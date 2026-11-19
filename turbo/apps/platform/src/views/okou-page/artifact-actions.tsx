@@ -505,7 +505,6 @@ function useGoogleDriveMenuAction(
               },
           options: {
             account: action.account,
-            agentId,
             connectorIcon: availability.googleDriveConnector.icon,
             connectorLabel: availability.googleDriveConnector.label,
           },

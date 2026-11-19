@@ -2106,7 +2106,6 @@
     "connectors": {
       "addConnectors": "Add connectors",
       "back": "Back",
-      "customAuthorizeDescription": "Review, connect, and authorize this custom connector for the agent.",
       "directory": {
         "allCategories": "All",
         "askAdmin": "Ask an admin to enable",
@@ -2974,7 +2973,6 @@
     },
     "actions": {
       "apply": "Apply",
-      "authorize": "Authorize",
       "cancel": "Cancel",
       "close": "Close",
       "closeWindow": "Close window",
@@ -3021,7 +3019,6 @@
     },
     "card": {
       "accessFor": "{{action}} {{connector}} access",
-      "authorized": "Authorized",
       "connectAria": "Connect {{connector}}",
       "connected": "Connected",
       "connectionExpired": "Connection expired",
@@ -3105,18 +3102,13 @@
         "searchAll": "Search all connectors"
       },
       "empty": {
-        "agent": "No connectors for this agent",
         "connected": "No connected connectors",
-        "search": "No connectors matching \"{{search}}\"",
-        "unshared": "Every connector is shared with an agent"
+        "search": "No connectors matching \"{{search}}\""
       },
       "filterCategory": "Category",
       "filters": {
-        "agents": "Agents",
         "all": "All",
-        "allAgents": "All agents",
-        "aria": "Filter connectors",
-        "unshared": "Not shared with any agent"
+        "aria": "Filter connectors"
       },
       "filterWith": "Filter: {{category}}",
       "myOkouDescription": "Connect third-party services for your Okou to use.",
@@ -3146,8 +3138,7 @@
         "seeMore_other": "See {{names}} and {{count}} more",
         "top": "Top connectors"
       },
-      "title": "Connectors",
-      "unnamedAgent": "Unnamed"
+      "title": "Connectors"
     },
     "connectDialog": {
       "connectedAs": "Connected as {{username}}",
@@ -3291,9 +3282,6 @@
       }
     },
     "directed": {
-      "authorizeAgent": "Authorize {{agent}}",
-      "authorized": "{{connector}} authorized",
-      "authorizeDocumentTitle": "Authorize {{connector}}",
       "connectDocumentTitle": "Connect {{connector}}",
       "connected": "{{connector}} connected",
       "needsConnector": "{{agent}} needs {{connector}} to proceed",
@@ -3321,10 +3309,8 @@
       "allowOptions": "{{permission}} allow options",
       "always": "Always",
       "clearSearch": "Clear permission search",
-      "descriptionAgent": "Configure which actions this agent is allowed to perform via this connector.",
       "find": "Find permissions",
       "findPlaceholder": "Find permissions...",
-      "forTarget": "for {{target}}",
       "loadError": "Failed to load permission metadata",
       "loading": "Loading permissions...",
       "metadataMissing": "No permission metadata found for {{connector}}",
@@ -4068,7 +4054,6 @@
     }
   },
   "myOkou": {
-    "access": "Your access in this workspace",
     "conflict": "Your saved instructions changed elsewhere. Your draft is kept here. Review or copy it before reloading the latest saved instructions.",
     "description": "Your instructions for Okou in this workspace",
     "discard": "Discard",

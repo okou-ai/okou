@@ -188,7 +188,7 @@ function createAgentComposerSignalsWithDraft(
   agentDraft: EnsuredAgentDraft,
   options: AgentComposerOptions = {},
 ) {
-  const connector = createComposerConnectorSignals(agentId);
+  const connector = createComposerConnectorSignals();
   const pendingRemoteAccess = createPendingRemoteAccessSignals();
   const submitMessage$ = createAgentSubmitMessage(
     agentId,

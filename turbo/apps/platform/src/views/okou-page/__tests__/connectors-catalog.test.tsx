@@ -7,8 +7,6 @@ import { customConnectorsContract } from "@okouai/api-contracts/contracts/custom
 import { connectedConnectorsContract } from "@okouai/api-contracts/contracts/connected-connectors";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 
-import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
-
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
@@ -25,14 +23,12 @@ import {
   getConnectorAction,
   getConnectorCard,
   getConnectorIcon,
-  listAgent,
   mockConnectors,
   mockOAuthCompletions,
   mockPublicConnectorStatus,
   publicStatusItem,
   queryConnectorAction,
   queryConnectorCard,
-  mockConnectorAgentAccess,
 } from "./connector-page-test-helpers.ts";
 
 const context = testContext();
@@ -111,18 +107,6 @@ function oauthMethod() {
   };
 }
 
-async function expectCards(expected: {
-  readonly github: boolean;
-  readonly asana: boolean;
-}): Promise<void> {
-  await waitFor(() => {
-    expect({
-      github: queryConnectorCard("GitHub") !== null,
-      asana: queryConnectorCard("Asana") !== null,
-    }).toStrictEqual(expected);
-  });
-}
-
 test("Browse connectors by category", async () => {
   mockConnectors(context, [
     { connectorSlug: "github", externalUsername: "octocat" },
@@ -142,63 +126,6 @@ test("Browse connectors by category", async () => {
   // The catalog is browsed a category at a time, and a category is far taller
   // than the viewport. Its marks are fetched as they are reached.
   expect(getConnectorIcon("Asana")).toHaveAttribute("loading", "lazy");
-});
-
-async function openConnectorFilterCatalog() {
-  const researchId = "c0000000-0000-4000-a000-000000000010";
-  const [github] = mockConnectors(context, [
-    { connectorSlug: "github", externalUsername: "octocat" },
-  ]);
-  if (!github) {
-    throw new Error("Expected the connected GitHub account");
-  }
-  mockPublicConnectorStatus(context, [
-    publicStatusItem({
-      connectorSlug: "github",
-      label: "GitHub",
-      authMethods: [oauthMethod()],
-      account: { ...github, connectionStatus: "connected" },
-    }),
-    publicStatusItem({
-      connectorSlug: "asana",
-      label: "Asana",
-      authMethods: [oauthMethod()],
-    }),
-  ]);
-  context.mocks.data.agents([
-    listAgent(researchId, "Research Agent", "preset:0"),
-  ]);
-  context.mocks.api(
-    userBuiltinConnectorsContract.get,
-    ({ params, respond }) => {
-      return respond(200, {
-        enabledConnectorSlugs: params.id === researchId ? ["github"] : [],
-      });
-    },
-  );
-  mockConnectorAgentAccess(context, (agentId) => {
-    return { enabledConnectorSlugs: agentId === researchId ? ["github"] : [] };
-  });
-  await setupPage({ context, path: "/connectors?scope=connected" });
-  await expectCards({ github: true, asana: false });
-  return { researchId };
-}
-
-test("Filter connected connectors by an agent after clearing the text search", async () => {
-  const { researchId } = await openConnectorFilterCatalog();
-  const search = screen.getByPlaceholderText("Find connected connectors");
-  await fill(search, "git");
-  await expectCards({ github: true, asana: false });
-  await fill(search, "");
-  click(getConnectorAction("button", "Filter connectors"));
-  click(
-    await waitFor(() => {
-      return getConnectorAction("menuitem", "Research Agent");
-    }),
-  );
-  await expectCards({ github: true, asana: false });
-  expect(locationSearch()).toContain("connection=agent");
-  expect(locationSearch()).toContain(researchId);
 });
 
 test("Require an application update before using connectors", async () => {
@@ -493,22 +420,20 @@ test("Land on Discover, then switch to the connectors this workspace has", async
     expect(locationSearch()).toContain("scope=connected");
   });
 
-  // The other scope is the connected ones alone, and its dimension is the
-  // agent -- one control in the slot, never two.
   const grid = await screen.findByTestId("connectors-connected-grid");
   expect(within(grid).getAllByTestId("connector-card-label")).toHaveLength(2);
   expect(
     screen.queryByTestId("connector-shelf-communication-collaboration"),
   ).toBeNull();
-  expect(screen.getByLabelText("Filter connectors")).toHaveTextContent(
-    "Filter: All agents",
-  );
-  await click(screen.getByLabelText("Filter connectors"));
-  const menu = await screen.findByRole("menu");
-  const options = queryAllByRoleFast("menuitem", menu).map((item) => {
-    return item.textContent;
+  const search = screen.getByPlaceholderText("Find connected connectors");
+  await fill(search, "gmail");
+  await waitFor(() => {
+    const results = within(screen.getByTestId("connectors-connected-grid"));
+    expect(results.getAllByTestId("connector-card-label")).toHaveLength(1);
+    expect(results.getByTestId("connector-card-label")).toHaveTextContent(
+      "Gmail",
+    );
   });
-  expect(options).toContain("All agents");
 });
 
 test("Keep a saved connector in Connected when its account needs a reconnect", async () => {
@@ -535,55 +460,6 @@ test("Keep a saved connector in Connected when its account needs a reconnect", a
     );
     expect(getConnectorAction("button", "Manage Gmail accounts")).toBeEnabled();
   });
-});
-
-test("Find the connectors no agent is using", async () => {
-  const researchId = "c0000000-0000-4000-a000-000000000011";
-  mockConnectors(context, [
-    { connectorSlug: "mail-0" as ConnectorSlug },
-    { connectorSlug: "mail-1" as ConnectorSlug },
-  ]);
-  mockSavedShelfConnectors(["mail-0", "mail-1"]);
-  context.mocks.data.agents([listAgent(researchId, "Research", "preset:0")]);
-  context.mocks.api(
-    userBuiltinConnectorsContract.get,
-    ({ params, respond }) => {
-      return respond(200, {
-        enabledConnectorSlugs: params.id === researchId ? ["mail-0"] : [],
-      });
-    },
-  );
-  mockConnectorAgentAccess(context, (agentId) => {
-    return {
-      enabledConnectorSlugs:
-        agentId === researchId ? ["mail-0" as ConnectorSlug] : [],
-    };
-  });
-  mockPublicConnectorStatus(context, connectedShelfCatalog(), {
-    "communication-collaboration": 327,
-    "ai-voice-audio": 50,
-  });
-  await setupPage({
-    context,
-    path: "/connectors?scope=connected",
-  });
-
-  await waitFor(() => {
-    expect(getConnectorCard("Gmail")).toBeInTheDocument();
-  });
-  expect(queryConnectorCard("Outlook Mail")).toBeInTheDocument();
-
-  // A connector nobody uses is the one worth finding in your own list, and it
-  // is the question the agent dimension cannot ask agent by agent.
-  click(getConnectorAction("button", "Filter connectors"));
-  click(getConnectorAction("menuitem", "Not shared with any agent"));
-  await waitFor(() => {
-    expect(queryConnectorCard("Gmail")).toBeNull();
-  });
-  expect(getConnectorCard("Outlook Mail")).toBeInTheDocument();
-  expect(new URLSearchParams(locationSearch()).get("connection")).toBe(
-    "unshared",
-  );
 });
 
 test("Reach the connectors this workspace built from their own segment", async () => {

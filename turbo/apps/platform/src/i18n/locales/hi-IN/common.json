@@ -2106,7 +2106,6 @@
     "connectors": {
       "addConnectors": "कनेक्टर्स जोड़ें",
       "back": "पीछे",
-      "customAuthorizeDescription": "एजेंट के लिए इस कस्टम कनेक्टर की समीक्षा करें, कनेक्ट करें और अधिकृत करें।",
       "directory": {
         "allCategories": "सभी",
         "askAdmin": "इसे चालू करने के लिए एडमिन से कहें",
@@ -2976,7 +2975,6 @@
     },
     "actions": {
       "apply": "आवेदन करना",
-      "authorize": "अधिकृत",
       "cancel": "रद्द करना",
       "close": "बंद करना",
       "closeWindow": "विंडो बंद",
@@ -3023,7 +3021,6 @@
     },
     "card": {
       "accessFor": "{{action}} {{connector}} पहुंच",
-      "authorized": "अधिकृत",
       "connectAria": "{{connector}} कनेक्ट करें",
       "connected": "कनेक्टेड",
       "connectionExpired": "कनेक्शन समाप्त हो गया",
@@ -3107,18 +3104,13 @@
         "searchAll": "सभी कनेक्टर खोजें"
       },
       "empty": {
-        "agent": "इस एजेंट के लिए कोई कनेक्टर नहीं",
         "connected": "कोई कनेक्टेड कनेक्टर नहीं",
-        "search": "\"{{search}}\" से मेल खाने वाला कोई कनेक्टर नहीं",
-        "unshared": "हर कनेक्टर किसी एजेंट के साथ साझा है"
+        "search": "\"{{search}}\" से मेल खाने वाला कोई कनेक्टर नहीं"
       },
       "filterCategory": "श्रेणी",
       "filters": {
-        "agents": "एजेंटों",
         "all": "सभी",
-        "allAgents": "सभी एजेंट",
-        "aria": "फ़िल्टर कनेक्टर्स",
-        "unshared": "किसी एजेंट के साथ साझा नहीं"
+        "aria": "फ़िल्टर कनेक्टर्स"
       },
       "filterWith": "फ़िल्टर: {{category}}",
       "myOkouDescription": "अपने Okou के इस्तेमाल के लिए बाहरी सेवाएँ जोड़ें।",
@@ -3148,8 +3140,7 @@
         "seeMore_other": "{{names}} और {{count}} अन्य देखें",
         "top": "शीर्ष कनेक्टर"
       },
-      "title": "कनेक्टर्स",
-      "unnamedAgent": "अज्ञात"
+      "title": "कनेक्टर्स"
     },
     "connectDialog": {
       "connectedAs": "{{username}} के रूप में जुड़ा हुआ है",
@@ -3293,9 +3284,6 @@
       }
     },
     "directed": {
-      "authorizeAgent": "{{agent}} को अधिकृत करें",
-      "authorized": "{{connector}} अधिकृत",
-      "authorizeDocumentTitle": "{{connector}} को अधिकृत करें",
       "connectDocumentTitle": "{{connector}} कनेक्ट करें",
       "connected": "{{connector}} कनेक्ट हुआ",
       "needsConnector": "{{agent}} को आगे बढ़ने के लिए {{connector}} की आवश्यकता है",
@@ -3323,10 +3311,8 @@
       "allowOptions": "{{permission}} विकल्पों की अनुमति देता है",
       "always": "हमेशा",
       "clearSearch": "अनुमति खोज साफ़ करें",
-      "descriptionAgent": "कॉन्फ़िगर करें कि इस एजेंट को इस कनेक्टर के माध्यम से कौन से कार्य करने की अनुमति है।",
       "find": "अनुमतियाँ खोजें",
       "findPlaceholder": "अनुमतियाँ ढूँढें...",
-      "forTarget": "{{target}} के लिए",
       "loadError": "अनुमति मेटाडेटा लोड करने में विफल",
       "loading": "अनुमतियाँ लोड हो रही हैं...",
       "metadataMissing": "{{connector}} के लिए कोई अनुमति मेटाडेटा नहीं मिला",
@@ -4070,7 +4056,6 @@
     }
   },
   "myOkou": {
-    "access": "इस कार्यक्षेत्र में आपकी पहुँच",
     "conflict": "आपके सहेजे गए निर्देश कहीं और बदल गए हैं। आपका ड्राफ़्ट सुरक्षित है। सहेजे गए निर्देश फिर लोड करने से पहले इसे देखें या कॉपी करें।",
     "description": "इस कार्यक्षेत्र में Okou के लिए आपके निर्देश",
     "discard": "छोड़ें",

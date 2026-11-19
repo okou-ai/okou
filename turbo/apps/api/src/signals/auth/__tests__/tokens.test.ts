@@ -257,11 +257,14 @@ describe("auth tokens", () => {
     });
   });
 
-  it("includes chat thread read and write capabilities in okou-scoped tokens", () => {
+  it("includes chat thread and connector account capabilities in okou-scoped tokens", () => {
     const token = issueOkouToken("user_okou", "run_okou", "org_okou");
 
     expect(verifyOkouToken(token)?.capabilities).toContain("chat-thread:read");
     expect(verifyOkouToken(token)?.capabilities).toContain("chat-thread:write");
+    expect(verifyOkouToken(token)?.capabilities).toContain(
+      "connector-account:switch",
+    );
   });
 
   it("includes chat event read and write capabilities in okou-scoped tokens", () => {

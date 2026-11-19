@@ -4304,7 +4304,6 @@ function ActiveChatConnectorActionConnectModal() {
     return connector && accountOptions ? (
       <CustomConnectorConnectDialog
         connector={connector}
-        agentId={active.agentId}
         accountOptions={accountOptions}
         origin={{ kind: "chat-action" }}
       />
@@ -4315,7 +4314,6 @@ function ActiveChatConnectorActionConnectModal() {
     return (
       <ConnectModal
         item={active.catalogItem}
-        agentId={active.agentId}
         accountLabel={accountLabelOf(active.account)}
         accountMode={{
           kind: "reconnect",
@@ -4345,7 +4343,6 @@ function ActiveChatConnectorActionConnectModal() {
   return (
     <ConnectModal
       item={active.catalogItem}
-      agentId={active.agentId}
       accountOptions={accountOptions}
       reconnectAuthMethod={reconnectAuthMethod}
       onClose={close}

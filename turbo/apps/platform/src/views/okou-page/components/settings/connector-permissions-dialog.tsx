@@ -30,11 +30,9 @@ export function ConnectorPermissionsDialog({
             }
           : undefined
       }
-      connectorScope
       scopeKey={`${owner}:${connectorAccountTargetKey(entry.target)}`}
       connectorSlug={entry.target.connectorSlug}
       connectorLabel={entry.label}
-      displayName=""
       session={signals.permissionDrawer}
     />
   );

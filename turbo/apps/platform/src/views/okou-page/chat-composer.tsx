@@ -46,7 +46,6 @@ import type {
 import type { PublicConnectorCatalogDiscoveryResponse } from "@okouai/api-contracts/contracts/connector-catalog";
 import type { CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connectors";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import type { BuiltinConnectorBrief } from "@okouai/api-contracts/contracts/connected-connectors";
 import type {
   UserTemplateCatalogEntry,
   UserTemplateKind,
@@ -157,7 +156,6 @@ import {
 } from "../../lib/composer-voice-input-shortcut.ts";
 import { ensurePushSubscription$ } from "../../lib/push-notifications.ts";
 import { isMobileTextInputDevice } from "../../lib/visual-viewport-keyboard.ts";
-import { agents$ } from "../../signals/agent.ts";
 import type { PlatformConnectorCatalogStatusItem } from "../../signals/connector-domain.ts";
 import {
   connectorCatalogStatus$,
@@ -228,7 +226,6 @@ import { ConnectorIcon } from "./components/settings/connector-icons.tsx";
 import { CustomConnectorConnectDialog } from "./components/settings/custom-connector-connect-dialog.tsx";
 
 import type { ConnectorConnectHandlers } from "./components/settings/launch-connector-connect.ts";
-import { PermissionsDialog } from "./components/settings/permissions-dialog.tsx";
 
 import type { ComposerPasteEvent } from "./composer-input-types.ts";
 import { ComposerNoticeTray } from "./composer-notice-tray.tsx";
@@ -376,10 +373,6 @@ type TemplatePreviewImageSize = Parameters<typeof r2ImageTransformUrl>[1];
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-type ComposerConnectorItem = BuiltinConnectorBrief & {
-  readonly authorized: boolean;
-};
 
 // ---------------------------------------------------------------------------
 // Queued messages strip — separate card stacked behind the composer with a
@@ -4230,28 +4223,6 @@ function ComposerRemoteAccessMenu({
   );
 }
 
-function ComposerConnectorPermissionDialog({
-  signals,
-  agentId,
-  agentDisplayName,
-  connector,
-}: {
-  signals: ComposerSignals;
-  agentId: string;
-  agentDisplayName: string;
-  connector: ComposerConnectorItem;
-}) {
-  return (
-    <PermissionsDialog
-      agentId={agentId}
-      connectorSlug={connector.slug}
-      connectorLabel={connector.label}
-      displayName={agentDisplayName}
-      session={signals.connector.permissionDrawer}
-    />
-  );
-}
-
 /**
  * The composer's connector entry. The trigger is a static mark so the composer
  * waits until the popover is open to load the Chat's connector access.
@@ -4403,34 +4374,6 @@ function ChatConnectorsPopoverBody({
  * The permission dialog retains its selected brief and loads only the target's
  * permission metadata and agent grants after the resource menu closes.
  */
-function ComposerConnectorPermissionDialogSlot({
-  signals,
-  connectorSlug,
-}: {
-  signals: ComposerSignals;
-  connectorSlug: ConnectorSlug;
-}) {
-  const agentId = signals.agentId;
-  const connectorUi = useGet(signals.connector.connectorUiState$);
-  const agents = useLastResolved(agents$) ?? [];
-  const permissionConnector = connectorUi.permissionConnector;
-  if (!permissionConnector || permissionConnector.slug !== connectorSlug) {
-    return null;
-  }
-  return (
-    <ComposerConnectorPermissionDialog
-      signals={signals}
-      agentId={agentId}
-      agentDisplayName={
-        agents.find((agent) => {
-          return agent.agentId === agentId;
-        })?.displayName ?? ""
-      }
-      connector={{ ...permissionConnector, authorized: true }}
-    />
-  );
-}
-
 // ---------------------------------------------------------------------------
 // Voice input mic button
 // ---------------------------------------------------------------------------
@@ -5560,44 +5503,6 @@ function ComposerNoticeSlot({ signals }: { signals: ComposerSignals }) {
 // Main composer
 // ---------------------------------------------------------------------------
 
-interface ResolvedComposerConnectorCollections {
-  readonly authorizedSet: ReadonlySet<ConnectorSlug>;
-  readonly connectorMap: ReadonlyMap<
-    ConnectorSlug,
-    PlatformConnectorCatalogStatusItem
-  >;
-  readonly selectedCustomConnector: CustomConnectorResponse | undefined;
-}
-
-function resolveComposerConnectorCollections({
-  addDialogCatalogItems,
-  addDialogCustomConnectors,
-  authorizedConnectorSlugs,
-  selectedCustomConnectorId,
-}: {
-  addDialogCatalogItems: readonly PlatformConnectorCatalogStatusItem[];
-  addDialogCustomConnectors: readonly CustomConnectorResponse[];
-  authorizedConnectorSlugs: readonly ConnectorSlug[] | null;
-  selectedCustomConnectorId: string | null;
-}): ResolvedComposerConnectorCollections {
-  const authorizedSet = new Set(authorizedConnectorSlugs ?? []);
-  const connectorMap = new Map(
-    addDialogCatalogItems.map((connector) => {
-      return [connector.slug, connector];
-    }),
-  );
-  const selectedCustomConnector = selectedCustomConnectorId
-    ? addDialogCustomConnectors.find((connector) => {
-        return connector.id === selectedCustomConnectorId;
-      })
-    : undefined;
-  return {
-    authorizedSet,
-    connectorMap,
-    selectedCustomConnector,
-  };
-}
-
 function ComposerFileInput({ signals }: { signals: ComposerSignals }) {
   const { t } = useTranslation();
   const setFileInput = useSet(signals.draft.setComposerFileInput$);
@@ -5655,7 +5560,6 @@ function ComposerConnectorConnectDialogs({
   selectedConnectorAccountOptions,
   selectedCustomConnector,
   selectedCustomConnectorAccountOptions,
-  agentId,
   connectHostKey,
   onBuiltinClose,
 }: {
@@ -5663,7 +5567,6 @@ function ComposerConnectorConnectDialogs({
   readonly selectedConnectorAccountOptions: DefaultConnectorAccountMutationOptions | null;
   readonly selectedCustomConnector: CustomConnectorResponse | undefined;
   readonly selectedCustomConnectorAccountOptions: CustomConnectorAccountMutationOptions | null;
-  readonly agentId: string;
   /** The composer's registration as the origin of its connections. */
   readonly connectHostKey: string;
   readonly onBuiltinClose: () => void;
@@ -5673,7 +5576,6 @@ function ComposerConnectorConnectDialogs({
       {selectedConnector && selectedConnectorAccountOptions ? (
         <ConnectModal
           item={selectedConnector}
-          agentId={agentId}
           accountOptions={selectedConnectorAccountOptions}
           onClose={onBuiltinClose}
           origin={{ kind: "composer", hostKey: connectHostKey }}
@@ -5682,7 +5584,6 @@ function ComposerConnectorConnectDialogs({
       {selectedCustomConnector && selectedCustomConnectorAccountOptions ? (
         <CustomConnectorConnectDialog
           connector={selectedCustomConnector}
-          agentId={agentId}
           accountOptions={selectedCustomConnectorAccountOptions}
           origin={{ kind: "composer", hostKey: connectHostKey }}
         />
@@ -5776,9 +5677,6 @@ function ComposerConnectorsSlot({
 }) {
   const pageSignal = useGet(pageSignal$);
   const dialogsOpen = useGet(signals.connector.dialogsOpen$);
-  const permissionConnectorSlug = useGet(
-    signals.connector.permissionConnectorSlug$,
-  );
   const triggerElement = useGet(signals.connector.triggerElement$);
   const permissions = useGet(signals.connector.chatAccess.permissions$);
   const permissionSignals = useGet(
@@ -5801,12 +5699,6 @@ function ComposerConnectorsSlot({
           signals={permissionSignals}
         />
       )}
-      {permissionConnectorSlug !== null && (
-        <ComposerConnectorPermissionDialogSlot
-          signals={signals}
-          connectorSlug={permissionConnectorSlug}
-        />
-      )}
       {dialogsOpen && (
         <ComposerConnectorDialogsSlot signals={signals} actions={actions} />
       )}
@@ -5816,7 +5708,7 @@ function ComposerConnectorsSlot({
 
 /**
  * The add, directory and connect dialogs. Mounted only while one is open,
- * because they are what needs the connector catalog and the agent's access.
+ * because they need the connector catalog.
  */
 function ComposerConnectorDialogsSlot({
   signals,
@@ -5825,13 +5717,6 @@ function ComposerConnectorDialogsSlot({
   signals: ComposerSignals;
   actions: ComposerConnectorActions;
 }) {
-  const lastAuthorization = useLastResolved(
-    signals.connector.data$,
-  )?.authorization;
-  const authorization =
-    lastAuthorization?.agentId === signals.agentId
-      ? lastAuthorization
-      : undefined;
   const addDialogCatalog = useLastResolved(signals.connector.addDialogCatalog$);
   const addDialogBrowseCatalog = useLastResolved(
     signals.connector.addDialogBrowseCatalog$,
@@ -5856,14 +5741,12 @@ function ComposerConnectorDialogsSlot({
 
   const pageSignal = useGet(pageSignal$);
   const selectedCustomConnectorId = connectorUi.selectedCustomConnectorId;
-  const agentRecordId = signals.agentId;
+  const selectedCustomConnector = addDialogCustomConnectors.find(
+    (connector) => {
+      return connector.id === selectedCustomConnectorId;
+    },
+  );
 
-  const { selectedCustomConnector } = resolveComposerConnectorCollections({
-    addDialogCatalogItems,
-    addDialogCustomConnectors,
-    authorizedConnectorSlugs: authorization?.enabledConnectorSlugs ?? null,
-    selectedCustomConnectorId,
-  });
   const selectedConnector = connectorUi.selectedConnector ?? undefined;
   const selectedConnectorAccountOptions =
     defaultBuiltinConnectorAccountOptions(selectedConnector);
@@ -5904,7 +5787,6 @@ function ComposerConnectorDialogsSlot({
             options: {
               connectorLabel: connector.label,
               connectorIcon: connector.icon,
-              agentId: agentRecordId,
               ...accountOptions,
             },
             origin,
@@ -5923,7 +5805,6 @@ function ComposerConnectorDialogsSlot({
             origin,
             options: {
               connectorLabel: connector.label,
-              agentId: agentRecordId,
               ...accountOptions,
             },
           },
@@ -5942,7 +5823,6 @@ function ComposerConnectorDialogsSlot({
         selectedCustomConnectorAccountOptions={
           selectedCustomConnectorAccountOptions
         }
-        agentId={agentRecordId}
         connectHostKey={signals.connectorCompletion.connectHostKey}
         onBuiltinClose={() => {
           detach(
@@ -6115,7 +5995,7 @@ function ComposerCard({
   layout: ComposerLayout;
 }) {
   const actions = useComposerActions(signals);
-  const connectorActions = useComposerConnectorActions(signals.connector);
+  const connectorActions = useComposerConnectorActions();
   const hasTemplateAttachment = useGet(signals.template.hasTemplateAttachment$);
   const dragOver = useGet(signals.draft.dragOver$);
   const setDragOver = useSet(signals.draft.setDragOver$);

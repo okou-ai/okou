@@ -2100,7 +2100,6 @@
     "connectors": {
       "addConnectors": "添加连接器",
       "back": "返回",
-      "customAuthorizeDescription": "查看并连接这个自定义连接器，然后授权给智能体。",
       "directory": {
         "allCategories": "全部",
         "askAdmin": "请管理员开启",
@@ -2960,7 +2959,6 @@
     },
     "actions": {
       "apply": "应用",
-      "authorize": "授权",
       "cancel": "取消",
       "close": "关闭",
       "closeWindow": "关闭窗口",
@@ -3007,7 +3005,6 @@
     },
     "card": {
       "accessFor": "{{action}}{{connector}}访问权限",
-      "authorized": "已授权",
       "connectAria": "连接{{connector}}",
       "connected": "已连接",
       "connectionExpired": "连接已过期",
@@ -3091,18 +3088,13 @@
         "searchAll": "搜索全部连接器"
       },
       "empty": {
-        "agent": "此智能体暂无连接器",
         "connected": "暂无已连接的连接器",
-        "search": "没有与「{{search}}」匹配的连接器",
-        "unshared": "每个连接器都已共享给智能体"
+        "search": "没有与「{{search}}」匹配的连接器"
       },
       "filterCategory": "分类",
       "filters": {
-        "agents": "智能体",
         "all": "全部",
-        "allAgents": "全部智能体",
-        "aria": "筛选连接器",
-        "unshared": "未共享给任何智能体"
+        "aria": "筛选连接器"
       },
       "filterWith": "筛选：{{category}}",
       "myOkouDescription": "连接第三方服务，供你的 Okou 使用。",
@@ -3132,8 +3124,7 @@
         "seeMore_other": "查看{{names}}及其他 {{count}} 个",
         "top": "热门连接器"
       },
-      "title": "连接器",
-      "unnamedAgent": "未命名"
+      "title": "连接器"
     },
     "connectDialog": {
       "connectedAs": "已以{{username}}身份连接",
@@ -3277,9 +3268,6 @@
       }
     },
     "directed": {
-      "authorizeAgent": "授权{{agent}}",
-      "authorized": "{{connector}}已授权",
-      "authorizeDocumentTitle": "授权{{connector}}",
       "connectDocumentTitle": "连接{{connector}}",
       "connected": "{{connector}}已连接",
       "needsConnector": "{{agent}}需要{{connector}}才能继续",
@@ -3307,10 +3295,8 @@
       "allowOptions": "{{permission}}的允许选项",
       "always": "始终",
       "clearSearch": "清除权限搜索",
-      "descriptionAgent": "设置此智能体可以通过该连接器执行哪些操作。",
       "find": "查找权限",
       "findPlaceholder": "查找权限…",
-      "forTarget": "用于{{target}}",
       "loadError": "无法加载权限信息",
       "loading": "正在加载权限…",
       "metadataMissing": "未找到{{connector}}的权限信息",
@@ -4052,7 +4038,6 @@
     }
   },
   "myOkou": {
-    "access": "你在此工作区的访问权限",
     "conflict": "指令已在其他地方更新。本地草稿已保留，请先查看或复制，再重新加载已保存的内容。",
     "description": "在此工作区中，专属于你的 Okou 指令",
     "discard": "放弃",

@@ -51,7 +51,6 @@ export function useBuiltinConnectorConnectHandlers() {
             method: authMethod,
             options: {
               account: { intent: "add" },
-              authorizeVisibleAgents: true,
               connectorLabel: connector.label,
               connectorIcon: connector.icon,
             },
@@ -67,7 +66,6 @@ export function useBuiltinConnectorConnectHandlers() {
             authMethod,
             options: {
               account: { intent: "add" },
-              authorizeVisibleAgents: true,
               connectorLabel: connector.label,
             },
             origin: { kind: "account", mode: { kind: "add" } },
@@ -90,7 +88,6 @@ function BuiltinAccountConnectDialog() {
   return accountConnect ? (
     <ConnectModal
       item={accountConnect.connector}
-      authorizeVisibleAgentsOnConnect
       accountMode={accountConnect.mode}
       accountOptions={{
         account:

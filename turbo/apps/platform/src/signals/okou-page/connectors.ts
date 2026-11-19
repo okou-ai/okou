@@ -10,44 +10,17 @@ import type { ConnectorAccountTarget } from "@okouai/api-contracts/contracts/con
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type { CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connectors";
 import type { PublicConnectorCatalogDiscoveryResponse } from "@okouai/api-contracts/contracts/connector-catalog";
-import type {
-  ConnectedConnectors,
-  BuiltinConnectorBrief,
-} from "@okouai/api-contracts/contracts/connected-connectors";
-import { userBuiltinConnectorsContract } from "@okouai/api-contracts/client/user-connectors";
-import { agentCustomConnectorsContract } from "@okouai/api-contracts/client/agent-custom-connectors";
-import { accept } from "../../lib/accept.ts";
-import { apiClient$ } from "../api-client.ts";
+import type { BuiltinConnectorBrief } from "@okouai/api-contracts/contracts/connected-connectors";
 import { pageSignal$ } from "../page-signal.ts";
-import { firewallPermissionMetadataByConnector } from "../firewall-permission-metadata.ts";
-import { userPermissionGrantsByAgent } from "../permission-allow/permission-allow-signals.ts";
-import { i18n } from "../../i18n/index.ts";
-import {
-  createAgentPermissionDrawerSave,
-  type PermissionDrawerSession,
-} from "./settings/permission-drawer-session.ts";
-import { onRef, resetSignal, withCleanup } from "../utils.ts";
-import { reloadAgentConnectorAuthorizations$ } from "./agent-connector-authorizations.ts";
-import {
-  composerAgentConnectors,
-  invalidateAgentConnectorAccess$,
-} from "./composer-agent-connectors.ts";
+import { onRef, resetSignal } from "../utils.ts";
 import { createConnectorResourceSignals } from "./connector-overview.ts";
-import { reloadOnboardingStatus$ } from "./onboarding.ts";
-import type {
-  PlatformConnectorCatalogStatusItem,
-  PlatformConnectorPermissionMetadata,
-  PlatformUserPermissionGrant,
-} from "../connector-domain.ts";
+import type { PlatformConnectorCatalogStatusItem } from "../connector-domain.ts";
 import {
   relatedConnectorCatalog,
   subscribeBuiltinConnectorChanges$,
   withConnectorCompletion,
 } from "../external/connectors.ts";
-import {
-  customConnectors$,
-  reloadCustomConnectorAuthorizedAgents$,
-} from "./settings/custom-connectors.ts";
+import { customConnectors$ } from "./settings/custom-connectors.ts";
 import {
   createComposerConnectorAccountSignals,
   type ComposerConnectorAccountSignals,
@@ -56,23 +29,6 @@ import { resetBuiltinManualGrantForm$ } from "./settings/connectors.ts";
 import { createChatConnectorAccessSignals } from "./chat-connector-access.ts";
 
 import { createPhoneUseAccessSignals } from "./phone-use-access.ts";
-
-export interface ComposerConnectorAuthorizationState {
-  readonly agentId: string;
-  readonly enabledConnectorSlugs: readonly ConnectorSlug[];
-  readonly customConnectorIds: readonly string[];
-}
-
-export type ComposerConnectorAuthorizationTarget =
-  | {
-      readonly kind: "builtin";
-      readonly connectorSlug: ConnectorSlug;
-    }
-  | {
-      readonly kind: "custom";
-      readonly connectorId: string;
-      readonly permissionBundleRef: string | null;
-    };
 
 export interface ComposerConnectorUiState {
   readonly showAddDialog: boolean;
@@ -88,8 +44,6 @@ export interface ComposerConnectorUiState {
   readonly remoteAccessFilter: "all" | "allowed";
   readonly remoteAccessEditedHosts: readonly string[];
   readonly popoverSortOrder: readonly string[] | null;
-  readonly permissionConnectorSlug: ConnectorSlug | null;
-  readonly permissionConnector: BuiltinConnectorBrief | null;
   readonly directoryTab: ConnectorDirectoryTab;
   readonly directoryCategory: string | null;
   readonly directoryDetailSlug: ConnectorSlug | null;
@@ -102,18 +56,9 @@ export interface ComposerConnectorUiState {
  */
 export type ConnectorDirectoryTab = "discover" | "custom";
 
-export interface ComposerConnectorData {
-  readonly overview: ConnectedConnectors;
-  readonly authorization: ComposerConnectorAuthorizationState;
-}
-
 export interface ComposerConnectorSignals {
-  readonly data$: Computed<Promise<ComposerConnectorData>>;
   readonly resources: ReturnType<typeof createConnectorResourceSignals>;
   readonly phoneAccess: ReturnType<typeof createPhoneUseAccessSignals>;
-  readonly connectorAuthorization$: Computed<
-    Promise<ComposerConnectorAuthorizationState>
-  >;
   readonly addDialogCatalog$: Computed<
     Promise<PublicConnectorCatalogDiscoveryResponse | null>
   >;
@@ -126,17 +71,12 @@ export interface ComposerConnectorSignals {
   readonly addDialogCustomConnectors$: Computed<
     Promise<readonly CustomConnectorResponse[]>
   >;
-  readonly setConnectorAuthorization$: Command<
-    Promise<void>,
-    [ComposerConnectorAuthorizationTarget, boolean, AbortSignal]
-  >;
   readonly connectorUiState$: Computed<ComposerConnectorUiState>;
   readonly popoverOpen$: Computed<boolean>;
   readonly phoneUseSetupOpen$: Computed<boolean>;
   readonly remoteAccessDialogOpen$: Computed<boolean>;
   readonly remoteAccessScopeId$: Computed<string>;
   readonly dialogsOpen$: Computed<boolean>;
-  readonly permissionConnectorSlug$: Computed<ConnectorSlug | null>;
   readonly openAccountManager$: Command<
     Promise<void>,
     [ConnectorAccountTarget, AbortSignal]
@@ -160,14 +100,6 @@ export interface ComposerConnectorSignals {
     Promise<void>,
     [Partial<ComposerConnectorUiState>, AbortSignal]
   >;
-  readonly connectorPermissionMetadata$: Computed<
-    Promise<PlatformConnectorPermissionMetadata | null>
-  >;
-  readonly connectorPermissionGrants$: Computed<
-    Promise<readonly PlatformUserPermissionGrant[]>
-  >;
-  /** The composer agent's permission drawer for the selected connector. */
-  readonly permissionDrawer: PermissionDrawerSession;
   readonly accounts: ComposerConnectorAccountSignals;
   readonly chatAccess: ReturnType<typeof createChatConnectorAccessSignals>;
   readonly reloadAccountPreference$: Command<void, []>;
@@ -205,140 +137,10 @@ function initialComposerConnectorUiState(): ComposerConnectorUiState {
     ...remoteAccessDialogState(false),
     remoteAccessScopeId: `remote-access-${crypto.randomUUID()}`,
     popoverSortOrder: null,
-    permissionConnectorSlug: null,
-    permissionConnector: null,
     directoryTab: "discover",
     directoryCategory: null,
     directoryDetailSlug: null,
   };
-}
-
-function createConnectorAuthorizationSignal(
-  agentId: string,
-): Computed<Promise<ComposerConnectorAuthorizationState>> {
-  const authorizations$ = composerAgentConnectors(agentId);
-  return computed(async (get): Promise<ComposerConnectorAuthorizationState> => {
-    const authorizations = await get(authorizations$);
-    return {
-      agentId,
-      enabledConnectorSlugs: authorizations.enabledConnectorSlugs,
-      customConnectorIds: authorizations.customConnectorIds,
-    };
-  });
-}
-
-function createBuiltinConnectorAuthorizationCommand(
-  agentId: string,
-): Command<Promise<void>, [ConnectorSlug, boolean, AbortSignal]> {
-  return command(
-    async (
-      { get, set },
-      connectorSlug: ConnectorSlug,
-      authorized: boolean,
-      signal: AbortSignal,
-    ): Promise<void> => {
-      signal.throwIfAborted();
-      const client = get(apiClient$)(userBuiltinConnectorsContract);
-      // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
-      await withCleanup(
-        accept(
-          client.update({
-            params: { id: agentId },
-            body: {
-              enabledConnectorSlugs: [connectorSlug],
-              operation: authorized ? "add" : "remove",
-            },
-            fetchOptions: { signal },
-          }),
-          [200],
-        ),
-        () => {
-          set(reloadAgentConnectorAuthorizations$);
-          set(invalidateAgentConnectorAccess$, agentId);
-        },
-      );
-      signal.throwIfAborted();
-      await set(reloadOnboardingStatus$);
-      signal.throwIfAborted();
-    },
-  );
-}
-
-function createCustomConnectorAuthorizationCommand(
-  agentId: string,
-): Command<Promise<void>, [string, boolean, AbortSignal]> {
-  return command(
-    async (
-      { get, set },
-      connectorId: string,
-      authorized: boolean,
-      signal: AbortSignal,
-    ): Promise<void> => {
-      signal.throwIfAborted();
-      const client = get(apiClient$)(agentCustomConnectorsContract);
-      // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
-      await withCleanup(
-        accept(
-          client.update({
-            params: { id: agentId },
-            body: {
-              grants: [
-                {
-                  customConnectorId: connectorId,
-                  permissionNames: [],
-                },
-              ],
-              operation: authorized ? "add" : "remove",
-            },
-            fetchOptions: { signal },
-          }),
-          [200],
-        ),
-        () => {
-          set(reloadCustomConnectorAuthorizedAgents$);
-          set(invalidateAgentConnectorAccess$, agentId);
-        },
-      );
-    },
-  );
-}
-
-function createConnectorAuthorizationCommand(
-  agentId: string,
-  authorization$: Computed<Promise<ComposerConnectorAuthorizationState>>,
-): ComposerConnectorSignals["setConnectorAuthorization$"] {
-  const setBuiltinAuthorization$ =
-    createBuiltinConnectorAuthorizationCommand(agentId);
-  const setCustomAuthorization$ =
-    createCustomConnectorAuthorizationCommand(agentId);
-  return command(
-    async (
-      { get, set },
-      target: ComposerConnectorAuthorizationTarget,
-      authorized: boolean,
-      signal: AbortSignal,
-    ): Promise<void> => {
-      if (target.kind === "builtin") {
-        await set(
-          setBuiltinAuthorization$,
-          target.connectorSlug,
-          authorized,
-          signal,
-        );
-      } else if (authorized && target.permissionBundleRef) {
-        return;
-      } else {
-        await set(
-          setCustomAuthorization$,
-          target.connectorId,
-          authorized,
-          signal,
-        );
-      }
-      await get(authorization$);
-      signal.throwIfAborted();
-    },
-  );
 }
 
 function createConnectorNavigation(
@@ -356,8 +158,6 @@ function createConnectorNavigation(
       });
       set(ui.updateConnectorUiState$, {
         showAddDialog: false,
-        permissionConnectorSlug: null,
-        permissionConnector: null,
       });
     },
   );
@@ -365,7 +165,6 @@ function createConnectorNavigation(
     const state = get(ui.connectorUiState$);
     if (
       get(chatAccess.permissions$) ||
-      state.permissionConnectorSlug ||
       state.selectedConnectorSlug ||
       state.selectedCustomConnectorId
     ) {
@@ -400,7 +199,6 @@ function createConnectorUiSelectors(
   | "remoteAccessDialogOpen$"
   | "remoteAccessScopeId$"
   | "dialogsOpen$"
-  | "permissionConnectorSlug$"
 > {
   return {
     popoverOpen$: computed((get) => {
@@ -423,9 +221,6 @@ function createConnectorUiSelectors(
         uiState.selectedConnector !== null ||
         uiState.selectedCustomConnectorId !== null
       );
-    }),
-    permissionConnectorSlug$: computed((get) => {
-      return get(connectorUiState$).permissionConnectorSlug;
     }),
   };
 }
@@ -664,7 +459,6 @@ function createConnectorUiSignals(
 }
 
 export function createComposerConnectorSignals(
-  agentId: string,
   threadId?: string,
 ): ComposerConnectorSignals {
   const resources = createConnectorResourceSignals(threadId);
@@ -672,17 +466,6 @@ export function createComposerConnectorSignals(
   const accounts = createComposerConnectorAccountSignals(threadId);
   const chatAccess = createChatConnectorAccessSignals(threadId);
   const ui = createConnectorUiSignals(resources, accounts, chatAccess);
-  const authorization$ = createConnectorAuthorizationSignal(agentId);
-  const data$ = computed(async (get): Promise<ComposerConnectorData> => {
-    return {
-      overview: await get(resources.connected$),
-      authorization: {
-        agentId,
-        enabledConnectorSlugs: [],
-        customConnectorIds: [],
-      },
-    };
-  });
   const addDialogKeyword$ = computed((get) => {
     return get(ui.connectorUiState$).addDialogSearch;
   });
@@ -730,54 +513,15 @@ export function createComposerConnectorSignals(
     }
     return await get(customConnectors$);
   });
-  const connectorPermissionMetadata$ = computed(async (get) => {
-    const connectorSlug = get(ui.connectorUiState$).permissionConnectorSlug;
-    if (!connectorSlug) {
-      return null;
-    }
-    return await get(firewallPermissionMetadataByConnector({ connectorSlug }));
-  });
-  const connectorPermissionGrants$ = computed(
-    async (get): Promise<readonly PlatformUserPermissionGrant[]> => {
-      return await get(userPermissionGrantsByAgent({ agentId }));
-    },
-  );
-  const permissionDrawer: PermissionDrawerSession = {
-    grants$: connectorPermissionGrants$,
-    metadata$: connectorPermissionMetadata$,
-    save$: createAgentPermissionDrawerSave(
-      computed(() => {
-        return agentId;
-      }),
-      () => {
-        return i18n.t(($) => {
-          return $.chat.permissions.updated;
-        });
-      },
-    ),
-    close$: command(({ set }) => {
-      set(ui.clearPermissions$);
-    }),
-  };
-
   return {
-    data$,
     resources,
     phoneAccess,
-    connectorAuthorization$: authorization$,
     addDialogCatalog$,
     addDialogBrowseCatalog$,
     addDialogCatalogItems$,
     addDialogCustomConnectors$,
-    setConnectorAuthorization$: createConnectorAuthorizationCommand(
-      agentId,
-      authorization$,
-    ),
     ...ui,
     ...createConnectorUiSelectors(ui.connectorUiState$),
-    connectorPermissionMetadata$,
-    connectorPermissionGrants$,
-    permissionDrawer,
     accounts,
     chatAccess,
     reloadAccountPreference$: command(({ set }) => {

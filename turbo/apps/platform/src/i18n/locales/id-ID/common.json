@@ -2100,7 +2100,6 @@
     "connectors": {
       "addConnectors": "Tambahkan konektor",
       "back": "Kembali",
-      "customAuthorizeDescription": "Tinjau, hubungkan, dan otorisasi konektor kustom ini untuk agen.",
       "directory": {
         "allCategories": "Semua",
         "askAdmin": "Minta admin untuk mengaktifkan",
@@ -2960,7 +2959,6 @@
     },
     "actions": {
       "apply": "Terapkan",
-      "authorize": "Otorisasi",
       "cancel": "Batal",
       "close": "Tutup",
       "closeWindow": "Tutup jendela",
@@ -3007,7 +3005,6 @@
     },
     "card": {
       "accessFor": "{{action}} akses {{connector}}",
-      "authorized": "Diotorisasi",
       "connectAria": "Hubungkan {{connector}}",
       "connected": "Terhubung",
       "connectionExpired": "Koneksi kedaluwarsa",
@@ -3091,18 +3088,13 @@
         "searchAll": "Cari semua konektor"
       },
       "empty": {
-        "agent": "Tidak ada konektor untuk agen ini",
         "connected": "Tidak ada konektor yang terhubung",
-        "search": "Tidak ada konektor yang cocok dengan \"{{search}}\"",
-        "unshared": "Setiap konektor sudah dibagikan ke sebuah agen"
+        "search": "Tidak ada konektor yang cocok dengan \"{{search}}\""
       },
       "filterCategory": "Kategori",
       "filters": {
-        "agents": "Agen",
         "all": "Semua",
-        "allAgents": "Semua agen",
-        "aria": "Filter konektor",
-        "unshared": "Tidak dibagikan ke agen mana pun"
+        "aria": "Filter konektor"
       },
       "filterWith": "Filter: {{category}}",
       "myOkouDescription": "Hubungkan layanan pihak ketiga untuk digunakan Okou Anda.",
@@ -3132,8 +3124,7 @@
         "seeMore_other": "Lihat {{names}} dan {{count}} lainnya",
         "top": "Konektor teratas"
       },
-      "title": "Konektor",
-      "unnamedAgent": "Tanpa nama"
+      "title": "Konektor"
     },
     "connectDialog": {
       "connectedAs": "Terhubung sebagai {{username}}",
@@ -3277,9 +3268,6 @@
       }
     },
     "directed": {
-      "authorizeAgent": "Otorisasi {{agent}}",
-      "authorized": "{{connector}} diotorisasi",
-      "authorizeDocumentTitle": "Otorisasi {{connector}}",
       "connectDocumentTitle": "Hubungkan {{connector}}",
       "connected": "{{connector}} terhubung",
       "needsConnector": "{{agent}} membutuhkan {{connector}} untuk melanjutkan",
@@ -3307,10 +3295,8 @@
       "allowOptions": "Opsi izinkan {{permission}}",
       "always": "Selalu",
       "clearSearch": "Hapus pencarian izin",
-      "descriptionAgent": "Konfigurasikan tindakan yang diizinkan dilakukan agen ini melalui konektor ini.",
       "find": "Cari izin",
       "findPlaceholder": "Cari izin...",
-      "forTarget": "untuk {{target}}",
       "loadError": "Gagal memuat metadata izin",
       "loading": "Memuat izin...",
       "metadataMissing": "Tidak ada metadata izin untuk {{connector}}",
@@ -4052,7 +4038,6 @@
     }
   },
   "myOkou": {
-    "access": "Akses Anda di ruang kerja ini",
     "conflict": "Instruksi tersimpan berubah di tempat lain. Draf Anda tetap disimpan. Tinjau atau salin sebelum memuat ulang instruksi tersimpan.",
     "description": "Instruksi Anda untuk Okou di ruang kerja ini",
     "discard": "Buang",

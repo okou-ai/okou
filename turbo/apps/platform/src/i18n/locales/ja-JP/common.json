@@ -2100,7 +2100,6 @@
     "connectors": {
       "addConnectors": "コネクタの追加",
       "back": "戻る",
-      "customAuthorizeDescription": "エージェント用のこのカスタム コネクタを確認、接続、承認します。",
       "directory": {
         "allCategories": "すべて",
         "askAdmin": "管理者に有効化を依頼してください",
@@ -2960,7 +2959,6 @@
     },
     "actions": {
       "apply": "申し込む",
-      "authorize": "承認する",
       "cancel": "キャンセル",
       "close": "閉じる",
       "closeWindow": "ウィンドウを閉じる",
@@ -3007,7 +3005,6 @@
     },
     "card": {
       "accessFor": "{{action}} {{connector}} アクセス",
-      "authorized": "認可された",
       "connectAria": "{{connector}} を接続します",
       "connected": "接続済み",
       "connectionExpired": "接続が期限切れになりました",
@@ -3091,18 +3088,13 @@
         "searchAll": "すべてのコネクターを検索"
       },
       "empty": {
-        "agent": "このエージェントにはコネクタがありません",
         "connected": "コネクタが接続されていません",
-        "search": "「{{search}}」に一致するコネクタはありません",
-        "unshared": "すべてのコネクタがいずれかのエージェントと共有されています"
+        "search": "「{{search}}」に一致するコネクタはありません"
       },
       "filterCategory": "カテゴリ",
       "filters": {
-        "agents": "エージェント",
         "all": "すべて",
-        "allAgents": "すべてのエージェント",
-        "aria": "フィルターコネクター",
-        "unshared": "どのエージェントとも共有されていません"
+        "aria": "フィルターコネクター"
       },
       "filterWith": "フィルタ: {{category}}",
       "myOkouDescription": "あなたのOkouが使う外部サービスを接続します。",
@@ -3132,8 +3124,7 @@
         "seeMore_other": "{{names}} ほか {{count}} 件を見る",
         "top": "人気のコネクタ"
       },
-      "title": "コネクター",
-      "unnamedAgent": "無名"
+      "title": "コネクター"
     },
     "connectDialog": {
       "connectedAs": "{{username}} として接続されています",
@@ -3277,9 +3268,6 @@
       }
     },
     "directed": {
-      "authorizeAgent": "{{agent}} を承認する",
-      "authorized": "{{connector}} が承認されました",
-      "authorizeDocumentTitle": "{{connector}} を承認する",
       "connectDocumentTitle": "{{connector}} を接続します",
       "connected": "{{connector}} が接続されました",
       "needsConnector": "{{agent}} を続行するには {{connector}} が必要です",
@@ -3307,10 +3295,8 @@
       "allowOptions": "{{permission}} 許可オプション",
       "always": "いつも",
       "clearSearch": "権限検索のクリア",
-      "descriptionAgent": "このエージェントがこのコネクタ経由で実行できるアクションを構成します。",
       "find": "権限の検索",
       "findPlaceholder": "権限を検索...",
-      "forTarget": "{{target}} の場合",
       "loadError": "権限メタデータのロードに失敗しました",
       "loading": "権限を読み込んでいます...",
       "metadataMissing": "{{connector}} の権限メタデータが見つかりません",
@@ -4052,7 +4038,6 @@
     }
   },
   "myOkou": {
-    "access": "このワークスペースでのアクセス権",
     "conflict": "保存済みの指示が別の場所で変更されました。下書きは保持されています。内容を確認またはコピーしてから、保存済みの指示を再読み込みしてください。",
     "description": "このワークスペースでのあなた専用の Okou への指示",
     "discard": "破棄",

@@ -20,10 +20,6 @@ import {
   completeExactReconnectChatAction$,
   refreshCustomConnectorChatAccount$,
 } from "../../chat-page/connector-action-block.ts";
-import {
-  completeDirectedConnectorAuthorization$,
-  setDirectedAuthorizeConnectModalKey$,
-} from "../../connectors-page/directed-authorize-slug.ts";
 import { completeDirectedConnectorAction$ } from "../../connectors-page/directed-connector-callback.ts";
 import {
   reloadDirectedConnectAccounts$,
@@ -85,7 +81,6 @@ export type ConnectorConnectOrigin =
   /** The standalone connect route that a chat action linked to. */
   | { readonly kind: "directed-connect"; readonly agentId: string | null }
   /** The standalone authorize route that a chat action linked to. */
-  | { readonly kind: "directed-authorize"; readonly agentId: string }
   /** The composer registered under this key. */
   | { readonly kind: "composer"; readonly hostKey: string }
   /** Syncing this artifact to Google Drive, which needed a connection. */
@@ -151,11 +146,6 @@ type ConnectorConnectPlan =
       readonly agentId: string | null;
       readonly callback: ChatActionCallback;
     }
-  | {
-      readonly kind: "directed-authorize";
-      readonly agentId: string;
-      readonly callback: ChatActionCallback;
-    }
   | ({ readonly kind: "artifact-drive-sync" } & ArtifactDriveSyncTarget)
   | ({
       readonly kind: "artifact-drive-reconnect";
@@ -204,13 +194,6 @@ const resolveConnectorConnectPlan$ = command(
       case "directed-connect": {
         return {
           kind: "directed-connect",
-          agentId: origin.agentId,
-          callback: get(routeChatActionCallback$),
-        };
-      }
-      case "directed-authorize": {
-        return {
-          kind: "directed-authorize",
           agentId: origin.agentId,
           callback: get(routeChatActionCallback$),
         };
@@ -307,15 +290,6 @@ const continueConnectorConnectPlan$ = command(
         );
         return;
       }
-      case "directed-authorize": {
-        await set(
-          completeDirectedConnectorAuthorization$,
-          plan.agentId,
-          plan.callback,
-          signal,
-        );
-        return;
-      }
       case "composer": {
         set(finishComposerConnectorAddition$, plan, signal);
         return;
@@ -333,7 +307,7 @@ const continueConnectorConnectPlan$ = command(
             connectionId,
             filename: plan.filename,
             mode: plan.mode,
-            authorize: false,
+            authorize: true,
           },
           signal,
         );
@@ -374,10 +348,6 @@ const closeConnectorConnectModal$ = command(
       }
       case "directed-connect": {
         set(setDirectedConnectModalKey$, null, signal);
-        return;
-      }
-      case "directed-authorize": {
-        set(setDirectedAuthorizeConnectModalKey$, null, signal);
         return;
       }
       case "composer": {

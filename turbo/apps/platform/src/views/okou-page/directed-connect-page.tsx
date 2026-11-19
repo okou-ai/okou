@@ -34,6 +34,7 @@ import { hasTokenInputValue } from "../../signals/okou-page/settings/token-input
 import { detach, onDomEventFn, Reason } from "../../signals/utils.ts";
 import {
   connectDirectedConnector$,
+  continueConnectedConnector$,
   directedConnectSlug$,
   directedConnectCustomSlug$,
   directedConnectCustomConnected$,
@@ -50,6 +51,7 @@ import {
   directedConnectCustomDialogKey$,
   setDirectedConnectCustomDialogKey$,
 } from "../../signals/connectors-page/directed-connect-slug.ts";
+import { pendingDirectedConnectorCallback$ } from "../../signals/connectors-page/directed-connector-callback.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { Check, Loader2 } from "lucide-react";
 import { DirectedActionError, DirectedCardShell } from "./directed-shared.tsx";
@@ -115,7 +117,6 @@ function ManualGrantForm({
           ),
           options: {
             connectorLabel,
-            ...(agentId ? { agentId } : { authorizeVisibleAgents: true }),
             ...accountOptions,
           },
           origin: { kind: "directed-connect", agentId },
@@ -304,10 +305,8 @@ function DirectedConnectModal({
   return (
     <ConnectModal
       item={item}
-      {...(agentId ? { agentId } : {})}
       accountOptions={accountOptions}
       reconnectAuthMethod={reconnectAuthMethod}
-      authorizeVisibleAgentsOnConnect={!agentId}
       onClose={onClose}
       origin={{ kind: "directed-connect", agentId }}
     />
@@ -561,6 +560,7 @@ function DirectedConnectCardContent({
   isConnecting,
   canConnect,
   onConnect,
+  continuation,
 }: {
   readonly icon: ReactNode;
   readonly connectorLabel: string;
@@ -571,6 +571,7 @@ function DirectedConnectCardContent({
   readonly isConnecting: boolean;
   readonly canConnect: boolean;
   readonly onConnect: () => void;
+  readonly continuation?: ReactNode;
 }) {
   const { t } = useTranslation();
   return (
@@ -595,6 +596,7 @@ function DirectedConnectCardContent({
       isLoading={isLoading}
     >
       <div className="flex flex-col items-center justify-center gap-2">
+        {continuation}
         <ConnectActions
           isConnected={isConnected}
           isConnecting={isConnecting}
@@ -606,6 +608,30 @@ function DirectedConnectCardContent({
   );
 }
 
+function DirectedConnectContinuation({
+  connected,
+  busy,
+  onContinue,
+}: {
+  readonly connected: boolean;
+  readonly busy: boolean;
+  readonly onContinue: () => void;
+}) {
+  const { t } = useTranslation();
+  const pending = useGet(pendingDirectedConnectorCallback$);
+  const target = useGet(directedConnectAccountTarget$);
+  if (!connected || !pending || target.kind !== "default") {
+    return null;
+  }
+  return (
+    <Button type="button" disabled={busy} onClick={onContinue}>
+      {t(($) => {
+        return $.chat.actions.continue;
+      })}
+    </Button>
+  );
+}
+
 function DirectedConnectCard() {
   const connectorSlug = useDirectedConnectConnectorSlug();
   const assistantName = useGet(assistantName$);
@@ -613,6 +639,9 @@ function DirectedConnectCard() {
   const agentNameLoadable = useLastLoadable(directedConnectAgentName$);
   const pollingDeviceAuthSlug = useGet(builtinPollingOAuthDeviceAuthSlug$);
   const [connectLoadable, connect] = useLoadableSet(connectDirectedConnector$);
+  const [continueLoadable, continueChat] = useLoadableSet(
+    continueConnectedConnector$,
+  );
   const signal = useGet(pageSignal$);
   const { item, presentation } = useDirectedConnectPresentation(connectorSlug);
   const setManualGrantDialogKey = useSet(setManualGrantDialogKey$);
@@ -665,10 +694,20 @@ function DirectedConnectCard() {
         isLoading={isLoading}
         isConnected={isConnected}
         isConnecting={isConnecting}
-        canConnect={canConnect}
+        canConnect={canConnect && continueLoadable.state !== "loading"}
         onConnect={handleConnect}
+        continuation={
+          <DirectedConnectContinuation
+            connected={isConnected}
+            busy={isConnecting || continueLoadable.state === "loading"}
+            onContinue={onDomEventFn(async () => {
+              await continueChat(connectorSlug, signal);
+            })}
+          />
+        }
       />
       <DirectedActionError loadable={connectLoadable} />
+      <DirectedActionError loadable={continueLoadable} />
       <DirectedConnectDialogs
         connectorSlug={connectorSlug}
         item={item}
@@ -761,7 +800,6 @@ function CustomDirectedConnectorDialog({
   return (
     <CustomConnectorConnectDialog
       connector={connection.connector}
-      {...(agentId ? { agentId } : {})}
       accountOptions={connection.accountOptions}
       origin={{ kind: "directed-connect", agentId }}
     />

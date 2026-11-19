@@ -40,7 +40,6 @@ import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-id
 import type { CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connectors";
 import type { PublicConnectorCatalogDiscoveryResponse } from "@okouai/api-contracts/contracts/connector-catalog";
 import type { PlatformConnectorCatalogStatusItem } from "../../signals/connector-domain.ts";
-import type { AgentResponse } from "@okouai/api-contracts/contracts/agents";
 import {
   connectorDirectoryPageSignals,
   directoryCatalogItems$,
@@ -49,7 +48,6 @@ import {
 } from "../../signals/okou-page/settings/connector-directory-page.ts";
 import { formatLocalizedNumber } from "../../i18n/format.ts";
 import { isOrgAdmin$ } from "../../signals/org.ts";
-import { agents$ } from "../../signals/agent.ts";
 import {
   CustomConnectorDirectoryDialogs,
   CustomConnectorGrid,
@@ -68,12 +66,9 @@ import {
   connectorCatalogDiscovery$,
   connectorsSearch$,
   connectorsCategoryFilter$,
-  connectorsConnectionFilter$,
   setConnectorsCategoryFilter$,
-  setConnectorsConnectionFilter$,
   setConnectorsSearch$,
   relatedCatalogItems$,
-  type ConnectorsConnectionFilter,
 } from "../../signals/okou-page/settings/connectors.ts";
 import {
   buildConnectorShelves,
@@ -105,9 +100,7 @@ import { ConnectorAccessManagementDialog } from "./components/settings/connector
 
 import { managedConnectorAccessSlug$ } from "../../signals/okou-page/settings/connector-access-management.ts";
 import { noConnectorImg } from "./platform-assets.ts";
-import { AvatarFromUrl } from "./sidebar-shared.tsx";
 import {
-  cn,
   surfaceVariants,
   Button,
   DropdownMenu,
@@ -119,7 +112,6 @@ import {
   SegmentControl,
   SegmentControlItem,
 } from "@okouai/ui";
-import { i18n } from "../../i18n/index.ts";
 import { connectedConnectorTargetKeys$ } from "../../signals/okou-page/connector-accounts.ts";
 import { ConnectorAccountNameDialog } from "./components/settings/connector-account-name-dialog.tsx";
 import { vncSummary$ } from "../../signals/vnc.ts";
@@ -305,164 +297,6 @@ function ConnectorsScopeSegment() {
  * switching scope changes what the menu offers rather than how the toolbar is
  * built.
  */
-function ConnectorFilterMenu({
-  label,
-  width,
-  leading,
-  children,
-}: {
-  readonly label: string;
-  readonly width: string;
-  readonly leading?: ReactNode;
-  readonly children: ReactNode;
-}) {
-  const { t } = useTranslation();
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        render={
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-9 shrink-0 self-end gap-1.5"
-            aria-label={t(($) => {
-              return $.connectors.catalog.filters.aria;
-            })}
-          />
-        }
-      >
-        <Filter size={14} aria-hidden="true" />
-        {leading}
-        <span className="max-w-[160px] truncate">{label}</span>
-        <ChevronDown size={14} aria-hidden="true" />
-      </DropdownMenuTrigger>
-      <DropdownMenuContent
-        align="end"
-        className={cn(
-          "max-h-[min(420px,var(--available-height))] overflow-y-auto",
-          width,
-        )}
-      >
-        {children}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
-/**
- * The one dimension that organises the connectors you already have: who uses
- * them. Connection status is not offered because this scope is the connected
- * ones -- the question left to ask is which agent can reach them.
- */
-function ConnectorAgentFilterMenu() {
-  const singleAgent = useLastResolved(singleAgentEnabled$) ?? false;
-  return singleAgent ? null : <LegacyConnectorAgentFilterMenu />;
-}
-
-function LegacyConnectorAgentFilterMenu() {
-  const { t } = useTranslation();
-  const agentsLoadable = useLastLoadable(agents$);
-  const agents = agentsLoadable.state === "hasData" ? agentsLoadable.data : [];
-  const value = useLastResolved(connectorsConnectionFilter$) ?? { kind: "all" };
-  const onChange = useSet(setConnectorsConnectionFilter$);
-  const activeAgent =
-    value.kind === "agent"
-      ? agents.find((agent) => {
-          return agent.agentId === value.agentId;
-        })
-      : undefined;
-  const label =
-    value.kind === "unshared"
-      ? t(($) => {
-          return $.connectors.catalog.filters.unshared;
-        })
-      : activeAgent
-        ? connectorAgentName(activeAgent)
-        : t(($) => {
-            return $.connectors.catalog.filters.allAgents;
-          });
-  return (
-    <ConnectorFilterMenu
-      label={t(
-        ($) => {
-          return $.connectors.catalog.filterWith;
-        },
-        { category: label },
-      )}
-      width="w-56"
-      leading={
-        activeAgent ? (
-          <AvatarFromUrl
-            avatarUrl={activeAgent.avatarUrl}
-            alt={connectorAgentName(activeAgent)}
-            size={16}
-            className="h-4 w-4 rounded-full object-cover"
-          />
-        ) : null
-      }
-    >
-      <ConnectorFilterOption
-        active={value.kind !== "agent" && value.kind !== "unshared"}
-        onSelect={() => {
-          onChange({ kind: "all" });
-        }}
-      >
-        {t(($) => {
-          return $.connectors.catalog.filters.allAgents;
-        })}
-      </ConnectorFilterOption>
-      {agents.length > 0 && (
-        <>
-          <DropdownMenuSeparator />
-          <ConnectorFilterSectionLabel>
-            {t(($) => {
-              return $.connectors.catalog.filters.agents;
-            })}
-          </ConnectorFilterSectionLabel>
-          {agents.map((agent) => {
-            return (
-              <ConnectorFilterOption
-                key={agent.agentId}
-                active={
-                  value.kind === "agent" && value.agentId === agent.agentId
-                }
-                onSelect={() => {
-                  onChange({ kind: "agent", agentId: agent.agentId });
-                }}
-              >
-                <AvatarFromUrl
-                  avatarUrl={agent.avatarUrl}
-                  alt={connectorAgentName(agent)}
-                  size={16}
-                  className="h-4 w-4 rounded-full object-cover"
-                />
-                <span className="truncate">{connectorAgentName(agent)}</span>
-              </ConnectorFilterOption>
-            );
-          })}
-          <DropdownMenuSeparator />
-          <ConnectorFilterOption
-            active={value.kind === "unshared"}
-            onSelect={() => {
-              onChange({ kind: "unshared" });
-            }}
-          >
-            {t(($) => {
-              return $.connectors.catalog.filters.unshared;
-            })}
-          </ConnectorFilterOption>
-        </>
-      )}
-    </ConnectorFilterMenu>
-  );
-}
-
-/**
- * The directory toolbar. Each scope is organised by exactly one dimension --
- * category for the catalog, agent for the connectors you already have -- so the
- * filter slot holds one control and changes contents with the segment rather
- * than putting two dropdowns side by side.
- */
 function ConnectorsDirectoryToolbar() {
   return (
     // The controls outlive the header: the title scrolls away and the scope and
@@ -555,9 +389,7 @@ function DirectoryControls() {
               className="pl-9 pr-3"
             />
           </div>
-          {scope === "connected" ? (
-            <ConnectorAgentFilterMenu />
-          ) : scope === "custom" ? (
+          {scope === "connected" ? null : scope === "custom" ? (
             <AdminNewCustomConnectorButton />
           ) : (
             <DropdownMenu>
@@ -973,15 +805,6 @@ function ConnectorsBuiltinPanel({
   return fallback;
 }
 
-function connectorAgentName(agent: AgentResponse): string {
-  return (
-    agent.displayName ??
-    i18n.t(($) => {
-      return $.connectors.catalog.unnamedAgent;
-    })
-  );
-}
-
 function ConnectorAccessButton(props: {
   readonly connectorSlug: ConnectorSlug;
   readonly connectorLabel: string;
@@ -1082,7 +905,6 @@ function ConnectorEmptyState({ message }: { readonly message: string }) {
 function ConnectorsConnectedPanel({
   connected,
   ready,
-  connectionFilter,
   renderCard,
   extras,
   extraCount,
@@ -1090,7 +912,6 @@ function ConnectorsConnectedPanel({
 }: {
   readonly connected: readonly DirectoryCatalogItem[];
   readonly ready: boolean;
-  readonly connectionFilter: ConnectorsConnectionFilter;
   readonly renderCard: (connector: DirectoryCatalogItem) => ReactNode;
   readonly extras: ReactNode;
   readonly extraCount: number;
@@ -1113,14 +934,7 @@ function ConnectorsConnectedPanel({
     return (
       <ConnectorEmptyState
         message={t(($) => {
-          // An empty list means something different under each filter: nothing
-          // connected at all, nothing this agent can reach, or nothing left
-          // that no agent uses.
-          return connectionFilter.kind === "agent"
-            ? $.connectors.catalog.empty.agent
-            : connectionFilter.kind === "unshared"
-              ? $.connectors.catalog.empty.unshared
-              : $.connectors.catalog.empty.connected;
+          return $.connectors.catalog.empty.connected;
         })}
       />
     );
@@ -1346,9 +1160,6 @@ function ConnectedDirectoryPanel() {
   const catalog = useLoadable(directoryCatalogItems$);
   const targets = useLastLoadable(connectedConnectorTargetKeys$);
   const inventoryStatus = connectorInventoryStatus(targets.state);
-  const connectionFilter = useLastResolved(connectorsConnectionFilter$) ?? {
-    kind: "all",
-  };
   const custom = directoryCustomConnectors(
     useLastLoadable(filteredDirectoryCustomConnectors$),
     targets,
@@ -1368,7 +1179,6 @@ function ConnectedDirectoryPanel() {
       connected={connected}
       ready={catalog.state === "hasData" && inventoryStatus !== "loading"}
       accountsUnavailable={inventoryStatus === "unavailable"}
-      connectionFilter={connectionFilter}
       renderCard={renderDirectoryCard}
       extraCount={custom.connected.length}
       extras={

@@ -175,7 +175,6 @@ export const connectMarkdownTable$ = command(
         method: request.method,
         options: {
           account: request.account,
-          agentId: request.params.agentId,
           connectorIcon: request.connector.icon,
           connectorLabel: request.connector.label,
         },
@@ -185,7 +184,7 @@ export const connectMarkdownTable$ = command(
             {
               ...request.params,
               connectionId: connectedAccountId,
-              authorize: false,
+              authorize: true,
             },
             ownerSignal,
           );

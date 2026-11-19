@@ -1,11 +1,10 @@
-import { command, computed, state, type Computed } from "ccstate";
+import { command, computed, state } from "ccstate";
 import type {
   ApplyUserPermissionGrant,
   UserPermissionGrantApplyMode,
   UserPermissionGrantExpiresIn,
   UserPermissionGrantAction,
 } from "@okouai/api-contracts/contracts/user-permission-grants";
-import { userPermissionGrantsContract } from "@okouai/api-contracts/client/user-permission-grants";
 import { connectorPermissionsContract } from "@okouai/api-contracts/client/connector-permissions";
 
 import {
@@ -138,33 +137,17 @@ export function resolveUserPermissionGrantPolicy(
   return resolveActiveUserPermissionGrantPolicy(grants, metadata, permission);
 }
 
-interface UserPermissionGrantsByAgentParams {
-  agentId: string;
-}
-
-export function userPermissionGrantsByAgent(
-  params: UserPermissionGrantsByAgentParams,
-): Computed<Promise<readonly PlatformUserPermissionGrant[]>> {
-  return computed(async (get) => {
-    get(internalUserPermissionGrantsReload$);
-    const client = get(apiClient$)(userPermissionGrantsContract);
-    const result = await accept(client.list({ query: params }), [200]);
-    return result.body;
-  });
-}
-
-/** Confirmation cards read only their requested targets, with the mode's owner. */
-export function permissionGrantsForConnectors(params: {
-  readonly agentId: string;
-  readonly connectorSlugs: readonly string[];
-}) {
+/** Confirmation cards read the member's grants for the requested connectors. */
+export function permissionGrantsForConnectors(
+  connectorSlugs: readonly string[],
+) {
   return computed(
     async (get): Promise<readonly PlatformUserPermissionGrant[]> => {
       get(internalUserPermissionGrantsReload$);
 
       const client = get(apiClient$)(connectorPermissionsContract);
       const grants = await Promise.all(
-        [...new Set(params.connectorSlugs)].map(async (connectorSlug) => {
+        [...new Set(connectorSlugs)].map(async (connectorSlug) => {
           const result = await accept(
             client.get({ query: { kind: "builtin", connectorSlug } }),
             [200, 404],
@@ -188,12 +171,7 @@ export const permissionAllowUserPermissionGrants$ = computed(async (get) => {
   }
   const connectorSlug = get(permissionAllowConnectorSlug$);
   return connectorSlug
-    ? await get(
-        permissionGrantsForConnectors({
-          agentId,
-          connectorSlugs: [connectorSlug],
-        }),
-      )
+    ? await get(permissionGrantsForConnectors([connectorSlug]))
     : [];
 });
 
@@ -212,17 +190,12 @@ export const applyUserPermissionGrants$ = command(
   async (
     { get, set },
     params: {
-      agentId?: string;
       connectorSlug: string;
       mode: UserPermissionGrantApplyMode;
       grants: readonly ApplyUserPermissionGrant[];
     },
     signal: AbortSignal,
   ): Promise<readonly PlatformUserPermissionGrant[]> => {
-    if (!params.agentId) {
-      throw new Error("Permission grant scope is required");
-    }
-
     signal.throwIfAborted();
     const result = await accept(
       get(apiClient$)(connectorPermissionsContract).apply({
@@ -250,7 +223,6 @@ export const applyUserPermissionGrants$ = command(
 );
 
 interface ApplyUserPermissionGrantParams {
-  agentId?: string;
   connectorSlug: string;
   permission: string;
   action: UserPermissionGrantAction;
@@ -266,7 +238,6 @@ export const applyUserPermissionGrant$ = command(
     const grants = await set(
       applyUserPermissionGrants$,
       {
-        agentId: params.agentId,
         connectorSlug: params.connectorSlug,
         mode: "patch",
         grants: [

@@ -2136,7 +2136,6 @@
     "connectors": {
       "addConnectors": "Ajouter des connecteurs",
       "back": "Retour",
-      "customAuthorizeDescription": "Examiner, connecter et autoriser ce connecteur personnalisé pour l'agent.",
       "directory": {
         "allCategories": "Tous",
         "askAdmin": "Demandez à un administrateur de l'activer",
@@ -3027,7 +3026,6 @@
     },
     "actions": {
       "apply": "Appliquer",
-      "authorize": "Autoriser",
       "cancel": "Annuler",
       "close": "Fermer",
       "closeWindow": "Fermer la fenêtre",
@@ -3074,7 +3072,6 @@
     },
     "card": {
       "accessFor": "{{action}} l'accès à {{connector}}",
-      "authorized": "Autorisé",
       "connectAria": "Connecter {{connector}}",
       "connected": "Connecté",
       "connectionExpired": "Connexion expirée",
@@ -3158,18 +3155,13 @@
         "searchAll": "Rechercher dans tous les connecteurs"
       },
       "empty": {
-        "agent": "Aucun connecteur pour cet agent",
         "connected": "Aucun connecteur connecté",
-        "search": "Aucun connecteur correspondant à \"{{search}}\"",
-        "unshared": "Chaque connecteur est partagé avec un agent"
+        "search": "Aucun connecteur correspondant à \"{{search}}\""
       },
       "filterCategory": "Catégorie",
       "filters": {
-        "agents": "Agents",
         "all": "Tous",
-        "allAgents": "Tous les agents",
-        "aria": "Filtrer les connecteurs",
-        "unshared": "Partagé avec aucun agent"
+        "aria": "Filtrer les connecteurs"
       },
       "filterWith": "Filtre : {{category}}",
       "myOkouDescription": "Connectez des services tiers pour votre Okou.",
@@ -3200,8 +3192,7 @@
         "seeMore_other": "Voir {{names}} et {{count}} autres",
         "top": "Connecteurs principaux"
       },
-      "title": "Connecteurs",
-      "unnamedAgent": "Sans nom"
+      "title": "Connecteurs"
     },
     "connectDialog": {
       "connectedAs": "Connecté en tant que {{username}}",
@@ -3345,9 +3336,6 @@
       }
     },
     "directed": {
-      "authorizeAgent": "Autoriser {{agent}}",
-      "authorized": "{{connector}} autorisé",
-      "authorizeDocumentTitle": "Autoriser {{connector}}",
       "connectDocumentTitle": "Connecter {{connector}}",
       "connected": "{{connector}} connecté",
       "needsConnector": "{{agent}} a besoin de {{connector}} pour continuer",
@@ -3377,10 +3365,8 @@
       "allowOptions": "Options d'autorisation pour {{permission}}",
       "always": "Toujours",
       "clearSearch": "Effacer la recherche de permissions",
-      "descriptionAgent": "Configurer les actions que cet agent est autorisé à effectuer via ce connecteur.",
       "find": "Trouver des permissions",
       "findPlaceholder": "Recherche de permissions...",
-      "forTarget": "pour {{target}}",
       "loadError": "Échec du chargement des métadonnées des permissions",
       "loading": "Chargement des permissions...",
       "metadataMissing": "Aucune métadonnée de permission trouvée pour {{connector}}",
@@ -4128,7 +4114,6 @@
     }
   },
   "myOkou": {
-    "access": "Votre accès dans cet espace de travail",
     "conflict": "Vos instructions enregistrées ont été modifiées ailleurs. Votre brouillon est conservé. Consultez-le ou copiez-le avant de recharger les instructions enregistrées.",
     "description": "Vos instructions pour Okou dans cet espace de travail",
     "discard": "Abandonner",

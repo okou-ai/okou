@@ -22,21 +22,12 @@ import {
   customConnectorValuesContract,
   customConnectorsContract,
 } from "@okouai/api-contracts/client/custom-connectors";
-import { agentCustomConnectorsContract } from "@okouai/api-contracts/client/agent-custom-connectors";
-import type { AgentCustomConnectorGrants } from "@okouai/api-contracts/contracts/agent-custom-connectors";
-import type { AgentResponse } from "@okouai/api-contracts/contracts/agents";
 import { IN_VITEST } from "../../../env.ts";
 import { i18n } from "../../../i18n/index.ts";
 import { accept } from "../../../lib/accept.ts";
 import { apiClient$, type ApiClientFactory } from "../../api-client.ts";
-import { agents$ } from "../../agent.ts";
 import { reloadUserConnectedConnectors$ } from "../connector-overview.ts";
 import { customConnectorAccountProjectionVersion$ } from "../connector-account-projection.ts";
-import {
-  connectorAgentAccess$,
-  connectorAuthorizationVersion$,
-  reloadConnectorAgentAccess$,
-} from "./connector-agent-access.ts";
 import { resetSignal, waitLoopUntil, withCleanup } from "../../utils.ts";
 import type { PlatformConnectorAccountMutationIntent } from "../../connector-domain.ts";
 import {
@@ -60,9 +51,6 @@ const internalReload$ = state(0);
 export type CustomConnectorAuthMethodType =
   "none" | "api" | "automatic" | "oauth2";
 
-export const customConnectorAuthorizationReloadVersion$ =
-  connectorAuthorizationVersion$;
-
 /**
  * List of org custom connectors with canonical connection status.
  * Cache-busted by `reloadCustomConnectors$`.
@@ -75,103 +63,6 @@ export const customConnectors$ = computed(
     const client = createClient(customConnectorsContract);
     const result = await accept(client.list(), [200]);
     return customConnectorListResponseSchema.parse(result.body).connectors;
-  },
-);
-
-export interface CustomConnectorAgentAuthorization {
-  readonly agent: AgentResponse;
-  readonly access: AgentCustomConnectorGrants;
-}
-
-export const customConnectorAgentAuthorizations$ = computed(
-  async (get): Promise<readonly CustomConnectorAgentAuthorization[]> => {
-    get(customConnectorAuthorizationReloadVersion$);
-    const connectors = await get(customConnectors$);
-    if (connectors.length === 0) {
-      return [];
-    }
-
-    const [allAgents, access] = await Promise.all([
-      get(agents$),
-      get(connectorAgentAccess$),
-    ]);
-    const grantsByAgent = new Map<
-      string,
-      AgentCustomConnectorGrants["grants"]
-    >();
-    const visibleAgentIds = new Set(access.visibleAgentIds);
-    for (const { agentId, connectorId, permissionNames } of access.custom) {
-      const grants = grantsByAgent.get(agentId) ?? [];
-      grantsByAgent.set(agentId, [
-        ...grants,
-        { customConnectorId: connectorId, permissionNames },
-      ]);
-    }
-    return allAgents
-      .filter((agent) => {
-        return visibleAgentIds.has(agent.agentId);
-      })
-      .map((agent) => {
-        return {
-          agent,
-          access: { grants: grantsByAgent.get(agent.agentId) ?? [] },
-        };
-      });
-  },
-);
-
-export const customConnectorAuthorizedAgentsById$ = computed(
-  async (get): Promise<ReadonlyMap<string, readonly AgentResponse[]>> => {
-    const rows = await get(customConnectorAgentAuthorizations$);
-    const agentsByConnectorId = new Map<string, AgentResponse[]>();
-    for (const row of rows) {
-      for (const grant of row.access.grants) {
-        const authorizedAgents =
-          agentsByConnectorId.get(grant.customConnectorId) ?? [];
-        authorizedAgents.push(row.agent);
-        agentsByConnectorId.set(grant.customConnectorId, authorizedAgents);
-      }
-    }
-    return agentsByConnectorId;
-  },
-);
-
-export const reloadCustomConnectorAuthorizedAgents$ =
-  reloadConnectorAgentAccess$;
-
-export const setCustomConnectorAgentAuthorization$ = command(
-  async (
-    { get },
-    args: {
-      readonly agentId: string;
-      readonly connectorId: string;
-      readonly permissionBundleRef: string | null;
-      readonly authorized: boolean;
-    },
-    signal: AbortSignal,
-  ): Promise<boolean> => {
-    if (args.authorized && args.permissionBundleRef) {
-      return false;
-    }
-    const client = get(apiClient$)(agentCustomConnectorsContract);
-    await accept(
-      client.update({
-        params: { id: args.agentId },
-        body: {
-          grants: [
-            {
-              customConnectorId: args.connectorId,
-              permissionNames: [],
-            },
-          ],
-          operation: args.authorized ? "add" : "remove",
-        },
-        fetchOptions: { signal },
-      }),
-      [200],
-    );
-    signal.throwIfAborted();
-    return true;
   },
 );
 

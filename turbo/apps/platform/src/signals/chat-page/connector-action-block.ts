@@ -32,14 +32,10 @@ import {
   resetBuiltinManualGrantForm$,
 } from "../okou-page/settings/connectors.ts";
 import {
-  customConnectorAuthorizedAgentsById$,
   customConnectors$,
   resetCustomConnectorConnectInput$,
-  setCustomConnectorAgentAuthorization$,
 } from "../okou-page/settings/custom-connectors.ts";
 import { resolvePlatformOriginForTarget } from "../api-base.ts";
-import { authorizeConnector$ as authorizeDirectedConnector$ } from "../connectors-page/directed-authorize-slug.ts";
-import { isAgentConnectorAuthorized } from "../okou-page/agent-connector-authorizations.ts";
 import { defaultBuiltinConnectorAccountOptions } from "../okou-page/settings/connector-account-dialogs.ts";
 import { readConnectorAccountPage } from "../okou-page/settings/connector-accounts.ts";
 import {
@@ -86,9 +82,7 @@ export type ConnectorActionDescriptor =
   | CustomConnectorActionDescriptor;
 
 interface ConnectorSignalState {
-  readonly available$: Computed<Promise<boolean>>;
   readonly connected$: Computed<Promise<boolean>>;
-  readonly authorized$: Computed<Promise<boolean>>;
   readonly complete$: Computed<Promise<boolean>>;
   readonly activate$: Command<Promise<void>, [AbortSignal]>;
 }
@@ -140,7 +134,10 @@ type ActiveExactReconnectConnectorAction =
 
 type ActiveCustomConnectorAction = CustomConnectorActionDescriptor & {
   readonly recordConnection$: Command<void, [CustomConnectorResponse, boolean]>;
+  readonly finishConnection$: FinishConnection;
 };
+
+type FinishConnection = Command<Promise<void>, [AbortSignal]>;
 
 type ReadCatalogAccountCommand = Command<
   Promise<PlatformConnectorCatalogStatusItem | null>,
@@ -150,6 +147,7 @@ type ReadCatalogAccountCommand = Command<
 type ActiveCatalogConnectorAction = CatalogConnectorActionDescriptor & {
   readonly catalogItem: PlatformConnectorCatalogStatusItem;
   readonly readAccount$: ReadCatalogAccountCommand;
+  readonly finishConnection$: FinishConnection;
 };
 
 type ActiveChatConnectorAction =
@@ -169,7 +167,7 @@ export const closeChatConnectorActionConnectDialog$ = command(({ set }) => {
   set(activeChatConnectorActionState$, null);
 });
 
-export function parseConnectorAuthorizeUrl(
+export function parseConnectorActionUrl(
   value: string,
   context: ChatActionContext | undefined,
 ): ChatActionParseResult<ConnectorActionDescriptor> {
@@ -269,6 +267,46 @@ const runConnectorActionCallback$ = command(
   },
 );
 
+function createConnectionCompletion(
+  descriptor:
+    CatalogConnectorActionDescriptor | CustomConnectorActionDescriptor,
+  connected$: Computed<Promise<boolean>>,
+) {
+  const continued$ = state(false);
+  const complete$ = computed(async (get) => {
+    const continued = get(continued$);
+    return (await get(connected$)) && (!descriptor.callbackPrompt || continued);
+  });
+  const callbackIds = {
+    clientEventId: crypto.randomUUID(),
+    chatThreadSortEventId: crypto.randomUUID(),
+  };
+  const finishConnection$ = command(
+    async ({ get, set }, signal: AbortSignal): Promise<void> => {
+      if (
+        get(continued$) ||
+        !descriptor.threadId ||
+        !descriptor.callbackPrompt
+      ) {
+        return;
+      }
+      await set(
+        runChatActionCallback$,
+        {
+          threadId: descriptor.threadId,
+          agentId: descriptor.agentId,
+          callbackPrompt: descriptor.callbackPrompt,
+          callbackIds,
+        },
+        signal,
+      );
+      signal.throwIfAborted();
+      set(continued$, true);
+    },
+  );
+  return { complete$, finishConnection$ };
+}
+
 export const completeExactReconnectChatAction$ = command(
   async (
     { get, set },
@@ -345,7 +383,7 @@ export const completeCustomConnectorChatAction$ = command(
         "The default account still needs attention. Review its accounts in Connectors settings.",
       );
     }
-    await set(runConnectorActionCallback$, active, signal);
+    await set(active.finishConnection$, signal);
   },
 );
 
@@ -365,67 +403,49 @@ export const completeCatalogConnectorChatAction$ = command(
       return;
     }
     requireCompletedCatalogAccount(item);
-    await set(runConnectorActionCallback$, active, signal);
+    await set(active.finishConnection$, signal);
   },
 );
+
+function isConnectedCatalogAccount(
+  item: PlatformConnectorCatalogStatusItem | null,
+): boolean {
+  if (!item?.connected) {
+    return false;
+  }
+  const status = builtinConnectorCurrentConnectionStatus(item);
+  return status !== "unavailable" && status !== "reconnect-required";
+}
 
 function requireCompletedCatalogAccount(
   item: PlatformConnectorCatalogStatusItem | null,
 ): void {
-  const status = item ? builtinConnectorCurrentConnectionStatus(item) : null;
-  if (
-    !item?.connected ||
-    status === "unavailable" ||
-    status === "reconnect-required"
-  ) {
+  if (!isConnectedCatalogAccount(item)) {
     throw new Error(
       "The default account still needs attention. Review its accounts in Connectors settings.",
     );
   }
 }
 
-type CatalogConnectorActivationSignals = Pick<
-  CatalogConnectorSignals,
-  "available$" | "catalogItem$" | "connected$"
-> & { readonly readAccount$: ReadCatalogAccountCommand };
-
 function createCatalogConnectorActivation(
   descriptor: CatalogConnectorActionDescriptor,
-  signals: CatalogConnectorActivationSignals,
+  readAccount$: ReadCatalogAccountCommand,
+  finishConnection$: FinishConnection,
 ): CatalogConnectorSignals["activate$"] {
-  return command(async ({ get, set }, signal: AbortSignal) => {
-    const available = await get(signals.available$);
+  return command(async ({ set }, signal: AbortSignal) => {
+    const connector = await set(readAccount$, undefined, signal);
     signal.throwIfAborted();
-    if (!available) {
-      return;
-    }
-
-    const catalogItem = await set(signals.readAccount$, undefined, signal);
-    signal.throwIfAborted();
-    const connected = catalogItem?.connected === true;
-    const status =
-      catalogItem === null
-        ? null
-        : builtinConnectorCurrentConnectionStatus(catalogItem);
-    if (status === "unavailable") {
-      throw new Error("Connector account metadata is unavailable.");
-    }
-    const reconnectRequired = status === "reconnect-required";
-    if (connected && !reconnectRequired) {
-      await set(
-        authorizeDirectedConnector$,
-        descriptor.connectorSlug,
-        descriptor.agentId,
-        signal,
-      );
-      await set(runConnectorActionCallback$, descriptor, signal);
-      return;
-    }
-
-    const connector = catalogItem;
     if (!connector) {
       return;
     }
+    if (builtinConnectorCurrentConnectionStatus(connector) === "unavailable") {
+      throw new Error("Connector account metadata is unavailable.");
+    }
+    if (isConnectedCatalogAccount(connector)) {
+      await set(finishConnection$, signal);
+      return;
+    }
+
     const accountOptions = defaultBuiltinConnectorAccountOptions(connector);
     if (!accountOptions) {
       return;
@@ -438,7 +458,8 @@ function createCatalogConnectorActivation(
       set(activeChatConnectorActionState$, {
         ...descriptor,
         catalogItem: connector,
-        readAccount$: signals.readAccount$,
+        readAccount$,
+        finishConnection$,
       });
       return;
     }
@@ -446,7 +467,6 @@ function createCatalogConnectorActivation(
     const connectOptions = {
       connectorLabel: connector.label,
       connectorIcon: connector.icon,
-      agentId: descriptor.agentId,
       ...accountOptions,
     };
     const connectionCompleted =
@@ -468,10 +488,10 @@ function createCatalogConnectorActivation(
             signal,
           );
     if (connectionCompleted) {
-      const current = await set(signals.readAccount$, undefined, signal);
+      const current = await set(readAccount$, undefined, signal);
       signal.throwIfAborted();
       requireCompletedCatalogAccount(current);
-      await set(runConnectorActionCallback$, descriptor, signal);
+      await set(finishConnection$, signal);
     }
   });
 }
@@ -530,61 +550,23 @@ function createCatalogConnectorSignals(
     },
   );
 
-  const available$ = computed(async (get): Promise<boolean> => {
-    const catalogItem = await get(catalogItem$);
-    return catalogItem !== null;
-  });
-
   const connected$ = computed(async (get): Promise<boolean> => {
-    return (await get(catalogItem$))?.connected ?? false;
+    return isConnectedCatalogAccount(await get(catalogItem$));
   });
-
-  const authorized$ = computed(async (get): Promise<boolean> => {
-    return await get(
-      isAgentConnectorAuthorized({
-        agentId: descriptor.agentId,
-        connectorSlug: descriptor.connectorSlug,
-      }),
-    );
-  });
-
-  const complete$ = computed(async (get): Promise<boolean> => {
-    const available = await get(available$);
-    if (!available) {
-      return false;
-    }
-
-    const [connected, authorized, catalogItem] = await Promise.all([
-      get(connected$),
-      get(authorized$),
-      get(catalogItem$),
-    ]);
-    const status =
-      catalogItem === null
-        ? null
-        : builtinConnectorCurrentConnectionStatus(catalogItem);
-    return (
-      connected &&
-      authorized &&
-      catalogItem !== null &&
-      status !== "reconnect-required" &&
-      status !== "unavailable"
-    );
-  });
-
-  const activate$ = createCatalogConnectorActivation(descriptor, {
-    available$,
-    catalogItem$,
+  const { complete$, finishConnection$ } = createConnectionCompletion(
+    descriptor,
     connected$,
+  );
+  const activate$ = createCatalogConnectorActivation(
+    descriptor,
     readAccount$,
-  });
+    finishConnection$,
+  );
 
   return {
     ...descriptor,
     catalogItem$,
-    available$,
     connected$,
-    authorized$,
     complete$,
     activate$,
     subscribe$: accountChanges.subscribe$,
@@ -709,10 +691,6 @@ function createCustomConnectorSignals(
     );
   });
 
-  const available$ = computed(async (get): Promise<boolean> => {
-    return (await get(connector$)) !== null;
-  });
-
   const connected$ = computed(async (get): Promise<boolean> => {
     const connector = await get(connector$);
     if (!connector) {
@@ -727,32 +705,10 @@ function createCustomConnectorSignals(
       : false;
   });
 
-  const authorized$ = computed(async (get): Promise<boolean> => {
-    const connector = await get(connector$);
-    if (!connector) {
-      return false;
-    }
-    const authorizedAgentsByConnectorId = await get(
-      customConnectorAuthorizedAgentsById$,
-    );
-    return (authorizedAgentsByConnectorId.get(connector.id) ?? []).some(
-      (agent) => {
-        return agent.agentId === descriptor.agentId;
-      },
-    );
-  });
-
-  const complete$ = computed(async (get): Promise<boolean> => {
-    const available = await get(available$);
-    if (!available) {
-      return false;
-    }
-    const [connected, authorized] = await Promise.all([
-      get(connected$),
-      get(authorized$),
-    ]);
-    return connected && authorized;
-  });
+  const { complete$, finishConnection$ } = createConnectionCompletion(
+    descriptor,
+    connected$,
+  );
 
   const activate$ = command(async ({ get, set }, signal: AbortSignal) => {
     const connector = await get(connector$);
@@ -776,38 +732,22 @@ function createCustomConnectorSignals(
       set(verifiedDefault$, { connector, connected });
     }
     if (connected) {
-      const alreadyAuthorized = await get(authorized$);
-      signal.throwIfAborted();
-      const authorized =
-        alreadyAuthorized ||
-        (await set(
-          setCustomConnectorAgentAuthorization$,
-          {
-            agentId: descriptor.agentId,
-            connectorId: connector.id,
-            permissionBundleRef: connector.permissionBundleRef ?? null,
-            authorized: true,
-          },
-          signal,
-        ));
-      signal.throwIfAborted();
-      if (!authorized) {
-        return;
-      }
-      await set(runConnectorActionCallback$, descriptor, signal);
+      await set(finishConnection$, signal);
       return;
     }
 
     set(resetCustomConnectorConnectInput$);
-    set(activeChatConnectorActionState$, { ...descriptor, recordConnection$ });
+    set(activeChatConnectorActionState$, {
+      ...descriptor,
+      recordConnection$,
+      finishConnection$,
+    });
   });
 
   return {
     ...descriptor,
     connector$,
-    available$,
     connected$,
-    authorized$,
     complete$,
     activate$,
   };

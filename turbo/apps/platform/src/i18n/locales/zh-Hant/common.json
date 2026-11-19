@@ -2100,7 +2100,6 @@
     "connectors": {
       "addConnectors": "新增連接器",
       "back": "返回",
-      "customAuthorizeDescription": "檢視並連線這個自定義連接器，然後授權給智能體。",
       "directory": {
         "allCategories": "全部",
         "askAdmin": "請管理員開啟",
@@ -2960,7 +2959,6 @@
     },
     "actions": {
       "apply": "應用",
-      "authorize": "授權",
       "cancel": "取消",
       "close": "關閉",
       "closeWindow": "關閉視窗",
@@ -3007,7 +3005,6 @@
     },
     "card": {
       "accessFor": "{{action}}{{connector}}訪問權限",
-      "authorized": "已授權",
       "connectAria": "連線{{connector}}",
       "connected": "已連線",
       "connectionExpired": "連線已過期",
@@ -3091,18 +3088,13 @@
         "searchAll": "搜尋全部連接器"
       },
       "empty": {
-        "agent": "此智能體暫無連接器",
         "connected": "暫無已連線的連接器",
-        "search": "沒有與「{{search}}」匹配的連接器",
-        "unshared": "每個連接器都已共享給智能體"
+        "search": "沒有與「{{search}}」匹配的連接器"
       },
       "filterCategory": "分類",
       "filters": {
-        "agents": "智能體",
         "all": "全部",
-        "allAgents": "全部智能體",
-        "aria": "篩選連接器",
-        "unshared": "未共享給任何智能體"
+        "aria": "篩選連接器"
       },
       "filterWith": "篩選：{{category}}",
       "myOkouDescription": "連結第三方服務，供你的 Okou 使用。",
@@ -3132,8 +3124,7 @@
         "seeMore_other": "檢視{{names}}及其他 {{count}} 個",
         "top": "熱門連接器"
       },
-      "title": "連接器",
-      "unnamedAgent": "未命名"
+      "title": "連接器"
     },
     "connectDialog": {
       "connectedAs": "已以{{username}}身份連線",
@@ -3277,9 +3268,6 @@
       }
     },
     "directed": {
-      "authorizeAgent": "授權{{agent}}",
-      "authorized": "{{connector}}已授權",
-      "authorizeDocumentTitle": "授權{{connector}}",
       "connectDocumentTitle": "連線{{connector}}",
       "connected": "{{connector}}已連線",
       "needsConnector": "{{agent}}需要{{connector}}才能繼續",
@@ -3307,10 +3295,8 @@
       "allowOptions": "{{permission}}的允許選項",
       "always": "始終",
       "clearSearch": "清除權限搜尋",
-      "descriptionAgent": "設定此智能體可以透過該連接器執行哪些操作。",
       "find": "查詢權限",
       "findPlaceholder": "查詢權限…",
-      "forTarget": "用於{{target}}",
       "loadError": "無法載入權限資訊",
       "loading": "正在載入權限…",
       "metadataMissing": "未找到{{connector}}的權限資訊",
@@ -4052,7 +4038,6 @@
     }
   },
   "myOkou": {
-    "access": "你在此工作區的存取權限",
     "conflict": "指令已在其他地方更新。本機草稿已保留，請先檢視或複製，再重新載入已儲存的內容。",
     "description": "在此工作區中，專屬於你的 Okou 指令",
     "discard": "捨棄",

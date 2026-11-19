@@ -272,7 +272,6 @@ function useSourceConnectorActivate(
             options: {
               connectorLabel: item.label,
               connectorIcon: item.icon,
-              authorizeVisibleAgents: true,
               ...accountOptions,
             },
             origin: {
@@ -376,7 +375,6 @@ function SourcesConnectorGrid({
         <ConnectModal
           item={selectedConnector}
           accountOptions={selectedAccountOptions}
-          authorizeVisibleAgentsOnConnect
           onClose={() => {
             setSelectedConnectorSlug(null);
           }}
@@ -422,7 +420,6 @@ function useListConnectHandlers(
               {
                 connectorLabel: item.label,
                 connectorIcon: item.icon,
-                authorizeVisibleAgents: true,
                 ...accountOptions,
               },
               pageSignal,
@@ -435,7 +432,6 @@ function useListConnectHandlers(
                 authMethod,
                 options: {
                   connectorLabel: item.label,
-                  authorizeVisibleAgents: true,
                   ...accountOptions,
                 },
               },
@@ -532,7 +528,6 @@ function ListConnectorSetup({ connectorSlugs }: ListConnectorSetupProps) {
         <ConnectModal
           item={selectedConnector}
           accountOptions={selectedAccountOptions}
-          authorizeVisibleAgentsOnConnect
           onClose={() => {
             setSelectedConnectorSlug(null);
           }}

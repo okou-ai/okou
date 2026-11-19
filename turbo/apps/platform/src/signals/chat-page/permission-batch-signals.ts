@@ -32,12 +32,11 @@ import {
 
 function createBatchResources(descriptor: PermissionBatchActionDescriptor) {
   const agent$ = agentById(descriptor.agentId);
-  const grants$ = permissionGrantsForConnectors({
-    agentId: descriptor.agentId,
-    connectorSlugs: descriptor.items.map((item) => {
+  const grants$ = permissionGrantsForConnectors(
+    descriptor.items.map((item) => {
       return item.connectorSlug;
     }),
-  });
+  );
   const metadataResources = [
     ...new Set(
       descriptor.items.map((item) => {
@@ -251,7 +250,6 @@ function createBatchSaveCommand(
             ...(await set(
               applyUserPermissionGrants$,
               {
-                agentId: descriptor.agentId,
                 connectorSlug: group.connectorSlug,
                 mode: "patch",
                 grants: group.grants,

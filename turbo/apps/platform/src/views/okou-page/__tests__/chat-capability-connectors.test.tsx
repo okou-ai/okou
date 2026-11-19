@@ -630,7 +630,7 @@ test.each([
     click(getButton("Connect", card));
     if (status === "connected") {
       await waitFor(() => {
-        return getButton("Authorized", card);
+        return getButton("Connected", card);
       });
     } else {
       await screen.findByRole("dialog", { name: "Connect Workspace Search" });
@@ -639,9 +639,9 @@ test.each([
       expect(sentPrompts(sends)).toStrictEqual(
         status === "connected" ? ["Resume workspace search"] : [],
       );
-      expect(authorizationUpdates).toHaveLength(status === "connected" ? 1 : 0);
+      expect(authorizationUpdates).toStrictEqual([]);
       expect(
-        queryControl("button", "Authorized", card)?.matches(":disabled") ??
+        queryControl("button", "Connected", card)?.matches(":disabled") ??
           false,
       ).toBe(status === "connected");
     });
@@ -743,7 +743,7 @@ test.each([false, true])(
   },
 );
 
-test("Keep an incomplete custom MCP reconnect unauthorized without resuming", async () => {
+test("Keep an incomplete custom MCP reconnect open without resuming", async () => {
   const { dialog, sends, authorizationUpdates } =
     await attemptCustomMcpConnection(true, false);
   await waitFor(() => {
@@ -821,7 +821,7 @@ test("Connect a single available connector without an unnecessary chooser", asyn
   });
 });
 
-test("Authorize a healthy canonical builtin using its target default", async () => {
+test("Continue a chat with the saved default account of a connected connector", async () => {
   const sends: CapturedChatSend[] = [];
   const slug = "canonical-drive";
   const item = catalogConnector({
@@ -863,23 +863,8 @@ test("Authorize a healthy canonical builtin using its target default", async () 
       });
     },
   );
-  let authorized = false;
-  context.mocks.api(userBuiltinConnectorsContract.get, ({ respond }) => {
-    return respond(200, { enabledConnectorSlugs: authorized ? [slug] : [] });
-  });
-  context.mocks.api(
-    userBuiltinConnectorsContract.update,
-    ({ body, respond }) => {
-      expect(body.enabledConnectorSlugs).toStrictEqual([slug]);
-      authorized = true;
-      context.mocks.ably.trigger("composerAgentConnectorsChanged", {
-        agentId: CAPABILITY_AGENT_ID,
-      });
-      return respond(200, { enabledConnectorSlugs: [slug] });
-    },
-  );
-  mockConnectorAgentAccess(context, () => {
-    return { enabledConnectorSlugs: authorized ? [slug] : [] };
+  context.mocks.api(userBuiltinConnectorsContract.update, () => {
+    throw new Error("A connection card cannot grant agent access");
   });
   installActionConversation({
     lines: [
@@ -891,17 +876,13 @@ test("Authorize a healthy canonical builtin using its target default", async () 
   await readyChat();
   const card = await screen.findByTestId("connector-action-card");
   await waitFor(() => {
-    expect(getButton("Authorize", card)).toBeEnabled();
+    expect(getButton("Continue", card)).toBeEnabled();
   });
-  click(getButton("Authorize", card));
+  click(getButton("Continue", card));
   await waitFor(() => {
-    expect(authorized).toBeTruthy();
     expect(sentPrompts(sends)).toStrictEqual(["Resume canonical drive"]);
+    expect(getButton("Connected", card)).toBeDisabled();
   });
-  await waitFor(() => {
-    expect(card).toHaveTextContent("Authorized");
-  });
-  expect(getButton("Authorized", card)).toBeDisabled();
   expect(screen.queryByRole("dialog")).toBeNull();
 });
 
@@ -939,7 +920,7 @@ test("A connector card observes a connection completed elsewhere", async () => {
   connected = true;
   context.mocks.ably.trigger("connector:changed", { connectorSlug: slug });
   await waitFor(() => {
-    expect(getButton("Authorized", card)).toBeDisabled();
+    expect(getButton("Connected", card)).toBeDisabled();
   });
 });
 
@@ -1033,7 +1014,7 @@ test("Preserve an existing custom connector permission during reconnection", asy
   click(getButton("Save"));
 
   await waitFor(() => {
-    expect(getButton("Authorized", card)).toBeDisabled();
+    expect(getButton("Connected", card)).toBeDisabled();
   });
   expect(sentPrompts(sends)).toStrictEqual(["Resume document lookup"]);
 });

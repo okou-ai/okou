@@ -414,7 +414,6 @@ function installDriveMocks(
       uploadError = undefined;
       completedAttempts.set(oauthAttemptId, oauthConnectionId);
       connectionState = "connected";
-      agentAuthorized = true;
       targetContext.mocks.ably.trigger("connector:changed", {
         connectorSlug: "google-drive",
       });
@@ -815,6 +814,9 @@ test("Connect Google Drive and sync an artifact", async () => {
 
   drive.completeAuthorization();
   await waitFor(() => {
+    expect(drive.authorizationUpdates).toStrictEqual([
+      { enabledConnectorSlugs: ["google-drive"], operation: "add" },
+    ]);
     expect(drive.syncRequests).toStrictEqual([
       {
         artifactId: DRIVE_ARTIFACT_ID,

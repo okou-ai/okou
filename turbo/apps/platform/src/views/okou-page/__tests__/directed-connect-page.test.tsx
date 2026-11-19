@@ -921,6 +921,52 @@ test("Start public OAuth from a directed connection link", async () => {
   });
 });
 
+test("Continue from an existing connector authorization link using the saved account", async () => {
+  mockPublicConnectorStatus(
+    publicNoAuthConnectorStatus({ slug: "stripe", label: "Public Stripe" }),
+  );
+  savedBuiltinResponse({
+    id: crypto.randomUUID(),
+    slug: "stripe",
+    authMethod: "api",
+    externalId: null,
+    externalUsername: null,
+    externalEmail: null,
+    oauthScopes: null,
+    connectionStatus: "connected",
+    reconnectReason: null,
+    tokenExpiresAt: null,
+    createdAt: "2026-01-01T00:00:00Z",
+    updatedAt: "2026-01-01T00:00:00Z",
+  });
+  const threadId = "00000000-0000-4000-a000-000000000101";
+  const callbackPrompt = "Re-check Stripe, then continue";
+  const continuations: unknown[] = [];
+  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+    expect(body).toMatchObject({ threadId });
+    if ("prompt" in body) {
+      continuations.push(body.userMessage);
+    }
+    return respond(201, { threadId });
+  });
+  context.mocks.api(userBuiltinConnectorsContract.update, () => {
+    throw new Error("A connection link cannot grant agent access");
+  });
+  await setupPage({
+    context,
+    path: `/connectors/stripe/authorize?agentId=${AGENT_ID}&threadId=${threadId}&callbackPrompt=${encodeURIComponent(callbackPrompt)}`,
+  });
+
+  click(await screen.findByRole("button", { name: "Continue" }));
+  await waitFor(() => {
+    expect(continuations).toStrictEqual([
+      { version: 1, parts: [{ type: "text", text: callbackPrompt }] },
+    ]);
+    expect(screen.getByText("Public Stripe connected")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Continue" })).toBeNull();
+  });
+});
+
 test("Connect a no-auth connector and continue the originating chat", async () => {
   let savedConnection: BuiltinConnectorResponse | null = null;
   mockPublicConnectorStatus(
@@ -995,6 +1041,7 @@ test("Connect a no-auth connector and continue the originating chat", async () =
     expect(continuationPrompt).toBe(callbackPrompt);
   });
   expect(visibleAgentAuthorizationUpdates).toBe(0);
+  expect(screen.queryByRole("button", { name: "Continue" })).toBeNull();
   expect(
     screen.queryByRole("dialog", { name: "Public Stripe" }),
   ).not.toBeInTheDocument();

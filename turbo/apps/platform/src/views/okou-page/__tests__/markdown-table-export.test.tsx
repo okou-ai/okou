@@ -502,7 +502,6 @@ test.each(["ready", "authorize", "connect", "reconnect"] as const)(
         );
         expect(body.agentId).toBeUndefined();
         expect(body.authorizeAgent).toBeUndefined();
-        authorized = true;
         needsConnection = false;
         completedAttempts.set(oauthAttemptId, CONNECTION_ID);
         return respond(200, {
