@@ -1,6 +1,8 @@
-import { connectorCatalogContract } from "@okouai/api-contracts/client/connector-catalog";
-import { connectorPermissionsContract } from "@okouai/api-contracts/client/connector-permissions";
-import type { ConnectorPermissions } from "@okouai/api-contracts/contracts/connector-permissions";
+import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
+import {
+  connectorPermissionsContract,
+  type ConnectorPermissions,
+} from "@okouai/api-contracts/contracts/connector-permissions";
 import { queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 import type { TestContext } from "../../../signals/__tests__/test-helpers.ts";
 
@@ -85,14 +87,18 @@ export function mockPermissionGrants(
     if (!acknowledge || target.kind !== "builtin") {
       return respond(200, { target, grants: [] });
     }
-    const applied = body.grants.map((grant) => ({
-      permission: grant.permission,
-      action: grant.action,
-      expiresAt: grant.action === "allow" ? PERMISSION_LATER : null,
-    }));
+    const applied = body.grants.map((grant) => {
+      return {
+        permission: grant.permission,
+        action: grant.action,
+        expiresAt: grant.action === "allow" ? PERMISSION_LATER : null,
+      };
+    });
     const old = saved.get(target.connectorSlug) ?? [];
     const next = old.filter((grant) => {
-      return !applied.some((entry) => entry.permission === grant.permission);
+      return !applied.some((entry) => {
+        return entry.permission === grant.permission;
+      });
     });
     next.push(...applied);
     saved.set(target.connectorSlug, next);

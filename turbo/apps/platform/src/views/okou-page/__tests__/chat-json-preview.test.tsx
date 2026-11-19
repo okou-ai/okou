@@ -1,4 +1,4 @@
-import { webFilesContract } from "@okouai/api-contracts/client/web-files";
+import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, within } from "@testing-library/react";
 import { HttpResponse } from "msw";
@@ -26,7 +26,9 @@ async function openPrivateJson(source: string, response?: ResponseInit) {
       publicUrl: null,
     });
   });
-  context.mocks.http.get(fileUrl, () => HttpResponse.text(source, response));
+  context.mocks.http.get(fileUrl, () => {
+    return HttpResponse.text(source, response);
+  });
   mockAttachmentChat(context, {
     chatEvents: [
       {

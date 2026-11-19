@@ -1,4 +1,4 @@
-import { sharedThreadsContract } from "@okouai/api-contracts/client/shared-threads";
+import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
 import { screen } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
@@ -39,9 +39,9 @@ test("An unavailable public conversation offers sign-in with a return to the sam
 });
 
 test("Anonymous readers see the public title, prompt and rendered Markdown", async () => {
-  context.mocks.browser.matchMedia(
-    (query) => query === "(prefers-color-scheme: dark)",
-  );
+  context.mocks.browser.matchMedia((query) => {
+    return query === "(prefers-color-scheme: dark)";
+  });
   context.mocks.api(sharedThreadsContract.get, ({ respond }) => {
     return respond(
       200,
@@ -72,6 +72,7 @@ test("Anonymous readers see the public title, prompt and rendered Markdown", asy
   expect(
     screen.getByText("public preview", { selector: "strong" }),
   ).toBeInTheDocument();
+  expect(screen.queryByTestId("rich-content-loading")).not.toBeInTheDocument();
   const brand = getLinkByName("Okou");
   expect(brand).toHaveAttribute("href", "https://app.okou.ai");
   expect(brand.querySelector("img")).toHaveAttribute(
@@ -101,8 +102,8 @@ test("A shared user's prompt keeps literal Markdown and opens links safely", asy
 
   await expect(
     screen.findByText(/and leave \*\*bold\*\* literal\./u),
-  ).resolves.toBeInTheDocument();
-  expect(screen.getByText("Open")).toBeInTheDocument();
+  ).resolves.toBeVisible();
+  expect(screen.getByText("Open")).toBeVisible();
   const report = getLinkByName("https://example.com/report");
   expect(report).toHaveAttribute("href", "https://example.com/report");
   expect(report).toHaveAttribute("target", "_blank");

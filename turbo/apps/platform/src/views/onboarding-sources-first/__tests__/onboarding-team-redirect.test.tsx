@@ -18,11 +18,11 @@ test("A member opening an old invitation link keeps their redeem code", async ()
     path: "/onboarding/team?redeemCode=LAUNCH50",
   });
 
-  expect(
-    await screen.findByRole("heading", {
+  await expect(
+    screen.findByRole("heading", {
       name: "How would you like to start with Okou?",
     }),
-  ).toBeInTheDocument();
+  ).resolves.toBeInTheDocument();
   expect(window.location.pathname).toBe("/onboarding/experience");
   expect(new URLSearchParams(window.location.search).get("redeemCode")).toBe(
     "LAUNCH50",

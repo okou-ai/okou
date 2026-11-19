@@ -1,4 +1,4 @@
-import { hostContract } from "@okouai/api-contracts/client/host";
+import { hostContract } from "@okouai/api-contracts/contracts/host";
 import { waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { startPage } from "../../../__tests__/page-helper.ts";

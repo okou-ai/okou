@@ -1,4 +1,4 @@
-import { emailUnsubscribeContract } from "@okouai/api-contracts/client/email-unsubscribe";
+import { emailUnsubscribeContract } from "@okouai/api-contracts/contracts/email-unsubscribe";
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
@@ -46,6 +46,7 @@ test("An email link without a token offers no unsubscribe action", async () => {
 
   const alert = await screen.findByRole("alert");
   expect(within(alert).getByText("Something went wrong")).toBeInTheDocument();
+  expect(screen.getByRole("img", { name: "Okou" })).toBeInTheDocument();
   expect(queryAllByRoleFast("button", document.body)).toHaveLength(0);
 });
 

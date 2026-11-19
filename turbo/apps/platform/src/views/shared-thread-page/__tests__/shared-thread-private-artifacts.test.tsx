@@ -1,6 +1,8 @@
-import { artifactReferencesContract } from "@okouai/api-contracts/client/artifact-references";
-import { sharedThreadsContract } from "@okouai/api-contracts/client/shared-threads";
-import type { SharedMessage } from "@okouai/api-contracts/contracts/shared-threads";
+import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
+import {
+  sharedThreadsContract,
+  type SharedMessage,
+} from "@okouai/api-contracts/contracts/shared-threads";
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
@@ -97,20 +99,19 @@ test("An anonymous reader sees temporary previews while sharing and copy retain 
     );
   });
   expect(
-    queryAllByRoleFast("link").find(
-      (item) => item.getAttribute("href") === audio,
-    ),
+    queryAllByRoleFast("link").find((item) => {
+      return item.getAttribute("href") === audio;
+    }),
   ).toHaveAttribute("href", audio);
-  expect(
-    queryAllByRoleFast("link").find(
-      (item) => item.getAttribute("href") === pdf,
-    ),
-  ).toHaveAttribute("href", pdf);
+  expect(screen.getByTestId("markdown-artifact-preview-pdf")).toHaveAttribute(
+    "href",
+    pdf,
+  );
   expect(getLinkByName("Download the brief")).toHaveAttribute("href", pdf);
 
-  const copy = queryAllByRoleFast("button").find(
-    (item) => item.getAttribute("aria-label") === "Copy message",
-  );
+  const copy = queryAllByRoleFast("button").find((item) => {
+    return item.getAttribute("aria-label") === "Copy message";
+  });
   if (!copy) {
     throw new Error("Missing Copy message action");
   }
@@ -167,9 +168,9 @@ test("Denied shared snapshots show unavailable previews and keep stable file lin
     screen.queryByTitle("Site preview for Slides"),
   ).not.toBeInTheDocument();
   expect(
-    queryAllByRoleFast("link").find(
-      (item) => item.getAttribute("href") === slides,
-    ),
+    queryAllByRoleFast("link").find((item) => {
+      return item.getAttribute("href") === slides;
+    }),
   ).toHaveAttribute("href", slides);
   expect(getLinkByName("photo.png")).toHaveAttribute("href", image);
 });

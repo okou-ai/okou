@@ -1,5 +1,5 @@
 import { screen } from "@testing-library/react";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 
 import {
   queryAllByRoleFast,
@@ -18,13 +18,17 @@ test("A successful bank connection opens its confirmation page", async () => {
   });
   await setupPage({ context, path: `/banking/connect/return?${returnParams}` });
 
-  expect(
-    await screen.findByRole("heading", { name: "Bank account connected" }),
-  ).toBeInTheDocument();
+  await expect(
+    screen.findByRole("heading", { name: "Bank account connected" }),
+  ).resolves.toBeInTheDocument();
   expect(screen.getByText("Connected")).toBeInTheDocument();
   const close = queryAllByRoleFast("button", document.body).find((button) => {
     return button.textContent?.trim() === "Close window";
   });
   expect(close).toBeEnabled();
-  expect(window.location.pathname).toBe("/banking/connect/return/success");
+  expect(vi.mocked(window.history.replaceState)).toHaveBeenLastCalledWith(
+    {},
+    "",
+    "/banking/connect/return/success",
+  );
 });

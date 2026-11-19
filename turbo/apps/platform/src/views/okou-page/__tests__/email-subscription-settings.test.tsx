@@ -1,4 +1,4 @@
-import { emailSubscriptionContract } from "@okouai/api-contracts/client/email-subscription";
+import { emailSubscriptionContract } from "@okouai/api-contracts/contracts/email-subscription";
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
@@ -74,9 +74,9 @@ test("The saved email preference stays on when delivery is unavailable", async (
 
   const section = await openEmailPreferences();
 
-  expect(
-    await within(section).findByText("Email unavailable"),
-  ).toBeInTheDocument();
+  await expect(
+    within(section).findByText("Email unavailable"),
+  ).resolves.toBeInTheDocument();
   expect(
     within(section).getByRole("switch", { name: "Email updates" }),
   ).toBeChecked();

@@ -1,4 +1,4 @@
-import { artifactReferencesContract } from "@okouai/api-contracts/client/artifact-references";
+import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
 import { screen, waitFor } from "@testing-library/react";
 import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
@@ -43,11 +43,17 @@ function mockFullscreen(enabled: boolean) {
     return Promise.resolve();
   };
   browserProperty(document, "fullscreenEnabled", { value: enabled });
-  browserProperty(document, "fullscreenElement", { get: () => fullscreen });
-  browserProperty(Element.prototype, "requestFullscreen", {
-    value: function (this: Element) {
-      return change(this);
+  browserProperty(document, "fullscreenElement", {
+    get: () => {
+      return fullscreen;
     },
+  });
+  browserProperty(Element.prototype, "requestFullscreen", {
+    value: enabled
+      ? function (this: Element) {
+          return change(this);
+        }
+      : undefined,
   });
   browserProperty(document, "exitFullscreen", {
     value: () => {
@@ -109,15 +115,17 @@ test("A browser without native fullscreen still offers a reversible full-view pr
   mockFullscreen(false);
   const frame = await openHtml();
   const originalSource = frame.getAttribute("src");
+  const title = screen.getByRole("heading", { name: "launch.html" });
 
   await enterViewerFullscreen();
 
+  expect(title).not.toBeVisible();
   expect(document.fullscreenElement).toBeNull();
   expect(frame).toBeVisible();
   expect(frame).toHaveAttribute("src", originalSource);
   await leaveViewerFullscreen();
+  expect(title).toBeVisible();
   expect(frame).toHaveAttribute("src", originalSource);
-  expect(screen.getByRole("banner")).toHaveTextContent("launch.html");
   expect(document.fullscreenElement).toBeNull();
 });
 

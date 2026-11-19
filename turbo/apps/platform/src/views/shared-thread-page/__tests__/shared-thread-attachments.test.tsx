@@ -1,5 +1,7 @@
-import { sharedThreadsContract } from "@okouai/api-contracts/client/shared-threads";
-import type { SharedMessage } from "@okouai/api-contracts/contracts/shared-threads";
+import {
+  sharedThreadsContract,
+  type SharedMessage,
+} from "@okouai/api-contracts/contracts/shared-threads";
 import { screen } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
@@ -91,7 +93,9 @@ test("An SVG-only prompt shows the source file link without rendering an image",
   });
 
   await expect(screen.findByText("diagram.svg")).resolves.toBeInTheDocument();
-  expectSafeAttachment("diagram.svg", svg);
+  const link = getLinkByName("diagram.svg");
+  expect(link).toHaveAttribute("href", svg);
+  expect(link).toHaveAttribute("target", "_blank");
   expect(
     screen.queryByRole("img", { name: "diagram.svg" }),
   ).not.toBeInTheDocument();

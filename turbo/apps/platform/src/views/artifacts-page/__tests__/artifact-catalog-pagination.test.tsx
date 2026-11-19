@@ -1,4 +1,4 @@
-import { artifactCatalogContract } from "@okouai/api-contracts/client/artifact-catalog";
+import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { click } from "../../../__tests__/page-helper.ts";

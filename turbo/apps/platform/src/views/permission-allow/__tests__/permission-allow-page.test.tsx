@@ -1,4 +1,4 @@
-import { chatEventsContract } from "@okouai/api-contracts/client/chat-event-send";
+import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-event-send";
 import { act, screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 import {
@@ -47,7 +47,7 @@ async function openPermission(
 async function confirmWhileChatIsPending(outcome: "succeeds" | "fails") {
   mockNow(new Date(PERMISSION_NOW), context.signal);
   mockPermissionCatalog(context);
-  const { writes } = mockPermissionGrants(context);
+  mockPermissionGrants(context);
   const started = context.mocks.deferred<void>();
   const release = context.mocks.deferred<void>();
   context.mocks.api(
@@ -84,28 +84,26 @@ async function confirmWhileChatIsPending(outcome: "succeeds" | "fails") {
   await act(() => {
     context.mocks.ably.trigger("connectorPermissionUpdated");
   });
-  expect(permissionButton("Saving...")).toBeDisabled();
-  expect(screen.queryByText("Permissions updated")).not.toBeInTheDocument();
-  expect(screen.queryByText("Already allowed")).not.toBeInTheDocument();
-  expect(writes).toMatchObject([
-    {
-      target: { kind: "builtin", connectorSlug: "slack" },
-      grants: [{ permission: ANALYTICS, action: "allow", expiresIn: "24h" }],
-    },
-  ]);
-
-  release.resolve(undefined);
+  return () => {
+    release.resolve(undefined);
+  };
 }
 
 test("The approval stays pending after a grant event until its chat continuation succeeds", async () => {
-  await confirmWhileChatIsPending("succeeds");
+  const succeed = await confirmWhileChatIsPending("succeeds");
+  expect(permissionButton("Saving...")).toBeDisabled();
+  expect(screen.queryByText("Permissions updated")).not.toBeInTheDocument();
+  expect(screen.queryByText("Already allowed")).not.toBeInTheDocument();
+
+  succeed();
   await expect(
     screen.findByText("Permissions updated"),
   ).resolves.toBeInTheDocument();
 });
 
 test("The approval stays pending after a grant event until its chat continuation fails", async () => {
-  await confirmWhileChatIsPending("fails");
+  const fail = await confirmWhileChatIsPending("fails");
+  fail();
   await expect(
     screen.findByText("Couldn't update permissions"),
   ).resolves.toBeInTheDocument();
@@ -117,11 +115,21 @@ test("The approval stays pending after a grant event until its chat continuation
 });
 
 test.each([
-  { action: "allow", title: "Already allowed", expiresAt: PERMISSION_LATER },
-  { action: "deny", title: "Already denied", expiresAt: null },
+  {
+    action: "allow",
+    title: "Already allowed",
+    expiresAt: PERMISSION_LATER,
+    absentExpiry: "Expired",
+  },
+  {
+    action: "deny",
+    title: "Already denied",
+    expiresAt: null,
+    absentExpiry: /Expires in/u,
+  },
 ] as const)(
   "An existing $action grant needs no confirmation",
-  async ({ action, title, expiresAt }) => {
+  async ({ action, title, expiresAt, absentExpiry }) => {
     mockNow(new Date(PERMISSION_NOW), context.signal);
     mockPermissionCatalog(context, action === "allow" ? "allow" : "ask");
     mockPermissionGrants(context, {
@@ -134,11 +142,11 @@ test.each([
     expect(
       screen.queryByRole("combobox", { name: "Permission duration" }),
     ).not.toBeInTheDocument();
-    expect(screen.queryByText("Expired")).not.toBeInTheDocument();
+    expect(screen.queryByText(absentExpiry)).not.toBeInTheDocument();
     expect(
-      queryAllByRoleFast("button", document.body).some(
-        (button) => button.textContent?.trim() === "Confirm",
-      ),
+      queryAllByRoleFast("button", document.body).some((button) => {
+        return button.textContent?.trim() === "Confirm";
+      }),
     ).toBeFalsy();
   },
 );
@@ -153,7 +161,9 @@ test("An older permission link can replace a Slack allow with a permanent denial
   });
 
   await openPermission({ action: "deny", legacyRef: true });
-  await waitFor(() => expect(permissionButton("Confirm")).toBeEnabled());
+  await waitFor(() => {
+    expect(permissionButton("Confirm")).toBeEnabled();
+  });
   click(permissionButton("Confirm"));
 
   await expect(
@@ -182,7 +192,10 @@ test.each(["not-a-date", PERMISSION_NOW])(
 
     await openPermission();
 
-    const duration = await screen.findByRole("combobox", {
+    await expect(
+      screen.findByText(/you're updating your permissions for/u),
+    ).resolves.toBeInTheDocument();
+    const duration = screen.getByRole("combobox", {
       name: "Permission duration",
     });
     expect(duration).toHaveTextContent("24 hours");

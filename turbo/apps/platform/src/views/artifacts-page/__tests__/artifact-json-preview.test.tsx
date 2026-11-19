@@ -1,4 +1,4 @@
-import { artifactCatalogContract } from "@okouai/api-contracts/client/artifact-catalog";
+import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { screen, waitFor } from "@testing-library/react";
 import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
@@ -44,9 +44,9 @@ test("The artifact catalog JSON preview preserves numeric spelling and exact sou
   click(await findArtifactAction(filename));
 
   await expect(screen.findByText("Tree")).resolves.toBeInTheDocument();
-  await waitFor(() =>
-    expect(getButtonByName('Expand "catalog"')).toBeEnabled(),
-  );
+  await waitFor(() => {
+    expect(getButtonByName('Expand "catalog"')).toBeEnabled();
+  });
   click(getButtonByName('Expand "catalog"'));
   expect(screen.getByText("1.00")).toBeInTheDocument();
   click(getButtonByName('Expand "items"'));

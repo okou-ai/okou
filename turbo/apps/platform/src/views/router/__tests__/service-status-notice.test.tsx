@@ -33,7 +33,9 @@ test("A desktop user can open or dismiss an active service incident", async () =
   expect(within(notice).getByText("Investigating")).toBeInTheDocument();
   expect(within(notice).getByText("Delayed API requests")).toBeInTheDocument();
   expect(
-    within(notice).getByRole("link", { name: "View latest updates" }),
+    queryAllByRoleFast("link", notice).find((link) => {
+      return link.textContent?.trim() === "View latest updates";
+    }),
   ).toHaveAttribute("href", "https://status.okou.ai/api-delays");
 
   const dismiss = queryAllByRoleFast("button", notice).find((button) => {

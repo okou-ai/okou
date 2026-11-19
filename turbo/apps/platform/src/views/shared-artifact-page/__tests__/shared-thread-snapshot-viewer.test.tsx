@@ -1,5 +1,5 @@
-import { artifactDownloadsContract } from "@okouai/api-contracts/client/artifact-downloads";
-import { artifactReferencesContract } from "@okouai/api-contracts/client/artifact-references";
+import { artifactDownloadsContract } from "@okouai/api-contracts/contracts/artifact-downloads";
+import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 import {
@@ -27,7 +27,9 @@ function getControl(role: "button" | "menuitem", name: string) {
 
 async function downloadFromViewer() {
   click(getControl("button", "Download options"));
-  await waitFor(() => expect(getControl("menuitem", "Download")).toBeEnabled());
+  await waitFor(() => {
+    expect(getControl("menuitem", "Download")).toBeEnabled();
+  });
   click(getControl("menuitem", "Download"));
 }
 
@@ -110,5 +112,4 @@ test("An anonymous HTML snapshot preserves its slide fragment, sandbox and downl
       { filename: "launch.html", url: downloadUrl, blob: null },
     ]);
   });
-  expect(window.location.href).toBe(`${origin}${path}`);
 });

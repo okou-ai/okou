@@ -15,9 +15,18 @@ function accessPath(reason: string) {
   return `/hosted-site-access?${params}`;
 }
 
+function link(label: string) {
+  const match = queryAllByRoleFast("link", document.body).find((item) => {
+    return item.textContent?.trim() === label;
+  });
+  if (!(match instanceof HTMLAnchorElement)) {
+    throw new Error(`Missing ${label} link`);
+  }
+  return match;
+}
+
 function expectAuthorizationLink(label: string) {
-  const link = screen.getByRole<HTMLAnchorElement>("link", { name: label });
-  const url = new URL(link.href);
+  const url = new URL(link(label).href);
   expect(url.origin).toBe("https://review.okou.app");
   expect(url.pathname).toBe("/.okou/auth/start");
   expect(url.searchParams.get("returnTo")).toBe("/report?view=summary");
@@ -39,18 +48,15 @@ test("A signed-out visitor can sign in to view the requested website", async () 
   });
 
   const title = "Verify access to this website";
-  expect(
-    await screen.findByRole("heading", { name: title }),
-  ).toBeInTheDocument();
+  await expect(
+    screen.findByRole("heading", { name: title }),
+  ).resolves.toBeInTheDocument();
   expect(document.title).toBe(`${title} | Okou`);
   expect(
     screen.getByText("Sign in with an account that can access this website."),
   ).toBeInTheDocument();
   expectAuthorizationLink("Sign in");
-  expect(screen.getByRole("link", { name: "Back to Okou" })).toHaveAttribute(
-    "href",
-    "/",
-  );
+  expect(link("Back to Okou")).toHaveAttribute("href", "/");
 });
 
 test("A signed-in visitor can continue incomplete verification", async () => {
@@ -60,13 +66,19 @@ test("A signed-in visitor can continue incomplete verification", async () => {
     path: accessPath("authenticate"),
   });
 
+  await expect(
+    screen.findByRole("heading", {
+      name: "Verify access to this website",
+    }),
+  ).resolves.toBeInTheDocument();
   expect(
-    await screen.findByText(
-      "Continue to verify access with your current account.",
-    ),
+    screen.getByText("Continue to verify access with your current account."),
   ).toBeInTheDocument();
   expectAuthorizationLink("Continue");
   expectSwitchAccount();
+  expect(
+    screen.queryByRole("heading", { name: "You can’t view this website" }),
+  ).not.toBeInTheDocument();
 });
 
 test("An expired session can restart verification for the original website path", async () => {
@@ -77,9 +89,9 @@ test("An expired session can restart verification for the original website path"
   });
 
   const title = "Verify your access again";
-  expect(
-    await screen.findByRole("heading", { name: title }),
-  ).toBeInTheDocument();
+  await expect(
+    screen.findByRole("heading", { name: title }),
+  ).resolves.toBeInTheDocument();
   expect(document.title).toBe(`${title} | Okou`);
   expectAuthorizationLink("Continue");
   expectSwitchAccount();
@@ -89,12 +101,12 @@ test("A visitor denied access can switch accounts or ask the sharer for access",
   await setupPage({ context, host: "app.okou.ai", path: accessPath("denied") });
 
   const title = "You can’t view this website";
-  expect(
-    await screen.findByRole("heading", { name: title }),
-  ).toBeInTheDocument();
+  await expect(
+    screen.findByRole("heading", { name: title }),
+  ).resolves.toBeInTheDocument();
   expect(document.title).toBe(`${title} | Okou`);
   expect(
-    screen.getByText(/ask the person who shared this link/i),
+    screen.getByText(/Ask the person who shared this link to check access\./u),
   ).toBeInTheDocument();
   expectSwitchAccount();
 });
@@ -107,8 +119,8 @@ test("An unavailable website explains that the failure is temporary", async () =
   });
 
   const title = "This website is temporarily unavailable";
-  expect(
-    await screen.findByRole("heading", { name: title }),
-  ).toBeInTheDocument();
+  await expect(
+    screen.findByRole("heading", { name: title }),
+  ).resolves.toBeInTheDocument();
   expect(document.title).toBe(`${title} | Okou`);
 });

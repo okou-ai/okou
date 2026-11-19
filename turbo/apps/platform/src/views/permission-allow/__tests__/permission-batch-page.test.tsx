@@ -1,6 +1,6 @@
-import { agentsByIdContract } from "@okouai/api-contracts/client/agents";
-import { chatEventsContract } from "@okouai/api-contracts/client/chat-event-send";
-import { chatThreadMetadataContract } from "@okouai/api-contracts/client/chat-threads";
+import { agentsByIdContract } from "@okouai/api-contracts/contracts/agents";
+import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-event-send";
+import { chatThreadMetadataContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { act, screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
@@ -19,7 +19,7 @@ const context = testContext();
 const secondAgent = "c0000000-0000-4000-a000-000000000002";
 const threadId = "a0000000-0000-4000-a000-000000000001";
 const secondThread = "a0000000-0000-4000-a000-000000000002";
-const requested = [
+const requested: readonly { connectorSlug: string; permission: string }[] = [
   { connectorSlug: "slack", permission: "chat:write" },
   { connectorSlug: "github", permission: "issues:read" },
 ];
@@ -76,12 +76,9 @@ async function openBatch(path = batchPath()) {
   });
 }
 
-async function confirmGroupedPermissions(
-  outcome: "succeeds" | "fails",
-  resultMessage: string,
-) {
+async function allowGroupedPermissions(outcome: "succeeds" | "fails") {
   mockPermissionCatalog(context);
-  const { writes, saved } = mockPermissionGrants(context);
+  const grants = mockPermissionGrants(context);
   mockCallbackTargets();
   context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
     expect(body).toMatchObject({
@@ -89,12 +86,6 @@ async function confirmGroupedPermissions(
       threadId,
       prompt: "Continue the investigation",
     });
-    expect(saved.get("slack")).toMatchObject([
-      { permission: "chat:write", action: "allow" },
-    ]);
-    expect(saved.get("github")).toMatchObject([
-      { permission: "issues:read", action: "allow" },
-    ]);
     if (outcome === "fails") {
       return respond(500, {
         error: { code: "INTERNAL_SERVER_ERROR", message: "Chat unavailable" },
@@ -111,12 +102,17 @@ async function confirmGroupedPermissions(
       "Applies to this connector across all your chats and agents.",
     ),
   ).toBeInTheDocument();
-  await waitFor(() =>
-    expect(permissionButton("Allow all 2 permissions")).toBeEnabled(),
-  );
+  await waitFor(() => {
+    expect(permissionButton("Allow all 2 permissions")).toBeEnabled();
+  });
   click(permissionButton("Allow all 2 permissions"));
+  return grants;
+}
 
-  await expect(screen.findByText(resultMessage)).resolves.toBeInTheDocument();
+function expectBothGrantsAllowed({
+  writes,
+  saved,
+}: ReturnType<typeof mockPermissionGrants>) {
   expect(screen.getByText("2 of 2 permissions allowed")).toBeInTheDocument();
   expect(writes).toHaveLength(2);
   for (const item of requested) {
@@ -129,18 +125,30 @@ async function confirmGroupedPermissions(
       }),
     );
   }
+  expect(saved.get("slack")).toMatchObject([
+    { permission: "chat:write", action: "allow" },
+  ]);
+  expect(saved.get("github")).toMatchObject([
+    { permission: "issues:read", action: "allow" },
+  ]);
 }
 
 test("Grouped grants remain allowed when chat continuation succeeds", async () => {
-  await confirmGroupedPermissions("succeeds", "The chat has continued.");
-  expect(screen.getByText("Permissions allowed")).toBeInTheDocument();
+  const grants = await allowGroupedPermissions("succeeds");
+
+  await expect(
+    screen.findByText("The chat has continued."),
+  ).resolves.toBeInTheDocument();
+  expectBothGrantsAllowed(grants);
 });
 
 test("Grouped grants remain allowed when chat continuation fails", async () => {
-  await confirmGroupedPermissions(
-    "fails",
-    "Permissions allowed, but could not continue.",
-  );
+  const grants = await allowGroupedPermissions("fails");
+
+  await expect(
+    screen.findByText("Permissions allowed, but could not continue."),
+  ).resolves.toBeInTheDocument();
+  expectBothGrantsAllowed(grants);
   expect(screen.getByRole("alert")).toHaveTextContent(
     "Permissions allowed, but could not continue.",
   );
@@ -178,7 +186,9 @@ test("Dismissing a batch leaves a second agent's request and chat continuation i
       duration: "24h",
     }),
   );
-  await waitFor(() => expect(permissionButton("Not now")).toBeEnabled());
+  await waitFor(() => {
+    expect(permissionButton("Not now")).toBeEnabled();
+  });
   click(permissionButton("Not now"));
   await expect(
     screen.findByText("No permissions were changed."),
@@ -195,9 +205,9 @@ test("Dismissing a batch leaves a second agent's request and chat continuation i
     window.dispatchEvent(new PopStateEvent("popstate"));
   });
   await screen.findByText("Second reviewer");
-  await waitFor(() =>
-    expect(permissionButton("Allow 1 permission")).toBeEnabled(),
-  );
+  await waitFor(() => {
+    expect(permissionButton("Allow 1 permission")).toBeEnabled();
+  });
   expect(
     screen.getByRole("combobox", { name: "Permission duration" }),
   ).toHaveTextContent("1 hour");
@@ -267,9 +277,9 @@ test("An unacknowledged grant cannot continue the chat", async () => {
   await openBatch(
     batchPath({ thread: threadId, prompt: "Continue the report" }),
   );
-  await waitFor(() =>
-    expect(permissionButton("Allow all 2 permissions")).toBeEnabled(),
-  );
+  await waitFor(() => {
+    expect(permissionButton("Allow all 2 permissions")).toBeEnabled();
+  });
   click(permissionButton("Allow all 2 permissions"));
 
   await expect(screen.findByRole("alert")).resolves.toHaveTextContent(

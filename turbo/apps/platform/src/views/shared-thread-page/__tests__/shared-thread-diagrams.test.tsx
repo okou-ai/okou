@@ -1,4 +1,4 @@
-import { sharedThreadsContract } from "@okouai/api-contracts/client/shared-threads";
+import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
@@ -46,12 +46,19 @@ test("A shared conversation renders and downloads its expanded diagram locally",
   });
 
   await setupSharedThreadPage(context, { host: "app.okou.ai" });
-  await waitFor(() => expect(diagramAction("Expand diagram")).toBeEnabled());
+  await waitFor(() => {
+    expect(diagramAction("Expand diagram")).toBeEnabled();
+  });
+  const conversationUrl = window.location.href;
   click(diagramAction("Expand diagram"));
 
   const dialog = await screen.findByRole("dialog");
+  expect(window.location.href).toBe(conversationUrl);
+  expect(screen.getByText("Review this workflow.")).toBeInTheDocument();
   const svg = await within(dialog).findByRole("img", { name: "diagram.svg" });
-  await waitFor(() => expect(svg).toBeVisible());
+  await waitFor(() => {
+    expect(svg).toBeVisible();
+  });
   const source = svg.getAttribute("src") ?? "";
   expect(browser.blobForUrl(source)?.type).toBe("image/svg+xml");
   const labels = queryAllByRoleFast("button", dialog).map((item) => {

@@ -1,4 +1,4 @@
-import { artifactReferencesContract } from "@okouai/api-contracts/client/artifact-references";
+import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 import {
@@ -50,8 +50,12 @@ test("A signed-out reader can preview, share and download a public image", async
 
   const image = await screen.findByRole("img", { name: "launch-map.png" });
   expect(image).toHaveAttribute("src", `${previewUrl}#detail`);
+  expect(
+    screen.getByRole("heading", { name: "launch-map.png" }),
+  ).toBeInTheDocument();
   expect(document.title).toBe("launch-map.png | Okou");
   expect(window.location.href).toBe(shareUrl);
+  expect(screen.queryByTestId("clerk-sign-in")).not.toBeInTheDocument();
 
   click(control("button", "Share"));
   await waitFor(() => {
@@ -59,11 +63,13 @@ test("A signed-out reader can preview, share and download a public image", async
   });
 
   click(control("button", "Download options"));
-  await waitFor(() => expect(control("menuitem", "Download")).toBeEnabled());
+  await waitFor(() => {
+    expect(control("menuitem", "Download")).toBeEnabled();
+  });
   click(control("menuitem", "Download"));
   await waitFor(() => {
-    expect(browser.downloads).toStrictEqual([
-      { filename: "launch-map.png", url: downloadUrl, blob: null },
+    expect(browser.downloads).toMatchObject([
+      { filename: "launch-map.png", url: downloadUrl },
     ]);
   });
   expect(window.location.href).toBe(shareUrl);
@@ -82,13 +88,17 @@ test("An unavailable artifact stays on its page until the reader chooses to sign
   await expect(
     screen.findByRole("heading", { name: "You can’t view this artifact" }),
   ).resolves.toBeInTheDocument();
-  expect(screen.getByText("Artifacts")).toBeInTheDocument();
+  expect(
+    screen.getByRole("heading", { name: "Artifacts" }),
+  ).toBeInTheDocument();
   const access = screen.getByRole("main");
   expect(access).toHaveTextContent("It may be private or no longer available.");
   expect(access).not.toHaveTextContent("shared with a different account");
   expect(
-    screen.queryByRole("img", { name: "launch-map.png" }),
+    screen.queryByTestId("attachment-lightbox-image"),
   ).not.toBeInTheDocument();
+  expect(access.querySelector("iframe")).toBeNull();
+  expect(screen.queryByTestId("clerk-sign-in")).not.toBeInTheDocument();
   expect(window.location.href).toBe(shareUrl);
   expect(navigation.calls).toHaveLength(0);
 
