@@ -507,3 +507,14 @@ chat-capability-connectors-008	turbo/apps/platform/src/views/okou-page/__tests__
 chat-capability-connectors-009	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-connectors.test.tsx	Keep an incomplete custom MCP reconnect open without resuming	625	passed
 chat-capability-connectors-011	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-connectors.test.tsx	Continue a chat with the saved default account of a connected connector	636	passed
 chat-capability-connectors-013	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-connectors.test.tsx	Enable a single no-auth connector without an unnecessary dialog	701	passed
+custom-connector-connect-lifecycle-001	turbo/apps/platform/src/views/okou-page/__tests__/custom-connector-connect-lifecycle.test.tsx	Cancel a pending custom connection and connect another account	20	passed
+custom-default-reconnect-003	turbo/apps/platform/src/views/okou-page/__tests__/custom-default-reconnect.test.tsx	Reconnect the current default when a healthy sibling exists	102	passed
+custom-default-reconnect-004	turbo/apps/platform/src/views/okou-page/__tests__/custom-default-reconnect.test.tsx	Wait for the initial account inventory before offering a custom connection	290	passed
+custom-default-reconnect-006	turbo/apps/platform/src/views/okou-page/__tests__/custom-default-reconnect.test.tsx	Add the first custom OAuth account after confirming zero accounts	305	passed
+custom-default-reconnect-007	turbo/apps/platform/src/views/okou-page/__tests__/custom-default-reconnect.test.tsx	Cancel a pending default lookup before starting provider authorization	321	passed
+custom-default-reconnect-009	turbo/apps/platform/src/views/okou-page/__tests__/custom-default-reconnect.test.tsx	Keep a no-default lookup from creating another account	341	passed
+custom-default-reconnect-010	turbo/apps/platform/src/views/okou-page/__tests__/custom-default-reconnect.test.tsx	Reconnect the expired OAuth account after its completion receipt	351	passed
+email-connect-page-001	turbo/apps/platform/src/views/okou-page/__tests__/email-connect-page.test.tsx	connects in the active workspace without asking a multi-workspace user to choose again	41	passed
+email-connect-page-003	turbo/apps/platform/src/views/okou-page/__tests__/email-connect-page.test.tsx	adds an email from the Works card with a short code and updates the open dialog	77	passed
+email-connect-page-004	turbo/apps/platform/src/views/okou-page/__tests__/email-connect-page.test.tsx	opens unsigned email settings with the login email connected	142	passed
+email-connect-page-005	turbo/apps/platform/src/views/okou-page/__tests__/email-connect-page.test.tsx	keeps a failed code request in the dialog and lets the user retry	178	passed

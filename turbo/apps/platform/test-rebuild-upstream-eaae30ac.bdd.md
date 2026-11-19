@@ -407,51 +407,6 @@ Validate new and reconnecting custom accounts appropriately. [Registration](http
 - **Then** Validate new and reconnecting custom accounts appropriately. Relevant visible labels or feedback in the upstream scenario include “Manage Acme Search accounts”, “Connect Acme Search”, “Configured”, “Secret”.
 - **Disposition** not_selected.
 
-## custom-connector-connect-lifecycle-002
-
-Keep a custom connection pending until its account naming continuation is ready. [Registration](https://github.com/okou-ai/okou/blob/4bf10b89e09adce4c9253418d2ad8de1937e3e9e/turbo/apps/platform/src/views/okou-page/__tests__/custom-connector-connect-lifecycle.test.tsx#L100).
-
-- **Given** The actor starts in the product surface described by the scenario.
-- **When** The actor opens the indicated connection surface and follows the available account action.
-- **Then** Keep a custom connection pending until its account naming continuation is ready. Relevant visible labels or feedback in the upstream scenario include “Connect Acme Search”, “Secret”, “Name your Acme Search account”, “Account name”.
-- **Disposition** not_selected.
-
-## custom-default-reconnect-001
-
-Reconnect an expired custom default with %i saved accounts. [Registration](https://github.com/okou-ai/okou/blob/4bf10b89e09adce4c9253418d2ad8de1937e3e9e/turbo/apps/platform/src/views/okou-page/__tests__/custom-default-reconnect.test.tsx#L102).
-
-- **Given** The actor starts in the product surface described by the scenario.
-- **When** The actor opens the indicated connection surface and follows the available account action.
-- **Then** Reconnect an expired custom default with %i saved accounts. Relevant visible labels or feedback in the upstream scenario include “Secret”.
-- **Disposition** not_selected.
-
-## custom-default-reconnect-002
-
-Reconnect an expired custom default with %i saved accounts. [Registration](https://github.com/okou-ai/okou/blob/4bf10b89e09adce4c9253418d2ad8de1937e3e9e/turbo/apps/platform/src/views/okou-page/__tests__/custom-default-reconnect.test.tsx#L102).
-
-- **Given** The actor starts in the product surface described by the scenario.
-- **When** The actor opens the indicated connection surface and follows the available account action.
-- **Then** Reconnect an expired custom default with %i saved accounts. Relevant visible labels or feedback in the upstream scenario include “Secret”.
-- **Disposition** not_selected.
-
-## custom-default-reconnect-010
-
-Reconnect the expired OAuth account after its completion receipt. [Registration](https://github.com/okou-ai/okou/blob/4bf10b89e09adce4c9253418d2ad8de1937e3e9e/turbo/apps/platform/src/views/okou-page/__tests__/custom-default-reconnect.test.tsx#L449).
-
-- **Given** The scenario starts with its completion receipt.
-- **When** The actor opens the indicated connection surface and follows the available account action.
-- **Then** Reconnect the expired OAuth account after its completion receipt. Relevant visible labels or feedback in the upstream scenario include “Acme Search connected”.
-- **Disposition** retain.
-
-## custom-default-reconnect-011
-
-Leave an incomplete OAuth reconnect unconfirmed. [Registration](https://github.com/okou-ai/okou/blob/4bf10b89e09adce4c9253418d2ad8de1937e3e9e/turbo/apps/platform/src/views/okou-page/__tests__/custom-default-reconnect.test.tsx#L471).
-
-- **Given** The actor starts in the product surface described by the scenario.
-- **When** The actor opens the indicated connection surface and follows the available account action.
-- **Then** Leave an incomplete OAuth reconnect unconfirmed.
-- **Disposition** not_selected.
-
 ## directed-connect-page-001
 
 Connect a manual MCP connector from a directed link. [Registration](https://github.com/okou-ai/okou/blob/4bf10b89e09adce4c9253418d2ad8de1937e3e9e/turbo/apps/platform/src/views/okou-page/__tests__/directed-connect-page.test.tsx#L435).
@@ -532,33 +487,6 @@ Connect a manual grant and continue the originating chat. [Registration](https:/
 - **When** The actor opens the permission surface and reviews or confirms the requested access.
 - **Then** Connect a manual grant and continue the originating chat. Relevant visible labels or feedback in the upstream scenario include “Okou needs Public Axiom to proceed”, “Public Axiom”, “Public Axiom connected”.
 - **Disposition** retain.
-
-## email-connect-page-003
-
-adds an email from the Works card with a short code and updates the open dialog. [Registration](https://github.com/okou-ai/okou/blob/4bf10b89e09adce4c9253418d2ad8de1937e3e9e/turbo/apps/platform/src/views/okou-page/__tests__/email-connect-page.test.tsx#L98).
-
-- **Given** The actor starts in the product surface described by the scenario.
-- **When** The actor performs the scenario action through its product surface.
-- **Then** Adds an email from the Works card with a short code and updates the open dialog. Relevant visible labels or feedback in the upstream scenario include “Connect”, “Email connections”, “Send the code from the email you want to add.”, “Open email”.
-- **Disposition** retain.
-
-## email-connect-page-005
-
-keeps a failed code request in the dialog and lets the user retry. [Registration](https://github.com/okou-ai/okou/blob/4bf10b89e09adce4c9253418d2ad8de1937e3e9e/turbo/apps/platform/src/views/okou-page/__tests__/email-connect-page.test.tsx#L199).
-
-- **Given** The actor starts in the product surface described by the scenario.
-- **When** The actor performs the scenario action through its product surface.
-- **Then** Keeps a failed code request in the dialog and lets the user retry. Relevant visible labels or feedback in the upstream scenario include “Connect”, “Email connections”, “Could not create a connection code. Try again.”, “Add email”.
-- **Disposition** retain.
-
-## email-connect-page-006
-
-deletes each linked address from Manage and returns focus to Connect. [Registration](https://github.com/okou-ai/okou/blob/4bf10b89e09adce4c9253418d2ad8de1937e3e9e/turbo/apps/platform/src/views/okou-page/__tests__/email-connect-page.test.tsx#L235).
-
-- **Given** The actor starts in the product surface described by the scenario.
-- **When** The actor opens the indicated connection surface and follows the available account action.
-- **Then** Deletes each linked address from Manage and returns focus to Connect. Relevant visible labels or feedback in the upstream scenario include “Email options”, “Manage”, “Email connections”, “Close”.
-- **Disposition** not_selected.
 
 ## integrations-hub-status-001
 
