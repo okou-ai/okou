@@ -95,6 +95,9 @@ internal fun ChatListScreen(
     listState: LazyListState,
     newChat: (String?) -> Unit,
     selectedChatId: String?,
+    actionsEnabled: Boolean,
+    refreshEnabled: Boolean,
+    startupRecovery: @Composable (() -> Unit)?,
 ) {
     var renamingId by remember { mutableStateOf<String?>(null) }
     val renaming =
@@ -163,13 +166,13 @@ internal fun ChatListScreen(
     val refreshLabel = stringResource(R.string.chat_refresh)
     PullToRefreshBox(
         isRefreshing = state.confirmedAt != null && state.listPhase == ChatReadPhase.Loading,
-        onRefresh = refresh,
+        onRefresh = { if (refreshEnabled) refresh() },
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.TopCenter,
     ) {
         LazyColumn(
             Modifier.widthIn(max = 720.dp).fillMaxSize().testTag("chat_list").semantics {
-                if (state.listPhase != ChatReadPhase.Loading) {
+                if (refreshEnabled && state.listPhase != ChatReadPhase.Loading) {
                     customActions =
                         listOf(
                             CustomAccessibilityAction(refreshLabel) {
@@ -191,9 +194,11 @@ internal fun ChatListScreen(
                 ChatAction(
                     R.string.composer_new,
                     { newChat(null) },
+                    enabled = actionsEnabled,
                     icon = R.drawable.ic_edit_square,
                 )
             }
+            if (startupRecovery != null) item { startupRecovery() }
             if (state.source == ChatListSource.Cache) item { ChatNotice(R.string.chat_cached) }
             if (state.listPhase == ChatReadPhase.Loading)
                 item {
@@ -257,6 +262,7 @@ internal fun ChatListScreen(
                                     ChatAction(
                                         R.string.composer_new_project,
                                         { newChat(project.id) },
+                                        enabled = actionsEnabled,
                                         icon = R.drawable.ic_edit_square,
                                     )
                                 }
@@ -275,7 +281,10 @@ internal fun ChatListScreen(
                                     thread.id == selectedChatId,
                                     runningFrame,
                                     row = section.firstChatRow + index,
-                                    actions = state.rowActions(thread, group, index),
+                                    actions =
+                                        if (actionsEnabled) state.rowActions(thread, group, index)
+                                        else emptyList(),
+                                    enabled = actionsEnabled,
                                     pendingAction = state.pendingRowActions[thread.id],
                                     performAction = { action ->
                                         if (action == ChatRowAction.Rename) renamingId = thread.id
@@ -416,6 +425,7 @@ private fun ChatRow(
     runningFrame: LongState,
     row: Int,
     actions: List<ChatRowAction>,
+    enabled: Boolean,
     pendingAction: ChatRowAction?,
     performAction: (ChatRowAction) -> Unit,
     open: () -> Unit,
@@ -470,6 +480,7 @@ private fun ChatRow(
                     }
                 }
                 .combinedClickable(
+                    enabled = enabled,
                     onClick = open,
                     onLongClick = openMenu,
                     onLongClickLabel = stringResource(R.string.chat_actions),

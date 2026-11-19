@@ -113,7 +113,7 @@ class OkouAppTest {
                                             WorkspaceTokenProvider { "test-token" },
                                         )
                                 MemberPreferencesModel(
-                                    testBootstrap().preferences,
+                                    testPreferences(),
                                     object : WorkspaceSession by service {
                                         override suspend fun updatePreferences(
                                             update: UpdatePreferencesRequest

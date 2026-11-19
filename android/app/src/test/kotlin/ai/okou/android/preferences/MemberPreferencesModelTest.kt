@@ -8,10 +8,10 @@ import ai.okou.android.api.generated.UserPreferencesColorTheme
 import ai.okou.android.api.generated.UserPreferencesLocale
 import ai.okou.android.api.generated.UserPreferencesSupportedLocalesItem
 import ai.okou.android.api.generated.UserPreferencesTheme
-import ai.okou.android.auth.WorkspaceBootstrap
 import ai.okou.android.auth.WorkspaceSession
 import ai.okou.android.chat.ChatListService
-import ai.okou.android.testBootstrap
+import ai.okou.android.testOrganization
+import ai.okou.android.testPreferences
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewmodel.initializer
@@ -55,7 +55,7 @@ class MemberPreferencesModelTest {
         ): ai.okou.android.api.generated.PersonalInstructions =
             error("Instructions are not enabled in this fixture")
 
-        var stored = testBootstrap().preferences
+        var stored = testPreferences()
         val requests = mutableListOf<UpdatePreferencesRequest>()
         var load: suspend () -> UserPreferences = { stored }
         var write: suspend (UpdatePreferencesRequest) -> UserPreferences = { request ->
@@ -74,7 +74,7 @@ class MemberPreferencesModelTest {
             stored
         }
 
-        override suspend fun bootstrap() = WorkspaceBootstrap(testBootstrap().organization, stored)
+        override suspend fun organization() = testOrganization()
 
         override suspend fun preferences() = load()
 
