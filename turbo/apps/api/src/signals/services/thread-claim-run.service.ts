@@ -275,10 +275,7 @@ import {
   type WorkflowAutomationEventPayload,
   workflowAutomationEventTypeSchema,
 } from "./workflow-automation-context.service";
-import {
-  AutomationRow,
-  DueWorkflowAutomation,
-} from "./workflow-automation-enqueue.service";
+import type { AutomationRow } from "./workflow-automation-enqueue.service";
 import { manualTriggerSource } from "./workflow-automation-trigger-source";
 import { recordWorkflowAdmissionDuration } from "./workflow-queue-admission-timing.service";
 import { createStorageSignals } from "./thread-storage.signals";
@@ -601,14 +598,6 @@ function buildWorkflowAutomationQueuedLaunchMaterial(args: {
   };
 }
 
-interface AssembleWorkflowAutomationRunArgs extends WorkflowAutomationLaunchArgs {
-  readonly queueEventId: string;
-}
-
-type RunFailure =
-  | { readonly kind: "conflict"; readonly message: string }
-  | { readonly kind: "run_error"; readonly response: RunErrorResponse };
-
 function workflowAutomationRunMetadata(
   automation: AutomationRow,
   triggerBrief: string | undefined,
@@ -618,25 +607,6 @@ function workflowAutomationRunMetadata(
     workflowAutomationId: automation.id,
     triggerBrief,
     autonomyBudget,
-  };
-}
-
-function automationSelectionCommand(
-  args: Pick<
-    AssembleWorkflowAutomationRunArgs,
-    "due" | "apiStartTime" | "triggerSource"
-  >,
-  model: ThreadModelSelection,
-  owner: ThreadRunOwner,
-): ThreadRunCommand {
-  const { chatThreadId } = args.due;
-  return {
-    owner,
-    apiStartTime: args.apiStartTime,
-    triggerSource: args.triggerSource ?? "automation-schedule",
-    chatThreadId,
-    codexServiceTier: model.codexServiceTier,
-    reasoningEffort: model.reasoningEffort ?? null,
   };
 }
 
@@ -661,7 +631,7 @@ type RejectedQueueRunAssembly = Extract<
 type QueuedAutomationLaunch =
   | {
       readonly kind: "launch";
-      readonly args: AssembleWorkflowAutomationRunArgs;
+      readonly args: QueuedAutomationLaunchArgs;
     }
   | { readonly kind: "rejected"; readonly assembly: RejectedQueueRunAssembly };
 
@@ -679,21 +649,16 @@ function queuedAutomationLaunchArguments(args: {
     ReturnType<typeof buildWorkflowAutomationQueuedLaunchMaterial>
   >;
   readonly autonomyBudget: number;
-}) {
+}): QueuedAutomationLaunchArgs {
   const { head, event, target, material, autonomyBudget } = args;
-  const triggerSource: TriggerSource = manualTriggerSource(target.automation);
   return {
-    due: {
-      automation: target.automation,
-      agentId: target.agentId,
-      chatThreadId: event.chatThreadId,
-      allowClaimedOnceScheduleAutomation:
-        material.allowClaimedOnceScheduleAutomation,
-    },
+    automation: target.automation,
+    chatThreadId: event.chatThreadId,
+    disableClaimedOnceSchedule: material.allowClaimedOnceScheduleAutomation,
     queueEventId: event.id,
     apiStartTime: head.apiStartTime,
     triggerBrief: event.triggerBrief ?? undefined,
-    triggerSource,
+    triggerSource: manualTriggerSource(target.automation),
     callbacks: material.callbacks,
     autonomyBudget,
     recordLastRunId: material.recordLastRunId,
@@ -908,23 +873,19 @@ function buildWorkflowAutomationCallbacks(
   return callbacks;
 }
 
-interface WorkflowAutomationLaunchArgs {
-  readonly due: DueWorkflowAutomation;
+interface QueuedAutomationLaunchArgs {
+  readonly automation: AutomationRow;
+  readonly chatThreadId: string;
+  readonly queueEventId: string;
+  readonly disableClaimedOnceSchedule: boolean;
   readonly apiStartTime: number;
   readonly triggerBrief?: string;
-  readonly triggerSource?: TriggerSource;
+  readonly triggerSource: ReturnType<typeof manualTriggerSource>;
   readonly callbacks: readonly InternalRunCallback[];
   readonly autonomyBudget: number;
   readonly recordLastRunId: boolean;
   readonly recordLastRunAt: boolean;
 }
-
-type RunErrorResponse = {
-  readonly status: number;
-  readonly body: {
-    readonly error: { readonly message: string; readonly code: string };
-  };
-};
 
 function withEmailSystemPrompt(
   plan: RunPlan,
@@ -1853,26 +1814,17 @@ export function createThreadClaimRunObjects(
     });
   });
   const automationModel$ = computed(
-    async (get): Promise<ThreadModelSelection | RunFailure> => {
+    async (get): Promise<ThreadModelSelection | ThreadModelError> => {
       if (!(await get(hasAutomationTarget$))) {
-        return {
-          kind: "conflict",
-          message: "Workflow automation no longer exists",
-        };
+        return conflict("Workflow automation no longer exists");
       }
-      const model = await get(threadContext.dispatchTiming$).measure(
+      return get(threadContext.dispatchTiming$).measure(
         "api_dispatch_pre_create_agent_workflow_automation_resolve_model_context",
         "nested",
         () => {
           return get(threadContext.modelSelection$);
         },
       );
-      return "status" in model
-        ? {
-            kind: "run_error",
-            response: { status: model.status, body: model.body },
-          }
-        : model;
     },
   );
   const hasAutomationTarget$ = computed(async (get) => {
@@ -1887,19 +1839,6 @@ export function createThreadClaimRunObjects(
       ? { owner: { orgId: bootstrap.orgId, userId: bootstrap.userId } }
       : null;
   });
-  const prepareAutomationRun$ = command(
-    async ({ get }, signal: AbortSignal): Promise<void> => {
-      const assembly = await get(automationAssembly$);
-      signal.throwIfAborted();
-      if (assembly.kind === "assembled") {
-        get(threadContext.dispatchTiming$).recordElapsed(
-          "api_dispatch_pre_create_agent_workflow_automation_create_run",
-          "nested",
-          now(),
-        );
-      }
-    },
-  );
   // A head whose automation input can no longer be read is rejected from its
   // captured reads.
   const earlyAutomationAssembly$ = computed(
@@ -2017,8 +1956,7 @@ export function createThreadClaimRunObjects(
         return launch.assembly;
       }
       const { args } = launch;
-      const { automation, chatThreadId, allowClaimedOnceScheduleAutomation } =
-        args.due;
+      const { automation, chatThreadId } = args;
       const reject = (error: {
         readonly code: string;
         readonly message: string;
@@ -2029,12 +1967,8 @@ export function createThreadClaimRunObjects(
         };
       };
       const model = await get(automationModel$);
-      if ("kind" in model) {
-        return reject(
-          model.kind === "conflict"
-            ? { code: "CONFLICT", message: model.message }
-            : model.response.body.error,
-        );
+      if ("status" in model) {
+        return reject(model.body.error);
       }
       const officialWorkflow = await get(officialWorkflow$);
       if (isRouteError(officialWorkflow)) {
@@ -2047,10 +1981,12 @@ export function createThreadClaimRunObjects(
       return {
         kind: "assembled",
         run: {
-          ...automationSelectionCommand(args, model, {
-            orgId: bootstrap.orgId,
-            userId: bootstrap.userId,
-          }),
+          owner: { orgId: bootstrap.orgId, userId: bootstrap.userId },
+          apiStartTime: args.apiStartTime,
+          triggerSource: args.triggerSource,
+          chatThreadId,
+          codexServiceTier: model.codexServiceTier,
+          reasoningEffort: model.reasoningEffort ?? null,
           agentRunMetadata: workflowAutomationRunMetadata(
             automation,
             args.triggerBrief,
@@ -2072,8 +2008,7 @@ export function createThreadClaimRunObjects(
           threadId: chatThreadId,
           recordLastRunId: args.recordLastRunId,
           recordLastRunAt: args.recordLastRunAt,
-          disableClaimedOnceSchedule:
-            allowClaimedOnceScheduleAutomation === true,
+          disableClaimedOnceSchedule: args.disableClaimedOnceSchedule,
         },
       };
     },
@@ -2109,7 +2044,7 @@ export function createThreadClaimRunObjects(
   );
   const selectionReady$ = computed(async (get) => {
     return (await get(isAutomation$))
-      ? !("kind" in (await get(automationModel$)))
+      ? !("status" in (await get(automationModel$)))
       : get(promptReady$);
   });
   const callbackInputs$ = computed(
@@ -2947,7 +2882,7 @@ export function createThreadClaimRunObjects(
         if (launch.kind === "rejected") {
           return { kind: "rejected" as const, assembly: launch.assembly };
         }
-        await set(prepareAutomationRun$, signal);
+        await get(automationAssembly$);
         signal.throwIfAborted();
       }
       const [runner, callbackRows, assembly, identity] = await Promise.all([
@@ -3220,13 +3155,13 @@ export function createThreadClaimRunObjects(
           },
         );
         if ("kind" in result && result.kind === "pending") {
-          set(internalCommittedRunId$, result.run.id);
+          set(internalCommittedRunId$, result.admittedLaunch.run.id);
           const launched = context.launchRecord;
           if (launched.kind === "prompt") {
             // Creation is durable even if cancellation or activation fails next.
             recordTemplateUsage(
               {
-                runId: result.run.id,
+                runId: result.admittedLaunch.run.id,
                 sourceEventId: context.head.id,
                 orgId: context.head.orgId,
                 userId: context.head.userId,
@@ -3466,12 +3401,6 @@ function runnerReuseKey(chatThreadId: string): string {
   return `thread:${chatThreadId}`;
 }
 
-interface RunRecord {
-  readonly id: string;
-  readonly createdAt: Date;
-  readonly status: "pending";
-}
-
 interface LaunchRunIdentity {
   readonly runId: string;
 }
@@ -3479,7 +3408,7 @@ interface LaunchRunIdentity {
 interface PersistedAtomicLaunchRows {
   readonly kind: "pending";
   readonly marketingRewardEventId: string | null;
-  readonly run: RunRecord;
+  readonly createdAt: Date;
 }
 
 interface PreparedRunnerLaunch {
@@ -3501,7 +3430,6 @@ type AtomicLaunchCommitResult =
   | {
       readonly kind: "pending";
       readonly marketingRewardEventId: string | null;
-      readonly run: RunRecord;
       readonly admittedLaunch: AdmittedRunLaunch;
       readonly publicationReturnedAt: number;
     }
@@ -3901,7 +3829,7 @@ function recordAtomicLaunchTiming(args: {
   );
   args.phaseTiming.appendTo(args.timing);
   args.timing.flush({
-    runId: args.committed.run.id,
+    runId: args.committed.admittedLaunch.run.id,
     runnerGroup: args.committed.admittedLaunch.runnerGroup,
     profile: args.committed.admittedLaunch.profile,
     dimensions: args.createArgs.timingDimensions,
@@ -4268,7 +4196,7 @@ async function pendingLaunchCommitResult(
   }
   args.admissionTiming.callbackFinished();
   const { persisted, publicationReturnedAt } = published.value;
-  if (!("run" in persisted)) {
+  if (persisted.kind === "queue-first-claim-lost") {
     return persisted;
   }
   const reusePreparation: RunnerReusePreparation =
@@ -4279,10 +4207,11 @@ async function pendingLaunchCommitResult(
           operations: [],
         };
   return {
-    ...persisted,
+    kind: "pending",
+    marketingRewardEventId: persisted.marketingRewardEventId,
     admittedLaunch: admittedRunLaunch(
       args,
-      persisted.run.createdAt,
+      persisted.createdAt,
       reusePreparation,
     ),
     publicationReturnedAt,
@@ -4343,7 +4272,6 @@ const pendingLaunchRowSchema = discriminatedUnion("kind", [
 ]);
 
 function pendingAtomicLaunchResult(
-  context: AtomicLaunchCteContext,
   row: zInfer<typeof pendingLaunchRowSchema> | undefined,
 ): PersistedAtomicLaunchRows | QueueFirstRunClaimLost {
   if (!row) {
@@ -4361,11 +4289,7 @@ function pendingAtomicLaunchResult(
   return {
     kind: "pending",
     marketingRewardEventId: row.marketingRewardEventId,
-    run: {
-      id: context.rowsArgs.identity.runId,
-      createdAt: row.createdAt,
-      status: "pending",
-    },
+    createdAt: row.createdAt,
   };
 }
 
@@ -4646,7 +4570,7 @@ const commitThreadLaunch$ = command(
         // Publication has committed. Return its durable identity before the
         // caller observes cancellation; do not orphan an accepted pending Run.
         const materializeStartedAt = monotonicNow();
-        const result = pendingAtomicLaunchResult(context, outcome.value[0]);
+        const result = pendingAtomicLaunchResult(outcome.value[0]);
         timing.recordDuration(
           "api_dispatch_persist_atomic_launch_materialize",
           "nested",
