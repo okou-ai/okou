@@ -15,23 +15,12 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { updateUserPreference$ } from "../../../signals/okou-page/settings/user-preferences.ts";
 
 const context = testContext();
 
-function getSendModeButton(name: string): HTMLElement {
-  const dialog = screen.getByRole("dialog", { name: "Settings" });
-  const button = queryAllByRoleFast("button", dialog).find((element) => {
-    return element.textContent?.trim() === name;
-  });
-  if (!button) {
-    throw new Error(`Button not found: ${name}`);
-  }
-  return button;
-}
-
-function delayPreferenceRefresh() {
-  let saved = false;
-  let value: UserPreferencesResponse = {
+function initialPreferences(): UserPreferencesResponse {
+  return {
     timezone: "Etc/UTC",
     locale: "en-US",
     supportedLocales: ["en-US", "pt-BR"],
@@ -44,74 +33,170 @@ function delayPreferenceRefresh() {
     captureNetworkBodiesRemaining: 0,
     memoryInitialized: true,
   };
-  const refreshing = context.mocks.deferred<void>();
-  const release = context.mocks.deferred<void>();
-  context.mocks.api(
-    userPreferencesContract.get,
-    async ({ respond, withSignal }) => {
-      if (saved) {
-        refreshing.resolve();
-        await withSignal(release.promise);
-      }
-      return respond(200, value);
-    },
-  );
-  context.mocks.api(userPreferencesContract.update, ({ body, respond }) => {
-    value = { ...value, ...body };
-    saved = true;
-    return respond(200, value);
-  });
-  return { refreshing, release };
 }
 
-test("saving send mode keeps a disabled cloud browser preference unchanged during refresh", async () => {
-  const { refreshing, release } = delayPreferenceRefresh();
+function getSendModeButton(name: string): HTMLElement {
+  const dialog = screen.getByRole("dialog", { name: "Settings" });
+  const button = queryAllByRoleFast("button", dialog).find((element) => {
+    return element.textContent?.trim() === name;
+  });
+  if (!button) {
+    throw new Error(`Button not found: ${name}`);
+  }
+  return button;
+}
+
+function delayPreferenceSaves() {
+  const original = initialPreferences();
+  let reads = 0;
+  const sendModeWrite = context.mocks.deferred<void>();
+  const cloudBrowserWrite = context.mocks.deferred<void>();
+  const timezoneWrite = context.mocks.deferred<void>();
+  const releaseSendMode = context.mocks.deferred<void>();
+  const releaseCloudBrowser = context.mocks.deferred<void>();
+  const releaseTimezone = context.mocks.deferred<void>();
+  context.mocks.api(userPreferencesContract.get, ({ respond }) => {
+    reads += 1;
+    return respond(200, original);
+  });
+  context.mocks.api(
+    userPreferencesContract.update,
+    async ({ body, respond, withSignal }) => {
+      if (body.sendMode !== undefined) {
+        sendModeWrite.resolve();
+        await withSignal(releaseSendMode.promise);
+      } else if (body.cloudBrowserEnabledByDefault !== undefined) {
+        cloudBrowserWrite.resolve();
+        await withSignal(releaseCloudBrowser.promise);
+      } else {
+        timezoneWrite.resolve();
+        await withSignal(releaseTimezone.promise);
+      }
+      // Each response includes the pre-write value of the other preference.
+      return respond(200, { ...original, ...body });
+    },
+  );
+  return {
+    sendModeWrite,
+    cloudBrowserWrite,
+    timezoneWrite,
+    releaseSendMode,
+    releaseCloudBrowser,
+    releaseTimezone,
+    reads: () => {
+      return reads;
+    },
+  };
+}
+
+test("saving send mode updates the setting from the write response", async () => {
+  const saves = delayPreferenceSaves();
   await setupPage({ context, path: "/agents?settings=chat" });
   const browser = await screen.findByRole("switch", { name: "Cloud browser" });
   await waitFor(() => {
     expect(browser).toBeEnabled();
   });
-  expect(browser).not.toBeChecked();
+  const readsBeforeSave = saves.reads();
   click(getSendModeButton("Enter"));
-  await refreshing.promise;
-  await waitFor(() => {
-    expect(getSendModeButton("Enter")).toBeDisabled();
-  });
+  await saves.sendModeWrite.promise;
+
+  expect(getSendModeButton("Enter")).toBeDisabled();
   expect(getSendModeButton("⌘ Enter")).toHaveAttribute("aria-pressed", "true");
   expect(browser).not.toBeChecked();
   expect(browser).toBeEnabled();
 
-  release.resolve();
+  saves.releaseSendMode.resolve();
   await waitFor(() => {
     expect(getSendModeButton("Enter")).toBeEnabled();
     expect(getSendModeButton("Enter")).toHaveAttribute("aria-pressed", "true");
   });
   expect(browser).not.toBeChecked();
+  expect(saves.reads()).toBe(readsBeforeSave);
 });
 
-test("saving cloud browser keeps the selected send mode unchanged during refresh", async () => {
-  const { refreshing, release } = delayPreferenceRefresh();
+test("overlapping saves preserve each confirmed preference without another read", async () => {
+  const saves = delayPreferenceSaves();
   await setupPage({ context, path: "/agents?settings=chat" });
   const browser = await screen.findByRole("switch", { name: "Cloud browser" });
   await waitFor(() => {
     expect(browser).toBeEnabled();
   });
-  expect(getSendModeButton("⌘ Enter")).toHaveAttribute("aria-pressed", "true");
+  const readsBeforeSave = saves.reads();
   click(browser);
-  await refreshing.promise;
-  await waitFor(() => {
-    expect(browser).toHaveAttribute("aria-disabled", "true");
-  });
+  await saves.cloudBrowserWrite.promise;
+
+  expect(browser).toHaveAttribute("aria-disabled", "true");
   expect(browser).not.toBeChecked();
   expect(getSendModeButton("⌘ Enter")).toHaveAttribute("aria-pressed", "true");
-  expect(getSendModeButton("⌘ Enter")).toBeEnabled();
+  expect(getSendModeButton("Enter")).toBeEnabled();
+  click(getSendModeButton("Enter"));
+  await saves.sendModeWrite.promise;
 
-  release.resolve();
+  saves.releaseSendMode.resolve();
+  await waitFor(() => {
+    expect(getSendModeButton("Enter")).toHaveAttribute("aria-pressed", "true");
+  });
+  expect(browser).not.toBeChecked();
+
+  saves.releaseCloudBrowser.resolve();
   await waitFor(() => {
     expect(browser).toBeChecked();
     expect(browser).toBeEnabled();
   });
-  expect(getSendModeButton("⌘ Enter")).toHaveAttribute("aria-pressed", "true");
+  expect(getSendModeButton("Enter")).toHaveAttribute("aria-pressed", "true");
+  expect(saves.reads()).toBe(readsBeforeSave);
+});
+
+test("overlapping saves to one preference read back the committed value", async () => {
+  let stored = initialPreferences();
+  let reads = 0;
+  const firstCommitted = context.mocks.deferred<void>();
+  const releaseFirstResponse = context.mocks.deferred<void>();
+  context.mocks.api(userPreferencesContract.get, ({ respond }) => {
+    reads += 1;
+    return respond(200, stored);
+  });
+  context.mocks.api(
+    userPreferencesContract.update,
+    async ({ body, respond, withSignal }) => {
+      const saved = { ...stored, ...body };
+      stored = saved;
+      if (body.sendMode === "enter") {
+        firstCommitted.resolve();
+        await withSignal(releaseFirstResponse.promise);
+      }
+      return respond(200, saved);
+    },
+  );
+  await setupPage({ context, path: "/agents?settings=chat" });
+  const browser = await screen.findByRole("switch", { name: "Cloud browser" });
+  await waitFor(() => {
+    expect(browser).toBeEnabled();
+    expect(getSendModeButton("⌘ Enter")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  });
+  const readsBeforeSave = reads;
+  click(getSendModeButton("Enter"));
+  await firstCommitted.promise;
+
+  await context.store.set(
+    updateUserPreference$,
+    { sendMode: "cmd-enter" },
+    context.signal,
+  );
+  expect(reads).toBe(readsBeforeSave);
+
+  releaseFirstResponse.resolve();
+  await waitFor(() => {
+    expect(reads).toBe(readsBeforeSave + 1);
+    expect(getSendModeButton("Enter")).toBeEnabled();
+    expect(getSendModeButton("⌘ Enter")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  });
 });
 
 test.each([false, true])(
@@ -247,8 +332,8 @@ test.each(["reopening Settings", "returning to Preference"])(
   },
 );
 
-test("saving time zone keeps enabled Morning brief unchanged during refresh", async () => {
-  const { refreshing, release } = delayPreferenceRefresh();
+test("saving time zone keeps enabled Morning brief unchanged", async () => {
+  const saves = delayPreferenceSaves();
   context.mocks.api(morningBriefPreferenceContract.get, ({ respond }) => {
     return respond(200, {
       enabled: true,
@@ -265,16 +350,17 @@ test("saving time zone keeps enabled Morning brief unchanged during refresh", as
   click(timezone);
   await screen.findByRole("option", { name: /Eastern Time \(ET\)$/u });
   await userEvent.keyboard("{Home}{ArrowDown}{Enter}");
-  await refreshing.promise;
+  await saves.timezoneWrite.promise;
   await waitFor(() => {
-    expect(timezone).toBeEnabled();
+    expect(timezone).toBeDisabled();
   });
   expect(morning).toBeChecked();
   expect(morning).toBeEnabled();
 
-  release.resolve();
+  saves.releaseTimezone.resolve();
   await waitFor(() => {
     expect(timezone).toHaveTextContent("Eastern Time (ET)");
+    expect(timezone).toBeEnabled();
   });
   expect(morning).toBeChecked();
 });
