@@ -24,6 +24,7 @@ export type ChatConnectorExecutionOwner = {
 /** One owned Chat/account snapshot, without credential material or Agent grants. */
 export function chatConnectorExecutionReadPlan(
   owner: ChatConnectorExecutionOwner,
+  connectorSlug?: string,
 ) {
   return new QueryBuilder()
     .select({
@@ -64,6 +65,9 @@ export function chatConnectorExecutionReadPlan(
       and(
         eq(connectors.orgId, owner.orgId),
         eq(connectors.userId, owner.userId),
+        connectorSlug === undefined
+          ? undefined
+          : eq(connectors.connectorSlug, connectorSlug),
       ),
     )
     .leftJoin(
