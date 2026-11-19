@@ -266,7 +266,10 @@ def runner(arguments):
     print("rootfs_hash=" + "1" * 64, flush=True)
     if MODE != "missing-hash":
         print("snapshot_hash=" + "2" * 64, flush=True)
-    if (ROOT / "block").exists():
+    if MODE == "wait-for-retirement":
+        # Fixture cleanup kills the unit process group.
+        signal.pause()
+    elif (ROOT / "block").exists():
         wait_for(lambda: (ROOT / "release").exists())
     return int(os.environ.get("IMAGE_BUILD_STATUS", "0"))
 

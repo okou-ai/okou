@@ -419,7 +419,7 @@ class ImageOperationTest(unittest.TestCase):
         self.assertEqual(len(marker_installs), 1)
 
     def test_claim_retries_a_timed_out_unit_observation(self):
-        prior = self.start_blocked()
+        prior = self.start_blocked("wait-for-retirement")
         claim_request = {"action": "claim", "phase": None}
         claim_count = self.records("requests").count(claim_request)
 
