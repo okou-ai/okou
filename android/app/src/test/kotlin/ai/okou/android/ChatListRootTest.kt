@@ -429,10 +429,14 @@ class ChatListRootTest {
         val commands = CopyOnWriteArrayList<RecordedRequest>()
         val rejectRead = AtomicBoolean(true)
         val unread = AtomicBoolean(true)
+        val indicatorsUnavailable = AtomicBoolean(false)
         fixture.indicators = {
-            val value = if (unread.get()) "\"$CHAT_IN_PROJECT\":\"$CHAT_DATE\"" else ""
-            val status = if (unread.get()) "\"$CHAT_IN_PROJECT\":\"unread\"" else ""
-            jsonResponse("""{"agents":{},"threads":{$status},"unreadAt":{$value}}""")
+            if (indicatorsUnavailable.get()) MockResponse().setResponseCode(503)
+            else {
+                val value = if (unread.get()) "\"$CHAT_IN_PROJECT\":\"$CHAT_DATE\"" else ""
+                val status = if (unread.get()) "\"$CHAT_IN_PROJECT\":\"unread\"" else ""
+                jsonResponse("""{"agents":{},"threads":{$status},"unreadAt":{$value}}""")
+            }
         }
         fixture.commandResponse = { request ->
             if (request.method != "POST") null
@@ -480,6 +484,12 @@ class ChatListRootTest {
         val target = hasText("Project chat")
         val row = compose.onNode(target)
         compose.onNodeWithTag("chat_list").performScrollToNode(target)
+        val unreadBadge =
+            SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Unread")
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(target.and(unreadBadge)).fetchSemanticsNodes().isNotEmpty()
+        }
+        indicatorsUnavailable.set(true)
         row.performMouseInput { click(button = MouseButton.Secondary) }
         compose.onNodeWithText("Mute chat").performClick()
 
@@ -509,6 +519,12 @@ class ChatListRootTest {
         compose.waitUntil(10_000) {
             compose.onAllNodes(target.and(!muted).and(available)).fetchSemanticsNodes().isNotEmpty()
         }
+        row.assert(!unreadBadge)
+        val refreshStatus = app.getString(R.string.chat_refresh_status)
+        indicatorsUnavailable.set(false)
+        compose.onNodeWithTag("chat_list").performScrollToNode(hasText(refreshStatus))
+        compose.onNodeWithText(refreshStatus).performClick()
+        compose.onNodeWithTag("chat_list").performScrollToNode(target)
         row.performSemanticsAction(SemanticsActions.OnLongClick)
         compose.onNodeWithText("Mark as unread").assertExists()
         compose.onNodeWithText("Mute chat").assertExists()

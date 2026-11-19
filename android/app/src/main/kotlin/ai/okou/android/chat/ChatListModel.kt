@@ -3,6 +3,7 @@ package ai.okou.android.chat
 import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.generated.Agents
 import ai.okou.android.api.generated.Indicators
+import ai.okou.android.api.generated.IndicatorsThreadsValue
 import ai.okou.android.auth.WorkspaceIdentity
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -134,6 +135,7 @@ class ChatListModel(
     private var agentsJob: Job? = null
     private var projectsJob: Job? = null
     private var indicatorsJob: Job? = null
+    private val indicatorReadReceipts = mutableMapOf<String, ChatTimestamp>()
     private val writes = Mutex()
     private val projectSync = ProjectSync(service, dispatcher)
     private val listInvalidations = Channel<Unit>(Channel.CONFLATED)
@@ -319,8 +321,9 @@ class ChatListModel(
                         ChatRowAction.Mute -> service.setMuted(threadId, true, newRowEventId())
                         ChatRowAction.Unmute -> {
                             // Acknowledge replies that arrived while this chat was muted.
-                            service.markRead(threadId)
+                            val receipt = service.markRead(threadId)
                             requireCurrent()
+                            applyReadReceipt(threadId, receipt.lastReadAt)
                             service.setMuted(threadId, false, newRowEventId())
                         }
                         ChatRowAction.Archive ->
@@ -357,10 +360,8 @@ class ChatListModel(
                     requireCurrent()
                     val observed = mutable.value
                     val changed = observed.threads.firstOrNull { it.id == threadId }
-                    if (
-                        observed.listPhase == ChatReadPhase.Failed ||
-                            changed?.let(action::matches) != true
-                    ) {
+                    // Another refresh may already have confirmed the change.
+                    if (changed?.let(action::matches) != true) {
                         mutable.value = observed.copy(failedRowAction = action)
                     }
                 }
@@ -382,6 +383,26 @@ class ChatListModel(
     }
 
     private fun newRowEventId() = UUID.randomUUID().toString()
+
+    private fun applyReadReceipt(threadId: String, lastReadAt: String?) {
+        val watermark = lastReadAt?.let(::chatTimestamp) ?: return
+        // The current indicator request can still return unread evidence from before this receipt.
+        if (indicatorsJob?.isActive == true) indicatorReadReceipts[threadId] = watermark
+        val state = mutable.value
+        val indicators = state.indicators ?: return
+        mutable.value = state.copy(indicators = indicators.acknowledgeUnread(threadId, watermark))
+    }
+
+    private fun Indicators.acknowledgeUnread(
+        threadId: String,
+        watermark: ChatTimestamp,
+    ): Indicators {
+        val unread = unreadAt[threadId] ?: return this
+        if (chatTimestamp(unread) > watermark) return this
+        val remainingThreads =
+            if (threads[threadId] == IndicatorsThreadsValue.UNREAD) threads - threadId else threads
+        return copy(threads = remainingThreads, unreadAt = unreadAt - threadId)
+    }
 
     fun refreshAfterSend(threadId: String) {
         viewModelScope.launch {
@@ -653,15 +674,21 @@ class ChatListModel(
                 try {
                     val result = service.indicators()
                     requireCurrent()
+                    val reconciled =
+                        indicatorReadReceipts.entries.fold(result) { status, (id, watermark) ->
+                            status.acknowledgeUnread(id, watermark)
+                        }
                     mutable.value =
                         mutable.value.copy(
-                            indicators = result,
+                            indicators = reconciled,
                             indicatorsPhase = ChatReadPhase.Ready,
                         )
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (error: Exception) {
                     fail(error) { it.copy(indicatorsPhase = ChatReadPhase.Failed) }
+                } finally {
+                    indicatorReadReceipts.clear()
                 }
             }
     }
