@@ -169,14 +169,15 @@ internal fun SettingsSheet(
         with(LocalDensity.current) { LocalWindowInfo.current.containerSize.height.toDp() }
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        // Keep the calling page visible above taller, scrollable sheets.
-        modifier = Modifier.heightIn(max = windowHeight * 0.84f),
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         sheetMaxWidth = 520.dp,
         containerColor = MaterialTheme.colorScheme.surface,
     ) {
         Column(
-            Modifier.fillMaxWidth().padding(bottom = 24.dp),
+            Modifier.fillMaxWidth()
+                // Limit scrollable content while the modal uses the full window for its anchors.
+                .heightIn(max = windowHeight * 0.80f)
+                .padding(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(
