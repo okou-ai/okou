@@ -1890,7 +1890,7 @@
       "optional": "(Optional)",
       "required": "(Required)",
       "savedPasswordsChrome": "Chrome (desktop): Right-click the username or password field, choose “Select password”, and search for the website.",
-      "savedPasswordsHelp": "How to fill",
+      "savedPasswordsHelp": "Use a saved password",
       "savedPasswordsHint": "You can use passwords saved in your browser.",
       "savedPasswordsSafari": "Safari (Mac): Click the key icon in the field, then choose “Other passwords…”.",
       "savedPasswordsSite": "Your browser may suggest your Okou account first. Search for the website shown above.",

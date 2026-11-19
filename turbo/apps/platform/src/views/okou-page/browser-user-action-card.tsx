@@ -6,15 +6,19 @@ import {
 } from "@okouai/api-contracts/validators/browser-user-actions";
 import type { BrowserUserActionResponse } from "@okouai/api-contracts/contracts/browser-user-actions";
 import { cn } from "@okouai/ui";
+import { Checkbox } from "@okouai/ui/components/ui/checkbox";
 import { Button } from "@okouai/ui/components/ui/button";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
 } from "@okouai/ui/components/ui/dialog";
+import { IconButton } from "@okouai/ui/components/ui/icon-button";
 import { Input } from "@okouai/ui/components/ui/input";
 import { Textarea } from "@okouai/ui/components/ui/textarea";
 import { useGet, useLastLoadable, useSet, type Loadable } from "ccstate-react";
@@ -24,6 +28,7 @@ import {
   CheckCircle2,
   Globe,
   Loader2,
+  X,
   XCircle,
 } from "lucide-react";
 import type { FormEvent, ReactNode } from "react";
@@ -278,11 +283,9 @@ interface PendingBrowserInputRequest {
 function PendingFormHeader({
   action,
   compact = false,
-  showTitle = true,
 }: {
   readonly action: PendingBrowserInputAction;
   readonly compact?: boolean;
-  readonly showTitle?: boolean;
 }) {
   const { t } = useTranslation();
   const title =
@@ -297,25 +300,17 @@ function PendingFormHeader({
         compact ? "gap-2.5 @[520px]:flex-1" : "gap-3",
       )}
     >
-      <Globe
-        size={16}
-        className={cn(
-          "shrink-0 self-start text-brand-text",
-          showTitle && "mt-1",
-        )}
-      />
+      <Globe size={16} className="mt-1 shrink-0 self-start text-brand-text" />
       <div className="min-w-0 max-w-sm">
-        {showTitle && (
-          <h2
-            className={cn(
-              "break-words text-[0.9375rem] font-medium text-foreground",
-              compact && "line-clamp-2 @[380px]:truncate",
-            )}
-          >
-            {title}
-          </h2>
-        )}
-        {showTitle && !compact && action.reason !== undefined && (
+        <h2
+          className={cn(
+            "break-words text-[0.9375rem] font-medium text-foreground",
+            compact && "line-clamp-2 @[380px]:truncate",
+          )}
+        >
+          {title}
+        </h2>
+        {!compact && action.reason !== undefined && (
           <p className="mt-1 whitespace-pre-wrap break-words text-sm text-muted-foreground">
             {action.reason}
           </p>
@@ -323,7 +318,7 @@ function PendingFormHeader({
         <div
           className={cn(
             "flex items-start gap-1.5 text-xs text-muted-foreground",
-            showTitle && (compact ? "mt-1" : "mt-2"),
+            compact ? "mt-1" : "mt-2",
           )}
         >
           <span className="shrink-0 font-medium text-foreground">
@@ -350,7 +345,7 @@ function PendingFormDestination({
   const { t } = useTranslation();
   return (
     <>
-      <PendingFormHeader action={action} showTitle={showTitle} />
+      {showTitle && <PendingFormHeader action={action} />}
       {action.fields.some((field) => {
         return field.fieldKind === "file";
       }) && (
@@ -365,33 +360,22 @@ function PendingFormDestination({
   );
 }
 
-function BrowserSavedPasswordHelp({
-  action,
-}: {
-  readonly action: PendingBrowserInputAction;
-}) {
+function BrowserSavedPasswordHelp() {
   const { t } = useTranslation();
-  if (
-    !action.fields.some((field) => {
-      return field.fieldKind === "username" || field.fieldKind === "password";
-    })
-  ) {
-    return null;
-  }
   return (
     <div className="flex min-w-0 flex-col gap-1 break-words text-xs leading-5 text-muted-foreground">
-      <p>
-        {t(($) => {
-          return $.chat.browserInput.savedPasswordsHint;
-        })}
-      </p>
       <details>
-        <summary className="w-fit cursor-default rounded-md py-1 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        <summary className="w-fit cursor-pointer rounded-md px-1 py-1 hover:bg-gray-50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
           {t(($) => {
             return $.chat.browserInput.savedPasswordsHelp;
           })}
         </summary>
-        <div className="flex flex-col gap-2 pt-2">
+        <div className="mt-1 flex flex-col gap-2 rounded-xl bg-gray-50 p-3">
+          <p>
+            {t(($) => {
+              return $.chat.browserInput.savedPasswordsHint;
+            })}
+          </p>
           <p>
             {t(($) => {
               return $.chat.browserInput.savedPasswordsChrome;
@@ -1037,27 +1021,25 @@ function BrowserCheckboxControl({
       : observed === true;
   const required = field.required || field.control.siteRequired;
   return (
-    <div className="flex max-w-full flex-wrap items-center gap-2">
-      <input
-        id={inputId}
-        name={field.key}
-        type="checkbox"
-        aria-describedby={describedBy}
-        className="size-4 shrink-0 accent-primary"
-        checked={checked}
-        required={required}
-        disabled={busy || observed === undefined}
-        onChange={(event) => {
-          if (observed !== undefined) {
-            if (event.currentTarget.checked === observed) {
-              onRemove(field.key);
-            } else {
-              onUpdate(field.key, event.currentTarget.checked, observed);
-            }
+    <Checkbox
+      id={inputId}
+      name={field.key}
+      aria-labelledby={`${inputId}-label`}
+      aria-describedby={describedBy}
+      className="mt-0.5"
+      checked={checked}
+      required={required}
+      disabled={busy || observed === undefined}
+      onCheckedChange={(nextChecked) => {
+        if (observed !== undefined) {
+          if (nextChecked === observed) {
+            onRemove(field.key);
+          } else {
+            onUpdate(field.key, nextChecked, observed);
           }
-        }}
-      />
-    </div>
+        }
+      }}
+    />
   );
 }
 
@@ -1065,46 +1047,37 @@ function BrowserInputFieldHeader({
   field,
   inputId,
   requirementId,
-  descriptionId,
 }: {
   readonly field: PendingBrowserInputField;
   readonly inputId: string;
   readonly requirementId: string;
-  readonly descriptionId: string | undefined;
 }) {
   const { t } = useTranslation();
   return (
-    <>
-      <div className="flex min-w-0 flex-wrap items-baseline gap-1 text-sm text-foreground">
-        <label
-          id={`${inputId}-label`}
-          htmlFor={inputId}
-          className="min-w-0 break-words font-medium"
-        >
-          {field.label}
-        </label>
-        <span
-          id={requirementId}
-          className="text-xs font-normal text-muted-foreground"
-        >
-          {field.required || field.control.siteRequired
-            ? t(($) => {
-                return $.chat.browserInput.required;
-              })
-            : t(($) => {
-                return $.chat.browserInput.optional;
-              })}
-        </span>
-      </div>
-      {field.description && (
-        <span
-          id={descriptionId}
-          className="min-w-0 break-words text-xs font-normal leading-4 text-muted-foreground"
-        >
-          {field.description}
-        </span>
-      )}
-    </>
+    <div className="flex min-w-0 flex-wrap items-baseline gap-1 text-sm text-foreground">
+      <label
+        id={`${inputId}-label`}
+        htmlFor={inputId}
+        className={cn(
+          "min-w-0 break-words font-medium",
+          field.fieldKind === "checkbox" && "cursor-pointer",
+        )}
+      >
+        {field.label}
+      </label>
+      <span
+        id={requirementId}
+        className="text-xs font-normal text-muted-foreground"
+      >
+        {field.required || field.control.siteRequired
+          ? t(($) => {
+              return $.chat.browserInput.required;
+            })
+          : t(($) => {
+              return $.chat.browserInput.optional;
+            })}
+      </span>
+    </div>
   );
 }
 
@@ -1412,7 +1385,9 @@ function BrowserInputFieldControl({
 }
 
 function BrowserInputField(
-  props: Parameters<typeof BrowserInputFieldControl>[0],
+  props: Parameters<typeof BrowserInputFieldControl>[0] & {
+    readonly showPasswordHelp: boolean;
+  },
 ) {
   const { field, index } = props;
   const inputId = `browser-input-field-${index}`;
@@ -1420,15 +1395,38 @@ function BrowserInputField(
   const descriptionId = field.description
     ? `${inputId}-description`
     : undefined;
+  const header = (
+    <BrowserInputFieldHeader
+      field={field}
+      inputId={inputId}
+      requirementId={requirementId}
+    />
+  );
+  const description = field.description && (
+    <span
+      id={descriptionId}
+      className="min-w-0 break-words text-xs leading-4 text-muted-foreground"
+    >
+      {field.description}
+    </span>
+  );
+  if (field.fieldKind === "checkbox") {
+    return (
+      <div className="flex items-start gap-2.5">
+        <BrowserInputFieldControl {...props} />
+        <div className="flex min-w-0 flex-col gap-1.5">
+          {header}
+          {description}
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="flex flex-col gap-1.5">
-      <BrowserInputFieldHeader
-        field={field}
-        inputId={inputId}
-        requirementId={requirementId}
-        descriptionId={descriptionId}
-      />
+      {header}
       <BrowserInputFieldControl {...props} />
+      {description}
+      {props.showPasswordHelp && <BrowserSavedPasswordHelp />}
     </div>
   );
 }
@@ -1484,6 +1482,15 @@ function BrowserInputFields({
     ) => void;
     readonly onRemoveChoice: (key: string) => void;
   }) {
+  const passwordIndex = action.fields.findIndex((field) => {
+    return field.fieldKind === "password";
+  });
+  const passwordHelpIndex =
+    passwordIndex !== -1
+      ? passwordIndex
+      : action.fields.findIndex((field) => {
+          return field.fieldKind === "username";
+        });
   return (
     <div className="flex flex-col gap-4">
       {action.fields.map((field, index) => {
@@ -1491,6 +1498,7 @@ function BrowserInputFields({
           <BrowserInputField
             key={field.key}
             field={field}
+            showPasswordHelp={index === passwordHelpIndex}
             index={index}
             draft={draft}
             choiceDraft={choiceDraft}
@@ -1536,13 +1544,13 @@ function PendingFormActions({
 }) {
   const { t } = useTranslation();
   return (
-    <>
+    <div className="flex flex-col gap-3 border-t border-border pt-4">
       <p className="text-xs leading-5 text-muted-foreground">
         {t(($) => {
           return $.chat.browserInput.submitDescription;
         })}
       </p>
-      <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+      <DialogFooter>
         <Button
           type="button"
           variant="outline"
@@ -1568,8 +1576,8 @@ function PendingFormActions({
                 return $.chat.browserInput.submit;
               })}
         </Button>
-      </div>
-    </>
+      </DialogFooter>
+    </div>
   );
 }
 
@@ -1717,7 +1725,6 @@ function PendingForm({ signals, request, showTitle = true }: PendingFormProps) {
       onSubmit={submitForm}
     >
       <PendingFormDestination action={activeAction} showTitle={showTitle} />
-      <BrowserSavedPasswordHelp action={activeAction} />
       <BrowserInputFields
         action={activeAction}
         draft={draft}
@@ -1826,20 +1833,45 @@ function PendingInlineAction({
               </Button>
             }
           />
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle className="break-words">{title}</DialogTitle>
-              {request.action.reason !== undefined && (
-                <DialogDescription className="whitespace-pre-wrap break-words">
-                  {request.action.reason}
-                </DialogDescription>
-              )}
-            </DialogHeader>
-            <PendingFormWithCheck
-              signals={signals}
-              request={request}
-              showTitle={false}
-            />
+          <DialogContent
+            position="top"
+            showCloseButton={false}
+            contentClassName="flex flex-col gap-0 p-0"
+          >
+            <div className="flex items-center gap-2 border-b border-border bg-gray-50 px-4 py-2.5">
+              <div className="flex min-w-0 flex-1 items-center gap-2 rounded-full border border-border bg-card px-3 py-2 text-xs font-medium text-foreground">
+                <Globe size={14} className="shrink-0 text-muted-foreground" />
+                <span className="min-w-0 wrap-anywhere">
+                  {request.action.siteOrigin}
+                </span>
+              </div>
+              <DialogClose
+                render={
+                  <IconButton
+                    aria-label={t(($) => {
+                      return $.workflows.common.close;
+                    })}
+                  />
+                }
+              >
+                <X size={18} className="text-muted-foreground" />
+              </DialogClose>
+            </div>
+            <div className="flex flex-col gap-5 p-6">
+              <DialogHeader className="text-left">
+                <DialogTitle className="break-words">{title}</DialogTitle>
+                {request.action.reason !== undefined && (
+                  <DialogDescription className="whitespace-pre-wrap break-words">
+                    {request.action.reason}
+                  </DialogDescription>
+                )}
+              </DialogHeader>
+              <PendingFormWithCheck
+                signals={signals}
+                request={request}
+                showTitle={false}
+              />
+            </div>
           </DialogContent>
         </Dialog>
       </div>

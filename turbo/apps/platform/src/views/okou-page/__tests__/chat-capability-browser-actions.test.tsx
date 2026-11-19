@@ -896,6 +896,9 @@ test("Closing an inline form clears password and code drafts while preserving or
   const dialog = await screen.findByRole("dialog", {
     name: "Sign in to download invoices",
   });
+  expect(
+    within(dialog).getByText("https://accounts.example.test"),
+  ).toBeInTheDocument();
   const emailInput = within(dialog).getByLabelText("Account email");
   const passwordInput = within(dialog).getByLabelText("Password");
   const codeInput = within(dialog).getByLabelText("Verification code");
@@ -910,8 +913,8 @@ test("Closing an inline form clears password and code drafts while preserving or
   await fill(passwordInput, "synthetic-password");
   await fill(codeInput, "123456");
 
-  expect(within(dialog).getAllByText("How to fill")).toHaveLength(1);
-  click(within(dialog).getByText("How to fill"));
+  expect(within(dialog).getAllByText("Use a saved password")).toHaveLength(1);
+  click(within(dialog).getByText("Use a saved password"));
   expect(within(dialog).getByText(/^Chrome \(desktop\):/u)).toBeVisible();
   expect(emailInput).toHaveValue("owner@example.test");
   expect(passwordInput).toHaveValue("synthetic-password");
@@ -1162,6 +1165,12 @@ test("An inline Browser input dialog confirms a required native checkbox", async
   if (!submitButton) {
     throw new Error("Missing Browser submit button");
   }
+  const consentLabel = within(dialog).getByText("Consent");
+  click(consentLabel);
+  expect(checkbox).not.toBeChecked();
+  expect(submitButton).toBeDisabled();
+  click(consentLabel);
+  expect(checkbox).toBeChecked();
   expect(submitButton).toBeEnabled();
   click(submitButton);
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();

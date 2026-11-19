@@ -529,7 +529,7 @@ test.each(["username", "password", "one_time_code", "text"] as const)(
     });
     const credentialRequest =
       fieldKind === "username" || fieldKind === "password";
-    expect(within(form).queryAllByText("How to fill")).toHaveLength(
+    expect(within(form).queryAllByText("Use a saved password")).toHaveLength(
       credentialRequest ? 1 : 0,
     );
     if (!credentialRequest) {
@@ -540,10 +540,10 @@ test.each(["username", "password", "one_time_code", "text"] as const)(
     await fill(input, "owner@example.test");
     const instructions = within(form).getByText(/^Chrome \(desktop\):/u);
     expect(instructions).not.toBeVisible();
-    click(within(form).getByText("How to fill"));
+    click(within(form).getByText("Use a saved password"));
     expect(instructions).toBeVisible();
     expect(input).toHaveValue("owner@example.test");
-    click(within(form).getByText("How to fill"));
+    click(within(form).getByText("Use a saved password"));
     expect(instructions).not.toBeVisible();
     expect(within(form).getByLabelText(label)).toHaveValue(
       "owner@example.test",
@@ -1358,7 +1358,7 @@ test.each([
     await waitFor(() => {
       expect(checkbox).toBeEnabled();
     });
-    expect(checkbox).toHaveProperty("checked", siteChecked);
+    expect(checkbox).toHaveAttribute("aria-checked", String(siteChecked));
     const user = userEvent.setup({ delay: null });
     await user.click(checkbox);
     click(button("Add to browser"));
