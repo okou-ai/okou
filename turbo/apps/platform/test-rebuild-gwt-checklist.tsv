@@ -1,0 +1,866 @@
+frozen_id	test_file	part	item	requirement	evidence_at_head	status	note	audit_basis
+banking-connect-return-page-002	src/views/banking-connect-return/__tests__/banking-connect-return-page.test.tsx	Given	1	User arrives at the banking connection return page	L19	covered		de0014f3
+banking-connect-return-page-002	src/views/banking-connect-return/__tests__/banking-connect-return-page.test.tsx	Given	2	Provider response is completed (reason=complete)	L14	covered		de0014f3
+banking-connect-return-page-002	src/views/banking-connect-return/__tests__/banking-connect-return-page.test.tsx	Given	3	Response code is 200	L15	covered		de0014f3
+banking-connect-return-page-002	src/views/banking-connect-return/__tests__/banking-connect-return-page.test.tsx	Given	4	Response carries a customer ID	L16	covered		de0014f3
+banking-connect-return-page-002	src/views/banking-connect-return/__tests__/banking-connect-return-page.test.tsx	Given	5	Response carries an institution ID	L17	covered		de0014f3
+banking-connect-return-page-002	src/views/banking-connect-return/__tests__/banking-connect-return-page.test.tsx	When	1	Return page handles the provider response	L19	covered		de0014f3
+banking-connect-return-page-002	src/views/banking-connect-return/__tests__/banking-connect-return-page.test.tsx	Then	1	Shows 'Bank account connected'	L21-L23	covered		de0014f3
+banking-connect-return-page-002	src/views/banking-connect-return/__tests__/banking-connect-return-page.test.tsx	Then	2	Shows 'Connected'	L24	covered		de0014f3
+banking-connect-return-page-002	src/views/banking-connect-return/__tests__/banking-connect-return-page.test.tsx	Then	3	'Close window' button is enabled	L25-L28	covered	toBeEnabled on undefined throws, so presence is asserted too	de0014f3
+banking-connect-return-page-002	src/views/banking-connect-return/__tests__/banking-connect-return-page.test.tsx	Then	4	Browser path is replaced with /banking/connect/return/success	L29-L33	covered		de0014f3
+email-unsubscribe-page-001	src/views/email-unsubscribe/__tests__/email-unsubscribe-page.test.tsx	Given	1	User is signed out	L35; page-helper.ts:L208-L214	covered		de0014f3
+email-unsubscribe-page-001	src/views/email-unsubscribe/__tests__/email-unsubscribe-page.test.tsx	Given	2	Opens unsubscribe page with an invalid token	L36	covered		de0014f3
+email-unsubscribe-page-001	src/views/email-unsubscribe/__tests__/email-unsubscribe-page.test.tsx	Given	3	Unsubscribe service responds 400	L29-L31	covered		de0014f3
+email-unsubscribe-page-001	src/views/email-unsubscribe/__tests__/email-unsubscribe-page.test.tsx	When	1	User selects Unsubscribe	L38; L14-L26	covered		de0014f3
+email-unsubscribe-page-001	src/views/email-unsubscribe/__tests__/email-unsubscribe-page.test.tsx	Then	1	Page shows 'Something went wrong'	L40-L41	covered		de0014f3
+email-unsubscribe-page-002	src/views/email-unsubscribe/__tests__/email-unsubscribe-page.test.tsx	Given	1	User is signed out	L45	covered		de0014f3
+email-unsubscribe-page-002	src/views/email-unsubscribe/__tests__/email-unsubscribe-page.test.tsx	Given	2	Opens unsubscribe page without a token	L45	covered		de0014f3
+email-unsubscribe-page-002	src/views/email-unsubscribe/__tests__/email-unsubscribe-page.test.tsx	When	1	Page loads	L45	covered		de0014f3
+email-unsubscribe-page-002	src/views/email-unsubscribe/__tests__/email-unsubscribe-page.test.tsx	Then	1	An alert says 'Something went wrong'	L47-L48	covered		de0014f3
+email-unsubscribe-page-002	src/views/email-unsubscribe/__tests__/email-unsubscribe-page.test.tsx	Then	2	The Okou image is present	L49	covered		de0014f3
+email-unsubscribe-page-002	src/views/email-unsubscribe/__tests__/email-unsubscribe-page.test.tsx	Then	3	No buttons are available to submit an unsubscribe request	L50	covered		de0014f3
+email-unsubscribe-page-003	src/views/email-unsubscribe/__tests__/email-unsubscribe-page.test.tsx	Given	1	User is signed out	L60	covered		de0014f3
+email-unsubscribe-page-003	src/views/email-unsubscribe/__tests__/email-unsubscribe-page.test.tsx	Given	2	Opens unsubscribe page with a valid token	L61	covered		de0014f3
+email-unsubscribe-page-003	src/views/email-unsubscribe/__tests__/email-unsubscribe-page.test.tsx	Given	3	Unsubscribe service responds successfully	L54-L56	covered		de0014f3
+email-unsubscribe-page-003	src/views/email-unsubscribe/__tests__/email-unsubscribe-page.test.tsx	When	1	User selects the enabled Unsubscribe button	L63; L22	covered	Enabled state asserted in helper	de0014f3
+email-unsubscribe-page-003	src/views/email-unsubscribe/__tests__/email-unsubscribe-page.test.tsx	Then	1	Page shows 'Unsubscribed'	L65-L67	covered		de0014f3
+email-unsubscribe-page-003	src/views/email-unsubscribe/__tests__/email-unsubscribe-page.test.tsx	Then	2	Page says 'You will no longer receive system-initiated email notifications from Okou.'	L68-L72	covered		de0014f3
+hosted-site-access-001	src/views/hosted-site-authorization/__tests__/hosted-site-access.test.tsx	Given	1	Visitor is signed out	L45	covered		de0014f3
+hosted-site-access-001	src/views/hosted-site-authorization/__tests__/hosted-site-access.test.tsx	Given	2	Opens the website access page for a protected website path	L11; L13-L16; L46-L47	covered		de0014f3
+hosted-site-access-001	src/views/hosted-site-authorization/__tests__/hosted-site-access.test.tsx	When	1	Visitor views the page	L43-L48	covered		de0014f3
+hosted-site-access-001	src/views/hosted-site-authorization/__tests__/hosted-site-access.test.tsx	Then	1	Page says 'Verify access to this website'	L50-L53	covered		de0014f3
+hosted-site-access-001	src/views/hosted-site-authorization/__tests__/hosted-site-access.test.tsx	Then	2	Explains to sign in with an account that can access the website	L55-L57	covered		de0014f3
+hosted-site-access-001	src/views/hosted-site-authorization/__tests__/hosted-site-access.test.tsx	Then	3	Heading is used as the document title	L54	covered		de0014f3
+hosted-site-access-001	src/views/hosted-site-authorization/__tests__/hosted-site-access.test.tsx	Then	4	'Sign in' starts authorization	L58; L28-L31	covered		de0014f3
+hosted-site-access-001	src/views/hosted-site-authorization/__tests__/hosted-site-access.test.tsx	Then	5	'Sign in' returns to the original website path	L58; L32	covered		de0014f3
+hosted-site-access-001	src/views/hosted-site-authorization/__tests__/hosted-site-access.test.tsx	Then	6	'Back to Okou' links to the home page	L59; L18-L25	covered		de0014f3
+hosted-site-access-002	src/views/hosted-site-authorization/__tests__/hosted-site-access.test.tsx	Given	1	Visitor is signed in	L63-L67; page-helper.ts:L217-L225	covered		de0014f3
+hosted-site-access-002	src/views/hosted-site-authorization/__tests__/hosted-site-access.test.tsx	Given	2	Opens access page after an incomplete authorization for a protected path	L11; L66	covered		de0014f3
+hosted-site-access-002	src/views/hosted-site-authorization/__tests__/hosted-site-access.test.tsx	When	1	Visitor views the page	L63-L67	covered		de0014f3
+hosted-site-access-002	src/views/hosted-site-authorization/__tests__/hosted-site-access.test.tsx	Then	1	Page says 'Verify access to this website'	L69-L73	covered		de0014f3
+hosted-site-access-002	src/views/hosted-site-authorization/__tests__/hosted-site-access.test.tsx	Then	2	Invites them to continue verification with their current account	L74-L76	covered		de0014f3
+hosted-site-access-002	src/views/hosted-site-authorization/__tests__/hosted-site-access.test.tsx	Then	3	'Continue' starts authorization	L77; L28-L31	covered		de0014f3
+hosted-site-access-002	src/views/hosted-site-authorization/__tests__/hosted-site-access.test.tsx	Then	4	'Continue' targets the original path	L77; L32	covered		de0014f3
+hosted-site-access-002	src/views/hosted-site-authorization/__tests__/hosted-site-access.test.tsx	Then	5	'Switch account' is enabled	L78; L35-L40	covered		de0014f3
+hosted-site-access-002	src/views/hosted-site-authorization/__tests__/hosted-site-access.test.tsx	Then	6	Page does not claim they were denied access	L79-L81	covered		de0014f3
+hosted-site-access-003	src/views/hosted-site-authorization/__tests__/hosted-site-access.test.tsx	Given	1	Visitor opens the access page after the website session expired	L88	covered		de0014f3
+hosted-site-access-003	src/views/hosted-site-authorization/__tests__/hosted-site-access.test.tsx	Given	2	Website path ends in /report?view=summary	L11	covered		de0014f3
+hosted-site-access-003	src/views/hosted-site-authorization/__tests__/hosted-site-access.test.tsx	When	1	Visitor views the page	L85-L89	covered		de0014f3
+hosted-site-access-003	src/views/hosted-site-authorization/__tests__/hosted-site-access.test.tsx	Then	1	Page says 'Verify your access again'	L91-L94	covered		de0014f3
+hosted-site-access-003	src/views/hosted-site-authorization/__tests__/hosted-site-access.test.tsx	Then	2	That text is also the document title	L95	covered		de0014f3
+hosted-site-access-003	src/views/hosted-site-authorization/__tests__/hosted-site-access.test.tsx	Then	3	'Continue' starts a fresh authorization	L96; L28-L31	covered		de0014f3
+hosted-site-access-003	src/views/hosted-site-authorization/__tests__/hosted-site-access.test.tsx	Then	4	Authorization returns to /report?view=summary	L96; L32	covered		de0014f3
+hosted-site-access-003	src/views/hosted-site-authorization/__tests__/hosted-site-access.test.tsx	Then	5	'Switch account' is enabled	L97; L35-L40	covered		de0014f3
+hosted-site-access-004	src/views/hosted-site-authorization/__tests__/hosted-site-access.test.tsx	Given	1	Visitor opens the access page after being denied access	L101	covered		de0014f3
+hosted-site-access-004	src/views/hosted-site-authorization/__tests__/hosted-site-access.test.tsx	When	1	Visitor views the page	L101	covered		de0014f3
+hosted-site-access-004	src/views/hosted-site-authorization/__tests__/hosted-site-access.test.tsx	Then	1	Page says 'You can’t view this website'	L103-L106	covered		de0014f3
+hosted-site-access-004	src/views/hosted-site-authorization/__tests__/hosted-site-access.test.tsx	Then	2	That text is also the document title	L107	covered		de0014f3
+hosted-site-access-004	src/views/hosted-site-authorization/__tests__/hosted-site-access.test.tsx	Then	3	'Switch account' is enabled	L111; L35-L40	covered		de0014f3
+hosted-site-access-004	src/views/hosted-site-authorization/__tests__/hosted-site-access.test.tsx	Then	4	Page advises asking the person who shared the link to check access	L108-L110	covered		de0014f3
+hosted-site-access-005	src/views/hosted-site-authorization/__tests__/hosted-site-access.test.tsx	Given	1	Visitor opens the access page because a website dependency is unavailable	L118	covered		de0014f3
+hosted-site-access-005	src/views/hosted-site-authorization/__tests__/hosted-site-access.test.tsx	When	1	Visitor views the page	L115-L119	covered		de0014f3
+hosted-site-access-005	src/views/hosted-site-authorization/__tests__/hosted-site-access.test.tsx	Then	1	Page says 'This website is temporarily unavailable'	L121-L124	covered		de0014f3
+hosted-site-access-005	src/views/hosted-site-authorization/__tests__/hosted-site-access.test.tsx	Then	2	That text is also the document title	L125	covered		de0014f3
+email-subscription-settings-002	src/views/okou-page/__tests__/email-subscription-settings.test.tsx	Given	1	Email updates are off	L16; L19-L25; L48	covered		de0014f3
+email-subscription-settings-002	src/views/okou-page/__tests__/email-subscription-settings.test.tsx	Given	2	First preference save is delayed	L17-L18; L29-L31	covered		de0014f3
+email-subscription-settings-002	src/views/okou-page/__tests__/email-subscription-settings.test.tsx	Given	3	First preference save then fails	L32-L37; L54	covered		de0014f3
+email-subscription-settings-002	src/views/okou-page/__tests__/email-subscription-settings.test.tsx	When	1	User turns email updates on	L50	covered		de0014f3
+email-subscription-settings-002	src/views/okou-page/__tests__/email-subscription-settings.test.tsx	When	2	User waits for the failure	L54-L57	covered		de0014f3
+email-subscription-settings-002	src/views/okou-page/__tests__/email-subscription-settings.test.tsx	When	3	User toggles again	L60	covered		de0014f3
+email-subscription-settings-002	src/views/okou-page/__tests__/email-subscription-settings.test.tsx	Then	1	Control is temporarily disabled during the request	L51-L53; L55-L57	covered		de0014f3
+email-subscription-settings-002	src/views/okou-page/__tests__/email-subscription-settings.test.tsx	Then	2	Control returns to off after failure	L58	covered		de0014f3
+email-subscription-settings-002	src/views/okou-page/__tests__/email-subscription-settings.test.tsx	Then	3	Next toggle is accepted successfully	L39-L40; L61-L63	covered	Switch is non-optimistic (checked = server value), so it turns on only after a successful save	de0014f3
+email-subscription-settings-002	src/views/okou-page/__tests__/email-subscription-settings.test.tsx	Then	4	Email updates are left on	L61-L63	covered		de0014f3
+email-subscription-settings-003	src/views/okou-page/__tests__/email-subscription-settings.test.tsx	Given	1	Email subscription is enabled	L69	covered		de0014f3
+email-subscription-settings-003	src/views/okou-page/__tests__/email-subscription-settings.test.tsx	Given	2	Delivery status is no-email	L71	covered		de0014f3
+email-subscription-settings-003	src/views/okou-page/__tests__/email-subscription-settings.test.tsx	Given	3	No email address is available	L70	covered		de0014f3
+email-subscription-settings-003	src/views/okou-page/__tests__/email-subscription-settings.test.tsx	When	1	User opens email subscription settings	L75; L10-L13	covered		de0014f3
+email-subscription-settings-003	src/views/okou-page/__tests__/email-subscription-settings.test.tsx	Then	1	Page explains 'Email unavailable'	L77-L79	covered		de0014f3
+email-subscription-settings-003	src/views/okou-page/__tests__/email-subscription-settings.test.tsx	Then	2	Email updates switch remains checked	L80-L82	covered		de0014f3
+onboarding-team-redirect-002	src/views/onboarding-sources-first/__tests__/onboarding-team-redirect.test.tsx	Given	1	User is a non-administrator	L13	covered		de0014f3
+onboarding-team-redirect-002	src/views/onboarding-sources-first/__tests__/onboarding-team-redirect.test.tsx	Given	2	User needs onboarding	L11-L12	covered		de0014f3
+onboarding-team-redirect-002	src/views/onboarding-sources-first/__tests__/onboarding-team-redirect.test.tsx	Given	3	Opens the retired invite URL	L18	covered		de0014f3
+onboarding-team-redirect-002	src/views/onboarding-sources-first/__tests__/onboarding-team-redirect.test.tsx	Given	4	URL carries redeemCode=LAUNCH50	L18	covered		de0014f3
+onboarding-team-redirect-002	src/views/onboarding-sources-first/__tests__/onboarding-team-redirect.test.tsx	When	1	The URL loads	L16-L19	covered		de0014f3
+onboarding-team-redirect-002	src/views/onboarding-sources-first/__tests__/onboarding-team-redirect.test.tsx	Then	1	User is taken to the experience question	L21-L26	covered		de0014f3
+onboarding-team-redirect-002	src/views/onboarding-sources-first/__tests__/onboarding-team-redirect.test.tsx	Then	2	Redeem code remains in the URL	L27-L29	covered		de0014f3
+permission-allow-page-003	src/views/permission-allow/__tests__/permission-allow-page.test.tsx	Given	1	User is confirming a permission grant	L75-L82	covered		de0014f3
+permission-allow-page-003	src/views/permission-allow/__tests__/permission-allow-page.test.tsx	Given	2	Grant has a chat-continuation callback	L37-L40; L75	covered		de0014f3
+permission-allow-page-003	src/views/permission-allow/__tests__/permission-allow-page.test.tsx	Given	3	Callback is in progress	L51-L62; L83	covered		de0014f3
+permission-allow-page-003	src/views/permission-allow/__tests__/permission-allow-page.test.tsx	Given	4	Continuation request targets the scenario's agent, thread and prompt	L56-L60	covered	request identity	de0014f3
+permission-allow-page-003	src/views/permission-allow/__tests__/permission-allow-page.test.tsx	When	1	Connector permission-updated notification arrives before the callback succeeds	L78-L80; L84-L86; L98	covered		de0014f3
+permission-allow-page-003	src/views/permission-allow/__tests__/permission-allow-page.test.tsx	Then	1	Confirmation remains pending	L94	covered	Checked right after the trigger without awaiting the notification-driven grants reload; likely effective since the post-apply reload already returns the same grant	de0014f3
+permission-allow-page-003	src/views/permission-allow/__tests__/permission-allow-page.test.tsx	Then	2	Confirmation control is disabled	L94	covered	Checked right after the trigger without awaiting the notification-driven grants reload; likely effective since the post-apply reload already returns the same grant	de0014f3
+permission-allow-page-003	src/views/permission-allow/__tests__/permission-allow-page.test.tsx	Then	3	No permissions-updated message	L95	covered	Checked right after the trigger without awaiting the notification-driven grants reload; likely effective since the post-apply reload already returns the same grant	de0014f3
+permission-allow-page-003	src/views/permission-allow/__tests__/permission-allow-page.test.tsx	Then	4	No already-allowed message	L96	covered	Checked right after the trigger without awaiting the notification-driven grants reload; likely effective since the post-apply reload already returns the same grant	de0014f3
+permission-allow-page-003	src/views/permission-allow/__tests__/permission-allow-page.test.tsx	Then	5	Once the callback succeeds the page reports permissions were updated	L98-L101	covered		de0014f3
+permission-allow-page-004	src/views/permission-allow/__tests__/permission-allow-page.test.tsx	Given	1	User is confirming a permission grant	L75-L82	covered		de0014f3
+permission-allow-page-004	src/views/permission-allow/__tests__/permission-allow-page.test.tsx	Given	2	Grant has a chat-continuation callback	L37-L40; L75	covered		de0014f3
+permission-allow-page-004	src/views/permission-allow/__tests__/permission-allow-page.test.tsx	Given	3	Callback is in progress	L51-L62; L83	covered		de0014f3
+permission-allow-page-004	src/views/permission-allow/__tests__/permission-allow-page.test.tsx	Given	4	Continuation request targets the scenario's agent, thread and prompt	L56-L60	covered	request identity	de0014f3
+permission-allow-page-004	src/views/permission-allow/__tests__/permission-allow-page.test.tsx	When	1	Connector permission-updated notification arrives	L78-L80; L84-L86	covered		de0014f3
+permission-allow-page-004	src/views/permission-allow/__tests__/permission-allow-page.test.tsx	When	2	The callback fails	L63-L70; L106	covered		de0014f3
+permission-allow-page-004	src/views/permission-allow/__tests__/permission-allow-page.test.tsx	Then	1	Page reports that permissions could not be updated	L107-L109	covered		de0014f3
+permission-allow-page-004	src/views/permission-allow/__tests__/permission-allow-page.test.tsx	Then	2	Confirm is disabled	L110	covered		de0014f3
+permission-allow-page-004	src/views/permission-allow/__tests__/permission-allow-page.test.tsx	Then	3	Permission-duration control is disabled	L111-L113	covered		de0014f3
+permission-allow-page-004	src/views/permission-allow/__tests__/permission-allow-page.test.tsx	Then	4	No already-allowed message appears	L114	covered		de0014f3
+permission-allow-page-006	src/views/permission-allow/__tests__/permission-allow-page.test.tsx	Given	1	Permission is effectively allowed by policy	L134	covered		de0014f3
+permission-allow-page-006	src/views/permission-allow/__tests__/permission-allow-page.test.tsx	Given	2	Existing grant expires one hour after the current time	L121; L133; L135-L137; permission-test-fixtures.ts:L11-L12	covered		de0014f3
+permission-allow-page-006	src/views/permission-allow/__tests__/permission-allow-page.test.tsx	When	1	User opens the permission page	L139	covered		de0014f3
+permission-allow-page-006	src/views/permission-allow/__tests__/permission-allow-page.test.tsx	Then	1	Page says 'Already allowed'	L141	covered		de0014f3
+permission-allow-page-006	src/views/permission-allow/__tests__/permission-allow-page.test.tsx	Then	2	No duration indication	L142-L144	covered	Duration label and 'Permission duration' combobox render together	de0014f3
+permission-allow-page-006	src/views/permission-allow/__tests__/permission-allow-page.test.tsx	Then	3	No expired indication	L122; L145	covered		de0014f3
+permission-allow-page-006	src/views/permission-allow/__tests__/permission-allow-page.test.tsx	Then	4	No Confirm button	L146-L150	covered		de0014f3
+permission-allow-page-007	src/views/permission-allow/__tests__/permission-allow-page.test.tsx	Given	1	Permission is already denied by an existing permanent denial	L127; L135-L137	covered		de0014f3
+permission-allow-page-007	src/views/permission-allow/__tests__/permission-allow-page.test.tsx	When	1	User opens a page to deny that permission	L139; L34	covered		de0014f3
+permission-allow-page-007	src/views/permission-allow/__tests__/permission-allow-page.test.tsx	Then	1	Page says 'Already denied'	L141	covered		de0014f3
+permission-allow-page-007	src/views/permission-allow/__tests__/permission-allow-page.test.tsx	Then	2	No duration	L142-L144	covered		de0014f3
+permission-allow-page-007	src/views/permission-allow/__tests__/permission-allow-page.test.tsx	Then	3	No expiry	L128; L145	covered		de0014f3
+permission-allow-page-007	src/views/permission-allow/__tests__/permission-allow-page.test.tsx	Then	4	No Confirm button	L146-L150	covered		de0014f3
+permission-allow-page-008	src/views/permission-allow/__tests__/permission-allow-page.test.tsx	Given	1	Older link uses the ref connector parameter	L32; L163	covered		de0014f3
+permission-allow-page-008	src/views/permission-allow/__tests__/permission-allow-page.test.tsx	Given	2	Link denies Slack access	L32-L34; L163	covered		de0014f3
+permission-allow-page-008	src/views/permission-allow/__tests__/permission-allow-page.test.tsx	Given	3	Permission currently has an allow grant	L157-L161	covered		de0014f3
+permission-allow-page-008	src/views/permission-allow/__tests__/permission-allow-page.test.tsx	When	1	User confirms the denial	L164-L167	covered		de0014f3
+permission-allow-page-008	src/views/permission-allow/__tests__/permission-allow-page.test.tsx	Then	1	Page reports 'Permissions denied'	L169-L171	covered		de0014f3
+permission-allow-page-008	src/views/permission-allow/__tests__/permission-allow-page.test.tsx	Then	2	Page shows no expiry	L172	covered		de0014f3
+permission-allow-page-008	src/views/permission-allow/__tests__/permission-allow-page.test.tsx	Then	3	Submitted deny is permanent (no expiresIn)	L179-L181	covered		de0014f3
+permission-allow-page-008	src/views/permission-allow/__tests__/permission-allow-page.test.tsx	Then	4	Submitted deny is for admin.analytics:read on Slack	L173-L178	covered		de0014f3
+permission-allow-page-009	src/views/permission-allow/__tests__/permission-allow-page.test.tsx	Given	1	Existing allow grant expires at invalid value not-a-date	L184; L189-L191	covered		de0014f3
+permission-allow-page-009	src/views/permission-allow/__tests__/permission-allow-page.test.tsx	When	1	User opens a permission page with a 24-hour grant option	L193; L35	covered		de0014f3
+permission-allow-page-009	src/views/permission-allow/__tests__/permission-allow-page.test.tsx	Then	1	Page asks the user to update permissions	L195-L197	covered		de0014f3
+permission-allow-page-009	src/views/permission-allow/__tests__/permission-allow-page.test.tsx	Then	2	Grant is not treated as already allowed	L203	covered		de0014f3
+permission-allow-page-009	src/views/permission-allow/__tests__/permission-allow-page.test.tsx	Then	3	Confirm is enabled	L202	covered		de0014f3
+permission-allow-page-009	src/views/permission-allow/__tests__/permission-allow-page.test.tsx	Then	4	Duration is 24 hours	L198-L201	covered		de0014f3
+permission-allow-page-010	src/views/permission-allow/__tests__/permission-allow-page.test.tsx	Given	1	Existing allow grant expires exactly at current time 2030-01-01T00:00:00.000Z	L184; L187; L189-L191	covered		de0014f3
+permission-allow-page-010	src/views/permission-allow/__tests__/permission-allow-page.test.tsx	When	1	User opens a permission page with a 24-hour grant option	L193; L35	covered		de0014f3
+permission-allow-page-010	src/views/permission-allow/__tests__/permission-allow-page.test.tsx	Then	1	Page asks the user to update permissions	L195-L197	covered		de0014f3
+permission-allow-page-010	src/views/permission-allow/__tests__/permission-allow-page.test.tsx	Then	2	Grant is not treated as already allowed	L203	covered		de0014f3
+permission-allow-page-010	src/views/permission-allow/__tests__/permission-allow-page.test.tsx	Then	3	Confirm is enabled	L202	covered		de0014f3
+permission-allow-page-010	src/views/permission-allow/__tests__/permission-allow-page.test.tsx	Then	4	Duration is 24 hours	L198-L201	covered		de0014f3
+permission-batch-page-003	src/views/permission-allow/__tests__/permission-batch-page.test.tsx	Given	1	User is asked to allow Slack chat:write and GitHub issues:read	L22-L25; L37; L97-L99	covered		de0014f3
+permission-batch-page-003	src/views/permission-allow/__tests__/permission-batch-page.test.tsx	Given	2	Requested duration is one hour	L39	covered		de0014f3
+permission-batch-page-003	src/views/permission-allow/__tests__/permission-batch-page.test.tsx	Given	3	My Okou is disabled	L74	covered		de0014f3
+permission-batch-page-003	src/views/permission-allow/__tests__/permission-batch-page.test.tsx	Given	4	Connector chat-account access is enabled	L100-L104	covered	Switch retired upstream; shared connector scope is the current default (upstream ledger row 559: -003 replaces -001)	de0014f3
+permission-batch-page-003	src/views/permission-allow/__tests__/permission-batch-page.test.tsx	Given	5	Continuation request targets the scenario's agent, thread and prompt	L83-L88	covered	request identity	de0014f3
+permission-batch-page-003	src/views/permission-allow/__tests__/permission-batch-page.test.tsx	When	1	User allows both permissions	L105-L108	covered		de0014f3
+permission-batch-page-003	src/views/permission-allow/__tests__/permission-batch-page.test.tsx	When	2	Chat continuation succeeds	L94	covered		de0014f3
+permission-batch-page-003	src/views/permission-allow/__tests__/permission-batch-page.test.tsx	Then	1	Both one-hour grants are applied	L142; L117-L133	covered		de0014f3
+permission-batch-page-003	src/views/permission-allow/__tests__/permission-batch-page.test.tsx	Then	2	Page shows 2 of 2 permissions allowed	L142; L116	covered		de0014f3
+permission-batch-page-003	src/views/permission-allow/__tests__/permission-batch-page.test.tsx	Then	3	Chat has continued	L139-L141	covered		de0014f3
+permission-batch-page-003	src/views/permission-allow/__tests__/permission-batch-page.test.tsx	Then	4	Displayed scope applies to each connector across all chats and agents	L100-L104	covered		de0014f3
+permission-batch-page-002	src/views/permission-allow/__tests__/permission-batch-page.test.tsx	Given	1	User is asked to allow Slack chat:write and GitHub issues:read	L22-L25; L37; L97-L99	covered		de0014f3
+permission-batch-page-002	src/views/permission-allow/__tests__/permission-batch-page.test.tsx	Given	2	Requested duration is one hour	L39	covered		de0014f3
+permission-batch-page-002	src/views/permission-allow/__tests__/permission-batch-page.test.tsx	Given	3	My Okou is disabled	L74	covered		de0014f3
+permission-batch-page-002	src/views/permission-allow/__tests__/permission-batch-page.test.tsx	Given	4	Connector chat-account access is disabled	L100-L104	upstream-amended	Chat-account switch retired upstream (upstream ledger row 562); the test runs the only remaining mode, checked by the shared-connector scope note	de0014f3
+permission-batch-page-002	src/views/permission-allow/__tests__/permission-batch-page.test.tsx	Given	5	Continuation request targets the scenario's agent, thread and prompt	L83-L88	covered	request identity	de0014f3
+permission-batch-page-002	src/views/permission-allow/__tests__/permission-batch-page.test.tsx	When	1	User allows both permissions	L105-L108	covered		de0014f3
+permission-batch-page-002	src/views/permission-allow/__tests__/permission-batch-page.test.tsx	When	2	Chat continuation fails	L89-L93	covered		de0014f3
+permission-batch-page-002	src/views/permission-allow/__tests__/permission-batch-page.test.tsx	Then	1	Both one-hour grants remain allowed	L151; L117-L133	covered		de0014f3
+permission-batch-page-002	src/views/permission-allow/__tests__/permission-batch-page.test.tsx	Then	2	Page shows 2 of 2 permissions allowed	L151; L116	covered		de0014f3
+permission-batch-page-002	src/views/permission-allow/__tests__/permission-batch-page.test.tsx	Then	3	Page reports permissions were allowed but the chat could not continue	L148-L150; L152-L155	covered		de0014f3
+permission-batch-page-002	src/views/permission-allow/__tests__/permission-batch-page.test.tsx	Then	4	Displayed scope applies to the agent, not only the current task	L100-L104	upstream-amended	Agent-scope copy retired upstream (upstream ledger row 562); amended claim carried by the 'Applies to this connector across all your chats and agents.' check	de0014f3
+permission-batch-page-006	src/views/permission-allow/__tests__/permission-batch-page.test.tsx	Given	1	User dismisses a batch permission request	L181-L195	covered		de0014f3
+permission-batch-page-006	src/views/permission-allow/__tests__/permission-batch-page.test.tsx	Given	2	User navigates to a different agent's batch request	L197-L207	covered		de0014f3
+permission-batch-page-006	src/views/permission-allow/__tests__/permission-batch-page.test.tsx	Given	3	Next request is for GitHub issues:read	L199	covered		de0014f3
+permission-batch-page-006	src/views/permission-allow/__tests__/permission-batch-page.test.tsx	Given	4	Next request has a different chat continuation	L200-L201	covered		de0014f3
+permission-batch-page-006	src/views/permission-allow/__tests__/permission-batch-page.test.tsx	When	1	User allows the next agent's permission	L208-L214	covered		de0014f3
+permission-batch-page-006	src/views/permission-allow/__tests__/permission-batch-page.test.tsx	Then	1	Next request uses a one-hour grant	L211-L213; L219-L224	covered		de0014f3
+permission-batch-page-006	src/views/permission-allow/__tests__/permission-batch-page.test.tsx	Then	2	Grant is for the next agent only	L219-L224; L225-L231	upstream-amended	Grants are connector-wide without agentId (upstream ledger row 564); carried by the single github write and the second agent's continuation	de0014f3
+permission-batch-page-006	src/views/permission-allow/__tests__/permission-batch-page.test.tsx	Then	3	Continuation uses the next thread and prompt	L225-L231	covered		de0014f3
+permission-batch-page-008	src/views/permission-allow/__tests__/permission-batch-page.test.tsx	Given	1	Both requested permissions are allowed by policy by default	L22-L25; L235	covered		de0014f3
+permission-batch-page-008	src/views/permission-allow/__tests__/permission-batch-page.test.tsx	When	1	User opens the batch page without a callback	L238; L41-L44	covered		de0014f3
+permission-batch-page-008	src/views/permission-allow/__tests__/permission-batch-page.test.tsx	Then	1	Page shows 'Permissions allowed'	L240-L242	covered		de0014f3
+permission-batch-page-008	src/views/permission-allow/__tests__/permission-batch-page.test.tsx	Then	2	Page shows the chat:write description	L243; permission-test-fixtures.ts:L44	covered		de0014f3
+permission-batch-page-008	src/views/permission-allow/__tests__/permission-batch-page.test.tsx	Then	3	No grant submission is required	L244	covered		de0014f3
+permission-batch-page-009	src/views/permission-allow/__tests__/permission-batch-page.test.tsx	Given	1	Metadata for one requested connector cannot be found	L248; permission-test-fixtures.ts:L35-L39	covered		de0014f3
+permission-batch-page-009	src/views/permission-allow/__tests__/permission-batch-page.test.tsx	When	1	User opens the batch permission page	L251	covered		de0014f3
+permission-batch-page-009	src/views/permission-allow/__tests__/permission-batch-page.test.tsx	When	2	User chooses Not now	L259	covered		de0014f3
+permission-batch-page-009	src/views/permission-allow/__tests__/permission-batch-page.test.tsx	Then	1	Page says it could not verify all permissions	L253-L257	covered		de0014f3
+permission-batch-page-009	src/views/permission-allow/__tests__/permission-batch-page.test.tsx	Then	2	Page says none can be changed	L253-L257	covered		de0014f3
+permission-batch-page-009	src/views/permission-allow/__tests__/permission-batch-page.test.tsx	Then	3	Allowing all permissions is disabled	L258	covered		de0014f3
+permission-batch-page-009	src/views/permission-allow/__tests__/permission-batch-page.test.tsx	Then	4	Dismissing reports that no permissions were changed	L261-L263	covered		de0014f3
+permission-batch-page-009	src/views/permission-allow/__tests__/permission-batch-page.test.tsx	Extra	1	Asserts no grant apply request was sent	-	removed	"Assertion removed in 94ffae58; the Then is carried by the ""No permissions were changed."" message"	de0014f3
+permission-batch-page-011	src/views/permission-allow/__tests__/permission-batch-page.test.tsx	Given	1	Batch request includes two permissions	L22-L25; L271-L273	covered		de0014f3
+permission-batch-page-011	src/views/permission-allow/__tests__/permission-batch-page.test.tsx	Given	2	Service returns a successful response with no grant acknowledgments	L268; permission-test-fixtures.ts:L87-L89	covered		de0014f3
+permission-batch-page-011	src/views/permission-allow/__tests__/permission-batch-page.test.tsx	When	1	User attempts to allow all permissions and continue the chat	L271-L277	covered		de0014f3
+permission-batch-page-011	src/views/permission-allow/__tests__/permission-batch-page.test.tsx	Then	1	Page shows an alert	L279-L281	covered		de0014f3
+permission-batch-page-011	src/views/permission-allow/__tests__/permission-batch-page.test.tsx	Then	2	Page shows 0 of 2 permissions allowed	L282	covered		de0014f3
+permission-batch-page-011	src/views/permission-allow/__tests__/permission-batch-page.test.tsx	Then	3	Allowing all is disabled	L283	covered		de0014f3
+permission-batch-page-011	src/views/permission-allow/__tests__/permission-batch-page.test.tsx	Then	4	No completed 'Permissions allowed' state	L284	covered		de0014f3
+permission-batch-page-011	src/views/permission-allow/__tests__/permission-batch-page.test.tsx	Extra	1	Asserts no chat continuation was sent	-	removed	Assertion removed in 94ffae58 (not stated in the Then)	de0014f3
+notification-navigation-001	src/views/notifications/__tests__/notification-navigation.test.tsx	Given	1	User is viewing Agents in the app	L11-L14	covered		de0014f3
+notification-navigation-001	src/views/notifications/__tests__/notification-navigation.test.tsx	Given	2	A chat notification arrives with a relative conversation URL	L10; L17	covered	Delivered via the service-worker NOTIFICATION_CLICK message	de0014f3
+notification-navigation-001	src/views/notifications/__tests__/notification-navigation.test.tsx	When	1	User clicks the notification	L16-L18	covered		de0014f3
+notification-navigation-001	src/views/notifications/__tests__/notification-navigation.test.tsx	Then	1	App navigates to that chat conversation	L20-L22	covered		de0014f3
+service-status-notice-001	src/views/router/__tests__/service-status-notice.test.tsx	Given	1	User is on the Okou production host	L27	covered		de0014f3
+service-status-notice-001	src/views/router/__tests__/service-status-notice.test.tsx	Given	2	An active incident reports delayed API requests	L16-L26	covered		de0014f3
+service-status-notice-001	src/views/router/__tests__/service-status-notice.test.tsx	When	1	User views the page	L32	covered		de0014f3
+service-status-notice-001	src/views/router/__tests__/service-status-notice.test.tsx	When	2	User dismisses the service update	L41-L47	covered		de0014f3
+service-status-notice-001	src/views/router/__tests__/service-status-notice.test.tsx	Then	1	Incident appears as Investigating	L33-L34	covered		de0014f3
+service-status-notice-001	src/views/router/__tests__/service-status-notice.test.tsx	Then	2	Incident has a link to its status page	L35-L39	covered		de0014f3
+service-status-notice-001	src/views/router/__tests__/service-status-notice.test.tsx	Then	3	Dismissing removes the service update region	L48-L52	covered		de0014f3
+service-status-notice-003	src/views/router/__tests__/service-status-notice.test.tsx	Given	1	User is on mobile	L15; L56	covered		de0014f3
+service-status-notice-003	src/views/router/__tests__/service-status-notice.test.tsx	Given	2	User is on the Okou production host	L27	covered		de0014f3
+service-status-notice-003	src/views/router/__tests__/service-status-notice.test.tsx	Given	3	User has bottom navigation	L57-L59	covered	'Main navigation' is the PWA bottom navigation landmark	de0014f3
+service-status-notice-003	src/views/router/__tests__/service-status-notice.test.tsx	Given	4	An active incident reports delayed API requests	L16-L26	covered		de0014f3
+service-status-notice-003	src/views/router/__tests__/service-status-notice.test.tsx	When	1	User opens the home page	L27	covered		de0014f3
+service-status-notice-003	src/views/router/__tests__/service-status-notice.test.tsx	Then	1	Main navigation is visible	L57-L59	covered		de0014f3
+service-status-notice-003	src/views/router/__tests__/service-status-notice.test.tsx	Then	2	Incident status is visible	L60-L61	covered		de0014f3
+hosted-site-authorization-002	src/views/hosted-site-authorization/__tests__/hosted-site-authorization.test.tsx	Given	1	User is signed in	L47-L51	covered		de0014f3
+hosted-site-authorization-002	src/views/hosted-site-authorization/__tests__/hosted-site-authorization.test.tsx	Given	2	User starts authorization for a website	L12-L23; L49	covered		de0014f3
+hosted-site-authorization-002	src/views/hosted-site-authorization/__tests__/hosted-site-authorization.test.tsx	Given	3	Website access is denied	L26; L37-L44	covered		de0014f3
+hosted-site-authorization-002	src/views/hosted-site-authorization/__tests__/hosted-site-authorization.test.tsx	Given	4	Authorization request targets the scenario's site	L40	covered	request identity	de0014f3
+hosted-site-authorization-002	src/views/hosted-site-authorization/__tests__/hosted-site-authorization.test.tsx	When	1	Authorization returns 403 Forbidden	L26; L41-L43	covered		de0014f3
+hosted-site-authorization-002	src/views/hosted-site-authorization/__tests__/hosted-site-authorization.test.tsx	Then	1	Browser navigates to the dedicated access page	L36; L53; L56-L58	covered		de0014f3
+hosted-site-authorization-002	src/views/hosted-site-authorization/__tests__/hosted-site-authorization.test.tsx	Then	2	Access page URL carries the website root URL	L54; L57	covered		de0014f3
+hosted-site-authorization-002	src/views/hosted-site-authorization/__tests__/hosted-site-authorization.test.tsx	Then	3	Access page URL carries reason denied	L55; L57	covered		de0014f3
+hosted-site-authorization-004	src/views/hosted-site-authorization/__tests__/hosted-site-authorization.test.tsx	Given	1	User starts site authorization	L47-L51	covered		de0014f3
+hosted-site-authorization-004	src/views/hosted-site-authorization/__tests__/hosted-site-authorization.test.tsx	Given	2	Return destination is /report?view=summary	L19-L21; L31; L49	covered		de0014f3
+hosted-site-authorization-004	src/views/hosted-site-authorization/__tests__/hosted-site-authorization.test.tsx	Given	3	Authorization request targets the scenario's site	L40	covered	request identity	de0014f3
+hosted-site-authorization-004	src/views/hosted-site-authorization/__tests__/hosted-site-authorization.test.tsx	When	1	Authorization returns 500 Internal Server Error	L28-L30; L41-L43	covered		de0014f3
+hosted-site-authorization-004	src/views/hosted-site-authorization/__tests__/hosted-site-authorization.test.tsx	Then	1	Browser navigates to the access page	L36; L53; L56-L58	covered		de0014f3
+hosted-site-authorization-004	src/views/hosted-site-authorization/__tests__/hosted-site-authorization.test.tsx	Then	2	Access page targets https://demo.okou.app/report?view=summary	L8; L54; L57	covered		de0014f3
+hosted-site-authorization-004	src/views/hosted-site-authorization/__tests__/hosted-site-authorization.test.tsx	Then	3	Access page URL carries reason unavailable	L55; L57	covered		de0014f3
+hosted-site-authorization-006	src/views/hosted-site-authorization/__tests__/hosted-site-authorization.test.tsx	Given	1	Signed-in user has no active organization or memberships	L68-L71	covered		de0014f3
+hosted-site-authorization-006	src/views/hosted-site-authorization/__tests__/hosted-site-authorization.test.tsx	Given	2	User opens the hosted-site authorization bridge	L63-L67	covered		de0014f3
+hosted-site-authorization-006	src/views/hosted-site-authorization/__tests__/hosted-site-authorization.test.tsx	When	1	User is sent to organization selection	L74-L76	covered		de0014f3
+hosted-site-authorization-006	src/views/hosted-site-authorization/__tests__/hosted-site-authorization.test.tsx	Then	1	Complete bridge URL is preserved as the continuation destination	L77-L79	covered		de0014f3
+shared-thread-presentation-001	src/views/shared-thread-page/__tests__/shared-thread-presentation.test.tsx	Given	1	Public conversation API returns not found	L15-L19	covered		de0014f3
+shared-thread-presentation-001	src/views/shared-thread-page/__tests__/shared-thread-presentation.test.tsx	Given	2	Signed-out visitor on app.okou.ai host	L21; shared-thread-test-helpers.ts:L37	covered		de0014f3
+shared-thread-presentation-001	src/views/shared-thread-page/__tests__/shared-thread-presentation.test.tsx	When	1	Shared conversation page loads	L21	covered		de0014f3
+shared-thread-presentation-001	src/views/shared-thread-page/__tests__/shared-thread-presentation.test.tsx	Then	1	Page shows You can't view this chat	L23-L25	covered		de0014f3
+shared-thread-presentation-001	src/views/shared-thread-page/__tests__/shared-thread-presentation.test.tsx	Then	2	Sign-in links redirect back to the current URL	L26-L33	covered	origin/path checks at L30-L31 confirm these are sign-in links	de0014f3
+shared-thread-presentation-001	src/views/shared-thread-page/__tests__/shared-thread-presentation.test.tsx	Then	3	Okou link points to https://app.okou.ai	L34	covered		de0014f3
+shared-thread-presentation-001	src/views/shared-thread-page/__tests__/shared-thread-presentation.test.tsx	Then	4	Sign up link points to the app.okou.ai sign-up destination	L35-L38	covered		de0014f3
+shared-thread-presentation-002	src/views/shared-thread-page/__tests__/shared-thread-presentation.test.tsx	Given	1	Public conversation titled Public launch plan	L48; shared-thread-test-helpers.ts:L18	covered		de0014f3
+shared-thread-presentation-002	src/views/shared-thread-page/__tests__/shared-thread-presentation.test.tsx	Given	2	Conversation contains user and assistant messages	L49-L56	covered		de0014f3
+shared-thread-presentation-002	src/views/shared-thread-page/__tests__/shared-thread-presentation.test.tsx	Given	3	Assistant content has Markdown headings and bold text	L55	covered		de0014f3
+shared-thread-presentation-002	src/views/shared-thread-page/__tests__/shared-thread-presentation.test.tsx	Given	4	Dark color scheme is preferred	L42-L44	covered		de0014f3
+shared-thread-presentation-002	src/views/shared-thread-page/__tests__/shared-thread-presentation.test.tsx	When	1	Signed-out visitor opens it on app.okou.ai	L62; shared-thread-test-helpers.ts:L37	covered		de0014f3
+shared-thread-presentation-002	src/views/shared-thread-page/__tests__/shared-thread-presentation.test.tsx	Then	1	Title renders	L70	covered		de0014f3
+shared-thread-presentation-002	src/views/shared-thread-page/__tests__/shared-thread-presentation.test.tsx	Then	2	User and assistant messages render	L64-L74	covered		de0014f3
+shared-thread-presentation-002	src/views/shared-thread-page/__tests__/shared-thread-presentation.test.tsx	Then	3	Primary is an H1	L67-L69	covered		de0014f3
+shared-thread-presentation-002	src/views/shared-thread-page/__tests__/shared-thread-presentation.test.tsx	Then	4	Secondary is an H2	L64-L66	covered		de0014f3
+shared-thread-presentation-002	src/views/shared-thread-page/__tests__/shared-thread-presentation.test.tsx	Then	5	public preview is bold	L72-L74	covered		de0014f3
+shared-thread-presentation-002	src/views/shared-thread-page/__tests__/shared-thread-presentation.test.tsx	Then	6	No rich-content loading indicator remains	L75	covered		de0014f3
+shared-thread-presentation-002	src/views/shared-thread-page/__tests__/shared-thread-presentation.test.tsx	Then	7	Okou brand link shows the light wordmark	L78-L81	covered		de0014f3
+shared-thread-presentation-002	src/views/shared-thread-page/__tests__/shared-thread-presentation.test.tsx	Then	8	Okou brand link targets https://app.okou.ai	L76-L77	covered		de0014f3
+shared-thread-presentation-005	src/views/shared-thread-page/__tests__/shared-thread-presentation.test.tsx	Given	1	Signed-out visitor	L101; shared-thread-test-helpers.ts:L37	covered		de0014f3
+shared-thread-presentation-005	src/views/shared-thread-page/__tests__/shared-thread-presentation.test.tsx	Given	2	User prompt contains https://example.com/report	L85-L98	covered		de0014f3
+shared-thread-presentation-005	src/views/shared-thread-page/__tests__/shared-thread-presentation.test.tsx	Given	3	User prompt contains literal **bold**	L94	covered		de0014f3
+shared-thread-presentation-005	src/views/shared-thread-page/__tests__/shared-thread-presentation.test.tsx	When	1	Prompt renders	L101-L105	covered		de0014f3
+shared-thread-presentation-005	src/views/shared-thread-page/__tests__/shared-thread-presentation.test.tsx	Then	1	URL is rendered as a link to that URL	L107-L108	covered		de0014f3
+shared-thread-presentation-005	src/views/shared-thread-page/__tests__/shared-thread-presentation.test.tsx	Then	2	Link opens in a new tab	L109	covered		de0014f3
+shared-thread-presentation-005	src/views/shared-thread-page/__tests__/shared-thread-presentation.test.tsx	Then	3	Link rel is noopener noreferrer	L110	covered		de0014f3
+shared-thread-presentation-005	src/views/shared-thread-page/__tests__/shared-thread-presentation.test.tsx	Then	4	Surrounding text remains visible	L103-L106	covered		de0014f3
+shared-thread-presentation-005	src/views/shared-thread-page/__tests__/shared-thread-presentation.test.tsx	Then	5	**bold** stays literal rather than rendered as Markdown	L103-L105	covered		de0014f3
+shared-thread-attachments-001	src/views/shared-thread-page/__tests__/shared-thread-attachments.test.tsx	Given	1	Signed-out visitor	L23; shared-thread-test-helpers.ts:L37	covered		de0014f3
+shared-thread-attachments-001	src/views/shared-thread-page/__tests__/shared-thread-attachments.test.tsx	Given	2	Shared prompt has a PNG screenshot attachment	L39-L44	covered		de0014f3
+shared-thread-attachments-001	src/views/shared-thread-page/__tests__/shared-thread-attachments.test.tsx	Given	3	Shared prompt has a PDF attachment	L45-L50	covered		de0014f3
+shared-thread-attachments-001	src/views/shared-thread-page/__tests__/shared-thread-attachments.test.tsx	When	1	Visitor views the attachments	L54	covered		de0014f3
+shared-thread-attachments-001	src/views/shared-thread-page/__tests__/shared-thread-attachments.test.tsx	Then	1	Screenshot links to its original file	L59; L27-L28	covered		de0014f3
+shared-thread-attachments-001	src/views/shared-thread-page/__tests__/shared-thread-attachments.test.tsx	Then	2	PDF links to its original file	L60; L27-L28	covered		de0014f3
+shared-thread-attachments-001	src/views/shared-thread-page/__tests__/shared-thread-attachments.test.tsx	Then	3	Both attachments open in a new tab	L29 (via L59-L60)	covered		de0014f3
+shared-thread-attachments-001	src/views/shared-thread-page/__tests__/shared-thread-attachments.test.tsx	Then	4	Both attachments open safely (noopener noreferrer)	L30 (via L59-L60)	covered		de0014f3
+shared-thread-attachments-001	src/views/shared-thread-page/__tests__/shared-thread-attachments.test.tsx	Then	5	Screenshot thumbnail is shown	L54	covered		de0014f3
+shared-thread-attachments-001	src/views/shared-thread-page/__tests__/shared-thread-attachments.test.tsx	Then	6	Thumbnail uses the 480x320 variant	L55-L58	covered		de0014f3
+shared-thread-attachments-002	src/views/shared-thread-page/__tests__/shared-thread-attachments.test.tsx	Given	1	Visitor views an unlinked shared Markdown image	L64-L68	covered		de0014f3
+shared-thread-attachments-002	src/views/shared-thread-page/__tests__/shared-thread-attachments.test.tsx	When	1	The image loads	L70-L72	covered		de0014f3
+shared-thread-attachments-002	src/views/shared-thread-page/__tests__/shared-thread-attachments.test.tsx	Then	1	An 800x720 thumbnail is shown	L70-L76	covered		de0014f3
+shared-thread-attachments-002	src/views/shared-thread-page/__tests__/shared-thread-attachments.test.tsx	Then	2	Link destination remains the image URL	L77	covered		de0014f3
+shared-thread-attachments-004	src/views/shared-thread-page/__tests__/shared-thread-attachments.test.tsx	Given	1	Prompt has no text	L84	covered		de0014f3
+shared-thread-attachments-004	src/views/shared-thread-page/__tests__/shared-thread-attachments.test.tsx	Given	2	Prompt has an SVG attachment	L85-L92	covered		de0014f3
+shared-thread-attachments-004	src/views/shared-thread-page/__tests__/shared-thread-attachments.test.tsx	When	1	Visitor views the attachment	L95	covered		de0014f3
+shared-thread-attachments-004	src/views/shared-thread-page/__tests__/shared-thread-attachments.test.tsx	Then	1	Attachment is a link to the original file	L96-L97	covered		de0014f3
+shared-thread-attachments-004	src/views/shared-thread-page/__tests__/shared-thread-attachments.test.tsx	Then	2	Link opens in a new tab	L98	covered		de0014f3
+shared-thread-attachments-004	src/views/shared-thread-page/__tests__/shared-thread-attachments.test.tsx	Then	3	Attachment is not rendered as an image	L95; L99-L101	covered		de0014f3
+anonymous-shared-artifact-page-001	src/views/shared-artifact-page/__tests__/anonymous-shared-artifact-page.test.tsx	Given	1	Signed-out recipient	L29 (via L49)	covered		de0014f3
+anonymous-shared-artifact-page-001	src/views/shared-artifact-page/__tests__/anonymous-shared-artifact-page.test.tsx	Given	2	Shared public PNG artifact	L37-L47	covered		de0014f3
+anonymous-shared-artifact-page-001	src/views/shared-artifact-page/__tests__/anonymous-shared-artifact-page.test.tsx	Given	3	URL has a source query and detail fragment	L12	covered		de0014f3
+anonymous-shared-artifact-page-001	src/views/shared-artifact-page/__tests__/anonymous-shared-artifact-page.test.tsx	Given	4	Public URL request targets the opened artifact reference	L40	covered	request identity	de0014f3
+anonymous-shared-artifact-page-001	src/views/shared-artifact-page/__tests__/anonymous-shared-artifact-page.test.tsx	When	1	Recipient previews it	L49-L51	covered		de0014f3
+anonymous-shared-artifact-page-001	src/views/shared-artifact-page/__tests__/anonymous-shared-artifact-page.test.tsx	When	2	Recipient copies its link via Share	L60	covered		de0014f3
+anonymous-shared-artifact-page-001	src/views/shared-artifact-page/__tests__/anonymous-shared-artifact-page.test.tsx	When	3	Recipient downloads it	L65-L69	covered		de0014f3
+anonymous-shared-artifact-page-001	src/views/shared-artifact-page/__tests__/anonymous-shared-artifact-page.test.tsx	Then	1	Image preview preserves the fragment	L52	covered		de0014f3
+anonymous-shared-artifact-page-001	src/views/shared-artifact-page/__tests__/anonymous-shared-artifact-page.test.tsx	Then	2	Artifact filename appears	L53-L55	covered		de0014f3
+anonymous-shared-artifact-page-001	src/views/shared-artifact-page/__tests__/anonymous-shared-artifact-page.test.tsx	Then	3	Okou page title appears	L56	covered		de0014f3
+anonymous-shared-artifact-page-001	src/views/shared-artifact-page/__tests__/anonymous-shared-artifact-page.test.tsx	Then	4	Browser URL remains unchanged	L57	covered		de0014f3
+anonymous-shared-artifact-page-001	src/views/shared-artifact-page/__tests__/anonymous-shared-artifact-page.test.tsx	Then	5	No sign-in is required or shown	L57-L58	covered		de0014f3
+anonymous-shared-artifact-page-001	src/views/shared-artifact-page/__tests__/anonymous-shared-artifact-page.test.tsx	Then	6	Share copies the current URL	L61-L63	covered		de0014f3
+anonymous-shared-artifact-page-001	src/views/shared-artifact-page/__tests__/anonymous-shared-artifact-page.test.tsx	Then	7	Download uses the supplied filename	L70-L74	covered		de0014f3
+anonymous-shared-artifact-page-001	src/views/shared-artifact-page/__tests__/anonymous-shared-artifact-page.test.tsx	Then	8	Download uses the supplied download URL	L70-L74	covered		de0014f3
+anonymous-shared-artifact-page-001	src/views/shared-artifact-page/__tests__/anonymous-shared-artifact-page.test.tsx	Then	9	Download happens without navigation	L75	covered		de0014f3
+anonymous-shared-artifact-page-003	src/views/shared-artifact-page/__tests__/anonymous-shared-artifact-page.test.tsx	Given	1	Signed-out recipient	L29 (via L86)	covered		de0014f3
+anonymous-shared-artifact-page-003	src/views/shared-artifact-page/__tests__/anonymous-shared-artifact-page.test.tsx	Given	2	Shared PNG artifact is unavailable	L80-L84	covered		de0014f3
+anonymous-shared-artifact-page-003	src/views/shared-artifact-page/__tests__/anonymous-shared-artifact-page.test.tsx	Given	3	URL has a source query and detail fragment	L12	covered		de0014f3
+anonymous-shared-artifact-page-003	src/views/shared-artifact-page/__tests__/anonymous-shared-artifact-page.test.tsx	When	1	Artifact cannot be retrieved when the page loads	L80-L86	covered		de0014f3
+anonymous-shared-artifact-page-003	src/views/shared-artifact-page/__tests__/anonymous-shared-artifact-page.test.tsx	Then	1	Viewer stays on the artifact route	L102	covered		de0014f3
+anonymous-shared-artifact-page-003	src/views/shared-artifact-page/__tests__/anonymous-shared-artifact-page.test.tsx	Then	2	Shows that the artifact cannot be viewed	L88-L90	covered		de0014f3
+anonymous-shared-artifact-page-003	src/views/shared-artifact-page/__tests__/anonymous-shared-artifact-page.test.tsx	Then	3	Artifacts heading is shown	L91-L93	covered		de0014f3
+anonymous-shared-artifact-page-003	src/views/shared-artifact-page/__tests__/anonymous-shared-artifact-page.test.tsx	Then	4	No preview is shown	L97-L100	covered		de0014f3
+anonymous-shared-artifact-page-003	src/views/shared-artifact-page/__tests__/anonymous-shared-artifact-page.test.tsx	Then	5	No sign-in prompt is shown	L101; L103	covered		de0014f3
+anonymous-shared-artifact-page-003	src/views/shared-artifact-page/__tests__/anonymous-shared-artifact-page.test.tsx	Then	6	Says the artifact may be private or unavailable	L94-L95	covered		de0014f3
+anonymous-shared-artifact-page-003	src/views/shared-artifact-page/__tests__/anonymous-shared-artifact-page.test.tsx	Then	7	Does not say it may be shared with a different account	L96	covered		de0014f3
+anonymous-shared-artifact-page-003	src/views/shared-artifact-page/__tests__/anonymous-shared-artifact-page.test.tsx	Then	8	Sign in is offered and starts only on request	L103; L105-L108	covered		de0014f3
+anonymous-shared-artifact-page-003	src/views/shared-artifact-page/__tests__/anonymous-shared-artifact-page.test.tsx	Then	9	Sign-in returns to the original artifact URL	L109-L113	covered		de0014f3
+artifact-json-preview-001	src/views/artifacts-page/__tests__/artifact-json-preview.test.tsx	Given	1	Artifacts file catalog contains catalog.json	L21-L24; L43	covered		de0014f3
+artifact-json-preview-001	src/views/artifacts-page/__tests__/artifact-json-preview.test.tsx	Given	2	catalog.json has the exact JSON source	L20; L25-L41	covered		de0014f3
+artifact-json-preview-001	src/views/artifacts-page/__tests__/artifact-json-preview.test.tsx	Given	3	Detail request targets the catalog.json artifact	L26	covered	request identity	de0014f3
+artifact-json-preview-001	src/views/artifacts-page/__tests__/artifact-json-preview.test.tsx	When	1	User opens the JSON preview	L44; L46	covered		de0014f3
+artifact-json-preview-001	src/views/artifacts-page/__tests__/artifact-json-preview.test.tsx	When	2	User expands catalog	L50	covered		de0014f3
+artifact-json-preview-001	src/views/artifacts-page/__tests__/artifact-json-preview.test.tsx	When	3	User expands items	L52	covered		de0014f3
+artifact-json-preview-001	src/views/artifacts-page/__tests__/artifact-json-preview.test.tsx	When	4	User selects Source	L54; L57	covered	aria-pressed at L57 confirms Source was selected	de0014f3
+artifact-json-preview-001	src/views/artifacts-page/__tests__/artifact-json-preview.test.tsx	Then	1	Tree shows the numeric value as 1.00	L51	covered		de0014f3
+artifact-json-preview-001	src/views/artifacts-page/__tests__/artifact-json-preview.test.tsx	Then	2	Tree shows the items array entry as [1]	L53	covered		de0014f3
+artifact-json-preview-001	src/views/artifacts-page/__tests__/artifact-json-preview.test.tsx	Then	3	Source view shows the exact original JSON text	L56	covered		de0014f3
+artifact-catalog-pagination-001	src/views/artifacts-page/__tests__/artifact-catalog-pagination.test.tsx	Given	1	Deep link to an image artifact in the Images catalog	L43-L45	covered		de0014f3
+artifact-catalog-pagination-001	src/views/artifacts-page/__tests__/artifact-catalog-pagination.test.tsx	Given	2	Selected image is on a later catalog page	L23-L30	covered		de0014f3
+artifact-catalog-pagination-001	src/views/artifacts-page/__tests__/artifact-catalog-pagination.test.tsx	Given	3	Detail request targets the deep-linked artifact	L32	covered	request identity	de0014f3
+artifact-catalog-pagination-001	src/views/artifacts-page/__tests__/artifact-catalog-pagination.test.tsx	When	1	Deep-linked preview opens	L47	covered		de0014f3
+artifact-catalog-pagination-001	src/views/artifacts-page/__tests__/artifact-catalog-pagination.test.tsx	When	2	User closes the preview	L59	covered		de0014f3
+artifact-catalog-pagination-001	src/views/artifacts-page/__tests__/artifact-catalog-pagination.test.tsx	Then	1	Image preview displays the artifact URL	L47-L48	covered		de0014f3
+artifact-catalog-pagination-001	src/views/artifacts-page/__tests__/artifact-catalog-pagination.test.tsx	Then	2	Catalog path remains /artifacts while open	L52	covered		de0014f3
+artifact-catalog-pagination-001	src/views/artifacts-page/__tests__/artifact-catalog-pagination.test.tsx	Then	3	Image tab is in the URL while open	L51	covered		de0014f3
+artifact-catalog-pagination-001	src/views/artifacts-page/__tests__/artifact-catalog-pagination.test.tsx	Then	4	Artifact ID is in the URL while open	L49-L50	covered		de0014f3
+artifact-catalog-pagination-001	src/views/artifacts-page/__tests__/artifact-catalog-pagination.test.tsx	Then	5	Image is also present in the catalog	L53-L57	covered		de0014f3
+artifact-catalog-pagination-001	src/views/artifacts-page/__tests__/artifact-catalog-pagination.test.tsx	Then	6	Closing removes the artifact parameter	L61-L63	covered		de0014f3
+artifact-catalog-pagination-001	src/views/artifacts-page/__tests__/artifact-catalog-pagination.test.tsx	Then	7	Closing keeps the image tab	L64	covered		de0014f3
+artifact-catalog-pagination-001	src/views/artifacts-page/__tests__/artifact-catalog-pagination.test.tsx	Then	8	Closing keeps the catalog path	L66	covered		de0014f3
+artifact-catalog-pagination-001	src/views/artifacts-page/__tests__/artifact-catalog-pagination.test.tsx	Then	9	Image remains available in the catalog after closing	L67	covered		de0014f3
+shared-thread-snapshot-viewer-001	src/views/shared-artifact-page/__tests__/shared-thread-snapshot-viewer.test.tsx	Given	1	Anonymous visitor	L58	covered		de0014f3
+shared-thread-snapshot-viewer-001	src/views/shared-artifact-page/__tests__/shared-thread-snapshot-viewer.test.tsx	Given	2	Visitor views a snapshot image	L45-L56; L60	covered		de0014f3
+shared-thread-snapshot-viewer-001	src/views/shared-artifact-page/__tests__/shared-thread-snapshot-viewer.test.tsx	Given	3	URL has a fragment	L37	covered		de0014f3
+shared-thread-snapshot-viewer-001	src/views/shared-artifact-page/__tests__/shared-thread-snapshot-viewer.test.tsx	Given	4	Download authorization can be renewed	L41; L51; L69	covered		de0014f3
+shared-thread-snapshot-viewer-001	src/views/shared-artifact-page/__tests__/shared-thread-snapshot-viewer.test.tsx	Given	5	Public URL request targets the snapshot reference	L48	covered	request identity	de0014f3
+shared-thread-snapshot-viewer-001	src/views/shared-artifact-page/__tests__/shared-thread-snapshot-viewer.test.tsx	When	1	Visitor selects Share	L63	covered		de0014f3
+shared-thread-snapshot-viewer-001	src/views/shared-artifact-page/__tests__/shared-thread-snapshot-viewer.test.tsx	When	2	Visitor downloads after authorization is renewed	L69-L70; L28-L34	covered		de0014f3
+shared-thread-snapshot-viewer-001	src/views/shared-artifact-page/__tests__/shared-thread-snapshot-viewer.test.tsx	Then	1	Image preview keeps its fragment	L60-L61	covered		de0014f3
+shared-thread-snapshot-viewer-001	src/views/shared-artifact-page/__tests__/shared-thread-snapshot-viewer.test.tsx	Then	2	App does not redirect	L62; L77	covered		de0014f3
+shared-thread-snapshot-viewer-001	src/views/shared-artifact-page/__tests__/shared-thread-snapshot-viewer.test.tsx	Then	3	Share copies the full app reference with fragment	L65	covered		de0014f3
+shared-thread-snapshot-viewer-001	src/views/shared-artifact-page/__tests__/shared-thread-snapshot-viewer.test.tsx	Then	4	Link copied is displayed	L64	covered		de0014f3
+shared-thread-snapshot-viewer-001	src/views/shared-artifact-page/__tests__/shared-thread-snapshot-viewer.test.tsx	Then	5	No audience controls are shown	L66-L67	covered		de0014f3
+shared-thread-snapshot-viewer-001	src/views/shared-artifact-page/__tests__/shared-thread-snapshot-viewer.test.tsx	Then	6	Download uses the newly authorized URL	L71-L75	covered		de0014f3
+shared-thread-snapshot-viewer-001	src/views/shared-artifact-page/__tests__/shared-thread-snapshot-viewer.test.tsx	Then	7	Download uses the original filename	L71-L75	covered		de0014f3
+shared-thread-snapshot-viewer-001	src/views/shared-artifact-page/__tests__/shared-thread-snapshot-viewer.test.tsx	Then	8	Download does not fetch a blob	L73	covered		de0014f3
+shared-thread-snapshot-viewer-001	src/views/shared-artifact-page/__tests__/shared-thread-snapshot-viewer.test.tsx	Then	9	Preview URL is unchanged after download	L76	covered		de0014f3
+shared-thread-snapshot-viewer-003	src/views/shared-artifact-page/__tests__/shared-thread-snapshot-viewer.test.tsx	Given	1	Anonymous visitor	L100	covered		de0014f3
+shared-thread-snapshot-viewer-003	src/views/shared-artifact-page/__tests__/shared-thread-snapshot-viewer.test.tsx	Given	2	Visitor views an HTML snapshot	L86-L93	covered		de0014f3
+shared-thread-snapshot-viewer-003	src/views/shared-artifact-page/__tests__/shared-thread-snapshot-viewer.test.tsx	Given	3	URL has a slide fragment	L81	covered		de0014f3
+shared-thread-snapshot-viewer-003	src/views/shared-artifact-page/__tests__/shared-thread-snapshot-viewer.test.tsx	Given	4	Snapshot carries a temporary download credential	L83-L84; L89	covered		de0014f3
+shared-thread-snapshot-viewer-003	src/views/shared-artifact-page/__tests__/shared-thread-snapshot-viewer.test.tsx	When	1	Visitor views the preview	L102-L107	covered		de0014f3
+shared-thread-snapshot-viewer-003	src/views/shared-artifact-page/__tests__/shared-thread-snapshot-viewer.test.tsx	When	2	Visitor selects Download	L108; L28-L34	covered		de0014f3
+shared-thread-snapshot-viewer-003	src/views/shared-artifact-page/__tests__/shared-thread-snapshot-viewer.test.tsx	Then	1	Preview keeps the slide fragment	L104	covered		de0014f3
+shared-thread-snapshot-viewer-003	src/views/shared-artifact-page/__tests__/shared-thread-snapshot-viewer.test.tsx	Then	2	Preview uses the origin referrer policy	L106	covered		de0014f3
+shared-thread-snapshot-viewer-003	src/views/shared-artifact-page/__tests__/shared-thread-snapshot-viewer.test.tsx	Then	3	Sandbox allows only same-origin and scripts	L105	covered		de0014f3
+shared-thread-snapshot-viewer-003	src/views/shared-artifact-page/__tests__/shared-thread-snapshot-viewer.test.tsx	Then	4	Download uses the original filename	L110-L114	covered		de0014f3
+shared-thread-snapshot-viewer-003	src/views/shared-artifact-page/__tests__/shared-thread-snapshot-viewer.test.tsx	Then	5	Download uses the credential-bearing URL	L110-L114	covered		de0014f3
+shared-thread-snapshot-viewer-003	src/views/shared-artifact-page/__tests__/shared-thread-snapshot-viewer.test.tsx	Then	6	Download does not fetch a blob	L112	covered		de0014f3
+shared-thread-private-artifacts-001	src/views/shared-thread-page/__tests__/shared-thread-private-artifacts.test.tsx	Given	1	Signed-out visitor	L29; shared-thread-test-helpers.ts:L37	covered		de0014f3
+shared-thread-private-artifacts-001	src/views/shared-thread-page/__tests__/shared-thread-private-artifacts.test.tsx	Given	2	Conversation has image, HTML, video, audio and PDF artifact references	L34-L39	covered		de0014f3
+shared-thread-private-artifacts-001	src/views/shared-thread-page/__tests__/shared-thread-private-artifacts.test.tsx	Given	3	Conversation has a download link	L40	covered		de0014f3
+shared-thread-private-artifacts-001	src/views/shared-thread-page/__tests__/shared-thread-private-artifacts.test.tsx	When	1	Conversation loads	L73-L77	covered		de0014f3
+shared-thread-private-artifacts-001	src/views/shared-thread-page/__tests__/shared-thread-private-artifacts.test.tsx	When	2	Visitor copies the assistant message	L112-L118	covered		de0014f3
+shared-thread-private-artifacts-001	src/views/shared-thread-page/__tests__/shared-thread-private-artifacts.test.tsx	Then	1	Image preview loads from the temporary resolved URL	L75-L81	covered		de0014f3
+shared-thread-private-artifacts-001	src/views/shared-thread-page/__tests__/shared-thread-private-artifacts.test.tsx	Then	2	Video preview loads from the temporary resolved URL	L92-L100	covered		de0014f3
+shared-thread-private-artifacts-001	src/views/shared-thread-page/__tests__/shared-thread-private-artifacts.test.tsx	Then	3	HTML preview iframe uses the temporary URL with the original fragment	L86-L91	covered		de0014f3
+shared-thread-private-artifacts-001	src/views/shared-thread-page/__tests__/shared-thread-private-artifacts.test.tsx	Then	4	Image preview link keeps the full stable URL with fragment	L82	covered		de0014f3
+shared-thread-private-artifacts-001	src/views/shared-thread-page/__tests__/shared-thread-private-artifacts.test.tsx	Then	5	HTML preview link keeps the full stable URL with fragment	L84-L85	covered		de0014f3
+shared-thread-private-artifacts-001	src/views/shared-thread-page/__tests__/shared-thread-private-artifacts.test.tsx	Then	6	Audio preview link keeps the stable URL	L101-L105	covered		de0014f3
+shared-thread-private-artifacts-001	src/views/shared-thread-page/__tests__/shared-thread-private-artifacts.test.tsx	Then	7	PDF preview link keeps the stable URL	L106-L109	covered		de0014f3
+shared-thread-private-artifacts-001	src/views/shared-thread-page/__tests__/shared-thread-private-artifacts.test.tsx	Then	8	Download link keeps the stable URL	L110	covered		de0014f3
+shared-thread-private-artifacts-001	src/views/shared-thread-page/__tests__/shared-thread-private-artifacts.test.tsx	Then	9	Copied text exactly preserves the original message	L119-L121	covered		de0014f3
+shared-thread-private-artifacts-003	src/views/shared-thread-page/__tests__/shared-thread-private-artifacts.test.tsx	Given	1	Signed-out visitor	L29; shared-thread-test-helpers.ts:L37	covered		de0014f3
+shared-thread-private-artifacts-003	src/views/shared-thread-page/__tests__/shared-thread-private-artifacts.test.tsx	Given	2	Conversation has an image artifact preview	L135	covered		de0014f3
+shared-thread-private-artifacts-003	src/views/shared-thread-page/__tests__/shared-thread-private-artifacts.test.tsx	Given	3	Conversation has an HTML artifact preview	L135	covered		de0014f3
+shared-thread-private-artifacts-003	src/views/shared-thread-page/__tests__/shared-thread-private-artifacts.test.tsx	Given	4	Conversation has an image attachment	L141-L148	covered		de0014f3
+shared-thread-private-artifacts-003	src/views/shared-thread-page/__tests__/shared-thread-private-artifacts.test.tsx	Given	5	Resolving each snapshot reference returns 403	L125-L129	covered		de0014f3
+shared-thread-private-artifacts-003	src/views/shared-thread-page/__tests__/shared-thread-private-artifacts.test.tsx	When	1	Conversation loads	L131-L150	covered		de0014f3
+shared-thread-private-artifacts-003	src/views/shared-thread-page/__tests__/shared-thread-private-artifacts.test.tsx	Then	1	Three unavailable statuses appear	L152-L160	covered		de0014f3
+shared-thread-private-artifacts-003	src/views/shared-thread-page/__tests__/shared-thread-private-artifacts.test.tsx	Then	2	No screenshot image is shown	L161-L163	covered		de0014f3
+shared-thread-private-artifacts-003	src/views/shared-thread-page/__tests__/shared-thread-private-artifacts.test.tsx	Then	3	No attachment image is shown	L164-L166	covered		de0014f3
+shared-thread-private-artifacts-003	src/views/shared-thread-page/__tests__/shared-thread-private-artifacts.test.tsx	Then	4	No site-preview title is shown	L167-L169	covered		de0014f3
+shared-thread-private-artifacts-003	src/views/shared-thread-page/__tests__/shared-thread-private-artifacts.test.tsx	Then	5	HTML preview links to its stable original reference	L170-L174	covered		de0014f3
+shared-thread-private-artifacts-003	src/views/shared-thread-page/__tests__/shared-thread-private-artifacts.test.tsx	Then	6	Attachment links to its stable original reference	L175	covered		de0014f3
+shared-thread-private-artifacts-003	src/views/shared-thread-page/__tests__/shared-thread-private-artifacts.test.tsx	Then	7	References are not loaded as bytes	L161-L169	covered		de0014f3
+shared-thread-diagrams-001	src/views/shared-thread-page/__tests__/shared-thread-diagrams.test.tsx	Given	1	Visitor views a shared conversation	L48	covered		de0014f3
+shared-thread-diagrams-001	src/views/shared-thread-page/__tests__/shared-thread-diagrams.test.tsx	Given	2	Conversation contains a Mermaid diagram	L32-L46	covered		de0014f3
+shared-thread-diagrams-001	src/views/shared-thread-page/__tests__/shared-thread-diagrams.test.tsx	When	1	Visitor expands the diagram	L52-L53	covered		de0014f3
+shared-thread-diagrams-001	src/views/shared-thread-page/__tests__/shared-thread-diagrams.test.tsx	When	2	Visitor downloads it	L77	covered		de0014f3
+shared-thread-diagrams-001	src/views/shared-thread-page/__tests__/shared-thread-diagrams.test.tsx	Then	1	Diagram opens in the conversation	L55-L57	covered		de0014f3
+shared-thread-diagrams-001	src/views/shared-thread-page/__tests__/shared-thread-diagrams.test.tsx	Then	2	Diagram is shown as an SVG	L58-L63	covered		de0014f3
+shared-thread-diagrams-001	src/views/shared-thread-page/__tests__/shared-thread-diagrams.test.tsx	Then	3	Viewer offers Close	L64-L69	covered		de0014f3
+shared-thread-diagrams-001	src/views/shared-thread-page/__tests__/shared-thread-diagrams.test.tsx	Then	4	Viewer offers Download	L64-L69	covered		de0014f3
+shared-thread-diagrams-001	src/views/shared-thread-page/__tests__/shared-thread-diagrams.test.tsx	Then	5	Viewer offers Fill view	L64-L69	covered		de0014f3
+shared-thread-diagrams-001	src/views/shared-thread-page/__tests__/shared-thread-diagrams.test.tsx	Then	6	No Share action	L70	covered		de0014f3
+shared-thread-diagrams-001	src/views/shared-thread-page/__tests__/shared-thread-diagrams.test.tsx	Then	7	No Copy link action	L71	covered		de0014f3
+shared-thread-diagrams-001	src/views/shared-thread-page/__tests__/shared-thread-diagrams.test.tsx	Then	8	No split-view action	L72	covered		de0014f3
+shared-thread-diagrams-001	src/views/shared-thread-page/__tests__/shared-thread-diagrams.test.tsx	Then	9	Zoom controls are enabled	L73-L75	covered		de0014f3
+shared-thread-diagrams-001	src/views/shared-thread-page/__tests__/shared-thread-diagrams.test.tsx	Then	10	Download saves the rendered SVG	L81-L83	covered		de0014f3
+shared-thread-diagrams-001	src/views/shared-thread-page/__tests__/shared-thread-diagrams.test.tsx	Then	11	Download filename is diagram.svg	L82	covered		de0014f3
+shared-thread-diagrams-001	src/views/shared-thread-page/__tests__/shared-thread-diagrams.test.tsx	Then	12	Download does not fetch the SVG	L82	covered		de0014f3
+shared-artifact-fullscreen-001	src/views/shared-artifact-page/__tests__/shared-artifact-fullscreen.test.tsx	Given	1	Browser does not support native fullscreen	L115; L45; L51-L57	covered		de0014f3
+shared-artifact-fullscreen-001	src/views/shared-artifact-page/__tests__/shared-artifact-fullscreen.test.tsx	Given	2	HTML artifact viewer is open	L116; L78-L96	covered		de0014f3
+shared-artifact-fullscreen-001	src/views/shared-artifact-page/__tests__/shared-artifact-fullscreen.test.tsx	When	1	User enters fullscreen	L120; L98-L102	covered		de0014f3
+shared-artifact-fullscreen-001	src/views/shared-artifact-page/__tests__/shared-artifact-fullscreen.test.tsx	When	2	User exits fullscreen	L126; L106-L110	covered		de0014f3
+shared-artifact-fullscreen-001	src/views/shared-artifact-page/__tests__/shared-artifact-fullscreen.test.tsx	Then	1	Header is hidden while fullscreen	L103 (via L120)	covered		de0014f3
+shared-artifact-fullscreen-001	src/views/shared-artifact-page/__tests__/shared-artifact-fullscreen.test.tsx	Then	2	Title is hidden while fullscreen	L118; L122	covered		de0014f3
+shared-artifact-fullscreen-001	src/views/shared-artifact-page/__tests__/shared-artifact-fullscreen.test.tsx	Then	3	Preview stays visible while fullscreen	L124	covered		de0014f3
+shared-artifact-fullscreen-001	src/views/shared-artifact-page/__tests__/shared-artifact-fullscreen.test.tsx	Then	4	Preview keeps its requested fragment	L94; L117; L125	covered		de0014f3
+shared-artifact-fullscreen-001	src/views/shared-artifact-page/__tests__/shared-artifact-fullscreen.test.tsx	Then	5	An enabled exit control is offered	L100-L102 (via L120)	covered		de0014f3
+shared-artifact-fullscreen-001	src/views/shared-artifact-page/__tests__/shared-artifact-fullscreen.test.tsx	Then	6	Exiting restores the header	L111 (via L126)	covered		de0014f3
+shared-artifact-fullscreen-001	src/views/shared-artifact-page/__tests__/shared-artifact-fullscreen.test.tsx	Then	7	Exiting restores the title	L127	covered		de0014f3
+shared-artifact-fullscreen-001	src/views/shared-artifact-page/__tests__/shared-artifact-fullscreen.test.tsx	Then	8	Focus returns to Enter fullscreen	L108-L110 (via L126)	covered		de0014f3
+shared-artifact-fullscreen-001	src/views/shared-artifact-page/__tests__/shared-artifact-fullscreen.test.tsx	Then	9	Preview URL is unchanged after exit	L128	covered		de0014f3
+shared-artifact-fullscreen-001	src/views/shared-artifact-page/__tests__/shared-artifact-fullscreen.test.tsx	Then	10	Native browser fullscreen remains inactive	L123; L129	covered		de0014f3
+shared-artifact-fullscreen-002	src/views/shared-artifact-page/__tests__/shared-artifact-fullscreen.test.tsx	Given	1	HTML artifact viewer is open	L134; L78-L96	covered		de0014f3
+shared-artifact-fullscreen-002	src/views/shared-artifact-page/__tests__/shared-artifact-fullscreen.test.tsx	Given	2	Browser supports native fullscreen	L133; L51-L55	covered		de0014f3
+shared-artifact-fullscreen-002	src/views/shared-artifact-page/__tests__/shared-artifact-fullscreen.test.tsx	When	1	User enters fullscreen	L137; L98-L102	covered		de0014f3
+shared-artifact-fullscreen-002	src/views/shared-artifact-page/__tests__/shared-artifact-fullscreen.test.tsx	When	2	User exits fullscreen	L143; L106-L110; L144	covered	fullscreenElement null at L144 confirms the exit happened	de0014f3
+shared-artifact-fullscreen-002	src/views/shared-artifact-page/__tests__/shared-artifact-fullscreen.test.tsx	Then	1	Preview is inside the native fullscreen element	L139	covered		de0014f3
+shared-artifact-fullscreen-002	src/views/shared-artifact-page/__tests__/shared-artifact-fullscreen.test.tsx	Then	2	Exit control is inside the native fullscreen element	L140-L142	covered		de0014f3
+shared-artifact-fullscreen-002	src/views/shared-artifact-page/__tests__/shared-artifact-fullscreen.test.tsx	Then	3	Header is hidden while fullscreen	L103 (via L137)	covered		de0014f3
+shared-artifact-fullscreen-002	src/views/shared-artifact-page/__tests__/shared-artifact-fullscreen.test.tsx	Then	4	Exiting restores the header	L111 (via L143)	covered		de0014f3
+shared-artifact-fullscreen-002	src/views/shared-artifact-page/__tests__/shared-artifact-fullscreen.test.tsx	Then	5	Focus returns to Enter fullscreen	L108-L110 (via L143)	covered		de0014f3
+shared-artifact-fullscreen-002	src/views/shared-artifact-page/__tests__/shared-artifact-fullscreen.test.tsx	Then	6	Preview URL is unchanged after exit	L145	covered		de0014f3
+shared-artifact-fullscreen-003	src/views/shared-artifact-page/__tests__/shared-artifact-fullscreen.test.tsx	Given	1	Markdown artifact viewer is open	L150-L172	covered		de0014f3
+shared-artifact-fullscreen-003	src/views/shared-artifact-page/__tests__/shared-artifact-fullscreen.test.tsx	Given	2	Artifact is in native document fullscreen	L149; L173	covered		de0014f3
+shared-artifact-fullscreen-003	src/views/shared-artifact-page/__tests__/shared-artifact-fullscreen.test.tsx	Given	3	Diagram is expanded within document fullscreen	L175-L178	covered	L178 confirms the expanded diagram sits inside the fullscreen element (fullscreen premise)	de0014f3
+shared-artifact-fullscreen-003	src/views/shared-artifact-page/__tests__/shared-artifact-fullscreen.test.tsx	When	1	User closes the diagram	L179	covered		de0014f3
+shared-artifact-fullscreen-003	src/views/shared-artifact-page/__tests__/shared-artifact-fullscreen.test.tsx	When	2	User exits document fullscreen	L187; L106-L110; L188	covered	fullscreenElement null at L188 confirms the exit happened	de0014f3
+shared-artifact-fullscreen-003	src/views/shared-artifact-page/__tests__/shared-artifact-fullscreen.test.tsx	Then	1	Closing the diagram preserves document fullscreen	L184-L185	covered		de0014f3
+shared-artifact-fullscreen-003	src/views/shared-artifact-page/__tests__/shared-artifact-fullscreen.test.tsx	Then	2	Focus returns to Expand diagram	L180-L183	covered		de0014f3
+shared-artifact-fullscreen-003	src/views/shared-artifact-page/__tests__/shared-artifact-fullscreen.test.tsx	Then	3	Exiting fullscreen restores the visible header	L111 (via L187)	covered		de0014f3
+shared-artifact-fullscreen-003	src/views/shared-artifact-page/__tests__/shared-artifact-fullscreen.test.tsx	Then	4	Focus returns to Enter fullscreen	L108-L110 (via L187)	covered		de0014f3
+chat-json-preview-001	src/views/okou-page/__tests__/chat-json-preview.test.tsx	Given	1	Authenticated user	L62-L67 (setupPage default auth)	covered		de0014f3
+chat-json-preview-001	src/views/okou-page/__tests__/chat-json-preview.test.tsx	Given	2	Private JSON chat attachment	L20-L28; L32-L60	covered		de0014f3
+chat-json-preview-001	src/views/okou-page/__tests__/chat-json-preview.test.tsx	Given	3	Sidebar preview is enabled and the attachment opens in the sidebar	L66; L68-L71	covered		de0014f3
+chat-json-preview-001	src/views/okou-page/__tests__/chat-json-preview.test.tsx	Given	4	JSON contains a large integer and an empty object	L75	covered		de0014f3
+chat-json-preview-001	src/views/okou-page/__tests__/chat-json-preview.test.tsx	Given	5	File URL request targets the attachment file	L21	covered	request identity	de0014f3
+chat-json-preview-001	src/views/okou-page/__tests__/chat-json-preview.test.tsx	When	1	User expands the items array	L78	covered		de0014f3
+chat-json-preview-001	src/views/okou-page/__tests__/chat-json-preview.test.tsx	When	2	User expands its first entry	L79	covered		de0014f3
+chat-json-preview-001	src/views/okou-page/__tests__/chat-json-preview.test.tsx	When	3	User switches to Source	L82	covered		de0014f3
+chat-json-preview-001	src/views/okou-page/__tests__/chat-json-preview.test.tsx	Then	1	Tree shows the exact integer 9223372036854775807	L80	covered		de0014f3
+chat-json-preview-001	src/views/okou-page/__tests__/chat-json-preview.test.tsx	Then	2	Tree shows the empty object	L81	covered		de0014f3
+chat-json-preview-001	src/views/okou-page/__tests__/chat-json-preview.test.tsx	Then	3	Source shows the original JSON text	L83	covered		de0014f3
+chat-json-preview-003	src/views/okou-page/__tests__/chat-json-preview.test.tsx	Given	1	Authenticated user	L62-L67 (setupPage default auth)	covered		de0014f3
+chat-json-preview-003	src/views/okou-page/__tests__/chat-json-preview.test.tsx	Given	2	Private JSON chat attachment	L20-L28; L32-L60	covered		de0014f3
+chat-json-preview-003	src/views/okou-page/__tests__/chat-json-preview.test.tsx	Given	3	Response is HTTP 206 with a byte range covering only a prefix	L88-L91	covered		de0014f3
+chat-json-preview-003	src/views/okou-page/__tests__/chat-json-preview.test.tsx	Given	4	Received prefix looks like complete JSON	L87	covered		de0014f3
+chat-json-preview-003	src/views/okou-page/__tests__/chat-json-preview.test.tsx	Given	5	File URL request targets the attachment file	L21	covered	request identity	de0014f3
+chat-json-preview-003	src/views/okou-page/__tests__/chat-json-preview.test.tsx	When	1	User views the attachment preview	L68-L71 (via L88)	covered		de0014f3
+chat-json-preview-003	src/views/okou-page/__tests__/chat-json-preview.test.tsx	Then	1	Tree mode is disabled	L96	covered		de0014f3
+chat-json-preview-003	src/views/okou-page/__tests__/chat-json-preview.test.tsx	Then	2	Status says Only part of this file is loaded	L93-L95	covered		de0014f3
+chat-json-preview-003	src/views/okou-page/__tests__/chat-json-preview.test.tsx	Then	3	Source view shows the received prefix	L97	covered		de0014f3
+shared-artifact-page-001	src/views/shared-artifact-page/__tests__/shared-artifact-page.test.tsx	Given	1	Visitor opens an image artifact link in the app	L85; L40-L52	covered		de0014f3
+shared-artifact-page-001	src/views/shared-artifact-page/__tests__/shared-artifact-page.test.tsx	When	1	Preview loads	L87-L89	covered		de0014f3
+shared-artifact-page-001	src/views/shared-artifact-page/__tests__/shared-artifact-page.test.tsx	When	2	Visitor uses Zoom in	L100	covered		de0014f3
+shared-artifact-page-001	src/views/shared-artifact-page/__tests__/shared-artifact-page.test.tsx	When	3	Visitor then uses Reset zoom	L110	covered		de0014f3
+shared-artifact-page-001	src/views/shared-artifact-page/__tests__/shared-artifact-page.test.tsx	Then	1	App stays on the artifact page without redirecting	L83; L97-L98	covered		de0014f3
+shared-artifact-page-001	src/views/shared-artifact-page/__tests__/shared-artifact-page.test.tsx	Then	2	Image is shown	L87-L89	covered		de0014f3
+shared-artifact-page-001	src/views/shared-artifact-page/__tests__/shared-artifact-page.test.tsx	Then	3	Filename is shown	L90-L92	covered		de0014f3
+shared-artifact-page-001	src/views/shared-artifact-page/__tests__/shared-artifact-page.test.tsx	Then	4	Document title matches	L93	covered		de0014f3
+shared-artifact-page-001	src/views/shared-artifact-page/__tests__/shared-artifact-page.test.tsx	Then	5	Zoom controls are provided	L94-L96	covered		de0014f3
+shared-artifact-page-001	src/views/shared-artifact-page/__tests__/shared-artifact-page.test.tsx	Then	6	Zoom in raises the zoom above 100%	L101-L109	covered		de0014f3
+shared-artifact-page-001	src/views/shared-artifact-page/__tests__/shared-artifact-page.test.tsx	Then	7	Reset zoom restores 100%	L111-L115	covered		de0014f3
+shared-artifact-page-003	src/views/shared-artifact-page/__tests__/shared-artifact-page.test.tsx	Given	1	Visitor is viewing a shared artifact	L120-L123; L40-L52	covered		de0014f3
+shared-artifact-page-003	src/views/shared-artifact-page/__tests__/shared-artifact-page.test.tsx	Given	2	Artifact is at a legacy path with a query and fragment	L122	covered		de0014f3
+shared-artifact-page-003	src/views/shared-artifact-page/__tests__/shared-artifact-page.test.tsx	When	1	Visitor opens Download options	L125	covered		de0014f3
+shared-artifact-page-003	src/views/shared-artifact-page/__tests__/shared-artifact-page.test.tsx	When	2	Visitor selects Download	L126-L129	covered		de0014f3
+shared-artifact-page-003	src/views/shared-artifact-page/__tests__/shared-artifact-page.test.tsx	Then	1	Original filename is downloaded	L131-L139	covered		de0014f3
+shared-artifact-page-003	src/views/shared-artifact-page/__tests__/shared-artifact-page.test.tsx	Then	2	Download uses the attachment download URL	L131-L139; L43	covered		de0014f3
+shared-artifact-page-003	src/views/shared-artifact-page/__tests__/shared-artifact-page.test.tsx	Then	3	No blob is fetched first	L136	covered		de0014f3
+shared-artifact-page-007	src/views/shared-artifact-page/__tests__/shared-artifact-page.test.tsx	Given	1	Signed-in visitor	L69-L75 (via L144)	covered		de0014f3
+shared-artifact-page-007	src/views/shared-artifact-page/__tests__/shared-artifact-page.test.tsx	Given	2	Artifact link returns status 404	L55-L64 (via L144)	covered		de0014f3
+shared-artifact-page-007	src/views/shared-artifact-page/__tests__/shared-artifact-page.test.tsx	Given	3	Visitor has a configured color theme	L143	covered		de0014f3
+shared-artifact-page-007	src/views/shared-artifact-page/__tests__/shared-artifact-page.test.tsx	When	1	Artifact request is denied	L144; L77-L79	covered		de0014f3
+shared-artifact-page-007	src/views/shared-artifact-page/__tests__/shared-artifact-page.test.tsx	Then	1	Viewer shows You can't view this artifact	L77-L79	covered		de0014f3
+shared-artifact-page-007	src/views/shared-artifact-page/__tests__/shared-artifact-page.test.tsx	Then	2	Artifacts heading is shown	L146-L148	covered		de0014f3
+shared-artifact-page-007	src/views/shared-artifact-page/__tests__/shared-artifact-page.test.tsx	Then	3	Filename is not shown	L167	covered		de0014f3
+shared-artifact-page-007	src/views/shared-artifact-page/__tests__/shared-artifact-page.test.tsx	Then	4	Image is not shown	L168-L170	covered		de0014f3
+shared-artifact-page-007	src/views/shared-artifact-page/__tests__/shared-artifact-page.test.tsx	Then	5	Iframe is not shown	L171	covered		de0014f3
+shared-artifact-page-007	src/views/shared-artifact-page/__tests__/shared-artifact-page.test.tsx	Then	6	Explains it may not exist or may be shared with another account or organization	L149-L152	covered		de0014f3
+shared-artifact-page-007	src/views/shared-artifact-page/__tests__/shared-artifact-page.test.tsx	Then	7	Does not say it may be private or unavailable	L164-L166	covered		de0014f3
+shared-artifact-page-007	src/views/shared-artifact-page/__tests__/shared-artifact-page.test.tsx	Then	8	Switch account is enabled	L153	covered		de0014f3
+shared-artifact-page-007	src/views/shared-artifact-page/__tests__/shared-artifact-page.test.tsx	Then	9	Back to Okou links to /	L154	covered		de0014f3
+shared-artifact-page-007	src/views/shared-artifact-page/__tests__/shared-artifact-page.test.tsx	Then	10	Signed-in user remains visible	L156	covered	Strengthened to toBeVisible in 94ffae58	de0014f3
+shared-artifact-page-007	src/views/shared-artifact-page/__tests__/shared-artifact-page.test.tsx	Then	11	Configured theme remains applied	L158-L163	covered		de0014f3
+shared-artifact-page-008	src/views/shared-artifact-page/__tests__/shared-artifact-page.test.tsx	Given	1	Signed-in visitor	L69-L75 (via L176)	covered		de0014f3
+shared-artifact-page-008	src/views/shared-artifact-page/__tests__/shared-artifact-page.test.tsx	Given	2	Visitor is on an unavailable artifact URL	L55-L64; L77-L79 (via L176)	covered		de0014f3
+shared-artifact-page-008	src/views/shared-artifact-page/__tests__/shared-artifact-page.test.tsx	Given	3	URL contains a query and fragment	L175	covered		de0014f3
+shared-artifact-page-008	src/views/shared-artifact-page/__tests__/shared-artifact-page.test.tsx	When	1	Visitor selects Switch account	L178	covered		de0014f3
+shared-artifact-page-008	src/views/shared-artifact-page/__tests__/shared-artifact-page.test.tsx	Then	1	Sign-in opens	L180-L187	covered		de0014f3
+shared-artifact-page-008	src/views/shared-artifact-page/__tests__/shared-artifact-page.test.tsx	Then	2	Both redirect URLs preserve the full artifact URL, query and fragment	L182-L185	covered		de0014f3
+shared-artifact-page-008	src/views/shared-artifact-page/__tests__/shared-artifact-page.test.tsx	Then	3	Current session is not signed out	L188	covered		de0014f3
+shared-artifact-page-010	src/views/shared-artifact-page/__tests__/shared-artifact-page.test.tsx	Given	1	Visitor views an image artifact	L205; L40-L52	covered		de0014f3
+shared-artifact-page-010	src/views/shared-artifact-page/__tests__/shared-artifact-page.test.tsx	Given	2	Sharing status reports public access	L192-L204	covered		de0014f3
+shared-artifact-page-010	src/views/shared-artifact-page/__tests__/shared-artifact-page.test.tsx	When	1	Visitor views details without opening the share menu	L205-L214	covered		de0014f3
+shared-artifact-page-010	src/views/shared-artifact-page/__tests__/shared-artifact-page.test.tsx	Then	1	Viewer shows Image · Public access	L207-L214	covered		de0014f3
+shared-thread-actions-002	src/views/shared-thread-page/__tests__/shared-thread-actions.test.tsx	Given	1	Shared conversation returns HTTP 404	L61-L65	covered		de0014f3
+shared-thread-actions-002	src/views/shared-thread-page/__tests__/shared-thread-actions.test.tsx	When	1	Shared conversation page loads	L67	covered		de0014f3
+shared-thread-actions-002	src/views/shared-thread-page/__tests__/shared-thread-actions.test.tsx	Then	1	Page says You can't view this chat	L69-L71	covered		de0014f3
+shared-thread-actions-002	src/views/shared-thread-page/__tests__/shared-thread-actions.test.tsx	Then	2	Explains it may be private or no longer available	L72-L74	covered		de0014f3
+shared-thread-actions-002	src/views/shared-thread-page/__tests__/shared-thread-actions.test.tsx	Then	3	Shows a sign-in link	L75	covered		de0014f3
+shared-thread-actions-005	src/views/shared-thread-page/__tests__/shared-thread-actions.test.tsx	Given	1	Visitor views a public conversation	L80-L114	covered		de0014f3
+shared-thread-actions-005	src/views/shared-thread-page/__tests__/shared-thread-actions.test.tsx	Given	2	Conversation has one user message	L85-L90	covered		de0014f3
+shared-thread-actions-005	src/views/shared-thread-page/__tests__/shared-thread-actions.test.tsx	Given	3	Conversation has three assistant messages	L91-L108	covered		de0014f3
+shared-thread-actions-005	src/views/shared-thread-page/__tests__/shared-thread-actions.test.tsx	Given	4	Assistant messages include plain and formatted text	L94; L100; L106	covered		de0014f3
+shared-thread-actions-005	src/views/shared-thread-page/__tests__/shared-thread-actions.test.tsx	When	1	Visitor copies the user message	L116-L129	covered		de0014f3
+shared-thread-actions-005	src/views/shared-thread-page/__tests__/shared-thread-actions.test.tsx	When	2	Visitor then copies the assistant response	L135	covered		de0014f3
+shared-thread-actions-005	src/views/shared-thread-page/__tests__/shared-thread-actions.test.tsx	Then	1	Clipboard receives the complete user message	L130-L132	covered		de0014f3
+shared-thread-actions-005	src/views/shared-thread-page/__tests__/shared-thread-actions.test.tsx	Then	2	Clipboard then receives all three assistant messages joined in order with blank lines	L136-L145	covered		de0014f3
+shared-thread-actions-005	src/views/shared-thread-page/__tests__/shared-thread-actions.test.tsx	Then	3	Copied! confirmation appears after copying	L133	covered		de0014f3
+shared-thread-actions-006	src/views/shared-thread-page/__tests__/shared-thread-actions.test.tsx	Given	1	Visitor views a public conversation on app.okou.ai	L150-L152; L54-L58	covered		de0014f3
+shared-thread-actions-006	src/views/shared-thread-page/__tests__/shared-thread-actions.test.tsx	When	1	Visitor opens Share	L157	covered		de0014f3
+shared-thread-actions-006	src/views/shared-thread-page/__tests__/shared-thread-actions.test.tsx	When	2	Visitor chooses Copy link	L158-L161	covered		de0014f3
+shared-thread-actions-006	src/views/shared-thread-page/__tests__/shared-thread-actions.test.tsx	Then	1	Clipboard receives the full app.okou.ai share URL	L163-L165; L18	covered		de0014f3
+shared-thread-actions-006	src/views/shared-thread-page/__tests__/shared-thread-actions.test.tsx	Then	2	Button confirms Copied	L166-L168	covered		de0014f3
+shared-thread-actions-007	src/views/shared-thread-page/__tests__/shared-thread-actions.test.tsx	Given	1	Signed-in creator	L207-L210	covered		de0014f3
+shared-thread-actions-007	src/views/shared-thread-page/__tests__/shared-thread-actions.test.tsx	Given	2	Creator reopens a shared conversation	L178; L207	covered		de0014f3
+shared-thread-actions-007	src/views/shared-thread-page/__tests__/shared-thread-actions.test.tsx	Given	3	Visibility is limited to the original workspace	L176; L179-L190	covered		de0014f3
+shared-thread-actions-007	src/views/shared-thread-page/__tests__/shared-thread-actions.test.tsx	Given	4	Private update and permission refresh can be held pending	L173-L175; L179-L183; L191-L206	covered		de0014f3
+shared-thread-actions-007	src/views/shared-thread-page/__tests__/shared-thread-actions.test.tsx	When	1	Creator opens Share	L212	covered		de0014f3
+shared-thread-actions-007	src/views/shared-thread-page/__tests__/shared-thread-actions.test.tsx	When	2	Creator copies the link	L216	covered		de0014f3
+shared-thread-actions-007	src/views/shared-thread-page/__tests__/shared-thread-actions.test.tsx	When	3	Creator chooses Only me	L221	covered		de0014f3
+shared-thread-actions-007	src/views/shared-thread-page/__tests__/shared-thread-actions.test.tsx	When	4	Creator chooses Anyone with the link while the update and refresh are pending	L231-L233	covered		de0014f3
+shared-thread-actions-007	src/views/shared-thread-page/__tests__/shared-thread-actions.test.tsx	Then	1	Original workspace option is initially selected	L213-L215	covered		de0014f3
+shared-thread-actions-007	src/views/shared-thread-page/__tests__/shared-thread-actions.test.tsx	Then	2	Share URL can be copied	L217-L219	covered		de0014f3
+shared-thread-actions-007	src/views/shared-thread-page/__tests__/shared-thread-actions.test.tsx	Then	3	During the update no option is selected	L224-L227	covered		de0014f3
+shared-thread-actions-007	src/views/shared-thread-page/__tests__/shared-thread-actions.test.tsx	Then	4	During the update all choices remain enabled	L224-L228	covered		de0014f3
+shared-thread-actions-007	src/views/shared-thread-page/__tests__/shared-thread-actions.test.tsx	Then	5	During the update the radio group is busy	L222-L223	covered		de0014f3
+shared-thread-actions-007	src/views/shared-thread-page/__tests__/shared-thread-actions.test.tsx	Then	6	During refresh the workspace option remains visible	L234	covered	Strengthened to toBeVisible in 94ffae58	de0014f3
+shared-thread-actions-007	src/views/shared-thread-page/__tests__/shared-thread-actions.test.tsx	Then	7	During refresh the group remains busy	L235	covered		de0014f3
+shared-thread-actions-007	src/views/shared-thread-page/__tests__/shared-thread-actions.test.tsx	Then	8	During refresh there is no loading-permissions status	L236-L238	covered		de0014f3
+shared-thread-actions-007	src/views/shared-thread-page/__tests__/shared-thread-actions.test.tsx	Then	9	After refresh Anyone with the link is selected	L240-L243	covered		de0014f3
+shared-thread-actions-007	src/views/shared-thread-page/__tests__/shared-thread-actions.test.tsx	Then	10	After refresh the group is no longer busy	L244	covered		de0014f3
+shared-thread-actions-009	src/views/shared-thread-page/__tests__/shared-thread-actions.test.tsx	Given	1	Signed-in recipient	L255-L258	covered		de0014f3
+shared-thread-actions-009	src/views/shared-thread-page/__tests__/shared-thread-actions.test.tsx	Given	2	Recipient views a shared conversation	L249	covered		de0014f3
+shared-thread-actions-009	src/views/shared-thread-page/__tests__/shared-thread-actions.test.tsx	Given	3	Permission read returns HTTP 404	L250-L254	covered		de0014f3
+shared-thread-actions-009	src/views/shared-thread-page/__tests__/shared-thread-actions.test.tsx	When	1	Recipient opens Share	L260	covered		de0014f3
+shared-thread-actions-009	src/views/shared-thread-page/__tests__/shared-thread-actions.test.tsx	When	2	Recipient copies the link	L264	covered		de0014f3
+shared-thread-actions-009	src/views/shared-thread-page/__tests__/shared-thread-actions.test.tsx	Then	1	Copy link is available	L261-L263	covered		de0014f3
+shared-thread-actions-009	src/views/shared-thread-page/__tests__/shared-thread-actions.test.tsx	Then	2	Copy link copies the full share URL	L266-L268; L18	covered		de0014f3
+shared-thread-actions-009	src/views/shared-thread-page/__tests__/shared-thread-actions.test.tsx	Then	3	Access controls are not shown	L269	covered		de0014f3
+shared-artifact-deletion-001	src/views/shared-artifact-page/__tests__/shared-artifact-deletion.test.tsx	Given	1	Signed-in owner (ownership lookup resolves to the catalog artifact)	L110-L124; L129	covered		working-tree
+shared-artifact-deletion-001	src/views/shared-artifact-page/__tests__/shared-artifact-deletion.test.tsx	Given	2	Shared file page uses the current reference format	L105-L107; L179	covered		working-tree
+shared-artifact-deletion-001	src/views/shared-artifact-page/__tests__/shared-artifact-deletion.test.tsx	Given	3	Owner, catalog and delete requests target the shared artifact	L114; L119-L121; L150	covered	request identity	working-tree
+shared-artifact-deletion-001	src/views/shared-artifact-page/__tests__/shared-artifact-deletion.test.tsx	When	1	Owner opens deletion	L156; L133-L143	covered		working-tree
+shared-artifact-deletion-001	src/views/shared-artifact-page/__tests__/shared-artifact-deletion.test.tsx	When	2	Owner cancels deletion	L157	covered		working-tree
+shared-artifact-deletion-001	src/views/shared-artifact-page/__tests__/shared-artifact-deletion.test.tsx	When	3	Owner reopens and confirms deletion	L164; L168 (via L180)	covered		working-tree
+shared-artifact-deletion-001	src/views/shared-artifact-page/__tests__/shared-artifact-deletion.test.tsx	Then	1	Cancel closes the dialog	L158-L159	covered		working-tree
+shared-artifact-deletion-001	src/views/shared-artifact-page/__tests__/shared-artifact-deletion.test.tsx	Then	2	Cancel restores focus to Delete	L160	covered		working-tree
+shared-artifact-deletion-001	src/views/shared-artifact-page/__tests__/shared-artifact-deletion.test.tsx	Then	3	Cancel keeps the page path unchanged	L162	covered		working-tree
+shared-artifact-deletion-001	src/views/shared-artifact-page/__tests__/shared-artifact-deletion.test.tsx	Then	4	Delete is disabled while deleting	L169-L171	covered		working-tree
+shared-artifact-deletion-001	src/views/shared-artifact-page/__tests__/shared-artifact-deletion.test.tsx	Then	5	Cancel is disabled while deleting	L172	covered		working-tree
+shared-artifact-deletion-001	src/views/shared-artifact-page/__tests__/shared-artifact-deletion.test.tsx	Then	6	No artifacts found is shown after deletion	L182-L184	covered		working-tree
+shared-artifact-deletion-001	src/views/shared-artifact-page/__tests__/shared-artifact-deletion.test.tsx	Then	7	Navigates to /artifacts	L185	covered		working-tree
+shared-artifact-deletion-004	src/views/shared-artifact-page/__tests__/shared-artifact-deletion.test.tsx	Given	1	Signed-in owner (ownership lookup resolves to the catalog artifact)	L110-L124; L129	covered		working-tree
+shared-artifact-deletion-004	src/views/shared-artifact-page/__tests__/shared-artifact-deletion.test.tsx	Given	2	Owner is viewing a shared-thread page	L105-L106; L189	covered		working-tree
+shared-artifact-deletion-004	src/views/shared-artifact-page/__tests__/shared-artifact-deletion.test.tsx	Given	3	Owner, catalog and delete requests target the shared artifact	L114; L119-L121; L150	covered	request identity	working-tree
+shared-artifact-deletion-004	src/views/shared-artifact-page/__tests__/shared-artifact-deletion.test.tsx	When	1	Owner opens deletion	L156; L133-L143	covered		working-tree
+shared-artifact-deletion-004	src/views/shared-artifact-page/__tests__/shared-artifact-deletion.test.tsx	When	2	Owner cancels deletion	L157	covered		working-tree
+shared-artifact-deletion-004	src/views/shared-artifact-page/__tests__/shared-artifact-deletion.test.tsx	When	3	Owner reopens and confirms deletion	L164; L168 (via L193)	covered		working-tree
+shared-artifact-deletion-004	src/views/shared-artifact-page/__tests__/shared-artifact-deletion.test.tsx	Then	1	Cancel closes the dialog	L158-L159	covered		working-tree
+shared-artifact-deletion-004	src/views/shared-artifact-page/__tests__/shared-artifact-deletion.test.tsx	Then	2	Cancel restores focus to Delete	L160	covered		working-tree
+shared-artifact-deletion-004	src/views/shared-artifact-page/__tests__/shared-artifact-deletion.test.tsx	Then	3	Cancel keeps the page path unchanged	L162	covered		working-tree
+shared-artifact-deletion-004	src/views/shared-artifact-page/__tests__/shared-artifact-deletion.test.tsx	Then	4	Confirmation says the shared link will stop working	L190-L192	covered		working-tree
+shared-artifact-deletion-004	src/views/shared-artifact-page/__tests__/shared-artifact-deletion.test.tsx	Then	5	Delete is disabled while deletion is in progress	L169-L171	covered		working-tree
+shared-artifact-deletion-004	src/views/shared-artifact-page/__tests__/shared-artifact-deletion.test.tsx	Then	6	Cancel is disabled while deletion is in progress	L172	covered		working-tree
+shared-artifact-deletion-004	src/views/shared-artifact-page/__tests__/shared-artifact-deletion.test.tsx	Then	7	No artifacts found is shown after deletion	L195-L197	covered		working-tree
+shared-artifact-deletion-004	src/views/shared-artifact-page/__tests__/shared-artifact-deletion.test.tsx	Then	8	Navigates to /artifacts	L198	covered		working-tree
+shared-artifact-deletion-005	src/views/shared-artifact-page/__tests__/shared-artifact-deletion.test.tsx	Given	1	Signed-in owner viewing a shared file page	L212; L126-L131	covered		working-tree
+shared-artifact-deletion-005	src/views/shared-artifact-page/__tests__/shared-artifact-deletion.test.tsx	Given	2	First deletion request fails with service unavailable	L202-L211	covered		working-tree
+shared-artifact-deletion-005	src/views/shared-artifact-page/__tests__/shared-artifact-deletion.test.tsx	Given	3	Owner and catalog requests target the shared file	L114; L119-L121	covered	request identity	working-tree
+shared-artifact-deletion-005	src/views/shared-artifact-page/__tests__/shared-artifact-deletion.test.tsx	When	1	Owner confirms deletion	L213; L215	covered		working-tree
+shared-artifact-deletion-005	src/views/shared-artifact-page/__tests__/shared-artifact-deletion.test.tsx	When	2	Owner retries after the failure	L223	covered		working-tree
+shared-artifact-deletion-005	src/views/shared-artifact-page/__tests__/shared-artifact-deletion.test.tsx	Then	1	Error Could not delete artifact appears	L216-L218	covered	message is the service error text the product surfaces (same as baseline)	working-tree
+shared-artifact-deletion-005	src/views/shared-artifact-page/__tests__/shared-artifact-deletion.test.tsx	Then	2	Dialog remains open	L219	covered		working-tree
+shared-artifact-deletion-005	src/views/shared-artifact-page/__tests__/shared-artifact-deletion.test.tsx	Then	3	Delete remains enabled	L220	covered		working-tree
+shared-artifact-deletion-005	src/views/shared-artifact-page/__tests__/shared-artifact-deletion.test.tsx	Then	4	Page path is unchanged	L221	covered		working-tree
+shared-artifact-deletion-005	src/views/shared-artifact-page/__tests__/shared-artifact-deletion.test.tsx	Then	5	Retry succeeds and shows No artifacts found	L224-L226	covered		working-tree
+shared-artifact-deletion-005	src/views/shared-artifact-page/__tests__/shared-artifact-deletion.test.tsx	Then	6	Retry navigates to /artifacts	L227	covered		working-tree
+shared-artifact-deletion-006	src/views/shared-artifact-page/__tests__/shared-artifact-deletion.test.tsx	Given	1	Signed-in owner of a shared file page	L230-L233 (file); L126-L131	covered		working-tree
+shared-artifact-deletion-006	src/views/shared-artifact-page/__tests__/shared-artifact-deletion.test.tsx	Given	2	Owner has opened the deletion dialog	L234	covered		working-tree
+shared-artifact-deletion-006	src/views/shared-artifact-page/__tests__/shared-artifact-deletion.test.tsx	Given	3	Owner and catalog requests target the shared artifact	L114; L119-L121	covered	request identity	working-tree
+shared-artifact-deletion-006	src/views/shared-artifact-page/__tests__/shared-artifact-deletion.test.tsx	When	1	A token refresh occurs and stays pending	L235-L243	covered		working-tree
+shared-artifact-deletion-006	src/views/shared-artifact-page/__tests__/shared-artifact-deletion.test.tsx	When	2	Owner cancels before the refresh completes	L244 (before L249)	covered		working-tree
+shared-artifact-deletion-006	src/views/shared-artifact-page/__tests__/shared-artifact-deletion.test.tsx	Then	1	Dialog closes	L245-L247	covered		working-tree
+shared-artifact-deletion-006	src/views/shared-artifact-page/__tests__/shared-artifact-deletion.test.tsx	Then	2	After the refresh completes focus returns to Delete	L249-L252	covered		working-tree
+shared-artifact-deletion-007	src/views/shared-artifact-page/__tests__/shared-artifact-deletion.test.tsx	Given	1	Signed-in owner of a shared-thread page	L230-L233 (shared-thread); L126-L131	covered		working-tree
+shared-artifact-deletion-007	src/views/shared-artifact-page/__tests__/shared-artifact-deletion.test.tsx	Given	2	Owner has opened the deletion dialog	L234	covered		working-tree
+shared-artifact-deletion-007	src/views/shared-artifact-page/__tests__/shared-artifact-deletion.test.tsx	Given	3	Owner and catalog requests target the shared artifact	L114; L119-L121	covered	request identity	working-tree
+shared-artifact-deletion-007	src/views/shared-artifact-page/__tests__/shared-artifact-deletion.test.tsx	When	1	A token refresh occurs and stays pending	L235-L243	covered		working-tree
+shared-artifact-deletion-007	src/views/shared-artifact-page/__tests__/shared-artifact-deletion.test.tsx	When	2	Owner cancels before the refresh completes	L244 (before L249)	covered		working-tree
+shared-artifact-deletion-007	src/views/shared-artifact-page/__tests__/shared-artifact-deletion.test.tsx	Then	1	Dialog closes	L245-L247	covered		working-tree
+shared-artifact-deletion-007	src/views/shared-artifact-page/__tests__/shared-artifact-deletion.test.tsx	Then	2	After the refresh completes focus returns to Delete	L249-L252	covered		working-tree
+shared-artifact-deletion-008	src/views/shared-artifact-page/__tests__/shared-artifact-deletion.test.tsx	Given	1	Read-only recipient (ownership lookup denied)	L258-L264; L268	covered	ownershipDenied at L268 confirms the read-only premise	working-tree
+shared-artifact-deletion-008	src/views/shared-artifact-page/__tests__/shared-artifact-deletion.test.tsx	Given	2	Recipient is viewing a shared file page	L257; L265	covered		working-tree
+shared-artifact-deletion-008	src/views/shared-artifact-page/__tests__/shared-artifact-deletion.test.tsx	When	1	Recipient views the available page actions	L267-L270	covered		working-tree
+shared-artifact-deletion-008	src/views/shared-artifact-page/__tests__/shared-artifact-deletion.test.tsx	Then	1	Share is available	L269	covered		working-tree
+shared-artifact-deletion-008	src/views/shared-artifact-page/__tests__/shared-artifact-deletion.test.tsx	Then	2	Delete is not offered	L271	covered		working-tree
+shared-thread-artifact-lightbox-001	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Given	1	Signed-out visitor	L203; shared-thread-test-helpers.ts:L37	covered		working-tree
+shared-thread-artifact-lightbox-001	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Given	2	Shared site with a screenshot cover	L48-L55; L201	covered		working-tree
+shared-thread-artifact-lightbox-001	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Given	3	Resolution requests target only the scenario's snapshot references	L86-L89; L112-L115	covered	request identity	working-tree
+shared-thread-artifact-lightbox-001	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	When	1	Visitor opens the site in the independent viewer	L212; L214	covered		working-tree
+shared-thread-artifact-lightbox-001	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	When	2	Visitor copies its link	L223	covered		working-tree
+shared-thread-artifact-lightbox-001	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	When	3	Visitor downloads it	L228	covered		working-tree
+shared-thread-artifact-lightbox-001	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	When	4	Visitor enters fullscreen	L234-L237	covered	data-mode=fullscreen confirms entry	working-tree
+shared-thread-artifact-lightbox-001	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	When	5	Visitor exits fullscreen	L238-L241	covered	data-mode=windowed confirms exit	working-tree
+shared-thread-artifact-lightbox-001	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	When	6	Visitor closes the viewer	L243; L190-L195	covered		working-tree
+shared-thread-artifact-lightbox-001	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Then	1	Card shows the cover	L205-L207	covered		working-tree
+shared-thread-artifact-lightbox-001	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Then	2	Card retains the original URL	L209	covered		working-tree
+shared-thread-artifact-lightbox-001	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Then	3	Card has no embedded frame	L210	covered		working-tree
+shared-thread-artifact-lightbox-001	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Then	4	Viewer shows the authorized site URL with its slide fragment	L215-L216	covered		working-tree
+shared-thread-artifact-lightbox-001	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Then	5	Site is in a sandboxed frame	L217	covered		working-tree
+shared-thread-artifact-lightbox-001	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Then	6	Viewer offers copy, download and fullscreen actions	L218-L220	covered		working-tree
+shared-thread-artifact-lightbox-001	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Then	7	Viewer offers no access controls	L221	covered		working-tree
+shared-thread-artifact-lightbox-001	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Then	8	Copy writes the original URL	L224-L226	covered		working-tree
+shared-thread-artifact-lightbox-001	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Then	9	Download saves lightsite1.html	L229-L231	covered		working-tree
+shared-thread-artifact-lightbox-001	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Then	10	Download does not change the displayed site	L232	covered		working-tree
+shared-thread-artifact-lightbox-001	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Then	11	Closing returns to the card	L192-L194; L244	covered		working-tree
+shared-thread-artifact-lightbox-001	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Then	12	Artifact resolution is unauthenticated	L81; L85; L245-L246	covered		working-tree
+shared-thread-artifact-lightbox-001	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Extra	1	Download URL equals SITE_DOWNLOAD_URL	-	removed	Download URL check dropped before acceptance; the filename check remains	working-tree
+shared-thread-artifact-lightbox-003	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Given	1	Signed-in viewer	L273-L276	covered		working-tree
+shared-thread-artifact-lightbox-003	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Given	2	Shared video artifact	L253-L271	covered		working-tree
+shared-thread-artifact-lightbox-003	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Given	3	App allows its download	L257	covered		working-tree
+shared-thread-artifact-lightbox-003	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	When	1	Viewer opens the video viewer	L278; L280	covered		working-tree
+shared-thread-artifact-lightbox-003	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	When	2	Viewer downloads the video	L288	covered		working-tree
+shared-thread-artifact-lightbox-003	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Then	1	Video plays at the original timestamp	L281-L286	covered		working-tree
+shared-thread-artifact-lightbox-003	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Then	2	Download saves lightvid01.mp4	L289-L293	covered		working-tree
+shared-thread-artifact-lightbox-003	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Then	3	Download uses the public download URL	L252; L289-L293	covered	resolve and publicUrl both supply this downloadUrl; product uses resolve's value when download is allowed	working-tree
+shared-thread-artifact-lightbox-003	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Then	4	Download does not change the displayed video	L294-L297	covered		working-tree
+shared-thread-artifact-lightbox-010	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Given	1	Visitor views a shared prompt	L303-L332	covered		working-tree
+shared-thread-artifact-lightbox-010	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Given	2	Prompt has a video attachment with a generated cover	L313-L318; L58-L65	covered		working-tree
+shared-thread-artifact-lightbox-010	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Given	3	Prompt has a site attachment with a generated cover	L319-L324; L48-L55	covered		working-tree
+shared-thread-artifact-lightbox-010	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Given	4	Resolution requests target only the scenario's snapshot references	L86-L89; L112-L115	covered	request identity	working-tree
+shared-thread-artifact-lightbox-010	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	When	1	Visitor opens the video in the independent viewer	L355-L356	covered		working-tree
+shared-thread-artifact-lightbox-010	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	When	2	Visitor copies the video link	L363	covered		working-tree
+shared-thread-artifact-lightbox-010	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	When	3	Visitor opens the site in the independent viewer	L367-L370	covered		working-tree
+shared-thread-artifact-lightbox-010	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	When	4	Visitor copies the site link	L374	covered		working-tree
+shared-thread-artifact-lightbox-010	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Then	1	Video card retains its cover	L337-L339; L346-L349	covered		working-tree
+shared-thread-artifact-lightbox-010	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Then	2	Site card retains its cover	L342-L344; L350-L353	covered		working-tree
+shared-thread-artifact-lightbox-010	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Then	3	Video viewer plays at the original timestamp	L357-L362	covered		working-tree
+shared-thread-artifact-lightbox-010	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Then	4	Site viewer shows the authorized site URL with its slide fragment	L371-L373	covered		working-tree
+shared-thread-artifact-lightbox-010	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Then	5	Clipboard receives the video URL then the site URL	L364-L366; L375-L377	covered		working-tree
+shared-thread-artifact-lightbox-011	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Given	1	Visitor opens a shared site in the viewer	L383-L392	covered		working-tree
+shared-thread-artifact-lightbox-011	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Given	2	Download access is then revoked	L394	covered		working-tree
+shared-thread-artifact-lightbox-011	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Given	3	Resolution requests target only the scenario's snapshot references	L86-L89; L112-L115	covered	request identity	working-tree
+shared-thread-artifact-lightbox-011	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	When	1	Visitor tries to download the site	L396	covered		working-tree
+shared-thread-artifact-lightbox-011	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Then	1	Viewer reports Download failed	L398-L400	covered		working-tree
+shared-thread-artifact-lightbox-011	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Then	2	No download occurs	L401	covered		working-tree
+shared-thread-artifact-lightbox-011	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Then	3	Browser location is not replaced	L382; L402	covered		working-tree
+shared-thread-artifact-lightbox-011	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Then	4	Visitor remains on the shared conversation	L393; L403	covered		working-tree
+shared-thread-artifact-lightbox-012	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Given	1	Visitor views a shared image	L414; L416	covered		working-tree
+shared-thread-artifact-lightbox-012	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Given	2	Image has a resolved preview	L407-L413	covered		working-tree
+shared-thread-artifact-lightbox-012	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Given	3	Resolve request targets the scenario's artifact reference	L146	covered	request identity	working-tree
+shared-thread-artifact-lightbox-012	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	When	1	Visitor opens the image from its card	L430	covered		working-tree
+shared-thread-artifact-lightbox-012	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Then	1	Card links to the original destination	L423	covered		working-tree
+shared-thread-artifact-lightbox-012	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Then	2	Card link opens in a new tab	L424	covered		working-tree
+shared-thread-artifact-lightbox-012	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Then	3	Card shows the preview	L425-L427	covered		working-tree
+shared-thread-artifact-lightbox-012	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Then	4	Opening shows the resolved image	L432-L435	covered		working-tree
+shared-thread-artifact-lightbox-012	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Then	5	Opening shows its caption	L436	covered		working-tree
+shared-thread-artifact-lightbox-012	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Then	6	Image opens in the conversation	L428; L432; L437	covered		working-tree
+shared-thread-artifact-lightbox-013	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Given	1	Visitor views a shared document as a card	L448-L453	covered		working-tree
+shared-thread-artifact-lightbox-013	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Given	2	Same document appears as a Markdown link	L449	covered		working-tree
+shared-thread-artifact-lightbox-013	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Given	3	Resolve request targets the scenario's artifact reference	L146	covered	request identity	working-tree
+shared-thread-artifact-lightbox-013	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	When	1	Visitor opens the document from the card	L456	covered		working-tree
+shared-thread-artifact-lightbox-013	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	When	2	Visitor closes the viewer	L466; L190-L195	covered		working-tree
+shared-thread-artifact-lightbox-013	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	When	3	Visitor opens the document from the link	L468	covered		working-tree
+shared-thread-artifact-lightbox-013	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Then	1	Card action opens the document in the conversation	L454; L458; L465	covered		working-tree
+shared-thread-artifact-lightbox-013	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Then	2	Link action opens the document in the conversation	L470; L472	covered		working-tree
+shared-thread-artifact-lightbox-013	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Then	3	Card viewer shows the resolved document	L459-L463	covered		working-tree
+shared-thread-artifact-lightbox-013	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Then	4	Card viewer shows its caption	L464	covered		working-tree
+shared-thread-artifact-lightbox-013	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Then	5	Link viewer uses the link text as its title	L471	covered	dialog title is plain text (no heading role); text match is the strongest available check	working-tree
+shared-thread-artifact-lightbox-014	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Given	1	Visitor views a prompt with an image attachment	L478-L501	covered		working-tree
+shared-thread-artifact-lightbox-014	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	When	1	Visitor opens the attachment	L508	covered		working-tree
+shared-thread-artifact-lightbox-014	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Then	1	Attachment opens in the conversation	L505; L510; L515	covered		working-tree
+shared-thread-artifact-lightbox-014	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Then	2	Attachment does not open a new tab	L516	covered	No window.open call after the viewer opens (added before acceptance)	working-tree
+shared-thread-artifact-lightbox-014	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Then	3	Viewer shows the image	L511-L513	covered		working-tree
+shared-thread-artifact-lightbox-014	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Then	4	Viewer shows the filename	L514	covered		working-tree
+shared-thread-artifact-lightbox-015	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Given	1	Visitor views a shared Markdown note	L520-L526; L533-L535	covered		working-tree
+shared-thread-artifact-lightbox-015	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Given	2	Note contains text and a Mermaid diagram	L527-L532	covered		working-tree
+shared-thread-artifact-lightbox-015	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Given	3	Resolve request targets the scenario's artifact reference	L146	covered	request identity	working-tree
+shared-thread-artifact-lightbox-015	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	When	1	Visitor opens the note	L536; L538	covered		working-tree
+shared-thread-artifact-lightbox-015	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	When	2	Visitor enters fullscreen	L549-L552	covered	data-mode=fullscreen confirms entry	working-tree
+shared-thread-artifact-lightbox-015	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	When	3	Visitor expands the diagram	L553-L558	covered		working-tree
+shared-thread-artifact-lightbox-015	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	When	4	Visitor presses Escape once per layer	L560; L569; L574	covered		working-tree
+shared-thread-artifact-lightbox-015	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Then	1	Viewer renders the note text	L539-L543	covered		working-tree
+shared-thread-artifact-lightbox-015	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Then	2	Viewer renders the title	L544	covered		working-tree
+shared-thread-artifact-lightbox-015	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Then	3	Viewer renders the diagram	L545-L547	covered		working-tree
+shared-thread-artifact-lightbox-015	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Then	4	First Escape closes the expanded diagram	L561-L565	covered		working-tree
+shared-thread-artifact-lightbox-015	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Then	5	Note remains fullscreen after the first Escape	L566	covered		working-tree
+shared-thread-artifact-lightbox-015	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Then	6	Focus returns to the expand control	L567	covered		working-tree
+shared-thread-artifact-lightbox-015	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Then	7	Second Escape exits fullscreen	L570-L572	covered		working-tree
+shared-thread-artifact-lightbox-015	src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Then	8	Final Escape closes the note viewer	L575-L577	covered		working-tree
+artifact-catalog-cards-001	src/views/artifacts-page/__tests__/artifact-catalog-cards.test.tsx	Given	1	Catalog contains a text file	L17	covered		working-tree
+artifact-catalog-cards-001	src/views/artifacts-page/__tests__/artifact-catalog-cards.test.tsx	Given	2	Catalog contains a hosted site with a thumbnail	L18-L23	covered		working-tree
+artifact-catalog-cards-001	src/views/artifacts-page/__tests__/artifact-catalog-cards.test.tsx	Given	3	Catalog contains an avatar video	L24-L28	covered		working-tree
+artifact-catalog-cards-001	src/views/artifacts-page/__tests__/artifact-catalog-cards.test.tsx	When	1	User views the artifact cards	L34	covered		working-tree
+artifact-catalog-cards-001	src/views/artifacts-page/__tests__/artifact-catalog-cards.test.tsx	Then	1	Hosted site is identified as a hosted-site artifact	L36-L39	covered		working-tree
+artifact-catalog-cards-001	src/views/artifacts-page/__tests__/artifact-catalog-cards.test.tsx	Then	2	Hosted site shows its available thumbnail preview	L40-L43	covered		working-tree
+artifact-catalog-cards-001	src/views/artifacts-page/__tests__/artifact-catalog-cards.test.tsx	Then	3	Video is identified as an avatar artifact	L44-L47	covered		working-tree
+artifact-catalog-cards-001	src/views/artifacts-page/__tests__/artifact-catalog-cards.test.tsx	Then	4	Text file is available as an artifact action	L48-L50; artifact-catalog-test-helpers.ts:L70-L79	covered		working-tree
+artifact-catalog-cards-003	src/views/artifacts-page/__tests__/artifact-catalog-cards.test.tsx	Given	1	Catalog initially contains launch-plan.txt	L54-L63; L66	covered		working-tree
+artifact-catalog-cards-003	src/views/artifacts-page/__tests__/artifact-catalog-cards.test.tsx	When	1	Member's artifact changes and the catalog receives an artifact-change event	L68-L70	covered		working-tree
+artifact-catalog-cards-003	src/views/artifacts-page/__tests__/artifact-catalog-cards.test.tsx	Then	1	Catalog is read again	L54-L59; L72	covered	synced-plan.txt is only served on a second list read, so L72 fails without a re-read	working-tree
+artifact-catalog-cards-003	src/views/artifacts-page/__tests__/artifact-catalog-cards.test.tsx	Then	2	Catalog shows synced-plan.txt	L72	covered		working-tree
+artifact-catalog-filters-002	src/views/artifacts-page/__tests__/artifact-catalog-filters.test.tsx	Given	1	Catalog is empty	L21-L23	covered		working-tree
+artifact-catalog-filters-002	src/views/artifacts-page/__tests__/artifact-catalog-filters.test.tsx	When	1	User selects Files	L29	covered		working-tree
+artifact-catalog-filters-002	src/views/artifacts-page/__tests__/artifact-catalog-filters.test.tsx	Then	1	All seven kind filters remain available	L37-L49	covered	Checked after the selection	working-tree
+artifact-catalog-filters-002	src/views/artifacts-page/__tests__/artifact-catalog-filters.test.tsx	Then	2	Files is selected	L31-L36	covered		working-tree
+artifact-catalog-filters-002	src/views/artifacts-page/__tests__/artifact-catalog-filters.test.tsx	Then	3	Empty-catalog message remains visible	L50	covered	toBeVisible	working-tree
+artifact-catalog-filters-003	src/views/artifacts-page/__tests__/artifact-catalog-filters.test.tsx	Given	1	Catalog initially shows a presentation	L65; L78-L80	covered		working-tree
+artifact-catalog-filters-003	src/views/artifacts-page/__tests__/artifact-catalog-filters.test.tsx	Given	2	A shared conversation is available after its catalog request completes	L56-L64	covered		working-tree
+artifact-catalog-filters-003	src/views/artifacts-page/__tests__/artifact-catalog-filters.test.tsx	Given	3	Sidebar preview is disabled	L53; L74-L76	covered		working-tree
+artifact-catalog-filters-003	src/views/artifacts-page/__tests__/artifact-catalog-filters.test.tsx	When	1	User selects Shared chats	L82-L87	covered		working-tree
+artifact-catalog-filters-003	src/views/artifacts-page/__tests__/artifact-catalog-filters.test.tsx	When	2	User waits for the results	L89	covered	confirms the When action happened	working-tree
+artifact-catalog-filters-003	src/views/artifacts-page/__tests__/artifact-catalog-filters.test.tsx	Then	1	Shared conversation is a link	L90	covered		working-tree
+artifact-catalog-filters-003	src/views/artifacts-page/__tests__/artifact-catalog-filters.test.tsx	Then	2	Link targets its shared-thread destination	L91-L94	covered		working-tree
+artifact-catalog-filters-003	src/views/artifacts-page/__tests__/artifact-catalog-filters.test.tsx	Then	3	Link opens in a new tab	L95	covered		working-tree
+artifact-catalog-filters-003	src/views/artifacts-page/__tests__/artifact-catalog-filters.test.tsx	Then	4	Link has safe link attributes	L96	covered		working-tree
+artifact-catalog-filters-003	src/views/artifacts-page/__tests__/artifact-catalog-filters.test.tsx	Then	5	Link is within a list item	L97-L98	covered		working-tree
+artifact-catalog-filters-003	src/views/artifacts-page/__tests__/artifact-catalog-filters.test.tsx	Then	6	List item is in a list	L99	covered		working-tree
+artifact-catalog-filters-004	src/views/artifacts-page/__tests__/artifact-catalog-filters.test.tsx	Given	1	Catalog initially shows a presentation	L65; L78-L80	covered		working-tree
+artifact-catalog-filters-004	src/views/artifacts-page/__tests__/artifact-catalog-filters.test.tsx	Given	2	A shared conversation is available after its catalog request completes	L56-L64	covered		working-tree
+artifact-catalog-filters-004	src/views/artifacts-page/__tests__/artifact-catalog-filters.test.tsx	Given	3	Sidebar preview is enabled	L53; L74-L76	covered		working-tree
+artifact-catalog-filters-004	src/views/artifacts-page/__tests__/artifact-catalog-filters.test.tsx	When	1	User selects Shared chats	L82-L87	covered		working-tree
+artifact-catalog-filters-004	src/views/artifacts-page/__tests__/artifact-catalog-filters.test.tsx	When	2	User waits for the results	L89	covered	confirms the When action happened	working-tree
+artifact-catalog-filters-004	src/views/artifacts-page/__tests__/artifact-catalog-filters.test.tsx	Then	1	Shared conversation is a link	L90	covered		working-tree
+artifact-catalog-filters-004	src/views/artifacts-page/__tests__/artifact-catalog-filters.test.tsx	Then	2	Link targets its shared-thread destination	L91-L94	covered		working-tree
+artifact-catalog-filters-004	src/views/artifacts-page/__tests__/artifact-catalog-filters.test.tsx	Then	3	Link opens in a new tab	L95	covered		working-tree
+artifact-catalog-filters-004	src/views/artifacts-page/__tests__/artifact-catalog-filters.test.tsx	Then	4	Link has safe link attributes	L96	covered		working-tree
+artifact-catalog-filters-004	src/views/artifacts-page/__tests__/artifact-catalog-filters.test.tsx	Then	5	Link is within a list item	L97-L98	covered		working-tree
+artifact-catalog-filters-004	src/views/artifacts-page/__tests__/artifact-catalog-filters.test.tsx	Then	6	List item is in a list	L99	covered		working-tree
+artifact-catalog-preview-001	src/views/artifacts-page/__tests__/artifact-catalog-preview.test.tsx	Given	1	Catalog contains a hosted-site card	L41-L52	covered		working-tree
+artifact-catalog-preview-001	src/views/artifacts-page/__tests__/artifact-catalog-preview.test.tsx	Given	2	Card thumbnail points to a stored private cover image	L47	covered		working-tree
+artifact-catalog-preview-001	src/views/artifacts-page/__tests__/artifact-catalog-preview.test.tsx	Given	3	Resolving that reference returns an authorized URL	L40; L53-L62	covered		working-tree
+artifact-catalog-preview-001	src/views/artifacts-page/__tests__/artifact-catalog-preview.test.tsx	When	1	User views the card preview	L64-L66	covered		working-tree
+artifact-catalog-preview-001	src/views/artifacts-page/__tests__/artifact-catalog-preview.test.tsx	Then	1	Card thumbnail uses the resolved private image URL	L67-L69	covered		working-tree
+artifact-catalog-preview-003	src/views/artifacts-page/__tests__/artifact-catalog-preview.test.tsx	Given	1	Catalog contains a ZIP file	L74-L79	covered		working-tree
+artifact-catalog-preview-003	src/views/artifacts-page/__tests__/artifact-catalog-preview.test.tsx	Given	2	Its preview can be opened	L80-L90	covered		working-tree
+artifact-catalog-preview-003	src/views/artifacts-page/__tests__/artifact-catalog-preview.test.tsx	Given	3	Its file URL returns archive content	L91-L95	covered		working-tree
+artifact-catalog-preview-003	src/views/artifacts-page/__tests__/artifact-catalog-preview.test.tsx	When	1	User opens the preview	L98; L21-L24	covered	confirms the When action happened (lightbox found)	working-tree
+artifact-catalog-preview-003	src/views/artifacts-page/__tests__/artifact-catalog-preview.test.tsx	When	2	User chooses Download	L98; L26-L36	covered		working-tree
+artifact-catalog-preview-003	src/views/artifacts-page/__tests__/artifact-catalog-preview.test.tsx	Then	1	A download is initiated for release-bundle.zip	L100-L102	covered		working-tree
+artifact-catalog-preview-003	src/views/artifacts-page/__tests__/artifact-catalog-preview.test.tsx	Then	2	Download uses its original artifact URL	L100-L102	covered		working-tree
+artifact-catalog-preview-004	src/views/artifacts-page/__tests__/artifact-catalog-preview.test.tsx	Given	1	Catalog contains a native PowerPoint presentation file	L107-L114	covered		working-tree
+artifact-catalog-preview-004	src/views/artifacts-page/__tests__/artifact-catalog-preview.test.tsx	Given	2	Its preview is available	L115-L125	covered		working-tree
+artifact-catalog-preview-004	src/views/artifacts-page/__tests__/artifact-catalog-preview.test.tsx	Given	3	Its original file URL is available	L126-L130	covered		working-tree
+artifact-catalog-preview-004	src/views/artifacts-page/__tests__/artifact-catalog-preview.test.tsx	When	1	User opens the file preview	L133; L21-L24	covered	confirms the When action happened (lightbox found)	working-tree
+artifact-catalog-preview-004	src/views/artifacts-page/__tests__/artifact-catalog-preview.test.tsx	When	2	User chooses Download	L141; L26-L36	covered		working-tree
+artifact-catalog-preview-004	src/views/artifacts-page/__tests__/artifact-catalog-preview.test.tsx	Then	1	Preview retains its Office presentation URL	L134-L139; L146	covered		working-tree
+artifact-catalog-preview-004	src/views/artifacts-page/__tests__/artifact-catalog-preview.test.tsx	Then	2	A download is initiated for the original quarterly-review.pptx	L143-L145	covered		working-tree
+artifact-catalog-preview-004	src/views/artifacts-page/__tests__/artifact-catalog-preview.test.tsx	Then	3	Download uses its original URL	L143-L145	covered		working-tree
+artifact-deletion-001	src/views/artifacts-page/__tests__/artifact-deletion.test.tsx	Given	1	Catalog contains report.txt	L79; L84-L89	covered		working-tree
+artifact-deletion-001	src/views/artifacts-page/__tests__/artifact-deletion.test.tsx	Given	2	Sidebar previews are disabled	L103	covered		working-tree
+artifact-deletion-001	src/views/artifacts-page/__tests__/artifact-deletion.test.tsx	Given	3	Delete request targets report.txt	L93	covered	request identity	working-tree
+artifact-deletion-001	src/views/artifacts-page/__tests__/artifact-deletion.test.tsx	When	1	User opens Delete	L106; L53-L67	covered	confirms the When action happened (dialog found)	working-tree
+artifact-deletion-001	src/views/artifacts-page/__tests__/artifact-deletion.test.tsx	When	2	User cancels	L110	covered		working-tree
+artifact-deletion-001	src/views/artifacts-page/__tests__/artifact-deletion.test.tsx	When	3	User reopens the dialog with Enter	L116-L119	covered	confirms the When action happened (dialog found)	working-tree
+artifact-deletion-001	src/views/artifacts-page/__tests__/artifact-deletion.test.tsx	When	4	User dismisses it with Escape	L120	covered		working-tree
+artifact-deletion-001	src/views/artifacts-page/__tests__/artifact-deletion.test.tsx	When	5	User confirms deletion	L126-L127	covered		working-tree
+artifact-deletion-001	src/views/artifacts-page/__tests__/artifact-deletion.test.tsx	When	6	Deletion request is pending	L82; L94-L95; L128	covered	confirms the When action happened (deleting deferred)	working-tree
+artifact-deletion-001	src/views/artifacts-page/__tests__/artifact-deletion.test.tsx	When	7	Deletion request eventually completes	L83; L139	covered		working-tree
+artifact-deletion-001	src/views/artifacts-page/__tests__/artifact-deletion.test.tsx	Then	1	Dialog warns that downloaded copies already exist	L107-L109	covered		working-tree
+artifact-deletion-001	src/views/artifacts-page/__tests__/artifact-deletion.test.tsx	Then	2	Cancel returns focus to Delete	L111-L114; L69-L75	covered		working-tree
+artifact-deletion-001	src/views/artifacts-page/__tests__/artifact-deletion.test.tsx	Then	3	Escape returns focus to Delete	L121-L124; L69-L75	covered		working-tree
+artifact-deletion-001	src/views/artifacts-page/__tests__/artifact-deletion.test.tsx	Then	4	While pending, Delete is disabled	L129-L131	covered		working-tree
+artifact-deletion-001	src/views/artifacts-page/__tests__/artifact-deletion.test.tsx	Then	5	While pending, Cancel is disabled	L132	covered		working-tree
+artifact-deletion-001	src/views/artifacts-page/__tests__/artifact-deletion.test.tsx	Then	6	While pending, Close is unavailable	L133	covered	Observed after the busy sentinel L129-L131	working-tree
+artifact-deletion-001	src/views/artifacts-page/__tests__/artifact-deletion.test.tsx	Then	7	While pending, Escape does not dismiss the dialog	L136	covered	After Escape the open dialog keeps its target title; closing would clear the target (artifact-deletion.ts set(target$, null))	working-tree
+artifact-deletion-001	src/views/artifacts-page/__tests__/artifact-deletion.test.tsx	Then	8	While pending, the artifact remains in the catalog	L137	covered		working-tree
+artifact-deletion-001	src/views/artifacts-page/__tests__/artifact-deletion.test.tsx	Then	9	On success 'Artifact deleted' appears	L140-L142	covered		working-tree
+artifact-deletion-001	src/views/artifacts-page/__tests__/artifact-deletion.test.tsx	Then	10	On success 'No artifacts found' appears	L143-L145	covered		working-tree
+artifact-deletion-001	src/views/artifacts-page/__tests__/artifact-deletion.test.tsx	Then	11	Artifact is absent	L146	covered	Observed after the 'No artifacts found' sentinel	working-tree
+artifact-deletion-001	src/views/artifacts-page/__tests__/artifact-deletion.test.tsx	Then	12	Focus returns to the catalog	L147-L149	covered		working-tree
+artifact-deletion-003	src/views/artifacts-page/__tests__/artifact-deletion.test.tsx	Given	1	Catalog contains report.txt	L153; L157-L162	covered		working-tree
+artifact-deletion-003	src/views/artifacts-page/__tests__/artifact-deletion.test.tsx	Given	2	First deletion attempt fails with a 503 error	L156; L163-L169	covered		working-tree
+artifact-deletion-003	src/views/artifacts-page/__tests__/artifact-deletion.test.tsx	When	1	User attempts deletion	L175-L176	covered		working-tree
+artifact-deletion-003	src/views/artifacts-page/__tests__/artifact-deletion.test.tsx	When	2	User cancels the failed dialog	L184	covered		working-tree
+artifact-deletion-003	src/views/artifacts-page/__tests__/artifact-deletion.test.tsx	When	3	User closes the preview	L189-L196	covered	confirms the When action happened (preview removed)	working-tree
+artifact-deletion-003	src/views/artifacts-page/__tests__/artifact-deletion.test.tsx	When	4	User reopens the preview	L198; L53-L64	covered		working-tree
+artifact-deletion-003	src/views/artifacts-page/__tests__/artifact-deletion.test.tsx	When	5	User retries deletion successfully	L199; L170-L171	covered		working-tree
+artifact-deletion-003	src/views/artifacts-page/__tests__/artifact-deletion.test.tsx	Then	1	First attempt displays 'Could not delete artifact'	L177-L179	covered		working-tree
+artifact-deletion-003	src/views/artifacts-page/__tests__/artifact-deletion.test.tsx	Then	2	First attempt does not show 'Artifact deleted'	L180	covered	Observed after the error sentinel	working-tree
+artifact-deletion-003	src/views/artifacts-page/__tests__/artifact-deletion.test.tsx	Then	3	Artifact stays available	L181	covered		working-tree
+artifact-deletion-003	src/views/artifacts-page/__tests__/artifact-deletion.test.tsx	Then	4	Delete stays enabled	L182	covered		working-tree
+artifact-deletion-003	src/views/artifacts-page/__tests__/artifact-deletion.test.tsx	Then	5	Cancel closes the dialog	L185-L186	covered		working-tree
+artifact-deletion-003	src/views/artifacts-page/__tests__/artifact-deletion.test.tsx	Then	6	Cancel returns focus to Delete	L187; L69-L75	covered		working-tree
+artifact-deletion-003	src/views/artifacts-page/__tests__/artifact-deletion.test.tsx	Then	7	Retry removes the artifact	L203	covered	Observed after the 'No artifacts found' sentinel	working-tree
+artifact-deletion-003	src/views/artifacts-page/__tests__/artifact-deletion.test.tsx	Then	8	Retry shows 'No artifacts found'	L200-L202	covered		working-tree
+artifact-deletion-004	src/views/artifacts-page/__tests__/artifact-deletion.test.tsx	Given	1	First catalog page contains keep-this.txt	L208-L211; L219; L227	covered		working-tree
+artifact-deletion-004	src/views/artifacts-page/__tests__/artifact-deletion.test.tsx	Given	2	A later page contains report.txt	L217-L218	covered		working-tree
+artifact-deletion-004	src/views/artifacts-page/__tests__/artifact-deletion.test.tsx	When	1	User loads the later page	L229; L55	covered	confirms the When action happened (report.txt found in the catalog before the preview opens)	working-tree
+artifact-deletion-004	src/views/artifacts-page/__tests__/artifact-deletion.test.tsx	When	2	User deletes report.txt	L230-L231; L222-L225	covered		working-tree
+artifact-deletion-004	src/views/artifacts-page/__tests__/artifact-deletion.test.tsx	When	3	Catalog refreshes	L233-L237	covered	Indirect: deletion only bumps the catalog revision (artifact-deletion.ts:L52-L54) and report.txt was rendered before, so its absence beside keep-this.txt requires the refresh	working-tree
+artifact-deletion-004	src/views/artifacts-page/__tests__/artifact-deletion.test.tsx	Then	1	Stale later-page artifact report.txt is absent	L237	covered		working-tree
+artifact-deletion-004	src/views/artifacts-page/__tests__/artifact-deletion.test.tsx	Then	2	keep-this.txt remains available	L236	covered		working-tree
+artifact-catalog-sidebar-001	src/views/artifacts-page/__tests__/artifact-catalog-sidebar.test.tsx	Given	1	Catalog contains the text file launch-plan.txt	L57-L63	covered		working-tree
+artifact-catalog-sidebar-001	src/views/artifacts-page/__tests__/artifact-catalog-sidebar.test.tsx	Given	2	Sidebar previews are disabled	L64	covered		working-tree
+artifact-catalog-sidebar-001	src/views/artifacts-page/__tests__/artifact-catalog-sidebar.test.tsx	When	1	User opens the file	L66	covered		working-tree
+artifact-catalog-sidebar-001	src/views/artifacts-page/__tests__/artifact-catalog-sidebar.test.tsx	When	2	User closes the preview	L73	covered		working-tree
+artifact-catalog-sidebar-001	src/views/artifacts-page/__tests__/artifact-catalog-sidebar.test.tsx	Then	1	Preview shows 'The launch plan is ready'	L69-L71	covered		working-tree
+artifact-catalog-sidebar-001	src/views/artifacts-page/__tests__/artifact-catalog-sidebar.test.tsx	Then	2	Preview is in the attachment lightbox	L68-L71	covered		working-tree
+artifact-catalog-sidebar-001	src/views/artifacts-page/__tests__/artifact-catalog-sidebar.test.tsx	Then	3	Preview is not in the artifact sidebar	L72	covered	Observed after the lightbox content sentinel	working-tree
+artifact-catalog-sidebar-001	src/views/artifacts-page/__tests__/artifact-catalog-sidebar.test.tsx	Then	4	Closing returns to the catalog	L74-L76	covered		working-tree
+artifact-catalog-sidebar-001	src/views/artifacts-page/__tests__/artifact-catalog-sidebar.test.tsx	Then	5	File remains available in the catalog	L77-L79	covered		working-tree
+artifact-catalog-sidebar-005	src/views/artifacts-page/__tests__/artifact-catalog-sidebar.test.tsx	Given	1	Catalog shows the routed Release website preview in the sidebar	L83-L99; L100	covered		working-tree
+artifact-catalog-sidebar-005	src/views/artifacts-page/__tests__/artifact-catalog-sidebar.test.tsx	Given	2	Preview is at its release URL	L101-L103	covered		working-tree
+artifact-catalog-sidebar-005	src/views/artifacts-page/__tests__/artifact-catalog-sidebar.test.tsx	When	1	User enters fullscreen	L105	covered		working-tree
+artifact-catalog-sidebar-005	src/views/artifacts-page/__tests__/artifact-catalog-sidebar.test.tsx	When	2	User exits fullscreen	L109	covered		working-tree
+artifact-catalog-sidebar-005	src/views/artifacts-page/__tests__/artifact-catalog-sidebar.test.tsx	When	3	User closes the preview	L113	covered		working-tree
+artifact-catalog-sidebar-005	src/views/artifacts-page/__tests__/artifact-catalog-sidebar.test.tsx	Then	1	Fullscreen can be entered	L106-L108	covered		working-tree
+artifact-catalog-sidebar-005	src/views/artifacts-page/__tests__/artifact-catalog-sidebar.test.tsx	Then	2	Fullscreen can be exited	L110-L112	covered		working-tree
+artifact-catalog-sidebar-005	src/views/artifacts-page/__tests__/artifact-catalog-sidebar.test.tsx	Then	3	Closing returns the URL to the hosted-site catalog without an artifact query	L115-L117	covered		working-tree
+artifact-catalog-sidebar-005	src/views/artifacts-page/__tests__/artifact-catalog-sidebar.test.tsx	Then	4	Closing hides the sidebar	L118	covered		working-tree
+artifact-catalog-sidebar-005	src/views/artifacts-page/__tests__/artifact-catalog-sidebar.test.tsx	Then	5	Release website remains available in the catalog	L119-L121	covered		working-tree
+artifact-catalog-sidebar-006	src/views/artifacts-page/__tests__/artifact-catalog-sidebar.test.tsx	Given	1	Catalog contains the binary file release-bundle.zip	L126	covered		working-tree
+artifact-catalog-sidebar-006	src/views/artifacts-page/__tests__/artifact-catalog-sidebar.test.tsx	Given	2	Sidebar previews are enabled	L127	covered		working-tree
+artifact-catalog-sidebar-006	src/views/artifacts-page/__tests__/artifact-catalog-sidebar.test.tsx	When	1	User opens the file	L129	covered		working-tree
+artifact-catalog-sidebar-006	src/views/artifacts-page/__tests__/artifact-catalog-sidebar.test.tsx	Then	1	A sidebar displays the filename	L131; L135-L137	covered		working-tree
+artifact-catalog-sidebar-006	src/views/artifacts-page/__tests__/artifact-catalog-sidebar.test.tsx	Then	2	Sidebar displays a Download artifact button	L132-L134	covered		working-tree
+artifact-catalog-sidebar-006	src/views/artifacts-page/__tests__/artifact-catalog-sidebar.test.tsx	Then	3	No download starts on open	L138	covered	Observed after the Download artifact sentinel, which needs the loaded artifact detail	working-tree
+artifact-catalog-sidebar-006	src/views/artifacts-page/__tests__/artifact-catalog-sidebar.test.tsx	Then	4	No attachment lightbox appears	L139	covered		working-tree
+artifact-catalog-sidebar-008	src/views/artifacts-page/__tests__/artifact-catalog-sidebar.test.tsx	Given	1	Catalog contains pending.pdf	L144-L147	covered		working-tree
+artifact-catalog-sidebar-008	src/views/artifacts-page/__tests__/artifact-catalog-sidebar.test.tsx	Given	2	Loading its artifact details has not completed	L143; L148-L151	covered		working-tree
+artifact-catalog-sidebar-008	src/views/artifacts-page/__tests__/artifact-catalog-sidebar.test.tsx	When	1	User opens the sidebar	L155-L158	covered	confirms the When action happened (loading sidebar found)	working-tree
+artifact-catalog-sidebar-008	src/views/artifacts-page/__tests__/artifact-catalog-sidebar.test.tsx	When	2	User closes it before details load	L159	covered	Before release at L163	working-tree
+artifact-catalog-sidebar-008	src/views/artifacts-page/__tests__/artifact-catalog-sidebar.test.tsx	When	3	Pending request is allowed to finish	L163	covered		working-tree
+artifact-catalog-sidebar-008	src/views/artifacts-page/__tests__/artifact-catalog-sidebar.test.tsx	When	4	User opens the file again	L164	covered		working-tree
+artifact-catalog-sidebar-008	src/views/artifacts-page/__tests__/artifact-catalog-sidebar.test.tsx	Then	1	First sidebar closes	L160-L162	covered		working-tree
+artifact-catalog-sidebar-008	src/views/artifacts-page/__tests__/artifact-catalog-sidebar.test.tsx	Then	2	Reopening loads the PDF preview at its artifact URL with #navpanes=0	L166-L172	covered		working-tree
+artifact-catalog-sidebar-008	src/views/artifacts-page/__tests__/artifact-catalog-sidebar.test.tsx	Then	3	No attachment lightbox appears	L173	covered		working-tree
+artifact-sharing-001	src/views/artifacts-page/__tests__/artifact-sharing.test.tsx	Given	1	An owner opens sharing for a private artifact	L113-L115; L45-L65; L67-L102	covered		working-tree
+artifact-sharing-001	src/views/artifacts-page/__tests__/artifact-sharing.test.tsx	Given	2	Artifact's organization is Acme	L53	covered		working-tree
+artifact-sharing-001	src/views/artifacts-page/__tests__/artifact-sharing.test.tsx	When	1	Owner opens the Share menu	L117; L103-L106	covered		working-tree
+artifact-sharing-001	src/views/artifacts-page/__tests__/artifact-sharing.test.tsx	Then	1	There are exactly three choices	L119-L130	covered		working-tree
+artifact-sharing-001	src/views/artifacts-page/__tests__/artifact-sharing.test.tsx	Then	2	Only me is described as 'Only you can open it'	L119-L130	covered	Description asserted via aria-description	working-tree
+artifact-sharing-001	src/views/artifacts-page/__tests__/artifact-sharing.test.tsx	Then	3	Anyone at Acme is described as 'Teammates can view'	L119-L130	covered	Description asserted via aria-description	working-tree
+artifact-sharing-001	src/views/artifacts-page/__tests__/artifact-sharing.test.tsx	Then	4	Anyone with the link is described as 'No sign-in needed'	L119-L130	covered	Description asserted via aria-description	working-tree
+artifact-sharing-001	src/views/artifacts-page/__tests__/artifact-sharing.test.tsx	Then	5	Only me is selected	L117; L107-L109	covered		working-tree
+artifact-sharing-001	src/views/artifacts-page/__tests__/artifact-sharing.test.tsx	Then	6	Copy link is enabled	L131	covered		working-tree
+artifact-sharing-002	src/views/artifacts-page/__tests__/artifact-sharing.test.tsx	Given	1	An owner opens sharing for a private artifact	L138-L141; L147	covered		working-tree
+artifact-sharing-002	src/views/artifacts-page/__tests__/artifact-sharing.test.tsx	When	1	Owner selects Organization	L151-L152	covered		working-tree
+artifact-sharing-002	src/views/artifacts-page/__tests__/artifact-sharing.test.tsx	When	2	Owner selects Public access	L151-L152	covered		working-tree
+artifact-sharing-002	src/views/artifacts-page/__tests__/artifact-sharing.test.tsx	When	3	Owner selects Only me	L151-L152	covered		working-tree
+artifact-sharing-002	src/views/artifacts-page/__tests__/artifact-sharing.test.tsx	When	4	Owner copies the link after each change	L156-L162	covered	confirms the When action happened (clipboard write count)	working-tree
+artifact-sharing-002	src/views/artifacts-page/__tests__/artifact-sharing.test.tsx	Then	1	Each selected access level becomes checked	L153-L155	covered		working-tree
+artifact-sharing-002	src/views/artifacts-page/__tests__/artifact-sharing.test.tsx	Then	2	API receives the changes in order organization, public, private	L142-L145; L165	covered		working-tree
+artifact-sharing-002	src/views/artifacts-page/__tests__/artifact-sharing.test.tsx	Then	3	Each copy writes the same canonical app link	L166-L167	covered		working-tree
+artifact-sharing-002	src/views/artifacts-page/__tests__/artifact-sharing.test.tsx	Then	4	No text box before copying	L148	covered		working-tree
+artifact-sharing-002	src/views/artifacts-page/__tests__/artifact-sharing.test.tsx	Then	5	No copied-link notice before copying	L149	covered		working-tree
+artifact-sharing-002	src/views/artifacts-page/__tests__/artifact-sharing.test.tsx	Then	6	Only one permission-status read occurs	L135; L138-L141; L168	covered		working-tree
+artifact-sharing-004	src/views/artifacts-page/__tests__/artifact-sharing.test.tsx	Given	1	An owner opens sharing	L182	covered		working-tree
+artifact-sharing-004	src/views/artifacts-page/__tests__/artifact-sharing.test.tsx	Given	2	Permission response supplies a canonical owner URL	L172; L174-L177	covered		working-tree
+artifact-sharing-004	src/views/artifacts-page/__tests__/artifact-sharing.test.tsx	Given	3	Short URL is distinct from the owner URL	L178	covered		working-tree
+artifact-sharing-004	src/views/artifacts-page/__tests__/artifact-sharing.test.tsx	When	1	Owner copies the link	L183	covered		working-tree
+artifact-sharing-004	src/views/artifacts-page/__tests__/artifact-sharing.test.tsx	Then	1	Clipboard receives the canonical owner URL	L185-L187	covered		working-tree
+artifact-sharing-004	src/views/artifacts-page/__tests__/artifact-sharing.test.tsx	Then	2	Clipboard does not receive the short URL	L186	covered	Exact single-entry match	working-tree
+artifact-sharing-007	src/views/artifacts-page/__tests__/artifact-sharing.test.tsx	Given	1	User is signed out	L199	covered		working-tree
+artifact-sharing-007	src/views/artifacts-page/__tests__/artifact-sharing.test.tsx	Given	2	Opens an artifact URL with a redirect_url query pointing to an external site	L197; L199	covered		working-tree
+artifact-sharing-007	src/views/artifacts-page/__tests__/artifact-sharing.test.tsx	Given	3	Artifact URL contains a fragment	L197	covered		working-tree
+artifact-sharing-007	src/views/artifacts-page/__tests__/artifact-sharing.test.tsx	When	1	User selects Sign in	L205	covered		working-tree
+artifact-sharing-007	src/views/artifacts-page/__tests__/artifact-sharing.test.tsx	Then	1	Browser does not navigate immediately on page load	L204	covered	Observed after the denied-page heading sentinel L201-L203	working-tree
+artifact-sharing-007	src/views/artifacts-page/__tests__/artifact-sharing.test.tsx	Then	2	Sign in redirects to the same-origin app sign-in page	L206-L211	covered		working-tree
+artifact-sharing-007	src/views/artifacts-page/__tests__/artifact-sharing.test.tsx	Then	3	Return URL preserves the complete artifact path, query and fragment	L212-L216	covered		working-tree
+artifact-sharing-007	src/views/artifacts-page/__tests__/artifact-sharing.test.tsx	Then	4	External redirect target is not honored	L212-L216	covered	Exact redirect_url equality excludes the external target	working-tree
