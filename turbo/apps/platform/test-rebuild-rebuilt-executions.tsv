@@ -873,3 +873,8 @@ chat-thread-link-chips-001	turbo/apps/platform/src/views/okou-page/__tests__/cha
 chat-thread-timeline-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-thread-timeline.test.tsx	A conversation containing only today's messages does not need a Today divider	55	passed
 chat-thread-timeline-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-thread-timeline.test.tsx	Messages in the same user turn receive a date boundary at local midnight	73	passed
 chat-thread-timeline-006	turbo/apps/platform/src/views/okou-page/__tests__/chat-thread-timeline.test.tsx	An assistant reply can open a new date section	106	passed
+chat-capability-browser-actions-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-browser-actions.test.tsx	Open a stopped browser without the refined panel	738	passed
+chat-capability-mail-feedback-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-mail-feedback.test.tsx	Keep inline feedback tied to the source email	23	passed
+chat-capability-voice-incremental-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-voice-incremental.test.tsx	Continue recording after an incremental transcription outage	34	passed
+chat-header-loading-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-header-loading.test.tsx	Open empty email and automation lists in a desktop chat	20	passed
+browser-session-page-002	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Window size settings retain each selected mode when reopened	18	passed

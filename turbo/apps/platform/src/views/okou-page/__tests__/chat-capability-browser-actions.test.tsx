@@ -1,3 +1,4 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   browserContract,
   type BrowserSession,
@@ -732,4 +733,42 @@ test("Render a live managed browser card", async () => {
   expect(within(card).getByText("Cloud browser")).toBeInTheDocument();
   expect(within(card).getByText("Live")).toBeInTheDocument();
   expect(thumbnailSource(card)).toContain("initial.png");
+});
+
+test("Open a stopped browser without the refined panel", async () => {
+  const signedScreenshot =
+    "https://bucket.r2.cloudflarestorage.com/screens/last.png?X-Amz-Signature=testing";
+  installBrowserCardConversation();
+  mockBrowserSession(browserSession("suspended", signedScreenshot));
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.CloudBrowserPanel]: false },
+  });
+  await readyChat();
+
+  const card = await findBrowserCard();
+  await waitFor(() => {
+    expect(thumbnailSource(card)).toBe(
+      `https://a.okou.io/cdn-cgi/image/width=800,fit=scale-down,format=auto,quality=85,metadata=none/${signedScreenshot}`,
+    );
+  });
+  click(card);
+
+  const panel = await screen.findByRole("complementary", {
+    name: "Cloud browser",
+  });
+  const browser = within(panel);
+  await expect(
+    browser.findByText("Browser not live"),
+  ).resolves.toBeInTheDocument();
+  expect(browser.getByRole("button", { name: "Start browser" })).toBeEnabled();
+  expect(
+    browser.getByRole("button", { name: "Close cloud browser" }),
+  ).toBeEnabled();
+  expect(
+    browser.getByRole("link", { name: "Open this browser in a new page" }),
+  ).toHaveAttribute("href", `/browsers/${RUN_THREAD_ID}`);
+  expect(browser.getByLabelText("Remote browser input")).toBeDisabled();
 });
