@@ -1,5 +1,7 @@
+import { useLastResolved } from "ccstate-react";
+import { worksChannelCards$ } from "../../../signals/works-page/works-channel-cards.ts";
 import type { ReactNode } from "react";
-import { EllipsisVertical } from "lucide-react";
+import { EllipsisVertical, Settings } from "lucide-react";
 import { Button } from "@okouai/ui";
 import {
   Popover,
@@ -27,6 +29,7 @@ export function ProviderCardMenu({
   onUninstall?: () => void;
   disconnecting: boolean;
 }) {
+  const compact = useLastResolved(worksChannelCards$);
   const { t } = useTranslation();
   return (
     <Popover>
@@ -40,7 +43,7 @@ export function ProviderCardMenu({
             className="shrink-0"
             aria-label={moreOptionsLabel}
           >
-            <EllipsisVertical size={16} />
+            {compact ? <Settings size={16} /> : <EllipsisVertical size={16} />}
           </Button>
         }
       />

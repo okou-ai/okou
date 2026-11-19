@@ -7062,6 +7062,18 @@
       "uninstalling": "アンインストール中…",
       "updatePermissions": "権限の更新"
     },
+    "channelExamples": {
+      "email": "メールを Okou に転送して、要点の整理や返信の下書きを頼めます。",
+      "feishu": "Feishu で Okou に下書きを送り、チームに共有する短い文章に整えてもらえます。",
+      "github": "プルリクエストが開かれたときに、レビュー用のチェックリストを作るワークフローを実行できます。",
+      "lark": "Lark で Okou に下書きを送り、チームに共有する短い文章に整えてもらえます。",
+      "phone": "iPhone から {{assistantName}} にアイデアを送って、下書きを作ってもらえます。",
+      "slack": "Slack のチャンネルで Okou にメンションして、下書きへの意見をもらえます。",
+      "teams": "Teams に会議メモを貼り付けて、次にやることを Okou にまとめてもらえます。",
+      "telegram": "Telegram で Okou に二つの案を送り、それぞれの利点と欠点を比較してもらえます。",
+      "wechat": "WeChat で Okou に二つの案を送り、それぞれの利点と欠点を比較してもらえます。",
+      "whatsapp": "WhatsApp で Okou に二つの案を送り、それぞれの利点と欠点を比較してもらえます。"
+    },
     "connected": "接続済み",
     "connectedWithDetail": "接続されました ({{detail}})",
     "discord": {

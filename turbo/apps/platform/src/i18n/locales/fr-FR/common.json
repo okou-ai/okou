@@ -7164,6 +7164,18 @@
       "uninstalling": "Désinstallation…",
       "updatePermissions": "Mettre à jour les permissions"
     },
+    "channelExamples": {
+      "email": "Transférez un e-mail à Okou et demandez un résumé ou une proposition de réponse.",
+      "feishu": "Envoyez un brouillon à Okou sur Feishu et demandez une version courte à partager avec votre équipe.",
+      "github": "À l’ouverture d’une pull request, lancez un workflow qui prépare une liste de points à vérifier.",
+      "lark": "Envoyez un brouillon à Okou sur Lark et demandez une version courte à partager avec votre équipe.",
+      "phone": "Envoyez une idée à {{assistantName}} depuis votre iPhone et demandez une première ébauche.",
+      "slack": "Mentionnez Okou dans un canal Slack pour demander un avis sur un brouillon.",
+      "teams": "Collez vos notes de réunion dans Teams et demandez à Okou d’en extraire les actions à mener.",
+      "telegram": "Envoyez deux options à Okou sur Telegram et demandez les avantages et les limites de chacune.",
+      "wechat": "Envoyez deux options à Okou sur WeChat et demandez les avantages et les limites de chacune.",
+      "whatsapp": "Envoyez deux options à Okou sur WhatsApp et demandez les avantages et les limites de chacune."
+    },
     "connected": "Connecté",
     "connectedWithDetail": "Connecté ({{detail}})",
     "discord": {

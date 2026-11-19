@@ -7062,6 +7062,18 @@
       "uninstalling": "Mencopot pemasangan…",
       "updatePermissions": "Perbarui izin"
     },
+    "channelExamples": {
+      "email": "Teruskan email ke Okou dan minta ringkasan atau draf balasan.",
+      "feishu": "Kirim draf ke Okou di Feishu dan minta versi singkat untuk dibagikan kepada tim.",
+      "github": "Saat pull request dibuka, jalankan alur kerja untuk menyiapkan daftar periksa peninjauan.",
+      "lark": "Kirim draf ke Okou di Lark dan minta versi singkat untuk dibagikan kepada tim.",
+      "phone": "Kirim ide ke {{assistantName}} dari iPhone dan minta bantuan membuat draf awal.",
+      "slack": "Sebut Okou di kanal Slack dan minta masukan tentang draf yang sedang Anda tulis.",
+      "teams": "Tempel catatan rapat di Teams dan minta Okou merangkum tugas yang perlu ditindaklanjuti.",
+      "telegram": "Kirim dua pilihan ke Okou di Telegram dan minta perbandingan kelebihan serta kekurangannya.",
+      "wechat": "Kirim dua pilihan ke Okou di WeChat dan minta perbandingan kelebihan serta kekurangannya.",
+      "whatsapp": "Kirim dua pilihan ke Okou di WhatsApp dan minta perbandingan kelebihan serta kekurangannya."
+    },
     "connected": "Terhubung",
     "connectedWithDetail": "Terhubung ({{detail}})",
     "discord": {

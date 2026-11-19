@@ -7084,6 +7084,18 @@
       "uninstalling": "Uninstalling…",
       "updatePermissions": "Update Permissions"
     },
+    "channelExamples": {
+      "email": "Forward an email to Okou and ask for a summary or a draft reply.",
+      "feishu": "Send Okou a draft in Feishu and ask for a shorter version to share with your team.",
+      "github": "When a pull request opens, run a workflow to prepare a review checklist.",
+      "lark": "Send Okou a draft in Lark and ask for a shorter version to share with your team.",
+      "phone": "Text {{assistantName}} a rough idea from your iPhone and ask for a first draft.",
+      "slack": "Mention Okou in a Slack channel and ask for a second opinion on a draft.",
+      "teams": "Paste your meeting notes into Teams and ask Okou to pull out the action items.",
+      "telegram": "Send Okou two options in Telegram and ask for the pros and cons of each.",
+      "wechat": "Send Okou two options in WeChat and ask for the pros and cons of each.",
+      "whatsapp": "Send Okou two options in WhatsApp and ask for the pros and cons of each."
+    },
     "connected": "Connected",
     "connectedWithDetail": "Connected ({{detail}})",
     "discord": {

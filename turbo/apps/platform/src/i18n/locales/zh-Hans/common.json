@@ -7062,6 +7062,18 @@
       "uninstalling": "正在卸载…",
       "updatePermissions": "更新权限"
     },
+    "channelExamples": {
+      "email": "把邮件转发给 Okou，请它归纳重点，或帮你起草一封回复。",
+      "feishu": "把草稿发给飞书里的 Okou，请它写成一段方便分享的团队更新。",
+      "github": "有人新建拉取请求时，运行工作流，准备一份代码审查清单。",
+      "lark": "把草稿发给 Lark 里的 Okou，请它写成一段方便分享的团队更新。",
+      "phone": "用 iPhone 给 {{assistantName}} 发条短信，说说你的想法，请它写个初稿。",
+      "slack": "在 Slack 频道里 @Okou，把草稿发给它，请它提修改意见。",
+      "teams": "把会议笔记发到 Teams 聊天里，让 Okou 帮你列出接下来要做的事。",
+      "telegram": "把两个备选方案发给 Telegram 里的 Okou，让它帮你比较各自的利弊。",
+      "wechat": "把两个备选方案发给微信里的 Okou，让它帮你比较各自的利弊。",
+      "whatsapp": "把两个备选方案发给 WhatsApp 里的 Okou，让它帮你比较各自的利弊。"
+    },
     "connected": "已连接",
     "connectedWithDetail": "已连接（{{detail}}）",
     "discord": {

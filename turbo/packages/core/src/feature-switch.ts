@@ -204,6 +204,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Describe each Who can access option in the share menu with one line, and anchor Copy link as a full-width footer under a divider.",
     enabled: true,
   },
+  [FeatureSwitchKey.WorksChannelCards]: {
+    maintainer: "ming@okou.ai",
+    displayName: "Works channel cards",
+    description:
+      "Show Works channels in a compact grid with usage examples and icon actions for connecting and managing accounts.",
+    enabled: false,
+  },
   [FeatureSwitchKey.HostedSiteShareRows]: {
     maintainer: "ming@okou.ai",
     displayName: "Website share rows",
