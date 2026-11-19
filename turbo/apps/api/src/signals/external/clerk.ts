@@ -9,7 +9,7 @@ import {
 } from "@clerk/backend/errors";
 import { verifyWebhook } from "@clerk/backend/webhooks";
 import { delay } from "signal-timers";
-import { array, number, object, string, union, url, enum as zEnum } from "zod";
+import { array, number, object, string, url, enum as zEnum } from "zod";
 import { accept, HttpStatusError } from "@okouai/connectors/accept";
 import { singleton } from "../../lib/singleton";
 import { env } from "../../lib/env";
@@ -31,8 +31,6 @@ export interface ClerkOAuthIdentity {
 }
 
 const oauthClaimsSchema = object({
-  iss: string(),
-  aud: union([string().min(1), array(string().min(1)).min(1)]),
   sub: string().startsWith("user_").min(6),
   org_id: string().startsWith("org_").min(5),
   // Must fit the persisted MCP source contract before any input is accepted.
@@ -42,7 +40,7 @@ const oauthClaimsSchema = object({
     .refine((value) => {
       return value.trim().length > 0;
     }),
-  exp: number().int().positive(),
+  exp: number(),
   scope: string().optional(),
   scp: array(string().min(1)).optional(),
 });
@@ -81,17 +79,16 @@ export function isClerkOAuthAccessToken(token: string): boolean {
   );
 }
 
-/** Full, signed OAuth claims; the provider's reduced token wrapper omits org/aud. */
+/** Use the signed OAuth claims because the provider's reduced token wrapper omits the organization. */
 export async function verifyClerkOAuthAccessToken(
   token: string,
-  config: { readonly issuer: string; readonly resource: string },
+  config: { readonly resource: string },
 ): Promise<ClerkOAuthIdentity | undefined> {
   const verified = await settle(
     verifyToken(token, {
       secretKey: env("CLERK_SECRET_KEY"),
       audience: config.resource,
       headerType: ["at+jwt", "application/at+jwt"],
-      clockSkewInMs: 0,
     }),
   );
   if (!verified.ok) {
@@ -105,13 +102,7 @@ export async function verifyClerkOAuthAccessToken(
     throw new ClerkOAuthVerificationUnavailableError();
   }
   const parsed = oauthClaimsSchema.safeParse(verified.value);
-  if (
-    !parsed.success ||
-    parsed.data.iss !== config.issuer ||
-    !(typeof parsed.data.aud === "string"
-      ? parsed.data.aud === config.resource
-      : parsed.data.aud.includes(config.resource))
-  ) {
+  if (!parsed.success) {
     return undefined;
   }
   const {
@@ -122,21 +113,7 @@ export async function verifyClerkOAuthAccessToken(
     scp,
     exp,
   } = parsed.data;
-  const scopes =
-    scope === undefined ? scp : scope.split(/\s+/u).filter(Boolean);
-  if (
-    !scopes ||
-    (scopes &&
-      scp &&
-      (scopes.some((item) => {
-        return !scp.includes(item);
-      }) ||
-        scp.some((item) => {
-          return !scopes.includes(item);
-        })))
-  ) {
-    return undefined;
-  }
+  const scopes = scp ?? scope?.split(" ") ?? [];
   return {
     userId: sub,
     orgId,
