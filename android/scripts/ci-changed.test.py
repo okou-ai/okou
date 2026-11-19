@@ -40,6 +40,13 @@ class ChangeSelectionTest(unittest.TestCase):
             write("unrelated.txt")
             base = commit()
             self.assertEqual(detect(base).stdout.strip(), "false")
+            for path in ["turbo/packages/api-contracts/src/contracts/mail.ts",
+                         "turbo/packages/api-contracts/src/contracts/ios-push-registrations.ts",
+                         "turbo/packages/api-contracts/src/validators/onboarding.ts"]:
+                write(path)
+            base = commit()
+            self.assertEqual(detect(base + "^").stdout.strip(), "false")
+            self.assertEqual(detect(base + "^", "push").stdout.strip(), "false")
             write("android/app/source.kt")
             first = commit()
             write("other.txt")
@@ -59,7 +66,7 @@ class ChangeSelectionTest(unittest.TestCase):
                          "turbo/apps/platform/src/views/css/index.css",
                          "ios/Okou/DesignSystem/Foundations/Lucide-LICENSE.txt",
                          "turbo/packages/api-contracts/src/kotlin-bindings/bindings.ts",
-                         "turbo/packages/api-contracts/src/validators/user-preferences.ts",
+                         "turbo/packages/api-contracts/src/validators/fixtures/android-versions.json",
                          ".github/scripts/artifacts/sign-okou-android-apk.sh",
                          ".github/scripts/release/archive-android-mapping.py",
                          ".github/scripts/tests/android-release-workflow-test.sh"]:

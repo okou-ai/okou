@@ -455,8 +455,11 @@ runs. Like Turbo and Crates, release-please PRs, queued release PRs and release
 commits skip Android validation after release-context detection succeeds. The
 production release job independently builds, signs and verifies its exact-target
 APK; it does not consume validation artifacts. Ordinary change selection includes
-Android sources/docs, CI inputs, Web semantic colors, and shared font/color-evaluator
-assets. One job runs the JVM tests and lint, then uploads the Debug APK for seven
+Android sources/docs, CI inputs, Web semantic colors, shared font/color-evaluator
+assets, Kotlin binding generators, the shared user-preferences schema, and validator
+fixtures used by Android tests. Turbo CI checks other API contract changes against
+the installed Android API and the committed Kotlin bindings. One job runs the JVM
+tests and lint, then uploads the Debug APK for seven
 days. A separate Linux/KVM job uses the production unsigned-build script to
 assemble and verify the optimized Release APK, then runs the instrumented suite
 against its signed counterpart on the managed API 35 phone. That job also uploads

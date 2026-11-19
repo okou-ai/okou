@@ -17,10 +17,12 @@ git merge-base --is-ancestor "$base" HEAD || {
 changed_files=$(mktemp)
 trap 'rm -f "$changed_files"' EXIT
 git diff --no-renames --name-only -z "$base" HEAD > "$changed_files"
+# Turbo checks canonical API compatibility and generated Kotlin. Native builds
+# also read the shared preferences contract and validator fixtures directly.
 needed=false
 while IFS= read -r -d '' path; do
   case "$path" in
-    android/* | docs/android/* | CLAUDE.md | docs/docs.md | docs/testing.md | .github/workflows/android.yml | .github/workflows/android-screenshots.yml | .github/workflows/release-please.yml | .github/scripts/artifacts/*okou-android-apk.sh | .github/scripts/release/*android*.py | .github/scripts/tests/android-* | .github/scripts/checks/changed-base-ref.sh | .github/scripts/checks/android_launcher.py | .github/scripts/checks/semgrep-results.py | .github/scripts/tests/semgrep-results-test.sh | ios/scripts/sync-design-tokens.py | ios/Okou/Resources/Fonts/* | ios/Okou/DesignSystem/Foundations/Lucide-LICENSE.txt | ios/Assets/AppIcon.svg | turbo/packages/ui/src/styles/globals.css | turbo/apps/platform/src/views/css/index.css | turbo/packages/api-contracts/src/contracts/* | turbo/packages/api-contracts/src/validators/* | turbo/packages/api-contracts/src/kotlin-bindings/*) needed=true ;;
+    android/* | docs/android/* | CLAUDE.md | docs/docs.md | docs/testing.md | .github/workflows/android.yml | .github/workflows/android-screenshots.yml | .github/workflows/release-please.yml | .github/scripts/artifacts/*okou-android-apk.sh | .github/scripts/release/*android*.py | .github/scripts/tests/android-* | .github/scripts/checks/changed-base-ref.sh | .github/scripts/checks/android_launcher.py | .github/scripts/checks/semgrep-results.py | .github/scripts/tests/semgrep-results-test.sh | ios/scripts/sync-design-tokens.py | ios/Okou/Resources/Fonts/* | ios/Okou/DesignSystem/Foundations/Lucide-LICENSE.txt | ios/Assets/AppIcon.svg | turbo/packages/ui/src/styles/globals.css | turbo/apps/platform/src/views/css/index.css | turbo/packages/api-contracts/src/contracts/user-preferences.ts | turbo/packages/api-contracts/src/validators/fixtures/* | turbo/packages/api-contracts/src/kotlin-bindings/*) needed=true ;;
   esac
 done < "$changed_files"
 echo "$needed"
