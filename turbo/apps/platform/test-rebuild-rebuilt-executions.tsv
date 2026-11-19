@@ -1399,3 +1399,23 @@ paid-tools-settings-022	turbo/apps/platform/src/views/okou-page/__tests__/paid-t
 paid-tools-settings-023	turbo/apps/platform/src/views/okou-page/__tests__/paid-tools-settings.test.tsx	An image model save cannot cross workspaces while awaiting its preference read	531	passed
 paid-tools-settings-024	turbo/apps/platform/src/views/okou-page/__tests__/paid-tools-settings.test.tsx	An image model save cannot cross workspaces while awaiting its write token	531	passed
 my-okou-avatar-settings-001	turbo/apps/platform/src/views/okou-page/__tests__/my-okou-avatar-settings.test.tsx	The home avatar opens My Okou settings	17	passed
+telegram-settings-002	turbo/apps/platform/src/views/okou-page/__tests__/telegram-settings.test.tsx	/settings/telegram?status=connected reads the official bot and offers a real connect action without trusting result markers	65	passed
+telegram-settings-004	turbo/apps/platform/src/views/okou-page/__tests__/telegram-settings.test.tsx	A bare result and reload display the verified connection and never bind or launch Telegram	84	passed
+telegram-settings-005	turbo/apps/platform/src/views/okou-page/__tests__/telegram-settings.test.tsx	Signed identity mismatch is a controlled account-management choice, with no silent unlink or bind	115	passed
+telegram-settings-006	turbo/apps/platform/src/views/okou-page/__tests__/telegram-settings.test.tsx	Signed confirmation consumes proof only after the POST and displays a real readback	134	passed
+telegram-settings-007	turbo/apps/platform/src/views/okou-page/__tests__/telegram-settings.test.tsx	A signed server rejection 400 stays visible without consuming the pending link	199	passed
+telegram-settings-009	turbo/apps/platform/src/views/okou-page/__tests__/telegram-settings.test.tsx	Foreground focus recovers a missed connection without replaying proof	239	passed
+telegram-settings-010	turbo/apps/platform/src/views/okou-page/__tests__/telegram-settings.test.tsx	Foreground visibilitychange recovers a missed connection without replaying proof	239	passed
+telegram-settings-013	turbo/apps/platform/src/views/okou-page/__tests__/telegram-settings.test.tsx	An unsupported or incomplete entry bot=unknown fails closed	264	passed
+tailscale-settings-001	turbo/apps/platform/src/views/okou-page/__tests__/tailscale-settings.test.tsx	Creating a network saves the entered tags and clears credentials	105	passed
+tailscale-settings-003	turbo/apps/platform/src/views/okou-page/__tests__/tailscale-settings.test.tsx	Realtime impact refresh invalidates an old acknowledgement without discarding deletion	144	passed
+tailscale-settings-006	turbo/apps/platform/src/views/okou-page/__tests__/tailscale-settings.test.tsx	An unconfirmed network creation keeps the credential draft frozen without exposing provider details	168	passed
+tailscale-settings-007	turbo/apps/platform/src/views/okou-page/__tests__/tailscale-settings.test.tsx	Changing organizations unmounts the draft and clears secrets	186	passed
+tailscale-settings-010	turbo/apps/platform/src/views/okou-page/__tests__/tailscale-settings.test.tsx	An impact conflict rejects an outdated network restriction without exposing provider details	205	passed
+cloudflare-access-settings-002	turbo/apps/platform/src/views/okou-page/__tests__/cloudflare-access-settings.test.tsx	Switching organizations navigates away from an open shared Access editor	93	passed
+cloudflare-access-settings-006	turbo/apps/platform/src/views/okou-page/__tests__/cloudflare-access-settings.test.tsx	An unconfirmed Access creation preserves its frozen credentials	114	passed
+cloudflare-access-settings-007	turbo/apps/platform/src/views/okou-page/__tests__/cloudflare-access-settings.test.tsx	Changing the owner clears Access secrets	134	passed
+cloudflare-access-settings-008	turbo/apps/platform/src/views/okou-page/__tests__/cloudflare-access-settings.test.tsx	Access load failure does not expose provider details	155	passed
+cloudflare-access-settings-009	turbo/apps/platform/src/views/okou-page/__tests__/cloudflare-access-settings.test.tsx	Deletion preview permission loss blocks shared deletion	166	passed
+cloudflare-access-settings-011	turbo/apps/platform/src/views/okou-page/__tests__/cloudflare-access-settings.test.tsx	A restriction rejected with CLOUDFLARE_ACCESS_IN_USE preserves its draft and protects provider details	184	passed
+cloudflare-access-settings-014	turbo/apps/platform/src/views/okou-page/__tests__/cloudflare-access-settings.test.tsx	Restriction preview permission loss blocks the scope change	239	passed
