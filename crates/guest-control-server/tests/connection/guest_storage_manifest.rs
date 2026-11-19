@@ -252,6 +252,37 @@ fn fragmented_large_storage_input_reaches_helper_and_preserves_next_frame() {
     finish_guest_connection(handle, host);
 }
 
+#[cfg(target_os = "linux")]
+#[test]
+fn decoded_storage_input_over_eight_mib_reaches_helper_through_pipe() {
+    // Eight MiB of file contents plus framing exceeds the sealed input limit.
+    let input = storage_input(32);
+    assert!(input.len() > 8 * 1024 * 1024);
+    let (_directory, program) = create_program(&format!(
+        "[ \"$1\" = {} ]; [ -p /proc/self/fd/0 ]; wc -c",
+        storage_files::STDIN_ARGUMENT,
+    ));
+    let (handle, mut host) = start_guest_connection_with_storage_manifest_program(program);
+
+    send_request(
+        &mut host,
+        423,
+        5_000,
+        "storage-run",
+        "/run/storage-run",
+        &input,
+    );
+    let result = read_result(&mut host, 423);
+    assert_eq!(result.termination, ExecTermination::Exited { exit_code: 0 });
+    let received_bytes = std::str::from_utf8(&result.stdout)
+        .unwrap()
+        .trim()
+        .parse::<usize>()
+        .unwrap();
+    assert_eq!(received_bytes, input.len());
+    finish_guest_connection(handle, host);
+}
+
 #[test]
 fn truncated_large_storage_input_does_not_start_helper() {
     let directory = tempfile::tempdir().unwrap();
