@@ -10,6 +10,28 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.93.0](https://github.com/okou-ai/okou/compare/api-v2.92.1...api-v2.93.0) (2026-11-19)
+
+
+### Features
+
+* **onboarding:** persist drafts across devices ([#48816](https://github.com/okou-ai/okou/issues/48816)) ([368d3dd](https://github.com/okou-ai/okou/commit/368d3dd31744833319c9cffce3c17191a5c327d7))
+
+
+### Bug Fixes
+
+* **api:** restore worker chat contract boundary ([#48831](https://github.com/okou-ai/okou/issues/48831)) ([eaa5345](https://github.com/okou-ai/okou/commit/eaa534508cd90d369ce240cd754aaf98ecb4e289))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.89.0
+    * @okouai/core bumped to 8.854.2
+    * @okouai/db bumped to 2.48.0
+    * @okouai/pi-agent-runtime bumped to 1.52.2
+
 ## [2.92.1](https://github.com/okou-ai/okou/compare/api-v2.92.0...api-v2.92.1) (2026-11-19)
 
 
