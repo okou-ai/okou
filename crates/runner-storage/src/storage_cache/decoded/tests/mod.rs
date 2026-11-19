@@ -205,7 +205,7 @@ async fn decoded_cache_rejects_invalid_gzip_trailers_after_tar_end() {
 
 #[tokio::test]
 async fn decoded_cache_does_not_accept_reader_limit_as_valid_gzip_eof() {
-    let encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::best());
+    let encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
     let mut builder = tar::Builder::new(encoder);
     let mut header = tar::Header::new_ustar();
     header.set_size(7);
@@ -218,11 +218,16 @@ async fn decoded_cache_does_not_accept_reader_limit_as_valid_gzip_eof() {
     let padding_bytes = (2 * MAX_ADMITTED_STORAGE_BYTES) as u64;
     let mut padding = io::repeat(0).take(padding_bytes);
     assert_eq!(io::copy(&mut padding, &mut encoder).unwrap(), padding_bytes);
+    let gzip = encoder.finish().unwrap();
+    assert!(
+        gzip.len() <= MAX_ADMITTED_COMPRESSED_BYTES,
+        "fixture must fit compressed admission to reach the reader limit"
+    );
     let cache_root = tempfile::tempdir().unwrap();
     let cache = DecodedCache::new(HomePaths::with_root(cache_root.path().to_owned()));
     assert!(
         cache
-            .resolve("padding", "v1", Bytes::from(encoder.finish().unwrap()))
+            .resolve("padding", "v1", Bytes::from(gzip))
             .await
             .unwrap()
             .is_none()
