@@ -83,6 +83,8 @@ async fn supplied_http_during_initial_running_heartbeat_follows_startup_outcome(
             .ingress_dir()
             .join(format!("{}.sock", identity.runner_id()));
         let status = env._temp_dir.path().join("status.json");
+        let queued = Arc::new(tokio::sync::Notify::new());
+        config.test_hooks.dispatch_work_queued = Some(queued.clone());
         env.handle.block_heartbeats();
         let runner = tokio::spawn(run(config));
         peer.wait_connected().await;
@@ -103,36 +105,19 @@ async fn supplied_http_during_initial_running_heartbeat_follows_startup_outcome(
 
         let run_id = RunId::new_v4();
         let body = envelope(identity, run_id).to_string();
-        let mut stream = tokio::net::UnixStream::connect(&socket).await.unwrap();
-        stream
-            .write_all(
-                format!(
-                    "POST /runners/{}/control/runs/{run_id}/dispatch HTTP/1.1\r\nHost: {HOST}\r\nAuthorization: Bearer {TOKEN}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nExpect: 100-continue\r\n\r\n",
-                    identity.runner_id(),
-                    body.len()
-                )
-                .as_bytes(),
-            )
-            .await
-            .unwrap();
-        // The server begins reading this offer while the Running heartbeat is
-        // still unacknowledged. A final response here would skip body intake.
-        const CONTINUE: &[u8] = b"HTTP/1.1 100 Continue\r\n\r\n";
-        let mut interim = [0; CONTINUE.len()];
-        tokio::time::timeout(Duration::from_secs(5), stream.read_exact(&mut interim))
-            .await
-            .expect("Runner should take the offer headers during the first Running heartbeat")
-            .unwrap();
-        assert_eq!(
-            String::from_utf8_lossy(&interim),
-            String::from_utf8_lossy(CONTINUE)
-        );
-        stream.write_all(body.as_bytes()).await.unwrap();
+        let stream = send_dispatch(&socket, identity, run_id, &body).await;
+        let mut response = Box::pin(read_dispatch_response(stream));
+        tokio::select! {
+            observed = &mut response => panic!("offer settled before queueing: {observed:?}"),
+            queued = tokio::time::timeout(Duration::from_secs(5), queued.notified()) => {
+                queued.expect("offer should be queued before the first Running heartbeat is acknowledged");
+            }
+        }
 
         if cancel_startup {
             // Keep the ACK blocked so the response must come from rollback.
             env.trigger_stopping().await;
-            let (status, _, response) = read_dispatch_response(stream).await;
+            let (status, _, response) = response.await;
             assert_eq!(
                 (status, &response["disposition"]),
                 (200, &json!("rejected"))
@@ -140,7 +125,7 @@ async fn supplied_http_during_initial_running_heartbeat_follows_startup_outcome(
             env.handle.unblock_heartbeats();
         } else {
             env.handle.unblock_heartbeats();
-            let (status, _, response) = read_dispatch_response(stream).await;
+            let (status, _, response) = response.await;
             assert_eq!(
                 (status, &response["disposition"]),
                 (200, &json!("accepted"))

@@ -65,6 +65,8 @@ pub(crate) struct DispatchIntake {
     slots: Arc<Semaphore>,
     latest_time_ms: AtomicU64,
     preferred_home_probe: Option<PreferredHomeProbe>,
+    #[cfg(test)]
+    pub(crate) work_queued: Option<Arc<tokio::sync::Notify>>,
 }
 
 pub(crate) struct DispatchWork {
@@ -121,6 +123,8 @@ impl DispatchIntake {
                 slots,
                 latest_time_ms: AtomicU64::new(0),
                 preferred_home_probe: None,
+                #[cfg(test)]
+                work_queued: None,
             },
             receiver,
         )
@@ -286,10 +290,17 @@ impl DispatchIntake {
         // its unused context/slot before observing the original admission.
         drop((context, permit));
         // Queueing and failed-send payload destruction do not hold the custody lock.
-        if let Some(work) = to_submit
-            && let Err(error) = self.sender.try_send(work)
-        {
-            error.into_inner().settle(Disposition::Rejected);
+        if let Some(work) = to_submit {
+            match self.sender.try_send(work) {
+                Ok(()) =>
+                {
+                    #[cfg(test)]
+                    if let Some(queued) = &self.work_queued {
+                        queued.notify_one();
+                    }
+                }
+                Err(error) => error.into_inner().settle(Disposition::Rejected),
+            }
         }
         observe(receiver).await
     }

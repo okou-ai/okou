@@ -355,6 +355,7 @@ impl OrphanReapState {
 #[cfg(test)]
 struct RunTestHooks {
     ingress_client: Option<reqwest::Client>,
+    dispatch_work_queued: Option<Arc<tokio::sync::Notify>>,
     outer_job_panic: Option<OuterJobPanicPoint>,
     test_observer: StartLoopTestObserver,
     before_initial_home_cache_scan: Option<StartLoopTestGate>,

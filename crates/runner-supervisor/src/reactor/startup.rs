@@ -310,7 +310,8 @@ pub(super) async fn start(
         }
     }
     let readiness = {
-        let cache_readiness = finish_initial_inventory(&mut startup, &ctx, &inventory, dispatch_intake);
+        let cache_readiness =
+            finish_initial_inventory(&mut startup, &ctx, &inventory, dispatch_intake);
         let cache_readiness =
             tokio::time::timeout(INITIAL_HOME_CACHE_READINESS_TIMEOUT, cache_readiness);
         tokio::pin!(cache_readiness);
@@ -409,11 +410,21 @@ async fn finish_initial_inventory(
     // The API can route offers before acknowledging the initial Running
     // heartbeat. Queue them here, then let the reactor take custody after startup.
     if let Some(ingress) = &startup.resources.ingress {
+        #[cfg(test)]
+        let dispatch_intake = {
+            let mut intake = dispatch_intake;
+            intake.work_queued = inventory.test_hooks.dispatch_work_queued.clone();
+            intake
+        };
         let preferred_home_probe = ctx.exec_config.home_cache.clone().map(|cache| {
             PreferredHomeProbe::new(
                 cache,
                 inventory.snapshot.clone(),
-                ctx.runner.profiles.iter().map(|(name, profile)| (name.clone(), profile.home_disk_mb)).collect(),
+                ctx.runner
+                    .profiles
+                    .iter()
+                    .map(|(name, profile)| (name.clone(), profile.home_disk_mb))
+                    .collect(),
                 ctx.shared.active_runs.clone(),
                 Arc::clone(&ctx.shared.idle_pool),
                 ctx.device_rate_limits.clone(),
