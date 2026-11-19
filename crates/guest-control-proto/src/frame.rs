@@ -2,6 +2,7 @@ use crate::error::ProtocolError;
 use crate::read::{read_u8_at, read_u32_at};
 use crate::wire::{HEADER_SIZE, MAX_MESSAGE_SIZE, MIN_BODY_SIZE};
 use std::convert::Infallible;
+use std::ops::RangeBounds;
 
 const INITIAL_BUFFER_CAPACITY: usize = 64 * 1024;
 const OVERSIZED_BUFFER_CAPACITY: usize = 4 * 1024 * 1024;
@@ -220,13 +221,13 @@ impl Decoder {
         Ok(())
     }
 
-    /// Move a pending frame to a specialized receiver once its header is
-    /// complete. The caller must finish or abandon it before feeding the next
-    /// bytes back to this decoder.
+    /// Move a pending frame of the selected type and payload size to a
+    /// specialized receiver once its header is complete. The caller must
+    /// finish or abandon it before feeding the next bytes back to this decoder.
     pub fn take_incomplete_frame(
         &mut self,
         msg_type: u8,
-        min_payload_len: usize,
+        payload_lengths: impl RangeBounds<usize>,
     ) -> Option<IncompleteFrame> {
         if read_u8_at(&self.buf, HEADER_SIZE)? != msg_type {
             return None;
@@ -235,7 +236,7 @@ impl Decoder {
         let length = read_u32_at(&self.buf, 0)? as usize;
         let payload_len = length.checked_sub(MIN_BODY_SIZE)?;
         if length > MAX_MESSAGE_SIZE
-            || payload_len < min_payload_len
+            || !payload_lengths.contains(&payload_len)
             || self.buf.len() >= HEADER_SIZE + length
         {
             return None;

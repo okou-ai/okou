@@ -2153,6 +2153,7 @@ dependencies = [
 name = "guest-control-server"
 version = "0.24.131"
 dependencies = [
+ "bytes",
  "chrono",
  "cli-test-support",
  "guest-contracts",
