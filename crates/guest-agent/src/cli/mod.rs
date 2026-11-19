@@ -50,6 +50,7 @@ mod process_group;
 mod provider_event_normalization;
 mod reasoning_effort;
 mod record_labels;
+mod startup_timing;
 mod termination;
 #[cfg(feature = "test-support")]
 #[doc(hidden)]

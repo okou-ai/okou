@@ -4,16 +4,16 @@
 //! unchanged. Additive segments partition that same interval. Child milestones
 //! use stderr receipt times, not subtraction of unrelated process clocks.
 
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Instant;
 
 use guest_telemetry::telemetry::record_sandbox_op;
 
+use super::startup_timing::StartupTiming;
+
 /// Records the complete Pi setup-to-first-output boundary once.
 pub struct PiStartupTiming {
-    started_at: Instant,
-    completed: AtomicBool,
+    timing: StartupTiming,
     succeeded_at: Arc<OnceLock<Instant>>,
     segments: PiStartupSegments,
 }
@@ -99,8 +99,7 @@ impl PiStartupTiming {
     pub fn start() -> Self {
         let started_at = Instant::now();
         Self {
-            started_at,
-            completed: AtomicBool::new(false),
+            timing: StartupTiming::new(started_at),
             succeeded_at: Arc::new(OnceLock::new()),
             segments: PiStartupSegments(Arc::new(Mutex::new(SegmentState {
                 started_at,
@@ -141,18 +140,13 @@ impl PiStartupTiming {
     }
 
     fn record_at(&self, completed_at: Instant, success: bool) {
-        if self.completed.swap(true, Ordering::Relaxed) {
+        let Some(duration) = self.timing.complete_at(completed_at) else {
             return;
-        }
+        };
         if success {
             let _ = self.succeeded_at.set(completed_at);
         }
         self.segments.finish(completed_at, success);
-        record_sandbox_op(
-            "pi_startup",
-            completed_at.saturating_duration_since(self.started_at),
-            success,
-            None,
-        );
+        record_sandbox_op("pi_startup", duration, success, None);
     }
 }
