@@ -257,6 +257,7 @@ describe("registerCommands", () => {
     expect(visibleCommandNames(prog)).toEqual([
       "model",
       "agent",
+      "run",
       "upgrade",
       "resource",
       "whoami",
@@ -267,7 +268,6 @@ describe("registerCommands", () => {
       "org",
       "connector",
       "mcp",
-      "run",
       "notify",
       "credit",
       "chat",
@@ -310,16 +310,29 @@ describe("registerCommands", () => {
     expect(visibleCommandNames(prog)).toContain("browser");
   });
 
-  it("should show current Run usage only with run-usage:read", () => {
+  it("shows the Run group in root help for a Run token with no capabilities", async () => {
     vi.stubEnv(
       "OKOU_TOKEN",
-      buildOkouToken({ scope: "okou", capabilities: ["run-usage:read"] }),
+      buildOkouToken({
+        scope: "okou",
+        capabilities: [],
+        userId: "user-run",
+        orgId: "org-run",
+        runId: "a0000000-0000-4000-8000-000000000001",
+      }),
     );
+    let helpOutput = "";
+    const prog = new Command("okou").exitOverride().configureOutput({
+      writeOut: (text: string) => {
+        helpOutput += text;
+      },
+    });
+    registerCommands(prog);
 
-    const prog = buildProgram();
-
-    expect(visibleCommandNames(prog)).toContain("run");
-    expect(visibleCommandNames(prog)).not.toContain("credit");
+    await expect(
+      prog.parseAsync(["--help"], { from: "user" }),
+    ).rejects.toMatchObject({ code: "commander.helpDisplayed" });
+    expect(helpOutput).toMatch(/^\s+run\s/m);
   });
 
   it("should show globally enabled commands when capabilities array is empty", () => {
@@ -333,6 +346,7 @@ describe("registerCommands", () => {
 
     expect(visibleCommandNames(prog)).toEqual([
       "model",
+      "run",
       "upgrade",
       "resource",
       "whoami",
@@ -905,6 +919,7 @@ describe("registerCommands", () => {
       "model",
       "connector",
       "mcp",
+      "run",
       "upgrade",
       "resource",
       "whoami",

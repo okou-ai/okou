@@ -4446,10 +4446,6 @@ function prepareRunnerLaunch(input: {
     realAgentInPreview: args.realAgentInPreview || undefined,
     apiStartTime: args.apiStartTime,
     featureFlags: {
-      [FeatureSwitchKey.ArtifactGenerationTiming]: isFeatureEnabled(
-        FeatureSwitchKey.ArtifactGenerationTiming,
-        args.featureSwitchContext,
-      ),
       [FeatureSwitchKey.ArtifactThreePointTiming]: isFeatureEnabled(
         FeatureSwitchKey.ArtifactThreePointTiming,
         args.featureSwitchContext,

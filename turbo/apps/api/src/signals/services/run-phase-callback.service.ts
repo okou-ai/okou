@@ -22,10 +22,6 @@ export function createRunPhaseCallback(
       signal.throwIfAborted();
       if (
         !features ||
-        !isFeatureEnabled(
-          FeatureSwitchKey.ArtifactGenerationTiming,
-          features,
-        ) ||
         !isFeatureEnabled(FeatureSwitchKey.ArtifactThreePointTiming, features)
       ) {
         return;
