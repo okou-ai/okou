@@ -1,6 +1,6 @@
 [package]
 name = "guest-storage-apply"
-version = "0.32.27"
+version = "0.32.28"
 edition.workspace = true
 
 [dependencies]

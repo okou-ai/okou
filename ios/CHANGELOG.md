@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.49.0](https://github.com/okou-ai/okou/compare/ios-v0.48.6...ios-v0.49.0) (2026-11-19)
+
+
+### Features
+
+* **ios:** refresh home screen widgets when chats change elsewhere ([#47010](https://github.com/okou-ai/okou/issues/47010)) ([a3459ce](https://github.com/okou-ai/okou/commit/a3459ce8b0a9e90434e1b2ae3d1791108e7eebd1))
+
 ## [0.48.6](https://github.com/okou-ai/okou/compare/ios-v0.48.5...ios-v0.48.6) (2026-11-18)
 
 

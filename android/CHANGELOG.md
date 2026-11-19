@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.27.0](https://github.com/okou-ai/okou/compare/android-v0.26.0...android-v0.27.0) (2026-11-19)
+
+
+### Features
+
+* **android:** add chat rename, pin and scoped ordering ([#48851](https://github.com/okou-ai/okou/issues/48851)) ([b2d3b9a](https://github.com/okou-ai/okou/commit/b2d3b9a592ed76451a3c5114eba21f61d55985e4))
+
+
+### Performance Improvements
+
+* **android:** shorten ci validation ([#48835](https://github.com/okou-ai/okou/issues/48835)) ([f319d49](https://github.com/okou-ai/okou/commit/f319d494feb0fe0ab29f762f5f22085a3300f6f9))
+
 ## [0.26.0](https://github.com/okou-ai/okou/compare/android-v0.25.0...android-v0.26.0) (2026-11-19)
 
 

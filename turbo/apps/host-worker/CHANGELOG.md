@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.9.153](https://github.com/okou-ai/okou/compare/host-worker-v1.9.152...host-worker-v1.9.153) (2026-11-19)
+
+
+### Bug Fixes
+
+* **app:** align artifact close button hover shape ([#48846](https://github.com/okou-ai/okou/issues/48846)) ([e74770e](https://github.com/okou-ai/okou/commit/e74770e52f002811f5800f8de1c171021b22ed22))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.90.0
+    * @okouai/core bumped to 8.854.3
+    * @okouai/ui bumped to 1.21.60
+
 ## [1.9.152](https://github.com/okou-ai/okou/compare/host-worker-v1.9.151...host-worker-v1.9.152) (2026-11-19)
 
 

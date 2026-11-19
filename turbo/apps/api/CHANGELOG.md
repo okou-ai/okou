@@ -10,6 +10,34 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.94.0](https://github.com/okou-ai/okou/compare/api-v2.93.0...api-v2.94.0) (2026-11-19)
+
+
+### Features
+
+* **ios:** refresh home screen widgets when chats change elsewhere ([#47010](https://github.com/okou-ai/okou/issues/47010)) ([a3459ce](https://github.com/okou-ai/okou/commit/a3459ce8b0a9e90434e1b2ae3d1791108e7eebd1))
+
+
+### Refactoring
+
+* **api:** carry the accepted official workflow mounts into dispatch ([#48857](https://github.com/okou-ai/okou/issues/48857)) ([47c480b](https://github.com/okou-ai/okou/commit/47c480bc3f4ab7f99722a823f512261d10e8040d))
+* **api:** delegate mcp token verification to clerk ([#48863](https://github.com/okou-ai/okou/issues/48863)) ([bbf2529](https://github.com/okou-ai/okou/commit/bbf25298b7e7127fe90a41dabdf82c84b942ae46))
+
+
+### Performance Improvements
+
+* **api:** reuse the picked input when rejecting a chat queue head ([#48873](https://github.com/okou-ai/okou/issues/48873)) ([6a663c9](https://github.com/okou-ai/okou/commit/6a663c942ad3ce0aa2726c65962880b68b875f0e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.90.0
+    * @okouai/core bumped to 8.854.3
+    * @okouai/db bumped to 2.49.0
+    * @okouai/pi-agent-runtime bumped to 1.52.3
+
 ## [2.93.0](https://github.com/okou-ai/okou/compare/api-v2.92.1...api-v2.93.0) (2026-11-19)
 
 
