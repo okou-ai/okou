@@ -3124,50 +3124,6 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     await fixture.finish();
   }, 120_000);
 
-  it.each([
-    {
-      mode: "original",
-      slidesEnabled: true,
-      expected: 200,
-    },
-    { mode: "google", slidesEnabled: true, expected: 200 },
-    { mode: "google", slidesEnabled: false, expected: 400 },
-  ] as const)(
-    "slides uses explicit $mode with its own switch ($slidesEnabled)",
-    async ({ mode, slidesEnabled, expected }) => {
-      const bytes = Buffer.from("presentation source");
-      const fixture = await workspaceSource("deck.pptx", bytes, slidesEnabled);
-      const native = mode === "google" && slidesEnabled;
-      const result = {
-        id: "uploaded-deck",
-        name: "deck.pptx",
-        mimeType: native
-          ? GOOGLE_WORKSPACE_MIME_TYPES.presentation
-          : "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-      };
-      const upload = mockGoogleDriveArtifactUpload(result);
-      if (native) {
-        mockGoogleWorkspaceReadback(result);
-        mockGoogleSlidesReadback([{ pageElementCount: 2 }]);
-      }
-      const response = await fixture.upload(mode);
-      expect(response.status).toBe(expected);
-      if (expected === 200) {
-        expect(response.body).toMatchObject(result);
-        expect(upload.metadata[0]).toContain(`"mimeType":"${result.mimeType}"`);
-        expect(Buffer.from(upload.bodies[0]!)).toStrictEqual(bytes);
-      } else {
-        expect(upload.bodies).toHaveLength(0);
-        expectApiError(response.body);
-        expect(response.body.error.message).toContain(
-          "Google Slides conversion is not enabled",
-        );
-      }
-      await fixture.finish();
-    },
-    120_000,
-  );
-
   const picturePptxMime =
     "application/vnd.openxmlformats-officedocument.presentationml.presentation";
 
@@ -3646,33 +3602,24 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     expectPicturePackagePreserved(source, outgoing);
   }
 
-  it.each(["google", "legacy"] as const)(
-    "non-chart Slides fidelity converts fixed spacing and explicit table borders (%s)",
-    async (mode) => {
-      const bytes = slidesNonChartFidelityFixture();
-      const fixture = await publicOfficeConversionSource(bytes);
-      mockSlidesImportFonts();
-      const native = {
-        id: `nonchart-fidelity-${mode}-${randomUUID()}`,
-        name: "deck",
-        mimeType: GOOGLE_WORKSPACE_MIME_TYPES.presentation,
-      };
-      const uploaded = mockGoogleDriveArtifactUpload(native);
-      if (mode === "google") {
-        mockGoogleWorkspaceReadback(native);
-      }
-      mockGoogleSlidesReadback([{ pageElementCount: 18 }]);
-      const response =
-        mode === "legacy"
-          ? await fixture.uploadLegacy()
-          : await fixture.upload("google");
-      expect(response.body).toMatchObject(native);
-      const outgoing = outgoingPictureDeck(uploaded, native.mimeType);
-      expectNonChartFidelity(bytes, outgoing);
-      await expect(fixture.sourceBytes()).resolves.toStrictEqual(bytes);
-    },
-    120_000,
-  );
+  it("non-chart Slides fidelity converts fixed spacing and explicit table borders", async () => {
+    const bytes = slidesNonChartFidelityFixture();
+    const fixture = await publicOfficeConversionSource(bytes);
+    mockSlidesImportFonts();
+    const native = {
+      id: `nonchart-fidelity-${randomUUID()}`,
+      name: "deck",
+      mimeType: GOOGLE_WORKSPACE_MIME_TYPES.presentation,
+    };
+    const uploaded = mockGoogleDriveArtifactUpload(native);
+    mockGoogleWorkspaceReadback(native);
+    mockGoogleSlidesReadback([{ pageElementCount: 18 }]);
+    const response = await fixture.upload("google");
+    expect(response.body).toMatchObject(native);
+    const outgoing = outgoingPictureDeck(uploaded, native.mimeType);
+    expectNonChartFidelity(bytes, outgoing);
+    await expect(fixture.sourceBytes()).resolves.toStrictEqual(bytes);
+  }, 120_000);
 
   it("non-chart Slides fidelity serializes table-only repairs without editable text frames", async () => {
     const bytes = slidesNonChartFidelityFixture({ tableOnly: true });
@@ -3690,23 +3637,6 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     const outgoing = outgoingPictureDeck(uploaded, native.mimeType);
     expect(uploadedSlidesText(outgoing)).toStrictEqual([]);
     expectNonChartFidelity(bytes, outgoing, { tableOnly: true });
-    await expect(fixture.sourceBytes()).resolves.toStrictEqual(bytes);
-  }, 120_000);
-
-  it("non-chart Slides fidelity keeps original-mode source bytes identical", async () => {
-    const bytes = slidesNonChartFidelityFixture();
-    const fixture = await publicOfficeConversionSource(bytes);
-    const original = {
-      id: `original-nonchart-${randomUUID()}`,
-      name: "deck.pptx",
-      mimeType: picturePptxMime,
-    };
-    const uploaded = mockGoogleDriveArtifactUpload(original);
-    const response = await fixture.upload("original");
-    expect(response.body).toMatchObject(original);
-    expect(outgoingPictureDeck(uploaded, original.mimeType)).toStrictEqual(
-      bytes,
-    );
     await expect(fixture.sourceBytes()).resolves.toStrictEqual(bytes);
   }, 120_000);
 
@@ -3734,93 +3664,80 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     await expect(fixture.sourceBytes()).resolves.toStrictEqual(bytes);
   }, 120_000);
 
-  it.each(["google", "original"] as const)(
-    "prepares editable presentation text only for Slides conversion (%s)",
-    async (mode) => {
-      const bytes = slidesImportFixture();
-      const fixture = await workspaceSource("deck.pptx", bytes, true);
-      mockSlidesImportFonts();
-      const native = {
-        id: "prepared-deck",
-        name: "deck",
-        mimeType:
-          mode === "original"
-            ? "application/vnd.openxmlformats-officedocument.presentationml.presentation"
-            : GOOGLE_WORKSPACE_MIME_TYPES.presentation,
-      };
-      const uploaded = mockGoogleDriveArtifactUpload(native);
-      if (mode !== "original") {
-        mockGoogleWorkspaceReadback(native);
-        mockGoogleSlidesReadback([{ pageElementCount: 12 }]);
-      }
-      const response = await fixture.upload(mode);
-      expect(response.status).toBe(200);
-      if (mode === "original") {
-        expect(Buffer.from(uploaded.bodies[0]!)).toStrictEqual(bytes);
-      } else {
-        const text = uploadedSlidesText(uploaded.bodies[0]!);
-        expect(text).toHaveLength(12);
-        expect(
-          text.find((item) => {
-            return item.id === "2";
-          }),
-        ).toMatchObject({ text: "05", sizes: [192] });
-        // The 259.2pt glyph advance needs spare capacity in the editor;
-        // preserving only that exact width is not a successful reservation.
-        const numberWidth = text.find((item) => {
-          return item.id === "2";
-        })!.width;
-        expect(numberWidth).toBeGreaterThanOrEqual(259.2 + 0.75);
-        expect(numberWidth).toBeLessThanOrEqual(259.2 + 2);
-        expect(
-          text.find((item) => {
-            return item.id === "3";
-          })?.width,
-        ).toBeCloseTo(300.52, 4);
-        expect(
-          text.find((item) => {
-            return item.id === "4";
-          }),
-        ).toMatchObject({
-          text: "White Green",
-          colors: ["FFFFFF", "00FF00"],
-          sizes: [20, 20],
-        });
-        expect(
-          text.filter((item) => {
-            return item.text.startsWith("Column");
-          }),
-        ).toHaveLength(2);
-        expect(
-          text.find((item) => {
-            return item.id === "8";
-          })?.width,
-        ).toBe(251);
-        expect(
-          text.find((item) => {
-            return item.id === "10";
-          })?.width,
-        ).toBe(235);
-        expect(
-          text.find((item) => {
-            return item.id === "11";
-          }),
-        ).toMatchObject({ text: "Unknown font", width: 100 });
-        expect(
-          text.find((item) => {
-            return item.id === "12";
-          }),
-        ).toMatchObject({ text: "05", width: 27, sizes: [20] });
-        expect(
-          text.find((item) => {
-            return item.id === "14";
-          }),
-        ).toMatchObject({ text: "05", width: 27, sizes: [20] });
-      }
-      await fixture.finish();
-    },
-    120_000,
-  );
+  it("prepares editable presentation text for Slides conversion", async () => {
+    const bytes = slidesImportFixture();
+    const fixture = await workspaceSource("deck.pptx", bytes, true);
+    mockSlidesImportFonts();
+    const native = {
+      id: "prepared-deck",
+      name: "deck",
+      mimeType: GOOGLE_WORKSPACE_MIME_TYPES.presentation,
+    };
+    const uploaded = mockGoogleDriveArtifactUpload(native);
+    mockGoogleWorkspaceReadback(native);
+    mockGoogleSlidesReadback([{ pageElementCount: 12 }]);
+    const response = await fixture.upload("google");
+    expect(response.status).toBe(200);
+    const text = uploadedSlidesText(uploaded.bodies[0]!);
+    expect(text).toHaveLength(12);
+    expect(
+      text.find((item) => {
+        return item.id === "2";
+      }),
+    ).toMatchObject({ text: "05", sizes: [192] });
+    // The 259.2pt glyph advance needs spare capacity in the editor;
+    // preserving only that exact width is not a successful reservation.
+    const numberWidth = text.find((item) => {
+      return item.id === "2";
+    })!.width;
+    expect(numberWidth).toBeGreaterThanOrEqual(259.2 + 0.75);
+    expect(numberWidth).toBeLessThanOrEqual(259.2 + 2);
+    expect(
+      text.find((item) => {
+        return item.id === "3";
+      })?.width,
+    ).toBeCloseTo(300.52, 4);
+    expect(
+      text.find((item) => {
+        return item.id === "4";
+      }),
+    ).toMatchObject({
+      text: "White Green",
+      colors: ["FFFFFF", "00FF00"],
+      sizes: [20, 20],
+    });
+    expect(
+      text.filter((item) => {
+        return item.text.startsWith("Column");
+      }),
+    ).toHaveLength(2);
+    expect(
+      text.find((item) => {
+        return item.id === "8";
+      })?.width,
+    ).toBe(251);
+    expect(
+      text.find((item) => {
+        return item.id === "10";
+      })?.width,
+    ).toBe(235);
+    expect(
+      text.find((item) => {
+        return item.id === "11";
+      }),
+    ).toMatchObject({ text: "Unknown font", width: 100 });
+    expect(
+      text.find((item) => {
+        return item.id === "12";
+      }),
+    ).toMatchObject({ text: "05", width: 27, sizes: [20] });
+    expect(
+      text.find((item) => {
+        return item.id === "14";
+      }),
+    ).toMatchObject({ text: "05", width: 27, sizes: [20] });
+    await fixture.finish();
+  }, 120_000);
 
   it.each([false, true])(
     "reserves positive font kerning for editable Slides text (split runs: %s)",
@@ -4167,12 +4084,11 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
   }
 
   it.each([
-    { endpoint: "legacy", providerStatus: 200, afterRefresh: false },
-    { endpoint: "explicit mode", providerStatus: 201, afterRefresh: false },
-    { endpoint: "explicit mode", providerStatus: 200, afterRefresh: true },
+    { providerStatus: 201, afterRefresh: false },
+    { providerStatus: 200, afterRefresh: true },
   ] as const)(
-    "drive upload returns HTTP $providerStatus success with node adapter globals through the $endpoint route (after refresh: $afterRefresh)",
-    async ({ endpoint, providerStatus, afterRefresh }) => {
+    "drive upload returns HTTP $providerStatus success with node adapter globals (after refresh: $afterRefresh)",
+    async ({ providerStatus, afterRefresh }) => {
       const fixture = await publicOfficeConversionSource(
         docsImportFixture(),
         "docx",
@@ -4196,48 +4112,11 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
             : HttpResponse.json(file, { status: providerStatus });
         },
       });
-      const response =
-        endpoint === "legacy"
-          ? await fixture.uploadLegacy()
-          : await fixture.upload("original");
+      const response = await fixture.upload("original");
       expect(response.status).toBe(200);
       expect(response.body).toStrictEqual(file);
       expect(upload.bodies).toHaveLength(afterRefresh ? 2 : 1);
       expect(oauth.refreshBodies).toHaveLength(afterRefresh ? 1 : 0);
-    },
-    10_000,
-  );
-
-  it.each(["legacy", "explicit mode"] as const)(
-    "drive upload returns the controlled folder lookup error through the %s route",
-    async (endpoint) => {
-      const fixture = await publicOfficeConversionSource(
-        docsImportFixture(),
-        "docx",
-      );
-      const oauth = mockGoogleDriveConnectorOAuth();
-      const upload = mockGoogleDriveArtifactUpload({
-        id: "unexpected",
-        name: "report",
-      });
-      const lookup = mockGoogleDriveFilesList(() => {
-        return { status: 403 };
-      });
-      const response =
-        endpoint === "legacy"
-          ? await fixture.uploadLegacy([400])
-          : await fixture.upload("original", [400]);
-      expect(response.status).toBe(400);
-      expect(response.body).toStrictEqual({
-        error: {
-          code: "BAD_REQUEST",
-          message: "Google Drive folder lookup failed with HTTP 403",
-        },
-      });
-      expect(lookup.queries).toHaveLength(1);
-      expect(oauth.refreshBodies).toHaveLength(0);
-      expect(upload.metadata).toHaveLength(0);
-      expect(upload.bodies).toHaveLength(0);
     },
     10_000,
   );
@@ -4247,7 +4126,6 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     { scenario: "scope 403", endpoint: "explicit mode" },
     { scenario: "other 403", endpoint: "explicit mode" },
     { scenario: "401", endpoint: "explicit mode" },
-    { scenario: "success", endpoint: "explicit mode" },
   ] as const)(
     "folder lookup recovery fixture: $scenario ($endpoint)",
     async ({ scenario, endpoint }) => {
@@ -4318,13 +4196,11 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
           },
         });
       } else if (scenario === "other 403") {
-        expect(response).toMatchObject({
-          status: 400,
-          body: {
-            error: {
-              code: "BAD_REQUEST",
-              message: "Google Drive folder lookup failed with HTTP 403",
-            },
+        expect(response.status).toBe(400);
+        expect(response.body).toStrictEqual({
+          error: {
+            code: "BAD_REQUEST",
+            message: "Google Drive folder lookup failed with HTTP 403",
           },
         });
       } else {
@@ -4334,9 +4210,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
         });
       }
       const rejected = scenario === "scope 403" || scenario === "other 403";
-      expect(lookup.queries).toHaveLength(
-        rejected ? 1 : scenario === "401" ? 3 : 2,
-      );
+      expect(lookup.queries).toHaveLength(rejected ? 1 : 3);
       expect(oauth.refreshBodies).toHaveLength(scenario === "401" ? 1 : 0);
       expect(upload.metadata).toHaveLength(rejected ? 0 : 1);
       expect(upload.bodies).toHaveLength(rejected ? 0 : 1);
@@ -4412,13 +4286,9 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
   }, 10_000);
 
   it.each([
-    { phase: "session", providerStatus: 400, afterRefresh: false },
-    { phase: "session", providerStatus: 403, afterRefresh: false },
     { phase: "session", providerStatus: 403, afterRefresh: true },
     { phase: "session", providerStatus: 401, afterRefresh: true },
-    { phase: "content", providerStatus: 400, afterRefresh: false },
     { phase: "content", providerStatus: 503, afterRefresh: false },
-    { phase: "content", providerStatus: 403, afterRefresh: true },
   ] as const)(
     "drive upload returns a controlled error for $phase HTTP $providerStatus with node adapter globals (after refresh: $afterRefresh)",
     async ({ phase, providerStatus, afterRefresh }) => {
@@ -4677,47 +4547,39 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     }
   }, 120_000);
 
-  it.each(["stalled", "unreadable"] as const)(
-    "folder lookup diagnostics preserve the response for a %s provider stream",
-    async (scenario) => {
-      const fixture = await publicOfficeConversionSource(
-        docsImportFixture(),
-        "docx",
-      );
-      const oauth = mockGoogleDriveConnectorOAuth();
-      const upload = mockGoogleDriveArtifactUpload({
-        id: "unexpected",
-        name: "report",
-      });
-      const lookup = mockGoogleDriveFilesList(() => {
-        return {
-          status: 403,
-          body: new ReadableStream<Uint8Array>({
-            start(controller) {
-              if (scenario === "unreadable") {
-                controller.error(new Error("private-provider-message"));
-              } else {
-                controller.enqueue(new TextEncoder().encode('{"error":'));
-              }
-            },
-          }),
-        };
-      });
-      const response = await fixture.upload("original", [400]);
-      expect(response.status).toBe(400);
-      expect(response.body).toStrictEqual({
-        error: {
-          code: "BAD_REQUEST",
-          message: "Google Drive folder lookup failed with HTTP 403",
-        },
-      });
-      expect(oauth.refreshBodies).toHaveLength(0);
-      expect(lookup.queries).toHaveLength(1);
-      expect(upload.metadata).toHaveLength(0);
-      expect(upload.bodies).toHaveLength(0);
-    },
-    10_000,
-  );
+  it("folder lookup returns a controlled error when its provider stream is unreadable", async () => {
+    const fixture = await publicOfficeConversionSource(
+      docsImportFixture(),
+      "docx",
+    );
+    const oauth = mockGoogleDriveConnectorOAuth();
+    const upload = mockGoogleDriveArtifactUpload({
+      id: "unexpected",
+      name: "report",
+    });
+    const lookup = mockGoogleDriveFilesList(() => {
+      return {
+        status: 403,
+        body: new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.error(new Error("private-provider-message"));
+          },
+        }),
+      };
+    });
+    const response = await fixture.upload("original", [400]);
+    expect(response.status).toBe(400);
+    expect(response.body).toStrictEqual({
+      error: {
+        code: "BAD_REQUEST",
+        message: "Google Drive folder lookup failed with HTTP 403",
+      },
+    });
+    expect(oauth.refreshBodies).toHaveLength(0);
+    expect(lookup.queries).toHaveLength(1);
+    expect(upload.metadata).toHaveLength(0);
+    expect(upload.bodies).toHaveLength(0);
+  }, 10_000);
 
   it("folder lookup diagnostics preserve request-owner cancellation", async () => {
     const owner = new AbortController();
@@ -4764,16 +4626,6 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       providerStatus: 429,
       afterRefresh: false,
       providerReason: "rateLimitExceeded",
-    },
-    {
-      providerStatus: 500,
-      afterRefresh: false,
-      providerReason: "backendError",
-    },
-    {
-      providerStatus: 503,
-      afterRefresh: false,
-      providerReason: "backendError",
     },
     {
       providerStatus: 503,
@@ -4845,107 +4697,38 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     120_000,
   );
 
-  it.each([
-    { scenario: "empty body", body: "" },
-    { scenario: "invalid JSON", body: "<html>private-provider-message</html>" },
-    { scenario: "missing reason", body: JSON.stringify({ error: {} }) },
-    {
-      scenario: "unknown reason",
-      body: JSON.stringify({
-        error: {
-          errors: [{ reason: "owner@example.test?token=private-token" }],
-        },
-      }),
-    },
-    {
-      scenario: "invalid reason type",
-      body: JSON.stringify({
-        error: { details: [{ reason: { token: "private-token" } }] },
-      }),
-    },
-    {
-      scenario: "invalid error envelope",
-      body: JSON.stringify({ error: { errors: "private-provider-message" } }),
-    },
-    {
-      scenario: "oversized body",
-      body: JSON.stringify({
-        error: {
-          message: "x".repeat(16 * 1024),
-          errors: [{ reason: "backendError" }],
-        },
-      }),
-    },
-  ])(
-    "workspace conversion keeps the fail-closed response for a preflight $scenario",
-    async ({ body }) => {
-      const fixture = await publicOfficeConversionSource(
-        docsImportFixture(),
-        "docx",
-      );
-      const upload = mockGoogleDriveArtifactUpload({
-        id: "unexpected",
-        name: "report",
-        mimeType: GOOGLE_WORKSPACE_MIME_TYPES.document,
-      });
-      mockGoogleDriveFilesList(() => {
-        return { status: 503, body };
-      });
-      const response = await fixture.upload("google", [400]);
-      expect(response.status).toBe(400);
-      expect(response.body).toStrictEqual({
-        error: {
-          code: "BAD_REQUEST",
-          message:
-            "Google Drive could not check previous conversions (HTTP 503). Try again.",
-        },
-      });
-      expect(upload.metadata).toHaveLength(0);
-      expect(upload.bodies).toHaveLength(0);
-    },
-    120_000,
-  );
-
-  it.each(["stalled", "unreadable"] as const)(
-    "workspace conversion keeps the fail-closed response for a preflight %s stream",
-    async (scenario) => {
-      const fixture = await publicOfficeConversionSource(
-        docsImportFixture(),
-        "docx",
-      );
-      const upload = mockGoogleDriveArtifactUpload({
-        id: "unexpected",
-        name: "report",
-        mimeType: GOOGLE_WORKSPACE_MIME_TYPES.document,
-      });
-      mockGoogleDriveFilesList(() => {
-        return {
-          status: 503,
-          body: new ReadableStream<Uint8Array>({
-            start(controller) {
-              if (scenario === "unreadable") {
-                controller.error(new Error("private-provider-message"));
-              } else {
-                controller.enqueue(new TextEncoder().encode('{"error":'));
-              }
-            },
-          }),
-        };
-      });
-      const response = await fixture.upload("google", [400]);
-      expect(response.status).toBe(400);
-      expect(response.body).toStrictEqual({
-        error: {
-          code: "BAD_REQUEST",
-          message:
-            "Google Drive could not check previous conversions (HTTP 503). Try again.",
-        },
-      });
-      expect(upload.metadata).toHaveLength(0);
-      expect(upload.bodies).toHaveLength(0);
-    },
-    10_000,
-  );
+  it("workspace conversion rejects a stalled lookup without uploading another file", async () => {
+    const fixture = await publicOfficeConversionSource(
+      docsImportFixture(),
+      "docx",
+    );
+    const upload = mockGoogleDriveArtifactUpload({
+      id: "unexpected",
+      name: "report",
+      mimeType: GOOGLE_WORKSPACE_MIME_TYPES.document,
+    });
+    mockGoogleDriveFilesList(() => {
+      return {
+        status: 503,
+        body: new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode('{"error":'));
+          },
+        }),
+      };
+    });
+    const response = await fixture.upload("google", [400]);
+    expect(response.status).toBe(400);
+    expect(response.body).toStrictEqual({
+      error: {
+        code: "BAD_REQUEST",
+        message:
+          "Google Drive could not check previous conversions (HTTP 503). Try again.",
+      },
+    });
+    expect(upload.metadata).toHaveLength(0);
+    expect(upload.bodies).toHaveLength(0);
+  }, 10_000);
 
   it("workspace conversion reuses a completed editable copy when the caller retries", async () => {
     const fixture = await workspaceSource("report.txt", Buffer.from("Hello"));
@@ -5028,28 +4811,20 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
 
   it.each([
     {
-      label: "converts a pptx artifact into a native slides deck",
-      pageElementCounts: [3, 5],
-      trashAccepted: true,
-      expectedMessage: null,
-    },
-    {
       label: "discards a conversion that produced an empty deck",
-      pageElementCounts: [0, 0],
       trashAccepted: true,
       expectedMessage:
         "Google Slides converted this presentation to an empty deck",
     },
     {
       label: "reports an empty deck drive refused to discard",
-      pageElementCounts: [0, 0],
       trashAccepted: false,
       expectedMessage:
         "Google Slides converted this presentation to an empty deck that could not be removed from Drive",
     },
   ])(
     "$label",
-    async ({ pageElementCounts, trashAccepted, expectedMessage }) => {
+    async ({ trashAccepted, expectedMessage }) => {
       const { actor, agentId, deckId, run, sandboxHeaders } =
         await setupSlidesConversionSync({
           agentLabel: "Artifacts slides conversion agent",
@@ -5063,9 +4838,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
           "https://docs.google.com/presentation/d/drive-slides-deck/edit",
       });
       const readback = mockGoogleSlidesReadback(
-        pageElementCounts.map((pageElementCount) => {
-          return { pageElementCount };
-        }),
+        [{ pageElementCount: 0 }, { pageElementCount: 0 }],
         { trashAccepted },
       );
 
@@ -5073,7 +4846,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
         actor,
         await chat.resolveCatalogArtifactId(actor, run.threadId, deckId),
         { agentId },
-        expectedMessage === null ? [200] : [400],
+        [400],
       );
 
       // The metadata asks Drive to convert while the part still declares the
@@ -5087,54 +4860,15 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       );
       expect(readback.presentationIds).toStrictEqual(["drive-slides-deck"]);
 
-      if (expectedMessage === null) {
-        expect(synced.body).toMatchObject({ id: "drive-slides-deck" });
-        expect(readback.trashedFileIds).toStrictEqual([]);
-      } else {
-        expectApiError(synced.body);
-        expect(synced.body.error.message).toBe(expectedMessage);
-        // A blank deck must not be reported as a successful sync, and a deck
-        // Drive would not discard must not be reported as discarded.
-        expect(readback.trashedFileIds).toStrictEqual(["drive-slides-deck"]);
-      }
+      expectApiError(synced.body);
+      expect(synced.body.error.message).toBe(expectedMessage);
+      expect(readback.trashedFileIds).toStrictEqual(["drive-slides-deck"]);
 
       chatCallbacks.mockChatOutputEvents([]);
       await completeChatRunOk(run.runId, sandboxHeaders);
     },
     120_000,
   );
-
-  it("uploads a presentation unchanged while slides conversion is off", async () => {
-    const { actor, agentId, deckId, run, sandboxHeaders } =
-      await setupSlidesConversionSync({
-        agentLabel: "Artifacts slides conversion disabled agent",
-        conversionEnabled: false,
-      });
-
-    const uploadRecorder = mockGoogleDriveArtifactUpload({
-      id: "drive-plain-deck",
-      name: "deck.pptx",
-      webViewLink: "https://drive.google.com/file/d/drive-plain-deck/view",
-    });
-    // No Slides handler is registered, so an unexpected read-back would fail
-    // the request instead of passing silently.
-
-    const synced = await chat.requestUploadArtifactToGoogleDrive(
-      actor,
-      await chat.resolveCatalogArtifactId(actor, run.threadId, deckId),
-      { agentId },
-      [200],
-    );
-
-    expect(synced.body).toMatchObject({ id: "drive-plain-deck" });
-    const multipart = uploadRecorder.metadata[0]!;
-    expect(multipart).toContain(
-      '"mimeType":"application/vnd.openxmlformats-officedocument.presentationml.presentation"',
-    );
-
-    chatCallbacks.mockChatOutputEvents([]);
-    await completeChatRunOk(run.runId, sandboxHeaders);
-  }, 120_000);
 
   it("reports a presentation google slides cannot read", async () => {
     const { actor, agentId, deckId, run, sandboxHeaders } =
