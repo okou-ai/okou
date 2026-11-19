@@ -1029,6 +1029,30 @@ test("Custom direction opens a full composer for a new chat without touching the
   });
   expect(composer()).not.toHaveTextContent(makeSuggestion().content.title);
 });
+test("Sending after removing the quote leaves the suggestion available", async () => {
+  const suggestion = makeSuggestion();
+  mockPool([suggestion]);
+  const sent = captureSend();
+  await openSuggestions();
+  const card = await screen.findByRole("article", {
+    name: suggestion.content.title,
+  });
+  const { editor, note } = await openCustomDirection(card);
+  await writeDirection(note, "Send this as a standalone message");
+  click(button("Remove feedback", "button", editor));
+  await waitFor(() => {
+    expect(button("Send", "button", editor)).toBeEnabled();
+  });
+  click(button("Send", "button", editor));
+  const { userMessage } = await sent;
+  expect(userMessage?.parts).toContainEqual({
+    type: "text",
+    text: "Send this as a standalone message",
+  });
+  await waitFor(() => {
+    expect(button(DIRECTION, "button", card)).toBeInTheDocument();
+  });
+});
 test("Each card shows its own background in the direction editor", async () => {
   const first = makeSuggestion();
   const second: Suggestion = {

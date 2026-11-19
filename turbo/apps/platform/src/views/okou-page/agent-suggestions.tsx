@@ -319,6 +319,24 @@ function SuggestionDirection({
   );
 }
 
+function SuggestionDirectionTitle({
+  target,
+  newChatTitle,
+}: {
+  readonly target: SuggestionDirectionTarget | null;
+  readonly newChatTitle: string;
+}) {
+  const { t } = useTranslation();
+  if (!target) {
+    return t(($) => {
+      return $.chat.agentSuggestions.directionTitle;
+    });
+  }
+  return target.kind === "thread"
+    ? (target.title ?? newChatTitle)
+    : newChatTitle;
+}
+
 function SuggestionDirectionComposer({
   direction,
 }: {
@@ -379,13 +397,10 @@ function SuggestionDirectionComposer({
             choosing ? "min-w-0 flex-1 truncate text-sm font-medium" : "sr-only"
           }
         >
-          {target
-            ? target.kind === "thread"
-              ? (target.title ?? newChatTitle)
-              : newChatTitle
-            : t(($) => {
-                return $.chat.agentSuggestions.directionTitle;
-              })}
+          <SuggestionDirectionTitle
+            target={target}
+            newChatTitle={newChatTitle}
+          />
         </h3>
         <Button
           type="button"

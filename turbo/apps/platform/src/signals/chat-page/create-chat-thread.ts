@@ -3660,7 +3660,7 @@ interface CreateChatThreadComposerSignalsOptions {
   readonly forward?: ChatForwardContext;
   /** Writes in a dialog over another page rather than under the thread. */
   readonly inPlace: boolean;
-  readonly onOptimisticSend?: () => void;
+  readonly onOptimisticSend?: (submission: ComposerSubmission) => void;
   readonly connector: ComposerSignals["connector"];
 }
 
@@ -3671,7 +3671,7 @@ interface ChatThreadComposerContext {
   readonly agentId: string;
   readonly cancellationRecoveryPending$: Computed<Promise<boolean>>;
   readonly forward?: ChatForwardContext;
-  readonly onOptimisticSend?: () => void;
+  readonly onOptimisticSend?: (submission: ComposerSubmission) => void;
 }
 
 function createThreadSubmitMessageSignal(
@@ -3692,6 +3692,11 @@ function createThreadSubmitMessageSignal(
       const cloudBrowserEnabled = get(
         computerUseHostSelection.cloudBrowserEnabled$,
       );
+      const onOptimisticSend = options.onOptimisticSend
+        ? () => {
+            options.onOptimisticSend?.(submission);
+          }
+        : undefined;
       const submitted =
         action === "queue"
           ? await set(
@@ -3703,9 +3708,7 @@ function createThreadSubmitMessageSignal(
                 generationTemplate: submission.generationTemplate,
                 editorDocument: submission.editorDocument,
                 ...(options.forward ? { forward: options.forward } : {}),
-                ...(options.onOptimisticSend
-                  ? { onOptimisticSend: options.onOptimisticSend }
-                  : {}),
+                onOptimisticSend,
               },
               signal,
             )
@@ -3718,9 +3721,7 @@ function createThreadSubmitMessageSignal(
                 generationTemplate: submission.generationTemplate,
                 editorDocument: submission.editorDocument,
                 ...(options.forward ? { forward: options.forward } : {}),
-                ...(options.onOptimisticSend
-                  ? { onOptimisticSend: options.onOptimisticSend }
-                  : {}),
+                onOptimisticSend,
               },
               signal,
             );
@@ -3879,7 +3880,7 @@ export function createThreadComposerSignals(
   chatEvents: ChatEventSignals,
   options: {
     readonly forward?: ChatForwardContext;
-    readonly onOptimisticSend?: () => void;
+    readonly onOptimisticSend?: (submission: ComposerSubmission) => void;
     readonly inPlace?: boolean;
   } = {},
 ): ComposerSignals {
@@ -3959,7 +3960,7 @@ const createChatForwardComposerSignals: ChatForwardComposerFactory = (
 export function createInPlaceThreadComposerSignals(
   threadId: string,
   agentId: string,
-  onOptimisticSend: () => void,
+  onOptimisticSend: (submission: ComposerSubmission) => void,
 ) {
   const chatEvents = createChatEventSignals(threadId);
   const composer = createThreadComposerSignals(threadId, agentId, chatEvents, {

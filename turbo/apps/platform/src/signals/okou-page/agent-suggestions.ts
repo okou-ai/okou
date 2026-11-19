@@ -26,12 +26,18 @@ import {
 } from "./agent-suggestion-session.ts";
 import { createInPlaceAgentComposerSignals } from "./agent-composer-signals.ts";
 import { createRestoredAttachment } from "./chat-draft.ts";
-import type { ComposerSignals } from "./composer-signals.ts";
+import type {
+  ComposerSignals,
+  ComposerSubmission,
+} from "./composer-signals.ts";
 import {
   createMessageDocumentSnapshot,
   messageDocumentToPrompt,
 } from "./user-message-document-codec.ts";
-import { suggestionContextPart } from "@okouai/api-contracts/contracts/suggestion-context";
+import {
+  suggestionContextPart,
+  suggestionFeedbacks,
+} from "@okouai/api-contracts/contracts/suggestion-context";
 import type {
   UserMessageDocument,
   ComposerDraft,
@@ -130,6 +136,7 @@ interface SuggestionDirectionSession {
   readonly finish: (
     target: SuggestionDirectionTarget,
     threadId: string,
+    submission: ComposerSubmission,
   ) => void;
 }
 
@@ -156,8 +163,8 @@ const directionGraph$ = computed((get) => {
       kind: target.kind,
       composer: createInPlaceAgentComposerSignals(
         target.agentId,
-        (threadId) => {
-          session.finish(target, threadId);
+        (threadId, submission) => {
+          session.finish(target, threadId, submission);
         },
         session.entry.item.content.title,
       ),
@@ -165,9 +172,13 @@ const directionGraph$ = computed((get) => {
   }
   return {
     kind: target.kind,
-    ...createInPlaceThreadComposerSignals(target.id, target.agentId, () => {
-      session.finish(target, target.id);
-    }),
+    ...createInPlaceThreadComposerSignals(
+      target.id,
+      target.agentId,
+      (submission) => {
+        session.finish(target, target.id, submission);
+      },
+    ),
   };
 });
 
@@ -242,12 +253,25 @@ const finishSuggestionDirection$ = command(
   (
     { get, set },
     session: SuggestionDirectionSession,
-    target: SuggestionDirectionTarget,
-    threadId: string,
+    sent: {
+      readonly target: SuggestionDirectionTarget;
+      readonly threadId: string;
+      readonly submission: ComposerSubmission;
+    },
     pageSignal: AbortSignal,
   ): void => {
+    const { target, threadId, submission } = sent;
     if (get(internalDirectionSession$) === session) {
       set(closeSuggestionDirection$);
+    }
+    const document = submission.editorDocument.toMessageDocument();
+    if (
+      !document ||
+      !suggestionFeedbacks(document).some(({ context }) => {
+        return context.suggestionId === session.entry.item.id;
+      })
+    ) {
+      return;
     }
     if (target.kind === "new") {
       showSuggestionSent();
@@ -355,8 +379,13 @@ export const openSuggestionDirection$ = command(
     const session: SuggestionDirectionSession = {
       entry,
       agentId,
-      finish: (target, threadId) => {
-        set(finishSuggestionDirection$, session, target, threadId, pageSignal);
+      finish: (target, threadId, submission) => {
+        set(
+          finishSuggestionDirection$,
+          session,
+          { target, threadId, submission },
+          pageSignal,
+        );
       },
     };
     set(internalDirectionSession$, session);

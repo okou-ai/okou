@@ -97,7 +97,10 @@ interface AgentComposerOptions {
   readonly projectId?: string;
   /** Names the new thread instead of deriving its title from the message. */
   readonly title?: string;
-  readonly onOptimisticSend?: (threadId: string) => void;
+  readonly onOptimisticSend?: (
+    threadId: string,
+    submission: ComposerSubmission,
+  ) => void;
 }
 
 function createAgentSubmitMessage(
@@ -158,9 +161,11 @@ function createAgentSubmitMessage(
                 cloudBrowserEnabled: access.kind === "cloudBrowser",
               }),
           ...(options.forward ? { forward: options.forward } : {}),
-          ...(options.onOptimisticSend
-            ? { onOptimisticSend: options.onOptimisticSend }
-            : {}),
+          onOptimisticSend: options.onOptimisticSend
+            ? (threadId) => {
+                options.onOptimisticSend?.(threadId, submission);
+              }
+            : undefined,
           ...(hasPendingConnectorAccess
             ? { initialConnectorAccess: pendingConnectorAccess }
             : {}),
@@ -253,7 +258,7 @@ export function createForwardAgentComposerSignals(
  */
 export function createInPlaceAgentComposerSignals(
   agentId: string,
-  onOptimisticSend: (threadId: string) => void,
+  onOptimisticSend: (threadId: string, submission: ComposerSubmission) => void,
   title: string,
 ) {
   return createAgentComposerSignalsWithDraft(
