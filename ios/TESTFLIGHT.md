@@ -33,11 +33,16 @@ In the Max & Zoe, Inc. team (`C5UWSXYB67`):
    separate **App Store Connect** distribution profiles for `ai.okou.ios`,
    `ai.okou.ios.notifications` and `ai.okou.ios.widgets`. Register both
    extensions as explicit iOS App IDs. Enable the App Group `group.ai.okou.ios`
-   on all three identifiers and profiles; retain production Push Notifications
-   on the main app. The app and the notification extension request the
+   on all three identifiers and profiles. Enable production Push Notifications
+   on the main app and on `ai.okou.ios.widgets`: WidgetKit pushes reload the
+   widgets, and `distribution-profile.py` rejects a widget profile without
+   `aps-environment: production`. After enabling the capability, regenerate the
+   widget profile and replace its secret. All three bundles request the
    existing Keychain group `C5UWSXYB67.ai.okou.ios`, preserving installed
-   sessions; the widget extension only reads the App Group and requests no
-   Keychain group. Neither extension needs a separate APNs key or push topic.
+   sessions; the notification extension and the widgets read the App's session
+   from it. The default team Keychain wildcard in each profile covers it. No
+   bundle needs a separate APNs key: the API's token-based key sends alerts to
+   `ai.okou.ios` and widget pushes to `ai.okou.ios.push-type.widgets`.
    The Desktop Developer ID Application certificate is not suitable for iOS.
    Store the following secrets in GitHub's existing `production` environment
    and retain recoverable copies in the Production vault:
@@ -48,7 +53,7 @@ In the Max & Zoe, Inc. team (`C5UWSXYB67`):
    | `IOS_DISTRIBUTION_P12_PASSWORD`             | Password protecting that export                                                   |
    | `IOS_PROVISIONING_PROFILE_BASE64`           | Base64 of the main app distribution profile with the shared App Group             |
    | `IOS_NOTIFICATION_EXTENSION_PROFILE_BASE64` | Base64 of the notification extension distribution profile with the same App Group |
-   | `IOS_WIDGETS_EXTENSION_PROFILE_BASE64`      | Base64 of the widget extension distribution profile with the same App Group       |
+   | `IOS_WIDGETS_EXTENSION_PROFILE_BASE64`      | Base64 of the widget extension distribution profile with the App Group and APNs   |
 
    Before storing the PKCS#12 export, verify it with macOS `security import`
    in a disposable keychain and confirm that it lists the Apple Distribution

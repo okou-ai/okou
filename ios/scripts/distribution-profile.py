@@ -16,6 +16,7 @@ BUNDLES = {
     ),
     "ai.okou.ios.widgets": Path("ios/Widgets/OkouWidgets.entitlements"),
 }
+PUSH_BUNDLES = {"ai.okou.ios", "ai.okou.ios.widgets"}
 
 
 def prepare(profile_path, destination, bundle_id):
@@ -43,8 +44,9 @@ def prepare(profile_path, destination, bundle_id):
         "com.apple.security.application-groups", []
     ):
         raise ValueError("Profile must enable the shared Okou App Group")
-    if bundle_id == "ai.okou.ios" and approved.get("aps-environment") != "production":
-        raise ValueError("Application distribution profile must enable production APNs")
+    # The app receives alerts; the widget extension receives WidgetKit pushes.
+    if bundle_id in PUSH_BUNDLES and approved.get("aps-environment") != "production":
+        raise ValueError(f"{bundle_id} distribution profile must enable production APNs")
     source = (
         BUNDLES[bundle_id].read_bytes().replace(b"$(APS_ENVIRONMENT)", b"production")
     )

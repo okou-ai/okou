@@ -43,17 +43,6 @@ private struct ChatAgentAvatarContent: View {
 }
 
 extension ChatThread {
-  /// The title's status emoji (the web's ✅ Done, ⏳ Waiting, …) split from its text,
-  /// matching the web's first-emoji rule so both clients agree on the same title.
-  var titleParts: (emoji: String?, text: String) {
-    let trimmed = displayTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard let index = trimmed.firstIndex(where: \.isTitleEmoji) else { return (nil, trimmed) }
-    let before = trimmed[..<index].trimmingCharacters(in: .whitespaces)
-    let after = trimmed[trimmed.index(after: index)...].trimmingCharacters(in: .whitespaces)
-    let text = [before, after].filter { !$0.isEmpty }.joined(separator: " ")
-    return (String(trimmed[index]), text.isEmpty ? String(trimmed[index]) : text)
-  }
-
   /// The title with `emoji` as its status, replacing any existing one; nil clears it.
   func title(withStatus emoji: String?) -> String {
     let parts = titleParts
@@ -90,15 +79,5 @@ enum ChatThreadStatus: String, CaseIterable, Identifiable {
     case .watching: String(localized: "Watching")
     case .shipped: String(localized: "Shipped")
     }
-  }
-}
-
-extension Character {
-  fileprivate var isTitleEmoji: Bool {
-    guard let scalar = unicodeScalars.first else { return false }
-    if scalar.properties.isEmojiPresentation { return true }
-    // Text-default pictographs count when they carry a variation selector or a sequence.
-    return scalar.properties.isEmoji && unicodeScalars.count > 1 && !isNumber
-      && scalar != "#" && scalar != "*"
   }
 }

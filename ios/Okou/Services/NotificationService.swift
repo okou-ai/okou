@@ -4,6 +4,7 @@ import OSLog
 import Observation
 import UIKit
 import UserNotifications
+import WidgetKit
 
 /// One immutable local data scope; its client still verifies identity before requests.
 struct NotificationWorkspace {
@@ -36,6 +37,8 @@ protocol NotificationSystem {
   func deliveredNotifications() async -> [DeliveredChatNotification]
   func removeDeliveredNotifications(identifiers: [String])
   func setBadgeCount(_ count: Int) async throws
+  /// The token WidgetKit issues once a widget with a push handler is installed, as hex.
+  func widgetPushToken() async -> String?
   var environment: String? { get }
 }
 
@@ -71,6 +74,11 @@ struct AppleNotificationSystem: NotificationSystem {
     if let url = URL(string: UIApplication.openSettingsURLString) {
       await UIApplication.shared.open(url)
     }
+  }
+  // WidgetCenter is not Sendable; read it off the main actor and return only the token.
+  nonisolated func widgetPushToken() async -> String? {
+    let info = await WidgetCenter.shared.currentPushInfo
+    return info?.token.map { String(format: "%02x", $0) }.joined()
   }
   var environment: String? {
     switch Bundle.main.object(forInfoDictionaryKey: "APNsEnvironment") as? String {
@@ -232,6 +240,8 @@ final class NotificationService {
     let generation = generation
     let workspace = workspace
     let status = await system.authorizationStatus()
+    // WidgetKit issues its token only after a widget is added, so each refresh reads it again.
+    let widgetToken = await system.widgetPushToken()
     guard self.generation == generation, !Task.isCancelled else { return }
     self.status = status
     guard let workspace else { return }
@@ -245,9 +255,11 @@ final class NotificationService {
         requestedDeviceToken = true
         system.register()
       }
-      guard let deviceToken, let environment = system.environment else { return }
-      if binding?.deviceToken == deviceToken && binding?.environment == environment { return }
-      let next = registration.nextBinding(deviceToken: deviceToken, environment: environment)
+      // An unchanged binding is not rewritten; a widget token that appears or changes rebinds.
+      guard let deviceToken, let environment = system.environment,
+        let next = registration.nextBinding(
+          replacing: binding, device: deviceToken, environment: environment, widget: widgetToken)
+      else { return }
       // Save the attempt before I/O so sign-out can fence even an uncertain write.
       binding = next
       defaults.set(true, forKey: "ios-push-registration-attempted")
@@ -649,6 +661,8 @@ private final class NotificationRegistrationIdentity {
     let revision: Int
     let deviceToken: String
     let environment: String
+    /// Lets the API refresh this device's widgets when a chat starts or finishes elsewhere.
+    let widgetPushToken: String?
   }
 
   struct Unregistration: Encodable {
@@ -662,9 +676,18 @@ private final class NotificationRegistrationIdentity {
     return revision
   }
 
-  func nextBinding(deviceToken: String, environment: String) -> Binding {
-    Binding(
+  /// The next binding, or nil when `current` already registers these tokens.
+  func nextBinding(
+    replacing current: Binding?, device deviceToken: String, environment: String,
+    widget widgetPushToken: String?
+  ) -> Binding? {
+    if current?.deviceToken == deviceToken && current?.environment == environment
+      && current?.widgetPushToken == widgetPushToken
+    {
+      return nil
+    }
+    return Binding(
       installationId: installationID, revision: nextRevision(), deviceToken: deviceToken,
-      environment: environment)
+      environment: environment, widgetPushToken: widgetPushToken)
   }
 }

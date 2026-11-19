@@ -529,6 +529,7 @@
     "src/signals/services/ios-notification-telemetry.ts",
     "src/signals/external/apns.ts",
     "src/signals/services/ios-push-registrations.service.ts",
+    "src/signals/services/ios-widget-push.service.ts",
     "src/signals/services/run-context-snapshot.service.ts",
     "src/signals/services/run-error-format.service.ts",
     "src/signals/services/run-summary.service.ts",

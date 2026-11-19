@@ -59,6 +59,11 @@ function updateRegistration(enabled: boolean) {
         deviceToken: "deviceToken" in body.data ? body.data.deviceToken : "",
         environment:
           "environment" in body.data ? body.data.environment : "production",
+        // An app without widgets, or from before widget pushes, clears the token.
+        widgetPushToken:
+          "widgetPushToken" in body.data
+            ? (body.data.widgetPushToken ?? null)
+            : null,
         userId: auth.userId,
         sessionId: auth.sessionId,
         enabled,
