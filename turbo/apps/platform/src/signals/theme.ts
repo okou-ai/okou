@@ -143,7 +143,7 @@ export const syncThemePreferences$ = command(
     signal.throwIfAborted();
 
     set(setTheme$, preferences.theme ?? "system");
-    set(setColorTheme$, preferences.colorTheme ?? DEFAULT_COLOR_THEME);
+    set(setColorTheme$, preferences.colorTheme ?? get(colorTheme$));
   },
 );
 
