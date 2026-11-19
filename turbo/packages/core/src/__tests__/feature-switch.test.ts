@@ -22,8 +22,10 @@ describe("FeatureSwitchKey", () => {
 });
 
 describe("isFeatureEnabled", () => {
-  it("defaults new workspace memberships to My Okou and honors retained overrides", () => {
-    const key = FeatureSwitchKey.SingleAgent;
+  it.each([
+    FeatureSwitchKey.SingleAgent,
+    FeatureSwitchKey.ConnectorChatAccountAccess,
+  ])("defaults %s on across workspaces and honors overrides", (key) => {
     for (const orgId of ["external-org", "org_3ANttyrbWYJk6JKRSTRLEsbsDLe"]) {
       const identity = { userId: "existing-account", orgId };
       expect(isFeatureEnabled(key, identity)).toBe(true);
@@ -37,7 +39,6 @@ describe("isFeatureEnabled", () => {
   });
 
   it.each([
-    FeatureSwitchKey.ConnectorChatAccountAccess,
     FeatureSwitchKey.ArtifactSidebarPreview,
     FeatureSwitchKey.ArtifactPreviewActionGroup,
   ])("defaults %s to staff and honors Lab overrides", (key) => {
@@ -445,7 +446,7 @@ describe("getFeatureSwitchMetadata", () => {
     );
     expect(
       metadata[FeatureSwitchKey.ConnectorChatAccountAccess].rolloutStage,
-    ).toBe("beta");
+    ).toBe("released");
     expect(
       metadata[FeatureSwitchKey.PresentationOutputFormat].rolloutStage,
     ).toBe("beta");

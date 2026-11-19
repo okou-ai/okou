@@ -57,7 +57,7 @@ function session(actor: ApiTestUser) {
   mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
 }
 
-async function owner(enabled = true) {
+async function owner({ legacyMode = false } = {}) {
   const actor = bdd.user();
   bdd.acceptAgentStorageWrites();
   runs.acceptStorageDownloads();
@@ -65,9 +65,9 @@ async function owner(enabled = true) {
   const runnerGroup = await runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
   await runs.ensurePersonalSubscriptionModel(actor);
-  if (enabled) {
+  if (legacyMode) {
     await connectors.updateFeatureSwitches(actor, {
-      connectorChatAccountAccess: true,
+      connectorChatAccountAccess: false,
     });
   }
   const { agentId } = await bdd.createAgent(actor, { visibility: "private" });
@@ -204,7 +204,7 @@ describe("Chat connector execution", () => {
   });
 
   it("retains Agent-gated startup and hides the new approval and switch APIs when disabled", async () => {
-    const value = await owner(false);
+    const value = await owner({ legacyMode: true });
     const account = await addAccount(value.actor, "A");
     const run = await start(value);
     expect(run.execution.connectorRuntimeTargets ?? []).toStrictEqual([]);
@@ -455,9 +455,6 @@ describe("Chat connector execution", () => {
       [403],
     );
     const foreign = bdd.user();
-    await connectors.updateFeatureSwitches(foreign, {
-      connectorChatAccountAccess: true,
-    });
     const foreignAccount = await addAccount(foreign, "foreign");
     await accept(
       client().select({

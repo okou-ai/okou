@@ -399,7 +399,9 @@ describe("POST /api/chat-threads", () => {
 
   it("resolves only sparse connector selections during account deletion", async () => {
     const fixture = await seedAgent();
-    await updateFeatureSwitchesForUser(context, fixture, {});
+    await updateFeatureSwitchesForUser(context, fixture, {
+      connectorChatAccountAccess: false,
+    });
     const firstResponse = await connectorApi.requestManualGrant(
       fixture.actor,
       "openai",
@@ -581,6 +583,9 @@ describe("POST /api/chat-threads", () => {
 
   it("refreshes builtin and custom selection authorization after grant changes", async () => {
     const actor = bdd.user();
+    await connectorApi.updateFeatureSwitches(actor, {
+      connectorChatAccountAccess: false,
+    });
     bdd.acceptAgentStorageWrites();
     const agent = await bdd.createAgent(actor, {
       displayName: "Selection authorization changes",
@@ -698,7 +703,9 @@ describe("POST /api/chat-threads", () => {
 
   it("creates and reads an exact built-in connector account selection", async () => {
     const fixture = await seedAgent();
-    await updateFeatureSwitchesForUser(context, fixture, {});
+    await updateFeatureSwitchesForUser(context, fixture, {
+      connectorChatAccountAccess: false,
+    });
     const connection = await connectorApi.connectManualGrant(
       fixture.actor,
       "openai",
@@ -752,6 +759,9 @@ describe("POST /api/chat-threads", () => {
       { orgId: fixture.orgId, userId: foreignActor.userId },
       context.signal,
     );
+    await connectorApi.updateFeatureSwitches(foreignActor, {
+      connectorChatAccountAccess: false,
+    });
     const foreignConnection = await connectorApi.connectManualGrant(
       foreignActor,
       "openai",
@@ -790,6 +800,11 @@ describe("POST /api/chat-threads", () => {
       seedOrgMembership$,
       { orgId: otherOrgId, userId: fixture.userId },
       context.signal,
+    );
+    await updateFeatureSwitchesForUser(
+      context,
+      { userId: fixture.userId, orgId: otherOrgId },
+      { connectorChatAccountAccess: false },
     );
     const otherOrgToken = await executionToken({
       userId: fixture.userId,

@@ -1089,6 +1089,7 @@ describe("POST /api/connectors/diagnostics/check", () => {
 
   it("keeps builtin registration pinned while permission and account authority change", async () => {
     const fixture = await publicChatActor(context);
+    fixture.ownsFeatureSwitches();
     const { actor: owner, agentId, run: own } = fixture;
     const runBase = "https://prod.api.reap.global/v1";
     const changedBase = "https://changed.api.reap.global/v1";
@@ -1099,6 +1100,11 @@ describe("POST /api/connectors/diagnostics/check", () => {
       });
     });
     const connectorId = connected.id;
+    await own(() => {
+      return connectorsApi.updateFeatureSwitches(owner, {
+        connectorChatAccountAccess: false,
+      });
+    });
     await own(() => {
       return runsApi.enableAgentConnectors(owner, agentId, ["reap"]);
     });
@@ -1244,6 +1250,9 @@ describe("POST /api/connectors/diagnostics/check", () => {
         await flushWaitUntilForTest();
       });
       await seedAdminMembership(owner);
+      await connectorsApi.updateFeatureSwitches(owner, {
+        connectorChatAccountAccess: false,
+      });
       await bdd.completeOnboarding(owner);
       configureCloudflareOAuth();
       server.use(
@@ -1588,6 +1597,9 @@ describe("POST /api/connectors/diagnostics/check", () => {
     async function prepareScenario() {
       const actor = bdd.user();
       await seedAdminMembership(actor);
+      await connectorsApi.updateFeatureSwitches(actor, {
+        connectorChatAccountAccess: false,
+      });
       const pinnedHost = "prod.api.reap.global";
       const changedHost = "changed.api.reap.global";
       const runBase = `https://${pinnedHost}/v1`;

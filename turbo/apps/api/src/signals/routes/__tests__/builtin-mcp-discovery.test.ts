@@ -34,8 +34,12 @@ async function discovery(token: string) {
 describe("builtin MCP discovery authority", () => {
   it("keeps absent and deleted account bindings unavailable without choosing a default", async () => {
     const owned = await publicChatActor(context);
+    owned.ownsFeatureSwitches();
     await owned.run(async () => {
       const { actor, agentId } = owned;
+      await connectors.updateFeatureSwitches(actor, {
+        connectorChatAccountAccess: false,
+      });
       const absentRun = await owned.sendChatRun(actor, {
         agentId,
         prompt: "Discover without a binding",
@@ -83,8 +87,12 @@ describe("builtin MCP discovery authority", () => {
 
   it("returns reconnect guidance for the exact non-default account", async () => {
     const owned = await publicChatActor(context);
+    owned.ownsFeatureSwitches();
     await owned.run(async () => {
       const { actor, agentId } = owned;
+      await connectors.updateFeatureSwitches(actor, {
+        connectorChatAccountAccess: false,
+      });
       mockEnv("APP_URL", "https://app.okou.ai");
       await connectors.connectManualGrant(actor, "manual-mcp", "api-token", {
         apiKey: "default-secret",

@@ -35,9 +35,14 @@ const {
 
 // Connector selection tests observe claimable native runs; Sonnet's Pi route
 // can finish API-first before these Runner assertions execute.
-async function entitledChatActor() {
+async function entitledChatActor({ legacyConnectorScope = false } = {}) {
   const result = await createEntitledChatActor();
   await api.updateUserModelPreference(result.actor, "claude-fable-5-1");
+  if (legacyConnectorScope) {
+    await connectors.updateFeatureSwitches(result.actor, {
+      connectorChatAccountAccess: false,
+    });
+  }
   return result;
 }
 
@@ -54,8 +59,9 @@ interface SelectedThreadConnectorFixture extends EntitledChatActor {
 
 async function selectedThreadConnectorFixture(
   title: string,
+  options?: { readonly legacyConnectorScope?: boolean },
 ): Promise<SelectedThreadConnectorFixture> {
-  const entitled = await entitledChatActor();
+  const entitled = await entitledChatActor(options);
   const connection = await connectors.connectManualGrant(
     entitled.actor,
     "openai",
@@ -327,6 +333,7 @@ describe("CHAT-02: thread connector account selection", () => {
     async function prepareScenario() {
       const fixture = await selectedThreadConnectorFixture(
         "Out-of-scope thread catalog selection",
+        { legacyConnectorScope: true },
       );
       return { fixture };
     }
@@ -404,7 +411,9 @@ describe("CHAT-02: thread connector account selection", () => {
   it.each(["revocation", "reauthorization"] as const)(
     "uses the default connector account across %s without an override",
     async (transition) => {
-      const { actor, agentId } = await entitledChatActor();
+      const { actor, agentId } = await entitledChatActor({
+        legacyConnectorScope: true,
+      });
       if (!actor.orgId) {
         throw new Error("Expected an organization-scoped chat actor");
       }

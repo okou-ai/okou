@@ -62,10 +62,10 @@ function legacy() {
 function session(actor: ReturnType<typeof bdd.user>) {
   mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
 }
-async function member(actor = bdd.user(), enabled = true) {
-  if (enabled) {
+async function member(actor = bdd.user(), { legacyMode = false } = {}) {
+  if (legacyMode) {
     await connectors.updateFeatureSwitches(actor, {
-      connectorChatAccountAccess: true,
+      connectorChatAccountAccess: false,
     });
   }
   session(actor);
@@ -431,7 +431,7 @@ describe("Member connector permissions", () => {
   });
 
   it("gates configuration and rejects a real Run credential before it can change shared rules", async () => {
-    const actor = await member(bdd.user(), false);
+    const actor = await member(bdd.user(), { legacyMode: true });
     await addOpenAi(actor);
     await accept(client().get({ headers, query: openai }), [404]);
     await connectors.updateFeatureSwitches(actor, {

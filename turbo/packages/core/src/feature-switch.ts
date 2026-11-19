@@ -144,8 +144,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "Chat connector accounts",
     description:
       "Configure Chat connector accounts and shared member connector permissions.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    enabled: true,
   },
   [FeatureSwitchKey.FeatureGuides]: {
     maintainer: "yuma@okou.ai",

@@ -594,6 +594,12 @@ function preparePiSandboxExecution(): void {
   piExecutionFixture.mockPiObjectStore();
 }
 
+async function useAgentConnectorGrants(actor: ApiTestUser): Promise<void> {
+  await createConnectorBddApi(context).updateFeatureSwitches(actor, {
+    [FeatureSwitchKey.ConnectorChatAccountAccess]: false,
+  });
+}
+
 async function entitledRunActor(
   userOptions: ApiTestUserOptions = {},
   route: { readonly model?: typeof NATIVE_RUNNER_ROUTE.model } = {},
@@ -3019,6 +3025,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const oauth = createOrdinaryOAuthRunApi();
         const api = oauth.api;
         const { actor, agentId, runnerGroup } = await oauth.entitledRunActor();
+        await useAgentConnectorGrants(actor);
 
         await oauth.connect(actor, {
           connectorSlug: "x",
@@ -3051,6 +3058,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const api = oauth.api;
         const fw = createFirewallApi(context);
         const { actor, agentId, runnerGroup } = await oauth.entitledRunActor();
+        await useAgentConnectorGrants(actor);
 
         await oauth.connect(actor, {
           connectorSlug: "x",
@@ -3373,7 +3381,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const connectors = createConnectorBddApi(context);
         const { actor, agentId, runnerGroup } = await entitledRunActor();
 
-        await connectors.updateFeatureSwitches(actor, {});
+        await useAgentConnectorGrants(actor);
 
         const connected = await connectors.connectManualGrant(
           actor,
@@ -3505,7 +3513,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
         const { actor, agentId, runnerGroup } = await entitledRunActor();
 
-        await connectors.updateFeatureSwitches(actor, {});
+        await useAgentConnectorGrants(actor);
         const connected = await connectors.connectManualGrant(
           actor,
           "lark",
@@ -4317,12 +4325,14 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             acceptedState();
           },
         });
+        owned.ownsFeatureSwitches();
         const { actor, agentId, runnerGroup } = owned;
         function own<T>(operation: () => Promise<T>) {
           acceptedState = captureExternalState();
           return owned.run(operation);
         }
         await own(async () => {
+          await useAgentConnectorGrants(actor);
           await own(() => {
             return api.updateUserModelPreference(actor, "claude-fable-5-1");
           });
@@ -4865,6 +4875,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const connectors = createConnectorBddApi(context);
         const fw = createFirewallApi(context);
         const { actor, agentId, runnerGroup } = await entitledRunActor();
+        await useAgentConnectorGrants(actor);
 
         const mcpDefinition = manualMcpRuntimeConnectorBody({
           displayName: "BDD MCP Runtime",
@@ -5169,11 +5180,13 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
       it("keeps a revoked exact custom source absent after a replacement becomes default", async () => {
         const owned = await publicChatActor(context);
+        owned.ownsFeatureSwitches();
         const { actor, agentId, runnerGroup } = owned;
         const api = createRunsApi(context);
         const connectors = createConnectorBddApi(context);
         const fw = createFirewallApi(context);
         await owned.run(async () => {
+          await useAgentConnectorGrants(actor);
           const custom = await connectors.createCustomConnector(
             actor,
             manualMcpRuntimeConnectorBody({
@@ -5264,6 +5277,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           {},
           NATIVE_RUNNER_ROUTE,
         );
+        await useAgentConnectorGrants(actor);
         const connectedSlugs = Array.from(
           { length: MCP_CONNECTOR_PROMPT_INVENTORY_LIMIT + 1 },
           (_, index) => {
@@ -5480,6 +5494,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           {},
           NATIVE_RUNNER_ROUTE,
         );
+        await useAgentConnectorGrants(actor);
         if (!actor.orgId) {
           throw new Error(
             "Expected a custom connector actor with an organization",
@@ -5659,8 +5674,10 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         createBddApi(context).acceptAgentStorageWrites();
         const connectors = createConnectorBddApi(context);
         const fixture = await publicChatActor(context);
+        fixture.ownsFeatureSwitches();
         const { actor, agentId, runnerGroup } = fixture;
         await fixture.run(async () => {
+          await useAgentConnectorGrants(actor);
           const slug = `_bdd-permission-skill-${randomUUID().slice(0, 8)}`;
           const custom = await connectors.createCustomConnector(actor, {
             slug,
@@ -7097,6 +7114,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           {},
           NATIVE_RUNNER_ROUTE,
         );
+        await useAgentConnectorGrants(actor);
         if (!actor.orgId) {
           throw new Error("Expected an organization-scoped run actor");
         }
@@ -8231,6 +8249,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           {},
           NATIVE_RUNNER_ROUTE,
         );
+        await useAgentConnectorGrants(actor);
 
         // The grants agent is public so a same-org member can write their own
         // grants for it without being the owner.
@@ -8723,6 +8742,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const oauth = createOrdinaryOAuthRunApi();
         const api = oauth.api;
         const { actor, runnerGroup } = await oauth.entitledRunActor();
+        await useAgentConnectorGrants(actor);
 
         const agent = await oauth.createAgent(actor, {
           displayName: "BDD Cloudflare unknown policy agent",
@@ -8878,6 +8898,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
         const completed = await bdd.completeOnboarding(actor);
         expect(completed.status).toBe(200);
+        await useAgentConnectorGrants(actor);
         await bdd.updateUserTimezone(actor, "America/Los_Angeles");
         // Reading the current user caches the Clerk name/email used by the
         // run context's user-info section.

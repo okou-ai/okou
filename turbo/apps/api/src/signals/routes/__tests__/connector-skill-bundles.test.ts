@@ -148,6 +148,8 @@ describe("Connector Skill bundle delivery", () => {
             [FeatureSwitchKey.CodexExecution]: framework === "codex",
             // These delivery cases override Skills with retained Agent Workflows.
             [FeatureSwitchKey.SingleAgent]: false,
+            // The selected connector and bundled Skills are Agent-scoped here.
+            [FeatureSwitchKey.ConnectorChatAccountAccess]: false,
           },
         );
         const s3 = installWorkflowVolumeS3Fixture(context);

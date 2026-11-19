@@ -878,8 +878,11 @@ describe("Google Workspace Events subscription lifecycle", () => {
     );
   });
 
-  it("reconciles subscriptions when selection and default account change", async () => {
+  it("reconciles subscriptions when legacy selection and default account change", async () => {
     const fixture = await setupFixture();
+    await connectors.updateFeatureSwitches(fixture.actor, {
+      connectorChatAccountAccess: false,
+    });
     const created = await createMeetAutomation(fixture);
     if (!created.body.chatThreadId) {
       throw new Error("Expected an automation chat thread");

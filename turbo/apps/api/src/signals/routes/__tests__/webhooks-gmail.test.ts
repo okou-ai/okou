@@ -1803,11 +1803,14 @@ describe("POST /api/webhooks/gmail", () => {
     );
   });
 
-  it("reconciles Gmail watches when selection and default account change", async () => {
+  it("reconciles Gmail watches when legacy selection and default account change", async () => {
     configureGmailEnv();
     const recorder = configureGmailWatchLifecycleMock();
     const { actor, workflowId, secondConnectorId } =
       await setupMultiAccountGmailFixture();
+    await updateFeatureSwitchesForUser(context, actor, {
+      connectorChatAccountAccess: false,
+    });
     const created = await accept(
       automationsClient().create({
         headers: authHeaders(actor),

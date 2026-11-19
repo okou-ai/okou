@@ -38,6 +38,7 @@ async function connectorActor() {
       }
     },
     afterRuns: async () => {
+      await connectors.deleteFeatureSwitches(actor);
       for (const agentId of agents) {
         await bdd.deleteAgent(actor, agentId);
       }
@@ -63,6 +64,9 @@ async function connectorActor() {
   return await owner.run(async () => {
     await publicPlanLifecycle(context, actor).update("active");
     await bdd.completeOnboarding(actor);
+    await connectors.updateFeatureSwitches(actor, {
+      connectorChatAccountAccess: false,
+    });
     const provider = await api.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
     });

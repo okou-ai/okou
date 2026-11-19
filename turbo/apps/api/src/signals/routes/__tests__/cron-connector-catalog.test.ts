@@ -501,6 +501,7 @@ describe("connector catalog valid lifecycle", () => {
       await fixture.configureSubscriptionPiModel(owner.actor);
       await connectorsApi.updateFeatureSwitches(owner.actor, {
         [FeatureSwitchKey.CodexExecution]: false,
+        [FeatureSwitchKey.ConnectorChatAccountAccess]: false,
       });
       installWorkflowVolumeS3Fixture(context, objects);
       await fixture.api.enableAgentConnectors(owner.actor, owner.agentId, [
@@ -646,8 +647,12 @@ describe("connector catalog valid lifecycle", () => {
   it("mounts all 17 normally published connector skill versions", async () => {
     clearMockNow();
     const owned = await publicChatActor(context, { clockTime: now() });
+    owned.ownsFeatureSwitches();
     const fixture = createChatEventsFixture(context);
     await owned.run(async () => {
+      await connectorsApi.updateFeatureSwitches(owned.actor, {
+        [FeatureSwitchKey.ConnectorChatAccountAccess]: false,
+      });
       await fixture.api.createPersonalModelProvider(owned.actor, {
         type: "codex-oauth-token",
         authMethod: "auth_json",
@@ -758,11 +763,9 @@ describe("connector catalog valid lifecycle", () => {
     });
     const published = readPublishedArchive(context, start);
     await owned.run(() => {
-      return connectorsApi.updateAgentCustomConnectors(
-        owned.actor,
-        owned.agentId,
-        [connector.id],
-      );
+      return connectorsApi.setCustomConnectorValues(owned.actor, connector.id, [
+        { key: "secret", kind: "secret", value: "queued-skill-api-token" },
+      ]);
     });
     const queued = await owned.queueChatRun(owned.actor, {
       agentId: owned.agentId,
