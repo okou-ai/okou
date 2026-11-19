@@ -179,11 +179,7 @@ import {
 } from "./api-dispatch-timing.service";
 import { maxAutonomyBudget$ } from "../autonomy-budget-limit";
 import { childAutonomyBudget } from "./autonomy-budget.service";
-import {
-  canonicalChatEventUserMessage,
-  canonicalChatInputModelSelection,
-  parseCanonicalChatEventRequiredOfficialWorkflowIds,
-} from "./canonical-chat-event-read.service";
+import { parseCanonicalChatEventRequiredOfficialWorkflowIds } from "./canonical-chat-event-read.service";
 import {
   prepareChatEvent,
   prepareChatEventReplacement,
@@ -2767,57 +2763,21 @@ export function createThreadClaimRunObjects(
     ].join("\n");
   });
 
-  /**
-   * The one rejection of a picked queue head, for business rejections and
-   * unexpected preparation or commit failures alike: record the rejected input
-   * and its error message, settle an automation tick, publish the realtime
-   * event and deliver the failure to the source integration. With `lease`, the
-   * rejection and the release of that lease commit together, and only while
-   * the claim still holds it; otherwise the statement rolls back every write.
-   * The event sequence is reserved first, then the queue lease is released
-   * before the rejection events and thread sort writes.
-   */
-  const rejectionInput$ = command(
-    async ({ get }, head: RejectedQueueHead, signal: AbortSignal) => {
-      const [source] = await get(db$)
-        .select({
-          id: chatEvents.id,
-          chatThreadId: chatEvents.chatThreadId,
-          eventType: chatEvents.eventType,
-          userMessage: canonicalChatEventUserMessage(),
-          createdAt: chatEvents.createdAt,
-          contextType: chatEvents.contextType,
-          contextId: chatEvents.contextId,
-          modelSelection: canonicalChatInputModelSelection(),
-        })
-        .from(chatEvents)
-        .where(
-          and(
-            eq(chatEvents.id, head.id),
-            eq(chatEvents.chatThreadId, head.chatThreadId),
-          ),
-        )
-        .limit(1);
-      signal.throwIfAborted();
-      if (!source?.userMessage) {
-        throw new Error("Queued input event is missing userMessage");
-      }
-      return { ...source, userMessage: source.userMessage };
-    },
-  );
-
   const commitQueueHeadRejection$ = command(
     async (
-      { set },
+      { get, set },
       args: {
-        readonly head: RejectedQueueHead;
         readonly errorMarker: string;
         readonly displayError: string;
         readonly lease?: ThreadClaim;
       },
       signal: AbortSignal,
-    ) => {
-      const source = await set(rejectionInput$, args.head, signal);
+    ): Promise<string | null> => {
+      const source = await get(queuedInput$);
+      signal.throwIfAborted();
+      if (!source) {
+        throw new Error("Claim has no picked event");
+      }
       const rejectedAt = new Date(
         Math.max(nowDate().getTime(), source.createdAt.getTime() + 1),
       );
@@ -2878,11 +2838,7 @@ export function createThreadClaimRunObjects(
       if (result.assistantEventId === null) {
         throw new Error("Failed to append queued input rejection");
       }
-      return {
-        assistantEventId: result.assistantEventId,
-        contextType: source.contextType,
-        contextId: source.contextId,
-      };
+      return result.assistantEventId;
     },
   );
 
@@ -2915,13 +2871,13 @@ export function createThreadClaimRunObjects(
                 signal,
               );
       signal.throwIfAborted();
-      const rejected = await set(
+      const assistantEventId = await set(
         commitQueueHeadRejection$,
-        { head, errorMarker: error.code.toLowerCase(), displayError, lease },
+        { errorMarker: error.code.toLowerCase(), displayError, lease },
         signal,
       );
       signal.throwIfAborted();
-      if (!rejected) {
+      if (assistantEventId === null) {
         return;
       }
       // Business rejections already have durable input.rejected/output.error
@@ -2951,7 +2907,7 @@ export function createThreadClaimRunObjects(
         ? set(
             deliverQueuedPromptRejection$,
             rejection.delivery,
-            rejected.assistantEventId,
+            assistantEventId,
             signal,
           )
         : error.code === "INTERNAL_ERROR" && agentId !== null
@@ -2959,7 +2915,7 @@ export function createThreadClaimRunObjects(
               deliverUnexpectedQueuedPromptRejection$,
               {
                 head: { ...head, agentId },
-                assistantEventId: rejected.assistantEventId,
+                assistantEventId,
               },
               signal,
             )
