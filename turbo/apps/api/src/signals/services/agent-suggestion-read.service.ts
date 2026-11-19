@@ -252,6 +252,7 @@ export const readFeedItems$ = command(
         signal,
       ),
     ]);
+    signal.throwIfAborted();
     const describedItems = items.map((item) => {
       if (item.type !== "event") {
         return item;
