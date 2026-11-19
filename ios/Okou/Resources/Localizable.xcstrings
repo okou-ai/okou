@@ -13946,40 +13946,40 @@
         }
       }
     },
-    "Notifications tell you when a chat finishes. Pick a chat's model at the top of the chat, and its connectors under + in the message composer.": {
+    "Notifications tell you when a chat finishes. Choose connectors under + in the message composer.": {
       "localizations": {
         "de": {
-          "stringUnit": { "state": "translated", "value": "Benachrichtigungen melden, wenn ein Chat fertig ist. Das Modell eines Chats wählen Sie oben im Chat, seine Konnektoren unter + im Nachrichtenfeld." }
+          "stringUnit": { "state": "translated", "value": "Benachrichtigungen melden, wenn ein Chat fertig ist. Konnektoren wählen Sie unter + im Nachrichtenfeld." }
         },
         "es": {
-          "stringUnit": { "state": "translated", "value": "Las notificaciones te avisan cuando termina un chat. Elige el modelo de un chat en la parte superior del chat y sus conectores en + del cuadro de mensaje." }
+          "stringUnit": { "state": "translated", "value": "Las notificaciones te avisan cuando termina un chat. Elige los conectores en + del cuadro de mensaje." }
         },
         "fr": {
-          "stringUnit": { "state": "translated", "value": "Les notifications vous préviennent quand un chat se termine. Choisissez le modèle d’un chat en haut du chat, et ses connecteurs sous + dans le champ de message." }
+          "stringUnit": { "state": "translated", "value": "Les notifications vous préviennent quand un chat se termine. Choisissez les connecteurs sous + dans le champ de message." }
         },
         "hi": {
-          "stringUnit": { "state": "translated", "value": "चैट पूरी होने पर सूचनाएँ आपको बताती हैं। चैट का मॉडल चैट के ऊपर चुनें, और उसके कनेक्टर संदेश बॉक्स में + के अंदर।" }
+          "stringUnit": { "state": "translated", "value": "चैट पूरी होने पर सूचनाएँ आपको बताती हैं। संदेश बॉक्स में + के अंदर कनेक्टर चुनें।" }
         },
         "id": {
-          "stringUnit": { "state": "translated", "value": "Notifikasi memberi tahu Anda saat chat selesai. Pilih model chat di bagian atas chat, dan konektornya di + pada kotak pesan." }
+          "stringUnit": { "state": "translated", "value": "Notifikasi memberi tahu Anda saat chat selesai. Pilih konektor di + pada kotak pesan." }
         },
         "it": {
-          "stringUnit": { "state": "translated", "value": "Le notifiche ti avvisano quando una chat termina. Scegli il modello di una chat in alto nella chat e i suoi connettori sotto + nel campo del messaggio." }
+          "stringUnit": { "state": "translated", "value": "Le notifiche ti avvisano quando una chat termina. Scegli i connettori sotto + nel campo del messaggio." }
         },
         "ja": {
-          "stringUnit": { "state": "translated", "value": "チャットが終わると通知でお知らせします。チャットのモデルはチャット上部で、コネクタはメッセージ欄の + から選べます。" }
+          "stringUnit": { "state": "translated", "value": "チャットが終わると通知でお知らせします。コネクタはメッセージ欄の + から選べます。" }
         },
         "ko": {
-          "stringUnit": { "state": "translated", "value": "채팅이 끝나면 알림으로 알려 드립니다. 채팅의 모델은 채팅 상단에서, 커넥터는 메시지 입력창의 + 에서 고르세요." }
+          "stringUnit": { "state": "translated", "value": "채팅이 끝나면 알림으로 알려 드립니다. 커넥터는 메시지 입력창의 + 에서 고르세요." }
         },
         "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "As notificações avisam quando um chat termina. Escolha o modelo de um chat no topo do chat e os conectores em + na caixa de mensagem." }
+          "stringUnit": { "state": "translated", "value": "As notificações avisam quando um chat termina. Escolha os conectores em + na caixa de mensagem." }
         },
         "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "聊天完成时会通知你。对话的模型在对话顶部选择，连接器在消息输入框的 + 里选择。" }
+          "stringUnit": { "state": "translated", "value": "聊天完成时会通知你。连接器在消息输入框的 + 里选择。" }
         },
         "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "聊天完成時會通知你。對話的模型在對話頂部選擇，連接器在訊息輸入框的 + 裡選擇。" }
+          "stringUnit": { "state": "translated", "value": "聊天完成時會通知你。連接器在訊息輸入框的 + 裡選擇。" }
         }
       }
     },

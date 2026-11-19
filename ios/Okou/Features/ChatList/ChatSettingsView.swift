@@ -116,7 +116,7 @@ struct ChatSettingsView: View {
         } footer: {
           VStack(alignment: .leading, spacing: OkouSpace.sm) {
             Text(
-              "Notifications tell you when a chat finishes. Pick a chat's model at the top of the chat, and its connectors under + in the message composer."
+              "Notifications tell you when a chat finishes. Choose connectors under + in the message composer."
             )
             .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
             if preferences?.returnKey == .send {
