@@ -708,20 +708,6 @@ function claimCommitArguments(
   };
 }
 
-/**
- * The first route error among prepared resources, in plan and launch order.
- */
-function firstPreparationFailure(
-  results: readonly unknown[],
-): CreateRunErrorResult | null {
-  for (const result of results) {
-    if (isRouteError(result)) {
-      return result;
-    }
-  }
-  return null;
-}
-
 /** Bind prepared launch facts to this admission's pending persistence. */
 function finalizeClaimRunContext(
   context: Omit<ThreadRunContext, "persistence">,
@@ -2410,29 +2396,19 @@ export function createThreadClaimRunObjects(
       }
     },
   );
-  const runIdentity$ = computed(async (get) => {
-    const ids = get(runIds$);
-    if (!(await get(selectionReady$))) {
-      return null;
-    }
-    return {
-      runId: ids.runId,
-    };
-  });
   // Resource reads do not wait for credit admission: its failure is checked
   // with the prepared resources before anything is committed.
   const resourceAllowed$ = computed(async (get) => {
     // Eager storage must not evaluate a Run plan for an automation source
     // whose delegation admission already rejects it.
-    if (
-      (await get(isAutomation$)) &&
-      (await get(automationBudget$)).kind === "invalid"
-    ) {
-      return false;
+    if (await get(isAutomation$)) {
+      return (
+        (await get(automationBudget$)).kind === "ok" && get(selectionReady$)
+      );
     }
     const [ready, validSource] = await Promise.all([
-      get(selectionReady$),
-      (await get(isAutomation$)) ? true : get(promptResourcesValid$),
+      get(promptReady$),
+      get(promptResourcesValid$),
     ]);
     return ready && validSource;
   });
@@ -2784,16 +2760,31 @@ export function createThreadClaimRunObjects(
         await get(automationAssembly$);
         signal.throwIfAborted();
       }
-      const [[input, runnerLaunch], callbackRows, assembly, identity] =
-        await Promise.all([
+      const [[input, runnerLaunch], callbackRows, assembly] = await Promise.all(
+        [
           set(prepareRunnerResources$, signal),
           get(callbackRows$),
           get(assembly$),
-          get(runIdentity$),
-        ]);
+        ],
+      );
       signal.throwIfAborted();
       if (assembly.kind !== "assembled") {
         return assembly;
+      }
+      const rejectResource = (failure: CreateRunErrorResult) => {
+        return {
+          kind: "rejected" as const,
+          rejection: claimAssemblyRejection(assembly, head, failure.body.error),
+        };
+      };
+      if (isRouteError(input)) {
+        return rejectResource(input);
+      }
+      if (isRouteError(runnerLaunch)) {
+        return rejectResource(runnerLaunch);
+      }
+      if (!input || !runnerLaunch) {
+        return { kind: "missing-resources" as const };
       }
       return {
         kind: "prepared" as const,
@@ -2801,7 +2792,6 @@ export function createThreadClaimRunObjects(
         runnerLaunch,
         callbackRows,
         assembly,
-        identity,
       };
     },
   );
@@ -2825,6 +2815,9 @@ export function createThreadClaimRunObjects(
         get(threadContext.connectorThreadSelections$),
       ]);
       signal.throwIfAborted();
+      if (resources.kind === "missing-resources") {
+        throw new Error("Prepared claim is missing launch resources");
+      }
       if (resources.kind !== "prepared") {
         await set(
           rejectChatQueueHead$,
@@ -2839,34 +2832,8 @@ export function createThreadClaimRunObjects(
         );
         return { kind: "passed" };
       }
-      const { input, runnerLaunch, callbackRows, assembly, identity } =
-        resources;
-      const failure = firstPreparationFailure([input, runnerLaunch]);
-      if (failure) {
-        await set(
-          rejectChatQueueHead$,
-          {
-            head,
-            rejection: claimAssemblyRejection(
-              assembly,
-              head,
-              failure.body.error,
-            ),
-          },
-          signal,
-        );
-        return { kind: "passed" };
-      }
-      if (
-        !input ||
-        !runnerLaunch ||
-        !callbackRows ||
-        !identity ||
-        isRouteError(input) ||
-        isRouteError(runnerLaunch)
-      ) {
-        throw new Error("Prepared claim is missing launch resources");
-      }
+      const { input, runnerLaunch, callbackRows, assembly } = resources;
+      const { runId } = get(runIds$);
       await set(recordQueuedInputAdmissionTiming$, head, timing.run, signal);
       signal.throwIfAborted();
       const preparedContext = await timing.run.measure(
@@ -2878,7 +2845,7 @@ export function createThreadClaimRunObjects(
               {
                 kind: "prepared",
                 input: claimCommitInput(input),
-                identity,
+                identity: { runId },
                 callbackRows,
                 launch: runnerLaunch,
                 head,
