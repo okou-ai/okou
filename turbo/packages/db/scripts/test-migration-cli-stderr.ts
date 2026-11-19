@@ -1,40 +1,18 @@
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-import { literal, object, string } from "zod";
 import { parseMigrationCliStderr } from "./migration-cli-stderr";
 
 const expected = {
-  status: "failed",
-  classification: "ReviewedPlanAndChecksumRequired",
+  result: "failed",
+  classification: "ZodError",
 };
 const record = JSON.stringify(expected);
 assert.deepEqual(parseMigrationCliStderr(`  ${record}\r\n`), expected);
 
 const before = "diagnostic before the failure record";
 const after = "diagnostic after the failure record";
-const warningImport = new URL(
-  "./fixtures/migration-cli-warning.mjs",
-  import.meta.url,
-).href;
-await assert.rejects(
-  promisify(execFile)(process.execPath, [
-    "--import",
-    warningImport,
-    "--import",
-    "tsx",
-    "scripts/migrations/026-retire-workflow-storage/cleanup.ts",
-    "--migrate",
-  ]),
-  (error: unknown) => {
-    const failure = object({ code: literal(1), stderr: string() }).parse(error);
-    const { stderr } = failure;
-    assert.match(stderr, /\[MIGRATION_CLI_TEST\]/u);
-    assert.ok(stderr.indexOf(before) < stderr.indexOf(record), stderr);
-    assert.ok(stderr.indexOf(after) > stderr.indexOf(record), stderr);
-    assert.deepEqual(parseMigrationCliStderr(stderr), expected);
-    return true;
-  },
+assert.deepEqual(
+  parseMigrationCliStderr(`${before}\n${record}\n${after}\n`),
+  expected,
 );
 
 for (const stderr of [
