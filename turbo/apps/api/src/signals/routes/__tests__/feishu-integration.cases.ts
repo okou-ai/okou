@@ -7701,53 +7701,6 @@ export function registerSharedFeishuConversationTests(): void {
     } = createFeishuIntegrationFixture(platform);
     beforeEach(reset);
 
-    it("resumes Feishu DM sessions across messages", async () => {
-      const fixture = await setupFeishuRunFixture();
-      const { actor, runnerGroup, appId, callbackUrl } = fixture;
-      const { mainSessionId } = await startFeishuDmSession(fixture);
-
-      await own(() => {
-        return postEvent(
-          callbackUrl,
-          directMessage(appId, "continue the Feishu DM session"),
-          { encrypted: true },
-        );
-      });
-      await own(flushWaitUntilForTest);
-      const followUpRun = await findRun(
-        actor,
-        "continue the Feishu DM session",
-      );
-      await expectRunSource(actor, followUpRun.id);
-      await own(() => {
-        return runsApi.heartbeatRunner(runnerGroup);
-      });
-      const followUpExecution = await readRunExecution(followUpRun.id);
-      expect(followUpExecution.nativeContinuation?.sessionId).toBe(
-        mainSessionId,
-      );
-      await completeRunSession({
-        runId: followUpRun.id,
-        sandboxToken: followUpExecution.sandboxToken,
-        sessionId: mainSessionId,
-        history: `bdd continued feishu history ${followUpRun.id}`,
-        assistantText: "Continued Feishu DM answer",
-      });
-
-      const client = setupApp({ context, routes: feishuConnectRoutes })(
-        connectContract,
-      );
-      await own(() => {
-        return accept(
-          client.removeInstallation({
-            headers: { authorization: "Bearer clerk-session" },
-            params: { installationId: fixture.installationId },
-          }),
-          [200],
-        );
-      });
-    });
-
     async function readFeishuThreadEvents(actor: ApiTestUser) {
       mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
       const threads = await own(() => {
@@ -7976,6 +7929,7 @@ export function registerSharedFeishuConversationTests(): void {
         });
         await own(flushWaitUntilForTest);
         const mainDmRun = await findRun(actor, "return to the main Feishu DM");
+        await expectRunSource(actor, mainDmRun.id);
         await own(() => {
           return runsApi.heartbeatRunner(runnerGroup);
         });
@@ -7983,23 +7937,14 @@ export function registerSharedFeishuConversationTests(): void {
         expect(mainDmExecution.nativeContinuation?.sessionId).toBe(
           mainSessionId,
         );
-        await own(() => {
-          return runsApi.requestCancelRun(actor, mainDmRun.id, [200]);
+        await completeRunSession({
+          runId: mainDmRun.id,
+          sandboxToken: mainDmExecution.sandboxToken,
+          sessionId: mainSessionId,
+          history: `bdd continued feishu history ${mainDmRun.id}`,
+          assistantText: "Continued Feishu DM answer",
         });
-        await own(flushWaitUntilForTest);
-
-        const client = setupApp({ context, routes: feishuConnectRoutes })(
-          connectContract,
-        );
-        await own(() => {
-          return accept(
-            client.removeInstallation({
-              headers: { authorization: "Bearer clerk-session" },
-              params: { installationId: fixture.installationId },
-            }),
-            [200],
-          );
-        });
+        await removeFeishuInstallation(fixture);
       });
     });
 
