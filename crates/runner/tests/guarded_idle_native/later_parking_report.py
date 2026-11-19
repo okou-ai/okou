@@ -2,14 +2,13 @@
 """Validate fixed native batch completion with positively retained later inventory."""
 
 import argparse
-import datetime
 import json
 import pathlib
 
 import progress_report as foreground
 import pressure_report as pressure
 import report
-import status_failure_report as failure
+import status_evidence
 from cleanup_report import COUNTS, accounting, supplied_policy
 from report import exact
 
@@ -48,23 +47,6 @@ def covered(value, policy):
           "original or separate incoming full lease lost")
 
 
-def current_status(value, initial, sandbox=None, reuse=None, blank=False):
-    if not isinstance(value, dict):
-        raise ValueError("current status missing")
-    for field in ("started_at", "updated_at"):
-        text = value.get(field)
-        if not isinstance(text, str) or datetime.datetime.fromisoformat(text).utcoffset() is None:
-            raise ValueError("invalid current status timestamp")
-    expected = {"mode": "starting", "max_concurrent": 1, "active_runs": [],
-                "started_at": initial["started_at"], "updated_at": value["updated_at"]}
-    if datetime.datetime.fromisoformat(value["updated_at"]) < datetime.datetime.fromisoformat(initial["updated_at"]):
-        raise ValueError("current status predates initial publication")
-    if sandbox:
-        expected["blank_sandboxes" if blank else "idle_sandboxes"] = (
-            [{"sandbox_id": sandbox}] if blank else [{"reuse_key": reuse, "sandbox_id": sandbox}])
-    exact(value, expected, "current status lost later inventory or resurrected original")
-
-
 def validate(directory):
     directory = pathlib.Path(directory)
     result, collector, terminals = report._validate_cases(directory, CASES, report.PHASES)
@@ -88,11 +70,11 @@ def validate(directory):
             raise ValueError("later parking changed original owner")
         blocked, pool, tail, waiting, complete, retired, joined = [e["evidence"] for e in events]
         path = blocked.get("status_path")
-        if not failure.valid_status_path(path) or path in paths:
+        if not status_evidence.valid_status_path(path) or path in paths:
             raise ValueError("private status path changed")
         paths.add(path)
         initial = blocked.get("published_status")
-        failure.status(initial, sandbox=identity[0])
+        status_evidence.original_status(initial, sandbox=identity[0])
         preparation = blocked.get("preparation")
         if not isinstance(preparation, dict):
             raise ValueError("missing actual incoming preparation")
@@ -142,7 +124,7 @@ def validate(directory):
         io_released = clock(waiting.get("io_released_ns"), events[2]["monotonic_ns"], terminal[4]["monotonic_ns"])
         polled = clock(waiting.get("status_wait_polled_ns"), terminal[4]["monotonic_ns"], events[3]["monotonic_ns"])
         before, after = waiting.get("status_waits_before"), waiting.get("status_waits_after")
-        if not failure.status_wait_advanced(before, after):
+        if not status_evidence.status_wait_advanced(before, after):
             raise ValueError("final status wait not positively observed")
         second = foreground.heartbeat(waiting.get("heartbeat"), 2, polled, events[3]["monotonic_ns"])
         if first != second or first in runners:
@@ -156,7 +138,7 @@ def validate(directory):
             "original lease or later backing custody changed")
         released = clock(complete.get("status_released_ns"), events[3]["monotonic_ns"], events[4]["monotonic_ns"])
         completed = clock(complete.get("batch_joined_ns"), released, events[4]["monotonic_ns"])
-        current_status(complete.get("published_status"), initial, new, reuse, blank)
+        status_evidence.current_status(complete.get("published_status"), initial, new, reuse, blank)
         exact(complete, {"status_released_ns": released, "batch_joined_ns": completed,
             "selected": 1, "completed": 1, "uncertain": 0, "not_started": 0, "status_error": False,
             "is_complete": True, "revision": revision, "published_status": complete["published_status"],
@@ -164,7 +146,7 @@ def validate(directory):
             "original batch recaptured later inventory or lost current publication")
         started = clock(retired.get("started_ns"), events[4]["monotonic_ns"], events[5]["monotonic_ns"])
         finished = clock(retired.get("joined_ns"), started, events[5]["monotonic_ns"])
-        current_status(retired.get("published_status"), complete["published_status"])
+        status_evidence.current_status(retired.get("published_status"), complete["published_status"])
         exact(retired, {"started_ns": started, "joined_ns": finished, "selected": 1, "completed": 1,
             "uncertain": 0, "not_started": 0, "status_error": False, "is_complete": True,
             "later_exit_confirmed": True, "published_status": retired["published_status"], "allocated": [0,0,0]},
