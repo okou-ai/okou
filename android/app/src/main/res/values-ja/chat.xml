@@ -31,4 +31,10 @@
     <string name="chat_mark_unread">未読にする</string>
     <string name="chat_read_action_pending">既読状態を更新しています…</string>
     <string name="chat_read_action_failed">既読状態を更新できませんでした。</string>
+    <string name="chat_mute">チャットをミュート</string>
+    <string name="chat_unmute">ミュートを解除</string>
+    <string name="chat_archive">チャットをアーカイブ</string>
+    <string name="chat_unarchive">アーカイブを解除</string>
+    <string name="chat_row_action_pending">チャットを更新しています…</string>
+    <string name="chat_row_action_failed">チャットの変更を確認できませんでした。</string>
 </resources>

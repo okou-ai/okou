@@ -3,6 +3,7 @@ package ai.okou.android.chat
 import ai.okou.android.CHAT_AGENT
 import ai.okou.android.CHAT_DATE
 import ai.okou.android.CHAT_EVENT
+import ai.okou.android.CHAT_IN_PROJECT
 import ai.okou.android.CHAT_PERSONAL
 import ai.okou.android.CHAT_PROJECT
 import ai.okou.android.TestChatService
@@ -17,6 +18,7 @@ import ai.okou.android.api.generated.Indicators
 import ai.okou.android.api.generated.IndicatorsThreadsValue
 import ai.okou.android.api.generated.ProjectEvents
 import ai.okou.android.api.generated.ProjectSnapshot
+import ai.okou.android.api.generated.ReadState
 import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.chatEventWire
 import androidx.lifecycle.ViewModelProvider
@@ -120,6 +122,105 @@ class ChatListModelTest {
         override suspend fun agents() = agentRead()
 
         override suspend fun indicators() = statusRead()
+    }
+
+    @Test
+    fun unmuteKeepsConfirmedStateWhenReadbackFails() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val store = ViewModelStore()
+        val oldStatus = CompletableDeferred<Indicators>()
+        val tail =
+            mutableListOf(
+                chatEventWire(),
+                chatEventWire(
+                    id = "77777777-7777-4777-8777-777777777777",
+                    seq = 18,
+                    kind = "sort_touched",
+                    extra = ",\"muted\":true",
+                ),
+            )
+        val source =
+            Service().apply {
+                listRead = {
+                    json.decodeFromString(
+                        """{"events":[${tail.joinToString(",")}],"hasMore":false}"""
+                    )
+                }
+                statusRead = { Indicators(emptyMap(), emptyMap(), emptyMap()) }
+            }
+        val service =
+            object : ChatListService by source {
+                override suspend fun markRead(threadId: String) = ReadState(CHAT_DATE)
+
+                override suspend fun setMuted(threadId: String, muted: Boolean, eventId: String) {
+                    tail.add(
+                        chatEventWire(
+                            id = eventId,
+                            seq = 19,
+                            thread = threadId,
+                            kind = "sort_touched",
+                            extra = ",\"muted\":$muted",
+                        )
+                    )
+                }
+            }
+        val cache = cache(temporary.newFolder(), dispatcher)
+        try {
+            val model =
+                ViewModelProvider(
+                    store,
+                    viewModelFactory {
+                        initializer {
+                            ChatListModel(service, cache, identity, { true }, {}, dispatcher)
+                        }
+                    },
+                )[ChatListModel::class.java]
+            model.refresh()
+            advanceUntilIdle()
+
+            source.statusRead = { oldStatus.await() }
+            model.refreshIndicators()
+            runCurrent()
+            source.statusRead = { throw IOException("offline") }
+
+            model.performRowAction(CHAT_PERSONAL, ChatRowAction.Unmute)
+            runCurrent()
+            assertEquals(ChatRowAction.Unmute, model.uiState.value.pendingRowActions[CHAT_PERSONAL])
+            model.refreshList()
+            advanceUntilIdle()
+            assertEquals(false, model.uiState.value.threads.single().muted)
+            source.listRead = { throw IOException("offline") }
+
+            oldStatus.complete(
+                Indicators(
+                    emptyMap(),
+                    mapOf(
+                        CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD,
+                        CHAT_IN_PROJECT to IndicatorsThreadsValue.ACTIVE,
+                    ),
+                    mapOf(CHAT_PERSONAL to CHAT_DATE),
+                )
+            )
+            advanceUntilIdle()
+
+            val state = model.uiState.value
+            assertEquals(false, state.threads.single().muted)
+            assertTrue(state.pendingRowActions.isEmpty())
+            assertEquals(ChatReadPhase.Failed, state.listPhase)
+            assertEquals(ChatReadPhase.Failed, state.indicatorsPhase)
+            assertNull(state.failedRowAction)
+            val indicators = checkNotNull(state.indicators)
+            assertEquals(
+                mapOf(CHAT_IN_PROJECT to IndicatorsThreadsValue.ACTIVE),
+                indicators.threads,
+            )
+            assertTrue(indicators.unreadAt.isEmpty())
+        } finally {
+            store.clear()
+            runCurrent()
+            Dispatchers.resetMain()
+        }
     }
 
     @Test
