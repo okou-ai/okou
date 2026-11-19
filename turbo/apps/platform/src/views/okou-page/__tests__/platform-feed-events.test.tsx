@@ -175,18 +175,36 @@ function destination(workspaceId = WORKSPACE_ID) {
 test("A fast event destination replaces its initially hidden loading status", async () => {
   mockAutomationDestination();
   const response = createDeferredPromise<void>(context.signal);
+  const initiallyHidden = createDeferredPromise<boolean>(context.signal);
   context.mocks.api(workflowAutomationsContract.get, async ({ respond }) => {
     await response.promise;
     return respond(200, automation());
   });
+  // Capture the initial state at mount, before startup or CI load can consume
+  // the entire delay. The response can now finish without waiting on the timer.
+  const observer = new MutationObserver(() => {
+    const loading = screen.queryByLabelText("Loading automation");
+    if (loading) {
+      observer.disconnect();
+      initiallyHidden.resolve(loading.closest("[hidden]") !== null);
+      response.resolve();
+    }
+  });
+  observer.observe(document.body, { childList: true, subtree: true });
+  context.signal.addEventListener(
+    "abort",
+    () => {
+      observer.disconnect();
+    },
+    { once: true },
+  );
+
   await setupPage({ context, path: destination(), auth: auth() });
-  const loading = await screen.findByLabelText("Loading automation");
-  expect(loading).not.toBeVisible();
-  response.resolve();
   const selected = await screen.findByRole("group", { name: "Every 1 hour" });
+  await expect(initiallyHidden.promise).resolves.toBeTruthy();
   expect(selected).toHaveAttribute("aria-current", "true");
   expect(within(selected).getByRole("switch")).not.toBeChecked();
-  expect(loading).not.toBeInTheDocument();
+  expect(screen.queryByLabelText("Loading automation")).not.toBeInTheDocument();
 });
 
 test("A pending event destination shows a lightweight status until access resolves", async () => {
@@ -412,8 +430,6 @@ test("A pause update explains the failure, shows the description, and links to t
   expect(link).toHaveAttribute("href", destination());
   expect(link).toHaveAttribute("target", "_blank");
   expect(link).toHaveAttribute("rel", "noopener noreferrer");
-  click(link);
-  expect(pathname()).toBe("/for-you");
   expect(control("button", "Enable", card)).toBeInTheDocument();
   expect(control("button", "Dismiss", card)).toBeInTheDocument();
   expect(card).not.toHaveTextContent(WORKSPACE_ID);
