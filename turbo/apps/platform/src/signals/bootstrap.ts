@@ -38,6 +38,7 @@ import { refreshChatListLayout$ } from "./chat-page/chat-list-layout.ts";
 import "./pwa-install.ts";
 import { ROUTES, type RoutePath } from "./route-paths.ts";
 
+import { listenForceUpgradeDialog$ } from "./force-upgrade.ts";
 import { setupGlobalMethod$ } from "./bootstrap/global-method.ts";
 import { setupLoggers$ } from "./bootstrap/loggers.ts";
 import { setupSlackConnectPage$ } from "./okou-page/slack-connect-page.ts";
@@ -680,10 +681,12 @@ const setupNotificationListener$ = command(({ set }, signal: AbortSignal) => {
   );
 });
 
+export type BootstrapView = "app" | "error";
+
 const completeBootstrap$ = command(
   async (
     { get, set },
-    render: () => void,
+    render: (view: BootstrapView) => void,
     signal: AbortSignal,
   ): Promise<void> => {
     await set(initLocale$, signal);
@@ -692,15 +695,18 @@ const completeBootstrap$ = command(
     set(initTheme$, signal);
     set(setupPwaNavigation$, signal);
 
-    render();
+    set(listenForceUpgradeDialog$, signal);
+    const [featureSwitches] = await Promise.allSettled([get(featureSwitches$)]);
+    signal.throwIfAborted();
+    if (featureSwitches.status === "rejected") {
+      render("error");
+      throw featureSwitches.reason;
+    }
+    set(applyFeatureSwitches$, featureSwitches.value);
+    set(setupAuthenticatedRealtime$, signal);
+    render("app");
 
     set(handleSlackRedirect$);
-
-    // Route setup may make one-time feature-gated decisions.
-    const featureSwitches = await get(featureSwitches$);
-    signal.throwIfAborted();
-    set(applyFeatureSwitches$, featureSwitches);
-
     await set(registerFriendReferral$, signal);
     signal.throwIfAborted();
 
@@ -731,7 +737,7 @@ export const bootstrap$ = command(
   async (
     { get, set },
     appVersion: string,
-    render: () => void,
+    render: (view: BootstrapView) => void,
     signal: AbortSignal,
   ): Promise<void> => {
     setupVisualViewportKeyboardState(
@@ -775,7 +781,6 @@ export const bootstrap$ = command(
     // Keep failures that happen before the first React render observable.
     set(listenSharedWorkerFailure$, signal);
     const sharedDatabaseSetup = set(setupSharedDatabaseBridge$, signal);
-    set(setupAuthenticatedRealtime$, signal);
     const ready = set(completeBootstrap$, render, signal);
 
     await Promise.all([clerkIdentitySetup, sharedDatabaseSetup, ready]);

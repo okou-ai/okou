@@ -1,4 +1,5 @@
 import { testContext } from "./test-helpers.ts";
+import { CLIENT_FORCE_UPGRADE_STATUS } from "@okouai/api-contracts/contracts/client-headers";
 import { featureGuidesContract } from "@okouai/api-contracts/contracts/feature-guides";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -48,7 +49,12 @@ test("A member who opted out does not request a feature guide during startup", a
   expect(guideRequested).toBeFalsy();
 });
 
-test("Routes wait for authoritative workspace features", async () => {
+test("The app waits for authoritative workspace features before mounting", async () => {
+  let guideRequests = 0;
+  context.mocks.api(featureGuidesContract.current, ({ respond }) => {
+    guideRequests++;
+    return respond(200, { edition: null });
+  });
   const requestStarted = context.mocks.deferred<void>();
   const releaseResponse = context.mocks.deferred<void>();
   context.mocks.api(
@@ -56,19 +62,19 @@ test("Routes wait for authoritative workspace features", async () => {
     async ({ respond, withSignal }) => {
       requestStarted.resolve(undefined);
       await withSignal(releaseResponse.promise);
-      return respond(200, {
-        switches: { [FeatureSwitchKey.SingleAgent]: false },
-        effectiveSwitches: { [FeatureSwitchKey.SingleAgent]: false },
-      });
+      const switches = {
+        [FeatureSwitchKey.FeatureGuides]: true,
+        [FeatureSwitchKey.SingleAgent]: false,
+      };
+      return respond(200, { switches, effectiveSwitches: switches });
     },
   );
 
   const page = await startPage({ context, path: "/agents" });
   await requestStarted.promise;
   expect(bootstrapSkeleton()).toBeVisible();
-  expect(
-    screen.queryByRole("heading", { name: "Agents" }),
-  ).not.toBeInTheDocument();
+  expect(document.getElementById("root")).toBeNull();
+  expect(guideRequests).toBe(0);
 
   releaseResponse.resolve(undefined);
   await page.ready;
@@ -76,6 +82,27 @@ test("Routes wait for authoritative workspace features", async () => {
   await expect(
     screen.findByRole("heading", { name: "Agents" }),
   ).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(guideRequests).toBe(1);
+  });
+});
+
+test("An upgrade required by the workspace switch request is shown during startup", async () => {
+  context.mocks.http.get("*/api/feature-switches", () => {
+    return Response.json(
+      { error: "Client update required" },
+      { status: CLIENT_FORCE_UPGRADE_STATUS },
+    );
+  });
+
+  const page = await startPage({ context, path: "/agents" });
+  await expect(page.ready).rejects.toMatchObject({
+    status: CLIENT_FORCE_UPGRADE_STATUS,
+  });
+  await expect(
+    screen.findByRole("dialog", { name: "Update required" }),
+  ).resolves.toBeVisible();
+  expect(screen.queryByRole("heading", { name: "Agents" })).toBeNull();
 });
 
 test("A new member without overrides enters My Okou without a Lab action", async () => {
