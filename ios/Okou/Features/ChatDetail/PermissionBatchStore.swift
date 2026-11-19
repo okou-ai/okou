@@ -23,6 +23,7 @@ final class PermissionBatchStore {
   private let clientEventID = UUID().uuidString.lowercased()
   private let sortEventID = UUID().uuidString.lowercased()
   private var operation: Task<Void, Never>?
+  private var continuationUncertain = false
   private let resources: PermissionCardResources
   private var generation = UUID()
   private var closed = false
@@ -47,10 +48,16 @@ final class PermissionBatchStore {
   var needsContinuation: Bool { allAllowed && action.callbackPrompt != nil && !hasContinued }
   var canConfirm: Bool { canConfirm(reviewing: snapshot) }
 
+  func displayedSnapshot(_ loaded: ChatPermissionBatchSnapshot?) -> ChatPermissionBatchSnapshot? {
+    if operation != nil { return snapshot }
+    return loaded ?? snapshot
+  }
+
   func canConfirm(reviewing snapshot: ChatPermissionBatchSnapshot?) -> Bool {
     let allAllowed = snapshot?.allAllowed == true && !requiresReadback
     let needsContinuation = allAllowed && action.callbackPrompt != nil && !hasContinued
-    return !closed && isActive && !isSaving && !requiresReadback && snapshot?.complete == true
+    return !closed && isActive && operation == nil && !requiresReadback
+      && snapshot?.complete == true
       && (!allAllowed || needsContinuation)
   }
 
@@ -83,7 +90,9 @@ final class PermissionBatchStore {
     guard let reviewed = reviewed ?? snapshot, canConfirm(reviewing: reviewed), operation == nil,
       !Task.isCancelled
     else { return }
-    isSaving = true
+    snapshot = reviewed
+    isSaving = !reviewed.allAllowed
+    isContinuing = reviewed.allAllowed
     error = nil
     generation = UUID()
     let generation = generation
@@ -106,7 +115,6 @@ final class PermissionBatchStore {
         guard cached.complete, cached.connectorScoped == reviewed.connectorScoped else {
           throw ChatError.invalidContract("Permission scope changed. Review the request again.")
         }
-        isContinuing = reviewed.allAllowed && action.callbackPrompt != nil && !hasContinued
         let verified: ChatPermissionBatchSnapshot
         if reviewed.allAllowed {
           // "Continue chat" never silently re-grants a permission revoked after review.
@@ -120,28 +128,35 @@ final class PermissionBatchStore {
           }
           verified = current
         } else {
-          // The service verifies the current scope and grants, then reads back the save.
           verified = try await commands.batchPermissions.apply(
-            action, duration: duration, expectedConnectorScoped: reviewed.connectorScoped)
+            action, duration: duration, reviewing: reviewed)
         }
         try Task.checkCancellation()
         guard !closed, self.generation == generation else { return }
         snapshot = verified
+        isSaving = false
         if needsContinuation, let prompt = action.callbackPrompt {
           isContinuing = true
-          try await commands.batchPermissions.validateContext(action)
-          let history = try await sync.history(threadID: action.threadID)
-          if !history.persistedEventIDs.contains(clientEventID) {
+          var delivered = false
+          if continuationUncertain {
+            try await commands.batchPermissions.validateContext(action)
+            let history = try await sync.eventHistory(threadID: action.threadID)
+            delivered = history.persistedEventIDs.contains(clientEventID)
+          }
+          if !delivered {
             let thread = ChatThread(
               id: action.threadID, agentID: action.agentID, title: "", createdAt: .now,
               updatedAt: .now, sortAt: .now, pinnedAt: nil, pinOrder: nil)
+            continuationUncertain = true
             _ = try await commands.send(
               thread: thread, text: prompt, clientEventID: clientEventID,
               chatThreadSortEventID: sortEventID, expectedAgentID: action.agentID)
           }
           try Task.checkCancellation()
           guard !closed, self.generation == generation else { return }
+          continuationUncertain = false
           hasContinued = true
+          isContinuing = false
           await didContinue()
         }
       } catch is CancellationError {
@@ -172,7 +187,7 @@ final class PermissionBatchStore {
 
   func deactivate() {
     isActive = false
-    if isSaving { requiresReadback = true }
+    if isSaving || isContinuing { requiresReadback = true }
     generation = UUID()
     operation?.cancel()
     operation = nil
