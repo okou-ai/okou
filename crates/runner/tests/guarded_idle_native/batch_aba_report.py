@@ -20,9 +20,7 @@ PHASES = ("admission_blocked", "pool_wait_progress", "admission_wait_progress", 
 
 
 def clock(value, begin, end):
-    if not report.positive_integer(value) or not begin < value < end:
-        raise ValueError("batch ABA clocks lost required ordering")
-    return value
+    return report.validate_phase_clock(value, begin, end, "batch ABA clocks lost required ordering")
 
 
 def queued(value):

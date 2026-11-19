@@ -151,6 +151,13 @@ def collect_witnesses(log_path, groups, *, case_matches, invalid_message):
             cases[event["case"]].append(event)
 
 
+def validate_phase_clock(value, begin, end, message):
+    """Return a positive monotonic timestamp strictly inside its phase bounds."""
+    if not positive_integer(value) or not begin < value < end:
+        raise ValueError(message)
+    return value
+
+
 def validate_witness_clock_order(events, message):
     """Require strict two-clock order in an already-admitted witness sequence."""
     for field in ("monotonic_ns", "unix_ns"):
