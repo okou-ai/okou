@@ -692,6 +692,7 @@ export function ArtifactCatalogPage({
   const { t } = useTranslation();
   const viewportRef = useSet(artifactCatalogViewportRef$);
   const sidebarOpen = useLastResolved(artifactCatalogSidebar.open$) ?? false;
+  const restoreFocusRef = useSet(artifactCatalogSidebar.restoreFocusRef$);
   const selectedKind = useGet(selectedArtifactCatalogKind$);
   const setKind = useSet(setArtifactCatalogKind$);
   const openArtifact = useSet(openArtifact$);
@@ -723,7 +724,10 @@ export function ArtifactCatalogPage({
       open={sidebarOpen}
       sidebar={<ArtifactCatalogSidebar />}
     >
-      <div className="flex min-h-0 flex-1 flex-col">
+      <div
+        ref={sidebarOpen ? undefined : restoreFocusRef}
+        className="flex min-h-0 flex-1 flex-col"
+      >
         {/* The header sits outside the scroll container so the kind filter stays
           pinned to the top while the catalog scrolls under it. */}
         <header className="shrink-0 bg-transparent px-4 pb-3 pt-3 sm:px-6 md:pt-10">

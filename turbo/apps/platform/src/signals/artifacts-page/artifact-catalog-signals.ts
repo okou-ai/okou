@@ -1,4 +1,4 @@
-import { command } from "ccstate";
+import { command, state } from "ccstate";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitches$ } from "../external/feature-switch.ts";
 import {
@@ -9,6 +9,7 @@ import { artifactIdPathParamsSchema } from "@okouai/api-contracts/validators/art
 import type { ArtifactCatalogKind } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { isTextPreviewKind } from "../text-preview.ts";
 import {
+  closeLightboxImmediatelyForOwner$,
   closeLightboxWithDialogExit$,
   openAudioLightbox$,
   openDocumentLightbox$,
@@ -73,9 +74,23 @@ export const loadMoreArtifactCatalog$ = pageCatalog.loadMore$;
 
 export const loadThroughArtifactCatalog$ = pageCatalog.loadThroughArtifact$;
 
+const internalArtifactCatalogScrollTarget$ = state<string | null>(null);
+
+export const prepareArtifactCatalogScroll$ = command(
+  ({ set }, artifactId: string | null) => {
+    set(internalArtifactCatalogScrollTarget$, artifactId);
+  },
+);
+
 export const scrollArtifactCardIntoViewRef$ = onRef(
-  command((_context, element: HTMLElement, signal: AbortSignal) => {
+  command(({ get, set }, element: HTMLElement, signal: AbortSignal) => {
     signal.throwIfAborted();
+    if (
+      get(internalArtifactCatalogScrollTarget$) !== element.dataset.artifactId
+    ) {
+      return;
+    }
+    set(internalArtifactCatalogScrollTarget$, null);
     element.scrollIntoView({ block: "center" });
   }),
 );
@@ -104,20 +119,23 @@ export function artifactCatalogScrollTargetFromHistoryState(
   return typeof artifactId === "string" ? artifactId : null;
 }
 
-export const closeArtifactCatalogPreview$ = command(
-  ({ get, set }, signal: AbortSignal) => {
-    signal.throwIfAborted();
-    set(artifactCatalogSidebar.close$);
-    set(closeLightboxWithDialogExit$, signal);
+const resetOpenArtifactSignal$ = resetSignal();
+
+const replaceArtifactCatalogSelection$ = command(
+  ({ get, set }, artifactId: string | null) => {
     if (get(pathname$) !== ROUTES.artifacts) {
       return;
     }
     const searchParams = new URLSearchParams(get(searchParams$));
-    const artifactId = artifactIdFromCatalogSearchParams(searchParams);
-    if (artifactId === null) {
+    const previousArtifactId = artifactIdFromCatalogSearchParams(searchParams);
+    if (artifactId === null && !searchParams.has("artifact")) {
       return;
     }
-    searchParams.delete("artifact");
+    if (artifactId === null) {
+      searchParams.delete("artifact");
+    } else {
+      searchParams.set("artifact", artifactId);
+    }
     const historyState = get(historyState$);
     set(
       replaceSearchParams$,
@@ -126,32 +144,41 @@ export const closeArtifactCatalogPreview$ = command(
         ...(typeof historyState === "object" && historyState !== null
           ? historyState
           : {}),
-        artifactCatalogScrollId: artifactId,
+        artifactCatalogScrollId: artifactId ?? previousArtifactId,
       },
       get(hash$),
     );
   },
 );
 
-/**
- * Open a card. The kind entity is fetched here rather than with the list, so
- * browsing the grid never pays for detail queries.
- */
-const resetOpenArtifactSignal$ = resetSignal();
+export const disposeArtifactCatalogPreview$ = command(({ set }) => {
+  set(resetOpenArtifactSignal$);
+  set(internalArtifactCatalogScrollTarget$, null);
+  set(artifactCatalogSidebar.close$);
+  set(closeLightboxImmediatelyForOwner$, closeArtifactCatalogPreview$);
+});
 
-export const openArtifact$ = command(
+export const closeArtifactCatalogPreview$ = command(
+  ({ set }, signal: AbortSignal) => {
+    signal.throwIfAborted();
+    set(resetOpenArtifactSignal$);
+    set(internalArtifactCatalogScrollTarget$, null);
+    set(replaceArtifactCatalogSelection$, null);
+    set(artifactCatalogSidebar.close$, true);
+    set(closeLightboxWithDialogExit$, signal);
+  },
+);
+
+const loadArtifactPreview$ = command(
   async ({ get, set }, artifactId: string, signal: AbortSignal) => {
-    if (
-      (await get(featureSwitches$))[FeatureSwitchKey.ArtifactSidebarPreview]
-    ) {
+    const features = await get(featureSwitches$);
+    signal.throwIfAborted();
+    if (features[FeatureSwitchKey.ArtifactSidebarPreview]) {
       await set(artifactCatalogSidebar.openArtifact$, artifactId, signal);
       return;
     }
-    const openSignal = set(resetOpenArtifactSignal$, signal);
-    set(pageCatalog.selectArtifact$, artifactId);
     const detail = await get(pageCatalog.selectedArtifactDetail$);
     signal.throwIfAborted();
-    openSignal.throwIfAborted();
     if (!detail) {
       return;
     }
@@ -167,15 +194,15 @@ export const openArtifact$ = command(
     const previewSignals = await set(
       pageCatalog.ensureSelectedArtifactPreview$,
       artifactId,
-      openSignal,
+      signal,
     );
     signal.throwIfAborted();
-    openSignal.throwIfAborted();
     if (!previewSignals) {
       return;
     }
     const base = {
       catalogArtifactId: detail.id,
+      dismiss$: closeArtifactCatalogPreview$,
       filename: preview.filename,
       contentType: preview.contentType,
       artifactKind: preview.artifactKind,
@@ -218,5 +245,61 @@ export const openArtifact$ = command(
       undefined,
       signal,
     );
+  },
+);
+
+/** Select without adding a browser visit; only route entry locates the card. */
+const openArtifactSelection$ = command(
+  async (
+    { set },
+    artifactId: string,
+    locateCard: boolean,
+    signal: AbortSignal,
+  ) => {
+    signal.throwIfAborted();
+    const openSignal = set(resetOpenArtifactSignal$, signal);
+    if (!locateCard) {
+      set(internalArtifactCatalogScrollTarget$, null);
+    }
+    set(artifactCatalogSidebar.cancelFocusRestore$);
+    set(pageCatalog.selectArtifact$, artifactId);
+    set(replaceArtifactCatalogSelection$, artifactId);
+    const [result] = await Promise.allSettled([
+      set(loadArtifactSelection$, artifactId, locateCard, openSignal),
+    ]);
+    signal.throwIfAborted();
+    if (
+      result.status === "rejected" &&
+      (!openSignal.aborted || result.reason !== openSignal.reason)
+    ) {
+      throw result.reason;
+    }
+  },
+);
+
+const loadArtifactSelection$ = command(
+  async (
+    { set },
+    artifactId: string,
+    locateCard: boolean,
+    signal: AbortSignal,
+  ) => {
+    await set(loadArtifactPreview$, artifactId, signal);
+    signal.throwIfAborted();
+    if (locateCard) {
+      await set(loadThroughArtifactCatalog$, artifactId, signal);
+    }
+  },
+);
+
+export const openArtifact$ = command(
+  ({ set }, artifactId: string, signal: AbortSignal) => {
+    return set(openArtifactSelection$, artifactId, false, signal);
+  },
+);
+
+export const openArtifactFromRoute$ = command(
+  ({ set }, artifactId: string, signal: AbortSignal) => {
+    return set(openArtifactSelection$, artifactId, true, signal);
   },
 );

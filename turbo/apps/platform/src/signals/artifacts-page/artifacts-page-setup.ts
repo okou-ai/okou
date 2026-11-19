@@ -14,22 +14,21 @@ import {
   artifactCatalogKindFromSearchParams,
   artifactCatalogScrollTargetFromHistoryState,
   artifactIdFromCatalogSearchParams,
+  disposeArtifactCatalogPreview$,
   loadThroughArtifactCatalog$,
-  openArtifact$,
+  openArtifactFromRoute$,
+  prepareArtifactCatalogScroll$,
   reloadArtifactCatalog$,
   setArtifactCatalogKindFromRoute$,
 } from "./artifact-catalog-signals.ts";
 
-import { artifactCatalogSidebar } from "./artifact-catalog-instance.ts";
-
 export const setupArtifactsPage$ = command(
   async ({ get, set }, signal: AbortSignal) => {
-    set(artifactCatalogSidebar.close$);
+    set(disposeArtifactCatalogPreview$);
     signal.addEventListener(
       "abort",
       () => {
-        set(artifactCatalogSidebar.close$);
-        set(closeLightboxImmediately$);
+        set(disposeArtifactCatalogPreview$);
       },
       { once: true },
     );
@@ -52,6 +51,7 @@ export const setupArtifactsPage$ = command(
     const scrollToArtifactId =
       artifactId ??
       artifactCatalogScrollTargetFromHistoryState(get(historyState$));
+    set(prepareArtifactCatalogScroll$, scrollToArtifactId);
     set(
       updatePage$,
       createElement(ArtifactCatalogPage, { scrollToArtifactId }),
@@ -66,9 +66,8 @@ export const setupArtifactsPage$ = command(
     await set(hideAppSkeleton$, signal);
 
     if (artifactId) {
-      await set(openArtifact$, artifactId, signal);
-    }
-    if (scrollToArtifactId) {
+      await set(openArtifactFromRoute$, artifactId, signal);
+    } else if (scrollToArtifactId) {
       await set(loadThroughArtifactCatalog$, scrollToArtifactId, signal);
     }
   },

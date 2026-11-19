@@ -13,13 +13,14 @@ import { rootSignal$ } from "../../signals/root-signal.ts";
 import {
   attachmentDiagramPreview,
   completeLightboxDialogExit$,
+  dismissLightbox$,
   lightboxDialogFullscreen$,
   lightboxDialogInitialFocus$,
   lightboxDialogMountRef$,
   lightboxDialogVisible$,
+  lightboxUrl$,
   type AttachmentLightboxState,
 } from "../../signals/okou-page/attachment-chips.ts";
-import { closeArtifactCatalogPreview$ } from "../../signals/artifacts-page/artifact-catalog-signals.ts";
 import { ArtifactDiagramLightbox } from "../components/artifact-diagram-lightbox.tsx";
 
 export function DialogIconButton({
@@ -48,9 +49,9 @@ export function DialogIconButton({
 
 function useCloseArtifactPreview() {
   const rootSignal = useGet(rootSignal$);
-  const closeArtifactCatalogPreview = useSet(closeArtifactCatalogPreview$);
+  const dismissLightbox = useSet(dismissLightbox$);
   return () => {
-    closeArtifactCatalogPreview(rootSignal);
+    dismissLightbox(rootSignal);
   };
 }
 
@@ -81,6 +82,7 @@ export function ArtifactPreviewDialogFrame({
   const dialogMountRef = useSet(lightboxDialogMountRef$);
   const initialFocus = useSet(lightboxDialogInitialFocus$);
   const completeDialogExit = useSet(completeLightboxDialogExit$);
+  const current = useGet(lightboxUrl$);
   const closeWithAnimation = useCloseArtifactPreview();
   const visible = useGet(lightboxDialogVisible$);
   const fullscreen = useGet(lightboxDialogFullscreen$);
@@ -88,7 +90,11 @@ export function ArtifactPreviewDialogFrame({
   return (
     <Dialog
       open={visible}
-      onOpenChangeComplete={completeDialogExit}
+      onOpenChangeComplete={(open) => {
+        if (current) {
+          completeDialogExit(current, open);
+        }
+      }}
       onOpenChange={(nextOpen) => {
         if (!nextOpen && visible) {
           closeWithAnimation();

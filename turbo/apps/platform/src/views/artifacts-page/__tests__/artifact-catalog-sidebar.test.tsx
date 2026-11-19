@@ -226,7 +226,7 @@ test("An avatar sidebar reuses the private video URL already shown by its card",
   expect(screen.queryByTestId("attachment-lightbox")).not.toBeInTheDocument();
 });
 
-test("Closing a routed sidebar while it loads lets catalog setup finish", async () => {
+test("Closing a loading routed sidebar cancels entry-only catalog positioning", async () => {
   const release = context.mocks.deferred<void>();
   const detail = fileDetail("pending.pdf", "application/pdf");
   context.mocks.api(artifactCatalogContract.list, ({ query, respond }) => {
@@ -266,7 +266,7 @@ test("Closing a routed sidebar while it loads lets catalog setup finish", async 
     release.resolve();
     await page.ready;
   }
-  await expect(findArtifactAction("pending.pdf")).resolves.toBeInTheDocument();
+  expect(screen.queryByText("pending.pdf")).not.toBeInTheDocument();
   await expect(
     findArtifactAction("first-page.txt"),
   ).resolves.toBeInTheDocument();
@@ -406,7 +406,12 @@ test("A late dismissed preview cannot replace a different open artifact", async 
   expect(
     within(replacement).queryByTitle("first.pdf preview"),
   ).not.toBeInTheDocument();
-  expect(window.location.search).toBe("?tab=file&source=search");
+  expect(new URLSearchParams(window.location.search).get("artifact")).toBe(
+    second.id,
+  );
+  expect(new URLSearchParams(window.location.search).get("source")).toBe(
+    "search",
+  );
   expect(window.location.hash).toBe("#catalog");
 });
 
