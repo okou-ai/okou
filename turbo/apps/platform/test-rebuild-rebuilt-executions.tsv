@@ -680,3 +680,58 @@ markdown-permission-batch-002	turbo/apps/platform/src/views/okou-page/__tests__/
 markdown-permission-batch-003	turbo/apps/platform/src/views/okou-page/__tests__/markdown-permission-batch.test.tsx	A partially allowed batch shows the remaining permission count	198	passed
 markdown-permission-batch-004	turbo/apps/platform/src/views/okou-page/__tests__/markdown-permission-batch.test.tsx	A batch stays reviewable while service details load and enables duration only when ready	223	passed
 markdown-permission-batch-005	turbo/apps/platform/src/views/okou-page/__tests__/markdown-permission-batch.test.tsx	A batch card reports saving and then allowed after the user confirms	275	passed
+markdown-table-export-002	turbo/apps/platform/src/views/okou-page/__tests__/markdown-table-export.test.tsx	A header-only table reports zero data rows and one column	477	passed
+markdown-table-export-013	turbo/apps/platform/src/views/okou-page/__tests__/markdown-table-export.test.tsx	Keyboard activation of footer Export preserves the menu and dismissal focus	486	passed
+markdown-table-export-014	turbo/apps/platform/src/views/okou-page/__tests__/markdown-table-export.test.tsx	Each table exports its own real workbook with literal values and source URLs	510	passed
+markdown-table-export-015	turbo/apps/platform/src/views/okou-page/__tests__/markdown-table-export.test.tsx	Cloud exports preserve the selected account and upload mode (ready)	578	passed
+markdown-table-export-016	turbo/apps/platform/src/views/okou-page/__tests__/markdown-table-export.test.tsx	Cloud exports preserve the selected account and upload mode (authorize)	578	passed
+markdown-table-export-017	turbo/apps/platform/src/views/okou-page/__tests__/markdown-table-export.test.tsx	Cloud exports preserve the selected account and upload mode (connect)	632	passed
+markdown-table-export-019	turbo/apps/platform/src/views/okou-page/__tests__/markdown-table-export.test.tsx	Repeating Save to Google Drive after success shows the new response link	671	passed
+markdown-table-export-020	turbo/apps/platform/src/views/okou-page/__tests__/markdown-table-export.test.tsx	Repeating Save to Google Sheets after success shows the new response link	671	passed
+markdown-table-export-021	turbo/apps/platform/src/views/okou-page/__tests__/markdown-table-export.test.tsx	Interleaving two tables and Google destinations shows the matching success links	707	passed
+markdown-table-export-022	turbo/apps/platform/src/views/okou-page/__tests__/markdown-table-export.test.tsx	An unconfirmed Sheets conversion can be retried after saving to Drive	752	passed
+markdown-table-export-023	turbo/apps/platform/src/views/okou-page/__tests__/markdown-table-export.test.tsx	A upload failure leaves the table save available for retry	788	passed
+markdown-table-export-024	turbo/apps/platform/src/views/okou-page/__tests__/markdown-table-export.test.tsx	A Google Drive API failure leaves the table save available for retry	788	passed
+markdown-table-export-025	turbo/apps/platform/src/views/okou-page/__tests__/markdown-table-export.test.tsx	The table export trigger is disabled and named Saving… during the initial upload	834	passed
+markdown-table-export-026	turbo/apps/platform/src/views/okou-page/__tests__/markdown-table-export.test.tsx	A completed original save without a URL remains available to save again	864	passed
+chat-run-history-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-history.test.tsx	Expand the first completed conversation phase	189	passed
+chat-run-history-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-history.test.tsx	Project an active run with one output message	217	passed
+chat-run-history-010	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-history.test.tsx	Exclude initial queue wait from active and completed work for input.prompt	247	passed
+chat-run-history-012	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-history.test.tsx	Do not create history before the first output.message	335	passed
+chat-run-history-013	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-history.test.tsx	Count one output.message once when Markdown renders multiple child blocks	356	passed
+chat-run-history-014	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-history.test.tsx	With Agent name on replies, a reply opens with its agent's name, linked to the agent's profile	398	passed
+chat-run-history-015	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-history.test.tsx	Project a completed run with multiple output messages	441	passed
+chat-run-history-016	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-history.test.tsx	Use the last output.message as the main result when it renders an action card	465	passed
+chat-run-history-018	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-history.test.tsx	Do not render result actions while waiting for assistant output	501	passed
+chat-run-history-021	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-history.test.tsx	Keep run-budget instructions out of the transcript	520	passed
+chat-run-history-022	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-history.test.tsx	Keep usage-only activity out of the conversation	561	passed
+chat-run-history-023	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-history.test.tsx	Preserve user text that resembles HTML	579	passed
+platform-feed-events-003	turbo/apps/platform/src/views/okou-page/__tests__/platform-feed-events.test.tsx	A failed destination can retry through the loading status and reach the same automation	197	passed
+platform-feed-events-006	turbo/apps/platform/src/views/okou-page/__tests__/platform-feed-events.test.tsx	A valid event destination hands Settings over to the normal workflow page	248	passed
+platform-feed-events-008	turbo/apps/platform/src/views/okou-page/__tests__/platform-feed-events.test.tsx	An automation API 404 produces safe no-access feedback rather than a recovery action	282	passed
+platform-feed-events-010	turbo/apps/platform/src/views/okou-page/__tests__/platform-feed-events.test.tsx	A removed workspace membership does not grant access from a event's structural IDs	311	passed
+platform-feed-events-011	turbo/apps/platform/src/views/okou-page/__tests__/platform-feed-events.test.tsx	A recovered Official Workflow automation opens read-only with its current enabled state	340	passed
+platform-feed-events-012	turbo/apps/platform/src/views/okou-page/__tests__/platform-feed-events.test.tsx	A failed dismissal stays visible and can be retried without changing its automation	366	passed
+platform-feed-events-013	turbo/apps/platform/src/views/okou-page/__tests__/platform-feed-events.test.tsx	A pause update explains the failure, shows the description, and links to the exact automation in a new tab	411	passed
+unified-chat-workspace-001	turbo/apps/platform/src/views/okou-page/__tests__/unified-chat-workspace.test.tsx	The unified workspace opens each side panel at its default width and resizes it from the keyboard	120	passed
+unified-chat-workspace-002	turbo/apps/platform/src/views/okou-page/__tests__/unified-chat-workspace.test.tsx	Double-clicking the side panel divider restores its default width	150	passed
+unified-chat-workspace-003	turbo/apps/platform/src/views/okou-page/__tests__/unified-chat-workspace.test.tsx	Panel borrowing folds immediately after the list minimum and restores only after 16px of reversal	168	passed
+unified-chat-workspace-005	turbo/apps/platform/src/views/okou-page/__tests__/unified-chat-workspace.test.tsx	The workspace preserves the grab offset and remembers final pointerup widths after a reload	209	passed
+unified-chat-workspace-006	turbo/apps/platform/src/views/okou-page/__tests__/unified-chat-workspace.test.tsx	Cancellation and blur preserve the last valid widths and discard stale gesture callbacks	249	passed
+chat-cards-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-cards.test.tsx	A permission request beside an ordinary link keeps its explanation	229	passed
+chat-cards-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-cards.test.tsx	Multiple actions on one line keep their order and formatted prose	255	passed
+chat-cards-007	turbo/apps/platform/src/views/okou-page/__tests__/chat-cards.test.tsx	A bare relative permission beside another link keeps punctuation and prose	275	passed
+chat-cards-009	turbo/apps/platform/src/views/okou-page/__tests__/chat-cards.test.tsx	Action-looking URLs embedded in structural text remain content	296	passed
+chat-cards-010	turbo/apps/platform/src/views/okou-page/__tests__/chat-cards.test.tsx	A bare action stops before adjacent Chinese punctuation and prose	328	passed
+chat-cards-011	turbo/apps/platform/src/views/okou-page/__tests__/chat-cards.test.tsx	Action labels stay literal instead of becoming new Markdown links or headings	343	passed
+chat-cards-012	turbo/apps/platform/src/views/okou-page/__tests__/chat-cards.test.tsx	Code, images and table links stay content beside real actions	365	passed
+chat-cards-013	turbo/apps/platform/src/views/okou-page/__tests__/chat-cards.test.tsx	Retained action labels preserve numeric character references	418	passed
+chat-cards-014	turbo/apps/platform/src/views/okou-page/__tests__/chat-cards.test.tsx	Multiline inline code stays literal beside a real action	430	passed
+chat-cards-017	turbo/apps/platform/src/views/okou-page/__tests__/chat-cards.test.tsx	Indented code keeps its formatting at message and action boundaries	448	passed
+chat-cards-018	turbo/apps/platform/src/views/okou-page/__tests__/chat-cards.test.tsx	An exact reconnect card opens the non-default account dialog and continues only after success	631	passed
+chat-cards-019	turbo/apps/platform/src/views/okou-page/__tests__/chat-cards.test.tsx	A reconnect completion for another account never continues the chat	687	passed
+chat-cards-022	turbo/apps/platform/src/views/okou-page/__tests__/chat-cards.test.tsx	An exact OAuth account opens the in-chat dialog with only its stored auth method	728	passed
+chat-cards-023	turbo/apps/platform/src/views/okou-page/__tests__/chat-cards.test.tsx	A bare relative exact reconnect link opens the dialog and retains its callback	746	passed
+chat-cards-025	turbo/apps/platform/src/views/okou-page/__tests__/chat-cards.test.tsx	A reconnect card rechecks an account that disappears before activation	788	passed
+chat-cards-030	turbo/apps/platform/src/views/okou-page/__tests__/chat-cards.test.tsx	Connector account switches A → B → A keep their icon and continue with fresh callback IDs	812	passed
+chat-cards-033	turbo/apps/platform/src/views/okou-page/__tests__/chat-cards.test.tsx	A valid banking request becomes an action card	470	passed

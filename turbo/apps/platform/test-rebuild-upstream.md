@@ -123,3 +123,10 @@ Original test: Enable closes an update for a recovered automation without restar
 - **Given** An automation has recovered since its pause update was created.
 - **When** The member opens the update and selects Enable.
 - **Then** The stale update clears and the already recovered automation is left running without a restart.
+
+### Final dispositions
+
+`upstream-platform-feed-events-001` is retained and runs once as
+`upstream-eaae30ac-platform-feed-events-440-01`. `upstream-platform-feed-events-002`
+matches `upstream-eaae30ac-platform-feed-events-483-01` and is not selected
+under the per-file rule.
