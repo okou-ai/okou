@@ -176,6 +176,23 @@ struct ChatSidebarView: View {
     } message: { _ in
       Text("Your chats will be kept and moved out of this project.")
     }
+    // The list presents it, not the row: a row's dialog returns on the row that replaces it.
+    .confirmationDialog(
+      "Delete chat?",
+      isPresented: Binding(
+        get: { deletingThreadID != nil },
+        set: { if !$0 { deletingThreadID = nil } }
+      ), titleVisibility: .visible, presenting: deletingThreadID
+    ) { id in
+      Button("Delete", role: .destructive) {
+        Task { await store.deleteThread(id) }
+      }
+      Button("Cancel", role: .cancel) {}
+    } message: { _ in
+      Text(
+        "This will permanently delete this chat. Any task currently running in this chat will be stopped immediately. Any linked automations will be paused. This action cannot be undone."
+      )
+    }
     .onChange(of: newChatActivation) { _, _ in showsSettings = false }
     .sheet(
       isPresented: Binding(
@@ -455,6 +472,8 @@ struct ChatSidebarView: View {
       EdgeInsets(top: 0, leading: rowInset + indentation, bottom: 0, trailing: rowInset)
     )
     .listRowSeparator(.hidden)
+    // Opaque, as Messages' rows are, so the list's own removal animation covers a departing
+    // row rather than showing its title through the row that takes its place.
     .listRowBackground(
       RoundedRectangle(cornerRadius: OkouRadius.control)
         .fill(
@@ -463,6 +482,7 @@ struct ChatSidebarView: View {
         )
         .padding(.leading, OkouSpace.md + indentation)
         .padding(.trailing, OkouSpace.md)
+        .background(OkouColor.sidebar)
     )
     .accessibilityIdentifier("chat-\(thread.id)")
     .accessibilityAddTraits(store.selectedThreadID == thread.id ? .isSelected : [])
@@ -504,22 +524,6 @@ struct ChatSidebarView: View {
         .labelStyle(.iconOnly)
         .tint(OkouSwipeTint.destructive)
         .disabled(!store.list.canUpdate(thread.id) || store.needsUpgrade)
-    }
-    .confirmationDialog(
-      "Delete chat?",
-      isPresented: Binding(
-        get: { deletingThreadID == thread.id },
-        set: { if !$0, deletingThreadID == thread.id { deletingThreadID = nil } }
-      ), titleVisibility: .visible
-    ) {
-      Button("Delete", role: .destructive) {
-        Task { await store.deleteThread(thread.id) }
-      }
-      Button("Cancel", role: .cancel) {}
-    } message: {
-      Text(
-        "This will permanently delete this chat. Any task currently running in this chat will be stopped immediately. Any linked automations will be paused. This action cannot be undone."
-      )
     }
   }
 
