@@ -1,4 +1,4 @@
-import { command } from "ccstate";
+import { command, computed, state } from "ccstate";
 import type {
   Suggestion,
   SuggestionOption,
@@ -9,7 +9,10 @@ import { defaultAgentId$ } from "../agent.ts";
 import { rootSignal$ } from "../root-signal.ts";
 import { navigateTo$ } from "../route.ts";
 import { ROUTES } from "../route-paths.ts";
+import { onRef, resetSignal } from "../utils.ts";
+import { chatThreadMetaMap$ } from "../chat-page/chat-thread-event-sourcing.ts";
 import {
+  createInPlaceThreadComposerSignals,
   ensureDraft$,
   resumeThreadDraftHandoff$,
 } from "../chat-page/create-chat-thread.ts";
@@ -21,12 +24,20 @@ import {
   restoreAgentSuggestion$,
   settleAgentSuggestion$,
 } from "./agent-suggestion-session.ts";
+import { createInPlaceAgentComposerSignals } from "./agent-composer-signals.ts";
 import { createRestoredAttachment } from "./chat-draft.ts";
+import type {
+  ComposerSignals,
+  ComposerSubmission,
+} from "./composer-signals.ts";
 import {
   createMessageDocumentSnapshot,
   messageDocumentToPrompt,
 } from "./user-message-document-codec.ts";
-import { suggestionContextPart } from "@okouai/api-contracts/contracts/suggestion-context";
+import {
+  suggestionContextPart,
+  suggestionFeedbacks,
+} from "@okouai/api-contracts/contracts/suggestion-context";
 import type {
   UserMessageDocument,
   ComposerDraft,
@@ -47,13 +58,15 @@ async function suggestionDraftVersion(draft: ComposerDraft): Promise<string> {
     .join("");
 }
 
-/** The saved background as one quote whose note carries the member's direction. */
+/**
+ * The saved background as one quote that waits for the member's direction.
+ * The card's quote keeps one identity, so replaying an unknown outcome resolves
+ * to the same follow-up.
+ */
 function suggestionContextDocument(
   item: Suggestion,
   contextVersion: string,
   attachmentIds: readonly string[],
-  draftId: string,
-  text: string,
 ): UserMessageDocument {
   const background =
     item.content.customOption.draft.draftUserMessage?.parts.find((part) => {
@@ -66,7 +79,7 @@ function suggestionContextDocument(
     version: 1,
     parts: [
       suggestionContextPart({
-        draftId,
+        draftId: item.id,
         suggestionId: item.id,
         optionId: "custom",
         titleSnapshot: item.content.title,
@@ -74,7 +87,7 @@ function suggestionContextDocument(
         contextVersion,
         attachmentIds: [...attachmentIds],
       }),
-      { ...background, note: [{ type: "text", text }] },
+      { ...background, note: [] },
     ],
   };
 }
@@ -87,44 +100,231 @@ function showSuggestionSent(): void {
   );
 }
 
-/** A card owns its draft and nonce, so browsing and explicit retries keep them. */
-const sendCustomAgentSuggestion$ = command(
-  async (
-    { get, set },
-    entry: AgentSuggestionEntry,
-    text: string,
-    pageSignal: AbortSignal,
-  ) => {
-    const submittedText = get(entry.customText$);
-    const signal = get(rootSignal$);
-    const agentId = await get(defaultAgentId$);
-    signal.throwIfAborted();
-    if (!agentId) {
-      throw new Error("Suggestion target is unavailable");
+interface SuggestionThreadTarget {
+  readonly kind: "thread";
+  readonly id: string;
+  readonly agentId: string;
+  readonly title: string | null;
+}
+
+/** A custom direction starts a new chat or continues a chat the card names. */
+export type SuggestionDirectionTarget =
+  { readonly kind: "new"; readonly agentId: string } | SuggestionThreadTarget;
+
+/** Chats the card's actions continue or reference, in the order they name them. */
+function relatedThreadIds(item: Suggestion): readonly string[] {
+  const ids = new Set<string>();
+  for (const option of item.content.options) {
+    if (option.threadId) {
+      ids.add(option.threadId);
     }
-    const item = entry.item;
+  }
+  for (const option of item.content.options) {
+    for (const part of option.draft.draftUserMessage?.parts ?? []) {
+      if (part.type === "chat_thread") {
+        ids.add(part.threadId);
+      }
+    }
+  }
+  return [...ids];
+}
+
+interface SuggestionDirectionSession {
+  readonly entry: AgentSuggestionEntry;
+  readonly agentId: string;
+  /** Closes the composer and settles the card once a send is accepted. */
+  readonly finish: (
+    target: SuggestionDirectionTarget,
+    threadId: string,
+    submission: ComposerSubmission,
+  ) => void;
+}
+
+const internalDirectionSession$ = state<SuggestionDirectionSession | null>(
+  null,
+);
+const internalDirectionTarget$ = state<SuggestionDirectionTarget | null>(null);
+const internalDirectionComposer$ = state<Promise<ComposerSignals> | null>(null);
+const resetDirection$ = resetSignal();
+const resetDirectionTarget$ = resetSignal();
+
+/**
+ * One unsaved composer per chosen target, so neither the default Agent's
+ * draft nor the target thread's saved draft is read or replaced.
+ */
+const directionGraph$ = computed((get) => {
+  const session = get(internalDirectionSession$);
+  const target = get(internalDirectionTarget$);
+  if (!session || !target) {
+    return null;
+  }
+  if (target.kind === "new") {
+    return {
+      kind: target.kind,
+      composer: createInPlaceAgentComposerSignals(
+        target.agentId,
+        (threadId, submission) => {
+          session.finish(target, threadId, submission);
+        },
+        session.entry.item.content.title,
+      ),
+    };
+  }
+  return {
+    kind: target.kind,
+    ...createInPlaceThreadComposerSignals(
+      target.id,
+      target.agentId,
+      (submission) => {
+        session.finish(target, target.id, submission);
+      },
+    ),
+  };
+});
+
+/** The card whose custom direction is being written, and where it can go. */
+export const suggestionDirection$ = computed((get) => {
+  const session = get(internalDirectionSession$);
+  if (!session) {
+    return null;
+  }
+  const threads = get(chatThreadMetaMap$);
+  return {
+    itemId: session.entry.item.id,
+    agentId: session.agentId,
+    threads: relatedThreadIds(session.entry.item).flatMap(
+      (id): SuggestionThreadTarget[] => {
+        const meta = threads.get(id);
+        return meta
+          ? [{ kind: "thread", id, agentId: meta.agentId, title: meta.title }]
+          : [];
+      },
+    ),
+  };
+});
+
+export const suggestionDirectionTarget$ = computed((get) => {
+  return get(internalDirectionTarget$);
+});
+
+export const suggestionDirectionComposer$ = computed((get) => {
+  return get(internalDirectionComposer$);
+});
+
+/** Returns the editor to its choice of target. */
+export const resetSuggestionDirectionTarget$ = command(({ set }) => {
+  set(resetDirectionTarget$);
+  set(internalDirectionTarget$, null);
+  set(internalDirectionComposer$, null);
+});
+
+const closeSuggestionDirection$ = command(({ set }) => {
+  set(resetDirection$);
+  set(resetSuggestionDirectionTarget$);
+  set(internalDirectionSession$, null);
+});
+
+const directionFocusReturnId$ = state<string | null>(null);
+
+export const collapseSuggestionDirection$ = command(({ get, set }) => {
+  const itemId = get(internalDirectionSession$)?.entry.item.id ?? null;
+  set(directionFocusReturnId$, itemId);
+  set(closeSuggestionDirection$);
+});
+
+export const restoreDirectionFocusOnRef$ = onRef<HTMLButtonElement>(
+  command(({ get, set }, trigger: HTMLButtonElement) => {
+    if (
+      get(directionFocusReturnId$) ===
+      trigger.dataset.suggestionDirectionTrigger
+    ) {
+      set(directionFocusReturnId$, null);
+      trigger.focus({ preventScroll: true });
+    }
+  }),
+);
+
+/**
+ * An accepted send closes the composer and moves the card below the waiting ones
+ * as a link to the chat that received it. The API consumes the card when it
+ * accepts the follow-up.
+ */
+const finishSuggestionDirection$ = command(
+  (
+    { get, set },
+    session: SuggestionDirectionSession,
+    sent: {
+      readonly target: SuggestionDirectionTarget;
+      readonly threadId: string;
+      readonly submission: ComposerSubmission;
+    },
+    pageSignal: AbortSignal,
+  ): void => {
+    const { target, threadId, submission } = sent;
+    if (get(internalDirectionSession$) === session) {
+      set(closeSuggestionDirection$);
+    }
+    const document = submission.editorDocument.toMessageDocument();
+    if (
+      !document ||
+      !suggestionFeedbacks(document).some(({ context }) => {
+        return context.suggestionId === session.entry.item.id;
+      })
+    ) {
+      return;
+    }
+    if (target.kind === "new") {
+      showSuggestionSent();
+    } else {
+      toast.success(
+        i18n.t(($) => {
+          return $.chat.agentSuggestions.sentToChat;
+        }),
+      );
+    }
+    set(
+      settleAgentSuggestion$,
+      session.entry,
+      { type: "sent", threadId },
+      pageSignal,
+    );
+  },
+);
+
+/** Installs the card's background before the target's composer mounts. */
+const prepareDirectionComposer$ = command(
+  async ({ get, set }, signal: AbortSignal): Promise<ComposerSignals> => {
+    const session = get(internalDirectionSession$);
+    const graph = get(directionGraph$);
+    if (!session || !graph) {
+      throw new Error("Suggestion direction is unavailable");
+    }
+    if (graph.kind === "new") {
+      set(graph.composer.setup$, signal);
+    } else {
+      await set(graph.setup$, signal);
+    }
+    const item = session.entry.item;
     const files = item.content.customOption.draft.draftAttachments ?? [];
-    const version = await suggestionDraftVersion(
+    const contextVersion = await suggestionDraftVersion(
       item.content.customOption.draft,
     );
     signal.throwIfAborted();
     const document = suggestionContextDocument(
       item,
-      version,
+      contextVersion,
       files.map((file) => {
         return file.id;
       }),
-      entry.customDraftId,
-      text,
     );
-    const prompt = messageDocumentToPrompt(document);
-    if (prompt === null) {
+    const content = messageDocumentToPrompt(document);
+    if (content === null) {
       throw new Error("Invalid suggestion background");
     }
     await set(
-      entry.customDraft.seed$,
+      graph.composer.draft.seed$,
       {
-        content: prompt,
+        content,
         userMessage: document,
         generationTemplate: undefined,
         attachments: files.map(createRestoredAttachment),
@@ -132,46 +332,81 @@ const sendCustomAgentSuggestion$ = command(
       signal,
     );
     signal.throwIfAborted();
-    await set(
-      sendNewThreadWithoutNavigation$,
-      {
-        agentId,
-        title: item.content.title,
-        draft: entry.customDraft,
-        preserveAgentDraft: true,
-        prompt,
-        generationTemplate: undefined,
-        editorDocument: createMessageDocumentSnapshot(document),
-        onOptimisticSend: (threadId) => {
-          // Custom-context sends invoke this only after durable acceptance.
-          set(
-            settleAgentSuggestion$,
-            entry,
-            { type: "sent", threadId },
-            pageSignal,
-          );
-          // A new page visit can edit the shared draft while this send is pending.
-          if (get(entry.customText$) === submittedText) {
-            set(entry.setCustomText$, "");
-          }
-          showSuggestionSent();
-        },
-      },
-      signal,
-    );
+    return graph.composer;
   },
 );
 
-export const submitCustomAgentSuggestion$ = command(
-  ({ get, set }, entry: AgentSuggestionEntry, signal: AbortSignal) => {
+/** Opens the composer of `target` for the open card. */
+export const chooseSuggestionDirectionTarget$ = command(
+  async (
+    { get, set },
+    target: SuggestionDirectionTarget,
+    parentSignal: AbortSignal,
+  ): Promise<ComposerSignals> => {
+    if (!get(internalDirectionSession$)) {
+      throw new Error("Suggestion direction is unavailable");
+    }
+    const signal = set(resetDirectionTarget$, parentSignal);
+    set(internalDirectionTarget$, target);
+    const prepared = set(prepareDirectionComposer$, signal);
+    set(internalDirectionComposer$, prepared);
+    return await prepared;
+  },
+);
+
+/**
+ * Opens the custom direction editor for a card. A card without related chats
+ * goes straight to a new chat of the default Agent; otherwise the member first
+ * chooses between a new chat and one of those chats.
+ */
+export const openSuggestionDirection$ = command(
+  async (
+    { get, set },
+    entry: AgentSuggestionEntry,
+    pageSignal: AbortSignal,
+  ): Promise<void> => {
+    set(directionFocusReturnId$, null);
+    const signal = set(resetDirection$, pageSignal);
+    set(resetSuggestionDirectionTarget$);
+    const agentId = await get(defaultAgentId$);
     signal.throwIfAborted();
-    const text = get(entry.customText$).trim();
-    if (!text || get(entry.hidden$)) {
+    if (!agentId) {
+      throw new Error("Suggestion target is unavailable");
+    }
+    if (get(entry.hidden$)) {
       return;
     }
-    const sending = set(sendCustomAgentSuggestion$, entry, text, signal);
-    set(entry.customSending$, sending);
-    return sending;
+    const session: SuggestionDirectionSession = {
+      entry,
+      agentId,
+      finish: (target, threadId, submission) => {
+        set(
+          finishSuggestionDirection$,
+          session,
+          { target, threadId, submission },
+          pageSignal,
+        );
+      },
+    };
+    set(internalDirectionSession$, session);
+    // Leaving the page or opening another card's editor ends this session.
+    signal.addEventListener(
+      "abort",
+      () => {
+        if (get(internalDirectionSession$) === session) {
+          set(internalDirectionSession$, null);
+          set(resetSuggestionDirectionTarget$);
+        }
+      },
+      { once: true },
+    );
+    if (get(suggestionDirection$)?.threads.length === 0) {
+      await set(
+        chooseSuggestionDirectionTarget$,
+        { kind: "new", agentId },
+        signal,
+      );
+    }
   },
 );
 
