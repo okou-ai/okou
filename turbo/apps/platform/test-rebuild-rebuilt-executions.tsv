@@ -940,3 +940,25 @@ browser-pointer-recovery-002	turbo/apps/platform/src/views/browser-session/__tes
 browser-pointer-recovery-005	turbo/apps/platform/src/views/browser-session/__tests__/browser-pointer-recovery.test.tsx	Keep the original drag failure and fence the detached tab	103	passed
 browser-pointer-recovery-007	turbo/apps/platform/src/views/browser-session/__tests__/browser-pointer-recovery.test.tsx	Preserve the failed release of a held key when neutral hover is interrupted	150	passed
 browser-pointer-recovery-008	turbo/apps/platform/src/views/browser-session/__tests__/browser-pointer-recovery.test.tsx	Retain an earlier native hover rejection when the next hover detaches	187	passed
+browser-frame-rate-001	turbo/apps/platform/src/views/browser-session/__tests__/browser-frame-rate.test.tsx	FPS is default Off and selected through a left-opening radio submenu	139	passed
+browser-frame-rate-002	turbo/apps/platform/src/views/browser-session/__tests__/browser-frame-rate.test.tsx	FPS can be enabled with keyboard menu navigation	180	passed
+browser-frame-rate-003	turbo/apps/platform/src/views/browser-session/__tests__/browser-frame-rate.test.tsx	The overlay follows the contained image origin when the viewer is resized	194	passed
+browser-frame-rate-004	turbo/apps/platform/src/views/browser-session/__tests__/browser-frame-rate.test.tsx	Choosing On again preserves the running counter	226	passed
+browser-frame-rate-010	turbo/apps/platform/src/views/browser-session/__tests__/browser-frame-rate.test.tsx	Changing capture settings starts a fresh measurement window	238	passed
+browser-frame-rate-011	turbo/apps/platform/src/views/browser-session/__tests__/browser-frame-rate.test.tsx	Selecting another tab resets its reading and history; disabling discards collected paints	258	passed
+browser-display-regression-001	turbo/apps/platform/src/views/browser-session/__tests__/browser-display-regression.test.tsx	A minimized remote window is restored and fitted without user action	143	passed
+browser-display-regression-004	turbo/apps/platform/src/views/browser-session/__tests__/browser-display-regression.test.tsx	Restoring an already calibrated window waits for a fresh native frame	175	passed
+browser-display-regression-005	turbo/apps/platform/src/views/browser-session/__tests__/browser-display-regression.test.tsx	A minimized window can be synchronized again after native capture preparation fails	212	passed
+browser-display-regression-006	turbo/apps/platform/src/views/browser-session/__tests__/browser-display-regression.test.tsx	A minimized window is restored after its pending calibration frame is invalidated	238	passed
+browser-display-regression-007	turbo/apps/platform/src/views/browser-session/__tests__/browser-display-regression.test.tsx	A target moved during restoration cannot authorize further display writes	275	passed
+browser-display-regression-013	turbo/apps/platform/src/views/browser-session/__tests__/browser-display-regression.test.tsx	Display synchronization resumes after image recovery with the frame first	321	passed
+browser-display-regression-015	turbo/apps/platform/src/views/browser-session/__tests__/browser-display-regression.test.tsx	A window resize keeps the accepted picture while capture is pending	364	passed
+browser-display-regression-016	turbo/apps/platform/src/views/browser-session/__tests__/browser-display-regression.test.tsx	Returning to a visible viewer does not flash a failure during display setup	408	passed
+browser-frames-recovery-001	turbo/apps/platform/src/views/browser-session/__tests__/browser-frames-recovery.test.tsx	Repeated frames loss recovers only capture and waits for a fresh scoped image	125	passed
+browser-frames-recovery-002	turbo/apps/platform/src/views/browser-session/__tests__/browser-frames-recovery.test.tsx	Frames recovery waits for the original navigation receipt and never replays it	175	passed
+browser-frames-recovery-004	turbo/apps/platform/src/views/browser-session/__tests__/browser-frames-recovery.test.tsx	Capture closure cannot erase a failed original input receipt	197	passed
+browser-frames-recovery-006	turbo/apps/platform/src/views/browser-session/__tests__/browser-frames-recovery.test.tsx	A replacement image socket may fail during opening and retry without replacing control	226	passed
+browser-frames-recovery-007	turbo/apps/platform/src/views/browser-session/__tests__/browser-frames-recovery.test.tsx	Closing the last tab after frames loss retains a blank without replacing control	248	passed
+browser-frames-recovery-009	turbo/apps/platform/src/views/browser-session/__tests__/browser-frames-recovery.test.tsx	Frames loss during an in-place image retry remains image-retryable	275	passed
+browser-frames-recovery-013	turbo/apps/platform/src/views/browser-session/__tests__/browser-frames-recovery.test.tsx	A true control failure after image loss still revokes the whole viewer	294	passed
+browser-frames-recovery-016	turbo/apps/platform/src/views/browser-session/__tests__/browser-frames-recovery.test.tsx	A target moved to a sibling window during image loss is not recovered into the viewer	308	passed
