@@ -71,9 +71,7 @@ def run(args, *, input=None, timeout=120, env=None):
         finally:
             CHILDREN.discard(process.pid)
         if process.returncode:
-            raise RuntimeError(
-                f"{Path(args[0]).name} exited {process.returncode}; see command diagnostics"
-            )
+            raise subprocess.CalledProcessError(process.returncode, Path(args[0]).name)
         return output
 
 
@@ -383,23 +381,30 @@ class Session:
         CHILDREN.discard(self.process.pid)
 
 
-def remote(host, user, operation, numbers):
-    # Only validated host/user, operation and positive integers enter SSH's
+def read_inventory(host, user, numbers):
+    # Only validated host/user and positive integers enter SSH's
     # command argument. The trusted executor is streamed over stdin, not staged
     # into a mutable PR-owned directory on the host.
-    output = run(
-        [
-            "ssh",
-            f"{user}@{host}",
-            "sudo",
-            "python3",
-            "-",
-            operation,
-            *map(str, numbers),
-        ],
-        input=(HERE / "cleanup-metal-resources.py").read_text(),
-        timeout=180,
-    )
+    args = [
+        "ssh",
+        f"{user}@{host}",
+        "sudo",
+        "python3",
+        "-",
+        "inventory",
+        *map(str, numbers),
+    ]
+    source = (HERE / "cleanup-metal-resources.py").read_text()
+    timeout = 180
+    deadline = time.monotonic() + timeout
+    try:
+        output = run(args, input=source, timeout=timeout)
+    except subprocess.CalledProcessError as error:
+        remaining = deadline - time.monotonic()
+        if error.returncode != 255 or remaining <= 0:
+            raise
+        print(f"Retrying metal inventory on {host} after SSH exit 255", file=sys.stderr)
+        output = run(args, input=source, timeout=remaining)
     result = json.loads(output)
     if not isinstance(result, dict) or any(
         not key.isdigit() or int(key) <= 0 for key in result
@@ -408,11 +413,11 @@ def remote(host, user, operation, numbers):
     return {int(key): value for key, value in result.items()}
 
 
-def observe_hosts(hosts, user, operation, numbers):
+def inventory_hosts(hosts, user, numbers):
     results = {}
     with ThreadPoolExecutor(max_workers=min(len(hosts), 2)) as pool:
         futures = {
-            host: pool.submit(remote, host, user, operation, numbers) for host in hosts
+            host: pool.submit(read_inventory, host, user, numbers) for host in hosts
         }
         for host, future in futures.items():
             try:
@@ -424,7 +429,7 @@ def observe_hosts(hosts, user, operation, numbers):
                 subprocess.SubprocessError,
             ) as error:
                 print(
-                    f"::error::Metal {operation} unverified on {host}: {error}",
+                    f"::error::Metal inventory unverified on {host}: {error}",
                     file=sys.stderr,
                 )
                 results[host] = None
@@ -609,9 +614,7 @@ def main():
         parser.error("RUNNER_PR_NUMBERS must be comma-separated positive PR numbers")
     selection = {int(value) for value in requested.split(",")} if requested else None
     started = time.monotonic()
-    inventory = observe_hosts(
-        hosts, user, "inventory", sorted(selection) if selection else []
-    )
+    inventory = inventory_hosts(hosts, user, sorted(selection) if selection else [])
     print(
         f"Metal inventory: {time.monotonic() - started:.2f}s, {len(hosts)} configured hosts",
         file=sys.stderr,
