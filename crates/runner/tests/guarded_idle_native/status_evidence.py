@@ -5,7 +5,6 @@ import pathlib
 
 import pressure_report as pressure
 import report
-from report import exact
 
 
 def valid_status_path(value):
@@ -68,7 +67,7 @@ def original_status(value, sandbox=None, previous=None):
         expected["idle_sandboxes"] = [{"reuse_key": reuse, "sandbox_id": sandbox}]
     if previous is not None and value["started_at"] != previous["started_at"]:
         raise ValueError("status retry changed original tracker")
-    exact(
+    report.exact(
         value, expected, "status publication resurrected inventory or changed its shape"
     )
 
@@ -88,6 +87,6 @@ def current_status(value, initial, sandbox=None, reuse=None, blank=False):
             if blank
             else [{"reuse_key": reuse, "sandbox_id": sandbox}]
         )
-    exact(
+    report.exact(
         value, expected, "current status lost later inventory or resurrected original"
     )
