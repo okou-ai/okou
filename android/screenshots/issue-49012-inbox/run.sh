@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+scenario=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+bash android/scripts/capture-screenshot-scenario.sh "$scenario" \
+  01-filter-menu.png 02-unread-filter.png 03-read-all-complete.png 04-wide-archived.png
