@@ -16,7 +16,7 @@ import { settle } from "../utils";
 import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 import { reconcileCanonicalSlackThreadStatus$ } from "./canonical-slack-thread-status.service";
 import { loadSlackQueuedLaunchMaterial$ } from "./slack-queued-launch-context.service";
-import { loadTeamsQueuedLaunchMaterial$ } from "./teams-queued-launch-context.service";
+import { createTeamsQueuedDelivery } from "./teams-queued-launch-context.service";
 import { sendTeamsRunStartIndicator } from "./teams-thinking-indicator.service";
 import { loadTelegramQueuedLaunchMaterial$ } from "./telegram-queued-launch-context.service";
 import { loadAgentPhoneQueuedLaunchMaterial$ } from "./agentphone-queued-launch-context.service";
@@ -46,6 +46,15 @@ const showRecoveryIndicator$ = command(
     input: IntegrationRecoveryInput,
     signal: AbortSignal,
   ): Promise<void> => {
+    if (input.contextType === "teams") {
+      signal.throwIfAborted();
+      const activity = await get(createTeamsQueuedDelivery(input));
+      signal.throwIfAborted();
+      if (activity) {
+        await sendTeamsRunStartIndicator({ activity }, signal);
+      }
+      return;
+    }
     const featureSwitchContext = await set(
       loadUserFeatureSwitchContext$,
       input.orgId,
@@ -92,20 +101,6 @@ const showRecoveryIndicator$ = command(
               .where(eq(chatFeishuContext.id, input.eventId));
             signal.throwIfAborted();
           }
-        }
-        break;
-      }
-      case "teams": {
-        const material = await set(
-          loadTeamsQueuedLaunchMaterial$,
-          source,
-          signal,
-        );
-        if (material) {
-          await sendTeamsRunStartIndicator(
-            { activity: material.teamsDelivery },
-            signal,
-          );
         }
         break;
       }

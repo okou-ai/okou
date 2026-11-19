@@ -38,7 +38,6 @@ import type {
 import type {
   FeishuThreadContext,
   SlackThreadContext,
-  TeamsThreadContext,
   TelegramThreadContext,
 } from "./thread-run-context.service";
 import {
@@ -275,7 +274,7 @@ import { isPersonalSubscriptionProviderType } from "./model-provider-account.ser
 import type { ModelFirstPin } from "./model-selection.service";
 import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 
-import { teamsDeliveryTargetSchema } from "./teams-chat-callback-payload";
+import { teamsDeliveryFromContext } from "./teams-queued-launch-context.service";
 
 import { telegramDeliveryTargetSchema } from "./telegram-chat-callback-payload";
 
@@ -450,30 +449,6 @@ function queuedFeishuDelivery(context: NonNullable<FeishuThreadContext>) {
     ...(context.reactionId ? { reactionId: context.reactionId } : {}),
     files: [...context.messageFiles],
   };
-}
-
-function queuedTeamsDelivery(context: NonNullable<TeamsThreadContext>) {
-  return teamsDeliveryTargetSchema.parse({
-    tenantId: context.tenantId,
-    tenantName: context.tenantName,
-    teamId: context.teamId,
-    teamName: context.teamName,
-    channelId: context.channelId,
-    conversationId: context.conversationId,
-    conversationType: context.conversationType,
-    threadId: context.threadId,
-    activityId: context.activityId,
-    serviceUrl: context.serviceUrl,
-    connectionId: context.connectionId,
-    teamsUserId: context.senderUserId,
-    teamsUserDisplayName: context.senderDisplayName,
-    teamsUserPrincipalName: context.senderPrincipalName,
-    botId: context.installationBotId,
-    botName: context.installationBotName,
-    files: context.messageFiles.map((file) => {
-      return { fileId: file.fileId, ...file.payload };
-    }),
-  });
 }
 
 function queuedTelegramDelivery(context: NonNullable<TelegramThreadContext>) {
@@ -1521,7 +1496,7 @@ export function createThreadClaimRunObjects(
           return {
             triggerSource: "teams",
             delivery: {
-              teamsDelivery: queuedTeamsDelivery(context),
+              teamsDelivery: teamsDeliveryFromContext(context),
             },
           };
         }
