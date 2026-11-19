@@ -32,9 +32,14 @@ export function resetMockOnboardingStatus(): void {
 }
 
 export const apiOnboardingHandlers = [
-  // The legacy suites exercise the browser draft flow against a pre-draft API.
+  // Suites without a server draft exercise the browser draft flow.
   mockApi(onboardingDraftContract.get, ({ respond }) => {
-    return respond(404, { error: "Not found" });
+    return respond(404, {
+      error: {
+        message: "Onboarding draft is unavailable",
+        code: "NOT_FOUND",
+      },
+    });
   }),
   // GET /api/onboarding/status
   mockApi(onboardingStatusContract.getStatus, ({ respond }) => {
