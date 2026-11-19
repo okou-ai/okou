@@ -97,6 +97,8 @@ case "${1:-}" in
       fi
     elif [ "${3:-}" = "046a7bac03cc5f5a94cc67394756f69be2eaf111" ]; then
       [ "${MOCK_MARKETING_SHORT_ADDRESS_WRITER_TARGET_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "d1739bed31dcde34fead64d82e54489fda10549f" ]; then
+      [ "${MOCK_MARKETING_REWARD_OWNERSHIP_TARGET_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "ac0609591b2a0a5f159afb50b7561df46a23f6a4" ]; then
       [ "${MOCK_CHAT_INDICATORS_CHANGED_PUBLISHER_TARGET_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "01d21f7c5857795104c27cd54e724f2ced2d683e" ]; then
@@ -770,6 +772,16 @@ assert_failure "Rollback target predates Marketing handoff short-address respons
 [ ! -s "${tmp_dir}/marketing-short-address.output" ] || fail "full-hash-only API must not publish outputs"
 if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
   fail "full-hash-only API must fail before provider or host access"
+fi
+
+# Removing the retired routing variable must not let rollback select a writer
+# that can independently fund campaign rewards in App.
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target cannot preserve sole Marketing reward ownership" \
+  run_resolver "${tmp_dir}/marketing-reward-ownership.output" MOCK_MARKETING_REWARD_OWNERSHIP_TARGET_VALID=0
+[ ! -s "${tmp_dir}/marketing-reward-ownership.output" ] || fail "incompatible campaign owner must not publish outputs"
+if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+  fail "incompatible campaign owner must fail before provider or host access"
 fi
 
 # Current Apps refresh chat indicators only from chatIndicatorsChanged.
