@@ -22,7 +22,7 @@ work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 cd "$root/android"
 ./gradlew :app:assembleRelease --no-daemon
-unsigned="$root/android/app/build/outputs/apk/release/app-release-unsigned.apk"
+unsigned="$root/android/app/build/outputs/apk/release/app-release.apk"
 mapping="$root/android/app/build/outputs/mapping/release/mapping.txt"
 test -s "$mapping"
 badging=$("$tools/aapt" dump badging "$unsigned")

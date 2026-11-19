@@ -360,6 +360,8 @@ exit. It owns the signing location independently of the runner's Android home.
 Normal Release builds remain unsigned until the production signing step. The
 helper first checks the native ABI rules, retains an unsigned APK and compressed
 mapping with the production build script, then assembles the signed app/driver.
+Both builds use the same intermediate APK filename so AGP can reuse the already
+optimized app. The helper copies the unsigned APK before assembling the signed one.
 It verifies that the signed app's DEX, resources and manifest and its mapping
 match the unsigned production build, both before and after running the suite.
 Its artifacts live under `build/reports/release/` and `app/build/` and are retained
