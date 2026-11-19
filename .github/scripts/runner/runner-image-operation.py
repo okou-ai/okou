@@ -66,10 +66,11 @@ def private_dir(path, create=True):
 
 
 @contextlib.contextmanager
-def gate(namespace, while_waiting=None, observe_intent=None, *, wait=True):
+def gate(namespace, while_waiting=None, observe_intent=None, *, wait=True, deadline=None):
     fd = os.open(namespace / "gate", os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
     try:
-        deadline = time.monotonic() + 15
+        if deadline is None:
+            deadline = time.monotonic() + 15
         while True:
             try:
                 fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -362,7 +363,9 @@ def claim(request, namespace, owner, retire_matching, deadline):
             retire_matching()
 
     while True:
-        with gate(namespace, while_waiting=check_waiting_claim):
+        with gate(namespace, while_waiting=check_waiting_claim, deadline=deadline):
+            if time.monotonic() >= deadline:
+                raise TimeoutError("image claim work deadline exceeded")
             previous = current_claim()
             # Until we own the gate, a same-owner claim may still be committing.
             if previous is not None and not owner_admitted(previous, owner):

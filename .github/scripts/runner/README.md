@@ -112,8 +112,9 @@ An image claim waits for the lifecycle flock outside the private gate. The
 waiter observes cancellation and retires older workers that take the gate
 during the wait. When the lock becomes available, it releases the observation
 lock and retries admission in the original lock order. PR claim uses a
-180-second end-to-end budget covering the default 150-second deployment lease
-and admission. The owner and closure cutoff are checked again under both locks.
+180-second end-to-end budget covering both lock waits and admission, including
+the default 150-second deployment lease. The owner and closure cutoff are
+checked again under both locks.
 The healthy path uses one SSH request. Run and guard retain their 600-second
 budgets.
 A claim places an exact-owner admission marker in the managed binary directory;

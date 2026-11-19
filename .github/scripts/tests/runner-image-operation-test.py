@@ -347,8 +347,13 @@ class ImageOperationTest(unittest.TestCase):
             try:
                 self.wait_for(lambda: (self.root / "claim-resource-created").exists())
                 gate = next(self.root.glob("vm0-runner-image-*/pr-123/gate"))
+                short = dict(self.environment, IMAGE_FAULT="short-claim-budget")
+                with self.image_call("claim", environment=short) as expired:
+                    output, error = expired.communicate(timeout=6)
+                    self.assertNotEqual(expired.returncode, 0, output + error)
+                    self.assertIn("image ownership gate deadline exceeded", error)
                 with self.image_call("claim") as retry:
-                    self.wait_for(lambda: len(self.records("claim-servers")) == 2)
+                    self.wait_for(lambda: len(self.records("claim-servers")) == 3)
                     retry_pid = self.records("claim-servers")[-1]
                     self.wait_for(
                         lambda: retry.poll() is not None or self.process_opened(retry_pid, gate)
