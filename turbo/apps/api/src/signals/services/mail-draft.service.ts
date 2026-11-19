@@ -2285,7 +2285,7 @@ export const linkMailDraft$ = command(
         return {
           kind: "bad_request",
           message:
-            "Invalid Outlook draft ID. Use the message ID returned by Microsoft Graph for the draft.",
+            "Invalid Outlook draft ID. Check for a typo or placeholder, then retry with the exact id returned by Microsoft Graph for the draft.",
         };
       }
       throw mailResult.error;

@@ -247,7 +247,7 @@ describe("Outlook mail in chat", () => {
         expect(rejected.body.error).toStrictEqual({
           code: "BAD_REQUEST",
           message:
-            "Invalid Outlook draft ID. Use the message ID returned by Microsoft Graph for the draft.",
+            "Invalid Outlook draft ID. Check for a typo or placeholder, then retry with the exact id returned by Microsoft Graph for the draft.",
         });
         await accept(fixture.link(), [200]);
       });
