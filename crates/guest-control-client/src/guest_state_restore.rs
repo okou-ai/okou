@@ -7,6 +7,7 @@ use guest_control_proto::{
 };
 
 use crate::helper_output::owned_capture;
+use crate::protocol_error;
 use crate::{
     FrameWriteObserver, GuestControlClient,
     normal_request_on_shared_with_write_observer_frame_builder, validate_fixed_helper_response,
@@ -61,7 +62,7 @@ impl GuestControlClient {
                     entropy,
                     timezone,
                 )
-                .map_err(protocol_invalid_input)
+                .map_err(protocol_error::invalid_input)
             },
         )
         .await?;
@@ -72,8 +73,8 @@ impl GuestControlClient {
             "guest state restore",
         )?;
 
-        let decoded =
-            decode_guest_state_restore_result(&response.payload).map_err(protocol_invalid_data)?;
+        let decoded = decode_guest_state_restore_result(&response.payload)
+            .map_err(protocol_error::invalid_data)?;
         let (stderr, stderr_truncated) =
             owned_capture(decoded.stderr, "guest state restore", "stderr")?;
         Ok(GuestStateRestoreResult {
@@ -84,12 +85,4 @@ impl GuestControlClient {
             diagnostic: decoded.diagnostic.to_owned(),
         })
     }
-}
-
-fn protocol_invalid_input(error: impl ToString) -> io::Error {
-    io::Error::new(io::ErrorKind::InvalidInput, error.to_string())
-}
-
-fn protocol_invalid_data(error: impl ToString) -> io::Error {
-    io::Error::new(io::ErrorKind::InvalidData, error.to_string())
 }

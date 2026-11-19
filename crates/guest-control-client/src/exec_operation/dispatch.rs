@@ -8,6 +8,7 @@ use guest_control_proto::{
     MSG_EXEC_STARTED,
 };
 
+use crate::protocol_error;
 use crate::{ConnectionState, Shared, normal_operation_transition_error};
 
 use super::state::{
@@ -198,7 +199,7 @@ fn dispatch_output(shared: &Arc<Shared>, msg: BorrowedRawMessage<'_>) -> io::Res
             && let Some(operation) = operations.get_mut_by_seq(msg.seq)
         {
             let decoded = guest_control_proto::decode_exec_output(msg.payload)
-                .map_err(exec_operation_protocol_error)?;
+                .map_err(protocol_error::invalid_data)?;
             if !operation.allows_output() {
                 return Err(exec_operation_protocol_error(
                     "exec output arrived before exec_started",
@@ -282,7 +283,7 @@ fn dispatch_started(shared: &Arc<Shared>, msg: BorrowedRawMessage<'_>) -> io::Re
                     return Ok(());
                 };
                 let decoded = guest_control_proto::decode_exec_started(msg.payload)
-                    .map_err(exec_operation_protocol_error)?;
+                    .map_err(protocol_error::invalid_data)?;
                 let lifecycle =
                     std::mem::replace(&mut operation.lifecycle, ExecOperationLifecycle::OneShot);
                 match lifecycle {
@@ -364,7 +365,7 @@ fn dispatch_agent_ready(shared: &Arc<Shared>, msg: BorrowedRawMessage<'_>) -> io
                     return Ok(());
                 };
                 let decoded = guest_control_proto::decode_exec_agent_ready(msg.payload)
-                    .map_err(exec_operation_protocol_error)?;
+                    .map_err(protocol_error::invalid_data)?;
                 let lifecycle =
                     std::mem::replace(&mut operation.lifecycle, ExecOperationLifecycle::OneShot);
                 match lifecycle {
@@ -429,7 +430,7 @@ pub(in crate::exec_operation) fn dispatch_result(
         match &mut *guard {
             ConnectionState::Connected { operations, .. } if operations.contains_seq(msg.seq) => {
                 let decoded = guest_control_proto::decode_exec_result(msg.payload)
-                    .map_err(exec_operation_protocol_error)?;
+                    .map_err(protocol_error::invalid_data)?;
                 let Some(operation) = operations.get_mut_by_seq(msg.seq) else {
                     return Ok(());
                 };
@@ -474,7 +475,7 @@ fn dispatch_control_result(shared: &Arc<Shared>, msg: BorrowedRawMessage<'_>) ->
         return Ok(());
     };
     let decoded = guest_control_proto::decode_exec_control_result(msg.payload)
-        .map_err(exec_operation_protocol_error)?;
+        .map_err(protocol_error::invalid_data)?;
 
     if decoded.control_nonce != pending.control_nonce {
         return Err(exec_operation_protocol_error(
@@ -519,7 +520,7 @@ fn dispatch_error(shared: &Arc<Shared>, msg: BorrowedRawMessage<'_>) -> io::Resu
             ConnectionState::Connected { operations, .. } if operations.contains_seq(msg.seq) => {
                 let err = guest_control_proto::decode_error(msg.payload)
                     .map(|message| exec_operation_guest_error(message.to_string()))
-                    .map_err(exec_operation_protocol_error)?;
+                    .map_err(protocol_error::invalid_data)?;
                 operations
                     .take_terminal_exec_operation(msg.seq)?
                     .map(|terminal| (terminal, err))
@@ -552,7 +553,7 @@ fn dispatch_control_error(shared: &Arc<Shared>, msg: BorrowedRawMessage<'_>) -> 
     };
     let message = guest_control_proto::decode_error(msg.payload)
         .map(|message| message.to_owned())
-        .map_err(exec_operation_protocol_error)?;
+        .map_err(protocol_error::invalid_data)?;
     pending
         .normal_operation
         .complete()
