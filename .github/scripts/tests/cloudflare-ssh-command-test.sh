@@ -916,7 +916,7 @@ assert_match_count "$concurrent/actual-ssh.log" 1 \
 assert_match_count "$concurrent/scp.log" 1 "/tmp/source metal@dev-8.aws.vm3.ai:/tmp/concurrent-scp"
 assert_line_count "$concurrent/ssh.log" 1 "-v -n -T metal@dev-8.aws.vm3.ai true"
 assert_not_contains "$concurrent/ssh.log" "-O exit"
-"$system_timeout" 5s bash -c 'printf "release\n" > "$1"' _ "$concurrent/auto-master.trigger"
+printf 'release\n' | "$system_timeout" 5s tee "$concurrent/auto-master.trigger" >/dev/null
 wait "$held_pid"
 assert_contains "$concurrent/held.out" "old channel completed"
 state_file="$concurrent/state/${target_key}.control-path"
