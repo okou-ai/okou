@@ -575,6 +575,15 @@ case "${1:-}" in
 esac
 SH
 
+# Reuse the parsed Git stub for the resolver's shell calls. The subshell owns
+# the stub's exits, and the executable still handles calls through PATH.
+git_startup="${tmp_dir}/git-startup.bash"
+{
+  printf '%s\n' 'git() ('
+  cat "${fake_bin}/git"
+  printf '%s\n' ')'
+} >"$git_startup"
+
 cat >"${fake_bin}/curl" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -623,6 +632,7 @@ run_resolver() {
   : >"$output_file"
   env -i \
     PATH="${fake_bin}:$PATH" \
+    BASH_ENV="$git_startup" \
     HOME="${HOME:-/tmp}" \
     AWS_METAL_RUNNER_HOSTS=arm-1,x86-1 \
     GH_TOKEN=test-github-token \
