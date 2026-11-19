@@ -220,6 +220,7 @@ fn copy_buffered<R: Read>(entry: &mut tar::Entry<'_, R>, file: &mut File) -> io:
 fn has_descriptor_budget(concurrency: usize) -> bool {
     use nix::sys::resource::{Resource, getrlimit};
 
+    const FD_DIRECTORY: &str = "/proc/self/fd";
     let Ok((soft_limit, _)) = getrlimit(Resource::RLIMIT_NOFILE) else {
         return false;
     };
@@ -230,7 +231,17 @@ fn has_descriptor_budget(concurrency: usize) -> bool {
     if soft_limit < required {
         return false;
     }
-    let Ok(mut descriptors) = fs::read_dir("/proc/self/fd") else {
+
+    // Recent Linux kernels report the descriptor count as the procfs directory
+    // size. Keep the extra slot that read_dir counts for its own handle.
+    if let Ok(metadata) = fs::metadata(FD_DIRECTORY)
+        && metadata.is_dir()
+        && metadata.len() > 0
+    {
+        return u128::from(metadata.len()) < u128::from(soft_limit - required);
+    }
+
+    let Ok(mut descriptors) = fs::read_dir(FD_DIRECTORY) else {
         return false;
     };
     let Ok(open_descriptors) = descriptors.try_fold(0, |count, entry| entry.map(|_| count + 1))
