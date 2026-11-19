@@ -4,6 +4,7 @@ import { http, HttpResponse } from "msw";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { server } from "../../../../mocks/server";
+import { stubRunConnectorAccountInventory } from "../../../__tests__/helpers/run-connector-accounts";
 import {
   authCodeMethod,
   catalogStatusItem,
@@ -726,9 +727,19 @@ describe("okou connector account list command", () => {
     );
   });
 
-  it("lists available inventory inside a run without changing its meaning", async () => {
+  it("reports the current and disabled saved accounts of this Chat", async () => {
     vi.stubEnv("OKOU_AGENT_ID", "agent-123");
     vi.stubEnv("OKOU_TOKEN", "agent-token");
+    const target = { kind: "builtin", connectorSlug: "github" } as const;
+    const primary = connectorAccount({
+      id: FIRST_CONNECTION_ID,
+      displayName: "Current account",
+      isDefault: true,
+    });
+    const secondary = connectorAccount({
+      id: SECOND_CONNECTION_ID,
+      displayName: "Disabled account",
+    });
     server.use(
       http.get(
         "http://localhost:3000/api/connector-accounts/connections",
@@ -737,21 +748,48 @@ describe("okou connector account list command", () => {
             "Bearer agent-token",
           );
           return HttpResponse.json({
-            connections: [
-              connectorAccount({ displayName: "Available account" }),
-            ],
-            defaultConnection: null,
+            connections: [primary, secondary],
+            defaultConnection: primary,
             nextCursor: null,
           });
         },
       ),
+      stubRunConnectorAccountInventory({
+        accounts: [
+          {
+            target,
+            connectionId: primary.id,
+            displayName: primary.displayName,
+            enabled: true,
+            isCurrent: true,
+            isDefault: true,
+          },
+          {
+            target,
+            connectionId: secondary.id,
+            displayName: secondary.displayName,
+            enabled: false,
+            isCurrent: false,
+            isDefault: false,
+          },
+        ],
+      }),
     );
 
-    await listConnectorAccountsCommand.parseAsync(["node", "okou", "github"]);
+    await listConnectorAccountsCommand.parseAsync([
+      "node",
+      "okou",
+      "github",
+      "--json",
+    ]);
 
-    const output = mockConsoleLog.mock.calls.flat().join("\n");
-    expect(output).toContain("Available accounts for GitHub");
-    expect(output).toContain("Available account");
-    expect(output).not.toContain("ACCOUNT USED BY THIS RUN");
+    expect(
+      JSON.parse(mockConsoleLog.mock.calls.flat().join("\n")),
+    ).toMatchObject({
+      accounts: [
+        { connectionId: primary.id, enabled: true, isCurrent: true },
+        { connectionId: secondary.id, enabled: false, isCurrent: false },
+      ],
+    });
   });
 });

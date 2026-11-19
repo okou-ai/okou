@@ -157,7 +157,7 @@ Input is a JSON object: {"apiKey":"..."}. Use a protected temporary file or stdi
 Custom connections require --add or --reconnect <connection-id>. none accepts an
 empty object; HTTP non-secret variables use declared field names. Existing
 builtin connect syntax still reconnects the current default, or adds if absent.
-No agent grants or permissions are changed. OAuth uses connector oauth start.
+This command stores a saved account. Use connector oauth start for OAuth.
 
 Examples:
   okou connector connect openai --add --input ./credentials.json

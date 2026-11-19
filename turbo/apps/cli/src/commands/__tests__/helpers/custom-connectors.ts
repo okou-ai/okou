@@ -8,7 +8,6 @@ import {
 } from "@okouai/api-contracts/contracts/custom-connectors";
 
 import type { McpConnector } from "@okouai/api-contracts/contracts/mcp-connectors";
-import type { AgentCustomConnectorGrant } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 
 export function customConnector(
   overrides: Partial<CustomConnectorHttpResponse> = {},
@@ -97,14 +96,5 @@ export function stubRunMcpConnectors(
 ) {
   return http.get(`${origin}/api/mcp-connectors`, () => {
     return HttpResponse.json({ connectors });
-  });
-}
-
-export function stubAgentCustomConnectors(
-  grants: readonly AgentCustomConnectorGrant[],
-  origin = "http://localhost:3000",
-) {
-  return http.get(`${origin}/api/agents/:id/custom-connectors`, () => {
-    return HttpResponse.json({ grants });
   });
 }

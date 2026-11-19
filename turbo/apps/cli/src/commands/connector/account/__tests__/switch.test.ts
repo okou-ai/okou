@@ -56,6 +56,7 @@ let selected: unknown[] = [];
 let enabled = true;
 beforeEach(() => {
   vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
+  vi.stubEnv("OKOU_AGENT_ID", "agent-1");
   vi.stubEnv(
     "OKOU_TOKEN",
     `vm0_sandbox_e30.${Buffer.from(JSON.stringify({ scope: "okou", capabilities: ["connector-account:switch"] })).toString("base64url")}.signature`,
@@ -164,10 +165,26 @@ describe("connector account switch", () => {
     expect(process.exitCode).toBe(1);
     expect(error.mock.calls.flat().join(" ")).toContain("not confirmed");
   });
-  it("keeps the direct switch unavailable without its captured capability", async () => {
-    vi.stubEnv("OKOU_TOKEN", "old-token");
+  it("does not dispatch when the Run account API rejects the token", async () => {
+    server.use(
+      http.get("http://localhost:3000/api/run/connector-accounts", () => {
+        return HttpResponse.json(
+          {
+            error: {
+              code: "FORBIDDEN",
+              message: "Missing required capability: connector-account:switch",
+            },
+          },
+          { status: 403 },
+        );
+      }),
+    );
     await expect(run()).rejects.toThrow("exit");
     expect(selected).toHaveLength(0);
+    expect(transport.requests).toHaveLength(0);
+    expect(error.mock.calls.flat().join(" ")).toContain(
+      "Missing required capability",
+    );
     expect(process.exitCode).toBe(1);
   });
 });

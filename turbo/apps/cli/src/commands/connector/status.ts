@@ -1,7 +1,4 @@
-import { singleAgentEnabled } from "../../lib/api/single-agent";
-import { modeHelp } from "../../lib/command/single-agent";
 import { Command } from "commander";
-import { chatConnectorAccountsEnabled } from "../../lib/api/domains/run-connector-accounts";
 import chalk from "chalk";
 import {
   listConnectorCatalog,
@@ -9,17 +6,12 @@ import {
 } from "../../lib/api/domains/connectors";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { findConnectorBySelector } from "./connector-selector";
-import { resolveAgentContext, resolveConnectorAgentId } from "./agent-context";
 import { getPlatformOrigin } from "../../lib/platform-url";
 import {
   availableConnectorSlugs,
   findConnectorStatusItem,
   type PublicConnectorStatus,
 } from "./public-catalog";
-import {
-  connectorActionUrl,
-  printCallbackActionUrlExample,
-} from "./action-url";
 import {
   isRunBoundConnectorContext,
   resolveRunConnectorAccountView,
@@ -34,10 +26,6 @@ import {
 } from "./member-status";
 
 const LABEL_WIDTH = 16;
-
-type AgentContext = NonNullable<
-  Awaited<ReturnType<typeof resolveAgentContext>>
->;
 
 function printConnectorDetails(
   connector: PublicConnectorStatus,
@@ -70,93 +58,7 @@ function printConnectorDetails(
   }
 }
 
-async function printAgentAction(
-  connector: PublicConnectorStatus,
-  facts: MemberConnectorFacts,
-  agentCtx: AgentContext,
-): Promise<void> {
-  const connectorSlug = connector.slug;
-  const authorized = agentCtx.authorizedConnectorSlugs.has(connectorSlug);
-  const isConnected = facts.memberStatus === "connected";
-  const needsReconnect = facts.memberStatus === "reconnect-required";
-  const personal = await singleAgentEnabled();
-  const agentLabel = personal
-    ? "your Okou"
-    : agentCtx.displayName === agentCtx.agentId
-      ? agentCtx.agentId
-      : `${agentCtx.displayName} (${agentCtx.agentId})`;
-
-  console.log();
-  if (needsReconnect) {
-    const origin = await getPlatformOrigin();
-    const url = connectorActionUrl({
-      origin,
-      path: "/connectors",
-      agentId: agentCtx.agentId,
-    });
-    console.log(
-      `The ${connectorSlug} connector is connected but needs to be reconnected before ${personal ? "" : "agent "}${agentLabel} can use it.`,
-    );
-    console.log(`Reconnect it at: [Reconnect ${connectorSlug}](${url})`);
-  } else if (!isConnected && facts.memberStatus !== "not-connected") {
-    const origin = await getPlatformOrigin();
-    const url = connectorActionUrl({
-      origin,
-      path: "/connectors",
-      agentId: agentCtx.agentId,
-    });
-    console.log(
-      `Review the ${connectorSlug} accounts before authorizing ${personal ? "" : "agent "}${agentLabel}.`,
-    );
-    console.log(
-      `Manage accounts at: [Manage ${connectorSlug} accounts](${url})`,
-    );
-  } else if (authorized && !isConnected) {
-    const origin = await getPlatformOrigin();
-    const url = connectorActionUrl({
-      origin,
-      path: `/connectors/${connectorSlug}/connect`,
-      agentId: agentCtx.agentId,
-    });
-    console.log(
-      `The ${connectorSlug} connector is authorized for ${personal ? "" : "agent "}${agentLabel}, but it is not connected.`,
-    );
-    console.log(`Connect it at: [Connect ${connectorSlug}](${url})`);
-    printCallbackActionUrlExample(url, agentCtx.agentId);
-  } else if (authorized) {
-    console.log(
-      `The ${connectorSlug} connector is authorized for ${personal ? "" : "agent "}${agentLabel}.`,
-    );
-  } else if (!isConnected) {
-    const origin = await getPlatformOrigin();
-    const url = connectorActionUrl({
-      origin,
-      path: `/connectors/${connectorSlug}/connect`,
-      agentId: agentCtx.agentId,
-    });
-    console.log(
-      `The ${connectorSlug} connector is not connected. Once connected, it will be authorized for ${personal ? "" : "agent "}${agentLabel}.`,
-    );
-    console.log(
-      `Connect and authorize it at: [Connect ${connectorSlug}](${url})`,
-    );
-    printCallbackActionUrlExample(url, agentCtx.agentId);
-  } else {
-    const origin = await getPlatformOrigin();
-    const url = connectorActionUrl({
-      origin,
-      path: `/connectors/${connectorSlug}/authorize`,
-      agentId: agentCtx.agentId,
-    });
-    console.log(
-      `The ${connectorSlug} connector is not authorized for ${personal ? "" : "agent "}${agentLabel}.`,
-    );
-    console.log(`Authorize it at: [Authorize ${connectorSlug}](${url})`);
-    printCallbackActionUrlExample(url, agentCtx.agentId);
-  }
-}
-
-async function printStandaloneAction(
+async function printMemberAction(
   connector: PublicConnectorStatus,
   facts: MemberConnectorFacts,
 ): Promise<void> {
@@ -306,63 +208,32 @@ export const statusCommand = new Command()
     "<selector>",
     "Connector slug or unique display name (builtin only outside a run)",
   )
-  .option(
-    "--agent <id>",
-    "Show per-agent authorization outside a run (must match the current Agent inside a run)",
-  )
   .option("--json", "Output connector status as JSON")
   .addHelpText(
     "after",
-    modeHelp(
-      `
-Scope:
-  Inside a run, accepts builtin or custom HTTP/MCP full slugs, custom UUIDs,
-  or exact unique display names from connector list. Reports the account
-  selected for that run. Missing account context is
-  reported as unavailable. Omit --agent or match the current Agent; the flag
-  does not change the run's accounts.
-  Outside a run, accepts builtin catalog full slugs or exact unique display names
-  and shows the current member's connection plus optional --agent authorization.
-  Qualify a selector with builtin: or custom: within the supported connector types.
-  For org custom definition/member status, use connector custom status <selector>.
-  Current-member JSON accountSummary/memberStatus describe target-specific account facts.
-  Agent authorization is reported separately.
-  To choose another account, run connector account list <selector> --json and
-  use only an exact returned connectionId. Never invent or reuse an ID from a
-  different connector. ${chatConnectorAccountsEnabled() ? "Use connector account switch for an enabled account in this Run; use switch-request to ask the owner to enable a disabled account in this Chat." : "A switch applies to future runs in this chat; it cannot replace the account already admitted to this Run."}
-  When status prints an action URL, return it verbatim. Add a callback only when
-  this turn needs exactly one access action; otherwise return ordinary links.
+    `
+Inside a Run, inspect the exact account used by builtin or custom HTTP/MCP
+connectors. Resolve alternatives with connector account list <selector> --json.
+Use account switch for an enabled account and switch-request for owner approval
+of a disabled account in this Chat.
 
-Examples:
+Outside a Run, inspect builtin saved-account status. For custom connector
+definitions and saved accounts, use connector custom status <selector>.
+Use --json for account details, including the exact connectionId.
+
+Examples
   okou connector status github --json
-  okou connector account list github --json
-  okou connector custom list
-  okou connector custom status <connector-id>`,
-      `
-Inspect your current account and Okou access without selecting an Agent.
-Inside a Run, use its admitted account context; outside a Run, inspect your
-connected accounts and workspace access. A saved account alone grants nothing.
-Use --json to inspect exact connectionIds and effective authorization.
-Use connector check for a failed request and connector account list for alternatives.
-Account changes retain existing consent, expiry and revocation rules.
+  okou connector status custom:<uuid>
 `,
-    ),
   )
   .action(
     withErrorHandler(
-      async (
-        connectorSlug: string,
-        options: { agent?: string; json?: boolean },
-      ) => {
-        const agentId = await resolveConnectorAgentId(options.agent);
+      async (connectorSlug: string, options: { json?: boolean }) => {
         if (isRunBoundConnectorContext()) {
           await printRunConnectorStatus(connectorSlug, options.json ?? false);
           return;
         }
-        const [catalog, agentCtx] = await Promise.all([
-          listConnectorCatalog(),
-          resolveAgentContext(agentId),
-        ]);
+        const catalog = await listConnectorCatalog();
         const definition = findConnectorStatusItem(
           catalog.connectors,
           connectorSlug,
@@ -393,15 +264,6 @@ Account changes retain existing consent, expiry and revocation rules.
                   target: { kind: "builtin", connectorSlug: connector.slug },
                   connectorType: "builtin",
                 },
-                authorization: agentCtx
-                  ? {
-                      agentId: agentCtx.agentId,
-                      displayName: agentCtx.displayName,
-                      authorized: agentCtx.authorizedConnectorSlugs.has(
-                        connector.slug,
-                      ),
-                    }
-                  : null,
               },
               null,
               2,
@@ -415,11 +277,7 @@ Account changes retain existing consent, expiry and revocation rules.
 
         printConnectorDetails(connector, facts);
 
-        if (agentCtx) {
-          await printAgentAction(connector, facts, agentCtx);
-        } else {
-          await printStandaloneAction(connector, facts);
-        }
+        await printMemberAction(connector, facts);
       },
     ),
   );

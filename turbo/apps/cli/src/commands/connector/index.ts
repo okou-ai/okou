@@ -1,7 +1,3 @@
-import {
-  modeHelp,
-  PERSONAL_CONNECTOR_HELP,
-} from "../../lib/command/single-agent";
 import { Command } from "commander";
 import { checkConnectorCommand } from "./check";
 import { connectCommand } from "./connect";
@@ -12,8 +8,6 @@ import { customConnectorCommand } from "./custom";
 import { permissionRequestCommand } from "./permission-request";
 import { connectorAccountCommand } from "./account";
 import { connectorOAuthCommand } from "./oauth";
-import { unauthorizeCommand } from "./unauthorize";
-import { chatConnectorAccountsEnabled } from "../../lib/api/domains/run-connector-accounts";
 
 export const connectorCommand = new Command()
   .name("connector")
@@ -27,76 +21,31 @@ export const connectorCommand = new Command()
   .addCommand(searchCommand)
   .addCommand(statusCommand)
   .addCommand(permissionRequestCommand)
-  .addCommand(unauthorizeCommand, { hidden: chatConnectorAccountsEnabled() })
   .addHelpText(
     "after",
-    modeHelp(
-      `
-Choose a command:
-  list/status   Inspect the current run's admitted accounts. Outside a run,
-                list includes builtin and custom connectors; status is builtin-only.
-  search        Discover builtin and custom HTTP/MCP connectors and connection guidance.
-  custom        Create/update/show/delete org custom connector definitions.
-  connect       Connect builtin manual grants or custom manual/no-auth accounts.
-  oauth start   Start existing OAuth/OpenID/automatic account authorization.
-  account disconnect
-                Disconnect one exact saved account directly, without approval.
-  check         Diagnose a failed URL or a builtin environment name.
-  permission-request
-                Request a diagnosed builtin permission; custom permissions use settings.
-  ${chatConnectorAccountsEnabled() ? "account switch  Use an allowed account in this Run and save this Chat's current account." : "unauthorize   Remove one connector from an Agent's access; narrowing needs no approval."}
+    `
+Account scope
+  Inside a Run, list/status report the exact accounts used by the Run.
+  Outside a Run, they report your saved accounts. Use connector custom status
+  for a custom definition and its saved-account status.
+  Use account list <selector> --json for exact connection IDs and Chat
+  allowance. Switch an enabled account with account switch. Use switch-request
+  for owner approval of a disabled account.
 
-Connection and access:
-  ${
-    chatConnectorAccountsEnabled()
-      ? "A connector is available when this Chat has an allowed account. Account inventory includes denied accounts; only the owner can enable them through switch-request. Firewall permissions are shared across all your Chats, Agents and accounts."
-      : `A definition describes the service and its authentication setup. Members then
-  connect their own accounts, grant Agent access, and select any fine-grained
-  permissions. Creating a custom definition alone does not complete these steps.
-  Use connect for member credentials and oauth start for existing authorization
-  flows. Neither command changes Agent grants or fine-grained permissions.
-  Use unauthorize to remove an Agent's connector grant directly.`
-  }
-  Use account disconnect --connection-id <uuid> to remove a saved account across
-  all Agents. See account disconnect --help for reconnection risks.
+Permission recovery
+  Firewall permissions are shared across your Chats and accounts. Inspect
+  whoami --permissions and diagnose the failed URL and method with connector
+  check. Use the permission-request command emitted for a deny/ask result.
+  Custom connector permissions are managed in Connectors settings.
+  Add a callback only for one access action in the current Web Chat.
+  Use ordinary links for multiple confirmations. Return each URL verbatim.
 
-Run context:
-  Inside a run, omit --agent to use the current Agent (OKOU_AGENT_ID).
-  Account inspection and permission-request require an explicit --agent to match
-  the current Agent. ${chatConnectorAccountsEnabled() ? "Chat allowance determines connector availability." : "Unauthorize can target another visible Agent with --agent; it only removes the current user's grant."}
-  Agent selection does not replace the accounts admitted to that run. Missing
-  run account context means unavailable; it does not select another account.
-  Outside a run, commands exposing --agent can inspect that Agent's authorization.
-
-Selectors:
-  Use a full slug, a custom UUID, or an exact unique display name.
-  Qualify a target with builtin:<slug-or-name> or custom:<uuid-slug-or-name>.
-  Full identifiers take precedence over display names; ambiguous matches are rejected.
-  Each command retains its supported connector types. Use UUIDs for stable custom automation.
-
-Account selection:
-  Inspect the account used by this Run with connector status <slug> --json, and
-  list alternatives with connector account list <slug> --json. Use only an
-  exact returned connectionId; never invent one or reuse it for another connector.
-  ${chatConnectorAccountsEnabled() ? "Use account switch for an already allowed account in this Run. Use switch-request for exact owner approval of a denied account. Both retain this Chat's current choice for later Runs; global defaults and other Chats' current choices are unchanged." : "Account switches affect future runs in the current chat, not this Run or a global default."}
-
-Permission recovery:
-  Diagnose the exact failed URL and method with connector check before trying
-  ad hoc fixes or requesting access. Check okou whoami --permissions first,
-  plan only the concrete operations needed now, and use the exact
-  permission-request command emitted for a deny/ask result. Provider OAuth
-  scope names are not Okou permissions.
-  Use a callback only when the current turn has exactly one access action. For
-  multiple actions, return ordinary links separately and wait for all of them.
-  Always return action URLs verbatim with every query parameter.
-
-Examples:
+Examples
   okou connector status builtin:github
   okou connector account list github --json
   okou connector custom status "Acme Search"
   okou connector check --connector custom:_acme-search --url https://api.acme.test/items
 
-Use each command's --help for its supported selectors and callback limits.`,
-      PERSONAL_CONNECTOR_HELP,
-    ),
+Use each subcommand's --help for its selectors, input and output.
+`,
   );

@@ -38,7 +38,7 @@ export const connectorOAuthStartCommand = addAccountMutationOptions(
   .addHelpText(
     "after",
     modeHelp(
-      "\nRequires --add or --reconnect <connection-id>. Starts only existing backend flows; does not grant Agent access, complete OAuth, poll tokens, or operate a browser. Return the authorization URL verbatim to the user. Device/external-code/managed flows are not supported by this command.",
+      "\nRequires --add or --reconnect <connection-id>. Starts provider authorization for the exact saved account. The user completes the flow at the returned URL. Return that URL verbatim. Device/external-code/managed flows are not supported by this command.",
       `
 Requires --add or --reconnect <connection-id>. Starts only existing backend flows;
 it does not grant Okou access, complete OAuth, poll tokens, or operate a browser.
@@ -108,7 +108,5 @@ flows are not supported by this command. Consent and permissions remain separate
   );
 
 export const connectorOAuthCommand = new Command("oauth")
-  .description(
-    "Start existing member authorization flows without changing Agent grants",
-  )
+  .description("Start member account authorization")
   .addCommand(connectorOAuthStartCommand);

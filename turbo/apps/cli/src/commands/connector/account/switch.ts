@@ -5,15 +5,18 @@ import {
   listCustomConnectors,
 } from "../../../lib/api/domains/connectors";
 import {
-  chatConnectorAccountsEnabled,
   listRunConnectorAccounts,
   selectRunConnectorAccount,
 } from "../../../lib/api/domains/run-connector-accounts";
 import { withErrorHandler } from "../../../lib/command/with-error-handler";
 import { isUuid } from "../../../lib/utils/uuid";
-import { connectorDiscoveryItems } from "../discovery";
+import {
+  connectorDiscoveryItems,
+  connectorDiscoveryTarget,
+} from "../discovery";
 import { findConnectorBySelector } from "../connector-selector";
 import { syncRunConnectorAccount } from "./switch-rpc";
+import { isRunBoundConnectorContext } from "../run-account-context";
 
 export const switchConnectorAccountCommand = new Command()
   .name("switch")
@@ -34,10 +37,9 @@ export const switchConnectorAccountCommand = new Command()
         selector: string,
         options: { connectionId: string; json?: boolean },
       ) => {
-        if (!chatConnectorAccountsEnabled())
-          throw new Error(
-            "Chat connector account switching is not enabled for this Run",
-          );
+        if (!isRunBoundConnectorContext()) {
+          throw new Error("Connector account switching requires an active Run");
+        }
         const connectionId = options.connectionId.trim();
         if (!isUuid(connectionId))
           throw new Error("--connection-id must be a valid UUID");
@@ -61,18 +63,12 @@ export const switchConnectorAccountCommand = new Command()
           },
         );
         if (!connector) throw new Error(`Unknown connector: ${selector}`);
-        const target =
-          connector.kind === "catalog"
-            ? { kind: "builtin" as const, connectorSlug: connector.slug }
-            : {
-                kind: "custom" as const,
-                customConnectorId: connector.customConnector.id,
-              };
+        const target = connectorDiscoveryTarget(connector);
+        const targetKey = connectorAccountTargetKey(target);
         const account = inventory.accounts.find((item) => {
           return (
             item.connectionId === connectionId &&
-            connectorAccountTargetKey(item.target) ===
-              connectorAccountTargetKey(target)
+            connectorAccountTargetKey(item.target) === targetKey
           );
         });
         if (!account)

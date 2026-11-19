@@ -15,7 +15,7 @@ import { ApiRequestError } from "../../lib/api/core/client-factory";
 import { createBrowserAuthorizationRequest } from "../../lib/api/domains/browser";
 import { createComputerUseAuthorizationRequest } from "../../lib/api/domains/computer-use";
 import { getOkouToken } from "../../lib/okou-env";
-import { resolveConnectorAgentId } from "./agent-context";
+import { resolvePermissionActionAgentId } from "./agent-context";
 import {
   CALLBACK_PROMPT_GUIDANCE,
   CALLBACK_PROMPT_MAX_LENGTH,
@@ -343,8 +343,8 @@ Notes:
     Follow policy.outcome: allow needs no additional permission approval; deny/ask
     blocks the request; unavailable means permission status could not be determined.
     An allowed permission check does not verify credentials or upstream API success.
-  - Custom HTTP connectors with permission bundles use Connectors > agent access
-    > Permissions. MCP connectors have Agent access but no HTTP permission bundle.
+  - Custom HTTP connectors with permission bundles use Connectors settings
+    > Permissions. MCP connector access is controlled by Chat account allowance.
     Custom UUIDs, full slugs, and exact unique display names, optionally prefixed
     with custom:, resolve to this settings guidance rather than a builtin approval link.
   - For custom unknown endpoints, only deny/ask outcomes need an administrator to
@@ -422,7 +422,7 @@ accounts never resets permissions. Browser/Computer Use consent remains separate
           }
           const batch = await resolvePermissionRequestBatch({
             batchFile: opts.batchFile,
-            agentId: await resolveConnectorAgentId(opts.agent),
+            agentId: await resolvePermissionActionAgentId(opts.agent),
             callbackPrompt: opts.callbackPrompt,
           });
           for (const summary of batch.summaries) console.log(summary);
@@ -459,7 +459,7 @@ accounts never resets permissions. Browser/Computer Use consent remains separate
             "Supply a selector and --permission for a single request, or use --batch-file <path>.",
           );
         }
-        const agentId = await resolveConnectorAgentId(opts.agent);
+        const agentId = await resolvePermissionActionAgentId(opts.agent);
         if (opts.url !== undefined) {
           validateDiagnosticUrl(opts.url);
         }

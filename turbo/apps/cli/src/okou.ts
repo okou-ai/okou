@@ -235,7 +235,7 @@ const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   },
   {
     name: "mcp",
-    description: "Use MCP connectors authorized for this Agent",
+    description: "Use this Chat's current MCP connector accounts",
     load: async () => {
       return (await import("./commands/mcp")).mcpCommand;
     },

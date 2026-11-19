@@ -1,7 +1,4 @@
-import {
-  resolveCommandMode,
-  modeHelp,
-} from "../../../lib/command/single-agent";
+import { connectorAccountTargetKey } from "@okouai/api-contracts/contracts/connector-accounts";
 import { Command } from "commander";
 import chalk from "chalk";
 import {
@@ -9,20 +6,13 @@ import {
   type CustomConnectorResponse,
 } from "@okouai/api-contracts/contracts/custom-connectors";
 import {
-  getAgent,
-  getAgentCustomConnectorGrants,
-} from "../../../lib/api/domains/agents";
-import {
   getCustomConnector,
   listCustomConnectors,
   listConnectedConnectors,
 } from "../../../lib/api/domains/connectors";
 import { withErrorHandler } from "../../../lib/command/with-error-handler";
-import {
-  resolveConnectorAgentId,
-  resolveConnectorDiscoveryAgentContext,
-} from "../agent-context";
-import { chatConnectorAccountsEnabled } from "../../../lib/api/domains/run-connector-accounts";
+import { getAllowedChatConnectorTargetKeys } from "../../../lib/api/domains/run-connector-accounts";
+import { isRunBoundConnectorContext } from "../run-account-context";
 import { resolveCustomConnectorId } from "../custom-connector-selector";
 import { createCustomConnectorCommand } from "./create";
 import { updateCustomConnectorCommand } from "./update";
@@ -43,7 +33,7 @@ const LABEL_WIDTH = 18;
 
 function customConnectorJson(
   connector: CustomConnectorResponse,
-  agent: Awaited<ReturnType<typeof resolveCustomAgentContext>>,
+  allowedInChat: boolean | null,
   facts:
     | MemberConnectorFacts
     | {
@@ -57,43 +47,7 @@ function customConnectorJson(
     target,
     connectorType: connectorInspectionType(target, connector),
     ...facts,
-    authorized: agent ? agent.authorizedIds.has(connector.id) : null,
-  };
-}
-
-async function resolveCustomAgentContext(agentId: string | undefined): Promise<{
-  readonly agentId: string;
-  readonly displayName: string;
-  readonly authorizedIds: Set<string>;
-  readonly personal: boolean;
-} | null> {
-  if (!agentId) {
-    return null;
-  }
-  if (chatConnectorAccountsEnabled()) {
-    const context = await resolveConnectorDiscoveryAgentContext(agentId);
-    return context
-      ? {
-          personal: context.personal,
-          agentId: context.agentId,
-          displayName: context.displayName,
-          authorizedIds: context.authorizedCustomConnectorIds,
-        }
-      : null;
-  }
-  const [agent, grants] = await Promise.all([
-    getAgent(agentId),
-    getAgentCustomConnectorGrants(agentId),
-  ]);
-  return {
-    personal: await resolveCommandMode(),
-    agentId: agent.agentId,
-    displayName: agent.displayName ?? agent.agentId,
-    authorizedIds: new Set(
-      grants.map((grant) => {
-        return grant.customConnectorId;
-      }),
-    ),
+    allowedInChat,
   };
 }
 
@@ -103,38 +57,35 @@ const listCommand = new Command()
   .description(
     "List org custom HTTP/MCP definitions and member saved-account presence",
   )
-  .option(
-    "--agent <id>",
-    "Show per-agent authorization column (must match the current Agent inside a run)",
-  )
   .option("--json", "Output current org custom connectors as JSON")
   .addHelpText(
     "after",
-    modeHelp(
-      `
-Lists org definitions with the current member's saved-account directory, including
-inside a run. This is separate from the accounts admitted to the current run;
-use connector list for that view. The ID column contains UUIDs for custom
-status/update and custom:<uuid> diagnostic selectors.
-Saved-account presence does not establish health, defaults, or runtime availability.
-Omit --agent inside a run to inspect the current Agent's access.`,
-      `
-Lists workspace definitions and your current saved-account directory, including
-inside a Run. This view is separate from the accounts admitted to the current Run;
-use connector list for that view. UUIDs identify custom status/update targets and
-custom:<uuid> diagnostic selectors. Saved-account presence does not establish
-health, defaults or runtime availability. Okou access still requires authorization.
+    `
+Lists workspace definitions and your saved accounts. Inside a Run, the Chat
+allowance column shows whether this Chat allows an account for each connector.
+Use connector list for the exact accounts used by the Run. UUIDs identify
+custom status and update targets.
 `,
-    ),
   )
   .action(
-    withErrorHandler(async (options: { agent?: string; json?: boolean }) => {
-      const agentId = await resolveConnectorAgentId(options.agent);
-      const [connectors, agentCtx, connected] = await Promise.all([
+    withErrorHandler(async (options: { json?: boolean }) => {
+      const [connectors, allowedTargets, connected] = await Promise.all([
         listCustomConnectors(),
-        resolveCustomAgentContext(agentId),
+        isRunBoundConnectorContext()
+          ? getAllowedChatConnectorTargetKeys()
+          : null,
         listConnectedConnectors(),
       ]);
+      const isAllowedInChat = (id: string) => {
+        return (
+          allowedTargets?.has(
+            connectorAccountTargetKey({
+              kind: "custom",
+              customConnectorId: id,
+            }),
+          ) ?? null
+        );
+      };
       const connectedIds = new Set(
         connected.customConnectors.map((connector) => {
           return connector.id;
@@ -145,18 +96,16 @@ health, defaults or runtime availability. Okou access still requires authorizati
           JSON.stringify(
             {
               context: "current",
-              agent: agentCtx
-                ? {
-                    agentId: agentCtx.agentId,
-                    displayName: agentCtx.displayName,
-                  }
-                : null,
               connectors: connectors.map((connector) => {
-                return customConnectorJson(connector, agentCtx, {
-                  hasSavedAccounts: connectedIds.has(connector.id),
-                  integrationManaged:
-                    isIntegrationManagedCustomConnector(connector),
-                });
+                return customConnectorJson(
+                  connector,
+                  isAllowedInChat(connector.id),
+                  {
+                    hasSavedAccounts: connectedIds.has(connector.id),
+                    integrationManaged:
+                      isIntegrationManagedCustomConnector(connector),
+                  },
+                );
               }),
             },
             null,
@@ -190,15 +139,7 @@ health, defaults or runtime availability. Okou access still requires authorizati
         "KIND",
         "SAVED ACCOUNTS",
       ];
-      if (agentCtx) {
-        header.push(
-          chatConnectorAccountsEnabled()
-            ? "ALLOWED IN THIS CHAT"
-            : agentCtx.personal
-              ? "YOUR OKOU ACCESS"
-              : `AUTHORIZED FOR ${agentCtx.displayName}`,
-        );
-      }
+      if (allowedTargets) header.push("ALLOWED IN THIS CHAT");
       console.log(chalk.dim(header.join("  ")));
       for (const connector of connectors) {
         const row = [
@@ -210,11 +151,11 @@ health, defaults or runtime availability. Okou access still requires authorizati
             ? "saved accounts (inspect status)"
             : "no saved accounts",
         ];
-        if (agentCtx) {
+        if (allowedTargets) {
           row.push(
-            agentCtx.authorizedIds.has(connector.id)
-              ? chalk.green("✓")
-              : chalk.dim("-"),
+            isAllowedInChat(connector.id)
+              ? chalk.green("yes")
+              : chalk.dim("no"),
           );
         }
         console.log(row.join("  "));
@@ -229,41 +170,31 @@ const statusCommand = new Command()
     "<selector>",
     "Custom connector slug, UUID, or unique display name (custom: prefix accepted)",
   )
-  .option(
-    "--agent <id>",
-    "Show authorization state for the given Agent (must match the current Agent inside a run)",
-  )
   .option("--json", "Output current org custom connector status as JSON")
   .addHelpText(
     "after",
-    modeHelp(
-      `
-Accepts a custom connector full slug, UUID, or exact unique display name,
-optionally prefixed with custom:. Use UUIDs for stable automation.
-Shows current org definition/member status, including inside a run. For the
-account admitted to a run, use connector status with its connector selector.
-Omit --agent inside a run to inspect the current Agent's access.`,
-      `
-Accepts a custom connector full slug, UUID, or exact unique display name,
-optionally prefixed with custom:. Use UUIDs for stable automation.
-Shows the current workspace definition and your saved-account status, including
-inside a Run. For the account admitted to a Run, use connector status with its
-connector selector. A saved account alone does not grant Okou access.
+    `
+Accepts a custom connector full slug, UUID or exact unique display name.
+Shows the workspace definition and your saved-account status, plus this Chat's
+account allowance inside a Run. Use connector status for the exact Run account.
 `,
-    ),
   )
   .action(
     withErrorHandler(
-      async (
-        connectorSelector: string,
-        options: { agent?: string; json?: boolean },
-      ) => {
-        const agentId = await resolveConnectorAgentId(options.agent);
+      async (connectorSelector: string, options: { json?: boolean }) => {
         const connectorId = await resolveCustomConnectorId(connectorSelector);
-        const [connector, agentCtx] = await Promise.all([
+        const target = {
+          kind: "custom",
+          customConnectorId: connectorId,
+        } as const;
+        const [connector, allowedTargets] = await Promise.all([
           getCustomConnector(connectorId),
-          resolveCustomAgentContext(agentId),
+          isRunBoundConnectorContext()
+            ? getAllowedChatConnectorTargetKeys()
+            : null,
         ]);
+        const allowedInChat =
+          allowedTargets?.has(connectorAccountTargetKey(target)) ?? null;
         const facts = connector
           ? await readMemberConnectorFacts(connector)
           : null;
@@ -272,18 +203,12 @@ connector selector. A saved account alone does not grant Okou access.
             JSON.stringify(
               {
                 context: "current",
-                target: { kind: "custom", customConnectorId: connectorId },
+                target,
                 state: connector === null ? "unavailable" : "available",
-                agent: agentCtx
-                  ? {
-                      agentId: agentCtx.agentId,
-                      displayName: agentCtx.displayName,
-                    }
-                  : null,
                 connector:
                   connector === null || facts === null
                     ? null
-                    : customConnectorJson(connector, agentCtx, facts),
+                    : customConnectorJson(connector, allowedInChat, facts),
               },
               null,
               2,
@@ -353,13 +278,9 @@ connector selector. A saved account alone does not grant Okou access.
               .join(", ")}`,
           );
         }
-        if (agentCtx) {
+        if (allowedInChat !== null) {
           console.log(
-            `${(chatConnectorAccountsEnabled() ? "Chat access:" : "Authorized:").padEnd(LABEL_WIDTH)}${
-              agentCtx.authorizedIds.has(connector.id)
-                ? chalk.green("yes")
-                : chalk.yellow("no")
-            }`,
+            `${"Chat access:".padEnd(LABEL_WIDTH)}${allowedInChat ? chalk.green("yes") : chalk.yellow("no")}`,
           );
         }
       },
@@ -377,55 +298,17 @@ export const customConnectorCommand = new Command()
   .addCommand(statusCommand)
   .addHelpText(
     "after",
-    modeHelp(
-      `
-Types and authentication:
-  HTTP: none, manual, oauth.
-  MCP over Streamable HTTP: none, manual, oauth, automatic.
-  The definition's authMode is required. Automatic is MCP-only and discovers
-  the server's authentication requirements when a member connects.
+    `
+Types and authentication
+  HTTP supports none, manual, and OAuth. MCP over Streamable HTTP also
+  supports automatic authentication. Each definition declares authMode.
 
-Definitions and access:
-  create/update manage org definitions; list/status show current-member metadata.
-  List JSON hasSavedAccounts reports directory membership only.
-  Status/show JSON accountSummary/memberStatus report target account details and
-  local status separately from definition metadata and Agent authorization.
-  ${
-    chatConnectorAccountsEnabled()
-      ? "Connect a member account, then allow it for this Chat. Shared firewall permissions apply across Chats and accounts. A definition alone does not grant execution access."
-      : `Creating a definition is separate from connecting a member account, granting
-  Agent access, and selecting any fine-grained permissions. This also applies
-  to none/automatic definitions. Members finish connection in the web flow.
-  Custom HTTP connectors with a permission bundle use Connectors > agent access
-  > Permissions. MCP connectors have Agent access but no HTTP permission bundle.`
-  }
-  Builtin permission-request approval links do not apply to custom connectors.
+Definitions and access
+  create/update manage workspace definitions. list/status show saved accounts
+  and current Chat allowance. Use connector list/status for Run account identity.
+  Connect a member account and allow it for the Chat. Review shared HTTP
+  permissions in Connectors settings.
 
-To add a custom connector:
-  Run "okou connector custom create -h" and follow the definition-only creation workflow.`,
-      `
-Types and authentication:
-  HTTP: none, manual, oauth.
-  MCP over Streamable HTTP: none, manual, oauth, automatic.
-  The definition's authMode is required. Automatic is MCP-only and discovers
-  the server's authentication requirements when you connect.
-
-Definitions and access:
-  create/update manage workspace definitions; list/status show your current
-  saved-account metadata, including inside a Run. These commands do not report
-  only the accounts admitted to that Run; use connector list/status for that view.
-  List JSON hasSavedAccounts reports directory membership only.
-  Status/show JSON accountSummary/memberStatus report account details and local
-  status separately from definition metadata and Okou access authorization.
-  A definition does not connect an account, complete OAuth or grant Okou access.
-  Connect an account, then authorize access under the current permission model.
-  Fine-grained HTTP permissions use Connectors settings; MCP access is connector-level.
-  Chat allowances apply only when that capability is enabled; this command does
-  not enable it. Switching accounts does not reset shared firewall permissions.
-  Builtin permission-request approval links do not apply to custom connectors.
-
-To add a custom connector:
-  Run "okou connector custom create -h" for definition schemas and examples.
+Run okou connector custom create -h for definition schemas and examples.
 `,
-    ),
   );
