@@ -312,3 +312,12 @@ chat-composer-model-selection-004	turbo/apps/platform/src/views/okou-page/__test
 chat-composer-model-selection-007	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-model-selection.test.tsx	Keep independent effort selections when changing models	226	passed
 chat-composer-model-selection-010	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-model-selection.test.tsx	Show the Pi fallback without overwriting a saved native preference	265	passed
 chat-composer-model-selection-011	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-model-selection.test.tsx	Save the preferred effort for future chats when Pi displays a fallback	287	passed
+chat-composer-connector-scroll-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-scroll.test.tsx	Preserve the 12-connector overview position while accounts open alongside it	80	passed
+chat-composer-connector-scroll-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-scroll.test.tsx	Keep connector search focus and reset its scroll position on a new query	109	passed
+chat-composer-connector-scroll-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-scroll.test.tsx	Keep focus after removing an open connector from a 1-connector overview	128	passed
+chat-composer-account-selection-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-account-selection.test.tsx	Accounts retain their identity when reconnection is required	95	passed
+chat-composer-account-selection-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-account-selection.test.tsx	Open a single-account chooser and read fresh target accounts on reopen	124	passed
+chat-composer-connector-loading-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-loading.test.tsx	Refresh the remote menu and Chat account inventory independently	65	passed
+chat-composer-connector-loading-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-loading.test.tsx	Render connected connectors while remote resources are unavailable	100	passed
+chat-composer-connector-loading-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-loading.test.tsx	Reopening a pending menu shares the Chat page's inventory request	115	passed
+chat-composer-connector-loading-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-loading.test.tsx	Render remote resources while connected connectors are unavailable	145	passed

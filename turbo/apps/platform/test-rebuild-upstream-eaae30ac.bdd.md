@@ -389,24 +389,6 @@ remote search results keep the selected account once. [Registration](https://git
 - **Then** Remote search results keep the selected account once.
 - **Disposition** not_selected.
 
-## chat-composer-account-selection-003
-
-Accounts retain their identity when reconnection is required. [Registration](https://github.com/okou-ai/okou/blob/4bf10b89e09adce4c9253418d2ad8de1937e3e9e/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-account-selection.test.tsx#L164).
-
-- **Given** A selected chat account has entered the reconnect-required state.
-- **When** Open the account chooser for the connector.
-- **Then** The existing account remains identifiable with its reconnect state.
-- **Disposition** retain.
-
-## chat-composer-account-selection-004
-
-Open a single-account chooser and read fresh target accounts on reopen. [Registration](https://github.com/okou-ai/okou/blob/4bf10b89e09adce4c9253418d2ad8de1937e3e9e/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-account-selection.test.tsx#L183).
-
-- **Given** The actor starts in the product surface described by the scenario.
-- **When** The actor opens the indicated connection surface and follows the available account action.
-- **Then** Open a single-account chooser and read fresh target accounts on reopen. Relevant visible labels or feedback in the upstream scenario include “Renamed account access”.
-- **Disposition** retain.
-
 ## chat-composer-connector-accounts-006
 
 An unavailable account keeps the new-chat draft and attachments (edited while creating: false). [Registration](https://github.com/okou-ai/okou/blob/4bf10b89e09adce4c9253418d2ad8de1937e3e9e/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-accounts.test.tsx#L112).
@@ -496,42 +478,6 @@ Read connected inventory without fetching the connector directory or old authori
 - **When** The actor opens the permission surface and reviews or confirms the requested access.
 - **Then** Read connected inventory without fetching the connector directory or old authorization endpoints.
 - **Disposition** not_selected.
-
-## chat-composer-connector-loading-002
-
-Refresh the remote menu and Chat account inventory independently. [Registration](https://github.com/okou-ai/okou/blob/4bf10b89e09adce4c9253418d2ad8de1937e3e9e/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-loading.test.tsx#L69).
-
-- **Given** The chat exposes remote controls and an account inventory with independent reads.
-- **When** Open, close and reopen the combined menu.
-- **Then** Each surface receives its current data through its owning entry and remains independently usable.
-- **Disposition** retain.
-
-## chat-composer-connector-loading-003
-
-Render connected connectors while remote resources are unavailable. [Registration](https://github.com/okou-ai/okou/blob/4bf10b89e09adce4c9253418d2ad8de1937e3e9e/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-loading.test.tsx#L117).
-
-- **Given** The scenario starts with remote resources are unavailable.
-- **When** The actor opens the indicated connection surface and follows the available account action.
-- **Then** Render connected connectors while remote resources are unavailable.
-- **Disposition** retain.
-
-## chat-composer-connector-loading-004
-
-Reopening a pending menu shares the Chat page's inventory request. [Registration](https://github.com/okou-ai/okou/blob/4bf10b89e09adce4c9253418d2ad8de1937e3e9e/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-loading.test.tsx#L133).
-
-- **Given** The chat account inventory is loading.
-- **When** Close and reopen the menu before the response.
-- **Then** The reopened menu adopts the pending chat inventory and then shows the loaded entries.
-- **Disposition** retain.
-
-## chat-composer-connector-loading-005
-
-Render remote resources while connected connectors are unavailable. [Registration](https://github.com/okou-ai/okou/blob/4bf10b89e09adce4c9253418d2ad8de1937e3e9e/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-loading.test.tsx#L161).
-
-- **Given** The scenario starts with connected connectors are unavailable.
-- **When** The actor opens the indicated connection surface and follows the available account action.
-- **Then** Render remote resources while connected connectors are unavailable. Relevant visible labels or feedback in the upstream scenario include “Available computer”, “Accounts are unavailable for this connector.”.
-- **Disposition** retain.
 
 ## chat-composer-connectors-001
 
