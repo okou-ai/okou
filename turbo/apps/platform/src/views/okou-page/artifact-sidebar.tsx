@@ -663,12 +663,12 @@ function ArtifactSidebarActions({
             url={url}
           />
         )}
+        {groupedActions && <ArtifactActionSeparator />}
         <ArtifactFullscreenAction
           fullscreen={fullscreen}
           onToggleFullscreen={onToggleFullscreen}
         />
       </ArtifactPreviewActionGroup>
-      {groupedActions && <ArtifactActionSeparator />}
       {compactActions && !groupedActions ? (
         <ArtifactMoreActions onClose={onClose} />
       ) : (

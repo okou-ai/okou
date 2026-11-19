@@ -1489,7 +1489,7 @@ function ArtifactPreviewDialogActions({
           iconSize={18}
           menu={groupedActions}
         />
-        {!groupedActions && <ArtifactActionSeparator />}
+        <ArtifactActionSeparator />
         {showSplitView && (
           <ArtifactDialogSplitViewButton onClick={openInSplitView} />
         )}
@@ -1502,7 +1502,6 @@ function ArtifactPreviewDialogActions({
           />
         )}
       </ArtifactPreviewActionGroup>
-      {groupedActions && <ArtifactActionSeparator />}
       <ArtifactPreviewCloseButton />
     </div>
   );
