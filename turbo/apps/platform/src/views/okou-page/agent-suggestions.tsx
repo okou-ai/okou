@@ -16,6 +16,7 @@ import {
   Paperclip,
 } from "lucide-react";
 import { Button, Textarea, buttonVariants, cn } from "@okouai/ui";
+import type { SuggestionOption } from "@okouai/api-contracts/contracts/feed";
 import {
   agentSuggestionEntries$,
   type AgentSuggestionEntry,
@@ -32,6 +33,23 @@ import { ROUTES } from "../../signals/route-paths.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { Link } from "../router/link.tsx";
 import { ForYouCardHeading } from "./for-you-card-heading.tsx";
+
+function SuggestionOptionContent({
+  option,
+}: {
+  readonly option: SuggestionOption;
+}) {
+  return (
+    <span className="flex min-w-0 flex-1 flex-col gap-0.5 wrap-break-word">
+      <span className="leading-5">{option.label}</span>
+      {option.description && (
+        <span className="text-xs leading-5 text-muted-foreground">
+          {option.description}
+        </span>
+      )}
+    </span>
+  );
+}
 
 function CloseSettledSuggestion({
   entry,
@@ -360,22 +378,25 @@ export function AgentSuggestionCard({
               type="button"
               variant="quiet"
               disabled={pending}
-              className="min-h-14 w-full justify-between gap-3 rounded-3xl bg-nested-fill px-4 py-3 text-left text-sm font-normal text-foreground"
+              className="h-auto min-h-14 w-full justify-between gap-3 whitespace-normal rounded-3xl bg-nested-fill px-4 py-3 text-left text-sm font-normal text-foreground"
               aria-label={option.label}
-              aria-description={
+              aria-description={[
+                option.description,
                 option.threadId
                   ? t(($) => {
                       return $.chat.agentSuggestions.editDraft;
                     })
                   : t(($) => {
                       return $.chat.agentSuggestions.sendNew;
-                    })
-              }
+                    }),
+              ]
+                .filter(Boolean)
+                .join(" ")}
               onClick={() => {
                 detach(start(item.id, option.id, signal), Reason.DomCallback);
               }}
             >
-              <span className="min-w-0 truncate">{option.label}</span>
+              <SuggestionOptionContent option={option} />
               {option.threadId ? (
                 <SquarePen
                   aria-hidden

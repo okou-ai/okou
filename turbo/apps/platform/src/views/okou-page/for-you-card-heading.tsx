@@ -19,9 +19,9 @@ export function ForYouCardHeading({
   const focusTitle = useSet(focusSuggestionTitleOnRef$);
   const illustration = useLastResolved(forYouIllustrations$)?.[id];
   return (
-    <header className="grid min-h-32 grid-cols-[minmax(0,1fr)_7rem] items-center gap-4 max-[360px]:grid-cols-[minmax(0,1fr)_5.75rem] max-[360px]:gap-2.5 sm:min-h-40 sm:grid-cols-[minmax(0,1fr)_11rem] sm:gap-6">
+    <header className="grid grid-cols-[minmax(0,1fr)_7rem] items-start gap-4 max-[360px]:grid-cols-[minmax(0,1fr)_5.75rem] max-[360px]:gap-2.5 sm:grid-cols-[minmax(0,1fr)_11rem] sm:gap-6">
       <div className="min-w-0">
-        {source && <div className="mb-3 flex min-w-0">{source}</div>}
+        {source && <div className="mb-2 flex min-w-0">{source}</div>}
         <h3
           id={`suggestion-title-${id}`}
           ref={active ? focusTitle : undefined}
@@ -36,7 +36,7 @@ export function ForYouCardHeading({
           </p>
         )}
       </div>
-      <div className="flex items-center justify-center p-2.5 max-[360px]:p-2 sm:p-3">
+      <div className="flex items-center justify-center px-2.5 max-[360px]:px-2 sm:px-3">
         {illustration && (
           <img
             data-slot="for-you-illustration"
