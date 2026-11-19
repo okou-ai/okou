@@ -17,7 +17,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -161,7 +160,6 @@ private fun PreferenceFeedback(state: MemberPreferencesState, retry: () -> Unit)
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun PaletteOptions(
     selected: UserPreferencesColorTheme,
@@ -188,7 +186,6 @@ private fun PaletteOptions(
             Surface(
                 modifier =
                     Modifier.weight(1f)
-                        .fillMaxRowHeight()
                         .clip(shape)
                         .selectable(
                             selected = checked,

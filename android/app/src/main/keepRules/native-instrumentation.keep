@@ -41,7 +41,7 @@
   int instructions_refresh;
   int instructions_reload;
   int instructions_save;
-  int instructions_section;
+  int instructions_title;
   int instructions_unsaved;
   int language_en_us;
   int language_zh_hant;
