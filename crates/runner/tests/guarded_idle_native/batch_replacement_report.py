@@ -11,7 +11,7 @@ import progress_report as foreground
 import later_parking_report as later
 import pressure_report as pressure
 import report
-import status_failure_report as failure
+import status_evidence
 from cleanup_report import COUNTS, accounting, has_accounting_shape, supplied_policy
 from report import exact
 
@@ -62,11 +62,11 @@ def validate(directory, cases=CASES, policy_key="native_batch_replacement_policy
             ordered, "replacement original saving/old refusal/new recovery order changed")
         blocked, tail, pool, progress, saved, waiting, refused, retired, joined = [e["evidence"] for e in events]
         path = blocked.get("status_path")
-        if not failure.valid_status_path(path) or path in paths:
+        if not status_evidence.valid_status_path(path) or path in paths:
             raise ValueError("replacement private status path changed")
         paths.add(path)
         initial = blocked.get("published_status")
-        failure.status(initial,sandbox=identity[0])
+        status_evidence.original_status(initial,sandbox=identity[0])
         reuse = initial["idle_sandboxes"][0]["reuse_key"]
         selected = blocked.get("selected_revision")
         if not pressure.integer(selected,1):
@@ -120,7 +120,7 @@ def validate(directory, cases=CASES, policy_key="native_batch_replacement_policy
         resumed = batch.clock(waiting.get("source_resumed_ns"),held,events[5]["monotonic_ns"])
         polled = batch.clock(waiting.get("status_wait_polled_ns"),resumed,events[5]["monotonic_ns"])
         before,after = waiting.get("status_waits_before"),waiting.get("status_waits_after")
-        if not failure.status_wait_advanced(before, after):
+        if not status_evidence.status_wait_advanced(before, after):
             raise ValueError("replacement final status wait not observed")
         second = foreground.heartbeat(waiting.get("heartbeat"),2,polled,events[5]["monotonic_ns"])
         if first != second or first in runners:
@@ -140,7 +140,7 @@ def validate(directory, cases=CASES, policy_key="native_batch_replacement_policy
             "replacement final status progress/custody missing")
         released = batch.clock(refused.get("status_released_ns"),events[5]["monotonic_ns"],events[6]["monotonic_ns"])
         completed = batch.clock(refused.get("batch_joined_ns"),released,events[6]["monotonic_ns"])
-        later.current_status(refused.get("published_status"),initial,new,reuse)
+        status_evidence.current_status(refused.get("published_status"),initial,new,reuse)
         exact(refused,{"status_released_ns":released,"batch_joined_ns":completed,"selected":1,"completed":0,
             "uncertain":0,"not_started":1,"status_error":False,"is_complete":False,
             "refused_sandbox_id":identity[0],"refused_reuse_key":reuse,"error":"AccountingChanged",
@@ -148,7 +148,7 @@ def validate(directory, cases=CASES, policy_key="native_batch_replacement_policy
             "incoming_exit_polled_pending":True,"allocated":[2,4096,1]},"old batch adopted incoming or changed exact refusal")
         started = batch.clock(retired.get("started_ns"),events[6]["monotonic_ns"],events[7]["monotonic_ns"])
         completed = batch.clock(retired.get("joined_ns"),started,events[7]["monotonic_ns"])
-        later.current_status(retired.get("published_status"),refused["published_status"])
+        status_evidence.current_status(retired.get("published_status"),refused["published_status"])
         exact(retired,{"started_ns":started,"joined_ns":completed,"selected":1,"completed":1,"uncertain":0,
             "not_started":0,"status_error":False,"is_complete":True,"incoming_exit_confirmed":True,
             "published_status":retired["published_status"],"allocated":[0,0,0]},"incoming separate recovery did not join")
