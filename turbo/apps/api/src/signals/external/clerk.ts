@@ -89,7 +89,6 @@ export async function verifyClerkOAuthAccessToken(
   const verified = await settle(
     verifyToken(token, {
       secretKey: env("CLERK_SECRET_KEY"),
-      audience: config.resource,
       headerType: ["at+jwt", "application/at+jwt"],
       clockSkewInMs: 0,
     }),
