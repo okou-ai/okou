@@ -11,7 +11,7 @@ import report
 import status_failure_report as failure
 from cleanup_report import COUNTS, accounting, coverage, supplied_policy
 from later_parking_report import current_status
-from snapshot_report import exact
+from report import exact
 
 PREFIX = "NATIVE_BATCH_ABA_WITNESS "
 CASES = {f"BatchAba-{mode}" for mode in ("fresh", "snapshot")}

@@ -10,7 +10,7 @@ import progress_report as foreground
 import pressure_report as pressure
 import report
 from cleanup_report import accounting, coverage, supplied_policy
-from snapshot_report import exact
+from report import exact
 
 PREFIX = "NATIVE_STATUS_FAILURE_WITNESS "
 CASES = {f"StatusFailure-{mode}" for mode in ("fresh", "snapshot")}

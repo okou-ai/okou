@@ -9,12 +9,6 @@ import report
 BYTES = 4 * 1024**3
 
 
-def exact(actual, expected, reason):
-    # JSON distinguishes booleans and integers, including in nested leases.
-    if json.dumps(actual, sort_keys=True) != json.dumps(expected, sort_keys=True):
-        raise ValueError(reason)
-
-
 def original_inputs(metadata, artifacts, prefix):
     raw_policy, raw_inputs = metadata[prefix+"_policy_json"], metadata[prefix+"_inputs_json"]
     mismatch_message = "startup raw policy/hash mismatch"
