@@ -10,6 +10,20 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.95.3](https://github.com/okou-ai/okou/compare/api-v2.95.2...api-v2.95.3) (2026-11-19)
+
+
+### Bug Fixes
+
+* **api:** isolate optional run packages and provision missing memory ([#49199](https://github.com/okou-ai/okou/issues/49199)) ([72c3c69](https://github.com/okou-ai/okou/commit/72c3c690b21f4934b87706d55dbd8f6c4cefa4ff))
+* **api:** state run limits and saved data responses as facts ([#49270](https://github.com/okou-ai/okou/issues/49270)) ([6c2ec0a](https://github.com/okou-ai/okou/commit/6c2ec0a09b22dd1bed15ccaa32c4b05886f5d217))
+
+
+### Refactoring
+
+* **api:** classify runner dispatch custody exhaustively ([#49202](https://github.com/okou-ai/okou/issues/49202)) ([ed9c0ee](https://github.com/okou-ai/okou/commit/ed9c0eecfa42a0ec5e4b3fda0136ba112fdf1df8))
+* **api:** enforce queued launch readiness at preparation ([#49204](https://github.com/okou-ai/okou/issues/49204)) ([60283b4](https://github.com/okou-ai/okou/commit/60283b4a3dbc984be44d9c4eabfe83c9c712f01b))
+
 ## [2.95.2](https://github.com/okou-ai/okou/compare/api-v2.95.1...api-v2.95.2) (2026-11-19)
 
 

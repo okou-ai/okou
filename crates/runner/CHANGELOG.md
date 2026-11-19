@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.249.66](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.65...runner-rs-v0.249.66) (2026-11-19)
+
+
+### Refactoring
+
+* **runner:** share native status evidence validation ([#49271](https://github.com/okou-ai/okou/issues/49271)) ([7b5327f](https://github.com/okou-ai/okou/commit/7b5327fb24b16e1b47e6639d793028d550c9ff8e))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.249.65](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.64...runner-rs-v0.249.65) (2026-11-19)
 
 

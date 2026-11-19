@@ -13,6 +13,13 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1153.1](https://github.com/okou-ai/okou/compare/app-v0.1153.0...app-v0.1153.1) (2026-11-19)
+
+
+### Bug Fixes
+
+* **platform:** expand the full composer inside for you cards ([#49200](https://github.com/okou-ai/okou/issues/49200)) ([a678cec](https://github.com/okou-ai/okou/commit/a678cec8667bc2fc6a9a5f8cf9f1bb9a334d465b))
+
 ## [0.1153.0](https://github.com/okou-ai/okou/compare/app-v0.1152.0...app-v0.1153.0) (2026-11-19)
 
 
