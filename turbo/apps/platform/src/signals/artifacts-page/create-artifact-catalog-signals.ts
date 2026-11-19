@@ -3,14 +3,7 @@ import {
   createAttachmentPreviewSignals,
   type AttachmentPreviewSignals,
 } from "../attachment-resource-url.ts";
-import {
-  command,
-  computed,
-  state,
-  type Command,
-  type Computed,
-  type State,
-} from "ccstate";
+import { command, computed, state, type Command, type Computed } from "ccstate";
 import { artifactCatalogContract } from "@okouai/api-contracts/client/artifact-catalog";
 import type {
   ArtifactCatalogKind,
@@ -103,35 +96,26 @@ interface ArtifactCatalogSelection {
   readonly selectedArtifactPreview$: Computed<AttachmentPreviewSignals | null>;
 }
 
-export interface ArtifactCatalogSignals extends ArtifactCatalogSelection {
-  readonly selectedKind$: Computed<ArtifactCatalogKind | null>;
-  readonly setKind$: Command<void, [ArtifactCatalogKind | null]>;
+export interface ArtifactCatalogViewSignals extends ArtifactCatalogSelection {
   readonly reload$: Command<void, []>;
   readonly catalog$: Computed<Promise<ArtifactCatalogPage>>;
   readonly loadMore$: Command<Promise<void>, [AbortSignal]>;
   readonly loadThroughArtifact$: Command<Promise<void>, [string, AbortSignal]>;
-  readonly createSelection: () => ArtifactCatalogSelection;
 }
 
-interface CatalogPagingState {
-  readonly chatThreadId: string | undefined;
-  readonly kind$: State<ArtifactCatalogKind | null>;
-  readonly reloadVersion$: State<number>;
-  readonly generation$: State<number>;
-  readonly pages$: State<readonly LoadedArtifactCatalogPage[]>;
+export interface ArtifactCatalogSignals extends ArtifactCatalogViewSignals {
+  readonly selectedKind$: Computed<ArtifactCatalogKind | null>;
+  readonly setKind$: Command<void, [ArtifactCatalogKind | null]>;
 }
 
-function createCatalogPagingSignals(paging: CatalogPagingState): {
-  readonly catalog$: Computed<Promise<ArtifactCatalogPage>>;
-  readonly loadMore$: Command<Promise<void>, [AbortSignal]>;
-} {
-  const { chatThreadId } = paging;
-
+function createCatalogSource(chatThreadId?: string) {
+  const kind$ = state<ArtifactCatalogKind | null>(null);
+  const reloadVersion$ = state(0);
   const firstPage$ = computed(
     async (get): Promise<LoadedArtifactCatalogPage> => {
       const revision = get(artifactCatalogRevision$);
-      get(paging.reloadVersion$);
-      const kind = get(paging.kind$);
+      get(reloadVersion$);
+      const kind = get(kind$);
       const client = get(apiClient$)(artifactCatalogContract);
       const result = await accept(
         client.list({
@@ -146,6 +130,20 @@ function createCatalogPagingSignals(paging: CatalogPagingState): {
       return withThumbnailLoad(result.body, revision);
     },
   );
+  return { chatThreadId, kind$, reloadVersion$, firstPage$ };
+}
+
+type CatalogSource = ReturnType<typeof createCatalogSource>;
+
+function createCatalogPagingSignals({
+  chatThreadId,
+  kind$,
+  firstPage$,
+}: CatalogSource) {
+  const pages$ = state<readonly LoadedArtifactCatalogPage[]>([]);
+  const resetPages$ = command(({ set }) => {
+    set(pages$, []);
+  });
 
   /**
    * Everything loaded so far, in server order. Reading this triggers the first
@@ -153,7 +151,7 @@ function createCatalogPagingSignals(paging: CatalogPagingState): {
    */
   const catalog$ = computed(async (get): Promise<ArtifactCatalogPage> => {
     const firstPage = await get(firstPage$);
-    const appendedPages = get(paging.pages$).filter((page) => {
+    const appendedPages = get(pages$).filter((page) => {
       return page.revision === firstPage.revision;
     });
     const lastPage = appendedPages.at(-1) ?? firstPage;
@@ -171,16 +169,11 @@ function createCatalogPagingSignals(paging: CatalogPagingState): {
   const loadMore$ = command(
     async ({ get, set }, signal: AbortSignal): Promise<void> => {
       const revision = get(artifactCatalogRevision$);
-      const generation = get(paging.generation$);
-      const kind = get(paging.kind$);
-      const pages = get(paging.pages$);
+      const kind = get(kind$);
+      const pages = get(pages$);
       const loaded = await get(catalog$);
       signal.throwIfAborted();
-      if (
-        get(artifactCatalogRevision$) !== revision ||
-        get(paging.generation$) !== generation ||
-        get(paging.pages$) !== pages
-      ) {
+      if (get(artifactCatalogRevision$) !== revision || get(pages$) !== pages) {
         return;
       }
       const cursor = loaded.nextCursor;
@@ -202,14 +195,10 @@ function createCatalogPagingSignals(paging: CatalogPagingState): {
         signal,
       );
       signal.throwIfAborted();
-      if (
-        get(artifactCatalogRevision$) !== revision ||
-        get(paging.generation$) !== generation ||
-        get(paging.pages$) !== pages
-      ) {
+      if (get(artifactCatalogRevision$) !== revision || get(pages$) !== pages) {
         return;
       }
-      set(paging.pages$, [
+      set(pages$, [
         ...pages.filter((page) => {
           return page.revision === revision;
         }),
@@ -218,13 +207,12 @@ function createCatalogPagingSignals(paging: CatalogPagingState): {
     },
   );
 
-  return { catalog$, loadMore$ };
+  return { catalog$, loadMore$, resetPages$ };
 }
 
 function createCatalogSelectionSignals(
   catalog$: Computed<Promise<ArtifactCatalogPage>>,
-  reloadVersion$: State<number>,
-  chatThreadId: string | undefined,
+  { reloadVersion$, chatThreadId }: CatalogSource,
 ): ArtifactCatalogSelection {
   const internalDetailVersion$ = state(0);
   const reloadSelectedArtifactDetail$ = command(({ set }) => {
@@ -319,58 +307,9 @@ function createCatalogSelectionSignals(
   };
 }
 
-/**
- * One independent catalog view. The `/artifacts` page holds a module-global
- * instance over the whole org catalog; each chat thread sidebar holds its own
- * instance narrowed by `chatThreadId`. Loaded pages live in the instance, so a
- * closed sidebar reopens on its cache while `reload$` refreshes the first page.
- */
-export function createArtifactCatalogSignals(
-  options: { readonly chatThreadId?: string } = {},
-): ArtifactCatalogSignals {
-  const internalKind$ = state<ArtifactCatalogKind | null>(null);
-  const internalReload$ = state(0);
-  const internalGeneration$ = state(0);
-  const internalPages$ = state<readonly LoadedArtifactCatalogPage[]>([]);
-
-  const resetPages$ = command(({ set }) => {
-    set(internalPages$, []);
-    set(internalGeneration$, (generation) => {
-      return generation + 1;
-    });
-  });
-
-  const setKind$ = command(({ set }, kind: ArtifactCatalogKind | null) => {
-    set(internalKind$, kind);
-    set(resetPages$);
-  });
-
-  /**
-   * Re-read the first page. Later pages are dropped rather than re-fetched:
-   * new artifacts always land at the head, so the first page is the only one
-   * that can have changed.
-   */
-  const reload$ = command(({ set }) => {
-    set(resetPages$);
-    set(internalReload$, (version) => {
-      return version + 1;
-    });
-  });
-
-  const { catalog$, loadMore$ } = createCatalogPagingSignals({
-    chatThreadId: options.chatThreadId,
-    kind$: internalKind$,
-    reloadVersion$: internalReload$,
-    generation$: internalGeneration$,
-    pages$: internalPages$,
-  });
-  const createSelection = () => {
-    return createCatalogSelectionSignals(
-      catalog$,
-      internalReload$,
-      options.chatThreadId,
-    );
-  };
+function createCatalogView(source: CatalogSource) {
+  const { catalog$, loadMore$, resetPages$ } =
+    createCatalogPagingSignals(source);
 
   const loadThroughArtifact$ = command(
     async ({ get, set }, artifactId: string, signal: AbortSignal) => {
@@ -399,15 +338,58 @@ export function createArtifactCatalogSignals(
   );
 
   return {
-    selectedKind$: computed((get) => {
-      return get(internalKind$);
-    }),
-    setKind$,
-    reload$,
     catalog$,
     loadMore$,
     loadThroughArtifact$,
-    createSelection,
-    ...createSelection(),
+    resetPages$,
+    ...createCatalogSelectionSignals(catalog$, source),
+  };
+}
+
+/** Re-read the first page and discard every view's cursors from the old page. */
+function createCatalogReload$(
+  { reloadVersion$ }: CatalogSource,
+  ...resets: readonly Command<void, []>[]
+) {
+  return command(({ set }) => {
+    for (const reset of resets) {
+      set(reset);
+    }
+    set(reloadVersion$, (version) => {
+      return version + 1;
+    });
+  });
+}
+
+export function createArtifactCatalogSignals(): ArtifactCatalogSignals {
+  const source = createCatalogSource();
+  const { resetPages$, ...view } = createCatalogView(source);
+  const setKind$ = command(({ set }, kind: ArtifactCatalogKind | null) => {
+    set(source.kind$, kind);
+    set(resetPages$);
+  });
+  return {
+    ...view,
+    selectedKind$: computed((get) => {
+      return get(source.kind$);
+    }),
+    setKind$,
+    reload$: createCatalogReload$(source, resetPages$),
+  };
+}
+
+/** Each chat shares one unfiltered first page. Each view owns its cursor and selection. */
+export function createThreadArtifactCatalogs(chatThreadId: string): {
+  readonly gallery: ArtifactCatalogViewSignals;
+  readonly resources: ArtifactCatalogViewSignals;
+} {
+  const source = createCatalogSource(chatThreadId);
+  const { resetPages$: resetGallery$, ...gallery } = createCatalogView(source);
+  const { resetPages$: resetResources$, ...resources } =
+    createCatalogView(source);
+  const reload$ = createCatalogReload$(source, resetGallery$, resetResources$);
+  return {
+    gallery: { ...gallery, reload$ },
+    resources: { ...resources, reload$ },
   };
 }

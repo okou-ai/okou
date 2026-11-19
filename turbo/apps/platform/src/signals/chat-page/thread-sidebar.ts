@@ -13,10 +13,7 @@ import {
   type State,
 } from "ccstate";
 
-import {
-  createArtifactCatalogSignals,
-  type ArtifactCatalogSignals,
-} from "../artifacts-page/create-artifact-catalog-signals.ts";
+import type { ArtifactCatalogViewSignals } from "../artifacts-page/create-artifact-catalog-signals.ts";
 import { createCatalogArtifactPreviewSignals } from "../artifacts-page/artifact-catalog-preview.ts";
 import {
   createTextPreviewComputed,
@@ -267,7 +264,7 @@ export interface ThreadSidebarSignals {
    * close/reopen — ccstate computeds keep the cache — and are only dropped
    * with the thread signals themselves on a thread switch.
    */
-  readonly artifactCatalog: ArtifactCatalogSignals;
+  readonly artifactCatalog: ArtifactCatalogViewSignals;
   readonly selectedArtifactText$: TextPreviewComputed;
   readonly selectedArtifactMarkdownTree$: MarkdownPreviewTreeComputed;
 }
@@ -349,6 +346,7 @@ function createThreadAutomationEditorSignals() {
 export function createThreadSidebarSignals(
   threadId: string,
   mailRegistry: MailDraftCardSignalsRegistry,
+  artifactCatalog: ArtifactCatalogViewSignals,
 ): ThreadSidebarSignals {
   const internalTarget$ = state<NonMailThreadSidebarTarget | null>(null);
   const internalEntryAnimationsEnabled$ = state(false);
@@ -359,9 +357,6 @@ export function createThreadSidebarSignals(
   const diagram = createArtifactDiagramPreviewSignals();
   const { resetSidebarSessionSignal$, startSession$ } =
     createThreadSidebarSessionSignals(diagram.dispose$);
-  const artifactCatalog = createArtifactCatalogSignals({
-    chatThreadId: threadId,
-  });
   const preview = createCatalogArtifactPreviewSignals(
     artifactCatalog,
     diagram.open$,

@@ -1,5 +1,5 @@
 import { command, computed, state, type Computed } from "ccstate";
-import type { ArtifactCatalogSignals } from "../artifacts-page/create-artifact-catalog-signals.ts";
+import type { ArtifactCatalogViewSignals } from "../artifacts-page/create-artifact-catalog-signals.ts";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../../i18n/index.ts";
 import { publicAttachmentUrl } from "../../views/okou-page/attachment-url.ts";
@@ -9,22 +9,18 @@ import {
   hostedSiteUrlChanges$,
 } from "../hosted-site-url-changes.ts";
 import type { ChatRelationSignals } from "./chat-relations.ts";
-
-type CopySelection = Pick<
-  ArtifactCatalogSignals,
-  "selectArtifact$" | "ensureSelectedArtifactPreview$"
->;
+import type { ThreadSidebarSignals } from "./thread-sidebar.ts";
 
 export const copyChatResourceArtifact$ = command(
   async (
     { get, set },
-    selection: CopySelection,
+    catalog: ArtifactCatalogViewSignals,
     artifactId: string,
     signal: AbortSignal,
   ) => {
-    set(selection.selectArtifact$, artifactId);
+    set(catalog.selectArtifact$, artifactId);
     const preview = await set(
-      selection.ensureSelectedArtifactPreview$,
+      catalog.ensureSelectedArtifactPreview$,
       artifactId,
       signal,
     );
@@ -58,7 +54,9 @@ export const copyChatResourceArtifact$ = command(
   },
 );
 
-function createChatResourcePanelSignals() {
+function createChatResourcePanelSignals(
+  reloadCatalog$: ArtifactCatalogViewSignals["reload$"],
+) {
   // A header popover like Emails: a press opens it, an outside press, focus
   // leaving or Escape closes it. Each thread visit builds a new panel graph,
   // so every visit starts closed.
@@ -67,18 +65,30 @@ function createChatResourcePanelSignals() {
     open$: computed((get) => {
       return get(open$);
     }),
-    setOpen$: command(({ set }, open: boolean) => {
-      set(open$, open);
-    }),
+    setOpen$: command(
+      ({ set }, open: boolean, galleryRefreshFailed: boolean) => {
+        if (open && galleryRefreshFailed) {
+          set(reloadCatalog$);
+        }
+        set(open$, open);
+      },
+    ),
   };
 }
 
 export function createChatResourceSignals(
-  catalog: ArtifactCatalogSignals,
+  catalog: ArtifactCatalogViewSignals,
   initialEventsReady$: Computed<boolean>,
   relations: Pick<ChatRelationSignals, "origin$" | "chats" | "closeMessages$">,
+  gallery: Pick<ThreadSidebarSignals, "artifactCatalog" | "target$">,
 ) {
-  const panel = createChatResourcePanelSignals();
+  const panel = createChatResourcePanelSignals(catalog.reload$);
+  // Opening resources can retry a failed read from the already-open gallery.
+  const openGalleryCatalog$ = computed((get) => {
+    return get(gallery.target$)?.type === "artifacts"
+      ? get(gallery.artifactCatalog.catalog$)
+      : null;
+  });
   const content$ = computed(async (get) => {
     if (!get(initialEventsReady$)) {
       return null;
@@ -130,8 +140,8 @@ export function createChatResourceSignals(
     ),
     content$,
     ready$,
-    loadMore$: catalog.loadMore$,
-    copySelection: catalog.createSelection(),
+    catalog,
+    openGalleryCatalog$,
     ...panel,
   };
 }

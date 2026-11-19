@@ -4,6 +4,7 @@ import {
   useGet,
   useLastLoadable,
   useLastResolved,
+  useLoadableState,
   useSet,
 } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
@@ -75,6 +76,7 @@ function ChatResourcesButtonInner({
   const resources = thread.resources;
   const open = useGet(resources.open$);
   const setOpen = useSet(resources.setOpen$);
+  const galleryCatalogState = useLoadableState(resources.openGalleryCatalog$);
   const visible = !transitioning && open;
   const copyLabel = t(($) => {
     return $.chat.resources.copyLink;
@@ -90,7 +92,7 @@ function ChatResourcesButtonInner({
     <Popover
       open={visible}
       onOpenChange={(nextOpen) => {
-        setOpen(nextOpen);
+        setOpen(nextOpen, galleryCatalogState === "hasError");
       }}
     >
       <ChatHeaderIconButton
@@ -304,7 +306,7 @@ function ChatResourceArtifacts({
   readonly children: ReactNode;
 }) {
   const { t } = useTranslation();
-  const [paging, loadMore] = useLoadableSet(thread.resources.loadMore$);
+  const [paging, loadMore] = useLoadableSet(thread.resources.catalog.loadMore$);
   const pageSignal = useGet(pageSignal$);
   const toggleSection = useSet(thread.resources.toggleSection$);
   if (artifactCount === 0) {
@@ -380,7 +382,7 @@ function ChatResourcesBody({
   };
   const onCopy = (artifactId: string) => {
     detach(
-      copyArtifact(thread.resources.copySelection, artifactId, pageSignal),
+      copyArtifact(thread.resources.catalog, artifactId, pageSignal),
       Reason.DomCallback,
     );
   };

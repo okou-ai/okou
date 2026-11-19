@@ -40,6 +40,7 @@ import {
 import { i18n } from "../../i18n/index.ts";
 import { createChatResourceSignals } from "./chat-resources.ts";
 import { createThreadMailSignals } from "./thread-mail.ts";
+import { createThreadArtifactCatalogs } from "../artifacts-page/create-artifact-catalog-signals.ts";
 import { createChatRelationSignals } from "./chat-relations.ts";
 import {
   createDraftSignals,
@@ -2302,7 +2303,12 @@ function createEventChangeEffects({
     [boolean, AbortSignal]
   >;
 }) {
-  const sidebar = createThreadSidebarSignals(threadId, mailDraftCardSignals);
+  const catalogs = createThreadArtifactCatalogs(threadId);
+  const sidebar = createThreadSidebarSignals(
+    threadId,
+    mailDraftCardSignals,
+    catalogs.gallery,
+  );
   const locallyMarkedReadAt$ = state<string | undefined>(undefined);
   const markThreadReadIfNeeded$ = createMarkThreadReadIfNeeded({
     threadId,
@@ -2348,7 +2354,7 @@ function createEventChangeEffects({
   const eventChangeHandler: ChatEventChangeHandler = Object.freeze({
     command$: afterEventsChange$,
   });
-  return { sidebar, eventChangeHandler };
+  return { sidebar, resourceCatalog: catalogs.resources, eventChangeHandler };
 }
 
 function createChatEventPresentationLifecycle({
@@ -2560,6 +2566,7 @@ function createChatThreadMessagePipeline({
   return {
     scroll,
     sidebar: effects.sidebar,
+    resourceCatalog: effects.resourceCatalog,
     imageNavigation: createThreadImageNavigationSignals(
       projections.eventImageGroups$,
       effects.sidebar.target$,
@@ -4071,9 +4078,10 @@ export function createChatPanelSignals(
       messagePipeline.latestRunFinishCreatedAt$,
     ),
     resources: createChatResourceSignals(
-      messages.sidebar.artifactCatalog,
+      messagePipeline.resourceCatalog,
       messagePipeline.initialEventsReady$,
       relations,
+      messages.sidebar,
     ),
     relations,
     browserPresence,
