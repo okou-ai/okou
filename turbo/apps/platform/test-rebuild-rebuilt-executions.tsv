@@ -1439,3 +1439,12 @@ ssh-tailscale-settings-008	turbo/apps/platform/src/views/okou-page/__tests__/ssh
 ssh-tailscale-settings-009	turbo/apps/platform/src/views/okou-page/__tests__/ssh-tailscale-settings.test.tsx	An unconfirmed SSH creation keeps its draft frozen	250	passed
 ssh-tailscale-settings-010	turbo/apps/platform/src/views/okou-page/__tests__/ssh-tailscale-settings.test.tsx	A retained tailscale VNC dependency opens its exact SSH host for rebind	280	passed
 ssh-tailscale-settings-011	turbo/apps/platform/src/views/okou-page/__tests__/ssh-tailscale-settings.test.tsx	A retained cloudflare_access VNC dependency opens its exact SSH host for rebind	280	passed
+vnc-lifecycle-002	turbo/apps/platform/src/views/okou-page/__tests__/vnc-lifecycle.test.tsx	A same-owner session replacement closes the form and cannot revive its password	93	passed
+vnc-lifecycle-003	turbo/apps/platform/src/views/okou-page/__tests__/vnc-lifecycle.test.tsx	Returning to an owner never revives an abandoned uncertain credential draft	111	passed
+vnc-authorization-001	turbo/apps/platform/src/views/okou-page/__tests__/vnc-authorization.test.tsx	The inline card allows only this chat and shows the desktop and access effect	75	passed
+vnc-authorization-002	turbo/apps/platform/src/views/okou-page/__tests__/vnc-authorization.test.tsx	The direct page waits for connector approvals and requesting Run completion	116	passed
+vnc-authorization-004	turbo/apps/platform/src/views/okou-page/__tests__/vnc-authorization.test.tsx	Continuation failure can be retried on the approved request without a second grant	151	passed
+vnc-authorization-005	turbo/apps/platform/src/views/okou-page/__tests__/vnc-authorization.test.tsx	VNC and SSH requests with the same ID remain separate actionable cards	190	passed
+vnc-access-001	turbo/apps/platform/src/views/okou-page/__tests__/vnc-access.test.tsx	Chat VNC setup appears and filters	19	passed
+vnc-delete-conflicts-001	turbo/apps/platform/src/views/okou-page/__tests__/vnc-delete-conflicts.test.tsx	A stale VNC host generation blocks deletion	92	passed
+vnc-delete-conflicts-002	turbo/apps/platform/src/views/okou-page/__tests__/vnc-delete-conflicts.test.tsx	A VNC credential deletion rejected with VNC_CREDENTIAL_REVISION_CONFLICT remains blocked	131	passed
