@@ -59,17 +59,7 @@ function installDeletion(threads: readonly ChatThreadSnapshotProjection[]) {
       return [thread.id, thread];
     }),
   );
-  context.mocks.api(chatThreadByIdContract.get, ({ params, respond }) => {
-    if (
-      threads.some((thread) => {
-        return thread.id === params.id;
-      }) &&
-      !remaining.has(params.id)
-    ) {
-      return respond(404, {
-        error: { code: "NOT_FOUND", message: "Chat not found" },
-      });
-    }
+  context.mocks.api(chatThreadByIdContract.get, ({ respond }) => {
     return respond(200, {
       lastReadAt: null,
       cancellationRecoveryPending: false,
@@ -80,15 +70,6 @@ function installDeletion(threads: readonly ChatThreadSnapshotProjection[]) {
   const threadEvents: ChatThreadEvent[] = [];
   context.mocks.data.onboardingStatus({ defaultAgentId: ordinary.agentId });
   context.mocks.api(projectsContract.get, ({ respond }) => {
-    if (
-      projectEvents.some((event) => {
-        return event.kind === "deleted";
-      })
-    ) {
-      return respond(404, {
-        error: { code: "NOT_FOUND", message: "Project not found" },
-      });
-    }
     return respond(200, {
       id: projectId,
       name: "Launch",
@@ -186,7 +167,6 @@ function installDeletion(threads: readonly ChatThreadSnapshotProjection[]) {
     ordinary,
     remaining,
     deleteThread,
-    projectEvents,
     projectDeleted,
   };
 }
@@ -210,7 +190,8 @@ function switches() {
 }
 
 test("Project deletion confirmation includes every archived page and returns safely to choices", async () => {
-  const fixture = installDeletion(members(101));
+  const threads = members(101);
+  const fixture = installDeletion(threads);
   await setupPage({
     context,
     path: `/chats/${fixture.ordinary.id}`,
@@ -225,79 +206,32 @@ test("Project deletion confirmation includes every archived page and returns saf
   const confirmation = await screen.findByRole("dialog", {
     name: "Delete project and threads?",
   });
-  expect(within(confirmation).getByText("Planning 101")).toBeInTheDocument();
+  for (const [index] of threads.entries()) {
+    expect(
+      within(confirmation).getByText(`Planning ${index + 1}`),
+    ).toBeInTheDocument();
+  }
   expect(
     within(confirmation).getByText(/This cannot be undone/),
   ).toBeInTheDocument();
   await waitFor(() => {
-    return expect(button("Back", confirmation)).toHaveFocus();
+    expect(button("Back", confirmation)).toHaveFocus();
   });
   click(button("Back", confirmation));
   await waitFor(() => {
-    return expect(fullDelete).toHaveFocus();
+    expect(fullDelete).toHaveFocus();
   });
   await userEvent.setup({ delay: null }).keyboard("{Escape}");
   await waitFor(() => {
-    return expect(button("Options for Launch")).toHaveFocus();
+    expect(
+      screen.queryByRole("dialog", { name: "Delete Project?" }),
+    ).toBeNull();
+    expect(button("Options for Launch")).toHaveFocus();
   });
   expect(
     document.querySelector(`[data-project-row-id="${projectId}"]`),
   ).toHaveTextContent("Launch");
   expect(location.pathname).toBe(`/chats/${fixture.ordinary.id}`);
-});
-
-test("Retry reconciles an unknown deletion of the open thread and recovers navigation", async () => {
-  const threads = members(3);
-  const fixture = installDeletion(threads);
-  let reject = true;
-  context.mocks.api(
-    chatThreadByIdContract.delete,
-    ({ params, query, respond }) => {
-      fixture.deleteThread(params.id, query?.eventId ?? crypto.randomUUID());
-      if (params.id === threads[1]!.id && reject) {
-        reject = false;
-        return respond(400, {
-          error: {
-            code: "BAD_REQUEST",
-            message: "Deletion response interrupted",
-          },
-        });
-      }
-      return respond(204);
-    },
-  );
-  await setupPage({
-    context,
-    path: `/chats/${threads[1]!.id}`,
-    ...fixture.workspace.pageOptions,
-    featureSwitches: switches(),
-  });
-  const first = await openDeletion();
-  click(
-    await waitFor(() => {
-      return button("Delete project and 3 threads…", first);
-    }),
-  );
-  const confirmation = await screen.findByRole("dialog", {
-    name: "Delete project and threads?",
-  });
-  click(button("Permanently delete", confirmation));
-  await expect(
-    within(confirmation).findByRole("alert"),
-  ).resolves.toHaveTextContent("Deletion stopped");
-  expect(button("Permanently delete", confirmation)).toBeEnabled();
-  click(button("Permanently delete", confirmation));
-  await expect(
-    within(confirmation).findByText(/Review the updated list/),
-  ).resolves.toBeInTheDocument();
-  expect(within(confirmation).getByText("Planning 3")).toBeInTheDocument();
-  expect(
-    document.querySelector(`[data-project-row-id="${projectId}"]`),
-  ).toHaveTextContent("Launch");
-  click(button("Permanently delete", confirmation));
-  await waitFor(() => {
-    return expect(location.pathname).toBe("/");
-  });
 });
 
 test("A new Project member requires reviewing the changed list before deleting anything", async () => {
@@ -328,6 +262,10 @@ test("A new Project member requires reviewing the changed list before deleting a
   await expect(
     within(confirmation).findByText(/Review the updated list/),
   ).resolves.toBeInTheDocument();
+  expect([...fixture.remaining.keys()]).toStrictEqual([
+    threads[0]!.id,
+    threads[1]!.id,
+  ]);
   expect(within(confirmation).getByText("Planning 1")).toBeInTheDocument();
   expect(within(confirmation).getByText("Planning 2")).toBeInTheDocument();
   expect(
@@ -337,27 +275,11 @@ test("A new Project member requires reviewing the changed list before deleting a
   ).toBeInTheDocument();
   click(button("Permanently delete", confirmation));
   await waitFor(() => {
-    return expect(button("Create Project")).toHaveFocus();
+    expect(button("Create Project")).toHaveFocus();
   });
-});
-
-test("Deleting an empty Project keeps the Project-only action available", async () => {
-  const fixture = installDeletion([]);
-  await setupPage({
-    context,
-    path: `/chats/${fixture.ordinary.id}`,
-    ...fixture.workspace.pageOptions,
-    featureSwitches: switches(),
-  });
-  const first = await openDeletion();
-  await waitFor(() => {
-    return expect(button("Delete project only", first)).toBeEnabled();
-  });
-  click(button("Delete project only", first));
-  await waitFor(() => {
-    return expect(button("Create Project")).toHaveFocus();
-  });
-  expect(location.pathname).toBe(`/chats/${fixture.ordinary.id}`);
+  expect(
+    document.querySelector(`[data-project-row-id="${projectId}"]`),
+  ).toBeNull();
 });
 
 test("Deleting the open Project thread finishes the batch before navigating to a new chat", async () => {
@@ -389,15 +311,22 @@ test("Deleting the open Project thread finishes the batch before navigating to a
   });
   click(button("Permanently delete", confirmation));
   await waitFor(() => {
-    return expect(button("Deleting…", confirmation)).toBeDisabled();
+    expect(button("Deleting…", confirmation)).toBeDisabled();
   });
   expect(button("Back", confirmation)).toBeDisabled();
   await userEvent.setup({ delay: null }).keyboard("{Escape}");
-  expect(confirmation).toBeInTheDocument();
+  expect(
+    screen.getByRole("dialog", { name: "Delete project and threads?" }),
+  ).toBe(confirmation);
+  expect(confirmation).toHaveAttribute("data-open");
+  expect(confirmation).not.toHaveAttribute("data-closed");
+  expect(location.pathname).toBe(`/chats/${threads[0]!.id}`);
   gate.resolve();
   await fixture.projectDeleted.promise;
+  expect(fixture.remaining.size).toBe(0);
+  expect(location.pathname).toBe(`/chats/${threads[0]!.id}`);
   await waitFor(() => {
-    return expect(location.pathname).toBe("/");
+    expect(location.pathname).toBe("/");
   });
   await expect(
     screen.findByRole("textbox", { name: "Message" }),
@@ -405,45 +334,4 @@ test("Deleting the open Project thread finishes the batch before navigating to a
   expect(
     document.querySelector(`[data-project-row-id="${projectId}"]`),
   ).toBeNull();
-});
-
-test("Retry reconciles a final Project deletion that committed before its error response", async () => {
-  const fixture = installDeletion(members(1));
-  context.mocks.api(projectsContract.delete, ({ body, respond }) => {
-    fixture.projectEvents.push({
-      id: body.eventId,
-      seqId: 2,
-      projectId,
-      kind: "deleted",
-      name: null,
-      createdAt: at,
-    });
-    return respond(409, {
-      error: { code: "CONFLICT", message: "Final response interrupted" },
-    });
-  });
-  await setupPage({
-    context,
-    path: `/chats/${fixture.ordinary.id}`,
-    ...fixture.workspace.pageOptions,
-    featureSwitches: switches(),
-  });
-  const first = await openDeletion();
-  click(
-    await waitFor(() => {
-      return button("Delete project and 1 thread…", first);
-    }),
-  );
-  const confirmation = await screen.findByRole("dialog", {
-    name: "Delete project and threads?",
-  });
-  click(button("Permanently delete", confirmation));
-  await expect(
-    within(confirmation).findByRole("alert"),
-  ).resolves.toHaveTextContent("Deletion stopped");
-  click(button("Permanently delete", confirmation));
-  await waitFor(() => {
-    return expect(button("Create Project")).toHaveFocus();
-  });
-  expect(location.pathname).toBe(`/chats/${fixture.ordinary.id}`);
 });

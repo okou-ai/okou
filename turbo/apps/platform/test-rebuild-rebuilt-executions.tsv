@@ -273,3 +273,9 @@ chat-continuity-drafts-002	turbo/apps/platform/src/views/okou-page/__tests__/cha
 chat-continuity-drafts-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-drafts.test.tsx	Removing an attachment from a restored rich draft keeps its other content	122	passed
 chat-continuity-drafts-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-drafts.test.tsx	A typed draft is restored after visiting a neighboring conversation	221	passed
 chat-continuity-drafts-007	turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-drafts.test.tsx	Sending a revised restored draft sends only its current text and attachment	255	passed
+chat-composer-ime-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-ime.test.tsx	Clear a cancelled IME query and keep committed spaces as slash boundaries	62	passed
+chat-composer-keyboard-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-keyboard.test.tsx	Shift-Enter keeps an active chat's follow-up draft on two lines without sending	123	passed
+chat-composer-keyboard-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-keyboard.test.tsx	Send with the command-key preference	158	passed
+chat-composer-keyboard-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-keyboard.test.tsx	Use the appropriate Enter behavior on touch devices	194	passed
+chat-composer-model-catalog-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-model-catalog.test.tsx	Offer the active catalog models in catalog order with catalog names	32	passed
+chat-composer-model-catalog-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-model-catalog.test.tsx	Offer Auto from canonical available-model and catalog responses	49	passed
