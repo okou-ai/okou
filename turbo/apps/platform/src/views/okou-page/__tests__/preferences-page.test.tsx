@@ -148,7 +148,9 @@ test("A saved workspace mode overrides the cookie and saves independently of the
   vi.spyOn(document, "cookie", "set").mockImplementation((value) => {
     cookieWrites.push(value);
   });
-  context.mocks.browser.cookie("__Secure-okou-theme=v1.light");
+  context.mocks.browser.cookie(
+    "__Secure-okou-theme=v1.light; __Secure-okou-color-theme=cotton-sky",
+  );
 
   await setupPage({
     context,
@@ -165,6 +167,9 @@ test("A saved workspace mode overrides the cookie and saves independently of the
   });
   expect(document.documentElement).toHaveAttribute("data-theme", "dark");
   expectSelected(getFastRole("button", "Golden hour", colorTheme));
+  expect(cookieWrites).toContain(
+    "__Secure-okou-color-theme=golden-hour; Path=/; Max-Age=31536000; SameSite=Lax; Secure",
+  );
 
   // Another page on the shared domain can change the first-paint cookie.
   act(() => {
@@ -194,10 +199,12 @@ test("A saved workspace mode overrides the cookie and saves independently of the
 
   click(getFastRole("button", "Deep lagoon", colorTheme));
 
+  const deepLagoon = getFastRole("button", "Deep lagoon", colorTheme);
   await waitFor(() => {
+    expect(deepLagoon).toBeEnabled();
     expect(updates).toContainEqual({ colorTheme: "deep-lagoon" });
-    expectSelected(getFastRole("button", "Deep lagoon", colorTheme));
   });
+  expectSelected(deepLagoon);
   expect(document.documentElement).toHaveAttribute("data-theme", "light");
   expect(document.documentElement).toHaveAttribute(
     "data-color-theme",
@@ -206,10 +213,12 @@ test("A saved workspace mode overrides the cookie and saves independently of the
   expect(cookieWrites).toContain(
     "__Secure-okou-theme=v1.light; Domain=.okou.ai; Path=/; Max-Age=31536000; SameSite=Lax; Secure",
   );
-  expect(cookieWrites.join("\n")).not.toMatch(/golden-hour|deep-lagoon/u);
+  expect(cookieWrites).toContain(
+    "__Secure-okou-color-theme=deep-lagoon; Path=/; Max-Age=31536000; SameSite=Lax; Secure",
+  );
 });
 
-test("A theme choice made during startup survives the initial workspace read", async () => {
+test("Appearance choices made during startup survive the initial workspace read", async () => {
   mockPreferences({ theme: "light" });
   context.mocks.browser.cookie("__Secure-okou-theme=v1.light");
   const releaseInitialRead = context.mocks.deferred<void>();
@@ -218,7 +227,11 @@ test("A theme choice made during startup survives the initial workspace read", a
     userPreferencesContract.get,
     async ({ respond, withSignal }) => {
       await withSignal(releaseInitialRead.promise);
-      return respond(200, { ...defaultPreferences(), theme: "light" });
+      return respond(200, {
+        ...defaultPreferences(),
+        theme: "light",
+        colorTheme: "golden-hour",
+      });
     },
   );
   context.mocks.api(
@@ -235,26 +248,39 @@ test("A theme choice made during startup survives the initial workspace read", a
     host: "app.okou.ai",
   });
   await page.content;
-  await screen.findByText("Your preferred color scheme");
+  const palette = await screen.findByRole("group", { name: "Color theme" });
   const dark = getFastRole("button", "Dark");
+  const deepLagoon = getFastRole("button", "Deep lagoon", palette);
   click(dark);
+  click(deepLagoon);
   expectSelected(dark);
   expect(dark).toBeDisabled();
+  expectSelected(deepLagoon);
+  expect(deepLagoon).toBeDisabled();
 
   releaseInitialRead.resolve();
   await page.ready;
   expectSelected(dark);
   expect(document.documentElement).toHaveAttribute("data-theme", "dark");
+  expectSelected(deepLagoon);
+  expect(document.documentElement).toHaveAttribute(
+    "data-color-theme",
+    "deep-lagoon",
+  );
 
   releaseSave.resolve();
   await waitFor(() => {
     expect(dark).toBeEnabled();
+    expect(deepLagoon).toBeEnabled();
   });
-  expectSelected(dark);
 });
 
 test("A failed theme save keeps the local choice and can be retried", async () => {
   mockPreferences();
+  const cookieWrites: string[] = [];
+  vi.spyOn(document, "cookie", "set").mockImplementation((value) => {
+    cookieWrites.push(value);
+  });
   context.mocks.browser.cookie("__Secure-okou-theme=v1.light");
   const releaseFailure = context.mocks.deferred<void>();
   let unavailable = true;
@@ -297,6 +323,7 @@ test("A failed theme save keeps the local choice and can be retried", async () =
     expect(dark).toBeEnabled();
   });
   expectSelected(dark);
+  expect(cookieWrites.join("\n")).not.toContain("__Secure-okou-theme=v1.dark");
 
   unavailable = false;
   click(dark);
@@ -306,22 +333,52 @@ test("A failed theme save keeps the local choice and can be retried", async () =
   });
   expectSelected(dark);
   expect(document.documentElement).toHaveAttribute("data-theme", "dark");
+  expect(cookieWrites).toContain(
+    "__Secure-okou-theme=v1.dark; Domain=.okou.ai; Path=/; Max-Age=31536000; SameSite=Lax; Secure",
+  );
 });
 
-test("A workspace without a saved color theme starts on the default palette", async () => {
+test("A cached palette is visible during startup and cleared when the workspace uses the default", async () => {
   const updates = mockPreferences({ colorTheme: null });
+  const cookieWrites: string[] = [];
+  vi.spyOn(document, "cookie", "set").mockImplementation((value) => {
+    cookieWrites.push(value);
+  });
+  context.mocks.browser.cookie("__Secure-okou-color-theme=citrus-spark");
+  const releaseInitialRead = context.mocks.deferred<void>();
+  let preferencesReads = 0;
+  context.mocks.api(
+    userPreferencesContract.get,
+    async ({ respond, withSignal }) => {
+      preferencesReads += 1;
+      await withSignal(releaseInitialRead.promise);
+      return respond(200, { ...defaultPreferences(), colorTheme: null });
+    },
+  );
 
-  await setupPage({
+  const page = await startPage({
     context,
-    path: "/settings",
+    path: "/agents?settings=preference",
     host: "app.okou.ai",
   });
-
+  await page.content;
   const colorTheme = await screen.findByRole("group", { name: "Color theme" });
+  expectSelected(getFastRole("button", "Citrus spark", colorTheme));
+  expect(document.documentElement).toHaveAttribute(
+    "data-color-theme",
+    "citrus-spark",
+  );
+
+  releaseInitialRead.resolve();
+  await page.ready;
+  expect(preferencesReads).toBe(1);
   expectSelected(getFastRole("button", "Default", colorTheme));
   expect(document.documentElement).not.toHaveAttribute("data-color-theme");
   expect(document.documentElement).not.toHaveAttribute(
     "data-gradient-color-themes",
+  );
+  expect(cookieWrites).toContain(
+    "__Secure-okou-color-theme=; Path=/; Max-Age=0; SameSite=Lax; Secure",
   );
 
   // An absent palette stays absent until the member picks one, so the first

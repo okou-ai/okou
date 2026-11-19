@@ -21,6 +21,12 @@ shows saving, refresh and retry states. Workspace settings offer the eight Web
 palettes and languages in `supportedLocales`, including distinct
 Simplified and Traditional Chinese.
 
+Android reads a private cache of the last confirmed display mode and palette
+while the identified workspace loads. The cache is scoped to the API origin,
+account and workspace and is read off the main thread. The existing preference
+response takes precedence and refreshes the cache. Only the server-confirmed
+workspace can open workspace content.
+
 My Okou in Settings reads and edits the signed-in user's personal Instructions
 for the selected workspace. It uses the existing `singleAgent` availability and
 canonical Instructions API without blocking chat or Appearance while loading.
@@ -434,9 +440,9 @@ MemberPreferencesModelTest covers shared display mode, confirmed and pending
 selections, failed saves, retry, readback and retired work. PaletteColorsTest resolves all sixteen
 mode/palette combinations from generated resources; LegacyLanguageSettingsTest
 exercises pre-Android13 app-language changes through the real Activity.
-Add modules and shared helpers for actual application boundaries. Appearance
-uses the system during first display and the member preference when the
-workspace becomes ready.
+Add modules and shared helpers for actual application boundaries.
+SessionModelTest also holds the workspace response to exercise cached
+appearance, confirmation and account and workspace isolation.
 Shared font bytes/licenses are sourced from `ios/Okou/Resources/Fonts` during
 the build; the app does not keep a second font copy in source. Its launcher
 vector retains the geometry from `ios/Assets/AppIcon.svg`. Native navigation

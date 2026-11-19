@@ -12,12 +12,15 @@ import ai.okou.android.api.generated.PersonalInstructions
 import ai.okou.android.api.generated.SendRequest
 import ai.okou.android.api.generated.UpdatePreferencesRequest
 import ai.okou.android.api.generated.UserPreferencesColorTheme
+import ai.okou.android.api.generated.UserPreferencesTheme
 import ai.okou.android.chat.ChatCacheStore
 import ai.okou.android.chat.ChatComposerService
 import ai.okou.android.chat.ChatListService
 import ai.okou.android.chat.ComposerJournalStore
 import ai.okou.android.chat.RunControlJournalStore
 import ai.okou.android.instructions.PersonalInstructionsDraftStore
+import ai.okou.android.preferences.MemberAppearance
+import ai.okou.android.preferences.MemberAppearanceCache
 import ai.okou.android.testAuthenticationState
 import ai.okou.android.testBootstrap
 import androidx.lifecycle.ViewModelProvider
@@ -91,6 +94,7 @@ class SessionModelTest {
     private fun check(
         auth: TestAuthentication = TestAuthentication(),
         configure: (Resource) -> Unit = {},
+        prepareAppearance: suspend MemberAppearanceCache.() -> Unit = {},
         block: suspend TestScope.(SessionModel, MutableList<Resource>) -> Unit,
     ) = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
@@ -121,7 +125,10 @@ class SessionModelTest {
                 temporary.newFolder(),
                 dispatcher,
             )
+        val appearanceDirectory = temporary.newFolder()
+        val appearance = MemberAppearanceCache({ appearanceDirectory }, dispatcher)
         try {
+            appearance.prepareAppearance()
             val model =
                 ViewModelProvider(
                     store,
@@ -140,6 +147,7 @@ class SessionModelTest {
                                 drafts,
                                 journal,
                                 controls,
+                                appearance,
                                 dispatcher,
                             )
                         }
@@ -197,6 +205,60 @@ class SessionModelTest {
             runCurrent()
             assertSame(ready, model.uiState.value.ready)
             assertFalse(resources.single().closed)
+        }
+    }
+
+    @Test
+    fun startupAppearanceIsScopedAndReplacedByTheConfirmedWorkspacePreferences() {
+        val auth = TestAuthentication()
+        val cached = MemberAppearance(UserPreferencesTheme.DARK, UserPreferencesColorTheme.DAYDREAM)
+        val confirmed =
+            MemberAppearance(UserPreferencesTheme.LIGHT, UserPreferencesColorTheme.BERRY_BLUSH)
+        val previousSession = WorkspaceIdentity("https://api.okou.ai", "user-a", "old", "org-a")
+        var bootstrap = CompletableDeferred<Unit>()
+        lateinit var disk: MemberAppearanceCache
+        check(
+            auth,
+            configure = { resource ->
+                resource.load = {
+                    bootstrap.await()
+                    val result = testBootstrap(resource.identity.workspaceId)
+                    result.copy(
+                        preferences =
+                            result.preferences.copy(
+                                theme = confirmed.theme,
+                                colorTheme = confirmed.colorTheme,
+                            )
+                    )
+                }
+            },
+            prepareAppearance = {
+                disk = this
+                save(previousSession, cached)
+            },
+        ) { model, _ ->
+            runCurrent()
+            assertEquals(SessionStage.LoadingWorkspace, model.uiState.value.stage)
+            assertEquals(cached, model.uiState.value.cachedAppearance)
+            assertNull(model.uiState.value.ready)
+
+            bootstrap.complete(Unit)
+            runCurrent()
+            val ready = requireNotNull(model.uiState.value.ready)
+            assertEquals(confirmed.theme, ready.preferences.uiState.value.theme)
+            assertEquals(confirmed.colorTheme, ready.preferences.uiState.value.colorTheme)
+            assertEquals(confirmed, disk.load(ready.identity))
+
+            bootstrap = CompletableDeferred()
+            model.chooseWorkspace("org-b", model.uiState.value.generation)
+            runCurrent()
+            assertEquals(SessionStage.LoadingWorkspace, model.uiState.value.stage)
+            assertNull(model.uiState.value.cachedAppearance)
+
+            auth.state.value = testAuthenticationState("user-b", "session-b", "org-a")
+            runCurrent()
+            assertEquals(SessionStage.LoadingWorkspace, model.uiState.value.stage)
+            assertNull(model.uiState.value.cachedAppearance)
         }
     }
 
