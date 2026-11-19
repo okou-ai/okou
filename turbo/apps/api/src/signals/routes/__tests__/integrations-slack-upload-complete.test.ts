@@ -354,10 +354,7 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
         ? await seedWithInstallation()
         : { ...(await seedBaseContext()), slackWorkspaceId: "" };
       const actor = actorFor(base);
-      const { agentId, runnerGroup } = await scenario.prepareActor(actor);
-      await scenario.run(() => {
-        return runsApi.heartbeatRunner(runnerGroup);
-      });
+      const { agentId } = await scenario.prepareActor(actor);
       const sent = await scenario.run(() => {
         return chatApi.sendAndLaunch(actor, {
           agentId,
