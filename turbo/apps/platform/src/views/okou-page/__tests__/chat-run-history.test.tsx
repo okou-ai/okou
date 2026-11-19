@@ -766,6 +766,71 @@ test("Do not render result actions while waiting for assistant output", async ()
   ).toBeNull();
 });
 
+test("Show working dots on scroll-to-bottom while the thread works", async () => {
+  const chat = installRunChat({
+    activeRunIds: [RUN_A],
+    chatEvents: [
+      promptEvent({
+        id: "scroll-working-user",
+        runId: RUN_A,
+        seqId: 1,
+        text: "Prepare a long report",
+      }),
+      assistantEvent({
+        id: "scroll-working-progress",
+        runId: RUN_A,
+        seqId: 2,
+        text: "Drafting the first section",
+      }),
+    ],
+  });
+
+  await setupPage({
+    context,
+    path: RUN_PATH,
+  });
+
+  await readyChat();
+  expect(
+    document.querySelector("[data-thinking-indicator]"),
+  ).toBeInTheDocument();
+  const scroller = document.querySelector<HTMLElement>(
+    "[data-scroll-container]",
+  );
+  if (!scroller) {
+    throw new Error("Expected the transcript scroll container");
+  }
+  Object.defineProperties(scroller, {
+    scrollHeight: { configurable: true, value: 2400 },
+    clientHeight: { configurable: true, value: 600 },
+  });
+  scroller.scrollTop = 800;
+  fireEvent.scroll(scroller);
+
+  const scrollButton = () => {
+    return document.querySelector<HTMLElement>("[data-scroll-to-bottom]");
+  };
+  await waitFor(() => {
+    expect(scrollButton()).toHaveAttribute("data-working");
+  });
+  expect(scrollButton()).toHaveAccessibleName("Scroll to bottom");
+  expect(
+    scrollButton()?.querySelectorAll("[data-scroll-to-bottom-working-dot]"),
+  ).toHaveLength(3);
+
+  chat.completeRun("Report ready");
+
+  // The arrow returning is the positive sentinel for the finished run.
+  await waitFor(() => {
+    expect(scrollButton()?.querySelector("svg")).toBeInTheDocument();
+  });
+  expect(scrollButton()).not.toHaveAttribute("data-working");
+  expect(
+    scrollButton()?.querySelector("[data-scroll-to-bottom-working-dot]"),
+  ).toBeNull();
+  expect(scrollButton()).toHaveAccessibleName("Scroll to bottom");
+});
+
 test("Render result actions after a run completes", async () => {
   installRunChat({
     chatEvents: [
