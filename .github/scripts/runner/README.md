@@ -159,7 +159,9 @@ at or below the cutoff is rejected.
 Warm/build run once in transient services. Identity covers the exact source,
 binary inputs/bytes, target, profile, host, adapter source and workflow run/attempt.
 Launch intent precedes submission; intent without a result or live unit fails
-unknown only after the launch gate is free and that absence is rechecked. A
+unknown only after the launch gate is free and that absence is rechecked.
+If execution service submission times out, the caller observes the original
+operation within its existing deadline. A
 reconnection waits for an in-flight submission without blocking on the worker's
 mutation gate or submitting the command again, including when intent appears
 after the reconnection has started waiting for that gate. Only 124/141/255 can

@@ -576,23 +576,30 @@ def remote(request):
             )
             if phase != "guard":
                 atomic_json(operation / "credentials.json", request["credentials"])
-            system(
-                "systemd-run",
-                "--quiet",
-                "--collect",
-                "--service-type=exec",
-                "--unit=" + unit,
-                "--description=Runner image " + inputs["jobRef"] + " " + identity,
-                *service_owner,
-                "--property=RuntimeMaxSec=" + str(WORK_SECONDS),
-                "--property=TimeoutStopSec=10",
-                "--property=KillMode=control-group",
-                "--property=SendSIGKILL=yes",
-                "/usr/bin/python3",
-                str(operation / "worker.py"),
-                "worker",
-                str(operation),
-            )
+            try:
+                system(
+                    "systemd-run",
+                    "--quiet",
+                    "--collect",
+                    "--service-type=exec",
+                    "--unit=" + unit,
+                    "--description=Runner image " + inputs["jobRef"] + " " + identity,
+                    *service_owner,
+                    "--property=RuntimeMaxSec=" + str(WORK_SECONDS),
+                    "--property=TimeoutStopSec=10",
+                    "--property=KillMode=control-group",
+                    "--property=SendSIGKILL=yes",
+                    "/usr/bin/python3",
+                    str(operation / "worker.py"),
+                    "worker",
+                    str(operation),
+                )
+            except subprocess.TimeoutExpired:
+                print(
+                    "Image service submission timed out. Observing the original operation.",
+                    file=sys.stderr,
+                    flush=True,
+                )
     observe(request, operation)
 
 
