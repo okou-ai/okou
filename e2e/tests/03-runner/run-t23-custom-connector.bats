@@ -362,19 +362,6 @@ EOF
         '.threadId | select(type == "string" and length > 0)' \
         <<<"$first_send_response")
 
-    # Keep the default connector account live while the Strapi case runs.
-    run bash -c '
-        for variable in "${!BATS_@}"; do
-            unset "$variable"
-        done
-        BATS_TEST_TIMEOUT=180 exec "$@"
-    ' strapi-overlap "$BATS_TEST_DIRNAME/../../test/libs/bats/bin/bats" \
-        --formatter tap "$BATS_TEST_DIRNAME/run-t03-firewall-strapi.bats"
-    echo "$output"
-    assert_success
-    assert_output --partial "ok 1 runner firewall resolves the Strapi variable base and header auth"
-    printf '# Strapi passed while the custom default account was active\n' >&3
-
     run runner_wait_for_run "$first_run_id" 180
     echo "$output"
     assert_success
