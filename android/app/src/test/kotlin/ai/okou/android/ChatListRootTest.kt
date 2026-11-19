@@ -81,7 +81,7 @@ class ChatListRootTest {
 
     @Before
     fun retainActualOwnerForTeardown() {
-        compose.onNodeWithText("Chats").assertExists()
+        compose.onNodeWithContentDescription("Chats").assertExists()
         compose.runOnIdle {
             chatJob =
                 checkNotNull(
@@ -249,7 +249,7 @@ class ChatListRootTest {
             app.responseGate.countDown()
             awaitListAndNames()
             compose.waitUntil(10_000) { compose.runOnIdle { entered.count == 0L } }
-            compose.onNodeWithText("Chats").assertExists()
+            compose.onNodeWithContentDescription("Chats").assertExists()
             org.junit.Assert.assertEquals(0, app.fixture.readRequests.get())
             val chats =
                 compose.runOnIdle {
@@ -435,7 +435,7 @@ class ChatListRootTest {
                 .fetchSemanticsNodes()
                 .isNotEmpty()
         }
-        compose.onNodeWithText("Chats").assertExists()
+        compose.onNodeWithContentDescription("Chats").assertExists()
         app.fixture.archive = { jsonResponse("""{"chatThreads":[]}""") }
         val retry = compose.activity.getString(R.string.retry)
         compose.onNodeWithTag("chat_list").performScrollToNode(hasText(retry))
@@ -449,7 +449,7 @@ class ChatListRootTest {
 
     @Test
     fun heldTransportKeepsNavigationAndRestoresTheListWithProjectStatus() {
-        compose.onNodeWithText("Chats").assertExists()
+        compose.onNodeWithContentDescription("Chats").assertExists()
         compose.onNodeWithText("Loading chats…").assertExists()
         compose.onNodeWithContentDescription("Switch workspace").performClick()
         compose.onNodeWithText("Workspace B").assertExists()
@@ -504,6 +504,18 @@ class ChatListRootTest {
         }
         compose.onNodeWithText("Archived").assertExists()
         compose.onNodeWithText(app.getString(R.string.retry)).assertExists()
+    }
+
+    @Test
+    fun aPopulatedProjectStartsItsOwnChatFromTheRowMenu() {
+        val app = compose.activity.application as ChatListApplication
+        app.responseGate.countDown()
+        awaitListAndNames()
+        compose.onNodeWithTag("chat_list").performScrollToNode(hasText("Research"))
+        compose.onNodeWithText("Research").performSemanticsAction(SemanticsActions.OnLongClick)
+        compose.onNodeWithText("New chat in this Project").performClick()
+        compose.onNodeWithText("Research").assertExists()
+        compose.onNodeWithTag("message_input").assertExists()
     }
 
     @Test

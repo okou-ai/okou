@@ -95,7 +95,7 @@ class NativeTextSendTest {
                     )
                 )
             }
-            text(app.getString(R.string.chat_list_title))
+            device.awaitChatList(app)
             click(R.string.composer_new)
             text(app.getString(R.string.composer_target_loading))
             scenario.onActivity {
@@ -173,7 +173,7 @@ class NativeTextSendTest {
             assertEquals("", editor().text)
             assertEquals(1, fixture.created.size)
             assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
-            text(app.getString(R.string.chat_list_title))
+            device.awaitChatList(app)
         } catch (error: Throwable) {
             failures += error
             try {

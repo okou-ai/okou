@@ -79,7 +79,7 @@ class NativeShellTest {
             text(R.string.appearance_system)
             awaitBars(light = true)
             assertTrue("System Back key injected", device.pressKeyCode(KeyEvent.KEYCODE_BACK))
-            text(R.string.chat_list_title)
+            device.awaitChatList(app)
         }
 
     @Test
@@ -162,7 +162,7 @@ class NativeShellTest {
             openPicker(R.string.language_zh_hant, R.string.language_en_us)
             dismissPicker(R.string.language_en_us, R.string.language_zh_hant)
             assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
-            text(R.string.chat_list_title)
+            device.awaitChatList(app)
             closeActivity()
             launch()
             click(R.string.settings)
@@ -178,7 +178,7 @@ class NativeShellTest {
     private fun launch() {
         check(scenario == null)
         scenario = ActivityScenario.launch(MainActivity::class.java)
-        text(R.string.chat_list_title)
+        device.awaitChatList(app)
     }
 
     private fun closeActivity() {

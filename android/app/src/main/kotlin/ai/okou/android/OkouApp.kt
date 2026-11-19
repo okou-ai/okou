@@ -33,22 +33,27 @@ import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -73,8 +78,10 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 
@@ -274,25 +281,87 @@ internal fun OkouApp(
                 }
         }
 
+    val toolbarActions =
+        @Composable {
+            if (settings == null && !searchActive && chats != null && composer != null) {
+                WorkspaceToolbarActions(
+                    showFilter = showList,
+                    list = list,
+                    selectFilter = chats::selectFilter,
+                    markAllRead = chats::markAllRead,
+                    openSearch = if (showList) ::openSearch else null,
+                    openUpdate = openUpdate,
+                    settingsFocus = settingsFocus,
+                    openSettings = { restore ->
+                        restoreSettingsFocus = restore
+                        focus.clearFocus()
+                        keyboard?.hide()
+                        navigation = navigation.copy(settings = SettingsDestination.Overview)
+                    },
+                )
+                LaunchedEffect(Unit) {
+                    if (restoreSettingsFocus) {
+                        restoreSettingsFocus = false
+                        settingsFocus.requestFocus()
+                    }
+                }
+            }
+        }
+    val listToolbar =
+        @Composable {
+            WorkspaceListToolbar(
+                widthDp = window.screenWidthDp,
+                listWidth = listWidth,
+                title =
+                    workspaceTitle
+                        ?: {
+                            Text(
+                                stringResource(R.string.app_name),
+                                Modifier.padding(start = 8.dp),
+                                style = MaterialTheme.typography.titleLarge,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        },
+                actions = toolbarActions,
+            )
+        }
+
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets.safeDrawing,
-        snackbarHost = { SnackbarHost(snackbar) },
+        snackbarHost = {
+            SnackbarHost(snackbar) { data ->
+                Surface(
+                    modifier =
+                        Modifier.widthIn(max = 512.dp)
+                            .fillMaxWidth()
+                            .padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.inverseSurface,
+                    contentColor = MaterialTheme.colorScheme.inverseOnSurface,
+                    shadowElevation = 4.dp,
+                ) {
+                    Box(
+                        Modifier.heightIn(min = 48.dp)
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                        contentAlignment = Alignment.CenterStart,
+                    ) {
+                        Text(
+                            data.visuals.message,
+                            style = MaterialTheme.typography.bodySmall.copy(letterSpacing = 0.sp),
+                        )
+                    }
+                }
+            }
+        },
         topBar = {
-            if (settings != null || !searchActive || listWidth != null) {
+            if (settings == null && listWidth == null && showList && !searchActive) {
+                Box(Modifier.windowInsetsPadding(TopAppBarDefaults.windowInsets)) { listToolbar() }
+            } else if (settings != null || listWidth == null && !searchActive) {
                 TopAppBar(
-                    title = {
-                        if (
-                            settings == null &&
-                                target == WorkspaceTarget.List &&
-                                workspaceTitle != null
-                        ) {
-                            workspaceTitle()
-                        } else {
-                            Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        }
-                    },
+                    title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     colors =
                         TopAppBarDefaults.topAppBarColors(
                             containerColor = MaterialTheme.colorScheme.background
@@ -313,34 +382,7 @@ internal fun OkouApp(
                             }
                         }
                     },
-                    actions = {
-                        if (
-                            settings == null && !searchActive && chats != null && composer != null
-                        ) {
-                            WorkspaceToolbarActions(
-                                showFilter = showList,
-                                list = list,
-                                selectFilter = chats::selectFilter,
-                                markAllRead = chats::markAllRead,
-                                openSearch = if (showList) ::openSearch else null,
-                                openUpdate = openUpdate,
-                                settingsFocus = settingsFocus,
-                                openSettings = { restore ->
-                                    restoreSettingsFocus = restore
-                                    focus.clearFocus()
-                                    keyboard?.hide()
-                                    navigation =
-                                        navigation.copy(settings = SettingsDestination.Overview)
-                                },
-                            )
-                            LaunchedEffect(Unit) {
-                                if (restoreSettingsFocus) {
-                                    restoreSettingsFocus = false
-                                    settingsFocus.requestFocus()
-                                }
-                            }
-                        }
-                    },
+                    actions = { toolbarActions() },
                 )
             }
         },
@@ -361,7 +403,7 @@ internal fun OkouApp(
                     if (showList) {
                         Column(
                             if (listWidth == null) Modifier.weight(1f).fillMaxHeight()
-                            else Modifier.width(listWidth.dp).fillMaxHeight(),
+                            else Modifier.width((listWidth - 1).dp).fillMaxHeight(),
                             horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
                             if (searchActive) {
@@ -375,6 +417,7 @@ internal fun OkouApp(
                                     onOpen = { openChat(it, fromSearch = true) },
                                 )
                             } else {
+                                if (listWidth != null) listToolbar()
                                 if (list.filter != ChatListFilter.Inbox) {
                                     AppliedChatFilter(list.filter) {
                                         chats?.selectFilter(ChatListFilter.Inbox)
@@ -398,6 +441,7 @@ internal fun OkouApp(
                                     listPosition,
                                     ::startNewChat,
                                     selectedChatId = if (listWidth != null) thread?.id else null,
+                                    wide = listWidth != null,
                                     actionsEnabled = composer != null,
                                     refreshEnabled = chats != null,
                                     startupRecovery = startupRecovery,
@@ -412,11 +456,35 @@ internal fun OkouApp(
                             controls != null &&
                             (listWidth != null || (!searchActive && target != WorkspaceTarget.List))
                     ) {
-                        Box(
+                        Column(
                             Modifier.weight(1f).fillMaxHeight(),
-                            contentAlignment = Alignment.TopCenter,
+                            horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
-                            Column(Modifier.widthIn(max = 768.dp).fillMaxWidth().fillMaxHeight()) {
+                            if (listWidth != null && target != WorkspaceTarget.List) {
+                                Box(
+                                    Modifier.fillMaxWidth()
+                                        .heightIn(min = 63.dp)
+                                        .padding(
+                                            horizontal = if (listWidth == 344) 40.dp else 32.dp
+                                        ),
+                                    contentAlignment = Alignment.CenterStart,
+                                ) {
+                                    Text(
+                                        title,
+                                        style =
+                                            MaterialTheme.typography.titleMedium.copy(
+                                                fontSize = 18.sp,
+                                                lineHeight = 24.sp,
+                                                letterSpacing = 0.sp,
+                                                fontWeight = FontWeight(550),
+                                            ),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                                HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+                            }
+                            Column(Modifier.widthIn(max = 768.dp).fillMaxWidth().weight(1f)) {
                                 when (target) {
                                     WorkspaceTarget.List ->
                                         Box(

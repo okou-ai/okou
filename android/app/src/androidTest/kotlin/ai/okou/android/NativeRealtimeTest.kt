@@ -185,7 +185,7 @@ class NativeRealtimeTest {
                 }
                 shown == visible
             }
-            text(app.getString(R.string.chat_list_title))
+            device.awaitChatList(app)
             text(app.getString(R.string.realtime_connecting))
             scenario.onActivity {
                 val ready =

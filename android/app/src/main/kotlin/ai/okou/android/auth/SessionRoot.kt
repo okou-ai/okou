@@ -12,6 +12,7 @@ import ai.okou.android.chat.WorkspaceRealtimeLifecycle
 import ai.okou.android.instructions.PersonalInstructionsSettings
 import ai.okou.android.preferences.MemberPreferencesSettings
 import ai.okou.android.state.SettingsDestination
+import ai.okou.android.workspaceListPaneWidth
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -20,6 +21,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
@@ -46,14 +48,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.clerk.api.ui.ClerkColors
 import com.clerk.api.ui.ClerkTheme
 import com.clerk.api.ui.ClerkTypography
@@ -317,18 +322,35 @@ private fun WorkspaceTitle(
     chooseWorkspace: (String) -> Unit,
 ) {
     val canSwitch = state.ready != null && state.memberships.size > 1
+    val window = LocalConfiguration.current
+    val pane = workspaceListPaneWidth(window.screenWidthDp, window.screenHeightDp)
+    val logoSize = if (pane == null) 28.dp else 26.dp
+    val spacing = if (pane == null) 8.dp else 6.dp
+    val titleSize =
+        when {
+            pane == 320 -> 18
+            pane == 344 -> 20
+            window.screenWidthDp >= 600 -> 21
+            else -> 20
+        }
     var choosing by remember { mutableStateOf(false) }
     val identity: @Composable RowScope.() -> Unit = {
         val logo = remember(workspace.id) { workspaceLogo(workspace.id) }
         Image(
             painterResource(logo),
             contentDescription = null,
-            modifier = Modifier.size(32.dp).clip(RoundedCornerShape(8.dp)),
+            modifier = Modifier.size(logoSize).clip(RoundedCornerShape(8.dp)),
         )
         Text(
             workspace.name,
-            modifier = Modifier.padding(start = 8.dp).weight(1f, fill = false),
-            style = MaterialTheme.typography.titleLarge,
+            modifier = Modifier.padding(start = spacing).weight(1f, fill = false),
+            style =
+                MaterialTheme.typography.titleLarge.copy(
+                    fontSize = titleSize.sp,
+                    lineHeight = (titleSize + 8).sp,
+                    letterSpacing = 0.sp,
+                    fontWeight = FontWeight.SemiBold,
+                ),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
@@ -336,21 +358,27 @@ private fun WorkspaceTitle(
             Icon(
                 painterResource(R.drawable.ic_expand_more),
                 stringResource(R.string.auth_switch_workspace),
-                Modifier.padding(start = 4.dp).size(16.dp),
+                Modifier.padding(start = spacing).size(14.dp),
             )
         }
     }
     if (canSwitch) {
         TextButton(
             onClick = { choosing = true },
+            modifier = Modifier.heightIn(min = 48.dp),
+            shape = RoundedCornerShape(12.dp),
             colors =
                 ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
-            contentPadding = PaddingValues(0.dp),
+            contentPadding = PaddingValues(spacing),
             content = identity,
         )
         if (choosing) WorkspaceChooser(state, chooseWorkspace) { choosing = false }
     } else {
-        Row(verticalAlignment = Alignment.CenterVertically, content = identity)
+        Row(
+            Modifier.heightIn(min = 48.dp).padding(spacing),
+            verticalAlignment = Alignment.CenterVertically,
+            content = identity,
+        )
     }
 }
 

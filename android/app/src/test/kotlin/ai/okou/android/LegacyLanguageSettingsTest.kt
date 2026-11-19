@@ -21,7 +21,7 @@ class LegacyLanguageSettingsTest {
 
     @Test
     fun applicationLanguageChangesUseTheNativeCompatibilityPathAndRecreateTheList() {
-        compose.onNodeWithText("Chats").assertExists()
+        compose.onNodeWithContentDescription("Chats").assertExists()
         compose.onNodeWithContentDescription("Settings").performClick()
         compose.onNodeWithText("Language").performScrollTo().performClick()
         compose
@@ -36,6 +36,8 @@ class LegacyLanguageSettingsTest {
             LocaleManagerCompat.getSystemLocales(compose.activity)[0]?.language,
         )
         compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
-        compose.onNodeWithText(compose.activity.getString(R.string.chat_list_title)).assertExists()
+        compose
+            .onNodeWithContentDescription(compose.activity.getString(R.string.chat_list_title))
+            .assertExists()
     }
 }

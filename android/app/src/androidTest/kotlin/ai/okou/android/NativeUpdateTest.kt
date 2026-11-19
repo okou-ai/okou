@@ -77,7 +77,7 @@ class NativeUpdateTest {
             scenario = ActivityScenario.launch(MainActivity::class.java)
             fun text(value: String) =
                 device.wait(Until.findObject(By.pkg(app.packageName).text(value)), 10_000)
-            assertNotNull(text(app.getString(R.string.chat_list_title)))
+            device.awaitChatList(app)
             gate.complete(Unit)
             val updateAction = app.getString(R.string.updates_view)
             assertNotNull(text(updateAction))

@@ -127,7 +127,7 @@ class NativeInstructionsTest {
                     ) == true
                 )
             }
-            text(app.getString(R.string.chat_list_title))
+            device.awaitChatList(app)
             checkNotNull(
                     device.wait(
                         Until.findObject(
@@ -191,7 +191,7 @@ class NativeInstructionsTest {
             assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
             reveal(app.getString(R.string.appearance))
             assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
-            text(app.getString(R.string.chat_list_title))
+            device.awaitChatList(app)
         } catch (error: Throwable) {
             failures += error
             try {

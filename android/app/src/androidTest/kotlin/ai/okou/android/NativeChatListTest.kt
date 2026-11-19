@@ -83,7 +83,7 @@ class NativeChatListTest {
                 // A scroll result is not a receipt for Compose's eventual visible outcome.
                 text(value)
             }
-            text(app.getString(R.string.chat_list_title))
+            device.awaitChatList(app)
             scenario.onActivity { activity ->
                 chatJob =
                     checkNotNull(
@@ -101,7 +101,7 @@ class NativeChatListTest {
             text(app.getString(R.string.appearance))
             gate.countDown()
             assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
-            text(app.getString(R.string.chat_list_title))
+            device.awaitChatList(app)
             revealText("Project chat")
             scenario.recreate()
             revealText("Project chat")
@@ -144,7 +144,7 @@ class NativeChatListTest {
             try {
                 device.executeShellCommand("wm size 1000x1000")
                 device.executeShellCommand("wm density 160")
-                val listTitle = text(app.getString(R.string.chat_list_title))
+                val listTitle = device.awaitChatList(app)
                 val conversation = text(app.getString(R.string.history_completed))
                 assertTrue(listTitle.visibleBounds.right < conversation.visibleBounds.left)
                 val toolbarBack = By.pkg(app.packageName).desc(app.getString(R.string.back))
@@ -158,15 +158,13 @@ class NativeChatListTest {
                 click(UiSelector().description(app.getString(R.string.settings)))
                 text(app.getString(R.string.appearance))
                 assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
-                text(app.getString(R.string.chat_list_title))
+                device.awaitChatList(app)
                 text(app.getString(R.string.history_completed))
             } finally {
                 device.executeShellCommand("wm size ${originalSize ?: "reset"}")
                 device.executeShellCommand("wm density ${originalDensity ?: "reset"}")
             }
-            assertTrue(
-                device.wait(Until.gone(By.text(app.getString(R.string.chat_list_title))), 10_000)
-            )
+            assertTrue(device.wait(Until.gone(chatListRegion(app)), 10_000))
             text(app.getString(R.string.history_completed))
             click(UiSelector().description(app.getString(R.string.back)))
             revealText("Project chat")

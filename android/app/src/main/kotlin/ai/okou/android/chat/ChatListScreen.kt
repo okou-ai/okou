@@ -5,10 +5,11 @@ import ai.okou.android.api.generated.IndicatorsThreadsValue
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -33,6 +34,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -43,10 +45,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.key.Key
@@ -59,6 +64,7 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.isSecondaryPressed
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -66,10 +72,12 @@ import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.collapse
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.expand
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -77,7 +85,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
@@ -95,6 +105,7 @@ internal fun ChatListScreen(
     listState: LazyListState,
     newChat: (String?) -> Unit,
     selectedChatId: String?,
+    wide: Boolean,
     actionsEnabled: Boolean,
     refreshEnabled: Boolean,
     startupRecovery: @Composable (() -> Unit)?,
@@ -164,6 +175,10 @@ internal fun ChatListScreen(
             state.agents.none { it.isDefaultAgent } &&
             state.threads.any { it.hidden != true && it.projectId !in knownProjects }
     val refreshLabel = stringResource(R.string.chat_refresh)
+    val listLabel = stringResource(R.string.chat_list_title)
+    val largeCompact = LocalConfiguration.current.screenWidthDp >= 600
+    val listInset = if (wide) 12.dp else if (largeCompact) 24.dp else 16.dp
+    val outline = MaterialTheme.colorScheme.outline
     PullToRefreshBox(
         isRefreshing = state.confirmedAt != null && state.listPhase == ChatReadPhase.Loading,
         onRefresh = { if (refreshEnabled) refresh() },
@@ -172,6 +187,7 @@ internal fun ChatListScreen(
     ) {
         LazyColumn(
             Modifier.widthIn(max = 720.dp).fillMaxSize().testTag("chat_list").semantics {
+                contentDescription = listLabel
                 if (refreshEnabled && state.listPhase != ChatReadPhase.Loading) {
                     customActions =
                         listOf(
@@ -182,22 +198,10 @@ internal fun ChatListScreen(
                         )
                 }
             },
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(24.dp),
+            contentPadding =
+                PaddingValues(start = listInset, end = listInset, top = 4.dp, bottom = 100.dp),
             state = listState,
         ) {
-            item {
-                Text(
-                    stringResource(R.string.chat_list_title),
-                    style = MaterialTheme.typography.headlineLarge,
-                    modifier = Modifier.semantics { heading() },
-                )
-                ChatAction(
-                    R.string.composer_new,
-                    { newChat(null) },
-                    enabled = actionsEnabled,
-                    icon = R.drawable.ic_edit_square,
-                )
-            }
             if (startupRecovery != null) item { startupRecovery() }
             if (state.source == ChatListSource.Cache) item { ChatNotice(R.string.chat_cached) }
             if (state.listPhase == ChatReadPhase.Loading)
@@ -251,20 +255,17 @@ internal fun ChatListScreen(
                                 runningFrame = runningFrame,
                                 row = section.firstRow,
                                 toggle = { toggleProject(project.id) },
+                                newChat = if (actionsEnabled) ({ newChat(project.id) }) else null,
                             )
                         }
-                        if (foldedStatus == null) {
+                        if (foldedStatus == null && group.threads.isEmpty()) {
                             item(key = "project_actions_${project.id}") {
-                                Column(Modifier.padding(start = 24.dp)) {
-                                    if (group.threads.isEmpty()) {
+                                Column(Modifier.projectChildIndent(outline)) {
+                                    if (actionsEnabled) {
+                                        NewProjectChatAction { newChat(project.id) }
+                                    } else {
                                         ChatNotice(R.string.chat_project_empty)
                                     }
-                                    ChatAction(
-                                        R.string.composer_new_project,
-                                        { newChat(project.id) },
-                                        enabled = actionsEnabled,
-                                        icon = R.drawable.ic_edit_square,
-                                    )
                                 }
                             }
                         }
@@ -274,7 +275,10 @@ internal fun ChatListScreen(
                         itemsIndexed(group.threads, key = { _, thread -> thread.id }) {
                             index,
                             thread ->
-                            Column(Modifier.padding(start = if (project == null) 0.dp else 24.dp)) {
+                            Column(
+                                if (project == null) Modifier
+                                else Modifier.projectChildIndent(outline)
+                            ) {
                                 ChatRow(
                                     thread,
                                     chatRowStatus(indicators[thread.id], thread.muted == true),
@@ -312,12 +316,61 @@ internal fun ChatListScreen(
                         (state.filter != ChatListFilter.Unread ||
                             state.indicatorsPhase == ChatReadPhase.Ready)
                 ) {
-                    item { ChatNotice(R.string.chat_empty) }
+                    item {
+                        Text(
+                            stringResource(R.string.chat_empty),
+                            Modifier.padding(horizontal = 12.dp, vertical = 38.dp).semantics {
+                                liveRegion = LiveRegionMode.Polite
+                            },
+                            style =
+                                MaterialTheme.typography.titleMedium.copy(
+                                    fontSize = 19.sp,
+                                    lineHeight = 28.5.sp,
+                                    letterSpacing = 0.sp,
+                                ),
+                        )
+                    }
+                }
+            }
+        }
+        if (actionsEnabled) {
+            val colors = MaterialTheme.colorScheme
+            val end = if (wide) 20.dp else if (largeCompact) 32.dp else 24.dp
+            Surface(
+                onClick = { newChat(null) },
+                modifier =
+                    Modifier.align(Alignment.BottomEnd)
+                        .padding(end = end, bottom = 24.dp)
+                        .semantics { role = Role.Button },
+                shape = RoundedCornerShape(16.dp),
+                color = colors.inverseSurface,
+                contentColor = colors.inverseOnSurface,
+                shadowElevation = 3.dp,
+            ) {
+                Row(
+                    Modifier.heightIn(min = 56.dp).padding(horizontal = 20.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(painterResource(R.drawable.ic_edit_square), null, Modifier.size(22.dp))
+                    Text(
+                        stringResource(R.string.composer_new),
+                        style = MaterialTheme.typography.labelLarge.copy(letterSpacing = 0.sp),
+                        fontWeight = FontWeight(550),
+                    )
                 }
             }
         }
     }
 }
+
+private fun Modifier.projectChildIndent(color: Color): Modifier =
+    drawBehind {
+            val inset = 20.5.dp.toPx()
+            val x = if (layoutDirection == LayoutDirection.Ltr) inset else size.width - inset
+            drawLine(color, Offset(x, 0f), Offset(x, size.height), strokeWidth = 1.dp.toPx())
+        }
+        .padding(start = 24.dp)
 
 @Composable
 private fun RenameChatDialog(
@@ -369,52 +422,117 @@ private fun ProjectRow(
     runningFrame: LongState,
     row: Int,
     toggle: () -> Unit,
+    newChat: (() -> Unit)?,
 ) {
     val label = status.label()
-    Row(
-        Modifier.fillMaxWidth()
-            .heightIn(min = 52.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .clickable(role = Role.Button, onClick = toggle)
-            .semantics {
-                heading()
-                if (label != null) stateDescription = label
-                if (collapsed) {
-                    expand {
-                        toggle()
-                        true
+    var menuOpen by remember(newChat != null) { mutableStateOf(false) }
+    val openMenu: (() -> Unit)? = if (newChat != null) ({ menuOpen = true }) else null
+    Box {
+        Row(
+            Modifier.fillMaxWidth()
+                .heightIn(min = 52.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .contextMenuInput(openMenu)
+                .combinedClickable(
+                    role = Role.Button,
+                    onClick = toggle,
+                    onLongClick = openMenu,
+                    onLongClickLabel = stringResource(R.string.chat_more_actions),
+                )
+                .semantics {
+                    heading()
+                    if (label != null) stateDescription = label
+                    if (collapsed) {
+                        expand {
+                            toggle()
+                            true
+                        }
+                    } else {
+                        collapse {
+                            toggle()
+                            true
+                        }
                     }
-                } else {
-                    collapse {
-                        toggle()
-                        true
+                }
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                painterResource(if (collapsed) R.drawable.ic_folder else R.drawable.ic_folder_open),
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp),
+            )
+            Spacer(Modifier.width(8.dp))
+            Row(
+                Modifier.weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    name,
+                    Modifier.weight(1f, fill = false),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = chatListTitleStyle(),
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Icon(
+                    painterResource(
+                        if (collapsed) R.drawable.ic_chevron_right else R.drawable.ic_expand_more
+                    ),
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(16.dp),
+                )
+            }
+            if (status != ChatRowStatus.None) {
+                Spacer(Modifier.width(8.dp))
+                ChatStatusGlyph(status, runningFrame, row)
+            }
+        }
+        if (newChat != null) {
+            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.composer_new_project)) },
+                    leadingIcon = {
+                        Icon(painterResource(R.drawable.ic_edit_square), contentDescription = null)
+                    },
+                    onClick = {
+                        menuOpen = false
+                        newChat()
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun Modifier.contextMenuInput(openMenu: (() -> Unit)?): Modifier {
+    val latestOpenMenu by rememberUpdatedState(openMenu)
+    return onKeyEvent {
+            val open = latestOpenMenu
+            if (
+                open != null &&
+                    it.type == KeyEventType.KeyUp &&
+                    (it.key == Key.Menu || it.key == Key.F10 && it.isShiftPressed)
+            ) {
+                open()
+                true
+            } else false
+        }
+        .pointerInput(Unit) {
+            awaitPointerEventScope {
+                while (true) {
+                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                    if (event.type == PointerEventType.Press && event.buttons.isSecondaryPressed) {
+                        event.changes.forEach { it.consume() }
+                        latestOpenMenu?.invoke()
                     }
                 }
             }
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(
-            painterResource(
-                if (collapsed) R.drawable.ic_chevron_right else R.drawable.ic_expand_more
-            ),
-            contentDescription = null,
-            modifier = Modifier.size(16.dp),
-        )
-        Spacer(Modifier.width(8.dp))
-        Text(
-            name,
-            Modifier.weight(1f),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            style = MaterialTheme.typography.bodyLarge,
-            fontWeight = FontWeight.SemiBold,
-        )
-        if (status != ChatRowStatus.None) {
-            Spacer(Modifier.width(8.dp))
-            ChatStatusGlyph(status, runningFrame, row)
         }
-    }
 }
 
 @Composable
@@ -455,30 +573,7 @@ private fun ChatRow(
                 .heightIn(min = 52.dp)
                 .clip(shape)
                 .then(if (isSelected) Modifier.background(colors.secondaryContainer) else Modifier)
-                .onKeyEvent {
-                    if (
-                        openMenu != null &&
-                            it.type == KeyEventType.KeyUp &&
-                            (it.key == Key.Menu || it.key == Key.F10 && it.isShiftPressed)
-                    ) {
-                        openMenu()
-                        true
-                    } else false
-                }
-                .pointerInput(actions, pendingAction) {
-                    awaitPointerEventScope {
-                        while (true) {
-                            val event = awaitPointerEvent(PointerEventPass.Initial)
-                            if (
-                                event.type == PointerEventType.Press &&
-                                    event.buttons.isSecondaryPressed
-                            ) {
-                                event.changes.forEach { it.consume() }
-                                openMenu?.invoke()
-                            }
-                        }
-                    }
-                }
+                .contextMenuInput(openMenu)
                 .combinedClickable(
                     enabled = enabled,
                     onClick = open,
@@ -499,7 +594,7 @@ private fun ChatRow(
                 color = if (isSelected) colors.onSecondaryContainer else colors.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.bodyLarge,
+                style = chatListTitleStyle(),
                 fontWeight = if (status == ChatRowStatus.Unread) FontWeight.SemiBold else null,
             )
             if (status != ChatRowStatus.None) {
@@ -528,6 +623,14 @@ private fun ChatRow(
         }
     }
 }
+
+@Composable
+private fun chatListTitleStyle() =
+    MaterialTheme.typography.bodyLarge.copy(
+        fontSize = 16.sp,
+        lineHeight = 24.sp,
+        letterSpacing = 0.sp,
+    )
 
 private fun ChatRowAction.label(): Int =
     when (this) {
@@ -593,26 +696,36 @@ private fun ChatStatusGlyph(status: ChatRowStatus, runningFrame: LongState, row:
 }
 
 @Composable
-private fun ChatAction(
-    label: Int,
-    action: () -> Unit,
-    enabled: Boolean = true,
-    @DrawableRes icon: Int? = null,
-) {
+private fun ChatAction(label: Int, action: () -> Unit, enabled: Boolean = true) {
     TextButton(
         onClick = action,
         enabled = enabled,
         colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
     ) {
-        if (icon != null) {
-            Icon(
-                painterResource(icon),
-                contentDescription = null,
-                modifier = Modifier.size(ButtonDefaults.IconSize),
-            )
-            Spacer(Modifier.width(ButtonDefaults.IconSpacing))
-        }
         Text(stringResource(label))
+    }
+}
+
+@Composable
+private fun NewProjectChatAction(onClick: () -> Unit) {
+    TextButton(
+        onClick = onClick,
+        modifier = Modifier.heightIn(min = 48.dp),
+        shape = RoundedCornerShape(9.dp),
+        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
+        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
+    ) {
+        Icon(painterResource(R.drawable.ic_add), null, Modifier.size(16.dp))
+        Spacer(Modifier.width(6.dp))
+        Text(
+            stringResource(R.string.composer_new_project),
+            style =
+                MaterialTheme.typography.labelMedium.copy(
+                    fontSize = 13.sp,
+                    lineHeight = 20.sp,
+                    letterSpacing = 0.sp,
+                ),
+        )
     }
 }
 

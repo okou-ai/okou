@@ -22,9 +22,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.assertHeightIsEqualTo
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertWidthIsEqualTo
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isSelectable
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -36,6 +38,7 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -218,18 +221,23 @@ class OkouAppTest {
     }
 
     @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun chatFilterSurvivesSettingsAndBack() {
         render()
-        compose.onNodeWithText("Chats").assertExists()
+        compose.onNodeWithContentDescription("Chats").assertExists()
         compose.onNodeWithContentDescription("More actions").assertDoesNotExist()
         compose.onNodeWithContentDescription("Filter").performClick()
-        compose.onNodeWithText("Inbox").assertIsSelected()
+        compose.onNodeWithText("Inbox").assertIsSelected().assertHeightIsEqualTo(48.dp)
+        compose
+            .onNodeWithTag("chat_filter_popup")
+            .assertWidthIsEqualTo(244.dp)
+            .assertHeightIsEqualTo(265.dp)
         compose.onNodeWithText("Mark all as read").assertIsNotEnabled()
         compose.onNodeWithText("Archived").performClick()
         compose.onNodeWithContentDescription("Settings").performClick()
         compose.onNodeWithText("Appearance").assertExists()
         compose.onNodeWithContentDescription("Back").performClick()
-        compose.onNodeWithText("Archived").assertIsSelected()
+        compose.onNodeWithText("Archived").assertIsSelected().assertHeightIsEqualTo(48.dp)
         compose.onNodeWithText("Archived").performClick()
         compose.onNodeWithText("Archived").assertDoesNotExist()
     }
@@ -342,7 +350,7 @@ class OkouAppTest {
         compose.onNodeWithText("Dunkel").assertIsDisplayed()
         compose.onNodeWithText("Arbeitsbereichseinstellungen").performScrollTo().assertIsDisplayed()
         compose.onNodeWithContentDescription("Zurück").assertIsDisplayed().performClick()
-        compose.onNodeWithText("Chats").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Chats").assertIsDisplayed()
         val refresh =
             compose
                 .onNodeWithTag("chat_list")
