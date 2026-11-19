@@ -1739,30 +1739,6 @@ export function createThreadClaimRunObjects(
         : { kind: "ok", autonomyBudget: derived.autonomyBudget };
     },
   );
-  const automationMaterial$ = computed(async (get) => {
-    const [input, eventPayload] = await Promise.all([
-      get(automationSource$),
-      get(threadContext.automationPayload$),
-    ]);
-    if (input.kind === "rejected") {
-      return null;
-    }
-    const { event, target } = input;
-    return buildWorkflowAutomationQueuedLaunchMaterial({
-      // Staff migration retains queued event bytes while reassigning the live
-      // Automation. Resolve its new execution name without rewriting history.
-      // Remove after every pre-cutover queued input has drained.
-      workflowName:
-        target.workflow.orgId === STAFF_SINGLE_AGENT_ORG_ID
-          ? target.workflow.name
-          : event.workflowName,
-      eventType: event.eventType,
-      eventPayload,
-      automation: target.automation,
-      agentId: target.agentId,
-      chatThreadId: event.chatThreadId,
-    });
-  });
   const automationModel$ = computed(
     async (get): Promise<ThreadModelSelection | ThreadModelError> => {
       if ((await get(automationSource$)).kind === "rejected") {
@@ -1789,7 +1765,7 @@ export function createThreadClaimRunObjects(
       if (input.kind === "rejected") {
         return input.assembly;
       }
-      await get(automationSourceBudget$);
+      const autonomyBudget = await get(automationBudget$);
       const { event, target } = input;
       if (
         target.workflow.officialDefinitionName !== null &&
@@ -1806,10 +1782,20 @@ export function createThreadClaimRunObjects(
           },
         };
       }
-      const [material, autonomyBudget] = await Promise.all([
-        get(automationMaterial$),
-        get(automationBudget$),
-      ]);
+      const material = buildWorkflowAutomationQueuedLaunchMaterial({
+        // Staff migration retains queued event bytes while reassigning the live
+        // Automation. Resolve its new execution name without rewriting history.
+        // Remove after every pre-cutover queued input has drained.
+        workflowName:
+          target.workflow.orgId === STAFF_SINGLE_AGENT_ORG_ID
+            ? target.workflow.name
+            : event.workflowName,
+        eventType: event.eventType,
+        eventPayload: await get(threadContext.automationPayload$),
+        automation: target.automation,
+        agentId: target.agentId,
+        chatThreadId: event.chatThreadId,
+      });
       if (!material) {
         return {
           kind: "rejected",
@@ -2781,57 +2767,35 @@ export function createThreadClaimRunObjects(
         const launch = await get(automationLaunch$);
         signal.throwIfAborted();
         if (launch.kind === "rejected") {
-          return { kind: "rejected" as const, assembly: launch };
+          return launch;
         }
         await get(automationAssembly$);
         signal.throwIfAborted();
       }
-      const [runner, callbackRows, assembly, identity] = await Promise.all([
-        set(prepareRunnerResources$, signal),
-        get(callbackRows$),
-        get(assembly$),
-        get(runIdentity$),
-      ]);
+      const [[input, runnerLaunch], callbackRows, assembly, identity] =
+        await Promise.all([
+          set(prepareRunnerResources$, signal),
+          get(callbackRows$),
+          get(assembly$),
+          get(runIdentity$),
+        ]);
       signal.throwIfAborted();
+      if (assembly.kind !== "assembled") {
+        return assembly;
+      }
       return {
         kind: "prepared" as const,
-        runner,
+        input,
+        runnerLaunch,
         callbackRows,
         assembly,
         identity,
       };
     },
   );
-  const prepareClaimResources$ = command(
-    async ({ get, set }, head: ChatQueueHeadContext, signal: AbortSignal) => {
-      const [launch] = await Promise.all([
-        set(prepareLaunchResources$, head, signal),
-        get(preparedStorage$),
-        // Connector reads start independently of prompt/model material. A
-        // prefetch miss joins the same loader once for this selected identity.
-        get(bootstrap.connectors$),
-        get(threadContext.connectorThreadSelections$),
-      ]);
-      signal.throwIfAborted();
-      if (launch.kind === "rejected") {
-        return { kind: "rejected" as const, assembly: launch.assembly };
-      }
-      const [input, runnerLaunch] = launch.runner;
-      return {
-        kind: "prepared" as const,
-        resources: [
-          input,
-          runnerLaunch,
-          launch.callbackRows,
-          launch.assembly,
-          launch.identity,
-        ] as const,
-      };
-    },
-  );
   const prepareRunContext$ = command(
     async (
-      { set },
+      { get, set },
       timing: ClaimRunTiming,
       signal: AbortSignal,
     ): Promise<ThreadRunContext | { readonly kind: "passed" }> => {
@@ -2840,39 +2804,31 @@ export function createThreadClaimRunObjects(
       if (!head) {
         return { kind: "passed" };
       }
-      const resources = await set(prepareClaimResources$, head, signal);
+      const [resources] = await Promise.all([
+        set(prepareLaunchResources$, head, signal),
+        get(preparedStorage$),
+        // Connector reads start independently of prompt/model material. A
+        // prefetch miss joins the same loader once for this selected identity.
+        get(bootstrap.connectors$),
+        get(threadContext.connectorThreadSelections$),
+      ]);
       signal.throwIfAborted();
-      if (resources.kind === "rejected") {
-        const early = resources.assembly;
+      if (resources.kind !== "prepared") {
         await set(
           rejectChatQueueHead$,
           {
             head,
             rejection:
-              early.kind === "rejected"
-                ? early.rejection
+              resources.kind === "rejected"
+                ? resources.rejection
                 : unreadyQueueHeadRejection(head),
           },
           signal,
         );
         return { kind: "passed" };
       }
-      const [input, runnerLaunch, callbackRows, assembly, identity] =
-        resources.resources;
-      if (assembly.kind !== "assembled") {
-        await set(
-          rejectChatQueueHead$,
-          {
-            head,
-            rejection:
-              assembly.kind === "rejected"
-                ? assembly.rejection
-                : unreadyQueueHeadRejection(head),
-          },
-          signal,
-        );
-        return { kind: "passed" };
-      }
+      const { input, runnerLaunch, callbackRows, assembly, identity } =
+        resources;
       const failure = firstPreparationFailure([input, runnerLaunch]);
       if (failure) {
         await set(
