@@ -37,10 +37,7 @@ import type { PickedThreadInputEvent } from "./thread-run-prompt/types";
 
 type RunMemoryObservation =
   | { readonly kind: "ready"; readonly mounts: readonly AcceptedMemoryMount[] }
-  | {
-      readonly kind: "missing";
-      readonly input: AgentRunStoragePlan["requested"]["input"];
-    };
+  | { readonly kind: "missing" };
 
 /**
  * The Run's memory storage from its current Agent and model: resolved
@@ -61,7 +58,7 @@ export function createStorageSignals(
   const storage$ = computed(async (get): Promise<RunMemoryObservation> => {
     const plan = await get(plan$);
     if (plan.missingArtifacts.length > 0) {
-      return { kind: "missing", input: plan.requested.input };
+      return { kind: "missing" };
     }
     return {
       kind: "ready",
@@ -71,16 +68,13 @@ export function createStorageSignals(
   const owner = { orgId: bootstrap.orgId, userId: bootstrap.userId };
   const initializedMemory$ = createMemberMemoryContext(owner);
   const recoverMemoryMounts$ = command(
-    async (
-      { get, set },
-      input: AgentRunStoragePlan["requested"]["input"],
-      signal: AbortSignal,
-    ) => {
+    async ({ get, set }, signal: AbortSignal) => {
+      const { requested } = await get(plan$);
       await set(initializeMemberMemory$, owner, signal);
       const { index: storageIndex } = await get(initializedMemory$);
       signal.throwIfAborted();
       return await finalizeMemoryMounts(
-        await resolveStorageEntries({ ...input, storageIndex }),
+        await resolveStorageEntries({ ...requested.input, storageIndex }),
       );
     },
   );

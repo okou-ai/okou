@@ -2577,7 +2577,7 @@ export function createThreadClaimRunObjects(
       const memoryMounts =
         preparedStorage.kind === "ready"
           ? preparedStorage.mounts
-          : await set(recoverMemoryMounts$, preparedStorage.input, signal);
+          : await set(recoverMemoryMounts$, signal);
       return {
         ...input,
         memoryMounts,
