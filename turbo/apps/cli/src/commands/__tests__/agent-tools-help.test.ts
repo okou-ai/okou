@@ -113,12 +113,14 @@ describe("agent-facing operational CLI help", () => {
     expect(root).toContain("exact returned connectionId");
     expect(root).toContain("Diagnose the exact failed URL and method");
     expect(root).toContain(
-      "Provider OAuth scope names are not Okou permissions",
+      "Use provider OAuth scopes only in the provider's authorization flow",
     );
     expect(root).toContain("exactly one access action");
 
     const accounts = await helpFor(connectorCommand, ["account", "list"]);
-    expect(accounts).toContain("never invent an ID");
+    expect(accounts).toContain(
+      "Use the exact connectionId returned for the connector",
+    );
     expect(accounts).toContain("account already admitted to the current Run");
 
     const check = await helpFor(connectorCommand, ["check"]);

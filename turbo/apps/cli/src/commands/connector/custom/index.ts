@@ -61,10 +61,10 @@ const listCommand = new Command()
   .addHelpText(
     "after",
     `
-Lists workspace definitions and your saved accounts. Inside a Run, the Chat
-allowance column shows whether this Chat allows an account for each connector.
-Use connector list for the exact accounts used by the Run. UUIDs identify
-custom status and update targets.
+Lists workspace definitions and your saved accounts, including inside a Run.
+The Chat allowance column shows whether this Chat allows an account for each
+connector. Use connector list for the exact accounts admitted to the Run.
+UUIDs identify custom status and update targets.
 `,
   )
   .action(
@@ -175,8 +175,9 @@ const statusCommand = new Command()
     "after",
     `
 Accepts a custom connector full slug, UUID or exact unique display name.
-Shows the workspace definition and your saved-account status, plus this Chat's
-account allowance inside a Run. Use connector status for the exact Run account.
+Shows the workspace definition and your saved-account status, including inside a Run.
+Inside a Run it also shows this Chat's account allowance. Use connector status
+for the exact account admitted to the Run.
 `,
   )
   .action(

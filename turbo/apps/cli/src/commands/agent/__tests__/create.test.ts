@@ -57,17 +57,13 @@ describe("okou agent create command", () => {
         "New Agent",
       ]);
 
-      const logCalls = mockConsoleLog.mock.calls.flat().join("\n");
-      expect(logCalls).toContain("comp_xyz789");
-      expect(logCalls).toContain("created");
+      const logCalls = mockConsoleLog.mock.calls.flat();
+      expect(logCalls.join("\n")).toContain("comp_xyz789");
+      expect(logCalls.join("\n")).toContain("created");
+      expect(logCalls).toContain("  okou connector search <keyword>");
+      expect(logCalls).toContain("  okou connector status <slug>");
       expect(logCalls).toContain(
-        "Next steps to authorize connectors for this agent:",
-      );
-      expect(logCalls).toContain(
-        "okou connector search <keyword> --agent comp_xyz789",
-      );
-      expect(logCalls).toContain(
-        "okou connector status <slug> --agent comp_xyz789",
+        "Manage which saved accounts a Chat can use in Chat settings.",
       );
     });
 

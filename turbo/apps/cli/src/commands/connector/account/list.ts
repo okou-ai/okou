@@ -161,12 +161,12 @@ export const listConnectorAccountsCommand = new Command()
     "after",
     `
 Lists saved accounts for the connector. Inside a Run, JSON includes enabled and
-isCurrent for this Chat. Inspect the account used by the Run with connector
-status <selector> --json.
+isCurrent for this Chat. Use connector status <selector> --json to inspect the
+account already admitted to the current Run.
 
-Use an exact connectionId returned for the connector. Switch an enabled account
-with connector account switch. Request owner approval for a disabled account
-with connector account switch-request.`,
+Use the exact connectionId returned for the connector. Use that ID only with its
+listed connector. Switch an enabled account with connector account switch.
+Request owner approval for a disabled account with connector account switch-request.`,
   )
   .action(
     withErrorHandler(
