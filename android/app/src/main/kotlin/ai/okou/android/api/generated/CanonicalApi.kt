@@ -217,6 +217,35 @@ internal interface CanonicalApi {
         @Path("id") `pathId`: String,
         @Query("eventId") `queryEventId`: String? = null,
     ): Response<Unit>
+
+    @POST("/api/chat-threads/{id}/rename")
+    suspend fun `renameThread`(
+        @Header("Authorization") token: String,
+        @Path("id") `pathId`: String,
+        @Body body: RenameThreadRequest,
+    ): Response<Unit>
+
+    @POST("/api/chat-threads/{id}/pin")
+    suspend fun `pinThread`(
+        @Header("Authorization") token: String,
+        @Path("id") `pathId`: String,
+        @Query("eventId") `queryEventId`: String? = null,
+        @Query("pinOrder") `queryPinOrder`: String? = null,
+    ): Response<Unit>
+
+    @POST("/api/chat-threads/{id}/unpin")
+    suspend fun `unpinThread`(
+        @Header("Authorization") token: String,
+        @Path("id") `pathId`: String,
+        @Query("eventId") `queryEventId`: String? = null,
+    ): Response<Unit>
+
+    @POST("/api/chat-threads/{id}/pin-order")
+    suspend fun `reorderPinnedThread`(
+        @Header("Authorization") token: String,
+        @Path("id") `pathId`: String,
+        @Body body: ReorderPinnedThreadRequest,
+    ): Response<Unit>
 }
 
 internal suspend fun CanonicalApi.`historyRows`(

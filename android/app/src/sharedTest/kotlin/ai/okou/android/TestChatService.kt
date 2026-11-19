@@ -45,6 +45,18 @@ open class TestChatService : ChatListService {
     override suspend fun setArchived(threadId: String, archived: Boolean, eventId: String): Unit =
         error("Unexpected archive change")
 
+    override suspend fun renameThread(threadId: String, title: String, eventId: String): Unit =
+        error("Unexpected rename")
+
+    override suspend fun setPinned(threadId: String, pinOrder: String?, eventId: String): Unit =
+        error("Unexpected pin change")
+
+    override suspend fun reorderPinnedThread(
+        threadId: String,
+        pinOrder: String,
+        eventId: String,
+    ): Unit = error("Unexpected pin reorder")
+
     override suspend fun featureSwitches() = FeatureSwitches(emptyMap(), emptyMap())
 
     override suspend fun chatSnapshot() =

@@ -1,5 +1,9 @@
 # Feature screenshot acceptance
 
+Follow the [feature screenshot principles](../../docs/android/android-testing.md#feature-screenshots).
+Prefer local ADB capture when the required build and test environment are
+available. Use this guide for managed captures.
+
 Run **Android Screenshots** manually with a full `commit_sha` and a repository-relative
 `script_path`, for example `android/screenshots/pr-123-feature/run.sh`. Both the app and
 recipe come from that commit. The workflow must first be registered on the default branch;

@@ -21,6 +21,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -28,12 +30,16 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.LongState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -67,6 +73,8 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
@@ -80,12 +88,33 @@ internal fun ChatListScreen(
     refreshIndicators: () -> Unit,
     open: (ConfirmedChat) -> Unit,
     performRowAction: (String, ChatRowAction) -> Unit,
+    renameThread: (String, String) -> Unit,
     collapsed: List<String>,
     toggleProject: (String) -> Unit,
     listState: LazyListState,
     newChat: (String?) -> Unit,
     selectedChatId: String?,
 ) {
+    var renamingId by remember { mutableStateOf<String?>(null) }
+    val renaming =
+        renamingId?.let { id -> state.threads.firstOrNull { it.id == id && it.hidden != true } }
+    if (renaming != null) {
+        key(renaming.id) {
+            RenameChatDialog(
+                currentTitle = renaming.title.orEmpty(),
+                enabled =
+                    state.listPhase != ChatReadPhase.Failed &&
+                        renaming.id !in state.pendingRowActions,
+                dismiss = { renamingId = null },
+                save = { title ->
+                    renameThread(renaming.id, title)
+                    renamingId = null
+                },
+            )
+        }
+    } else if (renamingId != null && state.listPhase == ChatReadPhase.Ready) {
+        LaunchedEffect(renamingId) { renamingId = null }
+    }
     val groups =
         remember(
             state.threads,
@@ -240,10 +269,11 @@ internal fun ChatListScreen(
                                     thread.id == selectedChatId,
                                     runningFrame,
                                     row = section.firstChatRow + index,
-                                    actions = state.rowActions(thread),
+                                    actions = state.rowActions(thread, group, index),
                                     pendingAction = state.pendingRowActions[thread.id],
                                     performAction = { action ->
-                                        performRowAction(thread.id, action)
+                                        if (action == ChatRowAction.Rename) renamingId = thread.id
+                                        else performRowAction(thread.id, action)
                                     },
                                 ) {
                                     open(thread)
@@ -272,6 +302,46 @@ internal fun ChatListScreen(
             }
         }
     }
+}
+
+@Composable
+private fun RenameChatDialog(
+    currentTitle: String,
+    enabled: Boolean,
+    dismiss: () -> Unit,
+    save: (String) -> Unit,
+) {
+    var input by remember { mutableStateOf(TextFieldValue(currentTitle)) }
+    val title = input.text.trim()
+    val foreground = MaterialTheme.colorScheme.onSurface
+    AlertDialog(
+        onDismissRequest = dismiss,
+        title = { Text(stringResource(R.string.chat_rename)) },
+        text = {
+            OutlinedTextField(
+                value = input,
+                onValueChange = { input = it },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text(stringResource(R.string.chat_title_field)) },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                colors =
+                    OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = foreground,
+                        focusedLabelColor = foreground,
+                        cursorColor = foreground,
+                    ),
+            )
+        },
+        confirmButton = {
+            ChatAction(
+                R.string.chat_rename_confirm,
+                { save(title) },
+                enabled = enabled && title.isNotEmpty() && title != currentTitle.trim(),
+            )
+        },
+        dismissButton = { ChatAction(R.string.chat_rename_cancel, dismiss) },
+    )
 }
 
 private fun projectRowKey(id: String) = "group_$id"
@@ -447,6 +517,11 @@ private fun ChatRowAction.label(): Int =
         ChatRowAction.Unmute -> R.string.chat_unmute
         ChatRowAction.Archive -> R.string.chat_archive
         ChatRowAction.Unarchive -> R.string.chat_unarchive
+        ChatRowAction.Rename -> R.string.chat_rename
+        ChatRowAction.Pin -> R.string.chat_pin
+        ChatRowAction.Unpin -> R.string.chat_unpin
+        ChatRowAction.MovePinUp -> R.string.chat_move_pin_up
+        ChatRowAction.MovePinDown -> R.string.chat_move_pin_down
     }
 
 @Composable
