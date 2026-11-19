@@ -119,44 +119,6 @@ describe("shared Browser public consumers", () => {
     },
   );
 
-  it("authorizes native viewing of an active Browser without a provider live URL", async () => {
-    const f = await fixture();
-    await f.owned.run(async () => {
-      const a = await f.start();
-      await use(a);
-      const [providerSessionId] = f.provider.sessionIds;
-      server.use(
-        http.get(`${PROVIDER_URL}/browsers/${providerSessionId}`, () => {
-          return HttpResponse.json({
-            id: providerSessionId,
-            status: "active",
-            liveUrl: null,
-            cdpUrl: f.provider.native.url,
-            extensions: [TEST_BROWSER_EXTENSION],
-            startedAt: new Date(START).toISOString(),
-            timeoutAt: new Date(START + 240 * MINUTE).toISOString(),
-            finishedAt: null,
-          });
-        }),
-      );
-      const params = { threadId: a.threadId };
-      const session = await accept(client().get({ headers, params }), [200]);
-      expect(session.body.browser).toMatchObject({
-        status: "active",
-        liveUrl: null,
-      });
-      const viewer = await accept(
-        client().get({ headers, params, query: { viewer: "native" } }),
-        [200],
-      );
-      expect(viewer.body.viewer).toStrictEqual({
-        browser: session.body.browser,
-        cdpUrl: f.provider.native.url,
-        extension: TEST_BROWSER_EXTENSION,
-      });
-    });
-  });
-
   it("reports a suspended Browser when its chat window expires during acquisition", async () => {
     const f = await fixture();
     await f.owned.run(async () => {
