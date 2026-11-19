@@ -1,6 +1,6 @@
 import { command, computed, state } from "ccstate";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../external/feature-switch.ts";
+import { featureSwitches$ } from "../external/feature-switch.ts";
 import type { ModelProviderSelection } from "../../views/okou-page/components/model-provider-picker.tsx";
 import {
   sendNewThread$,
@@ -116,12 +116,14 @@ function createAgentSubmitMessage(
       if (action !== "send") {
         return false;
       }
+      const features = await get(featureSwitches$);
+      signal.throwIfAborted();
       const access = get(newThreadComputerAccess$);
-      const initialPhoneUse = get(featureSwitch$)[FeatureSwitchKey.PhoneUse]
+      const initialPhoneUse = features[FeatureSwitchKey.PhoneUse]
         ? get(connector.phoneAccess.pending$)
         : null;
       const chatAccessEnabled =
-        get(featureSwitch$)[FeatureSwitchKey.ConnectorChatAccountAccess];
+        features[FeatureSwitchKey.ConnectorChatAccountAccess];
       const connectorPreference = chatAccessEnabled
         ? null
         : await get(connector.accounts.preferenceState$);

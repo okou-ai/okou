@@ -5,7 +5,7 @@ import {
   type GoogleWorkspaceTarget,
 } from "@okouai/core/google-workspace-conversion";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
+import { featureSwitches$ } from "../../signals/external/feature-switch.ts";
 import { isShareableArtifactReference } from "../../signals/artifact-sharing.ts";
 import type { AttachmentPreviewSignals } from "../../signals/attachment-resource-url.ts";
 import { ArtifactShareMenu } from "./artifact-share-menu.tsx";
@@ -280,7 +280,7 @@ function useGoogleDriveAvailability(
 function useGoogleWorkspaceTarget(
   filename: string,
 ): GoogleWorkspaceTarget | undefined {
-  const features = useLastResolved(featureSwitch$);
+  const features = useLastResolved(featureSwitches$);
   const target = googleWorkspaceTarget(filename);
   if (
     target === "presentation" &&

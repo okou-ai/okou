@@ -9,12 +9,12 @@ import { command, computed, state } from "ccstate";
 import { accept } from "../../../lib/accept.ts";
 import { defaultAgentId$ } from "../../agent.ts";
 import { apiClient$ } from "../../api-client.ts";
-import { featureSwitch$ } from "../../external/feature-switch.ts";
+import { featureSwitches$ } from "../../external/feature-switch.ts";
 import { onRef } from "../../utils.ts";
 import { settingsActionSignal$ } from "./settings-dialog.ts";
 
 export const debugLearningEnabled$ = computed(async (get) => {
-  const features = await get(featureSwitch$);
+  const features = await get(featureSwitches$);
   return (
     features[FeatureSwitchKey.OkouDebug] &&
     features[FeatureSwitchKey.ProactiveLearning]

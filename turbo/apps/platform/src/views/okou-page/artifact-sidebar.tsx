@@ -2,7 +2,7 @@ import type { ArtifactDeletionOrigin } from "../../signals/artifact-deletion-ori
 import { ArtifactDeleteButton } from "./artifact-deletion.tsx";
 import { ArtifactPreviewActionGroup } from "./artifact-preview-action-group.tsx";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
+import { featureSwitches$ } from "../../signals/external/feature-switch.ts";
 import { ArtifactDiagramLightbox } from "../components/artifact-diagram-lightbox.tsx";
 import { HostedSiteAccessCard } from "../hosted-site-authorization/hosted-site-access-page.tsx";
 import {
@@ -239,7 +239,9 @@ export function ArtifactSidebarContent({
   const share = useLoadable(artifactRef.shareUrl$);
   const shareUrl = useLastResolved(artifactRef.shareUrl$);
   const groupedActions =
-    useGet(featureSwitch$)[FeatureSwitchKey.ArtifactPreviewActionGroup];
+    useLastResolved(featureSwitches$)?.[
+      FeatureSwitchKey.ArtifactPreviewActionGroup
+    ] ?? false;
   const resolvedDisplay = resolveArtifactDisplay(artifactRef, item);
   const display = {
     ...resolvedDisplay,
@@ -631,7 +633,9 @@ function ArtifactSidebarActions({
   url: string;
 }) {
   const groupedActions =
-    useGet(featureSwitch$)[FeatureSwitchKey.ArtifactPreviewActionGroup];
+    useLastResolved(featureSwitches$)?.[
+      FeatureSwitchKey.ArtifactPreviewActionGroup
+    ] ?? false;
   return (
     <div className="flex shrink-0 items-center gap-1">
       <ArtifactPreviewActionGroup

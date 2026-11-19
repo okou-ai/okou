@@ -1,3 +1,4 @@
+import { detach, Reason } from "../../signals/utils.ts";
 import { withChatScrollLayout } from "./chat-scroll-layout.tsx";
 import {
   useGet,
@@ -125,6 +126,7 @@ function MediaImage({
   onActivate,
   resolutionFailed = false,
 }: MediaImageProps) {
+  const pageSignal = useGet(pageSignal$);
   const { t } = useTranslation();
   const loadStatus = useGet(load.status$);
   const imageStatus = resolutionFailed ? "error" : loadStatus;
@@ -228,12 +230,19 @@ function MediaImage({
         const threadId = event.currentTarget.closest<HTMLElement>(
           "[data-chat-thread-container-id]",
         )?.dataset.chatThreadContainerId;
-        openImageLightbox({
-          threadId,
-          url,
-          filename,
-          preview: resolvedPreview,
-        });
+        detach(
+          openImageLightbox(
+            {
+              threadId,
+              url,
+              filename,
+              preview: resolvedPreview,
+            },
+            undefined,
+            pageSignal,
+          ),
+          Reason.DomCallback,
+        );
       }}
       className={className}
     >
@@ -297,6 +306,7 @@ function ArtifactLinkIcon({
 }
 
 function MediaLink({ href, children, ...rest }: MarkdownAnchorProps) {
+  const pageSignal = useGet(pageSignal$);
   const openArtifact = useSet(openMarkdownArtifact$);
   const openMailDraft = useSet(openThreadMailDraft$);
   const openImageLightbox = useSet(openImageLightbox$);
@@ -314,13 +324,20 @@ function MediaLink({ href, children, ...rest }: MarkdownAnchorProps) {
           openMailDraft(card.signals);
         } else if (card?.kind === "artifact") {
           event.preventDefault();
-          openArtifact(card);
+          detach(openArtifact(card, undefined, pageSignal), Reason.DomCallback);
         } else if (href && isSafeMediaUrl(href) && isImageUrl(href)) {
           event.preventDefault();
           const threadId = event.currentTarget.closest<HTMLElement>(
             "[data-chat-thread-container-id]",
           )?.dataset.chatThreadContainerId;
-          openImageLightbox(threadId ? { threadId, url: href } : href);
+          detach(
+            openImageLightbox(
+              threadId ? { threadId, url: href } : href,
+              undefined,
+              pageSignal,
+            ),
+            Reason.DomCallback,
+          );
         }
       }}
     >

@@ -5,8 +5,8 @@ import { DEFAULT_AGENT_AVATAR_URL } from "@okouai/core/agent-avatar";
 import { avatarTextureUrl } from "@okouai/core/agent-avatar-texture";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { OkouAvatar, cn } from "@okouai/ui";
-import { useGet } from "ccstate-react";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
+import { useLastResolved } from "ccstate-react";
+import { featureSwitches$ } from "../../signals/external/feature-switch.ts";
 import type { PlatformConnectorCatalogConnectItem } from "../../signals/connector-domain.ts";
 import { ConnectorIcon } from "../okou-page/components/settings/connector-icons.tsx";
 import { OnboardingSourceOutcomeContent } from "./onboarding-source-outcome-content.tsx";
@@ -202,7 +202,8 @@ export function OnboardingSourceOutcome({
 /** Okou at the head of the outcome card: the animated avatar once it is on. */
 function OnboardingOkouAvatar() {
   const animatedAvatar =
-    useGet(featureSwitch$)[FeatureSwitchKey.OkouAnimatedAvatar];
+    useLastResolved(featureSwitches$)?.[FeatureSwitchKey.OkouAnimatedAvatar] ===
+    true;
   return animatedAvatar ? (
     <OkouAvatar size={22} />
   ) : (

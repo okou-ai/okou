@@ -343,7 +343,7 @@ test("Remote access stays open while a changed chat host refreshes", async () =>
   click(await findFastControl("button", "Connectors"));
   const remoteAccess = await screen.findByText("Remote access");
   click(remoteAccess);
-  const menu = screen.getByRole("dialog", { name: "Remote access" });
+  const menu = await screen.findByRole("dialog", { name: "Remote access" });
   const first = await screen.findByRole("combobox", { name: "SSH SSH host 1" });
   const second = screen.getByRole("combobox", { name: "SSH SSH host 2" });
 
@@ -691,9 +691,13 @@ test.each([
 test("Apply SSH host choices during thread creation", async () => {
   const { fixture, first, second, user } = await prepareDraftHostChoices();
   await chooseRemoteHost(first, "Off");
+  await waitFor(() => {
+    expect(first).toHaveTextContent("Off");
+  });
   await chooseRemoteHost(second, "On");
-  expect(first).toHaveTextContent("Off");
-  expect(second).toHaveTextContent("On");
+  await waitFor(() => {
+    expect(second).toHaveTextContent("On");
+  });
   await closeRemoteAccess();
   const composer = await screen.findByRole("textbox", { name: "Message" });
   await fill(composer, "Inspect both hosts");
@@ -897,8 +901,17 @@ test("Directory SSH setup follows shelves and categories", async () => {
   await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
   click(await findFastControl("button", "Connectors"));
   click(await findFastControl("button", "Add connectors"));
-  const dialog = await screen.findByRole("dialog", { name: "Connectors" });
-  await within(dialog).findByTestId("connector-shelf-head");
+  const dialog = await waitFor(() => {
+    const directory = screen
+      .getAllByRole("dialog", { name: "Connectors" })
+      .find((candidate) => {
+        return within(candidate).queryByTestId("connector-shelf-head") !== null;
+      });
+    if (!directory) {
+      throw new Error("Connector directory has not opened");
+    }
+    return directory;
+  });
   await findFastControl("link", "Manage SSH hosts", dialog);
   click(await findFastControl("button", "Remote access1", dialog));
   await within(dialog).findByRole("heading", { name: "Remote access" });

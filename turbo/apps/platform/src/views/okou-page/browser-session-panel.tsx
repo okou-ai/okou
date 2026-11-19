@@ -3,7 +3,13 @@ import type { ReactNode } from "react";
 import { AppWindow, AppWindowMac, Loader2, Play } from "lucide-react";
 import { Button, cn } from "@okouai/ui";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
+import {
+  useLastResolved,
+  useGet,
+  useLastLoadable,
+  useLoadable,
+  useSet,
+} from "ccstate-react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -11,7 +17,7 @@ import {
   isBrowserUnauthorized,
   type BrowserSessionSignals,
 } from "../../signals/chat-page/browser-session-block.ts";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
+import { featureSwitches$ } from "../../signals/external/feature-switch.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { Browser, BrowserLoadingStatus } from "../browser/browser.tsx";
@@ -285,7 +291,9 @@ function PausedBrowserSession({
 function BrowserSessionFooter({
   signals,
 }: Pick<BrowserSessionPanelProps, "signals">) {
-  const refined = useGet(featureSwitch$)[FeatureSwitchKey.CloudBrowserPanel];
+  const refined =
+    useLastResolved(featureSwitches$)?.[FeatureSwitchKey.CloudBrowserPanel] ===
+    true;
   const status = useLastLoadable(signals.panelStatus$);
   if (refined) {
     return null;
@@ -314,7 +322,9 @@ function BrowserSessionPanelContent({
   const instanceId = useLastLoadable(signals.panelInstanceId$);
   const windowId = useLastLoadable(signals.panelWindowId$);
   const connection = useLoadable(signals.viewerConnection$);
-  const refined = useGet(featureSwitch$)[FeatureSwitchKey.CloudBrowserPanel];
+  const refined =
+    useLastResolved(featureSwitches$)?.[FeatureSwitchKey.CloudBrowserPanel] ===
+    true;
   const keepAliveRef = useSet(signals.keepAliveRef$);
   const [startOperation, start] = useLoadableSet(signals.start$);
   const starting = startOperation.state === "loading";

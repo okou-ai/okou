@@ -14,7 +14,7 @@ import { now } from "../../lib/time.ts";
 import { defaultAgentId$ } from "../agent.ts";
 import { apiClient$ } from "../api-client.ts";
 import { authenticatedSessionKey$ } from "../auth.ts";
-import { featureSwitch$ } from "../external/feature-switch.ts";
+import { featureSwitches$ } from "../external/feature-switch.ts";
 import { setAblyLoop$ } from "../realtime.ts";
 import { rootSignal$ } from "../root-signal.ts";
 import { onDomEventFn, onRef, resetSignal } from "../utils.ts";
@@ -167,12 +167,14 @@ interface SettledSuggestion extends AgentSuggestionListItem {
 }
 
 /** The suggestion feature owns both the For you page and its navigation entry. */
-export const suggestionsEnabled$ = computed((get) => {
-  return get(featureSwitch$)[FeatureSwitchKey.AgentSuggestion] === true;
+export const suggestionsEnabled$ = computed(async (get) => {
+  return (
+    (await get(featureSwitches$))[FeatureSwitchKey.AgentSuggestion] === true
+  );
 });
 
 const agentSuggestionsEnabled$ = computed(async (get) => {
-  if (!get(suggestionsEnabled$)) {
+  if (!(await get(suggestionsEnabled$))) {
     return false;
   }
   // A new-chat option starts in the default agent.

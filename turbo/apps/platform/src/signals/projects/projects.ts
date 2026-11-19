@@ -20,7 +20,7 @@ import {
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { infer as zInfer } from "zod";
 import { installedSharedDatabaseBridge$ } from "../shared-database-bridge-state.ts";
-import { featureSwitch$ } from "../external/feature-switch.ts";
+import { featureSwitches$ } from "../external/feature-switch.ts";
 import { apiClient$ } from "../api-client.ts";
 import { authenticatedSessionKey$ } from "../auth.ts";
 import { rootVersion$ } from "../root-signal.ts";
@@ -33,8 +33,8 @@ import {
   registerOptimisticChatThreadEvent$,
 } from "../chat-page/chat-thread-event-sourcing.ts";
 
-export const projectsEnabled$ = computed((get) => {
-  return get(featureSwitch$)[FeatureSwitchKey.SingleAgent] ?? false;
+export const projectsEnabled$ = computed(async (get) => {
+  return (await get(featureSwitches$))[FeatureSwitchKey.SingleAgent] ?? false;
 });
 type OptimisticProjectRename = Pick<
   ProjectEvent,
@@ -93,10 +93,7 @@ function unsettledMoves(
   }
   return moves.slice(settledThrough + 1);
 }
-export const projects$ = computed((get) => {
-  if (!get(projectsEnabled$)) {
-    return [];
-  }
+export const projectedProjects$ = computed((get) => {
   const owner = get(projectState$);
   const value = get(owner.events$);
   const persistedIds = new Set(
@@ -141,6 +138,10 @@ export const projects$ = computed((get) => {
     })
     .sort(compareProjectSortOrder);
 });
+
+export const projects$ = computed(async (get) => {
+  return (await get(projectsEnabled$)) ? get(projectedProjects$) : [];
+});
 /**
  * Projects created on this page that the server has not persisted yet. A chat
  * cannot start inside one until its creation lands.
@@ -165,7 +166,7 @@ export const unconfirmedProjectIds$ = computed((get) => {
 export const syncProjects$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const owner = get(projectState$);
-    if (!get(projectsEnabled$)) {
+    if (!(await get(projectsEnabled$))) {
       set(owner.events$, null);
       return;
     }
@@ -200,7 +201,7 @@ export const syncProjects$ = command(
 export const hydrateProjects$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const owner = get(projectState$);
-    if (!get(projectsEnabled$)) {
+    if (!(await get(projectsEnabled$))) {
       set(owner.events$, null);
       return;
     }
@@ -273,7 +274,7 @@ export const createProject$ = command(
     const owner = get(projectState$);
     const eventId = operation();
     const createdAt = nowDate().toISOString();
-    const sortOrder = lastProjectSortOrder(get(projects$));
+    const sortOrder = lastProjectSortOrder(get(projectedProjects$));
     const confirmation = accept(
       get(apiClient$)(projectsContract).create({
         body: { id: eventId, eventId, name, fromThreadId },
@@ -373,7 +374,7 @@ export const reorderProject$ = command(
   ) => {
     signal.throwIfAborted();
     const updates = moveProjectSortOrder(
-      get(projects$),
+      await get(projects$),
       projectId,
       targetId,
       side,

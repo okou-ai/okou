@@ -16,7 +16,7 @@ import { builtinConnectorAccountProjectionVersion$ } from "../okou-page/connecto
 import { setAblyInvalidationLoop$ } from "../realtime.ts";
 import { apiClient$ } from "../api-client";
 import { accept } from "../../lib/accept.ts";
-import { featureSwitch$ } from "./feature-switch.ts";
+import { featureSwitches$ } from "./feature-switch.ts";
 import type {
   PlatformConnectorCatalogStatusItem,
   PlatformConnectorConnectionStatus,
@@ -141,7 +141,7 @@ export const builtinConnectorsReloadVersion$ = computed((get) => {
  */
 export const connectorCatalogStatus$ = computed(async (get) => {
   get(builtinConnectorsReloadVersion$);
-  get(featureSwitch$);
+  await get(featureSwitches$);
 
   const createClient = get(apiClient$);
   const client = createClient(connectorCatalogContract);
@@ -159,7 +159,7 @@ export const connectorCatalogStatus$ = computed(async (get) => {
 export const oneClickConnectorCatalog$ = withBuiltinConnectorDefaults(
   computed(async (get) => {
     get(builtinConnectorsReloadVersion$);
-    get(featureSwitch$);
+    await get(featureSwitches$);
 
     const createClient = get(apiClient$);
     const client = createClient(connectorCatalogContract);
@@ -188,7 +188,7 @@ export function relatedConnectorCatalog(
 ): Computed<Promise<PublicConnectorCatalogDiscoveryResponse>> {
   return computed(async (get) => {
     get(builtinConnectorsReloadVersion$);
-    get(featureSwitch$);
+    await get(featureSwitches$);
     const keyword = get(keyword$).trim();
     const category = category$ ? get(category$) : null;
     const createClient = get(apiClient$);
@@ -211,7 +211,7 @@ export function connectorCatalogItemBySlug(
 ): Computed<Promise<PlatformConnectorCatalogStatusItem | null>> {
   return computed(async (get) => {
     get(builtinConnectorsReloadVersion$);
-    get(featureSwitch$);
+    await get(featureSwitches$);
     const createClient = get(apiClient$);
     const client = createClient(connectorCatalogContract);
     const result = await accept(

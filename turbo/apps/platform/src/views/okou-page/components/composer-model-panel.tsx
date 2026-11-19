@@ -88,7 +88,8 @@ function ComposerModelPanelBody({
   onClose: () => void;
 }) {
   const { t } = useTranslation();
-  const subscriptionLinkingEnabled = useGet(subscriptionLinkingEnabled$);
+  const subscriptionLinkingEnabled =
+    useLastResolved(subscriptionLinkingEnabled$) ?? false;
   const modelsLoadable = useLastLoadable(availableRunModels$);
   const catalogLoadable = useLastLoadable(modelCatalog$);
   const modelsResponse = useLastResolved(availableRunModels$);

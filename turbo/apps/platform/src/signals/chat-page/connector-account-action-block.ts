@@ -13,7 +13,7 @@ import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-id
 import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/client/chat-threads";
 import { runConnectorAccountsContract } from "@okouai/api-contracts/client/run-connector-accounts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../external/feature-switch.ts";
+import { featureSwitches$ } from "../external/feature-switch.ts";
 import { command, computed, type Command, type Computed } from "ccstate";
 
 import { accept } from "../../lib/accept.ts";
@@ -228,7 +228,7 @@ function createConnectorAccountConfirmSignal(
       clientEventId: crypto.randomUUID(),
       chatThreadSortEventId: crypto.randomUUID(),
     };
-    const features = await get(featureSwitch$);
+    const features = await get(featureSwitches$);
     signal.throwIfAborted();
     if (features[FeatureSwitchKey.ConnectorChatAccountAccess]) {
       await accept(
@@ -277,7 +277,7 @@ function createConnectorAccountActionSignals(
   const status$ = computed(
     async (get): Promise<ConnectorAccountActionStatus> => {
       if (
-        !(await get(featureSwitch$))[
+        !(await get(featureSwitches$))[
           FeatureSwitchKey.ConnectorChatAccountAccess
         ]
       ) {

@@ -136,7 +136,9 @@ test("Start a fresh overview when reopening before the previous popup finishes c
   const finish = holdElementAnimations(popup);
   try {
     click(trigger);
-    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    await waitFor(() => {
+      expect(trigger).toHaveAttribute("aria-expanded", "false");
+    });
     expect(popup).toBeVisible();
     click(trigger);
     const reopened = await screen.findByRole("dialog", { name: "Connectors" });

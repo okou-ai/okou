@@ -1,7 +1,7 @@
 import { command, computed, state } from "ccstate";
 import { chatConnectorAccessContract } from "@okouai/api-contracts/client/chat-connector-access";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../../external/feature-switch.ts";
+import { featureSwitches$ } from "../../external/feature-switch.ts";
 import { onRef, resetSignal } from "../../utils.ts";
 import { reloadUserConnectedConnectors$ } from "../connector-overview.ts";
 import { invalidateConnectorAccountProjection$ } from "../connector-account-projection.ts";
@@ -211,17 +211,20 @@ export function createConnectorAccountDefaultSignals(
   const resetSave$ = resetSignal();
   const defaults$ = computed(async (get) => {
     const request = get(request$);
-    if (!request) {
+    if (
+      !request ||
+      !(await get(featureSwitches$))[
+        FeatureSwitchKey.ConnectorChatAccountAccess
+      ]
+    ) {
       return null;
     }
     await get(settingsConnectorAccounts.accounts$);
     const result = await request.read(get(apiClient$));
     return result.body;
   });
-  const open$ = command(({ get, set }, signal: AbortSignal) => {
-    if (get(featureSwitch$)[FeatureSwitchKey.ConnectorChatAccountAccess]) {
-      set(request$, accountDefaultsRequest(target, set(resetOwner$, signal)));
-    }
+  const open$ = command(({ set }, signal: AbortSignal) => {
+    set(request$, accountDefaultsRequest(target, set(resetOwner$, signal)));
   });
   const close$ = command(({ set }) => {
     set(resetOwner$);

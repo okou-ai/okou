@@ -6,15 +6,15 @@ import { defaultAgentName$ } from "../agent.ts";
 import { apiClient$ } from "../api-client.ts";
 import { runtimeAuthenticatedIdentity$ } from "../auth-context.ts";
 import { currentOrgInfo$ } from "../auth.ts";
-import { featureSwitch$ } from "../external/feature-switch.ts";
+import { featureSwitches$ } from "../external/feature-switch.ts";
 import { replaceSearchParams$, searchParams$ } from "../route.ts";
 import { refreshWechat$, wechatStatus$ } from "./wechat.ts";
 
 export const wechatConnectPageStatus$ = computed(async (get) => {
-  if (!get(featureSwitch$)[FeatureSwitchKey.WechatIntegration]) {
+  const token = get(searchParams$).get("token");
+  if (!(await get(featureSwitches$))[FeatureSwitchKey.WechatIntegration]) {
     return { kind: "disabled" } as const;
   }
-  const token = get(searchParams$).get("token");
   const identity = await get(runtimeAuthenticatedIdentity$);
   if (token !== null) {
     if (!token || token.length > 1024) {

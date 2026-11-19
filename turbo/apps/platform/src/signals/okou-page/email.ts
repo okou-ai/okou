@@ -8,7 +8,7 @@ import { apiClient$ } from "../api-client.ts";
 import { accept } from "../../lib/accept.ts";
 import { searchParams$ } from "../route.ts";
 import { setAblyLoop$ } from "../realtime.ts";
-import { featureSwitch$ } from "../external/feature-switch.ts";
+import { featureSwitches$ } from "../external/feature-switch.ts";
 import { onRef } from "../utils.ts";
 
 const reload$ = state(0);
@@ -131,11 +131,12 @@ const connectOriginalEmail$ = command(async ({ get }, signal: AbortSignal) => {
   return response.body;
 });
 export const connectEmailFromLink$ = command(
-  ({ get, set }, signal: AbortSignal) => {
-    if (
-      !get(featureSwitch$)[FeatureSwitchKey.EmailIntegration] ||
-      !get(emailConnectParams$)?.success
-    ) {
+  async ({ get, set }, signal: AbortSignal) => {
+    const enabled = (await get(featureSwitches$))[
+      FeatureSwitchKey.EmailIntegration
+    ];
+    signal.throwIfAborted();
+    if (!enabled || !get(emailConnectParams$)?.success) {
       return;
     }
     const request = set(connectOriginalEmail$, signal);
@@ -170,8 +171,12 @@ const refreshEmailFromChange$ = command(({ set }) => {
   return false;
 });
 export const watchEmailConnection$ = command(
-  ({ get, set }, signal: AbortSignal) => {
-    if (!get(featureSwitch$)[FeatureSwitchKey.EmailIntegration]) {
+  async ({ get, set }, signal: AbortSignal) => {
+    const enabled = (await get(featureSwitches$))[
+      FeatureSwitchKey.EmailIntegration
+    ];
+    signal.throwIfAborted();
+    if (!enabled) {
       return;
     }
     set(

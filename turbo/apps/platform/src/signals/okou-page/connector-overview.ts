@@ -10,7 +10,7 @@ import { locale$ } from "../locale.ts";
 import { apiClient$, type ApiClientFactory } from "../api-client.ts";
 import { setAblyInvalidationLoop$ } from "../realtime.ts";
 import { resetSignal } from "../utils.ts";
-import { featureSwitch$ } from "../external/feature-switch.ts";
+import { featureSwitches$ } from "../external/feature-switch.ts";
 
 function resourceRequests(signal?: AbortSignal) {
   return {
@@ -75,7 +75,7 @@ export function createConnectorResourceSignals(threadId?: string) {
     return await get(requests$).remotes(get(apiClient$));
   });
   const phoneUseDevices$ = computed(async (get) => {
-    if (!get(featureSwitch$)[FeatureSwitchKey.PhoneUse]) {
+    if (!(await get(featureSwitches$))[FeatureSwitchKey.PhoneUse]) {
       return [];
     }
     get(phonesVersion$);
@@ -87,7 +87,10 @@ export function createConnectorResourceSignals(threadId?: string) {
     });
   });
   const phoneUseGrant$ = computed(async (get) => {
-    if (!threadId || !get(featureSwitch$)[FeatureSwitchKey.PhoneUse]) {
+    if (
+      !threadId ||
+      !(await get(featureSwitches$))[FeatureSwitchKey.PhoneUse]
+    ) {
       return null;
     }
     get(phonesVersion$);

@@ -116,7 +116,9 @@ const synchronizeWorkspaceLayout$ = command(
   ): Promise<void> => {
     signal.throwIfAborted();
     set(sidebarMotion.commit$, preparation);
-    if (get(artifactCatalogSidebar.open$)) {
+    const artifactOpen = await get(artifactCatalogSidebar.open$);
+    signal.throwIfAborted();
+    if (artifactOpen) {
       set(artifactCatalogSidebar.imageCanvas.syncLayout$);
     }
     await set(restoreChatLayoutScroll$, signal);

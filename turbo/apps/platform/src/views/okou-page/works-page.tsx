@@ -4,6 +4,7 @@ import type { Command } from "ccstate";
 import { ProviderCardMenu } from "./components/provider-card-menu.tsx";
 import { ConnectedIndicator } from "./components/connected-indicator.tsx";
 import {
+  useLastResolved,
   useGet,
   useSet,
   useLastLoadable,
@@ -68,7 +69,7 @@ import { openFreshOAuth } from "../../lib/oauth-window.ts";
 import { WechatCard } from "./wechat-card.tsx";
 import { WhatsappCard } from "./whatsapp-card.tsx";
 import { AgentPhoneCard } from "./agentphone-card.tsx";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
+import { featureSwitches$ } from "../../signals/external/feature-switch.ts";
 import { settingsIconAssetUrl } from "./components/settings/settings-icon-assets.ts";
 import { FeishuCard } from "./feishu-card.tsx";
 import type { DiscordOrgStatus } from "@okouai/api-contracts/contracts/integrations-discord";
@@ -953,10 +954,10 @@ function TelegramCard() {
 export function WorksPage() {
   const { t } = useTranslation();
   const assistantName = useGet(assistantName$);
-  const features = useGet(featureSwitch$);
+  const features = useLastResolved(featureSwitches$);
   const larkEnabled =
-    (features[FeatureSwitchKey.LarkIntegration] ?? false) ||
-    (features[FeatureSwitchKey.LarkOfficialBot] ?? false);
+    (features?.[FeatureSwitchKey.LarkIntegration] ?? false) ||
+    (features?.[FeatureSwitchKey.LarkOfficialBot] ?? false);
   const displayNameLoadable = useLoadable(currentChatAgentDisplayName$);
   const displayName =
     displayNameLoadable.state === "hasData"
@@ -992,15 +993,19 @@ export function WorksPage() {
           <TeamsCard displayName={displayName} />
           <DiscordCard />
           <GithubCard />
-          {features[FeatureSwitchKey.FeishuIntegration] ? <FeishuCard /> : null}
+          {features?.[FeatureSwitchKey.FeishuIntegration] ? (
+            <FeishuCard />
+          ) : null}
           {larkEnabled ? <FeishuCard platform="lark" /> : null}
           <TelegramCard />
           <AgentPhoneCard />
-          {features[FeatureSwitchKey.EmailIntegration] ? <EmailCard /> : null}
-          {features[FeatureSwitchKey.WhatsappIntegration] ? (
+          {features?.[FeatureSwitchKey.EmailIntegration] ? <EmailCard /> : null}
+          {features?.[FeatureSwitchKey.WhatsappIntegration] ? (
             <WhatsappCard />
           ) : null}
-          {features[FeatureSwitchKey.WechatIntegration] ? <WechatCard /> : null}
+          {features?.[FeatureSwitchKey.WechatIntegration] ? (
+            <WechatCard />
+          ) : null}
         </div>
       </main>
     </div>

@@ -103,7 +103,7 @@ function installVoiceBoundaries() {
 async function openForwardComposer(name: string) {
   await selectPassage("launch plan has three careful stages");
   click(await findEnabledButton("Forward"));
-  const dialog = await screen.findByRole("dialog");
+  const dialog = await screen.findByRole("dialog", { name: "Forward to" });
   click(await within(dialog).findByRole("option", { name }));
   await expect(
     within(dialog).findByRole("textbox", { name: "Add a message" }),

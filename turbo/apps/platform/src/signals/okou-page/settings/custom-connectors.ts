@@ -2,7 +2,7 @@ import { singleAgentEnabled$ } from "../../single-agent.ts";
 import { command, computed, state } from "ccstate";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../../external/feature-switch.ts";
+import { featureSwitches$ } from "../../external/feature-switch.ts";
 import {
   CUSTOM_CONNECTOR_AUTOMATIC_OAUTH_ERROR_CODES,
   isIntegrationManagedCustomConnector,
@@ -198,7 +198,8 @@ const authorizeCustomConnectorForTarget$ = command(
     },
     signal: AbortSignal,
   ): Promise<void> => {
-    const singleAgent = get(singleAgentEnabled$);
+    const singleAgent = await get(singleAgentEnabled$);
+    signal.throwIfAborted();
     const defaultId = singleAgent ? await get(defaultAgentId$) : null;
     signal.throwIfAborted();
     if (args.target.kind === "visible-agents" && singleAgent && !defaultId) {
@@ -416,7 +417,9 @@ const setCustomConnectorValuesForTarget$ = command(
   ): Promise<CustomConnectorConnectionResult> => {
     const createClient = get(apiClient$);
     const hadSavedAccounts =
-      !get(featureSwitch$)[FeatureSwitchKey.ConnectorChatAccountAccess] &&
+      !(await get(featureSwitches$))[
+        FeatureSwitchKey.ConnectorChatAccountAccess
+      ] &&
       args.authorizationTarget.kind === "visible-agents" &&
       args.account.intent === "add"
         ? await hasSavedConnectorAccounts(
@@ -597,7 +600,7 @@ const authorizeCompletedCustomConnectorTarget$ = command(
     if (
       !args.accountComplete ||
       !args.connector ||
-      get(featureSwitch$)[FeatureSwitchKey.ConnectorChatAccountAccess]
+      (await get(featureSwitches$))[FeatureSwitchKey.ConnectorChatAccountAccess]
     ) {
       return false;
     }
@@ -694,7 +697,9 @@ const connectCustomConnectorAuthorizationForTargetCommand$ = command(
         );
         signal.throwIfAborted();
         hadSavedAccounts =
-          !get(featureSwitch$)[FeatureSwitchKey.ConnectorChatAccountAccess] &&
+          !(await get(featureSwitches$))[
+            FeatureSwitchKey.ConnectorChatAccountAccess
+          ] &&
           args.authorizationTarget.kind === "visible-agents" &&
           account.intent === "add"
             ? await hasSavedConnectorAccounts(
@@ -921,8 +926,9 @@ const runCustomConnectorConnection$ = command(
     args: CustomConnectorConnectionInput,
     signal: AbortSignal,
   ): Promise<boolean> => {
-    const chatAccounts =
-      get(featureSwitch$)[FeatureSwitchKey.ConnectorChatAccountAccess];
+    const chatAccounts = (await get(featureSwitches$))[
+      FeatureSwitchKey.ConnectorChatAccountAccess
+    ];
     const finish = async (
       result: CustomConnectorConnectionResult,
       attemptSignal: AbortSignal,

@@ -1,5 +1,5 @@
 import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
-import { useGet } from "ccstate-react";
+import { useLastResolved } from "ccstate-react";
 import type { ComponentProps, Ref } from "react";
 import { cn, PopoverContent } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
@@ -87,7 +87,7 @@ export function ComposerMentionSuggestionMenu({
     chatThread: ComposerChatThreadSuggestion,
   ) => void;
 }) {
-  const singleAgent = useGet(singleAgentEnabled$);
+  const singleAgent = useLastResolved(singleAgentEnabled$) ?? false;
   const { t } = useTranslation();
   const agentSection = agents.length > 0 && (
     <div key="agents">

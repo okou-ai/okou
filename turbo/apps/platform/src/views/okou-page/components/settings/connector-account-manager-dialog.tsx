@@ -1,7 +1,13 @@
 import type { FormEvent, ReactNode } from "react";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../../../../signals/external/feature-switch.ts";
-import { useGet, useLastLoadable, useSet, type Loadable } from "ccstate-react";
+import { featureSwitches$ } from "../../../../signals/external/feature-switch.ts";
+import {
+  useLastResolved,
+  useGet,
+  useLastLoadable,
+  useSet,
+  type Loadable,
+} from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { EllipsisVertical, Search } from "lucide-react";
@@ -785,7 +791,9 @@ function ConnectorAccountManagerHeader({
 }: Pick<ConnectorAccountManagerDialogProps, "connectorLabel" | "icon">) {
   const { t } = useTranslation();
   const chatAccess =
-    useGet(featureSwitch$)[FeatureSwitchKey.ConnectorChatAccountAccess];
+    useLastResolved(featureSwitches$)?.[
+      FeatureSwitchKey.ConnectorChatAccountAccess
+    ];
   return (
     <DialogHeader className="min-w-0 shrink-0 pr-8 text-left">
       <div className="flex items-center gap-3">
@@ -848,7 +856,9 @@ function LoadedConnectorAccountManagerDialog({
 }) {
   const { t } = useTranslation();
   const chatAccess =
-    useGet(featureSwitch$)[FeatureSwitchKey.ConnectorChatAccountAccess];
+    useLastResolved(featureSwitches$)?.[
+      FeatureSwitchKey.ConnectorChatAccountAccess
+    ];
   const defaults = useLastLoadable(defaultsSignals.defaults$);
   const accountsLoadable = useLastLoadable(settingsConnectorAccounts.accounts$);
   const search = useGet(settingsConnectorAccounts.search$);

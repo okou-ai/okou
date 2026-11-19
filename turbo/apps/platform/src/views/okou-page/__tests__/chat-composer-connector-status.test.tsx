@@ -180,7 +180,17 @@ test("Connecting a custom account updates the directory when it is reopened", as
     click(await findFastControl("button", "Connectors"));
   }
   click(await findFastControl("button", "Add connectors"));
-  const reopened = await screen.findByRole("dialog", { name: "Connectors" });
+  const reopened = await waitFor(() => {
+    const directory = screen
+      .getAllByRole("dialog", { name: "Connectors" })
+      .find((dialog) => {
+        return within(dialog).queryByRole("radio", { name: "Custom" }) !== null;
+      });
+    if (!directory) {
+      throw new Error("Connector directory has not opened");
+    }
+    return directory;
+  });
   await openCustom(reopened);
   await expect(
     findFastControl("button", "Connect Acme Search", reopened),

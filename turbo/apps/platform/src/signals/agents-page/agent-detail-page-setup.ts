@@ -22,7 +22,10 @@ export const setupAgentDetailPage$ = command(
       );
     }
 
-    if (get(singleAgentEnabled$) && agentId === (await get(defaultAgentId$))) {
+    if (
+      (await get(singleAgentEnabled$)) &&
+      agentId === (await get(defaultAgentId$))
+    ) {
       signal.throwIfAborted();
       const tab = get(searchParams$).get("tab");
       set(

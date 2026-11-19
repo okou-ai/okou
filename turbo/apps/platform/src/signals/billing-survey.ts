@@ -16,7 +16,7 @@ import { i18n } from "../i18n/index.ts";
 import { accept } from "../lib/accept.ts";
 import { apiClient$ } from "./api-client.ts";
 import { authenticatedIdentity$ } from "./auth.ts";
-import { featureSwitch$ } from "./external/feature-switch.ts";
+import { featureSwitches$ } from "./external/feature-switch.ts";
 import { billingCheckoutCanceled$ } from "./billing-checkout-return.ts";
 import { reloadBillingStatus$ } from "./okou-page/billing.ts";
 import { settingsDialogSessionActive$ } from "./okou-page/settings/settings-dialog.ts";
@@ -30,15 +30,15 @@ export { CHECKOUT_ABANDONED_SURVEY_ANSWERS, CREDITS_EXHAUSTED_SURVEY_ANSWERS };
 
 const DETAIL_MAX_LENGTH = 500;
 
-export const billingSurveyEnabled$ = computed((get) => {
-  return get(featureSwitch$)[FeatureSwitchKey.BillingSurvey] === true;
+export const billingSurveyEnabled$ = computed(async (get) => {
+  return (await get(featureSwitches$))[FeatureSwitchKey.BillingSurvey] === true;
 });
 
 const statusReload$ = state(0);
 
 const billingSurveyStatus$ = computed(async (get) => {
   get(statusReload$);
-  if (!get(billingSurveyEnabled$)) {
+  if (!(await get(billingSurveyEnabled$))) {
     return null;
   }
   const checkoutCanceled = await get(billingCheckoutCanceled$);

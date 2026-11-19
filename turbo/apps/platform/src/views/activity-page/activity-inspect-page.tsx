@@ -36,7 +36,7 @@ import {
   setInspectStepSearch$,
   type InspectLogData,
 } from "../../signals/activity-page/inspect-log-signals.ts";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
+import { featureSwitches$ } from "../../signals/external/feature-switch.ts";
 import { searchParams$, updateSearchParams$ } from "../../signals/route.ts";
 import { ContextContent } from "../okou-page/components/context-content.tsx";
 import { NetworkContent } from "../okou-page/components/network-content.tsx";
@@ -323,7 +323,7 @@ function InspectNetworkTab({ data }: { data: InspectLogData }) {
 
 function InspectLogContent({ data }: { data: InspectLogData }) {
   const { t } = useTranslation();
-  const features = useLastResolved(featureSwitch$);
+  const features = useLastResolved(featureSwitches$);
   const showDebugTabs = features?.[FeatureSwitchKey.OkouDebug] ?? false;
 
   const params = useGet(searchParams$);
