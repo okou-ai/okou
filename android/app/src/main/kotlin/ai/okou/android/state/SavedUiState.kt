@@ -30,24 +30,36 @@ internal enum class SettingsDestination {
 }
 
 internal enum class SearchRoute {
-    List,
-    Search,
-    ReturnToSearch,
+    Closed,
+    Open,
+    ReturnOnBack,
 }
 
-@Composable
-internal fun rememberSearchRoute(): MutableState<SearchRoute> = rememberSaveable {
-    mutableStateOf(SearchRoute.List)
-}
+private const val MAX_SAVED_SEARCH_QUERY_CHARS = 256
 
 @Composable
-internal fun rememberChatSearchQuery(): MutableState<String> = rememberSaveable {
-    mutableStateOf("")
-}
+internal fun rememberChatSearchQuery(): MutableState<TextFieldValue> =
+    rememberSaveable(
+        stateSaver =
+            listSaver<TextFieldValue, Any>(
+                save = {
+                    // Bound the Activity payload while retaining the full value in the live editor.
+                    if (it.text.length <= MAX_SAVED_SEARCH_QUERY_CHARS) {
+                        listOf(it.text, it.selection.start, it.selection.end)
+                    } else emptyList()
+                },
+                restore = { (text, start, end) ->
+                    TextFieldValue(text as String, TextRange(start as Int, end as Int))
+                },
+            )
+    ) {
+        mutableStateOf(TextFieldValue())
+    }
 
 internal data class WorkspaceNavigation(
     val target: WorkspaceTarget = WorkspaceTarget.List,
     val settings: SettingsDestination? = null,
+    val search: SearchRoute = SearchRoute.Closed,
 )
 
 @Composable
@@ -62,9 +74,10 @@ internal fun rememberWorkspaceNavigation(): MutableState<WorkspaceNavigation> =
                             is WorkspaceTarget.Chat -> "chat" to target.id
                             is WorkspaceTarget.NewChat -> "new" to target.projectId.orEmpty()
                         }
-                    listOf(kind, id, navigation.settings?.name.orEmpty())
+                    listOf(kind, id, navigation.settings?.name.orEmpty(), navigation.search.name)
                 },
-                restore = { (kind, id, settings) ->
+                restore = { fields ->
+                    val (kind, id, settings) = fields
                     val target =
                         when (kind) {
                             "chat" -> WorkspaceTarget.Chat(id as String)
@@ -80,7 +93,8 @@ internal fun rememberWorkspaceNavigation(): MutableState<WorkspaceNavigation> =
                                 SettingsDestination.Instructions
                             else -> null
                         }
-                    WorkspaceNavigation(target, destination)
+                    val search = SearchRoute.entries.firstOrNull { it.name == fields.getOrNull(3) }
+                    WorkspaceNavigation(target, destination, search ?: SearchRoute.Closed)
                 },
             )
     ) {

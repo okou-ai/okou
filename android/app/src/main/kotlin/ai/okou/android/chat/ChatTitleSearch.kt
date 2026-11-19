@@ -1,6 +1,7 @@
 package ai.okou.android.chat
 
 import ai.okou.android.R
+import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -45,8 +46,10 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -54,8 +57,8 @@ import androidx.compose.ui.unit.sp
 @Composable
 internal fun ChatTitleSearch(
     state: ChatListUiState,
-    query: String,
-    onQueryChange: (String) -> Unit,
+    query: TextFieldValue,
+    onQueryChange: (TextFieldValue) -> Unit,
     position: LazyListState,
     focusOnEntry: Boolean,
     onFocused: () -> Unit,
@@ -79,31 +82,13 @@ internal fun ChatTitleSearch(
     val inputStyle = MaterialTheme.typography.bodyLarge.copy(color = colors.onSurface)
     val untitled = stringResource(R.string.chat_untitled)
     val archived = stringResource(R.string.chat_archived)
-    val ordered =
-        remember(state.threads) {
-            state.threads
-                .asSequence()
-                .filter { it.hidden != true }
-                .map { it to chatTimestamp(it.sortAt) }
-                .sortedWith(
-                    compareByDescending<Pair<ConfirmedChat, ChatTimestamp>> { it.second }
-                        .thenBy { it.first.id }
-                )
-                .map { it.first }
-                .toList()
-        }
     val projectNames = remember(state.projects) { state.projects.associate { it.id to it.name } }
-    val keyword = query.trim()
+    val keyword = query.text.trim().lowercase()
     val results =
-        remember(ordered, keyword, untitled) {
-            if (keyword.isEmpty()) ordered.take(12)
-            else
-                ordered.filter {
-                    (it.title?.takeIf(String::isNotBlank) ?: untitled).contains(
-                        keyword,
-                        ignoreCase = true,
-                    )
-                }
+        remember(state.threadsByRecency, keyword, untitled) {
+            val visible = state.threadsByRecency.asSequence().filter { it.hidden != true }
+            if (keyword.isEmpty()) visible.take(12).toList()
+            else visible.filter { it.searchTitle(untitled).lowercase().contains(keyword) }.toList()
         }
 
     Column(Modifier.widthIn(max = 720.dp).fillMaxSize().imePadding().testTag("chat_search")) {
@@ -116,7 +101,7 @@ internal fun ChatTitleSearch(
             }
             BasicTextField(
                 value = query,
-                onValueChange = { onQueryChange(it.take(256)) },
+                onValueChange = onQueryChange,
                 modifier =
                     Modifier.weight(1f)
                         .focusRequester(inputFocus)
@@ -138,11 +123,14 @@ internal fun ChatTitleSearch(
                                 if (inputFocused) colors.primary else colors.outlineVariant,
                                 fieldShape,
                             )
-                            .padding(start = 12.dp, end = if (query.isEmpty()) 12.dp else 0.dp),
+                            .padding(
+                                start = 12.dp,
+                                end = if (query.text.isEmpty()) 12.dp else 0.dp,
+                            ),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Box(Modifier.weight(1f)) {
-                            if (query.isEmpty()) {
+                            if (query.text.isEmpty()) {
                                 Text(
                                     searchLabel,
                                     style = inputStyle,
@@ -153,8 +141,14 @@ internal fun ChatTitleSearch(
                             }
                             input()
                         }
-                        if (query.isNotEmpty()) {
-                            IconButton(onClick = { onQueryChange("") }) {
+                        if (query.text.isNotEmpty()) {
+                            IconButton(
+                                onClick = {
+                                    onQueryChange(TextFieldValue())
+                                    inputFocus.requestFocus()
+                                    keyboard?.show()
+                                }
+                            ) {
                                 Icon(
                                     painterResource(R.drawable.ic_close),
                                     stringResource(R.string.chat_search_clear),
@@ -165,6 +159,15 @@ internal fun ChatTitleSearch(
                 },
             )
         }
+        val failed = state.listPhase == ChatReadPhase.Failed
+        if (state.confirmedAt == null) {
+            // Let the restored list position apply to the result rows once data is available.
+            SearchNotice(
+                if (failed) R.string.chat_load_failed else R.string.chat_loading,
+                retry.takeIf { failed },
+            )
+            return@Column
+        }
         LazyColumn(
             Modifier.fillMaxWidth()
                 .weight(1f)
@@ -172,25 +175,13 @@ internal fun ChatTitleSearch(
                 .testTag("chat_search_results"),
             state = position,
         ) {
-            if (state.listPhase == ChatReadPhase.Failed) {
-                item {
-                    Column(Modifier.padding(horizontal = 12.dp)) {
-                        Text(
-                            stringResource(
-                                if (state.confirmedAt == null) R.string.chat_load_failed
-                                else R.string.chat_refresh_failed
-                            )
-                        )
-                        TextButton(onClick = retry) { Text(stringResource(R.string.retry)) }
-                    }
-                }
+            if (failed) {
+                item { SearchNotice(R.string.chat_refresh_failed, retry) }
             } else if (state.source == ChatListSource.Cache) {
-                item { Text(stringResource(R.string.chat_cached), Modifier.padding(12.dp)) }
+                item { SearchNotice(R.string.chat_cached) }
             }
-            if (state.confirmedAt == null && state.listPhase == ChatReadPhase.Loading) {
-                item { Text(stringResource(R.string.chat_loading), Modifier.padding(12.dp)) }
-            } else if (results.isEmpty() && state.listPhase != ChatReadPhase.Failed) {
-                item { Text(stringResource(R.string.chat_search_empty), Modifier.padding(12.dp)) }
+            if (results.isEmpty() && !failed) {
+                item { SearchNotice(R.string.chat_search_empty) }
             } else if (results.isNotEmpty()) {
                 item {
                     Text(
@@ -198,7 +189,9 @@ internal fun ChatTitleSearch(
                             if (keyword.isEmpty()) R.string.chat_search_recent
                             else R.string.chat_list_title
                         ),
-                        Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        Modifier.padding(horizontal = 12.dp, vertical = 8.dp).semantics {
+                            heading()
+                        },
                         style = MaterialTheme.typography.titleSmall,
                     )
                 }
@@ -216,7 +209,7 @@ internal fun ChatTitleSearch(
                         verticalArrangement = Arrangement.Center,
                     ) {
                         Text(
-                            chat.title?.takeIf(String::isNotBlank) ?: untitled,
+                            chat.searchTitle(untitled),
                             style = MaterialTheme.typography.bodyLarge,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
@@ -233,5 +226,16 @@ internal fun ChatTitleSearch(
                 }
             }
         }
+    }
+}
+
+private fun ConfirmedChat.searchTitle(untitled: String): String =
+    title?.takeIf(String::isNotBlank) ?: untitled
+
+@Composable
+private fun SearchNotice(@StringRes label: Int, retry: (() -> Unit)? = null) {
+    Column(Modifier.padding(12.dp)) {
+        Text(stringResource(label))
+        if (retry != null) TextButton(onClick = retry) { Text(stringResource(R.string.retry)) }
     }
 }

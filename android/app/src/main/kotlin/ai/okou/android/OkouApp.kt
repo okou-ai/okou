@@ -22,7 +22,6 @@ import ai.okou.android.state.WorkspaceTarget
 import ai.okou.android.state.rememberChatSearchQuery
 import ai.okou.android.state.rememberCollapsedProjects
 import ai.okou.android.state.rememberConversationUiState
-import ai.okou.android.state.rememberSearchRoute
 import ai.okou.android.state.rememberWorkspaceNavigation
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
@@ -73,6 +72,7 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -103,10 +103,9 @@ internal fun OkouApp(
     // Window configuration changes on resize. IME insets only change the space inside the panes.
     val window = LocalConfiguration.current
     val listWidth = workspaceListPaneWidth(window.screenWidthDp, window.screenHeightDp)
-    var searchRoute by rememberSearchRoute()
     var searchQuery by rememberChatSearchQuery()
     var focusSearch by remember { mutableStateOf(false) }
-    val searchActive = chats != null && composer != null && searchRoute == SearchRoute.Search
+    val searchActive = chats != null && composer != null && navigation.search == SearchRoute.Open
     val showList = listWidth != null || searchActive || target == WorkspaceTarget.List
     val showWorkspaceBack = listWidth == null && !searchActive && target != WorkspaceTarget.List
     val listPosition = rememberLazyListState()
@@ -122,25 +121,39 @@ internal fun OkouApp(
     val settingsFocus = remember { FocusRequester() }
     var restoreSettingsFocus by remember { mutableStateOf(false) }
 
-    fun closeSearch() {
+    fun releaseSearchFocus() {
         focus.clearFocus()
         keyboard?.hide()
         focusSearch = false
-        searchRoute = SearchRoute.List
+    }
+
+    fun closeSearch() {
+        releaseSearchFocus()
+        searchQuery = TextFieldValue()
+        navigation = navigation.copy(search = SearchRoute.Closed)
     }
 
     fun openSearch() {
-        searchQuery = ""
+        searchQuery = TextFieldValue()
         searchPosition.requestScrollToItem(0)
         focusSearch = true
-        searchRoute = SearchRoute.Search
+        navigation = navigation.copy(search = SearchRoute.Open)
     }
 
-    LaunchedEffect(listWidth, searchRoute) {
-        if (listWidth != null && searchRoute == SearchRoute.ReturnToSearch) {
-            searchRoute = SearchRoute.List
+    fun returnToList() {
+        val search =
+            when (navigation.search) {
+                SearchRoute.Open -> SearchRoute.Open
+                SearchRoute.ReturnOnBack ->
+                    if (listWidth == null) SearchRoute.Open else SearchRoute.Closed
+                SearchRoute.Closed -> SearchRoute.Closed
+            }
+        if (search == SearchRoute.Closed) {
+            searchQuery = TextFieldValue()
         }
+        navigation = navigation.copy(target = WorkspaceTarget.List, search = search)
     }
+
     val thread =
         (target as? WorkspaceTarget.Chat)?.let { chat ->
             list.threads.firstOrNull { it.id == chat.id && it.hidden != true }
@@ -158,11 +171,23 @@ internal fun OkouApp(
         }
     }
 
-    fun openChat(chat: ConfirmedChat) {
+    fun openChat(chat: ConfirmedChat, fromSearch: Boolean = false) {
         val activeComposer = composer ?: return
         val activeChats = chats ?: return
+        val search =
+            when {
+                fromSearch && listWidth == null -> SearchRoute.ReturnOnBack
+                !fromSearch && navigation.search == SearchRoute.Open -> SearchRoute.Open
+                else -> SearchRoute.Closed
+            }
+        if (fromSearch) releaseSearchFocus()
+        when (search) {
+            SearchRoute.Closed -> searchQuery = TextFieldValue()
+            SearchRoute.ReturnOnBack -> searchQuery = searchQuery.copy(composition = null)
+            SearchRoute.Open -> Unit
+        }
         conversations.open(chat.id)
-        navigation = navigation.copy(target = WorkspaceTarget.Chat(chat.id))
+        navigation = navigation.copy(target = WorkspaceTarget.Chat(chat.id), search = search)
         activeComposer.acknowledge(chat.id)
         activeChats.history.open(chat)
     }
@@ -171,15 +196,17 @@ internal fun OkouApp(
         val activeComposer = composer ?: return
         activeComposer.beginNew(projectId)
         conversations.open(ComposerTarget(projectId = projectId).key)
-        navigation = navigation.copy(target = WorkspaceTarget.NewChat(projectId))
+        val search =
+            if (navigation.search == SearchRoute.Open) SearchRoute.Open else SearchRoute.Closed
+        if (search == SearchRoute.Closed) searchQuery = TextFieldValue()
+        navigation = navigation.copy(target = WorkspaceTarget.NewChat(projectId), search = search)
     }
 
-    LaunchedEffect(target, thread, list.listPhase) {
+    LaunchedEffect(target, thread, list.listPhase, listWidth) {
         if (target is WorkspaceTarget.Chat) {
             if (thread != null) chats?.history?.open(thread)
             else if (list.listPhase == ChatReadPhase.Ready && navigation.target == target) {
-                navigation = navigation.copy(target = WorkspaceTarget.List)
-                if (searchRoute == SearchRoute.ReturnToSearch) searchRoute = SearchRoute.Search
+                returnToList()
                 scope.launch { snackbar.showSnackbar(missingChat) }
             }
         }
@@ -207,20 +234,12 @@ internal fun OkouApp(
     }
 
     fun back() {
-        if (navigation.settings == null) {
-            if (searchActive) {
-                closeSearch()
-                return
-            }
-            if (searchRoute == SearchRoute.ReturnToSearch) searchRoute = SearchRoute.Search
+        when (navigation.settings) {
+            SettingsDestination.Instructions ->
+                navigation = navigation.copy(settings = SettingsDestination.Overview)
+            SettingsDestination.Overview -> navigation = navigation.copy(settings = null)
+            null -> if (navigation.search == SearchRoute.Open) closeSearch() else returnToList()
         }
-        navigation =
-            when (navigation.settings) {
-                SettingsDestination.Instructions ->
-                    navigation.copy(settings = SettingsDestination.Overview)
-                SettingsDestination.Overview -> navigation.copy(settings = null)
-                null -> navigation.copy(target = WorkspaceTarget.List)
-            }
     }
 
     BackHandler(settings != null || showWorkspaceBack || searchActive, onBack = ::back)
@@ -333,21 +352,16 @@ internal fun OkouApp(
                                     state = list,
                                     query = searchQuery,
                                     onQueryChange = {
+                                        if (it.text != searchQuery.text)
+                                            searchPosition.requestScrollToItem(0)
                                         searchQuery = it
-                                        searchPosition.requestScrollToItem(0)
                                     },
                                     position = searchPosition,
                                     focusOnEntry = focusSearch,
                                     onFocused = { focusSearch = false },
                                     onClose = ::closeSearch,
                                     retry = chats::refreshList,
-                                    onOpen = { chat ->
-                                        closeSearch()
-                                        if (listWidth == null) {
-                                            searchRoute = SearchRoute.ReturnToSearch
-                                        }
-                                        openChat(chat)
-                                    },
+                                    onOpen = { openChat(it, fromSearch = true) },
                                 )
                             } else {
                                 if (list.filter != ChatListFilter.Recent) {

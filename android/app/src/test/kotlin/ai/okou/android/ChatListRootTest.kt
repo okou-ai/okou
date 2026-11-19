@@ -2,6 +2,7 @@ package ai.okou.android
 
 import ai.okou.android.auth.SessionModel
 import ai.okou.android.chat.ChatRowAction
+import android.content.res.Configuration
 import android.os.Looper
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.SemanticsActions
@@ -9,7 +10,10 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.MouseButton
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.click
+import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
@@ -25,8 +29,10 @@ import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTextInputSelection
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipe
+import androidx.compose.ui.text.TextRange
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import java.util.UUID
@@ -90,7 +96,7 @@ class ChatListRootTest {
 
     @Test
     @Config(qualifiers = "en-rUS-w400dp-h800dp")
-    fun titleSearchOpensArchivedProjectChatsAndBackRestoresTheQuery() {
+    fun titleSearchRestoresTheQueryAfterOpeningAnArchivedChatAndResizing() {
         val app = compose.activity.application as ChatListApplication
         app.fixture.events = { request ->
             if (request.requestUrl?.queryParameter("sinceSeqId") != null) {
@@ -119,22 +125,85 @@ class ChatListRootTest {
             }
         }
         app.responseGate.countDown()
-        compose.waitUntil(10_000) {
-            compose.onAllNodesWithText("Personal chat").fetchSemanticsNodes().isNotEmpty()
-        }
+        awaitListAndNames()
         compose.onNodeWithContentDescription("Search").performClick()
         compose.onNodeWithText("Recent chats").assertExists()
         compose.onNodeWithTag("chat_search_query").performTextInput("project")
+        compose.onNodeWithTag("chat_search_query").performTextInputSelection(TextRange(3))
         compose.onNodeWithText("Personal chat").assertDoesNotExist()
         compose.onNodeWithText("Research · Archived").assertExists()
         compose.onNodeWithText("Project chat").performClick()
         compose.onNodeWithTag("conversation").assertExists()
-        compose.onNodeWithContentDescription("Back").performClick()
-        compose.onNodeWithTag("chat_search_query").assert(hasText("project"))
+
+        compose.runOnIdle {
+            val wide =
+                Configuration(compose.activity.resources.configuration).apply {
+                    screenWidthDp = 1000
+                }
+            compose.activity.window.decorView.dispatchConfigurationChanged(wide)
+        }
+        compose.onNodeWithTag("chat_list").assertExists()
+        compose.onNodeWithTag("conversation").assertExists()
+        compose.runOnIdle {
+            compose.activity.window.decorView.dispatchConfigurationChanged(
+                compose.activity.resources.configuration
+            )
+        }
+        compose.activityRule.scenario.recreate()
+        compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
+
+        compose
+            .onNodeWithTag("chat_search_query")
+            .assert(hasText("project"))
+            .assert(
+                SemanticsMatcher.expectValue(SemanticsProperties.TextSelectionRange, TextRange(3))
+            )
         compose.onNodeWithText("Project chat").assertExists()
         compose.onNodeWithContentDescription("Back").performClick()
         compose.onNodeWithTag("chat_list").assertExists()
         compose.onNodeWithText("Project chat").assertDoesNotExist()
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w400dp-h800dp")
+    fun pastedTitleRetainsItsUnicodeAndMatchesTheWholeQuery() {
+        val app = compose.activity.application as ChatListApplication
+        val prefix = "a".repeat(255)
+        val title = "$prefix🧪 release"
+        val other = "$prefix🔔 release"
+        app.fixture.events = { request ->
+            if (request.requestUrl?.queryParameter("sinceSeqId") != null) {
+                jsonResponse("""{"events":[],"hasMore":false}""")
+            } else {
+                val project =
+                    chatEventWire(
+                        id = "77777777-7777-4777-8777-777777777777",
+                        seq = 23,
+                        thread = CHAT_IN_PROJECT,
+                        extra = ",\"projectId\":\"$CHAT_PROJECT\"",
+                        title = other,
+                        agent = CHAT_OTHER_AGENT,
+                    )
+                jsonResponse(
+                    """{"events":[${chatEventWire(title = title)},$project],"hasMore":false}"""
+                )
+            }
+        }
+        app.responseGate.countDown()
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithText(title).fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithContentDescription("Search").performClick()
+        compose.onNodeWithTag("chat_search_query").performTextInput(title)
+        compose.onNodeWithTag("chat_search_query").assert(hasText(title))
+        compose.onNodeWithTag("chat_search_results").performScrollToNode(hasText(title))
+        compose.onNodeWithText(other).assertDoesNotExist()
+        compose
+            .onNode(hasText(title) and hasAnyAncestor(hasTestTag("chat_search_results")))
+            .performClick()
+        compose.onNodeWithTag("conversation").assertExists()
+        compose.onNodeWithContentDescription("Back").performClick()
+        compose.onNodeWithTag("chat_search_query").assert(hasText(title))
     }
 
     @Test
@@ -149,10 +218,19 @@ class ChatListRootTest {
         compose.onNodeWithTag("chat_search_query").performTextInput("missing")
         compose.onNodeWithText("No matching chats").assertExists()
         compose.onNodeWithContentDescription("Clear search").performClick()
-        compose.onNodeWithText("Project chat").performClick()
+        compose.onNodeWithTag("chat_search_query").assertIsFocused().performTextInput("CHAT")
+        val results = hasAnyAncestor(hasTestTag("chat_search_results"))
+        val project = compose.onNode(hasText("Project chat") and results)
+        val personal = compose.onNode(hasText("Personal chat") and results)
+        assertTrue(
+            project.fetchSemanticsNode().boundsInRoot.top <
+                personal.fetchSemanticsNode().boundsInRoot.top
+        )
+        project.performClick()
         compose.onNodeWithTag("chat_search").assertDoesNotExist()
         compose.onNodeWithTag("chat_list").assertExists()
         compose.onNodeWithTag("conversation").assertExists()
+        compose.onNodeWithTag("chat_$CHAT_IN_PROJECT").assertIsSelected()
     }
 
     @Test
