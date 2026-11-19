@@ -36,3 +36,5 @@ shared-thread-presentation-005	turbo/apps/platform/src/views/shared-thread-page/
 shared-thread-attachments-001	turbo/apps/platform/src/views/shared-thread-page/__tests__/shared-thread-attachments.test.tsx	Shared prompt files keep their original links and a sized screenshot thumbnail	31	passed
 shared-thread-attachments-002	turbo/apps/platform/src/views/shared-thread-page/__tests__/shared-thread-attachments.test.tsx	An unlinked Markdown image opens its original URL from the thumbnail	61	passed
 shared-thread-attachments-004	turbo/apps/platform/src/views/shared-thread-page/__tests__/shared-thread-attachments.test.tsx	An SVG-only prompt shows the source file link without rendering an image	78	passed
+anonymous-shared-artifact-page-001	turbo/apps/platform/src/views/shared-artifact-page/__tests__/anonymous-shared-artifact-page.test.tsx	A signed-out reader can preview, share and download a public image	32	passed
+anonymous-shared-artifact-page-003	turbo/apps/platform/src/views/shared-artifact-page/__tests__/anonymous-shared-artifact-page.test.tsx	An unavailable artifact stays on its page until the reader chooses to sign in	72	passed
