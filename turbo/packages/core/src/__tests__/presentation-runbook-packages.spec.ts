@@ -34,27 +34,19 @@ describe("presentation runbook packages", () => {
   it("resolves each picker style to an independent native package without a fabricated archive", () => {
     const htmlPackages = listPresentationRunbookPackages("html");
     const pptxPackages = listPresentationRunbookPackages("pptx");
-    expect(
-      pptxPackages.map((pkg) => {
-        return pkg.templateId;
-      }),
-    ).toEqual(
-      htmlPackages.map((pkg) => {
-        return pkg.templateId;
-      }),
-    );
-    for (const pkg of pptxPackages) {
-      const htmlPackage = findPresentationRunbookPackage(pkg.templateId);
-      if (!htmlPackage) {
-        throw new Error(`Missing HTML style for ${pkg.templateId}`);
+    expect(pptxPackages).toHaveLength(htmlPackages.length + 1);
+    for (const htmlPackage of htmlPackages) {
+      const pkg = findPresentationRunbookPackage(
+        htmlPackage.templateId,
+        "pptx",
+      );
+      if (!pkg) {
+        throw new Error(`Missing native style for ${htmlPackage.templateId}`);
       }
       expect(pkg.outputFormat).toBe("pptx");
       expect(pkg.slug).toBe(`${htmlPackage.slug}-native`);
       expect(pkg.resourceId).toBe(`template:pptx-${htmlPackage.slug}-runbook`);
       expect(pkg.source).toEqual({ path: pkg.slug });
-      expect(findPresentationRunbookPackage(pkg.templateId, "pptx")).toEqual(
-        pkg,
-      );
       expect(findPresentationRunbookResource(pkg.resourceId)).toMatchObject({
         id: pkg.resourceId,
         kind: "template",
@@ -71,6 +63,25 @@ describe("presentation runbook packages", () => {
     expect(
       findPresentationRunbookResource("template:pptx-unknown-runbook"),
     ).toBeUndefined();
+  });
+
+  it("resolves Plain only as a native package", () => {
+    expect(
+      findPresentationRunbookPackage("template:pptx-plain", "html"),
+    ).toBeUndefined();
+    expect(
+      findPresentationRunbookPackage("template:pptx-plain", "pptx"),
+    ).toMatchObject({
+      resourceId: "template:pptx-plain-runbook",
+      slug: "plain-native",
+      defaultColorSystem: "nordic_frost",
+    });
+    expect(
+      findPresentationRunbookResource("template:pptx-plain-runbook"),
+    ).toMatchObject({
+      id: "template:pptx-plain-runbook",
+      source: { path: "plain-native" },
+    });
   });
 
   it.each(["html", "pptx"] as const)(
