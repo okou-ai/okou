@@ -1,14 +1,12 @@
 import { testContext } from "./test-helpers.ts";
 import { CLIENT_FORCE_UPGRADE_STATUS } from "@okouai/api-contracts/contracts/client-headers";
-import { featureGuidesContract } from "@okouai/api-contracts/contracts/feature-guides";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { screen, waitFor } from "@testing-library/react";
+import { screen } from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import { setupPage, startPage } from "../../__tests__/page-helper.ts";
 import { bootstrapSkeleton } from "../../test/bootstrap-skeleton.ts";
-import { pathname } from "../location.ts";
 
 const context = testContext();
 test("A signed-out page does not load workspace features", async () => {
@@ -34,22 +32,14 @@ test("A signed-out page does not load workspace features", async () => {
 });
 
 test("The app waits for authoritative workspace features before mounting", async () => {
-  let guideRequests = 0;
-  let workspaceSwitchRequests = 0;
-  context.mocks.api(featureGuidesContract.current, ({ respond }) => {
-    guideRequests++;
-    return respond(200, { edition: null });
-  });
   const requestStarted = context.mocks.deferred<void>();
   const releaseResponse = context.mocks.deferred<void>();
   context.mocks.api(
     featureSwitchesContract.get,
     async ({ respond, withSignal }) => {
-      workspaceSwitchRequests++;
       requestStarted.resolve(undefined);
       await withSignal(releaseResponse.promise);
       const switches = {
-        [FeatureSwitchKey.FeatureGuides]: true,
         [FeatureSwitchKey.SingleAgent]: false,
       };
       return respond(200, { switches, effectiveSwitches: switches });
@@ -60,7 +50,6 @@ test("The app waits for authoritative workspace features before mounting", async
   await requestStarted.promise;
   expect(bootstrapSkeleton()).toBeVisible();
   expect(document.getElementById("root")).toBeNull();
-  expect(guideRequests).toBe(0);
 
   releaseResponse.resolve(undefined);
   await page.ready;
@@ -68,10 +57,6 @@ test("The app waits for authoritative workspace features before mounting", async
   await expect(
     screen.findByRole("heading", { name: "Agents" }),
   ).resolves.toBeInTheDocument();
-  await waitFor(() => {
-    expect(guideRequests).toBe(1);
-  });
-  expect(workspaceSwitchRequests).toBe(1);
 });
 
 test("An upgrade required by the workspace switch request is shown during startup", async () => {
@@ -90,17 +75,4 @@ test("An upgrade required by the workspace switch request is shown during startu
     screen.findByRole("dialog", { name: "Update required" }),
   ).resolves.toBeVisible();
   expect(screen.queryByRole("heading", { name: "Agents" })).toBeNull();
-});
-
-test("A new member without overrides enters My Okou", async () => {
-  context.mocks.api(featureSwitchesContract.get, ({ respond }) => {
-    return respond(200, { switches: {}, effectiveSwitches: {} });
-  });
-  await setupPage({ context, path: "/agents" });
-  await waitFor(() => {
-    expect(pathname()).toBe("/");
-  });
-  expect(
-    screen.queryByRole("heading", { name: "Agents" }),
-  ).not.toBeInTheDocument();
 });

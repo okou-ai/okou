@@ -558,10 +558,10 @@ function createConnectorUiSignals(
   const { applyConnectorUiState$, updateConnectorUiState$ } =
     createConnectorUiStateCommands(internalUiState$, resources);
   const openAddConnectorsDialog$ = command(
-    async ({ set }, signal: AbortSignal): Promise<void> => {
+    ({ set }, signal: AbortSignal): Promise<void> => {
       // Ordinary entry starts a fresh browsing session without changing explicit
       // connector/account targets or the lifetime of an ongoing connection.
-      await set(
+      return set(
         updateConnectorUiState$,
         {
           showAddDialog: true,
@@ -603,10 +603,10 @@ function createConnectorUiSignals(
     },
   );
   const openRemoteAccessDialog$ = command(
-    async ({ set }, signal: AbortSignal): Promise<void> => {
+    ({ set }, signal: AbortSignal): Promise<void> => {
       set(accounts.closeMenu$);
       set(chatAccess.close$);
-      await set(
+      return set(
         updateConnectorUiState$,
         {
           popoverOpen: false,
@@ -619,8 +619,8 @@ function createConnectorUiSignals(
     },
   );
   const closeRemoteAccessDialog$ = command(
-    async ({ set }, signal: AbortSignal): Promise<void> => {
-      await set(
+    ({ set }, signal: AbortSignal): Promise<void> => {
+      return set(
         updateConnectorUiState$,
         { remoteAccessDialogOpen: false },
         signal,

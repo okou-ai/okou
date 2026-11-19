@@ -11,7 +11,7 @@ import {
 
 /** Links use the same preview commands and resource state as artifact cards. */
 export const openMarkdownArtifact$ = command(
-  async (
+  (
     { set },
     card: Extract<MarkdownCardRef, { kind: "artifact" }>,
     target: "lightbox" | undefined,
@@ -19,54 +19,24 @@ export const openMarkdownArtifact$ = command(
   ) => {
     const { signals, threadId } = card;
     const { filename, url, kind } = signals;
+    const input = { threadId, filename, url, preview: signals };
     switch (kind) {
       case "image": {
-        await set(
-          openImageLightbox$,
-          { threadId, url, filename, preview: signals },
-          target,
-          signal,
-        );
-        return;
+        return set(openImageLightbox$, input, target, signal);
       }
       case "video": {
-        await set(
-          openVideoLightbox$,
-          { threadId, filename, url, preview: signals },
-          target,
-          signal,
-        );
-        return;
+        return set(openVideoLightbox$, input, target, signal);
       }
       case "audio": {
-        await set(
-          openAudioLightbox$,
-          { threadId, filename, url, preview: signals },
-          target,
-          signal,
-        );
-        return;
+        return set(openAudioLightbox$, input, target, signal);
       }
       case "file": {
-        await set(
-          openFileLightbox$,
-          { threadId, filename, url, preview: signals },
-          target,
-          signal,
-        );
-        return;
+        return set(openFileLightbox$, input, target, signal);
       }
       default: {
-        await set(
+        return set(
           openDocumentLightbox$,
-          {
-            threadId,
-            filename,
-            url,
-            kind,
-            preview: signals,
-            text$: signals.text$,
-          },
+          { ...input, kind, text$: signals.text$ },
           target,
           signal,
         );

@@ -134,8 +134,8 @@ import { setupChatThreadFilterShortcut$ } from "./okou-page/chat-thread-filter-s
 import { setupChatThreadPinShortcuts$ } from "./chat-page/chat-thread-pin-shortcuts.ts";
 import { setupProjectFoldShortcuts$ } from "./projects/project-fold-shortcuts.ts";
 import { setupProjectOrderShortcuts$ } from "./projects/project-order-shortcuts.ts";
-import { bootstrapOnboardingGuard$ } from "./okou-page/onboard-guard.ts";
 import { featureSwitches$ } from "./external/feature-switch.ts";
+import { bootstrapOnboardingGuard$ } from "./okou-page/onboard-guard.ts";
 import { checkUnifiedSettingsParam$ } from "./okou-page/settings/settings-dialog.ts";
 import { captureInvitationRedirect$ } from "./invitation-redirect.ts";
 import { captureDiscordApprovalFragment$ } from "./okou-page/discord-oauth-approval.ts";
@@ -697,23 +697,23 @@ const completeBootstrap$ = command(
     set(setupPwaNavigation$, signal);
 
     set(listenForceUpgradeDialog$, signal);
-    const [featureSwitches] = await Promise.allSettled([get(featureSwitches$)]);
+    const [features] = await Promise.allSettled([get(featureSwitches$)]);
     signal.throwIfAborted();
-    if (featureSwitches.status === "rejected") {
+    if (features.status === "rejected") {
       render("error");
-      throw featureSwitches.reason;
+      throw features.reason;
     }
-    // DOM keydown must decide synchronously whether it owns the browser event.
-    // Keep only that decision current as Lab replaces the resolved switches.
-    let singleAgent = featureSwitches.value[FeatureSwitchKey.SingleAgent];
+
+    // Keydown must decide synchronously whether to claim the browser event.
+    let singleAgent = features.value[FeatureSwitchKey.SingleAgent];
     const refreshShortcutGate = async () => {
-      const pending = get(featureSwitches$);
-      const features = await pending;
-      if (!signal.aborted && get(featureSwitches$) === pending) {
-        singleAgent = features[FeatureSwitchKey.SingleAgent];
+      const pending = get(singleAgentEnabled$);
+      const enabled = await pending;
+      if (!signal.aborted && get(singleAgentEnabled$) === pending) {
+        singleAgent = enabled;
       }
     };
-    const stopWatching = watch(featureSwitches$, () => {
+    const stopWatching = watch(singleAgentEnabled$, () => {
       detach(
         refreshShortcutGate(),
         Reason.Daemon,
