@@ -36,9 +36,8 @@ def validate(directory):
     directory = pathlib.Path(directory)
     result, collector, terminals = report._validate_cases(directory, CASES, report.PHASES)
     raw_policy = collector["metadata"]["native_continuation_policy_json"]
-    if not isinstance(raw_policy, str) or hashlib.sha256(raw_policy.encode()).hexdigest() != result["artifacts"]["policy_sha256"]:
-        raise ValueError("continuation raw policy/hash mismatch")
-    policy = json.loads(raw_policy, object_pairs_hook=report.unique_object)
+    policy = report.decode_original_policy(
+        raw_policy, result["artifacts"], "continuation raw policy/hash mismatch")
     if not pressure_report.has_policy_shape(policy):
         raise ValueError("invalid continuation policy")
     required = (policy["operating_floor_bytes"] + policy["cleanup_reserve_bytes"]

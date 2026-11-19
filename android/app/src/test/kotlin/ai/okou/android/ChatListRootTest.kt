@@ -5,16 +5,21 @@ import android.os.Looper
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.MouseButton
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.click
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performMouseInput
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performSemanticsAction
@@ -22,10 +27,15 @@ import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipe
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import java.util.UUID
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.Job
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.RecordedRequest
 import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -409,6 +419,229 @@ class ChatListRootTest {
         choose("Mark as unread")
         awaitAction(unreadStatus)
         compose.onNodeWithTag("conversation").assertDoesNotExist()
+    }
+
+    @Test
+    fun muteConfirmsAnUncertainWriteAndUnmuteRequiresAcknowledgement() {
+        val app = compose.activity.application as ChatListApplication
+        val fixture = app.fixture
+        val events = fixture.rowEventTail()
+        val commands = CopyOnWriteArrayList<RecordedRequest>()
+        val rejectRead = AtomicBoolean(true)
+        val unread = AtomicBoolean(true)
+        val indicatorsUnavailable = AtomicBoolean(false)
+        fixture.indicators = {
+            if (indicatorsUnavailable.get()) MockResponse().setResponseCode(503)
+            else {
+                val value = if (unread.get()) "\"$CHAT_IN_PROJECT\":\"$CHAT_DATE\"" else ""
+                val status = if (unread.get()) "\"$CHAT_IN_PROJECT\":\"unread\"" else ""
+                jsonResponse("""{"agents":{},"threads":{$status},"unreadAt":{$value}}""")
+            }
+        }
+        fixture.commandResponse = { request ->
+            if (request.method != "POST") null
+            else
+                when (request.requestUrl?.encodedPath) {
+                    "/api/chat-threads/$CHAT_IN_PROJECT/mute" -> {
+                        commands.add(request)
+                        events.add(
+                            24L to
+                                request.rowEvent(
+                                    24,
+                                    CHAT_IN_PROJECT,
+                                    "sort_touched",
+                                    ",\"muted\":true",
+                                )
+                        )
+                        MockResponse().setResponseCode(503)
+                    }
+                    "/api/chat-threads/$CHAT_IN_PROJECT/mark-read" -> {
+                        commands.add(request)
+                        if (rejectRead.get()) MockResponse().setResponseCode(503)
+                        else {
+                            unread.set(false)
+                            jsonResponse("""{"lastReadAt":"$CHAT_DATE"}""")
+                        }
+                    }
+                    "/api/chat-threads/$CHAT_IN_PROJECT/unmute" -> {
+                        commands.add(request)
+                        events.add(
+                            25L to
+                                request.rowEvent(
+                                    25,
+                                    CHAT_IN_PROJECT,
+                                    "sort_touched",
+                                    ",\"muted\":false",
+                                )
+                        )
+                        MockResponse().setResponseCode(204)
+                    }
+                    else -> null
+                }
+        }
+        app.responseGate.countDown()
+        awaitListAndNames()
+        val target = hasText("Project chat")
+        val row = compose.onNode(target)
+        compose.onNodeWithTag("chat_list").performScrollToNode(target)
+        val unreadBadge =
+            SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Unread")
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(target.and(unreadBadge)).fetchSemanticsNodes().isNotEmpty()
+        }
+        indicatorsUnavailable.set(true)
+        row.performMouseInput { click(button = MouseButton.Secondary) }
+        compose.onNodeWithText("Mute chat").performClick()
+
+        val available = SemanticsMatcher.keyIsDefined(SemanticsActions.OnLongClick)
+        val muted = SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Muted")
+        val failed = "Could not confirm the chat change."
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(target.and(muted).and(available)).fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithText(failed).assertDoesNotExist()
+        row.performSemanticsAction(SemanticsActions.OnLongClick)
+        compose.onNodeWithText("Mark as read").assertDoesNotExist()
+        compose.onNodeWithText("Mark as unread").assertDoesNotExist()
+        compose.onNodeWithText("Unmute chat").performClick()
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithText(failed).fetchSemanticsNodes().isNotEmpty()
+        }
+        row.assert(muted)
+        assertEquals(
+            listOf("mute", "mark-read"),
+            commands.map { it.requestUrl?.pathSegments?.last() },
+        )
+
+        rejectRead.set(false)
+        row.performSemanticsAction(SemanticsActions.OnLongClick)
+        compose.onNodeWithText("Unmute chat").performClick()
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(target.and(!muted).and(available)).fetchSemanticsNodes().isNotEmpty()
+        }
+        row.assert(!unreadBadge)
+        val refreshStatus = app.getString(R.string.chat_refresh_status)
+        indicatorsUnavailable.set(false)
+        compose.onNodeWithTag("chat_list").performScrollToNode(hasText(refreshStatus))
+        compose.onNodeWithText(refreshStatus).performClick()
+        compose.onNodeWithTag("chat_list").performScrollToNode(target)
+        row.performSemanticsAction(SemanticsActions.OnLongClick)
+        compose.onNodeWithText("Mark as unread").assertExists()
+        compose.onNodeWithText("Mute chat").assertExists()
+        assertEquals(
+            listOf("mute", "mark-read", "mark-read", "unmute"),
+            commands.map { it.requestUrl?.pathSegments?.last() },
+        )
+        assertEquals(
+            2,
+            commands.mapNotNull { it.requestUrl?.queryParameter("eventId") }.distinct().size,
+        )
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w1000dp-h800dp")
+    fun archiveAndRestoreFollowConfirmedPlacementAndKeepTheOpenConversation() {
+        val app = compose.activity.application as ChatListApplication
+        val fixture = app.fixture
+        val readback = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val events =
+            fixture.rowEventTail {
+                if (it == 23L) {
+                    readback.countDown()
+                    release.await()
+                }
+            }
+        val commands = CopyOnWriteArrayList<RecordedRequest>()
+        fixture.commandResponse = { request ->
+            if (request.method != "POST") null
+            else
+                when (request.requestUrl?.encodedPath) {
+                    "/api/chat-threads/$CHAT_PERSONAL/archive" -> {
+                        commands.add(request)
+                        events.add(24L to request.rowEvent(24, CHAT_PERSONAL, "archived"))
+                        MockResponse().setResponseCode(204)
+                    }
+                    "/api/chat-threads/$CHAT_PERSONAL/unarchive" -> {
+                        commands.add(request)
+                        events.add(25L to request.rowEvent(25, CHAT_PERSONAL, "unarchived"))
+                        MockResponse().setResponseCode(204)
+                    }
+                    else -> null
+                }
+        }
+        try {
+            app.responseGate.countDown()
+            awaitListAndNames()
+            val rowTag = "chat_$CHAT_PERSONAL"
+            val target = hasTestTag(rowTag)
+            val row = compose.onNode(target)
+            compose.onNodeWithTag("chat_list").performScrollToNode(target)
+            row.performClick()
+            compose.waitUntil(10_000) {
+                compose
+                    .onAllNodesWithText("Native history", substring = true)
+                    .fetchSemanticsNodes()
+                    .isNotEmpty()
+            }
+            row.performTouchInput { longClick() }
+            compose.onNodeWithText("Archive chat").performClick()
+            compose.waitUntil(10_000) { compose.runOnIdle { readback.count == 0L } }
+            row.assert(!SemanticsMatcher.keyIsDefined(SemanticsActions.OnLongClick))
+            compose.onNodeWithTag("conversation").assertExists()
+            release.countDown()
+            compose.waitUntil(10_000) { compose.onAllNodes(target).fetchSemanticsNodes().isEmpty() }
+            compose.onNodeWithContentDescription("Filter").performClick()
+            compose.onNodeWithText("Archived").performClick()
+            compose.onNodeWithTag("chat_list").performScrollToNode(target)
+            compose.onNodeWithTag(rowTag).performSemanticsAction(SemanticsActions.OnLongClick)
+            compose.onNodeWithText("Unarchive chat").performClick()
+            compose.waitUntil(10_000) { compose.onAllNodes(target).fetchSemanticsNodes().isEmpty() }
+            compose.onNodeWithText("Archived").performClick()
+            compose.onNodeWithTag("chat_list").performScrollToNode(target)
+            compose.onNodeWithTag(rowTag).assertExists()
+            compose.onNodeWithTag("conversation").assertExists()
+            assertEquals(
+                listOf("archive", "unarchive"),
+                commands.map { it.requestUrl?.pathSegments?.last() },
+            )
+            assertEquals(
+                2,
+                commands.mapNotNull { it.requestUrl?.queryParameter("eventId") }.distinct().size,
+            )
+        } finally {
+            release.countDown()
+        }
+    }
+
+    private fun ChatListApiFixture.rowEventTail(
+        beforeReadback: (Long) -> Unit = {}
+    ): MutableList<Pair<Long, String>> {
+        val initialEvents = events
+        val tail = CopyOnWriteArrayList<Pair<Long, String>>()
+        events = { request ->
+            val since = request.requestUrl?.queryParameter("sinceSeqId")?.toLong()
+            if (since == null) initialEvents(request)
+            else {
+                if (tail.isNotEmpty()) beforeReadback(since)
+                val observed = tail.filter { it.first > since }.joinToString(",") { it.second }
+                jsonResponse("""{"events":[$observed],"hasMore":false}""")
+            }
+        }
+        return tail
+    }
+
+    private fun RecordedRequest.rowEvent(
+        seq: Long,
+        thread: String,
+        kind: String,
+        extra: String = "",
+    ): String {
+        val id = checkNotNull(requestUrl?.queryParameter("eventId"))
+        assertEquals(id, UUID.fromString(id).toString())
+        assertEquals("Bearer fixture-token", getHeader("Authorization"))
+        assertEquals(0L, bodySize)
+        return chatEventWire(id = id, seq = seq, thread = thread, kind = kind, extra = extra)
     }
 
     private fun awaitListAndNames() {

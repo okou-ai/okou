@@ -1,18 +1,27 @@
 """Correlate Data Router response IDs with Runs; never parse prices or results."""
 
+import asyncio
 import json
 import uuid
 
 from mitmproxy import http
 
-import firewall_auth_client
 import flow_metadata
 import platform_api
+import platform_http_transport as transport
 
 OWNER = "data-router"
 REQUEST_ID_HEADER = "X-Okou-Data-Request-Id"
 _REQUEST_ID_HEADER_NAME = REQUEST_ID_HEADER.lower().encode("ascii")
 _RESPONSE_REGISTRATION_ATTEMPTED = "_data_router_response_registration_attempted"
+
+
+async def post_registration(url: str, body: bytes, sandbox_token: str) -> None:
+    request = platform_api.make_api_request(url, body, sandbox_token)
+    async with asyncio.timeout(transport.REQUEST_DEADLINE_SECONDS):
+        response = await transport.send(request, body, transport.RequestProgress())
+    if not response.ok:
+        raise response.as_http_error(url)
 
 
 def prepare_request(flow: http.HTTPFlow) -> None:
@@ -46,6 +55,6 @@ async def register_response(flow: http.HTTPFlow) -> None:
     # uncertain platform write.
     flow.metadata[_RESPONSE_REGISTRATION_ATTEMPTED] = True
     body = json.dumps({"runId": run_id, "requestId": request_id}).encode()
-    await firewall_auth_client.post_platform_json(
+    await post_registration(
         f"{platform_api.get_api_url()}/api/webhooks/agent/data-request", body, token
     )

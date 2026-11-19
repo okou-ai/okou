@@ -47,11 +47,13 @@ The optional `emudhra` and `emudhra_old` signing modes remain disabled.
 
 ## Platform HTTP connection ownership
 
-Firewall-auth resolution and Data Router response registration share bounded
-HTTP/1 connection reuse. Origin, selected proxy route and proxy credentials,
-and TLS trust context define connection identity; request paths, bodies and
-application credentials remain request-local. Only fully consumed persistent
-responses with valid framing return to idle. Checkout must reject bytes received
+Firewall-auth resolution and Data Router response registration share the
+platform HTTP transport and its bounded HTTP/1 connection reuse. Each caller
+supplies its own Run credential and interprets its own endpoint response.
+The origin, selected proxy route, proxy credentials, and TLS trust context
+define connection identity. Request paths, bodies and application credentials
+remain request-local. Only fully consumed persistent responses with valid
+framing return to idle. Checkout must reject bytes received
 while idle, including bytes buffered during cancellation of the idle reader.
 A pending read transfers to the active request and remains owned until consumed
 or cancelled. Idle retention is bounded to four connections for at most

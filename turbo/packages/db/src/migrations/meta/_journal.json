@@ -3477,8 +3477,15 @@
     {
       "idx": 1575,
       "version": "7",
-      "when": 1795057230203,
-      "tag": "1575_onboarding_drafts",
+      "when": 1795041679110,
+      "tag": "1575_activate_active_default_agent_workspaces",
+      "breakpoints": true
+    },
+    {
+      "idx": 1576,
+      "version": "7",
+      "when": 1795060841707,
+      "tag": "1576_onboarding_drafts",
       "breakpoints": true
     }
   ]

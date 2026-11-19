@@ -358,9 +358,6 @@ unless run_step.dig("env", "VERCEL_AUTOMATION_BYPASS_SECRET") ==
     "${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}"
   raise "runner E2E tests must receive the preview bypass secret"
 end
-if run_step.fetch("env").key?("OKOU_MITM_RUNNER_TOKEN")
-  raise "runner E2E no longer requires privileged vendor-fallback injection"
-end
 
 unless runner.fetch("steps").any? do |step|
     step.fetch("uses", "").start_with?("actions/download-artifact@") &&
