@@ -727,10 +727,10 @@ describe("okou workflow automations", () => {
     return connector.id;
   }
 
-  it("creates a cron automation without binding a chat thread", async () => {
+  it("creates, disables, and re-enables a cron automation without binding a chat thread", async () => {
     const { workflowId } = await setupFixture();
+    mockNow(Date.parse("2026-06-26T08:00:00.000Z"));
 
-    context.mocks.ably.publish.mockClear();
     const created = await accept(
       automationsClient().create({
         headers: authHeaders(),
@@ -756,11 +756,39 @@ describe("okou workflow automations", () => {
       },
     });
     expect(created.body.chatThreadId).toBeNull();
-    expect(created.body.nextRunAt).toBeTruthy();
-    if (created.body.kind !== "schedule") {
-      throw new Error("Expected a schedule automation");
-    }
-    expect(created.body.scheduleSummary.length).toBeGreaterThan(0);
+    expect(created.body.nextRunAt).toBe("2026-06-26T09:00:00.000Z");
+    expect(created.body.scheduleSummary).toBe("0 9 * * 1-5 (UTC)");
+
+    const disabled = await accept(
+      automationsClient().disable({
+        headers: authHeaders(),
+        params: { id: created.body.id },
+      }),
+      [200],
+    );
+    expect(disabled.body.enabled).toBeFalsy();
+    expect(disabled.body.nextRunAt).toBeNull();
+
+    mockNow(Date.parse("2026-06-26T10:00:00.000Z"));
+    const enabled = await accept(
+      automationsClient().enable({
+        headers: authHeaders(),
+        params: { id: created.body.id },
+      }),
+      [200],
+    );
+    expect(enabled.body.enabled).toBeTruthy();
+    expect(enabled.body.nextRunAt).toBe("2026-06-29T09:00:00.000Z");
+    expect(enabled.body.chatThreadId).toBeNull();
+
+    // Keep the mock-dated automation out of later cron sweeps.
+    await accept(
+      automationsClient().disable({
+        headers: authHeaders(),
+        params: { id: created.body.id },
+      }),
+      [200],
+    );
   });
 
   it("lists thread-bound workflow automations", async () => {
@@ -852,59 +880,6 @@ describe("okou workflow automations", () => {
     ]);
   });
 
-  it("lists thread-bound webhook automations", async () => {
-    const { workflowId } = await setupFixture("team");
-
-    const created = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId },
-        body: { kind: "event", eventType: "webhook-received" },
-      }),
-      [201],
-    );
-    if (
-      created.body.kind !== "event" ||
-      created.body.eventType !== "webhook-received" ||
-      !created.body.chatThreadId
-    ) {
-      throw new Error("Expected a thread-bound webhook automation");
-    }
-
-    const listed = await accept(
-      automationsClient().listForChatThread({
-        headers: authHeaders(),
-        params: { threadId: created.body.chatThreadId },
-      }),
-      [200],
-    );
-    const [listedAutomation] = listed.body;
-    expect(listedAutomation).toMatchObject({
-      id: created.body.id,
-      kind: "event",
-      eventType: "webhook-received",
-      eventConfig: {
-        provider: "webhook",
-        event: "received",
-        auth: { mode: "hmac-sha256" },
-      },
-      chatThreadId: created.body.chatThreadId,
-      secretLastFour: created.body.secretLastFour,
-      disabledReason: null,
-      lastReceivedAt: null,
-      workflow: expect.objectContaining({ id: workflowId }),
-    });
-    if (
-      !listedAutomation ||
-      listedAutomation.kind !== "event" ||
-      listedAutomation.eventType !== "webhook-received"
-    ) {
-      throw new Error("Expected the webhook automation to be listed");
-    }
-    expect(listedAutomation.webhookUrl).toBeUndefined();
-    expect(listedAutomation.webhookSecret).toBeUndefined();
-  });
-
   it("shares a destination across concurrent creates and rebinds after deletion", async () => {
     const { workflowId } = await setupFixture("team");
     const createAutomation = () => {
@@ -978,9 +953,30 @@ describe("okou workflow automations", () => {
     );
   });
 
-  it("creates and updates one-time schedules from local atTime and timezone", async () => {
+  it("validates, creates, updates and lists a one-time schedule in its time zone", async () => {
     mockNow(Date.parse("2026-06-22T07:50:00.000Z"));
     const { workflowId } = await setupFixture();
+
+    const pastOnce = await accept(
+      automationsClient().create({
+        headers: authHeaders(),
+        params: { workflowId },
+        body: {
+          schedule: {
+            type: "once",
+            atTime: "2026-06-22T07:49:00.000Z",
+            timezone: "UTC",
+          },
+        },
+      }),
+      [400],
+    );
+    expect(pastOnce.body).toStrictEqual({
+      error: {
+        message: "Schedule atTime must be in the future",
+        code: "BAD_REQUEST",
+      },
+    });
 
     const created = await accept(
       automationsClient().create({
@@ -1026,6 +1022,30 @@ describe("okou workflow automations", () => {
     });
     expect(updated.body.nextRunAt).toBe("2026-06-22T08:05:00.000Z");
 
+    const listed = await accept(
+      automationsClient().list({
+        headers: authHeaders(),
+        params: { workflowId },
+      }),
+      [200],
+    );
+    const expectedAutomations = [
+      {
+        id: created.body.id,
+        kind: "schedule",
+        schedule: updated.body.schedule,
+      },
+    ];
+    expect(listed.body).toMatchObject(expectedAutomations);
+    const detail = await accept(
+      detailClient().get({
+        headers: authHeaders(),
+        params: { workflowId },
+      }),
+      [200],
+    );
+    expect(detail.body.automations).toMatchObject(expectedAutomations);
+
     // Disable so the past-dated one-time automation never becomes a stale due
     // candidate for later cron sweeps in the shared database.
     await accept(
@@ -1066,51 +1086,6 @@ describe("okou workflow automations", () => {
         code: "NOT_FOUND",
       },
     });
-  });
-
-  it("rejects a past one-time schedule", async () => {
-    const { workflowId } = await setupFixture();
-
-    const pastOnce = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId },
-        body: {
-          schedule: {
-            type: "once",
-            atTime: new Date(now() - 60_000).toISOString(),
-            timezone: "UTC",
-          },
-        },
-      }),
-      [400],
-    );
-
-    expect(pastOnce.body).toStrictEqual({
-      error: {
-        message: "Schedule atTime must be in the future",
-        code: "BAD_REQUEST",
-      },
-    });
-  });
-
-  it("makes a loop automation due immediately when enabled", async () => {
-    const { workflowId } = await setupFixture();
-
-    const created = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId },
-        body: { schedule: { type: "loop", intervalSeconds: 1800 } },
-      }),
-      [201],
-    );
-
-    expect(created.body.schedule).toStrictEqual({
-      type: "loop",
-      intervalSeconds: 1800,
-    });
-    expect(created.body.nextRunAt).toBeTruthy();
   });
 
   it("requires Team for webhook automation creation", async () => {
@@ -1268,7 +1243,7 @@ describe("okou workflow automations", () => {
     expect("fileContents" in listed.body[0]!.workflow).toBeFalsy();
   });
 
-  it("creates webhook event automations with a signed endpoint secret shown once", async () => {
+  it("discloses webhook credentials only on create and reveal and keeps the thread after deletion", async () => {
     const { workflowId } = await setupFixture("team");
 
     const created = await accept(
@@ -1297,10 +1272,12 @@ describe("okou workflow automations", () => {
     });
     if (
       created.body.kind !== "event" ||
-      created.body.eventType !== "webhook-received"
+      created.body.eventType !== "webhook-received" ||
+      !created.body.chatThreadId
     ) {
-      throw new Error("Expected a webhook automation");
+      throw new Error("Expected a thread-bound webhook automation");
     }
+    const threadId = created.body.chatThreadId;
     expect(created.body.webhookUrl).toContain(
       "/api/webhooks/workflow-automations/whk_",
     );
@@ -1330,6 +1307,29 @@ describe("okou workflow automations", () => {
     expect(listedWebhook.secretLastFour).toBe(created.body.secretLastFour);
     expect(listedWebhook.webhookSecret).toBeUndefined();
 
+    const threadListing = await accept(
+      automationsClient().listForChatThread({
+        headers: authHeaders(),
+        params: { threadId },
+      }),
+      [200],
+    );
+    expect(threadListing.body).toMatchObject([
+      {
+        id: created.body.id,
+        kind: "event",
+        eventType: "webhook-received",
+        eventConfig: created.body.eventConfig,
+        chatThreadId: threadId,
+        secretLastFour: created.body.secretLastFour,
+        disabledReason: null,
+        lastReceivedAt: null,
+        workflow: { id: workflowId },
+      },
+    ]);
+    expect(threadListing.body[0]).not.toHaveProperty("webhookUrl");
+    expect(threadListing.body[0]).not.toHaveProperty("webhookSecret");
+
     const revealed = await accept(
       automationsClient().revealWebhookSecret({
         headers: authHeaders(),
@@ -1342,6 +1342,30 @@ describe("okou workflow automations", () => {
       webhookUrl: created.body.webhookUrl,
       webhookSecret: created.body.webhookSecret,
     });
+
+    context.mocks.ably.publish.mockClear();
+    await accept(
+      automationsClient().delete({
+        headers: authHeaders(),
+        params: { id: created.body.id },
+      }),
+      [204],
+    );
+    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
+      `chatThreadAutomationsChanged:${threadId}`,
+      null,
+    );
+    await expect(wf.readThreadSelectedModel(threadId)).resolves.toBe(
+      "claude-fable-5-1",
+    );
+    const remaining = await accept(
+      automationsClient().listForChatThread({
+        headers: authHeaders(),
+        params: { threadId },
+      }),
+      [200],
+    );
+    expect(remaining.body).toStrictEqual([]);
   });
 
   it("uses configured webhook URLs for agent run tokens", async () => {
@@ -1565,44 +1589,51 @@ describe("okou workflow automations", () => {
     });
   });
 
-  it("requires a connected Gmail account for Gmail event automations", async () => {
+  it("requires a connected account for provider event automations", async () => {
     const { workflowId } = await setupFixture();
     mockOptionalEnv("GMAIL_PUBSUB_TOPIC_NAME", GMAIL_TOPIC_NAME);
-    const rejected = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId },
+    const cases = [
+      {
         body: {
           kind: "event",
           eventType: "gmail-new-message",
           eventConfig: { provider: "gmail", event: "new_message" },
         },
-      }),
-      [400],
-    );
-
-    expect(rejected.body.error.message).toBe(
-      "Connect Gmail before adding a Gmail event automation",
-    );
-  });
-
-  it("requires a connected Google Calendar account for Google Calendar event automations", async () => {
-    const { workflowId } = await setupFixture();
-    const rejected = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId },
+        message: "Connect Gmail before adding a Gmail event automation",
+      },
+      {
         body: {
           kind: "event",
           eventType: "google-calendar-event-created",
         },
-      }),
-      [400],
-    );
+        message:
+          "Connect Google Calendar before adding a Google Calendar event automation",
+      },
+      {
+        body: {
+          kind: "event",
+          eventType: "notion-child-page-created",
+          eventConfig: {
+            provider: "notion",
+            event: "child_page_created",
+            parentPageUrl: NOTION_PARENT_PAGE_URL,
+          },
+        },
+        message: "Connect Notion before adding a Notion event automation",
+      },
+    ] as const;
 
-    expect(rejected.body.error.message).toBe(
-      "Connect Google Calendar before adding a Google Calendar event automation",
-    );
+    for (const { body, message } of cases) {
+      const rejected = await accept(
+        automationsClient().create({
+          headers: authHeaders(),
+          params: { workflowId },
+          body,
+        }),
+        [400],
+      );
+      expect(rejected.body.error.message).toBe(message);
+    }
   });
 
   it("rejects Google Forms creation when Pub/Sub push is not configured", async () => {
@@ -2052,36 +2083,11 @@ describe("okou workflow automations", () => {
     );
   });
 
-  it("requires a connected Notion account for Notion child page automations", async () => {
-    const { workflowId } = await setupFixture();
-
-    const rejected = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId },
-        body: {
-          kind: "event",
-          eventType: "notion-child-page-created",
-          eventConfig: {
-            provider: "notion",
-            event: "child_page_created",
-            parentPageUrl: NOTION_PARENT_PAGE_URL,
-          },
-        },
-      }),
-      [400],
-    );
-
-    expect(rejected.body.error.message).toBe(
-      "Connect Notion before adding a Notion event automation",
-    );
-  });
-
-  it("requires a standard notion.so page URL for Notion child page automations", async () => {
+  it("requires standard notion.so page and database URLs for Notion automations", async () => {
     const scenario = await setupFixture();
     await connectNotion(scenario);
 
-    const rejected = await accept(
+    const page = await accept(
       automationsClient().create({
         headers: authHeaders(),
         params: { workflowId: scenario.workflowId },
@@ -2098,16 +2104,9 @@ describe("okou workflow automations", () => {
       [400],
     );
 
-    expect(rejected.body.error.message).toBe(
-      "Enter a standard notion.so page URL",
-    );
-  });
+    expect(page.body.error.message).toBe("Enter a standard notion.so page URL");
 
-  it("requires a standard notion.so database URL for Notion database item automations", async () => {
-    const scenario = await setupFixture();
-    await connectNotion(scenario);
-
-    const rejected = await accept(
+    const database = await accept(
       automationsClient().create({
         headers: authHeaders(),
         params: { workflowId: scenario.workflowId },
@@ -2124,21 +2123,27 @@ describe("okou workflow automations", () => {
       [400],
     );
 
-    expect(rejected.body.error.message).toBe(
+    expect(database.body.error.message).toBe(
       "Enter a standard notion.so database URL",
     );
   });
 
-  it("reports an inaccessible Notion page with Okou branding", async () => {
+  it("reports inaccessible Notion pages and databases", async () => {
     const scenario = await setupFixture();
     await connectNotion(scenario);
     server.use(
       http.get("https://api.notion.com/v1/pages/:pageId", () => {
         return new HttpResponse(null, { status: 404 });
       }),
+      http.get("https://api.notion.com/v1/databases/:databaseId", () => {
+        return new HttpResponse(null, { status: 404 });
+      }),
+      http.get("https://api.notion.com/v1/data_sources/:dataSourceId", () => {
+        return new HttpResponse(null, { status: 404 });
+      }),
     );
 
-    const rejected = await accept(
+    const page = await accept(
       automationsClient().create({
         headers: authHeaders(),
         params: { workflowId: scenario.workflowId },
@@ -2154,24 +2159,9 @@ describe("okou workflow automations", () => {
       }),
       [400],
     );
-    expect(rejected.body.error.message).toBe(
-      "Okou cannot access this Notion page",
-    );
-  });
+    expect(page.body.error.message).toBe("Okou cannot access this Notion page");
 
-  it("reports an inaccessible Notion database with Okou branding", async () => {
-    const scenario = await setupFixture();
-    await connectNotion(scenario);
-    server.use(
-      http.get("https://api.notion.com/v1/databases/:databaseId", () => {
-        return new HttpResponse(null, { status: 404 });
-      }),
-      http.get("https://api.notion.com/v1/data_sources/:dataSourceId", () => {
-        return new HttpResponse(null, { status: 404 });
-      }),
-    );
-
-    const rejected = await accept(
+    const database = await accept(
       automationsClient().create({
         headers: authHeaders(),
         params: { workflowId: scenario.workflowId },
@@ -2187,7 +2177,7 @@ describe("okou workflow automations", () => {
       }),
       [400],
     );
-    expect(rejected.body.error.message).toBe(
+    expect(database.body.error.message).toBe(
       "Okou cannot access this Notion database",
     );
   });
@@ -4108,84 +4098,7 @@ describe("okou workflow automations", () => {
     });
   });
 
-  it("returns created automations from list and both workflow detail fields", async () => {
-    const { workflowId } = await setupFixture();
-
-    await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId },
-        body: {
-          schedule: {
-            type: "once",
-            atTime: futureIso(86_400_000),
-            timezone: "UTC",
-          },
-        },
-      }),
-      [201],
-    );
-
-    const listed = await accept(
-      automationsClient().list({
-        headers: authHeaders(),
-        params: { workflowId },
-      }),
-      [200],
-    );
-    expect(listed.body).toHaveLength(1);
-    const [listedAutomation] = listed.body;
-    expect(listedAutomation?.kind).toBe("schedule");
-    if (listedAutomation?.kind !== "schedule") {
-      throw new Error("Expected a schedule automation");
-    }
-    expect(listedAutomation.schedule.type).toBe("once");
-
-    const detail = await accept(
-      detailClient().get({
-        headers: authHeaders(),
-        params: { workflowId },
-      }),
-      [200],
-    );
-    expect(detail.body.automations).toHaveLength(1);
-  });
-
-  it("updates the schedule of an existing automation", async () => {
-    const { workflowId } = await setupFixture();
-    const created = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId },
-        body: {
-          schedule: { type: "loop", intervalSeconds: 600 },
-        },
-      }),
-      [201],
-    );
-
-    const updated = await accept(
-      automationsClient().update({
-        headers: authHeaders(),
-        params: { id: created.body.id },
-        body: {
-          schedule: {
-            type: "cron",
-            cronExpression: "*/15 * * * *",
-            timezone: "UTC",
-          },
-        },
-      }),
-      [200],
-    );
-    expect(updated.body.schedule).toStrictEqual({
-      type: "cron",
-      cronExpression: "*/15 * * * *",
-      timezone: "UTC",
-    });
-  });
-
-  it("schedules updated loop automations from the last run interval", async () => {
+  it("schedules a loop from its last run after updates and re-enabling, then converts it to cron", async () => {
     mockOptionalEnv("RUNNER_DEFAULT_GROUP", "vm0/test");
     mockNow(Date.parse("2026-06-28T06:00:00.000Z"));
     const { workflowId } = await setupFixture();
@@ -4199,6 +4112,11 @@ describe("okou workflow automations", () => {
       }),
       [201],
     );
+    expect(created.body.schedule).toStrictEqual({
+      type: "loop",
+      intervalSeconds: 600,
+    });
+    expect(created.body.nextRunAt).toBe("2026-06-28T06:00:00.000Z");
 
     // A real manual run through the public run route stamps lastRunAt.
     mockNow(Date.parse("2026-06-28T06:05:00.000Z"));
@@ -4218,33 +4136,6 @@ describe("okou workflow automations", () => {
 
     expect(updated.body.nextRunAt).toBe("2026-06-28T07:05:00.000Z");
 
-    // Keep the past-dated loop automation out of later global cron sweeps.
-    await accept(
-      automationsClient().disable({
-        headers: authHeaders(),
-        params: { id: created.body.id },
-      }),
-      [200],
-    );
-  });
-
-  it("clears next run on disable and recomputes it on enable", async () => {
-    const { workflowId } = await setupFixture();
-    const created = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId },
-        body: {
-          schedule: {
-            type: "cron",
-            cronExpression: "0 * * * *",
-            timezone: "UTC",
-          },
-        },
-      }),
-      [201],
-    );
-
     const disabled = await accept(
       automationsClient().disable({
         headers: authHeaders(),
@@ -4252,9 +4143,9 @@ describe("okou workflow automations", () => {
       }),
       [200],
     );
-    expect(disabled.body.enabled).toBeFalsy();
     expect(disabled.body.nextRunAt).toBeNull();
 
+    mockNow(Date.parse("2026-06-28T06:12:00.000Z"));
     const enabled = await accept(
       automationsClient().enable({
         headers: authHeaders(),
@@ -4263,48 +4154,30 @@ describe("okou workflow automations", () => {
       [200],
     );
     expect(enabled.body.enabled).toBeTruthy();
-    expect(enabled.body.nextRunAt).toBeTruthy();
-  });
+    expect(enabled.body.nextRunAt).toBe("2026-06-28T07:05:00.000Z");
 
-  it("keeps enabled loop automations scheduled from the last run interval", async () => {
-    mockOptionalEnv("RUNNER_DEFAULT_GROUP", "vm0/test");
-    mockNow(Date.parse("2026-06-28T06:00:00.000Z"));
-    const { workflowId } = await setupFixture();
-    const created = await accept(
-      automationsClient().create({
+    const cron = await accept(
+      automationsClient().update({
         headers: authHeaders(),
-        params: { workflowId },
+        params: { id: created.body.id },
         body: {
-          schedule: { type: "loop", intervalSeconds: 1800 },
+          schedule: {
+            type: "cron",
+            cronExpression: "*/15 * * * *",
+            timezone: "UTC",
+          },
         },
       }),
-      [201],
-    );
-
-    // Stamp lastRunAt through a real manual run, then disable so enable has
-    // to recompute the next run from the last run interval.
-    mockNow(Date.parse("2026-06-28T06:05:00.000Z"));
-    await runAutomationNow(created.body.id);
-    await accept(
-      automationsClient().disable({
-        headers: authHeaders(),
-        params: { id: created.body.id },
-      }),
       [200],
     );
+    expect(cron.body.schedule).toStrictEqual({
+      type: "cron",
+      cronExpression: "*/15 * * * *",
+      timezone: "UTC",
+    });
+    expect(cron.body.nextRunAt).toBe("2026-06-28T06:15:00.000Z");
 
-    mockNow(Date.parse("2026-06-28T06:10:00.000Z"));
-    const enabled = await accept(
-      automationsClient().enable({
-        headers: authHeaders(),
-        params: { id: created.body.id },
-      }),
-      [200],
-    );
-
-    expect(enabled.body.enabled).toBeTruthy();
-    expect(enabled.body.nextRunAt).toBe("2026-06-28T06:35:00.000Z");
-
+    // Keep the past-dated schedule out of later global cron sweeps.
     await accept(
       automationsClient().disable({
         headers: authHeaders(),
@@ -4403,39 +4276,6 @@ describe("okou workflow automations", () => {
         code: "FORBIDDEN",
       },
     });
-  });
-
-  it("keeps the bound chat thread when an automation is deleted", async () => {
-    const { workflowId } = await setupFixture("team");
-    const created = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId },
-        body: { kind: "event", eventType: "webhook-received" },
-      }),
-      [201],
-    );
-    const threadId = created.body.chatThreadId;
-    expect(threadId).toBeTruthy();
-
-    context.mocks.ably.publish.mockClear();
-    await accept(
-      automationsClient().delete({
-        headers: authHeaders(),
-        params: { id: created.body.id },
-      }),
-      [204],
-    );
-    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
-      `chatThreadAutomationsChanged:${threadId}`,
-      null,
-    );
-
-    // The bound chat thread survives the automation deletion and still carries
-    // the system default model selection.
-    await expect(wf.readThreadSelectedModel(String(threadId))).resolves.toBe(
-      "claude-fable-5-1",
-    );
   });
 
   it("lazily binds a chat thread when a one-time automation runs now", async () => {

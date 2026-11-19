@@ -79,6 +79,12 @@ against the original SHA-256 before the atomic rename. All requests share the
 400-second staging deadline. Cleanup removes the upload directory when the
 host is reachable and reports an unconfirmed cleanup otherwise.
 
+## Runner host architecture probe
+
+Runner host grouping and image preparation share the `uname -m` probe.
+An SSH exit 255 permits one retry on the same host. The caller validates the
+architecture from a successful probe before using it.
+
 ## Image operation recovery
 
 `python3 runner-image-operation.py claim|cancel HOST`,
