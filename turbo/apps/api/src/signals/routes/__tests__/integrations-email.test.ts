@@ -1627,6 +1627,79 @@ describe("Email integration", () => {
     await flushWaitUntilForTest();
   });
 
+  it("recalls a picked email before its mailbox lookup finishes", async () => {
+    const { actor } = await entitledActor();
+    await connectorsApi.updateFeatureSwitches(actor, {
+      connectorChatAccountAccess: true,
+    });
+    await connectEmailMailbox(actor, "gmail", actor.email);
+    verifiedDirectory(actor);
+    await setGmailContextReadPermission("allow");
+    const message = incoming({ sender: actor.email });
+    const source = mockEmailMessageLookup(
+      "gmail",
+      message.messageId,
+      "The recalled input would have used this mailbox context",
+    );
+    const recallId = randomUUID();
+    server.use(
+      http.get(
+        "https://gmail.googleapis.com/gmail/v1/users/me/messages",
+        async () => {
+          const {
+            chatThreads: [thread],
+          } = await createdThreads(actor);
+          if (!thread) {
+            throw new Error("Expected an Email thread during mailbox lookup");
+          }
+          const { events } = await files.listThreadEvents(actor, thread.id);
+          const input = events.find((event) => {
+            return event.eventType === "input.prompt" && !event.runId;
+          });
+          if (!input) {
+            throw new Error("Expected a queued Email input");
+          }
+          const { agentId } = await files.readThreadMetadata(actor, thread.id);
+          await files.requestSendEvent(
+            actor,
+            {
+              agentId,
+              threadId: thread.id,
+              revokesEventId: input.id,
+              clientEventId: recallId,
+            },
+            [201],
+          );
+          return HttpResponse.json({
+            messages: [{ id: source.providerMessageId }],
+          });
+        },
+        { once: true },
+      ),
+    );
+
+    await message.send();
+
+    const {
+      chatThreads: [thread],
+    } = await createdThreads(actor);
+    if (!thread) {
+      throw new Error("Expected the Email thread after recall");
+    }
+    const { events } = await files.listThreadEvents(actor, thread.id);
+    expect(events).toContainEqual(
+      expect.objectContaining({ id: recallId, eventType: "control.revoke" }),
+    );
+    expect(
+      events.filter((event) => {
+        return event.eventType === "input.prompt" && event.runId;
+      }),
+    ).toHaveLength(0);
+    await expect(files.listActiveChatThreadIds(actor)).resolves.not.toContain(
+      thread.id,
+    );
+  });
+
   it("refreshes rejected Gmail credentials before fetching and appending the exact message", async () => {
     const { actor, group } = await entitledActor();
     await connectorsApi.updateFeatureSwitches(actor, {
