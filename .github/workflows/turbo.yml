@@ -177,12 +177,15 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
+    outputs:
+      release-entry: ${{ steps.check.outputs.release-entry }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
       - name: Check intervening component releases
+        id: check
         env:
           GH_TOKEN: ${{ github.token }}
           MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
@@ -214,6 +217,7 @@ jobs:
             echo 'Ordinary merge group; release presence validation is not needed.'
             exit 0
           fi
+          echo 'release-entry=true' >> "$GITHUB_OUTPUT"
           release_pr_head=$(jq -er .headRefOid <<< "$pr")
           git fetch --no-tags origin "$release_pr_head"
 
@@ -3055,11 +3059,19 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           IS_RELEASE: ${{ needs.detect-release.outputs.skip }}
           RELEASE_LOOKUP_FAILED: ${{ needs.detect-release.outputs.lookup-failed }}
+          RELEASE_MQ_ENTRY: ${{ needs.validate-release-presence.outputs.release-entry }}
           RELEASE_PRESENCE_RESULT: ${{ needs.validate-release-presence.result }}
           RELEASE_DEPLOY_APP_RESULT: ${{ needs.deploy-app.result }}
+          PRODUCTION_RELEASE_FREEZE: ${{ vars.PRODUCTION_RELEASE_FREEZE }}
         run: |
           if [[ "$CI_ADMISSION_RESULT" != "success" ]]; then
             echo "::error::CI admission did not pass ($CI_ADMISSION_RESULT). See the Check PR CI limits job and workflow summary for the reason and retry instructions."
+            exit 1
+          fi
+
+          # Check the exact string in Bash because Actions comparisons ignore case.
+          if [[ "$EVENT_NAME" == "merge_group" && "$RELEASE_MQ_ENTRY" == "true" && "$PRODUCTION_RELEASE_FREEZE" == "true" ]]; then
+            echo "::error title=Production release frozen::The repository variable PRODUCTION_RELEASE_FREEZE is true. Unset it after maintenance, then requeue the release PR."
             exit 1
           fi
 
