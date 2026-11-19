@@ -188,7 +188,7 @@ function ThreadSharingAccess({
     description: string;
   }[];
   return (
-    <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+    <div className="grid min-w-0 gap-1.5 @min-[560px]/sharing:grid-cols-[auto_minmax(10rem,16rem)] @min-[560px]/sharing:items-center @min-[560px]/sharing:gap-x-3">
       <span className="text-sm font-medium text-foreground">
         {t(($) => {
           return $.chat.sharing.whoCanOpen;
@@ -242,7 +242,7 @@ function ThreadSharingAccess({
           })}
         </SelectContent>
       </Select>
-      <p className="text-xs text-muted-foreground">
+      <p className="text-xs text-muted-foreground @min-[560px]/sharing:col-start-2">
         {options.find((option) => {
           return option.value === audience;
         })?.description ??
@@ -359,7 +359,7 @@ export function ChatThreadSharingFooter({
   const signal = useGet(pageSignal$);
   const creating = creation.state === "loading";
   return (
-    <footer className="@container/sharing relative shrink-0 border-t border-border/60 px-4 py-3 sm:px-6">
+    <footer className="@container/sharing relative shrink-0 px-4 py-3 sm:px-6">
       <div className="mx-auto flex w-full max-w-[900px] flex-col gap-3">
         {id ? (
           <SharedThreadCreatedLink
@@ -376,7 +376,7 @@ export function ChatThreadSharingFooter({
                 })}
               </p>
             )}
-            <div className="flex flex-col gap-3 @min-[520px]/sharing:flex-row @min-[520px]/sharing:items-center @min-[520px]/sharing:gap-6">
+            <div className="flex flex-col gap-3 rounded-2xl border border-border bg-background p-3 @min-[560px]/sharing:flex-row @min-[560px]/sharing:items-start @min-[560px]/sharing:justify-between">
               <ThreadSharingAccess thread={thread} disabled={creating} />
               <Button
                 className="shrink-0 bg-foreground text-background hover:bg-foreground-hover active:bg-foreground-pressed"

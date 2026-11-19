@@ -6028,9 +6028,10 @@ function SelectablePagedGroupRow({
   const selectedEventIds = useGet(thread.sharing.selectedEventIds$);
   const creating = useLoadable(thread.sharing.creation$).state === "loading";
   const toggle = useSet(thread.sharing.toggle$);
-  const nameLine =
-    useLastResolved(featureSwitches$)?.[FeatureSwitchKey.ChatReplyNameLine] ===
-    true;
+  const switches = useLastResolved(featureSwitches$);
+  const nameLine = switches?.[FeatureSwitchKey.ChatReplyNameLine] === true;
+  const shareSelection =
+    switches?.[FeatureSwitchKey.ThreadSharingSelection] === true;
   const sharing = phase !== "idle";
   const displayGroup = sharing ? chatGroupForSharing(group) : group;
   const content = (
@@ -6102,6 +6103,19 @@ function SelectablePagedGroupRow({
       {content}
     </div>
   );
+
+  if (shareSelection) {
+    return (
+      <div
+        data-chat-share-selectable-group
+        data-chat-scroll-anchor-alias-event-ids={aliasEventIds}
+        className="group/share-row grid grid-cols-[2rem_minmax(0,1fr)] gap-2 rounded-xl"
+      >
+        <ShareGroupSelectionColumn role={group.role} {...selection} />
+        {messages}
+      </div>
+    );
+  }
 
   if (nameLine) {
     return (
