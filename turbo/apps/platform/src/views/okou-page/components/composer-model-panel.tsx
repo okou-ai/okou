@@ -1,4 +1,3 @@
-import { EmptyStateIllustration } from "../../components/empty-state-illustration.tsx";
 import { LoadingSkeleton } from "../../components/loading-skeleton.tsx";
 import { Radio as RadioPrimitive } from "@base-ui/react/radio";
 import { ScrollArea } from "@base-ui/react/scroll-area";
@@ -175,8 +174,7 @@ function ComposerModelPanelBody({
               className="flex flex-col gap-0.5 py-1"
             >
               {state.models.length === 0 && (
-                <p className="flex items-center gap-2 px-2 py-2 text-sm text-muted-foreground">
-                  <EmptyStateIllustration scene="connection" size="row" />
+                <p className="px-2 py-2 text-sm text-muted-foreground">
                   {t(($) => {
                     return $.settings.models.picker.noConfiguredModels;
                   })}

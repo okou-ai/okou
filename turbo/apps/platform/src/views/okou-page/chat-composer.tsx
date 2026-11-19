@@ -1,4 +1,3 @@
-import { EmptyStateIllustration } from "../components/empty-state-illustration.tsx";
 import { ChatConnectorAccountDialogs } from "./chat-connector-account-dialogs.tsx";
 import { findDocumentTemplateItem } from "@okouai/core/document-template-items";
 import { DocumentTemplatePickerPane } from "./document-template-picker-pane.tsx";
@@ -4190,7 +4189,7 @@ function ComputerUseConnectorMenuSection({
         </div>
       ) : (
         <div className="flex items-center gap-2 px-2 py-1.5 text-sm text-muted-foreground">
-          <EmptyStateIllustration scene="computer" size="row" />
+          <Monitor size={16} className="shrink-0" />
           {t(($) => {
             return $.chat.computerUse.noOnlineComputers;
           })}
@@ -4606,8 +4605,7 @@ function ComposerConnectorAccountChoices({
         );
       })}
       {noResults ? (
-        <div className="flex items-center gap-2 px-2 py-3 text-sm text-muted-foreground">
-          <EmptyStateIllustration scene="search" size="row" />
+        <div className="px-2 py-3 text-sm text-muted-foreground">
           {t(($) => {
             return $.connectors.accounts.noAccountsFound;
           })}

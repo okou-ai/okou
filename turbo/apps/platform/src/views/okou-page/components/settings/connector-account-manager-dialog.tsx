@@ -1,4 +1,3 @@
-import { EmptyStateIllustration } from "../../../components/empty-state-illustration.tsx";
 import type { FormEvent, ReactNode } from "react";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitches$ } from "../../../../signals/external/feature-switch.ts";
@@ -590,10 +589,7 @@ function AccountsMessage({
     return <AccountsSkeleton />;
   }
   return (
-    <p className="flex flex-col items-center gap-3 py-8 text-center text-sm text-muted-foreground">
-      {messageKey === "noAccountsFound" && (
-        <EmptyStateIllustration scene="search" size="panel" />
-      )}
+    <p className="py-8 text-center text-sm text-muted-foreground">
       {messageKey === "accountsUnavailable"
         ? t(($) => {
             return $.connectors.accounts.accountsUnavailable;

@@ -1,26 +1,20 @@
 import { cn } from "@okouai/ui";
-import { platformEmptyPrivateAgentsImg } from "../../lib/static-assets.ts";
 import {
   emptyArtifactImg,
   emptyAutomationsImg,
   emptyChatImg,
-  emptyMailImg,
   emptySearchImg,
   emptyUsageImg,
-  emptyWorkflowImg,
   noConnectorImg,
   noPermissionIllustration,
 } from "../okou-page/platform-assets.ts";
 
 const scenes = Object.freeze({
-  agent: platformEmptyPrivateAgentsImg,
   artifact: emptyArtifactImg,
   computer: emptyAutomationsImg,
   chat: emptyChatImg,
-  mail: emptyMailImg,
   search: emptySearchImg,
   usage: emptyUsageImg,
-  workflow: emptyWorkflowImg,
   connection: noConnectorImg,
   permission: noPermissionIllustration,
 });
@@ -28,11 +22,9 @@ const scenes = Object.freeze({
 const sizes = Object.freeze({
   page: "h-24 w-36",
   panel: "h-16 w-24",
-  row: "h-8 w-12",
-  inline: "h-6 w-9",
 });
 
-/** Decorative brand artwork; the adjacent copy owns the accessible message. */
+/** Artwork for primary empty regions; compact controls keep text or icons. */
 export function EmptyStateIllustration({
   scene,
   size = "page",

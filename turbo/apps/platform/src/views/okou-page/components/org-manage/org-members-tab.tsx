@@ -1,4 +1,3 @@
-import { EmptyStateIllustration } from "../../../components/empty-state-illustration.tsx";
 // TODO(#8609): split large components to comply with max-lines-per-function (128)
 // oxlint-disable max-lines-per-function
 import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
@@ -346,27 +345,19 @@ export function OrgMembersTab() {
           filtered.length === 0 &&
           filteredPending.length === 0 &&
           membershipRequests.length === 0 && (
-            <MembersEmptyState searching={Boolean(search.trim())} />
+            <div className="sticky left-0 flex items-center justify-center py-12">
+              <span className="text-sm text-muted-foreground">
+                {search.trim()
+                  ? t(($) => {
+                      return $.settings.workspace.members.emptySearch;
+                    })
+                  : t(($) => {
+                      return $.settings.workspace.members.empty;
+                    })}
+              </span>
+            </div>
           )}
       </div>
-    </div>
-  );
-}
-
-function MembersEmptyState({ searching }: { readonly searching: boolean }) {
-  const { t } = useTranslation();
-  return (
-    <div className="sticky left-0 flex flex-col items-center justify-center gap-3 py-12">
-      <EmptyStateIllustration scene={searching ? "search" : "agent"} />
-      <span className="text-sm text-muted-foreground">
-        {searching
-          ? t(($) => {
-              return $.settings.workspace.members.emptySearch;
-            })
-          : t(($) => {
-              return $.settings.workspace.members.empty;
-            })}
-      </span>
     </div>
   );
 }

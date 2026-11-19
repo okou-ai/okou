@@ -1,4 +1,3 @@
-import { EmptyStateIllustration } from "../../../components/empty-state-illustration.tsx";
 import type {
   ModelProviderResponse,
   PersonalSubscriptionProviderType,
@@ -326,8 +325,7 @@ function PersonalProviderAccountTable({
               {group.title}
             </h4>
             {empty && (
-              <p className="flex items-center gap-2 text-xs text-muted-foreground">
-                <EmptyStateIllustration scene="connection" size="inline" />
+              <p className="text-xs text-muted-foreground">
                 {t(($) => {
                   return $.settings.models.personal.noAccounts;
                 })}

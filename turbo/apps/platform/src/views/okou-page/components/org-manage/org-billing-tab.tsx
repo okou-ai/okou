@@ -1,4 +1,3 @@
-import { EmptyStateIllustration } from "../../../components/empty-state-illustration.tsx";
 // TODO(#8609): split large components to comply with max-lines-per-function (128)
 // oxlint-disable max-lines-per-function
 import {
@@ -1700,12 +1699,7 @@ function ConcurrencyBillingSection({
         </div>
         <div className="h-0 border-t border-t-gray-400 mx-5" />
         {subscriptions.length === 0 ? (
-          <div className="flex flex-col items-center px-5 py-6 text-center">
-            <EmptyStateIllustration
-              scene="computer"
-              size="panel"
-              className="mb-3"
-            />
+          <div className="px-5 py-4">
             <p className="text-sm font-medium text-foreground">
               {i18n.t(($) => {
                 return $.billing.concurrency.emptyTitle;

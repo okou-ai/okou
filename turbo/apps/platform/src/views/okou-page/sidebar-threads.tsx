@@ -1,4 +1,3 @@
-import { EmptyStateIllustration } from "../components/empty-state-illustration.tsx";
 import { projectsEnabled$ } from "../../signals/projects/projects.ts";
 import {
   draggingProjectThread$,
@@ -1065,9 +1064,8 @@ function ChatThreadListEmptyState({
 }) {
   return (
     <div className="w-full">
-      <p className="flex items-center gap-2 px-2 py-2 text-sm leading-5 text-nav-copy-muted">
-        <EmptyStateIllustration scene="chat" size="row" />
-        <span>{message}</span>
+      <p className="px-2 py-2 text-sm leading-5 text-nav-copy-muted">
+        {message}
       </p>
       {action ? <ChatThreadFilterAction {...action} /> : null}
     </div>

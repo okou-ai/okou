@@ -1,4 +1,3 @@
-import { EmptyStateIllustration } from "../components/empty-state-illustration.tsx";
 import { LoadingSkeleton } from "../components/loading-skeleton.tsx";
 import {
   useGet,
@@ -1002,12 +1001,7 @@ function RemoteAccessInventory({
   }
   if (visible.length === 0) {
     return (
-      <div className="flex flex-col items-center px-3 py-6 text-center text-sm text-muted-foreground">
-        <EmptyStateIllustration
-          scene={filtered ? "permission" : "computer"}
-          size="panel"
-          className="mb-3"
-        />
+      <div className="px-3 py-6 text-center text-sm text-muted-foreground">
         <p>
           {filtered
             ? t(($) => {

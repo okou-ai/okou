@@ -1,4 +1,3 @@
-import { EmptyStateIllustration } from "../components/empty-state-illustration.tsx";
 import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
 import type { ChatThreadFeedbackSignals } from "../../signals/chat-page/chat-thread-feedback.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -194,8 +193,7 @@ function ForwardTargetPicker({
           </CommandGroup>
         ) : null}
         {matchingAgents.length === 0 && threads.length === 0 ? (
-          <p className="flex flex-col items-center gap-2 px-1 py-3 text-sm text-muted-foreground">
-            <EmptyStateIllustration scene="search" size="panel" />
+          <p className="px-1 py-3 text-sm text-muted-foreground">
             {t(($) => {
               return $.chat.forward.noResults;
             })}

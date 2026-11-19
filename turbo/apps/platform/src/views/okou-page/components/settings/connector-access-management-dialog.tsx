@@ -1,4 +1,3 @@
-import { EmptyStateIllustration } from "../../../components/empty-state-illustration.tsx";
 import { LoadingSkeleton } from "../../../components/loading-skeleton.tsx";
 import { singleAgentEnabled$ } from "../../../../signals/single-agent.ts";
 import { defaultAgentId$ } from "../../../../signals/agent.ts";
@@ -348,8 +347,7 @@ function AgentAccessList({
   const { t } = useTranslation();
   if (rows.length === 0) {
     return (
-      <p className="flex flex-col items-center gap-2 py-8 text-center text-sm text-muted-foreground">
-        <EmptyStateIllustration scene="search" size="panel" />
+      <p className="py-8 text-center text-sm text-muted-foreground">
         {search.trim()
           ? t(
               ($) => {

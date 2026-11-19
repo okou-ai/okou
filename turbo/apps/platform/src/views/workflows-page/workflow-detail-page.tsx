@@ -1,4 +1,3 @@
-import { EmptyStateIllustration } from "../components/empty-state-illustration.tsx";
 import { LoadingSkeleton } from "../components/loading-skeleton.tsx";
 // Workflow detail hosts the instruction editor, supplementary file manager
 // (SKILL.md is never shown), automations, visibility controls, metadata
@@ -2096,8 +2095,7 @@ function WorkflowCopyForm({
           })}
         </span>
         {noAgents ? (
-          <p className="flex items-center gap-2 text-sm text-muted-foreground">
-            <EmptyStateIllustration scene="agent" size="row" />
+          <p className="text-sm text-muted-foreground">
             {i18n.t(($) => {
               return $.workflows.detail.copy.noAgents;
             })}

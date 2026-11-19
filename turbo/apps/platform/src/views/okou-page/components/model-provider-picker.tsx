@@ -1,4 +1,3 @@
-import { EmptyStateIllustration } from "../../components/empty-state-illustration.tsx";
 import { LoadingSkeleton } from "../../components/loading-skeleton.tsx";
 import {
   isAutoSelectedModel,
@@ -445,11 +444,7 @@ function EnabledExplicitModelFirstModelPicker({
             </p>
           )
         ) : models.length === 0 ? (
-          <p
-            role="status"
-            className="flex items-center gap-2 px-2 py-2 text-sm text-muted-foreground"
-          >
-            <EmptyStateIllustration scene="connection" size="row" />
+          <p role="status" className="px-2 py-2 text-sm text-muted-foreground">
             {t(($) => {
               return $.settings.models.picker.noConfiguredModels;
             })}

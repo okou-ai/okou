@@ -1,4 +1,3 @@
-import { EmptyStateIllustration } from "../components/empty-state-illustration.tsx";
 import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
 import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
@@ -69,8 +68,7 @@ function AgentOptions() {
   }
   if (options.data.length === 0) {
     return (
-      <p className="flex flex-col items-center gap-2 px-3 py-4 text-center text-sm text-muted-foreground">
-        <EmptyStateIllustration scene="search" size="panel" />
+      <p className="px-3 py-4 text-sm text-muted-foreground">
         {ta(($) => {
           return $.sidebar.noResults;
         })}

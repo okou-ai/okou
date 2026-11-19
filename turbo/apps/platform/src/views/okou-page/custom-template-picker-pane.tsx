@@ -1,4 +1,3 @@
-import { EmptyStateIllustration } from "../components/empty-state-illustration.tsx";
 import type { ReactNode } from "react";
 import { DocumentTemplateCover } from "./document-template-cover.tsx";
 import {
@@ -843,8 +842,7 @@ export function CustomTemplatePickerSection({
           })}
         </div>
         {templates?.length === 0 && query.trim().length > 0 ? (
-          <p className="mt-3 flex flex-col items-center gap-2 py-4 text-center text-sm text-muted-foreground">
-            <EmptyStateIllustration scene="search" size="panel" />
+          <p className="mt-3 text-sm text-muted-foreground">
             {t(($) => {
               return $.artifacts.templates.noMatches;
             })}

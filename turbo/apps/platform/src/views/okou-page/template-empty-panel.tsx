@@ -1,4 +1,4 @@
-import { EmptyStateIllustration } from "../components/empty-state-illustration.tsx";
+import { Search } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 /**
@@ -11,7 +11,7 @@ export function TemplateEmptyPanel() {
   return (
     <div className="flex min-h-40 flex-1 items-center justify-center rounded-[22px] border-2 border-dashed border-border bg-background px-6 py-10 text-center">
       <div className="flex max-w-xl flex-col items-center">
-        <EmptyStateIllustration scene="search" size="panel" className="mb-4" />
+        <Search className="mb-4 h-8 w-8" />
         <p className="text-sm font-semibold text-muted-foreground">
           {t(($) => {
             return $.artifacts.templates.noMatches;
