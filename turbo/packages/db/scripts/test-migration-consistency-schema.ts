@@ -77,6 +77,7 @@ import { validateModelCatalogSeed } from "./test-model-catalog-seed";
 import { validateOfficialAutomationBindingSchema } from "./test-official-automation-binding-schema";
 import { validatePermanentOrgPlanEntitlementState } from "./test-org-plan-entitlement-permanent";
 import { validatePermanentPlatformGenerationReceipts } from "./test-platform-generation-receipts-permanent";
+import { validatePermanentRegistryArchives } from "./test-registry-archives-permanent";
 import { validatePermanentRunnerStateStorage } from "./test-runner-state-storage-permanent";
 import { validatePermanentBrowserOwnerStorage } from "./test-browser-owner-storage-permanent";
 import { validateBrowserOwnerDdlReplay } from "./test-browser-owner-ddl-replay";
@@ -3070,6 +3071,8 @@ async function main(): Promise<void> {
     await resetDatabase(dbUrl1);
     await runMigrations(dbUrl1);
     console.log("   ✅ Consecutive database resets completed successfully\n");
+
+    await validatePermanentRegistryArchives(dbUrl1);
 
     console.log("=== Registry resource publication CLI ===");
     console.log(
