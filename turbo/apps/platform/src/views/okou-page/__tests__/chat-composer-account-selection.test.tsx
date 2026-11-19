@@ -154,10 +154,10 @@ test.each(["pagination", "remote search"] as const)(
       });
       await fill(input, "remote");
       await within(chooser).findByRole("switch", { name: "Research access" });
-      expect(
-        within(chooser).queryByRole("switch", { name: "Client access" }),
-      ).toBeNull();
     }
+    expect(
+      within(chooser).queryAllByRole("switch", { name: "Client access" }),
+    ).toHaveLength(kind === "remote search" ? 0 : 1);
   },
 );
 

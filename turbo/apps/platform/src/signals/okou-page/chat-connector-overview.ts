@@ -186,6 +186,19 @@ function createNotificationRefreshCommand(
   });
 }
 
+function targetRevision(
+  target: ConnectorAccountTarget,
+  version$: State<number>,
+  patches$: State<ReadonlyMap<string, TargetPatch>>,
+) {
+  const key = connectorAccountTargetKey(target);
+  return computed((get) => {
+    const version = get(version$);
+    const revision = get(patches$).get(key)?.revision ?? 0;
+    return `${version}:${revision}`;
+  });
+}
+
 /** One Chat page owns the memoized baseline, target patches and subscription. */
 export function createChatConnectorOverviewSignals(threadId?: string) {
   const owner$ = state<CacheOwner | null>(null);
@@ -312,12 +325,7 @@ export function createChatConnectorOverviewSignals(threadId?: string) {
     refreshTarget$,
     retry$,
     targetRevision(target: ConnectorAccountTarget) {
-      const key = connectorAccountTargetKey(target);
-      return computed((get) => {
-        const version = get(version$);
-        const revision = get(patches$).get(key)?.revision ?? 0;
-        return `${version}:${revision}`;
-      });
+      return targetRevision(target, version$, patches$);
     },
   };
 }
