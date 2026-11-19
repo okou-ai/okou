@@ -657,11 +657,17 @@ class ImageOperationTest(unittest.TestCase):
                 self.result.unlink(missing_ok=True)
                 previous_executions = len(self.records("executions"))
                 self.invoke("claim")
+                previous_requests = len(self.records("requests"))
                 result = self.invoke("run", "build", str(self.result), check=False)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn(error, result.stderr)
                 self.assertFalse(self.result.exists())
                 self.assertEqual(len(self.records("executions")), previous_executions + 1)
+                requests = self.records("requests")[previous_requests:]
+                self.assertEqual(
+                    [request["action"] for request in requests],
+                    ["run", "cancel"],
+                )
 
     def test_cancellation_retires_worker_and_preserves_lease_successor(self):
         process = self.start_blocked()

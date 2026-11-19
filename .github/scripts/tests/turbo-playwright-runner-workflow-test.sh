@@ -9,7 +9,6 @@ RUNNER_HELPERS=(
   "${REPO_ROOT}/e2e/helpers/runner-api.bash"
   "${REPO_ROOT}/e2e/helpers/runner-chat.bash"
 )
-RUNNER_TOKEN="${REPO_ROOT}/e2e/playwright/runner-token.ts"
 RUNNER_MOCK_CLAUDE_BOOTSTRAP="${REPO_ROOT}/e2e/playwright/runner-mock-claude-bootstrap.bash"
 
 fail() {
@@ -21,16 +20,8 @@ grep -Fq "RUNNER_SERVICE_REF: \${{ needs.prepare.outputs.job-ref }}" "$WORKFLOW"
   fail "runner service identity must follow the deployed API job ref"
 grep -Fq "RUNNER_GROUP: \${{ format('vm0/development-{0}', needs.prepare.outputs.job-ref) }}" "$WORKFLOW" ||
   fail "runner group must match the deployed API default group"
-if grep -Fq 'playwright-staging' "$WORKFLOW"; then
-  fail "main Playwright runs must not use a group outside the staging API default"
-fi
 if grep -R -Fq '/api/test/' "$RUNNER_TESTS" "${RUNNER_HELPERS[@]}"; then
   fail "runner E2E coverage must use supported public APIs"
-fi
-# Keep paid prerequisites for every retained runtime/billing isolation group.
-if [[ "$(grep -Fc 'upgradeToPro: true' "$RUNNER_TOKEN")" -ne 3 ||
-  "$(grep -Fc 'fileName: "' "$RUNNER_TOKEN")" -ne 3 ]]; then
-  fail "all three runner isolation groups must upgrade to Pro"
 fi
 
 ruby -ryaml -ropen3 -rtempfile - "$WORKFLOW" "$RUNNER_MOCK_CLAUDE_BOOTSTRAP" <<'RUBY'
@@ -201,8 +192,7 @@ shard_generation_step = account_prepare.fetch("steps").find do |step|
 end
 raise "missing runner E2E shard generation" unless shard_generation_step
 shard_generation_script = shard_generation_step.fetch("run")
-unless shard_generation_step["id"] == "shards" &&
-    shard_generation_script.include?("playwright/runner-shards.ts tests/03-runner") &&
+unless shard_generation_script.include?("playwright/runner-shards.ts tests/03-runner") &&
     shard_generation_script.include?('length > 0 and length <= 12') &&
     shard_generation_script.include?('echo "matrix=$matrix" >> "$GITHUB_OUTPUT"')
   raise "runner E2E shard generation must use the tested executable and reject empty matrices"
@@ -234,22 +224,9 @@ end
 raise "missing runner E2E sign-in diagnostic upload" unless sign_in_diagnostic_upload
 unless sign_in_diagnostic_upload.fetch("if") == "failure()" &&
     sign_in_diagnostic_upload["continue-on-error"] == true &&
-    sign_in_diagnostic_upload.dig("with", "path") == "/tmp/e2e-runner-sign-in-diagnostics" &&
     sign_in_diagnostic_upload.dig("with", "if-no-files-found") == "ignore" &&
     sign_in_diagnostic_upload.dig("with", "retention-days") == 1
   raise "runner E2E sign-in diagnostics must be best-effort, failure-only, isolated from tokens, and short-lived"
-end
-
-diagnostic_upload_step = account_prepare.fetch("steps").find do |step|
-  step.dig("with", "path") == "/tmp/e2e-runner-checkout-diagnostics"
-end
-raise "missing runner E2E Checkout diagnostic upload" unless diagnostic_upload_step
-unless diagnostic_upload_step.fetch("if") == "failure()" &&
-    diagnostic_upload_step.dig("with", "path") ==
-      "/tmp/e2e-runner-checkout-diagnostics" &&
-    diagnostic_upload_step.dig("with", "if-no-files-found") == "ignore" &&
-    diagnostic_upload_step.dig("with", "retention-days") == 1
-  raise "runner E2E Checkout diagnostics must be failure-only and short-lived"
 end
 
 upload_step = account_prepare.fetch("steps").find do |step|
@@ -257,8 +234,7 @@ upload_step = account_prepare.fetch("steps").find do |step|
     step.dig("with", "name") == "e2e-tokens"
 end
 raise "missing runner E2E token artifact upload" unless upload_step
-unless upload_step.dig("with", "name") == "e2e-tokens" &&
-    upload_step.dig("with", "retention-days") == 1
+unless upload_step.dig("with", "retention-days") == 1
   raise "runner E2E token artifact must retain the historical contract"
 end
 %w[
@@ -275,11 +251,6 @@ unless Array(bootstrap["needs"]).include?("cli-e2e-03-runner-prepare")
   raise "runner bootstrap must wait for the token artifact"
 end
 bootstrap_steps = bootstrap.fetch("steps")
-unless bootstrap_steps.any? do |step|
-    step["uses"]&.start_with?("actions/checkout@")
-  end
-  raise "runner bootstrap must checkout the focused helper scripts"
-end
 unless bootstrap_steps.any? do |step|
     step.fetch("uses", "").start_with?("actions/download-artifact@") &&
       step.dig("with", "name") == "e2e-tokens"

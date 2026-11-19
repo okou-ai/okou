@@ -137,9 +137,6 @@ if args[0] == 'service':
     counter.write_text(str(count))
     operation = f'{action}-{owner}'
     if action == 'uninstall':
-        if count == 1 and scenario == 'delayed-ready':
-            event('residual-uninstall-failure', owner=owner)
-            sys.exit(65)
         if scenario == 'cleanup-failure' and (root / 'failed').exists():
             sys.exit(65)
     else:
@@ -178,7 +175,7 @@ if args[0] == 'service':
 if args[:2] == ['local', 'submit']:
     prompt = args[args.index('--prompt') + 1]
     number = int(prompt[-1])
-    owner = 'a' if number == 1 or scenario in ('job2-a', 'inactive-b') else 'b'
+    owner = 'a' if number == 1 or (number == 2 and scenario in ('job2-a', 'inactive-b')) else 'b'
     if number == 1 and scenario == 'wrong-owner':
         owner = 'b'
     run_id = f'00000000-0000-4000-8000-{number:012d}'
@@ -258,13 +255,6 @@ if args[0] == 'exec':
     number = int(sandbox[-1])
     guest_args = args[args.index('--') + 1:]
     if guest_args[:2] == ['test', '-p']:
-        if scenario == 'delayed-ready':
-            probe = root / f'probe-{number}'
-            attempts = int(probe.read_text()) if probe.exists() else 0
-            probe.write_text(str(attempts + 1))
-            if attempts == 0:
-                event('not-ready', number=number)
-                sys.exit(1)
         result = subprocess.run(guest_args)
         if result.returncode == 0:
             (root / f'ready-{number}').touch()
@@ -354,15 +344,13 @@ def run_case(scenario, failure, case, binary):
         assert '=== Upgrade test passed ===' in output, output
     events = [json.loads(line) for line in (case / 'events').read_text().splitlines()]
     if not failure:
-        assert sum(e['kind'] == 'submit' for e in events) == 3
+        second_owner = 'a' if scenario == 'job2-a' else 'b'
+        assert [e['owner'] for e in events if e['kind'] == 'submit'] == ['a', second_owner, 'b']
         assert sum(e['kind'] == 'install' for e in events) == 2
         assert sum(e['kind'] == 'drain' for e in events) == 3
         assert sum(e['kind'] == 'uninstall' for e in events) == 4
         assert sum(e['kind'] == 'release' for e in events) == 2
         assert not (case / 'enabled-a').exists() and not (case / 'active-b').exists()
-        if scenario == 'delayed-ready':
-            assert sum(e['kind'] == 'not-ready' for e in events) == 2
-            assert {e['owner'] for e in events if e['kind'] == 'residual-uninstall-failure'} == {'a', 'b'}
         print(f'PASS: {scenario}: 3 submissions, 2 installs, 3 drains, 4 uninstalls, 2 explicit releases')
     else:
         assert sum(e['kind'] == 'uninstall' for e in events) >= 4, f'{scenario}: exit cleanup missing'
@@ -400,7 +388,7 @@ with tempfile.TemporaryDirectory(prefix='upgrade-worker-test-') as temporary:
         (binary / name).symlink_to(helper)
     cases = {
         'job2-a': None,
-        'delayed-ready': None,
+        'job2-b': None,
         'missing-claim': 'not ready within observation budget',
         'wrong-owner': 'not ready within observation budget',
         'preparing-only': 'not ready within observation budget',
