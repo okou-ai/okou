@@ -487,20 +487,6 @@ export function waitForBrowserPaint(signal: AbortSignal): Promise<void> {
 }
 
 /** Report local voice failures while preserving the operation's rejection. */
-export async function withVoiceDraftFailureToast<T>(
-  operation: Promise<T>,
-  onFailure: (error: unknown) => void,
-  signal: AbortSignal,
-): Promise<T> {
-  // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
-  const result = await settle(operation, signal);
-  if (result.ok) {
-    return result.value;
-  }
-  onFailure(result.error);
-  throw result.error;
-}
-
 function commandSignal(
   args: readonly [...unknown[], AbortSignal],
 ): AbortSignal {
