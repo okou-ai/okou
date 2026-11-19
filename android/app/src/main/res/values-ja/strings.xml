@@ -148,4 +148,6 @@
     <string name="updates_android_unsupported">この更新には、より新しい Android が必要です。</string>
     <string name="realtime_connecting">リアルタイム更新に接続中…</string>
     <string name="realtime_unavailable">リアルタイム更新を利用できません。手動で更新できます。</string>
+    <string name="settings_account">アカウント</string>
+    <string name="preference_color_theme_description">配色テーマを選んでください。表示モードは変わりません。</string>
 </resources>

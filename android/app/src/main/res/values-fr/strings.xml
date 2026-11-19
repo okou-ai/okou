@@ -148,4 +148,6 @@
     <string name="updates_android_unsupported">Cette mise à jour nécessite une version Android plus récente.</string>
     <string name="realtime_connecting">Connexion aux mises à jour en direct…</string>
     <string name="realtime_unavailable">Les mises à jour en direct sont indisponibles. Vous pouvez actualiser manuellement.</string>
+    <string name="settings_account">Compte</string>
+    <string name="preference_color_theme_description">Choisissez un thème de couleur. Le mode d’apparence reste le même.</string>
 </resources>

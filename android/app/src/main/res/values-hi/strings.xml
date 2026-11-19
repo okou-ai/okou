@@ -148,4 +148,6 @@
     <string name="updates_android_unsupported">इस अपडेट के लिए नया Android सिस्टम संस्करण चाहिए।</string>
     <string name="realtime_connecting">लाइव अपडेट से कनेक्ट हो रहा है…</string>
     <string name="realtime_unavailable">लाइव अपडेट उपलब्ध नहीं हैं। आप मैन्युअल रूप से रीफ़्रेश कर सकते हैं।</string>
+    <string name="settings_account">खाता</string>
+    <string name="preference_color_theme_description">रंग थीम चुनें। आपका दिखावट मोड वही रहेगा।</string>
 </resources>

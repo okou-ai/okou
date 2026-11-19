@@ -1,10 +1,12 @@
 package ai.okou.android
 
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.core.app.LocaleManagerCompat
 import org.junit.Rule
 import org.junit.Test
@@ -21,8 +23,11 @@ class LegacyLanguageSettingsTest {
     fun applicationLanguageChangesUseTheNativeCompatibilityPathAndRecreateTheList() {
         compose.onNodeWithText("Chats").assertExists()
         compose.onNodeWithContentDescription("Settings").performClick()
-        compose.onNodeWithText("English").performScrollTo().performClick()
-        compose.onNodeWithText("日本語").performScrollTo().performClick()
+        compose.onNodeWithText("Language").performScrollTo().performClick()
+        compose
+            .onNodeWithText("日本語")
+            .performScrollTo()
+            .performSemanticsAction(SemanticsActions.OnClick)
         compose.waitForIdle()
         compose.activityRule.scenario.recreate()
         compose.onNodeWithText("設定").assertExists()

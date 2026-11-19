@@ -149,4 +149,6 @@
     <string name="updates_android_unsupported">This update needs a newer Android system version.</string>
     <string name="realtime_connecting">Connecting to live updates…</string>
     <string name="realtime_unavailable">Live updates unavailable. You can still refresh manually.</string>
+    <string name="settings_account">Account</string>
+    <string name="preference_color_theme_description">Choose a color theme. Your appearance mode stays the same.</string>
 </resources>

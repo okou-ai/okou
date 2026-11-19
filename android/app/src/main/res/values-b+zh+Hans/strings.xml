@@ -148,4 +148,6 @@
     <string name="updates_android_unsupported">此更新需要更新版本的 Android 系统。</string>
     <string name="realtime_connecting">正在连接实时更新…</string>
     <string name="realtime_unavailable">实时更新暂不可用，你仍可手动刷新。</string>
+    <string name="settings_account">账户</string>
+    <string name="preference_color_theme_description">选择喜欢的配色，明暗模式保持不变。</string>
 </resources>

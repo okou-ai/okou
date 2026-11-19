@@ -47,17 +47,17 @@ class NativeShellTest {
             requireNotNull(scenario).onActivity { systemDark = isNight(it) }
             val manual = if (systemDark) R.string.appearance_light else R.string.appearance_dark
             click(R.string.settings)
+            openAppearance()
             awaitSelectable(R.string.appearance_system)
-            click(manual)
-            awaitSelected(manual)
+            selectAppearance(manual)
             awaitBars(light = systemDark)
             closeActivity()
             launch()
             awaitBars(light = systemDark)
             click(R.string.settings)
+            openAppearance()
             awaitSelected(manual)
-            click(R.string.appearance_system)
-            awaitSelected(R.string.appearance_system)
+            selectAppearance(R.string.appearance_system)
             awaitBars(light = !systemDark)
         }
 
@@ -70,14 +70,16 @@ class NativeShellTest {
             awaitActivity("Android initial light configuration applies") { !isNight(it) }
             awaitBars(light = true)
             click(R.string.settings)
-            awaitSelectable(R.string.appearance_system)
+            openAppearance()
+            awaitSelected(R.string.appearance_system)
+            dismissAppearance()
             mode.nightMode = UiModeManager.MODE_NIGHT_YES
             awaitActivity("Android night configuration applies") { isNight(it) }
-            awaitSelected(R.string.appearance_system)
+            text(R.string.appearance_system)
             awaitBars(light = false)
             mode.nightMode = UiModeManager.MODE_NIGHT_NO
             awaitActivity("Android light configuration applies") { !isNight(it) }
-            awaitSelected(R.string.appearance_system)
+            text(R.string.appearance_system)
             awaitBars(light = true)
             assertTrue("System Back key injected", device.pressKeyCode(KeyEvent.KEYCODE_BACK))
             text(R.string.chat_list_title)
@@ -146,12 +148,15 @@ class NativeShellTest {
             }
             launch()
             click(R.string.settings)
-            awaitSelectable(R.string.appearance_system)
-            // Start below the palette, as in the original failed Settings hierarchy.
-            button(R.string.updates_check)
-            button(R.string.palette_default).click()
+            button(R.string.updates_title).click()
+            text(R.string.updates_check)
+            assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
+            await("Update details are dismissed") {
+                findCurrent(label(R.string.updates_check)) == null
+            }
+            button(R.string.preference_color_theme).click()
             option(R.string.palette_blue_horizon).click()
-            button(R.string.palette_blue_horizon).click()
+            button(R.string.preference_color_theme).click()
             dismissPicker(R.string.palette_default, R.string.palette_blue_horizon)
             button(R.string.language_en_us).click()
             option(R.string.language_zh_hant).click()
@@ -200,6 +205,37 @@ class NativeShellTest {
     // Compose exposes the label as a child of the native checkable option.
     private fun appearanceOption(id: Int): BySelector =
         By.pkg(app.packageName).checkable(true).hasDescendant(label(id))
+
+    private fun openAppearance() {
+        requireNotNull(
+                device.wait(
+                    Until.findObject(
+                        By.pkg(app.packageName)
+                            .clickable(true)
+                            .checkable(false)
+                            .enabled(true)
+                            .hasDescendant(label(R.string.appearance))
+                    ),
+                    WAIT,
+                )
+            )
+            .click()
+    }
+
+    private fun selectAppearance(id: Int) {
+        requireNotNull(device.wait(Until.findObject(appearanceOption(id).enabled(true)), WAIT))
+            .click()
+        await("Appearance choice is applied") {
+            !device.hasObject(appearanceOption(id)) && device.hasObject(label(id))
+        }
+    }
+
+    private fun dismissAppearance() {
+        assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
+        await("Appearance sheet is dismissed") {
+            !device.hasObject(appearanceOption(R.string.appearance_system))
+        }
+    }
 
     private fun awaitSelectable(id: Int) =
         await("Appearance controls finish loading") {
