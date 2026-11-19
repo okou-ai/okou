@@ -1768,8 +1768,8 @@ test("For you handles a suggestion and a platform event in the same deck", async
   await openForYou();
   const first = await activeForYouCard(suggestion.content.title);
   click(button("Dismiss", "button", first));
-  await screen.findByRole("heading", { name: "Automation disabled" });
-  expect(screen.getByText("Platform event")).toBeInTheDocument();
+  await screen.findByRole("heading", { name: "Automation paused" });
+  expect(screen.getByText("System update")).toBeInTheDocument();
   click(button("Dismiss"));
   await screen.findByRole("heading", { name: "All caught up" });
   expect(pool.consumed).toStrictEqual([suggestion.id]);
@@ -1988,7 +1988,7 @@ test("System updates remain unread with optional sources off until their card is
   await setupPage({ context, path: homePath, featureSwitches: features });
   await within(link(suggestionPath)).findByText("Unread");
   click(link(suggestionPath));
-  await screen.findByRole("heading", { name: "Automation disabled" });
+  await screen.findByRole("heading", { name: "Automation paused" });
   await waitFor(() => {
     expect(
       within(link(suggestionPath)).queryByText("Unread"),
