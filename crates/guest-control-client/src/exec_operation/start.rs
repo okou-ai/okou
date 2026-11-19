@@ -26,8 +26,8 @@ use super::handle::{
 };
 use super::state::{
     ExecOperationLifecycle, ExecOperationRegistration, ExecOperationRegistrationInput,
-    ExecOperationTracking, ExecStreamQueueKind, output_policy_streams,
-    register_exec_operation_start, stream_queue_capacity_for,
+    ExecOperationTracking, ExecStreamQueueKind, register_exec_operation_start,
+    stream_queue_capacity_for,
 };
 use super::types::{
     ExecCaptureRequest, ExecOperationRequest, ExecOperationResult, ExecStreamRequest,
@@ -204,7 +204,7 @@ pub(crate) async fn start_supervised_process_on_shared(
     shared: &Arc<Shared>,
     request: SupervisedExecRequest<'_>,
 ) -> io::Result<SupervisedExecHandle> {
-    if output_policy_streams(request.stderr) {
+    if request.stderr.stream_limits().is_some() {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             "supervised process output requires non-streaming stderr",
@@ -610,7 +610,7 @@ async fn exec_operation_stream_on_shared_with_tracking(
     tracking: ExecOperationTracking<'_>,
     write_observer: FrameWriteObserver,
 ) -> io::Result<ExecOperationHandle> {
-    if !output_policy_streams(request.stdout) && !output_policy_streams(request.stderr) {
+    if request.stdout.stream_limits().is_none() && request.stderr.stream_limits().is_none() {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             "exec_operation_stream requires a streaming output policy",
