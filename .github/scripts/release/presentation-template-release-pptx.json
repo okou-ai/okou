@@ -6,6 +6,7 @@
     "ref": "main",
     "directory": "Template-Presentation-Native"
   },
+  "deferredTemplates": ["plain-native"],
   "templates": [
     {
       "slug": "bloom-native",
