@@ -259,6 +259,15 @@ class CanonicalWorkspaceSession(
     override suspend fun setArchived(threadId: String, archived: Boolean, eventId: String) =
         api.setArchived(threadId, archived, eventId)
 
+    override suspend fun renameThread(threadId: String, title: String, eventId: String) =
+        api.renameThread(threadId, title, eventId)
+
+    override suspend fun setPinned(threadId: String, pinOrder: String?, eventId: String) =
+        api.setPinned(threadId, pinOrder, eventId)
+
+    override suspend fun reorderPinnedThread(threadId: String, pinOrder: String, eventId: String) =
+        api.reorderPinnedThread(threadId, pinOrder, eventId)
+
     override suspend fun historyRows(threadId: String, cursor: HistoryCursor): HistoryPage =
         withContext(Dispatchers.Default) {
             val page = api.historyRows(threadId, cursor)

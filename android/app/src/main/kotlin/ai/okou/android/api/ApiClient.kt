@@ -22,6 +22,8 @@ import ai.okou.android.api.generated.PersonalInstructions
 import ai.okou.android.api.generated.ProjectEvents
 import ai.okou.android.api.generated.ProjectSnapshot
 import ai.okou.android.api.generated.RealtimeTokenRequest
+import ai.okou.android.api.generated.RenameThreadRequest
+import ai.okou.android.api.generated.ReorderPinnedThreadRequest
 import ai.okou.android.api.generated.SaveAgentDraft
 import ai.okou.android.api.generated.SaveThreadDraft
 import ai.okou.android.api.generated.SendRequest
@@ -265,6 +267,23 @@ class ApiClient(
         executeResponse(204) {
             if (archived) api.archiveThread(it, threadId, eventId)
             else api.unarchiveThread(it, threadId, eventId)
+        }
+    }
+
+    suspend fun renameThread(threadId: String, title: String, eventId: String) {
+        executeResponse(204) { api.renameThread(it, threadId, RenameThreadRequest(title, eventId)) }
+    }
+
+    suspend fun setPinned(threadId: String, pinOrder: String?, eventId: String) {
+        executeResponse(204) {
+            if (pinOrder != null) api.pinThread(it, threadId, eventId, pinOrder)
+            else api.unpinThread(it, threadId, eventId)
+        }
+    }
+
+    suspend fun reorderPinnedThread(threadId: String, pinOrder: String, eventId: String) {
+        executeResponse(204) {
+            api.reorderPinnedThread(it, threadId, ReorderPinnedThreadRequest(pinOrder, eventId))
         }
     }
 

@@ -37,4 +37,12 @@
     <string name="chat_unarchive">取消归档</string>
     <string name="chat_row_action_pending">正在更新聊天…</string>
     <string name="chat_row_action_failed">无法确认聊天更改。</string>
+    <string name="chat_rename">重命名聊天</string>
+    <string name="chat_pin">置顶聊天</string>
+    <string name="chat_unpin">取消置顶</string>
+    <string name="chat_move_pin_up">上移</string>
+    <string name="chat_move_pin_down">下移</string>
+    <string name="chat_title_field">聊天标题</string>
+    <string name="chat_rename_confirm">重命名</string>
+    <string name="chat_rename_cancel">取消</string>
 </resources>

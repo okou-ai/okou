@@ -22,6 +22,12 @@ interface ChatListService : ConversationHistoryService {
 
     suspend fun setArchived(threadId: String, archived: Boolean, eventId: String)
 
+    suspend fun renameThread(threadId: String, title: String, eventId: String)
+
+    suspend fun setPinned(threadId: String, pinOrder: String?, eventId: String)
+
+    suspend fun reorderPinnedThread(threadId: String, pinOrder: String, eventId: String)
+
     suspend fun historyCatchUp(cursors: Map<String, HistoryCursor>): HistoryBatch
 
     suspend fun chatSnapshot(): ChatSnapshot

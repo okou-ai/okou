@@ -272,12 +272,7 @@ fun replayChats(checkpoint: ChatCheckpoint): List<ConfirmedChat> {
     }
     checkpoint.events.forEach(::apply)
     val ranks =
-        rows.values
-            .filter { it.pinnedAt != null }
-            .associate { row ->
-                val reversed = 8_640_000_000_000_000L - chatTime(checkNotNull(row.pinnedAt))
-                row.id to (row.pinOrder ?: "a0${reversed.toString().padStart(17, '0')}1")
-            }
+        rows.values.filter { it.pinnedAt != null }.associate { it.id to it.effectivePinOrder() }
     val times = rows.values.associate { it.id to chatTimestamp(it.sortAt) }
     return rows.values.sortedWith { left, right ->
         when {

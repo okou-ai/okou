@@ -40,6 +40,24 @@ internal fun ChatListGroup.pinnedTailIndex(): Int {
     return if (firstOrdinary > 0) firstOrdinary - 1 else -1
 }
 
+internal fun ChatListGroup.pinNeighbor(index: Int, step: Int): ConfirmedChat? =
+    threads.getOrNull(index + step)?.takeIf { it.pinnedAt != null }
+
+private fun ChatListUiState.listProjects() = if (projectsEnabled) projects else emptyList()
+
+private fun ChatListUiState.defaultAgentId() = agents.firstOrNull { it.isDefaultAgent }?.agentId
+
+private fun ConfirmedChat.isOutside(defaultAgentId: String?, knownProjects: Set<String>) =
+    agentId == defaultAgentId && projectId !in knownProjects
+
+/** Hidden and archived pins retain their canonical place within the group. */
+internal fun ChatListGroup.rankScope(state: ChatListUiState): List<ConfirmedChat> {
+    if (project != null) return state.threads.filter { it.projectId == project.id }
+    val known = state.listProjects().mapTo(hashSetOf()) { it.id }
+    val default = state.defaultAgentId()
+    return state.threads.filter { it.isOutside(default, known) }
+}
+
 internal data class ChatListSection(
     val group: ChatListGroup,
     val firstRow: Int,
@@ -79,7 +97,7 @@ fun chatListGroups(state: ChatListUiState): List<ChatListGroup> {
                     state.indicators?.threads?.get(row.id) == IndicatorsThreadsValue.UNREAD
         }
     }
-    val projects = if (state.projectsEnabled) state.projects else emptyList()
+    val projects = state.listProjects()
     val known = projects.mapTo(hashSetOf()) { it.id }
     val byProject = visible.groupBy { it.projectId }
     val groups =
@@ -88,7 +106,7 @@ fun chatListGroups(state: ChatListUiState): List<ChatListGroup> {
             if (rows.isEmpty() && state.filter != ChatListFilter.Recent) null
             else ChatListGroup(project, rows)
         }
-    val default = state.agents.firstOrNull { it.isDefaultAgent }?.agentId
-    val outside = visible.filter { it.agentId == default && it.projectId !in known && matches(it) }
+    val default = state.defaultAgentId()
+    val outside = visible.filter { it.isOutside(default, known) && matches(it) }
     return groups + ChatListGroup(null, outside)
 }

@@ -1,6 +1,7 @@
 package ai.okou.android
 
 import ai.okou.android.auth.SessionModel
+import ai.okou.android.chat.ChatRowAction
 import android.os.Looper
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.SemanticsActions
@@ -32,10 +33,14 @@ import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.Job
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.RecordedRequest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -613,6 +618,250 @@ class ChatListRootTest {
             release.countDown()
         }
     }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w400dp-h800dp")
+    fun titleAndPinsFollowAuthoritativeReadback() {
+        val app = compose.activity.application as ChatListApplication
+        val readback = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val fixture = app.fixture
+        val events =
+            fixture.rowEventTail {
+                readback.countDown()
+                release.await()
+            }
+        val commands = CopyOnWriteArrayList<RecordedRequest>()
+        fixture.commandResponse = { request ->
+            if (request.method != "POST") null
+            else
+                when (request.requestUrl?.encodedPath) {
+                    "/api/chat-threads/$CHAT_PERSONAL/rename" -> {
+                        commands.add(request)
+                        val body = request.jsonCommandBody()
+                        events.add(
+                            24L to
+                                chatEventWire(
+                                    id = body.getValue("eventId").jsonPrimitive.content,
+                                    seq = 24,
+                                    kind = "renamed",
+                                    title = body.getValue("title").jsonPrimitive.content,
+                                )
+                        )
+                        MockResponse().setResponseCode(503)
+                    }
+                    "/api/chat-threads/$CHAT_PERSONAL/pin" -> {
+                        commands.add(request)
+                        val rank = request.requestUrl?.queryParameter("pinOrder")
+                        events.add(
+                            25L to
+                                request.rowEvent(
+                                    25,
+                                    CHAT_PERSONAL,
+                                    "pinned",
+                                    ",\"pinOrder\":\"$rank\"",
+                                )
+                        )
+                        MockResponse().setResponseCode(204)
+                    }
+                    "/api/chat-threads/$CHAT_PERSONAL/unpin" -> {
+                        commands.add(request)
+                        events.add(26L to request.rowEvent(26, CHAT_PERSONAL, "unpinned"))
+                        MockResponse().setResponseCode(204)
+                    }
+                    else -> null
+                }
+        }
+        try {
+            app.responseGate.countDown()
+            awaitListAndNames()
+            compose.waitUntil(10_000) {
+                compose.onAllNodesWithText("Personal chat").fetchSemanticsNodes().isNotEmpty()
+            }
+            val row = compose.onNodeWithTag("chat_$CHAT_PERSONAL")
+            fun choose(label: String) {
+                row.performSemanticsAction(SemanticsActions.OnLongClick)
+                compose.onNodeWithText(label).performClick()
+            }
+            compose.runOnIdle {
+                val model =
+                    checkNotNull(
+                            ViewModelProvider(compose.activity)[SessionModel::class.java]
+                                .uiState
+                                .value
+                                .ready
+                        )
+                        .chats
+                model.renameThread(CHAT_PERSONAL, "   ")
+                model.renameThread(CHAT_PERSONAL, "Personal chat")
+                model.renameThread(CHAT_PERSONAL, "  Weekly brief  ")
+                assertEquals(
+                    ChatRowAction.Rename,
+                    model.uiState.value.pendingRowActions[CHAT_PERSONAL],
+                )
+            }
+            compose.waitUntil(10_000) { compose.runOnIdle { readback.count == 0L } }
+            row.assert(hasText("Personal chat"))
+            assertEquals(1, commands.size)
+            release.countDown()
+            compose.waitUntil(10_000) {
+                compose.onAllNodesWithText("Weekly brief").fetchSemanticsNodes().isNotEmpty()
+            }
+            compose.onNodeWithText("Could not confirm the chat change.").assertDoesNotExist()
+
+            val pinned =
+                SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Active, Pinned")
+            val personal = hasTestTag("chat_$CHAT_PERSONAL")
+            row.performSemanticsAction(SemanticsActions.OnLongClick)
+            compose.onNodeWithText("Rename chat").assertExists()
+            compose.onNodeWithText("Pin chat").performClick()
+            compose.waitUntil(10_000) {
+                compose.onAllNodes(personal.and(pinned)).fetchSemanticsNodes().isNotEmpty()
+            }
+            choose("Unpin chat")
+            compose.waitUntil(10_000) {
+                compose.onAllNodes(personal.and(!pinned)).fetchSemanticsNodes().isNotEmpty()
+            }
+            compose.onNodeWithTag("conversation").assertDoesNotExist()
+            assertEquals(
+                listOf("rename", "pin", "unpin"),
+                commands.map { it.requestUrl?.pathSegments?.last() },
+            )
+            assertEquals(
+                "Weekly brief",
+                commands[0].jsonCommandBody().getValue("title").jsonPrimitive.content,
+            )
+            assertEquals("a0", commands[1].requestUrl?.queryParameter("pinOrder"))
+            val renameId = commands[0].jsonCommandBody().getValue("eventId").jsonPrimitive.content
+            assertEquals(renameId, UUID.fromString(renameId).toString())
+            assertEquals(
+                3,
+                (listOf(renameId) +
+                        commands.drop(1).mapNotNull { it.requestUrl?.queryParameter("eventId") })
+                    .distinct()
+                    .size,
+            )
+        } finally {
+            release.countDown()
+        }
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w1000dp-h800dp")
+    fun projectMoveReadsBackPartialTieWritesAndCanRecover() {
+        val app = compose.activity.application as ChatListApplication
+        val fixture = app.fixture
+        val neighbor = "99999999-9999-4999-8999-999999999999"
+        val outside = "18888888-8888-4888-8888-888888888888"
+        fun seed(
+            seq: Long,
+            id: String,
+            title: String,
+            rank: String,
+            project: Boolean,
+            agent: String = CHAT_AGENT,
+        ) =
+            listOf(
+                chatEventWire(
+                    id = "00000000-0000-4000-8000-${seq.toString().padStart(12, '0')}",
+                    seq = seq,
+                    thread = id,
+                    title = title,
+                    agent = agent,
+                    extra = if (project) ",\"projectId\":\"$CHAT_PROJECT\"" else "",
+                ),
+                chatEventWire(
+                    id = "00000000-0000-4000-8000-${(seq + 1).toString().padStart(12, '0')}",
+                    seq = seq + 1,
+                    thread = id,
+                    kind = "pinned",
+                    agent = agent,
+                    extra = ",\"pinOrder\":\"$rank\"",
+                ),
+            )
+        val initial =
+            seed(17, CHAT_PERSONAL, "First Project pin", "a0", true) +
+                seed(19, neighbor, "Other agent pin", "a1", true, CHAT_OTHER_AGENT) +
+                seed(21, CHAT_IN_PROJECT, "Tied Project pin", "a1", true) +
+                seed(23, outside, "Outside pin", "a1", false)
+        fixture.events = {
+            jsonResponse("""{"events":[${initial.joinToString(",")}],"hasMore":false}""")
+        }
+        val events = fixture.rowEventTail()
+        val rejectMoved = AtomicBoolean(true)
+        val commands = CopyOnWriteArrayList<RecordedRequest>()
+        fixture.commandResponse = { request ->
+            val url = request.requestUrl
+            if (request.method != "POST" || url?.pathSegments?.lastOrNull() != "pin-order") null
+            else {
+                val id = url.pathSegments[2]
+                commands.add(request)
+                if (id == CHAT_PERSONAL && rejectMoved.get()) MockResponse().setResponseCode(503)
+                else {
+                    val seq = 24L + commands.size
+                    val body = request.jsonCommandBody()
+                    events.add(
+                        seq to
+                            chatEventWire(
+                                id = body.getValue("eventId").jsonPrimitive.content,
+                                seq = seq,
+                                thread = id,
+                                kind = "sort_touched",
+                                extra = ",\"pinOrder\":${body.getValue("pinOrder")}",
+                            )
+                    )
+                    MockResponse().setResponseCode(204)
+                }
+            }
+        }
+        app.responseGate.countDown()
+        awaitListAndNames()
+        val first = compose.onNodeWithTag("chat_$CHAT_PERSONAL")
+        val target = compose.onNodeWithTag("chat_$neighbor")
+        fun moveDown() {
+            first.performSemanticsAction(SemanticsActions.OnLongClick)
+            compose.onNodeWithText("Move up").assertDoesNotExist()
+            compose.onNodeWithText("Move down").performClick()
+        }
+        moveDown()
+        compose.waitUntil(10_000) {
+            compose
+                .onAllNodesWithText("Could not confirm the chat change.")
+                .fetchSemanticsNodes()
+                .isNotEmpty()
+        }
+        assertTrue(
+            first.fetchSemanticsNode().boundsInRoot.top <
+                target.fetchSemanticsNode().boundsInRoot.top
+        )
+        rejectMoved.set(false)
+        moveDown()
+        compose.waitUntil(10_000) {
+            target.fetchSemanticsNode().boundsInRoot.top <
+                first.fetchSemanticsNode().boundsInRoot.top
+        }
+        val tied = compose.onNodeWithTag("chat_$CHAT_IN_PROJECT")
+        assertTrue(
+            first.fetchSemanticsNode().boundsInRoot.top < tied.fetchSemanticsNode().boundsInRoot.top
+        )
+        assertEquals(
+            listOf(CHAT_IN_PROJECT to "a3", CHAT_PERSONAL to "a2", CHAT_PERSONAL to "a2"),
+            commands.map { command ->
+                command.requestUrl?.pathSegments?.get(2) to
+                    command.jsonCommandBody().getValue("pinOrder").jsonPrimitive.content
+            },
+        )
+        assertEquals(
+            3,
+            commands
+                .map { it.jsonCommandBody().getValue("eventId").jsonPrimitive.content }
+                .toSet()
+                .size,
+        )
+    }
+
+    private fun RecordedRequest.jsonCommandBody() =
+        Json.parseToJsonElement(body.clone().readUtf8()).jsonObject
 
     private fun ChatListApiFixture.rowEventTail(
         beforeReadback: (Long) -> Unit = {}

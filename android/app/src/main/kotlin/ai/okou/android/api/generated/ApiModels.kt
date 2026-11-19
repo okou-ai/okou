@@ -22,6 +22,10 @@ import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.encodeToJsonElement
 
+@Serializable data class RenameThreadRequest(val `title`: String, val `eventId`: String? = null)
+
+@Serializable data class ReorderPinnedThreadRequest(val `pinOrder`: String, val `eventId`: String)
+
 typealias ComposerDraft = Map<String, JsonElement>
 
 @Serializable(with = CanonicalInteger1Serializer::class) data object CanonicalInteger1

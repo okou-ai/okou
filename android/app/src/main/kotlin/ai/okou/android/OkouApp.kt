@@ -274,6 +274,7 @@ internal fun OkouApp(
                                 chats::refreshIndicators,
                                 ::openChat,
                                 chats::performRowAction,
+                                chats::renameThread,
                                 collapsed.values,
                                 collapsed::toggle,
                                 listPosition,
