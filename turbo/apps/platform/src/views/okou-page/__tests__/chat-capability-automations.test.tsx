@@ -2,13 +2,17 @@ import { selectDesktopHeaderAction } from "./chat-header-test-helpers.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   workflowAutomationsContract,
+  workflowsCollectionContract,
   type ChatThreadWorkflowAutomation,
 } from "@okouai/api-contracts/contracts/workflows";
 import { screen, waitFor, within } from "@testing-library/react";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { findComposerEditor } from "./chat-composer-test-helpers.ts";
 
 import {
   click,
+  fill,
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
@@ -66,9 +70,9 @@ function automationControl(
   return control;
 }
 
-async function openAutomationBrowser(): Promise<
-  readonly ChatThreadWorkflowAutomation[]
-> {
+async function openAutomationBrowser(
+  serverRecency = false,
+): Promise<readonly ChatThreadWorkflowAutomation[]> {
   const automations = [
     {
       id: ACTIVE_SCHEDULE_ID,
@@ -183,7 +187,22 @@ async function openAutomationBrowser(): Promise<
     },
   );
 
-  await setupPage({ context, path: RUN_PATH });
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    ...(serverRecency
+      ? {
+          auth: {
+            user: {
+              id: "user_3EWY21Oe3f15kfs3yYmbGgDb3NV",
+              fullName: "Bingjie Zang",
+              email: "bingjie@okou.ai",
+            },
+          },
+        }
+      : {}),
+    featureSwitches: { [FeatureSwitchKey.WorkflowRecency]: serverRecency },
+  });
 
   await readyChat();
   await selectDesktopHeaderAction("Automations");
@@ -193,6 +212,121 @@ async function openAutomationBrowser(): Promise<
   expect(automationSidebar).toBeVisible();
   return automations;
 }
+
+test("Chat-header Run now completes while a slash query's legacy import is pending", async () => {
+  const legacyId = "a0000000-0000-4000-a000-000000000872";
+  const runWorkflowId = "a0000000-0000-4000-a000-000000000871";
+  const legacy = JSON.stringify([legacyId]);
+  const values = new Map([["okou_recent-workflows", legacy]]);
+  vi.spyOn(localStorage, "getItem").mockImplementation((key) => {
+    return values.get(key) ?? null;
+  });
+  vi.spyOn(localStorage, "setItem").mockImplementation((key, value) => {
+    values.set(key, value);
+  });
+  vi.spyOn(localStorage, "removeItem").mockImplementation((key) => {
+    values.delete(key);
+  });
+  const importRequested = context.mocks.deferred<void>();
+  const imported = context.mocks.deferred<void>();
+  const runRequested = context.mocks.deferred<void>();
+  const runResponse = context.mocks.deferred<void>();
+  let importFinished = false;
+  context.mocks.api(workflowsCollectionContract.composer, ({ respond }) => {
+    return respond(200, [
+      {
+        id: legacyId,
+        name: "zulu",
+        displayName: null,
+        description: null,
+        lastUsedAt: importFinished ? "1970-01-01T00:00:00.000010Z" : null,
+      },
+      {
+        id: runWorkflowId,
+        name: "active-release-schedule",
+        displayName: null,
+        description: null,
+        lastUsedAt: null,
+      },
+      {
+        id: "a0000000-0000-4000-a000-000000000875",
+        name: "alpha",
+        displayName: null,
+        description: null,
+        lastUsedAt: null,
+      },
+    ]);
+  });
+  context.mocks.api(
+    workflowsCollectionContract.migrateRecency,
+    async ({ body, respond }) => {
+      expect(body).toStrictEqual({ workflowIds: [legacyId] });
+      importRequested.resolve();
+      await imported.promise;
+      importFinished = true;
+      return respond(200, { migrated: true });
+    },
+  );
+  context.mocks.api(
+    workflowAutomationsContract.run,
+    async ({ params, respond }) => {
+      expect(params.id).toBe(ACTIVE_SCHEDULE_ID);
+      runRequested.resolve();
+      await runResponse.promise;
+      return respond(201, {
+        chatThreadId: RUN_THREAD_ID,
+        runId: "accepted-automation-run",
+      });
+    },
+  );
+  await openAutomationBrowser(true);
+  const editor = await findComposerEditor();
+  await fill(editor, "Draft /");
+  await importRequested.promise;
+  await screen.findByRole("status", { name: "Loading workflows..." });
+  const run = automationControl(
+    automationPanel("Active release schedule"),
+    "button",
+    "Run now",
+  );
+  click(run);
+  await runRequested.promise;
+  await waitFor(() => {
+    expect(run).toBeDisabled();
+  });
+  runResponse.resolve();
+  await waitFor(() => {
+    expect(
+      automationControl(
+        automationPanel("Active release schedule"),
+        "button",
+        "Run now",
+      ),
+    ).toBeEnabled();
+  });
+  expect(importFinished).toBeFalsy();
+  expect(values.get("okou_recent-workflows")).toBe(legacy);
+  // Run now blurs the composer; reopen its still-pending slash query.
+  await fill(editor, "Draft");
+  await fill(editor, "Draft /");
+  await screen.findByRole("status", { name: "Loading workflows..." });
+  imported.resolve();
+  await waitFor(() => {
+    const menu = screen.getByTestId("slash-workflow-menu");
+    const names = queryAllByRoleFast("button", menu)
+      .map((button) => {
+        return button.querySelector('[data-slot="slash-workflow-name"]')
+          ?.textContent;
+      })
+      .filter(Boolean);
+    expect(names).toStrictEqual([
+      "/zulu",
+      "/active-release-schedule",
+      "/alpha",
+    ]);
+  });
+  expect(values.get("okou_recent-workflows")).toBe(legacy);
+});
 
 test("Browse an active scheduled workflow and its available controls", async () => {
   await openAutomationBrowser();

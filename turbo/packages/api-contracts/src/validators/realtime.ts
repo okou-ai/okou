@@ -54,6 +54,7 @@ export const userPreferenceKinds = [
   "defaultModel",
   "defaultImageModel",
   "cloudBrowserEnabledByDefault",
+  "workflowRecency",
 ] as const;
 
 export type UserPreferenceKind = (typeof userPreferenceKinds)[number];

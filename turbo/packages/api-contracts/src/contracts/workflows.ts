@@ -1389,12 +1389,16 @@ export const workflowListResponseSchema = array(workflowSummarySchema);
  * What the chat composer needs to offer and highlight `/workflow` commands:
  * the agent's own workflows that are not shadowed by a private override.
  */
-export const composerWorkflowSchema = workflowSummarySchema.pick({
-  id: true,
-  name: true,
-  displayName: true,
-  description: true,
-});
+export const composerWorkflowSchema = workflowSummarySchema
+  .pick({
+    id: true,
+    name: true,
+    displayName: true,
+    description: true,
+  })
+  .extend({
+    lastUsedAt: iso.datetime().nullable().optional(),
+  });
 
 export const composerWorkflowListResponseSchema = array(composerWorkflowSchema);
 
@@ -1480,6 +1484,20 @@ export const workflowsCollectionContract = c.router({
     },
     summary:
       "List the slash-command workflows the composer offers for one agent",
+  },
+  migrateRecency: {
+    method: "POST",
+    path: "/api/workflows/recency/migrate",
+    headers: authHeadersSchema,
+    body: object({ workflowIds: array(uuid()).max(1000) }).strict(),
+    responses: {
+      200: object({ migrated: boolean() }),
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+    },
+    summary:
+      "Import ordered legacy workflow history only when server history is empty",
   },
   create: {
     method: "POST",

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { string } from "zod";
 
 import {
+  composerWorkflowListResponseSchema,
   workflowSummarySchema,
   workflowOwnerProfileSchema,
   githubPullRequestEventConfigSchema,
@@ -18,6 +19,27 @@ import {
   workflowAutomationCreateRequestSchema,
   workflowAutomationUpdateRequestSchema,
 } from "../workflows";
+
+describe("Composer workflow recency contract", () => {
+  it("retains nullable last use while accepting preceding array responses", () => {
+    const workflow = {
+      id: "11111111-1111-4111-8111-111111111111",
+      name: "daily-report",
+      displayName: "Daily report",
+      description: null,
+    };
+    const response = [
+      workflow,
+      { ...workflow, lastUsedAt: null },
+      { ...workflow, lastUsedAt: "2026-01-10T00:00:00.000Z" },
+      { ...workflow, lastUsedAt: "1970-01-01T00:00:00.000010Z" },
+    ];
+
+    expect(composerWorkflowListResponseSchema.parse(response)).toStrictEqual(
+      response,
+    );
+  });
+});
 
 describe("Gmail new message workflow automation contract", () => {
   it("accepts only explicit text match fields", () => {

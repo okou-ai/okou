@@ -1,0 +1,3 @@
+ALTER TABLE "org_members_metadata" ADD COLUMN "recent_workflows" jsonb DEFAULT '[]'::jsonb NOT NULL;--> statement-breakpoint
+ALTER TABLE "org_members_metadata" ADD CONSTRAINT "org_members_metadata_recent_workflows_check" CHECK (CASE WHEN jsonb_typeof("org_members_metadata"."recent_workflows") = 'array' THEN jsonb_array_length("org_members_metadata"."recent_workflows") <= 10 ELSE false END) NOT VALID;--> statement-breakpoint
+ALTER TABLE "org_members_metadata" VALIDATE CONSTRAINT "org_members_metadata_recent_workflows_check";

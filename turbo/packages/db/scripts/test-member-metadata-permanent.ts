@@ -6,6 +6,7 @@ import { Client } from "pg";
 
 import { schema } from "../src/index";
 import { orgMembersMetadata } from "../src/runtime/org-members-metadata";
+import type { OrgMembersRecentWorkflows } from "../src/jsonb-contracts/org-members-metadata";
 
 /** Current member preference CRUD, implicit RETURNING and root-schema queries. */
 export async function validatePermanentMemberMetadata(databaseUrl: string) {
@@ -20,6 +21,15 @@ export async function validatePermanentMemberMetadata(databaseUrl: string) {
     eq(orgMembersMetadata.userId, userId),
   );
   const values = { orgId, userId, timezone: "UTC", locale: "en-US" };
+  const recentWorkflows: OrgMembersRecentWorkflows = Array.from(
+    { length: 10 },
+    (_, index) => {
+      return {
+        workflowId: randomUUID(),
+        lastUsedAt: new Date(Date.UTC(2026, 0, 10 - index)).toISOString(),
+      };
+    },
+  );
 
   try {
     const [created] = await db
@@ -31,6 +41,7 @@ export async function validatePermanentMemberMetadata(databaseUrl: string) {
     assert.equal(created.userId, userId);
     assert.equal(created.selectedModel, "auto");
     assert.deepEqual(created.modelSettings, {});
+    assert.deepEqual(created.recentWorkflows, []);
     assert.equal(created.cloudBrowserEnabledByDefault, true);
     assert.equal(created.onboardingDone, false);
 
@@ -60,6 +71,7 @@ export async function validatePermanentMemberMetadata(databaseUrl: string) {
         theme: "dark",
         onboardingDone: true,
         cloudBrowserEnabledByDefault: false,
+        recentWorkflows,
       })
       .where(owner)
       .returning();
@@ -69,6 +81,37 @@ export async function validatePermanentMemberMetadata(databaseUrl: string) {
     assert.equal(updated.cloudBrowserEnabledByDefault, false);
     assert.equal(updated.locale, "zh-Hans");
     assert.equal(updated.userId, userId);
+    assert.deepEqual(updated.recentWorkflows, recentWorkflows);
+    assert.deepEqual(
+      await db.query.orgMembersMetadata.findFirst({ where: owner }),
+      updated,
+    );
+
+    const updateRecency = `UPDATE org_members_metadata
+      SET recent_workflows = $3::jsonb WHERE org_id = $1 AND user_id = $2`;
+    for (const invalid of [
+      [
+        ...recentWorkflows,
+        { workflowId: randomUUID(), lastUsedAt: "2026-01-11T00:00:00.000Z" },
+      ],
+      null,
+      {},
+      "not-an-array",
+      10,
+      true,
+    ]) {
+      await assert.rejects(
+        client.query(updateRecency, [orgId, userId, JSON.stringify(invalid)]),
+        {
+          code: "23514",
+          constraint: "org_members_metadata_recent_workflows_check",
+        },
+      );
+    }
+    await assert.rejects(client.query(updateRecency, [orgId, userId, null]), {
+      code: "23502",
+      column: "recent_workflows",
+    });
     assert.deepEqual(
       await db.query.orgMembersMetadata.findFirst({ where: owner }),
       updated,

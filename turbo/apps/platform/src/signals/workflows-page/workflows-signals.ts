@@ -40,6 +40,7 @@ import type {
 
 import { accept } from "../../lib/accept.ts";
 import { apiClient$, type ApiClientFactory } from "../api-client.ts";
+import { authenticatedSessionKey$ } from "../auth.ts";
 import { activeRoute$ } from "../active-route.ts";
 import { locale$ } from "../locale.ts";
 import {
@@ -1683,6 +1684,7 @@ export const runWorkflowAutomationNow$ = command(
     automationId: string,
     signal: AbortSignal,
   ): Promise<{ chatThreadId: string; runId: string | null }> => {
+    const owner = get(authenticatedSessionKey$);
     const workflowId = get(currentWorkflowId$);
     const client = get(apiClient$)(workflowAutomationsContract);
     const result = await accept(
@@ -1696,7 +1698,11 @@ export const runWorkflowAutomationNow$ = command(
     if (workflowId) {
       // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
       await settle(() => {
-        set(recordRecentWorkflowUse$, [workflowId], signal);
+        return set(
+          recordRecentWorkflowUse$,
+          { owner, workflowIds: [workflowId] },
+          signal,
+        );
       }, signal);
     }
     return result.body;

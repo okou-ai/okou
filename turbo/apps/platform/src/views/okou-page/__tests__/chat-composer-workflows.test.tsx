@@ -270,7 +270,7 @@ test("Reopen workflow suggestions after clearing a pending draft", async () => {
   mockAgent();
   mockThread();
   const response = context.mocks.deferred<void>();
-  let workflows = [workflow("pr-review")];
+  const workflows = [workflow("pr-review")];
   context.mocks.api(
     workflowsCollectionContract.composer,
     async ({ respond }) => {
@@ -295,7 +295,6 @@ test("Reopen workflow suggestions after clearing a pending draft", async () => {
     expect(slashButton("/pr-review")).toBeInTheDocument();
   });
 
-  workflows = [];
   await fill(editor, "");
   await fill(editor, "/pr");
   const review = await waitFor(() => {

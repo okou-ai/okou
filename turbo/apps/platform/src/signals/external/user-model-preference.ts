@@ -13,6 +13,7 @@ import { userModelPreferenceContract } from "@okouai/api-contracts/client/user-m
 import { apiClient$ } from "../api-client.ts";
 import { accept } from "../../lib/accept.ts";
 import { setAblyPayloadLoop$ } from "../realtime.ts";
+import { reloadComposerWorkflowRecency$ } from "../okou-page/composer-workflows.ts";
 
 const internalReloadUserModelPreference$ = state(0);
 
@@ -82,7 +83,8 @@ function payloadRequestsKindsReloadFor(
 }
 
 const handleUserPreferenceChanged$ = command(
-  ({ set }, payload: unknown): boolean => {
+  async ({ set }, payload: unknown, signal: AbortSignal): Promise<boolean> => {
+    signal.throwIfAborted();
     if (
       payloadRequestsKindsReloadFor(payload, [
         "defaultModel",
@@ -91,6 +93,17 @@ const handleUserPreferenceChanged$ = command(
     ) {
       set(reloadUserModelPreference$);
     }
+    if (payloadRequestsKindsReloadFor(payload, ["workflowRecency"])) {
+      await set(reloadComposerWorkflowRecency$, signal);
+    }
+    return false;
+  },
+);
+
+const refreshWorkflowRecencyBaseline$ = command(
+  async ({ set }, signal: AbortSignal): Promise<boolean> => {
+    signal.throwIfAborted();
+    await set(reloadComposerWorkflowRecency$, signal);
     return false;
   },
 );
@@ -102,6 +115,7 @@ export const setupUserPreferenceRealtime$ = command(
       {
         topic: "userPreferenceChanged",
         loopCommand$: handleUserPreferenceChanged$,
+        initializeCommand$: refreshWorkflowRecencyBaseline$,
       },
       signal,
     );

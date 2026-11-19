@@ -129,19 +129,6 @@ export function findActiveSlashWorkflowRange(
   return { start, end: caretIndex, query };
 }
 
-export function workflowTokenPattern(
-  workflowNames: readonly string[],
-): RegExp | null {
-  if (workflowNames.length === 0) {
-    return null;
-  }
-
-  const escaped = workflowNames.map((name) => {
-    return name.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
-  });
-  return new RegExp(`(?:^|\\s)/(?:${escaped.join("|")})(?=$|\\s)`, "g");
-}
-
 export function buildComposerSlashWorkflows({
   agentId,
   workflows,

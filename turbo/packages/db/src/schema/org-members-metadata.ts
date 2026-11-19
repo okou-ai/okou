@@ -10,6 +10,10 @@ export const orgMembersMetadata = pgTable(
     return [
       primaryKey({ columns: [table.orgId, table.userId] }),
       check(
+        "org_members_metadata_recent_workflows_check",
+        sql`CASE WHEN jsonb_typeof(${table.recentWorkflows}) = 'array' THEN jsonb_array_length(${table.recentWorkflows}) <= 10 ELSE false END`,
+      ),
+      check(
         "org_members_metadata_canonical_selection_check",
         sql`${table.selectedModel} NOT IN ('okou-1.0', 'okou-1.0-pro', 'okou-1.0-max') AND ${table.selectedModel} NOT LIKE '@preset/%'`,
       ),
