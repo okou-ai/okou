@@ -47,6 +47,9 @@ const buttonVariants = cva(
           "text-muted-foreground hover:bg-state-hover hover:text-foreground active:bg-state-pressed",
         link: "text-brand-text underline-offset-4 hover:underline active:text-brand-text/80",
       },
+      highlightWhenOpen: {
+        true: "aria-expanded:bg-state-hover aria-expanded:text-foreground",
+      },
       size: {
         xs: "h-7 px-2.5",
         sm: "h-8 px-3",
@@ -95,6 +98,7 @@ const Button = React.forwardRef<HTMLElement, ButtonProps>(
       children,
       className,
       iconSize,
+      highlightWhenOpen,
       pending = false,
       size,
       variant,
@@ -102,6 +106,7 @@ const Button = React.forwardRef<HTMLElement, ButtonProps>(
       render,
       showTooltip = false,
       tooltipFullWidth = false,
+      tooltipSide,
       title: _title,
       ...props
     }: ButtonProps & Pick<ButtonBaseProps, "tooltipFullWidth">,
@@ -119,7 +124,13 @@ const Button = React.forwardRef<HTMLElement, ButtonProps>(
     const button = (
       <ButtonPrimitive
         className={cn(
-          buttonVariants({ variant, size, iconSize, className }),
+          buttonVariants({
+            variant,
+            size,
+            iconSize,
+            highlightWhenOpen,
+            className,
+          }),
           pending && "relative cursor-default",
         )}
         data-slot="button"
@@ -147,6 +158,7 @@ const Button = React.forwardRef<HTMLElement, ButtonProps>(
       disabled: buttonProps.disabled,
       showTooltip,
       tooltipFullWidth,
+      tooltipSide,
       "aria-label": buttonProps["aria-label"],
     });
   },

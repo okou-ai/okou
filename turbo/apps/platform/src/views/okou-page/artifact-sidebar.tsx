@@ -32,6 +32,7 @@ import {
 } from "../../signals/hosted-site-url-changes.ts";
 import {
   Button,
+  buttonVariants,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -547,24 +548,20 @@ function ArtifactSidebarHeader({
   return (
     <div className="flex min-h-14 shrink-0 items-center gap-3 border-b border-border/60 px-4 py-2">
       {onBack && (
-        <ArtifactActionTooltip
-          label={t(($) => {
+        <Button
+          showTooltip
+          tooltipSide="bottom"
+          type="button"
+          onClick={onBack}
+          aria-label={t(($) => {
             return $.artifacts.actions.backToAll;
           })}
+          variant="quiet"
+          size="icon-sm"
+          className="shrink-0"
         >
-          <Button
-            type="button"
-            onClick={onBack}
-            aria-label={t(($) => {
-              return $.artifacts.actions.backToAll;
-            })}
-            variant="quiet"
-            size="icon-sm"
-            className="shrink-0"
-          >
-            <ArrowLeft size={16} />
-          </Button>
-        </ArtifactActionTooltip>
+          <ArrowLeft size={16} />
+        </Button>
       )}
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm font-medium text-foreground">
@@ -749,7 +746,7 @@ function ArtifactOpenExternalAction({ url }: { url: string }) {
           return $.artifacts.actions.openNewTab;
         })}
         data-testid="artifact-sidebar-open-external"
-        className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-state-hover hover:text-foreground"
+        className={buttonVariants({ variant: "quiet", size: "icon-sm" })}
       >
         <ExternalLink size={16} />
       </a>
@@ -773,19 +770,19 @@ function ArtifactFullscreenAction({
         return $.artifacts.actions.enterFullscreen;
       });
   return (
-    <ArtifactActionTooltip label={label}>
-      <Button
-        type="button"
-        onClick={onToggleFullscreen}
-        aria-label={label}
-        data-testid="artifact-sidebar-fullscreen-toggle"
-        variant="quiet"
-        size="icon-sm"
-        className="hidden xl:inline-flex"
-      >
-        {fullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
-      </Button>
-    </ArtifactActionTooltip>
+    <Button
+      showTooltip
+      tooltipSide="bottom"
+      type="button"
+      onClick={onToggleFullscreen}
+      aria-label={label}
+      data-testid="artifact-sidebar-fullscreen-toggle"
+      variant="quiet"
+      size="icon-sm"
+      className="hidden xl:inline-flex"
+    >
+      {fullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+    </Button>
   );
 }
 
@@ -807,6 +804,7 @@ function ArtifactMoreActions({ onClose }: { onClose: () => void }) {
               })}
               variant="quiet"
               size="icon-sm"
+              highlightWhenOpen
             />
           }
         >
@@ -827,25 +825,20 @@ function ArtifactMoreActions({ onClose }: { onClose: () => void }) {
 function ArtifactCloseAction({ onClose }: { onClose: () => void }) {
   const { t } = useTranslation();
   return (
-    <ArtifactActionTooltip
-      label={t(($) => {
+    <Button
+      showTooltip
+      tooltipSide="bottom"
+      type="button"
+      onClick={onClose}
+      aria-label={t(($) => {
         return $.artifacts.actions.closeArtifact;
       })}
+      data-testid="artifact-sidebar-close"
+      variant="quiet"
+      size="icon-sm"
     >
-      <Button
-        type="button"
-        onClick={onClose}
-        aria-label={t(($) => {
-          return $.artifacts.actions.closeArtifact;
-        })}
-        data-testid="artifact-sidebar-close"
-        variant="quiet"
-        size="icon-sm"
-        className="rounded-full"
-      >
-        <X size={16} />
-      </Button>
-    </ArtifactActionTooltip>
+      <X size={16} />
+    </Button>
   );
 }
 
