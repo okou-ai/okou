@@ -25,6 +25,12 @@ import {
 } from "@okouai/api-contracts/contracts/workflows";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
+  CANONICAL_CLAUDE_CONFIG_DIR,
+  CANONICAL_CODEX_HOME_DIR,
+  PI_SKILLS_ROOT,
+  type ExecutionContext,
+} from "@okouai/api-contracts/contracts/runners";
+import {
   proactiveSuggestionsRoutes,
   proactiveLearningRoutes,
 } from "../proactive-preferences";
@@ -709,6 +715,30 @@ const scenarios = [
   };
 });
 
+function officialWorkflowBundle(
+  execution: ExecutionContext,
+  definitionName: string,
+) {
+  const skillRoot =
+    execution.cliAgentType === "pi"
+      ? PI_SKILLS_ROOT
+      : execution.cliAgentType === "codex"
+        ? `${CANONICAL_CODEX_HOME_DIR}/skills`
+        : `${CANONICAL_CLAUDE_CONFIG_DIR}/skills`;
+  const bundles = execution.contentBundles.skills.filter((bundle) => {
+    return bundle.mountPath === `${skillRoot}/${definitionName}`;
+  });
+  expect(bundles).toHaveLength(1);
+  const [bundle] = bundles;
+  if (!bundle) {
+    throw new Error("Expected an Official Workflow bundle in execution input");
+  }
+  expect(execution.piSessionId).toBe(
+    execution.cliAgentType === "pi" ? execution.runId : undefined,
+  );
+  return bundle;
+}
+
 test.each(scenarios)(
   "publishes the $kind catalog idempotently (upload failure: $failUpload, suggestions: $suggestionsEnabled)",
   // The Suggestions case creates 101 distinct action receipts through the real
@@ -942,14 +972,7 @@ test.each(scenarios)(
       curatesSuggestions,
       expectedFeedback,
     );
-    const bundle = execution.contentBundles.skills.find((skill) => {
-      return skill.mountPath.endsWith(`/${definitionName}`);
-    });
-    if (!bundle) {
-      throw new Error(
-        "Expected an Official Workflow bundle in execution input",
-      );
-    }
+    const bundle = officialWorkflowBundle(execution, definitionName);
     const files = readExecutionContentBundle(s3.objects, bundle);
     expect(files.get("SKILL.md")?.toString()).toContain(heading);
     expectScopeGuidance(files.get("SKILL.md")?.toString(), learning);

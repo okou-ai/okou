@@ -1,4 +1,10 @@
-import type { PreparedExecutionContext } from "@okouai/api-contracts/contracts/runners";
+import {
+  CANONICAL_CLAUDE_CONFIG_DIR,
+  CANONICAL_CODEX_HOME_DIR,
+  PI_SKILLS_ROOT,
+  type PreparedExecutionContext,
+} from "@okouai/api-contracts/contracts/runners";
+import { templateGuidanceMountPath } from "@okouai/api-contracts/contracts/template-guidance-bundle";
 import {
   contentBundleSchema,
   type ContentBundle,
@@ -16,6 +22,12 @@ import {
   agentInstructionsSelectionSql,
   type ExecutionPackageScope,
 } from "./execution-instructions-selection";
+import type { OfficialWorkflowObservation } from "./official-workflow-run.service";
+import {
+  resolveRunSkillVolumes,
+  type SkillVolume,
+} from "./run-prompt-and-skills";
+import { normalizeMountOverlay } from "./storage-mount-overlay";
 import type { ThreadAutomationTarget } from "./thread-context.signals";
 
 export const executionPackageSourcesSchema = object({
@@ -160,35 +172,31 @@ export function selectExecutionPackages(
   };
 }
 
-export function assertOfficialWorkflowMounts(
-  officialBundles: readonly { readonly mountPath: string }[],
-  storageMounts: readonly { readonly mountPath: string }[],
-  skillRoot: string,
-): void {
-  const officialPaths = officialBundles.map((bundle) => {
-    return bundle.mountPath;
-  });
-  if (
-    new Set(officialPaths).size !== officialPaths.length ||
-    officialPaths.some((path) => {
-      return (
-        !path.startsWith(`${skillRoot}/`) ||
-        storageMounts.some((mount) => {
-          return mount.mountPath === path;
-        })
-      );
-    })
-  ) {
-    throw new Error("Official Workflow bundle destinations are inconsistent");
-  }
-}
-
-export function executionSkillRoot(
-  framework: PreparedExecutionContext["cliAgentType"],
-): string {
-  return framework === "pi"
-    ? "/home/user/.pi/agent/skills"
-    : framework === "codex"
-      ? "/home/user/.codex/skills"
-      : "/home/user/.claude/skills";
+/** Resolve package destinations for this Run's accepted launch framework. */
+export function prepareRunPackageMounts(args: {
+  readonly framework: PreparedExecutionContext["cliAgentType"];
+  readonly skillVolumes: readonly SkillVolume[];
+  readonly officialWorkflow: OfficialWorkflowObservation | undefined;
+}) {
+  const skillRoot =
+    args.framework === "pi"
+      ? PI_SKILLS_ROOT
+      : args.framework === "codex"
+        ? `${CANONICAL_CODEX_HOME_DIR}/skills`
+        : `${CANONICAL_CLAUDE_CONFIG_DIR}/skills`;
+  const winners = normalizeMountOverlay(
+    resolveRunSkillVolumes(args.skillVolumes, skillRoot),
+  );
+  return {
+    skillRoot,
+    protectedMountPaths: winners.flatMap((volume) => {
+      return "templateGuidanceBundle" in volume
+        ? [templateGuidanceMountPath(volume.templateGuidanceBundle)]
+        : [];
+    }),
+    officialWorkflowBundles:
+      args.officialWorkflow?.definitions.map(({ name, contentBundle }) => {
+        return { ...contentBundle, mountPath: `${skillRoot}/${name}` };
+      }) ?? [],
+  };
 }
