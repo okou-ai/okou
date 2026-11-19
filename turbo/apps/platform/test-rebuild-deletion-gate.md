@@ -69,6 +69,6 @@ met.
 
 ## Latest tally
 
-See [Chat editing and save screening](test-rebuild-batch-edit-save.md)
-for the current count of 36 confirmed frozen deductions and the remaining
-1,498-row gap. Earlier figures are batch checkpoints.
+See [shared source matrix screening](test-rebuild-batch-source-matrices.md)
+for the current count of 46 confirmed frozen deductions and the remaining
+1,488-row gap. Earlier figures are batch checkpoints.
