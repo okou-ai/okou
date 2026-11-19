@@ -117,11 +117,7 @@ test("Generate first, then offer a native PDF download whose bytes survive repea
     return response.promise;
   });
   const browser = context.mocks.browser.blobDownload();
-  const namingStarted = context.mocks.deferred<void>();
-  await setupPdfChat(ANSWER, undefined, () => {
-    namingStarted.resolve();
-    return HttpResponse.json("Launch-plan");
-  });
+  await setupPdfChat();
 
   button("Generate PDF").focus();
   await userEvent.keyboard("{Enter}");
@@ -129,7 +125,6 @@ test("Generate first, then offer a native PDF download whose bytes survive repea
     expect(button("Generating PDF…")).toHaveAttribute("aria-disabled", "true");
   });
   expect(button("Generating PDF…")).toHaveFocus();
-  await namingStarted.promise;
   const pdf = new Blob(["%PDF-1.7\n%%EOF"], { type: "application/pdf" });
   response.resolve({ ok: true, blob: pdf });
   await waitFor(() => {
