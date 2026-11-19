@@ -83,6 +83,7 @@ data class ChatListUiState(
     val filter: ChatListFilter = ChatListFilter.Recent,
     val pendingRowActions: Map<String, ChatRowAction> = emptyMap(),
     val failedRowAction: ChatRowAction? = null,
+    internal val threadsByRecency: List<ConfirmedChat> = emptyList(),
 )
 
 internal fun ChatListUiState.rowActions(
@@ -577,7 +578,7 @@ class ChatListModel(
             viewModelScope.launch {
                 try {
                     val saved = cache.load() ?: return@launch
-                    val threads = withContext(dispatcher) { replayChats(saved.checkpoint) }
+                    val projection = withContext(dispatcher) { replayChatList(saved.checkpoint) }
                     requireCurrent()
                     val state = mutable.value
                     val networkSettings = state.projectsSettingsSource == ChatListSource.Network
@@ -590,7 +591,8 @@ class ChatListModel(
                             projectsEnabled =
                                 if (networkSettings) state.projectsEnabled
                                 else saved.navigation.projectsEnabled,
-                            threads = threads,
+                            threads = projection.threads,
+                            threadsByRecency = projection.byRecency,
                             confirmedAt = saved.confirmedAt,
                             source = ChatListSource.Cache,
                             agents =
@@ -657,7 +659,7 @@ class ChatListModel(
                     val previous = confirmed
                     val result = sync.synchronize(previous?.checkpoint)
                     val checkpoint = result.checkpoint
-                    withContext(dispatcher) { replayChats(checkpoint) }
+                    val replayed = withContext(dispatcher) { replayChatList(checkpoint) }
                     requireCurrent()
                     val saved =
                         if (!result.changed && previous != null && !mutable.value.cacheUnavailable)
@@ -667,12 +669,15 @@ class ChatListModel(
                                 CachedChats(checkpoint, System.currentTimeMillis(), navigation())
                             checkNotNull(persistChats(readBack = true))
                         }
-                    val threads = withContext(dispatcher) { replayChats(saved.checkpoint) }
+                    val projection =
+                        if (saved.checkpoint === checkpoint) replayed
+                        else withContext(dispatcher) { replayChatList(saved.checkpoint) }
                     requireCurrent()
                     confirmed = saved
                     mutable.value =
                         mutable.value.copy(
-                            threads = threads,
+                            threads = projection.threads,
+                            threadsByRecency = projection.byRecency,
                             confirmedAt = saved.confirmedAt,
                             source = ChatListSource.Network,
                             listPhase = ChatReadPhase.Ready,

@@ -3,6 +3,7 @@ import { computed, type Computed } from "ccstate";
 import { eq } from "drizzle-orm";
 import { db$ } from "../external/db";
 import type { PickedThreadInputEvent } from "./thread-run-prompt/types";
+import { restoredWorkflowAutomationEventPayload } from "./workflow-automation-context.service";
 
 type ThreadAutomationContext = Readonly<
   Pick<
@@ -49,6 +50,17 @@ export function createThreadAutomationContext(
           chatThreadId: pickedEvent.chatThreadId,
           ...context,
         }
+      : null;
+  });
+}
+
+export function createThreadAutomationPayload(
+  context$: ReturnType<typeof createThreadAutomationContext>,
+) {
+  return computed(async (get) => {
+    const context = await get(context$);
+    return context?.eventPayload
+      ? restoredWorkflowAutomationEventPayload(context.eventPayload)
       : null;
   });
 }

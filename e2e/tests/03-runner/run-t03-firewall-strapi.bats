@@ -15,7 +15,8 @@ teardown() {
 }
 
 @test "runner firewall resolves the Strapi variable base and header auth" {
-    local strapi_host="example.com"
+    # The custom connector account fixture uses example.com in the same workspace.
+    local strapi_host="example.org"
     local strapi_base_url="https://${strapi_host}"
     run create_runner_agent "runner-firewall-strapi-${TEST_ID}"
     echo "$output"

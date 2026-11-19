@@ -3077,14 +3077,6 @@ async function main(): Promise<void> {
     await runMigrations(dbUrl1);
     console.log("   ✅ Consecutive database resets completed successfully\n");
 
-    console.log("=== Workflow Storage retirement CLI ===");
-    console.log(
-      execCommand(
-        "node --import tsx scripts/migrations/026-retire-workflow-storage/test-cleanup.ts",
-        { cwd: PACKAGE_DIR, env: { DATABASE_URL: dbUrl1 } },
-      ),
-    );
-
     console.log("=== Registry resource inventory CLI ===");
     console.log(
       execCommand(

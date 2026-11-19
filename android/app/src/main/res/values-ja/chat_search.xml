@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="chat_search">検索</string>
+    <string name="chat_search_hint">チャットを検索</string>
+    <string name="chat_search_clear">検索をクリア</string>
+    <string name="chat_search_recent">最近のチャット</string>
+    <string name="chat_search_empty">一致するチャットがありません</string>
+</resources>

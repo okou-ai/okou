@@ -1,5 +1,6 @@
 package ai.okou.android.state
 
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
@@ -29,9 +30,96 @@ internal enum class SettingsDestination {
     Instructions,
 }
 
+internal enum class SearchRoute {
+    Closed,
+    Open,
+    ReturnOnBack,
+}
+
+private const val MAX_SAVED_SEARCH_QUERY_CHARS = 256
+
+internal data class SearchResultAnchor(val chatId: String, val offset: Int)
+
+internal class ChatSearchState(
+    query: TextFieldValue = TextFieldValue(),
+    anchor: SearchResultAnchor? = null,
+) {
+    var query by mutableStateOf(query)
+        private set
+
+    val position = LazyListState()
+    var pendingAnchor by mutableStateOf(anchor)
+        private set
+
+    fun edit(value: TextFieldValue) {
+        if (query.text != value.text) {
+            pendingAnchor = null
+            position.requestScrollToItem(0)
+        }
+        query = value
+    }
+
+    fun reset() {
+        pendingAnchor = null
+        position.requestScrollToItem(0)
+        query = TextFieldValue()
+    }
+
+    fun restorePosition(index: Int?) {
+        val anchor = pendingAnchor ?: return
+        if (index != null) position.requestScrollToItem(index, anchor.offset)
+        pendingAnchor = null
+    }
+
+    fun savedAnchor(): SearchResultAnchor? {
+        pendingAnchor?.let {
+            return it
+        }
+        return position.layoutInfo.visibleItemsInfo
+            .firstOrNull { it.index == position.firstVisibleItemIndex }
+            ?.let { item ->
+                (item.key as? String)?.let {
+                    SearchResultAnchor(it, position.firstVisibleItemScrollOffset)
+                }
+            }
+    }
+}
+
+@Composable
+internal fun rememberChatSearchState(): ChatSearchState =
+    rememberSaveable(
+        saver =
+            listSaver<ChatSearchState, Any>(
+                save = {
+                    val query = it.query
+                    if (query.text.length <= MAX_SAVED_SEARCH_QUERY_CHARS) {
+                        val anchor = it.savedAnchor()
+                        listOf(
+                            query.text,
+                            query.selection.start,
+                            query.selection.end,
+                            anchor?.chatId.orEmpty(),
+                            anchor?.offset ?: 0,
+                        )
+                    } else emptyList()
+                },
+                restore = { (text, start, end, chatId, offset) ->
+                    ChatSearchState(
+                        TextFieldValue(text as String, TextRange(start as Int, end as Int)),
+                        (chatId as String)
+                            .takeIf { it.isNotEmpty() }
+                            ?.let { SearchResultAnchor(it, offset as Int) },
+                    )
+                },
+            )
+    ) {
+        ChatSearchState()
+    }
+
 internal data class WorkspaceNavigation(
     val target: WorkspaceTarget = WorkspaceTarget.List,
     val settings: SettingsDestination? = null,
+    val search: SearchRoute = SearchRoute.Closed,
 )
 
 @Composable
@@ -46,9 +134,10 @@ internal fun rememberWorkspaceNavigation(): MutableState<WorkspaceNavigation> =
                             is WorkspaceTarget.Chat -> "chat" to target.id
                             is WorkspaceTarget.NewChat -> "new" to target.projectId.orEmpty()
                         }
-                    listOf(kind, id, navigation.settings?.name.orEmpty())
+                    listOf(kind, id, navigation.settings?.name.orEmpty(), navigation.search.name)
                 },
-                restore = { (kind, id, settings) ->
+                restore = { fields ->
+                    val (kind, id, settings) = fields
                     val target =
                         when (kind) {
                             "chat" -> WorkspaceTarget.Chat(id as String)
@@ -64,7 +153,8 @@ internal fun rememberWorkspaceNavigation(): MutableState<WorkspaceNavigation> =
                                 SettingsDestination.Instructions
                             else -> null
                         }
-                    WorkspaceNavigation(target, destination)
+                    val search = SearchRoute.entries.firstOrNull { it.name == fields.getOrNull(3) }
+                    WorkspaceNavigation(target, destination, search ?: SearchRoute.Closed)
                 },
             )
     ) {

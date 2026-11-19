@@ -3,10 +3,6 @@
 
 export const clientDescriptorManifest = [
   {
-    module: "agent-connector-access",
-    contracts: ["agentConnectorAccessContract"],
-  },
-  {
     module: "agent-custom-connectors",
     contracts: ["agentCustomConnectorsContract"],
   },
@@ -200,10 +196,6 @@ export const clientDescriptorManifest = [
   {
     module: "connector-accounts",
     contracts: ["connectorAccountsContract"],
-  },
-  {
-    module: "connector-agent-access",
-    contracts: ["connectorAgentAccessContract"],
   },
   {
     module: "connector-catalog",

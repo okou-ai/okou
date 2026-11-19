@@ -35,7 +35,6 @@ import {
   mockOAuthCompletions,
   mockPublicConnectorStatus,
   publicStatusItem,
-  mockConnectorAgentAccess,
 } from "./connector-page-test-helpers.ts";
 
 const context = testContext();
@@ -118,13 +117,6 @@ function mockAgentConnectorAccess(
       });
     },
   );
-  mockConnectorAgentAccess(context, (agentId) => {
-    return {
-      enabledConnectorSlugs: authorizedAgentIds.has(agentId)
-        ? [connectorSlug]
-        : [],
-    };
-  });
   context.mocks.api(
     userBuiltinConnectorsContract.update,
     ({ params, body, respond }) => {

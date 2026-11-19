@@ -67,6 +67,7 @@ internal fun WorkspaceToolbarActions(
     showFilter: Boolean,
     filter: ChatListFilter,
     selectFilter: (ChatListFilter) -> Unit,
+    openSearch: (() -> Unit)? = null,
     openUpdate: (() -> Unit)?,
     settingsFocus: FocusRequester,
     openSettings: (restoreFocus: Boolean) -> Unit,
@@ -84,6 +85,11 @@ internal fun WorkspaceToolbarActions(
                     painterResource(R.drawable.ic_filter_list),
                     stringResource(R.string.chat_filter),
                 )
+            }
+        }
+        if (openSearch != null) {
+            IconButton(onClick = openSearch) {
+                Icon(painterResource(R.drawable.ic_search), stringResource(R.string.chat_search))
             }
         }
         IconButton(modifier = settingsAnchor, onClick = { openSettings(anchorFocused) }) {
@@ -137,6 +143,18 @@ internal fun WorkspaceToolbarActions(
                         onClick = {
                             expanded = false
                             filterOpen = true
+                        },
+                    )
+                }
+                if (openSearch != null) {
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.chat_search)) },
+                        leadingIcon = {
+                            Icon(painterResource(R.drawable.ic_search), contentDescription = null)
+                        },
+                        onClick = {
+                            expanded = false
+                            openSearch()
                         },
                     )
                 }
