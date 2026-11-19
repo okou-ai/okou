@@ -10,6 +10,7 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.MouseButton
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsSelected
@@ -504,8 +505,43 @@ class ChatListRootTest {
         compose.waitUntil(10_000) {
             compose.onAllNodesWithText(failure).fetchSemanticsNodes().isNotEmpty()
         }
-        compose.onNodeWithText("Archived").assertExists()
+        compose.onNodeWithText("Filter · Archived").assertExists()
         compose.onNodeWithText(app.getString(R.string.retry)).assertExists()
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w400dp-h560dp")
+    fun returningToInboxRestoresItsScrollPosition() {
+        val app = compose.activity.application as ChatListApplication
+        val rows =
+            (1..24).joinToString(",") { index ->
+                val suffix = index.toString().padStart(12, '0')
+                chatEventWire(
+                    id = "61000000-0000-4000-8000-$suffix",
+                    seq = index.toLong(),
+                    thread = "62000000-0000-4000-8000-$suffix",
+                    title = "Inbox chat $index",
+                )
+            }
+        app.fixture.events = { request ->
+            val events = if (request.requestUrl?.queryParameter("sinceSeqId") == null) rows else ""
+            jsonResponse("""{"events":[$events],"hasMore":false}""")
+        }
+        app.responseGate.countDown()
+        awaitListAndNames()
+        val list = compose.onNodeWithTag("chat_list")
+        val chat = "Inbox chat 12"
+        list.performScrollToNode(hasText(chat))
+        val row = compose.onNodeWithText(chat).assertIsDisplayed()
+        val top = row.fetchSemanticsNode().boundsInRoot.top
+        val filter = compose.onNodeWithContentDescription("Filter")
+        filter.performClick()
+        compose.onNodeWithText("Archived").performClick()
+        compose.onNodeWithText("Filter · Archived").assertExists()
+        compose.onNodeWithText("No chats in this view.").assertIsDisplayed()
+        compose.onNodeWithText("Back to Inbox").performClick()
+        row.assertIsDisplayed()
+        assertEquals(top, row.fetchSemanticsNode().boundsInRoot.top)
     }
 
     @Test
@@ -704,7 +740,10 @@ class ChatListRootTest {
         rejectProject.set(false)
         markAll()
         awaitMessage("Marked 2 chats as read.")
-        compose.onNodeWithText("Unread").assertIsSelected().performClick()
+        compose.onNodeWithText("Filter · Unread").assertExists()
+        filter.performClick()
+        compose.onNodeWithText("Unread").assertIsSelected()
+        compose.onNodeWithText("Inbox").performClick()
         list.performScrollToNode(hasText("Running chat"))
         compose
             .onNodeWithText("Running chat")
@@ -887,7 +926,8 @@ class ChatListRootTest {
             compose.onNodeWithTag(rowTag).performSemanticsAction(SemanticsActions.OnLongClick)
             compose.onNodeWithText("Unarchive chat").performClick()
             compose.waitUntil(10_000) { compose.onAllNodes(target).fetchSemanticsNodes().isEmpty() }
-            compose.onNodeWithText("Archived").performClick()
+            compose.onNodeWithContentDescription("Filter").performClick()
+            compose.onNodeWithText("Inbox").performClick()
             compose.onNodeWithTag("chat_list").performScrollToNode(target)
             compose.onNodeWithTag(rowTag).assertExists()
             compose.onNodeWithTag("conversation").assertExists()

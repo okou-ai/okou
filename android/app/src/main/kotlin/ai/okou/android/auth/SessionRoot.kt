@@ -7,7 +7,9 @@ import ai.okou.android.SettingsIcon
 import ai.okou.android.SettingsRow
 import ai.okou.android.SettingsScreen
 import ai.okou.android.SettingsSection
+import ai.okou.android.WorkspaceFilterSubtitle
 import ai.okou.android.api.generated.Organization
+import ai.okou.android.chat.ChatListFilter
 import ai.okou.android.chat.WorkspaceRealtimeLifecycle
 import ai.okou.android.instructions.PersonalInstructionsSettings
 import ai.okou.android.preferences.MemberPreferencesSettings
@@ -113,7 +115,9 @@ fun SessionRoot(
                     },
                     recovery = ready?.recovery,
                     workspaceTitle =
-                        organization?.let { { WorkspaceTitle(it, state, chooseWorkspace) } },
+                        organization?.let { workspace ->
+                            { filter -> WorkspaceTitle(workspace, state, filter, chooseWorkspace) }
+                        },
                     openUpdate = openUpdate,
                     startupRecovery =
                         if (state.stage == SessionStage.Unavailable) {
@@ -319,6 +323,7 @@ private fun AccountSettings(openInstructions: () -> Unit, signOut: () -> Unit) {
 private fun WorkspaceTitle(
     workspace: Organization,
     state: SessionUiState,
+    filter: ChatListFilter,
     chooseWorkspace: (String) -> Unit,
 ) {
     val canSwitch = state.ready != null && state.memberships.size > 1
@@ -341,19 +346,21 @@ private fun WorkspaceTitle(
             contentDescription = null,
             modifier = Modifier.size(logoSize).clip(RoundedCornerShape(8.dp)),
         )
-        Text(
-            workspace.name,
-            modifier = Modifier.padding(start = spacing).weight(1f, fill = false),
-            style =
-                MaterialTheme.typography.titleLarge.copy(
-                    fontSize = titleSize.sp,
-                    lineHeight = (titleSize + 8).sp,
-                    letterSpacing = 0.sp,
-                    fontWeight = FontWeight.SemiBold,
-                ),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+        Column(Modifier.padding(start = spacing).weight(1f, fill = false)) {
+            Text(
+                workspace.name,
+                style =
+                    MaterialTheme.typography.titleLarge.copy(
+                        fontSize = titleSize.sp,
+                        lineHeight = 24.sp,
+                        letterSpacing = 0.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    ),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            WorkspaceFilterSubtitle(filter)
+        }
         if (canSwitch) {
             Icon(
                 painterResource(R.drawable.ic_expand_more),

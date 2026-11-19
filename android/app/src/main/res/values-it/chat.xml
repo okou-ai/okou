@@ -20,7 +20,8 @@
         <item quantity="other">%1$d chat segnate come lette.</item>
     </plurals>
     <string name="chat_filter">Filtra</string>
-    <string name="chat_clear_filter">Rimuovi filtro</string>
+    <string name="chat_filter_subtitle">Filtro · %1$s</string>
+    <string name="chat_back_to_inbox">Torna alla posta in arrivo</string>
     <string name="chat_more_actions">Altre azioni</string>
     <string name="chat_unread">Non lette</string>
     <string name="chat_archived">Archiviate</string>

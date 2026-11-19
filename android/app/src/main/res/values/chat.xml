@@ -20,7 +20,8 @@
         <item quantity="other">Marked %1$d chats as read.</item>
     </plurals>
     <string name="chat_filter">Filter</string>
-    <string name="chat_clear_filter">Clear filter</string>
+    <string name="chat_filter_subtitle">Filter · %1$s</string>
+    <string name="chat_back_to_inbox">Back to Inbox</string>
     <string name="chat_more_actions">More actions</string>
     <string name="chat_unread">Unread</string>
     <string name="chat_archived">Archived</string>

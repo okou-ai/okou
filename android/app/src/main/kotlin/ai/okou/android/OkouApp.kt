@@ -63,6 +63,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -94,7 +95,7 @@ internal fun OkouApp(
     controls: RunControlsModel?,
     settingsContent: @Composable (SettingsDestination, openInstructions: () -> Unit) -> Unit,
     recovery: AssistantRecoveryModel? = null,
-    workspaceTitle: @Composable (() -> Unit)? = null,
+    workspaceTitle: @Composable ((ChatListFilter) -> Unit)? = null,
     openUpdate: (() -> Unit)? = null,
     startupRecovery: @Composable (() -> Unit)? = null,
 ) {
@@ -116,7 +117,8 @@ internal fun OkouApp(
     val searchActive = chats != null && composer != null && navigation.search == SearchRoute.Open
     val showList = listWidth != null || searchActive || target == WorkspaceTarget.List
     val showWorkspaceBack = listWidth == null && !searchActive && target != WorkspaceTarget.List
-    val listPosition = rememberLazyListState()
+    val listPositions =
+        ChatListFilter.entries.map { filter -> key(filter) { rememberLazyListState() } }
     val settingsPosition = rememberScrollState()
     val collapsed = rememberCollapsedProjects()
     val conversations = rememberConversationUiState()
@@ -280,8 +282,7 @@ internal fun OkouApp(
                 }
         }
     val projectId = newChat?.projectId ?: thread?.projectId
-    val projectSubtitle =
-        projectId?.let { id -> list.projects.firstOrNull { it.id == id }?.name ?: id }
+    val projectSubtitle = projectId?.let { id -> list.projects.firstOrNull { it.id == id }?.name }
     val detailTitleStyle =
         MaterialTheme.typography.titleMedium.copy(
             fontSize = 18.sp,
@@ -364,17 +365,21 @@ internal fun OkouApp(
             WorkspaceListToolbar(
                 widthDp = window.screenWidthDp,
                 listWidth = listWidth,
-                title =
-                    workspaceTitle
-                        ?: {
+                title = {
+                    if (workspaceTitle != null) {
+                        workspaceTitle(list.filter)
+                    } else {
+                        Column(Modifier.padding(start = 8.dp)) {
                             Text(
                                 stringResource(R.string.app_name),
-                                Modifier.padding(start = 8.dp),
                                 style = MaterialTheme.typography.titleLarge,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
-                        },
+                            WorkspaceFilterSubtitle(list.filter)
+                        }
+                    }
+                },
                 actions = toolbarActions,
             )
         }
@@ -480,11 +485,6 @@ internal fun OkouApp(
                                 )
                             } else {
                                 if (listWidth != null) listToolbar()
-                                if (list.filter != ChatListFilter.Inbox) {
-                                    AppliedChatFilter(list.filter) {
-                                        chats?.selectFilter(ChatListFilter.Inbox)
-                                    }
-                                }
                                 ChatListScreen(
                                     list,
                                     { chats?.refresh() },
@@ -500,8 +500,9 @@ internal fun OkouApp(
                                     },
                                     collapsed.values,
                                     collapsed::toggle,
-                                    listPosition,
+                                    listPositions[list.filter.ordinal],
                                     ::startNewChat,
+                                    showInbox = { chats?.selectFilter(ChatListFilter.Inbox) },
                                     selectedChatId = if (listWidth != null) thread?.id else null,
                                     wide = listWidth != null,
                                     actionsEnabled = composer != null,

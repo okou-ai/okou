@@ -20,7 +20,8 @@
         <item quantity="other">%1$d discussions marquées comme lues.</item>
     </plurals>
     <string name="chat_filter">Filtrer</string>
-    <string name="chat_clear_filter">Effacer le filtre</string>
+    <string name="chat_filter_subtitle">Filtre · %1$s</string>
+    <string name="chat_back_to_inbox">Retour à la boîte de réception</string>
     <string name="chat_more_actions">Plus d’actions</string>
     <string name="chat_unread">Non lues</string>
     <string name="chat_archived">Archivées</string>

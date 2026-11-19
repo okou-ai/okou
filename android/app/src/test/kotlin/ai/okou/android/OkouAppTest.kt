@@ -238,9 +238,12 @@ class OkouAppTest {
         compose.onNodeWithContentDescription("Settings").performClick()
         compose.onNodeWithText("Appearance").assertExists()
         compose.onNodeWithContentDescription("Back").performClick()
-        compose.onNodeWithText("Archived").assertIsSelected().assertHeightIsEqualTo(48.dp)
-        compose.onNodeWithText("Archived").performClick()
-        compose.onNodeWithText("Archived").assertDoesNotExist()
+        compose.onNodeWithText("Filter · Archived").assertIsDisplayed()
+        compose.onNodeWithText("New chat").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Filter").performClick()
+        compose.onNodeWithText("Archived").assertIsSelected()
+        compose.onNodeWithText("Inbox").performClick()
+        compose.onNodeWithText("Filter · Archived").assertDoesNotExist()
     }
 
     @Test
@@ -256,8 +259,12 @@ class OkouAppTest {
         compose.onNodeWithText("Inbox").assertIsSelected()
         compose.onNodeWithText("Mark all as read").assertIsNotEnabled()
         compose.onNodeWithText("Muted").performClick()
-        compose.onNodeWithText("Muted").assertIsSelected().performClick()
-        compose.onNodeWithText("Muted").assertDoesNotExist()
+        compose.onNodeWithText("Filter · Muted").assertIsDisplayed()
+        compose.onNodeWithContentDescription("More actions").performClick()
+        compose.onNodeWithText("Filter").performClick()
+        compose.onNodeWithText("Muted").assertIsSelected()
+        compose.onNodeWithText("Inbox").performClick()
+        compose.onNodeWithText("Filter · Muted").assertDoesNotExist()
     }
 
     @Test
@@ -366,6 +373,6 @@ class OkouAppTest {
         compose.runOnIdle { assertEquals(true, refresh.action()) }
         compose.onNodeWithContentDescription("Filter").assertIsDisplayed().performClick()
         compose.onNodeWithText("Archiviert").assertIsDisplayed().performClick()
-        compose.onNodeWithText("Archiviert").assertIsSelected()
+        compose.onNodeWithText("Filter · Archiviert").assertExists()
     }
 }

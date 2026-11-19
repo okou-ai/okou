@@ -19,7 +19,8 @@
         <item quantity="other">%1$d chat ditandai telah dibaca.</item>
     </plurals>
     <string name="chat_filter">Filter</string>
-    <string name="chat_clear_filter">Hapus filter</string>
+    <string name="chat_filter_subtitle">Filter · %1$s</string>
+    <string name="chat_back_to_inbox">Kembali ke Kotak Masuk</string>
     <string name="chat_more_actions">Tindakan lainnya</string>
     <string name="chat_unread">Belum dibaca</string>
     <string name="chat_archived">Diarsipkan</string>

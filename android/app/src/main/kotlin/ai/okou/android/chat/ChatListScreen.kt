@@ -105,6 +105,7 @@ internal fun ChatListScreen(
     toggleProject: (String) -> Unit,
     listState: LazyListState,
     newChat: (String?) -> Unit,
+    showInbox: () -> Unit,
     selectedChatId: String?,
     wide: Boolean,
     actionsEnabled: Boolean,
@@ -272,7 +273,13 @@ internal fun ChatListScreen(
                                     if (!actionsEnabled) {
                                         ChatNotice(R.string.chat_project_empty)
                                     }
-                                    NewProjectChatAction(actionsEnabled) { newChat(project.id) }
+                                    ChatListTextAction(
+                                        R.string.composer_new_project,
+                                        R.drawable.ic_add,
+                                        enabled = actionsEnabled,
+                                    ) {
+                                        newChat(project.id)
+                                    }
                                 }
                             }
                         }
@@ -324,18 +331,25 @@ internal fun ChatListScreen(
                             state.indicatorsPhase == ChatReadPhase.Ready)
                 ) {
                     item {
-                        Text(
-                            stringResource(R.string.chat_empty),
-                            Modifier.padding(horizontal = 12.dp, vertical = 38.dp).semantics {
-                                liveRegion = LiveRegionMode.Polite
-                            },
-                            style =
-                                MaterialTheme.typography.titleMedium.copy(
-                                    fontSize = 19.sp,
-                                    lineHeight = 28.5.sp,
-                                    letterSpacing = 0.sp,
-                                ),
-                        )
+                        Column(Modifier.padding(horizontal = 12.dp, vertical = 38.dp)) {
+                            Text(
+                                stringResource(R.string.chat_empty),
+                                Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                                style =
+                                    MaterialTheme.typography.titleMedium.copy(
+                                        fontSize = 19.sp,
+                                        lineHeight = 28.5.sp,
+                                        letterSpacing = 0.sp,
+                                    ),
+                            )
+                            if (state.filter != ChatListFilter.Inbox) {
+                                ChatListTextAction(
+                                    R.string.chat_back_to_inbox,
+                                    R.drawable.ic_arrow_back,
+                                    onClick = showInbox,
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -721,7 +735,12 @@ private fun NewChatAction(modifier: Modifier, enabled: Boolean, onClick: () -> U
 }
 
 @Composable
-private fun NewProjectChatAction(enabled: Boolean, onClick: () -> Unit) {
+private fun ChatListTextAction(
+    label: Int,
+    @DrawableRes icon: Int,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
     TextButton(
         onClick = onClick,
         enabled = enabled,
@@ -730,10 +749,10 @@ private fun NewProjectChatAction(enabled: Boolean, onClick: () -> Unit) {
         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
         colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
     ) {
-        Icon(painterResource(R.drawable.ic_add), null, Modifier.size(16.dp))
+        Icon(painterResource(icon), null, Modifier.size(16.dp))
         Spacer(Modifier.width(6.dp))
         Text(
-            stringResource(R.string.composer_new_project),
+            stringResource(label),
             style =
                 MaterialTheme.typography.labelMedium.copy(
                     fontSize = 13.sp,
