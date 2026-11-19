@@ -1358,3 +1358,18 @@ preference-settings-001	turbo/apps/platform/src/views/okou-page/__tests__/prefer
 preference-settings-002	turbo/apps/platform/src/views/okou-page/__tests__/preference-settings.test.tsx	unified preference settings maps the legacy preference URL /settings into unified Settings	56	passed
 preference-settings-003	turbo/apps/platform/src/views/okou-page/__tests__/preference-settings.test.tsx	unified preference settings maps the legacy model URL /settings?tab=model-configuration into unified Settings	66	passed
 preference-settings-007	turbo/apps/platform/src/views/okou-page/__tests__/preference-settings.test.tsx	shows pending Morning Brief enrollment and accepts cancellation	83	passed
+settings-dialog-004	turbo/apps/platform/src/views/okou-page/__tests__/settings-dialog.test.tsx	Use the saved workspace language ahead of locale hints	114	passed
+settings-dialog-005	turbo/apps/platform/src/views/okou-page/__tests__/settings-dialog.test.tsx	Navigate workspace settings without closing Settings	137	passed
+settings-dialog-007	turbo/apps/platform/src/views/okou-page/__tests__/settings-dialog.test.tsx	Route members away from administrator-only workspace settings	163	passed
+settings-dialog-008	turbo/apps/platform/src/views/okou-page/__tests__/settings-dialog.test.tsx	Measure the threads inside a singleton snapshot on demand	247	passed
+settings-tab-005	turbo/apps/platform/src/views/okou-page/__tests__/settings-tab.test.tsx	Offer avatar creation instead of editing when the agent has no avatar	132	passed
+settings-tab-007	turbo/apps/platform/src/views/okou-page/__tests__/settings-tab.test.tsx	Keep every composer step and its edge options usable in one dialog	151	passed
+settings-tab-008	turbo/apps/platform/src/views/okou-page/__tests__/settings-tab.test.tsx	Create, save, and reopen a composed avatar from the profile page	200	passed
+settings-tab-011	turbo/apps/platform/src/views/okou-page/__tests__/settings-tab.test.tsx	Edit and reopen default Okou instructions through the deep link	287	passed
+settings-tab-012	turbo/apps/platform/src/views/okou-page/__tests__/settings-tab.test.tsx	Edit and save an agent profile	309	passed
+settings-tab-013	turbo/apps/platform/src/views/okou-page/__tests__/settings-tab.test.tsx	Discard unsaved agent profile edits	381	passed
+settings-tab-014	turbo/apps/platform/src/views/okou-page/__tests__/settings-tab.test.tsx	Explain the impact before deleting an agent	421	passed
+settings-tab-016	turbo/apps/platform/src/views/okou-page/__tests__/settings-tab.test.tsx	Copy selected workflows before deleting their source agent	577	passed
+settings-tab-018	turbo/apps/platform/src/views/okou-page/__tests__/settings-tab.test.tsx	Keep the source agent when its workflow refresh fails after copying	587	passed
+settings-model-loading-001	turbo/apps/platform/src/views/okou-page/__tests__/settings-model-loading.test.tsx	Keep loaded model controls usable when switching Settings sections	131	passed
+settings-model-loading-003	turbo/apps/platform/src/views/okou-page/__tests__/settings-model-loading.test.tsx	Apply realtime billing changes after reopening Settings	141	passed
