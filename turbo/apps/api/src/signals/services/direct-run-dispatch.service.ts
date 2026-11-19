@@ -191,6 +191,12 @@ interface DispatchOffer {
   };
 }
 
+const mayHaveTakenCustody = {
+  busy: false,
+  "not-delivered": false,
+  unknown: true,
+} as const;
+
 function remainingDelivery(window: DeliveryWindow): number {
   return Math.min(
     window.notAfter - now(),
@@ -314,7 +320,7 @@ const offerToProcess$ = command(
       if (observation === "rejected") {
         return "not-accepted" as const;
       }
-      uncertain ||= observation === "unknown";
+      uncertain ||= mayHaveTakenCustody[observation];
       let busyRemaining = Infinity;
       if (!uncertain) {
         if (observation !== "busy" || !busyRetry || finalAttempt) {
