@@ -158,24 +158,6 @@ test("The first server save imports both browser draft keys before clearing them
   ]);
 });
 
-test("A rollback to an older API still resumes the browser draft", async () => {
-  context.mocks.data.onboardingStatus({
-    needsOnboarding: true,
-    onboardingComplete: false,
-  });
-  mockOnboardingConnectorCatalog(context, []);
-  seedProgress("ready");
-  context.mocks.api(onboardingDraftContract.get, ({ respond }) => {
-    return respond(404, { error: "Not found" });
-  });
-
-  await setupPage({ context, locale: "en-US", path: ROUTES.onboarding });
-  await screen.findByRole("heading", { name: "Let’s start your first task" });
-  expect(screen.getByLabelText("Your first task")).toHaveValue(
-    "Draft my launch plan",
-  );
-});
-
 test("An explicit step URL takes precedence over saved progress", async () => {
   context.mocks.data.onboardingStatus({
     needsOnboarding: true,

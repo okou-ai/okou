@@ -35,9 +35,7 @@ export const loadServerOnboardingDraft$ = command(
         return guard;
       },
     });
-    // A new App can reach a pre-draft API during cutover or rollback.
-    // Remove its missing-route response after that API stops serving and is
-    // no longer a supported production rollback target.
+    // The API answers 404 when this member no longer needs onboarding.
     const response = await accept(
       client.get({ fetchOptions: { signal } }),
       [200, 404],
