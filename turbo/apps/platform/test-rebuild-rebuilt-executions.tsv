@@ -1347,3 +1347,14 @@ onboarding-sources-first-flow-034	turbo/apps/platform/src/views/onboarding-sourc
 onboarding-start-001	turbo/apps/platform/src/views/onboarding/__tests__/onboarding-start.test.tsx	Onboarding sends an authenticated event without waiting, with one attempt record before the POST	66	passed
 onboarding-start-004	turbo/apps/platform/src/views/onboarding/__tests__/onboarding-start.test.tsx	An already onboarded user continues into the app	106	passed
 onboarding-start-005	turbo/apps/platform/src/views/onboarding/__tests__/onboarding-start.test.tsx	Preview onboarding sends to its matching Marketing environment	119	passed
+integration-onboarding-001	turbo/apps/platform/src/views/okou-page/__tests__/integration-onboarding.test.tsx	A legacy Discord pending callback is exempt before onboarding can resolve	30	passed
+integration-onboarding-004	turbo/apps/platform/src/views/okou-page/__tests__/integration-onboarding.test.tsx	The legacy callback bridge can finish before a pending onboarding response	54	passed
+integration-onboarding-005	turbo/apps/platform/src/views/okou-page/__tests__/integration-onboarding.test.tsx	/works still requires onboarding	89	passed
+integration-onboarding-007	turbo/apps/platform/src/views/okou-page/__tests__/integration-onboarding.test.tsx	/settings/discord retains its canonical onboarding bypass without treating a marker as proof	104	passed
+onboarding-001	turbo/apps/platform/src/views/okou-page/__tests__/onboarding.test.tsx	A new user keeps prompt and connector context through onboarding (My Okou=false)	19	passed
+onboarding-004	turbo/apps/platform/src/views/okou-page/__tests__/onboarding.test.tsx	A Slack connection page remains visible before onboarding	44	passed
+onboarding-005	turbo/apps/platform/src/views/okou-page/__tests__/onboarding.test.tsx	An unsuccessful Slack return remains visible before onboarding	65	passed
+preference-settings-001	turbo/apps/platform/src/views/okou-page/__tests__/preference-settings.test.tsx	keeps the Morning Brief switch on while the platform recovers its schedule	14	passed
+preference-settings-002	turbo/apps/platform/src/views/okou-page/__tests__/preference-settings.test.tsx	unified preference settings maps the legacy preference URL /settings into unified Settings	56	passed
+preference-settings-003	turbo/apps/platform/src/views/okou-page/__tests__/preference-settings.test.tsx	unified preference settings maps the legacy model URL /settings?tab=model-configuration into unified Settings	66	passed
+preference-settings-007	turbo/apps/platform/src/views/okou-page/__tests__/preference-settings.test.tsx	shows pending Morning Brief enrollment and accepts cancellation	83	passed
