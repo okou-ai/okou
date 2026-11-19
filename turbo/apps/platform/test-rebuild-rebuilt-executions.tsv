@@ -27,3 +27,6 @@ permission-batch-page-011	turbo/apps/platform/src/views/permission-allow/__tests
 notification-navigation-001	turbo/apps/platform/src/views/notifications/__tests__/notification-navigation.test.tsx	A relative chat notification opens the linked conversation	8	passed
 service-status-notice-001	turbo/apps/platform/src/views/router/__tests__/service-status-notice.test.tsx	A desktop user can open or dismiss an active service incident	31	passed
 service-status-notice-003	turbo/apps/platform/src/views/router/__tests__/service-status-notice.test.tsx	A mobile user can see an active incident alongside main navigation	53	passed
+hosted-site-authorization-002	turbo/apps/platform/src/views/hosted-site-authorization/__tests__/hosted-site-authorization.test.tsx	The authorization bridge returns visitors to the website access page when denied	33	passed
+hosted-site-authorization-004	turbo/apps/platform/src/views/hosted-site-authorization/__tests__/hosted-site-authorization.test.tsx	The authorization bridge returns visitors to the website access page when unavailable	33	passed
+hosted-site-authorization-006	turbo/apps/platform/src/views/hosted-site-authorization/__tests__/hosted-site-authorization.test.tsx	Organization selection preserves the hosted-site authorization continuation	62	passed
