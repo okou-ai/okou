@@ -113,7 +113,10 @@ pub(crate) fn now_ms() -> u64 {
 }
 
 impl DispatchIntake {
-    pub fn new(slots: Arc<Semaphore>) -> (Self, mpsc::Receiver<DispatchWork>) {
+    pub fn new(
+        slots: Arc<Semaphore>,
+        preferred_home_probe: Option<PreferredHomeProbe>,
+    ) -> (Self, mpsc::Receiver<DispatchWork>) {
         // Constructed before intake is enabled, with the fresh shared transaction slots.
         let (sender, receiver) = mpsc::channel(slots.available_permits());
         (
@@ -122,17 +125,12 @@ impl DispatchIntake {
                 sender,
                 slots,
                 latest_time_ms: AtomicU64::new(0),
-                preferred_home_probe: None,
+                preferred_home_probe,
                 #[cfg(test)]
                 work_queued: None,
             },
             receiver,
         )
-    }
-
-    pub fn with_preferred_home_probe(mut self, probe: Option<PreferredHomeProbe>) -> Self {
-        self.preferred_home_probe = probe;
-        self
     }
 
     pub(super) fn try_reserve(&self) -> Option<OwnedSemaphorePermit> {

@@ -71,8 +71,7 @@ fn ordinary_dispatch_can_take_the_only_admission_slot_during_a_home_probe() {
         let cache = HomeImageCache::new(RunnerPaths::new(root.path().to_path_buf()));
         let (_mode, mode) = watch::channel(RunnerMode::Running);
         let probe = preferred_probe(cache, mode);
-        let (intake, mut receiver) = DispatchIntake::new(Arc::new(Semaphore::new(1)));
-        let intake = intake.with_preferred_home_probe(Some(probe));
+        let (intake, mut receiver) = DispatchIntake::new(Arc::new(Semaphore::new(1)), Some(probe));
 
         // Occupy the single blocking worker so the real probe stays pending.
         let (started, waiting) = oneshot::channel();
@@ -151,8 +150,11 @@ async fn same_bytes_are_admitted_at_preference_expiry_while_home_is_still_locked
         })
         .await;
     let (_mode, mode) = watch::channel(RunnerMode::Running);
-    let (intake, mut receiver) = DispatchIntake::new(Arc::new(Semaphore::new(1)));
-    let intake = Arc::new(intake.with_preferred_home_probe(Some(preferred_probe(cache, mode))));
+    let (intake, mut receiver) = DispatchIntake::new(
+        Arc::new(Semaphore::new(1)),
+        Some(preferred_probe(cache, mode)),
+    );
+    let intake = Arc::new(intake);
     let identity = RunnerProcessIdentity::new(uuid::Uuid::new_v4(), 1).unwrap();
     let run_id = RunId::new_v4();
     let body = preferred_body(identity, run_id, source);
@@ -188,7 +190,7 @@ async fn idle_listener_releases_expired_history_on_its_own_tick() {
     let runtime = IngressRuntime::start(directory.clone(), identity, HOST.into(), TOKEN)
         .await
         .unwrap();
-    let (intake, mut receiver) = DispatchIntake::new(Arc::new(Semaphore::new(4)));
+    let (intake, mut receiver) = DispatchIntake::new(Arc::new(Semaphore::new(4)), None);
     runtime.enable_dispatch(intake);
     let socket = directory.join(format!("{}.sock", identity.runner_id()));
     let run_id = RunId::new_v4();
@@ -233,7 +235,7 @@ async fn idle_listener_releases_expired_history_on_its_own_tick() {
 #[tokio::test]
 async fn original_window_replays_then_reclaims_settled_history_without_closing_new_intake() {
     let identity = RunnerProcessIdentity::new(uuid::Uuid::new_v4(), 1).unwrap();
-    let (intake, mut receiver) = DispatchIntake::new(Arc::new(Semaphore::new(4)));
+    let (intake, mut receiver) = DispatchIntake::new(Arc::new(Semaphore::new(4)), None);
     let intake = Arc::new(intake);
     let mut originals = Vec::new();
     for verdict in [Disposition::Accepted, Disposition::Rejected] {
@@ -308,7 +310,7 @@ async fn original_window_replays_then_reclaims_settled_history_without_closing_n
 #[tokio::test]
 async fn owner_loss_is_unknown_and_never_reopens_original_input_after_expiry() {
     let identity = RunnerProcessIdentity::new(uuid::Uuid::new_v4(), 1).unwrap();
-    let (intake, mut receiver) = DispatchIntake::new(Arc::new(Semaphore::new(4)));
+    let (intake, mut receiver) = DispatchIntake::new(Arc::new(Semaphore::new(4)), None);
     let intake = Arc::new(intake);
     let run_id = RunId::new_v4();
     let bytes = body(identity, run_id, 2_000);
@@ -335,7 +337,7 @@ async fn owner_loss_is_unknown_and_never_reopens_original_input_after_expiry() {
 #[tokio::test]
 async fn history_expiry_does_not_drop_owned_admission_or_its_existing_observers() {
     let identity = RunnerProcessIdentity::new(uuid::Uuid::new_v4(), 1).unwrap();
-    let (intake, mut receiver) = DispatchIntake::new(Arc::new(Semaphore::new(4)));
+    let (intake, mut receiver) = DispatchIntake::new(Arc::new(Semaphore::new(4)), None);
     let intake = Arc::new(intake);
     let run_id = RunId::new_v4();
     let bytes = body(identity, run_id, 2_000);

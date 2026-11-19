@@ -1,6 +1,6 @@
 import { useGet, useLastResolved, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { Layers } from "lucide-react";
+import { Edit, Layers } from "lucide-react";
 import { cn, getShortcutLabel } from "@okouai/ui";
 import { defaultAgentChatPageActive$ } from "../../signals/agent.ts";
 import { activeRoute$ } from "../../signals/active-route.ts";
@@ -11,6 +11,7 @@ import {
   suggestionsEnabled$,
 } from "../../signals/okou-page/agent-suggestion-session.ts";
 import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
+import { okouRailEntryEnabled$ } from "../../signals/okou-page/okou-rail-entry.ts";
 import { GLOBAL_KEYBOARD_SHORTCUTS } from "../../lib/global-keyboard-shortcuts.ts";
 import { OkouLogomark } from "../components/okou-logomark.tsx";
 import { Link } from "../router/link.tsx";
@@ -53,6 +54,7 @@ function RestingShortcutHint({ label }: { label: string | null }) {
 export function OkouChatListRow() {
   const enabled = useLastResolved(suggestionsEnabled$) ?? false;
   const singleAgent = useLastResolved(singleAgentEnabled$) ?? false;
+  const okouEntry = useLastResolved(okouRailEntryEnabled$) ?? false;
   const active = useLastResolved(defaultAgentChatPageActive$) === true;
   const assistantName = useGet(assistantName$);
   const { t } = useTranslation();
@@ -73,7 +75,12 @@ export function OkouChatListRow() {
       )}
     >
       <span className="flex w-8 shrink-0 items-center justify-center px-2">
-        <OkouLogomark className="size-4 shrink-0 opacity-70" />
+        {/* The rail entry carries the Okou mark, so New chat reads as an action. */}
+        {singleAgent && okouEntry ? (
+          <Edit aria-hidden className="size-4 shrink-0 opacity-70" />
+        ) : (
+          <OkouLogomark className="size-4 shrink-0 opacity-70" />
+        )}
       </span>
       <span className="min-w-0 flex-1 truncate">
         {singleAgent

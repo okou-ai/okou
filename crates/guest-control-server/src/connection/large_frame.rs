@@ -7,9 +7,10 @@ use guest_control_proto::{Decoder, IncompleteFrame};
 use crate::error::to_io_error;
 use crate::handlers::create_batch_input;
 
-// The 12–16 MiB serving tail pays for several full payload copies. Smaller
-// writes keep the existing decoder and worker path.
-pub(super) const STREAMED_BATCH_MIN_BYTES: usize = 12 * 1024 * 1024;
+// Ordinary batches at the sealed-helper cutoff are still incomplete after a
+// socket read. Receive them into the helper's input before the decoder can
+// build a heap buffer for the whole payload.
+pub(super) const STREAMED_BATCH_MIN_BYTES: usize = 4 * 1024 * 1024;
 
 // Smaller inputs benefit from the decoder's reusable buffer. Above this
 // range, the 9.36 MB mixed replay regressed on three Guests during first use.
