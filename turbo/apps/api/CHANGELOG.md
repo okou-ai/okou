@@ -10,6 +10,30 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.94.3](https://github.com/okou-ai/okou/compare/api-v2.94.2...api-v2.94.3) (2026-11-19)
+
+
+### Refactoring
+
+* **api:** retire legacy reward campaign orchestration ([#48939](https://github.com/okou-ai/okou/issues/48939)) ([d1739be](https://github.com/okou-ai/okou/commit/d1739bed31dcde34fead64d82e54489fda10549f))
+* **api:** share Teams launch context and delivery ([#48937](https://github.com/okou-ai/okou/issues/48937)) ([d972a61](https://github.com/okou-ai/okou/commit/d972a6163eca6ac35450d990345cfd33cc42ba82))
+
+
+### Performance Improvements
+
+* **api:** advance chat read cursors in one write ([#48932](https://github.com/okou-ai/okou/issues/48932)) ([39d40e3](https://github.com/okou-ai/okou/commit/39d40e3eaa0f20f87eaaeebd8df994d805ff3bcf))
+* **api:** defer codex subscription recovery until authorization completes ([#48935](https://github.com/okou-ai/okou/issues/48935)) ([ee65216](https://github.com/okou-ai/okou/commit/ee6521690304375a8a97480de0a506386c987360))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.90.2
+    * @okouai/core bumped to 8.854.5
+    * @okouai/db bumped to 2.51.1
+    * @okouai/pi-agent-runtime bumped to 1.52.5
+
 ## [2.94.2](https://github.com/okou-ai/okou/compare/api-v2.94.1...api-v2.94.2) (2026-11-19)
 
 
