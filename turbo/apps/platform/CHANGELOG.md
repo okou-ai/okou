@@ -13,6 +13,28 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1153.2](https://github.com/okou-ai/okou/compare/app-v0.1153.1...app-v0.1153.2) (2026-11-19)
+
+
+### Bug Fixes
+
+* let each suggestion decide where its custom direction goes ([#49274](https://github.com/okou-ai/okou/issues/49274)) ([8ee03b2](https://github.com/okou-ai/okou/commit/8ee03b20a05e80b4cd1059f8dd55b72ff85df347))
+* **platform:** redesign the browser input dialog ([#49272](https://github.com/okou-ai/okou/issues/49272)) ([9e40c6e](https://github.com/okou-ai/okou/commit/9e40c6e38102e657879bbfb5960dd8f68e980ab9))
+
+
+### Refactoring
+
+* remove expired deployment compatibility ([#49278](https://github.com/okou-ai/okou/issues/49278)) ([4338aee](https://github.com/okou-ai/okou/commit/4338aeeabfdb74ebee71a8e3c3c3862610b1262b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.93.1
+    * @okouai/core bumped to 8.856.1
+    * @okouai/ui bumped to 1.21.67
+
 ## [0.1153.1](https://github.com/okou-ai/okou/compare/app-v0.1153.0...app-v0.1153.1) (2026-11-19)
 
 

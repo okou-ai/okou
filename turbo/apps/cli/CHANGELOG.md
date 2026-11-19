@@ -1,5 +1,21 @@
 # Changelog
 
+## [10.34.11](https://github.com/okou-ai/okou/compare/cli-v10.34.10...cli-v10.34.11) (2026-11-19)
+
+
+### Bug Fixes
+
+* let each suggestion decide where its custom direction goes ([#49274](https://github.com/okou-ai/okou/issues/49274)) ([8ee03b2](https://github.com/okou-ai/okou/commit/8ee03b20a05e80b4cd1059f8dd55b72ff85df347))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.93.1
+    * @okouai/core bumped to 8.856.1
+    * @okouai/pi-agent-runtime bumped to 1.52.10
+
 ## [10.34.10](https://github.com/okou-ai/okou/compare/cli-v10.34.9...cli-v10.34.10) (2026-11-19)
 
 

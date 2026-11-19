@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.53.127](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.126...sandbox-firecracker-v0.53.127) (2026-11-19)
+
+
+### Refactoring
+
+* **sandbox-firecracker:** keep network pool ownership in the runtime ([#49276](https://github.com/okou-ai/okou/issues/49276)) ([cb720e1](https://github.com/okou-ai/okou/commit/cb720e139960a20d269f7371df0bff1f8b007e5a))
+
 ## [0.53.126](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.125...sandbox-firecracker-v0.53.126) (2026-11-19)
 
 ## [0.53.125](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.124...sandbox-firecracker-v0.53.125) (2026-11-19)
