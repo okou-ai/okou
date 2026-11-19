@@ -7,8 +7,8 @@ import { parseMessagePdfTree } from "../../lib/message-pdf/document.ts";
 import { generateMarkdownDocxBlob } from "../../lib/markdown-docx.ts";
 import { generateMessagePdfBlob } from "../../lib/message-pdf/index.ts";
 import { fetchResource } from "../../lib/resource-fetch.ts";
+import { triggerBlobDownload } from "../../views/okou-page/attachment-url.ts";
 import { attachmentDownloadSource$ } from "../attachment-download-source.ts";
-import { createObjectUrlResource } from "../object-url-resource.ts";
 
 const MAX_MARKDOWN_EXPORT_BYTES = 5 * 1024 * 1024;
 
@@ -22,11 +22,6 @@ interface MarkdownArtifactExportInput {
   readonly filename: string;
   readonly url: string;
   readonly format: MarkdownArtifactExportFormat;
-}
-
-export interface MarkdownArtifactExportResult {
-  readonly filename: string;
-  readonly href: string;
 }
 
 function exportFilename(
@@ -147,12 +142,12 @@ async function resolveImageUrls(
   return imageUrls;
 }
 
-export const generateMarkdownArtifactExport$ = command(
+export const downloadMarkdownArtifact$ = command(
   async (
     { set },
     input: MarkdownArtifactExportInput,
     signal: AbortSignal,
-  ): Promise<MarkdownArtifactExportResult> => {
+  ): Promise<void> => {
     signal.throwIfAborted();
     const resolveResource: ResourceResolver = (url, resourceSignal) => {
       return set(attachmentDownloadSource$, url, "app", resourceSignal);
@@ -179,9 +174,10 @@ export const generateMarkdownArtifactExport$ = command(
             baseUrl,
             signal,
           );
-    signal.throwIfAborted();
-    const filename = exportFilename(input.filename, input.format);
-    const resource = createObjectUrlResource(blob, signal);
-    return { filename, href: resource.url };
+    triggerBlobDownload(
+      blob,
+      exportFilename(input.filename, input.format),
+      signal,
+    );
   },
 );

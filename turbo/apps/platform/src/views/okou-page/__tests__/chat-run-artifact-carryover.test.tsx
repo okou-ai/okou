@@ -194,9 +194,9 @@ test("Show format download items and report conversion failures in a toast", asy
   });
 });
 
-test("Offer PDF and Word export actions in the Markdown artifact preview", async () => {
+test("Download a Word export after selecting it in the Markdown artifact preview", async () => {
   const markdownUrl = artifactUrl("generated-preview", "summary.md");
-  context.mocks.browser.blobDownload();
+  const browser = context.mocks.browser.blobDownload();
   context.mocks.browser.dedicatedWorker(() => {
     return Promise.resolve({ ok: true, blob: new Blob(["word"]) });
   });
@@ -243,15 +243,11 @@ test("Offer PDF and Word export actions in the Markdown artifact preview", async
   expect(within(docx).getByText("DOCX")).toBeInTheDocument();
   click(docx);
   await waitFor(() => {
-    expect(exportButton).not.toHaveAttribute("aria-busy");
+    expect(browser.downloads).toHaveLength(1);
   });
-  click(exportButton);
-  await waitFor(() => {
-    expect(menuItemNamed("Download as DOCX")).toHaveAttribute(
-      "download",
-      "summary.docx",
-    );
-  });
+  const [download] = browser.downloads;
+  expect(download?.filename).toBe("summary.docx");
+  await expect(download?.blob?.text()).resolves.toBe("word");
 });
 
 test("Expose an artifact referenced only by history from the main result actions", async () => {
