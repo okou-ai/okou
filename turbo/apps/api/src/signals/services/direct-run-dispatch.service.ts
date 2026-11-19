@@ -37,7 +37,9 @@ import { preparedRunnerReusePreference } from "./runner-reuse-preference";
 import { joinAll, settleIncludingAbort } from "../utils";
 import { recordRunContextSnapshot } from "./run-context-snapshot.service";
 
-const readDirectRunFleet$ = command(
+type PlacementPreference = Extract<RunnerPreference, { kind: "preference" }>;
+
+const readDirectRunCandidates$ = command(
   async ({ get }, input: AdmittedRunLaunch, signal: AbortSignal) => {
     signal.throwIfAborted();
     if (input.profile !== DEFAULT_RUNNER_PROFILE) {
@@ -57,6 +59,10 @@ const readDirectRunFleet$ = command(
         ),
       );
     signal.throwIfAborted();
+    const preference = preparedRunnerReusePreference(
+      input.reusePreparation,
+      input.createdAt,
+    );
     const candidates = rows.flatMap((row) => {
       if (
         row.runnerHostname === null ||
@@ -71,6 +77,13 @@ const readDirectRunFleet$ = command(
           runnerId: row.runnerId,
           heartbeatGeneration: row.heartbeatGeneration,
           hostname: row.runnerHostname,
+          preference:
+            preference.kind === "preference" &&
+            row.runnerId === preference.runnerIdentity.runnerId &&
+            row.heartbeatGeneration ===
+              preference.runnerIdentity.heartbeatGeneration
+              ? preference
+              : undefined,
           score: Math.max(
             0,
             Math.min(
@@ -85,7 +98,7 @@ const readDirectRunFleet$ = command(
         },
       ];
     });
-    // Shuffle first; stable sorting randomizes only candidates with equal headroom.
+    // Shuffle first so the stable sort breaks equal-priority, equal-headroom ties randomly.
     for (let i = candidates.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       const a = candidates[i],
@@ -95,34 +108,16 @@ const readDirectRunFleet$ = command(
         candidates[j] = a;
       }
     }
-    candidates.sort((a, b) => {
-      return b.score - a.score;
+    return candidates.sort((a, b) => {
+      const priority =
+        Number(b.preference !== undefined) - Number(a.preference !== undefined);
+      return priority || b.score - a.score;
     });
-    const preference = preparedRunnerReusePreference(
-      input.reusePreparation,
-      input.createdAt,
-    );
-    if (preference.kind === "preference") {
-      const index = candidates.findIndex((c) => {
-        return (
-          c.runnerId === preference.runnerIdentity.runnerId &&
-          c.heartbeatGeneration ===
-            preference.runnerIdentity.heartbeatGeneration
-        );
-      });
-      if (index > 0) {
-        const [preferred] = candidates.splice(index, 1);
-        if (preferred) {
-          candidates.unshift(preferred);
-        }
-      }
-    }
-    return { candidates, preference };
   },
 );
 
-type DirectRunFleet = Awaited<
-  ReturnType<(typeof readDirectRunFleet$)["write"]>
+type DirectRunCandidates = Awaited<
+  ReturnType<(typeof readDirectRunCandidates$)["write"]>
 >;
 const MAX_HOME_DEFERRAL_MS = 1000;
 const FINAL_HOME_DELIVERY_MARGIN_MS = 1000;
@@ -154,12 +149,12 @@ export const prepareDirectRunDispatch$ = command(
   ): Promise<DirectRunDispatchPreparation> => {
     signal.throwIfAborted();
     const prepared = await settleIncludingAbort(async () => {
-      const [publication, fleet] = await joinAll([
+      const [publication, candidates] = await joinAll([
         set(prepareDirectRun$, input, signal),
-        set(readDirectRunFleet$, input, signal),
+        set(readDirectRunCandidates$, input, signal),
       ]);
       signal.throwIfAborted();
-      return { input, ...publication, fleet };
+      return { input, ...publication, candidates };
     });
     signal.throwIfAborted();
     if (!prepared.ok) {
@@ -188,6 +183,14 @@ interface DeliveryWindow {
 }
 type DispatchEnvelope = output<typeof runnerDispatchEnvelopeSchema>;
 
+interface DispatchOffer {
+  readonly body: string;
+  readonly busyRetry?: {
+    readonly until: number;
+    readonly retryAtExpiry: boolean;
+  };
+}
+
 function remainingDelivery(window: DeliveryWindow): number {
   return Math.min(
     window.notAfter - now(),
@@ -195,32 +198,37 @@ function remainingDelivery(window: DeliveryWindow): number {
   );
 }
 
-function preferredHomeOffer(
+function createDispatchOffer(
   envelope: DispatchEnvelope,
   ordinaryBody: string,
-  preference: RunnerPreference,
-  preferredUntil: number,
+  preference: PlacementPreference | undefined,
   window: DeliveryWindow,
-): { body: string; waitUntil?: number } {
+): DispatchOffer {
+  if (!preference) {
+    return { body: ordinaryBody };
+  }
+  const expiresAt = Date.parse(preference.expiresAt);
+  const ordinaryOffer = {
+    body: ordinaryBody,
+    busyRetry: { until: expiresAt, retryAtExpiry: false },
+  };
   if (
-    preferredUntil <= 0 ||
-    preference.kind !== "preference" ||
     preference.tier !== "predecessorHome" ||
     preference.home.evidence !== "expected"
   ) {
-    return { body: ordinaryBody };
+    return ordinaryOffer;
   }
   const sentAt = now();
   const waitUntil = Math.floor(
     Math.min(
       sentAt + MAX_HOME_DEFERRAL_MS,
       sentAt + remainingDelivery(window) - FINAL_HOME_DELIVERY_MARGIN_MS,
-      preferredUntil,
+      expiresAt,
       Date.parse(preference.home.homeWaitUntil),
     ),
   );
   if (waitUntil <= sentAt) {
-    return { body: ordinaryBody };
+    return ordinaryOffer;
   }
   const body = JSON.stringify({
     ...envelope,
@@ -230,34 +238,8 @@ function preferredHomeOffer(
     },
   });
   return Buffer.byteLength(body, "utf8") <= RUNNER_DISPATCH_MAX_BODY_BYTES
-    ? { body, waitUntil }
-    : { body: ordinaryBody };
-}
-
-function busyRetry(
-  remaining: number,
-  homeWaitUntil: number | undefined,
-  finalHomeAttempt: boolean,
-): "backoff" | "final" | "stop" {
-  if (finalHomeAttempt) {
-    return "stop";
-  }
-  if (remaining > 0) {
-    return "backoff";
-  }
-  // A definite busy can arrive after the receiver's deferral deadline.
-  return homeWaitUntil === undefined ? "stop" : "final";
-}
-
-function preferredRouteDeadline(
-  preference: RunnerPreference,
-  target: DirectRunTarget,
-): number {
-  return preference.kind === "preference" &&
-    preference.runnerIdentity.runnerId === target.runnerId &&
-    preference.runnerIdentity.heartbeatGeneration === target.heartbeatGeneration
-    ? Date.parse(preference.expiresAt)
-    : 0;
+    ? { body, busyRetry: { until: waitUntil, retryAtExpiry: true } }
+    : ordinaryOffer;
 }
 
 function isCurrentOwner(
@@ -285,41 +267,37 @@ const offerToProcess$ = command(
   async (
     { set },
     args: {
-      readonly target: DirectRunTarget;
+      readonly target: DirectRunCandidates[number];
       readonly runId: string;
       readonly body: string;
       readonly envelope: DispatchEnvelope;
-      readonly preference: RunnerPreference;
       readonly token: string;
       readonly window: DeliveryWindow;
-      readonly preferredUntil: number;
     },
     signal: AbortSignal,
   ) => {
     signal.throwIfAborted();
     let uncertain = false;
     let retry = 0;
-    let offer: ReturnType<typeof preferredHomeOffer> | undefined;
+    let offer: DispatchOffer | undefined;
     for (;;) {
       const state = await set(readDirectRunState$, args.runId, signal);
       if (!isCurrentOwner(state, args.target)) {
         return uncertain ? ("uncertain" as const) : ("stopped" as const);
       }
-      offer ??= preferredHomeOffer(
+      offer ??= createDispatchOffer(
         args.envelope,
         args.body,
-        args.preference,
-        args.preferredUntil,
+        args.target.preference,
         args.window,
       );
       const remaining = remainingDelivery(args.window);
       if (remaining <= 0) {
         return uncertain ? ("uncertain" as const) : ("not-accepted" as const);
       }
-      const finalHomeAttempt =
-        offer.waitUntil !== undefined && now() >= offer.waitUntil;
-      const earlierUncertainty: boolean = uncertain;
-      uncertain = true;
+      const { busyRetry } = offer;
+      const finalAttempt =
+        busyRetry?.retryAtExpiry === true && now() >= busyRetry.until;
       const observation = await postRunnerDispatch(
         {
           target: args.target,
@@ -336,26 +314,24 @@ const offerToProcess$ = command(
       if (observation === "rejected") {
         return "not-accepted" as const;
       }
-      if (observation === "busy" || observation === "not-delivered") {
-        uncertain = earlierUncertainty;
-      }
-      const preferredRemaining =
-        (offer.waitUntil ?? args.preferredUntil) - now();
+      uncertain ||= observation === "unknown";
+      let busyRemaining = Infinity;
       if (!uncertain) {
-        const retryPolicy =
-          observation === "busy"
-            ? busyRetry(preferredRemaining, offer.waitUntil, finalHomeAttempt)
-            : "stop";
-        if (retryPolicy === "stop") {
+        if (observation !== "busy" || !busyRetry || finalAttempt) {
           return "not-accepted" as const;
         }
-        if (retryPolicy === "final") {
+        busyRemaining = busyRetry.until - now();
+        if (busyRemaining <= 0) {
+          if (!busyRetry.retryAtExpiry) {
+            return "not-accepted" as const;
+          }
+          // A busy response sent during deferral can arrive after it expires.
           continue;
         }
       }
       const wait = Math.min(
         remainingDelivery(args.window),
-        uncertain ? Infinity : preferredRemaining,
+        busyRemaining,
         Math.min(2000, 100 * 2 ** Math.min(retry++, 5)) * (1 + Math.random()),
       );
       if (wait <= 0) {
@@ -369,7 +345,7 @@ const offerToProcess$ = command(
 interface PreparedRunDelivery {
   readonly input: AdmittedRunLaunch;
   readonly executionContext: ExecutionContext;
-  readonly fleet: DirectRunFleet;
+  readonly candidates: DirectRunCandidates;
   readonly contextSnapshot: Omit<
     Parameters<typeof recordRunContextSnapshot>[0],
     "recordedAt"
@@ -383,7 +359,7 @@ export const dispatchPreparedRun$ = command(
     let owner: DirectRunTarget | null = null;
     let uncertain = false;
     const outcome = await settleIncludingAbort(async () => {
-      const { executionContext, fleet } = args;
+      const { executionContext, candidates } = args;
       // A queued input's latency marker can originate in an earlier invocation.
       const notAfter = Math.min(
         now() + 30_000,
@@ -396,7 +372,7 @@ export const dispatchPreparedRun$ = command(
         monotonicDeadline: performance.now() + Math.max(0, notAfter - now()),
       };
       const token = `${OFFICIAL_RUNNER_TOKEN_PREFIX}${env("OFFICIAL_RUNNER_SECRET")}`;
-      for (const target of fleet.candidates) {
+      for (const target of candidates) {
         if (remainingDelivery(window) <= 0) {
           break;
         }
@@ -433,22 +409,11 @@ export const dispatchPreparedRun$ = command(
             recordedAt: nowDate(),
           });
         }
-        const preference = fleet.preference;
-        const preferredUntil = preferredRouteDeadline(preference, target);
         // An exception after entering this command cannot prove non-acceptance.
         uncertain = true;
         const delivery = await set(
           offerToProcess$,
-          {
-            target,
-            runId: input.run.id,
-            body,
-            envelope,
-            preference,
-            token,
-            window,
-            preferredUntil,
-          },
+          { target, runId: input.run.id, body, envelope, token, window },
           signal,
         );
         uncertain = delivery === "uncertain";
