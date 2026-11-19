@@ -226,7 +226,6 @@ jq -e '
     .with["r2-account-id"] == "${{ vars.R2_ACCOUNT_ID }}" and
     .with["r2-bucket-name"] == "${{ vars.R2_USER_STORAGES_BUCKET_NAME }}"
   ) and
-  any(.architecture.jobs.compile.steps[]; .run == ".github/scripts/runner/runner-binary-build/build.sh build") and
   any(.architecture.jobs.compile.steps[];
     .run == ".github/scripts/runner/runner-binary-transport.sh publish" and
     .env.EXPECTED_BINARY_INPUT_DIGEST == "${{ steps.build.outputs.binary-input-digest }}" and
@@ -286,8 +285,9 @@ jq -e '
   (.architecture.jobs.compile | has("needs") | not) and
   .architecture.jobs.compile.strategy["fail-fast"] == false and
   .architecture.jobs.compile.permissions == {actions: "read", contents: "read"} and
-  ($build < $fresh and $fresh < $transport and $transport < $shadow and $shadow < $artifact and $artifact < $upload) and
-  all([$fresh, $transport, $shadow, $artifact][];
+  ($build != null and $build < $fresh and $fresh < $transport and $transport < $shadow and $shadow < $artifact and $artifact < $upload) and
+  $steps[$build].run == ".github/scripts/runner/runner-binary-build/build.sh build" and
+  all([$build, $fresh, $transport, $shadow, $artifact][];
     . as $index | ($steps[$index] | has("if") | not) and
     ($steps[$index] | has("continue-on-error") | not)
   ) and
