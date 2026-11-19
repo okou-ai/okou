@@ -4,14 +4,30 @@ import {
   runChatActionCallback$,
   type ChatActionCallback,
 } from "../chat-page/action-callback.ts";
-import { pageSignal$ } from "../page-signal.ts";
+import { pageVersion$ } from "../page-signal.ts";
 import { searchParams$ } from "../route.ts";
 
-const completedCallback$ = state<{
-  readonly page: AbortSignal;
+interface CompletedCallback {
   readonly agentId: string;
   readonly callback: ChatActionCallback;
-} | null>(null);
+}
+
+const pageCompletedCallback$ = computed((get) => {
+  get(pageVersion$);
+  return state<CompletedCallback | null>(null);
+});
+
+function completedSameCallback(
+  previous: CompletedCallback | null,
+  agentId: string,
+  callback: ChatActionCallback,
+): boolean {
+  return (
+    previous?.agentId === agentId &&
+    previous.callback.threadId === callback.threadId &&
+    previous.callback.callbackPrompt === callback.callbackPrompt
+  );
+}
 
 export const pendingDirectedConnectorCallback$ = computed((get) => {
   const callback = get(routeChatActionCallback$);
@@ -19,12 +35,10 @@ export const pendingDirectedConnectorCallback$ = computed((get) => {
   if (!agentId || !callback.threadId || !callback.callbackPrompt?.trim()) {
     return false;
   }
-  const previous = get(completedCallback$);
-  return (
-    previous?.page !== get(pageSignal$) ||
-    previous.agentId !== agentId ||
-    previous.callback.threadId !== callback.threadId ||
-    previous.callback.callbackPrompt !== callback.callbackPrompt
+  return !completedSameCallback(
+    get(get(pageCompletedCallback$)),
+    agentId,
+    callback,
   );
 });
 
@@ -37,7 +51,10 @@ export const completeDirectedConnectorAction$ = command(
     signal: AbortSignal,
   ) => {
     if (agentId && callback.callbackPrompt && callback.threadId) {
-      const page = get(pageSignal$);
+      const completedCallback$ = get(pageCompletedCallback$);
+      if (completedSameCallback(get(completedCallback$), agentId, callback)) {
+        return;
+      }
       await set(
         runChatActionCallback$,
         {
@@ -48,7 +65,7 @@ export const completeDirectedConnectorAction$ = command(
         signal,
       );
       signal.throwIfAborted();
-      set(completedCallback$, { page, agentId, callback });
+      set(completedCallback$, { agentId, callback });
     }
   },
 );

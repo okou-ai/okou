@@ -957,13 +957,17 @@ test("Continue from an existing connector authorization link using the saved acc
     path: `/connectors/stripe/authorize?agentId=${AGENT_ID}&threadId=${threadId}&callbackPrompt=${encodeURIComponent(callbackPrompt)}`,
   });
 
-  click(await screen.findByRole("button", { name: "Continue" }));
+  click(
+    await waitFor(() => {
+      return getButtonByText("Continue");
+    }),
+  );
   await waitFor(() => {
     expect(continuations).toStrictEqual([
       { version: 1, parts: [{ type: "text", text: callbackPrompt }] },
     ]);
     expect(screen.getByText("Public Stripe connected")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Continue" })).toBeNull();
+    expect(screen.queryByText("Continue")).toBeNull();
   });
 });
 
@@ -1041,7 +1045,7 @@ test("Connect a no-auth connector and continue the originating chat", async () =
     expect(continuationPrompt).toBe(callbackPrompt);
   });
   expect(visibleAgentAuthorizationUpdates).toBe(0);
-  expect(screen.queryByRole("button", { name: "Continue" })).toBeNull();
+  expect(screen.queryByText("Continue")).toBeNull();
   expect(
     screen.queryByRole("dialog", { name: "Public Stripe" }),
   ).not.toBeInTheDocument();
