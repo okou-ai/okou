@@ -3533,7 +3533,7 @@
         "copySuccess": "फ़ोन नंबर कॉपी किया गया",
         "createCodeError": "कनेक्शन कोड नहीं बनाया जा सका।",
         "creatingCode": "कनेक्शन कोड बनाया जा रहा है…",
-        "description": "{{assistantName}} तक टेक्स्ट-संदेश पहुंच",
+        "description": "अपने iPhone से {{assistantName}} को संदेश भेजें।",
         "openMessages": "मैसेज खोलें",
         "options": "फ़ोन विकल्प",
         "phoneLabel": "फ़ोन",
@@ -3638,7 +3638,7 @@
         "reviewGuide": "समीक्षा मार्गदर्शिका",
         "reviewGuideDescription": "इस Feishu बॉट के लिए पूर्ण सेटअप चरणों की समीक्षा करें।",
         "reviewGuideTitle": "Feishu समीक्षा मार्गदर्शिका",
-        "routeDescription": "Feishu संदेशों को एजेंटों तक रूट करें",
+        "routeDescription": "Feishu पर Okou को संदेश भेजें।",
         "selectAgent": "एक एजेंट चुनें",
         "setupIncomplete": "सेटअप अधूरा",
         "steps": {
@@ -3775,7 +3775,7 @@
         "reviewGuide": "समीक्षा मार्गदर्शिका",
         "reviewGuideDescription": "इस Lark बॉट के लिए पूर्ण सेटअप चरणों की समीक्षा करें।",
         "reviewGuideTitle": "Lark समीक्षा मार्गदर्शिका",
-        "routeDescription": "Lark संदेशों को एजेंटों तक रूट करें",
+        "routeDescription": "Lark पर Okou को संदेश भेजें।",
         "selectAgent": "एक एजेंट चुनें",
         "setupIncomplete": "सेटअप अधूरा",
         "steps": {
@@ -7168,7 +7168,7 @@
       "codeInstructions": "जिस ईमेल पते को जोड़ना है, उससे यह कोड Okou को भेजें। इसे विषय या संदेश की पहली पंक्ति में लिखें।",
       "connected": "ईमेल कनेक्ट हो गया",
       "deleteAria": "{{email}} हटाएँ",
-      "description": "ईमेल पर अपने Okou से बात करें",
+      "description": "Okou को ईमेल भेजें और अपने इनबॉक्स में जवाब पाएँ।",
       "emailAddress": "ईमेल पता",
       "healthNotice": "HIPAA के तहत आने वाली मरीज़ों की जानकारी के लिए इस इंटीग्रेशन का उपयोग न करें।",
       "invalidLink": "यह कनेक्शन लिंक अमान्य है। Okou को नया ईमेल भेजें।",
@@ -7191,8 +7191,7 @@
     "feishuConnected": "Feishu सफलतापूर्वक कनेक्ट हुआ",
     "github": {
       "adminInstall": "किसी संगठन एडमिन से GitHub ऐप इंस्टॉल करने के लिए कहें",
-      "description": "GitHub इवेंट से वर्कफ़्लो ऑटोमेशन ट्रिगर करें",
-      "install": "GitHub ऐप इंस्टॉल करें",
+      "description": "पुल रिक्वेस्ट खुलने पर वर्कफ़्लो शुरू करें।",
       "title": "GitHub"
     },
     "header": {
@@ -7201,7 +7200,7 @@
     },
     "slack": {
       "adminInstall": "अपने व्यवस्थापक से Slack एकीकरण स्थापित करने के लिए कहें",
-      "description": "टीम संचार और सहयोग",
+      "description": "Slack चैनल में Okou को मेंशन करें।",
       "install": "Slack पर स्थापित करें",
       "permissionsUpdated": "Slack अनुमतियाँ अद्यतन कर दी गई हैं",
       "title": "Slack",
@@ -7209,8 +7208,8 @@
       "uninstallTitle": "Slack एकीकरण अनइंस्टॉल करें?"
     },
     "teams": {
-      "connectAccount": "सेटअप पूरा करने के लिए अपना Microsoft खाता कनेक्ट करें",
-      "description": "टीम संचार और सहयोग",
+      "connectAccount": "Teams पर Okou को संदेश भेजें।",
+      "description": "Teams पर Okou को संदेश भेजें।",
       "disconnect": "Microsoft Teams को डिस्कनेक्ट करें",
       "install": "टीमों में स्थापित करें",
       "moreOptions": "अधिक Microsoft Teams विकल्प",
@@ -7221,7 +7220,7 @@
       "uninstallTitle": "Microsoft Teams एकीकरण अनइंस्टॉल करें?"
     },
     "telegram": {
-      "description": "एजेंटों को Telegram संदेश रूट करें",
+      "description": "Telegram पर Okou को संदेश भेजें।",
       "title": "Telegram"
     },
     "wechat": {
@@ -7231,7 +7230,7 @@
       "connect": "कनेक्ट करें",
       "connected": "कनेक्टेड",
       "creating": "QR कोड बनाया जा रहा है…",
-      "description": "WeChat पर अपने एजेंट से चैट करें।",
+      "description": "WeChat पर Okou को संदेश भेजें।",
       "disconnect": "डिस्कनेक्ट करें",
       "expired": "इस QR कोड की समय सीमा समाप्त हो गई है। नया बनाएँ।",
       "failed": "WeChat से कनेक्ट नहीं हो सका।",
@@ -7259,7 +7258,7 @@
       "connect": "WhatsApp कनेक्ट करें",
       "connectDescription": "अपने एजेंट से चैट करने के लिए अपना WhatsApp खाता {{brandName}} से जोड़ें।",
       "connected": "WhatsApp कनेक्ट हो गया",
-      "description": "WhatsApp से सीधे Okou के साथ चैट करें",
+      "description": "WhatsApp पर Okou को संदेश भेजें।",
       "disconnected": "WhatsApp डिस्कनेक्ट हो गया",
       "expires": "यह कोड 10 मिनट में समाप्त हो जाएगा। कनेक्शन की पुष्टि देखने के लिए यह पेज खुला रखें।",
       "instructions": "WhatsApp खोलें या QR कोड स्कैन करें, फिर अपना खाता लिंक करने के लिए कनेक्शन कोड भेजें।",

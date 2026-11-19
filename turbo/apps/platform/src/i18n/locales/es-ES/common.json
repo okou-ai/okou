@@ -3588,7 +3588,7 @@
         "copySuccess": "Número de teléfono copiado",
         "createCodeError": "No se pudo crear un código de conexión.",
         "creatingCode": "Creando código de conexión…",
-        "description": "Acceso por mensajes de texto a {{assistantName}}",
+        "description": "Envía un mensaje a {{assistantName}} desde tu iPhone.",
         "openMessages": "Abrir Mensajes",
         "options": "Opciones de teléfono",
         "phoneLabel": "Teléfono",
@@ -3693,7 +3693,7 @@
         "reviewGuide": "Guía para la revisión",
         "reviewGuideDescription": "Revisa los pasos de configuración completados para este bot de Feishu.",
         "reviewGuideTitle": "Guía de revisión de Feishu",
-        "routeDescription": "Dirige los mensajes de Feishu a los agentes",
+        "routeDescription": "Escribe a Okou en Feishu.",
         "selectAgent": "Selecciona un agente",
         "setupIncomplete": "Configuración incompleta",
         "steps": {
@@ -3830,7 +3830,7 @@
         "reviewGuide": "Guía para la revisión",
         "reviewGuideDescription": "Revisa los pasos de configuración completados para este bot de Lark.",
         "reviewGuideTitle": "Guía de revisión de Lark",
-        "routeDescription": "Dirige los mensajes de Lark a los agentes",
+        "routeDescription": "Escribe a Okou en Lark.",
         "selectAgent": "Selecciona un agente",
         "setupIncomplete": "Configuración incompleta",
         "steps": {
@@ -7246,7 +7246,7 @@
       "codeInstructions": "Envía este código a Okou desde el correo que quieres añadir. Ponlo en el asunto o en la primera línea del mensaje.",
       "connected": "Correo conectado",
       "deleteAria": "Eliminar {{email}}",
-      "description": "Habla con tu Okou por email",
+      "description": "Escribe a Okou por correo y recibe la respuesta en tu bandeja de entrada.",
       "emailAddress": "Correo electrónico",
       "healthNotice": "No uses esta integración para información de pacientes regulada por HIPAA.",
       "invalidLink": "Este enlace de conexión no es válido. Envía un nuevo correo a Okou.",
@@ -7269,8 +7269,7 @@
     "feishuConnected": "Feishu conectado con éxito",
     "github": {
       "adminInstall": "Pide a un administrador de la organización que instale la aplicación de GitHub",
-      "description": "Activa automatizaciones de flujo de trabajo con eventos de GitHub",
-      "install": "Instalar la aplicación de GitHub",
+      "description": "Inicia un flujo de trabajo cuando se abra un pull request.",
       "title": "GitHub"
     },
     "header": {
@@ -7279,7 +7278,7 @@
     },
     "slack": {
       "adminInstall": "Pide a tu administrador que instale la integración de Slack",
-      "description": "Comunicación y colaboración en equipo",
+      "description": "Menciona a Okou en un canal de Slack.",
       "install": "Instalar en Slack",
       "permissionsUpdated": "Los permisos de Slack se han actualizado",
       "title": "Slack",
@@ -7287,8 +7286,8 @@
       "uninstallTitle": "¿Desinstalar la integración de Slack?"
     },
     "teams": {
-      "connectAccount": "Conecta tu cuenta de Microsoft para terminar la configuración",
-      "description": "Comunicación y colaboración en equipo",
+      "connectAccount": "Escribe a Okou en Teams.",
+      "description": "Escribe a Okou en Teams.",
       "disconnect": "Desconectar Microsoft Teams",
       "install": "Instalar en Teams",
       "moreOptions": "Más opciones de Microsoft Teams",
@@ -7299,7 +7298,7 @@
       "uninstallTitle": "¿Desinstalar la integración de Microsoft Teams?"
     },
     "telegram": {
-      "description": "Dirige los mensajes de Telegram a los agentes",
+      "description": "Escribe a Okou en Telegram.",
       "title": "Telegram"
     },
     "wechat": {
@@ -7309,7 +7308,7 @@
       "connect": "Conectar",
       "connected": "Conectado",
       "creating": "Creando código QR…",
-      "description": "Habla con tu agente en WeChat.",
+      "description": "Escribe a Okou en WeChat.",
       "disconnect": "Desconectar",
       "expired": "Este código QR ha caducado. Crea uno nuevo.",
       "failed": "No se pudo conectar con WeChat.",
@@ -7337,7 +7336,7 @@
       "connect": "Conectar WhatsApp",
       "connectDescription": "Conecta tu cuenta de WhatsApp a {{brandName}} para hablar con tu agente.",
       "connected": "WhatsApp conectado",
-      "description": "Chatea con Okou directamente desde WhatsApp",
+      "description": "Escribe a Okou en WhatsApp.",
       "disconnected": "WhatsApp desconectado",
       "expires": "Este código caduca en 10 minutos. Mantén esta página abierta para ver cuándo se conecta tu cuenta.",
       "instructions": "Abre WhatsApp o escanea el código QR y envía el código de conexión para vincular tu cuenta.",

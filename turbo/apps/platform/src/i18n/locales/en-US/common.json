@@ -3531,7 +3531,7 @@
         "copySuccess": "Phone number copied",
         "createCodeError": "Couldn't create a connection code.",
         "creatingCode": "Creating connection code…",
-        "description": "Text-message access to {{assistantName}}",
+        "description": "Text {{assistantName}} from your iPhone.",
         "openMessages": "Open Messages",
         "options": "Phone options",
         "phoneLabel": "Phone",
@@ -3636,7 +3636,7 @@
         "reviewGuide": "Review guide",
         "reviewGuideDescription": "Review the completed setup steps for this Feishu bot.",
         "reviewGuideTitle": "Feishu review guide",
-        "routeDescription": "Route Feishu messages to agents",
+        "routeDescription": "Message Okou in Feishu.",
         "selectAgent": "Select an agent",
         "setupIncomplete": "Setup incomplete",
         "steps": {
@@ -3773,7 +3773,7 @@
         "reviewGuide": "Review guide",
         "reviewGuideDescription": "Review the completed setup steps for this Lark bot.",
         "reviewGuideTitle": "Lark review guide",
-        "routeDescription": "Route Lark messages to agents",
+        "routeDescription": "Message Okou in Lark.",
         "selectAgent": "Select an agent",
         "setupIncomplete": "Setup incomplete",
         "steps": {
@@ -7166,7 +7166,7 @@
       "codeInstructions": "Send this code to Okou from the email address you want to add. Use it as the subject or the first line of your message.",
       "connected": "Email connected",
       "deleteAria": "Delete {{email}}",
-      "description": "Chat with your Okou by email",
+      "description": "Email Okou and get a reply in your inbox.",
       "emailAddress": "Email address",
       "healthNotice": "Do not use this integration for HIPAA-regulated patient information.",
       "invalidLink": "This connection link is invalid. Send a new email to Okou.",
@@ -7189,8 +7189,7 @@
     "feishuConnected": "Feishu connected successfully",
     "github": {
       "adminInstall": "Ask an organization admin to install the GitHub App",
-      "description": "Trigger workflow automations from GitHub events",
-      "install": "Install GitHub App",
+      "description": "Start a workflow when a pull request opens.",
       "title": "GitHub"
     },
     "header": {
@@ -7199,7 +7198,7 @@
     },
     "slack": {
       "adminInstall": "Ask your admin to install the Slack integration",
-      "description": "Team communication and collaboration",
+      "description": "Mention Okou in a Slack channel.",
       "install": "Install to Slack",
       "permissionsUpdated": "Slack permissions have been updated",
       "title": "Slack",
@@ -7207,8 +7206,8 @@
       "uninstallTitle": "Uninstall Slack integration?"
     },
     "teams": {
-      "connectAccount": "Connect your Microsoft account to finish setup",
-      "description": "Team communication and collaboration",
+      "connectAccount": "Message Okou in Teams.",
+      "description": "Message Okou in Teams.",
       "disconnect": "Disconnect Microsoft Teams",
       "install": "Install in Teams",
       "moreOptions": "More Microsoft Teams options",
@@ -7219,7 +7218,7 @@
       "uninstallTitle": "Uninstall Microsoft Teams integration?"
     },
     "telegram": {
-      "description": "Route Telegram messages to agents",
+      "description": "Message Okou in Telegram.",
       "title": "Telegram"
     },
     "wechat": {
@@ -7229,7 +7228,7 @@
       "connect": "Connect",
       "connected": "Connected",
       "creating": "Creating QR code…",
-      "description": "Chat with your agent in WeChat.",
+      "description": "Message Okou in WeChat.",
       "disconnect": "Disconnect",
       "expired": "This QR code expired. Create a new one.",
       "failed": "Could not connect to WeChat.",
@@ -7257,7 +7256,7 @@
       "connect": "Connect WhatsApp",
       "connectDescription": "Link your WhatsApp account to {{brandName}} to chat with your agent.",
       "connected": "WhatsApp connected",
-      "description": "Chat with Okou directly from WhatsApp",
+      "description": "Message Okou in WhatsApp.",
       "disconnected": "WhatsApp disconnected",
       "expires": "This code expires in 10 minutes. Keep this page open to see when you are connected.",
       "instructions": "Open WhatsApp or scan the QR code, then send the connection code to link your account.",

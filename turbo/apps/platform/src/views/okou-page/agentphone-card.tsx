@@ -82,7 +82,7 @@ function AgentPhoneCardActions({
           type="button"
           variant="quiet"
           size="icon-xs"
-          className="shrink-0"
+          className="shrink-0 rounded-md border border-border/60"
           aria-label={t(($) => {
             return $.connectors.providerSettings.agentphone.connectAria;
           })}

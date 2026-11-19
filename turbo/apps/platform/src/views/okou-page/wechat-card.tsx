@@ -104,7 +104,7 @@ export function WechatCard() {
                       showTooltip
                       variant="quiet"
                       size="icon-xs"
-                      className="shrink-0"
+                      className="shrink-0 rounded-md border border-border/60"
                       aria-label={
                         status?.status === "reconnect_required"
                           ? t(($) => {

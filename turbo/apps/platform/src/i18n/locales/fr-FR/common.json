@@ -3588,7 +3588,7 @@
         "copySuccess": "Numéro de téléphone copié",
         "createCodeError": "Impossible de créer un code de connexion.",
         "creatingCode": "Création du code de connexion…",
-        "description": "Accès aux messages texte pour {{assistantName}}",
+        "description": "Envoyez un message à {{assistantName}} depuis votre iPhone.",
         "openMessages": "Ouvrir Messages",
         "options": "Options de téléphone",
         "phoneLabel": "Téléphone",
@@ -3693,7 +3693,7 @@
         "reviewGuide": "Guide de révision",
         "reviewGuideDescription": "Passez en revue les étapes de configuration terminées pour ce bot Feishu.",
         "reviewGuideTitle": "Guide de révision Feishu",
-        "routeDescription": "Acheminer les messages Feishu vers les agents",
+        "routeDescription": "Envoyez un message à Okou sur Feishu.",
         "selectAgent": "Sélectionner un agent",
         "setupIncomplete": "Configuration incomplète",
         "steps": {
@@ -3830,7 +3830,7 @@
         "reviewGuide": "Guide de révision",
         "reviewGuideDescription": "Passez en revue les étapes de configuration terminées pour ce bot Lark.",
         "reviewGuideTitle": "Guide de révision Lark",
-        "routeDescription": "Acheminer les messages Lark vers les agents",
+        "routeDescription": "Envoyez un message à Okou sur Lark.",
         "selectAgent": "Sélectionner un agent",
         "setupIncomplete": "Configuration incomplète",
         "steps": {
@@ -7246,7 +7246,7 @@
       "codeInstructions": "Envoyez ce code à Okou depuis l’adresse à ajouter. Placez-le dans l’objet ou sur la première ligne du message.",
       "connected": "E-mail connecté",
       "deleteAria": "Supprimer {{email}}",
-      "description": "Discutez avec votre Okou par e-mail",
+      "description": "Écrivez à Okou par e-mail pour recevoir sa réponse dans votre boîte mail.",
       "emailAddress": "Adresse e-mail",
       "healthNotice": "N’utilisez pas cette intégration pour des informations de patients soumises à HIPAA.",
       "invalidLink": "Ce lien de connexion est invalide. Envoyez un nouvel e-mail à Okou.",
@@ -7269,8 +7269,7 @@
     "feishuConnected": "Feishu connecté avec succès",
     "github": {
       "adminInstall": "Demandez à un administrateur de l’organisation d’installer l’application GitHub",
-      "description": "Déclenchez des automatisations de workflow à partir d’événements GitHub",
-      "install": "Installer l’application GitHub",
+      "description": "Lancez un workflow à l’ouverture d’une pull request.",
       "title": "GitHub"
     },
     "header": {
@@ -7279,7 +7278,7 @@
     },
     "slack": {
       "adminInstall": "Demandez à votre administrateur d'installer l'intégration Slack",
-      "description": "Communication et collaboration d'équipe",
+      "description": "Mentionnez Okou dans un canal Slack.",
       "install": "Installer sur Slack",
       "permissionsUpdated": "Les permissions Slack ont été mises à jour",
       "title": "Slack",
@@ -7287,8 +7286,8 @@
       "uninstallTitle": "Désinstaller l'intégration Slack ?"
     },
     "teams": {
-      "connectAccount": "Connectez votre compte Microsoft pour terminer la configuration",
-      "description": "Communication et collaboration d'équipe",
+      "connectAccount": "Envoyez un message à Okou sur Teams.",
+      "description": "Envoyez un message à Okou sur Teams.",
       "disconnect": "Déconnecter Microsoft Teams",
       "install": "Installer dans Teams",
       "moreOptions": "Plus d'options Microsoft Teams",
@@ -7299,7 +7298,7 @@
       "uninstallTitle": "Désinstaller l’intégration de Microsoft Teams ?"
     },
     "telegram": {
-      "description": "Acheminer les messages Telegram vers les agents",
+      "description": "Envoyez un message à Okou sur Telegram.",
       "title": "Telegram"
     },
     "wechat": {
@@ -7309,7 +7308,7 @@
       "connect": "Connecter",
       "connected": "Connecté",
       "creating": "Création du code QR…",
-      "description": "Discutez avec votre agent dans WeChat.",
+      "description": "Envoyez un message à Okou sur WeChat.",
       "disconnect": "Déconnecter",
       "expired": "Ce code QR a expiré. Créez-en un nouveau.",
       "failed": "Impossible de se connecter à WeChat.",
@@ -7337,7 +7336,7 @@
       "connect": "Connecter WhatsApp",
       "connectDescription": "Connectez votre compte WhatsApp à {{brandName}} pour discuter avec votre agent.",
       "connected": "WhatsApp connecté",
-      "description": "Discutez avec Okou directement sur WhatsApp",
+      "description": "Envoyez un message à Okou sur WhatsApp.",
       "disconnected": "WhatsApp déconnecté",
       "expires": "Ce code expire dans 10 minutes. Gardez cette page ouverte pour voir la confirmation de connexion.",
       "instructions": "Ouvrez WhatsApp ou scannez le code QR, puis envoyez le code de connexion pour associer votre compte.",

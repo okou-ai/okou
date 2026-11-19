@@ -1193,7 +1193,9 @@ export function FeishuCard({
                       className={buttonVariants({
                         variant: "quiet",
                         size: "icon-xs",
-                        className: "shrink-0",
+                        className: connected
+                          ? "shrink-0"
+                          : "shrink-0 rounded-md border border-border/60",
                       })}
                       aria-hidden="true"
                     >

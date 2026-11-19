@@ -293,7 +293,7 @@ test("The phone card describes messaging and the connect dialog displays the des
   const phoneCard = await waitFor(() => {
     return getIntegrationCard("Phone");
   });
-  expect(phoneCard).toHaveTextContent("Text-message access to Okou");
+  expect(phoneCard).toHaveTextContent("Text Okou from your iPhone.");
   expect(phoneCard).not.toHaveTextContent("+1 (314) 438-6568");
   click(getAction("button", "Connect phone", phoneCard));
   const dialog = await screen.findByRole("dialog", {
@@ -333,7 +333,7 @@ test("A user connects AgentPhone with a prefilled one-time code", async () => {
   const phoneCard = await waitFor(() => {
     return getIntegrationCard("Phone");
   });
-  expect(phoneCard).toHaveTextContent("Text-message access to Okou");
+  expect(phoneCard).toHaveTextContent("Text Okou from your iPhone.");
   click(getAction("button", "Connect phone", phoneCard));
 
   const dialog = await screen.findByRole("dialog", {
@@ -404,9 +404,7 @@ test("An admin can begin Microsoft Teams installation", async () => {
     return getIntegrationCard("Microsoft Teams");
   });
   const install = getAction("button", "Connect", teamsCard);
-  expect(
-    screen.getByText("Connect your Microsoft account to finish setup"),
-  ).toBeInTheDocument();
+  expect(screen.getByText("Message Okou in Teams.")).toBeInTheDocument();
 
   click(install);
 

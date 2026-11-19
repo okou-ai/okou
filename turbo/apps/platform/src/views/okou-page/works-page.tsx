@@ -159,7 +159,7 @@ function ProviderCardActions({
           data-testid={needsInstallation ? installTestId : connectTestId}
           variant="quiet"
           size="icon-xs"
-          className="shrink-0"
+          className="shrink-0 rounded-md border border-border/60"
           aria-label={t(($) => {
             return $.works.actions.connect;
           })}
@@ -785,7 +785,7 @@ function GithubCard() {
                         })}
                         className={cn(
                           buttonVariants({ variant: "quiet", size: "icon-xs" }),
-                          "shrink-0",
+                          "shrink-0 rounded-md border border-border/60",
                         )}
                       >
                         <Link2 size={16} aria-hidden="true" />
@@ -807,7 +807,7 @@ function GithubCard() {
                 type="button"
                 variant="quiet"
                 size="icon-xs"
-                className="shrink-0"
+                className="shrink-0 rounded-md border border-border/60"
                 aria-label={t(($) => {
                   return $.works.actions.connect;
                 })}
@@ -968,7 +968,7 @@ function TelegramCard() {
                 data-testid="telegram-connect-button"
                 variant="quiet"
                 size="icon-xs"
-                className="shrink-0"
+                className="shrink-0 rounded-md border border-border/60"
                 aria-label={t(($) => {
                   return $.works.actions.connect;
                 })}

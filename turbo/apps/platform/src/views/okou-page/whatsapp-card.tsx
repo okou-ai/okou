@@ -194,7 +194,7 @@ export function WhatsappCard() {
                   type="button"
                   variant="quiet"
                   size="icon-xs"
-                  className="shrink-0"
+                  className="shrink-0 rounded-md border border-border/60"
                   disabled={!status?.configured}
                   aria-label={t(($) => {
                     return $.works.whatsapp.connect;

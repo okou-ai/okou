@@ -51,7 +51,7 @@ export function DiscordAuthorizationActions({
       data-testid="discord-connect-button"
       variant="quiet"
       size="icon-xs"
-      className="shrink-0"
+      className="shrink-0 rounded-md border border-border/60"
       aria-label={t(($) => {
         return $.works.actions.connect;
       })}
