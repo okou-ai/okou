@@ -81,21 +81,35 @@ pub(crate) fn encode_into(
     payload_len: usize,
     append_payload: impl FnOnce(&mut Vec<u8>),
 ) -> Result<(), ProtocolError> {
+    encode_prefix_into(frame, msg_type, seq, payload_len, &[], append_payload).map(|_| ())
+}
+
+pub(crate) fn encode_prefix_into<'a>(
+    frame: &mut Vec<u8>,
+    msg_type: u8,
+    seq: u32,
+    prefix_payload_len: usize,
+    suffix: &'a [u8],
+    append_prefix: impl FnOnce(&mut Vec<u8>),
+) -> Result<&'a [u8], ProtocolError> {
     frame.clear();
-    let body_len = MIN_BODY_SIZE
-        .checked_add(payload_len)
+    let prefix_body_len = MIN_BODY_SIZE
+        .checked_add(prefix_payload_len)
+        .ok_or(ProtocolError::MessageTooLarge(usize::MAX))?;
+    let body_len = prefix_body_len
+        .checked_add(suffix.len())
         .ok_or(ProtocolError::MessageTooLarge(usize::MAX))?;
     if body_len > MAX_MESSAGE_SIZE {
         return Err(ProtocolError::MessageTooLarge(body_len));
     }
 
-    frame.reserve(HEADER_SIZE + body_len);
+    frame.reserve(HEADER_SIZE + prefix_body_len);
     frame.extend_from_slice(&(body_len as u32).to_be_bytes());
     frame.push(msg_type);
     frame.extend_from_slice(&seq.to_be_bytes());
-    append_payload(frame);
-    debug_assert_eq!(frame.len(), HEADER_SIZE + body_len);
-    Ok(())
+    append_prefix(frame);
+    debug_assert_eq!(frame.len(), HEADER_SIZE + prefix_body_len);
+    Ok(suffix)
 }
 
 /// Buffered message decoder for streaming data.

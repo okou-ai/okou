@@ -645,7 +645,6 @@ export const clientContractImportManifest = [
   {
     module: "cron",
     contracts: [
-      "cronAggregateRunPhaseTimingsContract",
       "cronBrowserReconcileContract",
       "cronCleanupSandboxesContract",
       "cronCleanupSuggestionsContract",
@@ -1325,6 +1324,7 @@ export const clientContractImportManifest = [
     module: "onboarding",
     contracts: [
       "onboardingCompleteContract",
+      "onboardingDraftContract",
       "onboardingRecommendationContract",
       "onboardingSourcesContract",
       "onboardingStatusContract",

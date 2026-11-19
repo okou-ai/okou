@@ -183,6 +183,69 @@ internal interface CanonicalApi {
         @Header("Authorization") token: String,
         @Path("id") `pathId`: String,
     ): Response<ReadState>
+
+    @POST("/api/chat-threads/{id}/mark-unread")
+    suspend fun `markUnread`(
+        @Header("Authorization") token: String,
+        @Path("id") `pathId`: String,
+    ): Response<ReadState>
+
+    @POST("/api/chat-threads/{id}/mute")
+    suspend fun `muteThread`(
+        @Header("Authorization") token: String,
+        @Path("id") `pathId`: String,
+        @Query("eventId") `queryEventId`: String? = null,
+    ): Response<Unit>
+
+    @POST("/api/chat-threads/{id}/unmute")
+    suspend fun `unmuteThread`(
+        @Header("Authorization") token: String,
+        @Path("id") `pathId`: String,
+        @Query("eventId") `queryEventId`: String? = null,
+    ): Response<Unit>
+
+    @POST("/api/chat-threads/{id}/archive")
+    suspend fun `archiveThread`(
+        @Header("Authorization") token: String,
+        @Path("id") `pathId`: String,
+        @Query("eventId") `queryEventId`: String? = null,
+    ): Response<Unit>
+
+    @POST("/api/chat-threads/{id}/unarchive")
+    suspend fun `unarchiveThread`(
+        @Header("Authorization") token: String,
+        @Path("id") `pathId`: String,
+        @Query("eventId") `queryEventId`: String? = null,
+    ): Response<Unit>
+
+    @POST("/api/chat-threads/{id}/rename")
+    suspend fun `renameThread`(
+        @Header("Authorization") token: String,
+        @Path("id") `pathId`: String,
+        @Body body: RenameThreadRequest,
+    ): Response<Unit>
+
+    @POST("/api/chat-threads/{id}/pin")
+    suspend fun `pinThread`(
+        @Header("Authorization") token: String,
+        @Path("id") `pathId`: String,
+        @Query("eventId") `queryEventId`: String? = null,
+        @Query("pinOrder") `queryPinOrder`: String? = null,
+    ): Response<Unit>
+
+    @POST("/api/chat-threads/{id}/unpin")
+    suspend fun `unpinThread`(
+        @Header("Authorization") token: String,
+        @Path("id") `pathId`: String,
+        @Query("eventId") `queryEventId`: String? = null,
+    ): Response<Unit>
+
+    @POST("/api/chat-threads/{id}/pin-order")
+    suspend fun `reorderPinnedThread`(
+        @Header("Authorization") token: String,
+        @Path("id") `pathId`: String,
+        @Body body: ReorderPinnedThreadRequest,
+    ): Response<Unit>
 }
 
 internal suspend fun CanonicalApi.`historyRows`(

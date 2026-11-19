@@ -62,7 +62,7 @@ export function shouldUsePiExecution(args: {
   readonly modelProviderType: string | null | undefined;
   /** The selected model's catalog projection (`piCatalogModel`). */
   readonly catalogModel: PiCatalogModel | null;
-  readonly codexServiceTier: "fast" | undefined;
+  readonly codexServiceTier: "fast" | "ultrafast" | undefined;
   readonly builtInModelRuntimeRoute: BuiltInModelRuntimeRoute | undefined;
 }): boolean {
   return (
@@ -83,7 +83,6 @@ export function shouldUsePiExecution(args: {
 
 interface PiModelProviderConfigInput {
   readonly upstreamModel?: string;
-  readonly piModelConfig?: PiModelConfig;
   readonly type: string;
   readonly concreteType?: string;
   readonly environment: Record<string, string>;
@@ -93,7 +92,7 @@ interface PiModelProviderConfigInput {
 function resolveCodexSubscriptionPiModelConfig(
   provider: PiModelProviderConfigInput,
   routeClass: PiRouteClass | null,
-  codexServiceTier: "fast" | undefined,
+  codexServiceTier: "fast" | "ultrafast" | undefined,
 ): PiModelConfig | null {
   if (
     provider.type !== "codex-oauth-token" ||
@@ -121,7 +120,7 @@ function resolveCodexSubscriptionPiModelConfig(
     return null;
   }
   const config = {
-    ...(codexServiceTier === "fast"
+    ...(codexServiceTier !== undefined
       ? {
           schemaVersion: PI_MODEL_CONFIG_DIALECT_TIER_GENERATION,
           serviceTier: codexServiceTier,
@@ -155,7 +154,7 @@ function resolveCodexSubscriptionPiModelConfig(
     dialect: config.dialect,
     transport: config.transport,
     thinkingLevel: config.thinkingLevel,
-    serviceTier: codexServiceTier === "fast" ? "fast" : undefined,
+    serviceTier: codexServiceTier,
   })
     ? config
     : null;
@@ -164,13 +163,10 @@ function resolveCodexSubscriptionPiModelConfig(
 function resolvePiRouteModelConfig(
   provider: PiModelProviderConfigInput | null,
   catalogModel: PiCatalogModel | null,
-  codexServiceTier: "fast" | undefined,
+  codexServiceTier: "fast" | "ultrafast" | undefined,
 ): PiModelConfig | null {
   if (!provider || !provider.selectedModel) {
     return null;
-  }
-  if (provider.piModelConfig) {
-    return provider.piModelConfig;
   }
   if (provider.type === "codex-oauth-token") {
     return resolveCodexSubscriptionPiModelConfig(
@@ -270,10 +266,10 @@ function resolveOpenRouterPiModelConfig(
 }
 
 /** Apply the run's effective effort to every Pi dialect before capturing its launch context. */
-export function resolvePiSandboxModelConfig(
+function resolvePiSandboxModelConfig(
   provider: PiModelProviderConfigInput | null,
   catalogModel: PiCatalogModel | null,
-  codexServiceTier: "fast" | undefined = undefined,
+  codexServiceTier: "fast" | "ultrafast" | undefined = undefined,
   reasoningEffort: ReasoningEffort | null | undefined = undefined,
 ): PiModelConfig | null {
   const config = resolvePiRouteModelConfig(
@@ -296,10 +292,10 @@ export function resolvePiSandboxModelConfig(
 }
 
 /** The plain run facts Pi model preparation reads. */
-export interface PiModelPreparationInput {
+interface PiModelPreparationInput {
   readonly catalog: ModelCatalog;
   readonly piExecution: boolean;
-  readonly codexServiceTier?: "fast";
+  readonly codexServiceTier?: "fast" | "ultrafast";
   readonly reasoningEffort?: ReasoningEffort | null;
 }
 
@@ -323,25 +319,4 @@ export function materializePreparedPiProvider(
     );
   }
   return { ...provider, piModelConfig: config };
-}
-
-export function resolvePreparedPiModelConfig(args: {
-  readonly input: PiModelPreparationInput;
-  readonly modelProvider: ResolvedModelProviderEnvironment;
-}): PiModelConfig | undefined {
-  if (!args.input.piExecution) {
-    return undefined;
-  }
-  const config = resolvePiSandboxModelConfig(
-    args.modelProvider,
-    piCatalogModel(args.input.catalog, args.modelProvider.selectedModel),
-    args.input.codexServiceTier,
-    args.input.reasoningEffort,
-  );
-  if (!config) {
-    throw new Error(
-      "Selected Pi execution requires a supported Pi model provider configuration",
-    );
-  }
-  return config;
 }

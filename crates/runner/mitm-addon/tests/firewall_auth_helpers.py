@@ -11,9 +11,8 @@ from aws_sigv4 import AwsSigV4Credentials
 
 
 def firewall_auth_request(
-    encrypted_secrets: str = "iv:tag:data",
     auth_headers: Mapping[str, str] | None = None,
-    sandbox_auth: str = "tok-xyz",
+    host_authority: str = "tok-xyz",
     *,
     auth_base: str | None = None,
     auth_query: Mapping[str, str] | None = None,
@@ -25,9 +24,8 @@ def firewall_auth_request(
 ) -> auth_client.FirewallAuthRequest:
     """Build a firewall auth request for cache and client integration tests."""
     return auth_client.FirewallAuthRequest(
-        encrypted_secrets=encrypted_secrets,
         auth_headers=dict(auth_headers or {}),
-        sandbox_token=sandbox_auth,
+        firewall_token=host_authority,
         auth_base=auth_base,
         auth_query=dict(auth_query) if auth_query is not None else None,
         auth_aws_sigv4=dict(auth_aws_sigv4) if auth_aws_sigv4 is not None else None,

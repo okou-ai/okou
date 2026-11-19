@@ -43,7 +43,7 @@ import {
   ChatHeaderPanelHeader,
 } from "./chat-header-panel.tsx";
 import { ChatHeaderIconButton } from "./chat-header-icon-button.tsx";
-import { emptyArtifactImg } from "./platform-assets.ts";
+import { emptyMailImg } from "./platform-assets.ts";
 
 export function ThreadMailLink({
   thread,
@@ -394,7 +394,7 @@ function ThreadMailRows({ thread }: { readonly thread: ChatPanelSignals }) {
         <ThreadMailRowsSkeleton />
       ) : mails.state === "hasData" && mails.data.length === 0 ? (
         <ChatPanelEmptyState
-          image={emptyArtifactImg}
+          image={emptyMailImg}
           title={t(($) => {
             return $.chat.mail.manager.emptyTitle;
           })}

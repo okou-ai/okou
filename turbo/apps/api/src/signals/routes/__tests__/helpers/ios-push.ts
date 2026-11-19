@@ -45,6 +45,7 @@ export async function registerIosPush(
     revision?: number;
     deviceToken?: string;
     environment?: "production" | "sandbox";
+    widgetPushToken?: string;
     supportsNotificationState?: boolean;
   } = {},
 ) {
@@ -54,6 +55,9 @@ export async function registerIosPush(
     revision: options.revision ?? 1,
     deviceToken: options.deviceToken ?? "ab".repeat(32),
     environment: options.environment ?? "production",
+    ...(options.widgetPushToken === undefined
+      ? {}
+      : { widgetPushToken: options.widgetPushToken }),
   };
   await accept(
     setupApp({ context, routes: iosPushRegistrationsRoutes })(

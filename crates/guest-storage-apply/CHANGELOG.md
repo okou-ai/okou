@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.32.28](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.27...guest-storage-apply-v0.32.28) (2026-11-19)
+
+
+### Performance Improvements
+
+* **guest-storage-apply:** widen large remote archive batches ([#48842](https://github.com/okou-ai/okou/issues/48842)) ([4251b95](https://github.com/okou-ai/okou/commit/4251b957383834550db84be719cef9f73884ff13))
+
+## [0.32.27](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.26...guest-storage-apply-v0.32.27) (2026-11-19)
+
+## [0.32.26](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.25...guest-storage-apply-v0.32.26) (2026-11-18)
+
+
+### Refactoring
+
+* **rust:** use typed directory entry operations ([#48730](https://github.com/okou-ai/okou/issues/48730)) ([5856c31](https://github.com/okou-ai/okou/commit/5856c31954cc37ce63770f5747a02b3da7c8676d))
+
 ## [0.32.25](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.24...guest-storage-apply-v0.32.25) (2026-11-18)
 
 ## [0.32.24](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.23...guest-storage-apply-v0.32.24) (2026-11-18)

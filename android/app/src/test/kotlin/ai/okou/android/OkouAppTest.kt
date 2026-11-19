@@ -18,6 +18,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -192,17 +193,23 @@ class OkouAppTest {
     fun chatFilterSurvivesSettingsAndBack() {
         render()
         compose.onNodeWithText("Chats").assertExists()
+        compose.onNodeWithContentDescription("More actions").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Filter").performClick()
+        compose.onNodeWithText("All").assertIsSelected()
         compose.onNodeWithText("Archived").performClick()
         compose.onNodeWithContentDescription("Settings").performClick()
         compose.onNodeWithText("Appearance").assertExists()
         compose.onNodeWithContentDescription("Back").performClick()
         compose.onNodeWithText("Archived").assertIsSelected()
+        compose.onNodeWithText("Archived").performClick()
+        compose.onNodeWithText("Archived").assertDoesNotExist()
     }
 
     @Test
     fun homeIsUsableBeforeAppearanceStorageReturns() {
         render(TestPreferencesStore().apply { initialRead = CompletableDeferred() })
         compose.onNodeWithText("Chats").assertExists()
+        compose.onNodeWithContentDescription("Filter").performClick()
         compose.onNodeWithText("Archived").performClick().assertIsSelected()
         compose.onNodeWithContentDescription("Settings").performClick()
         compose.onNodeWithText("Loading appearance…").assertExists()
@@ -299,6 +306,15 @@ class OkouAppTest {
         compose.onNodeWithText("Auf diesem Gerät").performScrollTo().assertIsDisplayed()
         compose.onNodeWithContentDescription("Zurück").assertIsDisplayed().performClick()
         compose.onNodeWithText("Chats").assertIsDisplayed()
-        compose.onNodeWithText("Chats aktualisieren").assertIsDisplayed().performClick()
+        val refresh =
+            compose
+                .onNodeWithTag("chat_list")
+                .fetchSemanticsNode()
+                .config[SemanticsActions.CustomActions]
+                .single { it.label == "Chats aktualisieren" }
+        compose.runOnIdle { assertEquals(true, refresh.action()) }
+        compose.onNodeWithContentDescription("Filter").assertIsDisplayed().performClick()
+        compose.onNodeWithText("Archiviert").assertIsDisplayed().performClick()
+        compose.onNodeWithText("Archiviert").assertIsSelected()
     }
 }

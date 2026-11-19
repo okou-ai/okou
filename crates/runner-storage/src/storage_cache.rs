@@ -116,6 +116,10 @@ const CONCURRENCY: usize = 4;
 const FRESH_DELIVERY_HTTP_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 /// Bound a stalled first response without shortening body or later-attempt allowance.
 const FRESH_DELIVERY_FIRST_HEADERS_TIMEOUT: Duration = Duration::from_secs(5);
+/// Extra background fills target workloads where avoiding remote request waves
+/// can materially shorten a follow-up start.
+const BACKGROUND_FILL_SLOW_HEADERS: Duration = Duration::from_millis(100);
+const BACKGROUND_FILL_SLOW_HEADERS_MIN_SAMPLES: usize = 2;
 const FRESH_DELIVERY_SCAN_LIMIT: usize = 64;
 const FRESH_DELIVERY_PER_RUN_LIMIT: usize = 4;
 const FRESH_DELIVERY_RUNNER_LIMIT: usize = 8;
@@ -454,14 +458,21 @@ struct FreshArchivePhaseRecords {
 }
 
 impl FreshArchivePhaseRecords {
-    fn record_to(&self, telemetry: &mut JobTelemetry) {
+    fn record_to(&self, telemetry: &mut JobTelemetry) -> usize {
         let records = std::mem::take(
             &mut *self
                 .records
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner()),
         );
+        let mut slow_headers = 0;
         for record in records {
+            if record.operation.action_type == STORAGE_CACHE_FRESH_DELIVERY_HEADERS
+                && record.operation.success
+                && record.operation.duration >= BACKGROUND_FILL_SLOW_HEADERS
+            {
+                slow_headers += 1;
+            }
             telemetry.record_archive_phase_at(
                 record.operation,
                 record.completed_at,
@@ -469,6 +480,7 @@ impl FreshArchivePhaseRecords {
                 record.archive_connection_attempt,
             );
         }
+        slow_headers
     }
 }
 
@@ -653,6 +665,7 @@ struct FreshArchiveResolved {
 pub struct FreshArchiveDelivery {
     cancel: CancellationToken,
     phase_records: FreshArchivePhaseRecords,
+    slow_headers: usize,
     classification: JoinSet<FreshArchiveClassification>,
     groups: Option<Vec<CacheTargetGroup>>,
     owned_keys: HashSet<(String, String)>,
@@ -806,8 +819,12 @@ impl FreshArchiveDelivery {
         if result.is_err() {
             self.cancel_and_drain(telemetry).await;
         }
-        self.phase_records.record_to(telemetry);
+        self.record_phases(telemetry);
         result
+    }
+
+    fn record_phases(&mut self, telemetry: &mut JobTelemetry) {
+        self.slow_headers += self.phase_records.record_to(telemetry);
     }
 
     async fn resolve_inner(
@@ -1731,8 +1748,16 @@ async fn populate_cache_inner(
     };
 
     record_passthrough_summary(&outcomes, plan, telemetry);
-    let deferred =
-        defer_background_fill_groups(&outcomes, home.clone(), decoded.cloned(), plan, telemetry);
+    let expand_queue = fresh_delivery
+        .is_some_and(|delivery| delivery.slow_headers >= BACKGROUND_FILL_SLOW_HEADERS_MIN_SAMPLES);
+    let deferred = defer_background_fill_groups(
+        &outcomes,
+        home.clone(),
+        decoded.cloned(),
+        plan,
+        telemetry,
+        expand_queue,
+    );
     for (group, outcome) in outcomes {
         apply_group_outcome(plan, &group, &outcome, telemetry);
     }
@@ -1757,6 +1782,7 @@ fn defer_background_fill_groups(
     decoded: Option<decoded::DecodedCache>,
     plan: &StoragePlan,
     telemetry: &mut JobTelemetry,
+    expand_queue: bool,
 ) -> Option<DeferredBackgroundFill> {
     let groups = outcomes
         .iter()
@@ -1797,6 +1823,7 @@ fn defer_background_fill_groups(
         groups,
         home,
         selected_at,
+        expand_queue,
     })
 }
 
@@ -1926,6 +1953,7 @@ pub async fn prepare_fresh_archive_delivery(
     Ok(FreshArchiveDelivery {
         cancel: owner_cancel,
         phase_records,
+        slow_headers: 0,
         classification,
         groups: None,
         owned_keys: HashSet::new(),

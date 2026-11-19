@@ -73,8 +73,9 @@ export function metadataCommitWithEventsSql(args: {
       NULL, event.title, NULL, NULL,
       CASE WHEN event.kind = 'model_selection_updated' THEN updated.selected_model ELSE NULL END,
       NULL, event.model_settings_patch,
-      CASE WHEN event.kind = 'service_tier_updated' AND updated.codex_service_tier = 'fast'
-        THEN 'priority' ELSE NULL END,
+      CASE WHEN event.kind = 'service_tier_updated' THEN
+        CASE WHEN updated.codex_service_tier = 'fast' THEN 'priority' ELSE updated.codex_service_tier END
+      ELSE NULL END,
       NULL, false, updated.updated_at
     FROM updated CROSS JOIN reserved CROSS JOIN (
       VALUES ${sql.join(eventValues, sql`, `)}

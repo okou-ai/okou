@@ -1,51 +1,35 @@
 import { command, computed, state } from "ccstate";
 import {
-  onboardingIndustrySchema,
-  onboardingSubscriptionProviderSchema,
+  onboardingDraftAnswersSchema,
+  onboardingDraftStepSchema,
+  type OnboardingDraftPayload,
 } from "@okouai/api-contracts/validators/onboarding";
 import type { OnboardingSubscriptionProvider } from "@okouai/api-contracts/contracts/onboarding";
 import type { OnboardingIndustry } from "@okouai/core/onboarding-industry";
 import {
-  boolean,
   literal,
-  number,
   object,
   string,
-  uuid,
   enum as zEnum,
   type infer as zInfer,
 } from "zod";
 
 import {
   STARTING_PROMPT_MAX_LENGTH,
-  persistedStartingPromptOutputSchema,
   type OnboardingOutputFormat,
   type StartingPromptOutput,
 } from "./onboarding-output-format.ts";
 import { localStorageSignals } from "../external/local-storage.ts";
 import { ROUTES, type RoutePath } from "../route-paths.ts";
-import { jsonParseOr } from "../utils.ts";
-
-/**
- * Source-first onboarding draft. Unsaved answers survive a browser refresh in
- * local storage, scoped to the current user and organization. Connections
- * keep their own server-backed state; their transient UI status
- * belongs to this application start.
- */
+import { rootSignal$ } from "../root-signal.ts";
+import { detach, jsonParseOr, Reason, resetSignal } from "../utils.ts";
+import {
+  createServerOnboardingDraftSync,
+  loadServerOnboardingDraft$,
+} from "./onboarding-server-draft.ts";
 
 export type SourcesFirstFlow = "owner" | "member";
-
-const sourcesFirstStepSchema = zEnum([
-  "sources",
-  "industry",
-  "experience",
-  "skills",
-  "slack",
-  "capabilities",
-  "ready",
-]);
-
-export type SourcesFirstStep = zInfer<typeof sourcesFirstStepSchema>;
+export type SourcesFirstStep = zInfer<typeof onboardingDraftStepSchema>;
 
 export const SOURCES_FIRST_STEP_ROUTES: Readonly<
   Record<SourcesFirstStep, RoutePath>
@@ -110,23 +94,12 @@ const persistedDraftIdentitySchema = object({
 
 const persistedStepSchema = persistedDraftIdentitySchema.extend({
   // Existing browser drafts can still point at the retired invitation step.
-  step: zEnum([...sourcesFirstStepSchema.options, "team"]),
+  step: zEnum([...onboardingDraftStepSchema.options, "team"]),
 });
 
-const persistedDraftSchema = persistedDraftIdentitySchema.extend({
+const persistedDraftSchema = onboardingDraftAnswersSchema.extend({
+  ...persistedDraftIdentitySchema.shape,
   version: literal(2),
-  industry: onboardingIndustrySchema.nullable(),
-  experienced: boolean().nullable(),
-  provider: onboardingSubscriptionProviderSchema.nullable(),
-  startingPromptDraft: string().max(STARTING_PROMPT_MAX_LENGTH),
-  startingPromptKey: string(),
-  // Selection metadata is optional in version-2 drafts; the complete prompt
-  // remains authoritative when no format has been recorded.
-  startingPromptOutput: persistedStartingPromptOutputSchema
-    .nullable()
-    .default(null),
-  recommendationJobId: uuid().nullable(),
-  recommendationStartedAt: number().finite().nonnegative().nullable(),
 });
 
 type PersistedSourcesFirstDraft = zInfer<typeof persistedDraftSchema>;
@@ -154,7 +127,7 @@ function savedDraftForIdentity(
 }
 
 function restoredDraft(
-  saved: PersistedSourcesFirstDraft | null,
+  saved: OnboardingDraftPayload["answers"] | null,
 ): SourcesFirstDraft {
   if (saved === null) {
     return emptyDraft();
@@ -189,40 +162,136 @@ const onboardingStorages = [draftStorage, stepStorage] as const;
 const internalDraftIdentity$ = state<SourcesFirstDraftIdentity | null>(null);
 const internalDraft$ = state<SourcesFirstDraft>(emptyDraft());
 
+const draftServerLifetime$ = resetSignal();
+const internalStep$ = state<SourcesFirstStep | null>(null);
+const serverSync$ = state<ReturnType<
+  typeof createServerOnboardingDraftSync
+> | null>(null);
+
+function isDraftOwner(
+  raw: string | null,
+  identity: SourcesFirstDraftIdentity,
+): boolean {
+  const parsed = persistedDraftIdentitySchema.safeParse(
+    raw === null ? null : jsonParseOr<unknown>(raw, null),
+  );
+  return (
+    parsed.success &&
+    parsed.data.orgId === identity.orgId &&
+    parsed.data.userId === identity.userId
+  );
+}
+
 /**
- * Restore answers and return the saved step once per identity/app lifetime.
- * Only the entry page resumes it; explicit step URLs and Back keep their target.
+ * Restore answers once per identity/app lifetime. Only the entry page resumes
+ * the saved step; explicit step URLs and Back keep their target.
  */
 export const restoreSourcesFirstDraft$ = command(
-  (
+  async (
     { get, set },
     identity: SourcesFirstDraftIdentity,
-  ): SourcesFirstStep | null => {
+    needsOnboarding: boolean,
+    signal: AbortSignal,
+  ): Promise<SourcesFirstStep | null> => {
     const active = get(internalDraftIdentity$);
     if (active?.orgId === identity.orgId && active.userId === identity.userId) {
       return null;
     }
-
-    const saved = savedDraftForIdentity(get(draftStorage.get$), identity);
-    set(internalDraftIdentity$, identity);
-    set(internalDraft$, restoredDraft(saved));
-    const step = persistedStepSchema.safeParse(
-      jsonParseOr<unknown>(get(stepStorage.get$) ?? "null", null),
-    );
-    return step.success &&
-      step.data.orgId === identity.orgId &&
-      step.data.userId === identity.userId
-      ? step.data.step === "team"
-        ? "experience"
-        : step.data.step
+    const remote = needsOnboarding
+      ? await set(loadServerOnboardingDraft$, identity, signal)
       : null;
+    signal.throwIfAborted();
+    if (!remote) {
+      set(draftServerLifetime$);
+    }
+    set(
+      serverSync$,
+      remote
+        ? createServerOnboardingDraftSync(
+            remote,
+            set(draftServerLifetime$, get(rootSignal$)),
+          )
+        : null,
+    );
+
+    const saved = savedDraftForIdentity(set(draftStorage.readFresh$), identity);
+    const savedStep = persistedStepSchema.safeParse(
+      jsonParseOr<unknown>(set(stepStorage.readFresh$) ?? "null", null),
+    );
+    const legacyStep =
+      savedStep.success &&
+      savedStep.data.orgId === identity.orgId &&
+      savedStep.data.userId === identity.userId
+        ? savedStep.data.step === "team"
+          ? "experience"
+          : savedStep.data.step
+        : null;
+    const step = remote?.snapshot ? remote.snapshot.step : legacyStep;
+    set(internalDraftIdentity$, identity);
+    set(internalDraft$, restoredDraft(remote?.snapshot?.answers ?? saved));
+    set(internalStep$, step);
+    return step;
+  },
+);
+
+function draftAnswers(
+  draft: SourcesFirstDraft,
+): OnboardingDraftPayload["answers"] {
+  const prompt =
+    draft.startingPromptDraft + (draft.startingPromptOutput?.suffix ?? "");
+  return {
+    ...draft,
+    startingPromptDraft: prompt,
+    startingPromptOutput: draft.startingPromptOutput
+      ? {
+          format: draft.startingPromptOutput.format,
+          start: draft.startingPromptDraft.length,
+          end: prompt.length,
+        }
+      : null,
+  };
+}
+
+const syncSourcesFirstDraft$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    const server = get(serverSync$);
+    const owner = get(internalDraftIdentity$);
+    if (!server || !owner) {
+      return;
+    }
+    const legacy = onboardingStorages.map((storage) => {
+      return set(storage.readFresh$);
+    });
+    const saved = await set(server, {
+      answers: draftAnswers(get(internalDraft$)),
+      step: get(internalStep$),
+    });
+    signal.throwIfAborted();
+    if (saved && get(serverSync$) === server) {
+      for (const [index, storage] of onboardingStorages.entries()) {
+        const raw = set(storage.readFresh$);
+        if (raw === legacy[index] && isDraftOwner(raw, owner)) {
+          set(storage.clear$);
+        }
+      }
+    }
   },
 );
 
 export const saveSourcesFirstStep$ = command(
   ({ get, set }, step: SourcesFirstStep): void => {
     const identity = get(internalDraftIdentity$);
-    if (identity !== null) {
+    if (identity === null) {
+      return;
+    }
+    set(internalStep$, step);
+    if (get(serverSync$)) {
+      detach(
+        set(syncSourcesFirstDraft$, get(rootSignal$)),
+        Reason.Deferred,
+        "save onboarding step",
+      );
+    } else {
       set(stepStorage.set$, JSON.stringify({ ...identity, step }));
     }
   },
@@ -232,19 +301,14 @@ export const clearSourcesFirstDraft$ = command(({ get, set }): void => {
   const identity = get(internalDraftIdentity$);
   if (identity !== null) {
     for (const storage of onboardingStorages) {
-      const raw = get(storage.get$);
-      const parsed = persistedDraftIdentitySchema.safeParse(
-        raw === null ? null : jsonParseOr<unknown>(raw, null),
-      );
-      if (
-        parsed.success &&
-        parsed.data.orgId === identity.orgId &&
-        parsed.data.userId === identity.userId
-      ) {
+      if (isDraftOwner(set(storage.readFresh$), identity)) {
         set(storage.clear$);
       }
     }
   }
+  set(draftServerLifetime$);
+  set(serverSync$, null);
+  set(internalStep$, null);
   set(internalDraftIdentity$, null);
   set(internalDraft$, emptyDraft());
 });
@@ -321,31 +385,19 @@ export const updateSourcesFirstDraft$ = command(
     if (identity === null) {
       return;
     }
-    // Keep the version-2 wire format readable by older app builds. Runtime
-    // state and the textarea contain only the task; restore splits them again.
-    const persistedPrompt =
-      next.startingPromptDraft + (next.startingPromptOutput?.suffix ?? "");
-    set(
-      draftStorage.set$,
-      JSON.stringify({
-        version: 2,
-        ...identity,
-        industry: next.industry,
-        experienced: next.experienced,
-        provider: next.provider,
-        startingPromptDraft: persistedPrompt,
-        startingPromptKey: next.startingPromptKey,
-        startingPromptOutput: next.startingPromptOutput
-          ? {
-              format: next.startingPromptOutput.format,
-              start: next.startingPromptDraft.length,
-              end: persistedPrompt.length,
-            }
-          : null,
-        recommendationJobId: next.recommendationJobId,
-        recommendationStartedAt: next.recommendationStartedAt,
-      }),
-    );
+    if (get(serverSync$)) {
+      detach(
+        set(syncSourcesFirstDraft$, get(rootSignal$)),
+        Reason.Deferred,
+        "save onboarding answers",
+      );
+    } else {
+      // Keep browser fallback drafts readable by previous app builds.
+      set(
+        draftStorage.set$,
+        JSON.stringify({ version: 2, ...identity, ...draftAnswers(next) }),
+      );
+    }
   },
 );
 

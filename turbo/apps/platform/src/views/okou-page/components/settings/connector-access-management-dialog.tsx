@@ -3,7 +3,7 @@ import { singleAgentEnabled$ } from "../../../../signals/single-agent.ts";
 import { defaultAgentId$ } from "../../../../signals/agent.ts";
 import type { ReactNode } from "react";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../../../../signals/external/feature-switch.ts";
+import { featureSwitches$ } from "../../../../signals/external/feature-switch.ts";
 import { ConnectorPermissionsDialog } from "./connector-permissions-dialog.tsx";
 
 import {
@@ -164,7 +164,7 @@ function AgentAccessRow({
   readonly onManage: (row: ConnectorAgentAccessRow) => void;
 }) {
   const { t } = useTranslation();
-  const singleAgent = useGet(singleAgentEnabled$);
+  const singleAgent = useLastResolved(singleAgentEnabled$) ?? false;
   const name = singleAgent ? "Okou" : agentName(row.agent);
   const canManage = row.authorized && hasPermissions;
 
@@ -405,7 +405,7 @@ function ConnectorAccessDialog({
   readonly footer?: ReactNode;
 }) {
   const { t } = useTranslation();
-  const singleAgent = useGet(singleAgentEnabled$);
+  const singleAgent = useLastResolved(singleAgentEnabled$) ?? false;
   const defaultAgentId = useLastResolved(defaultAgentId$);
   const visibleRows = singleAgent
     ? rows.filter((row) => {
@@ -491,7 +491,7 @@ function AgentPermissionDialog({
   readonly connectorSlug: ConnectorSlug;
   readonly connectorLabel: string;
 }) {
-  const singleAgent = useGet(singleAgentEnabled$);
+  const singleAgent = useLastResolved(singleAgentEnabled$) ?? false;
   if (!row) {
     return null;
   }
@@ -510,7 +510,9 @@ export function ConnectorAccessManagementDialog(
   props: ConnectorAccessManagementDialogProps,
 ) {
   const enabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ConnectorChatAccountAccess];
+    useLastResolved(featureSwitches$)?.[
+      FeatureSwitchKey.ConnectorChatAccountAccess
+    ];
   const signals = useGet(managedConnectorAccessSignals$);
   const entry = {
     target: { kind: "builtin" as const, connectorSlug: props.connectorSlug },
@@ -640,7 +642,7 @@ function CustomConnectorAccessPermissionsDrawer({
   readonly loadError: boolean;
   readonly onClose: () => void;
 }) {
-  const singleAgent = useGet(singleAgentEnabled$);
+  const singleAgent = useLastResolved(singleAgentEnabled$) ?? false;
   if (!draft || !agent) {
     return null;
   }
@@ -664,7 +666,9 @@ export function CustomConnectorAccessManagementDialog(props: {
   readonly onClose: () => void;
 }) {
   const enabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ConnectorChatAccountAccess];
+    useLastResolved(featureSwitches$)?.[
+      FeatureSwitchKey.ConnectorChatAccountAccess
+    ];
   return enabled ? null : (
     <LegacyCustomConnectorAccessManagementDialog {...props} />
   );

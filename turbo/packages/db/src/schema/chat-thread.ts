@@ -41,7 +41,7 @@ export const chatThreads = pgTable(
       ),
       check(
         "chk_chat_threads_codex_service_tier",
-        sql`${table.codexServiceTier} IS NULL OR ${table.codexServiceTier} = 'fast'`,
+        sql`${table.codexServiceTier} IS NULL OR ${table.codexServiceTier} IN ('fast', 'ultrafast')`,
       ),
       check(
         "chat_threads_computer_access_check",

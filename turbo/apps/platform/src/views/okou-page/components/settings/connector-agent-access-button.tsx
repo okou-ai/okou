@@ -1,4 +1,4 @@
-import { useGet, type LoadableState } from "ccstate-react";
+import { useLastResolved, type LoadableState } from "ccstate-react";
 import { singleAgentEnabled$ } from "../../../../signals/single-agent.ts";
 import { useTranslation } from "react-i18next";
 import { Button } from "@okouai/ui";
@@ -32,7 +32,7 @@ export function ConnectorAgentAccessButton({
   readonly onClick: () => void;
 }) {
   const { t } = useTranslation();
-  const singleAgent = useGet(singleAgentEnabled$);
+  const singleAgent = useLastResolved(singleAgentEnabled$) ?? false;
   const unnamed = t(($) => {
     return $.connectors.catalog.unnamedAgent;
   });

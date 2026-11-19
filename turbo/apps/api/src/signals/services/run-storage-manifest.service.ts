@@ -1,40 +1,34 @@
 import { performance } from "node:perf_hooks";
 import {
-  CANONICAL_CLAUDE_CONFIG_DIR,
   CANONICAL_CLAUDE_MEMORY_MOUNT_PATH,
-  CANONICAL_CODEX_HOME_DIR,
   CANONICAL_CODEX_MEMORY_MOUNT_PATH,
   CANONICAL_PI_MEMORY_MOUNT_PATH,
-  PI_SKILLS_ROOT,
   type PiModelConfig,
   type StorageMountEntry,
-  type StoredStorageMountEntry,
 } from "@okouai/api-contracts/contracts/runners";
-import { templateGuidanceMountPath } from "@okouai/api-contracts/contracts/template-guidance-bundle";
-import {
-  resolveRunSkillVolumes,
-  type SkillVolume,
-} from "./run-prompt-and-skills";
 import { now } from "../../lib/time";
-import type { PreparedExecutionStorageMount } from "./execution-storage.service";
-import type {
-  OfficialWorkflowObservation,
-  OfficialWorkflowRunObservation,
-} from "./official-workflow-run.service";
+import type { AcceptedMemoryMount } from "./execution-storage.service";
+import { isMemberMemoryIdentity } from "./member-memory-records";
 import {
   type ApiDispatchTimingActionType,
   ApiDispatchTimingCollector,
   measureApiDispatchTiming,
 } from "./api-dispatch-timing.service";
 import type { SupportedFramework } from "@okouai/core/frameworks";
-import { MEMORY_ARTIFACT_NAME } from "@okouai/core/storage-names";
+import {
+  MEMORY_ARTIFACT_NAME,
+  SYSTEM_ORG_ID,
+} from "@okouai/core/storage-names";
 import {
   isValidVersionPrefix,
   MIN_VERSION_PREFIX_LENGTH,
   VERSION_ID_LENGTH,
 } from "@okouai/core/version-id";
 import type { PersistedStorageMount } from "@okouai/db/types";
-import { cacheRowsFromProjection } from "./execution-storage-cache-read.service";
+import {
+  cacheRowsFromProjection,
+  type ExecutionStorageCacheRows,
+} from "./execution-storage-cache-read.service";
 import type {
   StorageIndex,
   StorageIndexEntry,
@@ -81,12 +75,6 @@ interface ResolvedStorageEntries {
   readonly input: BuildStorageManifestEntriesArgs;
   readonly phaseTimings: StorageManifestEntryPhaseTimings;
   readonly resolved: ResolvedStorageManifestEntryPlans;
-}
-
-/** One immutable storage selection per Run preparation attempt. */
-export interface ResolvedAgentRunStorage {
-  readonly metadata: PreparedAgentRunStorage<StorageMountMetadata>;
-  readonly requested: ResolvedStorageEntries;
 }
 
 /** Read-only selection. Missing writeback roots are initialized by materialization. */
@@ -310,7 +298,7 @@ function storageResolutionFromVersion(
   return {
     storageId: storage.storageId,
     versionId: version.id,
-    s3Prefix: storage.s3Prefix,
+    cachedUrls: storage.cachedUrls ?? [],
     s3Key: version.s3Key,
     archiveSize: version.archiveSize,
     fileCount: version.fileCount,
@@ -500,17 +488,6 @@ export async function resolveStorageEntries(
   return { input, phaseTimings, resolved };
 }
 
-/** Assemble writeback metadata from resolved artifact versions. */
-export function storageEntriesMetadata(
-  plan: ResolvedStorageEntries,
-): PreparedStorageEntries<StorageMountMetadata> {
-  return {
-    writebackEntries: plan.resolved.artifactInputs.map(
-      writebackStorageEntryMetadata,
-    ),
-  };
-}
-
 export function prepareRequestStorageResolution(
   args: {
     readonly runtimeOrgId: string;
@@ -541,21 +518,6 @@ export interface AgentRunStorageSelection {
   readonly requests: readonly StorageRequest[];
 }
 
-function frameworkSkillsMountPath(framework: SupportedFramework): string {
-  return framework === "codex"
-    ? `${CANONICAL_CODEX_HOME_DIR}/skills`
-    : `${CANONICAL_CLAUDE_CONFIG_DIR}/skills`;
-}
-
-function skillsRootForRun(
-  framework: SupportedFramework,
-  piSandbox: PiModelConfig | undefined,
-): string {
-  return piSandbox === undefined
-    ? frameworkSkillsMountPath(framework)
-    : PI_SKILLS_ROOT;
-}
-
 const AUTO_MEMORY_MISSING_ROOT_POLICY: ArtifactMissingRootPolicy =
   "preserveParentVersion";
 
@@ -581,37 +543,6 @@ export function memoryArtifactsForRun(args: {
   ];
 }
 
-export function prepareRunAdmissionMetadata(args: {
-  readonly skillVolumes: readonly SkillVolume[];
-  readonly officialWorkflow: OfficialWorkflowObservation | undefined;
-  readonly framework: SupportedFramework;
-  readonly piSandbox: PiModelConfig | undefined;
-}): {
-  readonly officialWorkflowRun: OfficialWorkflowRunObservation | undefined;
-  readonly protectedMountPaths: readonly string[];
-} {
-  const skillsRoot = skillsRootForRun(args.framework, args.piSandbox);
-  const winners = normalizeMountOverlay(
-    resolveRunSkillVolumes(args.skillVolumes, skillsRoot),
-  );
-  return {
-    protectedMountPaths: winners.flatMap((volume) => {
-      return "templateGuidanceBundle" in volume
-        ? [templateGuidanceMountPath(volume.templateGuidanceBundle)]
-        : [];
-    }),
-    officialWorkflowRun: args.officialWorkflow && {
-      ...args.officialWorkflow,
-      definitions: args.officialWorkflow.definitions.map((definition) => {
-        return {
-          ...definition,
-          mountPath: `${skillsRoot}/${definition.workflowName}`,
-        };
-      }),
-    },
-  };
-}
-
 type ArtifactMissingRootPolicy = NonNullable<
   StorageMountEntry["missingRootPolicy"]
 >;
@@ -633,35 +564,12 @@ interface ContextArtifact {
 interface StorageResolution {
   readonly storageId: string;
   readonly versionId: string;
-  readonly s3Prefix: string;
+  readonly cachedUrls: ExecutionStorageCacheRows;
   readonly s3Key: string;
   readonly archiveSize: number;
   readonly fileCount: number;
   readonly resolvedOrgId: string;
   readonly resolvedUserId: string;
-}
-
-/** Internal resolved identity, before transport URLs exist. Never persisted. */
-type StorageMountMetadata = Omit<StoredStorageMountEntry, "archiveUrl">;
-
-interface PreparedWritebackStorageEntry<
-  TMount extends StorageMountMetadata = StoredStorageMountEntry,
-> {
-  readonly storedMount: TMount;
-  readonly persistedMount: PersistedStorageMount;
-}
-
-interface PreparedStorageEntries<
-  TMount extends StorageMountMetadata = StoredStorageMountEntry,
-> {
-  readonly writebackEntries: readonly PreparedWritebackStorageEntry<TMount>[];
-}
-
-export interface PreparedAgentRunStorage<
-  TMount extends StorageMountMetadata = StoredStorageMountEntry,
-> {
-  readonly storageMounts: readonly TMount[];
-  readonly persistedStorageMounts: readonly PersistedStorageMount[];
 }
 
 interface ResolvedManifestArtifactInput {
@@ -690,129 +598,58 @@ function storageManifestCountBucket(
   return "17_plus";
 }
 
-function knownArchiveSize(resolved: StorageResolution): number | undefined {
-  return Number.isSafeInteger(resolved.archiveSize) && resolved.archiveSize > 0
-    ? resolved.archiveSize
-    : undefined;
-}
-
-function writebackStorageEntryMetadata(
-  input: ResolvedManifestArtifactInput,
-): PreparedWritebackStorageEntry<StorageMountMetadata> {
-  const { artifact, resolved } = input;
-  const storedMountBase = {
+function acceptedMemoryMount({
+  artifact,
+  resolved,
+}: ResolvedManifestArtifactInput): AcceptedMemoryMount {
+  const mount = {
     orgId: resolved.resolvedOrgId,
     userId: resolved.resolvedUserId,
     name: artifact.name,
     storageId: resolved.storageId,
-    versionId: resolved.versionId,
+    version: resolved.versionId,
     mountPath: artifact.mountPath,
+    writeback: true as const,
     ...(artifact.missingRootPolicy === undefined
       ? {}
       : { missingRootPolicy: artifact.missingRootPolicy }),
-    writeback: true as const,
   };
-  const preparedBase = {
-    persistedMount: {
-      orgId: resolved.resolvedOrgId,
-      userId: resolved.resolvedUserId,
-      name: artifact.name,
-      storageId: resolved.storageId,
-      version: resolved.versionId,
-      mountPath: artifact.mountPath,
-      writeback: true as const,
-      ...(artifact.missingRootPolicy === undefined
-        ? {}
-        : { missingRootPolicy: artifact.missingRootPolicy }),
-    },
-  };
-  if (resolved.fileCount === 0) {
-    return {
-      ...preparedBase,
-      storedMount: {
-        ...storedMountBase,
-        empty: true,
-      },
-    };
+  if (!isMemberMemoryIdentity(mount) || mount.orgId === SYSTEM_ORG_ID) {
+    throw new Error("Execution writeback requires member Memory");
   }
-
-  const archiveSize = knownArchiveSize(resolved);
   return {
-    ...preparedBase,
-    storedMount: {
-      ...storedMountBase,
-      ...(archiveSize === undefined ? {} : { archiveSize }),
-    },
+    mount,
+    s3Key: resolved.s3Key,
+    archiveSize: resolved.archiveSize,
+    fileCount: resolved.fileCount,
+    cachedUrls: resolved.cachedUrls,
   };
 }
 
-export async function finalizePreparedStorage<
-  TMount extends StorageMountMetadata,
->(args: {
-  readonly entries: PreparedStorageEntries<TMount>;
-  readonly timing?: ApiDispatchTimingCollector;
-}): Promise<PreparedAgentRunStorage<TMount>> {
+export async function finalizeMemoryMounts(
+  plan: ResolvedStorageEntries,
+): Promise<readonly AcceptedMemoryMount[]> {
+  const entries = plan.resolved.artifactInputs;
   return await measureApiDispatchTiming(
-    args.timing,
+    plan.input.timing,
     "api_dispatch_prepare_storage_manifest_assemble",
     "nested",
     () => {
-      return {
-        storageMounts: normalizeMountOverlay(
-          args.entries.writebackEntries.map((entry) => {
-            return entry.storedMount;
-          }),
-        ),
-        persistedStorageMounts: normalizeMountOverlay(
-          args.entries.writebackEntries.map((entry) => {
-            return entry.persistedMount;
-          }),
-        ),
-      };
+      return normalizeMountOverlay(
+        entries.map((entry) => {
+          return { mountPath: entry.artifact.mountPath, entry };
+        }),
+      ).map(({ entry }) => {
+        return acceptedMemoryMount(entry);
+      });
     },
     () => {
       return {
         storage_manifest_final_artifact_count_bucket:
-          storageManifestCountBucket(args.entries.writebackEntries.length),
+          storageManifestCountBucket(entries.length),
       };
     },
   );
 }
 
 export const AUTO_MEMORY_ARTIFACT_NAME = MEMORY_ARTIFACT_NAME;
-
-/** Runner storage mount for one prepared exact execution storage mount. */
-export function storedMountFromPrepared(
-  prepared: PreparedExecutionStorageMount,
-  preserveExplicitMissingRootPolicy: boolean,
-): StoredStorageMountEntry {
-  const identity = {
-    orgId: prepared.orgId,
-    userId: prepared.userId,
-    storageId: prepared.storageId,
-    versionId: prepared.versionId,
-    name: prepared.name,
-    mountPath: prepared.mountPath,
-  };
-  if (prepared.writeback) {
-    const policy = preserveExplicitMissingRootPolicy
-      ? { missingRootPolicy: prepared.missingRootPolicy }
-      : {};
-    return prepared.empty
-      ? { ...identity, writeback: true, empty: true, ...policy }
-      : {
-          ...identity,
-          writeback: true,
-          archiveUrl: prepared.archiveUrl,
-          ...(prepared.archiveSize > 0
-            ? { archiveSize: prepared.archiveSize }
-            : {}),
-          ...policy,
-        };
-  }
-  return {
-    ...identity,
-    archiveUrl: prepared.archiveUrl,
-    ...(prepared.archiveSize > 0 ? { archiveSize: prepared.archiveSize } : {}),
-  };
-}

@@ -38,7 +38,7 @@ def _write_outage_files(tmp_path: Path) -> tuple[Path, Path]:
         sandboxes[f"10.200.0.{index + 1}"] = {
             **builtin_sandbox(f"run-builtin-{index}", "example"),
             "sandboxToken": "test-token",
-            "encryptedSecrets": "iv:tag:data",
+            "firewallToken": "host-firewall-token",
             "networkPolicies": {
                 "example": {"allow": ["read"], "deny": [], "unknownPolicy": "deny"}
             },

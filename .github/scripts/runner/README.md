@@ -72,13 +72,27 @@ writer cannot become the executable. Remote EXIT cleans its own temporary file;
 an interrupted transport can delay that cleanup. Actual native execution remains
 outside this retry boundary. NBD-COW retains its own isolated-candidate protocol.
 
+Inputs above 128 MiB use a private upload directory and independently verified
+64 MiB chunks. A transport interruption retries the current chunk while keeping
+the previously accepted chunks. Finalization verifies the assembled executable
+against the original SHA-256 before the atomic rename. All requests share the
+400-second staging deadline. Cleanup removes the upload directory when the
+host is reachable and reports an unconfirmed cleanup otherwise.
+
+## Runner host architecture probe
+
+Runner host grouping and image preparation share the `uname -m` probe.
+An SSH exit 255 permits one retry on the same host. The caller validates the
+architecture from a successful probe before using it.
+
 ## Image operation recovery
 
 `python3 runner-image-operation.py claim|cancel HOST`,
 `run HOST warm|build RESULT_PATH`, and `guard HOST COMMAND ...` are internal
 adapters used by `prepare-runner-image.sh`. They require `JOB_REF`, `HEAD_SHA`,
 `TARGET_TRIPLE`, `PROFILE`, `METAL_USER`, `GITHUB_RUN_ID`, `GITHUB_RUN_ATTEMPT`,
-`EXPECTED_BINARY_INPUT_DIGEST`, and `RUNNER_IMAGE_RUNNER_SHA256`. Warm/build also
+`EXPECTED_BINARY_INPUT_DIGEST`, and `RUNNER_IMAGE_RUNNER_SHA256`. PR claims also
+require `RUNNER_IMAGE_RUN_CREATED_AT` from the GitHub run record. Warm/build
 consume the workflow's four `R2_*` values. Dependencies are Python 3, SSH and
 remote sudo/systemd with the existing Runner permissions.
 The `validate HOST` preflight checks the complete identity without SSH.
@@ -108,8 +122,15 @@ deployment and closed-PR cleanup. Its root-owned file keeps the same inode and
 is readable by workers so Linux can lock a read-only descriptor without running
 the worker as root. The private image gate is acquired first; cleanup never
 acquires that gate, and cancellation retires image units before waiting for it.
-Lifecycle contention shares the existing claim or worker deadline. The
-controller retains its 30-second claim and 600-second run/guard budgets.
+An image claim waits for the lifecycle flock outside the private gate. The
+waiter observes cancellation and retires older workers that take the gate
+during the wait. When the lock becomes available, it releases the observation
+lock and retries admission in the original lock order. PR claim uses a
+180-second end-to-end budget covering both lock waits and admission, including
+the default 150-second deployment lease. The owner and closure cutoff are
+checked again under both locks.
+The healthy path uses one SSH request. Run and guard retain their 600-second
+budgets.
 A claim places an exact-owner admission marker in the managed binary directory;
 preparation preserves only its current marker. After taking the lifecycle lock,
 every worker checks that marker again. Removing the namespace therefore fences
@@ -118,15 +139,19 @@ A same-owner claim cannot recreate a retired marker; a new workflow
 generation is required. The namespace owner records the host-resolved lifecycle
 lock and resource directory paths. No application/database schema changes.
 Closed-PR cleanup records GitHub's latest closure time in the existing lock
-file before removing resources. A new claim compares that cutoff with the
-workflow run's GitHub creation time while holding the lock. Reopening a PR can
-admit a fresh run created after closure. Rerunning an older run keeps its
-original creation time. The cutoff lasts for the life of the host lock file.
+file before removing resources. Each claim and each new worker compares that
+cutoff with the workflow run's GitHub creation time while holding the lock.
+Reopening a PR can admit a fresh run created after closure. Rerunning an older
+run keeps its original creation time. Same-owner claims and new worker launches
+require the creation time recorded when that owner was admitted. The cutoff
+lasts for the life of the host lock file.
 Owner state transitions from `claiming` to `ready` only after the marker and
 admission record are committed under the lifecycle lock; cancellation sets
-`cancelled`. A claim interrupted before that commit remains incomplete and
-cannot replay namespace initialization. Losing a committed claim reply still
-reattaches idempotently.
+`cancelled`. A retry after SSH loss while waiting for the lifecycle lock can
+resume the same claim because admission starts with both locks held. If the
+owner is already `claiming` and the original process exits before committing,
+the attempt remains incomplete and cannot replay namespace initialization.
+Losing a committed claim reply still reattaches idempotently.
 Cancellation received before a first claim records a generation cutoff in the
 same ledger. An earlier admitted owner can continue, while a delayed first claim
 at or below the cutoff is rejected.

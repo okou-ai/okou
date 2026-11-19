@@ -570,7 +570,7 @@ export function ArtifactCatalogEmpty() {
         alt=""
         role="presentation"
         loading="lazy"
-        className="mx-auto h-24 w-24 object-contain opacity-80"
+        className="mx-auto h-24 w-36 object-contain"
       />
       <h2 className="mt-4 text-sm font-medium text-foreground">
         {t(($) => {
@@ -691,7 +691,7 @@ export function ArtifactCatalogPage({
 }) {
   const { t } = useTranslation();
   const viewportRef = useSet(artifactCatalogViewportRef$);
-  const sidebarOpen = useGet(artifactCatalogSidebar.open$);
+  const sidebarOpen = useLastResolved(artifactCatalogSidebar.open$) ?? false;
   const selectedKind = useGet(selectedArtifactCatalogKind$);
   const setKind = useSet(setArtifactCatalogKind$);
   const openArtifact = useSet(openArtifact$);

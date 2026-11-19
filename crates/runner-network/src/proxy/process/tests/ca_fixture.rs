@@ -1,33 +1,26 @@
-use cli_test_support::mock_build::test_runner_build_session_id;
+mod key;
+
 use runner_host::host_file::{self, DirMode};
 use runner_host::paths::HomePaths;
-use runner_host::state_file::{self, OwnerCheck};
+use runner_host::state_file;
 use std::os::unix::fs::PermissionsExt;
-use std::path::PathBuf;
+use std::path::Path;
+use std::process::{Command, Stdio};
 
-#[derive(serde::Serialize, serde::Deserialize)]
 struct CaFixture {
     cert: String,
     key: String,
     combined: String,
 }
 
-#[derive(serde::Serialize, serde::Deserialize)]
-struct CachedCa {
-    session: String,
-    executable: PathBuf,
-    identity: CaFixture,
-}
-
 pub(super) async fn prepare_test_ca(home: &HomePaths) {
     static CA: tokio::sync::OnceCell<CaFixture> = tokio::sync::OnceCell::const_new();
     let identity = CA
-        .get_or_init(|| async { tokio::task::spawn_blocking(load_ca).await.unwrap() })
+        .get_or_init(|| async { tokio::task::spawn_blocking(generate_ca).await.unwrap() })
         .await;
 
-    // Copy the complete generated fixture, not another validation pass. Every
-    // case keeps independent files and a lock; actual proxy startup still
-    // validates and reconciles its identity through prepare_for_proxy.
+    // Each home owns its files and lock. Proxy startup validates and
+    // reconciles the fixture through prepare_for_proxy.
     let lock = runner_host::lock::acquire(home.ca_lock()).await.unwrap();
     let directory = home.ca_dir();
     tokio::task::spawn_blocking(move || {
@@ -51,57 +44,52 @@ pub(super) async fn prepare_test_ca(home: &HomePaths) {
     .unwrap();
 }
 
-fn load_ca() -> CaFixture {
-    let runtime = tokio::runtime::Handle::current();
-    let Some(session) = test_runner_build_session_id() else {
-        return runtime.block_on(generate_ca());
-    };
-    // nextest isolates cases in separate processes. Reuse only within its
-    // verified parent session and binary. Build mounts may have a foreign
-    // owner inside containers; keep the private slot in the temporary root.
-    let executable = std::env::current_exe().unwrap();
-    let directory = std::env::temp_dir().join(format!(
-        "okou-runner-network-test-ca-{}",
-        nix::unistd::geteuid()
-    ));
-    host_file::ensure_dir(&directory, DirMode::Private, "test CA cache").unwrap();
-    let lock = runner_host::lock::open_lock_file(&directory.join("identity.lock")).unwrap();
-    lock.lock().unwrap();
-    // This blocking owner retains the lock until generation and publication
-    // physically finish, even if its async observer stops waiting.
-    let path = directory.join("identity-v2.json");
-    if let Some(text) = runtime
-        .block_on(state_file::read_to_string(
-            &path,
-            64 * 1024,
-            OwnerCheck::CurrentEuidNoUntrustedWrites,
-        ))
-        .unwrap()
-    {
-        let cached: CachedCa = serde_json::from_str(&text).unwrap();
-        if cached.session == session && cached.executable == executable {
-            return cached.identity;
-        }
-    }
-    let cached = CachedCa {
-        session,
-        executable,
-        identity: runtime.block_on(generate_ca()),
-    };
-    state_file::write_private_atomic_blocking(&path, &serde_json::to_vec(&cached).unwrap())
+fn generate_ca() -> CaFixture {
+    let directory = tempfile::tempdir().unwrap();
+    let source = directory.path().join("proxy-fixture-key.der");
+    state_file::write_private_atomic_blocking(&source, &hex::decode(key::PKCS8_DER_HEX).unwrap())
         .unwrap();
-    cached.identity
+    // Issue a fresh certificate with the public synthetic key. The separate
+    // ca::tests suite exercises production prime generation and recovery.
+    let cert = openssl(
+        &[
+            "req",
+            "-new",
+            "-x509",
+            "-days",
+            "3650",
+            "-keyform",
+            "DER",
+            "-subj",
+            "/CN=mitmproxy/O=mitmproxy",
+            "-addext",
+            "basicConstraints=critical,CA:TRUE",
+            "-addext",
+            "keyUsage=critical,keyCertSign,cRLSign",
+            "-key",
+        ],
+        &source,
+    );
+    let key = openssl(&["pkey", "-inform", "DER", "-in"], &source);
+    let combined = format!("{cert}{key}");
+    CaFixture {
+        cert,
+        key,
+        combined,
+    }
 }
 
-async fn generate_ca() -> CaFixture {
-    // Lifecycle cases retain production-strength inputs. Genuine generation
-    // and recovery coverage stays independent in ca::tests.
-    let seed = tempfile::tempdir().unwrap();
-    let home = HomePaths::with_root(seed.path().join("home"));
-    crate::ca::ensure(&home).await.unwrap();
-    CaFixture {
-        cert: std::fs::read_to_string(home.ca_dir().join(crate::ca::CA_CERT)).unwrap(),
-        key: std::fs::read_to_string(home.ca_dir().join("mitmproxy-ca-key.pem")).unwrap(),
-        combined: std::fs::read_to_string(home.ca_dir().join("mitmproxy-ca.pem")).unwrap(),
-    }
+fn openssl(args: &[&str], key: &Path) -> String {
+    let output = Command::new("openssl")
+        .args(args)
+        .arg(key)
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "openssl {args:?} failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8(output.stdout).unwrap()
 }

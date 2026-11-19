@@ -863,7 +863,7 @@ function SpotlightSearchFilterBar({
   readonly resultCount: number;
   readonly onSelect: (filter: ThreeColumnSearchFilter) => void;
 }) {
-  const singleAgent = useGet(singleAgentEnabled$);
+  const singleAgent = useLastResolved(singleAgentEnabled$) ?? false;
   const { t } = useTranslation("agents");
   const options: readonly {
     readonly value: ThreeColumnSearchFilter;
@@ -1165,8 +1165,8 @@ function SpotlightSearchResults({
           </div>
         ) : null}
         {showNoResults ? (
-          // Same empty-state shape as the artifacts and workflows lists: a 96px
-          // spot illustration over a single line, centred in the list's minimum
+          // Same empty-state shape as the artifacts and workflows lists: a 96px-tall
+          // scene illustration over a single line, centred in the list's minimum
           // height so the dialog does not resize as results come and go.
           <div className="flex min-h-[268px] flex-col items-center justify-center px-6 text-center">
             <img
@@ -1174,7 +1174,7 @@ function SpotlightSearchResults({
               alt=""
               role="presentation"
               loading="lazy"
-              className="h-24 w-24 object-contain opacity-80"
+              className="h-24 w-36 object-contain"
             />
             <p className="mt-3 text-sm font-medium text-foreground">
               {t(($) => {
@@ -1207,7 +1207,9 @@ export function ThreeColumnSearchDialog({
   const query = useGet(chatListQuery$);
   const setQuery = useSet(setChatListQuery$);
   const signal = useGet(pageSignal$);
-  const filter = useGet(threeColumnSearchFilter$);
+  const rawFilter = useGet(threeColumnSearchFilter$);
+  const singleAgent = useLastResolved(singleAgentEnabled$);
+  const filter = singleAgent && rawFilter === "agents" ? "all" : rawFilter;
   const setFilter = useSet(setThreeColumnSearchFilter$);
   const threadLoadable = useLoadable(threeColumnSearchChatThreads$);
   const shortcutIndex = useSet(threadNumberShortcutIndex$);

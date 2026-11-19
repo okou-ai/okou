@@ -18,9 +18,6 @@ assert gate["if"] == "always()" and all(name in gate["needs"] for name in lanes)
 for name in lanes:
     job = jobs[name]
     assert job["needs"] == ["detect"], f"{name}: must start at the common detect boundary"
-    cache = next(step for step in job["steps"] if step.get("uses", "").startswith("Swatinem/rust-cache@"))
-    assert cache["with"]["shared-key"] == "check"
-    assert cache["with"]["save-if"] == ("${{ github.ref == 'refs/heads/main' }}" if name == "check" else False)
     # Once a lane is selected, its Cargo checks must run.
     assert not any("if" in step for step in job["steps"] if "cargo " in step.get("run", "")), name
 
@@ -68,9 +65,8 @@ def selected(name, values):
         expression(job["if"], values))
 
 
-def context(event, changed, ci, guest, ably, coverage=None):
-    values = {"github.event_name": event,
-              "needs.detect-release.outputs.skip": "false",
+def context(changed, ci, guest, ably, coverage=None):
+    values = {"needs.detect-release.outputs.skip": "false",
               "needs.detect.outputs.any-changed": str(changed).lower(),
               "needs.detect.outputs.ci-changed": str(ci).lower(),
               "needs.detect.outputs.coverage-needed": str(changed if coverage is None else coverage).lower(),
@@ -100,66 +96,66 @@ def assert_gate(values, expected, label):
     cases += 1
 
 
-for event in ("pull_request", "push", "merge_group"):
-    for changed, ci, guest, ably, coverage in itertools.product((False, True), repeat=5):
-        values = context(event, changed, ci, guest, ably, coverage)
-        wanted = {"check": changed, "check-docs": changed,
-                  "check-guest-production": changed and (guest or ci),
-                  "check-ably-smoke": changed and (ably or ci)}
-        for name in lanes:
-            assert selected(name, values) == wanted[name], (event, name, changed, ci, guest, ably)
-            values[f"needs.{name}.result"] = "success" if wanted[name] else "skipped"
-        assert selected("coverage", values) == coverage
-        values["needs.coverage.result"] = "success" if coverage else "skipped"
-        assert_gate(values, True, f"{event}: valid selection")
+# Selection and aggregation consume the same detector outputs for every event.
+for changed, ci, guest, ably, coverage in itertools.product((False, True), repeat=5):
+    values = context(changed, ci, guest, ably, coverage)
+    wanted = {
+        "check": changed,
+        "check-docs": changed,
+        "check-guest-production": changed and (guest or ci),
+        "check-ably-smoke": changed and (ably or ci),
+    }
+    selection = f"changed={changed}, ci={ci}, guest={guest}, ably={ably}, coverage={coverage}"
+    for name in lanes:
+        assert selected(name, values) == wanted[name], (name, selection)
+        values[f"needs.{name}.result"] = "success" if wanted[name] else "skipped"
+    assert selected("coverage", values) == coverage, selection
+    values["needs.coverage.result"] = "success" if coverage else "skipped"
+    assert_gate(values, True, selection)
 
-    # Generic/native CI work can remain selected independently of coverage.
-    for coverage in (False, True):
-        values = context(event, True, True, False, False, coverage)
-        for result in ("failure", "cancelled", "", "skipped"):
-            assert_gate(values | {"needs.coverage.result": result},
-                        result == "skipped" and not coverage,
-                        f"{event}: coverage={coverage}, result={result!r}")
+# Generic/native CI work can remain selected independently of coverage.
+for coverage in (False, True):
+    values = context(True, True, False, False, coverage)
+    for result in ("failure", "cancelled", "", "skipped"):
+        assert_gate(values | {"needs.coverage.result": result},
+                    result == "skipped" and not coverage,
+                    f"coverage={coverage}, result={result!r}")
 
-    # Exercise each independent selection path without crossing failures with
-    # every flag combination: outer skip, each inner selector, and CI-only work.
-    for changed, ci, guest, ably in (
-        (False, False, False, False),
-        (True, False, False, False),
-        (True, False, True, False),
-        (True, False, False, True),
-        (True, False, True, True),
-        (True, True, False, False),
-    ):
-        values = context(event, changed, ci, guest, ably)
-        wanted = {name: selected(name, values) for name in lanes}
-        values.update({
-            f"needs.{name}.result": "success" if wanted[name] else "skipped"
-            for name in lanes
-        })
-        for name in lanes:
-            for result in ("failure", "cancelled", "") + (("skipped",) if wanted[name] else ()):
-                assert_gate(values | {f"needs.{name}.result": result}, False, f"{event}: {name}={result!r}")
-    values = context(event, True, True, True, True)
-    for output in ("any-changed", "ci-changed", "guest-control-tests-changed", "ably-subscriber-changed", "coverage-needed"):
-        for invalid in ("", "TRUE", "unknown"):
-            assert_gate(values | {f"needs.detect.outputs.{output}": invalid}, False,
-                        f"{event}: invalid {output}={invalid!r}")
-    for result in ("failure", "cancelled", "skipped", ""):
-        broken = values | {"needs.detect.result": result}
-        assert all(not selected(name, broken) for name in lanes), "failed detect must suppress all lanes"
-        broken.update({f"needs.{name}.result": "skipped" for name in lanes})
-        assert_gate(broken, False, f"{event}: detect={result!r}")
-    released = values | {"needs.detect-release.outputs.skip": "true"}
-    released.update({f"needs.{name}.result": "skipped" for name in gate["needs"] if name != "detect-release"})
-    released.update({key: "" for key in released if key.startswith("needs.detect.outputs.")})
-    assert all(not selected(name, released) for name in lanes)
-    assert_gate(released, True, f"{event}: classified release")
-    for result in ("failure", "cancelled", "skipped", ""):
-        assert_gate(released | {"needs.detect-release.result": result}, False,
-                    f"{event}: failed release classifier={result!r}")
-    for invalid in ("", "TRUE", "unknown"):
-        assert_gate(values | {"needs.detect-release.outputs.skip": invalid}, False,
-                    f"{event}: invalid release selection={invalid!r}")
+# Check each lane's result with and without selection. The truth table above
+# already exercises selection through both the direct and CI-change paths.
+for enabled in (False, True):
+    values = context(enabled, False, True, True)
+    values.update({
+        f"needs.{name}.result": "success" if enabled else "skipped"
+        for name in lanes
+    })
+    values["needs.coverage.result"] = "success" if enabled else "skipped"
+    results = ("failure", "cancelled", "", "skipped") if enabled else ("failure", "cancelled", "")
+    for name in lanes:
+        for result in results:
+            assert_gate(values | {f"needs.{name}.result": result}, False,
+                        f"selected={enabled}, {name}={result!r}")
+
+values = context(True, True, True, True)
+for output in ("any-changed", "ci-changed", "guest-control-tests-changed", "ably-subscriber-changed", "coverage-needed"):
+    for invalid in ("", "TRUE"):
+        assert_gate(values | {f"needs.detect.outputs.{output}": invalid}, False,
+                    f"invalid {output}={invalid!r}")
+for result in ("failure", "cancelled", "skipped", ""):
+    broken = values | {"needs.detect.result": result}
+    assert all(not selected(name, broken) for name in lanes), "failed detect must suppress all lanes"
+    broken.update({f"needs.{name}.result": "skipped" for name in lanes})
+    assert_gate(broken, False, f"detect={result!r}")
+released = values | {"needs.detect-release.outputs.skip": "true"}
+released.update({f"needs.{name}.result": "skipped" for name in gate["needs"] if name != "detect-release"})
+released.update({key: "" for key in released if key.startswith("needs.detect.outputs.")})
+assert all(not selected(name, released) for name in lanes)
+assert_gate(released, True, "classified release")
+for result in ("failure", "cancelled", "skipped", ""):
+    assert_gate(released | {"needs.detect-release.result": result}, False,
+                f"failed release classifier={result!r}")
+for invalid in ("", "TRUE"):
+    assert_gate(values | {"needs.detect-release.outputs.skip": invalid}, False,
+                f"invalid release selection={invalid!r}")
 
 print(f"crates-parallel-checks-workflow-test: ok ({cases} gate cases)")

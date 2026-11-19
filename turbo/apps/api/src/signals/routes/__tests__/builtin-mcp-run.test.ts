@@ -240,9 +240,6 @@ describe("builtin MCP Run admission", () => {
       { authorization: `Bearer ${execution.firewallToken}` },
       {
         ...authBody,
-        encryptedSecrets: firewall.encryptedSecretsBody({
-          MCP_API_KEY: "caller-owned-alias-value",
-        }),
         secretConnectorMap: { MCP_API_KEY: "github" },
         secretConnectorMetadataMap: {},
       },

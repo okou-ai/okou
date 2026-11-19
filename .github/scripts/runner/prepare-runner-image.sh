@@ -3,6 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "${SCRIPT_DIR}/runner-image-target.sh"
+. "${SCRIPT_DIR}/runner-host-architecture-probe.sh"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 
 require_env() {
@@ -138,10 +139,7 @@ prepare_host() {
   echo "=== Preparing ${host} (job: ${job_ref}) ==="
 
   local remote_arch
-  if ! remote_arch=$(ssh "$remote" uname -m); then
-    return 1
-  fi
-  remote_arch=$(printf '%s\n' "$remote_arch" | tail -n1 | tr -d '\r')
+  remote_arch=$(runner_host_uname_m "$remote") || return $?
   if [ "$remote_arch" != "$EXPECTED_REMOTE_ARCH" ]; then
     echo "runner target ${TARGET_TRIPLE} expects remote architecture ${EXPECTED_REMOTE_ARCH}, but ${host} reported ${remote_arch}" >&2
     return 1

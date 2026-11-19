@@ -336,10 +336,24 @@ async function chooseAccess(
   });
 }
 
+async function findDirectory() {
+  return await waitFor(() => {
+    const directory = screen
+      .getAllByRole("dialog", { name: "Connectors" })
+      .find((dialog) => {
+        return within(dialog).queryByRole("radio", { name: "Custom" }) !== null;
+      });
+    if (!directory) {
+      throw new Error("Connector directory has not opened");
+    }
+    return directory;
+  });
+}
+
 async function openDirectory(user: ReturnType<typeof userEvent.setup>) {
   await user.click(await findFastControl("button", "Connectors"));
   await user.click(await findFastControl("button", "Add connectors"));
-  return await screen.findByRole("dialog", { name: "Connectors" });
+  return await findDirectory();
 }
 
 test.each([false, true])(
@@ -352,7 +366,7 @@ test.each([false, true])(
     const trigger = await findFastControl("button", "Connectors");
     await user.click(trigger);
     click(await findFastControl("button", "Add connectors"));
-    const directory = await screen.findByRole("dialog", { name: "Connectors" });
+    const directory = await findDirectory();
     await fill(
       within(directory).getByPlaceholderText("Find connectors..."),
       "GitHub",
@@ -787,8 +801,8 @@ test.each([
       const menu = await screen.findByRole("dialog", { name: "Connectors" });
       await user.click(await within(menu).findByText(label));
       await user.click(await findFastControl("button", "Manage accounts"));
-      await screen.findAllByText(`Manage ${label} accounts`);
-      expect(screen.getAllByText(`Manage ${label} accounts`)).toHaveLength(1);
+      const titles = await screen.findAllByText(`Manage ${label} accounts`);
+      expect(titles).toHaveLength(1);
       const manager = await screen.findByRole("dialog", {
         name: `Manage ${label} accounts`,
       });

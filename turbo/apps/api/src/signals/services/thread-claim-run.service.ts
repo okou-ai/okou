@@ -1,5 +1,6 @@
 import { publishChatThreadMessageCreated$ } from "./chat-event-publication.service";
 import { loadEmailSourceMessageContext$ } from "./email-source-message.service";
+import { scheduleUserWidgetRefresh$ } from "./ios-widget-push.service";
 import { STAFF_SINGLE_AGENT_ORG_ID } from "@okouai/core/single-agent-migration";
 import { buildEmailPrompt } from "./email-prompt";
 import { resolveIntegrationNotePrompt } from "./integration-note-prompt.service";
@@ -47,6 +48,7 @@ import {
   type PromptAndSkillVolumes,
   PromptAndSkillVolumesError,
 } from "./thread-run-prompt/prompt-and-skill-volumes";
+import type { PickedThreadInputEvent } from "./thread-run-prompt/types";
 import { createChatRunPreparationSnapshot } from "./chat-run-preparation-snapshot.signals";
 
 import {
@@ -89,13 +91,10 @@ import {
   tapError,
 } from "../utils";
 import type { DirectRunDispatchResult } from "./direct-run-dispatch.service";
+import type { AdmittedRunLaunch } from "./direct-run-preparation.service";
 import {
-  captureExecutionPackages$,
-  type AdmittedRunLaunch,
-} from "./direct-run-preparation.service";
-import {
-  executionSkillRoot,
-  type ExecutionWorkflowInput,
+  prepareRunPackageMounts,
+  selectExecutionPackages,
 } from "./execution-workflow-selection";
 import { dispatchCompleteSideEffects$ } from "./agent-run-lifecycle.service";
 import {
@@ -123,10 +122,10 @@ import {
   type PreparedChatEventRow,
 } from "./chat-event-append.service";
 import { recordThreadRunActivationMarkers } from "./chat-first-assistant-event-metric.service";
-import type {
-  QueuedUserMessage,
-  QueuedUserMessageContextType,
-  QueueFirstRunAssociation,
+import {
+  queuedThreadInputCondition,
+  type QueuedUserMessage,
+  type QueuedUserMessageContextType,
 } from "./chat-queued-event.service";
 import { finalizeClaimedRunUserMessage$ } from "./chat-run-event.service";
 import { randomUUID } from "node:crypto";
@@ -152,13 +151,11 @@ import {
   recordQueuedPromptRunLaunch$,
   rejectedQueuedRunAdmissionFailure,
 } from "./internal-chat-run-callback.service";
-import type { ModelCatalog } from "./model-catalog.service";
 import { morningBriefScheduleClaimBound$ } from "./morning-brief-schedule-claim.service";
 import {
   OFFICIAL_WORKFLOW_RUN_ADMISSION_MESSAGE,
   OfficialWorkflowRunAdmissionError,
-  exactMountsMatch,
-  type OfficialWorkflowRunObservation,
+  type OfficialWorkflowObservation,
 } from "./official-workflow-run.service";
 import { pendingLaunchBillingAttributionSql } from "./pending-launch-billing-plan";
 import {
@@ -166,16 +163,7 @@ import {
   pendingLaunchClaimFenceSql,
   pendingLaunchClaimProducerStatements,
 } from "./pending-launch-claim-plan";
-import {
-  pendingAdmissionRecordSchema as admissionRow,
-  advancePendingLaunchAdmission,
-  pendingLaunchAdmissionStart,
-} from "./pending-launch-admission-plan";
 import { pendingLaunchInsertSql } from "./pending-launch-sql";
-import {
-  type PiModelPreparationInput,
-  resolvePreparedPiModelConfig,
-} from "./pi-sandbox-config";
 import {
   checkCatalogRunRoute,
   checkOrgPlanRunAdmission,
@@ -191,15 +179,13 @@ import {
 } from "./api-dispatch-timing.service";
 import { maxAutonomyBudget$ } from "../autonomy-budget-limit";
 import { childAutonomyBudget } from "./autonomy-budget.service";
-import {
-  canonicalChatEventUserMessage,
-  canonicalChatInputModelSelection,
-  parseCanonicalChatEventRequiredOfficialWorkflowIds,
-} from "./canonical-chat-event-read.service";
+import { parseCanonicalChatEventRequiredOfficialWorkflowIds } from "./canonical-chat-event-read.service";
 import {
   prepareChatEvent,
   prepareChatEventReplacement,
+  type LoadedChatEventReplacementTarget,
 } from "./chat-event.service";
+import { withRunModelAnnotation } from "./chat-user-message.service";
 import { chatInputEnqueueCommits$ } from "./chat-input-enqueue-observation";
 import type {
   ChatQueueHeadContext,
@@ -235,7 +221,6 @@ import { isStaffOrg } from "@okouai/core/staff-org";
 import type {
   AgentRunFullLaunchSnapshot,
   AgentRunLaunchSnapshot,
-  AgentRunOfficialWorkflowProvenance,
 } from "@okouai/db/jsonb-contracts/agent-run-session-conversation";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
@@ -244,7 +229,10 @@ import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agen
 
 import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
 
-import { chatEvents } from "@okouai/db/schema/chat-event";
+import {
+  chatEvents,
+  type ChatEventUserMessage,
+} from "@okouai/db/schema/chat-event";
 
 import { chatNetworkBodyCaptures } from "@okouai/db/schema/chat-network-body-capture";
 
@@ -253,6 +241,7 @@ import type { PersistedStorageMount } from "@okouai/db/types";
 import { command, type Command, computed, type Computed, state } from "ccstate";
 import {
   and,
+  asc,
   count,
   eq,
   exists,
@@ -308,8 +297,8 @@ import {
 } from "./workflow-automation-enqueue.service";
 import { manualTriggerSource } from "./workflow-automation-trigger-source";
 import { recordWorkflowAdmissionDuration } from "./workflow-queue-admission-timing.service";
-import { prepareRunAdmissionMetadata } from "./run-storage-manifest.service";
-import { createStorageSignals, type Storage } from "./thread-storage.signals";
+import { createStorageSignals } from "./thread-storage.signals";
+import type { AcceptedMemoryMount } from "./execution-storage.service";
 import { settleRejectedAutomationInput$ } from "./workflow-schedule-failure.service";
 
 export interface ThreadClaim {
@@ -537,7 +526,6 @@ function queuedPromptRunInput(args: {
     queuedMessage: input.queuedMessage,
     selectedModel: model.pin.selectedModel,
     effectiveModelProvider: model.pin.modelProviderType,
-    piExecution: model.piExecution,
     codexServiceTier: model.codexServiceTier,
     reasoningEffort: model.reasoningEffort,
     triggerSource: launch.triggerSource,
@@ -557,7 +545,6 @@ function threadRunModelFields(model: ThreadModelSelection) {
     modelProvider: model.pin.modelProviderType,
     selectedModel: model.pin.selectedModel,
     codexServiceTier: model.codexServiceTier,
-    piExecution: model.piExecution,
   };
 }
 
@@ -575,11 +562,6 @@ function promptRunCommand(
     reasoningEffort: input.reasoningEffort,
     triggerSource: input.triggerSource,
     agentRunPreCreateSource: "chat_callback_auto_send",
-    queueFirstAssociation: {
-      threadId: input.threadId,
-      eventId: input.queuedMessage.id,
-    },
-    piExecution: input.piExecution,
     agentRunMetadata: { autonomyBudget: input.autonomyBudget },
     modelProvider: input.effectiveModelProvider,
     ...(input.realAgentInPreview ? { realAgentInPreview: true } : {}),
@@ -718,7 +700,7 @@ interface AssembledWorkflowAutomationRun {
 function automationSelectionCommand(
   args: Pick<
     AssembleWorkflowAutomationRunArgs,
-    "due" | "apiStartTime" | "queueEventId" | "triggerSource"
+    "due" | "apiStartTime" | "triggerSource"
   >,
   model: ThreadModelSelection,
   owner: ThreadRunOwner,
@@ -731,10 +713,6 @@ function automationSelectionCommand(
     chatThreadId,
     ...threadRunModelFields(model),
     reasoningEffort: model.reasoningEffort ?? null,
-    queueFirstAssociation: {
-      threadId: chatThreadId,
-      eventId: args.queueEventId,
-    },
   };
 }
 
@@ -886,7 +864,6 @@ function claimCommitArguments(
     agentRunMetadata: args.agentRunMetadata,
     modelSelection: args.modelSelection,
     codexServiceTier: args.codexServiceTier,
-    queueFirstAssociation: args.queueFirstAssociation,
     timingDimensions: args.timingDimensions,
     threadContinuation: {
       expected: args.threadContinuation.expected,
@@ -1387,48 +1364,41 @@ export function createThreadClaimRunObjects(
       };
     },
   );
-  const promptEvent$ = computed(async (get) => {
-    // The picked head already excludes consumed and revoked inputs.
-    const picked = await get(pickedEvent$);
-    const event = picked?.eventType === "input.prompt" ? picked : null;
+  const queuedInput$ = computed(async (get) => {
+    const event = await get(pickedEvent$);
     if (!event) {
       return null;
     }
     if (!event.userMessage) {
       throw new Error("Queued input event is missing userMessage");
     }
-    if (!event.contextType) {
-      throw new Error("Queued user message is missing its context type");
-    }
-    const parsedClaim = safeSync(() => {
-      return parseCanonicalChatEventRequiredOfficialWorkflowIds(
-        event.requiredOfficialWorkflowIds,
-      );
-    });
-    if ("error" in parsedClaim) {
-      throw new QueuedPromptInputInvalidError(
-        "Invalid Official Workflow source claim",
-      );
-    }
-    const requiredOfficialWorkflowIds = parsedClaim.ok;
-    assertQueuedPromptContext({
-      contextType: event.contextType,
-      contextId: event.contextId,
-      requiredOfficialWorkflowIds,
-    });
-    return {
-      ...event,
-      userMessage: event.userMessage,
-      contextType: event.contextType,
-      requiredOfficialWorkflowIds,
-    };
+    return { ...event, userMessage: event.userMessage };
   });
   const promptMessage$ = computed(
     async (get): Promise<QueuedUserMessage | null> => {
-      const event = await get(promptEvent$);
-      if (!event) {
+      const event = await get(queuedInput$);
+      if (event?.eventType !== "input.prompt") {
         return null;
       }
+      if (!event.contextType) {
+        throw new Error("Queued user message is missing its context type");
+      }
+      const parsedClaim = safeSync(() => {
+        return parseCanonicalChatEventRequiredOfficialWorkflowIds(
+          event.requiredOfficialWorkflowIds,
+        );
+      });
+      if ("error" in parsedClaim) {
+        throw new QueuedPromptInputInvalidError(
+          "Invalid Official Workflow source claim",
+        );
+      }
+      const requiredOfficialWorkflowIds = parsedClaim.ok;
+      assertQueuedPromptContext({
+        contextType: event.contextType,
+        contextId: event.contextId,
+        requiredOfficialWorkflowIds,
+      });
       if (event.preparation.isOfficialWorkflowThread) {
         throw new QueuedPromptLaunchUnavailableError(
           OFFICIAL_WORKFLOW_THREAD_READ_ONLY_MESSAGE,
@@ -1438,8 +1408,7 @@ export function createThreadClaimRunObjects(
         id: event.id,
         createdAt: event.createdAt,
         userMessage: event.userMessage,
-        requiredOfficialWorkflowIds:
-          event.requiredOfficialWorkflowIds ?? undefined,
+        requiredOfficialWorkflowIds: requiredOfficialWorkflowIds ?? undefined,
         selectedModel: event.modelSelection?.selectedModel ?? null,
         contextType: event.contextType,
         contextId: event.contextId,
@@ -1819,10 +1788,6 @@ export function createThreadClaimRunObjects(
       owner: { userId: args.userId, orgId: args.agent.orgId },
       apiStartTime: head.apiStartTime,
       agentId: args.agent.id,
-      queueFirstAssociation: {
-        threadId: args.threadId,
-        eventId: args.queuedMessage.id,
-      },
     };
   });
   const promptSelection$ = computed(async (get) => {
@@ -1843,7 +1808,6 @@ export function createThreadClaimRunObjects(
         owner: identity.owner,
         apiStartTime: identity.apiStartTime,
         chatThreadId: args.threadId,
-        queueFirstAssociation: identity.queueFirstAssociation,
         ...threadRunModelFields(model),
         reasoningEffort: model.reasoningEffort,
       },
@@ -2453,11 +2417,10 @@ export function createThreadClaimRunObjects(
     },
   );
   const preparedRunInput$ = computed(async (get) => {
-    const [input, resolution, fullCommand, catalog] = await Promise.all([
+    const [input, resolution, fullCommand] = await Promise.all([
       get(runPreparation$),
       get(threadContinuation$),
       get(assembledRun$),
-      get(claimCatalog$),
     ]);
     if (!fullCommand) {
       return null;
@@ -2472,7 +2435,6 @@ export function createThreadClaimRunObjects(
     }
     return {
       ...input,
-      catalog,
       command: fullCommand,
       threadContinuation: resolution,
     };
@@ -2665,38 +2627,32 @@ export function createThreadClaimRunObjects(
     }
     const { content } = contentContext;
     const { modelProvider, framework } = runtimeContext;
-    const piSandbox = resolvePreparedPiModelConfig({
-      input: piModelPreparationInput(args),
-      modelProvider,
-    });
     const { resolved } = contentContext;
     const promptAndSkills = await get(preparedPromptAndSkillVolumes$);
     if (isRouteError(promptAndSkills)) {
       return promptAndSkills;
     }
-    const metadata = prepareRunAdmissionMetadata({
+    const launchFramework =
+      modelProvider.piModelConfig === undefined ? framework : ("pi" as const);
+    const packageMounts = prepareRunPackageMounts({
+      framework: launchFramework,
       skillVolumes: promptAndSkills.skillVolumes,
       officialWorkflow: officialWorkflowRun,
-      framework,
-      piSandbox,
     });
     return {
       content,
       resolved,
-      framework,
-      piSandbox,
       modelProvider,
       connectorRuntimeTargets: runtimeContext.connectorRuntimeTargets,
       connectorEnvironment: runtimeContext.connectorEnvironment,
       connectorNetworkPolicyInputs: runtimeContext.connectorNetworkPolicyInputs,
-      connectorSkillVolumes: promptAndSkills.connectorSkillVolumes,
       modelProviderPermissions: runtimeContext.modelProviderPermissions,
-      seedSkillVolumes: promptAndSkills.seedSkillVolumes,
-      templateSkillVolumes: promptAndSkills.templateSkillVolumes,
       integrationContext:
         promptAndSkills.systemPromptVariables.integrationContext,
       userTimezone: promptAndSkills.userTimezone,
-      ...metadata,
+      launchFramework,
+      officialWorkflowProvenance: officialWorkflowRun?.provenance,
+      ...packageMounts,
       featureSwitchContext: contentContext.featureSwitchContext,
       selectedImageModel,
     };
@@ -2804,57 +2760,21 @@ export function createThreadClaimRunObjects(
     ].join("\n");
   });
 
-  /**
-   * The one rejection of a picked queue head, for business rejections and
-   * unexpected preparation or commit failures alike: record the rejected input
-   * and its error message, settle an automation tick, publish the realtime
-   * event and deliver the failure to the source integration. With `lease`, the
-   * rejection and the release of that lease commit together, and only while
-   * the claim still holds it; otherwise the statement rolls back every write.
-   * The event sequence is reserved first, then the queue lease is released
-   * before the rejection events and thread sort writes.
-   */
-  const rejectionInput$ = command(
-    async ({ get }, head: RejectedQueueHead, signal: AbortSignal) => {
-      const [source] = await get(db$)
-        .select({
-          id: chatEvents.id,
-          chatThreadId: chatEvents.chatThreadId,
-          eventType: chatEvents.eventType,
-          userMessage: canonicalChatEventUserMessage(),
-          createdAt: chatEvents.createdAt,
-          contextType: chatEvents.contextType,
-          contextId: chatEvents.contextId,
-          modelSelection: canonicalChatInputModelSelection(),
-        })
-        .from(chatEvents)
-        .where(
-          and(
-            eq(chatEvents.id, head.id),
-            eq(chatEvents.chatThreadId, head.chatThreadId),
-          ),
-        )
-        .limit(1);
-      signal.throwIfAborted();
-      if (!source?.userMessage) {
-        throw new Error("Queued input event is missing userMessage");
-      }
-      return { ...source, userMessage: source.userMessage };
-    },
-  );
-
   const commitQueueHeadRejection$ = command(
     async (
-      { set },
+      { get, set },
       args: {
-        readonly head: RejectedQueueHead;
         readonly errorMarker: string;
         readonly displayError: string;
         readonly lease?: ThreadClaim;
       },
       signal: AbortSignal,
-    ) => {
-      const source = await set(rejectionInput$, args.head, signal);
+    ): Promise<string | null> => {
+      const source = await get(queuedInput$);
+      signal.throwIfAborted();
+      if (!source) {
+        throw new Error("Claim has no picked event");
+      }
       const rejectedAt = new Date(
         Math.max(nowDate().getTime(), source.createdAt.getTime() + 1),
       );
@@ -2915,11 +2835,7 @@ export function createThreadClaimRunObjects(
       if (result.assistantEventId === null) {
         throw new Error("Failed to append queued input rejection");
       }
-      return {
-        assistantEventId: result.assistantEventId,
-        contextType: source.contextType,
-        contextId: source.contextId,
-      };
+      return result.assistantEventId;
     },
   );
 
@@ -2952,13 +2868,13 @@ export function createThreadClaimRunObjects(
                 signal,
               );
       signal.throwIfAborted();
-      const rejected = await set(
+      const assistantEventId = await set(
         commitQueueHeadRejection$,
-        { head, errorMarker: error.code.toLowerCase(), displayError, lease },
+        { errorMarker: error.code.toLowerCase(), displayError, lease },
         signal,
       );
       signal.throwIfAborted();
-      if (!rejected) {
+      if (assistantEventId === null) {
         return;
       }
       // Business rejections already have durable input.rejected/output.error
@@ -2988,7 +2904,7 @@ export function createThreadClaimRunObjects(
         ? set(
             deliverQueuedPromptRejection$,
             rejection.delivery,
-            rejected.assistantEventId,
+            assistantEventId,
             signal,
           )
         : error.code === "INTERNAL_ERROR" && agentId !== null
@@ -2996,7 +2912,7 @@ export function createThreadClaimRunObjects(
               deliverUnexpectedQueuedPromptRejection$,
               {
                 head: { ...head, agentId },
-                assistantEventId: rejected.assistantEventId,
+                assistantEventId,
               },
               signal,
             )
@@ -3040,14 +2956,14 @@ export function createThreadClaimRunObjects(
         return context;
       }
       const args = await get(contextArgs$);
+      const modelProvider = context.modelProvider;
       const launchSnapshot = {
         schemaVersion: 5 as const,
-        framework:
-          context.piSandbox === undefined ? context.framework : ("pi" as const),
+        framework: context.launchFramework,
         runnerProfile: DEFAULT_PROFILE,
       };
       const { content } = context;
-      const event = await get(pickedEvent$);
+      const event = await get(queuedInput$);
       if (!event) {
         throw new Error("Run preparation requires its selected input");
       }
@@ -3077,16 +2993,16 @@ export function createThreadClaimRunObjects(
           integration = event.contextType ?? undefined;
         }
       }
-      const { officialWorkflowRun, selectedImageModel } = context;
-      const modelProvider = context.modelProvider;
+      const { officialWorkflowProvenance, selectedImageModel } = context;
       return {
         args,
         integrationContext: context.integrationContext,
         persisted: {
+          inputEvent: event,
           content,
           selectedImageModel,
           launchSnapshot,
-          officialWorkflowRun,
+          officialWorkflowProvenance,
           resolved: {
             agentId: context.resolved.agentId,
           },
@@ -3101,11 +3017,9 @@ export function createThreadClaimRunObjects(
           },
         },
         runner: {
-          skillRoot: executionSkillRoot(launchSnapshot.framework),
           workflowAutomationId: args.agentRunMetadata.workflowAutomationId,
           agentId: context.resolved.agentId,
           protectedMountPaths: context.protectedMountPaths,
-          officialWorkflowRun,
           nativeContinuation:
             args.threadContinuation.executionSnapshot.nativeContinuation,
           realAgentInPreview: args.realAgentInPreview,
@@ -3113,18 +3027,15 @@ export function createThreadClaimRunObjects(
           featureSwitchContext: context.featureSwitchContext,
           connectorRuntimeTargets: context.connectorRuntimeTargets,
           facts: {
-            templateSkillVolumes: context.templateSkillVolumes,
+            skillRoot: context.skillRoot,
+            skillMounts: context.skillMounts,
+            officialWorkflowBundles: context.officialWorkflowBundles,
             integration,
             captureNetworkBodies: args.captureNetworkBodies === true,
-            modelProvider: {
-              ...modelProvider,
-              piModelConfig: context.piSandbox,
-            },
+            modelProvider,
             modelProviderPermissions: context.modelProviderPermissions,
             connectorEnvironment: context.connectorEnvironment,
             connectorNetworkPolicyInputs: context.connectorNetworkPolicyInputs,
-            connectorSkillVolumes: context.connectorSkillVolumes,
-            seedSkillVolumes: context.seedSkillVolumes,
             userTimezone: context.userTimezone,
           },
           apiStartTime: await get(runnerApiStartTime$),
@@ -3154,7 +3065,11 @@ export function createThreadClaimRunObjects(
   // plan; storage runs alongside it and its failure matters only when the plan
   // is ready.
   const preparedStorage$ = computed(
-    async (get): Promise<Storage | CreateRunErrorResult | null> => {
+    async (
+      get,
+    ): Promise<
+      readonly AcceptedMemoryMount[] | CreateRunErrorResult | null
+    > => {
       if (!(await get(resourceAllowed$))) {
         return null;
       }
@@ -3200,41 +3115,45 @@ export function createThreadClaimRunObjects(
           : { automationId: args.workflowAutomationId }),
         protectedMountPaths: [...args.protectedMountPaths],
       };
-      const officialMountPaths =
-        args.officialWorkflowRun?.provenance.definitions.map((definition) => {
-          return `${args.skillRoot}/${definition.name}`;
-        }) ?? [];
-      const [tokenInput, executionPackages, disabledPaidTools] =
-        await Promise.all([
-          get(okouTokenInput$),
-          set(
-            captureExecutionPackages$,
-            {
-              orgId: bootstrap.orgId,
-              userId: bootstrap.userId,
-              selection: {
-                skillRoot: args.skillRoot,
-                selection: {
-                  agentId: customWorkflowSelection.agentId,
-                  ...(!args.officialWorkflowRun && args.workflowAutomationId
-                    ? { automationId: args.workflowAutomationId }
-                    : {}),
-                  protectedMountPaths: [
-                    ...customWorkflowSelection.protectedMountPaths,
-                    ...officialMountPaths,
-                  ],
-                },
-              },
-              singleAgent: isFeatureEnabled(
-                FeatureSwitchKey.SingleAgent,
-                args.featureSwitchContext,
-              ),
-            },
-            signal,
-          ),
-          get(bootstrap.disabledPaidTools$),
-        ]);
+      const officialMountPaths = args.facts.officialWorkflowBundles.map(
+        ({ mountPath }) => {
+          return mountPath;
+        },
+      );
+      const timing = get(threadContext.dispatchTiming$);
+      const [
+        tokenInput,
+        packageSources,
+        ordinaryAutomation,
+        disabledPaidTools,
+      ] = await Promise.all([
+        get(okouTokenInput$),
+        timing.measure(
+          "api_dispatch_prepare_execution_package_wait",
+          "nested",
+          () => {
+            return get(threadContext.executionPackageSources$);
+          },
+        ),
+        args.workflowAutomationId &&
+        args.facts.officialWorkflowBundles.length === 0
+          ? get(automationTarget$)
+          : null,
+        get(bootstrap.disabledPaidTools$),
+      ]);
       signal.throwIfAborted();
+      const executionPackages = selectExecutionPackages(packageSources, {
+        skillRoot: args.facts.skillRoot,
+        protectedMountPaths: [
+          ...args.protectedMountPaths,
+          ...officialMountPaths,
+        ],
+        singleAgent: isFeatureEnabled(
+          FeatureSwitchKey.SingleAgent,
+          args.featureSwitchContext,
+        ),
+        ordinaryAutomation,
+      });
       if (!executionPackages) {
         return conflict("Run packages or source authorization are unavailable");
       }
@@ -3282,7 +3201,10 @@ export function createThreadClaimRunObjects(
       }
       return {
         ...input,
-        runStorageMounts: preparedStorage.metadata.persistedStorageMounts,
+        memoryMounts: preparedStorage,
+        runStorageMounts: preparedStorage.map(({ mount }) => {
+          return mount;
+        }),
       };
     },
   );
@@ -3320,7 +3242,7 @@ export function createThreadClaimRunObjects(
         }
         return model;
       }
-      return await set(
+      const rejection = await set(
         checkRunAdmission$,
         {
           catalog: await get(claimCatalog$),
@@ -3332,6 +3254,20 @@ export function createThreadClaimRunObjects(
         },
         signal,
       );
+      if (rejection || input.command.codexServiceTier !== "ultrafast") {
+        return rejection;
+      }
+      const context = await get(contentContext$);
+      signal.throwIfAborted();
+      if (isRouteError(context)) {
+        return context;
+      }
+      return isFeatureEnabled(
+        FeatureSwitchKey.CodexSubscriptionUltrafast,
+        context.featureSwitchContext,
+      )
+        ? null
+        : badRequestMessage("Ultrafast is unavailable in this workspace");
     },
   );
   const authorizeIdentity$ = computed(async (get) => {
@@ -3517,8 +3453,6 @@ export function createThreadClaimRunObjects(
         const launch = await set(prepareAutomationLaunch$, head, signal);
         signal.throwIfAborted();
         if (launch.kind === "rejected") {
-          // The automation input was rejected from its captured reads;
-          // no launch read can change that, so none starts.
           return { kind: "rejected" as const, assembly: launch.assembly };
         }
         rewardArgs = await set(prepareAutomationRun$, launch.args, signal);
@@ -3854,7 +3788,7 @@ export function createThreadClaimRunObjects(
   );
 
   const publishPendingRun$ = command(
-    async (_context, pending: PendingClaimRun, signal: AbortSignal) => {
+    async ({ set }, pending: PendingClaimRun, signal: AbortSignal) => {
       signal.throwIfAborted();
       // Immediate and queued picks have committed their active-run slot here.
       // Pending shell approvals must re-read chat_busy before the runner starts.
@@ -3863,6 +3797,7 @@ export function createThreadClaimRunObjects(
       );
       signal.throwIfAborted();
       // The committed pending Run is the active indicator's only start edge.
+      set(scheduleUserWidgetRefresh$, pending.context.head.userId);
       await publishChatIndicatorsChangedSafely({
         userId: pending.context.head.userId,
         orgId: pending.context.head.orgId,
@@ -4080,6 +4015,7 @@ interface PreparedRunnerLaunch {
   readonly reuseKey: string;
   readonly facts: Omit<AdmittedExecutionFacts, "connectorRuntimeTargets">;
   readonly runStorageMounts: readonly PersistedStorageMount[];
+  readonly memoryMounts: readonly AcceptedMemoryMount[];
   readonly connectorRuntimeTargets: readonly ConnectorRuntimeTargetRegistration[];
 }
 
@@ -4087,16 +4023,6 @@ type AgentRunCallbackInsert = typeof agentRunCallbacks.$inferInsert;
 
 interface QueueFirstRunClaimLost {
   readonly kind: "queue-first-claim-lost";
-}
-
-interface ValidatedThreadSessionSnapshot {
-  readonly kind: "validated-thread-session-snapshot";
-  readonly chatThreadId: string;
-  readonly threadAgentId: string | null;
-  readonly framework: string | null;
-  readonly frameworkSessionId: string | null;
-  readonly frameworkSessionRunId: string | null;
-  readonly admission: ChatThreadContinuation["admission"];
 }
 
 type AtomicLaunchCommitResult =
@@ -4127,18 +4053,22 @@ interface ThreadRunPersistenceArgs {
   readonly chatThreadId: string;
   readonly agentRunMetadata: AgentRunMetadata;
   readonly modelSelection: ModelFirstPin;
-  readonly codexServiceTier?: "fast";
-  readonly queueFirstAssociation: QueueFirstRunAssociation;
+  readonly codexServiceTier?: "fast" | "ultrafast";
   readonly timingDimensions: ApiDispatchTimingDimensions;
   readonly threadContinuation: PendingThreadContinuation;
 }
 
-/** Explicit run facts persisted with the launch rows. */
+/** Facts used to publish the picked input and its Run. */
 interface ThreadRunPersistenceContext {
+  readonly inputEvent: LoadedChatEventReplacementTarget &
+    Pick<PickedThreadInputEvent, "modelSelection"> & {
+      readonly userMessage: ChatEventUserMessage;
+    };
   readonly content: ThreadRunContent;
   readonly selectedImageModel: ImageModel;
   readonly launchSnapshot: AgentRunFullLaunchSnapshot;
-  readonly officialWorkflowRun: OfficialWorkflowRunObservation | undefined;
+  readonly officialWorkflowProvenance:
+    OfficialWorkflowObservation["provenance"] | undefined;
   readonly resolved: {
     readonly agentId: string;
   };
@@ -4179,15 +4109,7 @@ interface LaunchRunRowsArgs {
   readonly resolved: ThreadRunPersistenceContext["resolved"];
   readonly content: ThreadRunContent;
   readonly runStorageMounts: readonly PersistedStorageMount[];
-  readonly modelProvider: Pick<
-    ResolvedModelProviderEnvironment,
-    | "credentialOwner"
-    | "id"
-    | "type"
-    | "selectedModel"
-    | "builtInModelRuntimeRoute"
-    | "upstreamModel"
-  >;
+  readonly modelProvider: ThreadRunPersistenceContext["modelProvider"];
   readonly modelSelection: ModelFirstPin;
   readonly selectedImageModel: ImageModel;
   readonly callbackRows: readonly AgentRunCallbackInsert[];
@@ -4196,8 +4118,7 @@ interface LaunchRunRowsArgs {
   readonly apiStartTime: number;
   readonly runnerGroup: string;
   readonly launchSnapshot: AgentRunLaunchSnapshot;
-  readonly officialWorkflowProvenance:
-    AgentRunOfficialWorkflowProvenance | undefined;
+  readonly officialWorkflowProvenance: ThreadRunPersistenceContext["officialWorkflowProvenance"];
 }
 
 function launchRunValues(
@@ -4212,6 +4133,7 @@ function launchRunValues(
     orgId: args.orgId,
     status: "pending",
     agentId: args.resolved.agentId,
+    modelProviderAccountIdentity: args.modelProvider.accountIdentity,
     prompt: args.content.prompt,
     storageMounts: [...args.runStorageMounts],
     runnerGroup: args.runnerGroup,
@@ -4327,7 +4249,7 @@ function preparedLaunchRowsArgs(
     apiStartTime: commit.createArgs.apiStartTime,
     runnerGroup: commit.launch.runnerGroup,
     launchSnapshot: commit.context.launchSnapshot,
-    officialWorkflowProvenance: commit.context.officialWorkflowRun?.provenance,
+    officialWorkflowProvenance: commit.context.officialWorkflowProvenance,
   };
 }
 
@@ -4343,7 +4265,7 @@ interface PreparedAtomicLaunchPersistence {
   >;
 }
 
-export interface PreparedThreadLaunchCommit extends ThreadLaunchCommitInput {
+interface PreparedThreadLaunchCommit extends ThreadLaunchCommitInput {
   readonly planCapabilities: OrgPlanCapabilities | null;
   readonly featureSwitchContext: FeatureSwitchContext;
   readonly persistence: PreparedAtomicLaunchPersistence;
@@ -4362,11 +4284,6 @@ function prepareAtomicLaunchPersistence(
         targets: commit.launch.connectorRuntimeTargets,
       }),
   };
-}
-
-interface ValidatedPreparedLaunchAdmission {
-  readonly validatedThreadSession: ValidatedThreadSessionSnapshot;
-  readonly validatedAccountIdentity: string | null;
 }
 
 type ReturnedIdCte = WithSubquery & { readonly id: SQLWrapper };
@@ -4401,18 +4318,12 @@ function appendLaunchCallbackCte(args: {
   }
 }
 
-function launchThreadBindingCte(args: {
-  readonly chatThreadId: string;
-  readonly userId: string;
-  readonly orgId: string;
-  readonly identity: LaunchRunIdentity;
-  readonly validatedThreadSession: ValidatedThreadSessionSnapshot;
-}) {
-  const expected = args.validatedThreadSession;
-  if (expected.chatThreadId !== args.chatThreadId) {
-    throw new Error("Validated thread does not match launch");
-  }
-  if (expected.admission.runId !== args.identity.runId) {
+function launchThreadBindingCte({
+  createArgs,
+  identity,
+}: ThreadLaunchCommitInput) {
+  const { expected, admission } = createArgs.threadContinuation;
+  if (admission.runId !== identity.runId) {
     throw new Error("Captured predecessor facts do not match launch identity");
   }
   return new QueryBuilder().$with("validated_launch_thread").as(
@@ -4421,14 +4332,14 @@ function launchThreadBindingCte(args: {
       .from(chatThreads)
       .where(
         and(
-          eq(chatThreads.id, args.chatThreadId),
-          eq(chatThreads.userId, args.userId),
-          chatThreadOrganizationCondition(args.orgId),
+          eq(chatThreads.id, createArgs.chatThreadId),
+          eq(chatThreads.userId, createArgs.userId),
+          chatThreadOrganizationCondition(createArgs.orgId),
           sql`${chatThreads.agentId} IS NOT DISTINCT FROM ${expected.threadAgentId}::uuid`,
           sql`${chatThreads.framework} IS NOT DISTINCT FROM ${expected.framework}::text`,
           sql`${chatThreads.frameworkSessionId} IS NOT DISTINCT FROM ${expected.frameworkSessionId}::text`,
           sql`${chatThreads.frameworkSessionRunId} IS NOT DISTINCT FROM ${expected.frameworkSessionRunId}::uuid`,
-          sql`${chatThreads.frameworkSessionRunId} IS NOT DISTINCT FROM ${expected.admission.finalizingSourceRunId}::uuid`,
+          sql`${chatThreads.frameworkSessionRunId} IS NOT DISTINCT FROM ${admission.finalizingSourceRunId}::uuid`,
         ),
       ),
   );
@@ -4441,22 +4352,15 @@ function buildAtomicLaunchCteContext(args: AtomicLaunchRowsPlanArgs) {
   const createdAt = nowDate();
   const ctes: WithSubquery[] = [];
 
-  const updatedThread = launchThreadBindingCte({
-    chatThreadId: args.commit.createArgs.chatThreadId,
-    userId: args.commit.createArgs.userId,
-    orgId: args.commit.createArgs.orgId,
-    identity: rowsArgs.identity,
-    validatedThreadSession: args.validatedThreadSession,
-  });
+  const updatedThread = launchThreadBindingCte(args.commit);
   ctes.push(updatedThread);
   const automationId = metadata.workflowAutomationId;
   // A deleted source has the same nullable history link as ON DELETE SET NULL.
   // The key-share lock protects only the foreign key while publishing the Run.
-  const workflowAutomationId =
-    rowsArgs.officialWorkflowProvenance && automationId
-      ? sql`(SELECT ${workflowAutomations.id} FROM ${workflowAutomations}
-          WHERE ${eq(workflowAutomations.id, automationId)} FOR KEY SHARE)`
-      : automationId;
+  const workflowAutomationId = automationId
+    ? sql`(SELECT ${workflowAutomations.id} FROM ${workflowAutomations}
+        WHERE ${eq(workflowAutomations.id, automationId)} FOR KEY SHARE)`
+    : null;
   const insertedRun = new QueryBuilder()
     .$with("inserted_launch_run", {
       id: agentRuns.id,
@@ -4468,7 +4372,6 @@ function buildAtomicLaunchCteContext(args: AtomicLaunchRowsPlanArgs) {
         {
           ...launchRunValues(rowsArgs, createdAt, metadata),
           id: pendingLaunchGuardedRunId(args, updatedThread),
-          modelProviderAccountIdentity: args.validatedAccountIdentity,
           workflowAutomationId,
         },
         ["id", "createdAt"],
@@ -4511,12 +4414,12 @@ function buildAtomicLaunchCteContext(args: AtomicLaunchRowsPlanArgs) {
 
 type AtomicLaunchCteContext = ReturnType<typeof buildAtomicLaunchCteContext>;
 
-interface AtomicLaunchRowsPlanArgs extends ValidatedPreparedLaunchAdmission {
+interface AtomicLaunchRowsPlanArgs {
   readonly commit: PreparedThreadLaunchCommit;
-  readonly publication: PendingLaunchPublication;
-}
-interface AdmittedPreparedLaunch extends ValidatedPreparedLaunchAdmission {
-  readonly kind: "admitted";
+  readonly claim: PendingLaunchClaim;
+  readonly claimedInput: PreparedChatEventRow & {
+    readonly revokesEventId: string;
+  };
 }
 
 class ChatThreadBindingChanged extends Error {
@@ -4575,25 +4478,7 @@ interface ThreadRunCommand {
   readonly codexServiceTier?: CodexServiceTier;
   readonly reasoningEffort?: ReasoningEffort | null;
   readonly agentRunMetadata?: AgentRunMetadata;
-  readonly queueFirstAssociation: QueueFirstRunAssociation;
-  /** Immutable Pi eligibility captured by the caller's admission snapshot. */
-  readonly piExecution: boolean;
   readonly agentRunPreCreateSource?: AgentRunPreCreateSource;
-}
-
-/** The plain facts of a Thread run that Pi model preparation reads. */
-function piModelPreparationInput(
-  args: Pick<
-    ThreadRunArgs,
-    "catalog" | "piExecution" | "codexServiceTier" | "agentRunMetadata"
-  >,
-): PiModelPreparationInput {
-  return {
-    catalog: args.catalog,
-    piExecution: args.piExecution,
-    codexServiceTier: args.codexServiceTier,
-    reasoningEffort: args.agentRunMetadata.reasoningEffort,
-  };
 }
 
 // --- Thread-private implementation: launch input ---
@@ -4605,22 +4490,20 @@ interface ThreadExecution {
 
 /** The Thread facts needed to prepare one Runner launch. */
 interface ThreadRunnerFacts {
-  readonly skillRoot: string;
   readonly workflowAutomationId: string | undefined;
   readonly agentId: string;
   readonly protectedMountPaths: readonly string[];
-  readonly officialWorkflowRun: OfficialWorkflowRunObservation | undefined;
   readonly facts: Pick<
     AdmittedExecutionFacts,
-    | "templateSkillVolumes"
+    | "skillRoot"
+    | "skillMounts"
+    | "officialWorkflowBundles"
     | "integration"
     | "captureNetworkBodies"
     | "modelProvider"
     | "modelProviderPermissions"
     | "connectorEnvironment"
     | "connectorNetworkPolicyInputs"
-    | "connectorSkillVolumes"
-    | "seedSkillVolumes"
     | "userTimezone"
   >;
   readonly nativeContinuation: ChatThreadContinuation["executionSnapshot"]["nativeContinuation"];
@@ -4635,11 +4518,11 @@ interface ThreadRunnerFacts {
 /** Capture selectors and request receipts; admitted preparation assembles runtime input. */
 function prepareRunnerLaunch(input: {
   readonly args: ThreadRunnerFacts;
-  readonly customWorkflowSelection: ExecutionWorkflowInput["selection"];
+  readonly customWorkflowSelection: AdmittedExecutionFacts["customWorkflowSelection"];
   readonly executionPackages: AdmittedExecutionFacts["executionPackages"];
   readonly okouToken: string;
   readonly disabledPaidTools: readonly PaidToolId[];
-}): Omit<PreparedRunnerLaunch, "runStorageMounts"> {
+}): Omit<PreparedRunnerLaunch, "runStorageMounts" | "memoryMounts"> {
   const { args } = input;
   const facts = {
     ...args.facts,
@@ -4653,6 +4536,10 @@ function prepareRunnerLaunch(input: {
     featureFlags: {
       [FeatureSwitchKey.ArtifactGenerationTiming]: isFeatureEnabled(
         FeatureSwitchKey.ArtifactGenerationTiming,
+        args.featureSwitchContext,
+      ),
+      [FeatureSwitchKey.ArtifactThreePointTiming]: isFeatureEnabled(
+        FeatureSwitchKey.ArtifactThreePointTiming,
         args.featureSwitchContext,
       ),
       [FeatureSwitchKey.SingleAgent]: isFeatureEnabled(
@@ -4765,8 +4652,6 @@ interface ThreadRunPreparation {
 }
 
 interface ThreadRunArgsInput {
-  /** One catalog snapshot per run, loaded by the entry point. */
-  readonly catalog: ModelCatalog;
   readonly command: ThreadRunCommand;
   readonly modelSelection: ModelFirstPin;
   readonly threadContinuation: ChatThreadContinuation;
@@ -4781,13 +4666,10 @@ interface ThreadRunContent {
 
 /** The facts Thread uses to prepare and commit one claimed input. */
 interface ThreadRunArgs {
-  readonly catalog: ModelCatalog;
   readonly orgId: string;
   readonly userId: string;
-  readonly piExecution: boolean;
-  readonly codexServiceTier?: "fast";
+  readonly codexServiceTier?: "fast" | "ultrafast";
   readonly agentRunMetadata: AgentRunMetadata;
-  readonly queueFirstAssociation: QueueFirstRunAssociation;
   readonly prompt: string;
   readonly appendSystemPrompt: string;
   readonly realAgentInPreview?: boolean;
@@ -4808,10 +4690,7 @@ function buildThreadRunArgs(
   return {
     orgId: command.owner.orgId,
     userId: command.owner.userId,
-    piExecution: command.piExecution,
     codexServiceTier: command.codexServiceTier,
-    queueFirstAssociation: command.queueFirstAssociation,
-    catalog: args.catalog,
     prompt: prompt.userPrompt,
     realAgentInPreview: command.realAgentInPreview,
     captureNetworkBodies: command.captureNetworkBodies,
@@ -4938,18 +4817,22 @@ type CreateRunErrorResult =
     >;
 
 // Pending persistence uses connection-free SQL plans owned by one command.
-function pendingLaunchCommitResult(
+async function pendingLaunchCommitResult(
   args: PreparedThreadLaunchCommit,
-  admission: AdmittedPreparedLaunch,
-  published: PromiseSettledResult<{
+  publication: Promise<{
     readonly persisted: ReturnType<typeof pendingAtomicLaunchResult>;
     readonly publicationReturnedAt: number;
   }>,
-  preparedReuse: PromiseSettledResult<RunnerReusePreparation>,
-): AtomicLaunchCommitAttempt {
+  preparation: Promise<RunnerReusePreparation>,
+): Promise<AtomicLaunchCommitAttempt> {
+  const [published, preparedReuse] = await Promise.allSettled([
+    publication,
+    preparation,
+  ]);
   if (published.status === "rejected") {
     throw published.reason;
   }
+  args.admissionTiming.callbackFinished();
   const { persisted, publicationReturnedAt } = published.value;
   if (!("run" in persisted)) {
     return persisted;
@@ -4965,7 +4848,6 @@ function pendingLaunchCommitResult(
     ...persisted,
     admittedLaunch: admittedRunLaunch(
       args,
-      admission,
       persisted.run.createdAt,
       reusePreparation,
     ),
@@ -4975,7 +4857,6 @@ function pendingLaunchCommitResult(
 
 function admittedRunLaunch(
   args: PreparedThreadLaunchCommit,
-  admission: AdmittedPreparedLaunch,
   createdAt: Date,
   reusePreparation: RunnerReusePreparation,
 ): AdmittedRunLaunch {
@@ -4988,14 +4869,12 @@ function admittedRunLaunch(
       agentId: rows.resolved.agentId,
       chatThreadId: rows.chatThreadId,
       framework: rows.launchSnapshot.framework,
-      officialWorkflowProvenance: rows.officialWorkflowProvenance ?? null,
       prompt: rows.content.prompt,
       appendSystemPrompt: rows.content.appendSystemPrompt,
       vars: rows.content.vars,
-      storageMounts: args.launch.runStorageMounts,
       modelProvider: rows.modelSelection.modelProviderType,
       modelProviderId: metadata.modelProviderId,
-      modelProviderAccountIdentity: admission.validatedAccountIdentity,
+      modelProviderAccountIdentity: rows.modelProvider.accountIdentity,
       selectedModel: rows.modelSelection.selectedModel,
       modelRuntimeProvider: metadata.modelRuntimeProvider,
       modelRuntimeModel: metadata.modelRuntimeModel,
@@ -5006,6 +4885,7 @@ function admittedRunLaunch(
       reasoningEffort: metadata.reasoningEffort,
       codexServiceTier: metadata.codexServiceTier,
     },
+    memoryMounts: args.launch.memoryMounts,
     facts: {
       ...args.launch.facts,
       connectorRuntimeTargets:
@@ -5032,7 +4912,6 @@ const pendingLaunchRowSchema = discriminatedUnion("kind", [
 ]);
 
 function pendingAtomicLaunchResult(
-  args: PreparedThreadLaunchCommit,
   context: AtomicLaunchCteContext,
   row: zInfer<typeof pendingLaunchRowSchema> | undefined,
 ): PersistedAtomicLaunchRows | QueueFirstRunClaimLost {
@@ -5097,7 +4976,7 @@ function pendingAtomicLaunchPlan(
           orgId: context.rowsArgs.orgId,
           userId: context.rowsArgs.userId,
           runId: context.rowsArgs.identity.runId,
-          sourceEventId: args.publication.queueFirst.input.revokesEventId,
+          sourceEventId: args.claimedInput.revokesEventId,
           occurredAt: context.createdAt,
           environment: env("ENV"),
         },
@@ -5111,7 +4990,7 @@ function pendingAtomicLaunchPlan(
   names.push("launch_claim_relations");
   const beforeProducer = pendingLaunchBarrier(names);
   const producer = pendingLaunchClaimProducerStatements(
-    args.publication.claim.producer,
+    args.claim.producer,
     context.rowsArgs.identity.runId,
     sql`EXISTS (SELECT 1 FROM ${context.insertedRun}) AND ${beforeProducer} >= 0`,
   );
@@ -5147,33 +5026,6 @@ function returnedCteColumn(cte: WithSubquery, name: string): SQL {
   return sql`${sql.identifier(cte._.alias)}.${sql.identifier(name)}`;
 }
 
-function pendingLaunchRowsPlan(
-  commit: PreparedThreadLaunchCommit,
-  admission: ValidatedPreparedLaunchAdmission,
-  publication: PendingLaunchPublication,
-) {
-  const rows = {
-    commit,
-    ...admission,
-    publication,
-  };
-  const context = buildAtomicLaunchCteContext(rows);
-  return {
-    rows,
-    context,
-  };
-}
-
-interface PendingLaunchPublication {
-  readonly claim: PendingLaunchClaim;
-  readonly queueFirst: {
-    readonly input: PreparedChatEventRow & {
-      readonly revokesEventId: string;
-    };
-    readonly headSql: SQL;
-  };
-}
-
 function pendingLaunchBarrier(names: readonly string[]): SQL {
   return names.length === 0
     ? sql`0`
@@ -5185,12 +5037,21 @@ function pendingLaunchBarrier(names: readonly string[]): SQL {
       );
 }
 
-function pendingLaunchPublicationCtes(args: AtomicLaunchRowsPlanArgs): SQL {
-  const { claim, queueFirst } = args.publication;
+function pendingLaunchPublicationCtes({
+  claim,
+  claimedInput,
+}: AtomicLaunchRowsPlanArgs): SQL {
+  // Queue eligibility is decided with the write. The event body comes from
+  // the picked input used to prepare this Run.
+  const currentHead = new QueryBuilder()
+    .select({ id: chatEvents.id })
+    .from(chatEvents)
+    .where(queuedThreadInputCondition(claim.chatThreadId))
+    .orderBy(asc(chatEvents.seqId))
+    .limit(1);
   const claimCtes = sql`${canonicalChatEventInputCtes(
-    [queueFirst.input],
-    sql`EXISTS (
-        SELECT 1 FROM (${queueFirst.headSql}) AS current_head WHERE current_head.id = ${queueFirst.input.revokesEventId}::uuid)`,
+    [claimedInput],
+    eq(sql`(${currentHead})`, claimedInput.revokesEventId),
   )},
       inserted AS (${canonicalChatEventInsertSql("any")}),
       launch_claim_relations AS (
@@ -5274,6 +5135,30 @@ function throwPendingLaunchGuardFailure(error: unknown): void {
   }
 }
 
+function prepareClaimedInput({
+  context,
+  createArgs,
+  identity,
+}: ThreadLaunchCommitInput) {
+  const event = context.inputEvent;
+  const serviceTier =
+    createArgs.codexServiceTier === "fast"
+      ? "priority"
+      : createArgs.codexServiceTier;
+  const { row } = prepareChatEventReplacement(event, {
+    id: identity.runId,
+    chatThreadId: createArgs.chatThreadId,
+    eventType: "input.prompt",
+    runId: identity.runId,
+    userMessage: withRunModelAnnotation(
+      event.userMessage,
+      createArgs.modelSelection.selectedModel,
+      serviceTier,
+    ),
+  });
+  return { ...row, revokesEventId: event.id };
+}
+
 const commitThreadLaunch$ = command(
   async (
     { set },
@@ -5282,31 +5167,26 @@ const commitThreadLaunch$ = command(
     signal: AbortSignal,
   ): Promise<AtomicLaunchCommitAttempt> => {
     signal.throwIfAborted();
-    const official = args.context.officialWorkflowRun;
-    if (official && !exactMountsMatch(official, args.launch.runStorageMounts)) {
+    const { officialWorkflowBundles } = args.launch.facts;
+    if (
+      officialWorkflowBundles.some(({ mountPath }) => {
+        return args.launch.runStorageMounts.some((mount) => {
+          return mount.mountPath === mountPath;
+        });
+      })
+    ) {
       return conflict(OFFICIAL_WORKFLOW_RUN_ADMISSION_MESSAGE);
     }
     const db = set(writeDb$);
     const { admissionTiming, timing } = args;
     admissionTiming.transactionStarted();
     admissionTiming.admissionStarted();
-    const step = pendingLaunchAdmissionStart(args);
-    const rows = parseRawRows(admissionRow, await db.execute(step.sql));
-    signal.throwIfAborted();
-    const admission = advancePendingLaunchAdmission(args, step, rows);
-    if (admission.kind === "queue-first-claim-lost") {
-      admissionTiming.callbackFinished();
-      return admission;
-    }
-    const accepted: AdmittedPreparedLaunch = {
-      kind: "admitted",
-      validatedThreadSession: admission.validatedThreadSession,
-      validatedAccountIdentity: admission.validatedAccountIdentity,
-    };
-    const prepared = pendingLaunchRowsPlan(args, accepted, {
+    const planArgs: AtomicLaunchRowsPlanArgs = {
+      commit: args,
       claim,
-      queueFirst: { input: admission.claimInput, headSql: admission.headSql },
-    });
+      claimedInput: prepareClaimedInput(args),
+    };
+    const context = buildAtomicLaunchCteContext(planArgs);
     const leafStartedAt = admissionTiming.leafStartedAt();
     const publication = (async () => {
       signal.throwIfAborted();
@@ -5314,7 +5194,7 @@ const commitThreadLaunch$ = command(
       const databaseStartedAt = performance.now();
       const persisted = await withPgQueryExecutionCapture(capture, async () => {
         const buildStartedAt = monotonicNow();
-        const plan = pendingAtomicLaunchPlan(prepared.rows, prepared.context);
+        const plan = pendingAtomicLaunchPlan(planArgs, context);
         timing.recordDuration(
           "api_dispatch_persist_atomic_launch_build",
           "nested",
@@ -5335,11 +5215,7 @@ const commitThreadLaunch$ = command(
         // Publication has committed. Return its durable identity before the
         // caller observes cancellation; do not orphan an accepted pending Run.
         const materializeStartedAt = monotonicNow();
-        const result = pendingAtomicLaunchResult(
-          args,
-          prepared.context,
-          outcome.value[0],
-        );
+        const result = pendingAtomicLaunchResult(context, outcome.value[0]);
         timing.recordDuration(
           "api_dispatch_persist_atomic_launch_materialize",
           "nested",
@@ -5360,7 +5236,7 @@ const commitThreadLaunch$ = command(
     })().finally(() => {
       admissionTiming.recordLeafElapsed("persistence", leafStartedAt);
     });
-    const thread = accepted.validatedThreadSession;
+    const { chatThreadId, userId, orgId, threadContinuation } = args.createArgs;
     const { runnerGroup, profile, reuseKey } = args.launch;
     const preparation = set(prepareRunnerReusePreference$, {
       runId: args.identity.runId,
@@ -5368,29 +5244,13 @@ const commitThreadLaunch$ = command(
       profile,
       reuseKey,
       thread: {
-        threadId: thread.chatThreadId,
-        userId: args.createArgs.userId,
-        orgId: args.createArgs.orgId,
-        predecessorRunId: thread.frameworkSessionRunId,
+        threadId: chatThreadId,
+        userId,
+        orgId,
+        predecessorRunId: threadContinuation.expected.frameworkSessionRunId,
       },
     });
-    // Both reads and the guarded write belong to this attempt. Drain either
-    // failure before returning; only publication establishes a durable launch.
-    return await (async () => {
-      const [published, preparedReuse] = await Promise.allSettled([
-        publication,
-        preparation,
-      ]);
-      if (published.status === "fulfilled") {
-        admissionTiming.callbackFinished();
-      }
-      // Return the durable identity before the caller observes cancellation.
-      return pendingLaunchCommitResult(
-        args,
-        accepted,
-        published,
-        preparedReuse,
-      );
-    })();
+    // Return the durable identity before the caller observes cancellation.
+    return await pendingLaunchCommitResult(args, publication, preparation);
   },
 );

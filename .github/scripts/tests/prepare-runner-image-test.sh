@@ -200,6 +200,9 @@ cat > "${TMPDIR}/bin/ssh" << 'BASH'
 #!/usr/bin/env bash
 set -euo pipefail
 
+if [ "${1:-}" = -n ]; then
+  shift
+fi
 remote=$1
 shift
 {
@@ -209,6 +212,11 @@ shift
 } >> "$SSH_LOG"
 
 if [ "$#" -eq 2 ] && [ "$1" = "uname" ] && [ "$2" = "-m" ]; then
+  if [ "${SSH_FAIL_FIRST_PROBE:-}" = 1 ] &&
+    [ "$(grep -Fxc -- "$remote uname -m" "$SSH_LOG")" -eq 1 ]; then
+    printf 'partial architecture output\n'
+    exit 255
+  fi
   echo "aarch64"
   exit 0
 fi
@@ -500,6 +508,7 @@ run_remote_case() {
   local sticky_unit=${4:-}
   if PATH="${TMPDIR}/bin:${PATH}" \
     SSH_LOG="${case_dir}/ssh.log" \
+    SSH_FAIL_FIRST_PROBE="${REMOTE_FAIL_FIRST_PROBE:-}" \
     SSH_GC_COUNT_FILE="${case_dir}/gc-count" \
     SSH_GC_STATUSES="${REMOTE_GC_STATUSES:-}" \
     SSH_REACH_GC="${REMOTE_REACH_GC:-}" \
@@ -639,7 +648,7 @@ set_unit_state "$success_case" "vm0-runner-staging-aaaaaaaaaaaa-cancel.service" 
 set_unit_state "$success_case" "vm0-runner-staging-aaaaaaaaaaaa-9.service" active not-found
 set_unit_state "$success_case" "vm0-runner-staging-aaaaaaaaaaaa-10.service" active masked
 REMOTE_JOB_REF=staging-aaaaaaaaaaaa run_remote_case "$success_case"
-grep -q 'ci@dev-arm-1 uname -m' "${success_case}/ssh.log" || fail "valid supplied runner must reach the SSH boundary"
+[ "$(grep -Fxc 'ci@dev-arm-1 uname -m' "${success_case}/ssh.log")" -eq 1 ] || fail "healthy preparation must probe architecture once"
 grep -Eq '^stop .*vm0-runner-staging-aaaaaaaaaaaa-2\.service([[:space:]]|$)' "${success_case}/systemctl.log" || fail "expected primary runner suffix 2 to stop"
 grep -Eq '^stop .*vm0-runner-staging-aaaaaaaaaaaa-7\.service([[:space:]]|$)' "${success_case}/systemctl.log" || fail "expected primary runner suffix 7 to stop"
 if grep '^stop ' "${success_case}/systemctl.log" | grep -Eq 'vm0-runner-staging-aaaaaaaaaaaa-(exec|keepalive|cancel)\.service'; then
@@ -739,8 +748,9 @@ fi
 
 upload_success_case="${TMPDIR}/upload-success"
 prepare_remote_case "$upload_success_case"
-REMOTE_REACH_GC=1 REMOTE_GC_STATUSES=0 REMOTE_UPLOAD_STATUSES=0 \
+REMOTE_FAIL_FIRST_PROBE=1 REMOTE_REACH_GC=1 REMOTE_GC_STATUSES=0 REMOTE_UPLOAD_STATUSES=0 \
   run_remote_case "$upload_success_case"
+[ "$(grep -Fxc 'ci@dev-arm-1 uname -m' "${upload_success_case}/ssh.log")" -eq 2 ] || fail "failed architecture read must retry before upload"
 cmp "$runner" "${upload_success_case}/uploads/runner" || fail "successful upload must publish the complete executable"
 [ "$(< "${upload_success_case}/upload-count")" -eq 1 ] || fail "healthy upload must run once"
 grep -Fqx -- "$setup_command" "${upload_success_case}/ssh.log" || fail "validated upload must continue to setup"

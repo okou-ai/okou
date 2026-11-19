@@ -33,7 +33,7 @@ export type PiExecutionRoute =
       readonly provider: "openai-codex";
       readonly dialect: "openai-codex-responses";
       readonly transport: "sse";
-      readonly serviceTier?: "fast";
+      readonly serviceTier?: "fast" | "ultrafast";
       readonly credentialBindings: readonly [
         CredentialBinding<"access-token">,
         CredentialBinding<"account-id">,
@@ -96,10 +96,7 @@ export function normalizePiExecutionRoute(
       credentialBindings: [required("api-key")],
     };
   }
-  if (
-    route.provider !== "openai-codex" ||
-    (serviceTier !== undefined && serviceTier !== "fast")
-  ) {
+  if (route.provider !== "openai-codex" || serviceTier === "priority") {
     throw new Error("Pi Codex Responses requires its catalog and service tier");
   }
   const { catalogModel: _catalogModel, ...codex } = route;

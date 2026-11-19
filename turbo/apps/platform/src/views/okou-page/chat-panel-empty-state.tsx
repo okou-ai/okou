@@ -18,7 +18,7 @@ export function ChatPanelEmptyState({
         src={image}
         alt=""
         role="presentation"
-        className="h-16 w-16 object-contain opacity-80"
+        className="h-16 w-24 object-contain"
       />
       <p className="mt-2 text-sm font-medium text-foreground">{title}</p>
       <p className="mt-0.5 text-[13px] leading-5 text-muted-foreground">

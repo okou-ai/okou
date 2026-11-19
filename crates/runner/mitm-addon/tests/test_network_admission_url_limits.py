@@ -53,7 +53,6 @@ def _registry(tmp_path: Path, *, application_auth: bool, network: bool = True) -
             tmp_path,
             custom_connector_id="550e8400-e29b-41d4-a716-446655440000",
             firewall_name="custom_network",
-            include_encrypted_secrets=application_auth,
             api_entry=entry,
             network_policy={"allow": [], "deny": [], "ask": [], "unknownPolicy": "allow"},
         ),

@@ -19,6 +19,7 @@ import firewall_auth_client as auth_client
 import flow_metadata_keys as metadata_keys
 import matching
 import platform_api
+import platform_http_transport as transport
 from request_authority import get_trusted_authority
 from tests.auth_endpoint_helpers import FakeAuthEndpoint, firewall_auth_success_response
 from tests.auth_state_helpers import cached_headers
@@ -134,8 +135,7 @@ def _sandbox_info(
     *,
     run_id: str = "run-1",
     sandbox_marker: str = "tok-xyz",
-    encrypted_secrets: str = "iv:tag:data",
-    include_encrypted_secrets: bool = True,
+    firewall_marker: str | None = "host-firewall-token",
     billable_firewalls: list[str] | None = None,
     network_log_path: str | None = None,
 ) -> dict:
@@ -150,12 +150,34 @@ def _sandbox_info(
         "networkLogPath": network_log_path,
         "billableFirewalls": list(billable_firewalls or []),
     }
-    if include_encrypted_secrets:
-        sandbox_info["encryptedSecrets"] = encrypted_secrets
+    if firewall_marker is not None:
+        sandbox_info["firewallToken"] = firewall_marker
     return sandbox_info
 
 
 class TestHandleFirewallRequest:
+    @pytest.mark.parametrize("hook_phase", ["request", "requestheaders"])
+    async def test_managed_auth_requires_host_authority(
+        self, real_flow, mitm_ctx, tmp_path, hook_phase: HookPhase
+    ):
+        flow = _firewall_flow(real_flow)
+        allow = _allow(_api_entry())
+        sandbox_info = _sandbox_info(tmp_path, firewall_marker=None)
+        endpoint = FakeAuthEndpoint()
+
+        with endpoint.run(), mitm_ctx(api_url=endpoint.api_url):
+            result = await _run_firewall_auth_phase(hook_phase, flow, allow, sandbox_info)
+
+        expected_result = (
+            auth.FirewallAuthHandlingResult.LOCAL_RESPONSE
+            if hook_phase == "request"
+            else auth.FirewallHeaderPhaseAuthResult.REJECTED
+        )
+        assert result is expected_result
+        assert flow.response is not None
+        assert flow.response.status_code == 424
+        assert endpoint.request_count == 0
+
     async def test_success_injects_headers_and_audit_metadata(self, real_flow, mitm_ctx, tmp_path):
         flow = _firewall_flow(real_flow)
         proxy_log_path = tmp_path / "proxy.jsonl"
@@ -225,7 +247,7 @@ class TestHandleFirewallRequest:
             auth_config={},
             api_id="run-1:1",
         )
-        sandbox_info = _sandbox_info(tmp_path, include_encrypted_secrets=False)
+        sandbox_info = _sandbox_info(tmp_path, sandbox_marker="", firewall_marker=None)
         allow = _allow(
             api_entry,
             name="cloudflare",
@@ -362,10 +384,10 @@ class TestHandleFirewallRequest:
         first_flow = _firewall_flow(real_flow, run_id="run-1")
         second_flow = _firewall_flow(real_flow, run_id="run-1")
         first_sandbox_info = _sandbox_info(
-            tmp_path, run_id="run-1", encrypted_secrets="encrypted-first"
+            tmp_path, run_id="run-1", firewall_marker="first-host-firewall-token"
         )
         second_sandbox_info = _sandbox_info(
-            tmp_path, run_id="run-1", encrypted_secrets="encrypted-second"
+            tmp_path, run_id="run-1", firewall_marker="second-host-firewall-token"
         )
         mock_fetch = AsyncMock(
             side_effect=[
@@ -405,12 +427,11 @@ class TestHandleFirewallRequest:
             "auth-base",
             "auth-query",
             "auth-aws-sigv4",
-            "encrypted-secrets",
             "secret-connector-map",
             "secret-connector-metadata-map",
             "vars",
             "billable",
-            "sandbox-token",
+            "firewall-token",
         ],
     )
     async def test_auth_cache_identity_distinguishes_all_auth_inputs(
@@ -449,8 +470,6 @@ class TestHandleFirewallRequest:
                     "secretAccessKey": "${{ secrets.AWS_SECRET_ACCESS_KEY }}",
                 },
             }
-        elif changed_input == "encrypted-secrets":
-            second_sandbox_info["encryptedSecrets"] = "encrypted-updated"
         elif changed_input == "secret-connector-map":
             second_sandbox_info["secretConnectorMap"] = {"GITHUB_TOKEN": "github"}
         elif changed_input == "secret-connector-metadata-map":
@@ -459,8 +478,8 @@ class TestHandleFirewallRequest:
             second_sandbox_info["vars"] = {"TEAM": "vm0"}
         elif changed_input == "billable":
             second_sandbox_info["billableFirewalls"] = [second_name]
-        elif changed_input == "sandbox-token":
-            second_sandbox_info["sandboxToken"] = "sandbox-token-updated"
+        elif changed_input == "firewall-token":
+            second_sandbox_info["firewallToken"] = "updated-host-firewall-token"
         else:
             raise AssertionError(f"Unhandled auth identity input: {changed_input}")
 
@@ -988,7 +1007,7 @@ class TestHandleFirewallRequest:
     async def test_fetch_admission_saturation_returns_redacted_503(
         self, real_flow, mitm_ctx, tmp_path
     ):
-        encrypted_secrets = "encrypted-sensitive-payload"
+        firewall_marker = "sensitive-host-firewall-token"
         sandbox_token = "sensitive-sandbox-token"
         flow = _firewall_flow(real_flow)
         proxy_log_path = tmp_path / "proxy.jsonl"
@@ -997,7 +1016,7 @@ class TestHandleFirewallRequest:
         api_entry = _api_entry()
         sandbox_info = _sandbox_info(
             tmp_path,
-            encrypted_secrets=encrypted_secrets,
+            firewall_marker=firewall_marker,
             sandbox_marker=sandbox_token,
         )
         allow = _allow(api_entry)
@@ -1030,7 +1049,7 @@ class TestHandleFirewallRequest:
         }
         log_text = await asyncio.to_thread(read_jsonl_text_after_flush, proxy_log_path)
         assert "Firewall auth fetch admission saturated" in log_text
-        assert encrypted_secrets not in log_text
+        assert firewall_marker not in log_text
         assert sandbox_token not in log_text
 
     async def test_failure_returns_502(self, real_flow, mitm_ctx, tmp_path):
@@ -1088,7 +1107,7 @@ class TestHandleFirewallRequest:
             ),
             (
                 auth_client.FirewallAuthDeadlineExceededError(
-                    auth_client.FirewallAuthFetchPhase.RESPONSE_HEADERS
+                    transport.RequestPhase.RESPONSE_HEADERS
                 ),
                 "Firewall auth fetch deadline exceeded during response_headers",
                 {"kind": "deadline_exceeded", "phase": "response_headers"},
@@ -1127,7 +1146,7 @@ class TestHandleFirewallRequest:
         }
         with (
             patch.dict(os.environ, proxy_environment),
-            patch.object(auth_client, "_dns_resolver", FailingResolver()),
+            patch.object(transport, "_dns_resolver", FailingResolver()),
             mitm_ctx(api_url="http://auth-endpoint.invalid"),
         ):
             await handle_firewall_request_without_upstream_admission(flow, allow, sandbox_info)
@@ -1458,8 +1477,8 @@ class TestHandleFirewallRequest:
         with (
             endpoint.run(),
             patch.object(
-                auth_client,
-                "MAX_FIREWALL_AUTH_RESPONSE_BODY_BYTES",
+                transport,
+                "MAX_RESPONSE_BODY_BYTES",
                 len(response_body) - 1,
             ),
             mitm_ctx(api_url=endpoint.api_url),

@@ -11,6 +11,13 @@ import {
   chatThreadEventsContract,
   chatThreadByIdContract,
   chatThreadMarkReadContract,
+  chatThreadMarkUnreadContract,
+  chatThreadMuteContract,
+  chatThreadArchiveContract,
+  chatThreadRenameContract,
+  chatThreadPinContract,
+  chatThreadUnpinContract,
+  chatThreadPinOrderContract,
   chatThreadDraftContract,
 } from "../contracts/chat-threads";
 import { agentDraftContract } from "../contracts/agent-draft";
@@ -224,6 +231,53 @@ export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
   },
   ...chatReadBindings,
   ...historyReadBindings,
+  {
+    name: "markUnread",
+    response: "ReadState",
+    route: chatThreadMarkUnreadContract.markUnread,
+  },
+  {
+    name: "muteThread",
+    response: "Unit",
+    route: chatThreadMuteContract.mute,
+  },
+  {
+    name: "unmuteThread",
+    response: "Unit",
+    route: chatThreadMuteContract.unmute,
+  },
+  {
+    name: "archiveThread",
+    response: "Unit",
+    route: chatThreadArchiveContract.archive,
+  },
+  {
+    name: "unarchiveThread",
+    response: "Unit",
+    route: chatThreadArchiveContract.unarchive,
+  },
+  {
+    name: "renameThread",
+    request: "RenameThreadRequest",
+    response: "Unit",
+    route: chatThreadRenameContract.rename,
+  },
+  {
+    name: "pinThread",
+    response: "Unit",
+    route: chatThreadPinContract.pin,
+  },
+  {
+    name: "unpinThread",
+    response: "Unit",
+    route: chatThreadUnpinContract.unpin,
+  },
+  {
+    name: "reorderPinnedThread",
+    request: "ReorderPinnedThreadRequest",
+    response: "Unit",
+    route: chatThreadPinOrderContract.reorder,
+  },
 ];
 
 export interface KotlinTypeBinding {
@@ -235,6 +289,16 @@ export interface KotlinTypeBinding {
 }
 
 export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
+  {
+    name: "RenameThreadRequest",
+    schema: chatThreadRenameContract.rename.body,
+    direction: "input",
+  },
+  {
+    name: "ReorderPinnedThreadRequest",
+    schema: chatThreadPinOrderContract.reorder.body,
+    direction: "input",
+  },
   {
     name: "ComposerDraft",
     schema: agentDraftContract.get.responses[200],

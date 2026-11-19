@@ -1,4 +1,9 @@
-import { useGet, useLastLoadable, useSet } from "ccstate-react";
+import {
+  useLastResolved,
+  useGet,
+  useLastLoadable,
+  useSet,
+} from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { ArrowLeft, ArrowRight, ArrowUpRight, Sparkles } from "lucide-react";
 import { Button } from "@okouai/ui/components/ui/button";
@@ -338,7 +343,7 @@ export function FeatureGuideDialog() {
   const loadable = useLastLoadable(featureGuide$);
   const owner = useGet(authenticatedSessionKey$);
   const dismissed = useGet(dismissedFeatureGuide$);
-  const ready = useGet(featureGuideReady$);
+  const ready = useLastResolved(featureGuideReady$) ?? false;
   const signal = useGet(rootSignal$);
   const closeGuide = useSet(closeFeatureGuide$);
   const dismissGuide = useSet(dismissFeatureGuide$);
@@ -385,6 +390,7 @@ export function FeatureGuideDialog() {
     >
       <DialogContent
         maxWidth={720}
+        position="top"
         scrollable={false}
         contentClassName="flex flex-col gap-5 font-(family-name:--font-family-sans) sm:gap-6"
         closeLabel={t(($) => {

@@ -516,7 +516,7 @@ for test_case in \
   expect_success "$REPO" "$merge_base" "$merge_head" "$release_head"
 done
 
-expect_node_source_release() {
+expect_missing_app_release() {
   local repo=$1 merge_base=$2 release_head=$3 source=$4
   local merge_head
 
@@ -526,16 +526,6 @@ expect_node_source_release() {
   expect_failure \
     "$repo" "$merge_base" "$merge_head" "$release_head" \
     "turbo/apps/app has intervening source changes in ${source} but no new release"
-
-  release_head=$(
-    create_release_head "$repo" release-apps \
-      '.["turbo/apps/api"] = "1.0.1" | .["turbo/apps/app"] = "1.0.1"'
-  )
-  merge_head=$(
-    create_merge_head "$repo" merge-apps "$merge_base" \
-      '.["turbo/apps/api"] = "1.0.1" | .["turbo/apps/app"] = "1.0.1"'
-  )
-  expect_success "$repo" "$merge_base" "$merge_head" "$release_head"
 }
 
 # A test: subject does not exempt source. Names resembling tests, resources,
@@ -559,7 +549,7 @@ for source_path in \
   git -C "$REPO" add --all
   git -C "$REPO" commit -qm "test: update app tests"
   merge_base=$(git -C "$REPO" rev-parse HEAD)
-  expect_node_source_release "$REPO" "$merge_base" "$release_head" turbo/apps/app
+  expect_missing_app_release "$REPO" "$merge_base" "$release_head" turbo/apps/app
 done
 
 for transition in mixed delete rename-into-tests rename-out-of-tests; do
@@ -592,7 +582,7 @@ for transition in mixed delete rename-into-tests rename-out-of-tests; do
   git -C "$REPO" add --all
   git -C "$REPO" commit -qm "test: update app tests"
   merge_base=$(git -C "$REPO" rev-parse HEAD)
-  expect_node_source_release "$REPO" "$merge_base" "$release_head" turbo/apps/app
+  expect_missing_app_release "$REPO" "$merge_base" "$release_head" turbo/apps/app
 done
 
 setup_repo "mixed-shared-dependency"
@@ -606,7 +596,17 @@ printf 'shared production change\n' >>"${REPO}/turbo/packages/shared/src/index.t
 git -C "$REPO" add --all
 git -C "$REPO" commit -qm "test: update shared tests"
 merge_base=$(git -C "$REPO" rev-parse HEAD)
-expect_node_source_release "$REPO" "$merge_base" "$release_head" turbo/packages/shared
+expect_missing_app_release "$REPO" "$merge_base" "$release_head" turbo/packages/shared
+# Check acceptance once with both consumers released after a shared change.
+release_head=$(
+  create_release_head "$REPO" release-apps \
+    '.["turbo/apps/api"] = "1.0.1" | .["turbo/apps/app"] = "1.0.1"'
+)
+merge_head=$(
+  create_merge_head "$REPO" merge-apps "$merge_base" \
+    '.["turbo/apps/api"] = "1.0.1" | .["turbo/apps/app"] = "1.0.1"'
+)
+expect_success "$REPO" "$merge_base" "$merge_head" "$release_head"
 
 setup_repo "non-source-change"
 release_head=$(

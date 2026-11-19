@@ -130,6 +130,83 @@ describe("/api/feature-switches", () => {
     expect(optedIn.body.effectiveSwitches).toMatchObject({ [key]: true });
   });
 
+  it("defaults three-point timing on only for its owner and retains personal opt-out and opt-in", async () => {
+    const api = client();
+    const clerk = createRouteMocks(context).clerk;
+    const headers = { authorization: "Bearer clerk-session" };
+    const ownerId = "user_3EWY21Oe3f15kfs3yYmbGgDb3NV";
+    const orgId = `org_${randomUUID()}`;
+    const key = FeatureSwitchKey.ArtifactThreePointTiming;
+
+    clerk.session(ownerId, orgId, "org:member");
+    const initial = await accept(api.get({ headers }), [200]);
+    expect(initial.body.effectiveSwitches).toMatchObject({ [key]: true });
+    const optedOut = await accept(
+      api.update({ headers, body: { switches: { [key]: false } } }),
+      [200],
+    );
+    expect(optedOut.body.switches).toMatchObject({ [key]: false });
+    expect(optedOut.body.effectiveSwitches).toMatchObject({ [key]: false });
+    const retained = await accept(api.get({ headers }), [200]);
+    expect(retained.body.effectiveSwitches).toMatchObject({ [key]: false });
+
+    clerk.session(`user_${randomUUID()}`, orgId, "org:admin");
+    const peer = await accept(api.get({ headers }), [200]);
+    expect(peer.body.effectiveSwitches).toMatchObject({ [key]: false });
+
+    clerk.session(ownerId, `org_${randomUUID()}`, "org:member");
+    const anotherWorkspace = await accept(api.get({ headers }), [200]);
+    expect(anotherWorkspace.body.effectiveSwitches).toMatchObject({
+      [key]: true,
+    });
+
+    clerk.session(ownerId, orgId, "org:member");
+    const stillOptedOut = await accept(api.get({ headers }), [200]);
+    expect(stillOptedOut.body.effectiveSwitches).toMatchObject({
+      [key]: false,
+    });
+    const optedIn = await accept(
+      api.update({ headers, body: { switches: { [key]: true } } }),
+      [200],
+    );
+    expect(optedIn.body.switches).toMatchObject({ [key]: true });
+    expect(optedIn.body.effectiveSwitches).toMatchObject({ [key]: true });
+    const enabled = await accept(api.get({ headers }), [200]);
+    expect(enabled.body.effectiveSwitches).toMatchObject({ [key]: true });
+  });
+
+  it("cannot grant three-point timing to an unrelated same-staff-org admin through a stored opt-in", async () => {
+    const api = client();
+    const clerk = createRouteMocks(context).clerk;
+    const headers = { authorization: "Bearer clerk-session" };
+    const ownerId = "user_3EWY21Oe3f15kfs3yYmbGgDb3NV";
+    const orgId = "org_3ANttyrbWYJk6JKRSTRLEsbsDLe";
+    const key = FeatureSwitchKey.ArtifactThreePointTiming;
+
+    clerk.session(ownerId, orgId, "org:member");
+    const owner = await accept(api.get({ headers }), [200]);
+    expect(owner.body.effectiveSwitches).toMatchObject({ [key]: true });
+
+    clerk.session(`user_${randomUUID()}`, orgId, "org:admin");
+    const peerDefault = await accept(api.get({ headers }), [200]);
+    expect(peerDefault.body.effectiveSwitches).toMatchObject({ [key]: false });
+    const peerOptIn = await accept(
+      api.update({ headers, body: { switches: { [key]: true } } }),
+      [200],
+    );
+    expect(peerOptIn.body.switches).toMatchObject({ [key]: true });
+    expect(peerOptIn.body.effectiveSwitches).toMatchObject({ [key]: false });
+    const peer = await accept(api.get({ headers }), [200]);
+    expect(peer.body.switches).toMatchObject({ [key]: true });
+    expect(peer.body.effectiveSwitches).toMatchObject({ [key]: false });
+
+    clerk.session(ownerId, orgId, "org:member");
+    const unchangedOwner = await accept(api.get({ headers }), [200]);
+    expect(unchangedOwner.body.effectiveSwitches).toMatchObject({
+      [key]: true,
+    });
+  });
+
   it("keeps a personal switch personal within one organization", async () => {
     const clerk = createRouteMocks(context).clerk;
     const headers = { authorization: "Bearer clerk-session" };

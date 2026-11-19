@@ -30,8 +30,8 @@ function startApplication(
     await store.set(
       bootstrap$,
       __OKOU_APP_VERSION__,
-      () => {
-        setupRouter(store, (el) => {
+      (view) => {
+        setupRouter(store, view, (el) => {
           const rootEl = document.getElementById("root");
           if (!rootEl) {
             throw new Error("can't find root el to load whole app");
@@ -43,6 +43,7 @@ function startApplication(
           });
         });
       },
+      store.watch,
       rootSignal,
     );
   }

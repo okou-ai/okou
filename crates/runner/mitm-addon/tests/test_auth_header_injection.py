@@ -69,7 +69,7 @@ async def test_resolved_header_collisions_have_one_final_value_across_auth_paths
     sandbox_info = {
         "runId": "run-1",
         "sandboxToken": "tok",
-        "encryptedSecrets": "iv:tag:data",
+        "firewallToken": "host-firewall-token",
         "billableFirewalls": [],
     }
     token_meta = firewall_auth_response(headers=resolved_headers, base=resolved_base)
@@ -175,7 +175,7 @@ async def test_invalid_resolved_headers_cannot_be_hidden_by_collision_or_filteri
     sandbox_info = {
         "runId": "run-1",
         "sandboxToken": "tok",
-        "encryptedSecrets": "iv:tag:data",
+        "firewallToken": "host-firewall-token",
         "billableFirewalls": [],
     }
     token_meta = firewall_auth_response(
@@ -277,7 +277,7 @@ async def test_bulk_headers_preserve_semantics_without_per_header_rebuilds(
     sandbox_info = {
         "runId": "run-1",
         "sandboxToken": "tok",
-        "encryptedSecrets": "iv:tag:data",
+        "firewallToken": "host-firewall-token",
         "billableFirewalls": [],
     }
     token_meta = firewall_auth_response(

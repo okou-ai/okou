@@ -27,7 +27,7 @@ async fn blank_prefetch_recovery_preserves_budget_and_one_completion() {
         let run_id = RunId::new_v4();
         let mut context = minimal_context(run_id);
         context.cli_agent_type = "codex".into();
-        context.encrypted_secrets = Some("encrypted".into());
+        context.firewall_token = Some("host-firewall-token".into());
         context.firewalls = Some(vec![FirewallEntry::Builtin {
             name: "model-provider:codex-oauth-token".into(),
             base_url_vars: None,

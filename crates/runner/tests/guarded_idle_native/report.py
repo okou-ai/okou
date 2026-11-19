@@ -94,8 +94,13 @@ def validate_snapshot_preparation(directory, artifacts):
     if record["completed_monotonic_ns"] <= record["started_monotonic_ns"]:
         raise ValueError("unordered snapshot preparation observation clocks")
     boot = record["creator_boot_id"]
-    if not isinstance(boot, str) or str(uuid.UUID(boot)) != boot:
+    if not isinstance(boot, str) or not is_canonical_uuid(boot):
         raise ValueError("invalid snapshot preparation creator boot identity")
+
+
+def is_canonical_uuid(value):
+    """Compare the original spelling, preserving UUID parsing errors."""
+    return str(uuid.UUID(value)) == value
 
 
 def positive_integer(value):
@@ -126,6 +131,14 @@ def unique_object(pairs):
     return result
 
 
+def decode_original_policy(raw_policy, artifacts, mismatch_message):
+    """Verify the captured policy bytes before decoding their JSON."""
+    if (not isinstance(raw_policy, str)
+            or hashlib.sha256(raw_policy.encode()).hexdigest() != artifacts["policy_sha256"]):
+        raise ValueError(mismatch_message)
+    return json.loads(raw_policy, object_pairs_hook=unique_object)
+
+
 def collect_witnesses(log_path, groups, *, case_matches, invalid_message):
     """Admit strict witnesses into caller-owned groups in original log order."""
     for line in log_path.read_text().splitlines():
@@ -136,6 +149,13 @@ def collect_witnesses(log_path, groups, *, case_matches, invalid_message):
             if not valid_witness_envelope(event, case_matches):
                 raise ValueError(invalid_message)
             cases[event["case"]].append(event)
+
+
+def validate_phase_clock(value, begin, end, message):
+    """Return a positive monotonic timestamp strictly inside its phase bounds."""
+    if not positive_integer(value) or not begin < value < end:
+        raise ValueError(message)
+    return value
 
 
 def validate_witness_clock_order(events, message):
@@ -336,7 +356,7 @@ def _validate_receipts(directory, cases, phases, collector):
             raise ValueError("native phase clocks do not positively order the work")
         identity = (events[1]["sandbox_id"], events[1]["backing_generation"])
         for value in identity:
-            if str(uuid.UUID(value)) != value:
+            if not is_canonical_uuid(value):
                 raise ValueError("native identity is not one canonical original generation")
         if identity[0] in sandbox_ids or identity[1] in backing_generations or any(
                 (e["sandbox_id"], e["backing_generation"]) != identity for e in events[2:]):

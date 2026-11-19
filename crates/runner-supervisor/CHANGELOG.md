@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.26.6](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.26.5...runner-supervisor-v0.26.6) (2026-11-19)
+
+## [0.26.5](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.26.4...runner-supervisor-v0.26.5) (2026-11-19)
+
+## [0.26.4](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.26.3...runner-supervisor-v0.26.4) (2026-11-18)
+
+## [0.26.3](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.26.2...runner-supervisor-v0.26.3) (2026-11-18)
+
+
+### Refactoring
+
+* **firewall:** retire legacy resolver and envelope compatibility ([#48739](https://github.com/okou-ai/okou/issues/48739)) ([7dcd7ca](https://github.com/okou-ai/okou/commit/7dcd7cac45f2b26e253703533fc7f1097609c0f6))
+
 ## [0.26.2](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.26.1...runner-supervisor-v0.26.2) (2026-11-18)
 
 ## [0.26.1](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.26.0...runner-supervisor-v0.26.1) (2026-11-18)

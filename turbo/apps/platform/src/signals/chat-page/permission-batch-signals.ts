@@ -9,7 +9,7 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept } from "../../lib/accept.ts";
 import { agentById } from "../agent.ts";
 import { apiClient$ } from "../api-client.ts";
-import { featureSwitch$ } from "../external/feature-switch.ts";
+import { featureSwitches$ } from "../external/feature-switch.ts";
 import { firewallPermissionMetadataByConnector } from "../firewall-permission-metadata.ts";
 import {
   findPermissionInMetadata,
@@ -115,7 +115,7 @@ function createBatchState(descriptor: PermissionBatchActionDescriptor) {
 type BatchState = ReturnType<typeof createBatchState>;
 
 const assertBatchEnabled$ = command(async ({ get }, signal: AbortSignal) => {
-  const features = await get(featureSwitch$);
+  const features = await get(featureSwitches$);
   signal.throwIfAborted();
   if (!features[FeatureSwitchKey.BatchConnectorPermissions]) {
     throw new Error("Batch connector permissions are unavailable");
@@ -242,7 +242,7 @@ function createBatchSaveCommand(
         expiresIn,
       );
       let acknowledged = grants;
-      const features = await get(featureSwitch$);
+      const features = await get(featureSwitches$);
       signal.throwIfAborted();
       if (
         groups.length &&

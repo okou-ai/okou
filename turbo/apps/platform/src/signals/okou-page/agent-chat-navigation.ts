@@ -13,8 +13,15 @@ interface AgentChatNavigation {
  * chats with the default agent, so the agent only picks the page without it.
  */
 export const navigateToAgentChat$ = command(
-  ({ get, set }, agentId: string, options: AgentChatNavigation = {}) => {
-    if (get(singleAgentEnabled$)) {
+  async (
+    { get, set },
+    agentId: string,
+    options: AgentChatNavigation | undefined,
+    signal: AbortSignal,
+  ) => {
+    const singleAgent = await get(singleAgentEnabled$);
+    signal.throwIfAborted();
+    if (singleAgent) {
       set(detachedNavigateTo$, ROUTES.home, options);
       return;
     }

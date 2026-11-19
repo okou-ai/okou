@@ -50,6 +50,7 @@ mod process_group;
 mod provider_event_normalization;
 mod reasoning_effort;
 mod record_labels;
+mod startup_timing;
 mod termination;
 #[cfg(feature = "test-support")]
 #[doc(hidden)]
@@ -314,6 +315,7 @@ pub(super) struct CliRuntimeConfig<'a> {
     codex_runtime_config: Option<CodexRuntimeConfig>,
     codex_oauth_mode: bool,
     codex_fast_mode: bool,
+    codex_ultrafast_mode: bool,
     reasoning_effort: Option<&'a str>,
     disable_builtin_web_search: bool,
     agent_execution_deadline: Option<AgentExecutionDeadline>,
@@ -402,6 +404,9 @@ impl<'a> CliRuntimeConfig<'a> {
             codex_oauth_mode: !user_env_value(&config.user_env, "CHATGPT_ACCOUNT_ID").is_empty(),
             codex_fast_mode: matches!(config.framework, env::Framework::Codex)
                 && user_env_value(&config.user_env, CODEX_SERVICE_TIER_CANONICAL_ENV) == "fast",
+            codex_ultrafast_mode: matches!(config.framework, env::Framework::Codex)
+                && user_env_value(&config.user_env, CODEX_SERVICE_TIER_CANONICAL_ENV)
+                    == "ultrafast",
             reasoning_effort: reasoning_effort::resolve(config.framework, &config.user_env)?,
             disable_builtin_web_search,
             agent_execution_deadline,
@@ -447,6 +452,9 @@ impl<'a> CliRuntimeConfig<'a> {
         ));
         if self.codex_fast_mode {
             overrides.extend(CODEX_FAST_MODE_STARTUP_CONFIGS.map(str::to_string));
+        }
+        if self.codex_ultrafast_mode {
+            overrides.push(r#"service_tier="ultrafast""#.to_string());
         }
         overrides
     }

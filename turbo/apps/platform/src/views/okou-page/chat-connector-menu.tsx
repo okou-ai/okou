@@ -315,7 +315,7 @@ function AccountPanelFooter({
               disabled={!savedAccounts}
               onClick={() => {
                 permissions(permissionTarget);
-                setPopoverOpen(false);
+                detach(setPopoverOpen(false, signal), Reason.DomCallback);
               }}
             >
               <SlidersHorizontal
@@ -418,6 +418,7 @@ export function ChatConnectorMenu({
   readonly footer: ReactNode;
   readonly onOpenAddDialog: () => void;
 }) {
+  const pageSignal = useGet(pageSignal$);
   const { t } = useTranslation();
   const accounts = signals.connector.chatAccess;
   const overview = useLoadable(accounts.overview$);
@@ -452,7 +453,9 @@ export function ChatConnectorMenu({
       }
       showSearch={showSearch}
       search={ui.popoverSearch}
-      onSearchChange={searchConnectors}
+      onSearchChange={(search) => {
+        detach(searchConnectors(search, pageSignal), Reason.DomCallback);
+      }}
       onOpenAddDialog={onOpenAddDialog}
       footer={footer}
       contentKey={`overview:${ui.popoverSearch}`}

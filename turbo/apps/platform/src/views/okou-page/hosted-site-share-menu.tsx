@@ -26,7 +26,7 @@ import { ProBadge } from "./components/model-provider-picker.tsx";
 import { resolveEditableHostedSiteDomain } from "../../lib/platform-host.ts";
 import { captureArtifactAction } from "../../lib/posthog.ts";
 import { currentOrgInfo$ } from "../../signals/auth.ts";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
+import { featureSwitches$ } from "../../signals/external/feature-switch.ts";
 import { artifactPaywallLocked$ } from "../../signals/okou-page/artifact-paywall.ts";
 import {
   getHostedSiteShareScope,
@@ -57,8 +57,8 @@ function HostedSiteBannerSetting({
   const current = useLastResolved(session.banner$);
   const [operation, change] = useLoadableSet(session.changeBanner$);
   const signal = useGet(session.signal$);
-  const features = useGet(featureSwitch$);
-  const rows = features[FeatureSwitchKey.HostedSiteShareRows];
+  const features = useLastResolved(featureSwitches$);
+  const rows = features?.[FeatureSwitchKey.HostedSiteShareRows];
   const paywallLocked = useLastResolved(artifactPaywallLocked$) === true;
   if (
     !signal ||
@@ -443,7 +443,10 @@ function HostedSiteShareActions({
   const edit = useSet(session.edit$);
   const copy = useSet(session.copy$);
   const banner = useLoadable(session.banner$);
-  const rows = useGet(featureSwitch$)[FeatureSwitchKey.HostedSiteShareRows];
+  const rows =
+    useLastResolved(featureSwitches$)?.[
+      FeatureSwitchKey.HostedSiteShareRows
+    ] === true;
   const paywallLocked = useLastResolved(artifactPaywallLocked$) === true;
   if (!signal) {
     return null;
@@ -545,7 +548,10 @@ function HostedSiteShareUrl({
   // settled actions instead of a loading frame.
   const details = useLoadable(session.details$);
   const editing = useGet(session.editing$);
-  const rows = useGet(featureSwitch$)[FeatureSwitchKey.HostedSiteShareRows];
+  const rows =
+    useLastResolved(featureSwitches$)?.[
+      FeatureSwitchKey.HostedSiteShareRows
+    ] === true;
   return (
     <>
       {editing ? (
@@ -659,10 +665,8 @@ function HostedSiteSharePopover({
           <Button
             variant="quiet"
             size="icon-sm"
-            className={cn(
-              "data-popup-open:bg-state-hover data-popup-open:text-foreground",
-              className,
-            )}
+            highlightWhenOpen
+            className={className}
           />
         }
       >

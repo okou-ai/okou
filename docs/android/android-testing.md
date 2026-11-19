@@ -133,3 +133,23 @@ Separate local/JVM tests, host Compose tests, APK assembly, device installation,
 native acceptance, CI completion and store publication. A sandbox without KVM
 does not provide accelerated emulator acceptance. ViewModel retention does not
 prove process-death restoration; persistent drafts need their actual data owner.
+
+### Feature Screenshots
+
+Prefer capturing feature screenshots with ADB on an authorized development
+host when a suitable device or emulator and a build from the revision under
+review are available. Reuse the verified Debug APK when possible. Check its
+application ID before installation and use an ID that can coexist with the
+installed release.
+
+Drive the actual app to the state being reviewed and confirm the visible
+outcome before capturing. Use isolated fixture data when a test account is
+unavailable or the review concerns presentation and interaction. Record the
+build revision and relevant display conditions with the images. Evidence from
+fixtures covers the exercised UI, while backend integration and release
+acceptance have their own checks.
+
+Use the [managed screenshot workflow](../../android/screenshots/README.md)
+when local access, a suitable configuration or a trustworthy build is
+unavailable, or when the review requires reproducible CI evidence. Required
+Android tests and CI gates still apply to either capture path.

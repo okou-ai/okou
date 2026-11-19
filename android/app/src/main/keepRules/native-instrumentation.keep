@@ -19,9 +19,12 @@
   int appearance_system;
   int auth_welcome;
   int back;
+  int chat_archived;
+  int chat_empty;
+  int chat_filter;
   int chat_list_title;
   int chat_loading;
-  int chat_status_observed;
+  int chat_more_actions;
   int composer_accepted;
   int composer_new;
   int composer_saving;
@@ -48,9 +51,10 @@
   int realtime_unavailable;
   int recovery_continue;
   int settings;
-  int updates_available;
   int updates_check;
   int updates_required;
+  int updates_target;
+  int updates_view;
 }
 -keep,allowobfuscation class ai.okou.android.R {
 }
@@ -238,6 +242,7 @@
   public java.lang.Object historySnapshot(java.lang.String, kotlin.coroutines.Continuation);
   public java.lang.Object indicators(kotlin.coroutines.Continuation);
   public java.lang.Object markRead(java.lang.String, kotlin.coroutines.Continuation);
+  public java.lang.Object markUnread(java.lang.String, kotlin.coroutines.Continuation);
   public java.lang.Object newChatAgent(kotlin.coroutines.Continuation);
   public java.lang.Object observeInput(java.lang.String, java.lang.String, kotlin.coroutines.Continuation);
   public java.lang.Object observeRealtime(kotlinx.coroutines.flow.StateFlow, kotlin.jvm.functions.Function3, kotlin.jvm.functions.Function2, kotlin.coroutines.Continuation);
@@ -251,10 +256,15 @@
   public java.lang.Object recoveryCatalog(kotlin.coroutines.Continuation);
   public java.lang.Object recoveryModels(kotlin.coroutines.Continuation);
   public java.lang.Object recoverySubscriptions(kotlin.coroutines.Continuation);
+  public java.lang.Object renameThread(java.lang.String, java.lang.String, java.lang.String, kotlin.coroutines.Continuation);
+  public java.lang.Object reorderPinnedThread(java.lang.String, java.lang.String, java.lang.String, kotlin.coroutines.Continuation);
   public java.lang.Object resetSubscription(java.lang.String, java.lang.String, kotlin.coroutines.Continuation);
   public java.lang.Object saveComposerDraft(ai.okou.android.chat.ServerDraftTarget, java.lang.String, kotlin.coroutines.Continuation);
   public java.lang.Object sendControl(ai.okou.android.api.generated.SendRequest, kotlin.coroutines.Continuation);
   public java.lang.Object sendInput(ai.okou.android.api.generated.SendRequestVariant1, kotlin.coroutines.Continuation);
+  public java.lang.Object setArchived(java.lang.String, boolean, java.lang.String, kotlin.coroutines.Continuation);
+  public java.lang.Object setMuted(java.lang.String, boolean, java.lang.String, kotlin.coroutines.Continuation);
+  public java.lang.Object setPinned(java.lang.String, java.lang.String, java.lang.String, kotlin.coroutines.Continuation);
   public java.lang.Object threadDetail(java.lang.String, kotlin.coroutines.Continuation);
   public java.lang.Object updatePersonalInstructions(java.lang.String, java.lang.String, kotlin.coroutines.Continuation);
   public java.lang.Object updatePreferences(ai.okou.android.api.generated.UpdatePreferencesRequest, kotlin.coroutines.Continuation);
@@ -300,9 +310,15 @@
   public java.lang.Object historySnapshot(java.lang.String, kotlin.coroutines.Continuation);
   public java.lang.Object indicators(kotlin.coroutines.Continuation);
   public java.lang.Object markRead(java.lang.String, kotlin.coroutines.Continuation);
+  public java.lang.Object markUnread(java.lang.String, kotlin.coroutines.Continuation);
   public java.lang.Object projectArchive(java.lang.String, kotlin.coroutines.Continuation);
   public java.lang.Object projectEvents(long, kotlin.coroutines.Continuation);
   public java.lang.Object projectSnapshot(kotlin.coroutines.Continuation);
+  public java.lang.Object renameThread(java.lang.String, java.lang.String, java.lang.String, kotlin.coroutines.Continuation);
+  public java.lang.Object reorderPinnedThread(java.lang.String, java.lang.String, java.lang.String, kotlin.coroutines.Continuation);
+  public java.lang.Object setArchived(java.lang.String, boolean, java.lang.String, kotlin.coroutines.Continuation);
+  public java.lang.Object setMuted(java.lang.String, boolean, java.lang.String, kotlin.coroutines.Continuation);
+  public java.lang.Object setPinned(java.lang.String, java.lang.String, java.lang.String, kotlin.coroutines.Continuation);
   public java.lang.Object threadDetail(java.lang.String, kotlin.coroutines.Continuation);
 }
 -keep,allowobfuscation class ai.okou.android.chat.ChatListUiState {

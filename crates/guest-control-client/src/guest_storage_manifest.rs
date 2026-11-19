@@ -1,3 +1,4 @@
+use guest_contracts::storage_files::INPUT_MAGIC;
 use guest_contracts::storage_resources::{
     StorageControlTimingMetadata, StorageResourceAvailability, StorageResourceUsage,
 };
@@ -8,6 +9,7 @@ use std::time::{Duration, Instant};
 use guest_control_proto::{
     ExecTermination, MSG_ERROR, MSG_GUEST_STORAGE_MANIFEST_RESULT, RawMessage,
     decode_guest_storage_manifest_result, encode_guest_storage_manifest_request_frame_into,
+    encode_guest_storage_manifest_request_frame_prefix_into,
 };
 
 use crate::helper_output::owned_capture;
@@ -17,6 +19,7 @@ use crate::{
 };
 
 const TERMINAL_MSG_TYPES: &[u8] = &[MSG_ERROR, MSG_GUEST_STORAGE_MANIFEST_RESULT];
+const BORROWED_STORAGE_FRAME_MIN_BYTES: usize = 4 * 1024 * 1024;
 
 /// Owned result of the fixed guest storage-manifest helper.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -84,6 +87,7 @@ impl GuestControlClient {
                     request.runtime_dir,
                     request.metadata,
                 )
+                .map(|()| &[][..])
                 .map_err(protocol_invalid_input)
             },
             None,
@@ -185,6 +189,19 @@ impl GuestControlClient {
             request_timeout,
             FrameWriteObserver::noop(),
             |seq, frame| {
+                if manifest_json.len() >= BORROWED_STORAGE_FRAME_MIN_BYTES
+                    && manifest_json.starts_with(INPUT_MAGIC)
+                {
+                    return encode_guest_storage_manifest_request_frame_prefix_into(
+                        frame,
+                        seq,
+                        process_timeout_ms,
+                        run_id,
+                        runtime_dir,
+                        manifest_json,
+                    )
+                    .map_err(protocol_invalid_input);
+                }
                 encode_guest_storage_manifest_request_frame_into(
                     frame,
                     seq,
@@ -193,6 +210,7 @@ impl GuestControlClient {
                     runtime_dir,
                     manifest_json,
                 )
+                .map(|()| &[][..])
                 .map_err(protocol_invalid_input)
             },
             timing.as_deref_mut().map(|timing| &mut timing.host),

@@ -407,25 +407,40 @@ function MailMediaAttachmentPreview({
   readonly kind: "image" | "video";
   readonly url: string;
 }) {
+  const pageSignal = useGet(pageSignal$);
   const { t } = useTranslation();
   const openImageLightbox = useSet(openImageLightbox$);
   const openVideoLightbox = useSet(openVideoLightbox$);
   const onPreview = () => {
     if (kind === "image") {
-      openImageLightbox({
-        url,
-        filename,
-        shareAvailable: false,
-        splitViewAvailable: false,
-      });
+      detach(
+        openImageLightbox(
+          {
+            url,
+            filename,
+            shareAvailable: false,
+            splitViewAvailable: false,
+          },
+          undefined,
+          pageSignal,
+        ),
+        Reason.DomCallback,
+      );
       return;
     }
-    openVideoLightbox({
-      url,
-      filename,
-      shareAvailable: false,
-      splitViewAvailable: false,
-    });
+    detach(
+      openVideoLightbox(
+        {
+          url,
+          filename,
+          shareAvailable: false,
+          splitViewAvailable: false,
+        },
+        undefined,
+        pageSignal,
+      ),
+      Reason.DomCallback,
+    );
   };
   return (
     <button

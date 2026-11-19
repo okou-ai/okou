@@ -1,3 +1,5 @@
+import { detach, Reason } from "../../signals/utils.ts";
+import { pageSignal$ } from "../../signals/page-signal.ts";
 import {
   BuiltinConnectorAccountDialogs,
   useBuiltinConnectorConnectHandlers,
@@ -101,7 +103,7 @@ import {
 } from "./components/settings/connector-shelf.tsx";
 import { ConnectorAccessManagementDialog } from "./components/settings/connector-access-management-dialog.tsx";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
+import { featureSwitches$ } from "../../signals/external/feature-switch.ts";
 import {
   ConnectorAgentAccessButton,
   connectorAgentAccessStatus,
@@ -362,7 +364,7 @@ function ConnectorFilterMenu({
  * ones -- the question left to ask is which agent can reach them.
  */
 function ConnectorAgentFilterMenu() {
-  const singleAgent = useGet(singleAgentEnabled$);
+  const singleAgent = useLastResolved(singleAgentEnabled$) ?? false;
   return singleAgent ? null : <LegacyConnectorAgentFilterMenu />;
 }
 
@@ -370,7 +372,7 @@ function LegacyConnectorAgentFilterMenu() {
   const { t } = useTranslation();
   const agentsLoadable = useLastLoadable(agents$);
   const agents = agentsLoadable.state === "hasData" ? agentsLoadable.data : [];
-  const value = useGet(connectorsConnectionFilter$);
+  const value = useLastResolved(connectorsConnectionFilter$) ?? { kind: "all" };
   const onChange = useSet(setConnectorsConnectionFilter$);
   const activeAgent =
     value.kind === "agent"
@@ -997,7 +999,9 @@ function ConnectorAccessButton(props: {
   readonly onClick: () => void;
 }) {
   const enabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ConnectorChatAccountAccess];
+    useLastResolved(featureSwitches$)?.[
+      FeatureSwitchKey.ConnectorChatAccountAccess
+    ];
   const { t } = useTranslation();
   return enabled ? (
     props.allowAccessIncrease && props.hasPermissions ? (
@@ -1110,7 +1114,7 @@ function ConnectorEmptyState({ message }: { readonly message: string }) {
         alt={t(($) => {
           return $.connectors.catalog.noConnectorsAlt;
         })}
-        className="h-20 w-20 object-contain opacity-80"
+        className="h-20 w-30 object-contain"
       />
       <p className="text-center text-sm text-muted-foreground">{message}</p>
     </div>
@@ -1198,7 +1202,7 @@ interface SettingsConnectorCardProps {
 
 function ConnectorCatalogHeader() {
   const { t } = useTranslation();
-  const singleAgent = useGet(singleAgentEnabled$);
+  const singleAgent = useLastResolved(singleAgentEnabled$) ?? false;
   const count = useLastLoadable(connectorDirectoryPageSignals.catalogCount$);
   const connectorCatalogCount = count.state === "hasData" ? count.data : null;
   const scope = useGet(connectorsScope$);
@@ -1238,6 +1242,7 @@ function ConnectorCatalogHeader() {
 }
 
 function SettingsConnectorCard({ signals }: SettingsConnectorCardProps) {
+  const pageSignal = useGet(pageSignal$);
   const connector = signals.connector;
   const targets = useLastLoadable(signals.targets$);
   const hasAccounts =
@@ -1256,7 +1261,9 @@ function SettingsConnectorCard({ signals }: SettingsConnectorCardProps) {
       connectorLabel={connector.label}
       hasPermissions={connector.permissionSummary.hasPermissions}
       allowAccessIncrease={inventoryStatus === "ready" && hasAccounts}
-      onClick={manageAccess}
+      onClick={() => {
+        detach(manageAccess(pageSignal), Reason.DomCallback);
+      }}
     />
   );
   return (
@@ -1395,7 +1402,9 @@ function ConnectedDirectoryPanel() {
   const catalog = useLoadable(directoryCatalogItems$);
   const targets = useLastLoadable(connectedConnectorTargetKeys$);
   const inventoryStatus = connectorInventoryStatus(targets.state);
-  const connectionFilter = useGet(connectorsConnectionFilter$);
+  const connectionFilter = useLastResolved(connectorsConnectionFilter$) ?? {
+    kind: "all",
+  };
   const custom = directoryCustomConnectors(
     useLastLoadable(filteredDirectoryCustomConnectors$),
     targets,

@@ -3,7 +3,7 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { command, computed } from "ccstate";
 import { captureSubscriptionLinkingEvent } from "../../lib/posthog.ts";
 import { limitingSubscriptionUsageWindow } from "../../lib/subscription-usage-windows.ts";
-import { featureSwitch$ } from "../external/feature-switch.ts";
+import { featureSwitches$ } from "../external/feature-switch.ts";
 import { thirdPartySubscriptions$ } from "../external/third-party-subscriptions.ts";
 import { openSettingsDialogAt$ } from "./settings/settings-dialog.ts";
 import { openClaudeCodeDeviceAuthDialogPersonal$ } from "./settings/claude-code-device-auth.ts";
@@ -24,12 +24,14 @@ interface SubscriptionPlanUsage {
   readonly limitingWindow: "fiveHour" | "week" | null;
 }
 
-export const subscriptionLinkingEnabled$ = computed((get) => {
-  return get(featureSwitch$)[FeatureSwitchKey.SubscriptionLinkingEntry];
+export const subscriptionLinkingEnabled$ = computed(async (get) => {
+  return (await get(featureSwitches$))[
+    FeatureSwitchKey.SubscriptionLinkingEntry
+  ];
 });
 
 export const subscriptionLinkingUnlinked$ = computed(async (get) => {
-  if (!get(subscriptionLinkingEnabled$)) {
+  if (!(await get(subscriptionLinkingEnabled$))) {
     return null;
   }
   const { subscriptions } = await get(thirdPartySubscriptions$);
@@ -68,7 +70,7 @@ export const connectSubscriptionLinkingProvider$ = command(
     provider: PersonalSubscriptionProviderType,
     signal: AbortSignal,
   ) => {
-    if (!get(subscriptionLinkingEnabled$)) {
+    if (!(await get(subscriptionLinkingEnabled$))) {
       return;
     }
     captureSubscriptionLinkingEvent("provider_selected", source, provider);

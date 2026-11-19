@@ -10,7 +10,7 @@ import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { matchFirewallRequestDecision } from "@okouai/connectors/firewall-rule-matcher";
 import { badRequestMessage, resourceUnavailable } from "../../lib/error";
-import type { SandboxAuth } from "../../types/auth";
+import type { FirewallAuth } from "../../types/auth";
 import { writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import { userFeatureSwitchContext } from "./feature-switches.service";
@@ -114,7 +114,7 @@ function activeNetworkRun(
 }
 
 function networkAdmissionRunReadQuery(args: {
-  readonly auth: SandboxAuth;
+  readonly auth: FirewallAuth;
   readonly matched: { readonly customConnectorId: string };
 }) {
   return new QueryBuilder()
@@ -156,7 +156,7 @@ export const admitCustomConnectorNetworkRequest$ = command(
   async (
     { get, set },
     args: {
-      readonly auth: SandboxAuth;
+      readonly auth: FirewallAuth;
       readonly request: NetworkRequest;
       readonly matched: NetworkMatch;
     },

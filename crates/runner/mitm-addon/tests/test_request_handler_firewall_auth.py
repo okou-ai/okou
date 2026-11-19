@@ -45,9 +45,8 @@ def _resolved_firewall_auth() -> auth_client.FirewallAuthSuccess:
 
 
 @pytest.mark.parametrize("requestheaders_first", [False, True])
-@pytest.mark.parametrize("include_encrypted_secrets", [False, True])
 async def test_host_firewall_auth_reaches_resolver_and_reuses_cache(
-    tmp_path, real_flow, mitm_ctx, requestheaders_first, include_encrypted_secrets
+    tmp_path, real_flow, mitm_ctx, requestheaders_first
 ):
     reg_path = _write_registry(
         tmp_path,
@@ -64,7 +63,6 @@ async def test_host_firewall_auth_reaches_resolver_and_reuses_cache(
                 "ask": [],
                 "unknownPolicy": "deny",
             },
-            include_encrypted_secrets=include_encrypted_secrets,
             sandbox_fields={"firewallToken": "host-only-firewall"},
         ),
     )
@@ -99,10 +97,6 @@ async def test_host_firewall_auth_reaches_resolver_and_reuses_cache(
     assert request.json_body()["authHeaders"] == {
         "Authorization": "Bearer ${{ secrets.GITHUB_TOKEN }}"
     }
-    if include_encrypted_secrets:
-        assert request.json_body()["encryptedSecrets"] == "iv:tag:data"
-    else:
-        assert "encryptedSecrets" not in request.json_body()
     assert flows[1].metadata[metadata_keys.AUTH_CACHE_HIT] is True
 
 
@@ -646,7 +640,7 @@ async def test_registry_reload_replaces_firewall_auth_identity(tmp_path, real_fl
             if index:
                 _write_github_firewall_registry(
                     tmp_path,
-                    sandbox_fields={"encryptedSecrets": f"iv:tag:data-updated-{index}"},
+                    sandbox_fields={"firewallToken": f"host-firewall-token-{index}"},
                 )
             with state_file.open_state_file(
                 reg_path,
@@ -730,7 +724,7 @@ async def test_registry_reload_coalesces_unchanged_in_flight_firewall_auth(
         *,
         force_refresh: bool,
     ) -> auth_client.FirewallAuthSuccess:
-        assert request.encrypted_secrets == "iv:tag:data"
+        assert request.firewall_token == "host-firewall-token"
         assert force_refresh is False
         auth_fetch_started.set()
         await release_auth_fetch.wait()
@@ -790,7 +784,7 @@ async def test_superseded_fetch_completion_does_not_repopulate_auth_state(
         force_refresh: bool,
     ) -> auth_client.FirewallAuthSuccess:
         assert force_refresh is False
-        if request.encrypted_secrets == "iv:tag:data":
+        if request.firewall_token == "host-firewall-token":
             old_fetch_started.set()
             await release_old_fetch.wait()
             return auth_client.FirewallAuthSuccess(
@@ -810,7 +804,7 @@ async def test_superseded_fetch_completion_does_not_repopulate_auth_state(
             await asyncio.wait_for(old_fetch_started.wait(), timeout=1)
             _write_github_firewall_registry(
                 tmp_path,
-                sandbox_fields={"encryptedSecrets": "iv:tag:data-updated"},
+                sandbox_fields={"firewallToken": "updated-host-firewall-token"},
             )
             await mitm_addon.request(new_flow)
 
@@ -861,7 +855,7 @@ async def test_superseded_401_does_not_mutate_current_auth_state(tmp_path, real_
         await mitm_addon.request(flows[0])
         _write_github_firewall_registry(
             tmp_path,
-            sandbox_fields={"encryptedSecrets": "iv:tag:data-updated"},
+            sandbox_fields={"firewallToken": "updated-host-firewall-token"},
         )
         await mitm_addon.request(flows[1])
         old_key = flows[0].metadata[metadata_keys.FIREWALL_AUTH_CACHE_KEY]
@@ -1201,7 +1195,6 @@ async def test_reflection_method_firewall_without_managed_credentials_still_matc
                 "ask": [],
                 "unknownPolicy": "deny",
             },
-            include_encrypted_secrets=False,
         ),
     )
     flow = real_flow(

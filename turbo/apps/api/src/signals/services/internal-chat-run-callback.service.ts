@@ -168,6 +168,7 @@ import {
   dispatchTelegramChatDeliveryOnce$,
 } from "./internal-telegram-chat-run-callback.service";
 import { sendUserPushNotifications$ } from "./push-notifications.service";
+import { scheduleUserWidgetRefresh$ } from "./ios-widget-push.service";
 import { formatRunErrorForRunOwner$ } from "./run-error-format.service";
 import { saveRunSummary$ } from "./run-summary.service";
 import { loadSlackQueuedLaunchMaterial$ } from "./slack-queued-launch-context.service";
@@ -339,8 +340,7 @@ export interface CreateQueuedChatRunInput {
   readonly queuedMessage: QueuedUserMessage;
   readonly selectedModel: string;
   readonly effectiveModelProvider: ModelFirstPin["modelProviderType"];
-  readonly piExecution: boolean;
-  readonly codexServiceTier: "fast" | undefined;
+  readonly codexServiceTier: "fast" | "ultrafast" | undefined;
   readonly reasoningEffort?: ReasoningEffort | null;
   readonly triggerSource: QueuedUserMessageTriggerSource;
   readonly realAgentInPreview?: boolean;
@@ -1087,6 +1087,7 @@ const insertAssistantErrorEvent$ = command(
       assistantErrorEventTouchOptions(args),
       signal,
     );
+    set(scheduleUserWidgetRefresh$, args.userId);
     await set(publishAssistantErrorEventSignals$, args, signal);
     signal.throwIfAborted();
     return assistantErrorEventResult(displayErrorMessage, inserted);
@@ -1425,6 +1426,7 @@ const insertRunLifecycleMarker$ = command(
       runLifecycleMarkerTouchOptions(args, markerCreatedAt),
       signal,
     );
+    set(scheduleUserWidgetRefresh$, args.userId);
     await set(publishRunLifecycleMarkerSignals$, args, signal);
     signal.throwIfAborted();
     return runLifecycleMarkerResult(inserted);

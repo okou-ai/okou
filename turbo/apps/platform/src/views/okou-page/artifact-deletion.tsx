@@ -58,7 +58,7 @@ function PreviewArtifactDeleteMoreMenu({
               type="button"
               variant="quiet"
               size="icon-sm"
-              className="data-popup-open:bg-state-hover data-popup-open:text-foreground"
+              highlightWhenOpen
             />
           }
         >

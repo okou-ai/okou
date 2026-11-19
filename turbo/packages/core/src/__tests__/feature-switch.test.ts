@@ -56,6 +56,51 @@ describe("isFeatureEnabled", () => {
     }
   });
 
+  it("enables three-point timing only for Bingjie's user ID across workspaces", () => {
+    const key = FeatureSwitchKey.ArtifactThreePointTiming;
+    expect(getFeatureSwitchMetadata()[key].rolloutStage).toBe("internal");
+    for (const orgId of [
+      undefined,
+      "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
+      "external-org",
+    ]) {
+      const identity = {
+        userId: "user_3EWY21Oe3f15kfs3yYmbGgDb3NV",
+        orgId,
+      };
+      expect(isFeatureSwitchAvailable(key, identity)).toBe(true);
+      expect(isFeatureEnabled(key, identity)).toBe(true);
+      expect(getAllFeatureStates(identity)[key]).toBe(true);
+      for (const enabled of [false, true]) {
+        const context = { ...identity, overrides: { [key]: enabled } };
+        expect(isFeatureEnabled(key, context)).toBe(enabled);
+        expect(getAllFeatureStates(context)[key]).toBe(enabled);
+      }
+    }
+  });
+
+  it("rejects three-point timing opt-ins outside the user-only rollout", () => {
+    const key = FeatureSwitchKey.ArtifactThreePointTiming;
+    for (const identity of [
+      {},
+      { email: "bingjie@okou.ai" },
+      { userId: "external-user", orgId: "external-org" },
+      { userId: "staff-colleague", orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" },
+      {
+        userId: "staff-colleague",
+        email: "bingjie@okou.ai",
+        orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
+      },
+    ]) {
+      expect(isFeatureSwitchAvailable(key, identity)).toBe(false);
+      for (const overrides of [{}, { [key]: true }, { [key]: false }]) {
+        const context = { ...identity, overrides };
+        expect(isFeatureEnabled(key, context)).toBe(false);
+        expect(getAllFeatureStates(context)[key]).toBe(false);
+      }
+    }
+  });
+
   it("keeps presentation format available to Bingjie across workspaces", () => {
     const key = FeatureSwitchKey.PresentationOutputFormat;
     for (const orgId of [

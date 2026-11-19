@@ -34,12 +34,16 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import type { AuthContext } from "../../types/auth";
 
 import { env } from "../../lib/env";
+import { providerUnavailable } from "../../lib/error";
 import { now, nowDate } from "../../lib/time";
 import { authRoute } from "../auth/auth-route";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
 import { db$, writeDb$ } from "../external/db";
-import { verifyClerkComputerUseSession } from "../external/clerk";
+import {
+  clerkReadUnavailable,
+  verifyClerkComputerUseSession,
+} from "../external/clerk";
 import {
   createPhoneUseToken,
   phoneUseDeviceIsPresent,
@@ -131,6 +135,11 @@ function guard<T>(
             },
           },
         };
+      }
+      if (clerkReadUnavailable(result.error)) {
+        return providerUnavailable(
+          "Authentication provider is temporarily unavailable",
+        );
       }
       throw result.error;
     }),

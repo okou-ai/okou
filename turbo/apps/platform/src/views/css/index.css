@@ -180,6 +180,8 @@
      Keyframes stay below. */
   --animate-chat-greeting-token: chat-greeting-token 720ms
     cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-chat-greeting-avatar: chat-greeting-avatar 720ms
+    cubic-bezier(0.22, 1, 0.36, 1) both;
 
   /* The composer's second level. The panel settles once when a type is picked,
      then each row's items resolve left to right, which is the order they are
@@ -310,9 +312,11 @@
     );
 
   /* On the session's first home, the capability rows and the compliance block
-     under them settle in after the greeting: an 8px rise and a fade on the
-     greeting's own curve, one 70ms step apart through
-     `--capability-row-delay`. It lives in this inline block so the utility
+     under them settle in after the greeting: an 8px rise on the greeting's
+     own curve, one 70ms step apart through `--capability-row-delay`. They rise
+     without a fade: a row held at opacity 0 hides the page's largest paint,
+     the Create card's Spiral, from Largest Contentful Paint until the fade
+     has ended. It lives in this inline block so the utility
      carries the value itself: a theme variable is a custom property on
      `:root`, where its own `var(--capability-row-delay)` would resolve before
      any card could set one, leaving every row at 0ms. `animate-*` compiles to
@@ -693,6 +697,18 @@ body {
   }
 }
 
+/* The SVG avatar fades on its resting pixel grid. Transforming or filtering
+   the whole tile can change its rasterized edges when the filled entrance is
+   cleared after the last greeting word. */
+@keyframes chat-greeting-avatar {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 /* 14px is about half the greeting's line box. With no frame catching the word
    at the end of its travel, a larger distance stops reading as settling and
    starts reading as flying in; the blur is what carries the arrival instead. */
@@ -895,7 +911,6 @@ body {
    `transform-fill`. */
 @keyframes capability-row-in {
   from {
-    opacity: 0;
     transform: translateY(0.5rem);
   }
 }

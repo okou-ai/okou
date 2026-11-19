@@ -179,7 +179,7 @@ function PrivateEmptyState() {
         src={platformEmptyPrivateAgentsImg}
         alt=""
         aria-hidden="true"
-        className="h-24 w-24 object-contain opacity-80"
+        className="h-24 w-36 object-contain"
       />
       <p className="mt-3 text-sm font-medium text-foreground">
         {t(($) => {

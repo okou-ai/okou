@@ -37,7 +37,7 @@ import {
   isSupportedFramework,
 } from "@okouai/core/frameworks";
 import { ApiError } from "../../lib/api-error.ts";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
+import { featureSwitches$ } from "../../signals/external/feature-switch.ts";
 import { fetchDownloadExtra$ } from "../../signals/activity-page/activity-download.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { searchParams$, updateSearchParams$ } from "../../signals/route.ts";
@@ -137,7 +137,7 @@ function ActivityBreadcrumbLabel() {
 
 function ActivityNotFound() {
   const { t } = useTranslation();
-  const features = useLastResolved(featureSwitch$);
+  const features = useLastResolved(featureSwitches$);
   return (
     <div className="h-full flex flex-col min-h-0">
       <nav className="hidden md:flex shrink-0 items-center gap-1 px-4 pt-4 text-sm text-muted-foreground">
@@ -1003,7 +1003,7 @@ export function ActivityDetailPage() {
     }),
   );
 
-  const features = useLastResolved(featureSwitch$);
+  const features = useLastResolved(featureSwitches$);
   const events =
     eventsLoadable.state === "hasData" &&
     eventsLoadable.data?.runId === currentRunId
@@ -1044,7 +1044,7 @@ function ActivityLoadError() {
 }
 
 function ActivitySkeleton() {
-  const features = useLastResolved(featureSwitch$);
+  const features = useLastResolved(featureSwitches$);
   return (
     <div className="h-full flex flex-col min-h-0 overflow-hidden">
       <div className="flex-1 flex flex-col min-h-0 overflow-auto">

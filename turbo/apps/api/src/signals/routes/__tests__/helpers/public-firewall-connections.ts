@@ -80,7 +80,7 @@ export function createPublicFirewallConnections(context: TestContext) {
       actor,
       runId: created.runId,
       execution,
-      headers: { authorization: `Bearer ${execution.sandboxToken}` },
+      headers: { authorization: `Bearer ${execution.firewallToken}` },
     };
   }
 

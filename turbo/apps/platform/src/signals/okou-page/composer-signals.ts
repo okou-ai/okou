@@ -292,8 +292,8 @@ export interface ComposerSignals {
   readonly imageAnnotation: ImageAnnotationSignals;
   /** Previews draft media; images can also be marked up in the lightbox. */
   readonly openAttachmentPreview$: Command<
-    void,
-    [ChatAttachment, AnnotationImage]
+    Promise<void>,
+    [ChatAttachment, AnnotationImage, AbortSignal]
   >;
   /** Produces a draft image's annotated copy again after it failed. */
   readonly retryAnnotatedCopy$: Command<
@@ -755,7 +755,12 @@ function createComposerAttachmentAnnotation(
     },
   );
   const openAttachmentPreview$ = command(
-    ({ set }, attachment: ChatAttachment, image: AnnotationImage) => {
+    async (
+      { set },
+      attachment: ChatAttachment,
+      image: AnnotationImage,
+      signal: AbortSignal,
+    ) => {
       // A pending upload is not an artifact yet, so checking it must not take
       // over an open artifact sidebar. An attachment is the user's own input,
       // not a published artifact, so it carries no sharing controls.
@@ -768,13 +773,18 @@ function createComposerAttachmentAnnotation(
         splitViewAvailable: false,
       };
       if (attachment.contentType.startsWith("video/")) {
-        set(openVideoLightbox$, input);
+        await set(openVideoLightbox$, input, undefined, signal);
         return;
       }
-      set(openImageLightbox$, {
-        ...input,
-        annotationTarget: { attachment, annotate$: annotateAttachment$ },
-      });
+      await set(
+        openImageLightbox$,
+        {
+          ...input,
+          annotationTarget: { attachment, annotate$: annotateAttachment$ },
+        },
+        undefined,
+        signal,
+      );
     },
   );
   /**
@@ -1035,7 +1045,7 @@ function createSubmitCurrentInput({
           ? taskSelection.visualization
           : undefined;
       const presentationFormat =
-        get(presentationOutputFormatEnabled$) &&
+        (await get(presentationOutputFormatEnabled$)) &&
         (mode === "presentation" || visualization?.output === "presentation")
           ? get(presentationOutputFormat$)
           : undefined;

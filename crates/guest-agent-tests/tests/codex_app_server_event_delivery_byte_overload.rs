@@ -69,7 +69,7 @@ async fn run_retry_case(recover_before_eviction: bool) -> Result<(), Box<dyn std
         .path()
         .join(common::MOCK_CODEX_EVENT_DELIVERY_LARGE_RELEASE_SOCKET);
     let mut accepted_sequences = Vec::new();
-    let stalled_warning = loop {
+    let mut stalled_warning = loop {
         let request = tokio::select! {
             result = &mut execution => {
                 return Err(format!("app-server execution ended before the first warning was in flight: {result:?}").into());
@@ -91,17 +91,18 @@ async fn run_retry_case(recover_before_eviction: bool) -> Result<(), Box<dyn std
         accepted_sequences.extend(common::event_request_sequences(&request.request)?);
         request.respond(200)?;
     };
-    let stalled_body = stalled_warning.request.body.clone();
+    let stalled_body = std::mem::take(&mut stalled_warning.request.body).into_boxed_str();
     stalled_warning.respond(500)?;
     for _ in 1..6 {
         let retry = server.next_request(Duration::from_secs(5)).await?;
-        assert_eq!(retry.request.body, stalled_body);
+        assert_eq!(retry.request.body, *stalled_body);
         retry.respond(500)?;
     }
     // The mock is still blocked on its release socket, proving that a transient
     // failure survives more than the old three-attempt budget during execution.
     let retry = server.next_request(Duration::from_secs(5)).await?;
-    assert_eq!(retry.request.body, stalled_body);
+    assert_eq!(retry.request.body, *stalled_body);
+    drop(stalled_body);
     if recover_before_eviction {
         accepted_sequences.extend(common::event_request_sequences(&retry.request)?);
         retry.respond(200)?;

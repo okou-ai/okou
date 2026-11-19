@@ -353,7 +353,7 @@ function ExportActions({
 }
 
 function ExportScopeList() {
-  const singleAgent = useGet(singleAgentEnabled$);
+  const singleAgent = useLastResolved(singleAgentEnabled$) ?? false;
   const { t } = useTranslation();
   const items = [
     t(($) => {

@@ -10,7 +10,7 @@ export const PI_AGENT_THINKING_LEVELS = [
 
 export type PiAgentThinkingLevel = (typeof PI_AGENT_THINKING_LEVELS)[number];
 
-export type PiAgentServiceTier = "priority" | "fast";
+export type PiAgentServiceTier = "priority" | "fast" | "ultrafast";
 
 export type PiAgentDialect =
   "openai-responses" | "openai-completions" | "openai-codex-responses";
@@ -65,7 +65,7 @@ export type PiAgentModelConfig = PiAgentModelCommon &
         readonly catalogModel?: never;
         readonly transport: "sse";
         readonly accountId: string;
-        readonly serviceTier?: "fast";
+        readonly serviceTier?: "fast" | "ultrafast";
       }
   );
 

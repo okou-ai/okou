@@ -10,7 +10,7 @@ import {
   currentChatAgentDisplayName$,
 } from "../agent-chat.ts";
 import { activityDetail$ } from "../activity-page/activity-signals.ts";
-import { featureSwitch$ } from "../external/feature-switch.ts";
+import { featureSwitches$ } from "../external/feature-switch.ts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { currentWorkflowDetail$ } from "../workflows-page/workflows-signals.ts";
 import { i18n } from "../../i18n/index.ts";
@@ -70,7 +70,7 @@ const activityDetailBreadcrumb$ = computed(
     const section = i18n.t(($) => {
       return $.activity.detail.activity;
     });
-    const features = await get(featureSwitch$);
+    const features = await get(featureSwitches$);
     if (!features?.[FeatureSwitchKey.OkouDebug]) {
       return null;
     }

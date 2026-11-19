@@ -221,9 +221,14 @@ function WorkflowCapabilityCard({
       />
       <CapabilityGround card="workflow" />
       <CapabilityStage card="workflow">
-        {WORKFLOW_KINDS.map(({ art, visibility }) => {
+        {WORKFLOW_KINDS.map(({ art, visibility, loading }) => {
           return (
-            <CapabilityObjects key={art} art={art} className={visibility} />
+            <CapabilityObjects
+              key={art}
+              art={art}
+              className={visibility}
+              loading={loading}
+            />
           );
         })}
       </CapabilityStage>
@@ -307,9 +312,14 @@ function CapabilityCards({
         />
         <CapabilityGround card="create" />
         <CapabilityStage card="create">
-          {CREATE_TASKS.map(({ art, visibility }) => {
+          {CREATE_TASKS.map(({ art, visibility, loading }) => {
             return (
-              <CapabilityObjects key={art} art={art} className={visibility} />
+              <CapabilityObjects
+                key={art}
+                art={art}
+                className={visibility}
+                loading={loading}
+              />
             );
           })}
         </CapabilityStage>

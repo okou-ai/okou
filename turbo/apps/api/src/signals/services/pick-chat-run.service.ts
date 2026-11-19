@@ -512,7 +512,7 @@ function createPickObjects() {
               runId: input.run.id,
               runnerGroup: input.runnerGroup,
               profile: input.profile,
-              cacheWrites: preparation.cacheWrites,
+              ...preparation.cachePublication,
             },
             signal,
           ),

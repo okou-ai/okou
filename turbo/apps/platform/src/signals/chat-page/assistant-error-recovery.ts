@@ -19,7 +19,7 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { command, computed, type Computed } from "ccstate";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
-import { featureSwitch$ } from "../external/feature-switch.ts";
+import { featureSwitches$ } from "../external/feature-switch.ts";
 import { modelCatalog$ } from "../external/model-catalog.ts";
 import { personalModelProviderAccountRevision$ } from "../external/third-party-subscriptions.ts";
 import { availableRunModels$ } from "../external/run-models.ts";
@@ -767,12 +767,14 @@ export function createAssistantErrorRecoverySignals(deps: {
       const modelSelection = resolvedModel
         ? {
             selectedModel: resolvedModel,
-            ...(meta.serviceTier === "priority"
-              ? { codexServiceTier: "fast" as const }
-              : {}),
+            codexServiceTier:
+              meta.serviceTier === "priority"
+                ? ("fast" as const)
+                : (meta.serviceTier ?? undefined),
           }
         : null;
-      const features = get(featureSwitch$);
+      const features = await get(featureSwitches$);
+      signal.throwIfAborted();
       const runOptions = runOptionsFromModelProviderSelection(modelSelection);
       await set(
         deps.chatEvents.sendEvent$,

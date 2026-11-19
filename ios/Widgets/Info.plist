@@ -27,5 +27,13 @@
 	</dict>
 	<key>OkouAppURLScheme</key>
 	<string>ai.okou.ios</string>
+	<key>APIBaseURL</key>
+	<string>$(OKOU_API_BASE_URL)</string>
+	<key>ClerkPublishableKey</key>
+	<string>$(CLERK_PUBLISHABLE_KEY)</string>
+	<key>NotificationAppGroup</key>
+	<string>group.ai.okou.ios</string>
+	<key>ClerkKeychainAccessGroup</key>
+	<string>$(OKOU_CLERK_KEYCHAIN_ACCESS_GROUP)</string>
 </dict>
 </plist>

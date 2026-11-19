@@ -1,7 +1,12 @@
 import { command, computed, state } from "ccstate";
 import { eventDrivenChatThreads$ } from "../chat-page/chat-thread-event-sourcing.ts";
 import { onRef } from "../utils.ts";
-import { moveProjectThread$, projects$, projectsEnabled$ } from "./projects.ts";
+import {
+  moveProjectThread$,
+  projectedProjects$,
+  projects$,
+  projectsEnabled$,
+} from "./projects.ts";
 
 export const PROJECT_THREAD_DRAG_TYPE = "application/x-okou-chat-thread";
 
@@ -14,7 +19,7 @@ const dropTarget$ = state<{
 
 export const draggingProjectThread$ = computed((get) => {
   const id = get(draggingThreadId$);
-  return get(projectsEnabled$) && id
+  return id
     ? (get(eventDrivenChatThreads$).find((thread) => {
         return thread.id === id;
       }) ?? null)
@@ -34,7 +39,7 @@ export const projectThreadDragHint$ = computed((get) => {
   if (target.projectId === null) {
     return { ...target, name: null };
   }
-  const project = get(projects$).find((item) => {
+  const project = get(projectedProjects$).find((item) => {
     return item.id === target.projectId;
   });
   return project ? { ...target, name: project.name } : null;
@@ -43,7 +48,6 @@ export const projectThreadDragHint$ = computed((get) => {
 export const startProjectThreadDrag$ = command(
   ({ get, set }, threadId: string) => {
     if (
-      !get(projectsEnabled$) ||
       !get(eventDrivenChatThreads$).some((thread) => {
         return thread.id === threadId;
       })
@@ -83,11 +87,14 @@ export const moveDraggedProjectThread$ = command(
   async ({ get, set }, projectId: string | null, signal: AbortSignal) => {
     const thread = get(draggingProjectThread$);
     set(endProjectThreadDrag$);
+    const enabled = await get(projectsEnabled$);
+    signal.throwIfAborted();
     if (
+      !enabled ||
       !thread ||
       thread.projectId === projectId ||
       (projectId !== null &&
-        !get(projects$).some((project) => {
+        !(await get(projects$)).some((project) => {
           return project.id === projectId;
         }))
     ) {

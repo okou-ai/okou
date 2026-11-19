@@ -1,4 +1,5 @@
 import { performance } from "node:perf_hooks";
+import type { ChatInputModelSelection } from "@okouai/api-contracts/contracts/chat-input-model";
 import {
   getFrameworkForType,
   isBuiltInModelProviderType,
@@ -22,7 +23,7 @@ import { now } from "../../lib/time";
 import { safeSync, settle } from "../utils";
 import type { AgentRunContextSignals } from "./agent-run-context.signals";
 import type { ResolvedModelProviderEnvironment } from "./agent-run-contracts";
-import { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
+import type { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
 import {
   type BuiltInModelRuntimeRoute,
   builtInModelRuntimeRouteFromSnapshot,
@@ -30,7 +31,6 @@ import {
   unpricedBuiltInModelMessage,
 } from "./built-in-model-runtime-route.service";
 import { builtInRoutePricingFromSnapshot } from "./built-in-route-pricing";
-import type { QueueFirstRunAssociation } from "./chat-queued-event.service";
 import { resolveReasoningEffortForDispatch } from "./chat-reasoning-effort.service";
 import { isMemberSubscriptionRoute } from "./effective-model-route.service";
 import { memberSubscriptionModelRoutesFromCatalog } from "./member-subscription-models.service";
@@ -60,7 +60,6 @@ import {
   shouldUsePiExecution,
 } from "./pi-sandbox-config";
 import { checkOrgPlanRunAdmission } from "./run-admission.service";
-import type { PickedThreadInputEvent } from "./thread-run-prompt/types";
 
 export type ThreadModelError =
   | ReturnType<typeof badRequestMessage>
@@ -78,13 +77,13 @@ export type ThreadModelError =
       };
     };
 
-export type QueuedModelContext =
+type QueuedModelContext =
   | ThreadModelError
   | {
       readonly pin: ModelFirstPin;
       readonly admissionError: ThreadModelError | undefined;
       readonly featureSwitchContext: FeatureSwitchContext;
-      readonly runCodexServiceTier: "fast" | undefined;
+      readonly runCodexServiceTier: "fast" | "ultrafast" | undefined;
       readonly reasoningEffort: ReasoningEffort | undefined;
       readonly builtInModelRuntimeRoute:
         BuiltInModelRuntimeRoute | null | undefined;
@@ -96,17 +95,14 @@ export interface ThreadModelSelection {
   readonly owner: { readonly userId: string; readonly orgId: string };
   readonly pin: ModelFirstPin;
   readonly builtInModelRuntimeRoute: BuiltInModelRuntimeRoute | undefined;
-  readonly codexServiceTier: "fast" | undefined;
+  readonly codexServiceTier: "fast" | "ultrafast" | undefined;
   readonly reasoningEffort: ReasoningEffort | undefined;
   readonly piExecution: boolean;
   /** The CLI runtime the run executes in; Pi when Pi execution applies. */
   readonly cliAgentType: "pi" | ReturnType<typeof getFrameworkForType>;
-  readonly queueFirstAssociation: QueueFirstRunAssociation;
 }
 
 export interface ThreadModelSignals {
-  readonly dispatchTiming$: Computed<ApiDispatchTimingCollector>;
-  readonly queuedModel$: Computed<Promise<QueuedModelContext>>;
   /** The admitted model selection before any personal subscription account. */
   readonly modelSelection$: ThreadModelSelectionSignal;
   readonly subscriptionSelection$: Computed<
@@ -127,23 +123,32 @@ export interface ThreadModelSignals {
 type ThreadModelSelectionSignal = Computed<
   Promise<ThreadModelSelection | ThreadModelError>
 >;
+type QueuedModelPinSignal = Computed<
+  Promise<
+    | {
+        readonly pin: ModelFirstPin;
+        readonly selection: ChatInputModelSelection;
+      }
+    | ReturnType<typeof badRequestMessage>
+  >
+>;
+
 /** Resolve one immutable event selection, then share its captured provider route. */
 export function createThreadModelSignals(
   bootstrap: AgentRunContextSignals,
-  pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
+  chatThreadId: string,
+  effectiveSelection$: Computed<Promise<ChatInputModelSelection | null>>,
   creditsWaived$: Computed<Promise<boolean>>,
+  dispatchTiming$: Computed<ApiDispatchTimingCollector>,
 ): ThreadModelSignals {
-  const dispatchTiming$ = computed(() => {
-    return new ApiDispatchTimingCollector();
-  });
   const queuedModel$ = createQueuedModel(
     bootstrap,
-    pickedEvent$,
+    effectiveSelection$,
     creditsWaived$,
   );
   const selection$ = createModelSelection(
     bootstrap,
-    pickedEvent$,
+    chatThreadId,
     queuedModel$,
   );
   const subscriptionSelection$ = createSubscriptionSelection(
@@ -171,8 +176,6 @@ export function createThreadModelSignals(
     },
   );
   return {
-    dispatchTiming$,
-    queuedModel$,
     modelSelection$: selection$,
     subscriptionSelection$,
     requestedFramework$,
@@ -183,7 +186,7 @@ export function createThreadModelSignals(
 
 function createQueuedModel(
   bootstrap: AgentRunContextSignals,
-  pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
+  effectiveSelection$: Computed<Promise<ChatInputModelSelection | null>>,
   creditsWaived$: Computed<Promise<boolean>>,
 ) {
   const memberSnapshot$ = computed(async (get) => {
@@ -205,20 +208,22 @@ function createQueuedModel(
       await get(memberRoutes$),
     );
   });
-  const modelPin$ = computed(async (get) => {
-    const selection = (await get(pickedEvent$))?.canonicalModelSelection;
-    return selection
-      ? resolveQueuedModelSelectionPinFromSnapshot({
-          catalog: await get(bootstrap.modelCatalog$),
-          selectedModel: selection.selectedModel,
-          subscriptionModels: await get(subscriptionModels$),
-          memberProviderTypes: new Set(
-            (await get(memberSnapshot$)).providers.map((provider) => {
-              return provider.type;
-            }),
-          ),
-        })
-      : badRequestMessage("Queued input is missing its model selection");
+  const modelPin$: QueuedModelPinSignal = computed(async (get) => {
+    const selection = await get(effectiveSelection$);
+    if (!selection) {
+      return badRequestMessage("Queued input is missing its model selection");
+    }
+    const pin = resolveQueuedModelSelectionPinFromSnapshot({
+      catalog: await get(bootstrap.modelCatalog$),
+      selectedModel: selection.selectedModel,
+      subscriptionModels: await get(subscriptionModels$),
+      memberProviderTypes: new Set(
+        (await get(memberSnapshot$)).providers.map((provider) => {
+          return provider.type;
+        }),
+      ),
+    });
+    return "status" in pin ? pin : { pin, selection };
   });
   const builtInRuntimeRoute$ = createBuiltInRuntimeRoute(bootstrap, modelPin$);
   const providerAdmission$ = createProviderAdmission(
@@ -228,30 +233,21 @@ function createQueuedModel(
     creditsWaived$,
   );
   const queuedModel$ = computed(async (get): Promise<QueuedModelContext> => {
-    const [event] = await Promise.all([
-      get(pickedEvent$),
+    const [resolved, featureSwitchContext] = await Promise.all([
+      get(modelPin$),
+      get(bootstrap.featureSwitches$),
       get(bootstrap.plan$),
-      get(bootstrap.featureSwitches$),
     ]);
-    const selection = event?.canonicalModelSelection;
-    if (!selection) {
-      return badRequestMessage("Queued input is missing its model selection");
+    if ("status" in resolved) {
+      return resolved;
     }
-    const pin = await get(modelPin$);
-    if ("status" in pin) {
-      return pin;
-    }
-    const [
-      admission,
-      featureSwitchContext,
-      builtInModelRuntimeRoute,
-      memberAccountSnapshot,
-    ] = await Promise.all([
-      get(providerAdmission$),
-      get(bootstrap.featureSwitches$),
-      get(builtInRuntimeRoute$),
-      get(memberSnapshot$),
-    ]);
+    const { pin, selection } = resolved;
+    const [admission, builtInModelRuntimeRoute, memberAccountSnapshot] =
+      await Promise.all([
+        get(providerAdmission$),
+        get(builtInRuntimeRoute$),
+        get(memberSnapshot$),
+      ]);
     const unpriced =
       builtInModelRuntimeRoute === null && pin.selectedModel
         ? unpricedBuiltInModelRejection(
@@ -285,16 +281,14 @@ function createQueuedModel(
 
 function createBuiltInRuntimeRoute(
   bootstrap: AgentRunContextSignals,
-  modelPin$: Computed<
-    Promise<ModelFirstPin | ReturnType<typeof badRequestMessage>>
-  >,
+  modelPin$: QueuedModelPinSignal,
 ) {
   const builtInRuntimeRoute$ = computed(async (get) => {
-    const pin = await get(modelPin$);
+    const resolved = await get(modelPin$);
     if (
-      "status" in pin ||
-      !isBuiltInModelProviderType(pin.modelProviderType) ||
-      !pin.selectedModel
+      "status" in resolved ||
+      !isBuiltInModelProviderType(resolved.pin.modelProviderType) ||
+      !resolved.pin.selectedModel
     ) {
       return undefined;
     }
@@ -305,7 +299,7 @@ function createBuiltInRuntimeRoute(
     ]);
     return builtInModelRuntimeRouteFromSnapshot({
       catalog,
-      selectedModel: pin.selectedModel,
+      selectedModel: resolved.pin.selectedModel,
       modelKeyId: keys.find((key) => {
         return key.vendor === AUTO_RUN_KEY_VENDOR;
       })?.id,
@@ -321,16 +315,15 @@ function createBuiltInRuntimeRoute(
 function createProviderAdmission(
   bootstrap: AgentRunContextSignals,
   memberRoutes$: AgentRunContextSignals["memberRoutes$"],
-  modelPin$: Computed<
-    Promise<ModelFirstPin | ReturnType<typeof badRequestMessage>>
-  >,
+  modelPin$: QueuedModelPinSignal,
   creditsWaived$: Computed<Promise<boolean>>,
 ) {
   const providerAdmission$ = computed(async (get) => {
-    const pin = await get(modelPin$);
-    if ("status" in pin) {
+    const resolved = await get(modelPin$);
+    if ("status" in resolved) {
       throw new Error("Provider admission requires a valid queued model pin");
     }
+    const { pin } = resolved;
     const [catalog, member, capabilities] = await Promise.all([
       get(bootstrap.modelCatalog$),
       get(memberRoutes$),
@@ -372,15 +365,11 @@ function createProviderAdmission(
 
 function createModelSelection(
   bootstrap: AgentRunContextSignals,
-  pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
-  queuedModel$: ThreadModelSignals["queuedModel$"],
+  chatThreadId: string,
+  queuedModel$: ReturnType<typeof createQueuedModel>,
 ) {
   const selection$ = computed(
     async (get): Promise<ThreadModelSelection | ThreadModelError> => {
-      const event = await get(pickedEvent$);
-      if (!event) {
-        return badRequestMessage("Queued input is missing its model selection");
-      }
       const model = await get(queuedModel$);
       if ("status" in model) {
         return model;
@@ -404,12 +393,9 @@ function createModelSelection(
           },
         };
       }
-      const [selected, catalog] = await Promise.all([
-        bootstrap,
-        get(bootstrap.modelCatalog$),
-      ]);
+      const catalog = await get(bootstrap.modelCatalog$);
       const piExecution = shouldUsePiExecution({
-        chatThreadId: event.chatThreadId,
+        chatThreadId,
         featureSwitchContext: model.featureSwitchContext,
         modelProviderType,
         catalogModel: piCatalogModel(catalog, model.pin.selectedModel),
@@ -417,7 +403,7 @@ function createModelSelection(
         builtInModelRuntimeRoute: model.builtInModelRuntimeRoute ?? undefined,
       });
       return {
-        owner: { userId: selected.userId, orgId: selected.orgId },
+        owner: { userId: bootstrap.userId, orgId: bootstrap.orgId },
         pin: model.pin,
         builtInModelRuntimeRoute: model.builtInModelRuntimeRoute ?? undefined,
         codexServiceTier: model.runCodexServiceTier,
@@ -434,10 +420,6 @@ function createModelSelection(
         cliAgentType: piExecution
           ? "pi"
           : getFrameworkForType(modelProviderType),
-        queueFirstAssociation: {
-          threadId: event.chatThreadId,
-          eventId: event.id,
-        },
       };
     },
   );
@@ -447,7 +429,7 @@ function createModelSelection(
 function createSubscriptionSelection(
   bootstrap: AgentRunContextSignals,
   selection$: ThreadModelSelectionSignal,
-  dispatchTiming$: ThreadModelSignals["dispatchTiming$"],
+  dispatchTiming$: Computed<ApiDispatchTimingCollector>,
 ) {
   const subscriptionSelection$ = computed(
     async (get): Promise<ThreadModelSelection | ThreadModelError> => {
@@ -497,7 +479,7 @@ function createSubscriptionSelection(
 function createProviderContext(
   bootstrap: AgentRunContextSignals,
   subscriptionSelection$: ThreadModelSignals["subscriptionSelection$"],
-  dispatchTiming$: ThreadModelSignals["dispatchTiming$"],
+  dispatchTiming$: Computed<ApiDispatchTimingCollector>,
 ) {
   const providerContext$ = computed(async (get) => {
     const selection = await get(subscriptionSelection$);

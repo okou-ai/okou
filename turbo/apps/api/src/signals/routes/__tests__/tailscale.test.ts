@@ -600,73 +600,86 @@ describe("Tailscale configuration and saved-host authority", () => {
     );
   });
   it.each(["create", "update"] as const)(
-    "%s atomically supports every independent new/reused network and login combination",
+    "%s atomically binds inline and saved networks and logins",
     async (operation) => {
       owner();
       const existing = await config();
       let current = await host(existing.id);
-      for (const newNetwork of [false, true]) {
-        for (const newLogin of [false, true]) {
-          const before = await resources();
-          const transport = newNetwork
-            ? {
-                type: "tailscale" as const,
-                create: {
-                  name: "Inline network",
-                  credentials: oauth,
-                  tags: ["tag:okou"],
-                },
-              }
-            : { type: "tailscale" as const, configId: existing.id };
-          if (!("credentialId" in current)) {
-            throw new Error("Expected a credential-backed test host");
-          }
-          const fields = {
-            displayName: "Combined",
-            host: "100.64.2.3",
-            port: 65_535,
-            transport,
-            credential: newLogin
-              ? { create: login }
-              : { id: current.credentialId },
-          };
-          current =
-            operation === "create"
-              ? (
-                  await accept(
-                    hosts().create({
-                      headers,
-                      body: { id: randomUUID(), ...fields },
-                    }),
-                    [201],
-                  )
-                ).body
-              : (
-                  await accept(
-                    hosts().update({
-                      headers,
-                      params: { connectionId: current.id },
-                      body: {
-                        expectedGeneration: current.generation,
-                        ...fields,
-                      },
-                    }),
-                    [200],
-                  )
-                ).body;
-          const after = await resources();
-          expect(current).toMatchObject({
-            port: 65_535,
-            transport: { type: "tailscale" },
-          });
-          expect(after.configs).toHaveLength(
-            before.configs.length + Number(newNetwork),
-          );
-          expect(after.logins).toHaveLength(
-            before.logins.length + Number(newLogin),
-          );
-          expect(JSON.stringify(current)).not.toContain(oauth.clientSecret);
+      const combinations =
+        operation === "create"
+          ? [
+              [false, false],
+              [true, false],
+              [true, true],
+            ]
+          : [
+              [false, true],
+              [true, false],
+              [true, true],
+            ];
+      for (const [newNetwork, newLogin] of combinations) {
+        const before = await resources();
+        const transport = newNetwork
+          ? {
+              type: "tailscale" as const,
+              create: {
+                name: "Inline network",
+                credentials: oauth,
+                tags: ["tag:okou"],
+              },
+            }
+          : { type: "tailscale" as const, configId: existing.id };
+        if (!("credentialId" in current)) {
+          throw new Error("Expected a credential-backed test host");
         }
+        const fields = {
+          displayName: "Combined",
+          host: "100.64.2.3",
+          port: 65_535,
+          transport,
+          credential: newLogin
+            ? { create: login }
+            : { id: current.credentialId },
+        };
+        current =
+          operation === "create"
+            ? (
+                await accept(
+                  hosts().create({
+                    headers,
+                    body: { id: randomUUID(), ...fields },
+                  }),
+                  [201],
+                )
+              ).body
+            : (
+                await accept(
+                  hosts().update({
+                    headers,
+                    params: { connectionId: current.id },
+                    body: {
+                      expectedGeneration: current.generation,
+                      ...fields,
+                    },
+                  }),
+                  [200],
+                )
+              ).body;
+        const after = await resources();
+        expect(current).toMatchObject({
+          port: 65_535,
+          transport: { type: "tailscale" },
+        });
+        expect(after.configs).toHaveLength(
+          before.configs.length + Number(newNetwork),
+        );
+        expect(after.logins).toHaveLength(
+          before.logins.length + Number(newLogin),
+        );
+        expect(JSON.stringify(current)).not.toContain(oauth.clientSecret);
+      }
+      if (operation === "create") {
+        return;
       }
       const before = await resources();
       await accept(

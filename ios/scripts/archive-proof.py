@@ -108,7 +108,7 @@ def validate_archive(archive, version):
 
 
 def validate_widgets(archive, widgets, info, version):
-    """The WidgetKit extension reads the App's snapshot; it needs no keychain or Sentry."""
+    """The WidgetKit extension refreshes the App's snapshot with the App's shared session."""
     widgets_info = read_plist(widgets / "Info.plist")
     if (
         widgets_info["CFBundleIdentifier"] != WIDGETS_ID
@@ -122,6 +122,18 @@ def validate_widgets(archive, widgets, info, version):
     expected = {"NSExtensionPointIdentifier": "com.apple.widgetkit-extension"}
     if widgets_info.get("NSExtension") != expected:
         raise ValueError("Expected a WidgetKit extension")
+    if (
+        widgets_info.get("ClerkKeychainAccessGroup") != "C5UWSXYB67.ai.okou.ios"
+        or widgets_info.get("NotificationAppGroup") != "group.ai.okou.ios"
+    ):
+        raise ValueError(
+            "Unsigned runtime must declare the signed shared storage identities"
+        )
+    for key in ("APIBaseURL", "ClerkPublishableKey"):
+        if not info.get(key) or widgets_info.get(key) != info[key]:
+            raise ValueError(
+                "Widget extension must read the application's API and session service"
+            )
     if (widgets / "_CodeSignature").exists() or (
         widgets / "embedded.mobileprovision"
     ).exists():

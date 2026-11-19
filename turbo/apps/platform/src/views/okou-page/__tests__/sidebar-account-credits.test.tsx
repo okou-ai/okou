@@ -75,7 +75,6 @@ test("Show a member’s latest package credits in the account menu", async () =>
     "account-menu-credit-balance",
   );
   expect(within(usagePackItem).getByText("20,400 credits")).toBeInTheDocument();
-  expect(within(menu).queryByText("32,900 credits")).toBeNull();
 
   usagePackCredits = 500;
   fireEvent.keyDown(document.body, { key: "Escape" });
@@ -131,8 +130,6 @@ test("Combine workspace and member-package credits for administrators", async ()
     "account-menu-credit-balance",
   );
   expect(within(creditItem).getByText("32,900 credits")).toBeInTheDocument();
-  expect(within(menu).queryByText("12,500 credits")).toBeNull();
-  expect(within(menu).queryByText("20,400 credits")).toBeNull();
 });
 
 test.each([

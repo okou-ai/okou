@@ -2,10 +2,8 @@
 """Validate source-bound policy-pressure or logical-substitution native evidence."""
 
 import argparse
-import hashlib
 import json
 import pathlib
-import uuid
 
 import report
 
@@ -24,6 +22,11 @@ POLICY_FIELDS = {
 
 def integer(value, minimum=0):
     return type(value) is int and minimum <= value <= 2**64 - 1
+
+
+def has_policy_shape(policy):
+    return (isinstance(policy, dict) and set(policy) == POLICY_FIELDS
+            and all(integer(value, 1) for value in policy.values()))
 
 
 def sustained_ready_samples(samples, end, policy, after=0):
@@ -86,12 +89,9 @@ def validate(directory):
     cases = {f"{SCOPES[kind]}-{mode}" for mode in ("fresh", "snapshot")}
     result, _, receipts = report._validate_cases(directory, cases, PHASES)
     raw_policy = metadata["native_pressure_policy_json"]
-    if not isinstance(raw_policy, str) or hashlib.sha256(raw_policy.encode()).hexdigest() != \
-            result["artifacts"]["policy_sha256"]:
-        raise ValueError("native pressure raw policy/hash mismatch")
-    policy = json.loads(raw_policy, object_pairs_hook=report.unique_object)
-    if not isinstance(policy, dict) or set(policy) != POLICY_FIELDS or any(
-            not integer(value, 1) for value in policy.values()):
+    policy = report.decode_original_policy(
+        raw_policy, result["artifacts"], "native pressure raw policy/hash mismatch")
+    if not has_policy_shape(policy):
         raise ValueError("invalid native pressure policy")
     protected = policy["operating_floor_bytes"] + policy["cleanup_reserve_bytes"]
     if (protected >= policy["host_total_bytes"]
@@ -159,7 +159,7 @@ def validate(directory):
             evidence, joined = seen[0]["evidence"], seen[1]["evidence"]
             incoming = evidence.get("incoming_sandbox_id")
             if (set(evidence) != {"incoming_sandbox_id", "admitted"} or evidence["admitted"] is not True
-                    or not isinstance(incoming, str) or str(uuid.UUID(incoming)) != incoming
+                    or not isinstance(incoming, str) or not report.is_canonical_uuid(incoming)
                     or incoming in original_ids or incoming in incoming_ids
                     or joined != {"retirements": 1} or type(joined["retirements"]) is not int):
                 raise ValueError("native logical growth/original join is incomplete")

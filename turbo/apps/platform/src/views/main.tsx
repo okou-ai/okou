@@ -9,7 +9,8 @@ import { FeatureGuideDialog } from "./components/feature-guide-dialog.tsx";
 import { ForceUpgradeDialog } from "./components/force-upgrade-dialog.tsx";
 import { SharedWorkerFailureDialog } from "./components/shared-worker-failure-dialog.tsx";
 import { InspectLogFileInput } from "./inspect-log-file-input.tsx";
-import { listenForceUpgradeDialog$ } from "../signals/force-upgrade.ts";
+import type { BootstrapView } from "../signals/bootstrap.ts";
+import { AuthV1LoadError } from "./auth-v1/auth-v1-load-error.tsx";
 import { rootSignal$ } from "../signals/root-signal.ts";
 import { theme$ } from "../signals/theme.ts";
 import { handleInvitationRedirect$ } from "../signals/invitation-redirect.ts";
@@ -57,8 +58,19 @@ function AppToaster() {
 
 export const setupRouter = (
   store: Store,
+  view: BootstrapView,
   render: (children: React.ReactNode) => void,
 ) => {
+  if (view === "error") {
+    render(
+      <StoreProvider value={store}>
+        <AuthV1LoadError />
+        <ForceUpgradeDialog />
+      </StoreProvider>,
+    );
+    return;
+  }
+
   const signal = store.get(rootSignal$);
   setupViewportPinchPrevention(signal);
   if (isStandalonePwa()) {
@@ -67,7 +79,6 @@ export const setupRouter = (
       once: true,
     });
   }
-  store.set(listenForceUpgradeDialog$, signal);
   store.set(pollInstatusIssues$, signal);
   render(
     <StrictMode>

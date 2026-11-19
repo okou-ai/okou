@@ -10,6 +10,129 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.94.1](https://github.com/okou-ai/okou/compare/api-v2.94.0...api-v2.94.1) (2026-11-19)
+
+
+### Bug Fixes
+
+* **api:** authorize OAuth by route scopes ([#48878](https://github.com/okou-ai/okou/issues/48878)) ([34d574a](https://github.com/okou-ai/okou/commit/34d574a25f2bb3f096829e94b7a53d7608545245))
+
+
+### Refactoring
+
+* **api:** reuse resolved skill mounts during dispatch ([#48883](https://github.com/okou-ai/okou/issues/48883)) ([1d13675](https://github.com/okou-ai/okou/commit/1d136754b73d395b3b1a587ee9a947e745a2b2b0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/db bumped to 2.50.0
+
+## [2.94.0](https://github.com/okou-ai/okou/compare/api-v2.93.0...api-v2.94.0) (2026-11-19)
+
+
+### Features
+
+* **ios:** refresh home screen widgets when chats change elsewhere ([#47010](https://github.com/okou-ai/okou/issues/47010)) ([a3459ce](https://github.com/okou-ai/okou/commit/a3459ce8b0a9e90434e1b2ae3d1791108e7eebd1))
+
+
+### Refactoring
+
+* **api:** carry the accepted official workflow mounts into dispatch ([#48857](https://github.com/okou-ai/okou/issues/48857)) ([47c480b](https://github.com/okou-ai/okou/commit/47c480bc3f4ab7f99722a823f512261d10e8040d))
+* **api:** delegate mcp token verification to clerk ([#48863](https://github.com/okou-ai/okou/issues/48863)) ([bbf2529](https://github.com/okou-ai/okou/commit/bbf25298b7e7127fe90a41dabdf82c84b942ae46))
+
+
+### Performance Improvements
+
+* **api:** reuse the picked input when rejecting a chat queue head ([#48873](https://github.com/okou-ai/okou/issues/48873)) ([6a663c9](https://github.com/okou-ai/okou/commit/6a663c942ad3ce0aa2726c65962880b68b875f0e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.90.0
+    * @okouai/core bumped to 8.854.3
+    * @okouai/db bumped to 2.49.0
+    * @okouai/pi-agent-runtime bumped to 1.52.3
+
+## [2.93.0](https://github.com/okou-ai/okou/compare/api-v2.92.1...api-v2.93.0) (2026-11-19)
+
+
+### Features
+
+* **onboarding:** persist drafts across devices ([#48816](https://github.com/okou-ai/okou/issues/48816)) ([368d3dd](https://github.com/okou-ai/okou/commit/368d3dd31744833319c9cffce3c17191a5c327d7))
+
+
+### Bug Fixes
+
+* **api:** restore worker chat contract boundary ([#48831](https://github.com/okou-ai/okou/issues/48831)) ([eaa5345](https://github.com/okou-ai/okou/commit/eaa534508cd90d369ce240cd754aaf98ecb4e289))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.89.0
+    * @okouai/core bumped to 8.854.2
+    * @okouai/db bumped to 2.48.0
+    * @okouai/pi-agent-runtime bumped to 1.52.2
+
+## [2.92.1](https://github.com/okou-ai/okou/compare/api-v2.92.0...api-v2.92.1) (2026-11-19)
+
+
+### Bug Fixes
+
+* **api:** classify malformed outlook draft ids ([#48794](https://github.com/okou-ai/okou/issues/48794)) ([4cfd459](https://github.com/okou-ai/okou/commit/4cfd45983a517e8975e1e5021f7eeb7a37ad41b7))
+
+
+### Performance Improvements
+
+* **api:** overlap bundle url cache reads with storage signing ([#48801](https://github.com/okou-ai/okou/issues/48801)) ([c732cf0](https://github.com/okou-ai/okou/commit/c732cf0bb6f00c5f2db1f9881c9f18ade1f48a4d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.88.0
+    * @okouai/core bumped to 8.854.1
+    * @okouai/db bumped to 2.47.0
+    * @okouai/pi-agent-runtime bumped to 1.52.1
+
+## [2.92.0](https://github.com/okou-ai/okou/compare/api-v2.91.3...api-v2.92.0) (2026-11-18)
+
+
+### Features
+
+* add ultrafast for codex subscriptions ([#48736](https://github.com/okou-ai/okou/issues/48736)) ([c352dad](https://github.com/okou-ai/okou/commit/c352dadadbbec10cea8cf77adccfac8462ecdb94))
+
+
+### Refactoring
+
+* **api:** remove legacy storage export authorization ([#48732](https://github.com/okou-ai/okou/issues/48732)) ([ad521c5](https://github.com/okou-ai/okou/commit/ad521c515f25954f1cc271eceab18da4f2bb2789))
+* **api:** separate verified firewall and sandbox authority ([#48761](https://github.com/okou-ai/okou/issues/48761)) ([f642984](https://github.com/okou-ai/okou/commit/f64298411819eea46a8dc3ff7d570f3794f43214))
+* **firewall:** retire legacy resolver and envelope compatibility ([#48739](https://github.com/okou-ai/okou/issues/48739)) ([7dcd7ca](https://github.com/okou-ai/okou/commit/7dcd7cac45f2b26e253703533fc7f1097609c0f6))
+
+
+### Performance Improvements
+
+* **api:** prefetch chat attachment metadata once ([#48725](https://github.com/okou-ai/okou/issues/48725)) ([f688f4a](https://github.com/okou-ai/okou/commit/f688f4aa48b0d85c248529a701c82492b618a041))
+* **api:** prefetch execution packages from picked sources ([#48743](https://github.com/okou-ai/okou/issues/48743)) ([ed12b4c](https://github.com/okou-ai/okou/commit/ed12b4c17134868df08762d0c64142a4c4eb9a8f))
+* **api:** reuse accepted memory metadata in direct dispatch ([#48735](https://github.com/okou-ai/okou/issues/48735)) ([c3ceff1](https://github.com/okou-ai/okou/commit/c3ceff1935ba73b29a0b6962ceb69562295f3802))
+* **api:** reuse resolved pi config during run startup ([#48752](https://github.com/okou-ai/okou/issues/48752)) ([c4acfaa](https://github.com/okou-ai/okou/commit/c4acfaaf5f34d3df2dd4d1bf72fbd46f70170d4d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.87.0
+    * @okouai/core bumped to 8.854.0
+    * @okouai/db bumped to 2.46.0
+    * @okouai/pi-agent-runtime bumped to 1.52.0
+
 ## [2.91.3](https://github.com/okou-ai/okou/compare/api-v2.91.2...api-v2.91.3) (2026-11-18)
 
 

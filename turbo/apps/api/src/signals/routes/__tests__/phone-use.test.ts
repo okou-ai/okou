@@ -71,6 +71,38 @@ function setPhoneUse(enabled: boolean) {
   );
 }
 describe("Phone Use native connection authority", () => {
+  it("returns temporary unavailability without making the device ready when Clerk times out", async () => {
+    const actor = authenticate();
+    await setPhoneUse(true);
+    const client = api();
+    const registered = await accept(client.register({ headers, body }), [200]);
+    context.mocks.ably.presenceGet.mockResolvedValue({
+      items: [{ clientId: actor.userId }],
+    });
+    const release = createDeferredPromise<void>(context.signal);
+    context.mocks.clerk.sessions.getSession.mockImplementationOnce(async () => {
+      await release.promise;
+      return { id: actor.sessionId, userId: actor.userId, status: "active" };
+    });
+
+    const response = await accept(
+      client
+        .heartbeat({
+          headers,
+          params: { deviceId: registered.body.id },
+          body: { generation: registered.body.generation, ready: true },
+        })
+        .finally(() => {
+          release.resolve();
+        }),
+      [503],
+    );
+    expect(response.body.error.code).toBe("PROVIDER_UNAVAILABLE");
+    const listed = await accept(client.devices({ headers }), [200]);
+    expect(listed.body.devices).toStrictEqual([
+      expect.objectContaining({ id: registered.body.id, online: false }),
+    ]);
+  });
   it("advertises online only while native control and presence are available and fences replaced connections", async () => {
     const actor = authenticate();
     await setPhoneUse(true);

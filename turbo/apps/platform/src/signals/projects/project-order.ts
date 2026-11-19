@@ -4,13 +4,16 @@ import { chatThreadOnlyUnread$ } from "../chat-page/chat-thread-only-unread.ts";
 import { chatThreadOnlyMuted$ } from "../chat-page/chat-thread-only-muted.ts";
 import { projects$, projectsEnabled$, reorderProject$ } from "./projects.ts";
 
-export const projectReorderEnabled$ = computed((get) => {
+export const projectReorderFilterAllows$ = computed((get) => {
   return (
-    get(projectsEnabled$) &&
     !get(chatThreadOnlyUnread$) &&
     !get(chatThreadOnlyArchived$) &&
     !get(chatThreadOnlyMuted$)
   );
+});
+
+export const projectReorderEnabled$ = computed(async (get) => {
+  return (await get(projectsEnabled$)) && get(projectReorderFilterAllows$);
 });
 
 export const stepProject$ = command(
@@ -21,10 +24,11 @@ export const stepProject$ = command(
     signal: AbortSignal,
   ) => {
     signal.throwIfAborted();
-    if (!get(projectReorderEnabled$)) {
+    if (!(await get(projectReorderEnabled$))) {
       return;
     }
-    const projects = get(projects$);
+    const projects = await get(projects$);
+    signal.throwIfAborted();
     const index = projects.findIndex((project) => {
       return project.id === projectId;
     });

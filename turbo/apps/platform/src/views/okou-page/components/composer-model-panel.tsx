@@ -45,6 +45,7 @@ import {
 import {
   ChatEffortSettings,
   ChatFastSetting,
+  ChatSpeedSetting,
   formatChatEffort,
   useChatEffort,
 } from "./chat-effort-controls.tsx";
@@ -87,7 +88,8 @@ function ComposerModelPanelBody({
   onClose: () => void;
 }) {
   const { t } = useTranslation();
-  const subscriptionLinkingEnabled = useGet(subscriptionLinkingEnabled$);
+  const subscriptionLinkingEnabled =
+    useLastResolved(subscriptionLinkingEnabled$) ?? false;
   const modelsLoadable = useLastLoadable(availableRunModels$);
   const catalogLoadable = useLastLoadable(modelCatalog$);
   const modelsResponse = useLastResolved(availableRunModels$);
@@ -129,6 +131,9 @@ function ComposerModelPanelBody({
     selectedRunModel !== undefined &&
     isMemberRunModelConfigurable(selectedRunModel);
   const fastAvailable = isRunModelFastModeAvailable(selectedRunModel);
+  const ultrafastAvailable =
+    configurable &&
+    selectedRunModel.subscriptionOptions?.ultrafastAvailable === true;
   return (
     <>
       {/*
@@ -196,6 +201,7 @@ function ComposerModelPanelBody({
           value={value}
           onChange={onChange}
           disabled={!configurable}
+          ultrafastAvailable={ultrafastAvailable}
           fastImpact={
             fastAvailable ? (
               <ModelFastImpact runModel={selectedRunModel} />
@@ -488,14 +494,16 @@ function ComposerModelPanelOptions({
   onChange,
   disabled,
   fastImpact,
+  ultrafastAvailable,
 }: {
   value: ModelProviderSelection;
   onChange: (selection: ModelProviderSelection) => void;
   disabled: boolean;
   fastImpact: ReactNode;
+  ultrafastAvailable: boolean;
 }) {
   const { efforts } = useChatEffort(value);
-  if (efforts.length === 0 && fastImpact === null) {
+  if (efforts.length === 0 && fastImpact === null && !ultrafastAvailable) {
     return null;
   }
   return (
@@ -505,13 +513,22 @@ function ComposerModelPanelOptions({
         disabled={disabled}
         onChange={onChange}
       />
-      {fastImpact !== null && (
-        <ChatFastSetting
+      {ultrafastAvailable ? (
+        <ChatSpeedSetting
           selection={value}
           disabled={disabled}
           fastImpact={fastImpact}
           onChange={onChange}
         />
+      ) : (
+        fastImpact !== null && (
+          <ChatFastSetting
+            selection={value}
+            disabled={disabled}
+            fastImpact={fastImpact}
+            onChange={onChange}
+          />
+        )
       )}
     </div>
   );
@@ -525,6 +542,7 @@ function ComposerModelPanelTriggerLabel({
   value,
   placeholder,
 }: Pick<ComposerModelPanelProps, "value" | "placeholder">) {
+  const { t } = useTranslation();
   const { effort } = useChatEffort(value);
   const fast = value.codexServiceTier === "fast";
   return (
@@ -537,6 +555,14 @@ function ComposerModelPanelTriggerLabel({
       {effort !== undefined && (
         <span className="hidden shrink-0 composer-wide:inline">
           · {formatChatEffort(effort)}
+        </span>
+      )}
+      {value.codexServiceTier === "ultrafast" && (
+        <span className="hidden shrink-0 text-amber-600 composer-wide:inline dark:text-amber-300">
+          ·{" "}
+          {t(($) => {
+            return $.settings.models.picker.ultrafast;
+          })}
         </span>
       )}
       {fast && (
@@ -568,7 +594,13 @@ export function ComposerModelPanel({
   const triggerAriaLabel = [
     selectedModelDisplayName(catalog, value.selectedModel),
     effort === undefined ? undefined : formatChatEffort(effort),
-    value.codexServiceTier === "fast" ? fastLabel : undefined,
+    value.codexServiceTier === "fast"
+      ? fastLabel
+      : value.codexServiceTier === "ultrafast"
+        ? t(($) => {
+            return $.settings.models.picker.ultrafast;
+          })
+        : undefined,
   ]
     .filter(Boolean)
     .join(", ");

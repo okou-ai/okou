@@ -2,7 +2,6 @@ import { cronGetStartedContract } from "@okouai/api-contracts/contracts/get-star
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
-  cronAggregateRunPhaseTimingsContract,
   cronBrowserReconcileContract,
   cronCompactChatThreadSnapshotsContract,
   cronCompactUsageEventsContract,
@@ -54,10 +53,6 @@ function readVercelConfig(): VercelConfig {
 }
 
 const expectedVercelCrons = [
-  {
-    path: cronAggregateRunPhaseTimingsContract.aggregate.path,
-    schedule: "0 17 * * *",
-  },
   {
     path: cronReconcileImageGenerationsContract.process.path,
     schedule: "* * * * *",

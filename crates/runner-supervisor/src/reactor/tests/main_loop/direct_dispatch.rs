@@ -60,7 +60,7 @@ fn envelope(identity: RunnerProcessIdentity, run_id: RunId) -> Value {
         "runnerId": identity.runner_id(), "heartbeatGeneration": identity.heartbeat_generation(),
         "profile": "vm0/default", "notAfter": crate::ingress::dispatch::now_ms() + 60_000,
         "executionContext": {
-            "runId": run_id, "prompt": "supplied complete input", "sandboxToken": "run-scoped-token",
+            "runId": run_id, "prompt": "supplied complete input", "sandboxToken": "run-scoped-token", "firewallToken": "firewall-token",
             "cliAgentType": "claude-code", "platformEnvironment": {}, "connectorRuntimeTargets": [],
             "contentBundles": { "format": "tar-gzip-v1", "skills": [] }
         }
@@ -410,7 +410,9 @@ async fn supplied_http_executes_once_and_survives_caddy_loss_and_changed_replays
     .await;
 
     let run_id = RunId::new_v4();
-    let body = envelope(identity, run_id).to_string();
+    let mut input = envelope(identity, run_id);
+    input["futureDispatchMetadata"] = json!({"version": 1});
+    let body = input.to_string();
     let (first, second) = tokio::join!(
         client(&socket, identity, run_id, &body),
         client(&socket, identity, run_id, &body)
@@ -425,7 +427,15 @@ async fn supplied_http_executes_once_and_survives_caddy_loss_and_changed_replays
     peer.shutdown().await;
     let handle = env.cancel_tokens.handle(run_id).await.unwrap();
     assert!(!handle.is_cancelled());
-    let mut changed: Value = serde_json::from_str(&body).unwrap();
+    let mut changed = input.clone();
+    changed["futureDispatchMetadata"]["version"] = json!(2);
+    assert_eq!(
+        client(&socket, identity, run_id, &changed.to_string())
+            .await
+            .2["disposition"],
+        "conflict"
+    );
+    let mut changed = input;
     changed["executionContext"]["prompt"] = json!("replacement input");
     assert_eq!(
         client(&socket, identity, run_id, &changed.to_string())

@@ -43,16 +43,15 @@ export function createAutomationThreadPrompt(
     if (!eventPayload) {
       return null;
     }
-    // Temporary staff migration reader: queued events retain the old immutable
-    // name. New-mode executions use the same Automation's copied Workflow;
-    // already admitted legacy Runs keep their source namespace. Remove after
-    // pre-cutover inputs and pending Runs have drained.
+    // Invoke the same ordinary Workflow name that the Runner will mount.
+    // Official Workflow names retain the staff cutover's compatibility rule.
     const target = await get(target$);
     const workflowName =
-      target?.workflow.orgId === STAFF_SINGLE_AGENT_ORG_ID &&
+      target?.ordinaryWorkflowName ??
+      (target?.workflow.orgId === STAFF_SINGLE_AGENT_ORG_ID &&
       (await get(singleAgent$))
         ? target.workflow.name
-        : context.workflowName;
+        : context.workflowName);
     return {
       userPromptVariables: {
         message: [

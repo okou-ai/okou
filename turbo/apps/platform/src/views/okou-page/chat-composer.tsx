@@ -2,7 +2,7 @@ import { ChatConnectorAccountDialogs } from "./chat-connector-account-dialogs.ts
 import { findDocumentTemplateItem } from "@okouai/core/document-template-items";
 import { DocumentTemplatePickerPane } from "./document-template-picker-pane.tsx";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
+import { featureSwitches$ } from "../../signals/external/feature-switch.ts";
 import { ChatConnectorMenu } from "./chat-connector-menu.tsx";
 import {
   PhoneUseConnectorMenuSection,
@@ -4222,6 +4222,7 @@ function ComposerRemoteAccessMenu({
   computerUse: ComposerComputerUse | undefined;
   onOpenDownloadDialog: () => void;
 }) {
+  const pageSignal = useGet(pageSignal$);
   const openRemoteAccessDialog = useSet(
     signals.connector.openRemoteAccessDialog$,
   );
@@ -4231,7 +4232,9 @@ function ComposerRemoteAccessMenu({
       remoteAccess$={signals.remoteAccess$}
       defaults$={signals.connector.resources.remoteHostDefaults$}
       pendingRemoteAccess={signals.pendingRemoteAccess}
-      onOpen={openRemoteAccessDialog}
+      onOpen={() => {
+        detach(openRemoteAccessDialog(pageSignal), Reason.DomCallback);
+      }}
     />
   );
   return (
@@ -4944,6 +4947,11 @@ function ConnectorsPopoverButton({
   actions: ComposerConnectorActions;
   onOpenAddDialog: () => void;
 }) {
+  const pageSignal = useGet(pageSignal$);
+  const chatAccounts =
+    useLastResolved(featureSwitches$)?.[
+      FeatureSwitchKey.ConnectorChatAccountAccess
+    ];
   const { t } = useTranslation();
   const popoverOpen = useGet(signals.connector.popoverOpen$);
   const remoteAccessDialogOpen = useGet(
@@ -4975,7 +4983,7 @@ function ConnectorsPopoverButton({
             return;
           }
         }
-        setPopoverOpen(open);
+        detach(setPopoverOpen(open, pageSignal), Reason.DomCallback);
       }}
     >
       <TooltipProvider delay={300}>
@@ -5028,8 +5036,9 @@ function ConnectorsPopoverButton({
         collisionAvoidance={{ fallbackAxisSide: "none" }}
         className="flex max-h-[var(--available-height)] w-72 flex-col overflow-hidden p-0"
       >
-        {popoverOpen && (
+        {popoverOpen && chatAccounts !== undefined && (
           <ComposerConnectorsPopoverBody
+            chatAccounts={chatAccounts}
             signals={signals}
             actions={actions}
             onOpenAddDialog={onOpenAddDialog}
@@ -5056,19 +5065,19 @@ function ConnectorsPopoverButton({
  * component that asks for the agent's connectors and their access.
  */
 function ComposerConnectorsPopoverBody({
+  chatAccounts,
   signals,
   actions,
   onOpenAddDialog,
   onOpenDownloadDialog,
 }: {
+  chatAccounts: boolean;
   signals: ComposerSignals;
   actions: ComposerConnectorActions;
   onOpenAddDialog: () => void;
   onOpenDownloadDialog: () => void;
 }) {
-  const enabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ConnectorChatAccountAccess];
-  return enabled ? (
+  return chatAccounts ? (
     <ChatConnectorsPopoverBody
       signals={signals}
       onOpenAddDialog={onOpenAddDialog}
@@ -5156,9 +5165,15 @@ function LegacyComposerConnectorsPopoverBody({
   // the first toggle could otherwise move them rather than at open time.
   const pinSortOrder = () => {
     if (sortOrder === null) {
-      updateConnectorUi({
-        popoverSortOrder: connectorItems.map(composerPopoverConnectorId),
-      });
+      detach(
+        updateConnectorUi(
+          {
+            popoverSortOrder: connectorItems.map(composerPopoverConnectorId),
+          },
+          pageSignal,
+        ),
+        Reason.DomCallback,
+      );
     }
   };
   const handleToggle = async (
@@ -5197,7 +5212,9 @@ function LegacyComposerConnectorsPopoverBody({
       hasContent={connectorItems.length > 0}
       showSearch={showSearch}
       search={search}
-      onSearchChange={searchConnectors}
+      onSearchChange={(search) => {
+        detach(searchConnectors(search, pageSignal), Reason.DomCallback);
+      }}
       onOpenAddDialog={onOpenAddDialog}
       error={
         connectorState.state === "hasError"
@@ -5280,10 +5297,16 @@ function LegacyComposerConnectorsPopoverBody({
                           showTooltip
                           type="button"
                           onClick={() => {
-                            updateConnectorUi({
-                              permissionConnectorSlug: connector.slug,
-                              permissionConnector: connector,
-                            });
+                            detach(
+                              updateConnectorUi(
+                                {
+                                  permissionConnectorSlug: connector.slug,
+                                  permissionConnector: connector,
+                                },
+                                pageSignal,
+                              ),
+                              Reason.DomCallback,
+                            );
                           }}
                           aria-label={t(
                             ($) => {
@@ -6323,7 +6346,7 @@ function ComposerModelScopeCard({
   label: string;
   model: string;
   updating: boolean;
-  onUseForFutureChats: () => void;
+  onUseForFutureChats: (() => void) | undefined;
 }) {
   const { t } = useTranslation();
   return (
@@ -6336,28 +6359,32 @@ function ComposerModelScopeCard({
         </span>{" "}
         <span>{model}</span>
       </span>
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        className="ml-auto shrink-0 text-xs font-medium text-foreground"
-        disabled={updating}
-        aria-busy={updating}
-        onClick={onUseForFutureChats}
-      >
-        {updating && <Loader2 className="animate-spin" aria-hidden="true" />}
-        {t(($) => {
-          return $.chat.composer.useForFutureChats;
-        })}
-      </Button>
+      {onUseForFutureChats && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="ml-auto shrink-0 text-xs font-medium text-foreground"
+          disabled={updating}
+          aria-busy={updating}
+          onClick={onUseForFutureChats}
+        >
+          {updating && <Loader2 className="animate-spin" aria-hidden="true" />}
+          {t(($) => {
+            return $.chat.composer.useForFutureChats;
+          })}
+        </Button>
+      )}
     </ComposerNoticeTray>
   );
 }
 
 function runServiceTier(
   selection: ModelProviderSelection | null | undefined,
-): "priority" | null {
-  return selection?.codexServiceTier === "fast" ? "priority" : null;
+): "priority" | "ultrafast" | null {
+  return selection?.codexServiceTier === "fast"
+    ? "priority"
+    : (selection?.codexServiceTier ?? null);
 }
 
 function ComposerTemporaryModelNotice({
@@ -6401,6 +6428,9 @@ function ComposerTemporaryModelNotice({
   const updating = updateLoadable.state === "loading";
   const modelName = selectedModelDisplayName(catalog, selection.selectedModel);
   const runSpeedLabel = t(($) => {
+    if (selectionServiceTier === "ultrafast") {
+      return $.settings.models.picker.ultrafast;
+    }
     return selectionServiceTier === "priority"
       ? $.settings.models.picker.fast
       : $.settings.models.picker.standard;
@@ -6415,7 +6445,7 @@ function ComposerTemporaryModelNotice({
     .filter(Boolean)
     .join(" · ");
   const useForFutureChats = () => {
-    if (updating) {
+    if (updating || selectionServiceTier === "ultrafast") {
       return;
     }
     const { selectedModel } = selection;
@@ -6445,7 +6475,9 @@ function ComposerTemporaryModelNotice({
       })}
       model={scopedModelLabel}
       updating={updating}
-      onUseForFutureChats={useForFutureChats}
+      onUseForFutureChats={
+        selectionServiceTier === "ultrafast" ? undefined : useForFutureChats
+      }
     />,
   );
 }
@@ -6700,6 +6732,7 @@ function ComposerConnectorsSlot({
   signals: ComposerSignals;
   actions: ComposerConnectorActions;
 }) {
+  const pageSignal = useGet(pageSignal$);
   const dialogsOpen = useGet(signals.connector.dialogsOpen$);
   const permissionConnectorSlug = useGet(
     signals.connector.permissionConnectorSlug$,
@@ -6717,7 +6750,9 @@ function ComposerConnectorsSlot({
       <ConnectorsPopoverButton
         signals={signals}
         actions={actions}
-        onOpenAddDialog={openAddConnectorsDialog}
+        onOpenAddDialog={() => {
+          detach(openAddConnectorsDialog(pageSignal), Reason.DomCallback);
+        }}
       />
       <ChatConnectorAccountDialogs signals={signals} />
       {permissions && permissionSignals && (
@@ -6807,11 +6842,17 @@ function ComposerConnectorDialogsSlot({
     } as const;
     return {
       openModal: () => {
-        updateConnectorUi({
-          showAddDialog: false,
-          selectedConnectorSlug: connectorSlug,
-          selectedConnector: connector,
-        });
+        detach(
+          updateConnectorUi(
+            {
+              showAddDialog: false,
+              selectedConnectorSlug: connectorSlug,
+              selectedConnector: connector,
+            },
+            pageSignal,
+          ),
+          Reason.DomCallback,
+        );
       },
       connectBrowserAuth: async (authMethod) => {
         if (!accountOptions) {
@@ -6865,17 +6906,25 @@ function ComposerConnectorDialogsSlot({
         agentId={agentRecordId}
         connectHostKey={signals.connectorCompletion.connectHostKey}
         onBuiltinClose={() => {
-          updateConnectorUi({
-            selectedConnectorSlug: null,
-            selectedConnector: null,
-          });
+          detach(
+            updateConnectorUi(
+              {
+                selectedConnectorSlug: null,
+                selectedConnector: null,
+              },
+              pageSignal,
+            ),
+            Reason.DomCallback,
+          );
         }}
       />
       {connectorUi.showAddDialog && (
         <ConnectorDirectoryDialog
           finalFocus={directoryFinalFocus}
           state={connectorUi}
-          onUpdateState={updateConnectorUi}
+          onUpdateState={(patch) => {
+            detach(updateConnectorUi(patch, pageSignal), Reason.DomCallback);
+          }}
           categoryCounts={directoryBrowse.categoryCounts}
           loading={addDialogCatalog === undefined || addDialogCatalog === null}
           chipCatalog={directoryBrowse.chipCatalog}
@@ -6886,10 +6935,16 @@ function ComposerConnectorDialogsSlot({
           isConnectorConnecting={actions.isConnectorConnecting}
           connectHandlers={connectorConnectHandlers}
           onConnectCustom={(connector) => {
-            updateConnectorUi({
-              showAddDialog: false,
-              selectedCustomConnectorId: connector.id,
-            });
+            detach(
+              updateConnectorUi(
+                {
+                  showAddDialog: false,
+                  selectedCustomConnectorId: connector.id,
+                },
+                pageSignal,
+              ),
+              Reason.DomCallback,
+            );
           }}
           onConfigurePermissions={(connectorSlug) => {
             const connector = addDialogCatalogItems.find((item) => {
@@ -6898,17 +6953,24 @@ function ComposerConnectorDialogsSlot({
             if (!connector) {
               return;
             }
-            openConnectorPermissions({
-              slug: connector.slug,
-              label: connector.label,
-              icon: connector.icon,
-              hasPermissions: connector.permissionSummary.hasPermissions,
-            });
+            detach(
+              openConnectorPermissions(
+                {
+                  slug: connector.slug,
+                  label: connector.label,
+                  icon: connector.icon,
+                  hasPermissions: connector.permissionSummary.hasPermissions,
+                },
+                pageSignal,
+              ),
+              Reason.DomCallback,
+            );
           }}
           onClose={() => {
-            return updateConnectorUi({
-              showAddDialog: false,
-            });
+            detach(
+              updateConnectorUi({ showAddDialog: false }, pageSignal),
+              Reason.DomCallback,
+            );
           }}
         />
       )}

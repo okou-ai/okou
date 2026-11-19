@@ -2022,7 +2022,6 @@ pub(super) async fn register_proxy(
         firewalls: context.firewalls.as_deref(),
         network_policies: context.network_policies.as_ref(),
         connector_runtime_targets: Some(&context.connector_runtime_targets),
-        encrypted_secrets: context.encrypted_secrets.as_deref(),
         secret_connector_map: context.secret_connector_map.as_ref(),
         secret_connector_metadata_map: context.secret_connector_metadata_map.as_ref(),
         vars: context.vars.as_ref(),

@@ -25,6 +25,7 @@ export interface ButtonBaseProps extends Omit<
   render?: ButtonPrimitive.Props["render"];
   showTooltip?: boolean;
   tooltipFullWidth?: boolean;
+  tooltipSide?: React.ComponentProps<typeof TooltipContent>["side"];
 }
 
 /** Wraps a prepared button while its owner keeps ref forwarding in JSX. */
@@ -34,10 +35,15 @@ export function withButtonTooltip(
     disabled,
     showTooltip = false,
     tooltipFullWidth = false,
+    tooltipSide,
     "aria-label": label,
   }: Pick<
     ButtonBaseProps,
-    "disabled" | "showTooltip" | "tooltipFullWidth" | "aria-label"
+    | "disabled"
+    | "showTooltip"
+    | "tooltipFullWidth"
+    | "tooltipSide"
+    | "aria-label"
   >,
 ) {
   if (!showTooltip) return button;
@@ -54,7 +60,7 @@ export function withButtonTooltip(
     <TooltipProvider delay={200}>
       <Tooltip>
         <TooltipTrigger render={trigger} />
-        <TooltipContent>
+        <TooltipContent side={tooltipSide}>
           <p className="text-xs">{label}</p>
         </TooltipContent>
       </Tooltip>
@@ -72,6 +78,7 @@ export const ButtonBase = React.forwardRef<HTMLElement, ButtonBaseProps>(
       render,
       showTooltip = false,
       tooltipFullWidth = false,
+      tooltipSide,
       ...props
     },
     ref,
@@ -94,6 +101,7 @@ export const ButtonBase = React.forwardRef<HTMLElement, ButtonBaseProps>(
       disabled: buttonProps.disabled,
       showTooltip,
       tooltipFullWidth,
+      tooltipSide,
       "aria-label": buttonProps["aria-label"],
     });
   },

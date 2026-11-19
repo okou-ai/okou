@@ -214,6 +214,83 @@ class ChatReplayTest {
     }
 
     @Test
+    fun pinRankKeysMatchTheCanonicalBase62Ordering() {
+        val legacy = replay(event(1, "created"), event(2, "pinned")).single()
+        val smallest = "A" + "0".repeat(26)
+        assertEquals("a0", ChatPinOrder.first(emptyList()))
+        assertEquals("a0", ChatPinOrder.first(listOf(legacy)))
+        for ((upper, expected) in
+            listOf(
+                "a1" to "a0",
+                "a0" to "Zz",
+                "Z0" to "Yzz",
+                "b00" to "az",
+                "a0V" to "a0",
+                smallest.dropLast(1) + "1" to smallest + "V",
+                smallest + "V" to smallest + "G",
+                smallest + "01" to smallest + "00V",
+            )) {
+            assertEquals(upper, expected, ChatPinOrder.first(listOf(legacy.copy(pinOrder = upper))))
+        }
+
+        val moved = legacy.copy(id = "moved", pinOrder = "d0000")
+        for ((lower, upper, expected) in
+            listOf(
+                Triple("a0", "a1", "a0V"),
+                Triple("a0V", "a1", "a0l"),
+                Triple("Zz", "a0", "ZzV"),
+                Triple("Zz", "a1", "a0"),
+                Triple("a0", "a0V", "a0G"),
+                Triple("b125", "b129", "b127"),
+            )) {
+            val left = legacy.copy(id = "left", pinOrder = lower)
+            val right = legacy.copy(id = "right", pinOrder = upper)
+            val updates =
+                ChatPinOrder.move(listOf(left, right, moved), moved.id, right.id, before = true)
+            assertEquals(listOf(ChatPinOrderUpdate(moved.id, expected)), updates)
+        }
+        val pins = listOf(legacy, moved)
+        assertEquals(
+            listOf(ChatPinOrderUpdate(moved.id, "a0")),
+            ChatPinOrder.move(pins, moved.id, legacy.id, before = true),
+        )
+    }
+
+    @Test
+    fun rankingIncludesHiddenAndArchivedPeersButDoesNotCrossListGroups() {
+        val outside = replay(event(1, "created"), event(2, "pinned")).single()
+        val member = outside.copy(id = CHAT_IN_PROJECT, projectId = CHAT_PROJECT)
+        val hidden = member.copy(id = "hidden", hidden = true, agentId = CHAT_OTHER_AGENT)
+        val archived = member.copy(id = "archived", archived = true)
+        val project =
+            ConfirmedProject(CHAT_PROJECT, "Research", outside.createdAt, outside.createdAt)
+        val state =
+            ChatListUiState(
+                threads = listOf(outside, member, hidden, archived),
+                listPhase = ChatReadPhase.Ready,
+                agents = agents(),
+                projectsEnabled = true,
+                projectsSettingsSource = ChatListSource.Network,
+                projectsSource = ChatListSource.Network,
+                projects = listOf(project),
+            )
+        val (projectGroup, outsideGroup) = chatListGroups(state)
+        assertEquals(listOf(member), projectGroup.threads)
+        assertEquals(listOf(member, hidden, archived), projectGroup.rankScope(state))
+        assertEquals(listOf(outside), outsideGroup.rankScope(state))
+        val actions = state.rowActions(member, projectGroup, 0)
+        assertTrue(ChatRowAction.Unpin in actions)
+        assertFalse(ChatRowAction.MovePinUp in actions)
+        assertFalse(ChatRowAction.MovePinDown in actions)
+        val visible = projectGroup.copy(threads = listOf(member, hidden.copy(hidden = false)))
+        assertTrue(ChatRowAction.MovePinDown in state.rowActions(member, visible, 0))
+        assertFalse(
+            ChatRowAction.MovePinDown in
+                state.copy(filter = ChatListFilter.Muted).rowActions(member, visible, 0)
+        )
+    }
+
+    @Test
     fun mutedChatsKeepRunningStatusAndCollapsedProjectsPreferVisibleUnread() {
         val rows =
             replay(
@@ -245,6 +322,52 @@ class ChatReplayTest {
             ChatRowStatus.None,
             collapsedProjectStatus(listOf(unread.copy(muted = true)), indicators),
         )
+    }
+
+    @Test
+    fun waveCountsIdleRowsAndProjectHeadersButSkipsFoldedChildren() {
+        val member = ",\"projectId\":\"$CHAT_PROJECT\""
+        val threads =
+            replay(
+                event(1, "created"),
+                event(2, "created", extra = member, thread = CHAT_IN_PROJECT),
+                event(3, "created", extra = member, thread = "99999999-9999-4999-8999-999999999999"),
+            )
+        val project =
+            ConfirmedProject(
+                CHAT_PROJECT,
+                "Research",
+                "2026-11-13T00:00:00Z",
+                "2026-11-13T00:00:00Z",
+            )
+        val groups =
+            chatListGroups(
+                ChatListUiState(
+                    threads = threads,
+                    agents = agents(),
+                    projectsEnabled = true,
+                    projects = listOf(project),
+                )
+            )
+        val indicators = mapOf(CHAT_IN_PROJECT to IndicatorsThreadsValue.ACTIVE)
+
+        val (open, afterOpen) = chatListSections(groups, emptyList(), indicators)
+        assertEquals(0, open.firstRow)
+        assertEquals(1, open.firstChatRow)
+        assertEquals(3, afterOpen.firstChatRow)
+
+        val (folded, afterFolded) = chatListSections(groups, listOf(project.id), indicators)
+        assertEquals(ChatRowStatus.Running, folded.foldedStatus)
+        assertEquals(1, afterFolded.firstChatRow)
+    }
+
+    @Test
+    fun waveRowsTrailByTwoHundredMillisecondsAndWrapEveryTwelveRows() {
+        val time = 1_100_000_000L
+        assertEquals(runningWavePhase(time, 0), runningWavePhase(time + 200_000_000L, 1), 0f)
+        assertEquals(runningWavePhase(time, 0), runningWavePhase(time, 12), 0f)
+        assertEquals(runningWavePhase(time, 0), runningWavePhase(time + 2_400_000_000L, 0), 0f)
+        assertEquals(11f / 12f, runningWavePhase(0, 1), 0.00001f)
     }
 
     @Test

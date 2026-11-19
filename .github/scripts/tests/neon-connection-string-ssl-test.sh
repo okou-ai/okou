@@ -9,12 +9,9 @@ fail() {
 }
 
 mapfile -t invocations < <(
-  rg \
-    --line-number \
-    --no-heading \
-    --fixed-strings \
-    --glob '*.yml' \
-    --glob '*.yaml' \
+  grep -rHnF \
+    --include='*.yml' \
+    --include='*.yaml' \
     'neonctl connection-string' \
     "${repo_root}/.github/actions" \
     "${repo_root}/.github/workflows"
@@ -52,7 +49,7 @@ if [[ $checked -eq 0 ]]; then
 fi
 
 # The API-based preview branch script builds its connection string itself.
-if ! rg --quiet --fixed-strings 'url.searchParams.set("sslmode", "verify-full");' \
+if ! grep -qF 'url.searchParams.set("sslmode", "verify-full");' \
   "${repo_root}/.github/scripts/neon-preview-branch.sh"; then
   fail "neon-preview-branch.sh must set sslmode=verify-full"
 fi

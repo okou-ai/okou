@@ -719,6 +719,7 @@ describe("CHAT-02: dispatch failure", () => {
     if (!rejection || !error) {
       throw new Error("Expected the atomic dispatch rejection pair");
     }
+    expect(chatEventDisplayText(rejection)).toBe("fail before worker start");
     expect(error.seqId).toBe(rejection.seqId + 1);
     const runs = await reads.requestListLogs(actor, { limit: 100 }, [200]);
     expect(runs.body.data).toStrictEqual([]);

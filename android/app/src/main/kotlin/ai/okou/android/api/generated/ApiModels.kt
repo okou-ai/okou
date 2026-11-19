@@ -22,6 +22,10 @@ import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.encodeToJsonElement
 
+@Serializable data class RenameThreadRequest(val `title`: String, val `eventId`: String? = null)
+
+@Serializable data class ReorderPinnedThreadRequest(val `pinOrder`: String, val `eventId`: String)
+
 typealias ComposerDraft = Map<String, JsonElement>
 
 @Serializable(with = CanonicalInteger1Serializer::class) data object CanonicalInteger1
@@ -3395,6 +3399,7 @@ enum class RecoveryModelsModelsItemSubscriptionOptionsServiceTier {
 data class RecoveryModelsModelsItemSubscriptionOptions(
     val `efforts`: List<RecoveryModelsModelsItemSubscriptionOptionsEffortsItem>,
     val `serviceTier`: RecoveryModelsModelsItemSubscriptionOptionsServiceTier?,
+    val `ultrafastAvailable`: Boolean? = null,
 )
 
 @Serializable
@@ -3842,7 +3847,8 @@ data class CreateThreadRequestInitialRemoteAccessOverridesItem(
 
 @Serializable
 enum class CreateThreadRequestServiceTier {
-    @SerialName("priority") PRIORITY
+    @SerialName("priority") PRIORITY,
+    @SerialName("ultrafast") ULTRAFAST,
 }
 
 @Serializable
@@ -3876,7 +3882,8 @@ data class CreateThreadRequest(
 
 @Serializable
 enum class CreatedThreadServiceTier {
-    @SerialName("priority") PRIORITY
+    @SerialName("priority") PRIORITY,
+    @SerialName("ultrafast") ULTRAFAST,
 }
 
 @Serializable
@@ -3905,7 +3912,8 @@ enum class SendRequestVariant1RunOptionsReasoningEffort {
 
 @Serializable
 enum class SendRequestVariant1RunOptionsCodexServiceTier {
-    @SerialName("fast") FAST
+    @SerialName("fast") FAST,
+    @SerialName("ultrafast") ULTRAFAST,
 }
 
 @Serializable
@@ -5259,7 +5267,8 @@ enum class SendRequestVariant1UserMessagePartsItemVariant13Type {
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant13ServiceTier {
-    @SerialName("priority") PRIORITY
+    @SerialName("priority") PRIORITY,
+    @SerialName("ultrafast") ULTRAFAST,
 }
 
 @Serializable
@@ -6170,7 +6179,8 @@ enum class ChatEventsEventsItemVariant1ReasoningEffort {
 
 @Serializable
 enum class ChatEventsEventsItemVariant1ServiceTier {
-    @SerialName("priority") PRIORITY
+    @SerialName("priority") PRIORITY,
+    @SerialName("ultrafast") ULTRAFAST,
 }
 
 @Serializable
@@ -6250,7 +6260,8 @@ enum class ChatEventsEventsItemVariant2ReasoningEffort {
 
 @Serializable
 enum class ChatEventsEventsItemVariant2ServiceTier {
-    @SerialName("priority") PRIORITY
+    @SerialName("priority") PRIORITY,
+    @SerialName("ultrafast") ULTRAFAST,
 }
 
 @Serializable

@@ -1,10 +1,15 @@
 import { useLoadableSet } from "ccstate-react/experimental";
-import { useGet, useLastLoadable, useSet } from "ccstate-react";
+import {
+  useLastResolved,
+  useGet,
+  useLastLoadable,
+  useSet,
+} from "ccstate-react";
 import type { ReactNode } from "react";
 import { EllipsisVertical } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../../../../signals/external/feature-switch.ts";
+import { featureSwitches$ } from "../../../../signals/external/feature-switch.ts";
 
 import {
   surfaceVariants,
@@ -77,7 +82,9 @@ function CustomConnectorAgentAccess(props: {
   readonly onManageAccess: () => void;
 }) {
   const enabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ConnectorChatAccountAccess];
+    useLastResolved(featureSwitches$)?.[
+      FeatureSwitchKey.ConnectorChatAccountAccess
+    ];
   return enabled ? null : <LegacyCustomConnectorAgentAccess {...props} />;
 }
 

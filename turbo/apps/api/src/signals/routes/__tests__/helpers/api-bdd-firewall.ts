@@ -8,7 +8,6 @@ import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { server } from "../../../../mocks/server";
 import { webhooksAgentFirewallAuthRoutes } from "../../webhooks-agent-firewall-auth";
 import type { ApiTestUser } from "./api-bdd";
-import { encryptSecretForTests } from "./encrypt-secret";
 
 type FirewallAuthBody = zInfer<
   (typeof webhookFirewallAuthContract.resolve)["body"]
@@ -79,10 +78,6 @@ export function basicTemplate(first: string, second: string): string {
 
 export function createFirewallApi(context: TestContext) {
   return {
-    encryptedSecretsBody(values: Record<string, string>): string {
-      return encryptSecretForTests(JSON.stringify(values));
-    },
-
     seedClerkDirectory(actor: ApiTestUser): void {
       mockClerkUsers(context, [clerkUserProfile(actor)]);
       const memberships = clerkMemberships(actor);

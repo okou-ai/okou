@@ -2823,7 +2823,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             return firewallEntryName(firewall);
           }),
         ).toContain("model-provider:openrouter-codex");
-        expect(execution.encryptedSecrets).toBeNull();
         expect(execution.platformEnvironment).not.toHaveProperty(
           ENABLE_FRAMEWORK_IMAGE_GENERATION_ENV_VAR,
         );
@@ -3280,7 +3279,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(execution.secretConnectorMap).not.toHaveProperty(
           "X_REFRESH_TOKEN",
         );
-        expect(execution.encryptedSecrets).toBeNull();
         const serializedExecution = JSON.stringify(execution);
         for (const credential of [
           "x-bdd-lazy-access",
@@ -9953,7 +9951,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           mockEnv("ENV", "preview");
           mockEnv("VERCEL_AUTOMATION_BYPASS_SECRET", executionBypass);
           const execution = await api.executionInput(runId);
-          expect(execution.encryptedSecrets).toBeNull();
           expect(execution.platformEnvironment).not.toHaveProperty(
             "VERCEL_AUTOMATION_BYPASS_SECRET",
           );

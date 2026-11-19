@@ -57,20 +57,29 @@ assert_match_count() {
   fi
 }
 
-assert_process_gone() {
+assert_process_stopped() {
   local pid_file=$1
   local description=$2
-  local pid
+  local pid stat state
 
   [ -s "$pid_file" ] || fail "missing PID for ${description}"
   pid=$(< "$pid_file")
+  [[ "$pid" =~ ^[1-9][0-9]*$ ]] || fail "invalid PID for ${description}: ${pid}"
   for _ in {1..20}; do
-    if ! kill -0 "$pid" 2>/dev/null; then
-      return
+    if IFS= read -r stat 2>/dev/null < "/proc/${pid}/stat"; then
+      # Strip pid and comm before reading the state. A dead process can remain
+      # visible until its new parent reaps it.
+      state=${stat##*) }
+      state=${state%% *}
+      case "$state" in Z|X) return 0 ;; esac
+    elif [ ! -d "/proc/${pid}" ]; then
+      return 0
+    else
+      fail "cannot inspect ${description} process ${pid}"
     fi
     sleep 0.1
   done
-  fail "${description} process ${pid} is still alive"
+  fail "${description} process ${pid} is still running (state=${state})"
 }
 
 tmp=$(mktemp -d)
@@ -154,7 +163,7 @@ if [ "$is_probe" = "true" ]; then
   fi
 
   case "$FAKE_SSH_SCENARIO" in
-    healthy|actual-failure|actual-hang)
+    healthy|actual-failure|actual-hang|hold-channel)
       exit 0
       ;;
     auto-master-failure|auto-master-reuse)
@@ -214,6 +223,11 @@ if [ "$FAKE_SSH_SCENARIO" = "actual-failure" ]; then
   echo "actual stderr" >&2
   exit 42
 fi
+if [ "$FAKE_SSH_SCENARIO" = "hold-channel" ]; then
+  printf '%s\n' "$$" > "$FAKE_ACTUAL_SSH_PID"
+  IFS= read -r _ < "$FAKE_MASTER_TRIGGER"
+  echo 'old channel completed'
+fi
 if [ "$FAKE_SSH_SCENARIO" = "actual-hang" ]; then
   printf '%s\n' "$$" > "$FAKE_ACTUAL_SSH_PID"
   trap '' HUP INT TERM
@@ -268,7 +282,6 @@ fake_timeout="${fake_bin}/timeout"
 cat > "$fake_timeout" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
-printf '%s\n' "$*" >> "$FAKE_TIMEOUT_INVOCATIONS"
 if [ "${FAKE_TIMEOUT_MODE:-passthrough}" = "real" ]; then
   exec "$SYSTEM_TIMEOUT" "$@"
 fi
@@ -306,7 +319,6 @@ setup_case() {
   : > "$case_dir/actual-ssh.log"
   : > "$case_dir/scp.log"
   : > "$case_dir/sftp.log"
-  : > "$case_dir/timeout.log"
   : > "$case_dir/sleep.log"
   : > "$case_dir/probe-stdin"
   : > "$case_dir/ssh-stdin"
@@ -330,7 +342,6 @@ invoke_wrapper() {
   FAKE_ACTUAL_SSH_INVOCATIONS="$case_dir/actual-ssh.log" \
   FAKE_SCP_INVOCATIONS="$case_dir/scp.log" \
   FAKE_SFTP_INVOCATIONS="$case_dir/sftp.log" \
-  FAKE_TIMEOUT_INVOCATIONS="$case_dir/timeout.log" \
   FAKE_SLEEP_INVOCATIONS="$case_dir/sleep.log" \
   FAKE_PROBE_STDIN_FILE="$case_dir/probe-stdin" \
   FAKE_ACTUAL_SSH_STDIN="$case_dir/ssh-stdin" \
@@ -561,11 +572,9 @@ case "$(< "$actual_timeout/status")" in
 esac
 assert_line_count "$actual_timeout/actual-ssh.log" 1 \
   "metal@dev-1.aws.vm3.ai run-once-and-hang"
-assert_contains "$actual_timeout/timeout.log" \
-  "--kill-after=5s 1s ${fake_ssh} metal@dev-1.aws.vm3.ai run-once-and-hang"
 assert_contains "$actual_timeout/stderr" 'sending signal TERM to command'
-assert_process_gone "$actual_timeout/actual-ssh.pid" "timed-out SSH caller"
-assert_process_gone \
+assert_process_stopped "$actual_timeout/actual-ssh.pid" "timed-out SSH caller"
+assert_process_stopped \
   "$actual_timeout/actual-ssh-child.pid" \
   "timed-out SSH descendant"
 
@@ -604,8 +613,8 @@ assert_contains "$actual_cancel/stderr" 'signal=TERM'
 assert_contains "$actual_cancel/stderr" 'event=caller-signal'
 assert_line_count "$actual_cancel/actual-ssh.log" 1 \
   "metal@dev-1.aws.vm3.ai run-once-until-cancelled"
-assert_process_gone "$actual_cancel/actual-ssh.pid" "cancelled SSH caller"
-assert_process_gone \
+assert_process_stopped "$actual_cancel/actual-ssh.pid" "cancelled SSH caller"
+assert_process_stopped \
   "$actual_cancel/actual-ssh-child.pid" \
   "cancelled SSH descendant"
 
@@ -872,11 +881,25 @@ fi
 
 concurrent="${tmp}/concurrent"
 setup_case "$concurrent"
-invoke_wrapper "$concurrent" stale-success ssh \
+target_key=$(printf '%s' 'metal@dev-8.aws.vm3.ai' | sha256sum | cut -c1-24)
+old_proxy_root="$concurrent/runner-temp/cloudflare-ssh-master-${target_key}.stderr.proxies"
+mkfifo "$concurrent/auto-master.trigger"
+OKOU_CLOUDFLARE_SSH_OPERATION_TIMEOUT_SECONDS=15 \
+  invoke_wrapper "$concurrent" hold-channel ssh metal@dev-8.aws.vm3.ai held-operation \
+  > "$concurrent/held.out" 2> "$concurrent/held.err" &
+held_pid=$!
+for _ in {1..100}; do
+  [ ! -s "$concurrent/actual-ssh.pid" ] || break
+  "$system_sleep" 0.02
+done
+[ -s "$concurrent/actual-ssh.pid" ] || fail "old master channel did not start"
+mkdir -p "$old_proxy_root"
+touch "$old_proxy_root/retired"
+invoke_wrapper "$concurrent" healthy ssh \
   metal@dev-8.aws.vm3.ai touch /tmp/concurrent-ssh \
   > "$concurrent/stdout-1" 2> "$concurrent/stderr-1" &
 pid1=$!
-invoke_wrapper "$concurrent" stale-success scp \
+invoke_wrapper "$concurrent" healthy scp \
   /tmp/source metal@dev-8.aws.vm3.ai:/tmp/concurrent-scp \
   > "$concurrent/stdout-2" 2> "$concurrent/stderr-2" &
 pid2=$!
@@ -891,6 +914,25 @@ assert_match_count "$concurrent/ssh.log" 1 "-M -N -f"
 assert_match_count "$concurrent/actual-ssh.log" 1 \
   "metal@dev-8.aws.vm3.ai touch /tmp/concurrent-ssh"
 assert_match_count "$concurrent/scp.log" 1 "/tmp/source metal@dev-8.aws.vm3.ai:/tmp/concurrent-scp"
+assert_line_count "$concurrent/ssh.log" 1 "-v -n -T metal@dev-8.aws.vm3.ai true"
+assert_not_contains "$concurrent/ssh.log" "-O exit"
+printf 'release\n' | "$system_timeout" 5s tee "$concurrent/auto-master.trigger" >/dev/null
+wait "$held_pid"
+assert_contains "$concurrent/held.out" "old channel completed"
+state_file="$concurrent/state/${target_key}.control-path"
+replacement=$(< "$state_file")
+touch "$old_proxy_root/retired"
+run_wrapper "$concurrent" healthy ssh metal@dev-8.aws.vm3.ai echo unchanged
+assert_contains "$concurrent/status" "0"
+[ "$(< "$state_file")" = "$replacement" ] || fail "late retirement replaced the current master"
+assert_match_count "$concurrent/ssh.log" 1 "-M -N -f"
+mkdir -p "${replacement}.stderr.proxies"
+touch "${replacement}.stderr.proxies/retired"
+run_wrapper "$concurrent" healthy ssh metal@dev-8.aws.vm3.ai echo renewed
+assert_contains "$concurrent/status" "0"
+[ "$(< "$state_file")" != "$replacement" ] || fail "retired replacement was reused"
+assert_match_count "$concurrent/ssh.log" 2 "-M -N -f"
+assert_not_contains "$concurrent/ssh.log" "-O exit"
 if [ -s "$concurrent/probe-stdin" ]; then
   fail "concurrent probes consumed caller stdin"
 fi

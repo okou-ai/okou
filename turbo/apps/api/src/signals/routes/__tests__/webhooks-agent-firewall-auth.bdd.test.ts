@@ -214,7 +214,7 @@ async function firewallRun(
       actor,
       runId: run.runId,
       execution,
-      headers: { authorization: `Bearer ${execution.sandboxToken}` },
+      headers: { authorization: `Bearer ${execution.firewallToken}` },
     };
   });
 }
@@ -239,7 +239,6 @@ async function recordUnclassifiedCodexFailure(
     headers,
     {
       forceRefresh: true,
-      encryptedSecrets: fw.encryptedSecretsBody({}),
       authHeaders: {
         Authorization: `Bearer ${secretTemplate("CHATGPT_ACCESS_TOKEN")}`,
       },
@@ -265,6 +264,7 @@ async function withPublicFirewallRun(
       readonly runId: string;
       readonly threadId: string;
       readonly agentId: string;
+      readonly sandboxToken: string;
     },
   ) => Promise<void>,
 ): Promise<void> {
@@ -292,10 +292,10 @@ async function withPublicFirewallRun(
     const execution = await runsApi.executionInput(run.runId);
     fixture.registerExecution(run.runId, execution.sandboxToken);
     await scenario(
-      { authorization: `Bearer ${execution.sandboxToken}` },
+      { authorization: `Bearer ${execution.firewallToken}` },
       fixture,
       subscription,
-      { ...run, agentId: agent.agentId },
+      { ...run, agentId: agent.agentId, sandboxToken: execution.sandboxToken },
     );
   });
 }
@@ -384,9 +384,6 @@ async function publicGoogleRefreshFixture(slug: "gmail" | "google-sheets") {
     expiresIn: -60,
   });
   const body = {
-    encryptedSecrets: fw.encryptedSecretsBody({
-      [secretName]: accessToken,
-    }),
     authHeaders: {
       Authorization: `Bearer ${secretTemplate(secretName)}`,
     },
@@ -401,7 +398,7 @@ function gateFirstStoredSecretDecrypt(): {
 } {
   const started = createDeferredPromise<void>(context.signal);
   const resume = createDeferredPromise<void>(context.signal);
-  let decryptCalls = 0;
+  let gated = false;
   const release = (): void => {
     if (!resume.settled()) {
       resume.resolve(undefined);
@@ -423,10 +420,10 @@ function gateFirstStoredSecretDecrypt(): {
       });
     },
     async decrypt(): Promise<Uint8Array> {
-      decryptCalls += 1;
-      // The encrypted request payload is first. The second decrypt starts after
-      // the connector credential SELECT has captured its statement snapshot.
-      if (decryptCalls === 2) {
+      // Stored credential decryption starts after the credential SELECT has
+      // captured its statement snapshot.
+      if (!gated) {
+        gated = true;
         started.resolve(undefined);
         await resume.promise;
       }
@@ -441,7 +438,6 @@ describe("FW-1: firewall auth boundaries", () => {
   it("rejects missing and malformed firewall auth requests", async () => {
     const fw = createFirewallApi(context);
     const body = {
-      encryptedSecrets: fw.encryptedSecretsBody({}),
       authHeaders: {},
     };
 
@@ -457,78 +453,31 @@ describe("FW-1: firewall auth boundaries", () => {
     expectApiError(junkToken.body);
     expect(junkToken.body.error.code).toBe("UNAUTHORIZED");
   });
-
-  it("rejects undecryptable secret payloads for a real run", async () => {
-    await withPublicFirewallRun(async (headers) => {
-      const fw = createFirewallApi(context);
-
-      const garbage = await fw.requestFirewallAuth(
-        headers,
-        { encryptedSecrets: "garbage", authHeaders: {} },
-        [400],
-      );
-      expectApiError(garbage.body);
-      expect(garbage.body.error.message).toContain("Failed to decrypt");
-    });
-  });
 });
 
 describe("FW-2: template resolution without connector refresh", () => {
-  it("resolves secret-backed auth headers", async () => {
-    await withPublicFirewallRun(async (headers) => {
-      const fw = createFirewallApi(context);
-
-      const resolved = await fw.requestFirewallAuth(
-        headers,
-        {
-          encryptedSecrets: fw.encryptedSecretsBody({
-            API_KEY: "secret-value",
-            SCRAPENINJA_TOKEN: "rapidapi-secret",
-          }),
-          authHeaders: {
-            Authorization: `Bearer ${secretTemplate("API_KEY")}`,
-            "X-RapidAPI-Host": "scrapeninja.p.rapidapi.com",
-            "X-RapidAPI-Key": secretTemplate("SCRAPENINJA_TOKEN"),
-          },
-        },
-        [200],
-      );
-      if (resolved.status !== 200) {
-        throw new Error("Expected firewall auth resolution to succeed");
-      }
-      expect(resolved.body.headers.Authorization).toBe("Bearer secret-value");
-      expect(resolved.body.headers["X-RapidAPI-Host"]).toBe(
-        "scrapeninja.p.rapidapi.com",
-      );
-      expect(resolved.body.headers["X-RapidAPI-Key"]).toBe("rapidapi-secret");
-      expect(resolved.body.refreshedConnectors).toStrictEqual([]);
-      expect(resolved.body.refreshedSecrets).toStrictEqual([]);
-      expect(resolved.body.resolvedSecrets).toContain("API_KEY");
-      expect(resolved.body.resolvedSecrets).toContain("SCRAPENINJA_TOKEN");
-    });
-  });
-
   it("resolves variable and basic auth header templates", async () => {
     await withPublicFirewallRun(async (headers) => {
       const fw = createFirewallApi(context);
+      mockEnv("OKOU_DATA_ROUTER_URL", "https://data-router.example.test");
+      mockEnv("OKOU_DATA_TOKEN", "test-data-token");
 
       const resolved = await fw.requestFirewallAuth(
         headers,
         {
-          encryptedSecrets: fw.encryptedSecretsBody({
-            BASIC_USER: "alice",
-            SHARED: "secret-shared",
-          }),
           authHeaders: {
             "X-Tenant": varTemplate("TENANT"),
-            "X-Basic": basicTemplate("secrets.BASIC_USER", "vars.BASIC_PASS"),
+            "X-Basic": basicTemplate(
+              "secrets.OKOU_DATA_TOKEN",
+              "vars.BASIC_PASS",
+            ),
             "X-Literal-Basic": basicTemplate('"alice"', '"literal-pass"'),
-            "X-Shared": `${secretTemplate("SHARED")}:${varTemplate("SHARED")}`,
+            "X-Shared": `${secretTemplate("OKOU_DATA_TOKEN")}:${varTemplate("OKOU_DATA_TOKEN")}`,
           },
           vars: {
             TENANT: "tenant-1",
             BASIC_PASS: "var-pass",
-            SHARED: "var-shared",
+            OKOU_DATA_TOKEN: "var-shared",
           },
         },
         [200],
@@ -538,13 +487,13 @@ describe("FW-2: template resolution without connector refresh", () => {
       }
       expect(resolved.body.headers["X-Tenant"]).toBe("tenant-1");
       expect(resolved.body.headers["X-Basic"]).toBe(
-        `Basic ${Buffer.from("alice:var-pass").toString("base64")}`,
+        `Basic ${Buffer.from("test-data-token:var-pass").toString("base64")}`,
       );
       expect(resolved.body.headers["X-Literal-Basic"]).toBe(
         `Basic ${Buffer.from("alice:literal-pass").toString("base64")}`,
       );
       expect(resolved.body.headers["X-Shared"]).toBe(
-        "secret-shared:var-shared",
+        "test-data-token:var-shared",
       );
       expect(resolved.body.refreshedConnectors).toStrictEqual([]);
       expect(resolved.body.refreshedSecrets).toStrictEqual([]);
@@ -554,33 +503,29 @@ describe("FW-2: template resolution without connector refresh", () => {
   it("resolves secret templates in the base URL and query", async () => {
     await withPublicFirewallRun(async (headers) => {
       const fw = createFirewallApi(context);
+      mockEnv("OKOU_DATA_ROUTER_URL", "https://data-router.example.test");
+      mockEnv("OKOU_DATA_TOKEN", "test-data-token");
 
       const resolved = await fw.requestFirewallAuth(
         headers,
         {
-          encryptedSecrets: fw.encryptedSecretsBody({
-            BASE_SECRET: "base-secret",
-            QUERY_SECRET: "query-secret",
-          }),
           authHeaders: {},
-          authBase: `https://api.example.test/${secretTemplate("BASE_SECRET")}`,
-          authQuery: { token: secretTemplate("QUERY_SECRET") },
+          authBase: `https://api.example.test/${secretTemplate("OKOU_DATA_TOKEN")}`,
+          authQuery: { token: secretTemplate("OKOU_DATA_TOKEN") },
         },
         [200],
       );
       if (resolved.status !== 200) {
         throw new Error("Expected firewall auth resolution to succeed");
       }
-      expect(resolved.body.base).toBe("https://api.example.test/base-secret");
-      expect(resolved.body.query).toStrictEqual({ token: "query-secret" });
+      expect(resolved.body.base).toBe(
+        "https://api.example.test/test-data-token",
+      );
+      expect(resolved.body.query).toStrictEqual({ token: "test-data-token" });
       expect(resolved.body.expiresAt).toBeNull();
       expect(resolved.body.refreshedConnectors).toStrictEqual([]);
       expect(resolved.body.refreshedSecrets).toStrictEqual([]);
-      expect(resolved.body.resolvedSecrets).toStrictEqual(
-        [...resolved.body.resolvedSecrets].sort(),
-      );
-      expect(resolved.body.resolvedSecrets).toContain("BASE_SECRET");
-      expect(resolved.body.resolvedSecrets).toContain("QUERY_SECRET");
+      expect(resolved.body.resolvedSecrets).toStrictEqual(["OKOU_DATA_TOKEN"]);
     });
   });
 
@@ -591,7 +536,6 @@ describe("FW-2: template resolution without connector refresh", () => {
       const missing = await fw.requestFirewallAuth(
         headers,
         {
-          encryptedSecrets: fw.encryptedSecretsBody({}),
           authHeaders: {
             Authorization: `Bearer ${secretTemplate("NEVER_SET")}`,
           },
@@ -624,7 +568,6 @@ describe("FW-2: template resolution without connector refresh", () => {
       );
       accountIds.add(jiraConnection.id);
       const body = {
-        encryptedSecrets: fw.encryptedSecretsBody({}),
         authHeaders: {
           "X-Domain": varTemplate("JIRA_DOMAIN"),
           "X-Email": varTemplate("JIRA_EMAIL"),
@@ -671,27 +614,23 @@ describe("FW-2: template resolution without connector refresh", () => {
 
       // The quoted basic arguments are literals: the embedded secret template
       // must neither be collected as a reference nor resolved, so the request
-      // succeeds even though NEVER_SET is absent from the secret payload.
+      // succeeds even though NEVER_SET has no credential source.
       const resolved = await fw.requestFirewallAuth(
         headers,
         {
-          encryptedSecrets: fw.encryptedSecretsBody({ PASS: "pass-secret" }),
           authHeaders: {
             "X-Empty-Basic": basicTemplate("", ""),
             "X-Literal-Template": basicTemplate(
               `"${secretTemplate("NEVER_SET")}"`,
-              "secrets.PASS",
+              "vars.PASS",
             ),
-            "X-Quoted-Namespace": basicTemplate(
-              '"secrets.PASS"',
-              "secrets.PASS",
-            ),
+            "X-Quoted-Namespace": basicTemplate('"vars.PASS"', "vars.PASS"),
           },
           authQuery: {
             token: "literal-query-value",
             workspace: varTemplate("WORKSPACE_ID"),
           },
-          vars: { WORKSPACE_ID: "workspace-9" },
+          vars: { WORKSPACE_ID: "workspace-9", PASS: "configured-pass" },
         },
         [200],
       );
@@ -702,21 +641,20 @@ describe("FW-2: template resolution without connector refresh", () => {
         `Basic ${Buffer.from(":").toString("base64")}`,
       );
       expect(resolved.body.headers["X-Literal-Template"]).toBe(
-        `Basic ${Buffer.from(`${secretTemplate("NEVER_SET")}:pass-secret`).toString("base64")}`,
+        `Basic ${Buffer.from(`${secretTemplate("NEVER_SET")}:configured-pass`).toString("base64")}`,
       );
       expect(resolved.body.headers["X-Quoted-Namespace"]).toBe(
-        `Basic ${Buffer.from("secrets.PASS:pass-secret").toString("base64")}`,
+        `Basic ${Buffer.from("vars.PASS:configured-pass").toString("base64")}`,
       );
       expect(resolved.body.query).toStrictEqual({
         token: "literal-query-value",
         workspace: "workspace-9",
       });
-      expect(resolved.body.resolvedSecrets).toStrictEqual(["PASS"]);
+      expect(resolved.body.resolvedSecrets).toStrictEqual([]);
 
       const withoutQuery = await fw.requestFirewallAuth(
         headers,
         {
-          encryptedSecrets: fw.encryptedSecretsBody({}),
           authHeaders: { Authorization: "Bearer static-token" },
         },
         [200],
@@ -765,10 +703,7 @@ describe("FW-3: billable firewall lease", () => {
       const leased = await fw.requestFirewallAuth(
         headers,
         {
-          encryptedSecrets: fw.encryptedSecretsBody({ API_KEY: "paid" }),
-          authHeaders: {
-            Authorization: `Bearer ${secretTemplate("API_KEY")}`,
-          },
+          authHeaders: {},
           firewallBillable: true,
         },
         [200],
@@ -819,10 +754,7 @@ describe("FW-3: billable firewall lease", () => {
       const denied = await fw.requestFirewallAuth(
         headers,
         {
-          encryptedSecrets: fw.encryptedSecretsBody({ API_KEY: "paid" }),
-          authHeaders: {
-            Authorization: `Bearer ${secretTemplate("API_KEY")}`,
-          },
+          authHeaders: {},
           firewallBillable: true,
         },
         [402],
@@ -845,7 +777,7 @@ describe("FW-3: billable firewall lease", () => {
       onTestFinished,
     );
     const headers = {
-      authorization: `Bearer ${receivedExecution.sandboxToken}`,
+      authorization: `Bearer ${receivedExecution.firewallToken}`,
     };
     await publicConnections.testOAuth(actor, {
       accessToken: "stale-access",
@@ -870,9 +802,6 @@ describe("FW-3: billable firewall lease", () => {
     const denied = await fw.requestFirewallAuth(
       headers,
       {
-        encryptedSecrets: fw.encryptedSecretsBody({
-          TEST_OAUTH_TOKEN: "stale-access",
-        }),
         authHeaders: {
           Authorization: `Bearer ${secretTemplate("TEST_OAUTH_TOKEN")}`,
         },
@@ -898,10 +827,7 @@ describe("FW-3: billable firewall lease", () => {
       const leased = await fw.requestFirewallAuth(
         headers,
         {
-          encryptedSecrets: fw.encryptedSecretsBody({ API_KEY: "paid" }),
-          authHeaders: {
-            Authorization: `Bearer ${secretTemplate("API_KEY")}`,
-          },
+          authHeaders: {},
           firewallBillable: true,
         },
         [200],
@@ -932,9 +858,6 @@ describe("FW-3: billable firewall lease", () => {
       });
     });
     const body = {
-      encryptedSecrets: fw.encryptedSecretsBody({
-        TEST_OAUTH_TOKEN: "stale-access",
-      }),
       authHeaders: {
         Authorization: `Bearer ${secretTemplate("TEST_OAUTH_TOKEN")}`,
       },
@@ -970,11 +893,6 @@ describe("FW-3: billable firewall lease", () => {
       headers,
       {
         ...body,
-        // The forced snapshot must match the stored token, otherwise the
-        // request is served from the newer stored access.
-        encryptedSecrets: fw.encryptedSecretsBody({
-          TEST_OAUTH_TOKEN: "long-lived-access",
-        }),
         forceRefresh: true,
       },
       [200],
@@ -1015,12 +933,9 @@ describe("FW-3: billable firewall lease", () => {
     });
     await runsApi.heartbeatRunner(runnerGroup);
     const execution = await runsApi.executionInput(run.runId);
-    const headers = { authorization: `Bearer ${execution.sandboxToken}` };
+    const headers = { authorization: `Bearer ${execution.firewallToken}` };
     const body = {
-      encryptedSecrets: fw.encryptedSecretsBody({ API_KEY: "paid" }),
-      authHeaders: {
-        Authorization: `Bearer ${secretTemplate("API_KEY")}`,
-      },
+      authHeaders: {},
       firewallBillable: true,
     };
 
@@ -1062,7 +977,7 @@ describe("FW-3: billable firewall lease", () => {
     await runsApi.requestCancelRun(actor, run.runId, [200]);
     await webhooks.requestAgentComplete(
       { runId: run.runId, exitCode: 1, error: "Firewall carrier cancelled" },
-      headers,
+      { authorization: `Bearer ${execution.sandboxToken}` },
       [200],
     );
   });
@@ -1095,12 +1010,9 @@ describe("FW-3: billable firewall lease", () => {
     await runsApi.heartbeatRunner(runnerGroup);
     const execution = await runsApi.executionInput(run.runId);
     const denied = await fw.requestFirewallAuth(
-      { authorization: `Bearer ${execution.sandboxToken}` },
+      { authorization: `Bearer ${execution.firewallToken}` },
       {
-        encryptedSecrets: fw.encryptedSecretsBody({ API_KEY: "paid" }),
-        authHeaders: {
-          Authorization: `Bearer ${secretTemplate("API_KEY")}`,
-        },
+        authHeaders: {},
         firewallBillable: true,
       },
       [402],
@@ -1138,9 +1050,6 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
     const refreshed = await fw.requestFirewallAuth(
       headers,
       {
-        encryptedSecrets: fw.encryptedSecretsBody({
-          TEST_OAUTH_TOKEN: "stale-access",
-        }),
         authHeaders: {
           Authorization: `Bearer ${secretTemplate("TEST_OAUTH_TOKEN")}`,
         },
@@ -1180,9 +1089,6 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
       const refreshed = await fw.requestFirewallAuth(
         headers,
         {
-          encryptedSecrets: fw.encryptedSecretsBody({
-            TEST_OAUTH_TOKEN: "boundary-access",
-          }),
           authHeaders: {
             Authorization: `Bearer ${secretTemplate("TEST_OAUTH_TOKEN")}`,
           },
@@ -1230,9 +1136,6 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
         });
       });
       const body = {
-        encryptedSecrets: fw.encryptedSecretsBody({
-          TEST_OAUTH_TOKEN: "stale-access",
-        }),
         authHeaders: {
           Authorization: `Bearer ${secretTemplate("TEST_OAUTH_TOKEN")}`,
         },
@@ -1298,10 +1201,6 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
       }),
     );
     const body = {
-      encryptedSecrets: fw.encryptedSecretsBody({
-        TEST_OAUTH_TOKEN: "stale-access",
-        GMAIL_TOKEN: "stale-gmail-access",
-      }),
       authHeaders: {
         Authorization: `Bearer ${secretTemplate("TEST_OAUTH_TOKEN")}`,
         "X-Gmail": `Bearer ${secretTemplate("GMAIL_TOKEN")}`,
@@ -1366,9 +1265,6 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
     const refreshed = await fw.requestFirewallAuth(
       headers,
       {
-        encryptedSecrets: fw.encryptedSecretsBody({
-          TEST_OAUTH_TOKEN: "current-access",
-        }),
         authHeaders: {
           Authorization: `Bearer ${secretTemplate("TEST_OAUTH_TOKEN")}`,
         },
@@ -1484,7 +1380,6 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
         const internalName = `custom_connector_${mcp.id.replaceAll("-", "")}`;
         const secretKey = `CUSTOM_${mcp.id.replaceAll("-", "")}_S___OAUTH_ACCESS_TOKEN`;
         const authBody = {
-          encryptedSecrets: fw.encryptedSecretsBody({}),
           authHeaders: {
             Authorization: `Bearer ${secretTemplate(secretKey)}`,
           },
@@ -1727,13 +1622,10 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
     const connectorSources = await exactSecretConnectorSources(actor, {
       TEST_OAUTH_TOKEN: "test-oauth",
     });
-    const forceRefresh = async (currentAccessToken: string) => {
+    const forceRefresh = async () => {
       const response = await fw.requestFirewallAuth(
         headers,
         {
-          encryptedSecrets: fw.encryptedSecretsBody({
-            TEST_OAUTH_TOKEN: currentAccessToken,
-          }),
           authHeaders: {
             Authorization: `Bearer ${secretTemplate("TEST_OAUTH_TOKEN")}`,
           },
@@ -1756,7 +1648,7 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
         scope: "provider-added",
       });
     });
-    const narrowed = await forceRefresh("initial-scoped-access");
+    const narrowed = await forceRefresh();
     expect(narrowed.headers.Authorization).toBe("Bearer narrow-scoped-access");
     const narrowedConnector = await connectors.readDefaultBuiltinAccount(
       actor,
@@ -1780,7 +1672,7 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
         expiresIn: 3600,
       });
     });
-    await forceRefresh("narrow-scoped-access");
+    await forceRefresh();
     const preservedConnector = await connectors.readDefaultBuiltinAccount(
       actor,
       "test-oauth",
@@ -1818,7 +1710,7 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
     ).toBeNull();
   });
 
-  it("resolves a current connector token without a runtime envelope", async () => {
+  it("resolves a current stored connector token", async () => {
     const fw = createFirewallApi(context);
     const { actor, execution } = await publicConnections.run();
     await publicConnections.testOAuth(actor, {
@@ -1829,7 +1721,7 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
 
     const before = Math.floor(now() / 1000);
     const synced = await fw.requestFirewallAuth(
-      { authorization: `Bearer ${execution.firewallToken!}` },
+      { authorization: `Bearer ${execution.firewallToken}` },
       {
         authHeaders: {
           Authorization: `Bearer ${secretTemplate("TEST_OAUTH_TOKEN")}`,
@@ -1901,7 +1793,6 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
           pendingAuth = fw.requestFirewallAuth(
             headers,
             {
-              encryptedSecrets: fw.encryptedSecretsBody({}),
               authHeaders: {
                 "X-AWS-Access-Key-ID": secretTemplate("AWS_ACCESS_KEY_ID"),
                 "X-AWS-Secret-Access-Key": secretTemplate(
@@ -2000,7 +1891,6 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
           );
         });
         const body = {
-          encryptedSecrets: fw.encryptedSecretsBody({}),
           authHeaders: {
             Authorization: `Bearer ${secretTemplate("TEST_OAUTH_TOKEN")}`,
           },
@@ -2125,9 +2015,6 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
     });
 
     const body = {
-      encryptedSecrets: fw.encryptedSecretsBody({
-        TEST_OAUTH_TOKEN: "stale-access",
-      }),
       authHeaders: {
         Authorization: `Bearer ${secretTemplate("TEST_OAUTH_TOKEN")}`,
       },
@@ -2172,9 +2059,6 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
     });
 
     const body = {
-      encryptedSecrets: fw.encryptedSecretsBody({
-        TEST_OAUTH_TOKEN: "stale-access",
-      }),
       authHeaders: {
         Authorization: `Bearer ${secretTemplate("TEST_OAUTH_TOKEN")}`,
       },
@@ -2219,9 +2103,6 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
     });
 
     const body = {
-      encryptedSecrets: fw.encryptedSecretsBody({
-        TEST_OAUTH_TOKEN: "stale-access",
-      }),
       authHeaders: {
         Authorization: `Bearer ${secretTemplate("TEST_OAUTH_TOKEN")}`,
       },
@@ -2588,9 +2469,6 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
     const failed = await fw.requestFirewallAuth(
       headers,
       {
-        encryptedSecrets: fw.encryptedSecretsBody({
-          TEST_OAUTH_TOKEN: "stale-access",
-        }),
         authHeaders: {
           Authorization: `Bearer ${secretTemplate("TEST_OAUTH_TOKEN")}`,
         },
@@ -2616,9 +2494,6 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
     });
 
     const body = {
-      encryptedSecrets: fw.encryptedSecretsBody({
-        TEST_OAUTH_TOKEN: "stale-access",
-      }),
       authHeaders: {
         Authorization: `Bearer ${secretTemplate("TEST_OAUTH_TOKEN")}`,
       },
@@ -2668,9 +2543,6 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
     });
 
     const body = {
-      encryptedSecrets: fw.encryptedSecretsBody({
-        TEST_OAUTH_TOKEN: "stale-access",
-      }),
       authHeaders: {
         Authorization: `Bearer ${secretTemplate("TEST_OAUTH_TOKEN")}`,
       },
@@ -2727,7 +2599,6 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
       );
 
       const body = {
-        encryptedSecrets: fw.encryptedSecretsBody({}),
         authHeaders: {
           Authorization: `Bearer ${secretTemplate("LARK_TOKEN")}`,
         },
@@ -2786,9 +2657,6 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
     });
 
     const body = {
-      encryptedSecrets: fw.encryptedSecretsBody({
-        TEST_OAUTH_TOKEN: "stale-api-access",
-      }),
       authHeaders: {
         Authorization: `Bearer ${secretTemplate("TEST_OAUTH_TOKEN")}`,
       },
@@ -2824,7 +2692,8 @@ describe("FW-5: terminal runs close firewall credential authority", () => {
         async (headers, fixture, _subscription, run) => {
           const fw = createFirewallApi(context);
           const actor = fixture.actor;
-          const { runId } = run;
+          const { runId, sandboxToken } = run;
+          const callbackHeaders = { authorization: `Bearer ${sandboxToken}` };
           await connectPublicTestOAuth(fixture, {
             accessToken: "stale-access",
             refreshToken: "refresh-1",
@@ -2844,14 +2713,14 @@ describe("FW-5: terminal runs close firewall credential authority", () => {
           } else if (status === "failed") {
             await createWebhookCallbackApi(context).requestAgentComplete(
               { runId, exitCode: 1 },
-              headers,
+              callbackHeaders,
               [200],
             );
           } else {
             await completePublicClaudeRun(
               context,
               run,
-              headers,
+              callbackHeaders,
               "terminal firewall authorization",
             );
           }
@@ -2861,9 +2730,6 @@ describe("FW-5: terminal runs close firewall credential authority", () => {
           const denied = await fw.requestFirewallAuth(
             headers,
             {
-              encryptedSecrets: fw.encryptedSecretsBody({
-                TEST_OAUTH_TOKEN: "stale-access",
-              }),
               authHeaders: {
                 Authorization: `Bearer ${secretTemplate("TEST_OAUTH_TOKEN")}`,
               },
@@ -2912,7 +2778,6 @@ describe("FW-6: manual-grant api-token refresh without a provider client", () =>
       const resolved = await fw.requestFirewallAuth(
         headers,
         {
-          encryptedSecrets: fw.encryptedSecretsBody({}),
           authHeaders: {
             Authorization: `Bearer ${secretTemplate("TEST_OAUTH_API_TOKEN")}`,
           },
@@ -2949,7 +2814,6 @@ describe("FW-8: static access tokens and unavailable sources", () => {
     });
 
     const body = {
-      encryptedSecrets: fw.encryptedSecretsBody({}),
       authHeaders: {
         Authorization: `Bearer ${secretTemplate("TEST_OAUTH_DEVICE_TOKEN")}`,
       },
@@ -3006,7 +2870,6 @@ describe("FW-8: static access tokens and unavailable sources", () => {
     const synced = await fw.requestFirewallAuth(
       headers,
       {
-        encryptedSecrets: fw.encryptedSecretsBody({}),
         authHeaders: {
           Authorization: `Bearer ${secretTemplate("TEST_OAUTH_DEVICE_TOKEN")}`,
         },
@@ -3031,7 +2894,6 @@ describe("FW-8: static access tokens and unavailable sources", () => {
       const missing = await fw.requestFirewallAuth(
         headers,
         {
-          encryptedSecrets: fw.encryptedSecretsBody({}),
           authHeaders: {
             Authorization: `Bearer ${secretTemplate("NOTION_TOKEN")}`,
           },
@@ -3081,9 +2943,6 @@ describe("FW-9: codex model-provider access", () => {
     });
 
     const body = {
-      encryptedSecrets: fw.encryptedSecretsBody({
-        CHATGPT_ACCESS_TOKEN: "stale-chatgpt-token",
-      }),
       authHeaders: {
         Authorization: `Bearer ${secretTemplate("CHATGPT_ACCESS_TOKEN")}`,
       },
@@ -3137,9 +2996,6 @@ describe("FW-9: codex model-provider access", () => {
     const refreshed = await fw.requestFirewallAuth(
       headers,
       {
-        encryptedSecrets: fw.encryptedSecretsBody({
-          CHATGPT_ACCESS_TOKEN: "stale-chatgpt-token",
-        }),
         authHeaders: {
           Authorization: `Bearer ${secretTemplate("CHATGPT_ACCESS_TOKEN")}`,
         },
@@ -3164,7 +3020,6 @@ describe("FW-9: codex model-provider access", () => {
     const crossUser = await fw.requestFirewallAuth(
       headers,
       {
-        encryptedSecrets: fw.encryptedSecretsBody({}),
         authHeaders: {
           Authorization: `Bearer ${secretTemplate("CHATGPT_ACCESS_TOKEN")}`,
         },
@@ -3184,7 +3039,6 @@ describe("FW-9: codex model-provider access", () => {
     const unknownAlias = await fw.requestFirewallAuth(
       headers,
       {
-        encryptedSecrets: fw.encryptedSecretsBody({}),
         authHeaders: {
           Authorization: `Bearer ${secretTemplate("CHATGPT_REFRESH_TOKEN")}`,
         },
@@ -3203,7 +3057,6 @@ describe("FW-9: codex model-provider access", () => {
     const userScoped = await fw.requestFirewallAuth(
       headers,
       {
-        encryptedSecrets: fw.encryptedSecretsBody({}),
         authHeaders: {
           Authorization: `Bearer ${secretTemplate("CHATGPT_ACCESS_TOKEN")}`,
         },
@@ -3243,9 +3096,6 @@ describe("FW-9: codex model-provider access", () => {
     const recovered = await fw.requestFirewallAuth(
       headers,
       {
-        encryptedSecrets: fw.encryptedSecretsBody({
-          CHATGPT_ACCESS_TOKEN: "stale-chatgpt-token",
-        }),
         authHeaders: {
           Authorization: `Bearer ${secretTemplate("CHATGPT_ACCESS_TOKEN")}`,
         },
@@ -3285,9 +3135,6 @@ describe("FW-9: codex model-provider access", () => {
     const refreshed = await fw.requestFirewallAuth(
       headers,
       {
-        encryptedSecrets: fw.encryptedSecretsBody({
-          CHATGPT_ACCESS_TOKEN: "current-chatgpt-token",
-        }),
         authHeaders: {
           Authorization: `Bearer ${secretTemplate("CHATGPT_ACCESS_TOKEN")}`,
         },
@@ -3315,7 +3162,6 @@ describe("FW-9: codex model-provider access", () => {
     const missing = await fw.requestFirewallAuth(
       headers,
       {
-        encryptedSecrets: fw.encryptedSecretsBody({}),
         authHeaders: {
           Authorization: `Bearer ${secretTemplate("CHATGPT_ACCESS_TOKEN")}`,
         },
@@ -3353,9 +3199,6 @@ describe("FW-9: codex model-provider access", () => {
         expiresIn: -60,
       });
       const body = {
-        encryptedSecrets: fw.encryptedSecretsBody({
-          CHATGPT_ACCESS_TOKEN: "stale-chatgpt-token",
-        }),
         authHeaders: {
           Authorization: `Bearer ${secretTemplate("CHATGPT_ACCESS_TOKEN")}`,
         },
@@ -3444,7 +3287,6 @@ describe("FW-9: codex model-provider access", () => {
       );
     });
     const body = {
-      encryptedSecrets: fw.encryptedSecretsBody({}),
       authHeaders: {
         Authorization: `Bearer ${secretTemplate("CHATGPT_ACCESS_TOKEN")}`,
       },
@@ -3553,9 +3395,6 @@ describe("FW-9: codex model-provider access", () => {
       });
     });
     const body = {
-      encryptedSecrets: fw.encryptedSecretsBody({
-        CHATGPT_ACCESS_TOKEN: "stale-chatgpt-token",
-      }),
       authHeaders: {
         Authorization: `Bearer ${secretTemplate("CHATGPT_ACCESS_TOKEN")}`,
       },
@@ -3597,9 +3436,6 @@ describe("FW-10: platform connector secrets", () => {
     const resolved = await fw.requestFirewallAuth(
       headers,
       {
-        encryptedSecrets: fw.encryptedSecretsBody({
-          GOOGLE_ADS_TOKEN: "google-ads-access",
-        }),
         authHeaders: {
           Authorization: `Bearer ${secretTemplate("GOOGLE_ADS_TOKEN")}`,
           "developer-token": secretTemplate("GOOGLE_ADS_DEVELOPER_TOKEN"),
@@ -3642,9 +3478,6 @@ describe("FW-10: platform connector secrets", () => {
     const missing = await fw.requestFirewallAuth(
       headers,
       {
-        encryptedSecrets: fw.encryptedSecretsBody({
-          GOOGLE_ADS_TOKEN: "google-ads-access",
-        }),
         authHeaders: {
           "developer-token": secretTemplate("GOOGLE_ADS_DEVELOPER_TOKEN"),
         },
@@ -3665,41 +3498,6 @@ describe("FW-10: platform connector secrets", () => {
     expect(missing.body.error.code).toBe("CONNECTOR_NOT_CONFIGURED");
   });
 
-  it("does not fall back to stale encrypted values for platform metadata", async () => {
-    const fw = createFirewallApi(context);
-    const { actor, headers } = await publicConnections.run();
-    await publicConnections.googleOAuth(actor, "google-ads", {
-      accessToken: "google-ads-access",
-      refreshToken: "google-ads-refresh",
-    });
-    mockOptionalEnv("GOOGLE_ADS_DEVELOPER_TOKEN", " ");
-
-    const missing = await fw.requestFirewallAuth(
-      headers,
-      {
-        encryptedSecrets: fw.encryptedSecretsBody({
-          GOOGLE_ADS_DEVELOPER_TOKEN: "stale-developer-token",
-        }),
-        authHeaders: {
-          "developer-token": secretTemplate("GOOGLE_ADS_DEVELOPER_TOKEN"),
-        },
-        secretConnectorMap: {
-          GOOGLE_ADS_DEVELOPER_TOKEN: "google-ads",
-        },
-        secretConnectorMetadataMap: {
-          GOOGLE_ADS_DEVELOPER_TOKEN: {
-            sourceType: "platform-secret" as const,
-          },
-        },
-      },
-      [424],
-    );
-    if (missing.status !== 424) {
-      throw new Error("Expected stale encrypted platform value to be ignored");
-    }
-    expect(missing.body.error.code).toBe("CONNECTOR_NOT_CONFIGURED");
-  });
-
   it("rejects platform metadata for non-platform connector aliases", async () => {
     const fw = createFirewallApi(context);
     const { actor, headers } = await publicConnections.run();
@@ -3712,9 +3510,6 @@ describe("FW-10: platform connector secrets", () => {
     const invalid = await fw.requestFirewallAuth(
       headers,
       {
-        encryptedSecrets: fw.encryptedSecretsBody({
-          GOOGLE_ADS_TOKEN: "google-ads-access",
-        }),
         authHeaders: {
           Authorization: `Bearer ${secretTemplate("GOOGLE_ADS_TOKEN")}`,
         },
@@ -3737,24 +3532,24 @@ describe("FW-10: platform connector secrets", () => {
 });
 
 describe("FW-11: aws sigv4 template resolution", () => {
-  it("resolves aws sigv4 credentials from secret and var templates", async () => {
+  it("resolves aws sigv4 credentials from variable templates", async () => {
     await withPublicFirewallRun(async (headers) => {
       const fw = createFirewallApi(context);
 
       const resolved = await fw.requestFirewallAuth(
         headers,
         {
-          encryptedSecrets: fw.encryptedSecretsBody({
-            AWS_SECRET_ACCESS_KEY: "secret-access-key",
-            AWS_SESSION_TOKEN: "session-token",
-          }),
           authHeaders: {},
           authAwsSigv4: {
             accessKeyId: varTemplate("AWS_ACCESS_KEY_ID"),
-            secretAccessKey: secretTemplate("AWS_SECRET_ACCESS_KEY"),
-            sessionToken: secretTemplate("AWS_SESSION_TOKEN"),
+            secretAccessKey: varTemplate("AWS_SECRET_ACCESS_KEY"),
+            sessionToken: varTemplate("AWS_SESSION_TOKEN"),
           },
-          vars: { AWS_ACCESS_KEY_ID: "access-key-id" },
+          vars: {
+            AWS_ACCESS_KEY_ID: "access-key-id",
+            AWS_SECRET_ACCESS_KEY: "secret-access-key",
+            AWS_SESSION_TOKEN: "session-token",
+          },
         },
         [200],
       );
@@ -3767,10 +3562,7 @@ describe("FW-11: aws sigv4 template resolution", () => {
         secretAccessKey: "secret-access-key",
         sessionToken: "session-token",
       });
-      expect(resolved.body.resolvedSecrets).toStrictEqual([
-        "AWS_SECRET_ACCESS_KEY",
-        "AWS_SESSION_TOKEN",
-      ]);
+      expect(resolved.body.resolvedSecrets).toStrictEqual([]);
       expect(resolved.body.expiresAt).toBeNull();
     });
   });
@@ -3782,14 +3574,14 @@ describe("FW-11: aws sigv4 template resolution", () => {
       const missing = await fw.requestFirewallAuth(
         headers,
         {
-          encryptedSecrets: fw.encryptedSecretsBody({
-            AWS_ACCESS_KEY_ID: "",
-            AWS_SECRET_ACCESS_KEY: "secret-access-key",
-          }),
           authHeaders: {},
           authAwsSigv4: {
-            accessKeyId: secretTemplate("AWS_ACCESS_KEY_ID"),
-            secretAccessKey: secretTemplate("AWS_SECRET_ACCESS_KEY"),
+            accessKeyId: varTemplate("AWS_ACCESS_KEY_ID"),
+            secretAccessKey: varTemplate("AWS_SECRET_ACCESS_KEY"),
+          },
+          vars: {
+            AWS_ACCESS_KEY_ID: "",
+            AWS_SECRET_ACCESS_KEY: "secret-access-key",
           },
         },
         [424],

@@ -10,7 +10,7 @@ import { firewallPermissionMetadataByConnector } from "../../firewall-permission
 import type { PlatformUserPermissionGrant } from "../../connector-domain.ts";
 import { connectorAgentAccess$ } from "./connector-agent-access.ts";
 import { createConnectorPermissionsSignals } from "./connector-permissions.ts";
-import { featureSwitch$ } from "../../external/feature-switch.ts";
+import { featureSwitches$ } from "../../external/feature-switch.ts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { pageSignal$ } from "../../page-signal.ts";
 import { i18n } from "../../../i18n/index.ts";
@@ -41,24 +41,35 @@ export const connectorAccessManagementSearch$ = computed((get) => {
 });
 
 export const setManagedConnectorAccessSlug$ = command(
-  ({ get, set }, connectorSlug: ConnectorSlug | null) => {
+  async (
+    { get, set },
+    connectorSlug: ConnectorSlug | null,
+    signal: AbortSignal,
+  ) => {
+    const enabled =
+      connectorSlug !== null &&
+      (await get(featureSwitches$))[
+        FeatureSwitchKey.ConnectorChatAccountAccess
+      ];
+    signal.throwIfAborted();
     const current = get(managedConnectorAccessSignals$);
     if (current) {
       set(current.memberPermissions.close$);
     }
     set(managedConnectorAccessSlugState$, connectorSlug);
     const next = get(managedConnectorAccessSignals$);
-    if (
-      next &&
-      get(featureSwitch$)[FeatureSwitchKey.ConnectorChatAccountAccess]
-    ) {
+    if (next && enabled) {
       set(next.memberPermissions.open$, get(pageSignal$));
     }
   },
 );
 
-export const closeConnectorAccessManagement$ = command(({ set }) => {
-  set(setManagedConnectorAccessSlug$, null);
+export const closeConnectorAccessManagement$ = command(({ get, set }) => {
+  const current = get(managedConnectorAccessSignals$);
+  if (current) {
+    set(current.memberPermissions.close$);
+  }
+  set(managedConnectorAccessSlugState$, null);
 });
 
 export const setConnectorAccessManagementSearch$ = command(

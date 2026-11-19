@@ -5,7 +5,7 @@ import {
   type GoogleWorkspaceTarget,
 } from "@okouai/core/google-workspace-conversion";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
+import { featureSwitches$ } from "../../signals/external/feature-switch.ts";
 import { isShareableArtifactReference } from "../../signals/artifact-sharing.ts";
 import type { AttachmentPreviewSignals } from "../../signals/attachment-resource-url.ts";
 import { ArtifactShareMenu } from "./artifact-share-menu.tsx";
@@ -128,13 +128,6 @@ async function shareArtifactUrl(url: string): Promise<void> {
   await copyAttachmentLinkToClipboard(url);
 }
 
-function iconButtonClassName(className?: string): string {
-  return cn(
-    "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-state-hover hover:text-foreground",
-    className,
-  );
-}
-
 export function ArtifactActionSeparator() {
   return <span className="mx-0.5 h-5 w-px shrink-0 bg-divider/70" />;
 }
@@ -217,22 +210,25 @@ export function ArtifactShareButton({
     );
   }
   return (
-    <ArtifactActionTooltip label={label}>
-      <button
-        type="button"
-        onClick={() => {
-          detach(
-            shareArtifactUrl(shareUrl),
-            Reason.DomCallback,
-            "artifact share",
-          );
-        }}
-        aria-label={label}
-        className={iconButtonClassName(className)}
-      >
-        <Share2 size={iconSize} />
-      </button>
-    </ArtifactActionTooltip>
+    <Button
+      showTooltip
+      tooltipSide="bottom"
+      variant="quiet"
+      size="icon-sm"
+      iconSize={iconSize === 18 ? "md" : iconSize === 20 ? "lg" : "sm"}
+      type="button"
+      onClick={() => {
+        detach(
+          shareArtifactUrl(shareUrl),
+          Reason.DomCallback,
+          "artifact share",
+        );
+      }}
+      aria-label={label}
+      className={cn("shrink-0", className)}
+    >
+      <Share2 size={iconSize} />
+    </Button>
   );
 }
 
@@ -289,7 +285,7 @@ function useGoogleDriveAvailability(
 function useGoogleWorkspaceTarget(
   filename: string,
 ): GoogleWorkspaceTarget | undefined {
-  const features = useLastResolved(featureSwitch$);
+  const features = useLastResolved(featureSwitches$);
   const target = googleWorkspaceTarget(filename);
   if (
     target === "presentation" &&
@@ -986,10 +982,10 @@ export function ArtifactDownloadMenu({
   );
   const pageSignal = useGet(pageSignal$);
   const lightbox = useGet(lightboxUrl$);
-  const featureSwitches = useGet(featureSwitch$);
+  const featureSwitches = useLastResolved(featureSwitches$);
   const markdownExportEnabled =
     previewKind === "markdown" &&
-    featureSwitches[FeatureSwitchKey.MarkdownFirstOutput] === true;
+    featureSwitches?.[FeatureSwitchKey.MarkdownFirstOutput] === true;
   const markdownExportSignal =
     surface === "dialog" ? (lightbox?.ownerSignal ?? pageSignal) : pageSignal;
   const markdownExportPending =
@@ -1045,10 +1041,8 @@ export function ArtifactDownloadMenu({
               type="button"
               variant="quiet"
               size="icon-sm"
-              className={cn(
-                "data-popup-open:bg-state-hover data-popup-open:text-foreground disabled:pointer-events-none disabled:opacity-70",
-                className,
-              )}
+              highlightWhenOpen
+              className={cn("disabled:opacity-70", className)}
             />
           }
         >

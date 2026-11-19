@@ -234,7 +234,6 @@ import {
 import { cronCleanupXResourceReadsContract as OriginalCronCleanupXResourceReadsContract } from "../contracts/cron-cleanup-x-resource-reads";
 import { cronCleanupXResourceReadsContract } from "./cron-cleanup-x-resource-reads";
 import {
-  cronAggregateRunPhaseTimingsContract as OriginalCronAggregateRunPhaseTimingsContract,
   cronBrowserReconcileContract as OriginalCronBrowserReconcileContract,
   cronCleanupSandboxesContract as OriginalCronCleanupSandboxesContract,
   cronCleanupSuggestionsContract as OriginalCronCleanupSuggestionsContract,
@@ -265,7 +264,6 @@ import {
   cronTelegramCleanupContract as OriginalCronTelegramCleanupContract,
 } from "../contracts/cron";
 import {
-  cronAggregateRunPhaseTimingsContract,
   cronBrowserReconcileContract,
   cronCleanupSandboxesContract,
   cronCleanupSuggestionsContract,
@@ -540,12 +538,14 @@ import { notificationsContract as OriginalNotificationsContract } from "../contr
 import { notificationsContract } from "./notifications";
 import {
   onboardingCompleteContract as OriginalOnboardingCompleteContract,
+  onboardingDraftContract as OriginalOnboardingDraftContract,
   onboardingRecommendationContract as OriginalOnboardingRecommendationContract,
   onboardingSourcesContract as OriginalOnboardingSourcesContract,
   onboardingStatusContract as OriginalOnboardingStatusContract,
 } from "../contracts/onboarding";
 import {
   onboardingCompleteContract,
+  onboardingDraftContract,
   onboardingRecommendationContract,
   onboardingSourcesContract,
   onboardingStatusContract,
@@ -961,10 +961,6 @@ export const clientDescriptorContracts: readonly (readonly [
     cronCleanupXResourceReadsContract,
     OriginalCronCleanupXResourceReadsContract,
   ],
-  [
-    cronAggregateRunPhaseTimingsContract,
-    OriginalCronAggregateRunPhaseTimingsContract,
-  ],
   [cronBrowserReconcileContract, OriginalCronBrowserReconcileContract],
   [cronCleanupSandboxesContract, OriginalCronCleanupSandboxesContract],
   [cronCleanupSuggestionsContract, OriginalCronCleanupSuggestionsContract],
@@ -1254,6 +1250,7 @@ export const clientDescriptorContracts: readonly (readonly [
   [morningBriefPreferenceContract, OriginalMorningBriefPreferenceContract],
   [notificationsContract, OriginalNotificationsContract],
   [onboardingCompleteContract, OriginalOnboardingCompleteContract],
+  [onboardingDraftContract, OriginalOnboardingDraftContract],
   [onboardingRecommendationContract, OriginalOnboardingRecommendationContract],
   [onboardingSourcesContract, OriginalOnboardingSourcesContract],
   [onboardingStatusContract, OriginalOnboardingStatusContract],

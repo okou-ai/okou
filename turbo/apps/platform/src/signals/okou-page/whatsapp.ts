@@ -1,4 +1,4 @@
-import { featureSwitch$ } from "../external/feature-switch.ts";
+import { featureSwitches$ } from "../external/feature-switch.ts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { command, computed, state } from "ccstate";
 import { toast } from "@okouai/ui/components/ui/sonner";
@@ -117,7 +117,7 @@ const refreshWhatsappFromChange$ = command(
 export const watchWhatsappConnection$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<void> => {
     set(internalConnectDialogOpen$, false);
-    if (!get(featureSwitch$)[FeatureSwitchKey.WhatsappIntegration]) {
+    if (!(await get(featureSwitches$))[FeatureSwitchKey.WhatsappIntegration]) {
       return;
     }
     const current = await get(whatsappLinkStatus$);

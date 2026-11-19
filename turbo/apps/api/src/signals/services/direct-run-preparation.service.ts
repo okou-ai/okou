@@ -1,4 +1,3 @@
-import { contentBundleSchema } from "@okouai/api-contracts/contracts/content-bundle";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { command, computed, type Computed } from "ccstate";
@@ -7,13 +6,12 @@ import { array, boolean, object } from "zod";
 import { normalizeBuildCommitSha } from "../../lib/build-info";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { env } from "../../lib/env";
-import { nowDate } from "../../lib/time";
+import { monotonicNow, nowDate } from "../../lib/time";
 import { rawSqlReadDb$ } from "../external/db";
 import { recordSandboxOperations } from "../external/sandbox-op-log";
 import type { AdmittedExecutionFacts } from "./admitted-execution-facts";
-import { agentInstructionsSelectionSql } from "./execution-instructions-selection";
+import type { AcceptedMemoryMount } from "./execution-storage.service";
 import { createExecutionRuntimeContext } from "./execution-runtime-context";
-import { contentBundleAvailableCondition } from "./execution-content-bundle";
 import {
   cachedContentBundleUrlSchema,
   contentBundleUrlCacheContext$,
@@ -29,17 +27,11 @@ import {
   persistStoragePresignedUrls$,
   type StoragePresignedUrlCacheWrite,
 } from "./system-storage-presigned-url-cache.service";
-import {
-  executionWorkflowSchema,
-  assertOfficialWorkflowMounts,
-  executionSkillRoot,
-  executionWorkflowSelectionSql,
-  type ExecutionWorkflowInput,
-} from "./execution-workflow-selection";
 
 /** Receipt from durable Thread Run admission, before first-run classification. */
 export interface AdmittedRunLaunch {
   readonly run: Omit<ExecutionPublicationRun, "isFirstRun">;
+  readonly memoryMounts: readonly AcceptedMemoryMount[];
   readonly facts: AdmittedExecutionFacts;
   readonly runnerGroup: string;
   readonly profile: string;
@@ -48,46 +40,14 @@ export interface AdmittedRunLaunch {
   readonly reusePreparation: RunnerReusePreparation;
 }
 
-const capturedPackagesSchema = object({
-  workflows: array(executionWorkflowSchema),
-  instructionsBundle: contentBundleSchema.nullable(),
-});
-
-export type CapturedExecutionPackages = ReturnType<
-  typeof capturedPackagesSchema.parse
->;
-
-/** Read authorized package descriptors from a single snapshot of the picked Run's sources. */
-export const captureExecutionPackages$ = command(
-  async (
-    { get },
-    args: {
-      readonly orgId: string;
-      readonly userId: string;
-      readonly singleAgent: boolean;
-      readonly selection: ExecutionWorkflowInput;
-    },
-    signal: AbortSignal,
-  ): Promise<CapturedExecutionPackages | null> => {
-    signal.throwIfAborted();
-    const { selection } = args;
-    const db = get(rawSqlReadDb$);
-    const rows = await db.execute(sql`WITH admitted_run AS MATERIALIZED (
-      SELECT ${args.orgId}::text AS "orgId", ${args.userId}::text AS "userId",
-        ${selection.selection.agentId}::uuid AS "agentId",
-        ${selection.selection.automationId ?? null}::uuid AS "workflowAutomationId"
-    ), ${agentInstructionsSelectionSql(sql`${args.singleAgent}`)},
-      ${executionWorkflowSelectionSql(selection)}
-    SELECT documents AS workflows,
-      (SELECT "instructionsBundle" FROM selected_agent) AS "instructionsBundle"
-    FROM workflow_admission
-    WHERE "bundlesAvailable"
-      AND NOT EXISTS(SELECT 1 FROM selected_agent WHERE NOT ${contentBundleAvailableCondition(sql`selected_agent."instructionsBundle"`)})`);
-    signal.throwIfAborted();
-    const [packages] = parseRawRows(capturedPackagesSchema, rows);
-    return packages ?? null;
-  },
-);
+export interface DirectRunCachePublication {
+  readonly cacheWrites: readonly StoragePresignedUrlCacheWrite[];
+  readonly bundleCacheRead: {
+    readonly startedAt: string;
+    readonly durationMs: number;
+    readonly consumerWaitMs: number;
+  };
+}
 
 const executionPublicationFactsSchema = object({
   pending: boolean(),
@@ -106,21 +66,17 @@ export function createDirectRunPreparation(
       get(packageContext$),
     ]);
     const db = get(rawSqlReadDb$);
-    const skillRoot = executionSkillRoot(packageContext.cliAgentType);
-    assertOfficialWorkflowMounts(
-      packageContext.officialWorkflowBundles,
-      packageContext.storageMounts,
-      skillRoot,
-    );
     const cache = get(contentBundleUrlCacheContext$);
     const { instructionsBundle, workflows } = input.facts.executionPackages;
     const bundleHashes = [
-      ...(instructionsBundle ? [instructionsBundle.sha256] : []),
+      instructionsBundle.sha256,
       ...workflows.map((workflow) => {
         return workflow.contentBundle.sha256;
       }),
       ...executionBundleHashes(packageContext),
     ];
+    const timestamp = nowDate().toISOString();
+    const startedAt = monotonicNow();
     const rows = await db.execute(sql`SELECT EXISTS(
       SELECT 1 FROM ${agentRuns}
       WHERE ${and(eq(agentRuns.id, input.run.id), eq(agentRuns.userId, input.run.userId), eq(agentRuns.orgId, input.run.orgId), eq(agentRuns.status, "pending"))}
@@ -131,19 +87,29 @@ export function createDirectRunPreparation(
     if (!row?.pending) {
       throw new Error("Run is no longer pending for execution publication");
     }
+    const readyAt = monotonicNow();
     return {
       row: { ...input.facts.executionPackages, ...row },
-      skillRoot,
+      skillRoot: packageContext.skillRoot,
       cache,
+      timing: { timestamp, startedAt, readyAt },
     };
   });
   return computed(async (get) => {
-    const [input, prepared, packages] = await Promise.all([
+    const [input, context, packages] = await Promise.all([
       get(input$),
-      get(prepared$),
+      (async () => {
+        const prepared = await get(prepared$);
+        return { prepared, readyAt: monotonicNow() };
+      })(),
       get(packages$),
     ]);
-    return { input, prepared, packages };
+    return {
+      input,
+      prepared: context.prepared,
+      packages,
+      bundleCacheWaitMs: Math.max(0, packages.timing.readyAt - context.readyAt),
+    };
   });
 }
 
@@ -156,7 +122,7 @@ type DirectRunPreparationInput = PreparationInput<
 export const prepareDirectRun$ = command(
   async (
     { set },
-    { input, prepared, packages }: DirectRunPreparationInput,
+    { input, prepared, packages, bundleCacheWaitMs }: DirectRunPreparationInput,
     signal: AbortSignal,
   ) => {
     signal.throwIfAborted();
@@ -180,7 +146,17 @@ export const prepareDirectRun$ = command(
     );
     signal.throwIfAborted();
     return {
-      cacheWrites: [...prepared.storageCacheWrites, ...publication.cacheWrites],
+      cachePublication: {
+        cacheWrites: [
+          ...prepared.storageCacheWrites,
+          ...publication.cacheWrites,
+        ],
+        bundleCacheRead: {
+          startedAt: packages.timing.timestamp,
+          durationMs: packages.timing.readyAt - packages.timing.startedAt,
+          consumerWaitMs: bundleCacheWaitMs,
+        },
+      } satisfies DirectRunCachePublication,
       executionContext: publication.executionContext,
       contextSnapshot: {
         runId: run.id,
@@ -203,11 +179,10 @@ export const prepareDirectRun$ = command(
 export const publishDirectRunCache$ = command(
   async (
     { set },
-    args: {
+    args: DirectRunCachePublication & {
       readonly runId: string;
       readonly runnerGroup: string;
       readonly profile: string;
-      readonly cacheWrites: readonly StoragePresignedUrlCacheWrite[];
     },
     signal: AbortSignal,
   ) => {
@@ -217,7 +192,25 @@ export const publishDirectRunCache$ = command(
       signal,
     );
     const apiCommitSha = normalizeBuildCommitSha(env("GIT_COMMIT_SHA"));
+    const dimensions = {
+      runner_group: args.runnerGroup,
+      profile: args.profile,
+      ...(apiCommitSha ? { api_commit_sha: apiCommitSha } : {}),
+    };
     recordSandboxOperations([
+      {
+        sandboxType: "runner",
+        actionType: "api_dispatch_bundle_url_cache_read",
+        runId: args.runId,
+        durationMs: args.bundleCacheRead.durationMs,
+        success: true,
+        timestamp: args.bundleCacheRead.startedAt,
+        dimensions: {
+          ...dimensions,
+          span_kind: "nested",
+          bundle_cache_consumer_wait_ms: args.bundleCacheRead.consumerWaitMs,
+        },
+      },
       {
         sandboxType: "runner",
         actionType: "api_dispatch_presigned_url_cache_write",
@@ -226,6 +219,7 @@ export const publishDirectRunCache$ = command(
         success: publication.status !== "error",
         timestamp: nowDate().toISOString(),
         dimensions: {
+          ...dimensions,
           span_kind: "background",
           cache_write_status: publication.status,
           cache_entry_count: new Set(
@@ -233,9 +227,6 @@ export const publishDirectRunCache$ = command(
               return value.cacheKey;
             }),
           ).size,
-          runner_group: args.runnerGroup,
-          profile: args.profile,
-          ...(apiCommitSha ? { api_commit_sha: apiCommitSha } : {}),
         },
       },
     ]);

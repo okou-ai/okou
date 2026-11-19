@@ -4672,7 +4672,7 @@ function AutomationsSection({
               alt={i18n.t(($) => {
                 return $.workflows.automations.common.noAutomations;
               })}
-              className="h-24 w-24 object-contain opacity-80"
+              className="h-24 w-36 object-contain"
             />
             <p className="mt-3 text-sm font-medium text-foreground">
               {i18n.t(($) => {

@@ -57,7 +57,6 @@ fn base_registration<'a>() -> SandboxRegistration<'a> {
         firewalls: None,
         network_policies: None,
         connector_runtime_targets: None,
-        encrypted_secrets: None,
         secret_connector_map: None,
         secret_connector_metadata_map: None,
         vars: None,
@@ -324,7 +323,6 @@ async fn registry_register_and_unregister() {
             omitted_builtin_firewalls: HashSet::new(),
             omitted_custom_connector_ids: HashSet::new(),
             connector_routing_variables: HashMap::new(),
-            encrypted_secrets: None,
             secret_connector_map: None,
             secret_connector_metadata_map: None,
             vars: None,
@@ -1969,7 +1967,7 @@ async fn registry_serializes_billable_firewalls() {
 }
 
 #[tokio::test]
-async fn register_sandbox_stores_encrypted_secrets() {
+async fn register_sandbox_preserves_exact_connector_source_metadata() {
     let harness = RegistryHarness::new().await;
 
     let metadata = HashMap::from([(
@@ -1982,7 +1980,6 @@ async fn register_sandbox_stores_encrypted_secrets() {
         },
     )]);
     let registration = SandboxRegistration {
-        encrypted_secrets: Some("iv_b64:tag_b64:data_b64"),
         secret_connector_metadata_map: Some(&metadata),
         ..base_registration()
     };
@@ -1992,22 +1989,11 @@ async fn register_sandbox_stores_encrypted_secrets() {
         .await
         .unwrap();
 
-    let loaded = read_registry(harness.registry_path()).await.unwrap();
-    let sandbox = loaded.sandboxes.get("10.200.0.6").unwrap();
-    assert_eq!(
-        sandbox.encrypted_secrets.as_deref(),
-        Some("iv_b64:tag_b64:data_b64")
-    );
-
     // Verify JSON key name matches what the Python addon expects.
     let raw = tokio::fs::read_to_string(harness.registry_path())
         .await
         .unwrap();
     let value: serde_json::Value = serde_json::from_str(&raw).unwrap();
-    assert_eq!(
-        value["sandboxes"]["10.200.0.6"]["encryptedSecrets"],
-        "iv_b64:tag_b64:data_b64"
-    );
     assert_eq!(
         value["sandboxes"]["10.200.0.6"]["secretConnectorMetadataMap"]["CHATGPT_ACCESS_TOKEN"]["sourceUserId"],
         "user-123"
@@ -2045,7 +2031,6 @@ async fn registry_firewall_auth_base_serialized() {
 
     let registration = SandboxRegistration {
         firewalls: Some(&firewall_entries),
-        encrypted_secrets: Some("enc_data"),
         ..base_registration()
     };
     harness
@@ -2099,7 +2084,6 @@ async fn registry_firewall_auth_query_serialized() {
 
     let registration = SandboxRegistration {
         firewalls: Some(&firewall_entries),
-        encrypted_secrets: Some("enc_data"),
         ..base_registration()
     };
     harness

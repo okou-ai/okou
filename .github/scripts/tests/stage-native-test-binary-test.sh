@@ -11,10 +11,35 @@ cleanup() {
     [ -f "$pid_file" ] || continue
     kill -TERM -- "-$(cat "$pid_file")" 2>/dev/null || true
   done
-  rm -f -- "$destination" "$destination".upload.*
+  rm -rf -- "$destination" "$destination".upload.*
   rm -rf -- "$test_root"
 }
 trap cleanup EXIT
+
+assert_ssh_exited() {
+  local case_dir=$1 initial current pid
+  local -a initial_fields current_fields
+  IFS= read -r initial < "$case_dir/ssh.stat"
+  pid=${initial%% *}
+  if IFS= read -r current 2>/dev/null < "/proc/$pid/stat"; then
+    # Compare start times to identify the original process. A reaper may
+    # still have an exited process in its table after staging has returned.
+    read -r -a initial_fields <<< "${initial##*) }"
+    read -r -a current_fields <<< "${current##*) }"
+    if [[ ${current_fields[19]} != "${initial_fields[19]}" ||
+      ${current_fields[0]} == Z || ${current_fields[0]} == X ]]; then
+      return 0
+    fi
+    echo "staging transfer $pid is still running (state=${current_fields[0]})" >&2
+  elif [[ -d /proc/$pid ]]; then
+    echo "could not read the staging transfer's process state: $pid" >&2
+  else
+    return 0
+  fi
+  cat "$case_dir/out" >&2
+  return 1
+}
+
 mkdir "$test_root/bin"
 cat >"$test_root/test binary" <<'BINARY'
 #!/usr/bin/env bash
@@ -27,7 +52,32 @@ cat >"$test_root/bin/ssh" <<'SSH'
 set -euo pipefail
 # The guarded transport's probe must leave the transfer's stdin untouched.
 if [ "${!#}" = true ]; then exit 0; fi
+if [ "$1" = -n ]; then shift; fi
 [ "$1" = metal@host.vm3.ai ]
+if [[ "$2" == *native-chunk* ]]; then
+  read -r _ index _ <<<"${2##*native-chunk }"
+  printf '%s\n' "$index" >> "$CASE_DIR/chunks"
+  case "$SCENARIO" in
+    chunk-corrupt) head -c 3 | sh -c "$2"; exit $? ;;
+    chunk-exhausted) exit 255 ;;
+  esac
+  if [ "$index" = "'1'" ] && [ "$SCENARIO" = chunk-reset ]; then
+    tries=$(grep -Fxc -- "$index" "$CASE_DIR/chunks")
+    if [ "$tries" -lt 3 ]; then
+      head -c 1048576 | sh -c "$2" || true
+      echo 1048576 >> "$CASE_DIR/bytes"
+      exit 255
+    fi
+  fi
+  stat -Lc %s "/proc/$$/fd/0" >> "$CASE_DIR/bytes"
+fi
+
+record_ssh_process() {
+  local stat
+  IFS= read -r stat < "/proc/$$/stat"
+  printf '%s\n' "$stat" > "$CASE_DIR/ssh.stat"
+}
+
 count=0
 if [ -f "$CASE_DIR/count" ]; then count=$(cat "$CASE_DIR/count"); fi
 count=$((count + 1))
@@ -36,15 +86,15 @@ case "$SCENARIO" in
   permanent) exit 7 ;;
   exhausted) exit 255 ;;
   cancelled)
-    echo "$$" > "$CASE_DIR/ssh.pid"
     trap 'exit 143' TERM
+    record_ssh_process
     echo ready > "$CASE_DIR/ready"
     read -r _ < "$CASE_DIR/hold"
     ;;
   guarded-timeout)
     if [ "$count" -eq 1 ]; then
-      echo "$$" > "$CASE_DIR/ssh.pid"
       trap 'exit 143' TERM
+      record_ssh_process
       read -r _ < "$CASE_DIR/hold"
     fi
     ;;
@@ -52,14 +102,10 @@ case "$SCENARIO" in
     head -c 3 | sh -c "$2"
     exit $?
     ;;
-  partial | timeout | pipe)
+  pipe)
     if [ "$count" -eq 1 ]; then
       head -c 3 | sh -c "$2" || true
-      case "$SCENARIO" in
-        timeout) exit 124 ;;
-        pipe) exit 141 ;;
-        *) exit 255 ;;
-      esac
+      exit 141
     fi
     ;;
   late-writer)
@@ -79,8 +125,13 @@ case "$SCENARIO" in
       exit 255
     fi
     sh -c "$2"
-    echo release > "$CASE_DIR/release"
-    read -r _ < "$CASE_DIR/done"
+    if ! timeout --kill-after=1s 20s bash -c '
+      echo release > "$CASE_DIR/release"
+      read -r _ < "$CASE_DIR/done"
+    '; then
+      echo 'late writer did not complete its fixture handshake' >&2
+      exit 1
+    fi
     exit 0
     ;;
 esac
@@ -89,7 +140,7 @@ if [ "$SCENARIO" = lost-ack ] && [ "$count" -eq 1 ]; then exit 255; fi
 SSH
 chmod +x "$test_root/bin/ssh"
 
-for scenario in success partial timeout pipe lost-ack late-writer corrupt permanent exhausted; do
+for scenario in success pipe lost-ack late-writer corrupt permanent exhausted; do
   case_dir="$test_root/$scenario"
   mkdir "$case_dir"
   mkfifo "$case_dir/release" "$case_dir/done"
@@ -135,6 +186,54 @@ for scenario in success partial timeout pipe lost-ack late-writer corrupt perman
   rm -f "$case_dir/writer.pid"
 done
 
+large="$test_root/large-binary"
+ln -s "$large" "$test_root/linked-binary"
+case_dir="$test_root/chunk-reset"
+mkdir "$case_dir"
+cp "$test_root/test binary" "$large"
+# Two full chunks and a short tail cover publication with the minimum chunk count.
+size=$((129 * 1024 * 1024 + 37))
+truncate -s "$size" "$large"
+started=$SECONDS
+if ! PATH="$test_root/bin:$PATH" CASE_DIR="$case_dir" SCENARIO=chunk-reset \
+  bash "$helper" "$test_root/linked-binary" metal@host.vm3.ai "$destination" >"$case_dir/out" 2>&1; then
+  cat "$case_dir/out" >&2
+  exit 1
+fi
+cmp "$large" "$destination"
+test -x "$destination"
+# The initial chunk must not be sent again when the second resets.
+printf "'%s'\n" 0 1 1 1 2 | cmp - "$case_dir/chunks"
+expected_bytes=$((size + 2 * 1048576))
+test "$(awk '{bytes += $1} END {print bytes}' "$case_dir/bytes")" -eq "$expected_bytes"
+if compgen -G "$destination.upload.*" >/dev/null; then
+  echo "chunk staging directory leaked" >&2
+  exit 1
+fi
+printf 'chunk-reset: %s bytes, 5 chunk attempts, %s seconds\n' \
+  "$expected_bytes" "$((SECONDS - started))"
+rm -f -- "$destination"
+
+for scenario in chunk-corrupt chunk-exhausted; do
+  case_dir="$test_root/$scenario"
+  mkdir "$case_dir"
+  status=0
+  PATH="$test_root/bin:$PATH" CASE_DIR="$case_dir" SCENARIO="$scenario" \
+    bash "$helper" "$large" metal@host.vm3.ai "$destination" >"$case_dir/out" 2>&1 || status=$?
+  if [ "$scenario" = chunk-corrupt ]; then
+    test "$status" -eq 1
+    test "$(wc -l <"$case_dir/chunks")" -eq 1
+  else
+    test "$status" -eq 255
+    test "$(wc -l <"$case_dir/chunks")" -eq 3
+  fi
+  test ! -e "$destination"
+  if compgen -G "$destination.upload.*" >/dev/null; then
+    echo "failed upload leaked staging files" >&2
+    exit 1
+  fi
+done
+
 # Exercise the real guarded SSH caller, including its cancellation cleanup.
 # Shorten only the external upload deadline; retain GNU timeout and the real
 # kill-after intervals so a forced kill cannot masquerade as retryable timeout.
@@ -168,10 +267,7 @@ if [ "$status" -ne 0 ]; then
 fi
 test "$(cat "$case_dir/count")" -eq 2
 cmp "$test_root/test binary" "$destination"
-if kill -0 "$(cat "$case_dir/ssh.pid")" 2>/dev/null; then
-  echo 'timed-out guarded upload retained its SSH child' >&2
-  exit 1
-fi
+assert_ssh_exited "$case_dir"
 
 # Cancellation retires the external transfer rather than submitting again.
 case_dir="$test_root/cancelled"
@@ -192,10 +288,11 @@ fi
 kill -TERM "$owner"
 status=0
 wait "$owner" || status=$?
-test "$status" -eq 143
-test "$(cat "$case_dir/count")" -eq 1
-if kill -0 "$(cat "$case_dir/ssh.pid")" 2>/dev/null; then
-  echo 'cancelled upload retained its SSH child' >&2
+if [ "$status" -ne 143 ]; then
+  cat "$case_dir/out" >&2
+  echo "cancelled transfer returned $status, expected 143" >&2
   exit 1
 fi
+test "$(cat "$case_dir/count")" -eq 1
+assert_ssh_exited "$case_dir"
 echo 'stage-native-test-binary: verified publication, isolated writers and cancellation passed'

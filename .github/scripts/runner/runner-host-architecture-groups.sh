@@ -3,6 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "${SCRIPT_DIR}/runner-image-target.sh"
+. "${SCRIPT_DIR}/runner-host-architecture-probe.sh"
 
 usage() {
   cat <<'USAGE'
@@ -115,13 +116,6 @@ validate_hosts_csv() {
   done <<<"$host_lines"
 }
 
-host_uname_m() {
-  local host=$1
-  local remote_arch
-  remote_arch=$(ssh -n "${METAL_USER}@${host}" uname -m) || return $?
-  printf '%s\n' "$remote_arch" | tail -n1 | tr -d '\r'
-}
-
 emit_groups() {
   local groups hosts arm64_hosts="" x86_64_hosts=""
   hosts=$(normalize_hosts "${AWS_METAL_RUNNER_HOSTS:-}")
@@ -136,7 +130,7 @@ emit_groups() {
   local host host_lines uname_m target
   host_lines=$(printf '%s\n' "$hosts" | tr ',' '\n')
   while IFS= read -r host; do
-    uname_m=$(host_uname_m "$host") || return $?
+    uname_m=$(runner_host_uname_m "${METAL_USER}@${host}") || return $?
     if [ -z "$uname_m" ]; then
       echo "missing runner host architecture for ${host}" >&2
       return 2

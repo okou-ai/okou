@@ -59,6 +59,15 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Record research and generation boundaries for the current Run.",
     enabled: true,
   },
+  [FeatureSwitchKey.ArtifactThreePointTiming]: {
+    maintainer: "bingjie@okou.ai",
+    displayName: "Artifact three-point phase timing",
+    description:
+      "Record versioned research, generation, and authenticated completion observations in Axiom.",
+    enabled: false,
+    enabledUserHashes: ["032a75d8"], // Bingjie's account only, independent of workspace
+    restrictOverridesToAudience: true,
+  },
   [FeatureSwitchKey.PhoneUse]: {
     maintainer: "lancy@okou.ai",
     displayName: "Phone Use",
@@ -333,6 +342,11 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Test-only override to use Codex instead of Pi for supported ChatGPT subscription runs. Auto always stays on Pi.",
     enabled: false,
   },
+  [FeatureSwitchKey.CodexSubscriptionUltrafast]: {
+    maintainer: "ethan@okou.ai",
+    description: "Offer Ultrafast on supported personal Codex routes.",
+    enabled: false,
+  },
   [FeatureSwitchKey.LarkIntegration]: {
     maintainer: "yuma@okou.ai",
     description: "Enable Lark bot setup, account connections, and messaging.",
@@ -559,7 +573,7 @@ export function filterFeatureSwitchOverrides(
  * `ctx` is required so callers must pass identity (userId/orgId/email) or an
  * explicit `{}`. A switch gated by `enabledUserHashes` / `enabledOrgIdHashes`
  * silently returns `false` when ctx omits identity, which has caused bugs.
- * Client-side callers should usually read the platform `featureSwitch$` signal
+ * Client-side callers should usually read the platform `featureSwitches$` signal
  * instead — it also merges DB overrides on top of identity context.
  */
 export function isFeatureEnabled(

@@ -9,12 +9,25 @@ import ai.okou.android.api.generated.Indicators
 import ai.okou.android.api.generated.ProjectArchive
 import ai.okou.android.api.generated.ProjectEvents
 import ai.okou.android.api.generated.ProjectSnapshot
+import ai.okou.android.api.generated.ReadState
 
 /** A signed-storage rejection does not revoke the first-party workspace session. */
 class ChatSnapshotUnavailable(val status: Int) : Exception("Chat snapshot could not be downloaded")
 
-/** The workspace's canonical read boundary. None of these operations marks a thread read. */
+/** The workspace list reads and explicit row commands. */
 interface ChatListService : ConversationHistoryService {
+    suspend fun markUnread(threadId: String): ReadState
+
+    suspend fun setMuted(threadId: String, muted: Boolean, eventId: String)
+
+    suspend fun setArchived(threadId: String, archived: Boolean, eventId: String)
+
+    suspend fun renameThread(threadId: String, title: String, eventId: String)
+
+    suspend fun setPinned(threadId: String, pinOrder: String?, eventId: String)
+
+    suspend fun reorderPinnedThread(threadId: String, pinOrder: String, eventId: String)
+
     suspend fun historyCatchUp(cursors: Map<String, HistoryCursor>): HistoryBatch
 
     suspend fun chatSnapshot(): ChatSnapshot

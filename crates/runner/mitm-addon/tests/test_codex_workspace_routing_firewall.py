@@ -21,7 +21,7 @@ def _codex_registry(tmp_path):
                 "runId": "codex-workspace-routing",
                 "cliAgentType": "codex",
                 "sandboxToken": "sandbox-token",
-                "encryptedSecrets": "iv:tag:data",
+                "firewallToken": "host-firewall-token",
                 "networkLogPath": str(tmp_path / "network.jsonl"),
                 "proxyLogPath": str(tmp_path / "proxy.jsonl"),
                 "billableFirewalls": [],

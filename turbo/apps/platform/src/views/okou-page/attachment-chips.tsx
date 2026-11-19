@@ -1,7 +1,7 @@
 import { ArtifactDeleteButton } from "./artifact-deletion.tsx";
 import { ArtifactPreviewActionGroup } from "./artifact-preview-action-group.tsx";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
+import { featureSwitches$ } from "../../signals/external/feature-switch.ts";
 import {
   ArtifactPreviewCloseButton,
   ArtifactPreviewDialogFrame,
@@ -1416,7 +1416,9 @@ function ArtifactPreviewDialogActions({
   const filename = artifact?.filename ?? artifactDialogFilename(preview);
   const showShare = preview.shareAvailable !== false;
   const groupedActions =
-    useGet(featureSwitch$)[FeatureSwitchKey.ArtifactPreviewActionGroup];
+    useLastResolved(featureSwitches$)?.[
+      FeatureSwitchKey.ArtifactPreviewActionGroup
+    ] ?? false;
   const showSplitView = preview.splitViewAvailable !== false;
   const annotateLightboxImage = useSet(annotateLightboxImage$);
   const annotationTarget =
@@ -1675,14 +1677,21 @@ export function FileAttachmentChip({
       type="button"
       onClick={() => {
         if (previewOfficeDocument) {
-          openFileLightbox({
-            threadId,
-            filename,
-            contentType,
-            url,
-            ...(preview ? { preview } : {}),
-            ...(shareAvailable === undefined ? {} : { shareAvailable }),
-          });
+          detach(
+            openFileLightbox(
+              {
+                threadId,
+                filename,
+                contentType,
+                url,
+                ...(preview ? { preview } : {}),
+                ...(shareAvailable === undefined ? {} : { shareAvailable }),
+              },
+              undefined,
+              pageSignal,
+            ),
+            Reason.DomCallback,
+          );
           return;
         }
         captureArtifactAction({
@@ -1741,6 +1750,7 @@ export function PreviewableFileAttachmentChip({
   url: string;
   threadId?: string;
 }) {
+  const pageSignal = useGet(pageSignal$);
   const { t } = useTranslation();
   const openDocumentLightbox = useSet(openDocumentLightbox$);
   const kindLabel =
@@ -1772,16 +1782,25 @@ export function PreviewableFileAttachmentChip({
     <button
       type="button"
       onClick={() => {
-        openDocumentLightbox({
-          threadId,
-          kind,
-          url,
-          filename,
-          ...(preview ? { preview } : {}),
-          ...(shareAvailable === undefined ? {} : { shareAvailable }),
-          ...(splitViewAvailable === undefined ? {} : { splitViewAvailable }),
-          ...(text$ ? { text$ } : {}),
-        });
+        detach(
+          openDocumentLightbox(
+            {
+              threadId,
+              kind,
+              url,
+              filename,
+              ...(preview ? { preview } : {}),
+              ...(shareAvailable === undefined ? {} : { shareAvailable }),
+              ...(splitViewAvailable === undefined
+                ? {}
+                : { splitViewAvailable }),
+              ...(text$ ? { text$ } : {}),
+            },
+            undefined,
+            pageSignal,
+          ),
+          Reason.DomCallback,
+        );
       }}
       aria-label={t(
         ($) => {
@@ -1820,6 +1839,7 @@ export function PreviewableAudioAttachmentChip({
   url: string;
   threadId?: string;
 }) {
+  const pageSignal = useGet(pageSignal$);
   const { t } = useTranslation();
   const openAudioLightbox = useSet(openAudioLightbox$);
 
@@ -1827,15 +1847,24 @@ export function PreviewableAudioAttachmentChip({
     <button
       type="button"
       onClick={() => {
-        openAudioLightbox({
-          threadId,
-          url,
-          filename,
-          contentType,
-          ...(preview ? { preview } : {}),
-          ...(shareAvailable === undefined ? {} : { shareAvailable }),
-          ...(splitViewAvailable === undefined ? {} : { splitViewAvailable }),
-        });
+        detach(
+          openAudioLightbox(
+            {
+              threadId,
+              url,
+              filename,
+              contentType,
+              ...(preview ? { preview } : {}),
+              ...(shareAvailable === undefined ? {} : { shareAvailable }),
+              ...(splitViewAvailable === undefined
+                ? {}
+                : { splitViewAvailable }),
+            },
+            undefined,
+            pageSignal,
+          ),
+          Reason.DomCallback,
+        );
       }}
       aria-label={t(
         ($) => {
@@ -2176,6 +2205,7 @@ function AttachmentChip({
   previewHost: AttachmentPreviewHost;
   onRemove: () => void;
 }) {
+  const pageSignal = useGet(pageSignal$);
   const { t } = useTranslation();
   const infoLoadable = useLoadable(attachment.fileInfo$);
   const uploadedBytes = useGet(attachment.uploadedBytes$);
@@ -2206,10 +2236,17 @@ function AttachmentChip({
           load={attachment.imageLoad}
           markCount={annotationMarkCount(annotations)}
           openPreview={(previewUrl, mediaPreview) => {
-            openAttachmentPreview(attachment, {
-              url: previewUrl,
-              preview: mediaPreview,
-            });
+            detach(
+              openAttachmentPreview(
+                attachment,
+                {
+                  url: previewUrl,
+                  preview: mediaPreview,
+                },
+                pageSignal,
+              ),
+              Reason.DomCallback,
+            );
           }}
           url={url}
           uploading={uploading}

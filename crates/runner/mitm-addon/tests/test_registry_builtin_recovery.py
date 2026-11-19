@@ -25,7 +25,7 @@ def _write_recovery_files(tmp_path: Path) -> tuple[Path, Path]:
         client_ip: {
             **builtin_sandbox(f"run-{suffix}", "example"),
             "sandboxToken": "test-token",
-            "encryptedSecrets": "iv:tag:data",
+            "firewallToken": "host-firewall-token",
             "networkPolicies": {
                 "example": {"allow": ["read"], "deny": [], "unknownPolicy": "deny"}
             },

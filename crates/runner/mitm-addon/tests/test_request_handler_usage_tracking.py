@@ -160,7 +160,6 @@ def usage_control_root(tmp_path: Path) -> Path:
 def _write_billable_x_tracking_registry(
     tmp_path: Path,
     *,
-    include_encrypted_secrets: bool = True,
     sandbox_fields: dict[str, object] | None = None,
 ) -> Path:
     return _write_registry(
@@ -180,7 +179,6 @@ def _write_billable_x_tracking_registry(
                 "unknownPolicy": "deny",
             },
             billable_firewalls=[_X_FIREWALL_NAME],
-            include_encrypted_secrets=include_encrypted_secrets,
             sandbox_fields=sandbox_fields,
         ),
     )
@@ -557,7 +555,6 @@ async def test_local_firewall_error_leaves_usage_flows_drained(
     """Local auth failures do not enqueue usage and must not leak drain counters."""
     reg_path = _write_billable_x_tracking_registry(
         tmp_path,
-        include_encrypted_secrets=False,
     )
     flow = _x_tracking_flow(real_flow)
     endpoint = FakeAuthEndpoint()

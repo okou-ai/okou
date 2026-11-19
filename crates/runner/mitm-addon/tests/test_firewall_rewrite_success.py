@@ -34,7 +34,7 @@ class TestAuthBaseUrlRewriteSuccess:
         sandbox_info = {
             "runId": "run-1",
             "sandboxToken": "tok-xyz",
-            "encryptedSecrets": "iv:tag:data",
+            "firewallToken": "host-firewall-token",
             "networkLogPath": str(tmp_path / "net.jsonl"),
             "billableFirewalls": [],
         }
@@ -133,7 +133,7 @@ class TestAuthBaseUrlRewriteSuccess:
         sandbox_info = {
             "runId": "run-1",
             "sandboxToken": "tok",
-            "encryptedSecrets": "iv:tag:data",
+            "firewallToken": "host-firewall-token",
             "networkLogPath": str(tmp_path / "net.jsonl"),
             "billableFirewalls": [],
         }

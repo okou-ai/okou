@@ -124,4 +124,32 @@ describe("native iOS push registration", () => {
       expect(rejected.body.error.code).toBe("UNAUTHORIZED");
     },
   );
+
+  it("accepts an optional hex widget push token and rejects a malformed one", async () => {
+    const actor = {
+      userId: `user_${randomUUID()}`,
+      orgId: `org_${randomUUID()}`,
+    };
+    authenticateIosSession(context, actor.userId, actor.orgId);
+    const body = binding();
+    await accept(
+      client().register({
+        headers,
+        body: { ...body, widgetPushToken: "ef".repeat(32) },
+      }),
+      [200],
+    );
+    const malformed = await accept(
+      client().register({
+        headers,
+        body: { ...body, revision: 2, widgetPushToken: "not-a-token" },
+      }),
+      [400],
+    );
+    expect(malformed.status).toBe(400);
+    await accept(
+      client().register({ headers, body: { ...body, revision: 3 } }),
+      [200],
+    );
+  });
 });

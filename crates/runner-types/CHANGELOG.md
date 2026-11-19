@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.18.20](https://github.com/okou-ai/okou/compare/runner-types-v0.18.19...runner-types-v0.18.20) (2026-11-19)
+
+## [0.18.19](https://github.com/okou-ai/okou/compare/runner-types-v0.18.18...runner-types-v0.18.19) (2026-11-18)
+
+
+### Refactoring
+
+* **firewall:** retire legacy resolver and envelope compatibility ([#48739](https://github.com/okou-ai/okou/issues/48739)) ([7dcd7ca](https://github.com/okou-ai/okou/commit/7dcd7cac45f2b26e253703533fc7f1097609c0f6))
+
 ## [0.18.18](https://github.com/okou-ai/okou/compare/runner-types-v0.18.17...runner-types-v0.18.18) (2026-11-18)
 
 ## [0.18.17](https://github.com/okou-ai/okou/compare/runner-types-v0.18.16...runner-types-v0.18.17) (2026-11-18)

@@ -10,10 +10,6 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { authenticatedSessionKey$, clerk$ } from "../auth";
 import { apiClient$ } from "../api-client.ts";
 import { accept } from "../../lib/accept.ts";
-import {
-  featureSwitchState$,
-  setFeatureSwitchState$,
-} from "./feature-switch-state.ts";
 
 type FeatureSwitchClerk = Pick<Clerk, "organization" | "session" | "user">;
 
@@ -92,25 +88,14 @@ export const featureSwitches$ = computed(async (get) => {
   return getAllFeatureStates({ ...identity, overrides: combined });
 });
 
-export const featureSwitch$ = computed((get) => {
-  return get(featureSwitchState$);
-});
-
-export const applyFeatureSwitches$ = command(
-  ({ set }, switches: Record<FeatureSwitchKey, boolean>) => {
-    set(setFeatureSwitchState$, switches);
-  },
-);
-
 const reloadFeatureSwitch$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     signal.throwIfAborted();
     set(internalReloadFeatureSwitches$, (value) => {
       return value + 1;
     });
-    const switches = await get(featureSwitches$);
+    await get(featureSwitches$);
     signal.throwIfAborted();
-    set(applyFeatureSwitches$, switches);
   },
 );
 

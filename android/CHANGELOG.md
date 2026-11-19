@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.27.0](https://github.com/okou-ai/okou/compare/android-v0.26.0...android-v0.27.0) (2026-11-19)
+
+
+### Features
+
+* **android:** add chat rename, pin and scoped ordering ([#48851](https://github.com/okou-ai/okou/issues/48851)) ([b2d3b9a](https://github.com/okou-ai/okou/commit/b2d3b9a592ed76451a3c5114eba21f61d55985e4))
+
+
+### Performance Improvements
+
+* **android:** shorten ci validation ([#48835](https://github.com/okou-ai/okou/issues/48835)) ([f319d49](https://github.com/okou-ai/okou/commit/f319d494feb0fe0ab29f762f5f22085a3300f6f9))
+
+## [0.26.0](https://github.com/okou-ai/okou/compare/android-v0.25.0...android-v0.26.0) (2026-11-19)
+
+
+### Features
+
+* **android:** add chat row mute and archive actions ([#48768](https://github.com/okou-ai/okou/issues/48768)) ([f74ed61](https://github.com/okou-ai/okou/commit/f74ed61ce0b1c050375aa96e01b47a8ff7bb732d))
+
+## [0.25.0](https://github.com/okou-ai/okou/compare/android-v0.24.0...android-v0.25.0) (2026-11-18)
+
+
+### Features
+
+* add ultrafast for codex subscriptions ([#48736](https://github.com/okou-ai/okou/issues/48736)) ([c352dad](https://github.com/okou-ai/okou/commit/c352dadadbbec10cea8cf77adccfac8462ecdb94))
+* **android:** add chat row read actions ([#48753](https://github.com/okou-ai/okou/issues/48753)) ([feff7f3](https://github.com/okou-ai/okou/commit/feff7f3e6cca99b946b91f974c654e2104703050))
+* **android:** animate the chat list running indicators ([#48728](https://github.com/okou-ai/okou/issues/48728)) ([c8e2f5b](https://github.com/okou-ai/okou/commit/c8e2f5ba16ae4da481e6eb5bae576c68abf2c28b))
+* **android:** refine workspace list toolbar and filters ([#48740](https://github.com/okou-ai/okou/issues/48740)) ([36a450c](https://github.com/okou-ai/okou/commit/36a450c21413c751116d92d0ecf60e654d991aa6))
+
 ## [0.24.0](https://github.com/okou-ai/okou/compare/android-v0.23.0...android-v0.24.0) (2026-11-18)
 
 

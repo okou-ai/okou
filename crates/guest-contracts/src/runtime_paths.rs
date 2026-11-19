@@ -521,19 +521,26 @@ fn open_or_create_dir_component(
     );
     let mut created = false;
     if matches!(fd, Err(nix::errno::Errno::ENOENT)) {
-        // SAFETY: `name_c` is NUL-terminated and `parent` owns a live directory fd.
-        let mkdir_result =
-            unsafe { libc::mkdirat(parent.as_raw_fd(), name_c.as_ptr(), PRIVATE_DIR_MODE) };
-        if mkdir_result != 0 && io::Error::last_os_error().raw_os_error() != Some(libc::EEXIST) {
-            return Err(wrap_last_os_error(format!(
-                "create runtime directory component {} for {}",
-                name.to_string_lossy(),
-                full_path.display()
-            )));
-        }
-        if mkdir_result == 0 {
-            created = true;
-            chmod_created_dir_component(parent, name, &name_c, full_path)?;
+        match nix::sys::stat::mkdirat(
+            parent,
+            name_c.as_c_str(),
+            Mode::from_bits_retain(PRIVATE_DIR_MODE),
+        ) {
+            Ok(()) => {
+                created = true;
+                chmod_created_dir_component(parent, name, &name_c, full_path)?;
+            }
+            Err(nix::errno::Errno::EEXIST) => {}
+            Err(error) => {
+                return Err(wrap_io_error(
+                    error.into(),
+                    format!(
+                        "create runtime directory component {} for {}",
+                        name.to_string_lossy(),
+                        full_path.display()
+                    ),
+                ));
+            }
         }
         fd = nix::fcntl::openat(
             parent,
@@ -989,11 +996,11 @@ fn validate_replace_target(parent: &OwnedFd, name: &OsStr, path: &Path) -> io::R
 
 #[cfg(unix)]
 fn sync_private_replacement_directory(parent: &OwnedFd) -> io::Result<()> {
-    // SAFETY: `parent` owns a live directory descriptor.
-    if unsafe { libc::fsync(parent.as_raw_fd()) } != 0 {
-        return Err(io::Error::last_os_error());
-    }
-    Ok(())
+    nix::unistd::fsync(parent).map_err(|error| match error {
+        // Nix maps platform error codes outside its errno enum to zero.
+        nix::errno::Errno::UnknownErrno => io::Error::last_os_error(),
+        error => error.into(),
+    })
 }
 
 #[cfg(unix)]
@@ -1035,22 +1042,14 @@ fn replace_private_atomic_unix(
         set_file_private(&file)?;
         file.write_all(bytes)?;
         sync_file(&file)?;
-        // SAFETY: both names are NUL-terminated and `parent` pins the source
-        // and destination directory for the atomic replacement.
-        let result = unsafe {
-            libc::renameat(
-                parent.as_raw_fd(),
-                temp_name_c.as_ptr(),
-                parent.as_raw_fd(),
-                name_c.as_ptr(),
-            )
-        };
-        if result != 0 {
-            return Err(wrap_last_os_error(format!(
-                "publish atomic private replacement for {}",
-                path.display()
-            )));
-        }
+        nix::fcntl::renameat(&parent, temp_name_c.as_c_str(), &parent, name_c.as_c_str()).map_err(
+            |error| {
+                wrap_io_error(
+                    error.into(),
+                    format!("publish atomic private replacement for {}", path.display()),
+                )
+            },
+        )?;
         sync_directory(&parent).map_err(|error| {
             wrap_io_error(
                 error,
@@ -1063,11 +1062,12 @@ fn replace_private_atomic_unix(
         Ok(())
     })();
     if operation.is_err() {
-        // SAFETY: `temp_name_c` is NUL-terminated and `parent` owns the
-        // directory. Failure here must not hide the original operation error.
-        unsafe {
-            libc::unlinkat(parent.as_raw_fd(), temp_name_c.as_ptr(), 0);
-        }
+        // Cleanup must preserve the original operation error.
+        let _ = nix::unistd::unlinkat(
+            &parent,
+            temp_name_c.as_c_str(),
+            nix::unistd::UnlinkatFlags::NoRemoveDir,
+        );
     }
     operation
 }

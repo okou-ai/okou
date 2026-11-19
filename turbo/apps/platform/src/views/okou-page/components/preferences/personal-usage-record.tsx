@@ -312,7 +312,7 @@ function UsageRecordEmpty({
         alt=""
         role="presentation"
         loading="lazy"
-        className="h-24 w-24 object-contain opacity-80"
+        className="h-24 w-36 object-contain"
       />
       <p className="mt-3 text-sm font-medium text-foreground">{title}</p>
       <p className="mt-1 max-w-sm text-sm text-muted-foreground">

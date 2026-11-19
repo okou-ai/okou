@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.22.6](https://github.com/okou-ai/okou/compare/runner-executor-v0.22.5...runner-executor-v0.22.6) (2026-11-19)
+
+## [0.22.5](https://github.com/okou-ai/okou/compare/runner-executor-v0.22.4...runner-executor-v0.22.5) (2026-11-19)
+
+## [0.22.4](https://github.com/okou-ai/okou/compare/runner-executor-v0.22.3...runner-executor-v0.22.4) (2026-11-18)
+
+## [0.22.3](https://github.com/okou-ai/okou/compare/runner-executor-v0.22.2...runner-executor-v0.22.3) (2026-11-18)
+
+
+### Refactoring
+
+* **firewall:** retire legacy resolver and envelope compatibility ([#48739](https://github.com/okou-ai/okou/issues/48739)) ([7dcd7ca](https://github.com/okou-ai/okou/commit/7dcd7cac45f2b26e253703533fc7f1097609c0f6))
+
 ## [0.22.2](https://github.com/okou-ai/okou/compare/runner-executor-v0.22.1...runner-executor-v0.22.2) (2026-11-18)
 
 

@@ -306,10 +306,11 @@ test("replacing the sidebar from another chat waits for that chat's metadata", a
   await readyDownload(firstPreview, "sidebar");
 
   click(await findNamedLink(rightName));
-  const preview = await screen.findByTestId("artifact-sidebar");
-  await expect(
-    within(preview).findByText("Right content"),
-  ).resolves.toBeInTheDocument();
+  const preview = await waitFor(() => {
+    const sidebar = screen.getByTestId("artifact-sidebar");
+    expect(within(sidebar).getByText("Right content")).toBeInTheDocument();
+    return sidebar;
+  });
   expect(within(preview).queryByRole("status")).not.toBeInTheDocument();
   expect(within(preview).getByLabelText("Download artifact")).not.toBeVisible();
   expect(buttonNamed("Close artifact", preview)).toBeEnabled();

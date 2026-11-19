@@ -1,19 +1,11 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
-import {
-  literal,
-  object,
-  record,
-  string,
-  union,
-  type infer as zInfer,
-} from "zod";
+import { literal, object, string, union, type infer as zInfer } from "zod";
 
 import { env } from "../../lib/env";
 import { getSecretKmsClient } from "../../lib/secret-kms-client";
 
-const secretsMapSchema = record(string(), string());
 const STORED_SECRET_ENVELOPE_PREFIX = "vm0secret:v1:";
 
 const directKmsCiphertextSchema = object({
@@ -209,28 +201,11 @@ export async function decryptPersistentSecretValue(
   return await decryptStoredSecretValue(encrypted, ctx);
 }
 
-export async function decryptPersistentSecretsMap(
-  encryptedData: string | null,
-  ctx: FeatureSwitchContext,
-): Promise<Record<string, string> | null> {
-  if (!encryptedData) {
-    return null;
-  }
-
-  return secretsMapSchema.parse(
-    JSON.parse(
-      await decryptPersistentSecretValue(encryptedData, ctx),
-    ) as unknown,
-  );
-}
-
 /**
  * Encrypt a single secret value using AES-256-GCM.
  *
- * Reads `SECRETS_ENCRYPTION_KEY` from env so call sites stay clean — symmetric
- * counterpart to `decryptSecretValue` below. Output format
- * `iv:authTag:ciphertext` (all base64) matches what `encryptSecretForTests`
- * already produces, so encrypt/decrypt round-trip is provably consistent.
+ * Uses `SECRETS_ENCRYPTION_KEY` and produces the
+ * `iv:authTag:ciphertext` base64 format consumed by `decryptSecretValue`.
  */
 export function encryptSecretValue(plaintext: string): string {
   const key = Buffer.from(env("SECRETS_ENCRYPTION_KEY"), "hex");

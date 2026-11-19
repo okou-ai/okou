@@ -51,7 +51,6 @@
     "OKOU_AGENT_ID": "fixture-agent-id"
   },
   "secretValues": ["fixture-secret-value-not-real"],
-  "encryptedSecrets": "fixture-encrypted-secrets-not-real",
   "secretConnectorMap": {
     "FIXTURE_API_KEY": "fixture-connector"
   },

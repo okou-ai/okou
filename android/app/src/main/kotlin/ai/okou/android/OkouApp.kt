@@ -4,6 +4,7 @@ import ai.okou.android.chat.AssistantRecoveryModel
 import ai.okou.android.chat.AssistantRecoveryPanel
 import ai.okou.android.chat.ChatComposerField
 import ai.okou.android.chat.ChatComposerModel
+import ai.okou.android.chat.ChatListFilter
 import ai.okou.android.chat.ChatListModel
 import ai.okou.android.chat.ChatListScreen
 import ai.okou.android.chat.ChatReadPhase
@@ -56,8 +57,6 @@ import androidx.compose.runtime.structuralEqualityPolicy
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -81,6 +80,8 @@ internal fun OkouApp(
     account: @Composable () -> Unit = {},
     workspacePreferences: @Composable () -> Unit = {},
     recovery: AssistantRecoveryModel? = null,
+    workspaceTitle: @Composable (() -> Unit)? = null,
+    openUpdate: (() -> Unit)? = null,
 ) {
     val list by chats.uiState.collectAsStateWithLifecycle()
     var navigation by rememberWorkspaceNavigation()
@@ -88,6 +89,7 @@ internal fun OkouApp(
     // Window configuration changes on resize. IME insets only change the space inside the panes.
     val window = LocalConfiguration.current
     val listWidth = workspaceListPaneWidth(window.screenWidthDp, window.screenHeightDp)
+    val showList = listWidth != null || target == WorkspaceTarget.List
     val showWorkspaceBack = listWidth == null && target != WorkspaceTarget.List
     val listPosition = rememberLazyListState()
     val collapsed = rememberCollapsedProjects()
@@ -98,12 +100,23 @@ internal fun OkouApp(
     val focus = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     val settingsFocus = remember { FocusRequester() }
-    var settingsFocused by remember { mutableStateOf(false) }
     var restoreSettingsFocus by remember { mutableStateOf(false) }
     val thread =
         (target as? WorkspaceTarget.Chat)?.let { chat ->
             list.threads.firstOrNull { it.id == chat.id && it.hidden != true }
         }
+
+    list.failedRowAction?.let { action ->
+        val message =
+            stringResource(
+                if (action.updatesChat) R.string.chat_row_action_failed
+                else R.string.chat_read_action_failed
+            )
+        LaunchedEffect(action, message) {
+            snackbar.showSnackbar(message)
+            chats.dismissRowActionFailure(action)
+        }
+    }
 
     fun openChat(chat: ConfirmedChat) {
         conversations.open(chat.id)
@@ -176,7 +189,17 @@ internal fun OkouApp(
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             TopAppBar(
-                title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                title = {
+                    if (
+                        !navigation.settingsOpen &&
+                            target == WorkspaceTarget.List &&
+                            workspaceTitle != null
+                    ) {
+                        workspaceTitle()
+                    } else {
+                        Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                },
                 colors =
                     TopAppBarDefaults.topAppBarColors(
                         containerColor = MaterialTheme.colorScheme.background
@@ -196,23 +219,19 @@ internal fun OkouApp(
                 },
                 actions = {
                     if (!navigation.settingsOpen) {
-                        IconButton(
-                            modifier =
-                                Modifier.focusRequester(settingsFocus).onFocusChanged {
-                                    settingsFocused = it.isFocused
-                                },
-                            onClick = {
-                                restoreSettingsFocus = settingsFocused
+                        WorkspaceToolbarActions(
+                            showFilter = showList,
+                            filter = list.filter,
+                            selectFilter = chats::selectFilter,
+                            openUpdate = openUpdate,
+                            settingsFocus = settingsFocus,
+                            openSettings = { restore ->
+                                restoreSettingsFocus = restore
                                 focus.clearFocus()
                                 keyboard?.hide()
                                 navigation = navigation.copy(settingsOpen = true)
                             },
-                        ) {
-                            Icon(
-                                painterResource(R.drawable.okou_mark),
-                                stringResource(R.string.settings),
-                            )
-                        }
+                        )
                         LaunchedEffect(Unit) {
                             if (restoreSettingsFocus) {
                                 restoreSettingsFocus = false
@@ -236,19 +255,26 @@ internal fun OkouApp(
             } else {
                 RealtimeNotice(chats.updates)
                 Row(Modifier.fillMaxSize()) {
-                    if (listWidth != null || target == WorkspaceTarget.List) {
-                        Box(
-                            if (listWidth == null) Modifier.weight(1f)
-                            else Modifier.width(listWidth.dp).fillMaxHeight()
+                    if (showList) {
+                        Column(
+                            if (listWidth == null) Modifier.weight(1f).fillMaxHeight()
+                            else Modifier.width(listWidth.dp).fillMaxHeight(),
+                            horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
+                            if (list.filter != ChatListFilter.Recent) {
+                                AppliedChatFilter(list.filter) {
+                                    chats.selectFilter(ChatListFilter.Recent)
+                                }
+                            }
                             ChatListScreen(
                                 list,
                                 chats::refresh,
                                 chats::refreshList,
                                 chats::refreshMetadata,
                                 chats::refreshIndicators,
-                                chats::selectFilter,
                                 ::openChat,
+                                chats::performRowAction,
+                                chats::renameThread,
                                 collapsed.values,
                                 collapsed::toggle,
                                 listPosition,

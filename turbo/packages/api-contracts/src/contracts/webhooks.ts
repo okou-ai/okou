@@ -434,9 +434,6 @@ export const webhookFirewallAuthContract = c.router({
     path: "/api/webhooks/agent/firewall/auth",
     headers: authHeadersSchema,
     body: object({
-      // Optional legacy runtime secret namespace. API-owned sources resolve
-      // without it; supplied envelopes still decrypt to `secrets.NAME`.
-      encryptedSecrets: string().min(1).optional(),
       authHeaders: record(string(), string()),
       authBase: string().optional(),
       authQuery: record(string(), string()).optional(),

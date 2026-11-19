@@ -1,5 +1,46 @@
 # Changelog
 
+## [8.854.3](https://github.com/okou-ai/okou/compare/core-v8.854.2...core-v8.854.3) (2026-11-19)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.90.0
+
+## [8.854.2](https://github.com/okou-ai/okou/compare/core-v8.854.1...core-v8.854.2) (2026-11-19)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.89.0
+
+## [8.854.1](https://github.com/okou-ai/okou/compare/core-v8.854.0...core-v8.854.1) (2026-11-19)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.88.0
+
+## [8.854.0](https://github.com/okou-ai/okou/compare/core-v8.853.2...core-v8.854.0) (2026-11-18)
+
+
+### Features
+
+* add ultrafast for codex subscriptions ([#48736](https://github.com/okou-ai/okou/issues/48736)) ([c352dad](https://github.com/okou-ai/okou/commit/c352dadadbbec10cea8cf77adccfac8462ecdb94))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.87.0
+
 ## [8.853.2](https://github.com/okou-ai/okou/compare/core-v8.853.1...core-v8.853.2) (2026-11-18)
 
 

@@ -242,7 +242,6 @@ export const clientDescriptorManifest = [
   {
     module: "cron",
     contracts: [
-      "cronAggregateRunPhaseTimingsContract",
       "cronBrowserReconcileContract",
       "cronCleanupSandboxesContract",
       "cronCleanupSuggestionsContract",
@@ -562,6 +561,7 @@ export const clientDescriptorManifest = [
     module: "onboarding",
     contracts: [
       "onboardingCompleteContract",
+      "onboardingDraftContract",
       "onboardingRecommendationContract",
       "onboardingSourcesContract",
       "onboardingStatusContract",

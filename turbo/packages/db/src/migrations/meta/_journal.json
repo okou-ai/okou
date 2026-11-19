@@ -3466,6 +3466,69 @@
       "when": 1794995773929,
       "tag": "1573_lark_official_bot",
       "breakpoints": true
+    },
+    {
+      "idx": 1574,
+      "version": "7",
+      "when": 1795013020681,
+      "tag": "1574_codex_subscription_ultrafast",
+      "breakpoints": true
+    },
+    {
+      "idx": 1575,
+      "version": "7",
+      "when": 1795041679110,
+      "tag": "1575_activate_active_default_agent_workspaces",
+      "breakpoints": true
+    },
+    {
+      "idx": 1576,
+      "version": "7",
+      "when": 1795053710241,
+      "tag": "1576_activate_active_multi_agent_workspaces",
+      "breakpoints": true
+    },
+    {
+      "idx": 1577,
+      "version": "7",
+      "when": 1795061951933,
+      "tag": "1577_onboarding_drafts",
+      "breakpoints": true
+    },
+    {
+      "idx": 1578,
+      "version": "7",
+      "when": 1795064566795,
+      "tag": "1578_ios_widget_push_token",
+      "breakpoints": true
+    },
+    {
+      "idx": 1579,
+      "version": "7",
+      "when": 1795067765771,
+      "tag": "1579_activate_quiet_default_agent_workspaces",
+      "breakpoints": true
+    },
+    {
+      "idx": 1580,
+      "version": "7",
+      "when": 1795067788125,
+      "tag": "1580_activate_quiet_multi_agent_workspaces",
+      "breakpoints": true
+    },
+    {
+      "idx": 1581,
+      "version": "7",
+      "when": 1795073103039,
+      "tag": "1581_activate_morning_brief_my_okou",
+      "breakpoints": true
+    },
+    {
+      "idx": 1582,
+      "version": "7",
+      "when": 1795073129666,
+      "tag": "1582_activate_empty_workspaces_my_okou",
+      "breakpoints": true
     }
   ]
 }

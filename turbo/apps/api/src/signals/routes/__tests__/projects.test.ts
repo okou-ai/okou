@@ -140,68 +140,6 @@ async function listedIds(actor: ApiTestUser) {
 }
 
 describe("private Project order", () => {
-  it.each([
-    { clientType: "iOS", legacyVersion: "0.47.3", currentVersion: "0.47.5" },
-    { clientType: "iOS", legacyVersion: "0.47.4", currentVersion: "0.47.5" },
-    {
-      clientType: "Android",
-      legacyVersion: "0.19.1",
-      currentVersion: "0.19.2",
-    },
-  ])(
-    "keeps $clientType event cursors readable across the sorting release",
-    async ({ clientType, legacyVersion, currentVersion }) => {
-      const actor = await owner();
-      const first = await create(actor, "First");
-      const second = await create(actor, "Second");
-      const moveId = operation();
-      await accept(
-        reorder(actor, second.id, first.id, "before", moveId),
-        [204],
-      );
-      const read = async (version: string) => {
-        return await accept(
-          client().events({
-            headers: headers(actor),
-            extraHeaders: {
-              "X-Client-Type": clientType,
-              "X-Client-Version": version,
-            },
-            query: { sinceSeqId: 0 },
-          }),
-          [200],
-        );
-      };
-      const legacy = await read(legacyVersion);
-      const current = await read(currentVersion);
-      expect(legacy.body.events).toMatchObject([
-        { id: first.id, kind: "created", name: "First" },
-        { id: second.id, kind: "created", name: "Second" },
-        { id: moveId, kind: "renamed", name: "Second" },
-      ]);
-      expect(current.body.events).toMatchObject([
-        { id: first.id, kind: "created", name: "First" },
-        { id: second.id, kind: "created", name: "Second" },
-        {
-          id: moveId,
-          kind: "sort_updated",
-          name: "Second",
-          sortOrder: expect.any(String),
-        },
-      ]);
-      expect(
-        legacy.body.events.map(({ id, seqId }) => {
-          return { id, seqId };
-        }),
-      ).toStrictEqual(
-        current.body.events.map(({ id, seqId }) => {
-          return { id, seqId };
-        }),
-      );
-      expect(legacy.body.hasMore).toBe(current.body.hasMore);
-    },
-  );
-
   it("moves whole groups before and after targets, preserves rank on rename and appends new Projects", async () => {
     const actor = await owner();
     const first = await create(actor, "First");

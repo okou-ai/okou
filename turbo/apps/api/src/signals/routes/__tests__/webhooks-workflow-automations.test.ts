@@ -303,7 +303,7 @@ describe("POST /api/webhooks/workflow-automations/:token", () => {
         })
       );
     });
-    if (!queued) {
+    if (queued?.eventType !== "input.automation") {
       throw new Error("Expected the second delivery to remain queued");
     }
 
@@ -328,6 +328,7 @@ describe("POST /api/webhooks/workflow-automations/:token", () => {
       expect.objectContaining({
         eventType: "input.rejected",
         revokesEventId: queued.id,
+        userMessage: queued.userMessage,
       }),
     );
 

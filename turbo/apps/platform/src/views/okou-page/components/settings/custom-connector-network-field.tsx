@@ -7,7 +7,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@okouai/ui";
-import { useGet, useLoadable, useSet } from "ccstate-react";
+import { useLastResolved, useLoadable, useSet } from "ccstate-react";
 import { AlertTriangle, ChevronRight, ExternalLink } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
@@ -256,7 +256,7 @@ export function CustomConnectorNetworkField({
   readonly disabled: boolean;
 }) {
   const { t } = useTranslation();
-  const enabled = useGet(customConnectorCloudflareEnabled$);
+  const enabled = useLastResolved(customConnectorCloudflareEnabled$) ?? false;
   const choices = useLoadable(customConnectorCloudflareChoices$);
   const saved = connector?.networkBinding;
   if (!enabled && !saved) {

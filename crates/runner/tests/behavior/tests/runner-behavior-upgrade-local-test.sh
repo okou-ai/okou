@@ -84,7 +84,13 @@ if command == 'sleep':
     sys.exit(0)
 if command == 'seq':
     start, end = map(int, args)
-    print('\n'.join(str(x) for x in range(start, min(end, 16) + 1)))
+    # Shorten only a loop deliberately missing its completion condition. The
+    # positive cases need the full iteration budget to observe asynchronous work.
+    missing_readiness = scenario in ('missing-claim', 'wrong-owner', 'unrelated-only', 'preparing-only', 'missing-fifo')
+    stalled_completion = scenario == 'stalled-completion' and (root / 'released-1').exists()
+    if missing_readiness or stalled_completion:
+        end = min(end, 16)
+    print('\n'.join(str(x) for x in range(start, end + 1)))
     sys.exit(0)
 if command == 'journalctl':
     event('journal', owner=args[args.index('--unit') + 1].rsplit('-', 1)[-1])
@@ -134,7 +140,8 @@ if args[0] == 'service':
     counter.write_text(str(count))
     operation = f'{action}-{owner}'
     if action == 'uninstall':
-        if count == 1 and scenario == 'residual-uninstall-failure':
+        if count == 1 and scenario == 'delayed-ready':
+            event('residual-uninstall-failure', owner=owner)
             sys.exit(65)
         if scenario == 'cleanup-failure' and (root / 'failed').exists():
             sys.exit(65)
@@ -362,6 +369,7 @@ def run_case(scenario, failure, case, binary):
         assert not (case / 'enabled-a').exists() and not (case / 'active-b').exists()
         if scenario == 'delayed-ready':
             assert sum(e['kind'] == 'not-ready' for e in events) == 2
+            assert {e['owner'] for e in events if e['kind'] == 'residual-uninstall-failure'} == {'a', 'b'}
         print(f'PASS: {scenario}: 3 submissions, 2 installs, 3 drains, 4 uninstalls, 2 explicit releases')
     else:
         assert sum(e['kind'] == 'uninstall' for e in events) >= 4, f'{scenario}: exit cleanup missing'
@@ -405,7 +413,6 @@ with tempfile.TemporaryDirectory(prefix='upgrade-worker-test-') as temporary:
     for name in ('sudo', 'systemctl', 'journalctl', 'sleep', 'seq', 'rm'):
         (binary / name).symlink_to(helper)
     cases = {
-        'job2-b': None,
         'job2-a': None,
         'delayed-ready': None,
         'missing-claim': 'not ready within observation budget',
@@ -425,7 +432,6 @@ with tempfile.TemporaryDirectory(prefix='upgrade-worker-test-') as temporary:
     }
     cases.update({name: f'injected failure: {name}' for name in error_statuses})
     cases['cleanup-failure'] = cases['cleanup-directory-failure'] = 'injected failure: drain-a'
-    cases['residual-uninstall-failure'] = None
     for scenario, failure in cases.items():
         case = root / scenario
         case.mkdir()

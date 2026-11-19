@@ -5,7 +5,6 @@ import argparse
 import hashlib
 import json
 import pathlib
-import uuid
 
 import batch_aba_report as batch
 import pressure_report as pressure
@@ -17,7 +16,7 @@ CASES = {f"BatchRepark-{mode}" for mode in ("fresh", "snapshot")}
 
 
 def canonical_uuid(value):
-    if not isinstance(value, str) or str(uuid.UUID(value)) != value:
+    if not isinstance(value, str) or not report.is_canonical_uuid(value):
         raise ValueError("physical rollback run identity is not canonical")
     return value
 

@@ -1,5 +1,5 @@
 import { command, state, type Command } from "ccstate";
-import { delay, timeout } from "signal-timers";
+import { delay } from "signal-timers";
 import { IN_VITEST } from "../env.ts";
 import { now } from "../lib/time.ts";
 import { ApiError } from "../lib/api-error.ts";
@@ -228,26 +228,6 @@ export async function withCleanup<T>(
   }
 }
 
-/** Add an owner-bound deadline, preserving the owner's reason on cancellation. */
-export function abortAfter(
-  ms: number,
-  parentSignal: AbortSignal,
-  timeoutReason: unknown = new DOMException(
-    "Operation timed out",
-    "AbortError",
-  ),
-): AbortSignal {
-  const controller = new AbortController();
-  timeout(
-    () => {
-      controller.abort(timeoutReason);
-    },
-    ms,
-    { signal: parentSignal },
-  );
-  return AbortSignal.any([parentSignal, controller.signal]);
-}
-
 const MAX_LOOP_COUNT_IN_TEST = 100;
 // A round that fails before reaching its own wait must not retry in a spin.
 const FAILED_LOOP_ROUND_MIN_DELAY_MS = 1000;
@@ -465,28 +445,6 @@ export function waitForToken<T>(
   });
 }
 
-/** Track whether a ccstate-owned async load is still available for joining. */
-export interface TrackedAsyncResource<T> {
-  readonly pending: () => boolean;
-  readonly promise: Promise<T>;
-}
-
-export function trackAsyncResource<T>(
-  promise: Promise<T>,
-): TrackedAsyncResource<T> {
-  let pending = true;
-  // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
-  const trackedPromise = withCleanup(promise, () => {
-    pending = false;
-  });
-  return {
-    pending: () => {
-      return pending;
-    },
-    promise: trackedPromise,
-  };
-}
-
 export function waitForBrowserPaint(signal: AbortSignal): Promise<void> {
   if (
     typeof window === "undefined" ||
@@ -529,20 +487,6 @@ export function waitForBrowserPaint(signal: AbortSignal): Promise<void> {
 }
 
 /** Report local voice failures while preserving the operation's rejection. */
-export async function withVoiceDraftFailureToast<T>(
-  operation: Promise<T>,
-  onFailure: (error: unknown) => void,
-  signal: AbortSignal,
-): Promise<T> {
-  // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
-  const result = await settle(operation, signal);
-  if (result.ok) {
-    return result.value;
-  }
-  onFailure(result.error);
-  throw result.error;
-}
-
 function commandSignal(
   args: readonly [...unknown[], AbortSignal],
 ): AbortSignal {
@@ -703,24 +647,4 @@ export function throttleCommand<T, Args extends unknown[]>(
       signal,
     );
   });
-}
-
-/** Replace a one-shot protocol deadline; its parent owns every renewal. */
-export function createDeadline(parent: AbortSignal) {
-  let controller: AbortController | undefined;
-  const cancel = () => {
-    controller?.abort();
-    controller = undefined;
-  };
-  return {
-    cancel,
-    schedule(callback: () => void, milliseconds: number) {
-      cancel();
-      parent.throwIfAborted();
-      controller = new AbortController();
-      timeout(callback, milliseconds, {
-        signal: AbortSignal.any([parent, controller.signal]),
-      });
-    },
-  };
 }

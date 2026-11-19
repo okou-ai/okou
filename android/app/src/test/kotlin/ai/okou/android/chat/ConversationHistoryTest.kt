@@ -494,6 +494,71 @@ class ConversationHistoryTest {
     }
 
     @Test
+    fun explicitUnreadWaitsForAcknowledgementAndStopsTheVisibleVisitOnly() = runTest {
+        val started = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val explicitWrite = CompletableDeferred<Unit>()
+        val service =
+            object : Service() {
+                override suspend fun markRead(threadId: String): ReadState {
+                    started.complete(Unit)
+                    release.await()
+                    return super.markRead(threadId)
+                }
+            }
+        val lease = cache().open(identity) { true }
+        val model =
+            ConversationHistoryModel(
+                service,
+                lease,
+                backgroundScope,
+                { true },
+                {},
+                {},
+                StandardTestDispatcher(testScheduler),
+                precedingReadWrite = { if (started.isCompleted) explicitWrite else null },
+            )
+        try {
+            model.open(thread())
+            val visit =
+                checkNotNull(model.beginVisit(CHAT_PERSONAL, model.uiState.value.generation))
+            model.uiState.first { it.phase == HistoryPhase.Ready }
+            visit.confirmDisplayed(checkNotNull(model.uiState.value.confirmation))
+            started.await()
+            val stopped = checkNotNull(model.stopAutomaticRead(CHAT_PERSONAL))
+            assertFalse(stopped.isCompleted)
+
+            val nextId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+            service.rowsRead = { id, cursor ->
+                if (cursor.seqId >= 53) HistoryPage(emptyList(), cursor, false)
+                else HistoryPage(listOf(row(nextId, 53, id)), HistoryCursor(nextId, 53), false)
+            }
+            model.refresh()
+            model.uiState.first { it.phase == HistoryPhase.Ready }
+            visit.confirmDisplayed(checkNotNull(model.uiState.value.confirmation))
+            release.complete(Unit)
+            stopped.join()
+            runCurrent()
+            assertEquals(1, service.markCount)
+
+            model.endVisit(visit)
+            val next = checkNotNull(model.beginVisit(CHAT_PERSONAL, model.uiState.value.generation))
+            model.uiState.first { it.phase == HistoryPhase.Ready }
+            next.confirmDisplayed(checkNotNull(model.uiState.value.confirmation))
+            runCurrent()
+            assertEquals(1, service.markCount)
+            explicitWrite.complete(Unit)
+            runCurrent()
+            assertEquals(2, service.markCount)
+        } finally {
+            release.complete(Unit)
+            explicitWrite.complete(Unit)
+            model.close()
+            lease.close()
+        }
+    }
+
+    @Test
     fun staleDisplayReceiptsCannotMarkNewContentAndReadFailuresWaitForExplicitRetry() = runTest {
         var failRead = true
         val service =

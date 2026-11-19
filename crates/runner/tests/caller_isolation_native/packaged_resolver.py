@@ -6,7 +6,6 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 PATH = "/api/webhooks/agent/firewall/auth"
 BODY = {
-    "encryptedSecrets": "synthetic-host-shaped-ciphertext",
     "authHeaders": {"Authorization": "Bearer ${{ secrets.OPENROUTER_API_KEY }}"},
     "secretConnectorMetadataMap": {
         "OPENROUTER_API_KEY": {"sourceType": "platform-secret"}
@@ -48,7 +47,7 @@ def probe(env, as_role, record):
 body=json.loads(BODY)
 connection=http.client.HTTPConnection('127.0.0.1',18084,timeout=3)
 try:
- try: connection.request('POST',PATH,json.dumps(body),{'authorization':'Bearer synthetic-sandbox-token','content-type':'application/json'})
+ try: connection.request('POST',PATH,json.dumps(body),{'authorization':'Bearer synthetic-host-firewall-token','content-type':'application/json'})
  except OSError as error:
   assert error.errno in (1,13),error
   result={'connectErrno':error.errno,'status':None}

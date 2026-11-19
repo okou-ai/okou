@@ -133,7 +133,7 @@ const FOOTER_NAV: readonly FooterNavItem[] = [
 
 function useManageNavItems() {
   const { t } = useTranslation();
-  const singleAgent = useGet(singleAgentEnabled$);
+  const singleAgent = useLastResolved(singleAgentEnabled$) ?? false;
   const manageLabel = (id: ManageNavId): string => {
     switch (id) {
       case "agents": {
@@ -336,7 +336,7 @@ function ThreeColumnChatListToggle({
 
 function LabeledChatRailLink() {
   const activeId = useGet(activeRoute$);
-  const singleAgent = useGet(singleAgentEnabled$);
+  const singleAgent = useLastResolved(singleAgentEnabled$) ?? false;
   const defaultAgentId = useLastResolved(defaultAgentId$) ?? null;
   const showInbox = useSet(showChatThreadInbox$);
   // My Okou's chat page is `/` itself.
@@ -515,7 +515,7 @@ const CHAT_LIST_INSET = "px-3";
 
 function ChatListHeader() {
   const currentChatAgentId = useLastResolved(newChatAgentId$) ?? null;
-  const singleAgent = useGet(singleAgentEnabled$);
+  const singleAgent = useLastResolved(singleAgentEnabled$) ?? false;
   const navigate = useSet(detachedNavigateTo$);
   const openThreeColumnSearch = useSet(openThreeColumnSearchDialog$);
   const { t } = useTranslation();
@@ -647,7 +647,7 @@ function ChatListResizeSeam() {
 }
 
 function ChatListColumn() {
-  const singleAgent = useGet(singleAgentEnabled$);
+  const singleAgent = useLastResolved(singleAgentEnabled$) ?? false;
   const width = useGet(chatListWidth$);
   return (
     <aside

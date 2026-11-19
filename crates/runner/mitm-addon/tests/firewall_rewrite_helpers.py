@@ -60,7 +60,7 @@ def _make_rewrite_inputs(
     sandbox_info = {
         "runId": "run-1",
         "sandboxToken": "tok",
-        "encryptedSecrets": "iv:tag:data",
+        "firewallToken": "host-firewall-token",
         "networkLogPath": str(tmp_path / "net.jsonl"),
         "billableFirewalls": [],
     }

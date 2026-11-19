@@ -1,5 +1,52 @@
 # Changelog
 
+## [0.249.59](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.58...runner-rs-v0.249.59) (2026-11-19)
+
+## [0.249.58](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.57...runner-rs-v0.249.58) (2026-11-19)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.249.57](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.56...runner-rs-v0.249.57) (2026-11-19)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.249.56](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.55...runner-rs-v0.249.56) (2026-11-19)
+
+
+### Refactoring
+
+* **runner:** separate shared platform http transport from firewall auth ([#48769](https://github.com/okou-ai/okou/issues/48769)) ([83a3416](https://github.com/okou-ai/okou/commit/83a3416344f874b5968541c37c769378a8f0efe8))
+* **runner:** share original pressure policy decoding ([#48799](https://github.com/okou-ai/okou/issues/48799)) ([6beacab](https://github.com/okou-ai/okou/commit/6beacab3dc8adf04400c38f9eaeb2dfbb3f52d34))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.249.55](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.54...runner-rs-v0.249.55) (2026-11-18)
+
+
+### Refactoring
+
+* **python:** unify metadata match pattern analysis ([#48788](https://github.com/okou-ai/okou/issues/48788)) ([2787e00](https://github.com/okou-ai/okou/commit/2787e00171be56c603d19b3412af022d84e91ce0))
+* **runner:** share canonical uuid checks in native reports ([#48779](https://github.com/okou-ai/okou/issues/48779)) ([447d84d](https://github.com/okou-ai/okou/commit/447d84dc01de62b238b698e77b2470bafd60b663))
+
+## [0.249.54](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.53...runner-rs-v0.249.54) (2026-11-18)
+
+
+### Refactoring
+
+* **firewall:** retire legacy resolver and envelope compatibility ([#48739](https://github.com/okou-ai/okou/issues/48739)) ([7dcd7ca](https://github.com/okou-ai/okou/commit/7dcd7cac45f2b26e253703533fc7f1097609c0f6))
+* **runner:** centralize native pressure policy shape validation ([#48742](https://github.com/okou-ai/okou/issues/48742)) ([6de7061](https://github.com/okou-ai/okou/commit/6de7061ded8a72209a0edb56a324f4d4f5cd9423))
+* **runner:** share original evidence stream ownership ([#48727](https://github.com/okou-ai/okou/issues/48727)) ([280030d](https://github.com/okou-ai/okou/commit/280030d05d8ea88752d6eefac4bc41664c1284e5))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.249.53](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.52...runner-rs-v0.249.53) (2026-11-18)
 
 ### Release Dependencies

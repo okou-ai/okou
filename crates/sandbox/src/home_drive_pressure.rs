@@ -69,28 +69,26 @@ pub fn home_drive_copy_peak_bytes_from_file(
     let unit = allocation_unit;
     #[cfg(target_os = "linux")]
     {
-        use std::os::fd::AsRawFd;
+        use nix::errno::Errno;
+        use nix::unistd::{Whence, lseek};
+
         if !file
             .metadata()
             .is_ok_and(|m| m.is_file() && m.len() == logical_bytes)
         {
             return full;
         }
-        // SAFETY: file owns this descriptor; lseek writes no memory.
-        let initial_position = unsafe { libc::lseek(file.as_raw_fd(), 0, libc::SEEK_CUR) };
-        if initial_position < 0 {
-            return full;
-        }
+        let initial_position = match lseek(file, 0, Whence::SeekCur) {
+            Ok(position) if position >= 0 => position,
+            _ => return full,
+        };
         struct RestorePosition<'a> {
             file: &'a std::fs::File,
             position: libc::off_t,
         }
         impl Drop for RestorePosition<'_> {
             fn drop(&mut self) {
-                // SAFETY: the borrowed file remains open through this guard.
-                unsafe {
-                    libc::lseek(self.file.as_raw_fd(), self.position, libc::SEEK_SET);
-                }
+                let _ = lseek(self.file, self.position, Whence::SeekSet);
             }
         }
         let _restore = RestorePosition {
@@ -106,17 +104,14 @@ pub fn home_drive_copy_peak_bytes_from_file(
             let Ok(offset) = libc::off_t::try_from(position) else {
                 return full;
             };
-            // SAFETY: the owned descriptor and representable nonnegative offset.
-            let data = unsafe { libc::lseek(file.as_raw_fd(), offset, libc::SEEK_DATA) };
-            if data < 0 {
-                return if std::io::Error::last_os_error().raw_os_error() == Some(libc::ENXIO) {
-                    bytes.min(full)
-                } else {
-                    full
-                };
-            }
-            // SAFETY: the same live descriptor and a nonnegative seek offset.
-            let hole = unsafe { libc::lseek(file.as_raw_fd(), data, libc::SEEK_HOLE) };
+            let data = match lseek(file, offset, Whence::SeekData) {
+                Ok(data) if data >= 0 => data,
+                Err(Errno::ENXIO) => return bytes.min(full),
+                _ => return full,
+            };
+            let Ok(hole) = lseek(file, data, Whence::SeekHole) else {
+                return full;
+            };
             if hole <= data || hole as u64 > logical_bytes || (data as u64) < position {
                 return full;
             }

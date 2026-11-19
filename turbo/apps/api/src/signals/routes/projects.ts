@@ -1,10 +1,6 @@
 import { command, computed } from "ccstate";
 import { and, asc, eq, gt } from "drizzle-orm";
 import { projectsContract } from "@okouai/api-contracts/contracts/projects";
-import {
-  iosProjectSortOrderTransform,
-  androidProjectSortOrderTransform,
-} from "@okouai/api-contracts/client-transforms/project-sort-order";
 import { chatThreadSnapshotProjectionSchema } from "@okouai/api-contracts/validators/chat-threads";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -240,7 +236,8 @@ const threads$ = computed(async (get) => {
       updatedAt: t.updatedAt.toISOString(),
       pinnedAt: t.pinnedAt?.toISOString() ?? null,
       renamedAt: t.renamedAt?.toISOString() ?? null,
-      serviceTier: t.codexServiceTier === "fast" ? "priority" : null,
+      serviceTier:
+        t.codexServiceTier === "fast" ? "priority" : t.codexServiceTier,
     });
   });
   return {
@@ -300,10 +297,6 @@ export const projectRoutes: readonly RouteEntry[] = [
   },
   {
     route: projectsContract.events,
-    responseTransforms: [
-      iosProjectSortOrderTransform,
-      androidProjectSortOrderTransform,
-    ],
     handler: authRoute(
       {
         requireOrganization: true,

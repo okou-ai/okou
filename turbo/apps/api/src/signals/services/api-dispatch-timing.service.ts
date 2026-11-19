@@ -128,6 +128,8 @@ export type ApiDispatchTimingActionType =
   | "api_dispatch_prepare_storage_manifest_build_artifact_entries"
   | "api_dispatch_prepare_storage_manifest_resolve_artifact_versions"
   | "api_dispatch_prepare_storage_manifest_assemble"
+  | "api_dispatch_prepare_execution_package_sources"
+  | "api_dispatch_prepare_execution_package_wait"
   | "api_dispatch_connector_catalog_load_runtime_snapshot"
   | "api_dispatch_connector_catalog_validate_compatibility"
   | "api_dispatch_connector_catalog_materialize_accepted_snapshot"

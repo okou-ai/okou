@@ -46,6 +46,7 @@ import {
 
 import { failPendingInlineOnlyDeliveryCallbacksForDeletedThread$ } from "./agent-run-callback.service";
 import { dispatchCancelSideEffects$ } from "./run-cancel.service";
+import { cleanupExpiredOnboardingDrafts$ } from "./onboarding-draft.service";
 import { cleanupExpiredExportJobs$ } from "./user-export-cleanup.service";
 import { cleanupStaleRunnerState$ } from "./runner-state-cleanup.service";
 
@@ -636,6 +637,10 @@ export const cleanupSandboxes$ = command(
       }
       return deleted.length;
     })(signal);
+    signal.throwIfAborted();
+    await tapError(set(cleanupExpiredOnboardingDrafts$), () => {
+      L.warn("Could not remove expired onboarding drafts");
+    });
     signal.throwIfAborted();
     await set(cleanupGlobalMaintenance$, signal);
     signal.throwIfAborted();

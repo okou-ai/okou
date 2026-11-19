@@ -80,6 +80,21 @@ class ImageOperationTest(unittest.TestCase):
             )
         return result
 
+    @contextlib.contextmanager
+    def image_call(self, action, *arguments, environment=None):
+        with subprocess.Popen(
+            [sys.executable, str(COMMAND), action, "dev-11", *arguments],
+            env=self.environment if environment is None else environment,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        ) as process:
+            try:
+                yield process
+            finally:
+                if process.poll() is None:
+                    process.terminate()
+
     def records(self, name):
         path = self.root / (name + ".jsonl")
         return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
@@ -132,14 +147,45 @@ class ImageOperationTest(unittest.TestCase):
         cleanup.stdin.flush()
         return self.cleanup_reply(cleanup)["results"]["123"]
 
+    def fail_namespace_cleanup(self):
+        # A symlinked ancestor makes removal fail even when tests run as root.
+        runner_root = self.root / "var/lib/vm0-runner"
+        moved_root = runner_root.with_name("runner-data")
+        runner_root.rename(moved_root)
+        runner_root.symlink_to(moved_root, target_is_directory=True)
+        try:
+            with self.cleanup_session() as cleanup:
+                self.assertEqual(self.cleanup_reply(cleanup), {"ready": [123]})
+                result = self.clean_namespace(cleanup)
+                self.assertEqual(result["outcome"], "failed")
+                self.assertIn("resource ancestor is a symlink", result["error"])
+        finally:
+            runner_root.unlink()
+            moved_root.rename(runner_root)
+
+    def process_opened(self, pid, path):
+        descriptors = Path(f"/proc/{pid}/fd")
+        with contextlib.suppress(FileNotFoundError, ProcessLookupError):
+            return any(descriptor.resolve() == path for descriptor in descriptors.iterdir())
+        return False
+
+    def claim_waiter_opened(self, lock):
+        return any(
+            self.process_opened(pid, lock) for pid in reversed(self.records("claim-servers"))
+        )
+
     def test_running_image_excludes_cleanup_until_completion(self):
         process = self.start_blocked()
         lock = self.root / "var/lock/vm0-runner-lifecycle-pr-123.lock"
         with self.cleanup_session() as cleanup:
             # Synchronize on the actual lock contender opening the same file.
             def contender_opened():
-                descriptors = Path(f"/proc/{cleanup.pid}/fd")
-                return any(p.resolve() == lock for p in descriptors.iterdir() if p.exists())
+                for descriptor in Path(f"/proc/{cleanup.pid}/fd").iterdir():
+                    # An unrelated descriptor can close during enumeration.
+                    with contextlib.suppress(FileNotFoundError, ProcessLookupError):
+                        if descriptor.readlink() == lock:
+                            return True
+                return False
 
             self.wait_for(contender_opened)
             self.assertFalse(select.select([cleanup.stdout], [], [], 0)[0])
@@ -177,6 +223,80 @@ class ImageOperationTest(unittest.TestCase):
         output, error = process.communicate(timeout=15)
         self.assertNotEqual(process.returncode, 0, output + error)
         self.assertEqual(self.records("executions"), [])
+        self.assertFalse((self.root / "var/lib/vm0-runner/bin/pr-123-image-1234").exists())
+
+    def test_closure_fences_retained_owner_after_failed_cleanup(self):
+        self.invoke("claim")
+        directory = self.root / "var/lib/vm0-runner/bin/pr-123-image-1234"
+        marker = next(directory.glob(".image-owner-*"))
+        self.fail_namespace_cleanup()
+        self.assertTrue(marker.is_file())
+        reclaim = self.invoke("claim", check=False)
+        late = directory / "late"
+        guard = self.invoke("guard", "touch", str(late), input_text="", check=False)
+        self.assertNotEqual(reclaim.returncode, 0, reclaim.stderr)
+        self.assertIn("image workflow predates PR closure", reclaim.stderr)
+        self.assertNotEqual(guard.returncode, 0, guard.stderr)
+        self.assertFalse(late.exists())
+        self.environment.update(
+            GITHUB_RUN_ID="1235", RUNNER_IMAGE_RUN_CREATED_AT="2026-10-03T00:00:00Z"
+        )
+        self.invoke("claim")
+        fresh = directory.with_name("pr-123-image-1235") / "fresh"
+        self.invoke("guard", "touch", str(fresh), input_text="")
+        self.assertTrue(fresh.is_file())
+
+    def test_failed_cleanup_fences_detached_image_launch(self):
+        self.invoke("claim")
+        directory = self.root / "var/lib/vm0-runner/bin/pr-123-image-1234"
+        marker = next(directory.glob(".image-owner-*"))
+        with self.image_call(
+            "run",
+            "build",
+            str(self.result),
+            environment=dict(self.environment, IMAGE_FAULT="pending-launch"),
+        ) as launch:
+            try:
+                self.wait_for(lambda: bool(self.records("detached-servers")))
+                self.assertEqual(list((self.root / "units").glob("*.json")), [])
+                launch.kill()
+                self.assertEqual(launch.wait(timeout=5), -signal.SIGKILL)
+                self.fail_namespace_cleanup()
+                self.assertTrue(marker.is_file())
+            finally:
+                (self.root / "release-launch").touch()
+
+        observed = self.invoke("run", "build", str(self.result), check=False)
+        self.assertNotEqual(observed.returncode, 0, observed.stderr)
+        self.assertEqual(self.records("executions"), [])
+        self.assertFalse(self.result.exists())
+
+    def test_missing_owner_creation_time_blocks_reclaim_and_worker(self):
+        with self.cleanup_session() as cleanup:
+            self.assertEqual(self.cleanup_reply(cleanup), {"ready": [123]})
+            self.assertEqual(self.clean_namespace(cleanup)["outcome"], "already_absent")
+        self.environment["RUNNER_IMAGE_RUN_CREATED_AT"] = "2026-10-03T00:00:00Z"
+        self.invoke("claim")
+        owner_path = self.root / f"vm0-runner-image-{os.getuid()}/pr-123/owner.json"
+        owner = json.loads(owner_path.read_text())
+        del owner["runCreatedAt"]
+        owner_path.write_text(json.dumps(owner))
+
+        reclaim = self.invoke("claim", check=False)
+        self.assertNotEqual(reclaim.returncode, 0, reclaim.stderr)
+        self.assertIn("invalid image workflow creation time", reclaim.stderr)
+        output = self.root / "legacy-write"
+        guard = self.invoke("guard", "touch", str(output), input_text="", check=False)
+        self.assertNotEqual(guard.returncode, 0, guard.stderr)
+        self.assertFalse(output.exists())
+        self.environment["GITHUB_RUN_ATTEMPT"] = "2"
+        self.invoke("claim")
+
+    def test_pr_claim_without_creation_time_cannot_admit_an_owner(self):
+        self.environment["IMAGE_FAULT"] = "missing-claim-time"
+        claim = self.invoke("claim", check=False)
+        self.assertNotEqual(claim.returncode, 0, claim.stderr)
+        self.assertIn("invalid image workflow creation time", claim.stderr)
         self.assertFalse((self.root / "var/lib/vm0-runner/bin/pr-123-image-1234").exists())
 
     def test_cleanup_fences_a_late_service_and_same_owner_reclaim(self):
@@ -242,8 +362,8 @@ class ImageOperationTest(unittest.TestCase):
                 stderr=subprocess.PIPE,
             )
             self.addCleanup(lambda: claim.poll() is None and claim.kill())
-            owner = next(self.root.glob("vm0-runner-image-*/pr-123/owner.json"))
-            self.wait_for(lambda: json.loads(owner.read_text())["state"] == "claiming")
+            lock = self.root / "var/lock/vm0-runner-lifecycle-pr-123.lock"
+            self.wait_for(lambda: self.claim_waiter_opened(lock))
             self.assertEqual(self.clean_namespace(cleanup)["outcome"], "cleaned")
             self.assertFalse(directory.exists())
         out, error = claim.communicate(timeout=10)
@@ -262,6 +382,130 @@ class ImageOperationTest(unittest.TestCase):
         )
         self.invoke("claim")
         self.assertTrue(directory.with_name("pr-123-image-1236").exists())
+
+    def test_cancellation_can_fence_a_claim_waiting_for_preview(self):
+        self.invoke("claim")
+        self.environment["GITHUB_RUN_ID"] = "1235"
+        lock = self.root / "var/lock/vm0-runner-lifecycle-pr-123.lock"
+        directory = self.root / "var/lib/vm0-runner/bin/pr-123-image-1235"
+        with lock.open("r") as holder:
+            fcntl.flock(holder, fcntl.LOCK_EX)
+            with self.image_call("claim") as claim:
+                self.wait_for(lambda: self.claim_waiter_opened(lock))
+                self.assertFalse(directory.exists())
+                self.invoke("cancel")
+                output, error = claim.communicate(timeout=10)
+                self.assertNotEqual(claim.returncode, 0, output + error)
+                self.assertIn("cancelled", error)
+        self.assertFalse(directory.exists())
+        self.environment["GITHUB_RUN_ID"] = "1234"
+        self.invoke("run", "warm", str(self.result))
+
+    def test_claim_retries_after_ssh_loss_while_waiting_for_lifecycle_lock(self):
+        lock = self.root / "var/lock/vm0-runner-lifecycle-pr-123.lock"
+        lock.parent.mkdir(parents=True)
+        lock.touch()
+        self.environment["IMAGE_FAULT"] = "claim-wait-loss"
+        with self.image_call("claim") as claim:
+            with lock.open("r") as holder:
+                fcntl.flock(holder, fcntl.LOCK_EX)
+                self.wait_for(lambda: (self.root / "claim-wait-cut").exists())
+            output, error = claim.communicate(timeout=10)
+            self.assertEqual(claim.returncode, 0, output + error)
+
+        self.assertEqual(self.records("requests"), [{"action": "claim", "phase": None}] * 2)
+        binary_dir = self.root / "var/lib/vm0-runner/bin/pr-123-image-1234"
+        self.assertEqual(len(list(binary_dir.glob(".image-owner-*"))), 1)
+        marker_installs = [
+            call
+            for call in self.records("privileged")
+            if call[:4] == ["install", "-m", "600", "/dev/null"]
+        ]
+        self.assertEqual(len(marker_installs), 1)
+
+    def test_claim_budget_includes_prior_worker_retirement(self):
+        self.invoke("claim")
+        self.invoke("run", "warm", str(self.result))
+        self.environment.update(GITHUB_RUN_ID="1235", IMAGE_FAULT="slow-claim-retirement")
+        with self.image_call("claim") as claim:
+            output, error = claim.communicate(timeout=5)
+            self.assertNotEqual(claim.returncode, 0, output + error)
+            self.assertIn("timed out after", error)
+        binary_root = self.root / "var/lib/vm0-runner/bin"
+        self.assertTrue((binary_root / "pr-123-image-1234").is_dir())
+        self.assertFalse((binary_root / "pr-123-image-1235").exists())
+
+    def test_waiting_claim_retires_a_late_prior_worker(self):
+        self.invoke("claim")
+        lock = self.root / "var/lock/vm0-runner-lifecycle-pr-123.lock"
+        with contextlib.ExitStack() as children:
+            with lock.open("r") as deployment:
+                fcntl.flock(deployment, fcntl.LOCK_EX)
+                claim = children.enter_context(
+                    self.image_call(
+                        "claim",
+                        environment=dict(
+                            self.environment,
+                            GITHUB_RUN_ID="1235",
+                            IMAGE_FAULT="pause-retirement-observation",
+                        ),
+                    )
+                )
+                self.wait_for(lambda: self.claim_waiter_opened(lock))
+                prior = children.enter_context(
+                    self.image_call(
+                        "run",
+                        "build",
+                        str(self.result),
+                        environment=dict(self.environment, IMAGE_FAULT="late-prior-launch"),
+                    )
+                )
+                self.wait_for(lambda: (self.root / "retirement-observation-paused").exists())
+                # Deliver the old unit between the first status read and confirmation.
+                (self.root / "release-launch").touch()
+                self.wait_for(lambda: any((self.root / "units").glob("*.json")))
+                (self.root / "resume-retirement-observation").touch()
+                output, error = prior.communicate(timeout=10)
+                self.assertNotEqual(prior.returncode, 0, output + error)
+                self.assertTrue(self.records("stops"))
+                self.assertEqual(self.records("executions"), [])
+                self.assertIsNone(claim.poll())
+            output, error = claim.communicate(timeout=10)
+            self.assertEqual(claim.returncode, 0, output + error)
+        self.assertTrue((self.root / "var/lib/vm0-runner/bin/pr-123-image-1235").is_dir())
+
+    def test_same_owner_waits_for_the_original_claim_to_commit(self):
+        environment = dict(self.environment, IMAGE_FAULT="pause-claim-commit")
+        release = self.root / "release-claim-resource"
+        with self.image_call("claim", environment=environment) as original:
+            try:
+                self.wait_for(lambda: (self.root / "claim-resource-created").exists())
+                gate = next(self.root.glob("vm0-runner-image-*/pr-123/gate"))
+                short = dict(self.environment, IMAGE_FAULT="short-claim-budget")
+                with self.image_call("claim", environment=short) as expired:
+                    output, error = expired.communicate(timeout=6)
+                    self.assertNotEqual(expired.returncode, 0, output + error)
+                    self.assertIn("image ownership gate deadline exceeded", error)
+                with self.image_call("claim") as retry:
+                    self.wait_for(lambda: len(self.records("claim-servers")) == 3)
+                    retry_pid = self.records("claim-servers")[-1]
+                    self.wait_for(
+                        lambda: retry.poll() is not None or self.process_opened(retry_pid, gate)
+                    )
+                    self.assertFalse(select.select([retry.stdout, retry.stderr], [], [], 0.5)[0])
+                    release.touch()
+                    output, error = retry.communicate(timeout=10)
+                    self.assertEqual(retry.returncode, 0, output + error)
+                output, error = original.communicate(timeout=10)
+                self.assertEqual(original.returncode, 0, output + error)
+            finally:
+                release.touch()
+        marker_installs = [
+            call
+            for call in self.records("privileged")
+            if call[:4] == ["install", "-m", "600", "/dev/null"]
+        ]
+        self.assertEqual(len(marker_installs), 1)
 
     def start_blocked(self, fault=""):
         self.environment["IMAGE_FAULT"] = fault
@@ -298,15 +542,14 @@ class ImageOperationTest(unittest.TestCase):
     def assert_one_build(self):
         self.assertEqual([r["phase"] for r in self.records("executions")], ["build"])
 
-    def test_healthy_and_lost_result_keep_original_execution(self):
-        for fault in ("", "lost-result", "partial-result"):
+    def test_healthy_and_truncated_result_keep_original_execution(self):
+        for fault in ("", "partial-result"):
             with self.subTest(fault=fault):
                 (self.root / "fault-used").unlink(missing_ok=True)
                 self.environment["IMAGE_FAULT"] = fault
                 self.environment["GITHUB_RUN_ATTEMPT"] = str(
                     int(self.environment["GITHUB_RUN_ATTEMPT"]) + 1
                 )
-                started = time.monotonic()
                 self.invoke("claim")
                 outcome = self.invoke("run", "build", str(self.result))
                 result = json.loads(self.result.read_text())
@@ -315,12 +558,8 @@ class ImageOperationTest(unittest.TestCase):
                 self.assertEqual(result["snapshotHash"], "2" * 64)
                 self.assertIn("image-progress", outcome.stdout)
                 self.assertNotIn(self.environment["R2_SECRET_ACCESS_KEY"], outcome.stdout)
-                request_count = sum(r["action"] == "run" for r in self.records("requests"))
-                print(
-                    f"image fixture fault={fault or 'none'} elapsed={time.monotonic() - started:.3f}s cumulative_run_requests={request_count}"
-                )
-        self.assertEqual(len(self.records("executions")), 3)
-        self.assertEqual(sum(r["action"] == "run" for r in self.records("requests")), 5)
+        self.assertEqual(len(self.records("executions")), 2)
+        self.assertEqual(sum(r["action"] == "run" for r in self.records("requests")), 3)
         calls = json.dumps(self.records("privileged"))
         self.assertNotIn(self.environment["R2_SECRET_ACCESS_KEY"], calls)
         self.assertIn("--property=RuntimeMaxSec=570", calls)

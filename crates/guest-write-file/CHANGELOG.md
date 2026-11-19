@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.1.311](https://github.com/okou-ai/okou/compare/guest-write-file-v0.1.310...guest-write-file-v0.1.311) (2026-11-19)
+
+## [0.1.310](https://github.com/okou-ai/okou/compare/guest-write-file-v0.1.309...guest-write-file-v0.1.310) (2026-11-18)
+
+
+### Refactoring
+
+* **guest-control:** use typed sealed batch descriptors ([#48773](https://github.com/okou-ai/okou/issues/48773)) ([b1c67a4](https://github.com/okou-ai/okou/commit/b1c67a477f6261d5953cc4010c975933bea6d195))
+
+## [0.1.309](https://github.com/okou-ai/okou/compare/guest-write-file-v0.1.308...guest-write-file-v0.1.309) (2026-11-18)
+
 ## [0.1.308](https://github.com/okou-ai/okou/compare/guest-write-file-v0.1.307...guest-write-file-v0.1.308) (2026-11-18)
 
 ## [0.1.307](https://github.com/okou-ai/okou/compare/guest-write-file-v0.1.306...guest-write-file-v0.1.307) (2026-11-18)

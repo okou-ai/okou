@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.11.6](https://github.com/okou-ai/okou/compare/runner-storage-v0.11.5...runner-storage-v0.11.6) (2026-11-19)
+
+## [0.11.5](https://github.com/okou-ai/okou/compare/runner-storage-v0.11.4...runner-storage-v0.11.5) (2026-11-19)
+
+
+### Performance Improvements
+
+* **runner:** retain more archive fills after slow downloads ([#48770](https://github.com/okou-ai/okou/issues/48770)) ([d19e0c2](https://github.com/okou-ai/okou/commit/d19e0c2107fe26c14d4c05f423f5327cfb33dab9))
+
+## [0.11.4](https://github.com/okou-ai/okou/compare/runner-storage-v0.11.3...runner-storage-v0.11.4) (2026-11-18)
+
+## [0.11.3](https://github.com/okou-ai/okou/compare/runner-storage-v0.11.2...runner-storage-v0.11.3) (2026-11-18)
+
 ## [0.11.2](https://github.com/okou-ai/okou/compare/runner-storage-v0.11.1...runner-storage-v0.11.2) (2026-11-18)
 
 ## [0.11.1](https://github.com/okou-ai/okou/compare/runner-storage-v0.11.0...runner-storage-v0.11.1) (2026-11-18)

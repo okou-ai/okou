@@ -7,7 +7,8 @@ use guest_control_proto::{
     MSG_GUEST_STORAGE_MANIFEST_RESULT, ProtocolError, decode_guest_storage_manifest_request,
     decode_guest_storage_manifest_result, encode, encode_exec_result,
     encode_guest_storage_manifest_request, encode_guest_storage_manifest_request_frame_into,
-    encode_guest_storage_manifest_result, encode_guest_storage_manifest_result_frame_into,
+    encode_guest_storage_manifest_request_frame_prefix_into, encode_guest_storage_manifest_result,
+    encode_guest_storage_manifest_result_frame_into,
 };
 use proptest::prelude::*;
 use proptest::test_runner::{Config as ProptestConfig, RngSeed, TestCaseError, TestCaseResult};
@@ -18,6 +19,65 @@ const MAX_GENERATED_TEXT_CHARS: usize = 12;
 const MAX_GENERATED_MANIFEST_BYTES: usize = 64;
 const MAX_GENERATED_OUTPUT_BYTES: usize = 64;
 const MAX_ARBITRARY_PAYLOAD_BYTES: usize = 512;
+
+#[test]
+fn borrowed_storage_frame_matches_contiguous_encoding_at_large_input_boundaries() {
+    use guest_contracts::storage_files::{INPUT_MAGIC, MAX_INPUT_BYTES, MAX_PAYLOAD_BYTES};
+
+    for size in [4 * 1024 * 1024 - 1, 4 * 1024 * 1024, MAX_INPUT_BYTES] {
+        // The outer storage codec validates the binary envelope. The Guest
+        // helper decodes and validates the file groups separately.
+        let envelope_len = INPUT_MAGIC.len() + 2 * size_of::<u32>();
+        let manifest_len = (size - envelope_len)
+            .saturating_sub(MAX_PAYLOAD_BYTES)
+            .max(2);
+        let files_len = size - envelope_len - manifest_len;
+        let mut input = Vec::with_capacity(size);
+        input.extend_from_slice(INPUT_MAGIC);
+        input.extend_from_slice(&u32::try_from(manifest_len).unwrap().to_be_bytes());
+        input.extend_from_slice(b"{}");
+        input.resize(INPUT_MAGIC.len() + size_of::<u32>() + manifest_len, b' ');
+        input.extend_from_slice(&u32::try_from(files_len).unwrap().to_be_bytes());
+        input.resize(size, 0xA5);
+
+        let mut frame = Vec::new();
+        encode_guest_storage_manifest_request_frame_into(&mut frame, 7, 100, "run", "/run", &input)
+            .unwrap();
+        let mut prefix = Vec::new();
+        let suffix = encode_guest_storage_manifest_request_frame_prefix_into(
+            &mut prefix,
+            7,
+            100,
+            "run",
+            "/run",
+            &input,
+        )
+        .unwrap();
+        assert!(std::ptr::eq(suffix, input.as_slice()));
+        assert_eq!(prefix, frame[..prefix.len()]);
+        assert!(
+            suffix == &frame[prefix.len()..],
+            "changed payload at size {size}"
+        );
+
+        if size == MAX_INPUT_BYTES {
+            input.pop();
+            let original_prefix = prefix.clone();
+            assert!(
+                encode_guest_storage_manifest_request_frame_prefix_into(
+                    &mut prefix,
+                    7,
+                    100,
+                    "run",
+                    "/run",
+                    &input,
+                )
+                .is_err()
+            );
+            assert_eq!(prefix, original_prefix);
+        }
+    }
+}
 
 #[test]
 fn resource_field_is_bounded_and_independent_of_terminal_metadata() {

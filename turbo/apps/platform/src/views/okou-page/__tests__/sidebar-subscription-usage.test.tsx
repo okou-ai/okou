@@ -84,18 +84,21 @@ test("Open subscriptions by clicking the rail and open Models in Settings", asyn
   expect(entry).toHaveAccessibleDescription(
     "ChatGPT: 55% left; Claude: 76% left",
   );
+  const tooltipTextSelector = '[data-slot="tooltip-content"] *';
   const codexInformation = within(codex).getByLabelText("ChatGPT usage");
   await user.hover(codexInformation);
   await waitFor(() => {
-    expectVisibleText("Resets in 5d 23h");
+    expectVisibleText("Resets in 5d 23h", tooltipTextSelector);
     expectVisibleText(
       formatResetInTimeZone("2030-01-07T00:00:00.000Z", "America/New_York"),
+      tooltipTextSelector,
     );
   });
   await user.hover(within(claude).getByRole("heading", { name: "Claude" }));
   await waitFor(() => {
     expectVisibleText(
       formatResetInTimeZone("2030-01-01T05:00:00.000Z", "America/New_York"),
+      tooltipTextSelector,
     );
   });
   click(within(claude).getByLabelText("Claude usage"));

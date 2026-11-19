@@ -1,36 +1,22 @@
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import {
-  chatEvents,
-  chatEventRunlessInputPredicate,
-} from "@okouai/db/schema/chat-event";
+import { chatEvents } from "@okouai/db/schema/chat-event";
 import { computed } from "ccstate";
-import {
-  and,
-  asc,
-  count,
-  eq,
-  exists,
-  inArray,
-  lt,
-  not,
-  notExists,
-  sql,
-} from "drizzle-orm";
-import { alias, QueryBuilder } from "drizzle-orm/pg-core";
+import { and, asc, count, eq, exists, lt, not, sql } from "drizzle-orm";
+import { QueryBuilder } from "drizzle-orm/pg-core";
 
 import {
   nullableDriverValueDecoder,
   pgBooleanDecoder,
 } from "../../lib/db-structured-result";
 import { db$ } from "../external/db";
-import { joinAll } from "../utils";
 import type { AgentRunContextSignals } from "./agent-run-context.signals";
 import {
   canonicalChatEventUserMessage,
   canonicalChatInputModelSelection,
 } from "./canonical-chat-event-read.service";
+import { queuedThreadInputCondition } from "./chat-queued-event.service";
 import {
   chatThreadRequestSelection,
   type ChatThreadRequestFacts,
@@ -59,7 +45,6 @@ function buildPreparationTables(
         capacity === 0 ? sql`false` : eq(activeAgentRuns.orgId, claim.orgId),
       ),
   );
-  const revoker = alias(chatEvents, "preparation_input_revoker");
   // This request already validated and committed its canonical input facts.
   // Other FIFO heads still read and strictly decode their stored payload.
   const payload =
@@ -107,53 +92,20 @@ function buildPreparationTables(
           eq(agentRuns.id, chatEvents.contextId),
         ),
       )
-      .where(
-        and(
-          eq(chatEvents.chatThreadId, claim.chatThreadId),
-          chatEventRunlessInputPredicate(
-            chatEvents.runId,
-            chatEvents.eventType,
-          ),
-          inArray(chatEvents.eventType, ["input.prompt", "input.automation"]),
-          notExists(
-            new QueryBuilder()
-              .select({ id: revoker.id })
-              .from(revoker)
-              .where(eq(revoker.revokesEventId, chatEvents.id)),
-          ),
-        ),
-      )
+      .where(queuedThreadInputCondition(claim.chatThreadId))
       .orderBy(asc(chatEvents.seqId))
       .limit(1),
   );
   return { occupancy, head };
 }
 
-/** One head/capacity statement joined with the claim's owned Thread facts. */
+/** Read the FIFO head and its owned Thread in one availability statement. */
 export function createChatRunPreparationSnapshot(
   claim: { readonly orgId: string; readonly chatThreadId: string },
   bootstrap: AgentRunContextSignals,
   requestFacts?: ChatThreadRequestFacts,
 ) {
-  const threadRow$ = computed(async (get) => {
-    // Preserve the request's binding snapshot. Commit still checks that binding.
-    if (requestFacts) {
-      return requestFacts.thread;
-    }
-    const [row] = await get(db$)
-      .select(chatThreadRequestSelection())
-      .from(chatThreads)
-      .where(
-        and(
-          eq(chatThreads.id, claim.chatThreadId),
-          eq(chatThreads.userId, bootstrap.userId),
-          eq(chatThreads.agentId, bootstrap.agentId),
-        ),
-      )
-      .limit(1);
-    return row ?? null;
-  });
-  const availability$ = computed(async (get) => {
+  return computed(async (get) => {
     const database = get(db$);
     // The limit belongs to the identity context; occupancy is sampled here.
     const capacity = await get(bootstrap.concurrencyCapacity$);
@@ -174,6 +126,8 @@ export function createChatRunPreparationSnapshot(
             .from(activeAgentRuns)
             .where(eq(activeAgentRuns.chatThreadId, claim.chatThreadId)),
         ).mapWith(pgBooleanDecoder),
+        // An immediate send already owns its Thread snapshot.
+        ...(requestFacts ? {} : { thread: chatThreadRequestSelection() }),
         head: {
           id: head.id,
           chatThreadId: head.chatThreadId,
@@ -199,14 +153,21 @@ export function createChatRunPreparationSnapshot(
             )} ELSE false END`.mapWith(pgBooleanDecoder),
       })
       .from(occupancy)
-      .leftJoin(head, sql`true`);
+      .leftJoin(head, sql`true`)
+      .leftJoin(
+        chatThreads,
+        requestFacts
+          ? sql`false`
+          : and(
+              eq(chatThreads.id, head.chatThreadId),
+              eq(chatThreads.userId, bootstrap.userId),
+              eq(chatThreads.agentId, bootstrap.agentId),
+            ),
+      );
     if (!row) {
       throw new Error("Chat preparation occupancy returned no row");
     }
-    return row;
-  });
-  const snapshot$ = computed(async (get) => {
-    const [thread, row] = await joinAll([get(threadRow$), get(availability$)]);
+    const thread = requestFacts?.thread ?? row.thread;
     const picked = row.head;
     if (!thread || !picked) {
       return {
@@ -218,12 +179,10 @@ export function createChatRunPreparationSnapshot(
     // Only this request's actual FIFO head may use its canonical input facts.
     const owned =
       requestFacts?.input.id === picked.id ? requestFacts.input : undefined;
-    const modelSelection = owned ? owned.modelSelection : picked.modelSelection;
     const pickedEvent: PickedThreadInputEvent = {
       ...picked,
       userMessage: owned ? owned.userMessage : picked.userMessage,
-      modelSelection,
-      canonicalModelSelection: modelSelection,
+      modelSelection: owned ? owned.modelSelection : picked.modelSelection,
       requiredOfficialWorkflowIds: owned
         ? (owned.requiredOfficialWorkflowIds ?? null)
         : picked.requiredOfficialWorkflowIds,
@@ -240,5 +199,4 @@ export function createChatRunPreparationSnapshot(
       pickedEvent,
     };
   });
-  return snapshot$;
 }

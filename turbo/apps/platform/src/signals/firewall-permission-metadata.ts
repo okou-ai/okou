@@ -5,7 +5,7 @@ import { accept } from "../lib/accept.ts";
 import { apiClient$ } from "./api-client.ts";
 import type { PlatformConnectorPermissionMetadata } from "./connector-domain.ts";
 import { builtinConnectorsReloadVersion$ } from "./external/connectors.ts";
-import { featureSwitch$ } from "./external/feature-switch.ts";
+import { featureSwitches$ } from "./external/feature-switch.ts";
 
 interface FirewallPermissionMetadataParams {
   readonly connectorSlug: string;
@@ -20,7 +20,7 @@ export function firewallPermissionMetadataByConnector(
       return null;
     }
     get(builtinConnectorsReloadVersion$);
-    get(featureSwitch$);
+    await get(featureSwitches$);
 
     const createClient = get(apiClient$);
     const client = createClient(connectorCatalogContract);

@@ -12,7 +12,6 @@ import type {
 } from "ably";
 import type { SharedDatabaseBridge } from "../shared-database/bridge.ts";
 import type { SharedDatabaseRealtimeScope } from "../shared-database/protocol.ts";
-import { createPhonePresenceChannel } from "../lib/phone-presence-channel.ts";
 import { createAblyRealtime, type AblyRealtime } from "../lib/ably-realtime.ts";
 import { apiClient$ } from "./api-client.ts";
 import { runtimeAuthenticatedIdentity$ } from "./auth-context.ts";
@@ -84,7 +83,6 @@ type RealtimeChannelScope = SharedDatabaseRealtimeScope;
 
 interface RealtimeSessionChannels {
   readonly "run-output": RealtimeSubscriptionChannel;
-  readonly "phone-presence": RealtimeSubscriptionChannel;
   readonly credential: RealtimeSubscriptionChannel;
   readonly user: RealtimeSubscriptionChannel;
   readonly org: RealtimeSubscriptionChannel;
@@ -929,11 +927,6 @@ const initializeRealtime$ = command(
     );
     signal.throwIfAborted();
     const channels: RealtimeSessionChannels = {
-      "phone-presence": createPhonePresenceChannel(
-        connected.ably,
-        connected.identity,
-        whenChannelAttached,
-      ),
       "run-output": createSessionOutputSubscriptionChannel(
         connected.ably,
         connected.identity,

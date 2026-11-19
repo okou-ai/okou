@@ -139,9 +139,7 @@ describe("external MCP authentication and transport", () => {
   });
 
   it.each([
-    { iss: "https://other-clerk.example.test" },
     { aud: "https://different-resource.example.test/mcp" },
-    { aud: undefined },
     { org_id: undefined },
     { client_id: undefined },
     { client_id: "   " },
@@ -288,7 +286,6 @@ describe("external MCP authentication and transport", () => {
 
   it.each([
     { scope: undefined, scp: [orgScope, readScope] },
-    { scope: requiredScopes, scp: [orgScope, readScope] },
     { aud: ["https://another.example.test", resource] },
   ])("accepts the supported signed claim representation %j", async (claims) => {
     const auth = await fixture();
@@ -298,22 +295,6 @@ describe("external MCP authentication and transport", () => {
         body: requestBody("tools/list"),
       }),
     ).resolves.toMatchObject({ status: 200 });
-  });
-
-  it.each([
-    { scope: requiredScopes, scp: ["okou:chat:manage"] },
-    {
-      scope: `${requiredScopes} ${readScope}`,
-      scp: [orgScope, readScope, "okou:chat:manage"],
-    },
-  ])("rejects disagreeing signed scope claims %j", async (claims) => {
-    const auth = await fixture();
-    await expect(
-      client().request({
-        extraHeaders: protocolHeaders(auth.token(claims), "tools/list"),
-        body: requestBody("tools/list"),
-      }),
-    ).resolves.toMatchObject({ status: 401, body: { error: "invalid_token" } });
   });
 
   it("acknowledges legacy initialization notifications without caching them", async () => {

@@ -1,4 +1,4 @@
-import { useGet, useLoadable, useSet } from "ccstate-react";
+import { useLastResolved, useGet, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { brandName$ } from "../../signals/branding.ts";
@@ -22,7 +22,7 @@ import {
 import { detach, Reason } from "../../signals/utils.ts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
+import { featureSwitches$ } from "../../signals/external/feature-switch.ts";
 import { Dialog } from "@okouai/ui/components/ui/dialog";
 import { WhatsappMark } from "./components/whatsapp-mark.tsx";
 import { WhatsappConnectContent } from "./whatsapp-card.tsx";
@@ -360,7 +360,10 @@ function PageContent() {
   const brandName = useGet(brandName$);
   const params = useGet(searchParams$);
   const whatsapp = useGet(isWhatsappConnectPage$);
-  const enabled = useGet(featureSwitch$)[FeatureSwitchKey.WhatsappIntegration];
+  const enabled =
+    useLastResolved(featureSwitches$)?.[
+      FeatureSwitchKey.WhatsappIntegration
+    ] === true;
   const parsed = parseAgentPhoneConnectParams(
     params,
     whatsapp

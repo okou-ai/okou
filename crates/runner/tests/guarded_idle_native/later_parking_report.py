@@ -5,7 +5,6 @@ import argparse
 import datetime
 import json
 import pathlib
-import uuid
 
 import progress_report as foreground
 import pressure_report as pressure
@@ -21,7 +20,7 @@ PHASES = ("tail_blocked", "pool_wait_progress", "tail_wait_progress", "status_wa
 
 
 def identifier(value):
-    if not isinstance(value, str) or str(uuid.UUID(value)) != value:
+    if not isinstance(value, str) or not report.is_canonical_uuid(value):
         raise ValueError("later parking identity is not canonical")
     return value
 
@@ -37,9 +36,7 @@ def history_operation(evidence, identities, reason):
 
 
 def clock(value, begin, end):
-    if not report.positive_integer(value) or not begin < value < end:
-        raise ValueError("later parking phase clocks lost ordering")
-    return value
+    return report.validate_phase_clock(value, begin, end, "later parking phase clocks lost ordering")
 
 
 def covered(value, policy):

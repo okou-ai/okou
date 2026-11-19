@@ -18,7 +18,7 @@ import { openSettingsBillingPlansDialog$ } from "./settings/settings-dialog.ts";
 
 interface UserModelDefaultSource {
   selectedModel: string | null;
-  serviceTier?: "priority" | null;
+  serviceTier?: "priority" | "ultrafast" | null;
   modelSettings?: ModelSettings;
 }
 
@@ -48,7 +48,7 @@ function createModelFirstSelection(
 export function isServiceTierAvailableForSelection(params: {
   readonly models: AvailableRunModelsResponse | null | undefined;
   readonly selectedModel: string | null | undefined;
-  readonly tier: "priority";
+  readonly tier: "priority" | "ultrafast";
 }): boolean {
   const runModel = params.models?.models.find((candidate) => {
     return sameSelectedModel(candidate.model, params.selectedModel);
@@ -56,7 +56,9 @@ export function isServiceTierAvailableForSelection(params: {
   // Availability can change without changing this model's Fast capability.
   // Preserve the saved choice through reconnect and plan restrictions; send
   // readiness and admission own whether it can run now.
-  return runModel?.subscriptionOptions?.serviceTier === params.tier;
+  return params.tier === "ultrafast"
+    ? runModel?.subscriptionOptions?.ultrafastAvailable === true
+    : runModel?.subscriptionOptions?.serviceTier === params.tier;
 }
 
 /** Whether a configurable runModel row offers the Fast (priority) toggle. */

@@ -39,7 +39,7 @@ struct SandboxEntry<P = NetworkPolicy> {
     run_id: String,
     cli_agent_type: String,
     sandbox_token: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     firewall_token: Option<String>,
     registered_at: i64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -56,7 +56,6 @@ struct SandboxEntry<P = NetworkPolicy> {
     omitted_custom_connector_ids: HashSet<String>,
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     connector_routing_variables: HashMap<String, HashMap<String, String>>,
-    encrypted_secrets: Option<String>,
     secret_connector_map: Option<HashMap<String, String>>,
     secret_connector_metadata_map: Option<HashMap<String, SecretConnectorMetadata>>,
     vars: Option<HashMap<String, String>>,
@@ -78,14 +77,13 @@ pub struct SandboxRegistration<'a> {
     pub run_id: &'a str,
     pub cli_agent_type: &'a str,
     pub sandbox_token: &'a str,
-    /// Host-only firewall resolver authority; callback/billing keeps sandbox_token.
+    /// Host-only firewall resolver authority. Standalone jobs have no credential.
     pub firewall_token: Option<&'a str>,
     pub network_log_path: &'a std::path::Path,
     pub proxy_log_path: &'a std::path::Path,
     pub firewalls: Option<&'a [FirewallEntry]>,
     pub network_policies: Option<&'a HashMap<String, NetworkPolicy>>,
     pub connector_runtime_targets: Option<&'a [ConnectorRuntimeTargetRegistration]>,
-    pub encrypted_secrets: Option<&'a str>,
     pub secret_connector_map: Option<&'a HashMap<String, String>>,
     pub secret_connector_metadata_map: Option<&'a HashMap<String, SecretConnectorMetadata>>,
     pub vars: Option<&'a HashMap<String, String>>,
@@ -902,7 +900,6 @@ impl ProxyRegistryHandle {
                 omitted_builtin_firewalls,
                 omitted_custom_connector_ids,
                 connector_routing_variables,
-                encrypted_secrets: registration.encrypted_secrets.map(String::from),
                 secret_connector_map: registration.secret_connector_map.cloned(),
                 secret_connector_metadata_map: registration.secret_connector_metadata_map.cloned(),
                 vars: registration.vars.cloned(),

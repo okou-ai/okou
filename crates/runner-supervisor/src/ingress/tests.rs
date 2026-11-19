@@ -70,7 +70,7 @@ async fn dispatch_rejects_untrusted_routing_auth_and_bounded_body_without_custod
     let valid = json!({
         "runnerId": id.runner_id(), "heartbeatGeneration": id.heartbeat_generation(),
         "profile": "vm0/default", "notAfter": dispatch::now_ms() + 60_000,
-        "executionContext": {"runId": run_id, "sandboxToken": "run-token", "prompt": "hello", "cliAgentType": "", "platformEnvironment": {}, "connectorRuntimeTargets": [], "contentBundles": {"format": "tar-gzip-v1", "skills": []}}
+        "executionContext": {"runId": run_id, "sandboxToken": "run-token", "firewallToken": "firewall-token", "prompt": "hello", "cliAgentType": "", "platformEnvironment": {}, "connectorRuntimeTargets": [], "contentBundles": {"format": "tar-gzip-v1", "skills": []}}
     });
     let base = dispatch_request(id, run_id, &valid.to_string());
     for (bad, status) in [
@@ -124,6 +124,7 @@ async fn dispatch_rejects_untrusted_routing_auth_and_bounded_body_without_custod
     for (key, value) in [
         ("runId", json!(runner_types::ids::RunId::new_v4())),
         ("sandboxToken", json!("")),
+        ("firewallToken", json!("")),
         ("platformEnvironment", json!(null)),
         ("contentBundles", json!({"format":"unknown", "skills":[]})),
     ] {
@@ -188,7 +189,7 @@ async fn expired_http_replay_is_unknown_and_new_runs_still_enter_intake() {
     let mut input = serde_json::json!({
         "runnerId": id.runner_id(), "heartbeatGeneration": id.heartbeat_generation(),
         "profile": "vm0/default", "notAfter": deadline,
-        "executionContext": {"runId":run_id,"prompt":"hello","sandboxToken":"run-token","cliAgentType":"","platformEnvironment":{},"connectorRuntimeTargets":[],"contentBundles":{"format":"tar-gzip-v1","skills":[]}}
+        "executionContext": {"runId":run_id,"prompt":"hello","sandboxToken":"run-token","firewallToken":"firewall-token","cliAgentType":"","platformEnvironment":{},"connectorRuntimeTargets":[],"contentBundles":{"format":"tar-gzip-v1","skills":[]}}
     });
     let original = dispatch_request(id, run_id, &input.to_string());
     let peer_socket = socket.clone();

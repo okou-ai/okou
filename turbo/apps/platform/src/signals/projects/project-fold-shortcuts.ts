@@ -8,7 +8,7 @@ import { scrollToChatListRow$ } from "../chat-page/sidebar-chat-thread-scroll.ts
 import { shouldHandleShortcutPress } from "../okou-page/nav.ts";
 import { setProjectExpandedWithMotion$ } from "./project-fold.ts";
 import { selectedProjectId$ } from "./project-navigation.ts";
-import { projects$ } from "./projects.ts";
+import { projectedProjects$, projects$ } from "./projects.ts";
 
 /**
  * A text control keeps these keys for selecting to the line edge while it
@@ -40,7 +40,7 @@ function projectMenuOwns(target: EventTarget | null): boolean {
  * focus, otherwise the Project of the current Project page or chat.
  */
 export const setupProjectFoldShortcuts$ = command(
-  ({ get, set }, signal: AbortSignal) => {
+  ({ get, set }, projectsEnabled: () => boolean, signal: AbortSignal) => {
     const threadProjectId = (threadId: string) => {
       return (
         get(eventDrivenChatThreads$).find((thread) => {
@@ -72,7 +72,8 @@ export const setupProjectFoldShortcuts$ = command(
     const listedProjectId = (event: KeyboardEvent): string | null => {
       const projectId = targetProjectId(event.target);
       return projectId &&
-        get(projects$).some((project) => {
+        projectsEnabled() &&
+        get(projectedProjects$).some((project) => {
           return project.id === projectId;
         })
         ? projectId
@@ -96,7 +97,14 @@ export const setupProjectFoldShortcuts$ = command(
           shouldHandle,
           run: async (event) => {
             const projectId = listedProjectId(event);
-            if (!projectId) {
+            const projects = await get(projects$);
+            signal.throwIfAborted();
+            if (
+              !projectId ||
+              !projects.some((project) => {
+                return project.id === projectId;
+              })
+            ) {
               return;
             }
             await set(setProjectExpandedWithMotion$, projectId, false, signal);
@@ -113,7 +121,14 @@ export const setupProjectFoldShortcuts$ = command(
           shouldHandle,
           run: async (event) => {
             const projectId = listedProjectId(event);
-            if (projectId) {
+            const projects = await get(projects$);
+            signal.throwIfAborted();
+            if (
+              projectId &&
+              projects.some((project) => {
+                return project.id === projectId;
+              })
+            ) {
               await set(setProjectExpandedWithMotion$, projectId, true, signal);
             }
           },

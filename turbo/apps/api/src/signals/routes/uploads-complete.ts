@@ -83,10 +83,6 @@ const completeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     recordWebUploadedFile$,
     {
       runId,
-      purpose:
-        s3Object.purpose === "artifact" && s3Object.producingRunId === runId
-          ? "artifact"
-          : undefined,
       externalId: id,
       userId: auth.userId,
       orgId: "orgId" in auth ? auth.orgId : null,

@@ -24,7 +24,7 @@ import { nowDate } from "../../lib/time.ts";
 import type { ModelProviderSelection } from "../../views/okou-page/components/model-provider-picker.tsx";
 import { currentChatThreadId$ } from "../agent-chat.ts";
 import { apiClient$, type ApiClientFactory } from "../api-client.ts";
-import { featureSwitch$ } from "../external/feature-switch.ts";
+import { featureSwitches$ } from "../external/feature-switch.ts";
 import { modelCatalog$, type ModelCatalog } from "../external/model-catalog.ts";
 import { availableRunModels$ } from "../external/run-models.ts";
 import { userModelPreference$ } from "../external/user-model-preference.ts";
@@ -42,7 +42,7 @@ import {
   type ComposerTaskSelection,
 } from "../okou-page/composer-task-handoff.ts";
 import {
-  isCodexFastModeAvailableForSelection,
+  isServiceTierAvailableForSelection,
   resolveDefaultModelSelection,
 } from "../okou-page/model-default-selection.ts";
 import { selectedModelAvailable$ } from "../okou-page/model-first-personal-oauth.ts";
@@ -245,10 +245,14 @@ function resolveNewThreadModelSelection(
   },
 ): ModelProviderSelection | null {
   if (modelSelection) {
-    return modelSelection.codexServiceTier === "fast" &&
-      !isCodexFastModeAvailableForSelection({
+    return modelSelection.codexServiceTier !== undefined &&
+      !isServiceTierAvailableForSelection({
         models: args.models,
         selectedModel: modelSelection.selectedModel,
+        tier:
+          modelSelection.codexServiceTier === "fast"
+            ? "priority"
+            : modelSelection.codexServiceTier,
       })
       ? { ...modelSelection, codexServiceTier: undefined }
       : modelSelection;
@@ -363,7 +367,7 @@ const mintOptimisticThreadWithEvent$ = command(
       readonly projectId?: string;
       readonly title?: string;
       readonly selectedModel: string | null;
-      readonly serviceTier: "priority" | null;
+      readonly serviceTier: "priority" | "ultrafast" | null;
       readonly modelSettings: ModelSettings;
       readonly computerUseHostId: string | null;
       readonly cloudBrowserEnabled: boolean;
@@ -557,7 +561,9 @@ const startNewChatThreadCreate$ = command(
           modelSelection,
           models,
           catalog,
-          codexExecution: get(featureSwitch$)[FeatureSwitchKey.CodexExecution],
+          codexExecution: (await get(featureSwitches$))[
+            FeatureSwitchKey.CodexExecution
+          ],
         },
         signal,
       );
@@ -833,7 +839,8 @@ const sendNewThreadMessage$ = command(
     if (!prepared) {
       return null;
     }
-    const features = get(featureSwitch$);
+    const features = await get(featureSwitches$);
+    signal.throwIfAborted();
     const { annotatedUserMessage, optimisticUserMessage } =
       annotatedMessagesForNewThread(
         request,

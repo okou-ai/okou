@@ -615,7 +615,7 @@ const piModelConfigVersionedSchema = object({
     "xhigh",
     "max",
   ]).optional(),
-  serviceTier: zEnum(["priority", "fast"]).optional(),
+  serviceTier: zEnum(["priority", "fast", "ultrafast"]).optional(),
   credentialBindings: array(piModelCredentialBindingSchema).min(1).max(2),
 })
   .strict()
@@ -708,7 +708,7 @@ export const piModelConfigV3Schema = discriminatedUnion("dialect", [
     dialect: literal("openai-codex-responses"),
     transport: zEnum(["sse"]),
     provider: zEnum(["openai-codex"]),
-    serviceTier: zEnum(["fast"]).optional(),
+    serviceTier: zEnum(["fast", "ultrafast"]).optional(),
   }),
 ]).readonly();
 
@@ -841,9 +841,6 @@ const preparedExecutionContextObjectSchema = object({
   // Original Run vars travel in the admitted launch and merge during execution preparation.
   vars: record(string(), string()).nullable(),
   nativeContinuation: nativeContinuationSchema,
-  // Transitional protocol field only; current preparation never encrypts.
-  // Remove with the old-owner envelope readers in #48649.
-  encryptedSecrets: string().nullable(),
   // Maps firewall auth secret env aliases (the `NAME` in `${{ secrets.NAME }}`) to
   // their connector or provider owner. Keys are env aliases, not storage secret names.
   secretConnectorMap: record(string(), string()).nullable(),
@@ -929,9 +926,6 @@ const executionContextObjectSchema = object({
   // Plain secret values used by the runner for redaction. These are values, not
   // names, and are base64-encoded only when exported through OKOU_SECRET_VALUES.
   secretValues: array(string()).nullable(),
-  // Current launches send null. Remove this transition field and legacy readers
-  // after the owner/Run drain tracked in #48649.
-  encryptedSecrets: string().nullable(),
   // Maps firewall auth secret env aliases (the `NAME` in `${{ secrets.NAME }}`) to
   // their connector or provider owner. Keys are env aliases, not storage secret names.
   secretConnectorMap: record(string(), string()).nullable().optional(),

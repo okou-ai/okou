@@ -66,8 +66,10 @@ function piAgentCodexStream(
   options?: PiAgentStreamOptions,
 ): AssistantMessageEventStream {
   const serviceTier = options?.serviceTier;
-  if (serviceTier !== undefined && serviceTier !== "fast") {
-    throw new Error("Pi Codex Responses only accepts the fast service tier");
+  if (serviceTier === "priority") {
+    throw new Error(
+      "Pi Codex Responses does not accept a public API service tier",
+    );
   }
   const base = buildBaseOptions(model, context, options, options?.apiKey);
   const clampedReasoning =
@@ -78,7 +80,7 @@ function piAgentCodexStream(
     ...base,
     reasoningEffort: clampedReasoning === "off" ? undefined : clampedReasoning,
     // Codex keeps fast in config but sends priority on Responses requests.
-    serviceTier: serviceTier === "fast" ? "priority" : undefined,
+    serviceTier: serviceTier === "fast" ? "priority" : serviceTier,
     accountId,
     // Transport retries stay off here: the Codex adapter replaces a capped
     // Retry-After with a bare delay error, which would discard the friendly

@@ -82,17 +82,20 @@ impl<'a> RootedWriter<'a> {
             let Ok(name) = CString::new(name.as_bytes()) else {
                 return Ok(None);
             };
-            let directory = match open_at(previous, &name, DIRECTORY_FLAGS, 0) {
+            // SAFETY: previous is held by the root or parent cache until the
+            // open/create sequence completes, before the cache is mutated.
+            let parent = unsafe { BorrowedFd::borrow_raw(previous) };
+            let directory = match open_at(parent, &name, DIRECTORY_FLAGS, 0) {
                 Err(error) if error.kind() == io::ErrorKind::NotFound => {
-                    // SAFETY: previous is a live directory FD and name is NUL-terminated.
-                    let result = unsafe { libc::mkdirat(previous, name.as_ptr(), 0o777) };
-                    if result < 0 {
-                        let error = io::Error::last_os_error();
-                        if error.kind() != io::ErrorKind::AlreadyExists {
-                            return Err(error);
-                        }
+                    match nix::sys::stat::mkdirat(
+                        parent,
+                        name.as_c_str(),
+                        nix::sys::stat::Mode::from_bits_retain(0o777),
+                    ) {
+                        Ok(()) | Err(nix::errno::Errno::EEXIST) => {}
+                        Err(error) => return Err(error.into()),
                     }
-                    open_at(previous, &name, DIRECTORY_FLAGS, 0)
+                    open_at(parent, &name, DIRECTORY_FLAGS, 0)
                 }
                 result => result,
             };
@@ -139,6 +142,8 @@ impl<'a> RootedWriter<'a> {
         let Some(parent) = self.parent_fd(parent)? else {
             return Ok(None);
         };
+        // SAFETY: the root or cached parent stays open through this leaf open.
+        let parent = unsafe { BorrowedFd::borrow_raw(parent) };
         let flags =
             libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL | libc::O_NOFOLLOW | libc::O_CLOEXEC;
         match open_at(parent, &name, flags, 0o666) {
@@ -225,24 +230,26 @@ fn has_descriptor_budget(concurrency: usize) -> bool {
     if soft_limit < required {
         return false;
     }
-    let Ok(mut descriptors) = fs::read_dir("/proc/self/fd") else {
-        return false;
-    };
-    let Ok(open_descriptors) = descriptors.try_fold(0, |count, entry| entry.map(|_| count + 1))
-    else {
-        return false;
-    };
-    soft_limit.saturating_sub(open_descriptors) >= required
+
+    // The Runner's pinned Guest kernel reports the open descriptor count as
+    // the procfs directory size. Retain the previous conservative cutoff.
+    fs::metadata("/proc/self/fd").is_ok_and(|metadata| {
+        metadata.is_dir()
+            && metadata.len() > 0
+            && u128::from(metadata.len()) < u128::from(soft_limit - required)
+    })
 }
 
 fn descriptor_limit(error: &io::Error) -> bool {
     matches!(error.raw_os_error(), Some(libc::EMFILE | libc::ENFILE))
 }
 
-fn open_at(parent: RawFd, name: &CStr, flags: libc::c_int, mode: libc::mode_t) -> io::Result<File> {
-    // SAFETY: callers keep the root or cached parent File alive for this call;
-    // no cache invalidation occurs between obtaining parent and this borrow.
-    let parent = unsafe { BorrowedFd::borrow_raw(parent) };
+fn open_at(
+    parent: BorrowedFd<'_>,
+    name: &CStr,
+    flags: libc::c_int,
+    mode: libc::mode_t,
+) -> io::Result<File> {
     let fd = nix::fcntl::openat(
         parent,
         name,

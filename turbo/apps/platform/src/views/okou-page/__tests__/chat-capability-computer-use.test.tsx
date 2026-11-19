@@ -440,6 +440,7 @@ test("Discover computers that are available for Computer Use", async () => {
       status: "online",
     }),
   ];
+  expect(within(hostGroup).queryByText("Travel Mac")).toBeNull();
   await user.keyboard("{Escape}");
   await openComputerMenu();
 

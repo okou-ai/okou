@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.24.129](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.128...guest-control-server-v0.24.129) (2026-11-19)
+
+## [0.24.128](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.127...guest-control-server-v0.24.128) (2026-11-18)
+
+
+### Refactoring
+
+* **guest-control:** use typed sealed batch descriptors ([#48773](https://github.com/okou-ai/okou/issues/48773)) ([b1c67a4](https://github.com/okou-ai/okou/commit/b1c67a477f6261d5953cc4010c975933bea6d195))
+
+## [0.24.127](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.126...guest-control-server-v0.24.127) (2026-11-18)
+
 ## [0.24.126](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.125...guest-control-server-v0.24.126) (2026-11-18)
 
 ## [0.24.125](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.124...guest-control-server-v0.24.125) (2026-11-18)

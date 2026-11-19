@@ -30,7 +30,7 @@ import {
   resolveCatalogRunModel,
   type ModelCatalog,
 } from "./model-catalog.service";
-import { isCatalogFastServiceTierSupported } from "./model-route-capabilities.service";
+import { isCatalogCodexServiceTierSupported } from "./model-route-capabilities.service";
 import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 
 function isUnavailablePersonalCapture(
@@ -150,7 +150,7 @@ export const resolveChatInputModelSelection$ = command(
     signal.throwIfAborted();
     let selectedModel = args.selectedModel;
     let modelProviderType: string | null = null;
-    let codexServiceTier = args.codexServiceTier;
+    const codexServiceTier = args.codexServiceTier;
     const selected = selectedModel
       ? await set(
           resolveModelSelectionPin$,
@@ -188,7 +188,6 @@ export const resolveChatInputModelSelection$ = command(
       const auto = autoSelectionPin();
       selectedModel = auto.selectedModel;
       modelProviderType = auto.modelProviderType;
-      codexServiceTier = null;
     }
     if (!selectedModel) {
       return badRequestMessage("No valid model route is configured");
@@ -212,15 +211,20 @@ export const resolveChatInputModelSelection$ = command(
     if ("status" in effort) {
       return effort;
     }
-    return chatInputModelSelectionSchema.parse({
-      selectedModel,
-      codexServiceTier: isCatalogFastServiceTierSupported(
+    const tierSupported =
+      codexServiceTier !== null &&
+      isCatalogCodexServiceTierSupported(
         catalog,
         selectedModel,
+        codexServiceTier,
         modelProviderType,
-      )
-        ? codexServiceTier
-        : null,
+      );
+    if (codexServiceTier === "ultrafast" && !tierSupported) {
+      return badRequestMessage("Ultrafast is unavailable for this model route");
+    }
+    return chatInputModelSelectionSchema.parse({
+      selectedModel,
+      codexServiceTier: tierSupported ? codexServiceTier : null,
       reasoningEffort: effort.reasoningEffort ?? null,
     });
   },

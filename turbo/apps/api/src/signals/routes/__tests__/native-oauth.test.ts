@@ -116,7 +116,7 @@ describe("native organization OAuth grants", () => {
       "Other member",
     );
     const token = mcp.authorize(actor)({
-      scope: "user:org:read okou:project:read",
+      scope: "okou:project:read",
     });
     const listed = await request(token, "/api/projects");
     expect(listed.status).toBe(200);
@@ -154,7 +154,7 @@ describe("native organization OAuth grants", () => {
     const otherOrg = await thread(bdd.user({ userId: actor.userId }));
     const otherUser = await thread(bdd.user({ orgId: actor.orgId }));
     const token = mcp.authorize(actor)({
-      scope: "user:org:read okou:chat:read",
+      scope: "okou:chat:read",
     });
     const metadata = await request(
       token,
@@ -182,11 +182,6 @@ describe("native organization OAuth grants", () => {
   });
 
   it.each([
-    {
-      scope: "okou:chat:read okou:project:read okou:voice:transcribe",
-      path: "/api/realtime/token",
-      method: "POST",
-    },
     {
       scope: "user:org:read okou:chat:send",
       path: "/api/realtime/token",
@@ -241,7 +236,7 @@ describe("native organization OAuth grants", () => {
       const actor = bdd.user();
       const expiresAtMs = timestamp + remainingSeconds * 1000;
       const token = mcp.authorize(actor)({
-        scope: "user:org:read okou:chat:read",
+        scope: "okou:chat:read",
         exp: expiresAtMs / 1000,
       });
       context.mocks.ably.createTokenRequest.mockImplementation(

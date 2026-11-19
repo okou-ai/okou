@@ -10,7 +10,7 @@ import { i18n } from "../../i18n/index.ts";
 
 export const setupAgentsPage$ = command(
   async ({ get, set }, signal: AbortSignal) => {
-    if (get(singleAgentEnabled$)) {
+    if (await get(singleAgentEnabled$)) {
       set(detachedNavigateTo$, "/", {
         searchParams: new URLSearchParams({ settings: "my-okou" }),
         replace: true,

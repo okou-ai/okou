@@ -1,5 +1,14 @@
 use super::*;
 
+#[test]
+fn only_large_remote_batches_get_the_wider_download_window() {
+    assert_eq!(download_concurrency(0, 2), 2);
+    assert_eq!(download_concurrency(0, 128), 4);
+    assert_eq!(download_concurrency(17, 128), 16);
+    assert_eq!(download_concurrency(63, 128), 16);
+    assert_eq!(download_concurrency(64, 128), 24);
+}
+
 fn normalized_path(path: &str) -> PathBuf {
     normalize_path(Path::new(path))
 }

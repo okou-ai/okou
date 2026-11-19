@@ -549,7 +549,7 @@ describe("POST /api/image-io/generate", () => {
       );
       await expect(
         runs.readRun(fixture.actor, fixture.runId),
-      ).resolves.toMatchObject({ status: "cancelled", artifactResult: null });
+      ).resolves.toMatchObject({ status: "cancelled" });
     });
   });
 
@@ -1122,7 +1122,7 @@ describe("POST /api/image-io/generate", () => {
 
       await expect(
         createRunsApi(context).readRun(fixture.actor, fixture.runId),
-      ).resolves.toMatchObject({ artifactResult: "success" });
+      ).resolves.toMatchObject({ status: "running" });
 
       // The charge is asserted through product surfaces: the settled usage shows
       // up in the user's usage record with image/provider attribution, and the

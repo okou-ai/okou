@@ -8,7 +8,7 @@ type NoPermissionIllustrationProps = {
  * Padlock illustration for restricted access / not-found states (transparent WebP).
  */
 export function NoPermissionIllustration({
-  className = "h-28 w-auto max-w-[200px] object-contain opacity-90",
+  className = "h-28 w-auto max-w-[200px] object-contain",
 }: NoPermissionIllustrationProps) {
   return (
     <img

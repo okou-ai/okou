@@ -13,6 +13,106 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1149.1](https://github.com/okou-ai/okou/compare/app-v0.1149.0...app-v0.1149.1) (2026-11-19)
+
+
+### Bug Fixes
+
+* **app:** align artifact close button hover shape ([#48846](https://github.com/okou-ai/okou/issues/48846)) ([e74770e](https://github.com/okou-ai/okou/commit/e74770e52f002811f5800f8de1c171021b22ed22))
+* **app:** replace empty state icons with brand scenes ([#48856](https://github.com/okou-ai/okou/issues/48856)) ([4d82887](https://github.com/okou-ai/okou/commit/4d82887c52325b7ab7876150807fd87e133043f1))
+* **app:** resolve feature switches before mounting ([#48834](https://github.com/okou-ai/okou/issues/48834)) ([65206e8](https://github.com/okou-ai/okou/commit/65206e8e543d5ce23699fd8d2feea21e94e33413))
+
+
+### Refactoring
+
+* **app:** refresh device lists when opening the connector menu ([#48849](https://github.com/okou-ai/okou/issues/48849)) ([81e93c7](https://github.com/okou-ai/okou/commit/81e93c76a220f826e3b340b5465fe1db06efde10))
+
+
+### Performance Improvements
+
+* **app:** restore home lcp and load only the capability art on screen ([#48785](https://github.com/okou-ai/okou/issues/48785)) ([8451248](https://github.com/okou-ai/okou/commit/8451248be534efa0786da6df0fa1b1203c93f866))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.90.0
+    * @okouai/core bumped to 8.854.3
+    * @okouai/ui bumped to 1.21.60
+
+## [0.1149.0](https://github.com/okou-ai/okou/compare/app-v0.1148.2...app-v0.1149.0) (2026-11-19)
+
+
+### Features
+
+* **onboarding:** persist drafts across devices ([#48816](https://github.com/okou-ai/okou/issues/48816)) ([368d3dd](https://github.com/okou-ai/okou/commit/368d3dd31744833319c9cffce3c17191a5c327d7))
+
+
+### Refactoring
+
+* **platform:** simplify pdf, auth and browser close timing ([#48840](https://github.com/okou-ai/okou/issues/48840)) ([85c641e](https://github.com/okou-ai/okou/commit/85c641e01017caf8b3b6d830521cc62c242b57da))
+* **platform:** use ccstate to reload credit balances ([#48843](https://github.com/okou-ai/okou/issues/48843)) ([9d67f10](https://github.com/okou-ai/okou/commit/9d67f101309b6ee9de61553eff42bc1f14901787))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.89.0
+    * @okouai/core bumped to 8.854.2
+    * @okouai/ui bumped to 1.21.59
+
+## [0.1148.2](https://github.com/okou-ai/okou/compare/app-v0.1148.1...app-v0.1148.2) (2026-11-19)
+
+
+### Bug Fixes
+
+* **app:** defer feature guide requests until workspace switches load ([#48813](https://github.com/okou-ai/okou/issues/48813)) ([89e6b4c](https://github.com/okou-ai/okou/commit/89e6b4c0cb69754a6271de4d7968d974d34f2c09))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.88.0
+    * @okouai/core bumped to 8.854.1
+    * @okouai/ui bumped to 1.21.58
+
+## [0.1148.1](https://github.com/okou-ai/okou/compare/app-v0.1148.0...app-v0.1148.1) (2026-11-18)
+
+
+### Bug Fixes
+
+* **app:** anchor variable-height dialogs to the top ([#48771](https://github.com/okou-ai/okou/issues/48771)) ([312092f](https://github.com/okou-ai/okou/commit/312092f8a3da89890bc8f7a8d6de0ca80b12ac01))
+
+
+### Performance Improvements
+
+* **test:** reuse account manager title matches ([#48777](https://github.com/okou-ai/okou/issues/48777)) ([1cb70ce](https://github.com/okou-ai/okou/commit/1cb70ce79ff71bfea7e88899a60e1131847d2cb3))
+
+## [0.1148.0](https://github.com/okou-ai/okou/compare/app-v0.1147.5...app-v0.1148.0) (2026-11-18)
+
+
+### Features
+
+* add ultrafast for codex subscriptions ([#48736](https://github.com/okou-ai/okou/issues/48736)) ([c352dad](https://github.com/okou-ai/okou/commit/c352dadadbbec10cea8cf77adccfac8462ecdb94))
+
+
+### Performance Improvements
+
+* **test:** narrow connector account readiness queries ([#48747](https://github.com/okou-ai/okou/issues/48747)) ([c596d5d](https://github.com/okou-ai/okou/commit/c596d5d82c02fab6155681fd86153ce4311b113a))
+* **test:** scope subscription reset tooltip text checks ([#48757](https://github.com/okou-ai/okou/issues/48757)) ([9e11c62](https://github.com/okou-ai/okou/commit/9e11c62ea74263555197b0d23515b9282f19584b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.87.0
+    * @okouai/core bumped to 8.854.0
+    * @okouai/ui bumped to 1.21.57
+
 ## [0.1147.5](https://github.com/okou-ai/okou/compare/app-v0.1147.4...app-v0.1147.5) (2026-11-18)
 
 

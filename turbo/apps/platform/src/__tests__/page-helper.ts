@@ -303,8 +303,8 @@ async function setupPageAsync(
   const ready = store.set(
     bootstrap$,
     options.appVersion ?? TEST_APP_VERSION,
-    () => {
-      setupRouter(store, (element) => {
+    (view) => {
+      setupRouter(store, view, (element) => {
         const container = createBootstrapRoot();
         document.body.appendChild(container);
         const { unmount } = render(element, { container });
@@ -322,6 +322,7 @@ async function setupPageAsync(
         );
       });
     },
+    store.watch,
     signal,
   );
   return { ready };
