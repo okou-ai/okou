@@ -35,6 +35,7 @@ describe("email subscription settings", () => {
   it("lets a user restore email without changing brief generation, then pause the brief independently", async () => {
     let subscribed = false;
     let briefEnabled = true;
+    let briefReads = 0;
     context.mocks.api(emailSubscriptionContract.get, ({ respond }) => {
       return respond(200, { ...emailPreference, subscribed });
     });
@@ -43,6 +44,7 @@ describe("email subscription settings", () => {
       return respond(200, { subscribed });
     });
     context.mocks.api(morningBriefPreferenceContract.get, ({ respond }) => {
+      briefReads++;
       return respond(200, {
         enabled: briefEnabled,
         status: briefEnabled ? "enabled" : "paused",
@@ -69,6 +71,7 @@ describe("email subscription settings", () => {
     await waitFor(() => {
       expect(brief).toBeChecked();
     });
+    const initialBriefReads = briefReads;
     expect(
       within(region).getByText(/updates at alex@example\.test/u),
     ).toBeVisible();
@@ -98,6 +101,7 @@ describe("email subscription settings", () => {
       expect(brief).toBeChecked();
     });
     expect(emails).not.toBeChecked();
+    expect(briefReads).toBe(initialBriefReads);
   });
 
   it("keeps the previous email setting after a failed save so the user can toggle again", async () => {

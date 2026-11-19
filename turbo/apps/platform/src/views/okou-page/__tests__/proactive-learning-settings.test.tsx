@@ -1,12 +1,31 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { proactiveLearningContract } from "@okouai/api-contracts/contracts/proactive-nightly";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
 
 test("groups proactive preferences in Preference and keeps their opt-ins independent", async () => {
+  let learningReads = 0;
+  let learningEnabled = false;
+  context.mocks.api(proactiveLearningContract.get, ({ respond }) => {
+    learningReads++;
+    return respond(200, {
+      enabled: learningEnabled,
+      status: learningEnabled ? "enabled" : "paused",
+      unavailableReason: null,
+    });
+  });
+  context.mocks.api(proactiveLearningContract.update, ({ body, respond }) => {
+    learningEnabled = body.enabled;
+    return respond(200, {
+      enabled: learningEnabled,
+      status: learningEnabled ? "enabled" : "paused",
+      unavailableReason: null,
+    });
+  });
   await setupPage({
     context,
     path: "/agents?settings=preference",
@@ -41,6 +60,7 @@ test("groups proactive preferences in Preference and keeps their opt-ins indepen
         return toggle.getAttribute("aria-label");
       }),
   ).toStrictEqual(["Morning brief", "Suggestions", "Learning"]);
+  const initialLearningReads = learningReads;
   click(learning);
   await waitFor(() => {
     return expect(learning).toBeChecked();
@@ -53,6 +73,7 @@ test("groups proactive preferences in Preference and keeps their opt-ins indepen
   });
   expect(learning).toBeChecked();
   expect(morning).not.toBeChecked();
+  expect(learningReads).toBe(initialLearningReads);
 });
 
 test.each([
