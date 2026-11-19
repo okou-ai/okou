@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.249.65](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.64...runner-rs-v0.249.65) (2026-11-19)
+
+
+### Refactoring
+
+* **runner:** share cleanup accounting receipt validation ([#49193](https://github.com/okou-ai/okou/issues/49193)) ([d3db61e](https://github.com/okou-ai/okou/commit/d3db61efeb5420aaa6438b6a25144080fc532aec))
+* **runner:** unify home image preparation ([#49131](https://github.com/okou-ai/okou/issues/49131)) ([e831cb1](https://github.com/okou-ai/okou/commit/e831cb18e971db5b85ed819460d282d632c62c21))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.249.64](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.63...runner-rs-v0.249.64) (2026-11-19)
 
 

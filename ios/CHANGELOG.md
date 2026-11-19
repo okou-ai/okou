@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.51.0](https://github.com/okou-ai/okou/compare/ios-v0.50.0...ios-v0.51.0) (2026-11-19)
+
+
+### Features
+
+* **ios:** use native icon-only chat swipe actions with confirmed delete ([#49057](https://github.com/okou-ai/okou/issues/49057)) ([4cd8d4a](https://github.com/okou-ai/okou/commit/4cd8d4a79fad1014a190aa880e3bf0f459dd1568))
+
 ## [0.50.0](https://github.com/okou-ai/okou/compare/ios-v0.49.1...ios-v0.50.0) (2026-11-19)
 
 

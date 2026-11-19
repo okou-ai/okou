@@ -3,7 +3,6 @@ import { Command } from "commander";
 import { listConnectorAccountsCommand } from "./list";
 import { switchConnectorAccountRequestCommand } from "./switch-request";
 import { switchConnectorAccountCommand } from "./switch";
-import { chatConnectorAccountsEnabled } from "../../../lib/api/domains/run-connector-accounts";
 import {
   showConnectorAccountCommand,
   updateConnectorAccountCommand,
@@ -21,7 +20,5 @@ export const connectorAccountCommand = new Command()
   .addCommand(connectorAccountImpactCommand)
   .addCommand(disconnectConnectorAccountCommand)
   .addCommand(listConnectorAccountsCommand)
-  .addCommand(switchConnectorAccountCommand, {
-    hidden: !chatConnectorAccountsEnabled(),
-  })
+  .addCommand(switchConnectorAccountCommand)
   .addCommand(switchConnectorAccountRequestCommand);

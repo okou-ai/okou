@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.33](https://github.com/okou-ai/okou/compare/runner-network-v0.6.32...runner-network-v0.6.33) (2026-11-19)
+
+
+### Refactoring
+
+* **rust:** share vectored log writes ([#49127](https://github.com/okou-ai/okou/issues/49127)) ([4592830](https://github.com/okou-ai/okou/commit/45928304aad5dc912cf2aafe9c6b241c03f1c063))
+
 ## [0.6.32](https://github.com/okou-ai/okou/compare/runner-network-v0.6.31...runner-network-v0.6.32) (2026-11-19)
 
 ## [0.6.31](https://github.com/okou-ai/okou/compare/runner-network-v0.6.30...runner-network-v0.6.31) (2026-11-19)

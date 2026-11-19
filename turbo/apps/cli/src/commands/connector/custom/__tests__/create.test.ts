@@ -486,8 +486,13 @@ describe("okou connector custom create", () => {
     expect(createHelp).toContain("HTTPS endpoint for MCP");
     expect(createHelp).toContain("Never ask");
     expect(createHelp).toContain("end-user access token or refresh token");
-    expect(createHelp).toContain("does not store a");
-    expect(createHelp).toContain("start OAuth authorization");
+    const guidance = createHelp.replace(/\s+/gu, " ");
+    expect(guidance).toContain(
+      "Members supply manual credentials or authorize OAuth in the Connect dialog",
+    );
+    expect(guidance).toContain(
+      "okou connector account list <selector> --json to inspect Chat allowance",
+    );
 
     let customHelp = "";
     customConnectorCommand.configureOutput({

@@ -113,13 +113,29 @@ describe("agent-facing operational CLI help", () => {
     expect(root).toContain("exact returned connectionId");
     expect(root).toContain("Diagnose the exact failed URL and method");
     expect(root).toContain(
-      "Provider OAuth scope names are not Okou permissions",
+      "Use provider OAuth scopes only in the provider's authorization flow",
     );
     expect(root).toContain("exactly one access action");
 
     const accounts = await helpFor(connectorCommand, ["account", "list"]);
-    expect(accounts).toContain("never invent an ID");
+    expect(accounts).toContain(
+      "Use the exact connectionId returned for the connector",
+    );
     expect(accounts).toContain("account already admitted to the current Run");
+
+    const connect = await helpFor(connectorCommand, ["connect"]);
+    expect(connect).toContain("--json to inspect Chat allowance");
+
+    const oauth = await helpFor(connectorCommand, ["oauth", "start"]);
+    expect(oauth).toContain("--json to inspect Chat allowance");
+    expect(oauth).toContain("Return the authorization URL verbatim");
+
+    const disconnect = await helpFor(connectorCommand, [
+      "account",
+      "disconnect",
+    ]);
+    expect(disconnect).toContain("connector account impact");
+    expect(disconnect).toContain("supplying the API token again");
 
     const check = await helpFor(connectorCommand, ["check"]);
     expect(check).toContain("omit query strings and fragments");

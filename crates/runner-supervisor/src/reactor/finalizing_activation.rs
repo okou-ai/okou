@@ -23,7 +23,8 @@ use tokio::task::JoinSet;
 use tracing::info;
 
 use super::job_activation::{
-    activation_resources, build_spawn_job_request, job_activation_resources,
+    activation_resources, finish_spawn_job_request, home_prepare_policy_for_job,
+    job_activation_resources, prepare_spawn_job_request,
 };
 use super::job_spawn::{JobResult, SpawnContext, run_job};
 #[cfg(test)]
@@ -402,11 +403,19 @@ async fn run_finalizing_activation(
         },
         job_activation_resources(&ctx),
     );
-    let mut request = match AssertUnwindSafe(build_spawn_job_request(&mut activation, &ctx))
-        .catch_unwind()
-        .await
+    let (request, home_policy) = match AssertUnwindSafe(async {
+        prepare_spawn_job_request(&mut activation, &ctx).await?;
+        let home_policy = if home_fallback && preferred_home_source.is_none() {
+            None
+        } else {
+            Some(home_prepare_policy_for_job(activation.setup()?, &ctx))
+        };
+        finish_spawn_job_request(&mut activation).map(|request| (request, home_policy))
+    })
+    .catch_unwind()
+    .await
     {
-        Ok(Ok(request)) => request,
+        Ok(Ok(prepared)) => prepared,
         Ok(Err(error)) => {
             return Ok(activation
                 .recover(error.recovery_reason(), error.to_string())
@@ -422,9 +431,8 @@ async fn run_finalizing_activation(
         }
     };
     drop(activation_transfer_guard);
-    if home_fallback && preferred_home_source.is_none() {
+    let home_policy = home_policy.unwrap_or_else(|| {
         let (predecessor_state, lock_policy) = handoff_context.fallback_home_prepare_policy();
-        request.job_profile.home_image_prepare_policy = lock_policy;
         if lock_policy == HomeImagePreparePolicy::TryCacheWithoutLockWait {
             info!(
                 run_id = %run_id,
@@ -432,8 +440,9 @@ async fn run_finalizing_activation(
                 "finalizing fallback will skip home cache lock retry"
             );
         }
-    }
-    Ok(run_job(request, ctx).await)
+        lock_policy
+    });
+    Ok(run_job(request, home_policy, ctx).await)
 }
 
 async fn prepare_finalizing_resource(

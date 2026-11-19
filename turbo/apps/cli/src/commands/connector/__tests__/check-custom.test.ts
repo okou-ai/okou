@@ -24,11 +24,11 @@ import {
 } from "../../__tests__/helpers/connector-catalog";
 import {
   customConnector,
-  stubAgentCustomConnectors,
   stubCustomConnectors,
 } from "../../__tests__/helpers/custom-connectors";
 import {
   stubRunConnectorAccountInspection,
+  stubRunConnectorAccountInventory,
   writeRunConnectorAccountContext,
 } from "../../__tests__/helpers/run-connector-accounts";
 import { checkConnectorCommand } from "../check";
@@ -39,6 +39,24 @@ const ACCOUNT_ID = "44444444-4444-4444-8444-444444444444";
 const DEFAULT_ACCOUNT_ID = "55555555-5555-4555-8555-555555555555";
 const TARGET = { kind: "custom", customConnectorId: CUSTOM_ID } as const;
 const REQUEST_URL = "https://api.acme.test/pinned/items";
+
+function stubAllowedChatAccount() {
+  return stubRunConnectorAccountInventory(
+    {
+      accounts: [
+        {
+          target: TARGET,
+          connectionId: ACCOUNT_ID,
+          displayName: "Allowed account",
+          enabled: true,
+          isCurrent: true,
+          isDefault: false,
+        },
+      ],
+    },
+    ORIGIN,
+  );
+}
 
 type ResolvedUrl = Extract<
   ConnectorCheckDiagnosticResult,
@@ -164,7 +182,7 @@ describe("custom connector URL diagnostics", () => {
     ]);
     stubDiagnostic(resolvedCustom());
     server.use(
-      stubAgentCustomConnectors([]),
+      stubRunConnectorAccountInventory({}, ORIGIN),
       http.get(`${ORIGIN}/api/custom-connectors/${CUSTOM_ID}`, () => {
         return HttpResponse.json(
           customConnector({
@@ -198,7 +216,7 @@ describe("custom connector URL diagnostics", () => {
     "_mutable-new-slug",
     "Renamed Acme",
   ])(
-    "emits the exact custom account, subtype, and grant state for %s as JSON",
+    "emits the exact custom account, subtype, and Chat allowance for %s as JSON",
     async (selector) => {
       server.use(
         stubCustomConnectors([
@@ -228,7 +246,7 @@ describe("custom connector URL diagnostics", () => {
         accountSummary: null,
         memberStatus: null,
         managedStatus: null,
-        authorization: { authorized: false },
+        allowedInChat: false,
         diagnostic: {
           run: { bases: ["https://api.acme.test/pinned"] },
           permission: {
@@ -339,7 +357,7 @@ describe("custom connector URL diagnostics", () => {
     expect(json).toMatchObject({
       context: "current",
       account: null,
-      authorization: null,
+      allowedInChat: null,
       accountSummary: {
         accountCount: 1,
         defaultConnection: { id: DEFAULT_ACCOUNT_ID },
@@ -646,11 +664,7 @@ describe("custom connector URL diagnostics", () => {
     "explains custom unknown-endpoint $policy.outcome without inventing approval",
     async ({ policy, expected, blocked }) => {
       stubDiagnostic(resolvedCustom({ kind: "unknown-endpoint", policy }));
-      server.use(
-        stubAgentCustomConnectors([
-          { customConnectorId: CUSTOM_ID, permissionNames: [] },
-        ]),
-      );
+      server.use(stubAllowedChatAccount());
 
       await check();
       expect(output()).toContain(expected);
@@ -768,9 +782,7 @@ describe("custom connector URL diagnostics", () => {
     async (reconnectReason) => {
       const connectionStatus = "reconnect-required";
       server.use(
-        stubAgentCustomConnectors([
-          { customConnectorId: CUSTOM_ID, permissionNames: ["items:write"] },
-        ]),
+        stubAllowedChatAccount(),
         stubConnectorAccounts([
           connectorAccount(TARGET, {
             id: DEFAULT_ACCOUNT_ID,
@@ -811,11 +823,11 @@ describe("custom connector URL diagnostics", () => {
           connectionId: ACCOUNT_ID,
           metadata: { connectionStatus, reconnectReason },
         },
-        authorization: { authorized: true },
+        allowedInChat: true,
         actions: expect.arrayContaining([
           expect.objectContaining({
             kind: "link",
-            label: "Review Renamed Acme accounts and agent access",
+            label: "Review Renamed Acme accounts",
             supportsCallback: false,
           }),
         ]),

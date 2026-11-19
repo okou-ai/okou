@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.26.11](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.26.10...runner-supervisor-v0.26.11) (2026-11-19)
+
+
+### Refactoring
+
+* **runner:** construct dispatch intake with its home probe ([#49123](https://github.com/okou-ai/okou/issues/49123)) ([3770610](https://github.com/okou-ai/okou/commit/3770610074d3e432ef0fe658109be10420c5fde6))
+
 ## [0.26.10](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.26.9...runner-supervisor-v0.26.10) (2026-11-19)
 
 

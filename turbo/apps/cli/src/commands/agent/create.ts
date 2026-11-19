@@ -114,16 +114,11 @@ Examples:
         console.log(`  Visibility:   ${agent.visibility}`);
 
         console.log();
-        console.log("Next steps to authorize connectors for this agent:");
-        console.log("  - Search connectors this agent needs:");
+        console.log("Find and inspect connectors with these commands.");
+        console.log("  okou connector search <keyword>");
+        console.log("  okou connector status <slug>");
         console.log(
-          `      okou connector search <keyword> --agent ${agent.agentId}`,
-        );
-        console.log(
-          "  - Check authorization status (prints an authorize URL if not authorized):",
-        );
-        console.log(
-          `      okou connector status <slug> --agent ${agent.agentId}`,
+          "Manage which saved accounts a Chat can use in Chat settings.",
         );
       },
     ),

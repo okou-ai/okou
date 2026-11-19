@@ -16,10 +16,7 @@ import {
   connectedConnectorsContract,
   type ConnectedConnectors,
 } from "@okouai/api-contracts/contracts/connected-connectors";
-import {
-  builtinConnectorsMainContract,
-  builtinConnectorManualGrantContract,
-} from "@okouai/api-contracts/contracts/connectors";
+import { builtinConnectorManualGrantContract } from "@okouai/api-contracts/contracts/connectors";
 import {
   type PublicConnectorCatalogListResponse,
   type PublicConnectorCatalogPermissionDetail,
@@ -35,9 +32,7 @@ import {
   type ConnectorCheckTargetAwareUrlRequest,
 } from "@okouai/api-contracts/contracts/connector-check";
 import {
-  customConnectorPermissionBundleSchema,
   type CreateCustomConnectorBody,
-  type CustomConnectorPermissionBundleResponse,
   type UpdateCustomConnectorBody,
   customConnectorByIdContract,
   customConnectorsContract,
@@ -52,10 +47,6 @@ import {
   mcpConnectorsContract,
   type McpConnector,
 } from "@okouai/api-contracts/contracts/mcp-connectors";
-import {
-  type BuiltinConnectorListResponse as ApiBuiltinConnectorListResponse,
-  type BuiltinConnectorResponse,
-} from "@okouai/api-contracts/contracts/connector-schemas";
 import { handleManagementError } from "../../management-input";
 import {
   getConnectorManagementConfig,
@@ -63,8 +54,6 @@ import {
 } from "./connector-management";
 import { getClientConfig, handleError } from "../core/client-factory";
 
-export type BuiltinConnector = BuiltinConnectorResponse;
-type BuiltinConnectorListResponse = ApiBuiltinConnectorListResponse;
 export type ConnectorCatalogItem =
   PublicConnectorCatalogListResponse["connectors"][number];
 export type ConnectorCatalogStatus = PublicConnectorCatalogStatusItem;
@@ -164,20 +153,6 @@ export async function inspectConnectorAccounts(
     return result.body.results;
   }
   handleError(result, "Failed to inspect connector accounts for this run");
-}
-
-/** List all connectors for the authenticated user. */
-export async function listBuiltinConnectors(): Promise<BuiltinConnectorListResponse> {
-  const config = await getClientConfig();
-  const client = initClient(builtinConnectorsMainContract, config);
-
-  const result = await client.list({ headers: {} });
-
-  if (result.status === 200) {
-    return result.body;
-  }
-
-  handleError(result, "Failed to list connectors");
 }
 
 export async function listConnectorCatalog(): Promise<ConnectorCatalogListResponse> {
@@ -425,19 +400,4 @@ export async function deleteCustomConnector(id: string): Promise<void> {
   if (result.status !== 204) {
     handleManagementError(result, "Failed to delete custom connector");
   }
-}
-
-export async function getCustomConnectorPermissionBundle(
-  id: string,
-): Promise<CustomConnectorPermissionBundleResponse | null> {
-  const config = await getClientConfig();
-  const client = initClient(customConnectorByIdContract, config);
-  const result = await client.permissions({ params: { id }, headers: {} });
-  if (result.status === 200) {
-    return customConnectorPermissionBundleSchema.parse(result.body);
-  }
-  if (result.status === 404) {
-    return null;
-  }
-  handleError(result, `Failed to get custom connector permissions for "${id}"`);
 }
