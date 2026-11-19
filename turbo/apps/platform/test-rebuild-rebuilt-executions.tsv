@@ -931,3 +931,12 @@ browser-touch-regression-03.01	turbo/apps/platform/src/views/browser-session/__t
 browser-touch-regression-04	turbo/apps/platform/src/views/browser-session/__tests__/browser-touch-regression.test.tsx	Ignore letterbox taps and map touches within the image	115	passed
 browser-touch-regression-05	turbo/apps/platform/src/views/browser-session/__tests__/browser-touch-regression.test.tsx	Discard the old tab touch and send the new tap only to the selected tab	126	passed
 browser-touch-regression-07	turbo/apps/platform/src/views/browser-session/__tests__/browser-touch-regression.test.tsx	Forward a desktop mouse click and wheel movement in order	146	passed
+browser-connection-diagnostics-01	turbo/apps/platform/src/views/browser-session/__tests__/browser-connection-diagnostics.test.tsx	Report only safe native startup facts when the bridge cannot bind	35	passed
+browser-connection-diagnostics-02	turbo/apps/platform/src/views/browser-session/__tests__/browser-connection-diagnostics.test.tsx	Reuse the same opening native connection through revalidation without reporting cancellation	67	passed
+browser-connection-diagnostics-03	turbo/apps/platform/src/views/browser-session/__tests__/browser-connection-diagnostics.test.tsx	Keep the selected page usable after a handled background lookup rejection	101	passed
+browser-connection-diagnostics-05.03	turbo/apps/platform/src/views/browser-session/__tests__/browser-connection-diagnostics.test.tsx	Report safe navigation diagnostics for a native abort token with private text	117	passed
+browser-connection-diagnostics-06	turbo/apps/platform/src/views/browser-session/__tests__/browser-connection-diagnostics.test.tsx	Report safe navigation diagnostics for a provider request failure	117	passed
+browser-pointer-recovery-002	turbo/apps/platform/src/views/browser-session/__tests__/browser-pointer-recovery.test.tsx	Recover on the sibling when the hovered tab is destroyed before acknowledgement	72	passed
+browser-pointer-recovery-005	turbo/apps/platform/src/views/browser-session/__tests__/browser-pointer-recovery.test.tsx	Keep the original drag failure and fence the detached tab	103	passed
+browser-pointer-recovery-007	turbo/apps/platform/src/views/browser-session/__tests__/browser-pointer-recovery.test.tsx	Preserve the failed release of a held key when neutral hover is interrupted	150	passed
+browser-pointer-recovery-008	turbo/apps/platform/src/views/browser-session/__tests__/browser-pointer-recovery.test.tsx	Retain an earlier native hover rejection when the next hover detaches	187	passed

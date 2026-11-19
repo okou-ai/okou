@@ -5,6 +5,7 @@ import {
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor } from "@testing-library/react";
 import { expect } from "vitest";
+import { HttpResponse } from "msw";
 
 import {
   mockBrowserCdp,
@@ -54,6 +55,9 @@ export function arrangeNativePage(
       },
     ],
     ...options,
+  });
+  context.mocks.http.get("https://api.instatus.com/issues", () => {
+    return HttpResponse.json({ activeIncidents: [] });
   });
   context.mocks.api(browserContract.get, ({ respond }) => {
     return respond(200, { browser: viewer.browser, viewer });
