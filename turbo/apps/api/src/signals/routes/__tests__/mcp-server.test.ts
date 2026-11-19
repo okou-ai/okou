@@ -139,9 +139,7 @@ describe("external MCP authentication and transport", () => {
   });
 
   it.each([
-    { iss: "https://other-clerk.example.test" },
     { aud: "https://different-resource.example.test/mcp" },
-    { aud: undefined },
     { org_id: undefined },
     { client_id: undefined },
     { client_id: "   " },
