@@ -118,7 +118,8 @@ const suggestionContentSchema = object({
   options: suggestionOptionsSchema,
   customOption: object({
     id: literal("custom"),
-    threadId: literal(null),
+    /** The chat the member's own direction continues; null starts a new chat. */
+    threadId: uuid().toLowerCase().nullable(),
     draft: suggestionDraftSchema
       .refine((draft) => {
         return JSON.stringify(draft).length <= 65536;

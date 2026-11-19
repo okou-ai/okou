@@ -114,6 +114,7 @@ function suggestion(spec: {
   readonly background?: string;
   readonly backgroundFiles?: readonly Attachment[];
   readonly consumeToken?: string;
+  readonly customThreadId?: string;
 }): Suggestion {
   const backgroundFiles = spec.backgroundFiles ?? [];
   return {
@@ -137,7 +138,7 @@ function suggestion(spec: {
       ).map(option),
       customOption: {
         id: "custom",
-        threadId: null,
+        threadId: spec.customThreadId ?? null,
         draft: {
           draftUserMessage: {
             version: 1,
@@ -1036,7 +1037,7 @@ test("For you expands the composer inside the active card and advances after sen
   expect(location.pathname).toBe("/for-you");
 });
 
-test("A custom direction can reply in a related chat without touching its saved draft", async () => {
+test("A custom direction continues the chat its card names without touching its saved draft", async () => {
   installChats([chatThread(TARGET_THREAD_ID, "Hiring plan")]);
   context.mocks.api(chatThreadDraftContract.get, ({ params, respond }) => {
     return params.id === TARGET_THREAD_ID
@@ -1059,6 +1060,7 @@ test("A custom direction can reply in a related chat without touching its saved 
       id: FIRST_CARD_ID,
       title: "Schedule the interviews",
       background: "Two candidates are waiting for a slot",
+      customThreadId: TARGET_THREAD_ID,
       options: [
         {
           id: "schedule",
@@ -1073,15 +1075,10 @@ test("A custom direction can reply in a related chat without touching its saved 
   const { sends } = recordNewChats();
   await openForYou();
   const card = await findCard("Schedule the interviews");
-  click(control("button", "What do you have in mind?", card));
-  click(await findControl("button", "Hiring plan", card));
-  const composer = await waitFor(() => {
-    const element = card.querySelector('[data-slot="chat-composer-card"]');
-    if (!(element instanceof HTMLElement)) {
-      throw new Error("Related chat composer is not open");
-    }
-    return element;
-  });
+  const composer = await openDirection(card);
+  await expect(
+    within(card).findByRole("heading", { name: "Hiring plan" }),
+  ).resolves.toBeInTheDocument();
   expect(composer).toHaveTextContent("Schedule the interviews");
   expect(composer).not.toHaveTextContent("Saved reply draft");
   await typeDirection(composer, "Share the interview loop");

@@ -12,7 +12,6 @@ import {
   EyeOff,
   SquarePen,
   Send,
-  ArrowLeft,
 } from "lucide-react";
 import { Button, buttonVariants } from "@okouai/ui";
 import type { SuggestionOption } from "@okouai/api-contracts/contracts/feed";
@@ -20,20 +19,16 @@ import {
   agentSuggestionEntries$,
   type AgentSuggestionEntry,
   closeSettledSuggestion$,
-  focusSuggestionTitleOnRef$,
   retryAgentSuggestion$,
   submitSuggestionFeedbackWithUndo$,
 } from "../../signals/okou-page/agent-suggestion-session.ts";
 import {
-  chooseSuggestionDirectionTarget$,
   collapseSuggestionDirection$,
   restoreDirectionFocusOnRef$,
   openSuggestionDirection$,
-  resetSuggestionDirectionTarget$,
   startAgentSuggestion$,
   suggestionDirection$,
   suggestionDirectionComposer$,
-  suggestionDirectionTarget$,
   type SuggestionDirectionTarget,
 } from "../../signals/okou-page/agent-suggestions.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -42,7 +37,6 @@ import { detach, Reason } from "../../signals/utils.ts";
 import { Link } from "../router/link.tsx";
 import { ForYouCardHeading } from "./for-you-card-heading.tsx";
 import { ChatComposer } from "./composer.tsx";
-import { IconTooltipButton } from "../components/icon-tooltip.tsx";
 
 function SuggestionOptionContent({
   option,
@@ -241,71 +235,6 @@ function SuggestionDirectionEntry({
   );
 }
 
-function SuggestionDirectionTargets({
-  agentId,
-  threads,
-  newChatTitle,
-  relatedLabelId,
-}: {
-  readonly agentId: string;
-  readonly threads: readonly Extract<
-    SuggestionDirectionTarget,
-    { readonly kind: "thread" }
-  >[];
-  readonly newChatTitle: string;
-  readonly relatedLabelId: string;
-}) {
-  const { t } = useTranslation();
-  const choose = useSet(chooseSuggestionDirectionTarget$);
-  const signal = useGet(pageSignal$);
-  const select = (target: SuggestionDirectionTarget) => {
-    detach(choose(target, signal), Reason.DomCallback);
-  };
-  const row =
-    "h-auto min-h-12 w-full justify-start rounded-lg px-1 py-2 text-left text-sm font-normal";
-  return (
-    <div className="flex min-w-0 flex-col gap-4">
-      <Button
-        type="button"
-        variant="quiet"
-        className={row}
-        onClick={() => {
-          select({ kind: "new", agentId });
-        }}
-      >
-        {newChatTitle}
-      </Button>
-      <section aria-labelledby={relatedLabelId} className="min-w-0">
-        <h3
-          id={relatedLabelId}
-          className="pb-2 text-sm font-medium leading-5 text-foreground"
-        >
-          {t(($) => {
-            return $.chat.agentSuggestions.relatedChats;
-          })}
-        </h3>
-        <div className="flex flex-col gap-1">
-          {threads.map((target) => {
-            return (
-              <Button
-                key={target.id}
-                type="button"
-                variant="quiet"
-                className={row}
-                onClick={() => {
-                  select(target);
-                }}
-              >
-                <span className="truncate">{target.title ?? newChatTitle}</span>
-              </Button>
-            );
-          })}
-        </div>
-      </section>
-    </div>
-  );
-}
-
 function SuggestionDirection({
   entry,
 }: {
@@ -319,95 +248,57 @@ function SuggestionDirection({
   );
 }
 
-function SuggestionDirectionTitle({
-  target,
-  newChatTitle,
-}: {
-  readonly target: SuggestionDirectionTarget | null;
-  readonly newChatTitle: string;
-}) {
-  const { t } = useTranslation();
-  if (!target) {
-    return t(($) => {
-      return $.chat.agentSuggestions.directionTitle;
-    });
-  }
-  return target.kind === "thread"
-    ? (target.title ?? newChatTitle)
-    : newChatTitle;
-}
-
+/**
+ * The card's own composer. A direction that continues a chat names that chat
+ * in its header; a new chat keeps only the close control.
+ */
 function SuggestionDirectionComposer({
   direction,
 }: {
   readonly direction: {
     readonly itemId: string;
-    readonly agentId: string;
-    readonly threads: readonly Extract<
-      SuggestionDirectionTarget,
-      { readonly kind: "thread" }
-    >[];
+    readonly target: SuggestionDirectionTarget;
   };
 }) {
   const { t } = useTranslation();
   const headingId = `suggestion-direction-heading-${direction.itemId}`;
-  const descriptionId = `suggestion-direction-description-${direction.itemId}`;
-  const focusHeading = useSet(focusSuggestionTitleOnRef$);
-  const target = useGet(suggestionDirectionTarget$);
   const prepared = useLoadable(suggestionDirectionComposer$);
-  const back = useSet(resetSuggestionDirectionTarget$);
   const close = useSet(collapseSuggestionDirection$);
+  const { target } = direction;
+  const continuing = target.kind === "thread";
   const newChatTitle = t(($) => {
     return $.chat.newChat;
   });
-  const choosing = direction.threads.length > 0;
   return (
     <section
       aria-labelledby={headingId}
-      aria-describedby={!target ? descriptionId : undefined}
       className="relative flex min-w-0 flex-col gap-3"
     >
       <div
         className={
-          choosing
+          continuing
             ? "flex min-w-0 items-center gap-2"
             : "absolute -top-2 right-2 z-20"
         }
       >
-        {target && choosing && (
-          <IconTooltipButton
-            type="button"
-            onClick={() => {
-              back();
-            }}
-            className="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-state-hover hover:text-foreground"
-            aria-label={t(($) => {
-              return $.chat.forward.back;
-            })}
-          >
-            <ArrowLeft size={16} />
-          </IconTooltipButton>
-        )}
         <h3
-          key={target?.kind === "thread" ? target.id : target?.kind}
           id={headingId}
-          tabIndex={-1}
-          ref={choosing ? focusHeading : undefined}
           className={
-            choosing ? "min-w-0 flex-1 truncate text-sm font-medium" : "sr-only"
+            continuing
+              ? "min-w-0 flex-1 truncate text-sm font-medium"
+              : "sr-only"
           }
         >
-          <SuggestionDirectionTitle
-            target={target}
-            newChatTitle={newChatTitle}
-          />
+          {target.kind === "thread"
+            ? (target.title ?? newChatTitle)
+            : newChatTitle}
         </h3>
         <Button
           type="button"
           variant="quiet"
           size="icon-xs"
           className={
-            choosing ? undefined : "rounded-full border border-border bg-card"
+            continuing ? undefined : "rounded-full border border-border bg-card"
           }
           showTooltip
           aria-label={t(($) => {
@@ -420,13 +311,6 @@ function SuggestionDirectionComposer({
           <X />
         </Button>
       </div>
-      {!target && (
-        <p id={descriptionId} className="sr-only">
-          {t(($) => {
-            return $.chat.agentSuggestions.directionDescription;
-          })}
-        </p>
-      )}
       {prepared.state === "hasError" ? (
         <p role="alert" className="text-sm text-muted-foreground">
           {prepared.error instanceof Error
@@ -439,17 +323,10 @@ function SuggestionDirectionComposer({
         <div className="w-full min-w-0" data-chat-composer>
           <ChatComposer signals={prepared.data} showPendingItems={false} />
         </div>
-      ) : target || !choosing ? (
+      ) : (
         <div className="flex min-h-40 items-center justify-center text-muted-foreground">
           <Loader2 size={16} className="animate-spin" aria-hidden />
         </div>
-      ) : (
-        <SuggestionDirectionTargets
-          agentId={direction.agentId}
-          threads={direction.threads}
-          newChatTitle={newChatTitle}
-          relatedLabelId={`suggestion-direction-related-${direction.itemId}`}
-        />
       )}
     </section>
   );
