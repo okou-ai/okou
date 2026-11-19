@@ -69,6 +69,6 @@ met.
 
 ## Latest tally
 
-See [product action screening](test-rebuild-batch-product-actions.md)
-for the current count of 27 confirmed frozen deductions and the remaining
-1,507-row gap. Earlier figures are batch checkpoints.
+See [connector and Chat screening](test-rebuild-batch-connector-chat.md)
+for the current count of 29 confirmed frozen deductions and the remaining
+1,505-row gap. Earlier figures are batch checkpoints.
