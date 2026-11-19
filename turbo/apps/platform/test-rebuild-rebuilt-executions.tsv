@@ -1373,3 +1373,9 @@ settings-tab-016	turbo/apps/platform/src/views/okou-page/__tests__/settings-tab.
 settings-tab-018	turbo/apps/platform/src/views/okou-page/__tests__/settings-tab.test.tsx	Keep the source agent when its workflow refresh fails after copying	587	passed
 settings-model-loading-001	turbo/apps/platform/src/views/okou-page/__tests__/settings-model-loading.test.tsx	Keep loaded model controls usable when switching Settings sections	131	passed
 settings-model-loading-003	turbo/apps/platform/src/views/okou-page/__tests__/settings-model-loading.test.tsx	Apply realtime billing changes after reopening Settings	141	passed
+proactive-suggestions-settings-001	turbo/apps/platform/src/views/okou-page/__tests__/proactive-suggestions-settings.test.tsx	starts off, enables hourly checks independently of Morning Brief, and preserves explicit opt-out	12	passed
+proactive-suggestions-settings-002	turbo/apps/platform/src/views/okou-page/__tests__/proactive-suggestions-settings.test.tsx	keeps a pending opt-in cancellable when the primary Agent is unavailable	60	passed
+proactive-learning-settings-001	turbo/apps/platform/src/views/okou-page/__tests__/proactive-learning-settings.test.tsx	groups proactive preferences in Preference and keeps their opt-ins independent	9	passed
+proactive-learning-settings-002	turbo/apps/platform/src/views/okou-page/__tests__/proactive-learning-settings.test.tsx	offers Morning brief independently of the other rollout	58	passed
+sidebar-account-settings-001	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-account-settings.test.tsx	Open personal Settings and manage account security	25	passed
+sidebar-account-settings-002	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-account-settings.test.tsx	Toggle network-body capture in Debug settings	92	passed
