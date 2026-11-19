@@ -120,30 +120,23 @@ function loadRunnerExecutionContextFixture(): unknown {
   );
 }
 
-it("accepts additional dispatch metadata while validating known envelope fields", () => {
-  const runnerId = "00000000-0000-4000-8000-000000000001";
-  const checkout = { predecessorRunId: runnerId, waitUntil: 1_500 };
+it("ignores additional dispatch metadata and validates known fields", () => {
   const envelope = {
-    runnerId,
+    runnerId: "00000000-0000-4000-8000-000000000001",
     heartbeatGeneration: 1,
     profile: "vm0/default",
     notAfter: 2_000,
     executionContext: loadRunnerExecutionContextFixture(),
-    futureDispatchMetadata: { version: 2 },
-    preferredHomeCheckout: checkout,
   };
-  const parsed = runnerDispatchEnvelopeSchema.parse(envelope);
-  expect(parsed.preferredHomeCheckout).toStrictEqual(checkout);
-  expect(parsed).not.toHaveProperty("futureDispatchMetadata");
+  expect(
+    runnerDispatchEnvelopeSchema.parse({
+      ...envelope,
+      futureDispatchMetadata: { version: 1 },
+    }),
+  ).toStrictEqual(runnerDispatchEnvelopeSchema.parse(envelope));
   expect(
     runnerDispatchEnvelopeSchema.safeParse({ ...envelope, notAfter: "2000" })
       .success,
-  ).toBe(false);
-  expect(
-    runnerDispatchEnvelopeSchema.safeParse({
-      ...envelope,
-      preferredHomeCheckout: null,
-    }).success,
   ).toBe(false);
 });
 

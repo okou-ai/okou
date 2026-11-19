@@ -13,12 +13,6 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc, watch};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct PreferredHomeCheckout {
-    pub predecessor_run_id: RunId,
-    pub wait_until: tokio::time::Instant,
-}
-
 pub(super) const MAX_BODY: usize =
     api_contracts::generated::constants::runners::DISPATCH_MAX_BODY_BYTES as usize;
 const MAX_VALIDITY_MS: u64 =
@@ -36,37 +30,6 @@ pub(crate) enum Disposition {
     Conflict,
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct PreferredHomeCheckoutInput {
-    predecessor_run_id: RunId,
-    wait_until: u64,
-}
-
-impl PreferredHomeCheckoutInput {
-    fn deserialize_present<'de, D: serde::Deserializer<'de>>(
-        deserializer: D,
-    ) -> Result<Option<Self>, D::Error> {
-        use serde::de::{MapAccess, Visitor, value::MapAccessDeserializer};
-
-        struct CheckoutObject;
-
-        impl<'de> Visitor<'de> for CheckoutObject {
-            type Value = PreferredHomeCheckoutInput;
-
-            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                formatter.write_str("a preferred Home checkout object")
-            }
-
-            fn visit_map<A: MapAccess<'de>>(self, map: A) -> Result<Self::Value, A::Error> {
-                Self::Value::deserialize(MapAccessDeserializer::new(map))
-            }
-        }
-
-        deserializer.deserialize_map(CheckoutObject).map(Some)
-    }
-}
-
 // Dispatch senders and receivers roll independently.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -75,11 +38,6 @@ struct Envelope {
     heartbeat_generation: u64,
     profile: String,
     not_after: u64,
-    #[serde(
-        default,
-        deserialize_with = "PreferredHomeCheckoutInput::deserialize_present"
-    )]
-    preferred_home_checkout: Option<PreferredHomeCheckoutInput>,
     execution_context: Box<serde_json::value::RawValue>,
 }
 
@@ -98,7 +56,6 @@ pub(crate) struct DispatchIntake {
 
 pub(crate) struct DispatchWork {
     pub context: Option<ExecutionContext>,
-    pub preferred_home_checkout: Option<PreferredHomeCheckout>,
     pub profile: String,
     pub deadline: tokio::time::Instant,
     pub permit: Option<OwnedSemaphorePermit>,
@@ -217,16 +174,6 @@ impl DispatchIntake {
         // Freeze the remaining validity on a monotonic clock before decoding or
         // waiting for local resources. Wall-clock adjustment must not extend it.
         let deadline = received_at + std::time::Duration::from_millis(envelope.not_after - now);
-        let preferred_home_checkout = envelope.preferred_home_checkout.and_then(|checkout| {
-            let remaining = checkout
-                .wait_until
-                .min(envelope.not_after)
-                .checked_sub(now)?;
-            Some(PreferredHomeCheckout {
-                predecessor_run_id: checkout.predecessor_run_id,
-                wait_until: received_at + std::time::Duration::from_millis(remaining),
-            })
-        });
         let context =
             match decode_execution_publication(envelope.execution_context.get().as_bytes()) {
                 Ok(context) if context.run_id == run_id && !context.sandbox_token.is_empty() => {
@@ -256,7 +203,6 @@ impl DispatchIntake {
                 let (verdict, receiver) = watch::channel(Disposition::Pending);
                 to_submit = Some(DispatchWork {
                     context: context.take(),
-                    preferred_home_checkout,
                     profile: envelope.profile,
                     deadline,
                     permit: permit.take(),

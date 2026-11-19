@@ -2,7 +2,6 @@ use super::*;
 use httpmock::prelude::*;
 use sha2::{Digest, Sha256};
 
-use crate::error::RunnerError;
 use crate::executor::tests::support::RUN_IN_SANDBOX_TEST_TIMEOUT;
 use crate::home_image_cache::{HomeImagePrepareLockTestGate, HomeImagePreparePolicy};
 use crate::telemetry::{JobTelemetry, RunnerStartupPath};
@@ -134,127 +133,6 @@ async fn finalizing_home_source_fences_the_seed_used_by_a_fresh_executor() {
         config.background_fill.shutdown().await;
         config.decoded_cache.shutdown().await;
     }
-}
-
-#[tokio::test]
-async fn preferred_home_checkout_uses_only_the_selected_generation() {
-    let dir = tempfile::tempdir().unwrap();
-    let paths = RunnerPaths::new(dir.path().join("runner"));
-    let cache = HomeImageCache::new(paths.clone());
-    let mut config = test_executor_config(dir.path()).await;
-    config.home_cache = Some(cache.clone());
-    let mut context = minimal_context();
-    let session_id = "preferred-home-checkout";
-    set_reuse_and_session_identity(&mut context, session_id);
-    let seed = seed_home_image_cache(&cache, &paths, session_id, 16).await;
-    let generation = seed
-        .file_stem()
-        .unwrap()
-        .to_str()
-        .unwrap()
-        .strip_prefix("image-")
-        .unwrap()
-        .parse::<RunId>()
-        .unwrap();
-    for (predecessor_run_id, expected) in [
-        (RunId::new_v4(), HomeCacheCheckoutResult::Miss),
-        (generation, HomeCacheCheckoutResult::Hit),
-    ] {
-        let params = JobParams {
-            required_home_source_run_id: Some(predecessor_run_id),
-            home_disk_mb: 16,
-            home_image_prepare_policy: HomeImagePreparePolicy::TryCacheUntil(
-                tokio::time::Instant::now() + Duration::from_millis(500),
-            ),
-            ..default_params()
-        };
-        let mut telemetry = test_telemetry(&config, &context);
-        let lease = super::super::super::sandbox_run::prepare_home_image(
-            &context,
-            SandboxId::new_v4(),
-            &config,
-            &params,
-            &tokio_util::sync::CancellationToken::new(),
-            &mut telemetry,
-        )
-        .await
-        .unwrap();
-        assert_eq!(lease.result(), expected);
-        assert!(seed.is_file());
-    }
-    config.background_fill.shutdown().await;
-    config.decoded_cache.shutdown().await;
-}
-
-#[tokio::test]
-async fn cancelled_preferred_home_checkout_leaves_the_predecessor_lock_held() {
-    let dir = tempfile::tempdir().unwrap();
-    let paths = RunnerPaths::new(dir.path().join("runner"));
-    let lock_gate = HomeImagePrepareLockTestGate::default();
-    let mut config = test_executor_config(dir.path()).await;
-    config.home_cache =
-        Some(HomeImageCache::new(paths.clone()).with_prepare_lock_test_gate(lock_gate.clone()));
-    let mut context = minimal_context();
-    set_reuse_and_session_identity(&mut context, "cancelled-preferred-checkout");
-    let params = JobParams {
-        home_disk_mb: 16,
-        required_home_source_run_id: Some(RunId::new_v4()),
-        home_image_prepare_policy: HomeImagePreparePolicy::TryCacheUntil(
-            tokio::time::Instant::now() + RUN_IN_SANDBOX_TEST_TIMEOUT,
-        ),
-        ..default_params()
-    };
-    let cache_key = scoped_home_image_cache_key(
-        "",
-        &params.profile_name,
-        context.reuse_key().unwrap(),
-        u64::from(params.home_disk_mb) * 1024 * 1024,
-    );
-    let lock_path =
-        runner_host::paths::home_image_cache_lock_path(&paths.base_dir().join("locks"), &cache_key);
-    let predecessor = runner_host::lock::acquire(lock_path.clone()).await.unwrap();
-    let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
-    let factory = MockSandboxFactory::with_overrides(overrides.clone());
-    let cancel = tokio_util::sync::CancellationToken::new();
-    let mut telemetry = test_telemetry(&config, &context);
-    let execution = execute_new_sandbox(
-        &factory,
-        &context,
-        NewSandboxDispatch {
-            id: SandboxId::new_v4(),
-            reuse_result: SandboxReuseResult::PoolMiss,
-        },
-        &config,
-        &params,
-        &mut telemetry,
-        cancel.clone(),
-    );
-    tokio::pin!(execution);
-    tokio::select! {
-        () = lock_gate.wait_entered(RUN_IN_SANDBOX_TEST_TIMEOUT) => {}
-        _ = &mut execution => panic!("sandbox execution ended before observing Home contention"),
-    }
-    cancel.cancel();
-    let outcome = tokio::time::timeout(RUN_IN_SANDBOX_TEST_TIMEOUT, execution)
-        .await
-        .expect("cancellation must finish while the predecessor holds its lock");
-    assert!(matches!(outcome, Err(RunnerError::Cancelled)));
-    assert!(overrides.create_configs().is_empty());
-    assert!(matches!(
-        runner_host::lock::try_acquire_or_busy(lock_path.clone())
-            .await
-            .unwrap(),
-        runner_host::lock::TryLock::Busy
-    ));
-    drop(predecessor);
-    assert!(matches!(
-        runner_host::lock::try_acquire_or_busy(lock_path)
-            .await
-            .unwrap(),
-        runner_host::lock::TryLock::Acquired(_)
-    ));
-    config.background_fill.shutdown().await;
-    config.decoded_cache.shutdown().await;
 }
 
 #[tokio::test]

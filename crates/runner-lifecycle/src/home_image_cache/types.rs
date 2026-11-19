@@ -82,7 +82,6 @@ pub enum HomeImagePreparePolicy {
     #[default]
     TryCacheWithLockWait,
     TryCacheWithoutLockWait,
-    TryCacheUntil(tokio::time::Instant),
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct HomeImageLeaseRequest<'a> {

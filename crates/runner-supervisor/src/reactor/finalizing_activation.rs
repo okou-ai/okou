@@ -57,7 +57,6 @@ use runner_provider::RunCancellationRegistration;
 use runner_types::types::{CompleteRequest, SandboxReuseResult};
 
 pub(super) struct FinalizingActivationRequest {
-    pub(super) preferred_home_checkout: Option<crate::ingress::dispatch::PreferredHomeCheckout>,
     pub(super) job: ExecutionJob,
     pub(super) cancellation: RunCancellationRegistration,
     pub(super) handoff_context: FinalizingHandoffContext,
@@ -112,7 +111,6 @@ async fn run_finalizing_activation(
     ctx: SpawnContext,
 ) -> JobResult {
     let FinalizingActivationRequest {
-        preferred_home_checkout,
         job,
         cancellation,
         mut handoff_context,
@@ -383,7 +381,6 @@ async fn run_finalizing_activation(
     let mut activation = JobActivationGuard::new(
         JobActivationSetup {
             required_home_source_run_id,
-            preferred_home_checkout,
             job,
             rootfs_hash,
             cancellation,

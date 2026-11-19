@@ -511,34 +511,10 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
         prepared_run_payload,
         sandbox_prepared,
     } = hooks;
-    let checkout_home = preparation != FreshPreparation::DiskReplacement;
-    let checkout_before_admission = checkout_home
-        && matches!(
-            params.home_image_prepare_policy,
-            HomeImagePreparePolicy::TryCacheUntil(_)
-        );
-    // A Runner finishing the predecessor can still hold this Home lock. Keep
-    // weighted startup capacity available while the preferred checkout waits.
-    let mut home_image = if checkout_before_admission {
-        let lease = prepare_home_image(
-            context,
-            sandbox_id,
-            config,
-            params,
-            &controls.cancel,
-            telemetry,
-        )
-        .await;
-        if controls.cancel.is_cancelled() {
-            return Err(RunnerError::Cancelled);
-        }
-        lease
-    } else {
-        None
-    };
-    // Hold admission through the authenticated Agent-ready boundary. Factory
-    // work and the later mount, restore, storage and bootstrap stages all
-    // contribute to fresh startup contention.
+    // The gate intentionally starts before every fresh preparation stage and remains held through
+    // the authenticated Agent-ready boundary. Current production tails span both factory work and
+    // the later mount/restore/storage/bootstrap stages, so a narrower Firecracker-only gate would
+    // allow the same cohort to reconverge before Agent readiness completes.
     let admission_started = Instant::now();
     let admission_lease = match config
         .pre_spawn_admission
@@ -572,17 +548,11 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
     };
     controls.pre_spawn_admission_lease = Some(admission_lease);
     let prepare_started = Instant::now();
-    if checkout_home && !checkout_before_admission {
-        home_image = prepare_home_image(
-            context,
-            sandbox_id,
-            config,
-            params,
-            &controls.cancel,
-            telemetry,
-        )
-        .await;
-    }
+    let mut home_image = if preparation == FreshPreparation::DiskReplacement {
+        None
+    } else {
+        prepare_home_image(context, sandbox_id, config, params, telemetry).await
+    };
     let prepared_storage = prepare_storage(
         context,
         home_image
@@ -1038,7 +1008,6 @@ pub(super) async fn prepare_home_image(
     sandbox_id: SandboxId,
     config: &ExecutorConfig,
     params: &JobParams,
-    cancel: &CancellationToken,
     telemetry: &mut JobTelemetry,
 ) -> Option<HomeImageLease> {
     let cache = config.home_cache.as_ref()?;
@@ -1057,30 +1026,24 @@ pub(super) async fn prepare_home_image(
         },
         home_drive_required: true,
     };
-    let policy = params.home_image_prepare_policy;
-    let lease = match (params.required_home_source_run_id, policy) {
-        (Some(source), HomeImagePreparePolicy::TryCacheUntil(deadline)) => {
-            cache
-                .prepare_preferred_from_source(request, source, deadline, cancel)
-                .await?
+    let lease = if let Some(source) = params.required_home_source_run_id {
+        cache
+            .prepare_from_source(request, source, params.home_image_prepare_policy)
+            .await
+    } else {
+        match params.home_image_prepare_policy {
+            HomeImagePreparePolicy::TryCacheWithLockWait => cache.prepare(request).await,
+            HomeImagePreparePolicy::TryCacheWithoutLockWait | HomeImagePreparePolicy::SkipCache => {
+                cache
+                    .prepare_with_policy(request, params.home_image_prepare_policy)
+                    .await
+            }
         }
-        (Some(source), _) => cache.prepare_from_source(request, source, policy).await,
-        (None, _) => cache.prepare_with_policy(request, policy).await,
     };
-    let prepare_elapsed = prepare_started.elapsed();
     let prepare_error = home_image_prepare_error(lease.result());
-    if matches!(policy, HomeImagePreparePolicy::TryCacheUntil(_)) {
-        telemetry.record_with_outcome(
-            "runner_preferred_home_image_checkout",
-            prepare_elapsed,
-            prepare_error.is_none(),
-            prepare_error,
-            Some(if lease.is_cache_hit() { "hit" } else { "miss" }),
-        );
-    }
     telemetry.record(
         RUNNER_FRESH_HOME_IMAGE_PREPARE,
-        prepare_elapsed,
+        prepare_started.elapsed(),
         prepare_error.is_none(),
         prepare_error,
     );

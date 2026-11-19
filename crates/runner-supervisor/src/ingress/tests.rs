@@ -116,11 +116,6 @@ async fn dispatch_rejects_untrusted_routing_auth_and_bounded_body_without_custod
         ("heartbeatGeneration", json!(8)),
         ("notAfter", json!(1)),
         ("notAfter", json!(dispatch::now_ms() + 120_000)),
-        ("preferredHomeCheckout", json!(null)),
-        (
-            "preferredHomeCheckout",
-            json!([runner_types::ids::RunId::new_v4(), dispatch::now_ms() + 500]),
-        ),
     ] {
         let mut body = valid.clone();
         body[key] = value;

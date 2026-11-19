@@ -951,17 +951,8 @@ pub async fn execute_job_reuse_with_hooks(
         );
     }
 
-    let cancel = cancellation.any();
     let home_image = if kind == IdleSandboxKind::Blank {
-        sandbox_run::prepare_home_image(
-            &context,
-            sandbox_id,
-            config,
-            params,
-            &cancel,
-            &mut telemetry,
-        )
-        .await
+        sandbox_run::prepare_home_image(&context, sandbox_id, config, params, &mut telemetry).await
     } else {
         match (config.home_cache.as_ref(), home_image) {
             (_, Some(home_image)) => Some(home_image),
@@ -1011,7 +1002,12 @@ pub async fn execute_job_reuse_with_hooks(
     // The reuse owner either returns a live sandbox for caller finalization or
     // retires an unusable blank before attempting its single replacement.
     let sandbox_id_string = sandbox_id.to_string();
-    let outcome = match prepare_execution_context(&context, config, &sandbox_id_string, &cancel) {
+    let outcome = match prepare_execution_context(
+        &context,
+        config,
+        &sandbox_id_string,
+        &cancellation.any(),
+    ) {
         Err(error) => ExecuteOutcome::reused_sandbox_failure(
             match error {
                 RunnerError::Cancelled => ExecutionFailure::cancelled(),

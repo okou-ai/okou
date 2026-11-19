@@ -29,38 +29,6 @@ fn submit(
 }
 
 #[tokio::test]
-async fn preferred_home_checkout_survives_direct_dispatch() {
-    use std::time::Duration;
-
-    let identity = RunnerProcessIdentity::new(uuid::Uuid::new_v4(), 1).unwrap();
-    let predecessor = RunId::new_v4();
-    let (intake, mut receiver) = DispatchIntake::new(Arc::new(Semaphore::new(1)));
-    let intake = Arc::new(intake);
-    for (wait_until, before_delivery_deadline_ms) in
-        [(1_500, Some(500)), (2_500, Some(0)), (999, None)]
-    {
-        let run_id = RunId::new_v4();
-        let mut payload =
-            serde_json::from_str::<serde_json::Value>(&body(identity, run_id, 2_000)).unwrap();
-        payload["futureDispatchMetadata"] = json!({"version": 2});
-        payload["preferredHomeCheckout"] =
-            json!({ "predecessorRunId": predecessor, "waitUntil": wait_until });
-        let submitted = submit(&intake, identity, run_id, payload.to_string(), 1_000);
-        let work = receiver.recv().await.unwrap();
-        assert_eq!(
-            work.preferred_home_checkout,
-            before_delivery_deadline_ms.map(|ms| PreferredHomeCheckout {
-                predecessor_run_id: predecessor,
-                wait_until: work.deadline - Duration::from_millis(ms),
-            })
-        );
-        work.settle(Disposition::Accepted);
-        drop(work);
-        assert_eq!(submitted.await.unwrap(), Disposition::Accepted);
-    }
-}
-
-#[tokio::test]
 async fn idle_listener_releases_expired_history_on_its_own_tick() {
     use crate::ingress::IngressRuntime;
     use crate::ingress::test_support::{HOST, TOKEN};

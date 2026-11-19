@@ -99,153 +99,21 @@ fn cancelled_acquire_does_not_occupy_blocking_pool() {
 }
 
 #[tokio::test]
-async fn expired_contention_deadline_still_attempts_an_uncontended_lock() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("preferred-home.lock");
-    let held = try_acquire(path.clone()).await.unwrap();
-    let deadline = tokio::time::Instant::now();
-
-    assert!(matches!(
-        acquire_with_contention_deadline(path.clone(), deadline)
-            .await
-            .unwrap(),
-        TryLock::Busy
-    ));
-    drop(held);
-    assert!(matches!(
-        acquire_with_contention_deadline(path, deadline)
-            .await
-            .unwrap(),
-        TryLock::Acquired(_)
-    ));
-}
-
-#[test]
-fn contention_deadline_prevents_a_ready_retry_from_opening_the_lock() {
-    assert_deadline_leaves_lock_untouched(RetryAtExpiry::Ready);
-}
-
-#[test]
-fn contention_deadline_cancels_a_probe_queued_before_expiry() {
-    assert_deadline_leaves_lock_untouched(RetryAtExpiry::Queued);
-}
-
-#[test]
-fn contention_deadline_fences_a_worker_resumed_before_the_waiter() {
-    assert_deadline_leaves_lock_untouched(RetryAtExpiry::WorkerFirst);
-}
-
-enum RetryAtExpiry {
-    Ready,
-    Queued,
-    WorkerFirst,
-}
-
-fn assert_deadline_leaves_lock_untouched(retry: RetryAtExpiry) {
-    const WATCHDOG: Duration = Duration::from_secs(2);
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .max_blocking_threads(1)
-        .enable_time()
-        .build()
-        .unwrap();
-    runtime.block_on(async {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("test.lock");
-        let holder = acquire(path.clone()).await.unwrap();
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
-        let (busy_tx, busy_rx) = tokio::sync::oneshot::channel();
-        let (retry_tx, retry_rx) = tokio::sync::oneshot::channel();
-        let mut acquisition = Box::pin(acquire_with_contention_limit(
-            path.clone(),
-            ContentionLimit::Deadline(deadline),
-            async {
-                busy_tx.send(()).unwrap();
-                retry_rx.await.unwrap();
-            },
-        ));
-        tokio::select! {
-            _ = acquisition.as_mut() => panic!("completed before observing Busy"),
-            result = tokio::time::timeout(WATCHDOG, busy_rx) => {
-                result.unwrap().unwrap();
-            }
-        }
-
-        // Control when the only blocking worker can run a queued probe.
-        // Opening the lock would tighten its mode.
-        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
-        let (release_tx, release_rx) = mpsc::channel();
-        let blocker = tokio::task::spawn_blocking(move || {
-            started_tx.send(()).unwrap();
-            let _ = release_rx.recv();
-        });
-        tokio::time::timeout(WATCHDOG, started_rx)
-            .await
-            .unwrap()
-            .unwrap();
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
-
-        tokio::time::pause();
-        retry_tx.send(()).unwrap();
-        poll_fn(|context| {
-            assert!(acquisition.as_mut().poll(context).is_pending());
-            std::task::Poll::Ready(())
-        })
-        .await;
-        if !matches!(retry, RetryAtExpiry::Ready) {
-            tokio::time::advance(LOCK_RETRY_INITIAL_DELAY + Duration::from_millis(1)).await;
-            poll_fn(|context| {
-                assert!(acquisition.as_mut().poll(context).is_pending());
-                std::task::Poll::Ready(())
-            })
-            .await;
-        }
-        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
-        tokio::time::advance(remaining + Duration::from_millis(1)).await;
-        tokio::time::resume();
-        let drain_worker = async {
-            release_tx.send(()).unwrap();
-            blocker.await.unwrap();
-            let mode_after_probe = tokio::task::spawn_blocking(move || mode(&path))
-                .await
-                .unwrap();
-            drop(holder);
-            assert_eq!(mode_after_probe, 0o644);
-        };
-        let wait_for_expiry = async {
-            let result = tokio::time::timeout(WATCHDOG, acquisition).await.unwrap();
-            assert!(matches!(result.unwrap(), TryLock::Busy));
-        };
-        if matches!(retry, RetryAtExpiry::WorkerFirst) {
-            drain_worker.await;
-            wait_for_expiry.await;
-        } else {
-            wait_for_expiry.await;
-            drain_worker.await;
-        }
-    });
-}
-
-#[tokio::test]
-async fn contention_limits_acquire_after_observed_busy_is_released() {
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
-    for limit in [
-        ContentionLimit::Timeout(Duration::MAX),
-        ContentionLimit::Deadline(deadline),
-    ] {
-        assert_acquires_after_observed_busy(limit).await;
-    }
-}
-
-async fn assert_acquires_after_observed_busy(limit: ContentionLimit) {
+async fn contention_timeout_acquires_after_observed_busy_is_released() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("test.lock");
     let holder = acquire(path.clone()).await.unwrap();
     let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
     let (release_tx, release_rx) = tokio::sync::oneshot::channel();
-    let mut acquisition = Box::pin(acquire_with_contention_limit(path.clone(), limit, async {
-        entered_tx.send(()).unwrap();
-        release_rx.await.unwrap();
-    }));
+    let mut acquisition = Box::pin(acquire_with_contention_timeout_after_busy(
+        path.clone(),
+        LockMode::Exclusive,
+        Duration::from_secs(2),
+        async {
+            entered_tx.send(()).unwrap();
+            release_rx.await.unwrap();
+        },
+    ));
     tokio::select! {
         _ = acquisition.as_mut() => panic!("completed before observing Busy"),
         result = tokio::time::timeout(Duration::from_secs(2), entered_rx) => {
@@ -254,11 +122,7 @@ async fn assert_acquires_after_observed_busy(limit: ContentionLimit) {
     }
     drop(holder);
     release_tx.send(()).unwrap();
-    let TryLock::Acquired(guard) = tokio::time::timeout(Duration::from_secs(2), acquisition)
-        .await
-        .unwrap()
-        .unwrap()
-    else {
+    let TryLock::Acquired(guard) = acquisition.await.unwrap() else {
         panic!("released flock must be acquired within the contention budget");
     };
     assert!(matches!(
@@ -280,9 +144,10 @@ async fn contention_timeout_expires_after_the_retry_timer_is_armed() {
     let timeout = Duration::from_millis(100);
     let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
     let (release_tx, release_rx) = tokio::sync::oneshot::channel();
-    let mut acquisition = Box::pin(acquire_with_contention_limit(
+    let mut acquisition = Box::pin(acquire_with_contention_timeout_after_busy(
         path.clone(),
-        ContentionLimit::Timeout(timeout),
+        LockMode::Exclusive,
+        timeout,
         async {
             entered_tx.send(()).unwrap();
             release_rx.await.unwrap();
@@ -325,9 +190,10 @@ async fn cancelled_contention_timeout_leaves_no_lock_owner() {
     let holder = acquire(path.clone()).await.unwrap();
     let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
     let (release_tx, release_rx) = tokio::sync::oneshot::channel();
-    let mut acquisition = Box::pin(acquire_with_contention_limit(
+    let mut acquisition = Box::pin(acquire_with_contention_timeout_after_busy(
         path.clone(),
-        ContentionLimit::Timeout(Duration::from_secs(2)),
+        LockMode::Exclusive,
+        Duration::from_secs(2),
         async {
             entered_tx.send(()).unwrap();
             release_rx.await.unwrap();

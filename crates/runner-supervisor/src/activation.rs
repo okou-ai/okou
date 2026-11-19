@@ -42,7 +42,6 @@ pub struct ReadyExecutionResource {
 /// All owned inputs held across active-status publication and executor request construction.
 pub struct JobActivationSetup {
     pub required_home_source_run_id: Option<RunId>,
-    pub(crate) preferred_home_checkout: Option<crate::ingress::dispatch::PreferredHomeCheckout>,
     pub job: ExecutionJob,
     pub rootfs_hash: String,
     pub cancellation: RunCancellationRegistration,
@@ -289,7 +288,6 @@ async fn recover_activation_failure(
 ) -> JobActivationRecovery {
     let JobActivationSetup {
         required_home_source_run_id: _,
-        preferred_home_checkout: _,
         job,
         cancellation,
         profile_name: _,
