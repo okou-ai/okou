@@ -2,6 +2,7 @@ import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
+import { localStorageSignals } from "../../../signals/external/local-storage.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "../sidebar-breakpoint.ts";
 import {
@@ -20,6 +21,10 @@ const POINTER = Object.freeze({
   button: 0,
   buttons: 1,
 });
+
+function sidebarWidth(shell: HTMLElement): string {
+  return shell.style.getPropertyValue("--chat-thread-sidebar-width");
+}
 
 function resizeMask(): Element | null {
   return document.querySelector("[data-chat-thread-sidebar-resize-mask]");
@@ -152,4 +157,49 @@ test("Closing the sidebar during a resize removes its blocking mask", async () =
     screen.findByRole("separator", { name: "Resize sidebar" }),
   ).resolves.toBeInTheDocument();
   expect(resizeMask()).toBeNull();
+});
+
+test("Each panel kind opens at its own width and keeps its own resize", async () => {
+  const { handle, shell } = await openResizableSidebar();
+  // A list opens narrow: extra width would only add empty space.
+  expect(sidebarWidth(shell)).toBe("clamp(400px, 480px, calc(100% - 420px))");
+
+  fireEvent.pointerDown(handle, { ...POINTER, clientX: 960 });
+  fireEvent.pointerUp(handle, { ...POINTER, buttons: 0, clientX: 800 });
+  await waitFor(() => {
+    expect(sidebarWidth(shell)).toBe("clamp(400px, 640px, calc(100% - 420px))");
+  });
+
+  click(
+    buttonNamed(
+      "Preview Resize report.txt",
+      screen.getByTestId("thread-sidebar-artifacts"),
+    ),
+  );
+  const unavailable = await screen.findByTestId(
+    "thread-sidebar-artifact-unavailable",
+  );
+  expect(sidebarWidth(shell)).toBe("clamp(400px, 55%, calc(100% - 420px))");
+
+  click(buttonNamed("Back to artifacts", unavailable));
+  await screen.findByTestId("thread-sidebar-artifacts");
+  expect(sidebarWidth(shell)).toBe("clamp(400px, 640px, calc(100% - 420px))");
+});
+
+test("A width shared by every panel before carries over to previews only", async () => {
+  context.store.set(
+    localStorageSignals("thread-sidebar-widths").set$,
+    JSON.stringify({ panel: 700, browser: 900 }),
+  );
+  const { shell } = await openResizableSidebar();
+  expect(sidebarWidth(shell)).toBe("clamp(400px, 480px, calc(100% - 420px))");
+
+  click(
+    buttonNamed(
+      "Preview Resize report.txt",
+      screen.getByTestId("thread-sidebar-artifacts"),
+    ),
+  );
+  await screen.findByTestId("thread-sidebar-artifact-unavailable");
+  expect(sidebarWidth(shell)).toBe("clamp(400px, 700px, calc(100% - 420px))");
 });
