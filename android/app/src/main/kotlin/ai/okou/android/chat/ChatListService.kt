@@ -14,9 +14,13 @@ import ai.okou.android.api.generated.ReadState
 /** A signed-storage rejection does not revoke the first-party workspace session. */
 class ChatSnapshotUnavailable(val status: Int) : Exception("Chat snapshot could not be downloaded")
 
-/** The workspace list reads and explicit read cursor commands. */
+/** The workspace list reads and explicit row commands. */
 interface ChatListService : ConversationHistoryService {
     suspend fun markUnread(threadId: String): ReadState
+
+    suspend fun setMuted(threadId: String, muted: Boolean, eventId: String)
+
+    suspend fun setArchived(threadId: String, archived: Boolean, eventId: String)
 
     suspend fun historyCatchUp(cursors: Map<String, HistoryCursor>): HistoryBatch
 

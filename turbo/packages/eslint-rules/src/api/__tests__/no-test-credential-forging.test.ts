@@ -59,7 +59,7 @@ tester.run("no-test-credential-forging", noTestCredentialForging, {
     },
     {
       filename: fresh,
-      code: 'export { encryptSecretForTests } from "./helpers/encrypt-secret";',
+      code: 'export { signSandboxJwtForTests } from "../../auth/tokens";',
       options,
       errors: [{ messageId: "forged" }],
     },

@@ -30,7 +30,6 @@ import {
   unpricedBuiltInModelMessage,
 } from "./built-in-model-runtime-route.service";
 import { builtInRoutePricingFromSnapshot } from "./built-in-route-pricing";
-import type { QueueFirstRunAssociation } from "./chat-queued-event.service";
 import { resolveReasoningEffortForDispatch } from "./chat-reasoning-effort.service";
 import { isMemberSubscriptionRoute } from "./effective-model-route.service";
 import { memberSubscriptionModelRoutesFromCatalog } from "./member-subscription-models.service";
@@ -101,7 +100,6 @@ export interface ThreadModelSelection {
   readonly piExecution: boolean;
   /** The CLI runtime the run executes in; Pi when Pi execution applies. */
   readonly cliAgentType: "pi" | ReturnType<typeof getFrameworkForType>;
-  readonly queueFirstAssociation: QueueFirstRunAssociation;
 }
 
 export interface ThreadModelSignals {
@@ -430,10 +428,6 @@ function createModelSelection(
         cliAgentType: piExecution
           ? "pi"
           : getFrameworkForType(modelProviderType),
-        queueFirstAssociation: {
-          threadId: event.chatThreadId,
-          eventId: event.id,
-        },
       };
     },
   );

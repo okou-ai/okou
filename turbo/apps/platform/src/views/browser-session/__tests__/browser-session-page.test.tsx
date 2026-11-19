@@ -257,10 +257,30 @@ test("An accessible conversation without a browser can start one", async () => {
   expect(screen.queryByText("Browser not found")).toBeNull();
 });
 
-test("The interactive Okou viewer lets the owner change automatic sizing", async () => {
+test("Window size settings retain each selected mode when reopened", async () => {
   const sizingMenu = await setupInteractiveViewerSizingMenu();
   expect(menuRadio(sizingMenu, "Off")).toHaveAttribute("aria-checked", "false");
-  await selectViewerSizingOption(sizingMenu, "Off");
+  const oneTimeSizingMenu = await selectViewerSizingOption(
+    sizingMenu,
+    "On connection",
+  );
+  expect(menuRadio(oneTimeSizingMenu, "Follow panel")).toHaveAttribute(
+    "aria-checked",
+    "false",
+  );
+  const followPanelMenu = await selectViewerSizingOption(
+    oneTimeSizingMenu,
+    "Follow panel",
+  );
+  const disabledSizingMenu = await selectViewerSizingOption(
+    followPanelMenu,
+    "Off",
+  );
+  expect(menuRadio(disabledSizingMenu, "On connection")).toHaveAttribute(
+    "aria-checked",
+    "false",
+  );
+  await selectViewerSizingOption(disabledSizingMenu, "On connection");
 });
 
 test("The Okou viewer shows its host blank page only while the blank tab is selected", async () => {
@@ -321,24 +341,6 @@ test("The Okou viewer shows its host blank page only while the blank tab is sele
   click(blankTab);
   await within(viewer).findByText("Nothing open yet");
   expect(blankTab).toHaveAttribute("aria-selected", "true");
-});
-
-test("The Okou viewer starts with WebP and lets the owner change capture settings", async () => {
-  await setupInteractiveViewer();
-  click(screen.getByLabelText("Browser settings"));
-  const menu = await screen.findByRole("menu");
-  expect(within(menu).getByText("Image quality")).toBeInTheDocument();
-  click(within(menu).getByText("Image format"));
-  const formats = await screen.findByRole("menu", { name: "Image format" });
-  expect(menuRadio(formats, "WebP")).toHaveAttribute("aria-checked", "true");
-  click(menuRadio(formats, "JPEG"));
-  await waitFor(() => {
-    expect(formats).not.toBeInTheDocument();
-  });
-  click(screen.getByLabelText("Browser settings"));
-  click(within(await screen.findByRole("menu")).getByText("Image format"));
-  const updated = await screen.findByRole("menu", { name: "Image format" });
-  expect(menuRadio(updated, "JPEG")).toHaveAttribute("aria-checked", "true");
 });
 
 test("Image quality can be cleared and retyped before applying with Enter or blur", async () => {
@@ -562,19 +564,24 @@ test("Escape cancels a quality drag despite pointer events queued during dismiss
   expect(browser.captures.at(-1)).toMatchObject({ quality: 70 });
 });
 
-test("Choosing a quality preset replaces an unfinished custom draft", async () => {
+test("A quality preset replaces the draft and survives a switch through lossless PNG", async () => {
   const browser = await setupInteractiveViewer();
-  const input = await openQualityInput();
-  const menu = screen.getByRole("menu", { name: "Image quality" });
+  const qualityMenu = await openQualityMenu();
+  const input = within(qualityMenu).getByRole("textbox", {
+    name: "Image quality",
+  });
   await fill(input, "");
   await userEvent.type(input, "85");
   expect(browser.captures.at(-1)).toMatchObject({ quality: 70 });
 
-  await userEvent.click(menuRadio(menu, "Sharper"));
+  await userEvent.click(menuRadio(qualityMenu, "Sharper"));
   await waitFor(() => {
     expect(browser.captures.at(-1)).toMatchObject({ quality: 90 });
-    expect(menuRadio(menu, "Sharper")).toHaveAttribute("aria-checked", "true");
-    expect(menuRadio(menu, "Sharper")).not.toHaveAttribute(
+    expect(menuRadio(qualityMenu, "Sharper")).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    expect(menuRadio(qualityMenu, "Sharper")).not.toHaveAttribute(
       "aria-disabled",
       "true",
     );
@@ -582,24 +589,12 @@ test("Choosing a quality preset replaces an unfinished custom draft", async () =
   expect(browser.captures).not.toContainEqual(
     expect.objectContaining({ quality: 85 }),
   );
-});
-
-test("PNG shows lossless quality and switching back restores the chosen lossy quality", async () => {
-  const browser = await setupInteractiveViewer();
-  const qualityMenu = await openQualityMenu();
-  click(menuRadio(qualityMenu, "Sharper"));
-  await waitFor(() => {
-    expect(browser.captures.at(-1)).toMatchObject({ quality: 90 });
-    expect(menuRadio(qualityMenu, "Sharper")).not.toHaveAttribute(
-      "aria-disabled",
-      "true",
-    );
-  });
   await userEvent.click(screen.getByLabelText("Address"));
 
   click(screen.getByLabelText("Browser settings", { selector: "button" }));
   click(screen.getByText("Image format"));
   const formats = await screen.findByRole("menu", { name: "Image format" });
+  expect(menuRadio(formats, "WebP")).toHaveAttribute("aria-checked", "true");
   click(menuRadio(formats, "PNG"));
   await waitFor(() => {
     expect(browser.captures.at(-1)).toMatchObject({ format: "png" });
@@ -621,30 +616,13 @@ test("PNG shows lossless quality and switching back restores the chosen lossy qu
       quality: 90,
     });
     expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    expect(updatedFormats).not.toBeInTheDocument();
   });
-});
 
-test("The browser viewer keeps one-time sizing after automatic sizing is disabled", async () => {
-  const sizingMenu = await setupInteractiveViewerSizingMenu();
-  const disabledSizingMenu = await selectViewerSizingOption(sizingMenu, "Off");
-  expect(menuRadio(disabledSizingMenu, "On connection")).toHaveAttribute(
-    "aria-checked",
-    "false",
-  );
-  await selectViewerSizingOption(disabledSizingMenu, "On connection");
-});
-
-test("The browser viewer resumes continuous sizing after one-time sizing", async () => {
-  const sizingMenu = await setupInteractiveViewerSizingMenu();
-  const oneTimeSizingMenu = await selectViewerSizingOption(
-    sizingMenu,
-    "On connection",
-  );
-  expect(menuRadio(oneTimeSizingMenu, "Follow panel")).toHaveAttribute(
-    "aria-checked",
-    "false",
-  );
-  await selectViewerSizingOption(oneTimeSizingMenu, "Follow panel");
+  click(screen.getByLabelText("Browser settings", { selector: "button" }));
+  click(screen.getByText("Image format"));
+  const reopened = await screen.findByRole("menu", { name: "Image format" });
+  expect(menuRadio(reopened, "JPEG")).toHaveAttribute("aria-checked", "true");
 });
 
 test("A reclaimed connection shows an unavailable state", async () => {

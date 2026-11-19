@@ -136,10 +136,12 @@ export const bootstrapOnboardingGuard$ = command(
     // `onboardingComplete` is the organization's answer, so a member can still
     // be mid-run in a finished org; their draft stays until their own run ends.
     if (status.onboardingComplete && !status.needsOnboarding) {
-      set(restoreSourcesFirstDraft$, {
-        orgId: organization.id,
-        userId: user.id,
-      });
+      await set(
+        restoreSourcesFirstDraft$,
+        { orgId: organization.id, userId: user.id },
+        false,
+        signal,
+      );
       set(clearSourcesFirstDraft$);
     }
     if (!status.needsOnboarding) {

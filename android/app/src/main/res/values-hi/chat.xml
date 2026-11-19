@@ -31,4 +31,10 @@
     <string name="chat_mark_unread">अपठित चिह्नित करें</string>
     <string name="chat_read_action_pending">पढ़ने की स्थिति अपडेट हो रही है…</string>
     <string name="chat_read_action_failed">पढ़ने की स्थिति अपडेट नहीं हो सकी।</string>
+    <string name="chat_mute">चैट म्यूट करें</string>
+    <string name="chat_unmute">चैट अनम्यूट करें</string>
+    <string name="chat_archive">चैट आर्काइव करें</string>
+    <string name="chat_unarchive">आर्काइव से निकालें</string>
+    <string name="chat_row_action_pending">चैट अपडेट हो रही है…</string>
+    <string name="chat_row_action_failed">चैट में हुए बदलाव की पुष्टि नहीं हो सकी।</string>
 </resources>

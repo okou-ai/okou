@@ -1,5 +1,7 @@
 # Changelog
 
+## [0.24.129](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.128...guest-control-server-v0.24.129) (2026-11-19)
+
 ## [0.24.128](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.127...guest-control-server-v0.24.128) (2026-11-18)
 
 

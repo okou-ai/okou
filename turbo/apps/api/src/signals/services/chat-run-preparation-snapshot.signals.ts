@@ -1,24 +1,10 @@
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import {
-  chatEvents,
-  chatEventRunlessInputPredicate,
-} from "@okouai/db/schema/chat-event";
+import { chatEvents } from "@okouai/db/schema/chat-event";
 import { computed } from "ccstate";
-import {
-  and,
-  asc,
-  count,
-  eq,
-  exists,
-  inArray,
-  lt,
-  not,
-  notExists,
-  sql,
-} from "drizzle-orm";
-import { alias, QueryBuilder } from "drizzle-orm/pg-core";
+import { and, asc, count, eq, exists, lt, not, sql } from "drizzle-orm";
+import { QueryBuilder } from "drizzle-orm/pg-core";
 
 import {
   nullableDriverValueDecoder,
@@ -31,6 +17,7 @@ import {
   canonicalChatEventUserMessage,
   canonicalChatInputModelSelection,
 } from "./canonical-chat-event-read.service";
+import { queuedThreadInputCondition } from "./chat-queued-event.service";
 import {
   chatThreadRequestSelection,
   type ChatThreadRequestFacts,
@@ -59,7 +46,6 @@ function buildPreparationTables(
         capacity === 0 ? sql`false` : eq(activeAgentRuns.orgId, claim.orgId),
       ),
   );
-  const revoker = alias(chatEvents, "preparation_input_revoker");
   // This request already validated and committed its canonical input facts.
   // Other FIFO heads still read and strictly decode their stored payload.
   const payload =
@@ -107,22 +93,7 @@ function buildPreparationTables(
           eq(agentRuns.id, chatEvents.contextId),
         ),
       )
-      .where(
-        and(
-          eq(chatEvents.chatThreadId, claim.chatThreadId),
-          chatEventRunlessInputPredicate(
-            chatEvents.runId,
-            chatEvents.eventType,
-          ),
-          inArray(chatEvents.eventType, ["input.prompt", "input.automation"]),
-          notExists(
-            new QueryBuilder()
-              .select({ id: revoker.id })
-              .from(revoker)
-              .where(eq(revoker.revokesEventId, chatEvents.id)),
-          ),
-        ),
-      )
+      .where(queuedThreadInputCondition(claim.chatThreadId))
       .orderBy(asc(chatEvents.seqId))
       .limit(1),
   );

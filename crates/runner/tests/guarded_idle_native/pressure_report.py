@@ -2,7 +2,6 @@
 """Validate source-bound policy-pressure or logical-substitution native evidence."""
 
 import argparse
-import hashlib
 import json
 import pathlib
 
@@ -90,10 +89,8 @@ def validate(directory):
     cases = {f"{SCOPES[kind]}-{mode}" for mode in ("fresh", "snapshot")}
     result, _, receipts = report._validate_cases(directory, cases, PHASES)
     raw_policy = metadata["native_pressure_policy_json"]
-    if not isinstance(raw_policy, str) or hashlib.sha256(raw_policy.encode()).hexdigest() != \
-            result["artifacts"]["policy_sha256"]:
-        raise ValueError("native pressure raw policy/hash mismatch")
-    policy = json.loads(raw_policy, object_pairs_hook=report.unique_object)
+    policy = report.decode_original_policy(
+        raw_policy, result["artifacts"], "native pressure raw policy/hash mismatch")
     if not has_policy_shape(policy):
         raise ValueError("invalid native pressure policy")
     protected = policy["operating_floor_bytes"] + policy["cleanup_reserve_bytes"]

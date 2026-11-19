@@ -21,6 +21,7 @@ const { fixture, open, view, renew } = createBrowserFixtures(context);
 const chatApi = createChatFilesBddApi(context);
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 const query = Object.freeze({ viewer: "native" as const });
+const operationId = "44444444-4444-4444-8444-444444444444";
 
 function client() {
   return setupApp({ context, routes: browserRoutes })(browserContract);
@@ -44,10 +45,11 @@ test.each(["get", "open"] as const)(
         }),
       );
       const params = { threadId: a.threadId };
+      const earlier = context.mocks.ably.publish.mock.calls.length;
       const response = await accept(
         entry === "get"
           ? client().get({ headers, params, query })
-          : client().open({ headers, params, query, body: {} }),
+          : client().open({ headers, params, query, body: { operationId } }),
         [200],
       );
       expect(response.headers.get("Cache-Control")).toBe("no-store");
@@ -59,6 +61,16 @@ test.each(["get", "open"] as const)(
       expect(reads).toBe(1);
       expect(discoveries).toBe(1);
       expect(f.provider.sessionRequests).toHaveLength(1);
+      if (entry === "open") {
+        const notifications = context.mocks.ably.publish.mock.calls
+          .slice(earlier)
+          .filter(([topic]) => {
+            return topic === "browserSessionChanged";
+          });
+        expect(notifications).toStrictEqual([
+          ["browserSessionChanged", { threadId: a.threadId, operationId }],
+        ]);
+      }
       expect((await view(a)).window).toStrictEqual(first.window);
     });
   },
@@ -90,41 +102,30 @@ test("read acquisition does not create a missing Browser and preserves stopped p
   });
 });
 
-test.each(["native", "ordinary"] as const)(
-  "%s open publishes the appropriate lifecycle notification",
-  async (mode) => {
-    const f = await fixture();
-    await f.owned.run(async () => {
-      const a = await f.start();
-      await open(a);
-      const operationId = "44444444-4444-4444-8444-444444444444";
-      const earlier = context.mocks.ably.publish.mock.calls.length;
-      await accept(
-        client().open({
-          headers,
-          params: { threadId: a.threadId },
-          ...(mode === "native" ? { query } : {}),
-          body: { operationId },
-        }),
-        [200],
-      );
-      const notifications = context.mocks.ably.publish.mock.calls
-        .slice(earlier)
-        .filter(([topic]) => {
-          return topic === "browserSessionChanged";
-        });
-      expect(notifications).toStrictEqual([
-        [
-          "browserSessionChanged",
-          {
-            threadId: a.threadId,
-            ...(mode === "native" ? { operationId } : {}),
-          },
-        ],
-      ]);
-    });
-  },
-);
+test("ordinary open publishes a lifecycle notification without the native operation ID", async () => {
+  const f = await fixture();
+  await f.owned.run(async () => {
+    const a = await f.start();
+    await open(a);
+    const earlier = context.mocks.ably.publish.mock.calls.length;
+    await accept(
+      client().open({
+        headers,
+        params: { threadId: a.threadId },
+        body: { operationId },
+      }),
+      [200],
+    );
+    const notifications = context.mocks.ably.publish.mock.calls
+      .slice(earlier)
+      .filter(([topic]) => {
+        return topic === "browserSessionChanged";
+      });
+    expect(notifications).toStrictEqual([
+      ["browserSessionChanged", { threadId: a.threadId }],
+    ]);
+  });
+});
 
 test("native open correlates its expired-window retirement and final publication", async () => {
   const f = await fixture();
@@ -133,7 +134,6 @@ test("native open correlates its expired-window retirement and final publication
     const a = await f.start();
     const first = await open(a);
     mockNow(START + 11 * MINUTE);
-    const operationId = "44444444-4444-4444-8444-444444444444";
     const earlier = context.mocks.ably.publish.mock.calls.length;
     const opened = await accept(
       client().open({

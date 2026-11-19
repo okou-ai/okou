@@ -2,12 +2,11 @@ import { AST_NODE_TYPES, type TSESTree } from "@typescript-eslint/utils";
 import { createRule } from "../utils.ts";
 import { apiTestingDoc, isEntry, lintedFile } from "../test-boundary.ts";
 
-/** Helpers that mint, encrypt or verify credentials outside a real flow. */
+/** Helpers that mint or verify credentials outside a real flow. */
 const credentialForgingHelpers = [
   "signSandboxJwtForTests",
   "signPatJwtForTests",
   "signSkillImportJwtForTests",
-  "encryptSecretForTests",
   "generateSandboxToken",
   "verifyOkouToken",
 ] as const;
@@ -34,7 +33,7 @@ function nameOf(node: TSESTree.Node): string | undefined {
 
 /**
  * Credentials in API tests come from real sign-in, chat send and Runner claim
- * flows. New test files must not mint, encrypt or verify them locally.
+ * flows. New test files must not mint or verify them locally.
  */
 export const noTestCredentialForging = createRule<[Options], "forged">({
   name: "no-test-credential-forging",
@@ -43,7 +42,7 @@ export const noTestCredentialForging = createRule<[Options], "forged">({
     type: "problem",
     docs: {
       description:
-        "Disallow new API test use of credential signing, encryption and verification helpers",
+        "Disallow new API test use of credential signing and verification helpers",
       requiresTypeChecking: false,
     },
     schema: [

@@ -540,12 +540,14 @@ import { notificationsContract as OriginalNotificationsContract } from "../contr
 import { notificationsContract } from "./notifications";
 import {
   onboardingCompleteContract as OriginalOnboardingCompleteContract,
+  onboardingDraftContract as OriginalOnboardingDraftContract,
   onboardingRecommendationContract as OriginalOnboardingRecommendationContract,
   onboardingSourcesContract as OriginalOnboardingSourcesContract,
   onboardingStatusContract as OriginalOnboardingStatusContract,
 } from "../contracts/onboarding";
 import {
   onboardingCompleteContract,
+  onboardingDraftContract,
   onboardingRecommendationContract,
   onboardingSourcesContract,
   onboardingStatusContract,
@@ -1254,6 +1256,7 @@ export const clientDescriptorContracts: readonly (readonly [
   [morningBriefPreferenceContract, OriginalMorningBriefPreferenceContract],
   [notificationsContract, OriginalNotificationsContract],
   [onboardingCompleteContract, OriginalOnboardingCompleteContract],
+  [onboardingDraftContract, OriginalOnboardingDraftContract],
   [onboardingRecommendationContract, OriginalOnboardingRecommendationContract],
   [onboardingSourcesContract, OriginalOnboardingSourcesContract],
   [onboardingStatusContract, OriginalOnboardingStatusContract],

@@ -1,5 +1,9 @@
 import { SessionManager } from "@earendil-works/pi-coding-agent";
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import {
+  execFile,
+  spawn,
+  type ChildProcessWithoutNullStreams,
+} from "node:child_process";
 import { once } from "node:events";
 import fsSync from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -8,6 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface, type Interface } from "node:readline";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import { zstdDecompressSync } from "node:zlib";
 
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
@@ -37,7 +42,7 @@ const SESSION_ID = "11111111-1111-4111-8111-111111111111";
 const RPC_FIXTURE = fileURLToPath(
   new URL("../test/fixtures/pi-agent-loop-rpc-host.ts", import.meta.url),
 );
-const TSX_IMPORT = import.meta.resolve("tsx");
+const execFileAsync = promisify(execFile);
 let rpcHostEntry: Awaited<ReturnType<typeof buildProcessEntry>>;
 let rpcHostPreparation: ReturnType<typeof buildProcessEntry> | undefined;
 const CONFIG: PiSandboxAgentConfig = {
@@ -563,23 +568,24 @@ describe("sandbox Pi agent loop", () => {
   });
 
   it("keeps preparation reporting best effort when the diagnostic fd is closed", async () => {
-    const helper = fileURLToPath(
-      new URL("./pi-startup-timing.ts", import.meta.url),
+    // A tsx loader deprecation can itself write to the closed fd on Node 26.
+    const probe = await buildProcessEntry(
+      fileURLToPath(
+        new URL(
+          "../test/fixtures/pi-preparation-closed-fd.ts",
+          import.meta.url,
+        ),
+      ),
     );
-    const script = `import fs from 'node:fs'; const {writePiPreparationTiming} = await import(${JSON.stringify(helper)}); fs.closeSync(2); writePiPreparationTiming('run', {phase:'cli_config',startedAt:0,finishedAt:1,durationMs:1,outcome:'error'}); process.stdout.write('still-alive');`;
-    const child = spawn(
-      process.execPath,
-      ["--import", TSX_IMPORT, "--input-type=module", "-e", script],
-      { stdio: "pipe" },
-    );
-    let stdout = "";
-    child.stdout.setEncoding("utf8");
-    child.stdout.on("data", (chunk: string) => {
-      stdout += chunk;
-    });
-    const [code] = await once(child, "exit");
-    expect(code).toBe(0);
-    expect(stdout).toBe("still-alive");
+    try {
+      const { stdout } = await execFileAsync(process.execPath, [probe.entry], {
+        timeout: 4_000,
+        killSignal: "SIGKILL",
+      });
+      expect(stdout).toBe("still-alive");
+    } finally {
+      await probe.dispose();
+    }
   });
 
   it("preserves failure status when the terminal log sink throws", () => {

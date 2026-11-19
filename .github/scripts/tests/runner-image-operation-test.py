@@ -164,8 +164,12 @@ class ImageOperationTest(unittest.TestCase):
         with self.cleanup_session() as cleanup:
             # Synchronize on the actual lock contender opening the same file.
             def contender_opened():
-                descriptors = Path(f"/proc/{cleanup.pid}/fd")
-                return any(p.resolve() == lock for p in descriptors.iterdir() if p.exists())
+                for descriptor in Path(f"/proc/{cleanup.pid}/fd").iterdir():
+                    # An unrelated descriptor can close during enumeration.
+                    with contextlib.suppress(FileNotFoundError, ProcessLookupError):
+                        if descriptor.readlink() == lock:
+                            return True
+                return False
 
             self.wait_for(contender_opened)
             self.assertFalse(select.select([cleanup.stdout], [], [], 0)[0])

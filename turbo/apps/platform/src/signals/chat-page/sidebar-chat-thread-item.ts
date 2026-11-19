@@ -276,7 +276,7 @@ function createSidebarChatThreadItemSignals(
 }
 
 export function createSidebarChatThreadItemSignalsRegistry(): SidebarChatThreadItemSignalsRegistry {
-  const signalsByThreadId = new Map<string, SidebarChatThreadItemSignals>();
+  let signalsByThreadId = new Map<string, SidebarChatThreadItemSignals>();
 
   return {
     reconcile(threadIds) {
@@ -291,10 +291,7 @@ export function createSidebarChatThreadItemSignalsRegistry(): SidebarChatThreadI
         nextSignalsByThreadId.set(threadId, signals);
         return signals;
       });
-      signalsByThreadId.clear();
-      for (const [threadId, signals] of nextSignalsByThreadId) {
-        signalsByThreadId.set(threadId, signals);
-      }
+      signalsByThreadId = nextSignalsByThreadId;
       return items;
     },
   };

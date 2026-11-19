@@ -22,11 +22,11 @@ import {
   type ModelSettingsPatch,
   type ReasoningEffort,
 } from "@okouai/api-contracts/contracts/model-reasoning-effort";
-import {
-  MODEL_FIRST_SELECTION_PROVIDER_ID,
-  type ChatThreadServiceTier,
-  type CodexServiceTier,
+import type {
+  ChatThreadServiceTier,
+  CodexServiceTier,
 } from "@okouai/api-contracts/contracts/chat-threads";
+import { MODEL_FIRST_SELECTION_PROVIDER_ID } from "@okouai/api-contracts/validators/chat-threads";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { and, eq, isNotNull, sql } from "drizzle-orm";
 import {

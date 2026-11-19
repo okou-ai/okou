@@ -55,6 +55,10 @@ SSH_RECORD = re.compile(
     r"^(?:debug[123]: |(?:ssh|kex_exchange_identification|client_loop): |"
     r"(?:Connection|Read from|Received disconnect from|Disconnected from|Shared connection to) )"
 )
+PEER_RESET = re.compile(
+    r"^(?:downstream->upstream|upstream->downstream) copy: "
+    r"(?:read|write) tcp [^\r\n]+: (?:read|write): connection reset by peer$"
+)
 ARGUMENT = re.compile(r"(--(?:secret|id)(?:=|\s+))\S+")
 QUERY_SECRET = re.compile(
     r"(?i)([?&](?:access_token|token|client_secret|secret|password|authorization)=)"
@@ -212,21 +216,38 @@ def bounded(lines, byte_limit, line_limit):
     return list(reversed(result))
 
 
+def native_logs(directory):
+    application = directory / "application"
+    if application.is_symlink():
+        raise OSError("unsafe application log directory")
+    return sorted(
+        (path for path in application.glob("cloudflared*.log") if not path.is_symlink()),
+        key=lambda path: path.stat().st_mtime_ns,
+        reverse=True,
+    )
+
+
+def peer_reset(directory):
+    try:
+        for path in native_logs(directory)[:2]:
+            for line in tail(path, MAX_LINES):
+                if not line.startswith("{"):
+                    continue
+                if PEER_RESET.fullmatch(json.loads(line).get("message", "")):
+                    return True
+    except (OSError, ValueError):
+        return False
+    return False
+
+
 def proxy_evidence(directory):
     result = [f"----- Cloudflare proxy {directory.name} (source event times) -----"]
     result += bounded(
         ["lifecycle: " + line for line in tail(directory / "events.log", 12)], 2048, 14
     )
     application_lines = []
-    application = directory / "application"
     try:
-        if application.is_symlink():
-            raise OSError("unsafe application log directory")
-        files = sorted(
-            (p for p in application.glob("cloudflared*.log") if not p.is_symlink()),
-            key=lambda p: p.stat().st_mtime_ns,
-            reverse=True,
-        )
+        files = native_logs(directory)
         for path in reversed(files[:2]):
             application_lines += ["application: " + line for line in tail(path, 12)]
         if not files:
@@ -262,6 +283,8 @@ def publish(lines):
 
 def main():
     mode, argument = sys.argv[1:]
+    if mode == "peer-reset":
+        raise SystemExit(0 if peer_reset(Path(argument)) else 1)
     if mode == "sanitize":
         if argument == "-":
             raw = sys.stdin.buffer.read(MAX_BYTES)

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.32.25](https://github.com/okou-ai/okou/compare/guest-contracts-v0.32.24...guest-contracts-v0.32.25) (2026-11-19)
+
+
+### Refactoring
+
+* **guest-contracts:** borrow the private replacement directory for sync ([#48806](https://github.com/okou-ai/okou/issues/48806)) ([0e60429](https://github.com/okou-ai/okou/commit/0e60429c5387b4ec532ef1e9a30db23c563e0c9c))
+
 ## [0.32.24](https://github.com/okou-ai/okou/compare/guest-contracts-v0.32.23...guest-contracts-v0.32.24) (2026-11-18)
 
 

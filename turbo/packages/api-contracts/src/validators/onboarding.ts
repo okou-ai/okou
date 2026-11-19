@@ -1,4 +1,12 @@
-import { enum as zEnum } from "zod";
+import {
+  boolean,
+  enum as zEnum,
+  number,
+  object,
+  string,
+  uuid,
+  type infer as zInfer,
+} from "zod";
 import { userLocaleSchema } from "./user-preferences";
 
 /**
@@ -54,3 +62,52 @@ export const ONBOARDING_RECOMMENDATION_CONNECTOR_SLUGS = [
   "google-ads",
   "meta-ads",
 ] as const;
+
+export const onboardingDraftStepSchema = zEnum([
+  "industry",
+  "sources",
+  "experience",
+  "skills",
+  "slack",
+  "capabilities",
+  "ready",
+]);
+
+export const ONBOARDING_STARTING_PROMPT_MAX_LENGTH = 1000;
+
+export const onboardingStartingPromptFormatSchema = zEnum([
+  "image",
+  "presentation",
+  "website",
+  "report",
+  "research",
+  "people",
+]);
+
+export const onboardingStartingPromptOutputSchema = object({
+  format: onboardingStartingPromptFormatSchema,
+  start: number().int().min(0).max(ONBOARDING_STARTING_PROMPT_MAX_LENGTH),
+  end: number().int().min(0).max(ONBOARDING_STARTING_PROMPT_MAX_LENGTH),
+});
+
+export const onboardingDraftAnswersSchema = object({
+  industry: onboardingIndustrySchema.nullable(),
+  experienced: boolean().nullable(),
+  provider: onboardingSubscriptionProviderSchema.nullable(),
+  startingPromptDraft: string().max(ONBOARDING_STARTING_PROMPT_MAX_LENGTH),
+  startingPromptKey: string().max(512),
+  startingPromptOutput: onboardingStartingPromptOutputSchema
+    .nullable()
+    .default(null),
+  recommendationJobId: uuid().nullable(),
+  recommendationStartedAt: number().finite().nonnegative().nullable(),
+});
+
+export const onboardingDraftPayloadSchema = object({
+  answers: onboardingDraftAnswersSchema,
+  step: onboardingDraftStepSchema.nullable(),
+}).strict();
+
+export type OnboardingDraftPayload = zInfer<
+  typeof onboardingDraftPayloadSchema
+>;

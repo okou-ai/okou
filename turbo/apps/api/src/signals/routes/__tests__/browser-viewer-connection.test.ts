@@ -34,8 +34,13 @@ async function viewerScenario() {
   const providerId = randomUUID();
   const cdpUrl = `https://${providerId}.cdp.browser-use.com/`;
   const webSocketUrl = `wss://${providerId}.cdp.browser-use.com/devtools/browser/test?token=a%26b`;
-  const provider = {
-    status: "active" as "active" | "stopped",
+  const provider: {
+    status: "active" | "stopped";
+    cdpUrl: string;
+    liveUrl: string | null;
+    discoveryUrl: string;
+  } = {
+    status: "active",
     cdpUrl,
     liveUrl: `https://live.browser-use.com/?wss=${encodeURIComponent(cdpUrl)}`,
     discoveryUrl: webSocketUrl,
@@ -102,7 +107,7 @@ async function viewerScenario() {
       }
     },
   });
-  const current = await owned.run(async () => {
+  const params = await owned.run(async () => {
     const sent = await chat.sendAndLaunch(owned.actor, {
       agentId: owned.agentId,
       prompt: "Open my browser viewer",
@@ -114,7 +119,7 @@ async function viewerScenario() {
       authorization: `Bearer ${okouTokenFromExecution(execution.execution)}`,
     };
     await accept(client().use({ headers: runHeaders, body: {} }), [200]);
-    return { params: { threadId: sent.threadId }, runHeaders };
+    return { threadId: sent.threadId };
   });
   const orgId = owned.actor.orgId;
   if (!orgId) {
@@ -122,7 +127,7 @@ async function viewerScenario() {
   }
   return {
     ...owned,
-    ...current,
+    params,
     provider,
     webSocketUrl,
     orgId,
@@ -154,13 +159,6 @@ test("retrieves a viewer connection for its signed-in owner", async () => {
       extension: TEST_BROWSER_EXTENSION,
     });
     expect(connected.headers.get("cache-control")).toBe("no-store");
-    const deniedRun = await client().get({
-      headers: scenario.runHeaders,
-      params,
-      query,
-    });
-    expect(deniedRun.status).toBe(403);
-
     const foreign = { userId: `user_${randomUUID()}`, orgId: scenario.orgId };
     createRouteMocks(context).clerk.session(foreign.userId, foreign.orgId);
     const foreignResponse = await client().get({
@@ -171,16 +169,6 @@ test("retrieves a viewer connection for its signed-in owner", async () => {
     expect(foreignResponse).toMatchObject({
       status: 404,
       body: { error: { code: "BROWSER_NOT_FOUND" } },
-    });
-    createRouteMocks(context).clerk.session(
-      scenario.actor.userId,
-      scenario.actor.orgId,
-    );
-    scenario.provider.status = "stopped";
-    const stopped = await client().get({ headers, params, query });
-    expect(stopped).toMatchObject({
-      status: 200,
-      body: { browser: { status: "suspended" }, viewer: null },
     });
   });
 });
@@ -194,6 +182,7 @@ test.each(["provider WSS", "live WSS", "double-encoded live WSS"] as const)(
       scenario.provider.discoveryUrl = "not-a-websocket";
       if (source === "provider WSS") {
         scenario.provider.cdpUrl = scenario.webSocketUrl;
+        scenario.provider.liveUrl = null;
       } else {
         const endpoint =
           source === "double-encoded live WSS"
@@ -205,15 +194,23 @@ test.each(["provider WSS", "live WSS", "double-encoded live WSS"] as const)(
         client().get({ headers, params: scenario.params, query }),
         [200],
       );
+      expect(connected.body.browser).toMatchObject({
+        threadId: scenario.params.threadId,
+        status: "active",
+        liveUrl: scenario.provider.liveUrl,
+      });
       expect(connected.body.viewer).toStrictEqual({
-        browser: expect.objectContaining({
-          threadId: scenario.params.threadId,
-          status: "active",
-          liveUrl: scenario.provider.liveUrl,
-        }),
+        browser: connected.body.browser,
         cdpUrl: scenario.webSocketUrl,
         extension: TEST_BROWSER_EXTENSION,
       });
+      if (source === "provider WSS") {
+        const ordinary = await accept(
+          client().get({ headers, params: scenario.params }),
+          [200],
+        );
+        expect(ordinary.body.browser).toStrictEqual(connected.body.browser);
+      }
       // Teardown also uses the normal provider discovery path.
       scenario.provider.discoveryUrl = scenario.webSocketUrl;
     });

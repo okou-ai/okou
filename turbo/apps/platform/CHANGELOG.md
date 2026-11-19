@@ -13,6 +13,44 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1149.0](https://github.com/okou-ai/okou/compare/app-v0.1148.2...app-v0.1149.0) (2026-11-19)
+
+
+### Features
+
+* **onboarding:** persist drafts across devices ([#48816](https://github.com/okou-ai/okou/issues/48816)) ([368d3dd](https://github.com/okou-ai/okou/commit/368d3dd31744833319c9cffce3c17191a5c327d7))
+
+
+### Refactoring
+
+* **platform:** simplify pdf, auth and browser close timing ([#48840](https://github.com/okou-ai/okou/issues/48840)) ([85c641e](https://github.com/okou-ai/okou/commit/85c641e01017caf8b3b6d830521cc62c242b57da))
+* **platform:** use ccstate to reload credit balances ([#48843](https://github.com/okou-ai/okou/issues/48843)) ([9d67f10](https://github.com/okou-ai/okou/commit/9d67f101309b6ee9de61553eff42bc1f14901787))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.89.0
+    * @okouai/core bumped to 8.854.2
+    * @okouai/ui bumped to 1.21.59
+
+## [0.1148.2](https://github.com/okou-ai/okou/compare/app-v0.1148.1...app-v0.1148.2) (2026-11-19)
+
+
+### Bug Fixes
+
+* **app:** defer feature guide requests until workspace switches load ([#48813](https://github.com/okou-ai/okou/issues/48813)) ([89e6b4c](https://github.com/okou-ai/okou/commit/89e6b4c0cb69754a6271de4d7968d974d34f2c09))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.88.0
+    * @okouai/core bumped to 8.854.1
+    * @okouai/ui bumped to 1.21.58
+
 ## [0.1148.1](https://github.com/okou-ai/okou/compare/app-v0.1148.0...app-v0.1148.1) (2026-11-18)
 
 

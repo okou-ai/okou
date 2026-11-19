@@ -12,6 +12,8 @@ import {
   chatThreadByIdContract,
   chatThreadMarkReadContract,
   chatThreadMarkUnreadContract,
+  chatThreadMuteContract,
+  chatThreadArchiveContract,
   chatThreadDraftContract,
 } from "../contracts/chat-threads";
 import { agentDraftContract } from "../contracts/agent-draft";
@@ -229,6 +231,26 @@ export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
     name: "markUnread",
     response: "ReadState",
     route: chatThreadMarkUnreadContract.markUnread,
+  },
+  {
+    name: "muteThread",
+    response: "Unit",
+    route: chatThreadMuteContract.mute,
+  },
+  {
+    name: "unmuteThread",
+    response: "Unit",
+    route: chatThreadMuteContract.unmute,
+  },
+  {
+    name: "archiveThread",
+    response: "Unit",
+    route: chatThreadArchiveContract.archive,
+  },
+  {
+    name: "unarchiveThread",
+    response: "Unit",
+    route: chatThreadArchiveContract.unarchive,
   },
 ];
 

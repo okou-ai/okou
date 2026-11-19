@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.249.57](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.56...runner-rs-v0.249.57) (2026-11-19)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.249.56](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.55...runner-rs-v0.249.56) (2026-11-19)
+
+
+### Refactoring
+
+* **runner:** separate shared platform http transport from firewall auth ([#48769](https://github.com/okou-ai/okou/issues/48769)) ([83a3416](https://github.com/okou-ai/okou/commit/83a3416344f874b5968541c37c769378a8f0efe8))
+* **runner:** share original pressure policy decoding ([#48799](https://github.com/okou-ai/okou/issues/48799)) ([6beacab](https://github.com/okou-ai/okou/commit/6beacab3dc8adf04400c38f9eaeb2dfbb3f52d34))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.249.55](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.54...runner-rs-v0.249.55) (2026-11-18)
 
 

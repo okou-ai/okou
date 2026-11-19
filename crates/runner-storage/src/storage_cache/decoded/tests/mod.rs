@@ -205,8 +205,6 @@ async fn decoded_cache_rejects_invalid_gzip_trailers_after_tar_end() {
 
 #[tokio::test]
 async fn decoded_cache_does_not_accept_reader_limit_as_valid_gzip_eof() {
-    use std::io::Write;
-
     let encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::best());
     let mut builder = tar::Builder::new(encoder);
     let mut header = tar::Header::new_ustar();
@@ -217,9 +215,9 @@ async fn decoded_cache_does_not_accept_reader_limit_as_valid_gzip_eof() {
         .append_data(&mut header, "file", &b"content"[..])
         .unwrap();
     let mut encoder = builder.into_inner().unwrap();
-    encoder
-        .write_all(&vec![0; 2 * MAX_ADMITTED_STORAGE_BYTES])
-        .unwrap();
+    let padding_bytes = (2 * MAX_ADMITTED_STORAGE_BYTES) as u64;
+    let mut padding = io::repeat(0).take(padding_bytes);
+    assert_eq!(io::copy(&mut padding, &mut encoder).unwrap(), padding_bytes);
     let cache_root = tempfile::tempdir().unwrap();
     let cache = DecodedCache::new(HomePaths::with_root(cache_root.path().to_owned()));
     assert!(
