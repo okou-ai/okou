@@ -363,6 +363,11 @@ runner_chat_send_parts() {
         echo "# Chat send response is missing its thread id: $send_response" >&2
         return 1
     }
+    # Test teardown can recover the owned thread even when launch fails inside
+    # a Bats run subshell. Thread deletion cancels any run attached to it.
+    if [[ -z "$thread_id" && -n "${RUNNER_CHAT_THREAD_RECORD:-}" ]]; then
+        printf '%s\n' "$resolved_thread_id" >"$RUNNER_CHAT_THREAD_RECORD" || return 1
+    fi
     run_id="$(_runner_chat_wait_for_input_run \
         "$resolved_thread_id" \
         "$client_event_id")" || return 1

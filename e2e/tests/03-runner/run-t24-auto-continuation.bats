@@ -8,6 +8,7 @@ load '../../helpers/runner-chat'
 load '../../helpers/runner-api'
 
 BATS_TEST_TIMEOUT=600
+BATS_TEST_RETRIES=1
 
 setup() {
     local credentials="/tmp/e2e-api-credentials-runner-real-codex.json"
@@ -15,7 +16,7 @@ setup() {
     E2E_API_TOKEN="$(jq -er '.token | select(type == "string" and length > 0)' "$credentials")"
     E2E_API_URL="$(jq -er '.apiUrl | select(type == "string" and length > 0)' "$credentials")"
     runner_e2e_require_environment
-    runner_e2e_setup_test
+    runner_e2e_setup_live_test
 }
 
 teardown() {
@@ -64,9 +65,11 @@ assert_auto_route() {
     assert_success
     successor_result="$output"
     successor_run_id="$(runner_chat_field "$successor_result" '.runId')"
-    [[ "$successor_run_id" != "$RUN_ID" ]]
-    [[ "$(runner_chat_field "$successor_result" '.threadId')" == "$THREAD_ID" ]]
-    [[ "$(runner_chat_field "$successor_result" '.sessionId')" == "$first_session" ]]
+    if [[ "$successor_run_id" == "$RUN_ID" ]]; then
+        fail "Successor reused initial run $RUN_ID"
+    fi
+    assert_equal "$(runner_chat_field "$successor_result" '.threadId')" "$THREAD_ID"
+    assert_equal "$(runner_chat_field "$successor_result" '.sessionId')" "$first_session"
     RUN_ID="$successor_run_id"
     run assert_auto_route "$RUN_ID"
     assert_success

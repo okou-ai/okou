@@ -29,8 +29,16 @@ runner_e2e_setup_test() {
     CONNECTOR_ACCOUNT_ID=""
 }
 
+runner_e2e_setup_live_test() {
+    runner_e2e_setup_test
+    RUNNER_CHAT_THREAD_RECORD="$BATS_TEST_TMPDIR/thread-id"
+}
+
 runner_e2e_teardown_test() {
     local connector_slug="${1:-}"
+    if [[ -n "${RUNNER_CHAT_THREAD_RECORD:-}" && -s "$RUNNER_CHAT_THREAD_RECORD" ]]; then
+        THREAD_ID=$(<"$RUNNER_CHAT_THREAD_RECORD")
+    fi
     if [[ -n "${RUN_ID:-}" ]]; then
         runner_e2e_cancel_run "$RUN_ID" >/dev/null 2>&1 || true
     fi

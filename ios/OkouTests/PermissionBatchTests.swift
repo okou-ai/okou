@@ -57,6 +57,55 @@ final class PermissionBatchTests: XCTestCase {
     XCTAssertEqual(requests.filter { $0.url!.path == "/api/chat/events" }.count, 1)
   }
 
+  func testFirstConfirmationPublishesTheReceiptBeforeConversationRefreshCompletes() async throws {
+    let gate = ModelResponseGate()
+    let started = expectation(description: "Conversation refresh after accepted continuation")
+    let synchronize = Mutex(false)
+    let fixture = FixtureData(
+      onUnhandledRequest: { XCTFail($0) },
+      beforeRequest: { request in
+        if request.url!.path == "/api/chat/events" {
+          synchronize.withLock { $0 = true }
+        } else if request.url!.path.hasSuffix("/event-rows"),
+          synchronize.withLock({ pending in
+            guard pending else { return false }
+            pending = false
+            return true
+          })
+        {
+          started.fulfill()
+          await gate.wait()
+        }
+      })
+    let (conversation, card) = try await setup(fixture)
+    let reviewed = card.snapshot
+    let firstRequest = fixture.state.withLock { $0.requests.count }
+    let confirmation = Task { await card.confirm() }
+    addTeardownBlock { @MainActor in
+      conversation.close()
+      confirmation.cancel()
+      gate.open()
+      await confirmation.value
+    }
+    await fulfillment(of: [started], timeout: 3)
+    XCTAssertFalse(card.isSaving)
+    XCTAssertFalse(card.isContinuing)
+    XCTAssertTrue(card.hasContinued)
+    XCTAssertTrue(card.displayedSnapshot(reviewed)?.allAllowed == true)
+
+    let requests = fixture.state.withLock { Array($0.requests.dropFirst(firstRequest)) }
+    let write = try XCTUnwrap(requests.firstIndex { $0.httpMethod == "PUT" })
+    let continuation = try XCTUnwrap(requests.firstIndex { $0.url!.path == "/api/chat/events" })
+    let metadata = "/api/chat-threads/\(FixtureData.threadID)/metadata"
+    XCTAssertEqual(
+      requests[..<write].map { $0.url!.path }.sorted(),
+      [metadata, "/api/feature-switches", "/api/user-permission-grants"].sorted())
+    XCTAssertEqual(requests[(write + 1)..<continuation].map { $0.url!.path }, [metadata])
+    gate.open()
+    await confirmation.value
+    XCTAssertTrue(conversation.messages.contains { $0.text == "Continue after permissions" })
+  }
+
   func testPartialSharedSaveReadsBackAndOnlyRetriesMissingConnector() async throws {
     var state = FixtureData.State()
     state.shared = true
