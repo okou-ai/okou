@@ -222,9 +222,14 @@ final class ThreadListMutations {
     actionError = nil
   }
 
-  func canUpdate(_ id: String) -> Bool {
+  /// Whether a write may start, apart from the chat still being listed: a delete retry targets
+  /// a chat its own optimistic event already hides.
+  func canWrite(_ id: String) -> Bool {
     !closed && !blocked && !updatingThreads.contains(id) && !markingAgentRead
-      && threads.contains(where: { $0.id == id })
+  }
+
+  func canUpdate(_ id: String) -> Bool {
+    canWrite(id) && threads.contains(where: { $0.id == id })
   }
 
   @discardableResult
@@ -252,32 +257,27 @@ final class ThreadListMutations {
     }
   }
 
-  /// The chat leaves the list at once. A rejected delete removed nothing, so the chat returns.
+  /// The chat leaves the list at once. Its optimistic event stays until the persistent event
+  /// settles it, even when the request fails; a retry resends the same event.
   @discardableResult
   func delete(
-    _ thread: ChatThread, eventID: String, onFailure: (@MainActor (String) -> Void)? = nil
+    _ id: String, agentID: String, eventID: String,
+    onFailure: (@MainActor (String) -> Void)? = nil
   ) async -> Bool {
-    guard canUpdate(thread.id), !Task.isCancelled,
-      let current = threads.first(where: { $0.id == thread.id })
-    else { return false }
-    optimisticChanges.append(
-      (
-        eventID,
-        ChatThreadChange(
-          kind: .deleted, chatThreadId: current.id, agentId: current.agentID, createdAt: .now)
-      ))
-    projectThreads(threads)
-    let deleted = await updateThread(
-      current.id, includingIndicators: true, onFailure: onFailure
-    ) { [commands] in
-      try await commands.deleteThread(threadID: current.id, eventID: eventID)
+    let pending = optimisticChanges.contains { $0.id == eventID }
+    guard pending ? canWrite(id) : canUpdate(id), !Task.isCancelled else { return false }
+    if !pending {
+      optimisticChanges.append(
+        (
+          eventID,
+          ChatThreadChange(kind: .deleted, chatThreadId: id, agentId: agentID, createdAt: .now)
+        ))
+      projectThreads(threads)
     }
-    if !deleted, !closed {
-      optimisticChanges.removeAll { $0.id == eventID }
-      let present = threads.contains { $0.id == current.id }
-      projectThreads(present ? threads : threads + [current])
+    return await updateThread(id, includingIndicators: true, onFailure: onFailure) {
+      [commands] in
+      try await commands.deleteThread(threadID: id, eventID: eventID)
     }
-    return deleted
   }
 
   @discardableResult

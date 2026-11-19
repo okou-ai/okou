@@ -261,28 +261,37 @@ final class WorkspaceChatActions {
     return succeeded
   }
 
-  /// Deletes a chat the user has confirmed. It leaves the list at once; if the server rejects
-  /// the delete, the chat returns with Retry.
+  /// Deletes a chat the user has confirmed. It leaves the list at once and stays out of it
+  /// when the delete is not confirmed; Retry resends the same event.
   @discardableResult
-  func deleteThread(_ id: String, eventID: String = UUID().uuidString.lowercased()) async -> Bool {
+  func deleteThread(_ id: String) async -> Bool {
     guard let workspace else { return false }
     guard !closed, !needsUpgrade, workspace.list.canUpdate(id),
       let thread = workspace.list.threads.first(where: { $0.id == id })
     else { return false }
+    return await deleteThread(
+      id, agentID: thread.agentID, eventID: UUID().uuidString.lowercased())
+  }
+
+  private func deleteThread(_ id: String, agentID: String, eventID: String) async -> Bool {
+    guard let workspace else { return false }
+    guard !closed, !needsUpgrade else { return false }
     // Earlier feedback for this chat (Undo archive) has nothing left to act on.
     if threadFeedback?.threadID == id { threadFeedback = nil }
     var failure: String?
     let deleted = await workspace.list.delete(
-      thread, eventID: eventID, onFailure: { failure = $0 })
+      id, agentID: agentID, eventID: eventID, onFailure: { failure = $0 })
     guard !closed, !needsUpgrade else { return false }
     if deleted {
       workspace.notificationReadStateChanged()
     } else {
       threadFeedback = ChatThreadFeedback(
-        threadID: id, message: failure ?? String(localized: "The chat was not deleted."),
-        actionTitle: String(localized: "Retry"), persists: true, kind: .error
+        threadID: id,
+        message: failure ?? String(localized: "The chat deletion was not confirmed."),
+        actionTitle: String(localized: "Retry"), persists: true, actsOnHiddenChat: true,
+        kind: .error
       ) { [weak self] in
-        await self?.deleteThread(id, eventID: eventID)
+        _ = await self?.deleteThread(id, agentID: agentID, eventID: eventID)
       }
     }
     return deleted

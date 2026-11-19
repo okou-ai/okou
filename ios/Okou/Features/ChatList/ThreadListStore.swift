@@ -569,10 +569,15 @@ final class ThreadListStore {
 }
 
 extension ThreadListStore {
+  func canWrite(_ id: String) -> Bool {
+    actions.canWrite(id)
+  }
+
   @discardableResult
   func delete(
-    _ thread: ChatThread, eventID: String, onFailure: (@MainActor (String) -> Void)? = nil
+    _ id: String, agentID: String, eventID: String,
+    onFailure: (@MainActor (String) -> Void)? = nil
   ) async -> Bool {
-    return await actions.delete(thread, eventID: eventID, onFailure: onFailure)
+    return await actions.delete(id, agentID: agentID, eventID: eventID, onFailure: onFailure)
   }
 }

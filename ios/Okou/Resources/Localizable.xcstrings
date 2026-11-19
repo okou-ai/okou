@@ -26541,40 +26541,40 @@
         }
       }
     },
-    "The chat was not deleted.": {
+    "The chat deletion was not confirmed.": {
       "localizations": {
         "de": {
-          "stringUnit": { "state": "translated", "value": "Der Chat wurde nicht gelöscht." }
+          "stringUnit": { "state": "translated", "value": "Das Löschen des Chats wurde nicht bestätigt." }
         },
         "es": {
-          "stringUnit": { "state": "translated", "value": "El chat no se eliminó." }
+          "stringUnit": { "state": "translated", "value": "No se confirmó la eliminación del chat." }
         },
         "fr": {
-          "stringUnit": { "state": "translated", "value": "La discussion n’a pas été supprimée." }
+          "stringUnit": { "state": "translated", "value": "La suppression de la discussion n’a pas été confirmée." }
         },
         "hi": {
-          "stringUnit": { "state": "translated", "value": "चैट नहीं हटाई गई।" }
+          "stringUnit": { "state": "translated", "value": "चैट हटाने की पुष्टि नहीं हुई।" }
         },
         "id": {
-          "stringUnit": { "state": "translated", "value": "Chat tidak dihapus." }
+          "stringUnit": { "state": "translated", "value": "Penghapusan chat tidak dikonfirmasi." }
         },
         "it": {
-          "stringUnit": { "state": "translated", "value": "La chat non è stata eliminata." }
+          "stringUnit": { "state": "translated", "value": "L’eliminazione della chat non è stata confermata." }
         },
         "ja": {
-          "stringUnit": { "state": "translated", "value": "チャットは削除されませんでした。" }
+          "stringUnit": { "state": "translated", "value": "チャットの削除は確認されませんでした。" }
         },
         "ko": {
-          "stringUnit": { "state": "translated", "value": "채팅이 삭제되지 않았습니다." }
+          "stringUnit": { "state": "translated", "value": "채팅 삭제가 확인되지 않았습니다." }
         },
         "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "A conversa não foi excluída." }
+          "stringUnit": { "state": "translated", "value": "A exclusão da conversa não foi confirmada." }
         },
         "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "聊天未删除。" }
+          "stringUnit": { "state": "translated", "value": "删除聊天未确认。" }
         },
         "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "聊天未刪除。" }
+          "stringUnit": { "state": "translated", "value": "刪除聊天未確認。" }
         }
       }
     }

@@ -40,7 +40,7 @@ final class ChatThreadDeleteTests: XCTestCase {
     XCTAssertEqual(fixture.writes.map(\.action), ["delete"])
   }
 
-  func testRejectedDeleteRestoresTheChatAndRetriesTheSameEvent() async throws {
+  func testUnconfirmedDeleteKeepsTheChatHiddenAndRetriesTheSameEvent() async throws {
     let fixture = ThreadActionsFixture()
     let store = fixture.workspace()
     defer { store.close() }
@@ -51,13 +51,16 @@ final class ChatThreadDeleteTests: XCTestCase {
     let deleted = await store.deleteThread(ThreadActionsFixture.thread)
 
     XCTAssertFalse(deleted)
-    XCTAssertEqual(store.list.threads.map(\.id), [ThreadActionsFixture.thread])
+    // Only the persistent event settles the optimistic delete; a failure does not restore it.
+    XCTAssertTrue(store.list.threads.isEmpty)
     let retry = try XCTUnwrap(store.threadFeedback)
     XCTAssertEqual(retry.actionTitle, "Retry")
     XCTAssertTrue(retry.persists)
+    XCTAssertTrue(store.list.canWrite(ThreadActionsFixture.thread))
     await retry.action()
-    XCTAssertTrue(store.list.threads.isEmpty)
     XCTAssertNil(store.threadFeedback)
+    await store.refresh()
+    XCTAssertTrue(store.list.threads.isEmpty)
     XCTAssertEqual(fixture.writes.map(\.action), ["delete", "delete"])
     let eventIDs = fixture.writes.compactMap(\.eventID)
     XCTAssertEqual(eventIDs.count, 2)
