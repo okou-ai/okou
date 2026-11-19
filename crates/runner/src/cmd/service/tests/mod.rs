@@ -1,3 +1,4 @@
+mod readiness_health;
 mod teardown;
 
 use std::collections::VecDeque;
@@ -188,8 +189,10 @@ async fn wait_running_systemctl_timeout_child() {
         "unexpected error: {error}"
     );
     let expected_observation = match scenario.as_str() {
-        "config-query" => "last observation: not checked",
-        "active-query" => "last observation: live runner instance record missing",
+        "config-query" => "systemctl cat timed out while resolving the runner config",
+        "active-query" => {
+            "live runner instance record missing; systemctl show timed out checking active state"
+        }
         unexpected => panic!("unexpected wait-running timeout scenario: {unexpected}"),
     };
     assert!(

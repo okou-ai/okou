@@ -268,6 +268,12 @@ separate `vm0-ci-image-DIGEST-expire` names and remain image-owned.
 Stripe replacement uses the same lifecycle exclusion. Its Ansible playbooks
 remain deployment adapters; closed-PR teardown does not start Ansible per PR.
 
+Preview startup runs the selected Runner's health checks as part of
+`runner service wait-running --check-health`. The command emits numeric
+capacity on stdout after the same Runner instance passes health verification.
+Health diagnostics go to stderr. Failed verification uses the same partial
+start cleanup as other startup failures.
+
 The shared Stripe and preview Runner lock wrapper sends an explicit release
 request after the protected command succeeds. Each host closes its flock before
 acknowledging that request and saves the operation ID in a root-owned file

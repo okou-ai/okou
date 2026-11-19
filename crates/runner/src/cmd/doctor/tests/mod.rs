@@ -1492,7 +1492,10 @@ async fn orphan_mitmdump_rechecks_original_identity_and_current_ancestry() {
     let warning = &warnings[0];
 
     assert!(warning.persists(None, &fresh, &[], None).await);
-    assert_eq!(print_report(&[], &[], &warnings), ExitCode::FAILURE);
+    assert_eq!(
+        write_report(&[], &[], &warnings, io::sink()).unwrap(),
+        ExitCode::FAILURE
+    );
     // Reparenting changes observed PPID, not the proxy's generation.
     fresh.mitmdumps[0].ppid = Some(1);
     assert!(warning.persists(None, &fresh, &[], None).await);
@@ -1551,7 +1554,10 @@ async fn orphan_mitmdump_resolution_restores_success() {
                 remaining.push(warning);
             }
         }
-        assert_eq!(print_report(&[], &[], &remaining), ExitCode::SUCCESS);
+        assert_eq!(
+            write_report(&[], &[], &remaining, io::sink()).unwrap(),
+            ExitCode::SUCCESS
+        );
     }
 }
 
@@ -2018,7 +2024,10 @@ async fn persistent_unavailable_status_survives_recheck_budget() {
     assert!(reports[0].status.is_none());
     assert!(has_status_unavailable_warning(&reports[0]));
     assert_eq!(reports[0].warnings.len(), 1);
-    assert_eq!(print_report(&reports, &[], &[]), ExitCode::FAILURE);
+    assert_eq!(
+        write_report(&reports, &[], &[], io::sink()).unwrap(),
+        ExitCode::FAILURE
+    );
 }
 
 #[tokio::test]
@@ -2052,7 +2061,10 @@ async fn unavailable_status_recheck_applies_recovered_snapshot() {
     );
     assert!(!has_status_unavailable_warning(&reports[0]));
     assert!(reports[0].warnings.is_empty());
-    assert_eq!(print_report(&reports, &[], &[]), ExitCode::SUCCESS);
+    assert_eq!(
+        write_report(&reports, &[], &[], io::sink()).unwrap(),
+        ExitCode::SUCCESS
+    );
 }
 
 #[tokio::test]
@@ -2082,7 +2094,10 @@ async fn unavailable_status_recheck_reports_recovered_proxy_anomaly() {
     assert!(!has_status_unavailable_warning(&reports[0]));
     assert!(has_proxy_warning(&reports[0]));
     assert_eq!(reports[0].warnings.len(), 1);
-    assert_eq!(print_report(&reports, &[], &[]), ExitCode::FAILURE);
+    assert_eq!(
+        write_report(&reports, &[], &[], io::sink()).unwrap(),
+        ExitCode::FAILURE
+    );
 }
 
 #[tokio::test]
@@ -2315,7 +2330,7 @@ async fn build_runner_reports_requires_live_registry_entries() {
     .unwrap();
     let discovered = empty_discovered();
 
-    let reports = build_runner_reports(&[], None, None, &discovered, &[]).await;
+    let reports = build_runner_reports(&[], DoctorScope::Host, None, &discovered, &[]).await;
 
     assert!(reports.is_empty());
     api.assert_calls_async(0).await;
@@ -2341,7 +2356,13 @@ async fn build_runner_reports_allows_api_cold_starts() {
 
     let runners = [runner];
     let discovered = empty_discovered();
-    let reports = build_runner_reports(&runners, None, client.as_ref(), &discovered, &[]);
+    let reports = build_runner_reports(
+        &runners,
+        DoctorScope::Host,
+        client.as_ref(),
+        &discovered,
+        &[],
+    );
     tokio::pin!(reports);
     let request = tokio::select! {
         request = server.next_request("cold-start doctor probe") => request,
@@ -2388,7 +2409,13 @@ async fn build_runner_reports_refills_api_checks_and_preserves_order() {
     let discovered = empty_discovered();
 
     let (reports, ()) = tokio::join!(
-        build_runner_reports(&runners, None, client.as_ref(), &discovered, &[]),
+        build_runner_reports(
+            &runners,
+            DoctorScope::Host,
+            client.as_ref(),
+            &discovered,
+            &[]
+        ),
         release_doctor_apis(apis),
     );
 
@@ -2446,7 +2473,7 @@ async fn build_runner_reports_filters_non_target_config_path_before_api_check() 
 
     let reports = build_runner_reports(
         &runners,
-        Some(&target_fixture.config_path),
+        DoctorScope::Config(&target_fixture.config_path),
         client.as_ref(),
         &empty_discovered(),
         &[],
