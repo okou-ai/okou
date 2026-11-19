@@ -249,11 +249,13 @@ def main():
             with socket.socket() as occupied:
                 occupied.bind(("127.0.0.1", 0))
                 occupied.listen()
+                occupied_port = occupied.getsockname()[1]
                 try:
-                    provision(
-                        marker="after", status=410, listen=occupied.getsockname()[1]
-                    )
+                    provision(marker="after", status=410, listen=occupied_port)
                 except subprocess.CalledProcessError:
+                    assert f"http://127.0.0.1:{occupied_port} {{" in config.read_text()
+                    result = run(["systemctl", "show", unit, "--property=Result", "--value"])
+                    assert result.strip() == "exit-code", result
                     assert applied.read_bytes() == committed_state
                 else:
                     raise AssertionError(
