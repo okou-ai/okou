@@ -3,7 +3,7 @@ import { computed, type Computed } from "ccstate";
 import { optionalEnv } from "../../../lib/env";
 import { buildAgentPhonePrompt } from "../agentphone-prompt";
 import { resolveIntegrationNotePrompt } from "../integration-note-prompt.service";
-import type { AgentPhoneThreadContext } from "../thread-run-context.service";
+import type { AgentPhoneThreadContext } from "../agentphone-queued-launch-context.service";
 import type { RunPromptAndSkills } from "../run-prompt-and-skills";
 import type { PickedThreadInputEvent } from "./types";
 

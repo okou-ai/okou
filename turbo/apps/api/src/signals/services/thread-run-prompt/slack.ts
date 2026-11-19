@@ -6,7 +6,7 @@ import {
   resolveUserMentions,
 } from "../../../lib/slack-webhook-context";
 import { resolveIntegrationNotePrompt } from "../integration-note-prompt.service";
-import type { SlackThreadContext } from "../thread-run-context.service";
+import type { SlackThreadContext } from "../slack-queued-launch-context.service";
 import type { RunPromptAndSkills } from "../run-prompt-and-skills";
 import type { PickedThreadInputEvent } from "./types";
 

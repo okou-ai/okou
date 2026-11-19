@@ -1,4 +1,4 @@
-import { command } from "ccstate";
+import { command, computed } from "ccstate";
 import { OFFICIAL_TELEGRAM_BOT_ID } from "@okouai/api-contracts/contracts/integrations-telegram";
 import { agents } from "@okouai/db/schema/agent";
 import { chatEvents } from "@okouai/db/schema/chat-event";
@@ -78,16 +78,20 @@ function requiredTelegramLaunchContext(
   };
 }
 
-const loadTelegramLaunchContext$ = command(
-  async (
-    { get },
-    args: {
-      readonly eventId: string;
-      readonly chatThreadId: string;
-      readonly orgId: string;
-      readonly userId: string;
-    },
-  ) => {
+interface TelegramLaunchSource {
+  readonly eventId: string;
+  readonly chatThreadId: string;
+  readonly orgId: string;
+  readonly userId: string;
+  readonly contextId?: string;
+}
+
+export type TelegramThreadContext = ReturnType<
+  typeof requiredTelegramLaunchContext
+>;
+
+export function createTelegramLaunchContext(args: TelegramLaunchSource) {
+  return computed(async (get): Promise<TelegramThreadContext> => {
     const db = get(db$);
     const [row] = await db
       .select({
@@ -138,12 +142,15 @@ const loadTelegramLaunchContext$ = command(
           eq(chatEvents.id, args.eventId),
           eq(chatEvents.chatThreadId, args.chatThreadId),
           eq(chatEvents.contextType, "telegram"),
+          args.contextId === undefined
+            ? undefined
+            : eq(chatTelegramContext.id, args.contextId),
         ),
       )
       .limit(1);
     return requiredTelegramLaunchContext(row);
-  },
-);
+  });
+}
 
 function telegramUserInfoExtras(
   context: NonNullable<ReturnType<typeof requiredTelegramLaunchContext>>,
@@ -166,16 +173,12 @@ function telegramUserInfoExtras(
 
 export const loadTelegramQueuedLaunchMaterial$ = command(
   async (
-    { set },
-    args: {
-      readonly eventId: string;
-      readonly chatThreadId: string;
-      readonly orgId: string;
-      readonly userId: string;
+    { get },
+    args: TelegramLaunchSource & {
       readonly featureSwitchContext: FeatureSwitchContext;
     },
   ): Promise<TelegramQueuedLaunchMaterial | null> => {
-    const context = await set(loadTelegramLaunchContext$, args);
+    const context = await get(createTelegramLaunchContext(args));
     if (!context) {
       return null;
     }
