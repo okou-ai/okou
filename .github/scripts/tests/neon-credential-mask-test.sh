@@ -9,14 +9,13 @@ fail() {
   exit 1
 }
 
+preview_branch_call="\$(.github/scripts/neon-preview-branch.sh"
 mapfile -t generator_files < <(
-  rg \
-    --files-with-matches \
-    --fixed-strings \
-    --glob '*.yml' \
-    --glob '*.yaml' \
+  grep -rlF \
+    --include='*.yml' \
+    --include='*.yaml' \
     -e 'neonctl connection-string' \
-    -e '$(.github/scripts/neon-preview-branch.sh' \
+    -e "$preview_branch_call" \
     .github/actions \
     .github/workflows |
     sort
@@ -40,10 +39,7 @@ for index in "${!expected_generator_files[@]}"; do
 done
 
 mapfile -t invocations < <(
-  rg \
-    --line-number \
-    --no-heading \
-    --fixed-strings \
+  grep -HnF \
     'neonctl connection-string' \
     "${generator_files[@]}"
 )
@@ -53,11 +49,8 @@ if [[ ${#invocations[@]} -ne 4 ]]; then
 fi
 
 mapfile -t script_invocations < <(
-  rg \
-    --line-number \
-    --no-heading \
-    --fixed-strings \
-    '$(.github/scripts/neon-preview-branch.sh' \
+  grep -HnF \
+    "$preview_branch_call" \
     "${generator_files[@]}"
 )
 
@@ -75,12 +68,12 @@ ${database_url}
 VARIABLES
 
 for variable in "${raw_mask_variables[@]}"; do
-  if rg --quiet --fixed-strings "::add-mask::$variable" "${generator_files[@]}"; then
+  if grep -qF "::add-mask::$variable" "${generator_files[@]}"; then
     fail "generated database URLs must not be passed directly to add-mask"
   fi
 done
 
-if rg --quiet --fixed-strings 'DATABASE_URL value:' "${generator_files[@]}"; then
+if grep -qF 'DATABASE_URL value:' "${generator_files[@]}"; then
   fail "generated database URLs must not be logged"
 fi
 
@@ -127,7 +120,7 @@ assert_ordered() {
   local pattern
   for pattern in "$@"; do
     local matches
-    matches="$(rg --line-number --no-heading --fixed-strings -- "$pattern" "$file")" || matches=""
+    matches="$(grep -nF -- "$pattern" "$file")" || matches=""
 
     local line
     line="$(awk -F: -v previous="$previous_line" '$1 > previous { print $1; exit }' <<< "$matches")"

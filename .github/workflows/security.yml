@@ -233,23 +233,6 @@ jobs:
             "$archive"
           tar -xzf "$archive" actionlint
 
-      - name: Install ripgrep for workflow checks
-        run: |
-          RIPGREP_VERSION=14.1.1
-          RIPGREP_SHA256=4cf9f2741e6c465ffdb7c26f38056a59e2a2544b51f7cc128ef28337eeae4d8e
-          archive="$RUNNER_TEMP/ripgrep.tar.gz"
-          bin_dir="$RUNNER_TEMP/ripgrep-bin"
-          bash .github/scripts/download-verified.sh \
-            "https://github.com/BurntSushi/ripgrep/releases/download/${RIPGREP_VERSION}/ripgrep-${RIPGREP_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
-            "$RIPGREP_SHA256" \
-            "$archive"
-          mkdir -p "$bin_dir"
-          tar -xzf "$archive" \
-            --strip-components=1 \
-            -C "$bin_dir" \
-            "ripgrep-${RIPGREP_VERSION}-x86_64-unknown-linux-musl/rg"
-          echo "$bin_dir" >> "$GITHUB_PATH"
-
       - name: Check Release Please workspace coverage
         run: .github/scripts/checks/check-release-please-workspace-coverage.sh
 
@@ -372,7 +355,7 @@ jobs:
             e2e/tests/02-browser/brw-t01-platform-e2e.bats
           shellcheck .github/scripts/tests/runner-binary-early-publication-test.sh .github/scripts/tests/runner-binary-test-inputs-test.sh
           shellcheck crates/kerberos-worker/native/build.sh crates/kerberos-worker/native/build-dependencies.sh \
-            crates/kerberos-worker/tests/infrastructure/kerberos-native-cache-test.sh .github/scripts/tests/kerberos-native-cache-workflow-test.sh \
+            crates/kerberos-worker/tests/infrastructure/kerberos-native-cache-test.sh \
             .github/scripts/tests/crates-parallel-checks-workflow-test.sh
           shellcheck -x crates/runner-remote/tests/check-native-vnc-kerberos.sh
           shellcheck -x -P .github/scripts/runner/runner-binary-build .github/scripts/runner/runner-binary-build/*.sh
@@ -447,23 +430,6 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22.23.4
-
-      - name: Install ripgrep for workflow script tests
-        run: |
-          RIPGREP_VERSION=14.1.1
-          RIPGREP_SHA256=4cf9f2741e6c465ffdb7c26f38056a59e2a2544b51f7cc128ef28337eeae4d8e
-          archive="$RUNNER_TEMP/ripgrep.tar.gz"
-          bin_dir="$RUNNER_TEMP/ripgrep-bin"
-          bash .github/scripts/download-verified.sh \
-            "https://github.com/BurntSushi/ripgrep/releases/download/${RIPGREP_VERSION}/ripgrep-${RIPGREP_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
-            "$RIPGREP_SHA256" \
-            "$archive"
-          mkdir -p "$bin_dir"
-          tar -xzf "$archive" \
-            --strip-components=1 \
-            -C "$bin_dir" \
-            "ripgrep-${RIPGREP_VERSION}-x86_64-unknown-linux-musl/rg"
-          echo "$bin_dir" >> "$GITHUB_PATH"
 
       - name: Run workflow script test shard
         run: .github/scripts/run-workflow-script-test-shard.sh "${{ matrix.shard }}"

@@ -17,6 +17,15 @@ private final class HeartbeatClock: @unchecked Sendable {
   }
 }
 
+private func serverResponse(_ status: Int) -> APIRequestDiagnostic {
+  APIRequestDiagnostic(
+    requestId: UUID().uuidString, sessionId: UUID().uuidString, startedAt: Date(),
+    timing: APIRequestTiming(duration: .milliseconds(300), awakeDuration: .milliseconds(300)),
+    response: HTTPURLResponse(
+      url: URL(string: "https://api.example.test/heartbeat")!, statusCode: status,
+      httpVersion: "HTTP/1.1", headerFields: nil)!)
+}
+
 @MainActor
 final class HostRequestDiagnosticsTests: XCTestCase {
   func testRetriesUploadBoundedCorrelatedHistoryAtInfoLevel() async throws {
@@ -46,25 +55,26 @@ final class HostRequestDiagnosticsTests: XCTestCase {
     XCTAssertFalse(recovered.formatted.contains("private-error-description"))
   }
 
-  func testAwakeFailureEscalatesOnceAtNinetySecondsAndResetsAfterRecovery() async throws {
+  func testAwakeServerFailureEscalatesOnceAtNinetySecondsAndResetsAfterRecovery() async throws {
     let collector = try SentryHTTPCollector()
     addTeardownBlock { try await collector.close() }
     let clock = HeartbeatClock()
     var diagnostics = HostRequestDiagnostics(now: { clock.now() }, awakeNow: { clock.awakeNow() })
-    let error = URLError(.networkConnectionLost)
+    let error = DesktopFailure("network_error", "private-response")
+    let unavailable = [serverResponse(503)]
     let operation = APIRequestTraceSnapshot(
-      requests: [], authentication: [], phase: .httpRequest, deadline: .authenticatedRequest,
+      requests: unavailable, authentication: [], phase: .httpRequest, deadline: nil,
       timing: APIRequestTiming(duration: .seconds(10), awakeDuration: .seconds(10)))
-    diagnostics.failed(error: error, requests: [], retryDelay: 2, operation: operation)
+    diagnostics.failed(error: error, requests: unavailable, retryDelay: 2, operation: operation)
     clock.advance(.seconds(79), awake: .seconds(79))
-    diagnostics.failed(error: error, requests: [], retryDelay: 60)
+    diagnostics.failed(error: error, requests: unavailable, retryDelay: 60)
     await fulfillment(of: [collector.expectation(eventCount: 1)], timeout: 5)
     XCTAssertEqual(try collector.events().compactMap { $0["level"].string }, ["info"])
 
     clock.advance(.seconds(1), awake: .seconds(1))
-    diagnostics.failed(error: error, requests: [], retryDelay: 60)
+    diagnostics.failed(error: error, requests: unavailable, retryDelay: 60)
     clock.advance(.seconds(60), awake: .seconds(60))
-    diagnostics.failed(error: error, requests: [], retryDelay: 60)
+    diagnostics.failed(error: error, requests: unavailable, retryDelay: 60)
     diagnostics.finish(outcome: .recovered)
     await fulfillment(of: [collector.expectation(eventCount: 3)], timeout: 5)
     let events = try collector.events()
@@ -72,11 +82,12 @@ final class HostRequestDiagnosticsTests: XCTestCase {
     let failure = try XCTUnwrap(events.first { $0["level"].string == "error" })
     XCTAssertEqual(failure["contexts"]["heartbeat"]["failedAttempts"].number, 3)
     XCTAssertEqual(failure["contexts"]["heartbeat"]["awakeElapsedMs"].number, 90_000)
+    XCTAssertEqual(failure["tags"]["heartbeatReachedServer"].string, "true")
     XCTAssertEqual(Set(events.compactMap { $0["tags"]["heartbeatEpisodeId"].string }).count, 1)
 
-    diagnostics.failed(error: error, requests: [], retryDelay: 2)
+    diagnostics.failed(error: error, requests: unavailable, retryDelay: 2)
     clock.advance(.seconds(90), awake: .seconds(90))
-    diagnostics.failed(error: error, requests: [], retryDelay: 60)
+    diagnostics.failed(error: error, requests: unavailable, retryDelay: 60)
     await fulfillment(of: [collector.expectation(eventCount: 5)], timeout: 5)
     let episodes = try collector.events()
     XCTAssertEqual(episodes.filter { $0["level"].string == "error" }.count, 2)
@@ -108,12 +119,14 @@ final class HostRequestDiagnosticsTests: XCTestCase {
     XCTAssertEqual(try XCTUnwrap(context["systemSuspendedMs"].number), 3_631_549, accuracy: 0.001)
   }
 
-  func testRecoveryStillReportsAnAwakeOutageThatCrossedTheThresholdBetweenAttempts() async throws {
+  func testRecoveryStillReportsAServerOutageThatCrossedTheThresholdBetweenAttempts() async throws {
     let collector = try SentryHTTPCollector()
     addTeardownBlock { try await collector.close() }
     let clock = HeartbeatClock()
     var diagnostics = HostRequestDiagnostics(now: { clock.now() }, awakeNow: { clock.awakeNow() })
-    diagnostics.failed(error: URLError(.timedOut), requests: [], retryDelay: 60)
+    diagnostics.failed(
+      error: DesktopFailure("network_error", "private-response"), requests: [serverResponse(502)],
+      retryDelay: 60)
     clock.advance(.seconds(91), awake: .seconds(91))
     diagnostics.finish(outcome: .recovered)
 
@@ -128,20 +141,78 @@ final class HostRequestDiagnosticsTests: XCTestCase {
     XCTAssertEqual(failure["tags"]["heartbeatEpisodeId"], recovered["tags"]["heartbeatEpisodeId"])
   }
 
+  func testConnectivityFailuresStayInfoHoweverLongTheAwakeEpisodeLasts() async throws {
+    let collector = try SentryHTTPCollector()
+    addTeardownBlock { try await collector.close() }
+    let clock = HeartbeatClock()
+    var diagnostics = HostRequestDiagnostics(
+      request: .state, now: { clock.now() }, awakeNow: { clock.awakeNow() })
+    let cancelled = APIRequestDiagnostic(
+      requestId: UUID().uuidString, sessionId: UUID().uuidString, startedAt: Date(),
+      timing: APIRequestTiming(duration: .seconds(10), awakeDuration: .seconds(10)),
+      error: URLError(.cancelled))
+    let deadline = DesktopFailure("network_error", "private-deadline")
+    func operation(_ phase: APIRequestPhase) -> APIRequestTraceSnapshot {
+      APIRequestTraceSnapshot(
+        requests: phase == .httpRequest ? [cancelled] : [], authentication: [], phase: phase,
+        deadline: .authenticatedRequest,
+        timing: APIRequestTiming(duration: .seconds(10), awakeDuration: .seconds(10)))
+    }
+    // A broken network path: the request never connects, then token reads hit the
+    // deadline and fail TLS or DNS for six awake hours without any HTTP response.
+    diagnostics.failed(
+      error: deadline, requests: [cancelled], retryDelay: 2, operation: operation(.httpRequest))
+    let errors: [Error] = [deadline, URLError(.secureConnectionFailed), URLError(.cannotFindHost)]
+    for error in errors {
+      clock.advance(.seconds(7200), awake: .seconds(7200))
+      diagnostics.failed(
+        error: error, requests: [], retryDelay: 60, operation: operation(.tokenLookup))
+    }
+    diagnostics.finish(outcome: .recovered, requests: [serverResponse(200)])
+
+    await fulfillment(of: [collector.expectation(eventCount: 2)], timeout: 5)
+    let events = try collector.events()
+    XCTAssertEqual(events.compactMap { $0["level"].string }, ["info", "info"])
+    XCTAssertEqual(
+      events.compactMap { $0["tags"]["hostRequestReachedServer"].string }, ["false", "false"])
+    let recovered = try XCTUnwrap(
+      events.first { $0["tags"]["hostRequestOutcome"].string == "recovered" })
+    XCTAssertEqual(recovered["contexts"]["hostRequest"]["failedAttempts"].number, 4)
+    XCTAssertEqual(recovered["contexts"]["hostRequest"]["awakeElapsedMs"].number, 21_610_000)
+  }
+
+  func testServerFailureEscalatesAnEpisodeAlreadyPastTheThreshold() async throws {
+    let collector = try SentryHTTPCollector()
+    addTeardownBlock { try await collector.close() }
+    let clock = HeartbeatClock()
+    var diagnostics = HostRequestDiagnostics(now: { clock.now() }, awakeNow: { clock.awakeNow() })
+    diagnostics.failed(error: URLError(.secureConnectionFailed), requests: [], retryDelay: 2)
+    clock.advance(.seconds(120), awake: .seconds(120))
+    diagnostics.failed(error: URLError(.secureConnectionFailed), requests: [], retryDelay: 60)
+    await fulfillment(of: [collector.expectation(eventCount: 1)], timeout: 5)
+    XCTAssertEqual(try collector.events().compactMap { $0["level"].string }, ["info"])
+
+    clock.advance(.seconds(60), awake: .seconds(60))
+    diagnostics.failed(
+      error: DesktopFailure("network_error", "private-response"), requests: [serverResponse(503)],
+      retryDelay: 60)
+    diagnostics.finish(outcome: .recovered)
+    await fulfillment(of: [collector.expectation(eventCount: 3)], timeout: 5)
+    let events = try collector.events()
+    XCTAssertEqual(events.filter { $0["level"].string == "error" }.count, 1)
+    let failure = try XCTUnwrap(events.first { $0["level"].string == "error" })
+    XCTAssertEqual(failure["contexts"]["heartbeat"]["failedAttempts"].number, 3)
+    XCTAssertEqual(failure["tags"]["heartbeatReachedServer"].string, "true")
+  }
+
   func testTransientHTTPFailuresAreInfoAndUnexpectedResponsesEscalateImmediately() async throws {
     let collector = try SentryHTTPCollector()
     addTeardownBlock { try await collector.close() }
     var diagnostics = HostRequestDiagnostics()
     for status in [500, 503, 400] {
-      let response = HTTPURLResponse(
-        url: URL(string: "https://api.example.test/heartbeat")!, statusCode: status,
-        httpVersion: "HTTP/1.1", headerFields: nil)!
-      let request = APIRequestDiagnostic(
-        requestId: UUID().uuidString, sessionId: UUID().uuidString, startedAt: Date(),
-        timing: APIRequestTiming(duration: .milliseconds(300), awakeDuration: .milliseconds(300)),
-        response: response)
       diagnostics.failed(
-        error: DesktopFailure("network_error", "private-response"), requests: [request], retryDelay: 2)
+        error: DesktopFailure("network_error", "private-response"),
+        requests: [serverResponse(status)], retryDelay: 2)
     }
     diagnostics.finish(outcome: .recovered)
 

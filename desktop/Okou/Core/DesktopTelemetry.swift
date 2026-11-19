@@ -121,14 +121,18 @@ public enum DesktopTelemetry {
   }
 
   static func captureHostRequestEpisode(
-    request: HostRequestDiagnostics.Request, id: String, outcome: HostRequestDiagnostics.Outcome, level: SentryLevel = .info,
-    context: [String: Any]
+    request: HostRequestDiagnostics.Request, id: String, outcome: HostRequestDiagnostics.Outcome,
+    reachedServer: Bool, level: SentryLevel = .info, context: [String: Any]
   ) {
     let event = Event(level: level)
     let key = request == .heartbeat ? "heartbeat" : "hostRequest"
     event.message = SentryMessage(formatted: "Desktop host \(request.label) \(outcome.rawValue)")
     event.fingerprint = request == .heartbeat ? ["desktop-host-heartbeat"] : ["desktop-host-request", request.rawValue]
-    event.tags = ["\(key)Outcome": outcome.rawValue, "\(key)EpisodeId": id]
+    // "false" marks an episode whose failed attempts never got an HTTP response from the API.
+    event.tags = [
+      "\(key)Outcome": outcome.rawValue, "\(key)EpisodeId": id,
+      "\(key)ReachedServer": String(reachedServer),
+    ]
     var diagnostics = context
     diagnostics["method"] = "POST"
     diagnostics["pathTemplate"] = "/api/computer-use/hosts/:hostId/\(request.rawValue)"
