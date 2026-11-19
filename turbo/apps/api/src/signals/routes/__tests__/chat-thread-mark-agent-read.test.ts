@@ -266,8 +266,18 @@ describe("bulk Agent read-cursor notifications stay bounded", () => {
     await expect(visibleUnreadThreadIds(fixture)).resolves.toStrictEqual(
       new Set(fixture.threadIds),
     );
+    const pending = await chat.listThreadUnreads(
+      fixture.actor,
+      fixture.agentId,
+    );
+    const expectedCursors = new Map(
+      pending.map(({ threadId, unreadAt }) => {
+        return [threadId, unreadAt] as const;
+      }),
+    );
     await chat.markAgentThreadsRead(fixture.actor, fixture.agentId);
     const secondRead = await readCursors(fixture);
+    expect(secondRead).toStrictEqual(expectedCursors);
     for (const threadId of fixture.threadIds) {
       const first = firstRead.get(threadId);
       const second = secondRead.get(threadId);

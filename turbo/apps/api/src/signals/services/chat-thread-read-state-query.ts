@@ -1,5 +1,16 @@
 import { command, computed } from "ccstate";
-import { and, desc, eq, gt, gte, inArray, isNull, lt, or } from "drizzle-orm";
+import {
+  and,
+  desc,
+  eq,
+  gt,
+  gte,
+  inArray,
+  isNull,
+  lt,
+  or,
+  sql,
+} from "drizzle-orm";
 import {
   chatEventTerminalPredicate,
   chatEvents,
@@ -180,36 +191,55 @@ export function createAgentThreadReadPreparation(args: {
   });
 }
 
-/** One atomic cursor advance; equal/newer cursors and lost races are not retried. */
-export const advanceChatThreadReadCursor$ = command(
+/** Advance the prepared cursors atomically and report only the rows changed. */
+export const advanceChatThreadReadCursors$ = command(
   async (
     { set },
     args: {
-      readonly threadId: string;
       readonly userId: string;
-      readonly watermark: Date;
+      readonly cursors: readonly {
+        readonly threadId: string;
+        readonly watermark: Date;
+      }[];
       /** Bulk unread actions must not consume a concurrently muted thread. */
       readonly unmutedOnly?: boolean;
     },
     signal: AbortSignal,
-  ): Promise<boolean> => {
+  ): Promise<string[]> => {
     signal.throwIfAborted();
+    if (args.cursors.length === 0) {
+      return [];
+    }
+    const values = args.cursors.map(({ threadId, watermark }) => {
+      return sql`(${threadId}::uuid, ${watermark.toISOString()}::timestamp)`;
+    });
+    const watermark = sql`prepared_cursor.watermark`;
     const updated = await set(writeDb$)
       .update(chatThreads)
-      .set({ lastReadAt: args.watermark })
+      .set({ lastReadAt: watermark })
+      .from(
+        sql`(VALUES ${sql.join(values, sql`, `)}) AS prepared_cursor(thread_id, watermark)`,
+      )
       .where(
         and(
-          eq(chatThreads.id, args.threadId),
+          eq(chatThreads.id, sql`prepared_cursor.thread_id`),
           eq(chatThreads.userId, args.userId),
           args.unmutedOnly ? eq(chatThreads.muted, false) : undefined,
           or(
             isNull(chatThreads.lastReadAt),
-            lt(chatThreads.lastReadAt, args.watermark),
+            lt(chatThreads.lastReadAt, watermark),
           ),
         ),
       )
       .returning({ id: chatThreads.id });
     signal.throwIfAborted();
-    return updated.length > 0;
+    const updatedIds = new Set(
+      updated.map(({ id }) => {
+        return id;
+      }),
+    );
+    return args.cursors.flatMap(({ threadId }) => {
+      return updatedIds.has(threadId.toLowerCase()) ? [threadId] : [];
+    });
   },
 );

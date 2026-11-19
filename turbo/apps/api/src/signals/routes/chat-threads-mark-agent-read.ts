@@ -8,7 +8,7 @@ import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
 import { publishChatThreadReadCursorUpdatedSafely } from "../external/realtime";
 import {
-  advanceChatThreadReadCursor$,
+  advanceChatThreadReadCursors$,
   createAgentThreadReadPreparation,
 } from "../services/chat-thread-read-state-query";
 import type { RouteEntry } from "../route-entry";
@@ -60,18 +60,12 @@ const markAgentReadInner$ = command(
       return { status: 204 as const, body: undefined };
     }
 
-    const updatedThreadIds: string[] = [];
-    for (const cursor of cursors) {
-      const advanced = await set(
-        advanceChatThreadReadCursor$,
-        { ...cursor, userId, unmutedOnly: true },
-        signal,
-      );
-      signal.throwIfAborted();
-      if (advanced) {
-        updatedThreadIds.push(cursor.threadId);
-      }
-    }
+    const updatedThreadIds = await set(
+      advanceChatThreadReadCursors$,
+      { cursors, userId, unmutedOnly: true },
+      signal,
+    );
+    signal.throwIfAborted();
 
     if (updatedThreadIds.length > 0) {
       waitUntil(
