@@ -1077,7 +1077,7 @@ checksum = "e0921b3876b3a1df8a1c9f912e7f94342458022c2e84288015893d83c4d62a79"
 
 [[package]]
 name = "claude-mock"
-version = "0.22.123"
+version = "0.22.124"
 dependencies = [
  "api-contracts",
  "cli-test-support",
@@ -1136,7 +1136,7 @@ checksum = "0c9ea0ac24bc397ab3c98583a3c9ba74fa56b09a4449bbe172b9b1ddb016027a"
 
 [[package]]
 name = "codex-mock"
-version = "0.12.83"
+version = "0.12.84"
 dependencies = [
  "chrono",
  "clap",
@@ -2042,7 +2042,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent"
-version = "0.110.1"
+version = "0.110.2"
 dependencies = [
  "aho-corasick",
  "api-contracts",
@@ -2082,7 +2082,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent-tests"
-version = "0.1.221"
+version = "0.1.222"
 dependencies = [
  "api-contracts",
  "base64 0.23.1",
@@ -2109,7 +2109,7 @@ dependencies = [
 
 [[package]]
 name = "guest-contracts"
-version = "0.32.24"
+version = "0.32.25"
 dependencies = [
  "api-contracts",
  "base64 0.23.1",
@@ -2125,7 +2125,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-client"
-version = "0.23.111"
+version = "0.23.112"
 dependencies = [
  "guest-contracts",
  "guest-control-proto",
@@ -2143,7 +2143,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-proto"
-version = "0.22.89"
+version = "0.22.90"
 dependencies = [
  "guest-contracts",
  "proptest",
@@ -2151,7 +2151,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-server"
-version = "0.24.128"
+version = "0.24.129"
 dependencies = [
  "chrono",
  "cli-test-support",
@@ -2171,7 +2171,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-tests"
-version = "0.12.200"
+version = "0.12.201"
 dependencies = [
  "cli-test-support",
  "guest-contracts",
@@ -2189,7 +2189,7 @@ dependencies = [
 
 [[package]]
 name = "guest-home-mount"
-version = "0.2.87"
+version = "0.2.88"
 dependencies = [
  "guest-contracts",
  "libc",
@@ -2201,7 +2201,7 @@ dependencies = [
 
 [[package]]
 name = "guest-init"
-version = "0.20.114"
+version = "0.20.115"
 dependencies = [
  "guest-contracts",
  "guest-control-server",
@@ -2214,7 +2214,7 @@ dependencies = [
 
 [[package]]
 name = "guest-state-restore"
-version = "0.4.29"
+version = "0.4.30"
 dependencies = [
  "guest-contracts",
  "libc",
@@ -2223,7 +2223,7 @@ dependencies = [
 
 [[package]]
 name = "guest-storage-apply"
-version = "0.32.26"
+version = "0.32.27"
 dependencies = [
  "cli-test-support",
  "flate2",
@@ -2249,7 +2249,7 @@ dependencies = [
 
 [[package]]
 name = "guest-task-exec"
-version = "0.2.88"
+version = "0.2.89"
 dependencies = [
  "guest-contracts",
  "libc",
@@ -2260,7 +2260,7 @@ dependencies = [
 
 [[package]]
 name = "guest-telemetry"
-version = "0.3.220"
+version = "0.3.221"
 dependencies = [
  "chrono",
  "cli-test-support",
@@ -2272,7 +2272,7 @@ dependencies = [
 
 [[package]]
 name = "guest-tool-exec"
-version = "0.3.91"
+version = "0.3.92"
 dependencies = [
  "cli-test-support",
  "guest-contracts",
@@ -2286,7 +2286,7 @@ dependencies = [
 
 [[package]]
 name = "guest-write-file"
-version = "0.1.310"
+version = "0.1.311"
 dependencies = [
  "cli-test-support",
  "guest-contracts",
@@ -3659,7 +3659,7 @@ dependencies = [
 
 [[package]]
 name = "process-control-ipc"
-version = "0.5.87"
+version = "0.5.88"
 dependencies = [
  "guest-contracts",
  "libc",
@@ -4106,7 +4106,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.249.55"
+version = "0.249.56"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4180,7 +4180,7 @@ dependencies = [
 
 [[package]]
 name = "runner-executor"
-version = "0.22.4"
+version = "0.22.5"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4228,7 +4228,7 @@ dependencies = [
 
 [[package]]
 name = "runner-host"
-version = "0.12.3"
+version = "0.12.4"
 dependencies = [
  "chrono",
  "cli-test-support",
@@ -4253,7 +4253,7 @@ dependencies = [
 
 [[package]]
 name = "runner-lifecycle"
-version = "0.18.4"
+version = "0.18.5"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4285,7 +4285,7 @@ dependencies = [
 
 [[package]]
 name = "runner-network"
-version = "0.6.30"
+version = "0.6.31"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4317,7 +4317,7 @@ dependencies = [
 
 [[package]]
 name = "runner-provider"
-version = "0.20.31"
+version = "0.20.32"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -4362,7 +4362,7 @@ dependencies = [
 
 [[package]]
 name = "runner-remote"
-version = "0.31.81"
+version = "0.31.82"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -4462,7 +4462,7 @@ dependencies = [
 
 [[package]]
 name = "runner-storage"
-version = "0.11.4"
+version = "0.11.5"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4507,7 +4507,7 @@ dependencies = [
 
 [[package]]
 name = "runner-supervisor"
-version = "0.26.4"
+version = "0.26.5"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4555,7 +4555,7 @@ dependencies = [
 
 [[package]]
 name = "runner-types"
-version = "0.18.19"
+version = "0.18.20"
 dependencies = [
  "api-contracts",
  "guest-contracts",
@@ -4824,7 +4824,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox"
-version = "0.28.43"
+version = "0.28.44"
 dependencies = [
  "async-trait",
  "guest-contracts",
@@ -4841,7 +4841,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox-firecracker"
-version = "0.53.122"
+version = "0.53.123"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4879,7 +4879,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox-mock"
-version = "0.17.78"
+version = "0.17.79"
 dependencies = [
  "async-trait",
  "guest-contracts",
