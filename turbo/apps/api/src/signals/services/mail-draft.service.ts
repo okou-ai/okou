@@ -18,13 +18,12 @@ import {
 } from "@okouai/db/runtime/connector-catalog";
 import { connectorAuthMethodHasRequiredScopes } from "@okouai/connectors/connector-auth-method";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
+import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agents } from "@okouai/db/schema/agent";
-import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
 import { connectors } from "@okouai/db/schema/connector";
 import { mailDrafts } from "@okouai/db/schema/mail-draft";
-import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";
 import { command } from "ccstate";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, exists, inArray, sql } from "drizzle-orm";
 import { convert } from "html-to-text";
 import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
@@ -45,6 +44,10 @@ import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import { settle } from "../utils";
+import {
+  chatConnectorExecutionFromRows,
+  chatConnectorExecutionReadPlan,
+} from "./chat-connector-execution";
 import { resolveBuiltinConnectorCredentialAccess } from "./builtin-connector-credential-access.service";
 import {
   loadBuiltinConnectorCredentialValues$,
@@ -193,7 +196,6 @@ interface MailDraftRow {
   readonly provider: MailProvider;
   readonly webLink: string | null;
   readonly id: string;
-  readonly agentId: string;
   readonly chatThreadId: string;
   readonly connectorId: string | null;
   readonly draftId: string;
@@ -215,7 +217,6 @@ interface StoredMailDraftRow {
   readonly outlookConversationId: string | null;
   readonly outlookWebLink: string | null;
   readonly id: string;
-  readonly agentId: string;
   readonly chatThreadId: string;
   readonly connectorId: string | null;
   readonly gmailDraftId: string | null;
@@ -316,11 +317,10 @@ const loadMailConnections$ = command(
   async (
     { set },
     args: {
-      readonly connectorSlug?: "gmail" | "outlook-mail";
+      readonly connectorSlug: "gmail" | "outlook-mail";
       readonly snapshot: ConnectorRuntimeSelection;
       readonly orgId: string;
       readonly userId: string;
-      readonly agentId: string;
       readonly sourceId?: string;
     },
   ): Promise<readonly MailConnection[]> => {
@@ -342,24 +342,12 @@ const loadMailConnections$ = command(
         storageVersion: connectors.storageVersion,
         tokenExpiresAt: connectors.tokenExpiresAt,
       })
-      .from(userBuiltinConnectors)
-      .innerJoin(
-        connectors,
-        and(
-          eq(connectors.orgId, userBuiltinConnectors.orgId),
-          eq(connectors.userId, userBuiltinConnectors.userId),
-          eq(connectors.connectorSlug, userBuiltinConnectors.connectorSlug),
-        ),
-      )
+      .from(connectors)
       .where(
         and(
-          eq(userBuiltinConnectors.orgId, args.orgId),
-          eq(userBuiltinConnectors.userId, args.userId),
-          eq(userBuiltinConnectors.agentId, args.agentId),
-          eq(
-            userBuiltinConnectors.connectorSlug,
-            args.connectorSlug ?? "gmail",
-          ),
+          eq(connectors.orgId, args.orgId),
+          eq(connectors.userId, args.userId),
+          eq(connectors.connectorSlug, args.connectorSlug),
           args.sourceId
             ? eq(connectors.id, args.sourceId)
             : eq(connectors.isDefault, true),
@@ -424,7 +412,6 @@ const loadMailConnections$ = command(
 
 interface OwnedMailThreadContext {
   readonly agentId: string;
-  readonly connectorId: string | null;
 }
 
 const loadOwnedMailThreadContext$ = command(
@@ -434,32 +421,36 @@ const loadOwnedMailThreadContext$ = command(
       readonly orgId: string;
       readonly userId: string;
       readonly threadId: string;
-      readonly provider?: MailProvider;
+      readonly runId?: string;
     },
   ): Promise<OwnedMailThreadContext | null> => {
     const db = set(writeDb$);
     const [row] = await db
       .select({
         agentId: agents.id,
-        connectorId: chatThreadConnectorSelections.connectorId,
       })
       .from(chatThreads)
       .innerJoin(agents, eq(agents.id, chatThreads.agentId))
-      .leftJoin(
-        chatThreadConnectorSelections,
-        and(
-          eq(chatThreadConnectorSelections.chatThreadId, chatThreads.id),
-          eq(
-            chatThreadConnectorSelections.connectorSlug,
-            args.provider === "outlook" ? "outlook-mail" : "gmail",
-          ),
-        ),
-      )
       .where(
         and(
           eq(chatThreads.id, args.threadId),
           eq(chatThreads.userId, args.userId),
           eq(agents.orgId, args.orgId),
+          args.runId === undefined
+            ? undefined
+            : exists(
+                db
+                  .select({ id: agentRuns.id })
+                  .from(agentRuns)
+                  .where(
+                    and(
+                      eq(agentRuns.id, args.runId),
+                      eq(agentRuns.chatThreadId, chatThreads.id),
+                      eq(agentRuns.orgId, args.orgId),
+                      eq(agentRuns.userId, args.userId),
+                    ),
+                  ),
+              ),
         ),
       )
       .limit(1);
@@ -480,7 +471,6 @@ const loadOwnedMailDraft$ = command(
     const [row]: readonly StoredMailDraftRow[] = await db
       .select({
         id: mailDrafts.id,
-        agentId: agents.id,
         chatThreadId: chatThreads.id,
         connectorId: mailDrafts.connectorId,
         provider: mailDrafts.provider,
@@ -1373,7 +1363,6 @@ const connectionForRow$ = command(
       snapshot: args.snapshot,
       orgId: args.orgId,
       userId: args.userId,
-      agentId: args.row.agentId,
       sourceId: args.row.connectorId ?? undefined,
     });
     const linked = connections.find((connection) => {
@@ -2160,6 +2149,7 @@ const resolveMailLinkConnection$ = command(
       readonly userId: string;
       readonly threadId: string;
       readonly agentId?: string;
+      readonly runId?: string;
       readonly provider: MailProvider;
       readonly snapshot: ConnectorRuntimeSelection;
     },
@@ -2168,36 +2158,42 @@ const resolveMailLinkConnection$ = command(
     | MailDraftErrorResult
     | { readonly kind: "ok"; readonly connection: MailConnection }
   > => {
-    const thread = await set(loadOwnedMailThreadContext$, {
-      ...args,
-      provider: args.provider,
-    });
+    const thread = await set(loadOwnedMailThreadContext$, args);
     signal.throwIfAborted();
     if (!thread || (args.agentId && thread.agentId !== args.agentId)) {
       return { kind: "not_found", message: "Chat thread not found" };
     }
-    const connections = (
-      await set(loadMailConnections$, {
-        connectorSlug: args.provider === "gmail" ? "gmail" : "outlook-mail",
-        snapshot: args.snapshot,
-        orgId: args.orgId,
-        userId: args.userId,
-        agentId: thread.agentId,
-        sourceId: thread.connectorId ?? undefined,
-      })
-    ).filter((connection) => {
-      return !connection.needsReconnect && connection.scopesReady;
-    });
+    const connectorSlug = args.provider === "gmail" ? "gmail" : "outlook-mail";
+    const rows = await set(writeDb$)
+      .select()
+      .from(
+        chatConnectorExecutionReadPlan(
+          {
+            kind: "chat",
+            chatThreadId: args.threadId,
+            orgId: args.orgId,
+            userId: args.userId,
+          },
+          connectorSlug,
+        ).as("mail_chat_accounts"),
+      );
     signal.throwIfAborted();
-    const connection = connections.length === 1 ? connections[0] : undefined;
+    const selection = chatConnectorExecutionFromRows(rows).selections[0];
+    const [connection] = selection
+      ? await set(loadMailConnections$, {
+          connectorSlug,
+          snapshot: args.snapshot,
+          orgId: args.orgId,
+          userId: args.userId,
+          sourceId: selection.connectionId,
+        })
+      : [];
+    signal.throwIfAborted();
 
-    if (!connection) {
+    if (!connection || connection.needsReconnect || !connection.scopesReady) {
       return {
         kind: "conflict",
-        message:
-          connections.length === 0
-            ? `Connect and authorize ${args.provider === "gmail" ? "Gmail" : "Outlook"} for this agent first`
-            : `The agent has more than one ${args.provider === "gmail" ? "Gmail" : "Outlook"} connection`,
+        message: `Connect and allow ${args.provider === "gmail" ? "Gmail" : "Outlook"} in this Chat first`,
       };
     }
     return { kind: "ok", connection };
@@ -2210,6 +2206,7 @@ export const linkMailDraft$ = command(
     args: LinkMailDraftInput & {
       readonly orgId: string;
       readonly userId: string;
+      readonly runId?: string;
     },
     signal: AbortSignal,
   ): Promise<MailDraftLinkMutationResult> => {
