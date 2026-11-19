@@ -1,5 +1,5 @@
 import { command, state, type Command } from "ccstate";
-import { delay, timeout } from "signal-timers";
+import { delay } from "signal-timers";
 import { IN_VITEST } from "../env.ts";
 import { now } from "../lib/time.ts";
 import { ApiError } from "../lib/api-error.ts";
@@ -647,24 +647,4 @@ export function throttleCommand<T, Args extends unknown[]>(
       signal,
     );
   });
-}
-
-/** Replace a one-shot protocol deadline; its parent owns every renewal. */
-export function createDeadline(parent: AbortSignal) {
-  let controller: AbortController | undefined;
-  const cancel = () => {
-    controller?.abort();
-    controller = undefined;
-  };
-  return {
-    cancel,
-    schedule(callback: () => void, milliseconds: number) {
-      cancel();
-      parent.throwIfAborted();
-      controller = new AbortController();
-      timeout(callback, milliseconds, {
-        signal: AbortSignal.any([parent, controller.signal]),
-      });
-    },
-  };
 }
