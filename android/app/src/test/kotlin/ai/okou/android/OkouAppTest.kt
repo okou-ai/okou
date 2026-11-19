@@ -33,6 +33,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.Density
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
@@ -42,11 +43,13 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import java.io.IOException
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "en-rUS-w400dp-h800dp")
@@ -56,7 +59,11 @@ class OkouAppTest {
     private var background: Color? = null
     private val deviceConfiguration = mutableStateOf<Configuration?>(null)
 
-    private fun render(fontScale: Float = 1f, failPreferenceSave: () -> Boolean = { false }) {
+    private fun render(
+        fontScale: Float = 1f,
+        openUpdate: (() -> Unit)? = null,
+        failPreferenceSave: () -> Boolean = { false },
+    ) {
         val models =
             compose.runOnIdle {
                 val provider =
@@ -176,6 +183,7 @@ class OkouAppTest {
                                 workspacePreferences = { MemberPreferencesSettings(models.second) }
                             )
                         },
+                        openUpdate = openUpdate,
                     )
                 }
             }
@@ -185,6 +193,19 @@ class OkouAppTest {
     @After
     fun clearOwners() {
         compose.runOnIdle { owners.clear() }
+    }
+
+    @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun updateToolbarKeepsTheLabelReadableWithLargerText() {
+        render(fontScale = 1.3f, openUpdate = {})
+        val layouts = mutableListOf<TextLayoutResult>()
+        compose.onNodeWithText("View update", useUnmergedTree = true).performSemanticsAction(
+            SemanticsActions.GetTextLayoutResult
+        ) {
+            it(layouts)
+        }
+        assertFalse("Update action label was truncated", layouts.single().isLineEllipsized(0))
     }
 
     @Test

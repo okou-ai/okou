@@ -154,7 +154,7 @@ internal fun AppUpdateSettings(state: UpdateUiState, open: () -> Unit) {
         }
     SettingsRow(
         stringResource(R.string.updates_title),
-        leading = { SettingsIcon(R.drawable.ic_settings_updates) },
+        leading = { SettingsIcon(R.drawable.ic_download) },
         value = summary,
         onClick = open,
     )

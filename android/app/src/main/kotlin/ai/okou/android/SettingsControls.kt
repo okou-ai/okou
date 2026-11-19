@@ -118,7 +118,7 @@ internal fun SettingsRow(
             )
         if (showChevron)
             Icon(
-                painterResource(R.drawable.ic_chat_chevron_end),
+                painterResource(R.drawable.ic_chevron_right),
                 contentDescription = null,
                 modifier = Modifier.size(16.dp),
                 tint = muted,
@@ -248,7 +248,7 @@ internal fun SettingsChoiceRow(
         )
         if (selected)
             Icon(
-                painterResource(R.drawable.ic_settings_check),
+                painterResource(R.drawable.ic_check),
                 contentDescription = null,
                 modifier = Modifier.size(16.dp),
                 tint = foreground,

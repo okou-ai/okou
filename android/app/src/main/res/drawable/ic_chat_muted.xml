@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- Lucide bell-off. ISC license in assets/licenses. -->
-<vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="24dp" android:height="24dp"
-    android:viewportWidth="24" android:viewportHeight="24">
-    <path android:fillColor="@android:color/transparent" android:strokeColor="@android:color/black"
-        android:strokeWidth="2" android:strokeLineCap="round" android:strokeLineJoin="round"
-        android:pathData="M10.268,21a2,2 0,0 0,3.464,0 M17,17H4a1,1 0,0 1,-.74,-1.673C4.59,13.956 6,12.499 6,8a6,6 0,0 1,.258,-1.742 M2,2l20,20 M8.668,3.01A6,6 0,0 1,18,8c0,2.687 .77,4.653 1.707,6.05" />
-</vector>

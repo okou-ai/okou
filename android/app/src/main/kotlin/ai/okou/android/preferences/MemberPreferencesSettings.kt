@@ -57,7 +57,7 @@ internal fun MemberPreferencesSettings(model: MemberPreferencesModel) {
             SettingsPickerRow(
                 appearanceTitle,
                 value = stringResource(appearanceLabel(state.theme)),
-                leading = { SettingsIcon(R.drawable.ic_settings_appearance) },
+                leading = { SettingsIcon(R.drawable.ic_brightness_6) },
                 enabled = !state.busy,
             ) { dismiss ->
                 SettingsSheet(appearanceTitle, dismiss) {
@@ -90,7 +90,7 @@ internal fun MemberPreferencesSettings(model: MemberPreferencesModel) {
             SettingsPickerRow(
                 languageTitle,
                 value = stringResource(languageLabel(state.locale)),
-                leading = { SettingsIcon(R.drawable.ic_settings_language) },
+                leading = { SettingsIcon(R.drawable.ic_translate) },
                 enabled = !state.busy && state.supportedLocales.size > 1,
             ) { dismiss ->
                 SettingsSheet(languageTitle, dismiss) {

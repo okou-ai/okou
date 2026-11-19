@@ -263,13 +263,13 @@ private fun AccountSettings(openInstructions: () -> Unit, signOut: () -> Unit) {
         SettingsGroup {
             SettingsRow(
                 stringResource(R.string.instructions_title),
-                leading = { SettingsIcon(R.drawable.ic_settings_instructions) },
+                leading = { SettingsIcon(R.drawable.ic_settings) },
                 onClick = openInstructions,
             )
             HorizontalDivider()
             SettingsRow(
                 stringResource(R.string.auth_sign_out),
-                leading = { SettingsIcon(R.drawable.ic_settings_sign_out) },
+                leading = { SettingsIcon(R.drawable.ic_logout) },
                 onClick = signOut,
                 showChevron = false,
             )
@@ -298,7 +298,7 @@ private fun WorkspaceTitle(state: SessionUiState, chooseWorkspace: (String) -> U
         )
         if (canSwitch) {
             Icon(
-                painterResource(R.drawable.ic_chat_chevron_down),
+                painterResource(R.drawable.ic_expand_more),
                 stringResource(R.string.auth_switch_workspace),
                 Modifier.padding(start = 4.dp).size(16.dp),
             )

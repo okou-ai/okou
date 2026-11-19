@@ -447,9 +447,9 @@ SessionModelTest also holds the workspace response to exercise cached
 appearance, confirmation and account and workspace isolation.
 Shared font bytes/licenses are sourced from `ios/Okou/Resources/Fonts` during
 the build; the app does not keep a second font copy in source. Its launcher
-vector retains the geometry from `ios/Assets/AppIcon.svg`. Native navigation
-vectors use Lucide geometry; its shared license is also packaged under
-`assets/licenses`. No runtime font or icon download is needed.
+vector retains the geometry from `ios/Assets/AppIcon.svg`. App controls use
+locally packaged [Material Symbols Outlined](../docs/android/android-development.md#interface-icons)
+and ship their license under `assets/licenses`.
 
 ## CI and Distribution
 
