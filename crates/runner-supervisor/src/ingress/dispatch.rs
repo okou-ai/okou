@@ -30,8 +30,9 @@ pub(crate) enum Disposition {
     Conflict,
 }
 
+// Dispatch senders and receivers roll independently.
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 struct Envelope {
     runner_id: uuid::Uuid,
     heartbeat_generation: u64,
