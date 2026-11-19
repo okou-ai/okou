@@ -230,14 +230,14 @@ fn has_descriptor_budget(concurrency: usize) -> bool {
     if soft_limit < required {
         return false;
     }
-    let Ok(mut descriptors) = fs::read_dir("/proc/self/fd") else {
-        return false;
-    };
-    let Ok(open_descriptors) = descriptors.try_fold(0, |count, entry| entry.map(|_| count + 1))
-    else {
-        return false;
-    };
-    soft_limit.saturating_sub(open_descriptors) >= required
+
+    // The Runner's pinned Guest kernel reports the open descriptor count as
+    // the procfs directory size. Retain the previous conservative cutoff.
+    fs::metadata("/proc/self/fd").is_ok_and(|metadata| {
+        metadata.is_dir()
+            && metadata.len() > 0
+            && u128::from(metadata.len()) < u128::from(soft_limit - required)
+    })
 }
 
 fn descriptor_limit(error: &io::Error) -> bool {
