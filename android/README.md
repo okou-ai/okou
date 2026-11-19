@@ -4,9 +4,11 @@ Native Kotlin/Jetpack Compose client shell inside the Okou monorepo. Open this
 directory in Android Studio, or use the checked-in Gradle Wrapper. No pnpm,
 database, API service, account credentials, or local Web server is needed.
 
-Signed-out launches open the native Clerk login page. After authoritative
-membership and workspace bootstrap, the application provides a native conversation
-list and history reader. The workspace chat list uses single-line rows, indented
+Signed-out launches open the native Clerk login page. A restored active session
+with a selected workspace opens the native conversation list while access is
+checked. Once workspace access is confirmed, cached conversations and Projects
+can appear while the app refreshes the list and loads member preferences.
+The workspace chat list uses single-line rows, indented
 Project chats, and separators within groups that have pins and ordinary chats.
 Collapsed Projects summarize unread or running chats. Selecting a chat opens
 its conversation, and Back restores the same list position, filter

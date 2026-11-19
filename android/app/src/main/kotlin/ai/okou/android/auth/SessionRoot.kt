@@ -7,6 +7,7 @@ import ai.okou.android.SettingsIcon
 import ai.okou.android.SettingsRow
 import ai.okou.android.SettingsScreen
 import ai.okou.android.SettingsSection
+import ai.okou.android.api.generated.Organization
 import ai.okou.android.chat.WorkspaceRealtimeLifecycle
 import ai.okou.android.instructions.PersonalInstructionsSettings
 import ai.okou.android.preferences.MemberPreferencesSettings
@@ -72,31 +73,63 @@ fun SessionRoot(
         ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurface)
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         val ready = state.ready
-        if (state.stage == SessionStage.Ready && ready != null) {
-            key(ready.identity, state.generation) {
-                WorkspaceRealtimeLifecycle(ready.chats.updates)
+        val opened = state.opening as? OpeningWorkspace.Authorized
+        val identity = ready?.identity ?: state.opening?.identity
+        val organization = ready?.organization ?: opened?.organization
+        if (identity != null) {
+            key(
+                identity.apiOrigin,
+                identity.userId,
+                identity.sessionId,
+                identity.workspaceId,
+                state.generation,
+            ) {
+                if (ready != null) WorkspaceRealtimeLifecycle(ready.chats.updates)
                 OkouApp(
-                    ready.chats,
-                    ready.composer,
-                    ready.controls,
+                    ready?.chats ?: opened?.chats,
+                    ready?.composer,
+                    ready?.controls,
                     settingsContent = { destination, openInstructions ->
-                        when (destination) {
-                            SettingsDestination.Overview ->
-                                SettingsScreen(
-                                    appUpdates = appUpdates,
-                                    workspacePreferences = {
-                                        MemberPreferencesSettings(ready.preferences)
-                                    },
-                                    workspace = { WorkspaceSettings(state, chooseWorkspace) },
-                                    account = { AccountSettings(openInstructions, signOut) },
-                                )
-                            SettingsDestination.Instructions ->
-                                PersonalInstructionsSettings(ready.instructions)
+                        if (ready != null) {
+                            when (destination) {
+                                SettingsDestination.Overview ->
+                                    SettingsScreen(
+                                        appUpdates = appUpdates,
+                                        workspacePreferences = {
+                                            MemberPreferencesSettings(ready.preferences)
+                                        },
+                                        workspace = { WorkspaceSettings(state, chooseWorkspace) },
+                                        account = { AccountSettings(openInstructions, signOut) },
+                                    )
+                                SettingsDestination.Instructions ->
+                                    PersonalInstructionsSettings(ready.instructions)
+                            }
                         }
                     },
-                    recovery = ready.recovery,
-                    workspaceTitle = { WorkspaceTitle(state, chooseWorkspace) },
+                    recovery = ready?.recovery,
+                    workspaceTitle =
+                        organization?.let { { WorkspaceTitle(it, state, chooseWorkspace) } },
                     openUpdate = openUpdate,
+                    startupRecovery =
+                        if (state.stage == SessionStage.Unavailable) {
+                            {
+                                Column {
+                                    Text(
+                                        stringResource(R.string.auth_unavailable),
+                                        modifier =
+                                            Modifier.semantics {
+                                                liveRegion = LiveRegionMode.Polite
+                                            },
+                                    )
+                                    TextButton(onClick = retry, colors = textButtonColors) {
+                                        Text(stringResource(R.string.retry))
+                                    }
+                                    TextButton(onClick = signOut, colors = textButtonColors) {
+                                        Text(stringResource(R.string.auth_sign_out))
+                                    }
+                                }
+                            }
+                        } else null,
                 )
             }
         } else if (state.stage == SessionStage.SignIn) {
@@ -278,9 +311,12 @@ private fun AccountSettings(openInstructions: () -> Unit, signOut: () -> Unit) {
 }
 
 @Composable
-private fun WorkspaceTitle(state: SessionUiState, chooseWorkspace: (String) -> Unit) {
-    val workspace = checkNotNull(state.ready).organization
-    val canSwitch = state.memberships.size > 1
+private fun WorkspaceTitle(
+    workspace: Organization,
+    state: SessionUiState,
+    chooseWorkspace: (String) -> Unit,
+) {
+    val canSwitch = state.ready != null && state.memberships.size > 1
     var choosing by remember { mutableStateOf(false) }
     val identity: @Composable RowScope.() -> Unit = {
         val logo = remember(workspace.id) { workspaceLogo(workspace.id) }

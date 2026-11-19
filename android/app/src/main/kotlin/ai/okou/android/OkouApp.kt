@@ -7,6 +7,7 @@ import ai.okou.android.chat.ChatComposerModel
 import ai.okou.android.chat.ChatListFilter
 import ai.okou.android.chat.ChatListModel
 import ai.okou.android.chat.ChatListScreen
+import ai.okou.android.chat.ChatListUiState
 import ai.okou.android.chat.ChatReadPhase
 import ai.okou.android.chat.ComposerTarget
 import ai.okou.android.chat.ConfirmedChat
@@ -76,18 +77,25 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun OkouApp(
-    chats: ChatListModel,
-    composer: ChatComposerModel,
-    controls: RunControlsModel,
+    chats: ChatListModel?,
+    composer: ChatComposerModel?,
+    controls: RunControlsModel?,
     settingsContent: @Composable (SettingsDestination, openInstructions: () -> Unit) -> Unit,
     recovery: AssistantRecoveryModel? = null,
     workspaceTitle: @Composable (() -> Unit)? = null,
     openUpdate: (() -> Unit)? = null,
+    startupRecovery: @Composable (() -> Unit)? = null,
 ) {
-    val list by chats.uiState.collectAsStateWithLifecycle()
+    val list =
+        chats?.uiState?.collectAsStateWithLifecycle()?.value
+            ?: ChatListUiState(
+                listPhase =
+                    if (startupRecovery == null) ChatReadPhase.Loading else ChatReadPhase.Idle
+            )
     var navigation by rememberWorkspaceNavigation()
-    val settings = navigation.settings
-    val target = navigation.target
+    // Keep saved navigation available for Ready without entering a protected destination early.
+    val settings = navigation.settings.takeIf { composer != null }
+    val target = if (composer != null) navigation.target else WorkspaceTarget.List
     // Window configuration changes on resize. IME insets only change the space inside the panes.
     val window = LocalConfiguration.current
     val listWidth = workspaceListPaneWidth(window.screenWidthDp, window.screenHeightDp)
@@ -117,26 +125,29 @@ internal fun OkouApp(
             )
         LaunchedEffect(action, message) {
             snackbar.showSnackbar(message)
-            chats.dismissRowActionFailure(action)
+            chats?.dismissRowActionFailure(action)
         }
     }
 
     fun openChat(chat: ConfirmedChat) {
+        val activeComposer = composer ?: return
+        val activeChats = chats ?: return
         conversations.open(chat.id)
         navigation = navigation.copy(target = WorkspaceTarget.Chat(chat.id))
-        composer.acknowledge(chat.id)
-        chats.history.open(chat)
+        activeComposer.acknowledge(chat.id)
+        activeChats.history.open(chat)
     }
 
     fun startNewChat(projectId: String?) {
-        composer.beginNew(projectId)
+        val activeComposer = composer ?: return
+        activeComposer.beginNew(projectId)
         conversations.open(ComposerTarget(projectId = projectId).key)
         navigation = navigation.copy(target = WorkspaceTarget.NewChat(projectId))
     }
 
     LaunchedEffect(target, thread, list.listPhase) {
         if (target is WorkspaceTarget.Chat) {
-            if (thread != null) chats.history.open(thread)
+            if (thread != null) chats?.history?.open(thread)
             else if (list.listPhase == ChatReadPhase.Ready && navigation.target == target) {
                 navigation = navigation.copy(target = WorkspaceTarget.List)
                 scope.launch { snackbar.showSnackbar(missingChat) }
@@ -146,7 +157,8 @@ internal fun OkouApp(
     val newChat = target as? WorkspaceTarget.NewChat
     val newTarget = newChat?.let { ComposerTarget(projectId = it.projectId) }
     val createdId =
-        newTarget?.let { draft ->
+        if (newTarget != null && composer != null) {
+            val draft = newTarget
             val input = composer.uiState.collectAsStateWithLifecycle()
             val created by
                 remember(input, draft) {
@@ -155,7 +167,7 @@ internal fun OkouApp(
                     }
                 }
             created
-        }
+        } else null
     val createdChat =
         createdId?.let { id -> list.threads.firstOrNull { it.id == id && it.hidden != true } }
     LaunchedEffect(newChat, createdChat) {
@@ -229,7 +241,7 @@ internal fun OkouApp(
                     }
                 },
                 actions = {
-                    if (settings == null) {
+                    if (settings == null && chats != null && composer != null) {
                         WorkspaceToolbarActions(
                             showFilter = showList,
                             filter = list.filter,
@@ -266,7 +278,7 @@ internal fun OkouApp(
                     }
                 }
             } else {
-                RealtimeNotice(chats.updates)
+                if (chats != null && composer != null) RealtimeNotice(chats.updates)
                 Row(Modifier.fillMaxSize()) {
                     if (showList) {
                         Column(
@@ -276,28 +288,40 @@ internal fun OkouApp(
                         ) {
                             if (list.filter != ChatListFilter.Recent) {
                                 AppliedChatFilter(list.filter) {
-                                    chats.selectFilter(ChatListFilter.Recent)
+                                    chats?.selectFilter(ChatListFilter.Recent)
                                 }
                             }
                             ChatListScreen(
                                 list,
-                                chats::refresh,
-                                chats::refreshList,
-                                chats::refreshMetadata,
-                                chats::refreshIndicators,
+                                { chats?.refresh() },
+                                { chats?.refreshList() },
+                                { chats?.refreshMetadata() },
+                                { chats?.refreshIndicators() },
                                 ::openChat,
-                                chats::performRowAction,
-                                chats::renameThread,
+                                { id, action ->
+                                    if (composer != null) chats?.performRowAction(id, action)
+                                },
+                                { id, title ->
+                                    if (composer != null) chats?.renameThread(id, title)
+                                },
                                 collapsed.values,
                                 collapsed::toggle,
                                 listPosition,
                                 ::startNewChat,
                                 selectedChatId = if (listWidth != null) thread?.id else null,
+                                actionsEnabled = composer != null,
+                                refreshEnabled = chats != null,
+                                startupRecovery = startupRecovery,
                             )
                         }
                     }
                     if (listWidth != null) VerticalDivider()
-                    if (listWidth != null || target != WorkspaceTarget.List) {
+                    if (
+                        chats != null &&
+                            composer != null &&
+                            controls != null &&
+                            (listWidth != null || target != WorkspaceTarget.List)
+                    ) {
                         Box(
                             Modifier.weight(1f).fillMaxHeight(),
                             contentAlignment = Alignment.TopCenter,
