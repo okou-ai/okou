@@ -864,3 +864,132 @@ artifact-sharing-007	src/views/artifacts-page/__tests__/artifact-sharing.test.ts
 artifact-sharing-007	src/views/artifacts-page/__tests__/artifact-sharing.test.tsx	Then	2	Sign in redirects to the same-origin app sign-in page	L206-L211	covered		working-tree
 artifact-sharing-007	src/views/artifacts-page/__tests__/artifact-sharing.test.tsx	Then	3	Return URL preserves the complete artifact path, query and fragment	L212-L216	covered		working-tree
 artifact-sharing-007	src/views/artifacts-page/__tests__/artifact-sharing.test.tsx	Then	4	External redirect target is not honored	L212-L216	covered	Exact redirect_url equality excludes the external target	working-tree
+artifact-image-viewer-001	src/views/okou-page/__tests__/artifact-image-viewer.test.tsx	Given	1	Image viewer has opened an image	L231-L233; L105-L228	covered		working-tree
+artifact-image-viewer-001	src/views/okou-page/__tests__/artifact-image-viewer.test.tsx	Given	2	Image decoding is delayed	L115; L128-L132; L232	covered		working-tree
+artifact-image-viewer-001	src/views/okou-page/__tests__/artifact-image-viewer.test.tsx	When	1	Image dimensions become available before decoding finishes	L237	covered		working-tree
+artifact-image-viewer-001	src/views/okou-page/__tests__/artifact-image-viewer.test.tsx	When	2	Decoding completes	L241	covered		working-tree
+artifact-image-viewer-001	src/views/okou-page/__tests__/artifact-image-viewer.test.tsx	Then	1	Image stays hidden until decoding completes	L234; L238	covered		working-tree
+artifact-image-viewer-001	src/views/okou-page/__tests__/artifact-image-viewer.test.tsx	Then	2	Loading status stays visible until decoding completes	L235; L239	covered		working-tree
+artifact-image-viewer-001	src/views/okou-page/__tests__/artifact-image-viewer.test.tsx	Then	3	Image is visible after decoding	L242-L244	covered		working-tree
+artifact-image-viewer-001	src/views/okou-page/__tests__/artifact-image-viewer.test.tsx	Then	4	Loading status is gone after decoding	L245	covered		working-tree
+artifact-image-viewer-001	src/views/okou-page/__tests__/artifact-image-viewer.test.tsx	Then	5	No previous-image button is present	L246-L248	covered		working-tree
+artifact-image-viewer-001	src/views/okou-page/__tests__/artifact-image-viewer.test.tsx	Then	6	Next-image button is enabled	L249	covered		working-tree
+artifact-image-viewer-002	src/views/okou-page/__tests__/artifact-image-viewer.test.tsx	Given	1	Viewer shows the first of two images	L253-L258; L139-L157	covered		working-tree
+artifact-image-viewer-002	src/views/okou-page/__tests__/artifact-image-viewer.test.tsx	Given	2	Next image URL resolution is delayed	L114; L117-L118	covered		working-tree
+artifact-image-viewer-002	src/views/okou-page/__tests__/artifact-image-viewer.test.tsx	Given	3	Next image decoding is delayed	L116; L134-L135	covered		working-tree
+artifact-image-viewer-002	src/views/okou-page/__tests__/artifact-image-viewer.test.tsx	When	1	User presses Arrow Right	L260	covered		working-tree
+artifact-image-viewer-002	src/views/okou-page/__tests__/artifact-image-viewer.test.tsx	When	2	Next URL resolves	L268	covered		working-tree
+artifact-image-viewer-002	src/views/okou-page/__tests__/artifact-image-viewer.test.tsx	When	3	Next image finishes decoding	L277	covered		working-tree
+artifact-image-viewer-002	src/views/okou-page/__tests__/artifact-image-viewer.test.tsx	Then	1	First image is removed	L264	covered		working-tree
+artifact-image-viewer-002	src/views/okou-page/__tests__/artifact-image-viewer.test.tsx	Then	2	Viewer shows a loading status	L261-L263	covered		working-tree
+artifact-image-viewer-002	src/views/okou-page/__tests__/artifact-image-viewer.test.tsx	Then	3	Viewer shows the second image's preview name	L265	covered		working-tree
+artifact-image-viewer-002	src/views/okou-page/__tests__/artifact-image-viewer.test.tsx	Then	4	Focus remains in the viewer	L266	covered		working-tree
+artifact-image-viewer-002	src/views/okou-page/__tests__/artifact-image-viewer.test.tsx	Then	5	Second image stays hidden until decoding completes	L273; L275	covered		working-tree
+artifact-image-viewer-002	src/views/okou-page/__tests__/artifact-image-viewer.test.tsx	Then	6	Second image becomes visible after decoding	L278-L280	covered		working-tree
+artifact-image-viewer-002	src/views/okou-page/__tests__/artifact-image-viewer.test.tsx	Then	7	Loading status disappears	L281	covered		working-tree
+artifact-image-viewer-003	src/views/okou-page/__tests__/artifact-image-viewer.test.tsx	Given	1	Image is open in the lightbox at 100% zoom	L285-L293	covered		working-tree
+artifact-image-viewer-003	src/views/okou-page/__tests__/artifact-image-viewer.test.tsx	When	1	User uses the zoom buttons	L295; L299	covered		working-tree
+artifact-image-viewer-003	src/views/okou-page/__tests__/artifact-image-viewer.test.tsx	When	2	User uses Ctrl wheel gestures including 20 one-pixel events and pixel/line movements	L304-L335	covered		working-tree
+artifact-image-viewer-003	src/views/okou-page/__tests__/artifact-image-viewer.test.tsx	When	3	User tries zero movement and unmodified wheel movement	L338-L339	covered		working-tree
+artifact-image-viewer-003	src/views/okou-page/__tests__/artifact-image-viewer.test.tsx	When	4	User uses a Meta-modified wheel movement	L340	covered		working-tree
+artifact-image-viewer-003	src/views/okou-page/__tests__/artifact-image-viewer.test.tsx	Then	1	Zoom in changes 100% to 112%	L296-L298	covered		working-tree
+artifact-image-viewer-003	src/views/okou-page/__tests__/artifact-image-viewer.test.tsx	Then	2	Zoom out returns 112% to 100%	L300-L302	covered		working-tree
+artifact-image-viewer-003	src/views/okou-page/__tests__/artifact-image-viewer.test.tsx	Then	3	One-pixel gesture changes zoom to 101%	L304-L307	covered		working-tree
+artifact-image-viewer-003	src/views/okou-page/__tests__/artifact-image-viewer.test.tsx	Then	4	Twenty one-pixel gestures reach 120%	L313-L318	covered		working-tree
+artifact-image-viewer-003	src/views/okou-page/__tests__/artifact-image-viewer.test.tsx	Then	5	Equivalent 20-pixel movement reaches 120%	L319-L323	covered		working-tree
+artifact-image-viewer-003	src/views/okou-page/__tests__/artifact-image-viewer.test.tsx	Then	6	16-pixel movement reaches 115%	L326-L329	covered		working-tree
+artifact-image-viewer-003	src/views/okou-page/__tests__/artifact-image-viewer.test.tsx	Then	7	One line-mode unit reaches 115%	L330-L334	covered		working-tree
+artifact-image-viewer-003	src/views/okou-page/__tests__/artifact-image-viewer.test.tsx	Then	8	Zero movement does not zoom	L338; L341-L343	covered	exact 115% after the Meta gesture proves the zero and unmodified wheels added nothing	working-tree
+artifact-image-viewer-003	src/views/okou-page/__tests__/artifact-image-viewer.test.tsx	Then	9	Unmodified wheel movement does not zoom	L339; L341-L343	covered	same inference as item 8	working-tree
+artifact-image-viewer-003	src/views/okou-page/__tests__/artifact-image-viewer.test.tsx	Then	10	Meta-modified movement zooms	L340-L343	covered		working-tree
+artifact-image-viewer-003	src/views/okou-page/__tests__/artifact-image-viewer.test.tsx	Then	11	Zoom is bounded at 10%	L345-L348	covered		working-tree
+artifact-image-viewer-003	src/views/okou-page/__tests__/artifact-image-viewer.test.tsx	Then	12	Zoom out is disabled at the lower bound	L349	covered		working-tree
+artifact-image-viewer-003	src/views/okou-page/__tests__/artifact-image-viewer.test.tsx	Then	13	Zoom is bounded at the upper limit	L350-L353	covered	asserts the product default 300% maximum	working-tree
+artifact-image-viewer-003	src/views/okou-page/__tests__/artifact-image-viewer.test.tsx	Then	14	Zoom in is disabled at the upper bound	L354	covered		working-tree
+artifact-image-viewer-003	src/views/okou-page/__tests__/artifact-image-viewer.test.tsx	Then	15	Reset returns to 100%	L356-L359	covered		working-tree
+artifact-download-type-001	src/views/okou-page/__tests__/artifact-download-type.test.tsx	Given	1	Catalog contains a hosted-site artifact titled Confidential board review.png	L52-L72	covered		working-tree
+artifact-download-type-001	src/views/okou-page/__tests__/artifact-download-type.test.tsx	Given	2	Sidebar preview is disabled	L86-L88	covered		working-tree
+artifact-download-type-001	src/views/okou-page/__tests__/artifact-download-type.test.tsx	When	1	User opens the artifact	L90-L91	covered		working-tree
+artifact-download-type-001	src/views/okou-page/__tests__/artifact-download-type.test.tsx	When	2	User downloads from the lightbox menu	L92-L94	covered		working-tree
+artifact-download-type-001	src/views/okou-page/__tests__/artifact-download-type.test.tsx	Then	1	Downloaded filename is Confidential board review.html	L96-L99	covered		working-tree
+artifact-download-type-001	src/views/okou-page/__tests__/artifact-download-type.test.tsx	Then	2	Telemetry identifies a website download on the dialog surface	L100-L102	covered		working-tree
+artifact-download-type-005	src/views/okou-page/__tests__/artifact-download-type.test.tsx	Given	1	Chat message links to a generic file named forecast.bin	L108; L112; L114-L127	covered		working-tree
+artifact-download-type-005	src/views/okou-page/__tests__/artifact-download-type.test.tsx	Given	2	Resolved MIME type is an Excel spreadsheet	L110-L111; L128-L137	covered		working-tree
+artifact-download-type-005	src/views/okou-page/__tests__/artifact-download-type.test.tsx	When	1	User opens the link	L144-L145	covered		working-tree
+artifact-download-type-005	src/views/okou-page/__tests__/artifact-download-type.test.tsx	When	2	User downloads once from the preview	L146	covered		working-tree
+artifact-download-type-005	src/views/okou-page/__tests__/artifact-download-type.test.tsx	When	3	User downloads once from the download menu	L150-L151	covered		working-tree
+artifact-download-type-005	src/views/okou-page/__tests__/artifact-download-type.test.tsx	Then	1	Both downloads are recorded	L147-L149; L153-L155; L156-L163	covered		working-tree
+artifact-download-type-005	src/views/okou-page/__tests__/artifact-download-type.test.tsx	Then	2	First download is a spreadsheet on the file-preview surface	L156-L161	covered		working-tree
+artifact-download-type-005	src/views/okou-page/__tests__/artifact-download-type.test.tsx	Then	3	Second download is a spreadsheet on the dialog surface	L162	covered		working-tree
+artifact-download-type-006	src/views/okou-page/__tests__/artifact-download-type.test.tsx	Given	1	Chat draft has an attachment named recording	L169-L174	covered		working-tree
+artifact-download-type-006	src/views/okou-page/__tests__/artifact-download-type.test.tsx	Given	2	Attachment is identified only by MIME video/mp4	L172	covered		working-tree
+artifact-download-type-006	src/views/okou-page/__tests__/artifact-download-type.test.tsx	When	1	User opens its video preview	L184-L185	covered		working-tree
+artifact-download-type-006	src/views/okou-page/__tests__/artifact-download-type.test.tsx	When	2	User downloads from the preview menu	L186-L187	covered		working-tree
+artifact-download-type-006	src/views/okou-page/__tests__/artifact-download-type.test.tsx	Then	1	One download is recorded	L189-L194	covered		working-tree
+artifact-download-type-006	src/views/okou-page/__tests__/artifact-download-type.test.tsx	Then	2	Telemetry identifies a video on the dialog surface	L192-L194	covered		working-tree
+artifact-download-type-007	src/views/okou-page/__tests__/artifact-download-type.test.tsx	Given	1	Sent chat message has an attachment named recording	L200-L221	covered		working-tree
+artifact-download-type-007	src/views/okou-page/__tests__/artifact-download-type.test.tsx	Given	2	Attachment is identified only by MIME audio/mpeg	L216	covered		working-tree
+artifact-download-type-007	src/views/okou-page/__tests__/artifact-download-type.test.tsx	Given	3	Sidebar preview is enabled	L228-L230	covered		working-tree
+artifact-download-type-007	src/views/okou-page/__tests__/artifact-download-type.test.tsx	When	1	User opens its audio preview	L232-L233	covered		working-tree
+artifact-download-type-007	src/views/okou-page/__tests__/artifact-download-type.test.tsx	When	2	User downloads from the sidebar menu	L237-L238	covered		working-tree
+artifact-download-type-007	src/views/okou-page/__tests__/artifact-download-type.test.tsx	Then	1	Sidebar audio player uses the attachment URL	L222; L234-L236	covered		working-tree
+artifact-download-type-007	src/views/okou-page/__tests__/artifact-download-type.test.tsx	Then	2	One download is recorded	L240-L245	covered		working-tree
+artifact-download-type-007	src/views/okou-page/__tests__/artifact-download-type.test.tsx	Then	3	Telemetry identifies audio on the page surface	L243-L245	covered		working-tree
+artifact-diagram-overlay-001	src/views/okou-page/__tests__/artifact-diagram-overlay.test.tsx	Given	1	Document is open	L61; L23-L58	covered		working-tree
+artifact-diagram-overlay-001	src/views/okou-page/__tests__/artifact-diagram-overlay.test.tsx	Given	2	Document is in windowed mode	L62-L64	covered		working-tree
+artifact-diagram-overlay-001	src/views/okou-page/__tests__/artifact-diagram-overlay.test.tsx	Given	3	Source is expanded	L67	covered		working-tree
+artifact-diagram-overlay-001	src/views/okou-page/__tests__/artifact-diagram-overlay.test.tsx	Given	4	Reading viewport is scrolled to 120	L65-L66	covered		working-tree
+artifact-diagram-overlay-001	src/views/okou-page/__tests__/artifact-diagram-overlay.test.tsx	When	1	User expands the diagram	L73-L80	covered		working-tree
+artifact-diagram-overlay-001	src/views/okou-page/__tests__/artifact-diagram-overlay.test.tsx	When	2	User enters fullscreen in the expanded view	L81-L84	covered	data-mode=fullscreen confirms entry	working-tree
+artifact-diagram-overlay-001	src/views/okou-page/__tests__/artifact-diagram-overlay.test.tsx	When	3	User downloads the expanded diagram	L85-L88	covered	download count confirms the action	working-tree
+artifact-diagram-overlay-001	src/views/okou-page/__tests__/artifact-diagram-overlay.test.tsx	When	4	User closes it with Escape	L89; L91-L95	covered		working-tree
+artifact-diagram-overlay-001	src/views/okou-page/__tests__/artifact-diagram-overlay.test.tsx	Then	1	Document remains open	L96; L119	covered	Explicit dialog presence added before acceptance; focus return and windowed mode are checked next	working-tree
+artifact-diagram-overlay-001	src/views/okou-page/__tests__/artifact-diagram-overlay.test.tsx	Then	2	Document stays in windowed mode	L97	covered		working-tree
+artifact-diagram-overlay-001	src/views/okou-page/__tests__/artifact-diagram-overlay.test.tsx	Then	3	Scroll position stays at 120	L98	covered		working-tree
+artifact-diagram-overlay-001	src/views/okou-page/__tests__/artifact-diagram-overlay.test.tsx	Then	4	Source stays expanded	L99-L101	covered		working-tree
+artifact-diagram-overlay-001	src/views/okou-page/__tests__/artifact-diagram-overlay.test.tsx	Then	5	Focus returns to the diagram trigger	L102	covered		working-tree
+artifact-diagram-overlay-001	src/views/okou-page/__tests__/artifact-diagram-overlay.test.tsx	Then	6	Expanded diagram URL is revoked	L103	covered		working-tree
+artifact-diagram-overlay-001	src/views/okou-page/__tests__/artifact-diagram-overlay.test.tsx	Then	7	Inline image URL is not revoked	L104	covered		working-tree
+artifact-diagram-overlay-001	src/views/okou-page/__tests__/artifact-diagram-overlay.test.tsx	Then	8	Reopening creates a different expanded URL	L106-L111	covered		working-tree
+artifact-diagram-overlay-001	src/views/okou-page/__tests__/artifact-diagram-overlay.test.tsx	Then	9	Reopened URL is not revoked	L112	covered		working-tree
+artifact-diagram-overlay-001	src/views/okou-page/__tests__/artifact-diagram-overlay.test.tsx	Then	10	Closing the expanded view again leaves the document open	L113-L119	covered		working-tree
+artifact-diagram-overlay-001	src/views/okou-page/__tests__/artifact-diagram-overlay.test.tsx	Then	11	Escape then closes the document	L121-L124	covered		working-tree
+artifact-diagram-overlay-003	src/views/okou-page/__tests__/artifact-diagram-overlay.test.tsx	Given	1	Document is open in windowed mode	L128; L151	covered	Enter fullscreen control at L150 exists only in windowed mode	working-tree
+artifact-diagram-overlay-003	src/views/okou-page/__tests__/artifact-diagram-overlay.test.tsx	Given	2	Document has six paragraphs	L34; L136-L148	covered		working-tree
+artifact-diagram-overlay-003	src/views/okou-page/__tests__/artifact-diagram-overlay.test.tsx	Given	3	Scroll position is 190	L149	covered		working-tree
+artifact-diagram-overlay-003	src/views/okou-page/__tests__/artifact-diagram-overlay.test.tsx	When	1	User enters fullscreen	L151-L154	covered		working-tree
+artifact-diagram-overlay-003	src/views/okou-page/__tests__/artifact-diagram-overlay.test.tsx	When	2	User scrolls to 295	L157	covered		working-tree
+artifact-diagram-overlay-003	src/views/okou-page/__tests__/artifact-diagram-overlay.test.tsx	When	3	User exits fullscreen	L158-L161	covered		working-tree
+artifact-diagram-overlay-003	src/views/okou-page/__tests__/artifact-diagram-overlay.test.tsx	Then	1	Entering fullscreen adjusts scroll to 110	L155	covered		working-tree
+artifact-diagram-overlay-003	src/views/okou-page/__tests__/artifact-diagram-overlay.test.tsx	Then	2	Exiting fullscreen adjusts scroll to 495	L162	covered		working-tree
+artifact-action-telemetry-001	src/views/okou-page/__tests__/artifact-action-telemetry.test.tsx	Given	1	User previews confidential-release-bundle.zip in the artifact catalog	L54-L112	covered		working-tree
+artifact-action-telemetry-001	src/views/okou-page/__tests__/artifact-action-telemetry.test.tsx	When	1	User downloads it	L115	covered		working-tree
+artifact-action-telemetry-001	src/views/okou-page/__tests__/artifact-action-telemetry.test.tsx	When	2	User downloads again from Download options	L123-L128	covered		working-tree
+artifact-action-telemetry-001	src/views/okou-page/__tests__/artifact-action-telemetry.test.tsx	When	3	User copies its link from Share	L138-L142	covered	Copied at L142 confirms the copy	working-tree
+artifact-action-telemetry-001	src/views/okou-page/__tests__/artifact-action-telemetry.test.tsx	Then	1	Both downloads use the artifact URL	L129-L136	covered		working-tree
+artifact-action-telemetry-001	src/views/okou-page/__tests__/artifact-action-telemetry.test.tsx	Then	2	First download records one archive action on file_preview	L116-L121	covered		working-tree
+artifact-action-telemetry-001	src/views/okou-page/__tests__/artifact-action-telemetry.test.tsx	Then	3	Second download records one archive action on dialog	L144-L147	covered		working-tree
+artifact-action-telemetry-001	src/views/okou-page/__tests__/artifact-action-telemetry.test.tsx	Then	4	Previewing adds no actions	L113	covered		working-tree
+artifact-action-telemetry-001	src/views/okou-page/__tests__/artifact-action-telemetry.test.tsx	Then	5	Opening Download options adds no actions	L125-L127	covered		working-tree
+artifact-action-telemetry-001	src/views/okou-page/__tests__/artifact-action-telemetry.test.tsx	Then	6	Copying the link adds no actions	L144-L147	covered		working-tree
+artifact-action-telemetry-001	src/views/okou-page/__tests__/artifact-action-telemetry.test.tsx	Then	7	Copied link is the owner URL	L143	covered		working-tree
+artifact-action-telemetry-002	src/views/okou-page/__tests__/artifact-action-telemetry.test.tsx	Given	1	Attachment confidential-forecast.bin has content type application/octet-stream	L163-L169	covered		working-tree
+artifact-action-telemetry-002	src/views/okou-page/__tests__/artifact-action-telemetry.test.tsx	Given	2	A Word document attachment is alongside it	L170-L176	covered		working-tree
+artifact-action-telemetry-002	src/views/okou-page/__tests__/artifact-action-telemetry.test.tsx	When	1	User previews the Word document	L198-L205	covered	Office embed src confirms the preview opened	working-tree
+artifact-action-telemetry-002	src/views/okou-page/__tests__/artifact-action-telemetry.test.tsx	When	2	User downloads confidential-forecast.bin from the chat	L209-L213	covered		working-tree
+artifact-action-telemetry-002	src/views/okou-page/__tests__/artifact-action-telemetry.test.tsx	Then	1	Opening the Office preview records no action	L206	covered		working-tree
+artifact-action-telemetry-002	src/views/okou-page/__tests__/artifact-action-telemetry.test.tsx	Then	2	Opening the Office preview downloads nothing	L207	covered		working-tree
+artifact-action-telemetry-002	src/views/okou-page/__tests__/artifact-action-telemetry.test.tsx	Then	3	Binary downloads from its private URL with ?download=1	L215-L218	covered		working-tree
+artifact-action-telemetry-002	src/views/okou-page/__tests__/artifact-action-telemetry.test.tsx	Then	4	One attachment_chip download action with type other is recorded	L219-L221	covered		working-tree
+artifact-action-telemetry-004	src/views/okou-page/__tests__/artifact-action-telemetry.test.tsx	Given	1	Signed-out visitor	L271	covered		working-tree
+artifact-action-telemetry-004	src/views/okou-page/__tests__/artifact-action-telemetry.test.tsx	Given	2	Visitor views a shared-thread video preview	L233-L246; L267-L270	covered		working-tree
+artifact-action-telemetry-004	src/views/okou-page/__tests__/artifact-action-telemetry.test.tsx	Given	3	Public URL lookup serves the signed-out visitor	L257-L265	covered	public-URL mock is part of the signed-out Given	working-tree
+artifact-action-telemetry-004	src/views/okou-page/__tests__/artifact-action-telemetry.test.tsx	Given	4	Download URL is stale until the download	L232; L250; L260	covered		working-tree
+artifact-action-telemetry-004	src/views/okou-page/__tests__/artifact-action-telemetry.test.tsx	When	1	Visitor opens the preview	L273-L277	covered		working-tree
+artifact-action-telemetry-004	src/views/okou-page/__tests__/artifact-action-telemetry.test.tsx	When	2	Visitor enters fullscreen	L278-L281	covered	data-mode=fullscreen confirms entry	working-tree
+artifact-action-telemetry-004	src/views/okou-page/__tests__/artifact-action-telemetry.test.tsx	When	3	Visitor downloads with the current download URL	L284-L285	covered		working-tree
+artifact-action-telemetry-004	src/views/okou-page/__tests__/artifact-action-telemetry.test.tsx	Then	1	Opening the preview records no action	L282	covered		working-tree
+artifact-action-telemetry-004	src/views/okou-page/__tests__/artifact-action-telemetry.test.tsx	Then	2	Entering fullscreen records no action	L282	covered		working-tree
+artifact-action-telemetry-004	src/views/okou-page/__tests__/artifact-action-telemetry.test.tsx	Then	3	Download uses the fresh URL	L286-L289	covered		working-tree
+artifact-action-telemetry-004	src/views/okou-page/__tests__/artifact-action-telemetry.test.tsx	Then	4	Download does not use the stale URL	L289	covered		working-tree
+artifact-action-telemetry-004	src/views/okou-page/__tests__/artifact-action-telemetry.test.tsx	Then	5	One shared_preview download action with type video is recorded	L290-L292	covered		working-tree

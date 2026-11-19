@@ -1,27 +1,27 @@
 # App rebuild BDD conformance audit and shared artifact batch
 
-Main is merged through `dd337098` in `9ce6c85b`. All 30 accepted files
-register 94 Vitest executions. Each execution maps to one selected
-frozen ID, and all 94 pass on the merged head. Their frozen baseline is
-169 executions, so the verified reduction is 75 (44.4%). The final 30%
+Main is merged through `dd337098` in `9ce6c85b`. All 34 accepted files
+register 106 Vitest executions. Each execution maps to one selected
+frozen ID, and all 106 pass on the merged head. Their frozen baseline is
+189 executions, so the verified reduction is 83 (43.9%). The final 30%
 gate still uses the complete suite's actual registered count.
 
 | Scope                      | Files | Frozen executions | Registered and passed |
 | -------------------------- | ----: | ----------------: | --------------------: |
 | Re-audited earlier files   |    20 |                90 |                    51 |
-| Rebuilt in this round      |    10 |                79 |                    43 |
-| All accepted files         |    30 |               169 |                    94 |
-| Remaining frozen BDD scope |   455 |             4,942 |   2,587 still to keep |
+| Rebuilt in this round      |    14 |                99 |                    55 |
+| All accepted files         |    34 |               189 |                   106 |
+| Remaining frozen BDD scope |   451 |             4,922 |   2,575 still to keep |
 
 ## Conformance standard
 
 The [GWT checklist](test-rebuild-gwt-checklist.tsv) records every Given
-premise, When action and atomic Then claim of the 94 accepted IDs. A
+premise, When action and atomic Then claim of the 106 accepted IDs. A
 Then sentence is split at each separate observable claim, including
-negative claims. Every row names the test lines at `9ce6c85b` that set up
+negative claims. Every row names the test lines at `b6586901` that set up
 the premise, perform the action or assert the claim. A Then claim is
 covered only when its assertion would fail if that claim regressed. All
-437 Then items are covered or explicitly amended by upstream.
+504 Then items are covered or explicitly amended by upstream.
 
 The [execution ledger](test-rebuild-rebuilt-executions.tsv) is reconciled
 in both directions. Each runtime row from `vitest run` matches one static
@@ -92,7 +92,7 @@ errors. Earlier rounds ran Oxlint without ESLint, so ESLint and Oxlint
 rules were also violated. All 30 files now pass Prettier, Oxlint with
 warnings denied, type-aware Oxlint and ESLint.
 
-Package-wide ESLint still parses the 457 temporary BDD Markdown files
+Package-wide ESLint still parses the remaining temporary BDD Markdown files
 and reports parsing errors. That clears when the temporary BDD files are
 removed at the end. `lint-knip`, the pull request title check and the
 aggregate gates also failed on the previous head and remain open for the
@@ -101,24 +101,30 @@ this checkout's environment and was not used as evidence.
 
 ## Rebuilt in this round
 
-| File                         | Frozen executions | Registered and passed |
-| ---------------------------- | ----------------: | --------------------: |
-| Shared artifact page         |                10 |                     5 |
-| Shared conversation actions  |                 9 |                     5 |
-| Shared artifact deletion     |                11 |                     6 |
-| Shared conversation lightbox |                15 |                     8 |
-| Artifact catalog cards       |                 3 |                     2 |
-| Artifact catalog filters     |                 6 |                     3 |
-| Artifact catalog preview     |                 5 |                     3 |
-| Artifact deletion            |                 5 |                     3 |
-| Artifact catalog sidebar     |                 8 |                     4 |
-| Artifact sharing             |                 7 |                     4 |
+| File                          | Frozen executions | Registered and passed |
+| ----------------------------- | ----------------: | --------------------: |
+| Shared artifact page          |                10 |                     5 |
+| Shared conversation actions   |                 9 |                     5 |
+| Shared artifact deletion      |                11 |                     6 |
+| Shared conversation lightbox  |                15 |                     8 |
+| Artifact catalog cards        |                 3 |                     2 |
+| Artifact catalog filters      |                 6 |                     3 |
+| Artifact catalog preview      |                 5 |                     3 |
+| Artifact deletion             |                 5 |                     3 |
+| Artifact catalog sidebar      |                 8 |                     4 |
+| Artifact sharing              |                 7 |                     4 |
+| Chat artifact image viewer    |                 5 |                     3 |
+| Chat artifact download type   |                 7 |                     4 |
+| Chat artifact diagram overlay |                 3 |                     2 |
+| Chat artifact actions         |                 5 |                     3 |
 
 An independent audit read each file against its frozen BDD before
 acceptance. It found one missing claim: a prompt image attachment must
 not also open a new tab. It also found an unstated download URL check and
 an Escape check that could pass after a delayed close. These were fixed
-before the BDD files were removed. The access page for `shared-artifact-page-007`
+before the BDD files were removed. The four chat artifact files had no
+open findings; an explicit check that the document stays open after the
+first Escape was added before acceptance. The access page for `shared-artifact-page-007`
 registers only the selected 404 row, and its helper no longer accepts
 the unselected 403 status.
 
@@ -127,7 +133,7 @@ the unselected 403 status.
 The [`dd337098` sync](test-rebuild-upstream-sync-dd337098.md) keeps seven
 cleared files deleted and records 187 registrations: 148 unchanged and
 39 with fixture or timing changes. Main added no registrations. The
-shared page helper changed, and all 30 accepted files were rerun on the
+shared page helper changed, and all accepted files were rerun on the
 merged head. The 72 earlier mapping reviews are unchanged. None of them
 belongs to this round's files.
 
@@ -145,6 +151,12 @@ adds:
   avoid counting requests.
 - `shared-artifact-page-007` treats the configured color theme attribute
   as the theme remaining visible. It does not assert system dark mode.
+- `artifact-action-telemetry-004` follows the BDD's signed-out visitor,
+  while the baseline test ran signed in. The fresh download URL therefore
+  comes from the public artifact endpoint.
+- `artifact-image-viewer-003` asserts the product's default 300% maximum
+  zoom, because the test environment reports no layout width.
 
-Next, rebuild `hosted-site-sharing` (40 to 20) and the artifact viewer
-files under `okou-page`, applying the same checklist before acceptance.
+Next, rebuild `hosted-site-sharing` (40 to 20) and the remaining
+artifact files under `okou-page`, applying the same checklist before
+acceptance.
