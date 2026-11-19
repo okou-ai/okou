@@ -29,6 +29,7 @@ use crate::executor::{
     self, ExecutorConfig, RunnerPreSpawnConcurrency, RunnerPreSpawnPhase, RunnerPreSpawnTiming,
 };
 use crate::guest_timezone::GuestTimezoneIntent;
+use crate::home_image_cache::HomeImagePreparePolicy;
 use crate::idle_lifecycle::{IdleDestroyTracker, SharedIdlePool};
 use crate::idle_pool::{ParkingGate, ReusableIdleSandbox};
 use crate::job_lifecycle::{
@@ -68,7 +69,6 @@ pub(super) struct JobProfile {
     pub(super) budget_lease: BudgetLease,
     pub(super) restore_guest_state: bool,
     pub(super) device_rate_limits: Option<sandbox::DeviceRateLimits>,
-    pub(super) home_image_prepare_policy: crate::home_image_cache::HomeImagePreparePolicy,
     pub(super) factory: SharedFactory,
     pub(super) cancellation: RunCancellationRegistration,
 }
@@ -499,16 +499,18 @@ impl DeferredUploadPhase {
 /// the lease until reuse or destruction.
 pub(super) fn spawn_job(
     mut request: SpawnJobRequest,
+    home_image_prepare_policy: HomeImagePreparePolicy,
     ctx: &SpawnContext,
     jobs: &mut JoinSet<JobResult>,
 ) {
     request.pre_spawn_timing.mark_task_enqueued();
     let ctx = ctx.clone();
-    jobs.spawn(async move { Ok(run_job(request, ctx).await) });
+    jobs.spawn(async move { Ok(run_job(request, home_image_prepare_policy, ctx).await) });
 }
 
 pub(super) async fn run_job(
     request: SpawnJobRequest,
+    home_image_prepare_policy: HomeImagePreparePolicy,
     ctx: SpawnContext,
 ) -> RunCancellationRegistration {
     let started_at = Instant::now();
@@ -534,7 +536,6 @@ pub(super) async fn run_job(
     let vcpu = job_profile.vcpu;
     let memory_mb = job_profile.memory_mb;
     let home_disk_mb = job_profile.home_disk_mb;
-    let home_image_prepare_policy = job_profile.home_image_prepare_policy;
     let active_lease = job_profile.budget_lease;
     let profile_name = job_profile.profile_name;
     let factory = job_profile.factory;
