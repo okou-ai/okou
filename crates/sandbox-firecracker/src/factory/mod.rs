@@ -29,7 +29,7 @@ use crate::factory::create_transaction::{
 use crate::factory::leak_cleaner::LeakCleaner;
 use crate::home_drive_image::prepare_home_drive_image;
 use crate::host_cpu_cgroup::HostCpuCgroupManager;
-use crate::network::{NetnsPoolConfig, NetnsPoolHandle};
+use crate::network::NetnsPoolHandle;
 use crate::paths::{FactoryPaths, RuntimePaths, SandboxPaths, SockPaths};
 use crate::prerequisites;
 use crate::runtime_dirs::prepare_runtime_socket_dir;
@@ -62,27 +62,17 @@ pub(crate) struct FirecrackerFactory {
 
 struct StartedFactoryResources {
     netns_pool: NetnsPoolHandle,
-    netns_ownership: NetnsPoolOwnership,
     /// Bounded producer for one-shot COW slots.
     cow_pool: crate::cow_pool::CowPoolHandle,
     /// Owns the channel/task that drains leaked sandbox resources from Drop.
     leak_cleaner: LeakCleaner,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum NetnsPoolOwnership {
-    Owned,
-    Shared,
-}
-
 impl FirecrackerFactory {
-    /// Create a fully initialized factory.
-    ///
-    /// When `netns_pool` is provided, the factory shares it instead of
-    /// creating a new one (used for multi-profile runners).
+    /// Start a factory with a lease handle to the runtime's namespace pool.
     pub(crate) async fn start(
         config: FirecrackerConfig,
-        netns_pool: Option<NetnsPoolHandle>,
+        netns_pool: NetnsPoolHandle,
         device_pool: nbd_cow::pool::DevicePoolHandle,
         host_cpu_cgroup: Option<Arc<HostCpuCgroupManager>>,
         home_drive_pressure: Option<Arc<dyn sandbox::HomeDrivePressurePolicy>>,
@@ -108,45 +98,15 @@ impl FirecrackerFactory {
 
         let factory_paths = FactoryPaths::new(config.base_dir.clone());
         let runtime_paths = RuntimePaths::new();
-        let (netns_pool, netns_ownership) = match netns_pool {
-            Some(netns_pool) => (netns_pool, NetnsPoolOwnership::Shared),
-            None => {
-                let t = std::time::Instant::now();
-                let netns_config = NetnsPoolConfig {
-                    proxy_port: config.proxy_port,
-                    dns_port: config.dns_port,
-                }
-                .into_checked()
-                .await?;
-                let netns_pool = NetnsPoolHandle::create_checked(netns_config)
-                    .await
-                    .map_err(|e| SandboxError::Initialization {
-                        phase: SandboxInitializationPhase::Factory,
-                        message: format!("netns pool: {e}"),
-                    })?;
-                info!(elapsed_ms = duration_ms(t.elapsed()), "netns pool created");
-                (netns_pool, NetnsPoolOwnership::Owned)
-            }
-        };
 
         let rootfs = config.rootfs_path.clone();
-        let base_size = match tokio::fs::metadata(&rootfs).await {
-            Ok(metadata) => metadata.len(),
-            Err(error) => {
-                if netns_ownership == NetnsPoolOwnership::Owned
-                    && let Err(cleanup_error) = netns_pool.cleanup().await
-                {
-                    warn!(
-                        error = %cleanup_error,
-                        "failed to cleanup owned netns pool after factory initialization failure"
-                    );
-                }
-                return Err(SandboxError::Initialization {
-                    phase: SandboxInitializationPhase::Factory,
-                    message: format!("base image metadata: {error}"),
-                });
-            }
-        };
+        let base_size = tokio::fs::metadata(&rootfs)
+            .await
+            .map_err(|error| SandboxError::Initialization {
+                phase: SandboxInitializationPhase::Factory,
+                message: format!("base image metadata: {error}"),
+            })?
+            .len();
 
         info!(
             rootfs = %rootfs.display(),
@@ -187,7 +147,6 @@ impl FirecrackerFactory {
             cleanup_group,
             resources: Some(StartedFactoryResources {
                 netns_pool,
-                netns_ownership,
                 cow_pool,
                 leak_cleaner,
             }),
@@ -540,28 +499,16 @@ impl SandboxFactory for FirecrackerFactory {
         };
         let StartedFactoryResources {
             netns_pool,
-            netns_ownership,
             cow_pool,
             leak_cleaner,
-            ..
         } = resources;
-        self.shutdown_netns_pool = Some(netns_pool.clone());
+        self.shutdown_netns_pool = Some(netns_pool);
 
-        // Close the leak channel and let the drain task finish queued cleanup
-        // before we unwrap the shared pool Arcs below.
+        // Drain queued leak cleanup before retiring the COW pool.
         leak_cleaner.shutdown().await;
 
         // Clean up COW pool (delete pre-warmed COW files).
         cow_pool.cleanup().await;
-
-        // Direct factories own their netns pool and must clean it up even when
-        // detached destroy tasks still hold Arc clones. Shared runtime pools are
-        // cleaned up by FirecrackerRuntime::shutdown().
-        if netns_ownership == NetnsPoolOwnership::Owned
-            && let Err(e) = netns_pool.cleanup().await
-        {
-            warn!(error = %e, "failed to cleanup owned netns pool");
-        }
 
         info!("factory shutdown complete");
     }
