@@ -69,6 +69,6 @@ met.
 
 ## Latest tally
 
-See [input takeover and hosted-site recovery screening](test-rebuild-batch-input-and-site-recovery.md)
-for the current count of 61 confirmed frozen deductions and the remaining
-1,473-row gap. Earlier figures are batch checkpoints.
+See [authorization, subscription and recovery screening](test-rebuild-batch-authorization-feedback.md)
+for the current count of 64 confirmed frozen deductions and the remaining
+1,470-row gap. Earlier figures are batch checkpoints.
