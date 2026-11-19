@@ -7,6 +7,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
+use bytes::Bytes;
 use guest_control_proto::{
     self, BorrowedRawMessage, MSG_EXEC_CANCEL, MSG_EXEC_CONTROL, MSG_EXEC_START,
     MSG_FILE_WRITE_STATUS, MSG_FILE_WRITE_STATUS_RESULT, MSG_GUEST_DNS_READINESS,
@@ -283,7 +284,7 @@ impl ConnectionDispatcher {
             MSG_GUEST_DNS_READINESS => self.handle_guest_dns_readiness(msg)?,
             MSG_GUEST_STATE_RESTORE => self.handle_guest_state_restore(msg)?,
             MSG_GUEST_STORAGE_MANIFEST | guest_control_proto::MSG_GUEST_AGENT_INSTRUCTIONS => {
-                self.handle_guest_storage_manifest(msg)?
+                self.handle_guest_storage_manifest(msg, Bytes::copy_from_slice)?
             }
             MSG_HOME_DRIVE_MOUNT => self.handle_home_drive_mount(msg)?,
             MSG_QUIESCE_OPERATIONS => self.handle_quiesce_operations(msg)?,
@@ -561,7 +562,22 @@ impl ConnectionDispatcher {
         }
     }
 
-    fn handle_guest_storage_manifest(&self, msg: BorrowedRawMessage<'_>) -> io::Result<()> {
+    #[cfg(target_os = "linux")]
+    pub(super) fn dispatch_owned_storage(&self, seq: u32, payload: Bytes) -> io::Result<()> {
+        let msg = BorrowedRawMessage {
+            msg_type: MSG_GUEST_STORAGE_MANIFEST,
+            seq,
+            payload: &payload,
+        };
+        // The decoded manifest input is a subslice of this same payload.
+        self.handle_guest_storage_manifest(msg, |manifest| payload.slice_ref(manifest))
+    }
+
+    fn handle_guest_storage_manifest(
+        &self,
+        msg: BorrowedRawMessage<'_>,
+        retain_manifest: impl FnOnce(&[u8]) -> Bytes,
+    ) -> io::Result<()> {
         if !require_non_zero_sequence(msg.seq, "guest storage manifest", &self.writer)? {
             return Ok(());
         }
@@ -604,6 +620,7 @@ impl ConnectionDispatcher {
                 runtime_dir: decoded.runtime_dir,
                 manifest_json: decoded.manifest_json,
             },
+            retain_manifest,
             operation_guard,
             admission,
         ) {

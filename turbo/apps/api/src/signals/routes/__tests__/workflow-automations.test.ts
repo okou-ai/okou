@@ -4297,7 +4297,7 @@ describe("okou workflow automations", () => {
       }),
       [201],
     );
-    expect(created.body.chatThreadId).toBeNull();
+    expect(created.body).toMatchObject({ chatThreadId: null, enabled: true });
 
     const run = await runAutomationNow(created.body.id);
 
@@ -4325,9 +4325,12 @@ describe("okou workflow automations", () => {
     expect(execution.appendSystemPrompt).toContain("# Agent Identity");
 
     const automation = await wf.readAutomation(created.body.id);
-    expect(automation.chatThreadId).toBe(threadId);
+    expect(automation).toMatchObject({
+      chatThreadId: threadId,
+      enabled: false,
+      nextRunAt: created.body.nextRunAt,
+    });
     expect(typeof automation.lastRunAt).toBe("string");
-    expect(automation.nextRunAt).toBe(created.body.nextRunAt);
 
     // The run landed in the bound thread as the workflow slash-command user
     // message, linked to the created run id.

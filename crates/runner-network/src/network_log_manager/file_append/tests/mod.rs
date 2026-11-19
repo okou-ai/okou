@@ -73,6 +73,7 @@ fn write_lines_vectored_returns_write_zero() {
     let error = write_lines_vectored(&mut writer, lines.into_iter()).unwrap_err();
 
     assert_eq!(error.kind(), io::ErrorKind::WriteZero);
+    assert_eq!(error.to_string(), "failed to write network log batch");
     assert!(writer.bytes.is_empty());
 }
 

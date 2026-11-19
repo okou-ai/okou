@@ -101,6 +101,23 @@ The configured `storageId` values remain only as fixed hash namespaces for the
 existing opaque version-ID algorithm and verified bundle format. They do not
 resolve a Storage entity or bind archive lifetime to a Storage row.
 
+## Historical archive recovery
+
+Use authorized read-only access to find the exact `(resource_id, sha256)` in
+`registry_resource_archives` and record its `version_id`, `archive_bytes`,
+`file_count`, and `total_bytes`. Retrieve `registry-archives/v1/<sha256>.tar.gz`
+using private-bucket read access. Verify SHA-256 on the original compressed
+bytes and check the recorded size and file metadata. The Registry download API
+serves compiled pinned digests and current presentation HEADs.
+
+If an object or index row is missing, recover its original bytes and opaque
+version ID from an independently verified copy and its publication receipt.
+For the initial backfill, retain the audited legacy copies until a replacement
+recovery copy is verified. Later publication artifacts can supply the original
+bytes within their CI retention window. Rehearse recovery in an isolated bucket
+and database, leaving the current HEAD in place. Track recovery copies and
+retention before legacy data cleanup in [#45716](https://github.com/okou-ai/okou/issues/45716).
+
 ## Reader and rollback gate
 
 The first independent-only publication requires all of these checks:

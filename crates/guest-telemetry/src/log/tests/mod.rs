@@ -288,6 +288,7 @@ fn write_line_with_newline_errors_on_write_zero() {
     let error = write_line_with_newline(&mut writer, "line").unwrap_err();
 
     assert_eq!(error.kind(), io::ErrorKind::WriteZero);
+    assert_eq!(error.to_string(), "failed to write system log line");
     assert!(writer.output.is_empty());
 }
 

@@ -88,7 +88,6 @@ export type ApiDispatchTimingActionType =
   | "api_dispatch_enqueue_commit_to_consume_start"
   | "api_dispatch_request_received_to_enqueue_commit"
   | "api_dispatch_pre_create_agent_workflow_automation_resolve_model_context"
-  | "api_dispatch_pre_create_agent_workflow_automation_create_run"
   | "api_dispatch_pre_create_agent_automation_event_background_start_gap"
   | "api_dispatch_pre_create_agent_automation_event_load_source_state"
   | "api_dispatch_pre_create_agent_automation_event_load_external_events"

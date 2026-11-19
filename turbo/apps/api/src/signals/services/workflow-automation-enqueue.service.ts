@@ -46,9 +46,6 @@ export interface DueWorkflowAutomation {
   // longer carry an agentId column, so callers resolve it and pass it here.
   readonly agentId: string;
   readonly chatThreadId: string;
-  // One-time schedule automations are disabled as part of the optimistic claim.
-  // That claimed row can still proceed through the run-start readability gate.
-  readonly allowClaimedOnceScheduleAutomation?: boolean;
 }
 
 export type RunWorkflowAutomationResult = {
