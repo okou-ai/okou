@@ -82,9 +82,15 @@ def ssh(arguments):
                 / request["inputs"]["jobRef"]
                 / "gate"
             )
-            wait_for(
-                lambda: any(p.resolve() == gate for p in Path(f"/proc/{process.pid}/fd").iterdir())
-            )
+
+            def gate_opened():
+                for descriptor in Path(f"/proc/{process.pid}/fd").iterdir():
+                    with contextlib.suppress(FileNotFoundError, ProcessLookupError):
+                        if descriptor.readlink() == gate:
+                            return True
+                return False
+
+            wait_for(gate_opened)
             if once():
                 record("detached-servers", process.pid)
                 detached = True

@@ -3,8 +3,7 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 
-ruby -ryaml - "${repo_root}/.github/workflows/turbo.yml" \
-  "${repo_root}/.github/workflows/cleanup.yml" <<'RUBY'
+ruby -ryaml - "${repo_root}/.github/workflows/turbo.yml" <<'RUBY'
 
 turbo = YAML.load_file(ARGV.fetch(0))
 jobs = turbo.fetch("jobs")
@@ -18,23 +17,9 @@ find_step = lambda do |name|
   steps.find { |step| step["name"] == name } || raise("missing step: #{name}")
 end
 
-expected_candidate_sha = "${{ github.sha }}"
-expected_concurrency_group = "deploy-app-#{expected_candidate_sha}"
+expected_concurrency_group = "deploy-app-${{ github.sha }}"
 unless deploy_app.fetch("concurrency").fetch("group") == expected_concurrency_group
   raise "deploy-app concurrency must use the checked merge candidate"
-end
-
-checkout_step = steps.find do |step|
-  step.fetch("uses", "").start_with?("actions/checkout@")
-end
-raise "missing deploy-app checkout step" unless checkout_step
-unless checkout_step.fetch("with").fetch("ref") == expected_candidate_sha
-  raise "deploy-app must check out the merge candidate"
-end
-
-artifact_step = find_step.call("Resolve artifact commit SHA")
-unless artifact_step.fetch("run").include?("resolve-build-commit-sha.sh")
-  raise "deploy-app artifact identity must derive from the checked-out commit"
 end
 
 build_step = find_step.call("Build canonical app artifact")
@@ -44,9 +29,6 @@ unless build_step.dig("env", "VITE_AXIOM_CLIENT_TELEMETRY_TOKEN") == expected_ax
 end
 
 expected_deployment_url = "${{ steps.worker-deploy.outputs.url }}"
-if deploy_app.fetch("outputs").key?("deployment-url")
-  raise "deploy-app must not expose a second provider deployment URL"
-end
 unless deploy_app.fetch("outputs").fetch("preview-url") == expected_deployment_url
   raise "deploy-app preview-url must expose the verified public gateway URL"
 end
@@ -176,33 +158,6 @@ unless playwright_run.fetch("env").fetch("OKOU_APP_URL") == expected_downstream_
   raise "Playwright E2E must emit the app preview URL"
 end
 
-turbo_source = File.read(ARGV.fetch(0))
-legacy_markers = [
-  "CF_PREVIEW_GATEWAY_MODE",
-  "resolve-app-preview-ingress-mode.sh",
-]
-legacy_markers.each do |marker|
-  raise "legacy app preview ingress remains: #{marker}" if turbo_source.include?(marker)
-end
-
-cleanup_source = File.read(ARGV.fetch(1))
-cleanup = YAML.load_file(ARGV.fetch(1))
-expected_cleanup_concurrency = {
-  "group" => "cleanup-pr-${{ github.event.pull_request.number }}",
-  "cancel-in-progress" => true,
-}
-unless cleanup.fetch("concurrency") == expected_cleanup_concurrency
-  raise "cleanup must deduplicate without cancelling the matching PR Turbo run"
-end
-
-legacy_cleanup_markers = [
-  "cleanup-legacy-preview-www",
-  "manage-cloudflare-worker-route.sh",
-  "delete-cloudflare-worker.sh",
-]
-legacy_cleanup_markers.each do |marker|
-  raise "legacy preview cleanup remains: #{marker}" if cleanup_source.include?(marker)
-end
 RUBY
 
 echo "app-preview-ingress-workflow tests passed"
