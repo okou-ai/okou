@@ -491,6 +491,9 @@ for integration_environment in preview production; do
         canonical "$integration_repo_vars" "$integration_repo_secrets" 2>&1
     )"
     integration_env_file="$(awk -F= '$1 == "file" { sub(/^[^=]*=/, ""); print }' "${integration_dir}/github-output")"
+    if [[ ! -f "$integration_env_file" || ! -r "$integration_env_file" || ! -s "$integration_env_file" ]]; then
+      fail "expected a readable, nonempty rendered environment for ${integration_app}/${integration_environment}"
+    fi
     assert_no_fixture_secret_values "$integration_output"
     assert_env_absent_value "$integration_env_file" "github-conflicting-integration"
     if [[ "$integration_app" == api ]]; then
