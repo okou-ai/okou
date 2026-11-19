@@ -12,6 +12,7 @@ import json
 import os
 import platform
 import re
+import selectors
 import shutil
 import signal
 import stat
@@ -219,15 +220,19 @@ def run_vm(command, log_path, receipt, timeout=35):
             )
             receipt["vmmPid"] = process.pid
             receipt["cleanup"] = "vmm_running"
-            # Pending cancellation can run only after Popen is owned. The exec
-            # wrapper restores the child's original mask independently.
-            signal.pthread_sigmask(signal.SIG_SETMASK, original_mask)
-            try:
-                process.wait(timeout=timeout)
-            except subprocess.TimeoutExpired as error:
-                raise TimeoutError(
-                    "owned Firecracker exceeded native deadline"
-                ) from error
+            # Wait for exit outside Popen so cancellation cannot interrupt its
+            # internal wait lock. Reap with cancellation signals blocked.
+            with selectors.DefaultSelector() as selector:
+                pidfd = os.pidfd_open(process.pid)
+                try:
+                    selector.register(pidfd, selectors.EVENT_READ)
+                    signal.pthread_sigmask(signal.SIG_SETMASK, original_mask)
+                    if not selector.select(timeout):
+                        raise TimeoutError("owned Firecracker exceeded native deadline")
+                finally:
+                    signal.pthread_sigmask(signal.SIG_BLOCK, interrupts)
+                    os.close(pidfd)
+            process.wait()
             if process.returncode:
                 raise ValueError(
                     f"owned Firecracker failed with exit {process.returncode}"
