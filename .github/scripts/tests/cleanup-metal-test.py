@@ -700,6 +700,24 @@ class CleanupTests(unittest.TestCase):
         self.assertEqual(payload["42"]["outcome"], "cleaned")
         self.assertEqual(precious.read_text(), "keep")
 
+    def test_unsafe_image_admission_path_fails_only_its_namespace(self):
+        target = self.root / "external-image"
+        target.mkdir()
+        marker = target / (".image-owner-" + "a" * 64)
+        marker.touch()
+        root = self.root / "metal-a/var/lib/vm0-runner/bin"
+        root.mkdir(parents=True)
+        (root / "pr-42-image-1234").symlink_to(target, target_is_directory=True)
+        sibling = self.resource("var/lib/vm0-runner/stripe/pr-43/config")
+
+        result, payload = self.worker("cleanup", 42, 43)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(payload["42"]["outcome"], "failed")
+        self.assertIn("resource ancestor is a symlink", payload["42"]["error"])
+        self.assertTrue(marker.is_file())
+        self.assertEqual(payload["43"]["outcome"], "cleaned")
+        self.assertFalse(sibling.exists())
+
     @unittest.skipIf(os.getuid() == 0, "requires normal filesystem permissions")
     def test_permission_failure_keeps_resource_and_other_pr_progresses(self):
         unit = self.resource("etc/systemd/system/vm0-runner-pr-42-api.service")

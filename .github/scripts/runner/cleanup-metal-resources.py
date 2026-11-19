@@ -30,6 +30,8 @@ UNIT = re.compile(
     r"|vm0-ci-image-pr-([1-9][0-9]*)-[a-f0-9]{64})\.service$"
 )
 IMAGE_UNIT = re.compile(r"^vm0-ci-image-([a-f0-9]{64})\.service$")
+IMAGE_DIRECTORY = re.compile(r"pr-([1-9][0-9]*)-image-[1-9][0-9]*")
+IMAGE_OWNER_MARKER = re.compile(r"\.image-owner-[a-f0-9]{64}")
 NAMESPACE = re.compile(r"(?:^|-)pr-([1-9][0-9]*)(?:-|$)")
 PROPERTIES = (
     "Id",
@@ -41,8 +43,9 @@ PROPERTIES = (
     "FragmentPath",
 )
 UNIT_ROOTS = ("/etc/systemd/system", "/run/systemd/system", "/run/systemd/transient")
+BIN_ROOT = "/var/lib/vm0-runner/bin"
 DATA_ROOTS = (
-    "/var/lib/vm0-runner/bin",
+    BIN_ROOT,
     "/var/lib/vm0-runner/runners",
     "/var/lib/vm0-runner/groups/vm0",
     "/var/lib/vm0-runner/stripe",
@@ -271,15 +274,16 @@ class Host:
             ] = paths
         return resources
 
-    def remove(self, path):
-        path = Path(path)
-        # Paths originate only in the bounded inventory. Reject symlinked
-        # ancestors even if a concurrent native caller changed one after scan.
-        for parent in path.parents:
+    def check_resource_ancestors(self, directory):
+        for parent in (directory, *directory.parents):
             if parent == self.root:
                 break
             if parent.is_symlink():
                 raise RuntimeError(f"resource ancestor is a symlink: {parent}")
+
+    def remove(self, path):
+        path = Path(path)
+        self.check_resource_ancestors(path.parent)
         try:
             if path.is_symlink() or not path.is_dir():
                 path.unlink()
@@ -306,10 +310,38 @@ class Host:
                     time.sleep(0.1)
             yield
 
-    def cleanup(self, selected):
-        before = self.inventory(selected)
+    def revoke_image_admission(self, selected):
+        # The session holds these namespace locks. Older image workers check
+        # the marker after acquiring the same lock, without reading the cutoff.
+        try:
+            self.check_resource_ancestors(self.path(BIN_ROOT))
+            entries = self.entries(BIN_ROOT)
+        except (OSError, RuntimeError) as error:
+            return {pr: {"outcome": "failed", "error": str(error)} for pr in selected}
+
         outcomes = {}
+        for directory in entries:
+            match = IMAGE_DIRECTORY.fullmatch(directory.name)
+            if not match or (pr := int(match[1])) not in selected:
+                continue
+            try:
+                self.check_resource_ancestors(directory)
+                if directory.is_dir():
+                    for marker in directory.iterdir():
+                        if IMAGE_OWNER_MARKER.fullmatch(marker.name):
+                            marker.unlink(missing_ok=True)
+            except (OSError, RuntimeError) as error:
+                outcomes.setdefault(pr, {"outcome": "failed", "error": str(error)})
+        return outcomes
+
+    def cleanup(self, selected):
+        # Revoke admission even if a later inventory or bulk teardown fails.
         command_errors = {pr: [] for pr in selected}
+        outcomes = self.revoke_image_admission(selected)
+        selected = [pr for pr in selected if pr not in outcomes]
+        if not selected:
+            return outcomes
+        before = self.inventory(selected)
         dirty = False
 
         def teardown(pr, operation, *args):

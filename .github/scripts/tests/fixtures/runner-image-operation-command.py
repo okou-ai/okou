@@ -175,6 +175,23 @@ def systemd_run(arguments):
             wait_for(lambda: (ROOT / "release-launch").exists())
         return 0  # Record the real retention contract without waiting one hour.
     command = arguments[arguments.index("/usr/bin/python3") :]
+    if os.environ.get("IMAGE_PRE_CLOSURE_WORKER") == "1":
+        # Model the shipped worker that checks its marker but not the cutoff.
+        command = [
+            sys.executable,
+            "-c",
+            """import os, runpy, sys
+from pathlib import Path
+worker = runpy.run_path(sys.argv[1])["worker"]
+worker.__globals__["check_closure"] = lambda *_: None
+try:
+    worker(sys.argv[2])
+finally:
+    (Path(os.environ["IMAGE_FIXTURE"]) / "legacy-worker-finished").touch()
+""",
+            command[1],
+            command[3],
+        ]
     if MODE == "absent-launch":
         return 1
     if MODE == "launch-timeout-without-unit":
