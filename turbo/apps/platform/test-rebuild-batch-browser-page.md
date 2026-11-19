@@ -60,3 +60,26 @@ on initial page open. The current GET performs combined native acquisition,
 and keep-alive mounts only after an active presentation is loaded. An initial
 authorization denial cannot currently construct either pending-lease Given
 through the standalone route.
+
+## Overlapping renewals and navigation
+
+- `023` holds native membership checks across two authority scopes. It
+  observes the first blocked hint, then verifies that the second attempt
+  shows a new hint only until its check completes. No navigation reaches CDP.
+- `035` holds both lease responses and proves that the renewed grant starts
+  renewing before the older lease completes. Its own denied renewal removes
+  input. `036` releases an older denial during the new socket's load and
+  verifies that the renewed viewer streams. `037` restores the viewer after
+  delivering revoke and grant events together against a cached enabled grant.
+- `053` holds a late renewal during native instance replacement and confirms
+  the later viewer renews, accepts address editing and records one heartbeat
+  failure. `055` observes the old request's abort signal when the Router
+  switches chats and verifies that subsequent renewal requests use the new ID.
+
+Twenty-five expanded rows match twenty-five selected IDs. The BDD stays for
+`024`, `025` and `034`. An in-place same-window reload in `034` preserves
+the mounted active panel and its keep-alive ref. The lease loop awaits the
+active HTTP round before requesting another lease. The frozen ordering, with
+the new lease already pending when the old one returns its denial, requires
+a refresh that starts a second renewal owner. The grant-change and route
+replacement cases above provide such a boundary and are tracked separately.

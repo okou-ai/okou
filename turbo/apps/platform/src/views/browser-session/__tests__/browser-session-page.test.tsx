@@ -22,6 +22,7 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 import { openQualityInput } from "./browser-settings-test-helpers.ts";
 import {
+  cachedChatListEvents,
   chatListEvent,
   chatListThread,
   installChatListStream,
@@ -766,10 +767,12 @@ async function openViewerWithRenewal(
         },
       });
     }
-    if (renewals > 2) {
+    if (renewals === 2) {
+      retryStarted.resolve();
+    }
+    if (renewals === 3) {
       renewed.resolve();
     }
-    retryStarted.resolve();
     await retry.promise;
     expired = outcome !== "continue";
     if (outcome === "missing") {
@@ -871,7 +874,9 @@ test("Switch to the reopened native window and keep renewing its viewer", async 
       await firstRenewal.promise;
       return respond(200, { browser: viewer.browser });
     }
-    replacementRenewal.resolve();
+    if (renewals === 2) {
+      replacementRenewal.resolve();
+    }
     return respond(200, { browser: viewer.browser });
   });
 
@@ -945,4 +950,333 @@ test("Search from the address field after restarting a browser used with an IME"
       "https://www.google.com/search?q=annual+report",
     );
   });
+});
+
+const BLOCKED_BROWSER = "Cloud browser is not enabled for this chat";
+
+async function openViewerWithRevocableLease() {
+  const caseId = 794;
+  const thread = chatListThread(1, "Browser conversation", {
+    cloudBrowserEnabled: true,
+  });
+  const viewer = viewerConnection(thread.id);
+  const source = installChatListStream(context, { caseId, snapshot: [thread] });
+  const cdp = mockBrowserCdp(context, viewer.cdpUrl, {
+    targets: [
+      {
+        targetId: "example-page",
+        title: "Example",
+        url: "https://example.com",
+        windowId: 1,
+      },
+    ],
+  });
+  const denied = {
+    error: { code: "BROWSER_AUTHORIZATION_REQUIRED", message: BLOCKED_BROWSER },
+  };
+  const firstStarted = context.mocks.deferred<void>();
+  const denyFirst = context.mocks.deferred<void>();
+  const laterStarted = context.mocks.deferred<void>();
+  const denyLater = context.mocks.deferred<boolean>();
+  let renewals = 0;
+  let granted = true;
+  let sequence = 2;
+  const events: ReturnType<typeof chatListEvent>[] = [];
+
+  context.mocks.api(browserContract.get, ({ respond }) => {
+    return granted
+      ? respond(200, { browser: viewer.browser, viewer })
+      : respond(403, denied);
+  });
+  context.mocks.api(browserContract.leaseByThread, async ({ respond }) => {
+    renewals += 1;
+    if (renewals === 1) {
+      firstStarted.resolve();
+      await denyFirst.promise;
+      return respond(403, denied);
+    }
+    if (renewals === 2) {
+      laterStarted.resolve();
+    }
+    return (await denyLater.promise)
+      ? respond(403, denied)
+      : respond(200, { browser: viewer.browser });
+  });
+  await setupPage({
+    context,
+    path: `/browsers/${thread.id}`,
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.CloudBrowserPanel]: true },
+    cachedChatThreadEvents: cachedChatListEvents(caseId, [thread]),
+  });
+  await firstStarted.promise;
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+
+  return {
+    cdp,
+    denyFirst,
+    denyLater,
+    laterStarted,
+    access(...updates: boolean[]) {
+      for (const enabled of updates) {
+        granted = enabled;
+        events.push(
+          chatListEvent(
+            caseId,
+            sequence++,
+            "computer_use_host_updated",
+            thread.id,
+            {
+              computerUseHostId: null,
+              cloudBrowserEnabled: enabled,
+            },
+          ),
+        );
+      }
+      source.setEvents(events);
+      changeChatThreadList();
+    },
+  };
+}
+
+test("Renew a fresh grant while the previous lease is still pending", async () => {
+  const setup = await openViewerWithRevocableLease();
+  setup.access(false);
+  await expect(screen.findByText(BLOCKED_BROWSER)).resolves.toBeInTheDocument();
+  setup.access(true);
+
+  await setup.laterStarted.promise;
+  setup.denyLater.resolve(true);
+
+  await waitFor(() => {
+    expect(screen.getByText(BLOCKED_BROWSER)).toBeInTheDocument();
+    expect(
+      screen.queryByLabelText("Remote browser input"),
+    ).not.toBeInTheDocument();
+  });
+});
+
+test("Keep a renewed grant streaming when the superseded lease is denied", async () => {
+  const setup = await openViewerWithRevocableLease();
+  const oldConnections = setup.cdp.connections();
+  setup.access(false);
+  await expect(screen.findByText(BLOCKED_BROWSER)).resolves.toBeInTheDocument();
+  setup.cdp.setAutoOpen(false);
+  setup.access(true);
+  await waitFor(() => {
+    expect(setup.cdp.connections()).toBeGreaterThan(oldConnections);
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  });
+  setup.denyFirst.resolve();
+  setup.cdp.openConnection();
+
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    expect(screen.queryByText(BLOCKED_BROWSER)).not.toBeInTheDocument();
+  });
+});
+
+test("Clear a denied lease after a batched revoke and grant", async () => {
+  const setup = await openViewerWithRevocableLease();
+  setup.denyFirst.resolve();
+  await waitFor(() => {
+    expect(screen.getByText(BLOCKED_BROWSER)).toBeInTheDocument();
+    expect(
+      screen.queryByLabelText("Remote browser input"),
+    ).not.toBeInTheDocument();
+  });
+
+  setup.access(false, true);
+
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    expect(screen.queryByText(BLOCKED_BROWSER)).not.toBeInTheDocument();
+  });
+});
+
+async function openViewerWithOldRenewalPending() {
+  const initial = viewerConnection();
+  const previous = {
+    ...initial,
+    browser: {
+      ...initial.browser,
+      window: { ...initial.browser.window, primaryWindowId: 0 },
+    },
+  };
+  let active = previous;
+  const cdp = mockBrowserCdp(context, previous.cdpUrl, {
+    targets: [
+      {
+        targetId: "first-window",
+        title: "Current chat",
+        url: "https://example.com",
+        windowId: 0,
+      },
+      {
+        targetId: "other-window",
+        title: "Other chat",
+        url: "https://other.example.com",
+        windowId: 1,
+      },
+    ],
+  });
+  const failure = context.mocks.deferred<void>();
+  const oldRenewal = context.mocks.deferred<Request>();
+  const releaseOld = context.mocks.deferred<void>();
+  const renewed = context.mocks.deferred<void>();
+  const requests: string[] = [];
+  const logged = heartbeatErrors();
+
+  context.mocks.api(browserContract.get, ({ params, respond }) => {
+    const browser = { ...active.browser, threadId: params.threadId };
+    return respond(200, { browser, viewer: { ...active, browser } });
+  });
+  context.mocks.api(
+    browserContract.leaseByThread,
+    async ({ request, params, respond }) => {
+      const thread = params.threadId;
+      requests.push(thread);
+      if (requests.length === 1) {
+        await failure.promise;
+        return respond(503, {
+          error: {
+            code: "BROWSER_UNAVAILABLE",
+            message: "Temporary browser service outage",
+          },
+        });
+      }
+      if (requests.length === 2) {
+        oldRenewal.resolve(request);
+        await releaseOld.promise;
+        return respond(200, { browser: previous.browser });
+      }
+      if (requests.length === 3) {
+        renewed.resolve();
+      }
+      return respond(200, { browser: { ...active.browser, threadId: thread } });
+    },
+  );
+
+  await openBrowserPage();
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    expect(
+      context.mocks.ably.hasSubscription("browserSessionChanged"),
+    ).toBeTruthy();
+  });
+  failure.resolve();
+  const pending = await oldRenewal.promise;
+  return {
+    cdp,
+    pending,
+    releaseOld,
+    renewed,
+    requests,
+    logged,
+    switchInstance() {
+      active = {
+        ...previous,
+        browser: {
+          ...previous.browser,
+          window: {
+            ...previous.browser.window,
+            instanceId: "a0000000-0000-4000-a000-000000000349",
+          },
+        },
+      };
+      cdp.setAutoOpen(false);
+      context.mocks.ably.trigger("browserSessionChanged", {
+        threadId: THREAD_ID,
+      });
+    },
+    navigate(threadId: string) {
+      active = viewerConnection(threadId);
+      window.history.pushState({}, "", `/browsers/${threadId}`);
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    },
+  };
+}
+
+test("Keep the replacement instance live when an older renewal arrives late", async () => {
+  const setup = await openViewerWithOldRenewalPending();
+  const connections = setup.cdp.connections();
+
+  setup.switchInstance();
+  await waitFor(() => {
+    expect(setup.cdp.connections()).toBeGreaterThan(connections);
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  });
+  setup.releaseOld.resolve();
+  setup.cdp.openConnection();
+  await setup.renewed.promise;
+
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  const address = screen.getByLabelText("Address");
+  await fill(address, "https://example.comx");
+  expect(address).toHaveValue("https://example.comx");
+  expect(
+    setup.logged().map((entry) => {
+      return entry[2];
+    }),
+  ).toStrictEqual([{ threadId: THREAD_ID, status: 503 }]);
+});
+
+test("Cancel the old heartbeat on navigation and renew only the new chat", async () => {
+  const setup = await openViewerWithOldRenewalPending();
+  const nextThread = "a0000000-0000-4000-a000-000000000350";
+
+  setup.navigate(nextThread);
+  await waitFor(() => {
+    expect(setup.pending.signal.aborted).toBeTruthy();
+    expect(viewerControl("tab", "Other chat")).toBeInTheDocument();
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  setup.releaseOld.resolve();
+  await setup.renewed.promise;
+  expect(setup.requests.slice(0, 3)).toStrictEqual([
+    THREAD_ID,
+    THREAD_ID,
+    nextThread,
+  ]);
+  expect(
+    setup.requests.slice(2).every((thread) => {
+      return thread === nextThread;
+    }),
+  ).toBeTruthy();
+});
+
+test("Discard the old blocked address hint when chat authorization renews", async () => {
+  const setup = await openViewerWithRevocableLease();
+  const hint = "The browser is not ready. Try again shortly.";
+  const earlierMembership = setup.cdp.holdNextMembership("example-page");
+  setup.access(true);
+  await earlierMembership.received;
+  const earlierAddress = screen.getByLabelText("Address");
+  await fill(earlierAddress, "https://old-address.example.test");
+  fireEvent.keyDown(earlierAddress, { key: "Enter" });
+  await expect(screen.findByText(hint)).resolves.toBeInTheDocument();
+
+  const membership = setup.cdp.holdNextMembership("example-page");
+  setup.access(true);
+  await membership.received;
+  await earlierMembership.release();
+  expect(screen.queryByText(hint)).not.toBeInTheDocument();
+  const address = screen.getByLabelText("Address");
+  await fill(address, "https://new-address.example.test");
+  fireEvent.keyDown(address, { key: "Enter" });
+  await expect(screen.findByText(hint)).resolves.toBeInTheDocument();
+
+  await membership.release();
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    expect(screen.queryByText(hint)).not.toBeInTheDocument();
+  });
+  expect(setup.cdp.targets[0]?.url).toBe("https://example.com");
+  expect(setup.cdp.requests).not.toContainEqual(
+    expect.objectContaining({ method: "Page.navigate" }),
+  );
 });
