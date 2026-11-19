@@ -27,11 +27,13 @@ export const builtInSkills = pgTable(
     // The cutover migration activates the complete catalog together.
     authoritative: boolean("authoritative").default(false).notNull(),
   },
-  (table) => [
-    check(
-      "built_in_skills_bundle_version_check",
-      sql`${table.versionHash} ~ '^[0-9a-f]{64}$'
+  (table) => {
+    return [
+      check(
+        "built_in_skills_bundle_version_check",
+        sql`${table.versionHash} ~ '^[0-9a-f]{64}$'
         AND ${table.contentBundleSourceVersionHash} = ${table.versionHash}`,
-    ),
-  ],
+      ),
+    ];
+  },
 );
