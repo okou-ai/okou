@@ -50,6 +50,17 @@ seven previously confirmed harness rows, the cumulative confirmed net
 reduction is 12 of 5,111 rows (0.23%), leaving 1,522 needed. No upstream
 addition is counted in that reduction.
 
+## Browser address submission
+
+[The address matrix review](test-rebuild-address-matrix.tsv) maps all 82
+rows to source registrations and behavior families. Compare the fixtures
+and expected destinations against addressSubmission and its normalization,
+navigation-intent and completion branches. Ordinary Enter and Ctrl+Enter
+are different public triggers. The host-length boundary, Unicode query
+encoding, composition, and paste filtering carry distinct guarantees.
+Some same-family variants still need a narrower branch comparison. No
+row from this matrix contributes to the cumulative deduction yet.
+
 Continue source-backed screening by module. Prioritize large address
 submission, browser viewer and remote access matrices. Review fixtures
 and product branches before grouping parameter rows. Keep the automation
