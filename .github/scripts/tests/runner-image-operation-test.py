@@ -266,6 +266,52 @@ class ImageOperationTest(unittest.TestCase):
         self.assertEqual(self.records("executions"), [])
         self.assertFalse(self.result.exists())
 
+    def test_failed_teardown_revokes_admission_for_detached_older_worker(self):
+        self.invoke("claim")
+        binary_root = self.root / "var/lib/vm0-runner/bin"
+        directory = binary_root / "pr-123-image-1234"
+        marker = next(directory.glob(".image-owner-*"))
+        sibling = binary_root / "pr-1234-image-1234"
+        sibling.mkdir()
+        sibling_marker = sibling / (".image-owner-" + "a" * 64)
+        sibling_marker.touch()
+
+        # Inventory can see this unit, but teardown cannot delete it through
+        # the symlinked ancestor. The image runner directory stays in place.
+        etc = self.root / "alternate-etc"
+        systemd = etc / "systemd/system"
+        systemd.mkdir(parents=True)
+        (systemd / "vm0-runner-pr-123.service").touch()
+        (self.root / "etc").symlink_to(etc, target_is_directory=True)
+
+        with self.image_call(
+            "run",
+            "build",
+            str(self.result),
+            environment=dict(
+                self.environment,
+                IMAGE_FAULT="pending-launch",
+                IMAGE_PRE_CLOSURE_WORKER="1",
+            ),
+        ) as launch:
+            try:
+                self.wait_for(lambda: bool(self.records("detached-servers")))
+                launch.kill()
+                self.assertEqual(launch.wait(timeout=5), -signal.SIGKILL)
+                with self.cleanup_session() as cleanup:
+                    self.assertEqual(self.cleanup_reply(cleanup), {"ready": [123]})
+                    result = self.clean_namespace(cleanup)
+                    self.assertEqual(result["outcome"], "failed")
+                    self.assertIn("resource ancestor is a symlink", result["error"])
+                self.assertTrue(directory.is_dir())
+            finally:
+                (self.root / "release-launch").touch()
+
+        self.wait_for(lambda: bool(self.records("legacy-image-admission")))
+        self.assertEqual(self.records("legacy-image-admission"), [False])
+        self.assertFalse(marker.exists())
+        self.assertTrue(sibling_marker.is_file())
+
     def test_missing_owner_creation_time_blocks_reclaim_and_worker(self):
         with self.cleanup_session() as cleanup:
             self.assertEqual(self.cleanup_reply(cleanup), {"ready": [123]})

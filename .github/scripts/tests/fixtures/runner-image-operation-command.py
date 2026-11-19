@@ -2,6 +2,7 @@
 """External SSH/systemd/privileged-runner fixture; internal image code stays real."""
 
 import contextlib
+import fcntl
 import fnmatch
 import hashlib
 import json
@@ -175,6 +176,13 @@ def systemd_run(arguments):
             wait_for(lambda: (ROOT / "release-launch").exists())
         return 0  # Record the real retention contract without waiting one hour.
     command = arguments[arguments.index("/usr/bin/python3") :]
+    if os.environ.get("IMAGE_PRE_CLOSURE_WORKER") == "1":
+        command = [
+            sys.executable,
+            str(Path(__file__).resolve()),
+            "legacy-image-worker",
+            command[-1],
+        ]
     if MODE == "absent-launch":
         return 1
     if MODE == "launch-timeout-without-unit":
@@ -287,6 +295,16 @@ def runner(arguments):
 def main():
     name = Path(sys.argv[0]).name
     arguments = sys.argv[1:]
+    if name == "runner-image-operation-command.py" and arguments[:1] == ["legacy-image-worker"]:
+        # The pre-cutoff worker uses the persisted marker as its admission gate.
+        namespace = Path(arguments[1]).parent
+        owner = json.loads((namespace / "owner.json").read_text())
+        marker = Path(owner["resourceRoot"]) / (".image-owner-" + owner["identity"])
+        with Path(owner["lifecycleLock"]).open("rb") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            admitted = not marker.is_symlink() and marker.is_file()
+            record("legacy-image-admission", admitted)
+        return 0 if admitted else 1
     if name == "ssh":
         return ssh(arguments)
     if name == "systemctl":

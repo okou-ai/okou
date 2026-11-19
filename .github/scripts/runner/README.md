@@ -244,15 +244,22 @@ association or stabilization failures remain unverified and retain resources.
 An unverified or failed result exits 1 because cleanup was not established;
 proven live-owner deferrals and reopened PR skips exit 0.
 
-The host executor reobserves runner and Stripe units/directories under the locks,
-verifies stopped execution before removing files, and verifies final state.
+Under the existing namespace locks, the host executor records the closure
+cutoff and revokes image admission before inventory and bulk teardown. Older
+image workers check that admission marker after taking the same lock, so a
+later teardown failure can leave the runner directory without admitting work.
+An unverified revocation fails that namespace. The executor then reobserves
+runner and Stripe resources, verifies stopped execution before bulk removal,
+and verifies final state. If this inventory fails, the executor reports the
+remaining selected namespaces as unverified and leaves their services untouched.
 It submits all selected stops before polling with one shared 330s stop budget
 (Runner units allow 300s). Inactive/failed state, no main PID, no queued/running
-job and an unpopulated cgroup are all required before deletion. A stop deadline
-retains that namespace's files and reports failure; stopped siblings can still
-be cleaned. The host operation has a 480s hard limit, inside the controller's
-510s response and 720s batch limits. Heartbeats continue during the wait, and
-cancellation still interrupts the worker before releasing its namespace locks.
+job and an unpopulated cgroup are all required before bulk removal. A stop
+deadline retains the remaining namespace files and reports failure. Stopped
+siblings can still be cleaned. The host operation has a 480s hard limit, inside
+the controller's 510s response and 720s batch limits. Heartbeats continue during
+the wait, and cancellation interrupts the worker before releasing its namespace
+locks.
 Absent resources are counted separately from actual cleanup. Persistent and
 transient files, directory-only and Stripe-only leftovers participate in discovery;
 inactive manager records with no execution, queued job or files do not repeatedly
@@ -275,9 +282,9 @@ retire.
 Cleanup controllers already running from an earlier revision still share the
 lifecycle lock and remove the admission marker. Per-unit retirement of a
 worker with the new name requires the updated controller.
-A running legacy unit without PR attribution makes current
-cleanup inventory unverified and preserves resources. Expiry timers keep their
-separate `vm0-ci-image-DIGEST-expire` names and remain image-owned.
+A running legacy unit without PR attribution leaves cleanup inventory unverified
+and prevents bulk removal. Expiry timers keep their separate
+`vm0-ci-image-DIGEST-expire` names and remain image-owned.
 
 Stripe replacement uses the same lifecycle exclusion. Its Ansible playbooks
 remain deployment adapters; closed-PR teardown does not start Ansible per PR.
