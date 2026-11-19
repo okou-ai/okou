@@ -1,0 +1,6 @@
+scenario_id	decision	retained_scenario	evidence
+onboarding-team-redirect-001	merge	onboarding-team-redirect-002	The retired route unconditionally redirects regardless of role. The pending-onboarding fixture only passes redeemCode, and the donor proves the same rendered destination and preserved code.
+msw-contract-001	remove	—	The source builds synthetic GET and PATCH contracts and calls the MSW fixture transport directly. Method, parameter decoding and fixture replacement are test harness behavior.
+msw-contract-009	remove	—	The source issues direct HTTP calls against synthetic MSW handlers and checks handler precedence between a static list and dynamic account detail.
+api-client-bootstrap-002	remove	—	Platform Vitest aliases client response validation to a full-schema fixture adapter. This row drives the adapter directly using valid and invalid fixture bodies; it has no rendered app behavior.
+api-client-bootstrap-003	remove	—	The row constructs an unmapped synthetic descriptor to verify the Vitest-only validator adapter error, with no App route or production response outcome.

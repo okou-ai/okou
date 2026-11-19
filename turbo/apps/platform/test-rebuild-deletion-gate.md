@@ -34,7 +34,24 @@ are recorded separately.
   chat-capability-permissions-004 is a candidate for covering grant
   refresh. Check the host-approval and transport guarantees separately.
 
-Continue source-backed screening by module. Start with the 36 possible
-donors, then review same-module parameter matrices and cross-file user
-journeys. Keep the automation retry sample and further rebuild work pending
-until the deletion gate is met.
+## Confirmed comparison batch
+
+The [pair decisions](test-rebuild-pair-decisions.tsv) record both frozen
+scenarios and the reason for the disposition across 36 consolidation
+candidates and 12 cross-file overlaps. One row can consolidate into its
+linked retained scenario. The other 47 comparisons retain their distinct
+route, actor, provider, action ordering or visible result. The retired
+onboarding team route has a single unconditional redirect, and its
+admin and member fixtures prove the same destination and redeem code.
+
+The [confirmed additions to the deduction ledger](test-rebuild-confirmed-deductions.tsv)
+record that consolidation and four harness-only removals. Including the
+seven previously confirmed harness rows, the cumulative confirmed net
+reduction is 12 of 5,111 rows (0.23%), leaving 1,522 needed. No upstream
+addition is counted in that reduction.
+
+Continue source-backed screening by module. Prioritize large address
+submission, browser viewer and remote access matrices. Review fixtures
+and product branches before grouping parameter rows. Keep the automation
+retry sample and further rebuild work pending until the deletion gate is
+met.
