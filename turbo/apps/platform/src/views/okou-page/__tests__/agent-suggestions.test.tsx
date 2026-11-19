@@ -340,6 +340,7 @@ function captureSend(): Promise<SentInput> {
 const DIRECTION = "What do you have in mind?";
 async function openDirectionEditor(
   container: ParentNode = document.body,
+  target = "New chat",
 ): Promise<HTMLElement> {
   const trigger = button(DIRECTION, "button", container);
   const card = trigger.closest("article");
@@ -347,9 +348,7 @@ async function openDirectionEditor(
     throw new Error("Expected the direction trigger inside a suggestion card");
   }
   click(trigger);
-  return await within(card).findByRole("region", {
-    name: /^(New chat|Continue in)$/,
-  });
+  return await within(card).findByRole("region", { name: target });
 }
 async function openCustomDirection(
   container: ParentNode = document.body,
@@ -1241,14 +1240,21 @@ test("The custom direction editor sends the background files without the home dr
   expect(JSON.stringify(message)).not.toContain("My saved draft");
   expect(pathname()).toBe(suggestionPath);
 });
-test("A custom direction can reply in a related chat without touching its saved draft", async () => {
-  const suggestion: Suggestion = {
-    ...makeSuggestion(),
+function withCustomThread(threadIdOverride: string): Suggestion {
+  const suggestion = makeSuggestion();
+  return {
+    ...suggestion,
     content: {
-      ...makeSuggestion().content,
-      options: [makeOption({ threadId })],
+      ...suggestion.content,
+      customOption: {
+        ...suggestion.content.customOption,
+        threadId: threadIdOverride,
+      },
     },
   };
+}
+test("A custom direction continues the chat its card names without touching its saved draft", async () => {
+  const suggestion = withCustomThread(threadId);
   mockPool([suggestion]);
   const sends: { threadId?: string; userMessage?: UserMessageDocument }[] = [];
   const savedDrafts: unknown[] = [];
@@ -1274,18 +1280,11 @@ test("A custom direction can reply in a related chat without touching its saved 
   });
   await openSuggestions();
   await screen.findByText(suggestion.content.title);
-  const editor = await openDirectionEditor();
-  expect(
-    within(editor).getByRole("heading", { name: "Continue in" }),
-  ).toBeInTheDocument();
-  const related = within(editor).getByRole("region", {
-    name: "Related chats",
-  });
-  click(button("Referenced decision", "button", related));
-  const note = await within(editor).findByRole("textbox", { name: DIRECTION });
-  expect(within(editor).getByRole("heading")).toHaveTextContent(
+  const editor = await openDirectionEditor(
+    document.body,
     "Referenced decision",
   );
+  const note = await within(editor).findByRole("textbox", { name: DIRECTION });
   expect(composer(editor)).toHaveTextContent(suggestion.content.title);
   expect(composer(editor)).not.toHaveTextContent("Existing remote draft");
   await writeDirection(note, "Use the latest numbers from this chat");
@@ -1309,7 +1308,60 @@ test("A custom direction can reply in a related chat without touching its saved 
   await screen.findByRole("heading", { name: "All caught up" });
   expect(savedDrafts).toStrictEqual([]);
 });
-test("The related chat choice can return to start a new chat instead", async () => {
+test("A custom direction continues its named chat before the chat list has loaded it", async () => {
+  const suggestion = withCustomThread(threadId);
+  mockPool([suggestion]);
+  const sends: { threadId?: string; userMessage?: UserMessageDocument }[] = [];
+  const lifecycle = mockChatLifecycle(context, {
+    threadId,
+    threadTitle: "Referenced decision",
+    onSendRequest: ({ threadId: sentThreadId, userMessage }) => {
+      sends.push({ threadId: sentThreadId, userMessage });
+    },
+  });
+  // The chat exists, but this page's chat list has not received it yet.
+  lifecycle.setThreadList([]);
+  context.mocks.api(chatThreadMetadataContract.get, ({ params, respond }) => {
+    return params.id === threadId
+      ? respond(200, {
+          id: threadId,
+          agentId,
+          title: "Referenced decision",
+          selectedModel: null,
+          modelSettings: {},
+          serviceTier: null,
+          pinnedAt: null,
+          archived: false,
+          muted: false,
+          computerUseHostId: null,
+          cloudBrowserEnabled: false,
+        })
+      : respond(404, {
+          error: {
+            code: "CHAT_THREAD_NOT_FOUND",
+            message: "Chat thread not found",
+          },
+        });
+  });
+  await openSuggestions();
+  await screen.findByText(suggestion.content.title);
+  const editor = await openDirectionEditor(
+    document.body,
+    "Referenced decision",
+  );
+  const note = await within(editor).findByRole("textbox", { name: DIRECTION });
+  await writeDirection(note, "Keep this in the decision chat");
+  await waitFor(() => {
+    expect(button("Send", "button", editor)).toBeEnabled();
+  });
+  click(button("Send", "button", editor));
+  await screen.findByText("Sent to the chat");
+  await waitFor(() => {
+    expect(sends).toHaveLength(1);
+  });
+  expect(sends[0].threadId).toBe(threadId);
+});
+test("A custom direction starts a new chat when its card names none, even beside an existing-chat action", async () => {
   const suggestion: Suggestion = {
     ...makeSuggestion(),
     content: {
@@ -1332,18 +1384,7 @@ test("The related chat choice can return to start a new chat instead", async () 
   });
   await openSuggestions();
   await screen.findByText(suggestion.content.title);
-  const editor = await openDirectionEditor();
-  click(
-    button(
-      "Referenced decision",
-      "button",
-      within(editor).getByRole("region", { name: "Related chats" }),
-    ),
-  );
-  await within(editor).findByRole("textbox", { name: DIRECTION });
-  click(button("Back", "button", editor));
-  click(button("New chat", "button", editor));
-  const note = await within(editor).findByRole("textbox", { name: DIRECTION });
+  const { editor, note } = await openCustomDirection();
   await writeDirection(note, "Start fresh with this background");
   await waitFor(() => {
     expect(button("Send", "button", editor)).toBeEnabled();
@@ -1356,6 +1397,25 @@ test("The related chat choice can return to start a new chat instead", async () 
   expect(JSON.stringify(message.userMessage)).toContain(
     "Start fresh with this background",
   );
+});
+test("A custom direction whose chat is gone starts a new chat instead", async () => {
+  const goneThreadId = "b0000000-0000-4000-a000-000000000999";
+  const suggestion = withCustomThread(goneThreadId);
+  mockPool([suggestion]);
+  const sent = captureSend();
+  await openSuggestions();
+  await screen.findByText(suggestion.content.title);
+  const { editor, note } = await openCustomDirection();
+  await writeDirection(note, "Pick this up again");
+  await waitFor(() => {
+    expect(button("Send", "button", editor)).toBeEnabled();
+  });
+  click(button("Send", "button", editor));
+  await screen.findByText(SENT);
+  const message = await sent;
+  expect(message.threadId).not.toBe(goneThreadId);
+  expect(message.title).toBe(suggestion.content.title);
+  expect(JSON.stringify(message.userMessage)).toContain("Pick this up again");
 });
 test("Not planned advances to the next card and Undo restores the selected card", async () => {
   const items = numberedSuggestions(3);
