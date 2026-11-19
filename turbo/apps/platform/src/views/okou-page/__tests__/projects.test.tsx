@@ -2080,6 +2080,9 @@ test("A cross-Agent Project chat can be dragged onto another collapsed Project",
     "false",
   );
   const dataTransfer = createDataTransferStub();
+  await waitFor(() => {
+    expect(threadLink(member.id)).toHaveAttribute("draggable", "true");
+  });
   fireEvent.dragStart(threadLink(member.id), { dataTransfer });
   fireEvent.dragOver(projectRow(secondId), { dataTransfer });
   await expect(screen.findByRole("tooltip")).resolves.toHaveTextContent(

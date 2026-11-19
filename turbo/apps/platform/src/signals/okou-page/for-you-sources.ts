@@ -76,23 +76,27 @@ export function createForYouReadRef(id: string) {
   return onRef(
     command(
       async ({ get, set }, _element: HTMLElement, signal: AbortSignal) => {
-        if (
-          (await get(featureSwitches$))[FeatureSwitchKey.AgentSuggestion] !==
-          true
-        ) {
+        const enabled = (await get(featureSwitches$))[
+          FeatureSwitchKey.AgentSuggestion
+        ];
+        signal.throwIfAborted();
+        if (!enabled) {
           return;
         }
         if (document.hidden) {
           const visible = createDeferredPromise<void>(signal);
-          document.addEventListener(
-            "visibilitychange",
-            () => {
-              if (!document.hidden) {
-                visible.resolve();
-              }
-            },
-            { signal },
-          );
+          const onVisibilityChange = () => {
+            if (!document.hidden) {
+              document.removeEventListener(
+                "visibilitychange",
+                onVisibilityChange,
+              );
+              visible.resolve();
+            }
+          };
+          document.addEventListener("visibilitychange", onVisibilityChange, {
+            signal,
+          });
           await visible.promise;
           signal.throwIfAborted();
         }

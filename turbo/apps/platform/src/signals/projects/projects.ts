@@ -274,7 +274,7 @@ export const createProject$ = command(
     const owner = get(projectState$);
     const eventId = operation();
     const createdAt = nowDate().toISOString();
-    const sortOrder = lastProjectSortOrder(await get(projects$));
+    const sortOrder = lastProjectSortOrder(get(projectedProjects$));
     const confirmation = accept(
       get(apiClient$)(projectsContract).create({
         body: { id: eventId, eventId, name, fromThreadId },
