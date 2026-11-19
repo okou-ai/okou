@@ -1701,6 +1701,9 @@ describe("private Runner VNC authority", () => {
     await expect(
       api.resolve(f, { supportedProfiles: [...vncProfiles] }),
     ).resolves.toStrictEqual({ outcome: "unavailable" });
+    expect(
+      (await check(f, 2, { expectedTransport: { type: "direct" } })).body,
+    ).toStrictEqual({ outcome: "unavailable" });
     expect(kms.decryptCalls).toBe(0);
 
     await api.setDefault(f, "ssh", ssh.body.id, true);
