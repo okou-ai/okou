@@ -2098,12 +2098,8 @@
       "unavailableTitle": "账户不可用"
     },
     "connectors": {
-      "accountForThread": "本次对话使用的账户",
-      "add": "添加 {{connectorName}}",
       "addConnectors": "添加连接器",
-      "authorized": "{{connectorName}} 已连接，并已授权给 {{agentName}}",
       "back": "返回",
-      "configurePermissions": "配置 {{connectorName}} 权限",
       "customAuthorizeDescription": "查看并连接这个自定义连接器，然后授权给智能体。",
       "directory": {
         "allCategories": "全部",
@@ -2131,14 +2127,8 @@
         "tabCustom": "自定义",
         "tabDiscover": "发现"
       },
-      "fallsBackTo": "回退到 {{account}}",
       "find": "查找连接器…",
-      "loadFailed": "无法加载连接器。",
-      "noUsableAccount": "没有可用账户",
-      "remove": "移除 {{connectorName}}",
-      "selectedAccountFor": "{{connector}} · 已选账户：{{account}}",
-      "title": "连接器",
-      "useDefault": "使用默认"
+      "title": "连接器"
     },
     "documentTitle": "聊天",
     "errors": {
@@ -2937,28 +2927,12 @@
     "totalAccounts": "{{value}} 个账号"
   },
   "connectors": {
-    "access": {
-      "accessFor": "{{action}}{{agent}}的{{connector}}访问权限",
-      "accessUpdated": "{{connector}}访问权限已更新",
-      "clearSearch": "清除智能体搜索",
-      "description": "选择哪些智能体可以使用这个连接器。",
-      "loading": "正在加载智能体…",
-      "managePermissions": "管理权限",
-      "managePermissionsFor": "管理{{agent}}的{{connector}}权限",
-      "noAgents": "没有找到智能体",
-      "noMatchingAgents": "没有匹配「{{search}}」的智能体",
-      "permissionsUpdated": "权限已更新",
-      "search": "查找智能体",
-      "title": "管理{{connector}}访问权限",
-      "unnamedAgent": "未命名"
-    },
     "accounts": {
       "accountName": "账号名称",
       "accountsUnavailable": "这个连接器不支持账号管理。",
       "actions": "账号操作",
       "addAccount": "添加账号",
       "connected": "已连接",
-      "default": "默认",
       "disconnectAccount": "断开账号连接",
       "disconnectDescription": "这会把该账号与 Okou 断开。使用它的会话将回到默认继承。对方平台上的账号不会被删除。",
       "disconnectDescriptionWithCount": "这会把该账号与 Okou 断开。{{value}} 个会话将回到默认继承。对方平台上的账号不会被删除。",
@@ -2973,8 +2947,6 @@
       "find": "查找账号",
       "loading": "正在加载账号…",
       "loadMore": "加载更多",
-      "makeDefault": "设为默认",
-      "managerDescription": "新的运行会使用你的默认账号。",
       "managerTitle": "管理{{connector}}账号",
       "namePromptDescription": "可以跳过，稍后再命名。",
       "namePromptTitle": "给你的{{connector}}账号起个名字",
@@ -3048,11 +3020,7 @@
     },
     "catalog": {
       "access": {
-        "add": "添加访问权限",
-        "manage": "管理{{connector}}访问权限",
-        "summaryMany": "{{value}} 个智能体",
-        "unavailable": "无法访问",
-        "usedBy": "使用方： "
+        "manage": "管理{{connector}}访问权限"
       },
       "categories": {
         "ai": {

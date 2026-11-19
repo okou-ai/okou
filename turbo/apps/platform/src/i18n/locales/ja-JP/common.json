@@ -2098,12 +2098,8 @@
       "unavailableTitle": "アカウントを利用できません"
     },
     "connectors": {
-      "accountForThread": "このスレッドのアカウント",
-      "add": "{{connectorName}} を追加",
       "addConnectors": "コネクタの追加",
-      "authorized": "{{connectorName}} が接続され、{{agentName}} に対して承認されました",
       "back": "戻る",
-      "configurePermissions": "{{connectorName}} 権限を構成する",
       "customAuthorizeDescription": "エージェント用のこのカスタム コネクタを確認、接続、承認します。",
       "directory": {
         "allCategories": "すべて",
@@ -2131,14 +2127,8 @@
         "tabCustom": "カスタム",
         "tabDiscover": "見つける"
       },
-      "fallsBackTo": "{{account}} にフォールバック",
       "find": "コネクタを検索...",
-      "loadFailed": "コネクターを読み込めませんでした。",
-      "noUsableAccount": "使用可能なアカウントがありません",
-      "remove": "{{connectorName}} を削除します",
-      "selectedAccountFor": "{{connector}} · 選択中のアカウント: {{account}}",
-      "title": "コネクター",
-      "useDefault": "デフォルトを使用"
+      "title": "コネクター"
     },
     "documentTitle": "チャット",
     "errors": {
@@ -2937,28 +2927,12 @@
     "totalAccounts": "{{value}} 個のアカウント"
   },
   "connectors": {
-    "access": {
-      "accessFor": "{{action}} {{connector}} {{agent}} へのアクセス",
-      "accessUpdated": "{{connector}} アクセスが更新されました",
-      "clearSearch": "エージェント検索をクリアする",
-      "description": "このコネクタを使用できるエージェントを選択します。",
-      "loading": "エージェントをロード中...",
-      "managePermissions": "権限の管理",
-      "managePermissionsFor": "{{agent}} の {{connector}} 権限を管理する",
-      "noAgents": "エージェントが見つかりませんでした",
-      "noMatchingAgents": "「{{search}}」に一致するエージェントはありません",
-      "permissionsUpdated": "権限が更新されました",
-      "search": "エージェントを探す",
-      "title": "{{connector}} アクセスを管理する",
-      "unnamedAgent": "無名"
-    },
     "accounts": {
       "accountName": "アカウント名",
       "accountsUnavailable": "このコネクターのアカウントは利用できません。",
       "actions": "アカウント操作",
       "addAccount": "アカウントを追加",
       "connected": "接続済み",
-      "default": "デフォルト",
       "disconnectAccount": "アカウントの接続を解除",
       "disconnectDescription": "このアカウントを Okou から切断します。このアカウントを使用しているスレッドはデフォルトの継承に戻ります。プロバイダー側のアカウントは削除されません。",
       "disconnectDescriptionWithCount": "このアカウントを Okou から切断します。{{value}} 件のスレッドがデフォルトの継承に戻ります。プロバイダー側のアカウントは削除されません。",
@@ -2973,8 +2947,6 @@
       "find": "アカウントを検索",
       "loading": "アカウントを読み込み中…",
       "loadMore": "さらに読み込む",
-      "makeDefault": "デフォルトに設定",
-      "managerDescription": "新しい実行ではデフォルトのアカウントが使われます。",
       "managerTitle": "{{connector}} のアカウントを管理",
       "namePromptDescription": "この手順をスキップして、後でアカウントに名前を付けることもできます。",
       "namePromptTitle": "{{connector}} アカウントに名前を付ける",
@@ -3048,11 +3020,7 @@
     },
     "catalog": {
       "access": {
-        "add": "アクセス権の追加",
-        "manage": "{{connector}} アクセスを管理する",
-        "summaryMany": "{{value}} 件のエージェント",
-        "unavailable": "アクセスを利用できません",
-        "usedBy": "使用者 "
+        "manage": "{{connector}} アクセスを管理する"
       },
       "categories": {
         "ai": {

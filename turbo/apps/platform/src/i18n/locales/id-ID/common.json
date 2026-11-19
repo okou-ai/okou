@@ -2098,12 +2098,8 @@
       "unavailableTitle": "Akun tidak tersedia"
     },
     "connectors": {
-      "accountForThread": "Akun untuk utas ini",
-      "add": "Tambahkan {{connectorName}}",
       "addConnectors": "Tambahkan konektor",
-      "authorized": "{{connectorName}} terhubung dan diotorisasi untuk {{agentName}}",
       "back": "Kembali",
-      "configurePermissions": "Konfigurasikan izin {{connectorName}}",
       "customAuthorizeDescription": "Tinjau, hubungkan, dan otorisasi konektor kustom ini untuk agen.",
       "directory": {
         "allCategories": "Semua",
@@ -2131,14 +2127,8 @@
         "tabCustom": "Kustom",
         "tabDiscover": "Temukan"
       },
-      "fallsBackTo": "Beralih kembali ke {{account}}",
       "find": "Cari konektor...",
-      "loadFailed": "Gagal memuat konektor.",
-      "noUsableAccount": "Tidak ada akun yang dapat digunakan",
-      "remove": "Hapus {{connectorName}}",
-      "selectedAccountFor": "{{connector}} · Akun terpilih: {{account}}",
-      "title": "Konektor",
-      "useDefault": "Gunakan default"
+      "title": "Konektor"
     },
     "documentTitle": "Chat",
     "errors": {
@@ -2937,28 +2927,12 @@
     "totalAccounts": "{{value}} akun"
   },
   "connectors": {
-    "access": {
-      "accessFor": "{{action}} akses {{connector}} untuk {{agent}}",
-      "accessUpdated": "Akses {{connector}} diperbarui",
-      "clearSearch": "Hapus pencarian agen",
-      "description": "Pilih agen yang dapat menggunakan konektor ini.",
-      "loading": "Memuat agen...",
-      "managePermissions": "Kelola izin",
-      "managePermissionsFor": "Kelola izin {{connector}} untuk {{agent}}",
-      "noAgents": "Tidak ada agen ditemukan",
-      "noMatchingAgents": "Tidak ada agen yang cocok dengan \"{{search}}\"",
-      "permissionsUpdated": "Izin diperbarui",
-      "search": "Cari agen",
-      "title": "Kelola akses {{connector}}",
-      "unnamedAgent": "Tanpa nama"
-    },
     "accounts": {
       "accountName": "Nama akun",
       "accountsUnavailable": "Akun tidak tersedia untuk konektor ini.",
       "actions": "Tindakan akun",
       "addAccount": "Tambah akun",
       "connected": "Terhubung",
-      "default": "Default",
       "disconnectAccount": "Putuskan akun",
       "disconnectDescription": "Ini memutuskan akun dari Okou. Thread yang menggunakannya akan kembali ke pewarisan default. Akun di penyedia tidak akan dihapus.",
       "disconnectDescriptionWithCount": "Ini memutuskan akun dari Okou. {{value}} thread akan kembali ke pewarisan default. Akun di penyedia tidak akan dihapus.",
@@ -2973,8 +2947,6 @@
       "find": "Cari akun",
       "loading": "Memuat akun…",
       "loadMore": "Muat lebih banyak",
-      "makeDefault": "Jadikan default",
-      "managerDescription": "Run baru menggunakan akun default Anda.",
       "managerTitle": "Kelola akun {{connector}}",
       "namePromptDescription": "Anda dapat melewati langkah ini dan memberi nama akun nanti.",
       "namePromptTitle": "Beri nama akun {{connector}} Anda",
@@ -3048,11 +3020,7 @@
     },
     "catalog": {
       "access": {
-        "add": "Tambah akses",
-        "manage": "Kelola akses {{connector}}",
-        "summaryMany": "{{value}} agen",
-        "unavailable": "Akses tidak tersedia",
-        "usedBy": "Digunakan oleh "
+        "manage": "Kelola akses {{connector}}"
       },
       "categories": {
         "ai": {

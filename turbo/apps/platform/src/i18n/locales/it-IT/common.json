@@ -2134,12 +2134,8 @@
       "unavailableTitle": "Account non disponibile"
     },
     "connectors": {
-      "accountForThread": "Account per questo thread",
-      "add": "Aggiungi {{connectorName}}",
       "addConnectors": "Aggiungi connettori",
-      "authorized": "{{connectorName}} connesso e autorizzato per {{agentName}}",
       "back": "Indietro",
-      "configurePermissions": "Configura le autorizzazioni {{connectorName}}",
       "customAuthorizeDescription": "Esamina, connetti e autorizza questo connettore personalizzato per l'agente.",
       "directory": {
         "allCategories": "Tutti",
@@ -2173,14 +2169,8 @@
         "tabCustom": "Personalizzati",
         "tabDiscover": "Scopri"
       },
-      "fallsBackTo": "Passa a {{account}} come alternativa",
       "find": "Trova connettori...",
-      "loadFailed": "Impossibile caricare i connettori.",
-      "noUsableAccount": "Nessun account utilizzabile",
-      "remove": "Rimuovi {{connectorName}}",
-      "selectedAccountFor": "{{connector}} · Account selezionato: {{account}}",
-      "title": "Connettori",
-      "useDefault": "Usa predefinito"
+      "title": "Connettori"
     },
     "documentTitle": "Chat",
     "errors": {
@@ -3002,28 +2992,12 @@
     "totalAccounts": "{{value}} account"
   },
   "connectors": {
-    "access": {
-      "accessFor": "{{action}} l'accesso a {{connector}} per {{agent}}",
-      "accessUpdated": "Accesso a {{connector}} aggiornato",
-      "clearSearch": "Cancella ricerca agente",
-      "description": "Scegli quali agenti possono utilizzare questo connettore.",
-      "loading": "Caricamento agenti...",
-      "managePermissions": "Gestisci le autorizzazioni",
-      "managePermissionsFor": "Gestisci le autorizzazioni di {{connector}} per {{agent}}",
-      "noAgents": "Nessun agente trovato",
-      "noMatchingAgents": "Nessun agente corrispondente a \"{{search}}\"",
-      "permissionsUpdated": "Autorizzazioni aggiornate",
-      "search": "Trova agenti",
-      "title": "Gestisci l'accesso a {{connector}}",
-      "unnamedAgent": "Senza nome"
-    },
     "accounts": {
       "accountName": "Nome account",
       "accountsUnavailable": "Gli account non sono disponibili per questo connettore.",
       "actions": "Azioni account",
       "addAccount": "Aggiungi account",
       "connected": "Connesso",
-      "default": "Predefinito",
       "disconnectAccount": "Disconnetti account",
       "disconnectDescription": "Questo disconnette l'account da Okou. Le conversazioni che lo usano torneranno all'ereditarietà predefinita. L'account del provider non verrà eliminato.",
       "disconnectDescriptionWithCount": "Questo disconnette l'account da Okou. {{value}} conversazioni torneranno all'ereditarietà predefinita. L'account del provider non verrà eliminato.",
@@ -3040,8 +3014,6 @@
       "find": "Cerca account",
       "loading": "Caricamento account…",
       "loadMore": "Carica altro",
-      "makeDefault": "Imposta come predefinito",
-      "managerDescription": "Le nuove esecuzioni usano il tuo account predefinito.",
       "managerTitle": "Gestisci gli account di {{connector}}",
       "namePromptDescription": "Puoi saltare questo passaggio e assegnare un nome all'account in seguito.",
       "namePromptTitle": "Assegna un nome al tuo account {{connector}}",
@@ -3115,11 +3087,7 @@
     },
     "catalog": {
       "access": {
-        "add": "Aggiungi accesso",
-        "manage": "Gestisci l'accesso {{connector}}",
-        "summaryMany": "{{value}} agenti",
-        "unavailable": "Accesso non disponibile",
-        "usedBy": "Utilizzato da "
+        "manage": "Gestisci l'accesso {{connector}}"
       },
       "categories": {
         "ai": {

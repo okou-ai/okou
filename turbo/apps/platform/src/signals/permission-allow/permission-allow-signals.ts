@@ -20,7 +20,7 @@ import {
 } from "../chat-page/action-callback.ts";
 import { pathParams$, searchParams$ } from "../route.ts";
 import { accept } from "../../lib/accept.ts";
-import { agentById, currentAgentId$ } from "../agent.ts";
+import { agentById } from "../agent.ts";
 import { firewallPermissionMetadataByConnector } from "../firewall-permission-metadata.ts";
 import { setAblyLoop$ } from "../realtime.ts";
 import { resolveActiveUserPermissionGrantPolicy } from "../user-permission-grants.ts";
@@ -153,17 +153,6 @@ export function userPermissionGrantsByAgent(
   });
 }
 
-export function userPermissionGrantsByAgentIfExists(
-  params: UserPermissionGrantsByAgentParams,
-): Computed<Promise<readonly PlatformUserPermissionGrant[] | null>> {
-  return computed(async (get) => {
-    get(internalUserPermissionGrantsReload$);
-    const client = get(apiClient$)(userPermissionGrantsContract);
-    const result = await accept(client.list({ query: params }), [200, 404]);
-    return result.status === 404 ? null : result.body;
-  });
-}
-
 /** Confirmation cards read only their requested targets, with the mode's owner. */
 export function permissionGrantsForConnectors(params: {
   readonly agentId: string;
@@ -206,15 +195,6 @@ export const permissionAllowUserPermissionGrants$ = computed(async (get) => {
         }),
       )
     : [];
-});
-
-/** The current agent-detail route's permission grants. */
-export const currentAgentUserPermissionGrants$ = computed(async (get) => {
-  const agentId = get(currentAgentId$);
-  if (!agentId) {
-    return [];
-  }
-  return await get(userPermissionGrantsByAgent({ agentId }));
 });
 
 /** Firewall metadata selected by the permission-allow route. */

@@ -8,7 +8,6 @@ import {
   catalogFixture,
   connectorFixtureAccount,
   httpConnectorFixture,
-  mcpConnectorFixture,
 } from "../../../mocks/handlers/connector-account-fixtures.ts";
 import { mockOAuthCompletions } from "./connector-page-test-helpers.ts";
 import {
@@ -38,7 +37,6 @@ import {
   isIntegrationManagedCustomConnector,
   type CustomConnectorValueInput,
   type CustomConnectorHttpResponse,
-  type CustomConnectorMcpResponse,
   type CustomConnectorResponse,
   customConnectorsContract,
   customConnectorValuesContract,
@@ -65,7 +63,7 @@ export const OTHER_AGENT_ID = "c0000000-0000-4000-a000-000000000061";
 export const SCOUT_THREAD_ID = "b0000000-0000-4000-a000-000000000061";
 export const OTHER_THREAD_ID = "b0000000-0000-4000-a000-000000000062";
 export const ACME_CONNECTOR_ID = "e0000000-0000-4000-a000-000000000061";
-export const DEEPWIKI_CONNECTOR_ID = "e0000000-0000-4000-a000-000000000062";
+
 export const FEISHU_CONNECTOR_ID = "e0000000-0000-4000-a000-000000000063";
 export const ORDINARY_CONNECTOR_ID = "e0000000-0000-4000-a000-000000000064";
 
@@ -451,35 +449,6 @@ export function httpConnector(
           updatedAt: CREATED_AT,
           configuredFieldKeys: authMode === "manual" ? ["secret"] : [],
         }
-      : undefined,
-  });
-}
-
-export function mcpConnector(args: {
-  readonly id: string;
-  readonly slug: string;
-  readonly displayName: string;
-  readonly hasAccount: boolean;
-}): CustomConnectorMcpResponse {
-  return mcpConnectorFixture({
-    id: args.id,
-    slug: args.slug,
-    displayName: args.displayName,
-    kind: "mcp",
-    endpoint: "https://mcp.example.test/connect",
-    transport: "streamable-http",
-    prefixTemplates: [],
-    fields: [],
-    headerInjections: [],
-    queryInjections: [],
-    authMode: "manual",
-    permissionBundleRef: null,
-    skillMarkdown: null,
-    storageVersion: 1,
-    createdAt: CREATED_AT,
-    updatedAt: CREATED_AT,
-    account: args.hasAccount
-      ? { id: `f${args.id.slice(1)}`, updatedAt: CREATED_AT }
       : undefined,
   });
 }

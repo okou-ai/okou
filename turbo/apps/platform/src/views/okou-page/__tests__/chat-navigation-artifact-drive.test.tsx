@@ -759,8 +759,6 @@ test("Recheck Drive authorization after leaving and reopening the chat page", as
     expect(drive.oauthRequests).toContainEqual({
       account: { intent: "add" },
       authMethod: "oauth",
-      agentId: NAVIGATION_ARTIFACT_AGENT_ID,
-      authorizeAgent: true,
       callbackTarget: "app",
     });
   });
@@ -809,8 +807,6 @@ test("Connect Google Drive and sync an artifact", async () => {
       {
         account: { intent: "add" },
         authMethod: "oauth",
-        agentId: NAVIGATION_ARTIFACT_AGENT_ID,
-        authorizeAgent: true,
         callbackTarget: "app",
       },
     ]);
@@ -883,8 +879,6 @@ test("Recover missing Drive scope for a native upload only after explicit exact-
           connectionId: SELECTED_DRIVE_CONNECTION_ID,
         },
         authMethod: "oauth",
-        agentId: NAVIGATION_ARTIFACT_AGENT_ID,
-        authorizeAgent: true,
         callbackTarget: "app",
       },
     ]);
@@ -1301,8 +1295,6 @@ describe("google editor conversion", () => {
           connectionId: SELECTED_DRIVE_CONNECTION_ID,
         },
         authMethod: "oauth",
-        agentId: NAVIGATION_ARTIFACT_AGENT_ID,
-        authorizeAgent: true,
         callbackTarget: "app",
       },
     ];

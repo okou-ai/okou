@@ -2104,12 +2104,8 @@
       "unavailableTitle": "खाता उपलब्ध नहीं है"
     },
     "connectors": {
-      "accountForThread": "इस थ्रेड के लिए खाता",
-      "add": "{{connectorName}} जोड़ें",
       "addConnectors": "कनेक्टर्स जोड़ें",
-      "authorized": "{{connectorName}} जुड़ा हुआ है और {{agentName}} के लिए अधिकृत है",
       "back": "पीछे",
-      "configurePermissions": "{{connectorName}} अनुमतियाँ कॉन्फ़िगर करें",
       "customAuthorizeDescription": "एजेंट के लिए इस कस्टम कनेक्टर की समीक्षा करें, कनेक्ट करें और अधिकृत करें।",
       "directory": {
         "allCategories": "सभी",
@@ -2140,14 +2136,8 @@
         "tabCustom": "कस्टम",
         "tabDiscover": "खोजें"
       },
-      "fallsBackTo": "{{account}} पर वापस जाता है",
       "find": "कनेक्टर ढूंढें...",
-      "loadFailed": "कनेक्टर्स लोड नहीं हो सके।",
-      "noUsableAccount": "कोई उपयोग योग्य खाता नहीं",
-      "remove": "{{connectorName}} हटाएँ",
-      "selectedAccountFor": "{{connector}} · चुना गया खाता: {{account}}",
-      "title": "कनेक्टर्स",
-      "useDefault": "डिफ़ॉल्ट उपयोग करें"
+      "title": "कनेक्टर्स"
     },
     "documentTitle": "चैट",
     "errors": {
@@ -2952,28 +2942,12 @@
     "totalAccounts": "{{value}} खाते"
   },
   "connectors": {
-    "access": {
-      "accessFor": "{{agent}} के लिए {{action}} {{connector}} पहुंच",
-      "accessUpdated": "{{connector}} एक्सेस अपडेट किया गया",
-      "clearSearch": "एजेंट खोज साफ़ करें",
-      "description": "चुनें कि कौन से एजेंट इस कनेक्टर का उपयोग कर सकते हैं।",
-      "loading": "एजेंट लोड हो रहे हैं...",
-      "managePermissions": "अनुमतियाँ प्रबंधित करें",
-      "managePermissionsFor": "{{agent}} के लिए {{connector}} अनुमतियाँ प्रबंधित करें",
-      "noAgents": "कोई एजेंट नहीं मिला",
-      "noMatchingAgents": "\"{{search}}\" से मेल खाने वाला कोई एजेंट नहीं",
-      "permissionsUpdated": "अनुमतियाँ अद्यतन की गईं",
-      "search": "एजेंटों को खोजें",
-      "title": "{{connector}} पहुंच प्रबंधित करें",
-      "unnamedAgent": "अज्ञात"
-    },
     "accounts": {
       "accountName": "खाते का नाम",
       "accountsUnavailable": "इस कनेक्टर के लिए खाते उपलब्ध नहीं हैं।",
       "actions": "खाते की कार्रवाइयाँ",
       "addAccount": "खाता जोड़ें",
       "connected": "कनेक्टेड",
-      "default": "डिफ़ॉल्ट",
       "disconnectAccount": "खाता डिस्कनेक्ट करें",
       "disconnectDescription": "यह खाते को Okou से डिस्कनेक्ट करता है। इसका उपयोग करने वाले थ्रेड डिफ़ॉल्ट इनहेरिटेंस पर लौट जाएँगे। प्रदाता का खाता हटाया नहीं जाएगा।",
       "disconnectDescriptionWithCount": "यह खाते को Okou से डिस्कनेक्ट करता है। {{value}} थ्रेड डिफ़ॉल्ट इनहेरिटेंस पर लौट जाएँगे। प्रदाता का खाता हटाया नहीं जाएगा।",
@@ -2989,8 +2963,6 @@
       "find": "खाते खोजें",
       "loading": "खाते लोड हो रहे हैं…",
       "loadMore": "और लोड करें",
-      "makeDefault": "डिफ़ॉल्ट बनाएँ",
-      "managerDescription": "नए रन आपके डिफ़ॉल्ट खाते का उपयोग करते हैं।",
       "managerTitle": "{{connector}} खाते प्रबंधित करें",
       "namePromptDescription": "आप इसे छोड़ सकते हैं और खाते को बाद में नाम दे सकते हैं।",
       "namePromptTitle": "अपने {{connector}} खाते को नाम दें",
@@ -3064,11 +3036,7 @@
     },
     "catalog": {
       "access": {
-        "add": "पहुंच जोड़ें",
-        "manage": "{{connector}} पहुंच प्रबंधित करें",
-        "summaryMany": "{{value}} एजेंट",
-        "unavailable": "पहुंच उपलब्ध नहीं है",
-        "usedBy": "द्वारा उपयोग किया जाता है"
+        "manage": "{{connector}} पहुंच प्रबंधित करें"
       },
       "categories": {
         "ai": {

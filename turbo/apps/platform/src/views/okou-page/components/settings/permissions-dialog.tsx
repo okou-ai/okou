@@ -7,8 +7,6 @@ import { useTranslation } from "react-i18next";
 import { useLastResolved, useGet, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import {
-  Sheet,
-  SheetContent,
   SheetDescription,
   SheetHeader,
   SheetTitle,
@@ -1548,30 +1546,6 @@ function PermissionsContent({
         </>
       )}
     </>
-  );
-}
-
-export function PermissionsDrawer(props: PermissionsDrawerProps) {
-  const dismissDrawer = useSet(dismissPermissionDrawer$);
-  const handleClose = () => {
-    dismissDrawer(props.session);
-  };
-
-  return (
-    <Sheet
-      open
-      onOpenChange={(open) => {
-        return !open && handleClose();
-      }}
-    >
-      <SheetContent side="right">
-        <PermissionsContent
-          props={props}
-          surface="sheet"
-          onClose={handleClose}
-        />
-      </SheetContent>
-    </Sheet>
   );
 }
 

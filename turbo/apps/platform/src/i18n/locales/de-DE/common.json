@@ -2104,12 +2104,8 @@
       "unavailableTitle": "Konto nicht verfügbar"
     },
     "connectors": {
-      "accountForThread": "Konto für diesen Thread",
-      "add": "{{connectorName}} hinzufügen",
       "addConnectors": "Integrationen hinzufügen",
-      "authorized": "{{connectorName}} verbunden und autorisiert für {{agentName}}",
       "back": "Zurück",
-      "configurePermissions": "Konfigurieren Sie {{connectorName}}-Berechtigungen",
       "customAuthorizeDescription": "Prüfen und verbinden Sie diese benutzerdefinierte Integration und autorisieren Sie sie für den Agenten.",
       "directory": {
         "allCategories": "Alle",
@@ -2140,14 +2136,8 @@
         "tabCustom": "Eigene",
         "tabDiscover": "Entdecken"
       },
-      "fallsBackTo": "Wechselt zu {{account}} zurück",
       "find": "Integrationen suchen...",
-      "loadFailed": "Integrationen konnten nicht geladen werden.",
-      "noUsableAccount": "Kein verwendbares Konto",
-      "remove": "{{connectorName}} entfernen",
-      "selectedAccountFor": "{{connector}} · Ausgewähltes Konto: {{account}}",
-      "title": "Integrationen",
-      "useDefault": "Standard verwenden"
+      "title": "Integrationen"
     },
     "documentTitle": "Chat",
     "errors": {
@@ -2952,28 +2942,12 @@
     "totalAccounts": "{{value}} Konten"
   },
   "connectors": {
-    "access": {
-      "accessFor": "{{action}} {{connector}} Zugriff für {{agent}}",
-      "accessUpdated": "{{connector}} Zugriff aktualisiert",
-      "clearSearch": "Übersichtliche Agentensuche",
-      "description": "Wählen Sie aus, welche Agenten diese Integration verwenden können.",
-      "loading": "Agenten werden geladen...",
-      "managePermissions": "Berechtigungen verwalten",
-      "managePermissionsFor": "{{connector}}-Berechtigungen für {{agent}} verwalten",
-      "noAgents": "Keine Agenten gefunden",
-      "noMatchingAgents": "Keine Agenten, die mit „{{search}}“ übereinstimmen",
-      "permissionsUpdated": "Berechtigungen aktualisiert",
-      "search": "Finden Sie Agenten",
-      "title": "Verwalten Sie den {{connector}}-Zugriff",
-      "unnamedAgent": "Unbenannt"
-    },
     "accounts": {
       "accountName": "Kontoname",
       "accountsUnavailable": "Konten sind für diesen Connector nicht verfügbar.",
       "actions": "Kontoaktionen",
       "addAccount": "Konto hinzufügen",
       "connected": "Verbunden",
-      "default": "Standard",
       "disconnectAccount": "Konto trennen",
       "disconnectDescription": "Dadurch wird das Konto von Okou getrennt. Threads, die es verwenden, kehren zur Standardvererbung zurück. Das Konto beim Anbieter wird nicht gelöscht.",
       "disconnectDescriptionWithCount": "Dadurch wird das Konto von Okou getrennt. {{value}} Threads kehren zur Standardvererbung zurück. Das Konto beim Anbieter wird nicht gelöscht.",
@@ -2989,8 +2963,6 @@
       "find": "Konten suchen",
       "loading": "Konten werden geladen…",
       "loadMore": "Mehr laden",
-      "makeDefault": "Als Standard festlegen",
-      "managerDescription": "Neue Ausführungen verwenden dein Standardkonto.",
       "managerTitle": "{{connector}}-Konten verwalten",
       "namePromptDescription": "Sie können diesen Schritt überspringen und das Konto später benennen.",
       "namePromptTitle": "{{connector}}-Konto benennen",
@@ -3064,11 +3036,7 @@
     },
     "catalog": {
       "access": {
-        "add": "Zugriff hinzufügen",
-        "manage": "Verwalten Sie den {{connector}}-Zugriff",
-        "summaryMany": "{{value}} Agenten",
-        "unavailable": "Zugriff nicht verfügbar",
-        "usedBy": "Verwendet von "
+        "manage": "Verwalten Sie den {{connector}}-Zugriff"
       },
       "categories": {
         "ai": {

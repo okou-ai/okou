@@ -5128,7 +5128,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
         const disconnectedRun = await api.createThreadRun(actor, {
           agentId,
-          prompt: "identify an authorized MCP connector that needs connection",
+          prompt: "omit the disconnected MCP connector",
         });
         const disconnectedExecution = await api.executionInput(
           disconnectedRun.runId,
@@ -5136,8 +5136,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(
           mcpConnectorPromptSection(
             disconnectedExecution.appendSystemPrompt ?? "",
-          ),
-        ).toContain(`- \`${mcp.slug}\``);
+          ) ?? "",
+        ).not.toContain(`- \`${mcp.slug}\``);
         expect(
           disconnectedExecution.connectorRuntimeTargets,
         ).not.toContainEqual(

@@ -2104,12 +2104,8 @@
       "unavailableTitle": "Account unavailable"
     },
     "connectors": {
-      "accountForThread": "Account for this chat",
-      "add": "Add {{connectorName}}",
       "addConnectors": "Add connectors",
-      "authorized": "{{connectorName}} connected and authorized for {{agentName}}",
       "back": "Back",
-      "configurePermissions": "Configure {{connectorName}} permissions",
       "customAuthorizeDescription": "Review, connect, and authorize this custom connector for the agent.",
       "directory": {
         "allCategories": "All",
@@ -2140,14 +2136,8 @@
         "tabCustom": "Custom",
         "tabDiscover": "Discover"
       },
-      "fallsBackTo": "Falls back to {{account}}",
       "find": "Find connectors...",
-      "loadFailed": "Couldn't load connectors.",
-      "noUsableAccount": "No usable account",
-      "remove": "Remove {{connectorName}}",
-      "selectedAccountFor": "{{connector}} · Selected account: {{account}}",
-      "title": "Connectors",
-      "useDefault": "Use default"
+      "title": "Connectors"
     },
     "documentTitle": "Chat",
     "errors": {
@@ -2952,28 +2942,12 @@
     "totalAccounts": "{{value}} accounts"
   },
   "connectors": {
-    "access": {
-      "accessFor": "{{action}} {{connector}} access for {{agent}}",
-      "accessUpdated": "{{connector}} access updated",
-      "clearSearch": "Clear agent search",
-      "description": "Choose which agents can use this connector.",
-      "loading": "Loading agents...",
-      "managePermissions": "Manage permissions",
-      "managePermissionsFor": "Manage {{connector}} permissions for {{agent}}",
-      "noAgents": "No agents found",
-      "noMatchingAgents": "No agents matching \"{{search}}\"",
-      "permissionsUpdated": "Permissions updated",
-      "search": "Find agents",
-      "title": "Manage {{connector}} access",
-      "unnamedAgent": "Unnamed"
-    },
     "accounts": {
       "accountName": "Account name",
       "accountsUnavailable": "Accounts are unavailable for this connector.",
       "actions": "Account actions",
       "addAccount": "Add account",
       "connected": "Connected",
-      "default": "Default",
       "disconnectAccount": "Disconnect account",
       "disconnectDescription": "This disconnects the account from Okou. Threads using it will return to default inheritance. The provider account will not be deleted.",
       "disconnectDescriptionWithCount": "This disconnects the account from Okou. {{value}} threads will return to default inheritance. The provider account will not be deleted.",
@@ -2987,8 +2961,6 @@
       "find": "Find accounts",
       "loading": "Loading accounts…",
       "loadMore": "Load more",
-      "makeDefault": "Make default",
-      "managerDescription": "New runs use your default account.",
       "managerTitle": "Manage {{connector}} accounts",
       "namePromptDescription": "You can skip this and name the account later.",
       "namePromptTitle": "Name your {{connector}} account",
@@ -3062,11 +3034,7 @@
     },
     "catalog": {
       "access": {
-        "add": "Add access",
-        "manage": "Manage {{connector}} access",
-        "summaryMany": "{{value}} agents",
-        "unavailable": "Access unavailable",
-        "usedBy": "Used by "
+        "manage": "Manage {{connector}} access"
       },
       "categories": {
         "ai": {
