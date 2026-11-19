@@ -297,7 +297,9 @@ internal fun OkouApp(
                         }
                     },
                     actions = {
-                        if (settings == null && !searchActive && chats != null && composer != null) {
+                        if (
+                            settings == null && !searchActive && chats != null && composer != null
+                        ) {
                             WorkspaceToolbarActions(
                                 showFilter = showList,
                                 filter = list.filter,
@@ -344,7 +346,7 @@ internal fun OkouApp(
                             else Modifier.width(listWidth.dp).fillMaxHeight(),
                             horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
-                            if (searchActive && chats != null) {
+                            if (searchActive) {
                                 ChatTitleSearch(
                                     state = list,
                                     search = searchState,
