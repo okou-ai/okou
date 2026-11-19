@@ -10,7 +10,7 @@ import batch_aba_report as batch
 import later_parking_report as later
 import report
 import speculative_fault_report as saving
-import status_failure_report as failure
+import status_evidence
 from native_transition_report import wait_progress, wire
 from cleanup_report import supplied_policy
 from report import exact
@@ -50,11 +50,11 @@ def validate(directory):
         initial, captured, accepted, lost, progress, joined, ready = [event["evidence"] for event in events[:7]]
         mode = case.rsplit("-", 1)[0]
         path = initial.get("status_path")
-        if not failure.valid_status_path(path) or path in paths:
+        if not status_evidence.valid_status_path(path) or path in paths:
             raise ValueError("invalid or replayed native physical pause status path")
         paths.add(path)
         baseline = initial.get("published_status")
-        failure.status(baseline, sandbox=identity[0])
+        status_evidence.original_status(baseline, sandbox=identity[0])
         exact(initial, {"policy":policy,"status_path":path,"published_status":baseline,"regular_file":True},
               "native physical pause changed original inputs")
         history, operation = later.history_operation(

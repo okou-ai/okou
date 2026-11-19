@@ -10,7 +10,7 @@ import batch_aba_report as batch
 import progress_report as foreground
 import later_parking_report as later
 import report
-import status_failure_report as failure
+import status_evidence
 from cleanup_report import accounting, coverage, supplied_policy
 from report import exact
 
@@ -55,7 +55,7 @@ def validate_saving_progress(events, terminal, baseline, policy, identities, run
         "speculative required data/lease/accounting did not join")
     polled = batch.clock(status.get("status_wait_polled_ns"), events[3]["monotonic_ns"], events[4]["monotonic_ns"])
     before, after = status.get("status_waits_before"), status.get("status_waits_after")
-    if not failure.status_wait_advanced(before, after):
+    if not status_evidence.status_wait_advanced(before, after):
         raise ValueError("speculative final status wait not positively observed")
     if foreground.heartbeat(status.get("heartbeat"), sequence+1, polled, events[4]["monotonic_ns"], (0,0)) != runner:
         raise ValueError("speculative final heartbeat changed Runner identity")
@@ -64,7 +64,7 @@ def validate_saving_progress(events, terminal, baseline, policy, identities, run
         "publication_polled_pending": True, "allocated": [0,0,0]}, "speculative status wait lost progress")
     released = batch.clock(published.get("status_released_ns"), events[4]["monotonic_ns"], events[5]["monotonic_ns"])
     finished = batch.clock(published.get("publication_joined_ns"), released, events[5]["monotonic_ns"])
-    later.current_status(published.get("published_status"), baseline)
+    status_evidence.current_status(published.get("published_status"), baseline)
     exact(published, {"status_released_ns": released, "publication_joined_ns": finished,
         "published_status": published["published_status"], "regular_file": True, "allocated": [0,0,0]},
         "speculative final current status retained inventory")
@@ -102,11 +102,11 @@ def validate(directory):
         initial, waiting, lost = [event["evidence"] for event in events[:3]]
         mode = "panic" if case.startswith("SpeculativePanic-") else "drop"
         path = initial.get("status_path")
-        if not failure.valid_status_path(path) or path in paths:
+        if not status_evidence.valid_status_path(path) or path in paths:
             raise ValueError("invalid or replayed speculative private status path")
         paths.add(path)
         baseline = initial.get("published_status")
-        failure.status(baseline, sandbox=identity[0])
+        status_evidence.original_status(baseline, sandbox=identity[0])
         exact(initial, {"policy": policy, "status_path": path, "published_status": baseline,
                         "regular_file": True}, "speculative fault changed original inputs")
         history, operation = later.history_operation(
