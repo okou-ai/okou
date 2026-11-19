@@ -8,7 +8,10 @@ shift
 export ANDROID_HOME=${ANDROID_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/android-sdk}
 : "${OKOU_SCREENSHOT_RUN:?Invoke the recipe through screenshots.py run}"
 cd android
-bash scripts/test-release.sh \
+# Configuration cache lets Gradle prepare the managed device alongside APK tasks.
+python3 scripts/run-native-tests.py build/reports/instrumentation/logcat -- \
+  ./gradlew :app:pixel2Api35Setup :app:assembleDebug :app:pixel2Api35DebugAndroidTest \
+  --configuration-cache --no-daemon \
   "-Pokou.screenshotScenarioDir=$scenario" \
   -Pandroid.testInstrumentationRunnerArguments.class=ai.okou.android.screenshots.ScreenshotScenario \
   "-Pandroid.testInstrumentationRunnerArguments.okouScreenshotRun=$OKOU_SCREENSHOT_RUN" \
