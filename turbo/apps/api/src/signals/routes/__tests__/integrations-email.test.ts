@@ -1623,9 +1623,6 @@ describe("Email integration", () => {
 
   it("recalls a picked email before its mailbox lookup finishes", async () => {
     const { actor } = await entitledActor();
-    await connectorsApi.updateFeatureSwitches(actor, {
-      connectorChatAccountAccess: true,
-    });
     await connectEmailMailbox(actor, "gmail", actor.email);
     verifiedDirectory(actor);
     await setGmailContextReadPermission("allow");

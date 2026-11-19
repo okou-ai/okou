@@ -102,7 +102,9 @@ test("Keep a custom connection pending until its account naming continuation is 
   mockCustomConnectorStory(context, [{ connector }]);
   context.mocks.data.agents([listAgent(RESEARCH_ID, "Research")]);
   let account: ConnectorAccountConnection | undefined;
-  mockSavedConnectorAccounts(context, () => (account ? [account] : []));
+  mockSavedConnectorAccounts(context, () => {
+    return account ? [account] : [];
+  });
   let accountReads = 0;
   context.mocks.api(customConnectorValuesContract.set, ({ respond }) => {
     account = customConnectorAccount(connector.id, {

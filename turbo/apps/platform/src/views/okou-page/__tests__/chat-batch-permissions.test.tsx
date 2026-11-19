@@ -251,21 +251,25 @@ test("Review full scopes grouped by connector and apply the selected duration to
     {
       target: { kind: "builtin", connectorSlug: "calendar-service" },
       mode: "patch",
-      grants: items.slice(0, 2).map(({ permission }) => ({
-        permission,
-        action: "allow",
-        expiresIn: "24h",
-      })),
+      grants: items.slice(0, 2).map(({ permission }) => {
+        return {
+          permission,
+          action: "allow",
+          expiresIn: "24h",
+        };
+      }),
     },
     {
       target: { kind: "builtin", connectorSlug: "reports-service" },
       mode: "patch",
       grants: expect.arrayContaining(
-        [items[2]!.permission, UNKNOWN_PERMISSION_GRANT].map((permission) => ({
-          permission,
-          action: "allow",
-          expiresIn: "24h",
-        })),
+        [items[2]!.permission, UNKNOWN_PERMISSION_GRANT].map((permission) => {
+          return {
+            permission,
+            action: "allow",
+            expiresIn: "24h",
+          };
+        }),
       ),
     },
   ]);
@@ -358,19 +362,25 @@ test("Review every scope in a large batch as metadata and grants arrive separate
   ).resolves.toBeInTheDocument();
   expect(within(dialog).getByText("Permissions allowed")).toBeInTheDocument();
   expect(applied).toStrictEqual(
-    ["calendar-service", "reports-service"].map((connectorSlug) => ({
-      target: { kind: "builtin", connectorSlug },
-      mode: "patch",
-      grants: expect.arrayContaining(
-        largeBatch
-          .filter((item) => item.connectorSlug === connectorSlug)
-          .map(({ permission }) => ({
-            permission,
-            action: "allow",
-            expiresIn: "always",
-          })),
-      ),
-    })),
+    ["calendar-service", "reports-service"].map((connectorSlug) => {
+      return {
+        target: { kind: "builtin", connectorSlug },
+        mode: "patch",
+        grants: expect.arrayContaining(
+          largeBatch
+            .filter((item) => {
+              return item.connectorSlug === connectorSlug;
+            })
+            .map(({ permission }) => {
+              return {
+                permission,
+                action: "allow",
+                expiresIn: "always",
+              };
+            }),
+        ),
+      };
+    }),
   );
   for (const request of applied) {
     expect(request.grants).toHaveLength(10);

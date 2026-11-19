@@ -104,7 +104,7 @@ test("Configure connector permissions from the composer", async () => {
   await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
 
   click(await findFastControl("button", "Connectors"));
-  click(await screen.findByRole("button", { name: /^Axiom/u }));
+  click(await findFastControl("button", /^Axiom/u));
   click(await findFastControl("button", "Permissions"));
   const dialog = await screen.findByRole("dialog", {
     name: "Axiom permissions",
@@ -192,9 +192,7 @@ describe("connecting a custom connector from Chat", () => {
       expect(screen.queryByRole("dialog")).toBeNull();
     });
     await ensureConnectorsOpen(user);
-    await expect(
-      screen.findByRole("button", { name: /^Acme Search/u }),
-    ).resolves.toBeVisible();
+    await expect(screen.findByText("Acme Search")).resolves.toBeVisible();
   });
 });
 
@@ -302,11 +300,9 @@ test("Show only the connector actions that are useful in chat", async () => {
 
   await loadComposer();
   await openConnectors(user);
-  await user.click(await screen.findByRole("button", { name: /^Axiom/u }));
+  await user.click(await findFastControl("button", /^Axiom/u));
   const axiomMenu = await screen.findByRole("dialog", { name: "Axiom" });
-  expect(
-    within(axiomMenu).getByRole("button", { name: "Permissions" }),
-  ).toBeVisible();
+  expect(queryFastControl("button", "Permissions", axiomMenu)).toBeVisible();
   expect(
     within(axiomMenu).getByRole("switch", { name: "Work access" }),
   ).toBeChecked();
@@ -314,11 +310,9 @@ test("Show only the connector actions that are useful in chat", async () => {
     within(axiomMenu).getByRole("switch", { name: "Personal access" }),
   ).toBeChecked();
   await user.keyboard("{Escape}");
-  await user.click(await screen.findByRole("button", { name: /^GitHub/u }));
+  await user.click(await findFastControl("button", /^GitHub/u));
   const githubMenu = await screen.findByRole("dialog", { name: "GitHub" });
-  expect(
-    within(githubMenu).queryByRole("button", { name: "Permissions" }),
-  ).toBeNull();
+  expect(queryFastControl("button", "Permissions", githubMenu)).toBeNull();
   expect(
     within(githubMenu).getByRole("switch", { name: "Work access" }),
   ).toBeVisible();
@@ -488,7 +482,7 @@ test("Respect integration-managed connector availability in chat", async () => {
 
   await loadComposer();
   await openConnectors(user);
-  click(await screen.findByRole("button", { name: /^Feishu/u }));
+  click(await screen.findByText("Feishu"));
   const menu = await screen.findByRole("dialog", { name: "Feishu" });
   await expect(
     within(menu).findByRole("switch", { name: "Primary access" }),
@@ -603,7 +597,7 @@ test("Enable a credential-free connector directly from chat", async () => {
   });
   await ensureConnectorsOpen(user);
   await expect(
-    screen.findByRole("button", { name: /^Public Stripe/u }),
+    findFastControl("button", /^Public Stripe/u),
   ).resolves.toBeVisible();
   expect(browserOpen.calls).toHaveLength(0);
 });

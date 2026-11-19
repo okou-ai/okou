@@ -25,6 +25,7 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { findFastControl } from "./chat-message-experience-test-helpers.ts";
 import {
   getConnectorAction,
   getConnectorCard,
@@ -720,7 +721,7 @@ test.each([
     ).not.toBeInTheDocument();
     click(within(dialog).getByLabelText("Close"));
     await expect(
-      screen.findByRole("button", { name: `Manage ${label} accounts` }),
+      findFastControl("button", `Manage ${label} accounts`),
     ).resolves.toBeVisible();
   },
 );

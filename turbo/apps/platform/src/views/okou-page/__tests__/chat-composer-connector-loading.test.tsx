@@ -62,7 +62,7 @@ test("Read connected inventory without fetching the connector directory or old a
   await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
   click(await findFastControl("button", "Connectors"));
   await expect(
-    screen.findByRole("button", { name: /^GitHub/u }),
+    findFastControl("button", /^GitHub/u),
   ).resolves.toBeInTheDocument();
 });
 
@@ -97,7 +97,7 @@ test("Refresh the remote menu and Chat account inventory independently", async (
   const trigger = await findFastControl("button", "Connectors");
   expect(screen.queryByText("First computer")).not.toBeInTheDocument();
   click(trigger);
-  await screen.findByRole("button", { name: /^First GitHub/u });
+  await findFastControl("button", /^First GitHub/u);
   await screen.findByText("First computer");
   click(trigger);
   await waitFor(() => {
@@ -108,7 +108,7 @@ test("Refresh the remote menu and Chat account inventory independently", async (
   computerLabel = "Renamed computer";
   click(trigger);
   await expect(
-    screen.findByRole("button", { name: /^Renamed GitHub/u }),
+    findFastControl("button", /^Renamed GitHub/u),
   ).resolves.toBeVisible();
   await expect(screen.findByText("Renamed computer")).resolves.toBeVisible();
   expect(screen.queryByText("First computer")).not.toBeInTheDocument();
@@ -126,9 +126,7 @@ test("Render connected connectors while remote resources are unavailable", async
   });
   await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
   click(await findFastControl("button", "Connectors"));
-  await expect(
-    screen.findByRole("button", { name: /^GitHub/u }),
-  ).resolves.toBeVisible();
+  await expect(findFastControl("button", /^GitHub/u)).resolves.toBeVisible();
   await expect(screen.findByRole("alert")).resolves.toBeVisible();
 });
 
@@ -156,9 +154,7 @@ test("Reopening a pending menu shares the Chat page's inventory request", async 
   });
   click(trigger);
   release.resolve(undefined);
-  await expect(
-    screen.findByRole("button", { name: /^GitHub/u }),
-  ).resolves.toBeVisible();
+  await expect(findFastControl("button", /^GitHub/u)).resolves.toBeVisible();
   expect(reads).toBe(1);
 });
 

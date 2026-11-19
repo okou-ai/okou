@@ -181,7 +181,9 @@ async function openPermissionEditor(
   options: PermissionEditorOptions,
 ): Promise<HTMLElement> {
   await setupPermissionEditor(options);
-  const card = await waitFor(() => getConnectorCard("Slack"));
+  const card = await waitFor(() => {
+    return getConnectorCard("Slack");
+  });
   click(await waitForRoleElementByText("button", "Permissions", card));
   const drawer = await screen.findByRole("dialog", {
     name: "Slack permissions",

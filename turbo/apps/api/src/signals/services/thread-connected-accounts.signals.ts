@@ -75,7 +75,6 @@ import type {
 import type { createThreadConnectorSources } from "./thread-connector-sources.service";
 import type { PickedThreadInputEvent } from "./thread-run-prompt/types";
 
-/** The integration account that delivered the picked input, if any. */
 type DispatchTiming$ = Computed<ApiDispatchTimingCollector>;
 
 export type ConnectedAccountsError = ReturnType<typeof badRequestMessage>;
@@ -322,7 +321,9 @@ function createConnectorInputSignals(
   const featureSwitchContext$ = computed(async (get) => {
     return await get(execution.featureSwitches$);
   });
-  const memberPermissionPolicies$ = execution.permissionPolicies$;
+  const memberPermissionPolicies$ = computed((get) => {
+    return get(execution.permissionPolicies$);
+  });
   const customConnectorDefinitions$ = computed(async (get) => {
     const { timing } = await get(connectorInput$);
     const collector = timing;

@@ -86,19 +86,21 @@ function pendingChatAccess(accounts: ReturnType<typeof githubAccounts>) {
     target: githubTarget(),
     available: true,
     currentConnectionId: accounts[1]!.id,
-    accounts: accounts.map((account, index) => ({
-      connectionId: account.id,
-      displayName: account.displayName,
-      isDefault: account.isDefault,
-      defaultEnabled: true,
-      overrideEnabled: index === 0 ? false : null,
-      enabled: index > 0,
-    })),
+    accounts: accounts.map((account, index) => {
+      return {
+        connectionId: account.id,
+        displayName: account.displayName,
+        isDefault: account.isDefault,
+        defaultEnabled: true,
+        overrideEnabled: index === 0 ? false : null,
+        enabled: index > 0,
+      };
+    }),
   };
 }
 
 async function choosePersonalAccount(user: ReturnType<typeof userEvent.setup>) {
-  click(await screen.findByRole("button", { name: /GitHub.*accounts/u }));
+  click(await findFastControl("button", /GitHub.*accounts/u));
   const work = await screen.findByRole("switch", { name: "Work access" });
   await user.click(work);
   await waitFor(() => {
@@ -236,11 +238,13 @@ test.each([false, true])(
       );
     });
     expect(overrides).toStrictEqual(
-      createRequests.map((request) => ({
-        threadId: request.clientThreadId,
-        connectionId: accounts[0]!.id,
-        enabled: false,
-      })),
+      createRequests.map((request) => {
+        return {
+          threadId: request.clientThreadId,
+          connectionId: accounts[0]!.id,
+          enabled: false,
+        };
+      }),
     );
     expect(sends[0]).toMatchObject({
       prompt: retainedPrompt,

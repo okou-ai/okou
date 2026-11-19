@@ -21,18 +21,13 @@ function normalizedText(element: Element): string {
 
 export function findFastControl(
   role: "button" | "link" | "radio" | "tab",
-  name: string,
+  name: string | RegExp,
   container: ParentNode = document.body,
 ): Promise<HTMLElement> {
   return waitFor(() => {
-    const control = queryAllByRoleFast(role, container).find((candidate) => {
-      return (
-        candidate.getAttribute("aria-label") === name ||
-        normalizedText(candidate) === name
-      );
-    });
+    const control = queryFastControl(role, name, container);
     if (!control) {
-      throw new Error(`${role} ${name} not found`);
+      throw new Error(`${role} ${String(name)} not found`);
     }
     return control;
   });
@@ -40,15 +35,16 @@ export function findFastControl(
 
 export function queryFastControl(
   role: "button" | "link" | "radio" | "tab",
-  name: string,
+  name: string | RegExp,
   container: ParentNode = document.body,
 ): HTMLElement | null {
   return (
     queryAllByRoleFast(role, container).find((candidate) => {
-      return (
-        candidate.getAttribute("aria-label") === name ||
-        normalizedText(candidate) === name
-      );
+      const label = candidate.getAttribute("aria-label");
+      const text = normalizedText(candidate);
+      return typeof name === "string"
+        ? label === name || text === name
+        : name.test(label ?? text);
     }) ?? null
   );
 }

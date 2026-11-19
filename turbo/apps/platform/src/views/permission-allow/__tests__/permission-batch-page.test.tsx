@@ -81,10 +81,12 @@ function installResources({
             invertInDarkMode: false,
           },
           permissionCount: permissions.length,
-          permissions: permissions.map((permission) => ({
-            name: permission,
-            description: `Description for ${permission}`,
-          })),
+          permissions: permissions.map((permission) => {
+            return {
+              name: permission,
+              description: `Description for ${permission}`,
+            };
+          }),
           categories: null,
           defaultPolicy: { permissionDefault, unknownPolicy: "ask" },
         },
@@ -260,15 +262,17 @@ test.each(["dismissed", "continued"] as const)(
         }
         const { connectorSlug } = body.target;
         grants.push(
-          ...body.grants.map((grant) => ({
-            agentId: AGENT_ID,
-            connectorSlug,
-            permission: grant.permission,
-            action: "allow" as const,
-            expiresAt: "2099-01-01T00:00:00.000Z",
-            createdAt: "2030-01-01T00:00:00.000Z",
-            updatedAt: "2030-01-01T00:00:00.000Z",
-          })),
+          ...body.grants.map((grant) => {
+            return {
+              agentId: AGENT_ID,
+              connectorSlug,
+              permission: grant.permission,
+              action: "allow" as const,
+              expiresAt: "2099-01-01T00:00:00.000Z",
+              createdAt: "2030-01-01T00:00:00.000Z",
+              updatedAt: "2030-01-01T00:00:00.000Z",
+            };
+          }),
         );
         context.mocks.ably.trigger("connectorPermissionUpdated");
         return respond(200, connectorPermissionsResponse(body.target, grants));

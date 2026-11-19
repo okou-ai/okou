@@ -3,7 +3,7 @@ import {
   type ApplyConnectorPermissions,
 } from "@okouai/api-contracts/contracts/connector-permissions";
 import { connectorPermissionsResponse } from "../../../__tests__/connector-permissions.ts";
-import { screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import {
   type PublicConnectorCatalogPermissionDetail,
   connectorCatalogContract,
@@ -36,6 +36,7 @@ import {
   mockPublicConnectorStatus,
   getConnectorCard,
 } from "../../okou-page/__tests__/connector-page-test-helpers.ts";
+import { findFastControl } from "../../okou-page/__tests__/chat-message-experience-test-helpers.ts";
 
 const context = testContext();
 const FIXED_NOW_ISO = "2026-08-18T12:00:00.000Z";
@@ -213,9 +214,11 @@ function chooseDuration(permission: string, option: string): void {
 async function openPermissions(connectorName: string): Promise<void> {
   await screen.findByText(connectorName);
   click(
-    await within(getConnectorCard(connectorName)).findByRole("button", {
-      name: "Permissions",
-    }),
+    await findFastControl(
+      "button",
+      "Permissions",
+      getConnectorCard(connectorName),
+    ),
   );
   await screen.findByRole("heading", {
     name: (accessibleName) => {
@@ -299,9 +302,7 @@ test("A user can apply a temporary connector policy", async () => {
 test("A user can restore the saved connector-policy baseline", async () => {
   const requests = await setupAppliedAxiomPermission();
   click(
-    await within(getConnectorCard("Axiom")).findByRole("button", {
-      name: "Permissions",
-    }),
+    await findFastControl("button", "Permissions", getConnectorCard("Axiom")),
   );
   await screen.findByRole("heading", { name: /^Axiom permissions\b/u });
   click(policyButton(permissionRow("annotations|create"), "Deny"));
@@ -355,9 +356,7 @@ test("Closing connector permissions discards unapplied changes", async () => {
   expect(requests).toStrictEqual([]);
 
   click(
-    await within(getConnectorCard("Axiom")).findByRole("button", {
-      name: "Permissions",
-    }),
+    await findFastControl("button", "Permissions", getConnectorCard("Axiom")),
   );
   await screen.findByRole("heading", { name: /^Axiom permissions\b/u });
   const reopened = permissionRow("annotations|create");
