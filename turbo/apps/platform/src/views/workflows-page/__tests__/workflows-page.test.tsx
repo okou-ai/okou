@@ -3222,6 +3222,7 @@ async function verifyWebhookFieldInteractions(
 }
 
 test("Allow webhook creation when the plan grants the capability", async () => {
+  const clipboard = context.mocks.browser.clipboardWriteText();
   context.mocks.data.org({
     id: "org_1",
     name: "Test Org",
@@ -3249,12 +3250,29 @@ test("Allow webhook creation when the plan grants the capability", async () => {
 
   click(buttonByText("Create webhook"));
   const dialog = screen.getByRole("dialog", { name: "Add webhook automation" });
+  const webhookUrl = webhookWorkflowAutomation().webhookUrl;
   await expect(
     within(dialog).findByLabelText("Webhook URL"),
-  ).resolves.toHaveValue(webhookWorkflowAutomation().webhookUrl);
+  ).resolves.toHaveValue(webhookUrl);
   expect(within(dialog).getByLabelText("Signing secret")).toHaveValue(
     "webhook-secret",
   );
+
+  const copyButtons = queryAllByRoleFast("button", dialog).filter((button) => {
+    return textFor(button) === "Copy";
+  });
+  expect(copyButtons).toHaveLength(3);
+  for (const button of copyButtons) {
+    click(button);
+  }
+  expect(clipboard.writes.slice(0, 2)).toStrictEqual([
+    webhookUrl,
+    "webhook-secret",
+  ]);
+  expect(clipboard.writes).toHaveLength(3);
+  expect(clipboard.writes[2]).toContain(webhookUrl);
+  expect(clipboard.writes[2]).toContain("webhook-secret");
+
   click(buttonByText("Done", dialog));
   await waitFor(() => {
     expect(dialog).not.toBeInTheDocument();
