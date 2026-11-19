@@ -180,7 +180,7 @@ import {
   teamsDeliveryTargetSchema,
   type TeamsDeliveryTarget,
 } from "./teams-chat-callback-payload";
-import { loadTeamsQueuedLaunchMaterial$ } from "./teams-queued-launch-context.service";
+import { createTeamsQueuedDelivery } from "./teams-queued-launch-context.service";
 import {
   telegramDeliveryTargetSchema,
   type TelegramDeliveryTarget,
@@ -3566,7 +3566,7 @@ const loadMessageRejectionDelivery$ = command(
 
 const loadQueuedRejectionChannel$ = command(
   async (
-    { set },
+    { get, set },
     head: QueuedRejectionHead,
     signal: AbortSignal,
   ): Promise<QueuedAdmissionFailureChannel | undefined> => {
@@ -3642,14 +3642,9 @@ const loadQueuedRejectionChannel$ = command(
           : undefined;
       }
       case "teams": {
-        const material = await set(
-          loadTeamsQueuedLaunchMaterial$,
-          source,
-          signal,
-        );
-        return material
-          ? { ...delivery, kind: "Teams", target: material.teamsDelivery }
-          : undefined;
+        const target = await get(createTeamsQueuedDelivery(source));
+        signal.throwIfAborted();
+        return target ? { ...delivery, kind: "Teams", target } : undefined;
       }
       case "discord": {
         const material = await set(

@@ -6,7 +6,7 @@ import { teamsOrgConnections } from "@okouai/db/runtime/teams-org-connection";
 import { teamsOrgInstallations } from "@okouai/db/schema/teams-org-installation";
 import { and, eq } from "drizzle-orm";
 
-import { command } from "ccstate";
+import { command, computed } from "ccstate";
 import { db$ } from "../external/db";
 import {
   teamsDeliveryTargetSchema,
@@ -77,18 +77,18 @@ function requiredTeamsLaunchContext(row: TeamsLaunchContextRow | undefined) {
   };
 }
 
-const loadTeamsLaunchContext$ = command(
-  async (
-    { get },
-    args: {
-      readonly eventId: string;
-      readonly chatThreadId: string;
-      readonly orgId: string;
-      readonly userId: string;
-    },
-    signal: AbortSignal,
-  ) => {
-    signal.throwIfAborted();
+export type TeamsThreadContext = ReturnType<typeof requiredTeamsLaunchContext>;
+
+interface TeamsLaunchSource {
+  readonly eventId: string;
+  readonly chatThreadId: string;
+  readonly orgId: string;
+  readonly userId: string;
+  readonly contextId?: string;
+}
+
+export function createTeamsLaunchContext(args: TeamsLaunchSource) {
+  return computed(async (get): Promise<TeamsThreadContext> => {
     const db = get(db$);
     const [row] = await db
       .select({
@@ -157,13 +157,15 @@ const loadTeamsLaunchContext$ = command(
           eq(chatEvents.id, args.eventId),
           eq(chatEvents.chatThreadId, args.chatThreadId),
           eq(chatEvents.contextType, "teams"),
+          args.contextId === undefined
+            ? undefined
+            : eq(chatTeamsContext.id, args.contextId),
         ),
       )
       .limit(1);
-    signal.throwIfAborted();
     return requiredTeamsLaunchContext(row);
-  },
-);
+  });
+}
 
 function promptFiles(context: {
   readonly messageFiles: NonNullable<
@@ -192,69 +194,85 @@ function promptThreadId(context: {
   return context.threadId;
 }
 
+export function teamsPromptFromContext(
+  context: NonNullable<TeamsThreadContext>,
+  featureSwitchContext: FeatureSwitchContext,
+) {
+  return {
+    prompt: appendTeamsFilesToPrompt(context.messageText, promptFiles(context)),
+    appendSystemPrompt: buildTeamsPrompt({
+      tenantId: context.tenantId,
+      tenantName: context.tenantName,
+      teamId: context.teamId,
+      teamName: context.teamName,
+      channelId: context.channelId,
+      conversationId: context.conversationId,
+      conversationType: context.conversationType,
+      threadId: promptThreadId(context),
+      activityId: context.activityId,
+      teamsAppId: context.teamsAppId,
+      botId: context.installationBotId,
+      botName: context.installationBotName,
+      integrationNote: resolveIntegrationNotePrompt({
+        triggerSource: "teams",
+        featureSwitchContext,
+      }),
+      threadContext: context.threadContext,
+    }),
+  };
+}
+
+export function teamsDeliveryFromContext(
+  context: NonNullable<TeamsThreadContext>,
+) {
+  return teamsDeliveryTargetSchema.parse({
+    tenantId: context.tenantId,
+    tenantName: context.tenantName,
+    teamId: context.teamId,
+    teamName: context.teamName,
+    channelId: context.channelId,
+    conversationId: context.conversationId,
+    conversationType: context.conversationType,
+    threadId: context.threadId,
+    activityId: context.activityId,
+    serviceUrl: context.serviceUrl,
+    connectionId: context.connectionId,
+    teamsUserId: context.senderUserId,
+    teamsUserDisplayName: context.senderDisplayName,
+    teamsUserPrincipalName: context.senderPrincipalName,
+    botId: context.installationBotId,
+    botName: context.installationBotName,
+    files: context.messageFiles.map((file) => {
+      return { fileId: file.fileId, ...file.payload };
+    }),
+  });
+}
+
+export function createTeamsQueuedDelivery(args: TeamsLaunchSource) {
+  const context$ = createTeamsLaunchContext(args);
+  return computed(async (get) => {
+    const context = await get(context$);
+    return context ? teamsDeliveryFromContext(context) : null;
+  });
+}
+
 export const loadTeamsQueuedLaunchMaterial$ = command(
   async (
-    { set },
-    args: {
-      readonly eventId: string;
-      readonly chatThreadId: string;
-      readonly orgId: string;
-      readonly userId: string;
+    { get },
+    args: TeamsLaunchSource & {
       readonly featureSwitchContext: FeatureSwitchContext;
     },
     signal: AbortSignal,
   ): Promise<TeamsQueuedLaunchMaterial | null> => {
-    const context = await set(loadTeamsLaunchContext$, args, signal);
+    signal.throwIfAborted();
+    const context = await get(createTeamsLaunchContext(args));
+    signal.throwIfAborted();
     if (!context) {
       return null;
     }
-    const botId = context.installationBotId;
-    const botName = context.installationBotName;
     return {
-      prompt: appendTeamsFilesToPrompt(
-        context.messageText,
-        promptFiles(context),
-      ),
-      appendSystemPrompt: buildTeamsPrompt({
-        tenantId: context.tenantId,
-        tenantName: context.tenantName,
-        teamId: context.teamId,
-        teamName: context.teamName,
-        channelId: context.channelId,
-        conversationId: context.conversationId,
-        conversationType: context.conversationType,
-        threadId: promptThreadId(context),
-        activityId: context.activityId,
-        teamsAppId: context.teamsAppId,
-        botId,
-        botName,
-        integrationNote: resolveIntegrationNotePrompt({
-          triggerSource: "teams",
-          featureSwitchContext: args.featureSwitchContext,
-        }),
-        threadContext: context.threadContext,
-      }),
-      teamsDelivery: teamsDeliveryTargetSchema.parse({
-        tenantId: context.tenantId,
-        tenantName: context.tenantName,
-        teamId: context.teamId,
-        teamName: context.teamName,
-        channelId: context.channelId,
-        conversationId: context.conversationId,
-        conversationType: context.conversationType,
-        threadId: context.threadId,
-        activityId: context.activityId,
-        serviceUrl: context.serviceUrl,
-        connectionId: context.connectionId,
-        teamsUserId: context.senderUserId,
-        teamsUserDisplayName: context.senderDisplayName,
-        teamsUserPrincipalName: context.senderPrincipalName,
-        botId,
-        botName,
-        files: context.messageFiles.map((file) => {
-          return { fileId: file.fileId, ...file.payload };
-        }),
-      }),
+      ...teamsPromptFromContext(context, args.featureSwitchContext),
+      teamsDelivery: teamsDeliveryFromContext(context),
       userInfoExtras: {
         ...(context.senderDisplayName
           ? { teamsUserDisplayName: context.senderDisplayName }

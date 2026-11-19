@@ -1,5 +1,4 @@
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { teamsAccountOwnerCondition } from "./teams-workspace-identity.service";
 import { computed, type Computed } from "ccstate";
 import { and, eq, exists, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import {
@@ -18,7 +17,6 @@ import { chatAgentphoneContext } from "@okouai/db/schema/chat-agentphone-context
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatFeishuContext } from "@okouai/db/schema/chat-feishu-context";
 import { chatSlackContext } from "@okouai/db/schema/chat-slack-context";
-import { chatTeamsContext } from "@okouai/db/schema/chat-teams-context";
 import { chatTelegramContext } from "@okouai/db/schema/chat-telegram-context";
 import { feishuChatThreadRoutes } from "@okouai/db/schema/feishu-chat-thread-route";
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
@@ -26,9 +24,6 @@ import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installatio
 import { slackChatThreadRoutes } from "@okouai/db/schema/slack-chat-thread-route";
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
-import { teamsChatThreadRoutes } from "@okouai/db/schema/teams-chat-thread-route";
-import { teamsOrgConnections } from "@okouai/db/runtime/teams-org-connection";
-import { teamsOrgInstallations } from "@okouai/db/schema/teams-org-installation";
 import { telegramOfficialUserLinks } from "@okouai/db/schema/telegram-official-user-link";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { db$ } from "../external/db";
@@ -37,6 +32,10 @@ import {
   userFeatureSwitchOverridesFromRows,
 } from "./feature-switch-scope";
 import type { PickedThreadInputEvent } from "./thread-run-prompt/types";
+import {
+  createTeamsLaunchContext,
+  type TeamsThreadContext,
+} from "./teams-queued-launch-context.service";
 
 type PickedThreadInputEventNode = Computed<
   Promise<PickedThreadInputEvent | null>
@@ -79,31 +78,6 @@ type FeishuLaunchContextRow = Pick<
   readonly routeThreadId: string;
   readonly feishuDisplayName: string | null;
   readonly connectorSourceId: string | null;
-};
-
-type TeamsLaunchContextRow = Pick<
-  typeof chatTeamsContext.$inferSelect,
-  | "tenantId"
-  | "tenantName"
-  | "teamId"
-  | "teamName"
-  | "channelId"
-  | "conversationId"
-  | "conversationType"
-  | "threadId"
-  | "activityId"
-  | "serviceUrl"
-  | "teamsAppId"
-  | "senderUserId"
-  | "senderDisplayName"
-  | "senderPrincipalName"
-  | "connectionId"
-  | "threadContext"
-  | "messageText"
-  | "messageFiles"
-> & {
-  readonly installationBotId: string | null;
-  readonly installationBotName: string | null;
 };
 
 type TelegramLaunchContextRow = Pick<
@@ -209,31 +183,6 @@ function requiredFeishuLaunchContext(row: FeishuLaunchContextRow | undefined) {
     connectionId: row.connectionId,
     connectorSourceId: row.connectorSourceId,
     installationId: row.installationId,
-  };
-}
-
-function requiredTeamsLaunchContext(row: TeamsLaunchContextRow | undefined) {
-  if (
-    !row ||
-    row.threadId === null ||
-    row.serviceUrl === null ||
-    row.senderUserId === null ||
-    row.connectionId === null ||
-    row.threadContext === null ||
-    row.messageText === null ||
-    row.messageFiles === null
-  ) {
-    return null;
-  }
-  return {
-    ...row,
-    threadId: row.threadId,
-    serviceUrl: row.serviceUrl,
-    senderUserId: row.senderUserId,
-    connectionId: row.connectionId,
-    threadContext: row.threadContext,
-    messageText: row.messageText,
-    messageFiles: row.messageFiles,
   };
 }
 
@@ -541,93 +490,28 @@ export function createFeishuThreadContext(
   });
 }
 
-export type TeamsThreadContext = ReturnType<typeof requiredTeamsLaunchContext>;
-
 export function createTeamsThreadContext(
   pickedEvent$: PickedThreadInputEventNode,
   orgId: string,
 ): Computed<Promise<TeamsThreadContext>> {
-  const context$ = computed(async (get) => {
-    const db = get(db$);
+  return computed(async (get) => {
     const pickedEvent = await get(pickedEvent$);
     if (
-      !pickedEvent ||
-      pickedEvent.contextType !== "teams" ||
+      pickedEvent?.contextType !== "teams" ||
       pickedEvent.contextId === null
     ) {
       return null;
     }
-    const [row] = await db
-      .select({
-        tenantId: chatTeamsContext.tenantId,
-        tenantName: chatTeamsContext.tenantName,
-        teamId: chatTeamsContext.teamId,
-        teamName: chatTeamsContext.teamName,
-        channelId: chatTeamsContext.channelId,
-        conversationId: chatTeamsContext.conversationId,
-        conversationType: chatTeamsContext.conversationType,
-        threadId: chatTeamsContext.threadId,
-        activityId: chatTeamsContext.activityId,
-        serviceUrl: chatTeamsContext.serviceUrl,
-        teamsAppId: chatTeamsContext.teamsAppId,
-        senderUserId: chatTeamsContext.senderUserId,
-        senderDisplayName: chatTeamsContext.senderDisplayName,
-        senderPrincipalName: chatTeamsContext.senderPrincipalName,
-        connectionId: chatTeamsContext.connectionId,
-        threadContext: chatTeamsContext.threadContext,
-        messageText: chatTeamsContext.messageText,
-        messageFiles: chatTeamsContext.messageFiles,
-        installationBotId: teamsOrgInstallations.botId,
-        installationBotName: teamsOrgInstallations.botName,
-      })
-      .from(chatEvents)
-      .innerJoin(
-        chatTeamsContext,
-        and(
-          eq(chatTeamsContext.id, chatEvents.contextId),
-          eq(chatTeamsContext.chatThreadId, chatEvents.chatThreadId),
-        ),
-      )
-      .innerJoin(
-        teamsChatThreadRoutes,
-        and(
-          eq(teamsChatThreadRoutes.chatThreadId, chatEvents.chatThreadId),
-          eq(teamsChatThreadRoutes.connectionId, chatTeamsContext.connectionId),
-          eq(
-            teamsChatThreadRoutes.conversationId,
-            chatTeamsContext.conversationId,
-          ),
-          eq(teamsChatThreadRoutes.threadId, chatTeamsContext.threadId),
-          eq(teamsChatThreadRoutes.userId, pickedEvent.userId),
-        ),
-      )
-      .innerJoin(
-        teamsOrgConnections,
-        and(
-          eq(teamsOrgConnections.id, chatTeamsContext.connectionId),
-          eq(teamsOrgConnections.teamsTenantId, chatTeamsContext.tenantId),
-          eq(teamsOrgConnections.userId, pickedEvent.userId),
-        ),
-      )
-      .innerJoin(
-        teamsOrgInstallations,
-        and(
-          eq(teamsOrgInstallations.teamsTenantId, chatTeamsContext.tenantId),
-          teamsAccountOwnerCondition({ orgId, userId: pickedEvent.userId }),
-        ),
-      )
-      .where(
-        and(
-          eq(chatEvents.id, pickedEvent.id),
-          eq(chatEvents.chatThreadId, pickedEvent.chatThreadId),
-          eq(chatEvents.contextType, "teams"),
-          eq(chatTeamsContext.id, pickedEvent.contextId),
-        ),
-      )
-      .limit(1);
-    return requiredTeamsLaunchContext(row);
+    return await get(
+      createTeamsLaunchContext({
+        eventId: pickedEvent.id,
+        chatThreadId: pickedEvent.chatThreadId,
+        contextId: pickedEvent.contextId,
+        userId: pickedEvent.userId,
+        orgId,
+      }),
+    );
   });
-  return context$;
 }
 
 export type TelegramThreadContext = ReturnType<
