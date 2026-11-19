@@ -413,7 +413,6 @@ export const requiredAuthContext$ = command(
       if (
         authContext.tokenType === "oauth" &&
         (!options.oauthScope ||
-          !authContext.scopes.includes("user:org:read") ||
           !(typeof options.oauthScope === "string"
             ? authContext.scopes.includes(options.oauthScope)
             : options.oauthScope.some((scope) => {
