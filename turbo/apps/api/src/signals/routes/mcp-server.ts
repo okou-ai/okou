@@ -152,7 +152,7 @@ const mcpRequest$ = command(async ({ get, set }, signal: AbortSignal) => {
     return challenge(config.metadataUrl);
   }
   const token = /^Bearer ([^\s,]+)$/iu.exec(authorization)?.[1];
-  if (!token || token.length > 16 * 1024) {
+  if (!token) {
     return challenge(config.metadataUrl, "invalid_token");
   }
   const verified = await settle(

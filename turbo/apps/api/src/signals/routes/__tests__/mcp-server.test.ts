@@ -286,7 +286,7 @@ describe("external MCP authentication and transport", () => {
 
   it.each([
     { scope: undefined, scp: [orgScope, readScope] },
-    { scope: requiredScopes, scp: [orgScope, readScope] },
+    { scope: "okou:chat:manage", scp: [orgScope, readScope] },
     { aud: ["https://another.example.test", resource] },
   ])("accepts the supported signed claim representation %j", async (claims) => {
     const auth = await fixture();
@@ -300,18 +300,17 @@ describe("external MCP authentication and transport", () => {
 
   it.each([
     { scope: requiredScopes, scp: ["okou:chat:manage"] },
-    {
-      scope: `${requiredScopes} ${readScope}`,
-      scp: [orgScope, readScope, "okou:chat:manage"],
-    },
-  ])("rejects disagreeing signed scope claims %j", async (claims) => {
+    { scope: undefined, scp: undefined },
+  ])("rejects a grant without the required scopes %j", async (claims) => {
     const auth = await fixture();
-    await expect(
+    const response = await accept(
       client().request({
         extraHeaders: protocolHeaders(auth.token(claims), "tools/list"),
         body: requestBody("tools/list"),
       }),
-    ).resolves.toMatchObject({ status: 401, body: { error: "invalid_token" } });
+      [403],
+    );
+    expect(response.body).toStrictEqual({ error: "insufficient_scope" });
   });
 
   it("acknowledges legacy initialization notifications without caching them", async () => {

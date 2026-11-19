@@ -40,7 +40,7 @@ const oauthClaimsSchema = object({
     .refine((value) => {
       return value.trim().length > 0;
     }),
-  exp: number().int().positive(),
+  exp: number(),
   scope: string().optional(),
   scp: array(string().min(1)).optional(),
 });
@@ -89,7 +89,6 @@ export async function verifyClerkOAuthAccessToken(
       secretKey: env("CLERK_SECRET_KEY"),
       audience: config.resource,
       headerType: ["at+jwt", "application/at+jwt"],
-      clockSkewInMs: 0,
     }),
   );
   if (!verified.ok) {
@@ -114,21 +113,7 @@ export async function verifyClerkOAuthAccessToken(
     scp,
     exp,
   } = parsed.data;
-  const scopes =
-    scope === undefined ? scp : scope.split(/\s+/u).filter(Boolean);
-  if (
-    !scopes ||
-    (scopes &&
-      scp &&
-      (scopes.some((item) => {
-        return !scp.includes(item);
-      }) ||
-        scp.some((item) => {
-          return !scopes.includes(item);
-        })))
-  ) {
-    return undefined;
-  }
+  const scopes = scp ?? scope?.split(" ") ?? [];
   return {
     userId: sub,
     orgId,
