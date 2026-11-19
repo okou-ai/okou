@@ -54,7 +54,6 @@ const CONDITIONAL_CAPABILITIES = [
   ["phone-use:write", FeatureSwitchKey.PhoneUse],
   ["instructions:read", FeatureSwitchKey.SingleAgent],
   ["instructions:write", FeatureSwitchKey.SingleAgent],
-  ["connector-account:switch", FeatureSwitchKey.ConnectorChatAccountAccess],
   ["project:read", FeatureSwitchKey.SingleAgent],
   ["project:write", FeatureSwitchKey.SingleAgent],
   ["computer-use:shell:write", FeatureSwitchKey.DesktopShell],

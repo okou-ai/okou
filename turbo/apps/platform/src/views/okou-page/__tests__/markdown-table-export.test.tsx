@@ -500,8 +500,8 @@ test.each(["ready", "authorize", "connect", "reconnect"] as const)(
             ? { intent: "reconnect", connectionId: CONNECTION_ID }
             : { intent: "add" },
         );
-        expect(body.authorizeAgent).toBeTruthy();
-        authorized = true;
+        expect(body.agentId).toBeUndefined();
+        expect(body.authorizeAgent).toBeUndefined();
         needsConnection = false;
         completedAttempts.set(oauthAttemptId, CONNECTION_ID);
         return respond(200, {

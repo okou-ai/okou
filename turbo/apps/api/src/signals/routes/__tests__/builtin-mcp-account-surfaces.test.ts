@@ -1,3 +1,4 @@
+import { createChatConnectorAccessApi } from "./helpers/chat-connector-access";
 import { randomUUID } from "node:crypto";
 import { afterEach, describe, it } from "vitest";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
@@ -347,12 +348,14 @@ describe("builtin MCP account surfaces", () => {
     expect(inspected.body.results).toMatchObject([
       { kind: "available", connectionId, target },
     ]);
-    await accept(selections.clear({ headers, params, body: target }), [204]);
+    const access = createChatConnectorAccessApi(context);
+    await access.setThreadOverride(actor, params.id, selection, false);
     const cleared = await accept(selections.get({ headers, params }), [200]);
     expect(cleared.body).toStrictEqual({
       selections: [],
       selectedConnections: [],
     });
+    await access.setThreadOverride(actor, params.id, selection, true);
     await accept(
       selections.update({ headers, params, body: selection }),
       [200],

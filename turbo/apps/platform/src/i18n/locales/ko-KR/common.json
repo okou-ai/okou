@@ -1047,12 +1047,10 @@
       "invalid": "이 권한 링크는 유효하지 않거나 사용할 수 없습니다.",
       "loadFailed": "요청된 모든 권한을 확인하지 못했습니다. 권한을 변경할 수 없습니다.",
       "loading": "권한을 불러오는 중",
-      "myOkouScopeNote": "현재 작업뿐 아니라 이 워크스페이스에서 내 Okou 사용에 적용됩니다.",
       "myOkouSharedScopeNote": "이 워크스페이스의 내 모든 채팅에서 이 커넥터에 적용됩니다. 팀원의 권한은 각자 독립적입니다.",
       "notNow": "나중에",
       "pending_other": "허용할 권한 {{count}}개",
       "review": "권한 검토",
-      "scopeNote": "현재 작업뿐 아니라 이 에이전트에 적용됩니다.",
       "sharedScopeNote": "이 커넥터의 권한은 모든 채팅과 에이전트에 적용됩니다.",
       "title": "다음 권한 허용"
     }
@@ -2098,13 +2096,8 @@
       "unavailableTitle": "계정을 사용할 수 없음"
     },
     "connectors": {
-      "accountForThread": "이 스레드의 계정",
-      "add": "{{connectorName}} 추가",
       "addConnectors": "커넥터 추가",
-      "authorized": "{{connectorName}}가 연결되고 {{agentName}}에 권한이 부여되었습니다",
       "back": "뒤로",
-      "configurePermissions": "{{connectorName}} 권한 구성",
-      "customAuthorizeDescription": "이 맞춤 커넥터를 검토하고 연결한 후 에이전트에 권한을 부여하세요.",
       "directory": {
         "allCategories": "전체",
         "askAdmin": "관리자에게 활성화를 요청하세요",
@@ -2131,14 +2124,8 @@
         "tabCustom": "커스텀",
         "tabDiscover": "탐색"
       },
-      "fallsBackTo": "{{account}} 계정으로 대체",
       "find": "커넥터 찾기...",
-      "loadFailed": "커넥터를 불러올 수 없습니다.",
-      "noUsableAccount": "사용 가능한 계정 없음",
-      "remove": "{{connectorName}} 제거",
-      "selectedAccountFor": "{{connector}} · 선택한 계정: {{account}}",
-      "title": "커넥터",
-      "useDefault": "기본값 사용"
+      "title": "커넥터"
     },
     "documentTitle": "채팅",
     "errors": {
@@ -2937,28 +2924,12 @@
     "totalAccounts": "계정 {{value}}개"
   },
   "connectors": {
-    "access": {
-      "accessFor": "{{agent}}에 대해 {{connector}} {{action}} 권한",
-      "accessUpdated": "{{connector}} 권한이 업데이트되었습니다",
-      "clearSearch": "에이전트 검색 초기화",
-      "description": "이 커넥터를 사용할 수 있는 에이전트를 선택하세요.",
-      "loading": "에이전트 불러오는 중...",
-      "managePermissions": "권한 관리",
-      "managePermissionsFor": "{{agent}}에 대한 {{connector}} 권한 관리",
-      "noAgents": "에이전트를 찾을 수 없습니다",
-      "noMatchingAgents": "\"{{search}}\"와 일치하는 에이전트가 없습니다",
-      "permissionsUpdated": "권한이 업데이트되었습니다",
-      "search": "에이전트 찾기",
-      "title": "{{connector}} 접근 권한 관리",
-      "unnamedAgent": "이름 없음"
-    },
     "accounts": {
       "accountName": "계정 이름",
       "accountsUnavailable": "이 커넥터의 계정을 사용할 수 없습니다.",
       "actions": "계정 작업",
       "addAccount": "계정 추가",
       "connected": "연결됨",
-      "default": "기본값",
       "disconnectAccount": "계정 연결 해제",
       "disconnectDescription": "이 계정과 Okou의 연결을 해제합니다. 이 계정을 사용하는 스레드는 기본 상속으로 돌아갑니다. 제공업체의 계정은 삭제되지 않습니다.",
       "disconnectDescriptionWithCount": "이 계정과 Okou의 연결을 해제합니다. {{value}}개 스레드가 기본 상속으로 돌아갑니다. 제공업체의 계정은 삭제되지 않습니다.",
@@ -2973,8 +2944,6 @@
       "find": "계정 찾기",
       "loading": "계정 불러오는 중…",
       "loadMore": "더 불러오기",
-      "makeDefault": "기본값으로 설정",
-      "managerDescription": "새 실행은 기본 계정을 사용합니다.",
       "managerTitle": "{{connector}} 계정 관리",
       "namePromptDescription": "이 단계를 건너뛰고 나중에 계정 이름을 지정할 수 있습니다.",
       "namePromptTitle": "{{connector}} 계정 이름 지정",
@@ -2988,7 +2957,6 @@
     },
     "actions": {
       "apply": "적용",
-      "authorize": "승인",
       "cancel": "취소",
       "close": "닫기",
       "closeWindow": "창 닫기",
@@ -3035,7 +3003,6 @@
     },
     "card": {
       "accessFor": "{{action}} {{connector}} 접근 권한",
-      "authorized": "승인됨",
       "connectAria": "{{connector}} 연결",
       "connected": "연결됨",
       "connectionExpired": "연결이 만료되었습니다",
@@ -3048,11 +3015,7 @@
     },
     "catalog": {
       "access": {
-        "add": "접근 권한 추가",
-        "manage": "{{connector}} 접근 권한 관리",
-        "summaryMany": "에이전트 {{value}}개",
-        "unavailable": "접근 권한을 사용할 수 없음",
-        "usedBy": "사용 중 "
+        "manage": "{{connector}} 접근 권한 관리"
       },
       "categories": {
         "ai": {
@@ -3123,18 +3086,13 @@
         "searchAll": "모든 커넥터 검색"
       },
       "empty": {
-        "agent": "이 에이전트에 연결된 커넥터가 없습니다",
         "connected": "연결된 커넥터가 없습니다",
-        "search": "\"{{search}}\"와(과) 일치하는 커넥터가 없습니다",
-        "unshared": "모든 커넥터가 에이전트와 공유되어 있습니다"
+        "search": "\"{{search}}\"와(과) 일치하는 커넥터가 없습니다"
       },
       "filterCategory": "카테고리",
       "filters": {
-        "agents": "에이전트",
         "all": "전체",
-        "allAgents": "모든 에이전트",
-        "aria": "커넥터 필터",
-        "unshared": "어떤 에이전트와도 공유되지 않음"
+        "aria": "커넥터 필터"
       },
       "filterWith": "필터: {{category}}",
       "myOkouDescription": "내 Okou가 사용할 외부 서비스를 연결하세요.",
@@ -3164,8 +3122,7 @@
         "seeMore_other": "{{names}} 외 {{count}}개 보기",
         "top": "인기 커넥터"
       },
-      "title": "커넥터",
-      "unnamedAgent": "이름 없음"
+      "title": "커넥터"
     },
     "connectDialog": {
       "connectedAs": "{{username}}로 연결됨",
@@ -3309,9 +3266,6 @@
       }
     },
     "directed": {
-      "authorizeAgent": "{{agent}} 권한 부여",
-      "authorized": "{{connector}} 권한 부여됨",
-      "authorizeDocumentTitle": "{{connector}} 권한 부여",
       "connectDocumentTitle": "{{connector}} 연결",
       "connected": "{{connector}} 연결됨",
       "needsConnector": "{{agent}}가 진행하려면 {{connector}}가 필요합니다",
@@ -3339,10 +3293,8 @@
       "allowOptions": "{{permission}} 허용 옵션",
       "always": "항상",
       "clearSearch": "권한 검색 지우기",
-      "descriptionAgent": "이 에이전트가 이 커넥터를 통해 수행할 수 있는 작업을 구성하세요.",
       "find": "권한 찾기",
       "findPlaceholder": "권한 찾기...",
-      "forTarget": "{{target}} 대상",
       "loadError": "권한 메타데이터 로드 실패",
       "loading": "권한 로드 중...",
       "metadataMissing": "{{connector}}에 대한 권한 메타데이터가 없습니다",
@@ -4084,7 +4036,6 @@
     }
   },
   "myOkou": {
-    "access": "이 워크스페이스에서의 내 접근 권한",
     "conflict": "저장된 지침이 다른 곳에서 변경되었습니다. 초안은 유지됩니다. 저장된 지침을 다시 불러오기 전에 초안을 검토하거나 복사하세요.",
     "description": "이 워크스페이스에서 Okou에게 전달할 나만의 지침",
     "discard": "취소",

@@ -1,18 +1,16 @@
 import {
-  agentsByIdContract,
-  type AgentResponse,
-} from "@okouai/api-contracts/contracts/agents";
+  connectorPermissionsContract,
+  type ApplyConnectorPermissions,
+} from "@okouai/api-contracts/contracts/connector-permissions";
+import { connectorPermissionsResponse } from "../../../__tests__/connector-permissions.ts";
 import {
   type PublicConnectorCatalogPermissionDetail,
   connectorCatalogContract,
 } from "@okouai/api-contracts/contracts/connector-catalog";
-import type { BuiltinConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
-import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
-import {
-  type ApplyUserPermissionGrant,
-  type ApplyUserPermissionGrantsRequest,
-  type UserPermissionGrantResponse,
-  userPermissionGrantsContract,
+
+import type {
+  ApplyUserPermissionGrant,
+  UserPermissionGrantResponse,
 } from "@okouai/api-contracts/contracts/user-permission-grants";
 import { UNKNOWN_PERMISSION_GRANT } from "@okouai/connectors/firewall-contracts";
 import { screen, waitFor, within } from "@testing-library/react";
@@ -25,10 +23,17 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import { mockNow } from "../../../__tests__/time.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  catalogConnectorFixture,
+  mockConnectorOverview,
+} from "./team-page-test-helpers.ts";
+import {
+  getConnectorCard,
+  mockPublicConnectorStatus,
+} from "../../okou-page/__tests__/connector-page-test-helpers.ts";
 
 const context = testContext();
 const AGENT_ID = "10000000-0000-4000-a000-000000000011";
-const CONNECTION_ID = "20000000-0000-4000-a000-000000000011";
 const NOW_MS = 1_893_456_000_000;
 const SEVEN_DAYS_LATER = "2030-01-08T00:00:00.000Z";
 const CREATED_AT = "2029-12-01T00:00:00.000Z";
@@ -53,37 +58,7 @@ interface PermissionEditorOptions {
   readonly permissionDefault?: "allow" | "deny" | "ask";
   readonly unknownPolicy?: "allow" | "deny" | "ask";
   readonly grants?: readonly UserPermissionGrantResponse[];
-  readonly appliedRequests?: ApplyUserPermissionGrantsRequest[];
-}
-
-function agentFixture(): AgentResponse {
-  return {
-    isDefaultAgent: false,
-    agentId: AGENT_ID,
-    ownerId: "test-user-123",
-    displayName: "Research Bot",
-    description: null,
-    sound: null,
-    avatarUrl: null,
-    visibility: "private",
-  };
-}
-
-function connectedSlackFixture(): BuiltinConnectorResponse {
-  return {
-    id: CONNECTION_ID,
-    slug: "slack",
-    authMethod: "oauth",
-    externalId: "slack-workspace-1",
-    externalUsername: "permission-editor",
-    externalEmail: null,
-    oauthScopes: ["bookmarks:read", "channels:read", "channels:history"],
-    connectionStatus: "connected",
-    reconnectReason: null,
-    tokenExpiresAt: null,
-    createdAt: CREATED_AT,
-    updatedAt: CREATED_AT,
-  };
+  readonly appliedRequests?: ApplyConnectorPermissions[];
 }
 
 function permissionMetadata({
@@ -147,19 +122,9 @@ function setupPermissionEditor(
   const grants = [...(options.grants ?? [])];
 
   mockNow(NOW_MS, context.signal);
-  context.mocks.data.agents([agentFixture()]);
-  context.mocks.data.connectors([connectedSlackFixture()]);
-  context.mocks.api(agentsByIdContract.get, ({ params, respond }) => {
-    expect(params.id).toBe(AGENT_ID);
-    return respond(200, agentFixture());
-  });
-  context.mocks.api(
-    userBuiltinConnectorsContract.get,
-    ({ params, respond }) => {
-      expect(params.id).toBe(AGENT_ID);
-      return respond(200, { enabledConnectorSlugs: ["slack"] });
-    },
-  );
+  const connector = catalogConnectorFixture("slack", "Slack");
+  mockConnectorOverview(context, [connector]);
+  mockPublicConnectorStatus(context, [connector]);
   context.mocks.api(
     connectorCatalogContract.permissions,
     ({ params, respond }) => {
@@ -167,16 +132,14 @@ function setupPermissionEditor(
       return respond(200, { permissions: metadata });
     },
   );
-  context.mocks.api(userPermissionGrantsContract.list, ({ query, respond }) => {
-    expect(query.agentId).toBe(AGENT_ID);
-    return respond(200, grants);
+  context.mocks.api(connectorPermissionsContract.get, ({ query, respond }) => {
+    return respond(200, connectorPermissionsResponse(query, grants));
   });
-  context.mocks.api(userPermissionGrantsContract.apply, ({ body, respond }) => {
+  context.mocks.api(connectorPermissionsContract.apply, ({ body, respond }) => {
     options.appliedRequests?.push(body);
-    return respond(200, []);
+    return respond(200, connectorPermissionsResponse(body.target, []));
   });
-
-  return setupPage({ context, path: `/agents/${AGENT_ID}` });
+  return setupPage({ context, path: "/connectors?scope=connected" });
 }
 
 function roleElementByText(
@@ -218,19 +181,13 @@ async function openPermissionEditor(
   options: PermissionEditorOptions,
 ): Promise<HTMLElement> {
   await setupPermissionEditor(options);
-  const manageButton = await waitForRoleElementByText(
-    "button",
-    "Manage Slack permissions",
-  );
-  click(manageButton);
-
-  const description = await screen.findByText(
-    "Configure which actions this agent is allowed to perform via this connector.",
-  );
-  const drawer = description.closest<HTMLElement>('[role="dialog"]');
-  if (!drawer) {
-    throw new Error("Slack permissions drawer not found");
-  }
+  const card = await waitFor(() => {
+    return getConnectorCard("Slack");
+  });
+  click(await waitForRoleElementByText("button", "Permissions", card));
+  const drawer = await screen.findByRole("dialog", {
+    name: "Slack permissions",
+  });
   if (options.grouped === false) {
     await within(drawer).findByText("bookmarks:read", { selector: "code" });
   } else {
@@ -308,7 +265,7 @@ function sortedGrants(
 }
 
 function expectSinglePatch(
-  requests: readonly ApplyUserPermissionGrantsRequest[],
+  requests: readonly ApplyConnectorPermissions[],
   grants: readonly ApplyUserPermissionGrant[],
 ): void {
   expect(requests).toHaveLength(1);
@@ -318,8 +275,7 @@ function expectSinglePatch(
     ...request,
     grants: sortedGrants(request.grants),
   }).toStrictEqual({
-    agentId: AGENT_ID,
-    connectorSlug: "slack",
+    target: { kind: "builtin", connectorSlug: "slack" },
     mode: "patch",
     grants: sortedGrants(grants),
   });
@@ -348,7 +304,7 @@ test("Apply reflects effective permission-policy changes", async () => {
 });
 
 test("A denied permission does not keep the group's expiration", async () => {
-  const appliedRequests: ApplyUserPermissionGrantsRequest[] = [];
+  const appliedRequests: ApplyConnectorPermissions[] = [];
   const drawer = await openPermissionEditor({
     permissionDefault: "deny",
     grants: READ_PERMISSIONS.map((permission) => {
@@ -375,16 +331,16 @@ test("A denied permission does not keep the group's expiration", async () => {
   ).toHaveTextContent("7 days");
   click(roleElementByText("button", "Apply", drawer));
 
-  await expect(
-    screen.findByText("Permissions updated"),
-  ).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(drawer).not.toBeInTheDocument();
+  });
   expectSinglePatch(appliedRequests, [
     { permission: "bookmarks:read", action: "deny" },
   ]);
 });
 
 test("An individual permission duration overrides its group", async () => {
-  const appliedRequests: ApplyUserPermissionGrantsRequest[] = [];
+  const appliedRequests: ApplyConnectorPermissions[] = [];
   const drawer = await openPermissionEditor({
     permissionDefault: "deny",
     grants: READ_PERMISSIONS.map((permission) => {
@@ -409,9 +365,9 @@ test("An individual permission duration overrides its group", async () => {
   ).toHaveTextContent("7 days");
   click(roleElementByText("button", "Apply", drawer));
 
-  await expect(
-    screen.findByText("Permissions updated"),
-  ).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(drawer).not.toBeInTheDocument();
+  });
   expectSinglePatch(appliedRequests, [
     {
       permission: "bookmarks:read",
@@ -422,7 +378,7 @@ test("An individual permission duration overrides its group", async () => {
 });
 
 test("Undoing a deny does not create an unnecessary always grant", async () => {
-  const appliedRequests: ApplyUserPermissionGrantsRequest[] = [];
+  const appliedRequests: ApplyConnectorPermissions[] = [];
   const drawer = await openPermissionEditor({ appliedRequests });
   await expandReadGroup(drawer);
   const bookmarkRow = permissionRow(drawer, "bookmarks:read");
@@ -443,7 +399,7 @@ test("Undoing a deny does not create an unnecessary always grant", async () => {
 });
 
 test("Activating an already allowed bulk policy also allows other endpoints only on Apply", async () => {
-  const appliedRequests: ApplyUserPermissionGrantsRequest[] = [];
+  const appliedRequests: ApplyConnectorPermissions[] = [];
   const drawer = await openPermissionEditor({
     grouped: false,
     unknownPolicy: "ask",
@@ -467,16 +423,16 @@ test("Activating an already allowed bulk policy also allows other endpoints only
   expect(apply).toBeEnabled();
   expect(appliedRequests).toHaveLength(0);
   click(apply);
-  await expect(
-    screen.findByText("Permissions updated"),
-  ).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(drawer).not.toBeInTheDocument();
+  });
   expectSinglePatch(appliedRequests, [
     { permission: UNKNOWN_PERMISSION_GRANT, action: "allow" },
   ]);
 });
 
 test("Ask and mixed permissions remain distinct while group commands keep their scope", async () => {
-  const appliedRequests: ApplyUserPermissionGrantsRequest[] = [];
+  const appliedRequests: ApplyConnectorPermissions[] = [];
   const drawer = await openPermissionEditor({
     permissionDefault: "ask",
     unknownPolicy: "ask",
@@ -528,9 +484,9 @@ test("Ask and mixed permissions remain distinct while group commands keep their 
   );
   expect(appliedRequests).toHaveLength(0);
   click(roleElementByText("button", "Apply", drawer));
-  await expect(
-    screen.findByText("Permissions updated"),
-  ).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(drawer).not.toBeInTheDocument();
+  });
   expectSinglePatch(
     appliedRequests,
     READ_PERMISSIONS.map((permission) => {

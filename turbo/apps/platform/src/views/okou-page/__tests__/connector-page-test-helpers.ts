@@ -117,13 +117,6 @@ export function queryConnectorAction(
   );
 }
 
-export function getConnectorSwitch(
-  name: string,
-  container: HTMLElement = document.body,
-): HTMLElement {
-  return within(container).getByRole("switch", { name });
-}
-
 export function queryConnectorCard(label: string): HTMLElement | null {
   const labelElement = screen
     .queryAllByTestId("connector-card-label")

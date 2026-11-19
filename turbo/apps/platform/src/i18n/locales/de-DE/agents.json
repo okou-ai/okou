@@ -10,24 +10,6 @@
     "save": "Speichern",
     "saving": "Speichern…"
   },
-  "authorization": {
-    "closeSearch": "Suche schließen",
-    "connectorsLink": "Integrationen",
-    "connectorsSaved": "Integrationen gespeichert",
-    "customConnectors": {
-      "description": "Benutzerdefinierte Integrationen Ihrer Organisation.",
-      "saved": "Benutzerdefinierte Integrationen gespeichert"
-    },
-    "description": "Während der Ausführung kann der Agent Ihre verbundenen Dienste sicher nutzen. Sie können den Zugriff jederzeit verwalten oder deaktivieren.",
-    "findConnectors": "Integrationen suchen",
-    "noConnectorsAfterLink": " Seite, um Ihren ersten Dienst zu verbinden.",
-    "noConnectorsAlt": "Keine Integrationen",
-    "noConnectorsBeforeLink": "Noch keine verbundenen Dienste. Gehen Sie zum ",
-    "noResults": "Keine Ergebnisse für „{{search}}“",
-    "permissionLoadError": "Berechtigungserteilungen konnten nicht geladen werden",
-    "permissionsUpdated": "Berechtigungen aktualisiert",
-    "searchPlaceholder": "Integrationen suchen..."
-  },
   "avatar": {
     "accessibilityDescription": "Passen Sie den Stil, die Farbe und die Gesichtsdetails des Agenten-Avatars an.",
     "actions": {
@@ -79,7 +61,6 @@
     },
     "sectionNavigation": "Bereich der Agentendetails",
     "tabs": {
-      "authorization": "Autorisierung",
       "instructions": "Anweisungen",
       "profile": "Profil"
     },

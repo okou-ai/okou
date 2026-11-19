@@ -1,10 +1,6 @@
 import {
   catalogFixture,
   connectorFixtureAccount,
-  httpConnectorFixture,
-  mcpConnectorFixture,
-  type HttpFixtureOverrides,
-  type McpFixtureOverrides,
 } from "../../../mocks/handlers/connector-account-fixtures.ts";
 import { connectedConnectorsContract } from "@okouai/api-contracts/contracts/connected-connectors";
 import {
@@ -14,8 +10,6 @@ import {
 } from "@okouai/api-contracts/contracts/agents";
 import {
   isIntegrationManagedCustomConnector,
-  type CustomConnectorHttpResponse,
-  type CustomConnectorMcpResponse,
   type CustomConnectorResponse,
 } from "@okouai/api-contracts/contracts/custom-connectors";
 import type {
@@ -30,9 +24,6 @@ import { setupPage } from "../../../__tests__/page-helper.ts";
 import type { TestContext } from "../../../signals/__tests__/test-helpers.ts";
 
 export const RESEARCH_AGENT_ID = "10000000-0000-4000-8000-000000000001";
-export const SUPPORT_AGENT_ID = "10000000-0000-4000-8000-000000000002";
-const ACME_CONNECTOR_ID = "20000000-0000-4000-8000-000000000001";
-const DEEPWIKI_CONNECTOR_ID = "20000000-0000-4000-8000-000000000002";
 
 const NOW = "2026-08-18T12:00:00.000Z";
 
@@ -153,56 +144,6 @@ export function mockConnectorOverview(
       });
     },
   );
-}
-
-function customConnectorBase() {
-  return {
-    fields: [],
-    headerInjections: [],
-    queryInjections: [],
-    authMode: "manual" as const,
-    skillMarkdown: null,
-    storageVersion: 1,
-    account: {
-      id: "30000000-0000-4000-8000-000000000001",
-      updatedAt: NOW,
-      configuredFieldKeys: [],
-    },
-    createdAt: NOW,
-    updatedAt: NOW,
-  };
-}
-
-export function acmeConnectorFixture(
-  overrides: HttpFixtureOverrides = {},
-): CustomConnectorHttpResponse {
-  return httpConnectorFixture({
-    ...customConnectorBase(),
-    id: ACME_CONNECTOR_ID,
-    slug: "acme-search",
-    displayName: "Acme Search",
-    kind: "http",
-    prefixTemplates: ["https://api.acme.test/v1/"],
-    permissionBundleRef: null,
-    ...overrides,
-  });
-}
-
-export function deepWikiConnectorFixture(
-  overrides: McpFixtureOverrides = {},
-): CustomConnectorMcpResponse {
-  return mcpConnectorFixture({
-    ...customConnectorBase(),
-    id: DEEPWIKI_CONNECTOR_ID,
-    slug: "deepwiki",
-    displayName: "DeepWiki",
-    kind: "mcp",
-    endpoint: "https://mcp.deepwiki.com/mcp",
-    transport: "streamable-http",
-    prefixTemplates: [],
-    permissionBundleRef: null,
-    ...overrides,
-  });
 }
 
 export function permissionMetadataFixture(

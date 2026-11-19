@@ -13,7 +13,6 @@ public final class PermissionBatchHTTPFixture: Sendable {
   ]
 
   public struct Grant: Codable, Sendable {
-    public var agentId: String
     public var connectorSlug: String
     public var permission: String
     public var action: String
@@ -22,7 +21,6 @@ public final class PermissionBatchHTTPFixture: Sendable {
       connectorSlug: String = "gmail", permission: String = "mail.read",
       action: String = "allow", expiresAt: String? = nil
     ) {
-      agentId = PermissionBatchHTTPFixture.agentID
       self.connectorSlug = connectorSlug
       self.permission = permission
       self.action = action
@@ -32,13 +30,12 @@ public final class PermissionBatchHTTPFixture: Sendable {
 
   public struct State: Sendable {
     public var enabled = true
-    public var shared = false
     public var threadAgentID = PermissionBatchHTTPFixture.agentID
     public var grants: [Grant] = []
     public var metadataStatus: [String: Int] = [:]
     public var grantReadStatus = 200
     public var failConnector: String?
-    public var loseBatchResponseOnce = false
+    public var loseResponseForConnector: String?
     public var loseResumeResponseOnce = false
     public var failReadbackAfterWrite = false
     public var requests: [URLRequest] = []
@@ -97,10 +94,7 @@ public final class PermissionBatchHTTPFixture: Sendable {
         let threadPath = "/api/chat-threads/\(Self.threadID)"
         if path == "/api/feature-switches" {
           return Self.response([
-            "effectiveSwitches": [
-              "batchConnectorPermissions": value.enabled,
-              "connectorChatAccountAccess": value.shared
-            ]
+            "effectiveSwitches": ["batchConnectorPermissions": value.enabled]
           ])
         }
         if path == "/api/agents/\(Self.agentID)" {
@@ -127,18 +121,8 @@ public final class PermissionBatchHTTPFixture: Sendable {
             ]
           ])
         }
-        if path == "/api/user-permission-grants" {
-          if value.grantReadStatus != 200 { return Self.error(value.grantReadStatus) }
-          return Self.encoded(value.grants)
-        }
         if path == "/api/connector-permissions" {
           return try Self.connectorPermissions(request, state: &value)
-        }
-        if path == "/api/user-permission-grants/apply-batch" {
-          return try Self.applyBatch(request, state: &value)
-        }
-        if path == threadPath + "/connector-selections" {
-          return Self.response(["selections": []])
         }
         if path == threadPath + "/event-snapshot" {
           return ChatHTTPResponse(
@@ -204,36 +188,12 @@ public final class PermissionBatchHTTPFixture: Sendable {
     let body = try JSONDecoder().decode(Body.self, from: request.httpBody!)
     if value.failConnector == body.target.connectorSlug { return Self.error(503) }
     Self.apply(body.grants, slug: body.target.connectorSlug, state: &value)
-    return Self.memberGrants(body.target.connectorSlug, grants: value.grants)
-  }
-
-  private static func applyBatch(_ request: URLRequest, state value: inout State) throws
-    -> ChatHTTPResponse
-  {
-    struct Body: Decodable {
-      struct Group: Decodable {
-        let connectorSlug: String
-        let grants: [Edit]
-      }
-      let agentId: String
-      let groups: [Group]
-    }
-    let body = try JSONDecoder().decode(Body.self, from: request.httpBody!)
-    for group in body.groups {
-      Self.apply(group.grants, slug: group.connectorSlug, state: &value)
-    }
     if value.failReadbackAfterWrite { value.grantReadStatus = 503 }
-    if value.loseBatchResponseOnce {
-      value.loseBatchResponseOnce = false
+    if value.loseResponseForConnector == body.target.connectorSlug {
+      value.loseResponseForConnector = nil
       return Self.error(503)
     }
-    return Self.encoded(
-      value.grants.filter { grant in
-        body.groups.contains { group in
-          group.connectorSlug == grant.connectorSlug
-            && group.grants.contains { $0.permission == grant.permission }
-        }
-      })
+    return Self.memberGrants(body.target.connectorSlug, grants: value.grants)
   }
 
   private struct Edit: Decodable {
@@ -252,15 +212,15 @@ public final class PermissionBatchHTTPFixture: Sendable {
   }
 
   private static func memberGrants(_ slug: String, grants: [Grant]) -> ChatHTTPResponse {
-    let json = try! JSONEncoder().encode(grants.filter { $0.connectorSlug == slug })
-    return ChatHTTPResponse(
-      body: """
-        {"target":{"kind":"builtin","connectorSlug":"\(slug)"},"grants":\(String(data: json, encoding: .utf8)!)}
-        """)
-  }
-
-  private static func encoded(_ grants: [Grant]) -> ChatHTTPResponse {
-    ChatHTTPResponse(body: try! JSONEncoder().encodeString(grants))
+    Self.response([
+      "target": ["kind": "builtin", "connectorSlug": slug],
+      "grants": grants.filter { $0.connectorSlug == slug }.map { grant in
+        [
+          "permission": grant.permission, "action": grant.action,
+          "expiresAt": grant.expiresAt as Any? ?? NSNull()
+        ]
+      }
+    ])
   }
 
   private static func error(_ status: Int) -> ChatHTTPResponse {

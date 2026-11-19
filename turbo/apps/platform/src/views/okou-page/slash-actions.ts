@@ -354,7 +354,6 @@ function useComposerActions(
   composer: ComposerSignals,
   leave: () => void,
 ): SlashAction[] {
-  const pageSignal = useGet(pageSignal$);
   const { t } = useTranslation();
   const openConnectors = useSet(composer.connector.openAddConnectorsDialog$);
   const insertText = useSet(composer.editor.insertText$);
@@ -372,7 +371,7 @@ function useComposerActions(
       keywords: ["connect", "connector", "integration"],
       run: () => {
         leave();
-        detach(openConnectors(pageSignal), Reason.DomCallback);
+        openConnectors();
       },
     },
     {

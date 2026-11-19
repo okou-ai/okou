@@ -10,24 +10,6 @@
     "save": "저장",
     "saving": "저장 중…"
   },
-  "authorization": {
-    "closeSearch": "검색 닫기",
-    "connectorsLink": "커넥터",
-    "connectorsSaved": "커넥터 저장됨",
-    "customConnectors": {
-      "description": "조직에서 등록한 맞춤 커넥터입니다.",
-      "saved": "맞춤 커넥터 저장됨"
-    },
-    "description": "실행 시 에이전트가 연결된 서비스를 안전하게 사용할 수 있습니다. 언제든지 접근 권한을 관리하거나 해제할 수 있습니다.",
-    "findConnectors": "커넥터 찾기",
-    "noConnectorsAfterLink": " 첫 번째 서비스를 연결하려면 페이지로 이동하세요.",
-    "noConnectorsAlt": "커넥터 없음",
-    "noConnectorsBeforeLink": "아직 연결된 서비스가 없습니다. 다음으로 이동하세요 ",
-    "noResults": "“{{search}}”에 대한 결과가 없습니다",
-    "permissionLoadError": "권한 부여 정보를 불러오지 못했습니다",
-    "permissionsUpdated": "권한이 업데이트되었습니다",
-    "searchPlaceholder": "커넥터 찾기..."
-  },
   "avatar": {
     "accessibilityDescription": "에이전트 아바타 스타일, 색상 및 얼굴 세부 정보를 맞춤 설정하세요.",
     "actions": {
@@ -79,7 +61,6 @@
     },
     "sectionNavigation": "에이전트 상세 섹션",
     "tabs": {
-      "authorization": "권한",
       "instructions": "지침",
       "profile": "프로필"
     },

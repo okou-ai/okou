@@ -3818,7 +3818,7 @@ function createThreadComposerSignalsWithContext(
   draft: DraftSignals,
   persistence: ThreadDraftPersistence,
 ): ComposerSignals {
-  const connector = createComposerConnectorSignals(context.agentId, threadId);
+  const connector = createComposerConnectorSignals(threadId);
   const modelSelection = createModelSelection(threadId, context.threadMeta$);
   const modelSelectionForSend$ = createModelSelectionForSend(modelSelection);
   const computerUseHostSelection = createComputerUseHostSelection(
@@ -4050,8 +4050,7 @@ export function createChatPanelSignals(
     subscribeSessionOutput$: sessionOutput.subscribe$,
     automationSignals: threadOwned,
     cancellationRecovery,
-    reloadConnectorAccountPreference$:
-      composer.connector.reloadAccountPreference$,
+    reloadConnectorAccountPreference$: composer.connector.chatAccess.reload$,
   });
   const relations = createChatRelationSignals(threadId, messagePipeline);
   return {

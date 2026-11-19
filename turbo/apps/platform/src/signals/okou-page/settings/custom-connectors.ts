@@ -1,8 +1,6 @@
-import { singleAgentEnabled$ } from "../../single-agent.ts";
 import { command, computed, state } from "ccstate";
 import { toast } from "@okouai/ui/components/ui/sonner";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitches$ } from "../../external/feature-switch.ts";
+
 import {
   CUSTOM_CONNECTOR_AUTOMATIC_OAUTH_ERROR_CODES,
   isIntegrationManagedCustomConnector,
@@ -24,25 +22,15 @@ import {
   customConnectorValuesContract,
   customConnectorsContract,
 } from "@okouai/api-contracts/client/custom-connectors";
-import { agentCustomConnectorsContract } from "@okouai/api-contracts/client/agent-custom-connectors";
-import type { AgentCustomConnectorGrants } from "@okouai/api-contracts/contracts/agent-custom-connectors";
-import type { AgentResponse } from "@okouai/api-contracts/contracts/agents";
 import { IN_VITEST } from "../../../env.ts";
 import { i18n } from "../../../i18n/index.ts";
 import { accept } from "../../../lib/accept.ts";
 import { apiClient$, type ApiClientFactory } from "../../api-client.ts";
-import { agents$, defaultAgentId$ } from "../../agent.ts";
 import { reloadUserConnectedConnectors$ } from "../connector-overview.ts";
 import { customConnectorAccountProjectionVersion$ } from "../connector-account-projection.ts";
-import {
-  connectorAgentAccess$,
-  connectorAuthorizationVersion$,
-  reloadConnectorAgentAccess$,
-} from "./connector-agent-access.ts";
 import { resetSignal, waitLoopUntil, withCleanup } from "../../utils.ts";
 import type { PlatformConnectorAccountMutationIntent } from "../../connector-domain.ts";
 import {
-  hasSavedConnectorAccounts,
   resolveCustomConnectorAccountMutation,
   readConnectorOAuthCompletion,
   readConnectorAccountCompletion,
@@ -63,9 +51,6 @@ const internalReload$ = state(0);
 export type CustomConnectorAuthMethodType =
   "none" | "api" | "automatic" | "oauth2";
 
-export const customConnectorAuthorizationReloadVersion$ =
-  connectorAuthorizationVersion$;
-
 /**
  * List of org custom connectors with canonical connection status.
  * Cache-busted by `reloadCustomConnectors$`.
@@ -81,103 +66,6 @@ export const customConnectors$ = computed(
   },
 );
 
-export interface CustomConnectorAgentAuthorization {
-  readonly agent: AgentResponse;
-  readonly access: AgentCustomConnectorGrants;
-}
-
-export const customConnectorAgentAuthorizations$ = computed(
-  async (get): Promise<readonly CustomConnectorAgentAuthorization[]> => {
-    get(customConnectorAuthorizationReloadVersion$);
-    const connectors = await get(customConnectors$);
-    if (connectors.length === 0) {
-      return [];
-    }
-
-    const [allAgents, access] = await Promise.all([
-      get(agents$),
-      get(connectorAgentAccess$),
-    ]);
-    const grantsByAgent = new Map<
-      string,
-      AgentCustomConnectorGrants["grants"]
-    >();
-    const visibleAgentIds = new Set(access.visibleAgentIds);
-    for (const { agentId, connectorId, permissionNames } of access.custom) {
-      const grants = grantsByAgent.get(agentId) ?? [];
-      grantsByAgent.set(agentId, [
-        ...grants,
-        { customConnectorId: connectorId, permissionNames },
-      ]);
-    }
-    return allAgents
-      .filter((agent) => {
-        return visibleAgentIds.has(agent.agentId);
-      })
-      .map((agent) => {
-        return {
-          agent,
-          access: { grants: grantsByAgent.get(agent.agentId) ?? [] },
-        };
-      });
-  },
-);
-
-export const customConnectorAuthorizedAgentsById$ = computed(
-  async (get): Promise<ReadonlyMap<string, readonly AgentResponse[]>> => {
-    const rows = await get(customConnectorAgentAuthorizations$);
-    const agentsByConnectorId = new Map<string, AgentResponse[]>();
-    for (const row of rows) {
-      for (const grant of row.access.grants) {
-        const authorizedAgents =
-          agentsByConnectorId.get(grant.customConnectorId) ?? [];
-        authorizedAgents.push(row.agent);
-        agentsByConnectorId.set(grant.customConnectorId, authorizedAgents);
-      }
-    }
-    return agentsByConnectorId;
-  },
-);
-
-export const reloadCustomConnectorAuthorizedAgents$ =
-  reloadConnectorAgentAccess$;
-
-export const setCustomConnectorAgentAuthorization$ = command(
-  async (
-    { get },
-    args: {
-      readonly agentId: string;
-      readonly connectorId: string;
-      readonly permissionBundleRef: string | null;
-      readonly authorized: boolean;
-    },
-    signal: AbortSignal,
-  ): Promise<boolean> => {
-    if (args.authorized && args.permissionBundleRef) {
-      return false;
-    }
-    const client = get(apiClient$)(agentCustomConnectorsContract);
-    await accept(
-      client.update({
-        params: { id: args.agentId },
-        body: {
-          grants: [
-            {
-              customConnectorId: args.connectorId,
-              permissionNames: [],
-            },
-          ],
-          operation: args.authorized ? "add" : "remove",
-        },
-        fetchOptions: { signal },
-      }),
-      [200],
-    );
-    signal.throwIfAborted();
-    return true;
-  },
-);
-
 const bumpReload$ = command(({ set }) => {
   set(internalReload$, (v) => {
     return v + 1;
@@ -185,93 +73,7 @@ const bumpReload$ = command(({ set }) => {
   set(reloadUserConnectedConnectors$);
 });
 
-type CustomConnectorAuthorizationTarget =
-  | { readonly kind: "visible-agents" }
-  | { readonly kind: "agent"; readonly agentId: string };
-
-const authorizeCustomConnectorForTarget$ = command(
-  async (
-    { get },
-    args: {
-      readonly connectorId: string;
-      readonly target: CustomConnectorAuthorizationTarget;
-    },
-    signal: AbortSignal,
-  ): Promise<void> => {
-    const singleAgent = await get(singleAgentEnabled$);
-    signal.throwIfAborted();
-    const defaultId = singleAgent ? await get(defaultAgentId$) : null;
-    signal.throwIfAborted();
-    if (args.target.kind === "visible-agents" && singleAgent && !defaultId) {
-      throw new Error("Your workspace’s Okou is unavailable. Try again.");
-    }
-    const agentIds =
-      args.target.kind === "agent"
-        ? [args.target.agentId]
-        : defaultId
-          ? [defaultId]
-          : (await get(agents$)).map((agent) => {
-              return agent.agentId;
-            });
-    signal.throwIfAborted();
-    const client = get(apiClient$)(agentCustomConnectorsContract);
-    await Promise.all(
-      agentIds.map(async (agentId) => {
-        await accept(
-          client.update({
-            params: { id: agentId },
-            body: {
-              grants: [
-                {
-                  customConnectorId: args.connectorId,
-                  permissionNames: [],
-                },
-              ],
-              operation: "add",
-            },
-            fetchOptions: { signal },
-          }),
-          args.target.kind === "agent" ? [200] : [200, 404],
-        );
-      }),
-    );
-    signal.throwIfAborted();
-  },
-);
-
-const isCustomConnectorAuthorizedForTarget$ = command(
-  async (
-    { get },
-    args: {
-      readonly connectorId: string;
-      readonly target: CustomConnectorAuthorizationTarget;
-    },
-    signal: AbortSignal,
-  ): Promise<boolean> => {
-    if (args.target.kind === "visible-agents") {
-      return false;
-    }
-    const client = get(apiClient$)(agentCustomConnectorsContract);
-    const result = await accept(
-      client.get({
-        params: { id: args.target.agentId },
-        fetchOptions: { signal },
-      }),
-      [200, 404],
-    );
-    signal.throwIfAborted();
-    return (
-      result.status === 200 &&
-      result.body.grants.some((grant) => {
-        return grant.customConnectorId === args.connectorId;
-      })
-    );
-  },
-);
-
-type CustomConnectorConnectionResult = {
-  readonly targetAuthorized: boolean;
-} & (
+type CustomConnectorConnectionResult = {} & (
   | { readonly connected: true; readonly connectionId: string }
   | { readonly connected: false; readonly connectionId: string | null }
 );
@@ -404,30 +206,17 @@ export const deleteCustomConnector$ = command(
   },
 );
 
-const setCustomConnectorValuesForTarget$ = command(
+export const setCustomConnectorValues$ = command(
   async (
     { get, set },
     args: {
       readonly id: string;
       readonly values: readonly CustomConnectorValueInput[];
-      readonly authorizationTarget: CustomConnectorAuthorizationTarget;
       readonly account: PlatformConnectorAccountMutationIntent;
     },
     signal: AbortSignal,
   ): Promise<CustomConnectorConnectionResult> => {
     const createClient = get(apiClient$);
-    const hadSavedAccounts =
-      !(await get(featureSwitches$))[
-        FeatureSwitchKey.ConnectorChatAccountAccess
-      ] &&
-      args.authorizationTarget.kind === "visible-agents" &&
-      args.account.intent === "add"
-        ? await hasSavedConnectorAccounts(
-            createClient,
-            { kind: "custom", customConnectorId: args.id },
-            signal,
-          )
-        : undefined;
     const client = createClient(customConnectorValuesContract);
     const result = await accept(
       client.set({
@@ -460,20 +249,9 @@ const setCustomConnectorValuesForTarget$ = command(
     if (!connected) {
       return {
         connected: false,
-        targetAuthorized: false,
         connectionId: null,
       };
     }
-    const targetAuthorized = await set(
-      authorizeCompletedCustomConnectorTarget$,
-      {
-        connector,
-        accountComplete: connected,
-        target: args.authorizationTarget,
-        hadSavedAccounts,
-      },
-      signal,
-    );
     signal.throwIfAborted();
     toast.success(
       i18n.t(($) => {
@@ -482,60 +260,13 @@ const setCustomConnectorValuesForTarget$ = command(
     );
     return {
       connected: true,
-      targetAuthorized,
       connectionId,
     };
   },
 );
 
-export const setCustomConnectorValues$ = command(
-  async (
-    { set },
-    args: {
-      readonly id: string;
-      readonly values: readonly CustomConnectorValueInput[];
-      readonly account: PlatformConnectorAccountMutationIntent;
-    },
-    signal: AbortSignal,
-  ): Promise<CustomConnectorConnectionResult> => {
-    return await set(
-      setCustomConnectorValuesForTarget$,
-      {
-        ...args,
-        authorizationTarget: { kind: "visible-agents" },
-      },
-      signal,
-    );
-  },
-);
-
-export const setCustomConnectorValuesForAgent$ = command(
-  async (
-    { set },
-    args: {
-      readonly id: string;
-      readonly values: readonly CustomConnectorValueInput[];
-      readonly agentId: string;
-      readonly account: PlatformConnectorAccountMutationIntent;
-    },
-    signal: AbortSignal,
-  ): Promise<CustomConnectorConnectionResult> => {
-    return await set(
-      setCustomConnectorValuesForTarget$,
-      {
-        id: args.id,
-        values: args.values,
-        account: args.account,
-        authorizationTarget: { kind: "agent", agentId: args.agentId },
-      },
-      signal,
-    );
-  },
-);
-
-interface CustomConnectorAuthorizationTargetArgs {
+interface CustomConnectorAuthorizationArgs {
   readonly id: string;
-  readonly authorizationTarget: CustomConnectorAuthorizationTarget;
   readonly account: CustomConnectorAccountMutationIntent;
   readonly onSuccess?: (
     result: CustomConnectorConnectionResult,
@@ -586,49 +317,6 @@ const startCustomConnectorAuthorization$ = command(
   },
 );
 
-const authorizeCompletedCustomConnectorTarget$ = command(
-  async (
-    { get, set },
-    args: {
-      readonly connector: CustomConnectorResponse | undefined;
-      readonly accountComplete: boolean;
-      readonly target: CustomConnectorAuthorizationTarget;
-      readonly hadSavedAccounts: boolean | undefined;
-    },
-    signal: AbortSignal,
-  ): Promise<boolean> => {
-    if (
-      !args.accountComplete ||
-      !args.connector ||
-      (await get(featureSwitches$))[FeatureSwitchKey.ConnectorChatAccountAccess]
-    ) {
-      return false;
-    }
-    if (
-      args.target.kind === "visible-agents" &&
-      args.hadSavedAccounts !== false
-    ) {
-      return false;
-    }
-    if (!args.connector.permissionBundleRef) {
-      await set(
-        authorizeCustomConnectorForTarget$,
-        {
-          connectorId: args.connector.id,
-          target: args.target,
-        },
-        signal,
-      );
-      return true;
-    }
-    return await set(
-      isCustomConnectorAuthorizedForTarget$,
-      { connectorId: args.connector.id, target: args.target },
-      signal,
-    );
-  },
-);
-
 function openCustomConnectorAuthorizationWindow(signal: AbortSignal) {
   const authWindow = window.open(
     "about:blank",
@@ -676,15 +364,14 @@ function completedCustomConnectorAccountId(
   return connectionId;
 }
 
-const connectCustomConnectorAuthorizationForTargetCommand$ = command(
+const connectCustomConnectorAuthorizationCommand$ = command(
   async (
     { get, set },
-    args: CustomConnectorAuthorizationTargetArgs,
+    args: CustomConnectorAuthorizationArgs,
     signal: AbortSignal,
   ): Promise<CustomConnectorConnectionResult> => {
     const authWindow = openCustomConnectorAuthorizationWindow(signal);
     let navigated = false;
-    let hadSavedAccounts: boolean | undefined;
     // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
     const { startResult, account } = await withCleanup(
       (async () => {
@@ -696,18 +383,6 @@ const connectCustomConnectorAuthorizationForTargetCommand$ = command(
           signal,
         );
         signal.throwIfAborted();
-        hadSavedAccounts =
-          !(await get(featureSwitches$))[
-            FeatureSwitchKey.ConnectorChatAccountAccess
-          ] &&
-          args.authorizationTarget.kind === "visible-agents" &&
-          account.intent === "add"
-            ? await hasSavedConnectorAccounts(
-                createClient,
-                { kind: "custom", customConnectorId: args.id },
-                signal,
-              )
-            : undefined;
         const result = await set(
           startCustomConnectorAuthorization$,
           { id: args.id, account },
@@ -740,19 +415,8 @@ const connectCustomConnectorAuthorizationForTargetCommand$ = command(
         signal,
       );
       set(bumpReload$);
-      const targetAuthorized = await set(
-        authorizeCompletedCustomConnectorTarget$,
-        {
-          connector: startResult.connector,
-          accountComplete: connected,
-          target: args.authorizationTarget,
-          hadSavedAccounts,
-        },
-        signal,
-      );
       return {
         connected,
-        targetAuthorized,
         connectionId,
       };
     }
@@ -774,7 +438,6 @@ const connectCustomConnectorAuthorizationForTargetCommand$ = command(
     if (connectionId === null) {
       return {
         connected: false,
-        targetAuthorized: false,
         connectionId: null,
       };
     }
@@ -785,32 +448,21 @@ const connectCustomConnectorAuthorizationForTargetCommand$ = command(
       connectionId,
       signal,
     );
-    const targetAuthorized = await set(
-      authorizeCompletedCustomConnectorTarget$,
-      {
-        connector,
-        accountComplete: connected,
-        target: args.authorizationTarget,
-        hadSavedAccounts,
-      },
-      signal,
-    );
     return {
       connected,
-      targetAuthorized,
       connectionId,
     };
   },
 );
 
-const connectCustomConnectorAuthorizationForTarget$ = command(
+export const connectCustomConnectorAuthorization$ = command(
   async (
     { set },
-    args: CustomConnectorAuthorizationTargetArgs,
+    args: CustomConnectorAuthorizationArgs,
     signal: AbortSignal,
   ) => {
     const result = await set(
-      connectCustomConnectorAuthorizationForTargetCommand$,
+      connectCustomConnectorAuthorizationCommand$,
       args,
       signal,
     );
@@ -820,27 +472,6 @@ const connectCustomConnectorAuthorizationForTarget$ = command(
       signal.throwIfAborted();
     }
     return result;
-  },
-);
-
-export const connectCustomConnectorAuthorization$ = command(
-  async (
-    { set },
-    args: {
-      readonly id: string;
-      readonly account: CustomConnectorAccountMutationIntent;
-      readonly onSuccess?: CustomConnectorAuthorizationTargetArgs["onSuccess"];
-    },
-    signal: AbortSignal,
-  ): Promise<CustomConnectorConnectionResult> => {
-    return await set(
-      connectCustomConnectorAuthorizationForTarget$,
-      {
-        ...args,
-        authorizationTarget: { kind: "visible-agents" },
-      },
-      signal,
-    );
   },
 );
 
@@ -867,30 +498,6 @@ export const connectCustomConnectorAuthorizationAndSettle$ = command(
   },
 );
 
-export const connectCustomConnectorAuthorizationForAgent$ = command(
-  async (
-    { set },
-    args: {
-      readonly id: string;
-      readonly agentId: string;
-      readonly account: CustomConnectorAccountMutationIntent;
-      readonly onSuccess?: CustomConnectorAuthorizationTargetArgs["onSuccess"];
-    },
-    signal: AbortSignal,
-  ): Promise<CustomConnectorConnectionResult> => {
-    return await set(
-      connectCustomConnectorAuthorizationForTarget$,
-      {
-        id: args.id,
-        account: args.account,
-        authorizationTarget: { kind: "agent", agentId: args.agentId },
-        onSuccess: args.onSuccess,
-      },
-      signal,
-    );
-  },
-);
-
 const resetCustomConnectorConnectionSignal$ = resetSignal();
 const closeCustomConnectorConnection$ = command(
   ({ set }, onClose: (() => void) | undefined) => {
@@ -911,7 +518,6 @@ export const cancelCustomConnectorConnection$ = command(
 
 interface CustomConnectorConnectionInput {
   readonly connector: CustomConnectorResponse;
-  readonly agentId?: string;
   readonly values: readonly CustomConnectorValueInput[];
   readonly accountOptions: CustomConnectorAccountMutationOptions;
   readonly accountMode?: ConnectorAccountConnectMode;
@@ -926,9 +532,6 @@ const runCustomConnectorConnection$ = command(
     args: CustomConnectorConnectionInput,
     signal: AbortSignal,
   ): Promise<boolean> => {
-    const chatAccounts = (await get(featureSwitches$))[
-      FeatureSwitchKey.ConnectorChatAccountAccess
-    ];
     const finish = async (
       result: CustomConnectorConnectionResult,
       attemptSignal: AbortSignal,
@@ -937,10 +540,7 @@ const runCustomConnectorConnection$ = command(
         await args.onConnected?.(result.connectionId, attemptSignal);
         attemptSignal.throwIfAborted();
       }
-      if (
-        result.connected &&
-        (chatAccounts || result.targetAuthorized || args.accountMode)
-      ) {
+      if (result.connected) {
         await args.onSuccess?.(result.connectionId, attemptSignal);
         attemptSignal.throwIfAborted();
       }
@@ -954,13 +554,11 @@ const runCustomConnectorConnection$ = command(
         ...args.accountOptions,
         onSuccess: finish,
       };
-      const result = args.agentId
-        ? await set(
-            connectCustomConnectorAuthorizationForAgent$,
-            { ...options, agentId: args.agentId },
-            signal,
-          )
-        : await set(connectCustomConnectorAuthorization$, options, signal);
+      const result = await set(
+        connectCustomConnectorAuthorization$,
+        options,
+        signal,
+      );
       return result.connected;
     }
     const account = await resolveCustomConnectorAccountMutation(
@@ -975,13 +573,7 @@ const runCustomConnectorConnection$ = command(
       values: args.values,
       account,
     };
-    const result = args.agentId
-      ? await set(
-          setCustomConnectorValuesForAgent$,
-          { ...options, agentId: args.agentId },
-          signal,
-        )
-      : await set(setCustomConnectorValues$, options, signal);
+    const result = await set(setCustomConnectorValues$, options, signal);
     await finish(result, signal);
     return result.connected;
   },
@@ -1011,7 +603,6 @@ type DialogState =
   | { kind: "none" }
   | { kind: "create" }
   | { kind: "edit"; connector: CustomConnectorResponse }
-  | { kind: "access"; connector: CustomConnectorResponse }
   | { kind: "delete"; connector: CustomConnectorResponse };
 
 const internalDialog$ = state<DialogState>({ kind: "none" });
@@ -1052,11 +643,6 @@ export const openCustomConnectorEditConfirmationDialog$ = command(
 export const closeCustomConnectorEditConfirmationDialog$ = command(
   ({ set }) => {
     set(internalEditConfirmation$, null);
-  },
-);
-export const openCustomConnectorAccessDialog$ = command(
-  ({ set }, connector: CustomConnectorResponse) => {
-    set(internalDialog$, { kind: "access", connector });
   },
 );
 export const openCustomConnectorDeleteDialog$ = command(

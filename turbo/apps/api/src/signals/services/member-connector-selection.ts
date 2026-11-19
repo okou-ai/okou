@@ -27,6 +27,17 @@ import {
 } from "./custom-connector-definition-selection";
 import { customConnectorSkillBundleSelection } from "./custom-connector-skill-bundle-columns";
 
+export interface ConnectorMember {
+  readonly orgId: string;
+  readonly userId: string;
+}
+
+export const memberConnectorRuleColumns = Object.freeze({
+  permission: connectorPermissionGrants.permission,
+  action: connectorPermissionGrants.action,
+  expiresAt: connectorPermissionGrants.expiresAt,
+});
+
 /** The storage identity is a connector target, never an Agent or account. */
 export function memberConnectorPermissionColumns() {
   return {
@@ -36,14 +47,12 @@ export function memberConnectorPermissionColumns() {
       ELSE 'custom_connector_' || replace(${connectorPermissionGrants.customConnectorId}::text, '-', '') END`.mapWith(
         pgTextDecoder,
       ),
-    permission: connectorPermissionGrants.permission,
-    action: connectorPermissionGrants.action,
-    expiresAt: connectorPermissionGrants.expiresAt,
+    ...memberConnectorRuleColumns,
   };
 }
 
 export function activeMemberConnectorPermissionCondition(
-  owner: { readonly orgId: string; readonly userId: string },
+  owner: ConnectorMember,
   at: Date,
 ) {
   return and(
@@ -58,7 +67,7 @@ export function activeMemberConnectorPermissionCondition(
 
 /** Pure builders share the existing bootstrap capture and its decoders. */
 export function memberConnectorSelectionQueries(
-  owner: { readonly orgId: string; readonly userId: string },
+  owner: ConnectorMember,
   at: Date,
 ) {
   const builder = new QueryBuilder();
@@ -87,8 +96,7 @@ export function memberConnectorSelectionQueries(
     .select({
       payload: sql`jsonb_build_object(
       'connector', ${contextJsonProjection(connectorColumns)} || jsonb_build_object('networkBinding', ${networkBinding.sql}),
-      'oauthConfig', CASE WHEN ${orgCustomConnectorOauthConfigs.connectorId} IS NULL THEN NULL ELSE ${contextJsonProjection(oauthColumns)} END,
-      'permissionNames', '[]'::jsonb)`
+      'oauthConfig', CASE WHEN ${orgCustomConnectorOauthConfigs.connectorId} IS NULL THEN NULL ELSE ${contextJsonProjection(oauthColumns)} END)`
         .mapWith(zodDriverValueDecoder(zUnknown()))
         .as("payload"),
     })
@@ -121,7 +129,7 @@ export function memberConnectorSelectionQueries(
   const permissions = builder
     .select({
       payload:
-        sql`${contextJsonProjection({ permission: connectorPermissionGrants.permission, action: connectorPermissionGrants.action, expiresAt: connectorPermissionGrants.expiresAt })} || jsonb_build_object('connectorSlug', ${permissionColumns.connectorSlug})`
+        sql`${contextJsonProjection(memberConnectorRuleColumns)} || jsonb_build_object('connectorSlug', ${permissionColumns.connectorSlug})`
           .mapWith(zodDriverValueDecoder(zUnknown()))
           .as("payload"),
     })

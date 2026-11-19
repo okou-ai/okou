@@ -1176,16 +1176,9 @@ describe("POST /api/webhooks/notion", () => {
   });
 
   it("follows an allowance replacement before the Chat's first explicit account selection", async () => {
-    const {
-      actor,
-      threadId,
-      firstAccount,
-      secondAccount,
-      expectAutomationConnector,
-    } = await setupNotionAccountLifecycle();
-    await connectorsApi.updateFeatureSwitches(actor, {
-      connectorChatAccountAccess: true,
-    });
+    const { threadId, firstAccount, secondAccount, expectAutomationConnector } =
+      await setupNotionAccountLifecycle();
+
     const changed = await accept(
       setupApp({ context, routes: chatConnectorAccessRoutes })(
         chatConnectorAccessContract,
@@ -1214,9 +1207,7 @@ describe("POST /api/webhooks/notion", () => {
         secondAccount,
         expectAutomationConnector,
       } = await setupNotionAccountLifecycle();
-      await connectorsApi.updateFeatureSwitches(actor, {
-        connectorChatAccountAccess: true,
-      });
+
       const thirdOwner = randomUUID();
       mockNotionConnectorOAuth({
         accessToken: "notion-third-access-token",
@@ -1294,9 +1285,7 @@ describe("POST /api/webhooks/notion", () => {
   it("does not reactivate a denied Notion default when deletion leaves no allowed account", async () => {
     const { actor, threadId, automationId, firstAccount, secondAccount } =
       await setupNotionAccountLifecycle();
-    await connectorsApi.updateFeatureSwitches(actor, {
-      connectorChatAccountAccess: true,
-    });
+
     const target = { kind: "builtin", connectorSlug: "notion" } as const;
     const access = setupApp({ context, routes: chatConnectorAccessRoutes })(
       chatConnectorAccessContract,
@@ -1346,9 +1335,7 @@ describe("POST /api/webhooks/notion", () => {
       secondAccount,
       expectAutomationConnector,
     } = await setupNotionAccountLifecycle();
-    await connectorsApi.updateFeatureSwitches(actor, {
-      connectorChatAccountAccess: true,
-    });
+
     const target = { kind: "builtin", connectorSlug: "notion" } as const;
     const access = setupApp({ context, routes: chatConnectorAccessRoutes })(
       chatConnectorAccessContract,

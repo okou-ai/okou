@@ -1047,12 +1047,10 @@
       "invalid": "この権限リンクは無効か、利用できません。",
       "loadFailed": "リクエストされたすべての権限を確認できませんでした。権限は変更できません。",
       "loading": "権限を読み込み中",
-      "myOkouScopeNote": "現在のタスクだけでなく、このワークスペースでのあなたのOkouの利用に適用されます。",
       "myOkouSharedScopeNote": "このワークスペース内のあなたのチャット全体で、このコネクタに適用されます。チームメンバーの権限はそれぞれ独立しています。",
       "notNow": "今はしない",
       "pending_other": "{{count}} 件の権限を許可",
       "review": "権限を確認",
-      "scopeNote": "現在のタスクだけでなく、このエージェントに適用されます。",
       "sharedScopeNote": "このコネクタの権限は、すべてのチャットとエージェントに適用されます。",
       "title": "以下の権限を許可"
     }
@@ -2098,13 +2096,8 @@
       "unavailableTitle": "アカウントを利用できません"
     },
     "connectors": {
-      "accountForThread": "このスレッドのアカウント",
-      "add": "{{connectorName}} を追加",
       "addConnectors": "コネクタの追加",
-      "authorized": "{{connectorName}} が接続され、{{agentName}} に対して承認されました",
       "back": "戻る",
-      "configurePermissions": "{{connectorName}} 権限を構成する",
-      "customAuthorizeDescription": "エージェント用のこのカスタム コネクタを確認、接続、承認します。",
       "directory": {
         "allCategories": "すべて",
         "askAdmin": "管理者に有効化を依頼してください",
@@ -2131,14 +2124,8 @@
         "tabCustom": "カスタム",
         "tabDiscover": "見つける"
       },
-      "fallsBackTo": "{{account}} にフォールバック",
       "find": "コネクタを検索...",
-      "loadFailed": "コネクターを読み込めませんでした。",
-      "noUsableAccount": "使用可能なアカウントがありません",
-      "remove": "{{connectorName}} を削除します",
-      "selectedAccountFor": "{{connector}} · 選択中のアカウント: {{account}}",
-      "title": "コネクター",
-      "useDefault": "デフォルトを使用"
+      "title": "コネクター"
     },
     "documentTitle": "チャット",
     "errors": {
@@ -2937,28 +2924,12 @@
     "totalAccounts": "{{value}} 個のアカウント"
   },
   "connectors": {
-    "access": {
-      "accessFor": "{{action}} {{connector}} {{agent}} へのアクセス",
-      "accessUpdated": "{{connector}} アクセスが更新されました",
-      "clearSearch": "エージェント検索をクリアする",
-      "description": "このコネクタを使用できるエージェントを選択します。",
-      "loading": "エージェントをロード中...",
-      "managePermissions": "権限の管理",
-      "managePermissionsFor": "{{agent}} の {{connector}} 権限を管理する",
-      "noAgents": "エージェントが見つかりませんでした",
-      "noMatchingAgents": "「{{search}}」に一致するエージェントはありません",
-      "permissionsUpdated": "権限が更新されました",
-      "search": "エージェントを探す",
-      "title": "{{connector}} アクセスを管理する",
-      "unnamedAgent": "無名"
-    },
     "accounts": {
       "accountName": "アカウント名",
       "accountsUnavailable": "このコネクターのアカウントは利用できません。",
       "actions": "アカウント操作",
       "addAccount": "アカウントを追加",
       "connected": "接続済み",
-      "default": "デフォルト",
       "disconnectAccount": "アカウントの接続を解除",
       "disconnectDescription": "このアカウントを Okou から切断します。このアカウントを使用しているスレッドはデフォルトの継承に戻ります。プロバイダー側のアカウントは削除されません。",
       "disconnectDescriptionWithCount": "このアカウントを Okou から切断します。{{value}} 件のスレッドがデフォルトの継承に戻ります。プロバイダー側のアカウントは削除されません。",
@@ -2973,8 +2944,6 @@
       "find": "アカウントを検索",
       "loading": "アカウントを読み込み中…",
       "loadMore": "さらに読み込む",
-      "makeDefault": "デフォルトに設定",
-      "managerDescription": "新しい実行ではデフォルトのアカウントが使われます。",
       "managerTitle": "{{connector}} のアカウントを管理",
       "namePromptDescription": "この手順をスキップして、後でアカウントに名前を付けることもできます。",
       "namePromptTitle": "{{connector}} アカウントに名前を付ける",
@@ -2988,7 +2957,6 @@
     },
     "actions": {
       "apply": "申し込む",
-      "authorize": "承認する",
       "cancel": "キャンセル",
       "close": "閉じる",
       "closeWindow": "ウィンドウを閉じる",
@@ -3035,7 +3003,6 @@
     },
     "card": {
       "accessFor": "{{action}} {{connector}} アクセス",
-      "authorized": "認可された",
       "connectAria": "{{connector}} を接続します",
       "connected": "接続済み",
       "connectionExpired": "接続が期限切れになりました",
@@ -3048,11 +3015,7 @@
     },
     "catalog": {
       "access": {
-        "add": "アクセス権の追加",
-        "manage": "{{connector}} アクセスを管理する",
-        "summaryMany": "{{value}} 件のエージェント",
-        "unavailable": "アクセスを利用できません",
-        "usedBy": "使用者 "
+        "manage": "{{connector}} アクセスを管理する"
       },
       "categories": {
         "ai": {
@@ -3123,18 +3086,13 @@
         "searchAll": "すべてのコネクターを検索"
       },
       "empty": {
-        "agent": "このエージェントにはコネクタがありません",
         "connected": "コネクタが接続されていません",
-        "search": "「{{search}}」に一致するコネクタはありません",
-        "unshared": "すべてのコネクタがいずれかのエージェントと共有されています"
+        "search": "「{{search}}」に一致するコネクタはありません"
       },
       "filterCategory": "カテゴリ",
       "filters": {
-        "agents": "エージェント",
         "all": "すべて",
-        "allAgents": "すべてのエージェント",
-        "aria": "フィルターコネクター",
-        "unshared": "どのエージェントとも共有されていません"
+        "aria": "フィルターコネクター"
       },
       "filterWith": "フィルタ: {{category}}",
       "myOkouDescription": "あなたのOkouが使う外部サービスを接続します。",
@@ -3164,8 +3122,7 @@
         "seeMore_other": "{{names}} ほか {{count}} 件を見る",
         "top": "人気のコネクタ"
       },
-      "title": "コネクター",
-      "unnamedAgent": "無名"
+      "title": "コネクター"
     },
     "connectDialog": {
       "connectedAs": "{{username}} として接続されています",
@@ -3309,9 +3266,6 @@
       }
     },
     "directed": {
-      "authorizeAgent": "{{agent}} を承認する",
-      "authorized": "{{connector}} が承認されました",
-      "authorizeDocumentTitle": "{{connector}} を承認する",
       "connectDocumentTitle": "{{connector}} を接続します",
       "connected": "{{connector}} が接続されました",
       "needsConnector": "{{agent}} を続行するには {{connector}} が必要です",
@@ -3339,10 +3293,8 @@
       "allowOptions": "{{permission}} 許可オプション",
       "always": "いつも",
       "clearSearch": "権限検索のクリア",
-      "descriptionAgent": "このエージェントがこのコネクタ経由で実行できるアクションを構成します。",
       "find": "権限の検索",
       "findPlaceholder": "権限を検索...",
-      "forTarget": "{{target}} の場合",
       "loadError": "権限メタデータのロードに失敗しました",
       "loading": "権限を読み込んでいます...",
       "metadataMissing": "{{connector}} の権限メタデータが見つかりません",
@@ -4084,7 +4036,6 @@
     }
   },
   "myOkou": {
-    "access": "このワークスペースでのアクセス権",
     "conflict": "保存済みの指示が別の場所で変更されました。下書きは保持されています。内容を確認またはコピーしてから、保存済みの指示を再読み込みしてください。",
     "description": "このワークスペースでのあなた専用の Okou への指示",
     "discard": "破棄",

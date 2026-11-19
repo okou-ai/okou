@@ -7093,8 +7093,8 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
         ...customConnectorBody(uniqueSlug("bdd-skill-update-failure")),
         skillMarkdown: "Keep these active instructions.",
       });
-      await connectorsApi.updateAgentCustomConnectors(admin, fixture.agentId, [
-        created.id,
+      await connectorsApi.setCustomConnectorValues(admin, created.id, [
+        { key: "secret", kind: "secret", value: "bdd-skill-api-token" },
       ]);
       const initialHead = await observeCustomSkill(fixture, created.id);
       if (!initialHead) {
@@ -7148,8 +7148,8 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
         ...customConnectorBody(uniqueSlug("bdd-skill-update-race")),
         skillMarkdown: "Initial active instructions.",
       });
-      await connectorsApi.updateAgentCustomConnectors(admin, fixture.agentId, [
-        created.id,
+      await connectorsApi.setCustomConnectorValues(admin, created.id, [
+        { key: "secret", kind: "secret", value: "bdd-skill-api-token" },
       ]);
       const initialHead = await observeCustomSkill(fixture, created.id);
       if (!initialHead) {
@@ -7252,8 +7252,8 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
         permissionBundleRef: "builtin:slack@1",
         skillMarkdown: "Use this connector to coordinate Slack conversations.",
       });
-      await connectorsApi.updateAgentCustomConnectors(admin, fixture.agentId, [
-        created.id,
+      await connectorsApi.setCustomConnectorValues(admin, created.id, [
+        { key: "secret", kind: "secret", value: "bdd-skill-api-token" },
       ]);
       const createdHead = await observeCustomSkill(fixture, created.id);
       if (!createdHead) {

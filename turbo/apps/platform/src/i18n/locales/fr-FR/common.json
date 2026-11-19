@@ -1071,14 +1071,12 @@
       "invalid": "Ce lien d’autorisation est invalide ou indisponible.",
       "loadFailed": "Impossible de vérifier toutes les autorisations demandées. Aucune autorisation ne peut être modifiée.",
       "loading": "Chargement des autorisations",
-      "myOkouScopeNote": "S'applique à votre utilisation d'Okou dans cet espace de travail, pas seulement à la tâche en cours.",
       "myOkouSharedScopeNote": "S'applique à ce connecteur dans vos chats de cet espace de travail. Vos collègues ont leurs propres autorisations.",
       "notNow": "Pas maintenant",
       "pending_one": "{{count}} autorisation à accorder",
       "pending_many": "{{count}} autorisations à accorder",
       "pending_other": "{{count}} autorisations à accorder",
       "review": "Examiner les autorisations",
-      "scopeNote": "S’applique à cet agent, pas uniquement à la tâche en cours.",
       "sharedScopeNote": "S’applique à ce connecteur dans tous vos chats et agents.",
       "title": "Accorder les autorisations suivantes"
     }
@@ -2134,13 +2132,8 @@
       "unavailableTitle": "Compte indisponible"
     },
     "connectors": {
-      "accountForThread": "Compte pour ce fil",
-      "add": "Ajouter {{connectorName}}",
       "addConnectors": "Ajouter des connecteurs",
-      "authorized": "{{connectorName}} connecté et autorisé pour {{agentName}}",
       "back": "Retour",
-      "configurePermissions": "Configurer les autorisations de {{connectorName}}",
-      "customAuthorizeDescription": "Examiner, connecter et autoriser ce connecteur personnalisé pour l'agent.",
       "directory": {
         "allCategories": "Tous",
         "askAdmin": "Demandez à un administrateur de l'activer",
@@ -2173,14 +2166,8 @@
         "tabCustom": "Personnalisés",
         "tabDiscover": "Découvrir"
       },
-      "fallsBackTo": "Utilise {{account}} en repli",
       "find": "Rechercher des connecteurs...",
-      "loadFailed": "Impossible de charger les connecteurs.",
-      "noUsableAccount": "Aucun compte utilisable",
-      "remove": "Supprimer {{connectorName}}",
-      "selectedAccountFor": "{{connector}} · Compte sélectionné : {{account}}",
-      "title": "Connecteurs",
-      "useDefault": "Utiliser le compte par défaut"
+      "title": "Connecteurs"
     },
     "documentTitle": "Discussion",
     "errors": {
@@ -3002,28 +2989,12 @@
     "totalAccounts": "{{value}} comptes"
   },
   "connectors": {
-    "access": {
-      "accessFor": "{{action}} l'accès à {{connector}} pour {{agent}}",
-      "accessUpdated": "Accès à {{connector}} mis à jour",
-      "clearSearch": "Effacer la recherche d'agents",
-      "description": "Choisissez quels agents peuvent utiliser ce connecteur.",
-      "loading": "Chargement des agents...",
-      "managePermissions": "Gérer les permissions",
-      "managePermissionsFor": "Gérer les permissions de {{connector}} pour {{agent}}",
-      "noAgents": "Aucun agent trouvé",
-      "noMatchingAgents": "Aucun agent ne correspond à \"{{search}}\"",
-      "permissionsUpdated": "Permissions mises à jour",
-      "search": "Trouver des agents",
-      "title": "Gérer l'accès à {{connector}}",
-      "unnamedAgent": "Sans nom"
-    },
     "accounts": {
       "accountName": "Nom du compte",
       "accountsUnavailable": "Les comptes ne sont pas disponibles pour ce connecteur.",
       "actions": "Actions du compte",
       "addAccount": "Ajouter un compte",
       "connected": "Connecté",
-      "default": "Par défaut",
       "disconnectAccount": "Déconnecter le compte",
       "disconnectDescription": "Cela déconnecte le compte d’Okou. Les fils qui l’utilisent reviendront à l’héritage par défaut. Le compte chez le fournisseur ne sera pas supprimé.",
       "disconnectDescriptionWithCount": "Cela déconnecte le compte d’Okou. {{value}} fils reviendront à l’héritage par défaut. Le compte chez le fournisseur ne sera pas supprimé.",
@@ -3040,8 +3011,6 @@
       "find": "Rechercher des comptes",
       "loading": "Chargement des comptes…",
       "loadMore": "Charger plus",
-      "makeDefault": "Définir par défaut",
-      "managerDescription": "Les nouvelles exécutions utilisent votre compte par défaut.",
       "managerTitle": "Gérer les comptes {{connector}}",
       "namePromptDescription": "Vous pouvez ignorer cette étape et nommer le compte plus tard.",
       "namePromptTitle": "Nommer votre compte {{connector}}",
@@ -3055,7 +3024,6 @@
     },
     "actions": {
       "apply": "Appliquer",
-      "authorize": "Autoriser",
       "cancel": "Annuler",
       "close": "Fermer",
       "closeWindow": "Fermer la fenêtre",
@@ -3102,7 +3070,6 @@
     },
     "card": {
       "accessFor": "{{action}} l'accès à {{connector}}",
-      "authorized": "Autorisé",
       "connectAria": "Connecter {{connector}}",
       "connected": "Connecté",
       "connectionExpired": "Connexion expirée",
@@ -3115,11 +3082,7 @@
     },
     "catalog": {
       "access": {
-        "add": "Ajouter l'accès",
-        "manage": "Gérer l'accès à {{connector}}",
-        "summaryMany": "{{value}} agents",
-        "unavailable": "Accès indisponible",
-        "usedBy": "Utilisé par"
+        "manage": "Gérer l'accès à {{connector}}"
       },
       "categories": {
         "ai": {
@@ -3190,18 +3153,13 @@
         "searchAll": "Rechercher dans tous les connecteurs"
       },
       "empty": {
-        "agent": "Aucun connecteur pour cet agent",
         "connected": "Aucun connecteur connecté",
-        "search": "Aucun connecteur correspondant à \"{{search}}\"",
-        "unshared": "Chaque connecteur est partagé avec un agent"
+        "search": "Aucun connecteur correspondant à \"{{search}}\""
       },
       "filterCategory": "Catégorie",
       "filters": {
-        "agents": "Agents",
         "all": "Tous",
-        "allAgents": "Tous les agents",
-        "aria": "Filtrer les connecteurs",
-        "unshared": "Partagé avec aucun agent"
+        "aria": "Filtrer les connecteurs"
       },
       "filterWith": "Filtre : {{category}}",
       "myOkouDescription": "Connectez des services tiers pour votre Okou.",
@@ -3232,8 +3190,7 @@
         "seeMore_other": "Voir {{names}} et {{count}} autres",
         "top": "Connecteurs principaux"
       },
-      "title": "Connecteurs",
-      "unnamedAgent": "Sans nom"
+      "title": "Connecteurs"
     },
     "connectDialog": {
       "connectedAs": "Connecté en tant que {{username}}",
@@ -3377,9 +3334,6 @@
       }
     },
     "directed": {
-      "authorizeAgent": "Autoriser {{agent}}",
-      "authorized": "{{connector}} autorisé",
-      "authorizeDocumentTitle": "Autoriser {{connector}}",
       "connectDocumentTitle": "Connecter {{connector}}",
       "connected": "{{connector}} connecté",
       "needsConnector": "{{agent}} a besoin de {{connector}} pour continuer",
@@ -3409,10 +3363,8 @@
       "allowOptions": "Options d'autorisation pour {{permission}}",
       "always": "Toujours",
       "clearSearch": "Effacer la recherche de permissions",
-      "descriptionAgent": "Configurer les actions que cet agent est autorisé à effectuer via ce connecteur.",
       "find": "Trouver des permissions",
       "findPlaceholder": "Recherche de permissions...",
-      "forTarget": "pour {{target}}",
       "loadError": "Échec du chargement des métadonnées des permissions",
       "loading": "Chargement des permissions...",
       "metadataMissing": "Aucune métadonnée de permission trouvée pour {{connector}}",
@@ -4160,7 +4112,6 @@
     }
   },
   "myOkou": {
-    "access": "Votre accès dans cet espace de travail",
     "conflict": "Vos instructions enregistrées ont été modifiées ailleurs. Votre brouillon est conservé. Consultez-le ou copiez-le avant de recharger les instructions enregistrées.",
     "description": "Vos instructions pour Okou dans cet espace de travail",
     "discard": "Abandonner",

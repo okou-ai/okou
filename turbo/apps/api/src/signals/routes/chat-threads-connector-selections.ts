@@ -1,7 +1,5 @@
 import { command, computed } from "ccstate";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
+
 import { setChatConnectorCurrent$ } from "../services/chat-connector-access.service";
 import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
 
@@ -10,16 +8,9 @@ import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf } from "../context/request";
 import { publishChatThreadDetailChangedSafely } from "../external/realtime";
-import { bestEffort } from "../utils";
-import {
-  clearChatThreadConnectorSelection$,
-  connectorSelectionsForChatThread,
-  updateChatThreadConnectorSelection$,
-} from "../services/chat-thread-connector-selection.service";
-import { reconcileGmailWatchesForUser$ } from "../services/gmail-automation-watch.service";
-import { reconcileGoogleCalendarWatchesForUser$ } from "../services/google-calendar-automation-watch.service";
-import { reconcileGoogleFormsWatchesForUser$ } from "../services/google-forms-automation-watch.service";
-import { reconcileGoogleMeetSubscriptionsForUser$ } from "../services/google-meet-automation-watch.service";
+
+import { connectorSelectionsForChatThread } from "../services/chat-thread-connector-selection.service";
+
 import type { RouteEntry } from "../route-entry";
 
 const selectionScope$ = computed((get) => {
@@ -59,98 +50,28 @@ const updateSelectionInner$ = command(
     if (!body.ok) {
       return body.response;
     }
-    const features = await set(
-      loadUserFeatureSwitchContext$,
-      auth.orgId,
-      auth.userId,
-      signal,
-    );
-    if (
-      isFeatureEnabled(FeatureSwitchKey.ConnectorChatAccountAccess, features)
-    ) {
-      const saved = await set(
-        setChatConnectorCurrent$,
-        {
-          orgId: auth.orgId,
-          userId: auth.userId,
-          chatThreadId: params.id,
-          target: body.data.target,
-        },
-        body.data.connectionId,
-        signal,
-      );
-      if (saved) {
-        await publishChatThreadDetailChangedSafely(auth.userId, params.id);
-        signal.throwIfAborted();
-      }
-      return saved
-        ? { status: 200 as const, body: body.data }
-        : badRequestMessage(
-            "Account is unavailable or not allowed in this Chat",
-          );
-    }
-    const result = await set(
-      updateChatThreadConnectorSelection$,
+    const saved = await set(
+      setChatConnectorCurrent$,
       {
         orgId: auth.orgId,
         userId: auth.userId,
         chatThreadId: params.id,
-        selection: body.data,
+        target: body.data.target,
       },
+      body.data.connectionId,
       signal,
     );
-    signal.throwIfAborted();
-    if (result.kind === "not_found") {
-      return notFound("Chat thread not found");
+    if (saved) {
+      await publishChatThreadDetailChangedSafely(auth.userId, params.id);
+      signal.throwIfAborted();
     }
-    if (result.kind === "invalid") {
-      return badRequestMessage(result.message);
-    }
-    if (
-      body.data.target.kind === "builtin" &&
-      (body.data.target.connectorSlug === "gmail" ||
-        body.data.target.connectorSlug === "google-calendar" ||
-        body.data.target.connectorSlug === "google-forms" ||
-        body.data.target.connectorSlug === "google-meet")
-    ) {
-      await bestEffort(
-        body.data.target.connectorSlug === "gmail"
-          ? set(
-              reconcileGmailWatchesForUser$,
-              { orgId: auth.orgId, userId: auth.userId },
-              signal,
-            )
-          : body.data.target.connectorSlug === "google-calendar"
-            ? set(
-                reconcileGoogleCalendarWatchesForUser$,
-                { orgId: auth.orgId, userId: auth.userId },
-                signal,
-              )
-            : body.data.target.connectorSlug === "google-forms"
-              ? set(
-                  reconcileGoogleFormsWatchesForUser$,
-                  { orgId: auth.orgId, userId: auth.userId },
-                  signal,
-                )
-              : set(
-                  reconcileGoogleMeetSubscriptionsForUser$,
-                  { orgId: auth.orgId, userId: auth.userId },
-                  signal,
-                ),
-        signal,
-      );
-    }
-    await publishChatThreadDetailChangedSafely(auth.userId, params.id);
-    signal.throwIfAborted();
-    return { status: 200 as const, body: result.selection };
+    return saved
+      ? { status: 200 as const, body: body.data }
+      : badRequestMessage("Account is unavailable or not allowed in this Chat");
   },
 );
 const clearSelectionInner$ = command(
-  async ({ get, set }, signal: AbortSignal): Promise<unknown> => {
-    const auth = get(organizationAuthContext$);
-    const params = get(
-      pathParamsOf(chatThreadConnectorSelectionContract.clear),
-    );
+  async ({ get }, signal: AbortSignal): Promise<unknown> => {
     const body = await get(
       bodyResultOf(chatThreadConnectorSelectionContract.clear),
     );
@@ -158,70 +79,9 @@ const clearSelectionInner$ = command(
     if (!body.ok) {
       return body.response;
     }
-    const features = await set(
-      loadUserFeatureSwitchContext$,
-      auth.orgId,
-      auth.userId,
-      signal,
+    return badRequestMessage(
+      "Manage this Chat's account access instead of clearing its current account",
     );
-    if (
-      isFeatureEnabled(FeatureSwitchKey.ConnectorChatAccountAccess, features)
-    ) {
-      return badRequestMessage(
-        "Manage this Chat's account access instead of clearing its current account",
-      );
-    }
-    const result = await set(
-      clearChatThreadConnectorSelection$,
-      {
-        orgId: auth.orgId,
-        userId: auth.userId,
-        chatThreadId: params.id,
-        target: body.data,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    if (result.kind === "not_found") {
-      return notFound("Chat thread not found");
-    }
-    if (
-      body.data.kind === "builtin" &&
-      (body.data.connectorSlug === "gmail" ||
-        body.data.connectorSlug === "google-calendar" ||
-        body.data.connectorSlug === "google-forms" ||
-        body.data.connectorSlug === "google-meet")
-    ) {
-      await bestEffort(
-        body.data.connectorSlug === "gmail"
-          ? set(
-              reconcileGmailWatchesForUser$,
-              { orgId: auth.orgId, userId: auth.userId },
-              signal,
-            )
-          : body.data.connectorSlug === "google-calendar"
-            ? set(
-                reconcileGoogleCalendarWatchesForUser$,
-                { orgId: auth.orgId, userId: auth.userId },
-                signal,
-              )
-            : body.data.connectorSlug === "google-forms"
-              ? set(
-                  reconcileGoogleFormsWatchesForUser$,
-                  { orgId: auth.orgId, userId: auth.userId },
-                  signal,
-                )
-              : set(
-                  reconcileGoogleMeetSubscriptionsForUser$,
-                  { orgId: auth.orgId, userId: auth.userId },
-                  signal,
-                ),
-        signal,
-      );
-    }
-    await publishChatThreadDetailChangedSafely(auth.userId, params.id);
-    signal.throwIfAborted();
-    return { status: 204 as const, body: undefined };
   },
 );
 

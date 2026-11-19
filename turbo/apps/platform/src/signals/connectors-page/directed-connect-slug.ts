@@ -36,6 +36,7 @@ import {
 } from "../external/connectors.ts";
 import { customConnectors$ } from "../okou-page/settings/custom-connectors.ts";
 import { createConnectorAccountListSignals } from "../okou-page/connector-accounts.ts";
+import { readConnectorAccountPage } from "../okou-page/settings/connector-accounts.ts";
 
 const directedConnectAccounts = createConnectorAccountListSignals({
   includeBuiltinScopeMismatch: true,
@@ -164,10 +165,7 @@ export const directedConnectExactAccount$ = computed(
   },
 );
 
-/**
- * Agent ID extracted from `?agentId=` query parameter on the connect page.
- * When present, the connect page will auto-authorize the agent after connecting.
- */
+/** The agent of the chat that requested the connection. */
 export const directedConnectAgentId$ = computed((get): string | null => {
   return get(searchParams$).get("agentId");
 });
@@ -184,6 +182,23 @@ export const directedConnectAgentName$ = computed(async (get) => {
   });
   return { agentId, displayName: agent?.displayName ?? null };
 });
+
+export const continueConnectedConnector$ = command(
+  async ({ get, set }, slug: ConnectorSlug, signal: AbortSignal) => {
+    const agentId = get(directedConnectAgentId$);
+    const callback = get(routeChatActionCallback$);
+    const accounts = await readConnectorAccountPage(
+      get(apiClient$),
+      { kind: "builtin", connectorSlug: slug },
+      signal,
+      { includeBuiltinScopeMismatch: true },
+    );
+    if (accounts.defaultConnection?.connectionStatus !== "connected") {
+      throw new Error("The default account still needs attention.");
+    }
+    await set(completeDirectedConnectorAction$, agentId, callback, signal);
+  },
+);
 
 interface DirectedConnectTarget {
   readonly connectorSlug: ConnectorSlug;
@@ -275,7 +290,6 @@ export const connectDirectedConnector$ = command(
     }
     const options = {
       connectorLabel: item.label,
-      ...(agentId ? { agentId } : { authorizeVisibleAgents: true }),
       ...accountOptions,
     };
     const onSuccess = (_connectionId: string, attemptSignal: AbortSignal) => {

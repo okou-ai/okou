@@ -7,7 +7,6 @@ import Observation
 @MainActor @Observable
 final class ComposerConnectorAccountResources {
   enum Action: Sendable {
-    case select(String?)
     case access(String, Bool?)
     case defaultAccount(String)
     case defaultEnabled(String, Bool)
@@ -16,15 +15,8 @@ final class ComposerConnectorAccountResources {
   struct Page: Sendable {
     let accounts: [ChatConnectorAccount]
     let nextCursor: String?
-    let defaultAccount: ChatConnectorAccount?
-    let selectedID: String?
-    let access: ChatConnectorAccess?
+    let access: ChatConnectorAccess
     let defaults: [ChatConnectorAccountDefault]
-  }
-
-  private struct Details: Sendable {
-    var preferences: ChatConnectorPreferences?
-    var defaults: [ChatConnectorAccountDefault] = []
   }
 
   /// Pagination accumulation is canonical returned data, not a second request phase.
@@ -35,7 +27,6 @@ final class ComposerConnectorAccountResources {
 
   let connector: ChatComposerConnector
   let agentID: String
-  let chatAccountAccess: Bool
   let managesDefaults: Bool
   let store = CCState.Store()
   let search: Computed<String>
@@ -58,7 +49,7 @@ final class ComposerConnectorAccountResources {
   private(set) var isClosed = false
   @ObservationIgnored private var generation = UUID()
   @ObservationIgnored private var firstTask: Task<ChatConnectorAccounts, Error>?
-  @ObservationIgnored private var detailsTask: Task<Details, Error>?
+  @ObservationIgnored private var detailsTask: Task<[ChatConnectorAccountDefault], Error>?
   @ObservationIgnored private var moreTask: Task<Void, Error>?
 
   init(
@@ -69,7 +60,6 @@ final class ComposerConnectorAccountResources {
     self.connector = connector
     self.agentID = agentID
     self.managesDefaults = managesDefaults
-    chatAccountAccess = composer.chatAccountAccess
     service = composer.service
     self.didFail = didFail
     let keyword = keyword
@@ -125,26 +115,20 @@ final class ComposerConnectorAccountResources {
 
   @ObservationIgnored private lazy var details = makeDetails()
 
-  private func makeDetails() -> Computed<Task<Details, Error>> {
+  private func makeDetails() -> Computed<Task<[ChatConnectorAccountDefault], Error>> {
     Computed { [weak self] get, options in
       guard let self, !isClosed, try get(lifetime) else { throw CancellationError() }
       _ = try get(revision)
       let signal = options.signal
       let target = connector.target
-      let threadID = composer?.threadID
-      let task: Task<Details, Error> =
-        Task { @MainActor [weak self, service, managesDefaults, chatAccountAccess] in
+      let task: Task<[ChatConnectorAccountDefault], Error> =
+        Task { @MainActor [weak self, service] in
           do {
             try Task.checkCancellation()
-            var value = Details()
-            if managesDefaults {
-              value.defaults = try await service.accountDefaults(target: target)
-            } else if !chatAccountAccess, let threadID {
-              value.preferences = try await service.preferences(threadID: threadID)
-            }
+            let defaults = try await service.accountDefaults(target: target)
             try Task.checkCancellation()
             try signal.checkCancellation()
-            return value
+            return defaults
           } catch {
             if let self, !isClosed, !Task.isCancelled, !signal.isCancelled { didFail(error) }
             throw error
@@ -167,33 +151,23 @@ final class ComposerConnectorAccountResources {
       let search = try get(keyword)
       let tail = try get(tail)
       let first = try get(first)
-      let details = try get(details)
+      let details = managesDefaults ? try get(details) : nil
       guard let current = composer.connectors.first(where: { $0.target == connector.target }) else {
         throw APIClientError.http(status: 404, message: "Connector unavailable.")
       }
-      let pending = composer.pendingOptions.connectorSelections.first {
-        $0.target == connector.target
-      }
-      let (result, settings) = try await (first.value, details.value)
+      let (result, defaults) = try await (first.value, details?.value)
       try Task.checkCancellation()
       try options.signal.checkCancellation()
       var accounts = result.connections + (tail?.accounts ?? [])
-      let selected = settings.preferences?.selections.first { $0.target == connector.target }
-      let selectedID =
-        chatAccountAccess
-        ? current.access?.currentConnectionId
-        : (settings.preferences == nil ? pending?.connectionId : selected?.connectionId)
-      let explicit = settings.preferences?.selectedConnections.first { $0.id == selectedID }
-      let pinned = chatAccountAccess ? (search.isEmpty ? current.currentAccount : nil) : explicit
-      if !managesDefaults, let pinned, !accounts.contains(where: { $0.id == pinned.id }) {
+      if !managesDefaults, search.isEmpty, let pinned = current.currentAccount,
+        !accounts.contains(where: { $0.id == pinned.id })
+      {
         accounts.insert(pinned, at: 0)
       }
       let cursor: String?
       if let tail { cursor = tail.nextCursor } else { cursor = result.nextCursor }
       return Page(
-        accounts: accounts, nextCursor: cursor,
-        defaultAccount: result.defaultConnection, selectedID: selectedID, access: current.access,
-        defaults: settings.defaults)
+        accounts: accounts, nextCursor: cursor, access: current.access, defaults: defaults ?? [])
     }
   }
 

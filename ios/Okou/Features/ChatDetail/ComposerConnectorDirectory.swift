@@ -360,7 +360,7 @@ private struct ComposerConnectorDetail: View {
         .buttonStyle(OkouButtonStyle(isPrimary: !added, isCompact: true))
         .accessibilityIdentifier("connector-connect")
         if connector.permissionSummary.hasPermissions
-          && (!store.chatAccountAccess || store.canConfigurePermissions(slug: connector.slug))
+          && store.canConfigurePermissions(slug: connector.slug)
         {
           Button {
             permissionDestination = store.openPermissions(

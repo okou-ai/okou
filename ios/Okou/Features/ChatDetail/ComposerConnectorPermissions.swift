@@ -125,12 +125,8 @@ private struct ComposerConnectorPermissionsContent: View {
           }.disabled(
             busy || value.permissions.isEmpty)
         } footer: {
-          Text(
-            state.connectorScoped
-              ? "These permissions apply to this connector across your chats and accounts."
-              : "These permissions apply to this Agent across its chats."
-          )
-          .okouSectionNote()
+          Text("These permissions apply to this connector across your chats and accounts.")
+            .okouSectionNote()
         }
         Section {
           ForEach(value.permissions, id: \.name) { permission in
@@ -161,11 +157,7 @@ private struct ComposerConnectorPermissionsContent: View {
       text: Binding(get: { selection.search }, set: { resources.update(search: $0) }),
       prompt: "Find permissions"
     )
-    .confirmationDialog(
-      connectorScoped
-        ? "Reset this connector's permissions?"
-        : "Reset this connector's permissions for this Agent?", isPresented: $confirmsReset
-    ) {
+    .confirmationDialog("Reset this connector's permissions?", isPresented: $confirmsReset) {
       Button("Reset to defaults", role: .destructive) { Task { await resources.apply(.reset) } }
         .disabled(busy)
     }
@@ -183,11 +175,6 @@ private struct ComposerConnectorPermissionsContent: View {
       }
       .okouSectionNote()
     }
-  }
-
-  private var connectorScoped: Bool {
-    if case .hasData(let value) = page { return value.state.connectorScoped }
-    return false
   }
 
   private func permissionRow(

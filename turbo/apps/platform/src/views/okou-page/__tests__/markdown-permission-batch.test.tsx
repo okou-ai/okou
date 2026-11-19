@@ -1,9 +1,10 @@
+import { connectorPermissionsContract } from "@okouai/api-contracts/contracts/connector-permissions";
+import { connectorPermissionsResponse } from "../../../__tests__/connector-permissions.ts";
 import { agentsByIdContract } from "@okouai/api-contracts/contracts/agents";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
-import {
-  userPermissionGrantsContract,
-  type UserPermissionGrantBatchItem,
-  type UserPermissionGrantResponse,
+import type {
+  UserPermissionGrantBatchItem,
+  UserPermissionGrantResponse,
 } from "@okouai/api-contracts/contracts/user-permission-grants";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
@@ -97,8 +98,8 @@ test("A markdown batch link renders grouped permissions without duplicate rows",
       });
     },
   );
-  context.mocks.api(userPermissionGrantsContract.list, ({ respond }) => {
-    return respond(200, []);
+  context.mocks.api(connectorPermissionsContract.get, ({ query, respond }) => {
+    return respond(200, connectorPermissionsResponse(query, []));
   });
 
   await openMarkdown(
@@ -180,8 +181,8 @@ test("A batch card shows three service logos and exposes every service in its ov
     return { connectorSlug: service.slug, permission: "files:read" };
   });
   installMetadata(items);
-  context.mocks.api(userPermissionGrantsContract.list, ({ respond }) => {
-    return respond(200, []);
+  context.mocks.api(connectorPermissionsContract.get, ({ query, respond }) => {
+    return respond(200, connectorPermissionsResponse(query, []));
   });
 
   await openMarkdown(`[Authorize tools](${batchUrl(items).toString()})`, true);
@@ -209,18 +210,18 @@ test("A batch card shows three service logos and exposes every service in its ov
 
 test("A partially allowed batch shows the remaining permission count", async () => {
   installMetadata(defaultItems.slice(0, 2));
-  context.mocks.api(userPermissionGrantsContract.list, ({ respond }) => {
-    return respond(200, [
-      {
-        agentId: AGENT_ID,
-        connectorSlug: "slack",
-        permission: "files:read",
-        action: "allow",
-        expiresAt: "2099-01-01T00:00:00.000Z",
-        createdAt: "2030-01-01T00:00:00.000Z",
-        updatedAt: "2030-01-01T00:00:00.000Z",
-      },
-    ]);
+  context.mocks.api(connectorPermissionsContract.get, ({ query, respond }) => {
+    return respond(
+      200,
+      connectorPermissionsResponse(query, [
+        {
+          connectorSlug: "slack",
+          permission: "files:read",
+          action: "allow",
+          expiresAt: "2099-01-01T00:00:00.000Z",
+        },
+      ]),
+    );
   });
 
   await openMarkdown(`[Authorize tools](${batchUrl().toString()})`, true);
@@ -240,8 +241,8 @@ test("A batch stays reviewable while service details load and enables duration o
     { connectorSlug: "github", permission: "repos.read" },
   ];
   installMetadata(items, metadata.promise);
-  context.mocks.api(userPermissionGrantsContract.list, ({ respond }) => {
-    return respond(200, []);
+  context.mocks.api(connectorPermissionsContract.get, ({ query, respond }) => {
+    return respond(200, connectorPermissionsResponse(query, []));
   });
 
   await openMarkdown(`[Authorize tools](${batchUrl(items).toString()})`, true);
@@ -308,30 +309,32 @@ test("A batch card reports saving and then allowed after the user confirms", asy
   const items = defaultItems.slice(0, 2);
   installMetadata(items);
   const grants: UserPermissionGrantResponse[] = [];
-  context.mocks.api(userPermissionGrantsContract.list, ({ respond }) => {
-    return respond(200, grants);
+  context.mocks.api(connectorPermissionsContract.get, ({ query, respond }) => {
+    return respond(200, connectorPermissionsResponse(query, grants));
   });
   context.mocks.api(
-    userPermissionGrantsContract.applyBatch,
+    connectorPermissionsContract.apply,
     async ({ body, respond }) => {
       await save.promise;
+      if (body.target.kind !== "builtin") {
+        throw new Error("Expected a builtin connector");
+      }
+      const { connectorSlug } = body.target;
       grants.push(
-        ...body.groups.flatMap((group) => {
-          return group.grants.map((grant) => {
-            return {
-              agentId: AGENT_ID,
-              connectorSlug: group.connectorSlug,
-              permission: grant.permission,
-              action: "allow" as const,
-              expiresAt: "2099-01-01T00:00:00.000Z",
-              createdAt: "2030-01-01T00:00:00.000Z",
-              updatedAt: "2030-01-01T00:00:00.000Z",
-            };
-          });
+        ...body.grants.map((grant) => {
+          return {
+            agentId: AGENT_ID,
+            connectorSlug,
+            permission: grant.permission,
+            action: "allow" as const,
+            expiresAt: "2099-01-01T00:00:00.000Z",
+            createdAt: "2030-01-01T00:00:00.000Z",
+            updatedAt: "2030-01-01T00:00:00.000Z",
+          };
         }),
       );
       context.mocks.ably.trigger("connectorPermissionUpdated");
-      return respond(200, grants);
+      return respond(200, connectorPermissionsResponse(body.target, grants));
     },
   );
 

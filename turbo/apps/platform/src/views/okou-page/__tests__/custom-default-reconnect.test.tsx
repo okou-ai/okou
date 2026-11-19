@@ -173,9 +173,7 @@ test.each([1, 2])(
     expect(mutations).toStrictEqual([
       { intent: "reconnect", connectionId: account.id },
     ]);
-    expect(grants).toStrictEqual([
-      { customConnectorId: connector.id, permissionNames: [] },
-    ]);
+    expect(grants).toStrictEqual([]);
   },
 );
 
@@ -448,7 +446,7 @@ test.each([
   },
 );
 
-test("Authorize an expired OAuth default only after ready completion", async () => {
+test("Reconnect the expired OAuth account after its completion receipt", async () => {
   const flow = installOAuthFlow("expired", true);
   const dialog = await openOAuthConnection(flow);
   click(getConnectorAction("button", "Continue", dialog));
@@ -464,15 +462,13 @@ test("Authorize an expired OAuth default only after ready completion", async () 
       screen.queryByRole("dialog", { name: "Connect Acme Search" }),
     ).toBeNull();
   });
-  expect(flow.grants).toStrictEqual([
-    [{ customConnectorId: flow.connector().id, permissionNames: [] }],
-  ]);
+  expect(flow.grants).toStrictEqual([]);
   expect(flow.mutations).toStrictEqual([
     { intent: "reconnect", connectionId: flow.account.id },
   ]);
 });
 
-test("Keep an incomplete OAuth reconnect unauthorized", async () => {
+test("Leave an incomplete OAuth reconnect unconfirmed", async () => {
   const flow = installOAuthFlow("expired");
   const dialog = await openOAuthConnection(flow);
   click(getConnectorAction("button", "Continue", dialog));

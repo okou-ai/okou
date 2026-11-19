@@ -219,11 +219,10 @@ describe("runner execution context contract", () => {
   });
 
   it.each([
-    { featureFlags: { singleAgent: true, connectorChatAccountAccess: false } },
+    { featureFlags: { singleAgent: true, retainedDiagnosticFlag: false } },
     {
       featureFlags: {
         singleAgent: false,
-        connectorChatAccountAccess: true,
         retainedDiagnosticFlag: true,
       },
     },

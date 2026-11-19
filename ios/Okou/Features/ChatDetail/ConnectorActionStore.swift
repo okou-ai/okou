@@ -145,11 +145,7 @@ final class ConnectorActionStore {
         }
         if case .select = flow.action.kind {
           try await service.select(flow.action, status: current)
-          try check(flow)
-          guard let verified = try await service.status(flow.action), verified.selected else {
-            throw APIClientError.invalidResponse
-          }
-          try await finish(flow, status: verified)
+          try await finish(flow)
           return
         }
         let reconnect: Bool
@@ -158,10 +154,7 @@ final class ConnectorActionStore {
         default: reconnect = false
         }
         if current.connected && !reconnect && flow.session == nil {
-          if current.requiresAgentAuthorization {
-            try await service.authorize(flow.action, status: current)
-          }
-          try await finish(flow, status: current)
+          try await finish(flow)
           return
         }
         if flow.isExternalCode,
@@ -192,8 +185,7 @@ final class ConnectorActionStore {
     _ flow: ConnectorAuthorizationFlow, status current: ChatConnectorStatus
   ) async throws {
     let result = try await service.start(
-      flow.action, status: current, method: flow.method, values: flow.values,
-      options: flow.options)
+      status: current, method: flow.method, values: flow.values, options: flow.options)
     try check(flow)
     flow.values = [:]
     flow.code = ""
@@ -304,18 +296,9 @@ final class ConnectorActionStore {
       throw APIClientError.http(
         status: 409, message: "Connector setup is incomplete. Refresh and try again.")
     }
-    guard let current = try await service.status(flow.action.confirming(accountID: id)) else {
-      throw APIClientError.invalidResponse
-    }
-    try check(flow)
-    if current.requiresAgentAuthorization {
-      try await service.authorize(flow.action, status: current)
-    }
-    try await finish(flow, status: current)
+    try await finish(flow)
   }
-  private func finish(
-    _ flow: ConnectorAuthorizationFlow, status: ChatConnectorStatus
-  ) async throws {
+  private func finish(_ flow: ConnectorAuthorizationFlow) async throws {
     try check(flow)
     guard
       let verified = try await service.status(flow.action.confirming(accountID: flow.operatedID))
@@ -323,11 +306,9 @@ final class ConnectorActionStore {
       throw APIClientError.invalidResponse
     }
     if case .select = flow.action.kind {
-      guard verified.selected && !verified.requiresAgentAuthorization else {
-        throw APIClientError.invalidResponse
-      }
+      guard verified.selected else { throw APIClientError.invalidResponse }
     } else {
-      guard verified.complete else { throw APIClientError.invalidResponse }
+      guard verified.connected else { throw APIClientError.invalidResponse }
     }
     try check(flow)
     if case .connect = flow.action.kind, let id = flow.operatedID, verified.custom?.managed != true,
@@ -337,7 +318,7 @@ final class ConnectorActionStore {
         status: 409, message: "The default account changed. Refresh the card before continuing.")
     }
     if let id = flow.operatedID {
-      let account = try await service.account(id: id, target: status.target)
+      let account = try await service.account(id: id, target: verified.target)
       guard account.ready else { throw APIClientError.invalidResponse }
     }
     try check(flow)
@@ -352,9 +333,7 @@ final class ConnectorActionStore {
     activeRead?.invalidate()
     notices[flow.action.id] =
       flow.action.callbackPrompt == nil
-      ? (verified.chatAccountAccess
-        ? String(localized: "Account connected.")
-        : String(localized: "Connected and authorized for this Agent."))
+      ? String(localized: "Account connected.")
       : String(localized: "Connected. Chat continued.")
     flow.browserURL = nil
     flow.session = nil

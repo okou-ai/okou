@@ -1050,13 +1050,11 @@
       "invalid": "अनुमति का यह लिंक अमान्य या अनुपलब्ध है।",
       "loadFailed": "सभी अनुरोधित अनुमतियों की पुष्टि नहीं हो सकी। किसी भी अनुमति में बदलाव नहीं किया जा सकता।",
       "loading": "अनुमतियाँ लोड हो रही हैं",
-      "myOkouScopeNote": "इस कार्यक्षेत्र में आपके Okou के इस्तेमाल पर लागू है, केवल मौजूदा काम पर नहीं।",
       "myOkouSharedScopeNote": "इस कार्यक्षेत्र में आपकी सभी चैट में इस कनेक्टर पर लागू है। आपके साथियों की अनुमतियाँ अलग हैं।",
       "notNow": "अभी नहीं",
       "pending_one": "{{count}} अनुमति देनी है",
       "pending_other": "{{count}} अनुमतियाँ देनी हैं",
       "review": "अनुमतियों की समीक्षा करें",
-      "scopeNote": "यह इस एजेंट पर लागू होता है, केवल मौजूदा कार्य पर नहीं।",
       "sharedScopeNote": "इस कनेक्टर की अनुमतियाँ आपकी सभी चैट और एजेंट पर लागू होती हैं।",
       "title": "निम्नलिखित अनुमतियाँ दें"
     }
@@ -2104,13 +2102,8 @@
       "unavailableTitle": "खाता उपलब्ध नहीं है"
     },
     "connectors": {
-      "accountForThread": "इस थ्रेड के लिए खाता",
-      "add": "{{connectorName}} जोड़ें",
       "addConnectors": "कनेक्टर्स जोड़ें",
-      "authorized": "{{connectorName}} जुड़ा हुआ है और {{agentName}} के लिए अधिकृत है",
       "back": "पीछे",
-      "configurePermissions": "{{connectorName}} अनुमतियाँ कॉन्फ़िगर करें",
-      "customAuthorizeDescription": "एजेंट के लिए इस कस्टम कनेक्टर की समीक्षा करें, कनेक्ट करें और अधिकृत करें।",
       "directory": {
         "allCategories": "सभी",
         "askAdmin": "इसे चालू करने के लिए एडमिन से कहें",
@@ -2140,14 +2133,8 @@
         "tabCustom": "कस्टम",
         "tabDiscover": "खोजें"
       },
-      "fallsBackTo": "{{account}} पर वापस जाता है",
       "find": "कनेक्टर ढूंढें...",
-      "loadFailed": "कनेक्टर्स लोड नहीं हो सके।",
-      "noUsableAccount": "कोई उपयोग योग्य खाता नहीं",
-      "remove": "{{connectorName}} हटाएँ",
-      "selectedAccountFor": "{{connector}} · चुना गया खाता: {{account}}",
-      "title": "कनेक्टर्स",
-      "useDefault": "डिफ़ॉल्ट उपयोग करें"
+      "title": "कनेक्टर्स"
     },
     "documentTitle": "चैट",
     "errors": {
@@ -2952,28 +2939,12 @@
     "totalAccounts": "{{value}} खाते"
   },
   "connectors": {
-    "access": {
-      "accessFor": "{{agent}} के लिए {{action}} {{connector}} पहुंच",
-      "accessUpdated": "{{connector}} एक्सेस अपडेट किया गया",
-      "clearSearch": "एजेंट खोज साफ़ करें",
-      "description": "चुनें कि कौन से एजेंट इस कनेक्टर का उपयोग कर सकते हैं।",
-      "loading": "एजेंट लोड हो रहे हैं...",
-      "managePermissions": "अनुमतियाँ प्रबंधित करें",
-      "managePermissionsFor": "{{agent}} के लिए {{connector}} अनुमतियाँ प्रबंधित करें",
-      "noAgents": "कोई एजेंट नहीं मिला",
-      "noMatchingAgents": "\"{{search}}\" से मेल खाने वाला कोई एजेंट नहीं",
-      "permissionsUpdated": "अनुमतियाँ अद्यतन की गईं",
-      "search": "एजेंटों को खोजें",
-      "title": "{{connector}} पहुंच प्रबंधित करें",
-      "unnamedAgent": "अज्ञात"
-    },
     "accounts": {
       "accountName": "खाते का नाम",
       "accountsUnavailable": "इस कनेक्टर के लिए खाते उपलब्ध नहीं हैं।",
       "actions": "खाते की कार्रवाइयाँ",
       "addAccount": "खाता जोड़ें",
       "connected": "कनेक्टेड",
-      "default": "डिफ़ॉल्ट",
       "disconnectAccount": "खाता डिस्कनेक्ट करें",
       "disconnectDescription": "यह खाते को Okou से डिस्कनेक्ट करता है। इसका उपयोग करने वाले थ्रेड डिफ़ॉल्ट इनहेरिटेंस पर लौट जाएँगे। प्रदाता का खाता हटाया नहीं जाएगा।",
       "disconnectDescriptionWithCount": "यह खाते को Okou से डिस्कनेक्ट करता है। {{value}} थ्रेड डिफ़ॉल्ट इनहेरिटेंस पर लौट जाएँगे। प्रदाता का खाता हटाया नहीं जाएगा।",
@@ -2989,8 +2960,6 @@
       "find": "खाते खोजें",
       "loading": "खाते लोड हो रहे हैं…",
       "loadMore": "और लोड करें",
-      "makeDefault": "डिफ़ॉल्ट बनाएँ",
-      "managerDescription": "नए रन आपके डिफ़ॉल्ट खाते का उपयोग करते हैं।",
       "managerTitle": "{{connector}} खाते प्रबंधित करें",
       "namePromptDescription": "आप इसे छोड़ सकते हैं और खाते को बाद में नाम दे सकते हैं।",
       "namePromptTitle": "अपने {{connector}} खाते को नाम दें",
@@ -3004,7 +2973,6 @@
     },
     "actions": {
       "apply": "आवेदन करना",
-      "authorize": "अधिकृत",
       "cancel": "रद्द करना",
       "close": "बंद करना",
       "closeWindow": "विंडो बंद",
@@ -3051,7 +3019,6 @@
     },
     "card": {
       "accessFor": "{{action}} {{connector}} पहुंच",
-      "authorized": "अधिकृत",
       "connectAria": "{{connector}} कनेक्ट करें",
       "connected": "कनेक्टेड",
       "connectionExpired": "कनेक्शन समाप्त हो गया",
@@ -3064,11 +3031,7 @@
     },
     "catalog": {
       "access": {
-        "add": "पहुंच जोड़ें",
-        "manage": "{{connector}} पहुंच प्रबंधित करें",
-        "summaryMany": "{{value}} एजेंट",
-        "unavailable": "पहुंच उपलब्ध नहीं है",
-        "usedBy": "द्वारा उपयोग किया जाता है"
+        "manage": "{{connector}} पहुंच प्रबंधित करें"
       },
       "categories": {
         "ai": {
@@ -3139,18 +3102,13 @@
         "searchAll": "सभी कनेक्टर खोजें"
       },
       "empty": {
-        "agent": "इस एजेंट के लिए कोई कनेक्टर नहीं",
         "connected": "कोई कनेक्टेड कनेक्टर नहीं",
-        "search": "\"{{search}}\" से मेल खाने वाला कोई कनेक्टर नहीं",
-        "unshared": "हर कनेक्टर किसी एजेंट के साथ साझा है"
+        "search": "\"{{search}}\" से मेल खाने वाला कोई कनेक्टर नहीं"
       },
       "filterCategory": "श्रेणी",
       "filters": {
-        "agents": "एजेंटों",
         "all": "सभी",
-        "allAgents": "सभी एजेंट",
-        "aria": "फ़िल्टर कनेक्टर्स",
-        "unshared": "किसी एजेंट के साथ साझा नहीं"
+        "aria": "फ़िल्टर कनेक्टर्स"
       },
       "filterWith": "फ़िल्टर: {{category}}",
       "myOkouDescription": "अपने Okou के इस्तेमाल के लिए बाहरी सेवाएँ जोड़ें।",
@@ -3180,8 +3138,7 @@
         "seeMore_other": "{{names}} और {{count}} अन्य देखें",
         "top": "शीर्ष कनेक्टर"
       },
-      "title": "कनेक्टर्स",
-      "unnamedAgent": "अज्ञात"
+      "title": "कनेक्टर्स"
     },
     "connectDialog": {
       "connectedAs": "{{username}} के रूप में जुड़ा हुआ है",
@@ -3325,9 +3282,6 @@
       }
     },
     "directed": {
-      "authorizeAgent": "{{agent}} को अधिकृत करें",
-      "authorized": "{{connector}} अधिकृत",
-      "authorizeDocumentTitle": "{{connector}} को अधिकृत करें",
       "connectDocumentTitle": "{{connector}} कनेक्ट करें",
       "connected": "{{connector}} कनेक्ट हुआ",
       "needsConnector": "{{agent}} को आगे बढ़ने के लिए {{connector}} की आवश्यकता है",
@@ -3355,10 +3309,8 @@
       "allowOptions": "{{permission}} विकल्पों की अनुमति देता है",
       "always": "हमेशा",
       "clearSearch": "अनुमति खोज साफ़ करें",
-      "descriptionAgent": "कॉन्फ़िगर करें कि इस एजेंट को इस कनेक्टर के माध्यम से कौन से कार्य करने की अनुमति है।",
       "find": "अनुमतियाँ खोजें",
       "findPlaceholder": "अनुमतियाँ ढूँढें...",
-      "forTarget": "{{target}} के लिए",
       "loadError": "अनुमति मेटाडेटा लोड करने में विफल",
       "loading": "अनुमतियाँ लोड हो रही हैं...",
       "metadataMissing": "{{connector}} के लिए कोई अनुमति मेटाडेटा नहीं मिला",
@@ -4102,7 +4054,6 @@
     }
   },
   "myOkou": {
-    "access": "इस कार्यक्षेत्र में आपकी पहुँच",
     "conflict": "आपके सहेजे गए निर्देश कहीं और बदल गए हैं। आपका ड्राफ़्ट सुरक्षित है। सहेजे गए निर्देश फिर लोड करने से पहले इसे देखें या कॉपी करें।",
     "description": "इस कार्यक्षेत्र में Okou के लिए आपके निर्देश",
     "discard": "छोड़ें",

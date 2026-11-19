@@ -139,14 +139,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
     restrictOverridesToAudience: true,
   },
-  [FeatureSwitchKey.ConnectorChatAccountAccess]: {
-    maintainer: "liangyou@okou.ai",
-    displayName: "Chat connector accounts",
-    description:
-      "Configure Chat connector accounts and shared member connector permissions.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.FeatureGuides]: {
     maintainer: "yuma@okou.ai",
     displayName: "Feature guides",

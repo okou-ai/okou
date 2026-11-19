@@ -232,16 +232,15 @@ export function networkPolicyRefreshConnectorSlugs(
  * awaited by their existing read group and its cancellation boundary. */
 export const readActiveNetworkPolicyRefreshes$ = command(
   async (
-    { get },
+    _context,
     args: {
-      readonly scope: UserPermissionGrantScope;
       readonly connectorSlugs: readonly string[];
       readonly snapshot: Pick<ConnectorRuntimeLookup, "serverFirewalls">;
-      readonly memberRules: readonly ResolvedPermissionGrant[] | undefined;
+      readonly memberRules: readonly ResolvedPermissionGrant[];
     },
     checkedAt: Date = nowDate(),
   ): Promise<readonly ActiveNetworkPolicyRefresh[]> => {
-    const { scope, connectorSlugs, snapshot } = args;
+    const { connectorSlugs, snapshot } = args;
     if (connectorSlugs.length === 0) {
       return [];
     }
@@ -254,29 +253,11 @@ export const readActiveNetworkPolicyRefreshes$ = command(
       return [];
     }
 
-    const grants =
-      args.memberRules ??
-      (await get(db$)
-        .select(userPermissionGrantSelection)
-        .from(userPermissionGrants)
-        .where(
-          and(
-            eq(userPermissionGrants.orgId, scope.orgId),
-            eq(userPermissionGrants.userId, scope.userId),
-            eq(userPermissionGrants.agentId, scope.agentId),
-            inArray(userPermissionGrants.connectorSlug, uniqueConnectorSlugs),
-            activeUserPermissionGrantCondition(checkedAt),
-          ),
-        )
-        .orderBy(
-          asc(userPermissionGrants.connectorSlug),
-          asc(userPermissionGrants.permission),
-        ));
     return await activeNetworkPolicyRefreshesFromGrants(
       {
         catalog: snapshot.serverFirewalls,
         connectorSlugs: uniqueConnectorSlugs,
-        grants,
+        grants: args.memberRules,
       },
       checkedAt,
     );

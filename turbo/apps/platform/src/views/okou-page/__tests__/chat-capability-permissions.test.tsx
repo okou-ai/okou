@@ -1,3 +1,8 @@
+import {
+  connectorPermissionsContract,
+  type ApplyConnectorPermissions,
+} from "@okouai/api-contracts/contracts/connector-permissions";
+import { connectorPermissionsResponse } from "../../../__tests__/connector-permissions.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   type PublicConnectorCatalogPermissionDetail,
@@ -5,11 +10,7 @@ import {
 } from "@okouai/api-contracts/contracts/connector-catalog";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
-import {
-  userPermissionGrantsContract,
-  type ApplyUserPermissionGrantsRequest,
-  type UserPermissionGrantResponse,
-} from "@okouai/api-contracts/contracts/user-permission-grants";
+import type { UserPermissionGrantResponse } from "@okouai/api-contracts/contracts/user-permission-grants";
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
@@ -142,8 +143,8 @@ test("Expose the full permission scope on the card itself", async () => {
         })
       : null;
   });
-  context.mocks.api(userPermissionGrantsContract.list, ({ respond }) => {
-    return respond(200, []);
+  context.mocks.api(connectorPermissionsContract.get, ({ query, respond }) => {
+    return respond(200, connectorPermissionsResponse(query, []));
   });
   installActionConversation({
     lines: [permissionActionUrl({ connectorSlug, permission })],
@@ -177,13 +178,13 @@ test("Fail closed on permission load and save errors", async () => {
   installPermissionMetadata((slug) => {
     return slug === connectorSlug ? permission : null;
   });
-  context.mocks.api(userPermissionGrantsContract.list, ({ respond }) => {
+  context.mocks.api(connectorPermissionsContract.get, ({ query, respond }) => {
     if (!permissionServiceAvailable) {
       throw new TypeError("Permission service temporarily unavailable");
     }
-    return respond(200, []);
+    return respond(200, connectorPermissionsResponse(query, []));
   });
-  context.mocks.api(userPermissionGrantsContract.apply, ({ respond }) => {
+  context.mocks.api(connectorPermissionsContract.apply, ({ respond }) => {
     return respond(500, {
       error: { code: "SAVE_FAILED", message: "Permission save failed" },
     });
@@ -247,8 +248,8 @@ test("Hide confirmation when connector permission details are invalid", async ()
       });
     },
   );
-  context.mocks.api(userPermissionGrantsContract.list, ({ respond }) => {
-    return respond(200, []);
+  context.mocks.api(connectorPermissionsContract.get, ({ query, respond }) => {
+    return respond(200, connectorPermissionsResponse(query, []));
   });
   installActionConversation({
     lines: [
@@ -312,8 +313,8 @@ test("Reflect current connector permission decisions", async () => {
         })
       : null;
   });
-  context.mocks.api(userPermissionGrantsContract.list, ({ respond }) => {
-    return respond(200, grants);
+  context.mocks.api(connectorPermissionsContract.get, ({ query, respond }) => {
+    return respond(200, connectorPermissionsResponse(query, grants));
   });
   installActionConversation({
     lines: [
@@ -379,12 +380,12 @@ test("Permission cards keep the full operation pending and expose callback failu
         })
       : null;
   });
-  context.mocks.api(userPermissionGrantsContract.list, ({ respond }) => {
-    return respond(200, grants);
+  context.mocks.api(connectorPermissionsContract.get, ({ query, respond }) => {
+    return respond(200, connectorPermissionsResponse(query, grants));
   });
-  context.mocks.api(userPermissionGrantsContract.apply, ({ respond }) => {
+  context.mocks.api(connectorPermissionsContract.apply, ({ body, respond }) => {
     grants = [activeGrant({ connectorSlug, permission, action: "allow" })];
-    return respond(200, grants);
+    return respond(200, connectorPermissionsResponse(body.target, grants));
   });
   installActionConversation({
     lines: [
@@ -427,7 +428,7 @@ test("Permission cards keep the full operation pending and expose callback failu
 test("Review and confirm connector permissions individually", async () => {
   const connectorSlug = "cloud-records";
   const sends: CapturedChatSend[] = [];
-  const applyRequests: ApplyUserPermissionGrantsRequest[] = [];
+  const applyRequests: ApplyConnectorPermissions[] = [];
   const followupGate = context.mocks.deferred<void>();
   let grants: UserPermissionGrantResponse[] = [];
   installPermissionMetadata((slug) => {
@@ -439,11 +440,11 @@ test("Review and confirm connector permissions individually", async () => {
         })
       : null;
   });
-  context.mocks.api(userPermissionGrantsContract.list, ({ respond }) => {
-    return respond(200, grants);
+  context.mocks.api(connectorPermissionsContract.get, ({ query, respond }) => {
+    return respond(200, connectorPermissionsResponse(query, grants));
   });
   context.mocks.api(
-    userPermissionGrantsContract.apply,
+    connectorPermissionsContract.apply,
     async ({ body, respond }) => {
       applyRequests.push(body);
       const requested = body.grants[0]!;
@@ -463,7 +464,7 @@ test("Review and confirm connector permissions individually", async () => {
         }),
         applied,
       ];
-      return respond(200, [applied]);
+      return respond(200, connectorPermissionsResponse(body.target, [applied]));
     },
   );
   installActionConversation({
@@ -512,7 +513,7 @@ test("Review and confirm connector permissions individually", async () => {
   );
   expect(reportsUpdated).toBeVisible();
   expect(applyRequests[0]).toMatchObject({
-    connectorSlug,
+    target: { kind: "builtin", connectorSlug },
     grants: [{ permission: "reports.read", action: "allow", expiresIn: "24h" }],
   });
   expect(getButton("Confirm", unknownCard)).toBeEnabled();

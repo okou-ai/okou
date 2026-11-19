@@ -87,10 +87,10 @@ final class ComposerConnectorPermissionResources {
       _ = try get(revision)
       let signal = options.signal
       let task: Task<ChatConnectorPermissionState, Error> =
-        Task { @MainActor [weak self, service, agentID, slug] in
+        Task { @MainActor [weak self, service, slug] in
           do {
             try Task.checkCancellation()
-            let result = try await service.permissions(slug: slug, agentID: agentID)
+            let result = try await service.permissions(slug: slug)
             try Task.checkCancellation()
             try signal.checkCancellation()
             return result

@@ -655,12 +655,9 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
         displayName: "BDD resume agent",
         visibility: "private",
       });
-      const [readonlySkill] = await readonlyConnectorSkills(
-        context,
-        actor,
-        agent.agentId,
-        ["session continuation"],
-      );
+      const [readonlySkill] = await readonlyConnectorSkills(context, actor, [
+        "session continuation",
+      ]);
       if (!readonlySkill) {
         throw new Error("Expected a readonly Connector skill");
       }

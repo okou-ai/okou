@@ -1,6 +1,6 @@
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+
 import { chatConnectorAccessContract } from "@okouai/api-contracts/contracts/chat-connector-access";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { connectorSlugSchema } from "@okouai/api-contracts/contracts/connector-identity";
@@ -77,7 +77,7 @@ async function setup(
       : `/chats/${SCOUT_THREAD_ID}`,
     locale: "en-US",
     sharedWorkerTestTransport,
-    featureSwitches: { [FeatureSwitchKey.ConnectorChatAccountAccess]: true },
+    featureSwitches: {},
   });
   await findComposer();
 }

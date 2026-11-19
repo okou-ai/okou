@@ -432,7 +432,7 @@ function getButtonByText(text: string, container?: ParentNode): HTMLElement {
   return button;
 }
 
-test("Connect and authorize a manual MCP connector", async () => {
+test("Connect a manual MCP connector from a directed link", async () => {
   const connectionId = crypto.randomUUID();
   let connected = false;
   let grants: AgentCustomConnectorGrant[] = [];
@@ -505,9 +505,7 @@ test("Connect and authorize a manual MCP connector", async () => {
     expect(submittedValues).toStrictEqual([
       { key: "secret", kind: "secret", value: "acme-secret" },
     ]);
-    expect(grants).toStrictEqual([
-      { customConnectorId: connector.id, permissionNames: [] },
-    ]);
+    expect(grants).toStrictEqual([]);
     expect(screen.getByText("DeepWiki connected")).toBeInTheDocument();
   });
 });
@@ -593,9 +591,7 @@ test("Let an MCP server discover authentication from a directed connection", asy
     expect(authWindow.location.href).toBe(
       "https://mcp.discovery.test/authorize",
     );
-    expect(grants).toStrictEqual([
-      { customConnectorId: connector.id, permissionNames: [] },
-    ]);
+    expect(grants).toStrictEqual([]);
     expect(screen.getByText("Discovery MCP connected")).toBeInTheDocument();
   });
 });
@@ -673,7 +669,7 @@ test("Reconnect the exact manual custom-connector account", async () => {
   });
 });
 
-test("Connect and authorize a custom OAuth connector", async () => {
+test("Connect a custom OAuth connector from a directed link", async () => {
   const completedAttempts = mockOAuthCompletions(context);
   const oauthAttemptId = crypto.randomUUID();
   let connected = false;
@@ -760,9 +756,7 @@ test("Connect and authorize a custom OAuth connector", async () => {
 
   await waitFor(() => {
     expect(authWindow.location.href).toBe("https://acme.test/oauth/authorize");
-    expect(grants).toStrictEqual([
-      { customConnectorId: connector.id, permissionNames: [] },
-    ]);
+    expect(grants).toStrictEqual([]);
     expect(screen.getByText("Acme OAuth connected")).toBeInTheDocument();
     expect(
       screen.queryByRole("dialog", { name: "Connect Acme OAuth" }),
@@ -861,123 +855,8 @@ test("Reconnect the exact custom OAuth account", async () => {
 
   await waitFor(() => {
     expect(authWindow.location.href).toBe("https://acme.test/oauth/reconnect");
-    expect(grants).toStrictEqual([
-      { customConnectorId: connector.id, permissionNames: [] },
-    ]);
+    expect(grants).toStrictEqual([]);
   });
-});
-
-test("Preserve existing agent permissions after connecting custom OAuth", async () => {
-  const completedAttempts = mockOAuthCompletions(context);
-  const oauthAttemptId = crypto.randomUUID();
-  let connected = false;
-  const connectionId = crypto.randomUUID();
-  let authorizationUpdates = 0;
-  const authorizationRequested = context.mocks.deferred<void>();
-  const releaseAuthorization = context.mocks.deferred<void>();
-  const connector = customConnector({
-    slug: "_acme-permissioned-oauth",
-    displayName: "Acme Permissioned OAuth",
-    authMode: "oauth",
-    fields: [],
-    permissionBundleRef: "builtin:feishu@1",
-    headerInjections: [
-      {
-        name: "Authorization",
-        valueTemplate: "Bearer {{oauth.access_token}}",
-      },
-    ],
-    oauthConfig: {
-      providerAdapter: "standard",
-      clientId: "client-id",
-      authorizationUrl: "https://acme.test/oauth/authorize",
-      tokenUrl: "https://acme.test/oauth/token",
-      tokenEndpointAuthMethod: "client_secret_post",
-      pkceMethod: "S256",
-      scopes: ["read"],
-      authorizationParams: {},
-    },
-  });
-  mockAccounts(() => {
-    return connected
-      ? [
-          customConnectorAccount(connector.id, {
-            id: connectionId,
-            authMethod: "oauth",
-          }),
-        ]
-      : [];
-  });
-  context.mocks.api(customConnectorsContract.list, ({ respond }) => {
-    return respond(200, {
-      connectors: [connector],
-    });
-  });
-  context.mocks.api(
-    customConnectorOAuth2Contract.start,
-    ({ body, params, respond }) => {
-      expect(params.id).toBe(connector.id);
-      expect(body.account).toStrictEqual({ intent: "add" });
-      connected = true;
-      completedAttempts.set(oauthAttemptId, connectionId);
-      return respond(200, {
-        result: "authorization",
-        oauthAttemptId,
-        authorizationUrl: "https://acme.test/oauth/authorize",
-        connectionId,
-      });
-    },
-  );
-  context.mocks.api(
-    agentCustomConnectorsContract.get,
-    async ({ params, respond }) => {
-      expect(params.id).toBe(AGENT_ID);
-      authorizationRequested.resolve();
-      await releaseAuthorization.promise;
-      const grants = [
-        {
-          customConnectorId: connector.id,
-          permissionNames: ["messages:send-as-user"],
-        },
-      ];
-      return respond(200, { grants });
-    },
-  );
-  context.mocks.api(agentCustomConnectorsContract.update, ({ respond }) => {
-    authorizationUpdates += 1;
-    return respond(200, { grants: [] });
-  });
-  const authWindow = context.mocks.browser.authWindow();
-  authWindow.closed = true;
-  Object.defineProperty(authWindow, "location", {
-    value: { href: "" },
-    configurable: true,
-  });
-  context.mocks.browser.open(authWindow);
-
-  await setupPage({
-    context,
-    path: `/connectors/${connector.slug}/connect?agentId=${AGENT_ID}`,
-  });
-
-  await screen.findByText("Okou needs Acme Permissioned OAuth to proceed");
-  click(getButtonByText("Connect"));
-  await screen.findByRole("dialog", {
-    name: "Connect Acme Permissioned OAuth",
-  });
-  click(getButtonByText("Continue"));
-
-  await waitFor(() => {
-    expect(authWindow.location.href).toBe("https://acme.test/oauth/authorize");
-  });
-  await authorizationRequested.promise;
-  releaseAuthorization.resolve();
-  await waitFor(() => {
-    expect(
-      screen.getByText("Acme Permissioned OAuth connected"),
-    ).toBeInTheDocument();
-  });
-  expect(authorizationUpdates).toBe(0);
 });
 
 test("Start public OAuth from a directed connection link", async () => {
@@ -1037,8 +916,84 @@ test("Start public OAuth from a directed connection link", async () => {
     expect(authWindow.location.href).toBe(
       "https://oauth.test/github/authorize",
     );
-    expect(startedAgentId).toBe(AGENT_ID);
-    expect(authorizeAgent).toBeTruthy();
+    expect(startedAgentId).toBeUndefined();
+    expect(authorizeAgent).toBeUndefined();
+  });
+});
+
+test("Continue from an existing connector authorization link using the saved account", async () => {
+  mockPublicConnectorStatus(
+    publicNoAuthConnectorStatus({ slug: "stripe", label: "Public Stripe" }),
+  );
+  savedBuiltinResponse({
+    id: crypto.randomUUID(),
+    slug: "stripe",
+    authMethod: "api",
+    externalId: null,
+    externalUsername: null,
+    externalEmail: null,
+    oauthScopes: null,
+    connectionStatus: "connected",
+    reconnectReason: null,
+    tokenExpiresAt: null,
+    createdAt: "2026-01-01T00:00:00Z",
+    updatedAt: "2026-01-01T00:00:00Z",
+  });
+  const threadId = "00000000-0000-4000-a000-000000000101";
+  const callbackPrompt = "Re-check Stripe, then continue";
+  const continuations: {
+    readonly clientEventId: string | undefined;
+    readonly chatThreadSortEventId: string | undefined;
+    readonly userMessage: unknown;
+  }[] = [];
+  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+    expect(body).toMatchObject({ threadId });
+    continuations.push({
+      clientEventId: body.clientEventId,
+      chatThreadSortEventId: body.chatThreadSortEventId,
+      userMessage: body.userMessage,
+    });
+    if (continuations.length === 1) {
+      return respond(500, {
+        error: {
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Chat continuation unavailable",
+        },
+      });
+    }
+    return respond(201, { threadId });
+  });
+  context.mocks.api(userBuiltinConnectorsContract.update, () => {
+    throw new Error("A connection link cannot grant agent access");
+  });
+  await setupPage({
+    context,
+    path: `/connectors/stripe/authorize?agentId=${AGENT_ID}&threadId=${threadId}&callbackPrompt=${encodeURIComponent(callbackPrompt)}`,
+  });
+
+  click(
+    await waitFor(() => {
+      return getButtonByText("Continue");
+    }),
+  );
+  await waitFor(() => {
+    expect(continuations).toHaveLength(1);
+    expect(getButtonByText("Continue")).toBeEnabled();
+  });
+  click(getButtonByText("Continue"));
+  await waitFor(() => {
+    expect(continuations).toHaveLength(2);
+    expect(continuations[0]).toStrictEqual({
+      clientEventId: expect.any(String),
+      chatThreadSortEventId: expect.any(String),
+      userMessage: {
+        version: 1,
+        parts: [{ type: "text", text: callbackPrompt }],
+      },
+    });
+    expect(continuations[1]).toStrictEqual(continuations[0]);
+    expect(screen.getByText("Public Stripe connected")).toBeInTheDocument();
+    expect(screen.queryByText("Continue")).toBeNull();
   });
 });
 
@@ -1063,8 +1018,6 @@ test("Connect a no-auth connector and continue the originating chat", async () =
       expect(body).toStrictEqual({
         account: { intent: "add" },
         authMethod: "api",
-        agentId: AGENT_ID,
-        authorizeAgent: true,
       });
       savedConnection = savedBuiltinResponse({
         id: crypto.randomUUID(),
@@ -1118,6 +1071,7 @@ test("Connect a no-auth connector and continue the originating chat", async () =
     expect(continuationPrompt).toBe(callbackPrompt);
   });
   expect(visibleAgentAuthorizationUpdates).toBe(0);
+  expect(screen.queryByText("Continue")).toBeNull();
   expect(
     screen.queryByRole("dialog", { name: "Public Stripe" }),
   ).not.toBeInTheDocument();
@@ -1367,8 +1321,8 @@ test("Reconnect the expired public OAuth account", async () => {
   expect(startedConnectorSlug).toBe("github");
   expect(startedAccountIntent).toBe("reconnect");
   expect(startedAuthMethod).toBe("oauth");
-  expect(startedAgentId).toBe(AGENT_ID);
-  expect(startedAuthorizeAgent).toBeTruthy();
+  expect(startedAgentId).toBeNull();
+  expect(startedAuthorizeAgent).toBeFalsy();
   expect(startedConnectionId).toBe(connectionId);
 
   context.mocks.data.connectors([
@@ -1489,7 +1443,7 @@ test("Connect a manual grant and continue the originating chat", async () => {
     builtinConnectorManualGrantContract.connect,
     ({ body, params, respond }) => {
       expect(params.connectorSlug).toBe("axiom");
-      expect(body.agentId).toBe(AGENT_ID);
+      expect(body.agentId).toBeUndefined();
       submittedValues = body.values;
       savedConnection = savedBuiltinResponse({
         id: crypto.randomUUID(),

@@ -1,7 +1,5 @@
 import { command, computed } from "ccstate";
 import { chatConnectorAccessContract } from "@okouai/api-contracts/contracts/chat-connector-access";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { badRequestMessage, notFound } from "../../lib/error";
 import { organizationAuthContext$ } from "../auth/auth-context";
@@ -9,7 +7,7 @@ import { authRoute } from "../auth/auth-route";
 import { setResHeader$ } from "../context/hono";
 import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
 import type { RouteEntry } from "../route-entry";
-import { createUserFeatureSwitchContext } from "../services/feature-switches.service";
+
 import {
   chatConnectorAccess,
   connectorAccountAccessDefaults,
@@ -23,18 +21,10 @@ const ownerAuth = {
   missingOrganizationStatus: 401,
   accept: ["session"],
 } as const;
-const unavailable = notFound("Chat connector account access is not available");
 const missing = notFound("Chat or connector account not found");
 const owner$ = computed((get) => {
   const auth = get(organizationAuthContext$);
   return { orgId: auth.orgId, userId: auth.userId };
-});
-const featureContext$ = createUserFeatureSwitchContext(owner$);
-const featureAvailable$ = command(async ({ get, set }, signal: AbortSignal) => {
-  set(setResHeader$, "Cache-Control", "no-store");
-  const context = await get(featureContext$);
-  signal.throwIfAborted();
-  return isFeatureEnabled(FeatureSwitchKey.ConnectorChatAccountAccess, context);
 });
 
 const defaultsScope$ = computed((get) => {
@@ -45,18 +35,14 @@ const defaultsScope$ = computed((get) => {
 });
 const defaults$ = connectorAccountAccessDefaults(defaultsScope$);
 const defaultsHandler$ = command(async ({ get, set }, signal: AbortSignal) => {
-  if (!(await set(featureAvailable$, signal))) {
-    return unavailable;
-  }
+  set(setResHeader$, "Cache-Control", "no-store");
   const body = await get(defaults$);
   signal.throwIfAborted();
   return { status: 200 as const, body };
 });
 const updateDefaultHandler$ = command(
   async ({ get, set }, signal: AbortSignal) => {
-    if (!(await set(featureAvailable$, signal))) {
-      return unavailable;
-    }
+    set(setResHeader$, "Cache-Control", "no-store");
     const body = await get(
       bodyResultOf(chatConnectorAccessContract.updateAccountDefault),
     );
@@ -92,9 +78,7 @@ const threadScope$ = computed((get) => {
 });
 const threadAccess$ = chatConnectorAccess(threadScope$);
 const threadHandler$ = command(async ({ get, set }, signal: AbortSignal) => {
-  if (!(await set(featureAvailable$, signal))) {
-    return unavailable;
-  }
+  set(setResHeader$, "Cache-Control", "no-store");
   const body = await get(threadAccess$);
   signal.throwIfAborted();
   return body ? { status: 200 as const, body } : missing;
@@ -116,9 +100,7 @@ const overrideScope$ = computed(async (get) => {
 });
 const overrideAccess$ = chatConnectorAccess(overrideScope$);
 const overrideHandler$ = command(async ({ get, set }, signal: AbortSignal) => {
-  if (!(await set(featureAvailable$, signal))) {
-    return unavailable;
-  }
+  set(setResHeader$, "Cache-Control", "no-store");
   const body = await get(
     bodyResultOf(chatConnectorAccessContract.setThreadOverride),
   );
@@ -166,9 +148,7 @@ const currentScope$ = computed(async (get) => {
 });
 const currentAccess$ = chatConnectorAccess(currentScope$);
 const currentHandler$ = command(async ({ get, set }, signal: AbortSignal) => {
-  if (!(await set(featureAvailable$, signal))) {
-    return unavailable;
-  }
+  set(setResHeader$, "Cache-Control", "no-store");
   const body = await get(
     bodyResultOf(chatConnectorAccessContract.setThreadCurrent),
   );

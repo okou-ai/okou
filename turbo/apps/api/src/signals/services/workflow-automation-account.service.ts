@@ -3,15 +3,13 @@ import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-con
 import { connectors } from "@okouai/db/schema/connector";
 import { workflowUserAutomationThreads } from "@okouai/db/schema/workflow";
 import { chatThreadConnectorAccessOverrides } from "@okouai/db/schema/chat-thread-connector-access";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+
 import { command } from "ccstate";
 import { and, eq, sql, type SQL } from "drizzle-orm";
 import { object, uuid } from "zod";
 
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { rawSqlReadDb$ } from "../external/db";
-import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 
 interface WorkflowAutomationAccountScope {
   readonly orgId: string;
@@ -20,30 +18,12 @@ interface WorkflowAutomationAccountScope {
   readonly connectorSlug: ConnectorSlug;
 }
 
-export const loadWorkflowAutomationAccountMode$ = command(
-  async (
-    { set },
-    args: { readonly orgId: string; readonly userId: string },
-    signal?: AbortSignal,
-  ) => {
-    return isFeatureEnabled(
-      FeatureSwitchKey.ConnectorChatAccountAccess,
-      await set(loadUserFeatureSwitchContext$, args.orgId, args.userId, signal),
-    );
-  },
-);
-
 export const readWorkflowAutomationConnectorAccount$ = command(
   async (
-    { get, set },
+    { get },
     args: WorkflowAutomationAccountScope,
     signal?: AbortSignal,
   ): Promise<string | null> => {
-    const chatAccountAccess = await set(
-      loadWorkflowAutomationAccountMode$,
-      args,
-      signal,
-    );
     const db = get(rawSqlReadDb$);
     const [selection] = parseRawRows(
       object({ connectorId: uuid().nullable() }),
@@ -51,7 +31,6 @@ export const readWorkflowAutomationConnectorAccount$ = command(
         workflowAutomationConnectorSelectionSql({
           ...args,
           workflowId: sql`${args.workflowId}`,
-          chatAccountAccess,
         }),
       ),
     );
@@ -88,31 +67,13 @@ export function workflowAutomationSelectedAccountReadPlan(
   };
 }
 
-export function workflowAutomationDefaultAccountReadPlan(
-  args: WorkflowAutomationAccountScope,
-) {
-  return {
-    columns: { connectorId: connectors.id },
-    from: connectors,
-    where: and(
-      eq(connectors.orgId, args.orgId),
-      eq(connectors.userId, args.userId),
-      eq(connectors.connectorSlug, args.connectorSlug),
-      eq(connectors.isDefault, true),
-    ),
-    limit: 1,
-  };
-}
-
 export function workflowAutomationConnectorSelectionSql(args: {
   readonly orgId: string;
   readonly userId: string;
   readonly workflowId: SQL;
   readonly connectorSlug: string;
-  readonly chatAccountAccess?: boolean;
 }) {
-  if (args.chatAccountAccess) {
-    return sql`SELECT (
+  return sql`SELECT (
       SELECT ${connectors.id}
       FROM ${connectors}
       LEFT JOIN ${workflowUserAutomationThreads}
@@ -132,21 +93,4 @@ export function workflowAutomationConnectorSelectionSql(args: {
         ${connectors.isDefault} DESC, ${connectors.createdAt}, ${connectors.id}
       LIMIT 1
     ) AS "connectorId"`;
-  }
-  return sql`WITH selected AS (
-    SELECT ${chatThreadConnectorSelections.connectorId} AS connector_id
-    FROM ${workflowUserAutomationThreads}
-    JOIN ${chatThreadConnectorSelections}
-      ON ${chatThreadConnectorSelections.chatThreadId} = ${workflowUserAutomationThreads.chatThreadId}
-      AND ${chatThreadConnectorSelections.connectorSlug} = ${args.connectorSlug}
-    WHERE ${workflowUserAutomationThreads.orgId} = ${args.orgId}
-      AND ${workflowUserAutomationThreads.userId} = ${args.userId}
-      AND ${workflowUserAutomationThreads.workflowId} = ${args.workflowId}
-    LIMIT 1
-  ) SELECT CASE WHEN EXISTS(SELECT 1 FROM selected)
-    THEN (SELECT connector_id FROM selected)
-    ELSE (SELECT ${connectors.id} FROM ${connectors}
-      WHERE ${connectors.orgId} = ${args.orgId} AND ${connectors.userId} = ${args.userId}
-        AND ${connectors.connectorSlug} = ${args.connectorSlug} AND ${connectors.isDefault}
-      LIMIT 1) END AS "connectorId"`;
 }

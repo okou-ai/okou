@@ -35,6 +35,7 @@ public final class ConnectorAccessHTTPFixture: Sendable {
     public var threads: [String: ThreadSettings] = [:]
     public var grants: [Grant] = []
     public var rejectCurrentOnce = false
+    public var rejectOverrideOnce = false
     public var requests: [URLRequest] = []
     public init() {}
   }
@@ -239,6 +240,10 @@ public final class ConnectorAccessHTTPFixture: Sendable {
       guard body.target == target(state), state.accountIDs.contains(parts[4]) else {
         return error(403, "Wrong account")
       }
+      if state.rejectOverrideOnce {
+        state.rejectOverrideOnce = false
+        return error(403, "Account access change rejected")
+      }
       var settings = state.threads[id] ?? ThreadSettings()
       settings.overrides[parts[4]] = body.enabled
       state.threads[id] = settings
@@ -306,10 +311,6 @@ public final class ConnectorAccessHTTPFixture: Sendable {
       kind: query.first { $0.name == "kind" }?.value ?? "",
       connectorSlug: query.first { $0.name == "connectorSlug" }?.value,
       customConnectorId: query.first { $0.name == "customConnectorId" }?.value)
-    if path == "/api/feature-switches" {
-      return ChatHTTPResponse(
-        body: "{\"effectiveSwitches\":{\"connectorChatAccountAccess\":true}}")
-    }
     if path == "/api/agents" {
       return ChatHTTPResponse(
         body: "[{\"agentId\":\"\(FixtureData.agentID)\",\"isDefaultAgent\":true}]")

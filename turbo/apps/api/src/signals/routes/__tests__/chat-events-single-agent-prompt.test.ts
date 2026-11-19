@@ -62,7 +62,7 @@ describe("captured My Okou execution guidance", () => {
       );
       expect(prompt).toContain("runtime child-task tools are execution tools");
       expect(prompt).toContain(
-        "the current thread's override for future runs, not the current run or global default",
+        "a successful switch also saves this Chat's current account for subsequent Runs",
       );
       expect(prompt).not.toContain("MUTABLE_SHARED_ROLE_DO_NOT_INHERIT");
       expect(prompt).not.toContain("Communicate in a warm, approachable");

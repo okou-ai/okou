@@ -1071,14 +1071,12 @@
       "invalid": "Este enlace de permisos no es válido o no está disponible.",
       "loadFailed": "No se han podido verificar todos los permisos solicitados. No se puede cambiar ningún permiso.",
       "loading": "Cargando permisos",
-      "myOkouScopeNote": "Se aplica a tu uso de Okou en este espacio de trabajo, no solo a la tarea actual.",
       "myOkouSharedScopeNote": "Se aplica a este conector en tus chats de este espacio de trabajo. Tus compañeros tienen sus propios permisos.",
       "notNow": "Ahora no",
       "pending_one": "{{count}} permiso por permitir",
       "pending_many": "{{count}} permisos por permitir",
       "pending_other": "{{count}} permisos por permitir",
       "review": "Revisar permisos",
-      "scopeNote": "Se aplica a este agente, no solo a la tarea actual.",
       "sharedScopeNote": "Se aplica a este conector en todos tus chats y agentes.",
       "title": "Conceder los siguientes permisos"
     }
@@ -2134,13 +2132,8 @@
       "unavailableTitle": "Cuenta no disponible"
     },
     "connectors": {
-      "accountForThread": "Cuenta para este hilo",
-      "add": "Añadir {{connectorName}}",
       "addConnectors": "Añadir conectores",
-      "authorized": "{{connectorName}} está conectado y autorizado para {{agentName}}",
       "back": "Volver",
-      "configurePermissions": "Configurar permisos de {{connectorName}}",
-      "customAuthorizeDescription": "Revisa, conecta y autoriza este conector personalizado para el agente.",
       "directory": {
         "allCategories": "Todos",
         "askAdmin": "Pide a un administrador que lo habilite",
@@ -2173,14 +2166,8 @@
         "tabCustom": "Personalizados",
         "tabDiscover": "Descubrir"
       },
-      "fallsBackTo": "Usa {{account}} como alternativa",
       "find": "Buscar conectores...",
-      "loadFailed": "No se pudieron cargar los conectores.",
-      "noUsableAccount": "No hay ninguna cuenta disponible",
-      "remove": "Eliminar {{connectorName}}",
-      "selectedAccountFor": "{{connector}} · Cuenta seleccionada: {{account}}",
-      "title": "Conectores",
-      "useDefault": "Usar predeterminada"
+      "title": "Conectores"
     },
     "documentTitle": "Chat",
     "errors": {
@@ -3002,28 +2989,12 @@
     "totalAccounts": "{{value}} cuentas"
   },
   "connectors": {
-    "access": {
-      "accessFor": "{{action}} el acceso de {{connector}} para {{agent}}",
-      "accessUpdated": "Acceso a {{connector}} actualizado",
-      "clearSearch": "Borrar búsqueda de agentes",
-      "description": "Elige qué agentes pueden usar este conector.",
-      "loading": "Cargando agentes...",
-      "managePermissions": "Gestionar permisos",
-      "managePermissionsFor": "Gestionar los permisos de {{connector}} para {{agent}}",
-      "noAgents": "No se encontraron agentes",
-      "noMatchingAgents": "No hay agentes que coincidan con \"{{search}}\"",
-      "permissionsUpdated": "Permisos actualizados",
-      "search": "Buscar agentes",
-      "title": "Gestionar el acceso a {{connector}}",
-      "unnamedAgent": "Sin nombre"
-    },
     "accounts": {
       "accountName": "Nombre de la cuenta",
       "accountsUnavailable": "Las cuentas no están disponibles para este conector.",
       "actions": "Acciones de la cuenta",
       "addAccount": "Añadir cuenta",
       "connected": "Conectada",
-      "default": "Predeterminada",
       "disconnectAccount": "Desconectar cuenta",
       "disconnectDescription": "Esto desconecta la cuenta de Okou. Los hilos que la usan volverán a la herencia predeterminada. La cuenta del proveedor no se eliminará.",
       "disconnectDescriptionWithCount": "Esto desconecta la cuenta de Okou. {{value}} hilos volverán a la herencia predeterminada. La cuenta del proveedor no se eliminará.",
@@ -3040,8 +3011,6 @@
       "find": "Buscar cuentas",
       "loading": "Cargando cuentas…",
       "loadMore": "Cargar más",
-      "makeDefault": "Establecer como predeterminada",
-      "managerDescription": "Las nuevas ejecuciones usan tu cuenta predeterminada.",
       "managerTitle": "Gestionar cuentas de {{connector}}",
       "namePromptDescription": "Puedes omitir este paso y asignar un nombre a la cuenta más tarde.",
       "namePromptTitle": "Asigna un nombre a tu cuenta de {{connector}}",
@@ -3055,7 +3024,6 @@
     },
     "actions": {
       "apply": "Aplicar",
-      "authorize": "Autorizar",
       "cancel": "Cancelar",
       "close": "Cerrar",
       "closeWindow": "Cerrar ventana",
@@ -3102,7 +3070,6 @@
     },
     "card": {
       "accessFor": "{{action}} el acceso a {{connector}}",
-      "authorized": "Autorizado",
       "connectAria": "Conectar {{connector}}",
       "connected": "Conectado",
       "connectionExpired": "Conexión expirada",
@@ -3115,11 +3082,7 @@
     },
     "catalog": {
       "access": {
-        "add": "Añadir acceso",
-        "manage": "Gestionar el acceso a {{connector}}",
-        "summaryMany": "{{value}} agentes",
-        "unavailable": "Acceso no disponible",
-        "usedBy": "Utilizado por"
+        "manage": "Gestionar el acceso a {{connector}}"
       },
       "categories": {
         "ai": {
@@ -3190,18 +3153,13 @@
         "searchAll": "Buscar en todos los conectores"
       },
       "empty": {
-        "agent": "No hay conectores para este agente",
         "connected": "Sin conectores conectados",
-        "search": "No hay conectores que coincidan con \"{{search}}\"",
-        "unshared": "Todos los conectores están compartidos con un agente"
+        "search": "No hay conectores que coincidan con \"{{search}}\""
       },
       "filterCategory": "Categoría",
       "filters": {
-        "agents": "Agentes",
         "all": "Todos",
-        "allAgents": "Todos los agentes",
-        "aria": "Conectores de filtro",
-        "unshared": "No compartido con ningún agente"
+        "aria": "Conectores de filtro"
       },
       "filterWith": "Filtro: {{category}}",
       "myOkouDescription": "Conecta servicios externos para que tu Okou los use.",
@@ -3232,8 +3190,7 @@
         "seeMore_other": "Ver {{names}} y {{count}} más",
         "top": "Conectores principales"
       },
-      "title": "Conectores",
-      "unnamedAgent": "Sin nombre"
+      "title": "Conectores"
     },
     "connectDialog": {
       "connectedAs": "Conectado como {{username}}",
@@ -3377,9 +3334,6 @@
       }
     },
     "directed": {
-      "authorizeAgent": "Autoriza {{agent}}",
-      "authorized": "{{connector}} autorizado",
-      "authorizeDocumentTitle": "Autoriza {{connector}}",
       "connectDocumentTitle": "Conectar {{connector}}",
       "connected": "{{connector}} conectado",
       "needsConnector": "{{agent}} necesita {{connector}} para seguir adelante",
@@ -3409,10 +3363,8 @@
       "allowOptions": "{{permission}} opciones de permiso",
       "always": "Siempre",
       "clearSearch": "Borrar búsqueda de permisos",
-      "descriptionAgent": "Configura qué acciones puede realizar este agente a través de este conector.",
       "find": "Buscar permisos",
       "findPlaceholder": "Busca permisos...",
-      "forTarget": "por {{target}}",
       "loadError": "No se han cargado los metadatos de permisos",
       "loading": "Cargando permisos...",
       "metadataMissing": "No se han encontrado metadatos de permisos para {{connector}}",
@@ -4160,7 +4112,6 @@
     }
   },
   "myOkou": {
-    "access": "Tu acceso en este espacio de trabajo",
     "conflict": "Tus instrucciones guardadas cambiaron en otro lugar. Se conserva tu borrador. Revísalo o cópialo antes de recargar las instrucciones guardadas.",
     "description": "Tus instrucciones para Okou en este espacio de trabajo",
     "discard": "Descartar",

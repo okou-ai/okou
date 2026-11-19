@@ -1,21 +1,6 @@
 import ChatDomain
 import Foundation
 
-public struct ChatPermissionGrant: Decodable, Equatable, Sendable {
-  public let agentId: String
-  public let connectorSlug: String
-  public let permission: String
-  public let action: ChatPermissionAction.Action
-  public let expiresAt: Date?
-
-  public func isActive(at date: Date) -> Bool { expiresAt.map { $0 > date } ?? true }
-  var rule: ChatPermissionRule {
-    ChatPermissionRule(
-      connectorSlug: connectorSlug, permission: permission, action: action, expiresAt: expiresAt)
-  }
-}
-
-/// Permission values are shared by the legacy and member wire adapters, never their owners.
 public struct ChatPermissionRule: Equatable, Sendable {
   public let connectorSlug: String
   public let permission: String
@@ -88,7 +73,6 @@ public struct ChatPermissionSnapshot: Sendable {
   public let agentName: String?
   public let metadata: ChatPermissionMetadata?
   public let grants: [ChatPermissionRule]
-  public let connectorScoped: Bool
 }
 
 /// Uses the same current-user grants and catalog metadata as the PWA permission card.
@@ -102,25 +86,13 @@ public struct ChatPermissions: Sendable {
       let displayName: String?
     }
     async let agentRequest: Agent = client.request("/api/agents/\(action.agentID)")
-    async let metadataRequest = metadata(slug: action.connectorSlug)
-    async let sharedRequest = ChatComposerAccess(client: client).chatAccountAccessEnabled()
-    let shared = try await sharedRequest
-    let rules: [ChatPermissionRule]
-    if shared {
-      let result: MemberConnectorPermissions = try await client.request(
-        "/api/connector-permissions", query: ChatConnectorTarget.builtin(action.connectorSlug).query
-      )
-      rules = try result.rules(slug: action.connectorSlug)
-    } else {
-      rules = try await grants(action).map(\.rule)
-    }
-    let agent = try await agentRequest
+    async let snapshot = connectorPermissions(slug: action.connectorSlug)
+    let (agent, permissions) = try await (agentRequest, snapshot)
     guard UUID(uuidString: agent.agentId) == UUID(uuidString: action.agentID) else {
       throw APIClientError.invalidResponse
     }
     return ChatPermissionSnapshot(
-      agentName: agent.displayName, metadata: try await metadataRequest, grants: rules,
-      connectorScoped: shared)
+      agentName: agent.displayName, metadata: permissions.metadata, grants: permissions.grants)
   }
 
   public func apply(
@@ -140,59 +112,26 @@ public struct ChatPermissions: Sendable {
     }) {
       return current
     }
-    if current.connectorScoped {
-      let result = try await applyConnectorPermissions(
-        slug: action.connectorSlug,
-        edits: [
-          ChatPermissionEdit(
-            permission: action.permission, action: action.action.rawValue,
-            expiresIn: action.action == .allow ? duration.rawValue : nil)
-        ])
-      guard
-        result.contains(where: {
-          $0.permission == action.permission && $0.action == action.action && $0.isActive(at: .now)
-        })
-      else { throw APIClientError.invalidResponse }
-      return ChatPermissionSnapshot(
-        agentName: current.agentName, metadata: metadata, grants: result, connectorScoped: true)
-    }
-    struct Grant: Encodable {
-      let permission: String
-      let action: ChatPermissionAction.Action
-      let expiresIn: ChatPermissionAction.Duration?
-    }
-    struct Body: Encodable {
-      let agentId: String
-      let connectorSlug: String
-      let mode = "patch"
-      let grants: [Grant]
-    }
-    let body = Body(
-      agentId: action.agentID, connectorSlug: action.connectorSlug,
-      grants: [
-        Grant(
-          permission: action.permission, action: action.action,
-          expiresIn: action.action == .allow ? duration : nil)
+    let result = try await applyConnectorPermissions(
+      slug: action.connectorSlug,
+      edits: [
+        ChatPermissionEdit(
+          permission: action.permission, action: action.action.rawValue,
+          expiresIn: action.action == .allow ? duration.rawValue : nil)
       ])
-    let result: [ChatPermissionGrant] = try await client.request(
-      "/api/user-permission-grants/apply", method: "PUT", body: JSONEncoder().encode(body))
-    guard let grant = result.first, result.count == 1,
-      UUID(uuidString: grant.agentId) == UUID(uuidString: action.agentID),
-      grant.connectorSlug == action.connectorSlug, grant.permission == action.permission,
-      grant.action == action.action, grant.isActive(at: .now)
+    guard
+      result.contains(where: {
+        $0.permission == action.permission && $0.action == action.action && $0.isActive(at: .now)
+      })
     else { throw APIClientError.invalidResponse }
     return ChatPermissionSnapshot(
-      agentName: current.agentName, metadata: metadata,
-      grants: current.grants.filter {
-        $0.connectorSlug != action.connectorSlug || $0.permission != action.permission
-      } + [grant.rule], connectorScoped: false)
+      agentName: current.agentName, metadata: metadata, grants: result)
   }
 
   func connectorPermissions(slug: String) async throws -> ChatPermissionSnapshot {
-    let rules = try await connectorGrants(slug: slug)
-    let metadata = try await metadata(slug: slug)
-    return ChatPermissionSnapshot(
-      agentName: nil, metadata: metadata, grants: rules, connectorScoped: true)
+    async let rules = connectorGrants(slug: slug)
+    async let metadata = self.metadata(slug: slug)
+    return try await ChatPermissionSnapshot(agentName: nil, metadata: metadata, grants: rules)
   }
 
   func connectorGrants(slug: String) async throws -> [ChatPermissionRule] {
@@ -235,13 +174,4 @@ public struct ChatPermissions: Sendable {
     else { throw ChatError.invalidContract("This request no longer belongs to this chat.") }
   }
 
-  private func grants(_ action: ChatPermissionAction) async throws -> [ChatPermissionGrant] {
-    let grants: [ChatPermissionGrant] = try await client.request(
-      "/api/user-permission-grants", query: [URLQueryItem(name: "agentId", value: action.agentID)])
-    guard grants.allSatisfy({ UUID(uuidString: $0.agentId) == UUID(uuidString: action.agentID) })
-    else {
-      throw APIClientError.invalidResponse
-    }
-    return grants
-  }
 }

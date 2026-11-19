@@ -2,7 +2,6 @@ import {
   connectorSlugSchema,
   type ConnectorSlug,
 } from "@okouai/api-contracts/contracts/connector-identity";
-import type { AgentCustomConnectorGrant } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import { userCustomConnectors } from "@okouai/db/schema/user-custom-connector";
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";
@@ -24,7 +23,6 @@ export interface CustomConnectorDefinitionVersion {
 export interface AgentConnectorScope {
   readonly allowedConnectorSlugs: readonly ConnectorSlug[];
   readonly allowedCustomConnectorIds: readonly string[];
-  readonly customConnectorGrants: readonly AgentCustomConnectorGrant[];
 }
 
 export interface AgentConnectorScopeSnapshot extends AgentConnectorScope {
@@ -37,7 +35,6 @@ export interface AgentConnectorSlugRow {
 
 export interface AgentCustomConnectorRow {
   readonly customConnectorId: string;
-  readonly permissionNames: readonly string[];
   readonly connectorSlug: string;
   readonly storageVersion: number;
   readonly skillStorageVersionId: string | null;
@@ -63,12 +60,6 @@ export function agentConnectorScopeFromRows(args: {
   const allowedCustomConnectorIds = customConnectorRows.map((row) => {
     return row.customConnectorId;
   });
-  const customConnectorGrants = customConnectorRows.map((row) => {
-    return {
-      customConnectorId: row.customConnectorId,
-      permissionNames: [...row.permissionNames].sort(),
-    };
-  });
   const customConnectorDefinitions = customConnectorRows.map((row) => {
     return {
       customConnectorId: row.customConnectorId,
@@ -81,7 +72,6 @@ export function agentConnectorScopeFromRows(args: {
   return {
     allowedConnectorSlugs,
     allowedCustomConnectorIds,
-    customConnectorGrants,
     customConnectorDefinitions,
   };
 }
@@ -112,7 +102,6 @@ export const readAgentConnectorScope$ = command(
       db
         .select({
           customConnectorId: userCustomConnectors.customConnectorId,
-          permissionNames: userCustomConnectors.permissionNames,
           connectorSlug: orgCustomConnectors.slug,
           storageVersion: orgCustomConnectors.storageVersion,
           skillStorageVersionId: orgCustomConnectors.skillStorageVersionId,

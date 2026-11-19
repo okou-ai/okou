@@ -1,12 +1,10 @@
+import { createChatConnectorAccessApi } from "./helpers/chat-connector-access";
 import { BUILT_IN_SKILLS } from "@okouai/core/built-in-skills";
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { userPermissionGrantsContract } from "@okouai/api-contracts/contracts/user-permission-grants";
 import { MODEL_PROVIDER_ENV_PLACEHOLDERS } from "@okouai/api-contracts/contracts/model-providers";
-import { accept, testContext } from "../../../__tests__/test-context";
-import { setupApp } from "../../../__tests__/test-helpers";
+import { testContext } from "../../../__tests__/test-context";
 import { now } from "../../../lib/time";
-import { userPermissionGrantsRoutes } from "../user-permission-grants";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import {
   manualHttpCustomConnectorCreateBody,
@@ -25,7 +23,6 @@ const {
   sendChatRun,
   runExecution,
   cancelChatRun,
-  sessionHeaders,
 } = createChatEventsFixture(context);
 const MODEL = "claude-fable-5-1";
 const misc = createMiscRoutesApi(context);
@@ -185,21 +182,14 @@ describe("shared context statement projections through normal sends", () => {
           throw new Error("Expected workflow publication");
         }
         workflowName = workflow.body.name;
-        const response = await accept(
-          setupApp({ context, routes: userPermissionGrantsRoutes })(
-            userPermissionGrantsContract,
-          ).apply({
-            headers: sessionHeaders(actor),
-            body: {
-              agentId,
-              connectorSlug: "slack",
-              mode: "replace",
-              grants: [{ permission: "__unknown__", action: "deny" }],
-            },
-          }),
-          [200],
-        );
-        expect(response.body).toContainEqual(
+        const response = await createChatConnectorAccessApi(
+          context,
+        ).applyPermissions(actor, {
+          target: { kind: "builtin", connectorSlug: "slack" },
+          mode: "replace",
+          grants: [{ permission: "__unknown__", action: "deny" }],
+        });
+        expect(response.grants).toContainEqual(
           expect.objectContaining({
             action: "deny",
             permission: "__unknown__",

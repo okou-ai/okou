@@ -294,10 +294,7 @@ async function setup(path = `/chats/${SCOUT_THREAD_ID}`, singleAgent = false) {
     context,
     path,
     locale: "en-US",
-    featureSwitches: {
-      [FeatureSwitchKey.ConnectorChatAccountAccess]: true,
-      [FeatureSwitchKey.SingleAgent]: singleAgent,
-    },
+    featureSwitches: { [FeatureSwitchKey.SingleAgent]: singleAgent },
   });
   await findComposer();
 }

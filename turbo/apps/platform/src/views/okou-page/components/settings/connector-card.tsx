@@ -46,7 +46,7 @@ type ActionConnectorCardProps = {
   readonly variant: "action";
   readonly icon: ReactNode;
   readonly label: string;
-  readonly description: string;
+  readonly description?: string;
   readonly connected: boolean;
   readonly complete: boolean;
   readonly reconnectRequired: boolean;
@@ -425,7 +425,7 @@ function ActionConnectorCard({
   const { t } = useTranslation();
   const actionLabel = complete
     ? t(($) => {
-        return $.connectors.card.authorized;
+        return $.connectors.card.connected;
       })
     : reconnectRequired
       ? t(($) => {
@@ -433,7 +433,7 @@ function ActionConnectorCard({
         })
       : connected
         ? t(($) => {
-            return $.connectors.actions.authorize;
+            return $.chat.actions.continue;
           })
         : t(($) => {
             return $.connectors.actions.connect;
@@ -460,9 +460,11 @@ function ActionConnectorCard({
           >
             {label}
           </div>
-          <div className="mt-0.5 line-clamp-2 text-sm leading-5 text-muted-foreground">
-            {description}
-          </div>
+          {description && (
+            <div className="mt-0.5 line-clamp-2 text-sm leading-5 text-muted-foreground">
+              {description}
+            </div>
+          )}
         </div>
       </div>
       <button

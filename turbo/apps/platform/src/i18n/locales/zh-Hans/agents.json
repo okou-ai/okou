@@ -10,24 +10,6 @@
     "save": "保存",
     "saving": "保存中…"
   },
-  "authorization": {
-    "closeSearch": "关闭搜索",
-    "connectorsLink": "连接器",
-    "connectorsSaved": "连接器已保存",
-    "customConnectors": {
-      "description": "你所在组织注册的自定义连接器。",
-      "saved": "自定义连接器已保存"
-    },
-    "description": "运行时，智能体可以安全地使用你已连接的服务。你随时可以管理或关闭这些访问权限。",
-    "findConnectors": "查找连接器",
-    "noConnectorsAfterLink": " 页面连接第一个服务。",
-    "noConnectorsAlt": "暂无连接器",
-    "noConnectorsBeforeLink": "还没有连接任何服务。前往 ",
-    "noResults": "没有与「{{search}}」匹配的结果",
-    "permissionLoadError": "加载权限授予失败",
-    "permissionsUpdated": "权限已更新",
-    "searchPlaceholder": "查找连接器…"
-  },
   "avatar": {
     "accessibilityDescription": "自定义智能体头像的风格、颜色和五官细节。",
     "actions": {
@@ -79,7 +61,6 @@
     },
     "sectionNavigation": "智能体详情栏目",
     "tabs": {
-      "authorization": "授权",
       "instructions": "指令",
       "profile": "资料"
     },

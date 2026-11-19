@@ -24,7 +24,7 @@ import { sshConnectionsRoutes } from "../ssh-connections";
 import { chatRemoteAccessRoutes } from "../chat-remote-access";
 import { createRouteMocks } from "./helpers/route-test";
 import { createPublicRemoteAccessRunApi } from "./helpers/public-remote-access-run";
-import { createAuthDeviceSupportApi } from "./helpers/api-bdd-auth-device-support";
+
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { inlineSshKey } from "./helpers/ssh-credential";
@@ -78,17 +78,14 @@ describe("SSH chat authorization", () => {
     await flushWaitUntilForTest();
     await publicRuns.cleanup();
   });
-  async function scenario(memberMode = false) {
+  async function scenario() {
     mockEnv("OFFICIAL_RUNNER_SECRET", "c".repeat(64));
     const owner = {
       userId: `user_ssh_approval_${randomUUID()}`,
       orgId: `org_ssh_approval_${randomUUID()}`,
     };
     const pending = await publicRuns.start(owner);
-    await createAuthDeviceSupportApi(context).updateFeatureSwitches(
-      pending.actor,
-      { connectorChatAccountAccess: memberMode },
-    );
+
     const run = await publicRuns.executionInput(pending, {
       authorization: `Bearer vm0_official_${"c".repeat(64)}`,
     });
@@ -416,109 +413,102 @@ describe("SSH chat authorization", () => {
     await accept(api().approve({ headers, params, body: {} }), [409]);
   });
 
-  it.each([false, true])(
-    "continues only after the companion permission is approved in the effective permission model (shared=%s)",
-    async (memberMode) => {
-      const s = await scenario(memberMode);
-      const connectors = createConnectorBddApi(context);
-      mockSlackConnectorOAuth();
-      const oauth = await connectors.startOauth(
-        s.run.actor,
-        "slack",
-        "oauth",
-        s.run.agentId,
+  it("continues only after the shared companion permission is approved", async () => {
+    const s = await scenario();
+
+    const connectors = createConnectorBddApi(context);
+    mockSlackConnectorOAuth();
+    const oauth = await connectors.startOauth(
+      s.run.actor,
+      "slack",
+      "oauth",
+      s.run.agentId,
+    );
+    const state = new URL(oauth.authorizationUrl).searchParams.get("state");
+    if (!state) {
+      throw new Error("Expected Slack OAuth state");
+    }
+    await connectors.completeOauthCallback("slack", {
+      state,
+      code: "ssh-companion-permission",
+    });
+    authenticate(s.owner);
+    const requested = await accept(
+      api().create({
+        headers: s.token,
+        body: {
+          ...s.body,
+          requiredPermissions: [
+            { connectorSlug: "slack", permission: "chat:write" },
+          ],
+        },
+      }),
+      [200],
+    );
+    const params = { id: requested.body.id };
+    await end(s.run);
+    const waiting = await accept(api().get({ headers, params }), [200]);
+    expect(waiting.body.approvalBlockedReason).toBe("permissions_required");
+    const legacy = setupApp({ context, routes: userPermissionGrantsRoutes })(
+      userPermissionGrantsContract,
+    );
+    await accept(
+      legacy.apply({
+        headers,
+        body: {
+          agentId: s.run.agentId,
+          connectorSlug: "slack",
+          mode: "patch",
+          grants: [
+            { permission: "chat:write", action: "allow", expiresIn: "1h" },
+          ],
+        },
+      }),
+      [200],
+    );
+    const stillWaiting = await accept(api().get({ headers, params }), [200]);
+    expect(stillWaiting.body.approvalBlockedReason).toBe(
+      "permissions_required",
+    );
+    await accept(
+      setupApp({ context, routes: connectorPermissionsRoutes })(
+        connectorPermissionsContract,
+      ).apply({
+        headers,
+        body: {
+          target: { kind: "builtin", connectorSlug: "slack" },
+          mode: "patch",
+          grants: [
+            { permission: "chat:write", action: "allow", expiresIn: "1h" },
+          ],
+        },
+      }),
+      [200],
+    );
+    const ready = await accept(api().get({ headers, params }), [200]);
+    expect(ready.body.approvalBlockedReason).toBeNull();
+    const approved = await accept(
+      api().approve({ headers, params, body: {} }),
+      [200],
+    );
+    expect(approved.body).toMatchObject({
+      enabled: true,
+      continuationPending: false,
+    });
+    await flushWaitUntilForTest();
+    const events = await createChatFilesBddApi(context).listThreadEvents(
+      s.run.actor,
+      s.run.threadId,
+    );
+    const continuation = events.events.find((event) => {
+      return (
+        event.eventType === "input.prompt" &&
+        event.revokesEventId === requested.body.id
       );
-      const state = new URL(oauth.authorizationUrl).searchParams.get("state");
-      if (!state) {
-        throw new Error("Expected Slack OAuth state");
-      }
-      await connectors.completeOauthCallback("slack", {
-        state,
-        code: "ssh-companion-permission",
-      });
-      authenticate(s.owner);
-      const requested = await accept(
-        api().create({
-          headers: s.token,
-          body: {
-            ...s.body,
-            requiredPermissions: [
-              { connectorSlug: "slack", permission: "chat:write" },
-            ],
-          },
-        }),
-        [200],
-      );
-      const params = { id: requested.body.id };
-      await end(s.run);
-      const waiting = await accept(api().get({ headers, params }), [200]);
-      expect(waiting.body.approvalBlockedReason).toBe("permissions_required");
-      const legacy = setupApp({ context, routes: userPermissionGrantsRoutes })(
-        userPermissionGrantsContract,
-      );
-      await accept(
-        legacy.apply({
-          headers,
-          body: {
-            agentId: s.run.agentId,
-            connectorSlug: "slack",
-            mode: "patch",
-            grants: [
-              { permission: "chat:write", action: "allow", expiresIn: "1h" },
-            ],
-          },
-        }),
-        [200],
-      );
-      if (memberMode) {
-        const stillWaiting = await accept(
-          api().get({ headers, params }),
-          [200],
-        );
-        expect(stillWaiting.body.approvalBlockedReason).toBe(
-          "permissions_required",
-        );
-        await accept(
-          setupApp({ context, routes: connectorPermissionsRoutes })(
-            connectorPermissionsContract,
-          ).apply({
-            headers,
-            body: {
-              target: { kind: "builtin", connectorSlug: "slack" },
-              mode: "patch",
-              grants: [
-                { permission: "chat:write", action: "allow", expiresIn: "1h" },
-              ],
-            },
-          }),
-          [200],
-        );
-      }
-      const ready = await accept(api().get({ headers, params }), [200]);
-      expect(ready.body.approvalBlockedReason).toBeNull();
-      const approved = await accept(
-        api().approve({ headers, params, body: {} }),
-        [200],
-      );
-      expect(approved.body).toMatchObject({
-        enabled: true,
-        continuationPending: false,
-      });
-      await flushWaitUntilForTest();
-      const events = await createChatFilesBddApi(context).listThreadEvents(
-        s.run.actor,
-        s.run.threadId,
-      );
-      const continuation = events.events.find((event) => {
-        return (
-          event.eventType === "input.prompt" &&
-          event.revokesEventId === requested.body.id
-        );
-      });
-      if (!continuation?.runId) {
-        throw new Error("Expected continuation after both approvals");
-      }
-      resumed.push({ actor: s.run.actor, runId: continuation.runId });
-    },
-  );
+    });
+    if (!continuation?.runId) {
+      throw new Error("Expected continuation after both approvals");
+    }
+    resumed.push({ actor: s.run.actor, runId: continuation.runId });
+  });
 });

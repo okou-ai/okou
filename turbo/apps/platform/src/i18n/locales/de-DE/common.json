@@ -1050,13 +1050,11 @@
       "invalid": "Dieser Berechtigungslink ist ungültig oder nicht verfügbar.",
       "loadFailed": "Nicht alle angeforderten Berechtigungen konnten überprüft werden. Es können keine Berechtigungen geändert werden.",
       "loading": "Berechtigungen werden geladen",
-      "myOkouScopeNote": "Gilt für deine Nutzung von Okou in diesem Workspace, nicht nur für die aktuelle Aufgabe.",
       "myOkouSharedScopeNote": "Gilt für diesen Connector in deinen Chats in diesem Workspace. Deine Teammitglieder haben eigene Berechtigungen.",
       "notNow": "Nicht jetzt",
       "pending_one": "{{count}} Berechtigung ausstehend",
       "pending_other": "{{count}} Berechtigungen ausstehend",
       "review": "Berechtigungen prüfen",
-      "scopeNote": "Gilt für diesen Agenten, nicht nur für die aktuelle Aufgabe.",
       "sharedScopeNote": "Die Berechtigungen für diesen Connector gelten für alle deine Chats und Agenten.",
       "title": "Folgende Berechtigungen erlauben"
     }
@@ -2104,13 +2102,8 @@
       "unavailableTitle": "Konto nicht verfügbar"
     },
     "connectors": {
-      "accountForThread": "Konto für diesen Thread",
-      "add": "{{connectorName}} hinzufügen",
       "addConnectors": "Integrationen hinzufügen",
-      "authorized": "{{connectorName}} verbunden und autorisiert für {{agentName}}",
       "back": "Zurück",
-      "configurePermissions": "Konfigurieren Sie {{connectorName}}-Berechtigungen",
-      "customAuthorizeDescription": "Prüfen und verbinden Sie diese benutzerdefinierte Integration und autorisieren Sie sie für den Agenten.",
       "directory": {
         "allCategories": "Alle",
         "askAdmin": "Lassen Sie diese Integration von einem Admin freischalten",
@@ -2140,14 +2133,8 @@
         "tabCustom": "Eigene",
         "tabDiscover": "Entdecken"
       },
-      "fallsBackTo": "Wechselt zu {{account}} zurück",
       "find": "Integrationen suchen...",
-      "loadFailed": "Integrationen konnten nicht geladen werden.",
-      "noUsableAccount": "Kein verwendbares Konto",
-      "remove": "{{connectorName}} entfernen",
-      "selectedAccountFor": "{{connector}} · Ausgewähltes Konto: {{account}}",
-      "title": "Integrationen",
-      "useDefault": "Standard verwenden"
+      "title": "Integrationen"
     },
     "documentTitle": "Chat",
     "errors": {
@@ -2952,28 +2939,12 @@
     "totalAccounts": "{{value}} Konten"
   },
   "connectors": {
-    "access": {
-      "accessFor": "{{action}} {{connector}} Zugriff für {{agent}}",
-      "accessUpdated": "{{connector}} Zugriff aktualisiert",
-      "clearSearch": "Übersichtliche Agentensuche",
-      "description": "Wählen Sie aus, welche Agenten diese Integration verwenden können.",
-      "loading": "Agenten werden geladen...",
-      "managePermissions": "Berechtigungen verwalten",
-      "managePermissionsFor": "{{connector}}-Berechtigungen für {{agent}} verwalten",
-      "noAgents": "Keine Agenten gefunden",
-      "noMatchingAgents": "Keine Agenten, die mit „{{search}}“ übereinstimmen",
-      "permissionsUpdated": "Berechtigungen aktualisiert",
-      "search": "Finden Sie Agenten",
-      "title": "Verwalten Sie den {{connector}}-Zugriff",
-      "unnamedAgent": "Unbenannt"
-    },
     "accounts": {
       "accountName": "Kontoname",
       "accountsUnavailable": "Konten sind für diesen Connector nicht verfügbar.",
       "actions": "Kontoaktionen",
       "addAccount": "Konto hinzufügen",
       "connected": "Verbunden",
-      "default": "Standard",
       "disconnectAccount": "Konto trennen",
       "disconnectDescription": "Dadurch wird das Konto von Okou getrennt. Threads, die es verwenden, kehren zur Standardvererbung zurück. Das Konto beim Anbieter wird nicht gelöscht.",
       "disconnectDescriptionWithCount": "Dadurch wird das Konto von Okou getrennt. {{value}} Threads kehren zur Standardvererbung zurück. Das Konto beim Anbieter wird nicht gelöscht.",
@@ -2989,8 +2960,6 @@
       "find": "Konten suchen",
       "loading": "Konten werden geladen…",
       "loadMore": "Mehr laden",
-      "makeDefault": "Als Standard festlegen",
-      "managerDescription": "Neue Ausführungen verwenden dein Standardkonto.",
       "managerTitle": "{{connector}}-Konten verwalten",
       "namePromptDescription": "Sie können diesen Schritt überspringen und das Konto später benennen.",
       "namePromptTitle": "{{connector}}-Konto benennen",
@@ -3004,7 +2973,6 @@
     },
     "actions": {
       "apply": "Anwenden",
-      "authorize": "Autorisieren",
       "cancel": "Abbrechen",
       "close": "Schließen",
       "closeWindow": "Fenster schließen",
@@ -3051,7 +3019,6 @@
     },
     "card": {
       "accessFor": "{{action}} {{connector}} Zugriff",
-      "authorized": "Autorisiert",
       "connectAria": "Verbinden Sie {{connector}}",
       "connected": "Verbunden",
       "connectionExpired": "Verbindung abgelaufen",
@@ -3064,11 +3031,7 @@
     },
     "catalog": {
       "access": {
-        "add": "Zugriff hinzufügen",
-        "manage": "Verwalten Sie den {{connector}}-Zugriff",
-        "summaryMany": "{{value}} Agenten",
-        "unavailable": "Zugriff nicht verfügbar",
-        "usedBy": "Verwendet von "
+        "manage": "Verwalten Sie den {{connector}}-Zugriff"
       },
       "categories": {
         "ai": {
@@ -3139,18 +3102,13 @@
         "searchAll": "Alle Konnektoren durchsuchen"
       },
       "empty": {
-        "agent": "Keine Integrationen für diesen Agenten",
         "connected": "Keine verbundenen Integrationen",
-        "search": "Keine Integrationen passend zu „{{search}}“",
-        "unshared": "Jede Integration ist mit einem Agenten geteilt"
+        "search": "Keine Integrationen passend zu „{{search}}“"
       },
       "filterCategory": "Kategorie",
       "filters": {
-        "agents": "Agenten",
         "all": "Alle",
-        "allAgents": "Alle Agenten",
-        "aria": "Integrationen filtern",
-        "unshared": "Mit keinem Agenten geteilt"
+        "aria": "Integrationen filtern"
       },
       "filterWith": "Filter: {{category}}",
       "myOkouDescription": "Verbinde externe Dienste für dein Okou.",
@@ -3180,8 +3138,7 @@
         "seeMore_other": "{{names}} und {{count}} weitere ansehen",
         "top": "Top-Konnektoren"
       },
-      "title": "Integrationen",
-      "unnamedAgent": "Unbenannt"
+      "title": "Integrationen"
     },
     "connectDialog": {
       "connectedAs": "Verbunden als {{username}}",
@@ -3325,9 +3282,6 @@
       }
     },
     "directed": {
-      "authorizeAgent": "Autorisieren Sie {{agent}}",
-      "authorized": "{{connector}} autorisiert",
-      "authorizeDocumentTitle": "Autorisieren Sie {{connector}}",
       "connectDocumentTitle": "Verbinden Sie {{connector}}",
       "connected": "{{connector}} verbunden",
       "needsConnector": "{{agent}} benötigt {{connector}}, um fortzufahren",
@@ -3355,10 +3309,8 @@
       "allowOptions": "{{permission}} erlaubt Optionen",
       "always": "Stets",
       "clearSearch": "Klare Berechtigungssuche",
-      "descriptionAgent": "Legen Sie fest, welche Aktionen dieser Agent über diese Integration ausführen darf.",
       "find": "Suchen Sie nach Berechtigungen",
       "findPlaceholder": "Berechtigungen finden...",
-      "forTarget": "für {{target}}",
       "loadError": "Berechtigungsmetadaten konnten nicht geladen werden",
       "loading": "Ladeberechtigungen...",
       "metadataMissing": "Für {{connector}} wurden keine Berechtigungsmetadaten gefunden.",
@@ -4102,7 +4054,6 @@
     }
   },
   "myOkou": {
-    "access": "Dein Zugriff in diesem Arbeitsbereich",
     "conflict": "Deine gespeicherten Anweisungen wurden anderswo geändert. Dein Entwurf bleibt erhalten. Prüfe oder kopiere ihn, bevor du die gespeicherten Anweisungen neu lädst.",
     "description": "Deine Anweisungen für Okou in diesem Arbeitsbereich",
     "discard": "Verwerfen",

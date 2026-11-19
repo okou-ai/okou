@@ -13,7 +13,6 @@ export enum FeatureSwitchKey {
   SingleAgent = "singleAgent",
   ProjectTitleReveal = "projectTitleReveal",
   OkouAnimatedAvatar = "okouAnimatedAvatar",
-  ConnectorChatAccountAccess = "connectorChatAccountAccess",
   FeatureGuides = "featureGuides",
   BatchConnectorPermissions = "batchConnectorPermissions",
   DesktopShell = "desktopShell",

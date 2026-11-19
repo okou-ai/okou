@@ -34,14 +34,10 @@ public enum ConnectorHTTPFixtures {
     """
   }
   public static func response(
-    _ request: URLRequest, connected: Bool = true, authorized: Bool = true,
+    _ request: URLRequest, connected: Bool = true,
     grantKind: String = "none", customMode: String = "none"
   ) -> ChatHTTPResponse? {
     let path = request.url?.path ?? ""
-    if path == "/api/feature-switches" {
-      return ChatHTTPResponse(
-        body: "{\"effectiveSwitches\":{\"connectorChatAccountAccess\":false}}")
-    }
     if path.hasSuffix("/metadata") { return ChatHTTPResponse(body: metadata) }
     if path == "/api/connector-catalog/slack" {
       return ChatHTTPResponse(body: catalog(grantKind: grantKind))
@@ -75,22 +71,16 @@ public enum ConnectorHTTPFixtures {
         .contains { $0.name == "kind" && $0.value == "custom" } == true
       return ChatHTTPResponse(body: account(custom: custom, connected: connected))
     }
-    if path.hasSuffix("/user-connectors") {
-      return ChatHTTPResponse(
-        body: "{\"enabledConnectorSlugs\":\(authorized ? "[\"slack\"]" : "[]")}")
-    }
-    if path.hasSuffix("/custom-connectors") {
-      return ChatHTTPResponse(
-        body:
-          "{\"grants\":\(authorized ? "[{\"customConnectorId\":\"\(customID)\",\"permissionNames\":[]}]" : "[]")}"
-      )
-    }
-    if path.hasSuffix("/connector-selections") {
-      return ChatHTTPResponse(body: "{\"selections\":[]}")
-    }
     if path == "/api/chat/events" {
       return ChatHTTPResponse(status: 201, body: "{\"threadId\":\"\(threadID)\"}")
     }
     return nil
+  }
+
+  public static func access(slug: String = "slack", currentID: String? = accountID) -> String {
+    let current = currentID.map { "\"\($0)\"" } ?? "null"
+    return """
+      {"target":{"kind":"builtin","connectorSlug":"\(slug)"},"accounts":[{"connectionId":"\(accountID)","displayName":"Work account","defaultEnabled":true,"isDefault":true,"overrideEnabled":null,"enabled":true}],"currentConnectionId":\(current),"available":\(currentID != nil)}
+      """
   }
 }

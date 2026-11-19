@@ -161,7 +161,6 @@ test.each(["legacy Agent", "Chat account"] as const)(
       await runs.ensurePersonalSubscriptionModel(actor);
       await connectors.updateFeatureSwitches(actor, {
         [FeatureSwitchKey.CustomConnectorCloudflareAccess]: true,
-        [FeatureSwitchKey.ConnectorChatAccountAccess]: mode === "Chat account",
       });
       const { agentId } = await bdd.createAgent(actor, {
         displayName: "Bound connector execution",

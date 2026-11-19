@@ -32,9 +32,7 @@ export interface AdmittedExecutionFacts {
   readonly nativeContinuation: NativeContinuation;
   readonly featureFlags: Readonly<
     Record<
-      | FeatureSwitchKey.ArtifactThreePointTiming
-      | FeatureSwitchKey.SingleAgent
-      | FeatureSwitchKey.ConnectorChatAccountAccess,
+      FeatureSwitchKey.ArtifactThreePointTiming | FeatureSwitchKey.SingleAgent,
       boolean
     >
   >;

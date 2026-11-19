@@ -3,7 +3,7 @@ import { resolveApiBase } from "../api-base.ts";
 import { parseArtifactReference } from "@okouai/api-contracts/validators/artifact-references";
 import { isArtifactPublicationFilePath } from "@okouai/api-contracts/contracts/artifact-delivery";
 import {
-  parseConnectorAuthorizeUrl,
+  parseConnectorActionUrl,
   type ConnectorActionDescriptor,
 } from "./connector-action-block.ts";
 import {
@@ -907,7 +907,7 @@ function createActionBlockFromUrl(
       descriptor: { originalUrl: subscriptionReset.originalUrl },
     };
   }
-  const connectorAction = parseConnectorAuthorizeUrl(url, chatActionContext);
+  const connectorAction = parseConnectorActionUrl(url, chatActionContext);
   if (connectorAction.status === "valid") {
     return {
       type: "connector-action",

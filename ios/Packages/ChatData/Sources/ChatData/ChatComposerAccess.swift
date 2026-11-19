@@ -37,7 +37,6 @@ public struct ChatRemoteOverride: Codable, Equatable, Sendable {
 /// New-chat choices are carried by the owning composer until its first send.
 public struct ChatComposerOptions: Codable, Equatable, Sendable {
   public var connectorSelections: [ChatConnectorSelection] = []
-  public var chatAccountAccess = false
   public var initialConnectorAccessOverrides: [ChatConnectorAccessOverride] = []
   public var initialRemoteAccessOverrides: [ChatRemoteOverride] = []
   public var computerAccess: ChatComputerAccess?
@@ -48,12 +47,9 @@ public struct ChatComposerConnector: Identifiable, Sendable {
   public let target: ChatConnectorTarget
   public let label: String
   public let hasPermissions: Bool
-  public let permissionBundleRef: String?
-  public let managed: Bool
-  public let authorized: Bool
   /// The partner's own logo; custom connectors have none.
   public var icon: ChatConnectorIcon?
-  public var access: ChatConnectorAccess?
+  public var access: ChatConnectorAccess
   public var currentAccount: ChatConnectorAccount?
   public var id: String { target.key }
 }
@@ -113,11 +109,6 @@ public struct ChatConnectorAccounts: Decodable, Sendable {
   }
 }
 
-public struct ChatConnectorPreferences: Decodable, Sendable {
-  public let selections: [ChatConnectorSelection]
-  public let selectedConnections: [ChatConnectorAccount]
-}
-
 public struct ChatVncConnection: Decodable, Sendable {
   public let id: String
   public let transport: Transport?
@@ -140,14 +131,13 @@ public struct ChatVncConnection: Decodable, Sendable {
   }
 }
 
-/// User-session controls share the PWA's Agent and conversation scopes.
+/// User-session controls for accounts and access in the composer.
 public struct ChatComposerAccess: Sendable {
   let client: APIClient
   public init(client: APIClient) { self.client = client }
 
   public func connectors(
-    agentID: String, chatAccountAccess: Bool = false, threadID: String? = nil,
-    options: ChatComposerOptions = .init()
+    threadID: String? = nil, options: ChatComposerOptions = .init()
   ) async throws -> [ChatComposerConnector] {
     struct Builtin: Decodable, Sendable {
       let slug: String
@@ -158,96 +148,53 @@ public struct ChatComposerAccess: Sendable {
     struct Custom: Decodable, Sendable {
       let id: String
       let displayName: String
-      let permissionBundleRef: String?
-      let integrationManaged: Bool
     }
     struct Connected: Decodable, Sendable {
       let builtinConnectors: [Builtin]
       let customConnectors: [Custom]
     }
-    struct Access: Decodable, Sendable {
-      let enabledConnectorSlugs: [String]
-      let customConnectorIds: [String]
+    struct Candidate: Sendable {
+      let target: ChatConnectorTarget
+      let label: String
+      let hasPermissions: Bool
+      let icon: ChatConnectorIcon?
     }
-    async let connected: Connected = client.request("/api/connectors/connected")
-    let grants: Access?
-    if chatAccountAccess {
-      grants = nil
-    } else {
-      grants = try await client.request("/api/agents/\(agentID)/connector-access")
-    }
-    let list = try await connected
-    let values =
+    let list: Connected = try await client.request("/api/connectors/connected")
+    let candidates =
       list.builtinConnectors.map {
-        ChatComposerConnector(
+        Candidate(
           target: .builtin($0.slug), label: $0.label, hasPermissions: $0.hasPermissions,
-          permissionBundleRef: nil, managed: false,
-          authorized: grants?.enabledConnectorSlugs.contains($0.slug) == true, icon: $0.icon,
-          access: nil, currentAccount: nil)
+          icon: $0.icon)
       }
       + list.customConnectors.map {
-        ChatComposerConnector(
-          target: .custom($0.id), label: $0.displayName, hasPermissions: false,
-          permissionBundleRef: $0.permissionBundleRef, managed: $0.integrationManaged,
-          authorized: grants?.customConnectorIds.contains($0.id) == true,
-          access: nil, currentAccount: nil)
+        Candidate(target: .custom($0.id), label: $0.displayName, hasPermissions: false, icon: nil)
       }
-    guard chatAccountAccess else { return values }
     return try await withThrowingTaskGroup(of: (Int, ChatComposerConnector).self) { group in
-      for (index, connector) in values.enumerated() {
+      for (index, candidate) in candidates.enumerated() {
         group.addTask {
-          var entry = connector
           let access = try await self.connectorAccess(
-            target: connector.target, threadID: threadID, options: options)
-          entry.access = access
+            target: candidate.target, threadID: threadID, options: options)
+          var currentAccount: ChatConnectorAccount?
           if let id = access.currentConnectionId {
             do {
-              entry.currentAccount = try await ChatConnectorService(client: self.client).account(
-                id: id, target: connector.target)
+              currentAccount = try await ChatConnectorService(client: self.client).account(
+                id: id, target: candidate.target)
             } catch let error as APIClientError where error.statusCode == 404 {
-              entry.currentAccount = nil
+              currentAccount = nil
             }
           }
-          return (index, entry)
+          return (
+            index,
+            ChatComposerConnector(
+              target: candidate.target, label: candidate.label,
+              hasPermissions: candidate.hasPermissions, icon: candidate.icon, access: access,
+              currentAccount: currentAccount)
+          )
         }
       }
       var result: [(Int, ChatComposerConnector)] = []
       for try await value in group { result.append(value) }
       return result.sorted { $0.0 < $1.0 }.map { $0.1 }
-    }
-  }
-
-  public func setAuthorized(
-    _ connector: ChatComposerConnector, agentID: String, enabled: Bool
-  ) async throws {
-    if let slug = connector.target.connectorSlug {
-      struct Body: Encodable {
-        let enabledConnectorSlugs: [String]
-        let operation: String
-      }
-      try await client.data(
-        "/api/agents/\(agentID)/user-connectors", method: "PUT",
-        body: JSONEncoder().encode(
-          Body(enabledConnectorSlugs: [slug], operation: enabled ? "add" : "remove")))
-    } else if let id = connector.target.customConnectorId {
-      guard !enabled || connector.permissionBundleRef == nil else {
-        throw ChatError.invalidContract(
-          "Configure this connector's permissions before enabling it.")
-      }
-      struct Grant: Encodable {
-        let customConnectorId: String
-        let permissionNames: [String]
-      }
-      struct Body: Encodable {
-        let grants: [Grant]
-        let operation: String
-      }
-      try await client.data(
-        "/api/agents/\(agentID)/custom-connectors", method: "PUT",
-        body: JSONEncoder().encode(
-          Body(
-            grants: [Grant(customConnectorId: id, permissionNames: [])],
-            operation: enabled ? "add" : "remove")))
     }
   }
 
@@ -301,9 +248,6 @@ public struct ChatComposerAccess: Sendable {
           computerUseHostId: access.computerUseHostId,
           cloudBrowserEnabled: access.cloudBrowserEnabled)))
   }
-  public func preferences(threadID: String) async throws -> ChatConnectorPreferences {
-    try await client.request("/api/chat-threads/\(threadID)/connector-selections")
-  }
   public func accounts(
     target: ChatConnectorTarget, search: String = "", cursor: String? = nil
   ) async throws -> ChatConnectorAccounts {
@@ -320,20 +264,5 @@ public struct ChatComposerAccess: Sendable {
       throw APIClientError.invalidResponse
     }
     return response
-  }
-  public func selectAccount(
-    target: ChatConnectorTarget, connectionID: String?, threadID: String
-  ) async throws {
-    let body =
-      try connectionID.map {
-        try JSONEncoder().encode(ChatConnectorSelection(target: target, connectionId: $0))
-      } ?? JSONEncoder().encode(target)
-    if connectionID == nil {
-      try await client.data(
-        "/api/chat-threads/\(threadID)/connector-selections", method: "DELETE", body: body)
-    } else {
-      try await client.data(
-        "/api/chat-threads/\(threadID)/connector-selections", method: "PUT", body: body)
-    }
   }
 }

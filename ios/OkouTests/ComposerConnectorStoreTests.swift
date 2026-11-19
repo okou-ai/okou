@@ -23,8 +23,7 @@ final class ComposerConnectorStoreTests: XCTestCase {
             """)
       }
       if request.url!.path.hasSuffix("/connector-access") {
-        return ChatHTTPResponse(
-          body: "{\"enabledConnectorSlugs\":[\"slack\"],\"customConnectorIds\":[]}")
+        return ChatHTTPResponse(body: FixtureData.access())
       }
       if request.url!.path == "/api/remotes/overview" {
         return ChatHTTPResponse(
@@ -51,7 +50,7 @@ final class ComposerConnectorStoreTests: XCTestCase {
     _ = try await connectedValue(store)
     _ = try await remoteValue(store)
     XCTAssertEqual(store.connectors.first?.label, "Slack")
-    XCTAssertEqual(store.connectors.first?.authorized, true)
+    XCTAssertEqual(store.connectors.first?.access.currentConnectionId, FixtureData.accountID)
     XCTAssertEqual(store.hosts(.ssh).first?.connectionId, FixtureData.accountID)
     XCTAssertEqual(store.vncConnections.first?.id, FixtureData.accountID)
   }
@@ -223,8 +222,8 @@ final class ComposerConnectorStoreTests: XCTestCase {
     let first = try resources.store.get(resources.connected)
     let second = try resources.store.get(resources.connected)
     let values = try await (first.value, second.value)
-    XCTAssertTrue(values.0.connectors.isEmpty)
-    XCTAssertFalse(values.1.chatAccountAccess)
+    XCTAssertTrue(values.0.isEmpty)
+    XCTAssertTrue(values.1.isEmpty)
     let failed = try resources.store.get(resources.remote)
     if case .success = await failed.result {
       XCTFail("A failed remote read became successful data")
@@ -276,7 +275,7 @@ final class ComposerConnectorStoreTests: XCTestCase {
     XCTAssertEqual(store.hosts(.ssh).first?.connectionId, FixtureData.accountID)
     connectedResponse.open()
     let connected = try await pending.connected.value
-    XCTAssertTrue(connected.connectors.isEmpty)
+    XCTAssertTrue(connected.isEmpty)
   }
 
   func testAgentReplacementCancelsBothOriginalReadsAndRejectsTheirLateResults() async throws {
@@ -305,10 +304,6 @@ final class ComposerConnectorStoreTests: XCTestCase {
       }
       if path == "/api/agents/\(FixtureData.siblingID)" {
         return ChatHTTPResponse(body: "{\"agentId\":\"\(FixtureData.siblingID)\"}")
-      }
-      if path == "/api/agents/\(FixtureData.siblingID)/connector-access" {
-        return ChatHTTPResponse(
-          body: #"{"enabledConnectorSlugs":["slack"],"customConnectorIds":[]}"#)
       }
       if path == "/api/connectors/connected" {
         return ChatHTTPResponse(
@@ -714,7 +709,7 @@ extension XCTestCase {
   fileprivate typealias FixtureData = ConnectorHTTPFixtures
 
   fileprivate func connectedValue(_ store: ComposerConnectorStore) async throws
-    -> ComposerConnectorResources.Connected
+    -> [ChatComposerConnector]
   {
     let resources = try XCTUnwrap(store.resources)
     return try await resources.store.get(resources.connected).value
@@ -740,14 +735,17 @@ extension XCTestCase {
 private func composerResponse(_ request: URLRequest) throws -> ChatHTTPResponse {
   typealias FixtureData = ConnectorHTTPFixtures
   switch request.url!.path {
-  case "/api/feature-switches":
-    return ChatHTTPResponse(body: "{\"effectiveSwitches\":{\"connectorChatAccountAccess\":false}}")
   case "/api/agents/\(FixtureData.agentID)":
     return ChatHTTPResponse(body: "{\"agentId\":\"\(FixtureData.agentID)\"}")
   case "/api/connectors/connected":
     return ChatHTTPResponse(body: "{\"builtinConnectors\":[],\"customConnectors\":[]}")
-  case "/api/agents/\(FixtureData.agentID)/connector-access":
-    return ChatHTTPResponse(body: "{\"enabledConnectorSlugs\":[],\"customConnectorIds\":[]}")
+  case "/api/connector-account-access/defaults":
+    return ChatHTTPResponse(
+      body: """
+        [{"connectionId":"\(FixtureData.accountID)","displayName":"Work account","defaultEnabled":true,"isDefault":true}]
+        """)
+  case "/api/connector-accounts/\(FixtureData.accountID)":
+    return ChatHTTPResponse(body: FixtureData.account())
   case "/api/remotes/overview":
     return ChatHTTPResponse(
       body: """

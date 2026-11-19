@@ -48,10 +48,7 @@ function createPermissionSignals(
       chatThreadSortEventId: crypto.randomUUID(),
     },
     agent$: agentById(descriptor.agentId),
-    grants$: permissionGrantsForConnectors({
-      agentId: descriptor.agentId,
-      connectorSlugs: [descriptor.connectorSlug],
-    }),
+    grants$: permissionGrantsForConnectors([descriptor.connectorSlug]),
     metadata$: firewallPermissionMetadataByConnector({
       connectorSlug: descriptor.connectorSlug,
     }),

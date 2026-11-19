@@ -58,8 +58,9 @@ final class ChatPermissionTests: XCTestCase {
       let request = try XCTUnwrap(
         fixture.state.withLock { $0.requests.first { $0.httpMethod == "PUT" } })
       let body = try body(request)
-      XCTAssertEqual(body["agentId"] as? String, PermissionHTTPFixture.agentID)
-      XCTAssertEqual(body["connectorSlug"] as? String, "gmail")
+      XCTAssertEqual(request.url?.path, "/api/connector-permissions")
+      XCTAssertEqual(
+        body["target"] as? [String: String], ["kind": "builtin", "connectorSlug": "gmail"])
       XCTAssertEqual(body["mode"] as? String, "patch")
       let grant = try XCTUnwrap((body["grants"] as? [[String: String]])?.first)
       XCTAssertEqual(

@@ -492,8 +492,7 @@ final class PermissionActionTests: XCTestCase {
   ) {
     let requests = fixture.state.withLock { $0.requests }
     for path in [
-      "/api/feature-switches",
-      "/api/agents/\(PermissionHTTPFixture.agentID)", "/api/user-permission-grants",
+      "/api/agents/\(PermissionHTTPFixture.agentID)", "/api/connector-permissions",
       "/api/connector-catalog/gmail/permissions"
     ] {
       XCTAssertEqual(

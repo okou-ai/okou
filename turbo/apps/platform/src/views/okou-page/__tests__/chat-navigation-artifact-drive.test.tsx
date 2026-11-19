@@ -414,7 +414,6 @@ function installDriveMocks(
       uploadError = undefined;
       completedAttempts.set(oauthAttemptId, oauthConnectionId);
       connectionState = "connected";
-      agentAuthorized = true;
       targetContext.mocks.ably.trigger("connector:changed", {
         connectorSlug: "google-drive",
       });
@@ -759,8 +758,6 @@ test("Recheck Drive authorization after leaving and reopening the chat page", as
     expect(drive.oauthRequests).toContainEqual({
       account: { intent: "add" },
       authMethod: "oauth",
-      agentId: NAVIGATION_ARTIFACT_AGENT_ID,
-      authorizeAgent: true,
       callbackTarget: "app",
     });
   });
@@ -809,8 +806,6 @@ test("Connect Google Drive and sync an artifact", async () => {
       {
         account: { intent: "add" },
         authMethod: "oauth",
-        agentId: NAVIGATION_ARTIFACT_AGENT_ID,
-        authorizeAgent: true,
         callbackTarget: "app",
       },
     ]);
@@ -819,6 +814,9 @@ test("Connect Google Drive and sync an artifact", async () => {
 
   drive.completeAuthorization();
   await waitFor(() => {
+    expect(drive.authorizationUpdates).toStrictEqual([
+      { enabledConnectorSlugs: ["google-drive"], operation: "add" },
+    ]);
     expect(drive.syncRequests).toStrictEqual([
       {
         artifactId: DRIVE_ARTIFACT_ID,
@@ -883,8 +881,6 @@ test("Recover missing Drive scope for a native upload only after explicit exact-
           connectionId: SELECTED_DRIVE_CONNECTION_ID,
         },
         authMethod: "oauth",
-        agentId: NAVIGATION_ARTIFACT_AGENT_ID,
-        authorizeAgent: true,
         callbackTarget: "app",
       },
     ]);
@@ -1301,8 +1297,6 @@ describe("google editor conversion", () => {
           connectionId: SELECTED_DRIVE_CONNECTION_ID,
         },
         authMethod: "oauth",
-        agentId: NAVIGATION_ARTIFACT_AGENT_ID,
-        authorizeAgent: true,
         callbackTarget: "app",
       },
     ];
