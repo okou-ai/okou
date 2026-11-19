@@ -154,7 +154,7 @@ test("A signed-in visitor denied with status 404 sees the access page without th
   expect(control("link", "Back to Okou")).toHaveAttribute("href", "/");
   await expect(
     screen.findByText("Signed in as alex@example.test"),
-  ).resolves.toBeInTheDocument();
+  ).resolves.toBeVisible();
   await waitFor(() => {
     expect(document.documentElement).toHaveAttribute(
       "data-color-theme",

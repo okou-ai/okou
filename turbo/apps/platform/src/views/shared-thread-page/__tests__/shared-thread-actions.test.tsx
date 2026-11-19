@@ -231,7 +231,7 @@ test("The creator can copy the link and change workspace visibility to anyone wi
   click(getRadioByName("Anyone with the link"));
   update.resolve();
   await refreshRequested.promise;
-  expect(getRadioByName("Anyone at Original workspace")).toBeInTheDocument();
+  expect(getRadioByName("Anyone at Original workspace")).toBeVisible();
   expect(choices).toHaveAttribute("aria-busy", "true");
   expect(
     screen.queryByRole("status", { name: "Loading permissions" }),
