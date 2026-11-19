@@ -744,6 +744,7 @@ test("Enable a single no-auth connector without an unnecessary dialog", async ()
 
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   await waitFor(() => {
+    expect(connected).toBeTruthy();
     expect(sentPrompts(sends)).toStrictEqual(["Resume with public data"]);
   });
 });
