@@ -24,7 +24,9 @@ use crate::exec_operation::{
     ExecOperationRegistry, ExecOperationWorkerRequest, cancel_exec_operation, send_error_response,
     start_exec_operation,
 };
-use crate::file_write_worker::{FileWriteKind, FileWriteSubmitError, FileWriteWorker};
+use crate::file_write_worker::{
+    FileWriteKind, FileWritePayload, FileWriteSubmitError, FileWriteWorker,
+};
 use crate::guest_dns_readiness::{GuestDnsReadinessSubmitError, GuestDnsReadinessWorker};
 use crate::guest_state_restore::{
     GuestStateRestoreSubmission, GuestStateRestoreSubmitError, GuestStateRestoreWorker,
@@ -38,6 +40,7 @@ use crate::log::log;
 use crate::memory_snapshot::MeminfoSource;
 use crate::process_containment::{ProcessContainmentMode, verify_exec_process_containment_empty};
 use crate::quiesce::{AcquireOperationError, OperationGuard, OperationState, QuiesceResult};
+use crate::worker_ownership::SingleActivePermit;
 use crate::writer::GuestWriter;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -423,32 +426,81 @@ impl ConnectionDispatcher {
         msg: BorrowedRawMessage<'_>,
         kind: FileWriteKind,
     ) -> io::Result<()> {
-        if !require_non_zero_sequence(msg.seq, kind.operation_label(), &self.writer)? {
-            return Ok(());
-        }
-        if reject_operation_if_quiescing(&self.operation_state, msg.seq, &self.writer)? {
-            return Ok(());
-        }
-        if let Err(error) = kind.validate_payload(msg.payload) {
-            send_error_response(msg.seq, &error.to_string(), &self.writer)?;
-            return Ok(());
-        }
-        let Some(admission) = self.file_write_worker.try_admit() else {
-            send_error_response(msg.seq, "guest file write already active", &self.writer)?;
-            return Ok(());
-        };
-        let Some(operation_guard) =
-            acquire_operation_guard(&self.operation_state, msg.seq, &self.writer)?
+        let Some((operation_guard, admission, ())) =
+            self.admit_file_write(msg.seq, kind, || {
+                kind.validate_payload(msg.payload).map_err(to_io_error)
+            })?
         else {
             return Ok(());
         };
+        self.submit_file_write(
+            msg.seq,
+            FileWritePayload::Buffered {
+                kind,
+                bytes: msg.payload.to_vec(),
+            },
+            operation_guard,
+            admission,
+        )
+    }
+
+    #[cfg(target_os = "linux")]
+    pub(super) fn dispatch_sealed_write(&self, seq: u32, input: std::fs::File) -> io::Result<()> {
+        let Some((operation_guard, admission, stats)) =
+            self.admit_file_write(seq, FileWriteKind::Files, || {
+                crate::handlers::seal_and_validate_batch_input(&input)
+            })?
+        else {
+            return Ok(());
+        };
+        self.submit_file_write(
+            seq,
+            FileWritePayload::Sealed { input, stats },
+            operation_guard,
+            admission,
+        )
+    }
+
+    fn admit_file_write<T>(
+        &self,
+        seq: u32,
+        kind: FileWriteKind,
+        validate: impl FnOnce() -> io::Result<T>,
+    ) -> io::Result<Option<(OperationGuard, SingleActivePermit, T)>> {
+        if !require_non_zero_sequence(seq, kind.operation_label(), &self.writer)?
+            || reject_operation_if_quiescing(&self.operation_state, seq, &self.writer)?
+        {
+            return Ok(None);
+        }
+        let validated = match validate() {
+            Ok(value) => value,
+            Err(error) => {
+                send_error_response(seq, &error.to_string(), &self.writer)?;
+                return Ok(None);
+            }
+        };
+        let Some(admission) = self.file_write_worker.try_admit() else {
+            send_error_response(seq, "guest file write already active", &self.writer)?;
+            return Ok(None);
+        };
+        let operation_guard = acquire_operation_guard(&self.operation_state, seq, &self.writer)?;
+        Ok(operation_guard.map(|guard| (guard, admission, validated)))
+    }
+
+    fn submit_file_write(
+        &self,
+        seq: u32,
+        payload: FileWritePayload,
+        operation_guard: OperationGuard,
+        admission: SingleActivePermit,
+    ) -> io::Result<()> {
         match self
             .file_write_worker
-            .submit(kind, msg.seq, msg.payload, operation_guard, admission)
+            .submit(seq, payload, operation_guard, admission)
         {
             Ok(()) => Ok(()),
             Err(FileWriteSubmitError::Busy) => {
-                send_error_response(msg.seq, "guest file write already active", &self.writer)
+                send_error_response(seq, "guest file write already active", &self.writer)
             }
             Err(FileWriteSubmitError::Disconnected) => Err(io::Error::new(
                 io::ErrorKind::BrokenPipe,
