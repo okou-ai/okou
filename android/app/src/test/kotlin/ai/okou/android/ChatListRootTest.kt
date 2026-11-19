@@ -35,6 +35,7 @@ import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextInputSelection
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipe
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
@@ -61,6 +62,7 @@ import org.junit.runners.model.MultipleFailureException
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 
 class ChatListApplication : TestOkouApplication() {
     lateinit var fixture: ChatListApiFixture
@@ -895,6 +897,7 @@ class ChatListRootTest {
 
     @Test
     @Config(qualifiers = "en-rUS-w1000dp-h800dp")
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun archiveAndRestoreFollowConfirmedPlacementAndKeepTheOpenConversation() {
         val app = compose.activity.application as ChatListApplication
         val fixture = app.fixture
@@ -948,6 +951,14 @@ class ChatListRootTest {
             compose.waitUntil(10_000) { compose.onAllNodes(target).fetchSemanticsNodes().isEmpty() }
             compose.onNodeWithContentDescription("Filter").performClick()
             compose.onNodeWithText("Archived").performClick()
+            val filterLabel = "Filter · Archived"
+            val filterLayouts = mutableListOf<TextLayoutResult>()
+            val subtitle = compose.onNodeWithText(filterLabel, useUnmergedTree = true)
+            subtitle.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { read ->
+                read(filterLayouts)
+            }
+            val filterLayout = filterLayouts.single()
+            assertEquals(filterLabel.length, filterLayout.getLineEnd(0, visibleEnd = true))
             compose.onNodeWithTag("chat_list").performScrollToNode(target)
             compose.onNodeWithTag(rowTag).performSemanticsAction(SemanticsActions.OnLongClick)
             compose.onNodeWithText("Unarchive chat").performClick()

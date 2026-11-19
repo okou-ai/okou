@@ -339,20 +339,23 @@ private fun WorkspaceTitle(
             modifier = Modifier.size(logoSize).clip(RoundedCornerShape(8.dp)),
         )
         Column(Modifier.padding(start = spacing).weight(1f, fill = false)) {
-            Text(
-                workspace.name,
-                style = workspaceListTitleStyle(window.screenWidthDp, pane),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    workspace.name,
+                    Modifier.weight(1f, fill = false),
+                    style = workspaceListTitleStyle(window.screenWidthDp, pane),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (canSwitch) {
+                    Icon(
+                        painterResource(R.drawable.ic_expand_more),
+                        stringResource(R.string.auth_switch_workspace),
+                        Modifier.padding(start = spacing).size(14.dp),
+                    )
+                }
+            }
             WorkspaceFilterSubtitle(filter)
-        }
-        if (canSwitch) {
-            Icon(
-                painterResource(R.drawable.ic_expand_more),
-                stringResource(R.string.auth_switch_workspace),
-                Modifier.padding(start = spacing).size(14.dp),
-            )
         }
     }
     if (canSwitch) {
@@ -362,7 +365,13 @@ private fun WorkspaceTitle(
             shape = RoundedCornerShape(12.dp),
             colors =
                 ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
-            contentPadding = PaddingValues(spacing),
+            contentPadding =
+                PaddingValues(
+                    start = spacing,
+                    top = spacing,
+                    end = if (pane == 320 || window.screenWidthDp < 360) 0.dp else spacing,
+                    bottom = spacing,
+                ),
             content = identity,
         )
         if (choosing) WorkspaceChooser(state, chooseWorkspace) { choosing = false }
