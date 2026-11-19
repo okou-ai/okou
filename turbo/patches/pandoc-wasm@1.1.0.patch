@@ -1,0 +1,40 @@
+diff --git a/src/index.browser.js b/src/index.browser.js
+index c1bf9b4..b109dbf 100644
+--- a/src/index.browser.js
++++ b/src/index.browser.js
+@@ -1,21 +1,15 @@
+-/* pandoc-wasm: Browser entry point
+-
+-   This file is used when bundling for browsers.
+-   It loads the WASM binary via fetch/import.
+-*/
+-
++/* Use Vite's explicit asset URL, and defer loading until DOCX is requested. */
+ import {createPandocInstance} from "./core.js"
+-
+-// Load WASM file for browser
+-const pandocWasmModule = await import("./pandoc.wasm")
+-const pandocWasmLocation = pandocWasmModule.default
+-const pandocWasmFetch = await fetch(pandocWasmLocation)
+-const pandocWasm = await pandocWasmFetch.arrayBuffer()
+-
+-// Create pandoc instance
+-const pandocInstance = await createPandocInstance(pandocWasm)
+-
+-// Export the API
+-export const convert = pandocInstance.convert
+-export const query = pandocInstance.query
+-export const pandoc = pandocInstance.pandoc
++import wasmUrl from "./pandoc.wasm?url"
++
++let instance
++export async function convert(options, stdin, files) {
++    instance ??= fetch(wasmUrl, {credentials: "omit"}).then(async response => {
++        if (!response.ok) {
++            throw new Error("Pandoc WASM could not be loaded")
++        }
++        return createPandocInstance(await response.arrayBuffer())
++    })
++    const pandoc = await instance
++    return pandoc.convert(options, stdin, files)
++}

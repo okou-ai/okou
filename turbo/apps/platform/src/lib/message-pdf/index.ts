@@ -1,11 +1,11 @@
 import type { Root, RootContent } from "hast";
 
-import { createDeferredPromise } from "../../signals/utils.ts";
 import { platformMessagePdfFontUrls } from "../static-assets.ts";
 import { preparePdfAssets } from "./assets.ts";
 import { parseMessagePdfTree } from "./document.ts";
-import type { PdfWorkerRequest, PdfWorkerResponse } from "./types.ts";
+import type { PdfWorkerRequest } from "./types.ts";
 import { readPdfResource } from "./urls.ts";
+import { runDocumentExportWorker } from "./worker-client.ts";
 
 async function loadFont(
   url: string,
@@ -74,42 +74,6 @@ export async function generateMessagePdfBlob(
         ? loadFont(platformMessagePdfFontUrls.emoji, signal)
         : undefined,
     ]);
-  signal.throwIfAborted();
-  const worker = new Worker(
-    new URL("./message-pdf-worker.ts", import.meta.url),
-    {
-      type: "module",
-    },
-  );
-  const result = createDeferredPromise<Blob>(signal);
-  worker.addEventListener(
-    "message",
-    (event: MessageEvent<PdfWorkerResponse>) => {
-      if (result.settled()) {
-        return;
-      }
-      if (event.data.ok) {
-        result.resolve(event.data.blob);
-      } else {
-        result.reject(new Error("PDF export worker could not complete"));
-      }
-    },
-    { signal },
-  );
-  const onError = () => {
-    if (!result.settled()) {
-      result.reject(new Error("PDF export worker could not complete"));
-    }
-  };
-  worker.addEventListener("error", onError, { signal });
-  worker.addEventListener("messageerror", onError, { signal });
-  signal.addEventListener(
-    "abort",
-    () => {
-      worker.terminate();
-    },
-    { once: true },
-  );
   const request: PdfWorkerRequest = {
     baseUrl,
     tree,
@@ -129,6 +93,5 @@ export async function generateMessagePdfBlob(
   ].filter((font): font is ArrayBuffer => {
     return font !== undefined;
   });
-  worker.postMessage(request, fonts);
-  return result.promise;
+  return runDocumentExportWorker(request, signal, fonts);
 }

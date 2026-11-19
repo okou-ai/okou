@@ -5,7 +5,6 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
-  docx@9.15.4>@types/node: 24.13.4
   speech-rule-engine>@xmldom/xmldom: ^0.9.12
   '@esbuild-kit/core-utils>esbuild': ^0.25.4
   esbuild@>=0.27.3 <0.28.1: '>=0.28.1'
@@ -43,6 +42,9 @@ patchedDependencies:
   '@testing-library/jest-dom@6.9.1':
     hash: 82080105f6adaf176f58b0ec2d5017702df2a069e46194cd9e1b0054f392a8bf
     path: patches/@testing-library__jest-dom@6.9.1.patch
+  pandoc-wasm@1.1.0:
+    hash: 60e9e055d38219a43204082335d55728209838e1a58115de0e9373f3f82f68fa
+    path: patches/pandoc-wasm@1.1.0.patch
   react-zoom-pan-pinch@4.0.3:
     hash: 4966c0444b8c652ac4488870f1b1a9387d3261d084f7d9c37247158314bff8ac
     path: patches/react-zoom-pan-pinch@4.0.3.patch
@@ -846,9 +848,6 @@ importers:
       ccstate-react:
         specifier: ^6.1.0
         version: 6.1.0(@types/react@19.2.14)(react@19.2.6)
-      docx:
-        specifier: ^9.15.4
-        version: 9.15.4
       fflate:
         specifier: ^0.8.3
         version: 0.8.3
@@ -882,6 +881,9 @@ importers:
       onnxruntime-web:
         specifier: 1.30.0
         version: 1.30.0
+      pandoc-wasm:
+        specifier: 1.1.0
+        version: 1.1.0(patch_hash=60e9e055d38219a43204082335d55728209838e1a58115de0e9373f3f82f68fa)
       path-to-regexp:
         specifier: ^8.4.0
         version: 8.4.0
@@ -1837,6 +1839,9 @@ packages:
   '@bcoe/v8-coverage@1.0.2':
     resolution: {integrity: sha512-6zABk/ECA/QYSCQ1NGiVwwbQerUCZ+TQbp64Q3AgmfNvurHH0j8TtXa1qbShXA6qqkpAj4V5W8pP6mLe1mcMqA==}
     engines: {node: '>=18'}
+
+  '@bjorn3/browser_wasi_shim@0.4.2':
+    resolution: {integrity: sha512-/iHkCVUG3VbcbmEHn5iIUpIrh7a7WPiwZ3sHy4HZKZzBdSadwdddYDZAII2zBvQYV0Lfi8naZngPCN7WPHI/hA==}
 
   '@borewit/text-codec@0.2.2':
     resolution: {integrity: sha512-DDaRehssg1aNrH4+2hnj1B7vnUGEjU6OIlyRdkMd0aUdIUvKXrJfXsy8LVtXAy7DRvYVluWbMspsRhz2lcW0mQ==}
@@ -6406,10 +6411,6 @@ packages:
     resolution: {integrity: sha512-35mSku4ZXK0vfCuHEDAwt55dg2jNajHZ1odvF+8SSr82EsZY4QmXfuWso8oEd8zRhVObSN18aM0CjSdoBX7zIw==}
     engines: {node: '>=0.10.0'}
 
-  docx@9.15.4:
-    resolution: {integrity: sha512-5UUTdR+eE7KVeNroYYt6K0Ixi9yez18BBKnypz3XyQSR8FsVYTiZ4vqKZr83JHjYPAgO+Tw7T/+13KyITpkgFw==}
-    engines: {node: '>=16'}
-
   dom-accessibility-api@0.5.16:
     resolution: {integrity: sha512-X7BJ2yElsnOJ30pZF4uIIDfBEVgF4XEBxL9Bxhy6dnrm5hkzqmsWHGTiHqRiITNhMyFLyAiWndIJP7Z1NTteDg==}
 
@@ -8127,11 +8128,6 @@ packages:
     engines: {node: ^10 || ^12 || ^13.7 || ^14 || >=15.0.1}
     hasBin: true
 
-  nanoid@6.0.2:
-    resolution: {integrity: sha512-hIvVOb9Qr1p/9CNNLOe0OlWvgx/ziTsVwKN/GDSsuArN2K0wDiafP3s0SWmsm7o2BdnyS8Z9Z64NFBUbn6ziBg==}
-    engines: {node: ^22 || ^24 || >=26}
-    hasBin: true
-
   natural-compare@1.4.0:
     resolution: {integrity: sha512-OWND8ei3VtNC9h7V60qff3SVobHr996CTwgxubgyQYEpg290h9J0buyECNNJexkFm5sOajh5G116RYA1c8ZMSw==}
 
@@ -8343,6 +8339,9 @@ packages:
 
   pako@0.2.9:
     resolution: {integrity: sha512-NUcwaKxUxWrZLpDG+z/xZaCgQITkA/Dv4V/T6bw7VON6l1Xz/VnrBqrYjZQ12TamKHzITTfOEIYUj48y2KXImA==}
+
+  pandoc-wasm@1.1.0:
+    resolution: {integrity: sha512-IoWBsC/cbSZe71rcRtxXUxG+Auf8aGDHKYOQZA6OdwmUL2xdpQaqrSGhPa+6zfLdSar7cnyAmTWt6KU9n5kBjQ==}
 
   parent-module@1.0.1:
     resolution: {integrity: sha512-GQ2EWRpQV8/o+Aw8YqtfZZPfNRWZYkbidE9k5rpl/hC3vtHHBfGm2Ifi6qWV+coDGkrUKZAxE3Lot5kcsRlh+g==}
@@ -10305,6 +10304,8 @@ snapshots:
       '@types/react': 19.2.14
 
   '@bcoe/v8-coverage@1.0.2': {}
+
+  '@bjorn3/browser_wasi_shim@0.4.2': {}
 
   '@borewit/text-codec@0.2.2': {}
 
@@ -13728,7 +13729,7 @@ snapshots:
       obug: 3.0.0
       std-env: 4.3.0
       tinyrainbow: 3.2.0
-      vitest: 5.1.0(@opentelemetry/api@1.9.1)(@types/node@24.13.4)(@vitest/coverage-v8@5.1.0)(@vitest/ui@5.1.0)(happy-dom@21.0.4(bufferutil@4.1.0)(utf-8-validate@6.0.6))(msw@2.13.2(@types/node@24.13.4)(@typescript/typescript6@6.0.2))(vite@8.3.4(@types/node@24.13.4)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
+      vitest: 5.1.0(@opentelemetry/api@1.9.1)(@types/node@24.3.0)(@vitest/coverage-v8@5.1.0)(@vitest/ui@5.1.0)(happy-dom@21.0.4(bufferutil@4.1.0)(utf-8-validate@6.0.6))(msw@2.13.2(@types/node@24.3.0)(@typescript/typescript6@6.0.2))(vite@8.3.4(@types/node@24.3.0)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
 
   '@vitest/istanbul-lib-coverage@2.1.0': {}
 
@@ -13770,7 +13771,7 @@ snapshots:
       pathe: 2.0.3
       sirv: 3.0.2
       tinyrainbow: 3.2.0
-      vitest: 5.1.0(@opentelemetry/api@1.9.1)(@types/node@24.13.4)(@vitest/coverage-v8@5.1.0)(@vitest/ui@5.1.0)(happy-dom@21.0.4(bufferutil@4.1.0)(utf-8-validate@6.0.6))(msw@2.13.2(@types/node@24.13.4)(@typescript/typescript6@6.0.2))(vite@8.3.4(@types/node@24.13.4)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
+      vitest: 5.1.0(@opentelemetry/api@1.9.1)(@types/node@24.3.0)(@vitest/coverage-v8@5.1.0)(@vitest/ui@5.1.0)(happy-dom@21.0.4(bufferutil@4.1.0)(utf-8-validate@6.0.6))(msw@2.13.2(@types/node@24.3.0)(@typescript/typescript6@6.0.2))(vite@8.3.4(@types/node@24.3.0)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
 
   '@vitest/utils@5.1.0':
     dependencies:
@@ -14515,12 +14516,6 @@ snapshots:
   doctrine@2.1.0:
     dependencies:
       esutils: 2.0.3
-
-  docx@9.15.4:
-    dependencies:
-      '@types/node': 24.13.4
-      fflate: 0.8.3
-      nanoid: 6.0.2
 
   dom-accessibility-api@0.5.16: {}
 
@@ -16582,8 +16577,6 @@ snapshots:
 
   nanoid@3.3.20: {}
 
-  nanoid@6.0.2: {}
-
   natural-compare@1.4.0: {}
 
   node-domexception@1.0.0: {}
@@ -16839,6 +16832,10 @@ snapshots:
   package-manager-detector@1.8.0: {}
 
   pako@0.2.9: {}
+
+  pandoc-wasm@1.1.0(patch_hash=60e9e055d38219a43204082335d55728209838e1a58115de0e9373f3f82f68fa):
+    dependencies:
+      '@bjorn3/browser_wasi_shim': 0.4.2
 
   parent-module@1.0.1:
     dependencies:

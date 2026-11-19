@@ -40,9 +40,6 @@ auditConfig:
     - GHSA-ch52-4w7c-c8xp
 
 overrides:
-  # Keep docx declarations on the workspace Node type line. A second Node type
-  # peer splits Vitest from the instance augmented by jest-dom.
-  "docx@9.15.4>@types/node": 24.13.4
   # speech-rule-engine 4.1.4 pins xmldom 0.9.10, which has XML injection and
   # parser DoS advisories. Remove when upstream requires xmldom >=0.9.12.
   "speech-rule-engine>@xmldom/xmldom": ^0.9.12
@@ -89,6 +86,7 @@ overrides:
   "@solana/web3.js@1.98.4>jayson": 4.1.3
 
 patchedDependencies:
+  "pandoc-wasm@1.1.0": patches/pandoc-wasm@1.1.0.patch
   # Remove when Base UI fixes empty trigger refs and preserves the focused
   # composite item index after DOM reordering. Regression: connector account defaults.
   "@base-ui/react@1.7.0": patches/@base-ui__react@1.7.0.patch

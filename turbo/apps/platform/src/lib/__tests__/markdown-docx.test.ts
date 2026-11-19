@@ -2,19 +2,25 @@ import { unzipSync } from "fflate";
 import { describe, expect, it } from "vitest";
 
 import { generateMarkdownDocxBlob } from "../markdown-docx.ts";
+import { renderMarkdownDocx } from "../markdown-docx/render.ts";
 import type { PdfAssets } from "../message-pdf/types.ts";
 
 function emptyAssets(): PdfAssets {
   return { images: new Map(), diagrams: new Map() };
 }
 
+function render(source: string): Promise<Blob> {
+  return renderMarkdownDocx({
+    source,
+    assets: emptyAssets(),
+    baseUrl: "https://example.test/source.md",
+  });
+}
+
 describe("markdown DOCX export", () => {
   it("creates a Word package with headings, emphasis, tables, and safe links", async () => {
-    const blob = await generateMarkdownDocxBlob(
+    const blob = await render(
       "# Quarterly report\n\n**Gross margin** improved.\n\n[Source](https://example.test/report)\n\n| Quarter | Revenue |\n| --- | ---: |\n| Q1 | $42m |\n",
-      emptyAssets(),
-      "https://example.test/source.md",
-      AbortSignal.any([]),
     );
     const files = unzipSync(new Uint8Array(await blob.arrayBuffer()));
     const documentXml = new TextDecoder().decode(files["word/document.xml"]);
@@ -39,8 +45,7 @@ describe("markdown DOCX export", () => {
       },
     );
     expect(new Set(colors)).toStrictEqual(new Set(["000000"]));
-    expect(documentXml).toContain('<w:rStyle w:val="Hyperlink"/>');
-    expect(documentXml).toContain('w:color="000000"');
+    expect(documentXml).toMatch(/<w:rStyle w:val="Hyperlink"\s*\/>/u);
   });
 
   it("fits wide CJK tables to a landscape page with content-sized columns", async () => {
@@ -81,22 +86,17 @@ describe("markdown DOCX export", () => {
         return `| ${cells.join(" | ")} |`;
       })
       .join("\n");
-    const blob = await generateMarkdownDocxBlob(
-      source,
-      emptyAssets(),
-      "https://example.test/source.md",
-      AbortSignal.any([]),
-    );
+    const blob = await render(source);
     const files = unzipSync(new Uint8Array(await blob.arrayBuffer()));
     const xml = new TextDecoder().decode(files["word/document.xml"]);
-    const widths = [...xml.matchAll(/<w:gridCol w:w="(\d+)"\/>/gu)].map(
+    const widths = [...xml.matchAll(/<w:gridCol w:w="(\d+)"\s*\/>/gu)].map(
       (match) => {
         return Number(match[1]);
       },
     );
 
     expect(xml).toContain('w:orient="landscape"');
-    expect(xml).toContain("<w:tblHeader/>");
+    expect(xml).toMatch(/<w:tblHeader(?:\s[^>]*)?\/>/u);
     expect(xml).toContain("<w:cantSplit/>");
     expect(widths).toHaveLength(headings.length);
     expect(widths[1]).toBeGreaterThan(widths[0]);
@@ -108,18 +108,15 @@ describe("markdown DOCX export", () => {
   });
 
   it("preserves independent list start values and Word line breaks", async () => {
-    const blob = await generateMarkdownDocxBlob(
+    const blob = await render(
       "1. Alpha\n2. Beta\n\nContinue\n\n3. Gamma\n4. Delta\n\nFirst  \nSecond\n\n```text\nLine 1\nLine 2\n```",
-      emptyAssets(),
-      "https://example.test/source.md",
-      AbortSignal.any([]),
     );
     const files = unzipSync(new Uint8Array(await blob.arrayBuffer()));
     const decoder = new TextDecoder();
     const documentXml = decoder.decode(files["word/document.xml"]);
     const numberingXml = decoder.decode(files["word/numbering.xml"]);
     const listIds = [
-      ...documentXml.matchAll(/<w:numId w:val="(\d+)"\/>/gu),
+      ...documentXml.matchAll(/<w:numId w:val="(\d+)"\s*\/>/gu),
     ].map((match) => {
       return match[1];
     });
@@ -128,8 +125,40 @@ describe("markdown DOCX export", () => {
     expect(listIds[0]).toBe(listIds[1]);
     expect(listIds[2]).toBe(listIds[3]);
     expect(listIds[0]).not.toBe(listIds[2]);
-    expect(numberingXml).toContain('<w:startOverride w:val="3"/>');
-    expect(documentXml.match(/<w:br\/>/gu)).toHaveLength(2);
+    expect(numberingXml).toMatch(/<w:(?:startOverride|start) w:val="3"\s*\/>/u);
+    expect(documentXml.match(/<w:br\s*\/>/gu)).toHaveLength(2);
+  });
+
+  it("exports native bookmarks, footnotes, equations, and task states", async () => {
+    const blob = await render(String.raw`# Methods
+
+[Back to methods](#methods)
+
+Sample note.[^note]
+
+Inline \(x = 2\).
+
+$$
+y = \frac{1}{2}
+$$
+
+- [x] Complete
+- [ ] Waiting
+
+[^note]: Method details remain readable.
+`);
+    const archive = unzipSync(new Uint8Array(await blob.arrayBuffer()));
+    const decoder = new TextDecoder();
+    const xml = decoder.decode(archive["word/document.xml"]);
+
+    expect(xml).toContain('w:anchor="methods"');
+    expect(xml).toContain('w:name="methods"');
+    expect(xml).toContain("<w:footnoteReference ");
+    expect(decoder.decode(archive["word/footnotes.xml"])).toContain("Method");
+    expect(xml.match(/<m:oMath>/gu)).toHaveLength(2);
+    const numbering = decoder.decode(archive["word/numbering.xml"]);
+    expect(numbering).toContain("☒");
+    expect(numbering).toContain("☐");
   });
 
   it("honors cancellation before creating the document", async () => {
