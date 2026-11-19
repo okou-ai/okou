@@ -129,13 +129,22 @@ function connectorEnvironmentFromSnapshot(
       return target.connectorSlug;
     }),
   );
+  const catalog =
+    input.connectorCatalogSelection.kind === "scoped"
+      ? input.connectorCatalogSelection.selection
+      : null;
   const snapshot = input.storedConnectorSnapshot;
   const builtin = storedConnectorEnvironmentFromSnapshot(
     snapshot
       ? {
           ...snapshot,
           bindingSets: snapshot.bindingSets.filter((bindingSet) => {
-            return admittedSlugs.has(bindingSet.connectorSlug);
+            // Valid identity/environment-only Connectors need no firewall target.
+            return (
+              admittedSlugs.has(bindingSet.connectorSlug) ||
+              (catalog !== null &&
+                !catalog.serverFirewalls.has(bindingSet.connectorSlug))
+            );
           }),
         }
       : null,
