@@ -128,6 +128,11 @@ test("a missing authoritative R2 manifest fails publication", async (t) => {
 test("a corrupted receipt prevents publication of the current manifest", async (t) => {
   const s3 = await fixture(t, { mode: "snapshot-corrupt" });
   await assert.rejects(s3.publish(), /R2 publication could not be verified/u);
+  assert.equal(
+    s3.objects.size,
+    2,
+    "the corrupted receipt must have been stored",
+  );
   assert.deepEqual(s3.objects.get(currentKey), previous);
   assert.ok(
     s3.requests.every(
@@ -157,7 +162,10 @@ test("a change after the source read preserves the concurrent publication and fa
     mode: "conflict",
     concurrent: otherPublication,
   });
-  await assert.rejects(s3.publish());
+  await assert.rejects(s3.publish(), {
+    stderr:
+      /R2 publication could not be verified: put_exit=\d+ code=PreconditionFailed/u,
+  });
   assert.deepEqual(s3.objects.get(currentKey), otherPublication);
 });
 
