@@ -150,6 +150,7 @@ for scenario in success pipe lost-ack late-writer corrupt permanent exhausted; d
 done
 
 large="$test_root/large-binary"
+ln -s "$large" "$test_root/linked-binary"
 for scenario in chunk-healthy chunk-reset; do
   case_dir="$test_root/$scenario"
   mkdir "$case_dir"
@@ -166,7 +167,7 @@ for scenario in chunk-healthy chunk-reset; do
   truncate -s "$size" "$large"
   started=$SECONDS
   if ! PATH="$test_root/bin:$PATH" CASE_DIR="$case_dir" SCENARIO="$scenario" \
-    bash "$helper" "$large" metal@host.vm3.ai "$destination" >"$case_dir/out" 2>&1; then
+    bash "$helper" "$test_root/linked-binary" metal@host.vm3.ai "$destination" >"$case_dir/out" 2>&1; then
     cat "$case_dir/out" >&2
     exit 1
   fi

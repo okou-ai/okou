@@ -22,7 +22,7 @@ if [ ! -f "$source_file" ] || [ ! -x "$source_file" ] ||
 fi
 expected_sha=$(sha256sum <"$source_file")
 expected_sha=${expected_sha%% *}
-source_size=$(stat -c %s -- "$source_file")
+source_size=$(stat -Lc %s -- "$source_file")
 
 # Every submission creates its own writer. A disconnected previous writer can
 # publish only the same verified bytes, never a partial later execution input.
