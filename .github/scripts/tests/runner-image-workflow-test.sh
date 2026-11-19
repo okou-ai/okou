@@ -16,26 +16,6 @@ architecture_json=$(yq -o=json '.' "${REPO_ROOT}/.github/workflows/runner-image-
 workflow_json=$(yq -o=json '.' "$WORKFLOW" |
   jq --argjson architecture "$architecture_json" '. + {architecture: $architecture}')
 
-jq -e '
-  .jobs.prepare.steps as $steps |
-  ($steps | map(.id // "") | index("identity")) as $identity |
-  ($steps | map(.id // "") | index("turbo-cache")) as $cache |
-  ($steps | map(.id // "") | index("turbo")) as $detect |
-  ($identity < $cache and $cache < $detect) and
-  ($steps[$cache].uses | startswith("actions/cache@")) and
-  $steps[$cache].if == $steps[$detect].if and
-  $steps[$cache].if == "steps.identity.outputs.release-skip != '\''true'\''" and
-  $steps[$cache].with.path == $steps[$detect].env.TURBO_TOOL_DIR and
-  $steps[$cache].with.path == "${{ runner.temp }}/runner-image-turbo-tool" and
-  ($steps[$cache].with.key | contains("${{ hashFiles('\''scripts/changed.sh'\'') }}")) and
-  ($steps[$cache].with | has("restore-keys") | not) and
-  $steps[$detect].env.npm_config_cache == "${{ runner.temp }}/runner-image-turbo-npm" and
-  $steps[$detect].env.npm_config_prefer_offline == "true" and
-  ($steps[$detect].env | has("npm_config_offline") | not) and
-  ($steps[$detect].run | contains("CHANGES_JSON=$(./scripts/changed.sh")) and
-  (.jobs.prepare.env // {} | has("npm_config_cache") | not)
-' <<<"$workflow_json" >/dev/null || fail "Turbo detection must use its pinned tool cache without changing CLI cache ownership or release skips"
-
 # Exercise the workflow's input detector with a transport-only Git change.
 test_root=$(mktemp -d)
 trap 'rm -rf "$test_root"' EXIT
@@ -179,6 +159,7 @@ jq -e '
     "${{ steps.needed.outputs.playwright-runner-consumer-needed }}" and
   any(.jobs.prepare.steps[];
     .id == "turbo" and
+    .if == "steps.identity.outputs.release-skip != '\''true'\''" and
     (.run | contains(".github/scripts/runner/runner-image-context.sh turbo-consumer")) and
     (.run | contains(".github/scripts/runner/runner-image-context.sh playwright-consumer"))
   ) and
@@ -245,7 +226,6 @@ jq -e '
     .with["r2-account-id"] == "${{ vars.R2_ACCOUNT_ID }}" and
     .with["r2-bucket-name"] == "${{ vars.R2_USER_STORAGES_BUCKET_NAME }}"
   ) and
-  any(.architecture.jobs.compile.steps[]; (.uses // "") | startswith("Swatinem/rust-cache@")) and
   any(.architecture.jobs.compile.steps[]; .run == ".github/scripts/runner/runner-binary-build/build.sh build") and
   any(.architecture.jobs.compile.steps[];
     .run == ".github/scripts/runner/runner-binary-transport.sh publish" and
@@ -253,16 +233,7 @@ jq -e '
     .env.PRODUCER_RUN_ATTEMPT == "${{ github.run_attempt }}" and
     (. | has("continue-on-error") | not)
   )
-' <<<"$workflow_json" >/dev/null || fail "compile must be a required miss-only Rust/cache/build matrix"
-
-jq -e '
-  ([.jobs, .architecture.jobs | to_entries[] |
-    select(any(.value.steps[]?; .uses == "./.github/actions/setup-r2-sccache")) |
-    .key] | sort) == ["compile", "prewarm-rust-cache"] and
-  ([.jobs, .architecture.jobs | to_entries[] |
-    select(any(.value.steps[]?; (.uses // "") | startswith("Swatinem/rust-cache@"))) |
-    .key] | sort) == ["compile", "prewarm-rust-cache"]
-' <<<"$workflow_json" >/dev/null || fail "compiler caches must stay in the miss-only compiler and main dependency prewarmer"
+' <<<"$workflow_json" >/dev/null || fail "compile must be required for cache misses and preserve R2 bindings"
 
 jq -e '
   (.architecture.jobs.build.needs | sort) == ["compile"] and

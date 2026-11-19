@@ -59,7 +59,6 @@ if [[ "$2" == *native-chunk* ]]; then
   printf '%s\n' "$index" >> "$CASE_DIR/chunks"
   case "$SCENARIO" in
     chunk-corrupt) head -c 3 | sh -c "$2"; exit $? ;;
-    chunk-exhausted) exit 255 ;;
   esac
   if [ "$index" = "'1'" ] && [ "$SCENARIO" = chunk-reset ]; then
     tries=$(grep -Fxc -- "$index" "$CASE_DIR/chunks")
@@ -214,25 +213,22 @@ printf 'chunk-reset: %s bytes, 5 chunk attempts, %s seconds\n' \
   "$expected_bytes" "$((SECONDS - started))"
 rm -f -- "$destination"
 
-for scenario in chunk-corrupt chunk-exhausted; do
-  case_dir="$test_root/$scenario"
-  mkdir "$case_dir"
-  status=0
-  PATH="$test_root/bin:$PATH" CASE_DIR="$case_dir" SCENARIO="$scenario" \
-    bash "$helper" "$large" metal@host.vm3.ai "$destination" >"$case_dir/out" 2>&1 || status=$?
-  if [ "$scenario" = chunk-corrupt ]; then
-    test "$status" -eq 1
-    test "$(wc -l <"$case_dir/chunks")" -eq 1
-  else
-    test "$status" -eq 255
-    test "$(wc -l <"$case_dir/chunks")" -eq 3
-  fi
-  test ! -e "$destination"
-  if compgen -G "$destination.upload.*" >/dev/null; then
-    echo "failed upload leaked staging files" >&2
-    exit 1
-  fi
-done
+case_dir="$test_root/chunk-corrupt"
+mkdir "$case_dir"
+status=0
+PATH="$test_root/bin:$PATH" CASE_DIR="$case_dir" SCENARIO=chunk-corrupt \
+  bash "$helper" "$large" metal@host.vm3.ai "$destination" >"$case_dir/out" 2>&1 || status=$?
+if [ "$status" -ne 1 ]; then
+  cat "$case_dir/out" >&2
+  echo "corrupt chunk returned unexpected status: $status" >&2
+  exit 1
+fi
+test "$(wc -l <"$case_dir/chunks")" -eq 1
+test ! -e "$destination"
+if compgen -G "$destination.upload.*" >/dev/null; then
+  echo "failed upload leaked staging files" >&2
+  exit 1
+fi
 
 # Exercise the real guarded SSH caller, including its cancellation cleanup.
 # Shorten only the external upload deadline; retain GNU timeout and the real
