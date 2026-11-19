@@ -35,6 +35,11 @@ import {
   waitForSend,
 } from "./chat-capability-test-helpers.ts";
 
+import {
+  getNamedButton,
+  getNamedLink,
+} from "./chat-attachment-test-helpers.ts";
+
 const context = testContext();
 const { installCapabilityChat } = createChatCapabilityHelpers(context);
 
@@ -767,12 +772,10 @@ test("Open a stopped browser without the refined panel", async () => {
   await expect(
     browser.findByText("Browser not live"),
   ).resolves.toBeInTheDocument();
-  expect(browser.getByRole("button", { name: "Start browser" })).toBeEnabled();
+  expect(getNamedButton("Start browser", panel)).toBeEnabled();
+  expect(getNamedButton("Close cloud browser", panel)).toBeEnabled();
   expect(
-    browser.getByRole("button", { name: "Close cloud browser" }),
-  ).toBeEnabled();
-  expect(
-    browser.getByRole("link", { name: "Open this browser in a new page" }),
+    getNamedLink("Open this browser in a new page", panel),
   ).toHaveAttribute("href", `/browsers/${RUN_THREAD_ID}`);
   expect(browser.getByLabelText("Remote browser input")).toBeDisabled();
 });
@@ -894,9 +897,10 @@ test("Follow suspension and resumption in the live browser panel", async () => {
     expect(thumbnailSource(card)).toContain("initial.png");
   });
   click(card);
-  const panel = within(
-    await screen.findByRole("complementary", { name: "Cloud browser" }),
-  );
+  const sidebar = await screen.findByRole("complementary", {
+    name: "Cloud browser",
+  });
+  const panel = within(sidebar);
   const expectLivePage = async () => {
     await waitFor(() => {
       expect(panel.getByLabelText("Remote browser input")).toBeEnabled();
@@ -916,7 +920,7 @@ test("Follow suspension and resumption in the live browser panel", async () => {
     panel.findByText("Browser not live"),
   ).resolves.toBeInTheDocument();
   expect(panel.getByLabelText("Remote browser input")).toBeDisabled();
-  expect(panel.getByRole("button", { name: "Start browser" })).toBeEnabled();
+  expect(getNamedButton("Start browser", sidebar)).toBeEnabled();
   await expect(screen.findByText("Stopped")).resolves.toBeInTheDocument();
 
   session = { ...initialSession, liveUrl: "https://example.com/resumed" };

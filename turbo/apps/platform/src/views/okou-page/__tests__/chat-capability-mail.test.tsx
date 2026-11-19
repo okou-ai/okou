@@ -5,7 +5,11 @@ import {
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
-import { click, setupPage } from "../../../__tests__/page-helper.ts";
+import {
+  click,
+  queryAllByRoleFast,
+  setupPage,
+} from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   completedConversation,
@@ -15,6 +19,11 @@ import {
   RUN_PATH,
 } from "./chat-capability-test-helpers.ts";
 
+import {
+  getNamedButton,
+  getNamedLink,
+} from "./chat-attachment-test-helpers.ts";
+
 const context = testContext();
 const { installCapabilityChat } = createChatCapabilityHelpers(context);
 
@@ -22,26 +31,30 @@ test("Send, revisit, and delete mail drafts from chat", async () => {
   const approvalId = "a0000000-0000-4000-a000-000000000617";
   const vendorId = "a0000000-0000-4000-a000-000000000618";
   const time = "2026-08-01T10:00:00.000Z";
-  const url = (id: string) => `https://app.okou.ai/mail/drafts/${id}`;
-  const draft = (subject: string, id: string): MailDraft => ({
-    provider: "gmail",
-    version: 3,
-    gmailDraftId: `draft-${id}`,
-    gmailThreadId: `thread-${id}`,
-    gmailMessageId: `message-${id}`,
-    status: "draft",
-    detailAvailable: true,
-    from: "sender@example.com",
-    to: ["reviewer@example.com"],
-    cc: [],
-    bcc: [],
-    references: [],
-    attachments: [],
-    subject,
-    body: `Please review ${subject.toLowerCase()}.`,
-    createdAt: time,
-    updatedAt: time,
-  });
+  const url = (id: string) => {
+    return `https://app.okou.ai/mail/drafts/${id}`;
+  };
+  const draft = (subject: string, id: string): MailDraft => {
+    return {
+      provider: "gmail",
+      version: 3,
+      gmailDraftId: `draft-${id}`,
+      gmailThreadId: `thread-${id}`,
+      gmailMessageId: `message-${id}`,
+      status: "draft",
+      detailAvailable: true,
+      from: "sender@example.com",
+      to: ["reviewer@example.com"],
+      cc: [],
+      bcc: [],
+      references: [],
+      attachments: [],
+      subject,
+      body: `Please review ${subject.toLowerCase()}.`,
+      createdAt: time,
+      updatedAt: time,
+    };
+  };
   const drafts = new Map([
     [approvalId, draft("Launch approval", "approval")],
     [vendorId, draft("Vendor follow-up", "vendor")],
@@ -90,8 +103,8 @@ test("Send, revisit, and delete mail drafts from chat", async () => {
   await readyChat();
   const open = async (button: string, body: string) => {
     click(await findButton(button));
-    const panel = within(await screen.findByTestId("mail-draft-sidebar"));
-    await expect(panel.findByText(body)).resolves.toBeInTheDocument();
+    const panel = await screen.findByTestId("mail-draft-sidebar");
+    await expect(within(panel).findByText(body)).resolves.toBeInTheDocument();
     return panel;
   };
 
@@ -99,9 +112,9 @@ test("Send, revisit, and delete mail drafts from chat", async () => {
     "Open draft email: Launch approval",
     "Please review launch approval.",
   );
-  click(approval.getByRole("button", { name: "Send" }));
+  click(getNamedButton("Send", approval));
   const sentCard = await findButton("Open sent email: Launch approval");
-  expect(approval.getByRole("link", { name: "Open in Gmail" })).toHaveAttribute(
+  expect(getNamedLink("Open in Gmail", approval)).toHaveAttribute(
     "href",
     "https://mail.google.com/mail/?authuser=sender%40example.com#all/thread-approval",
   );
@@ -114,9 +127,7 @@ test("Send, revisit, and delete mail drafts from chat", async () => {
     "Open sent email: Launch approval",
     "Please review launch approval.",
   );
-  expect(
-    revisited.getByRole("link", { name: "Open in Gmail" }),
-  ).toHaveAttribute(
+  expect(getNamedLink("Open in Gmail", revisited)).toHaveAttribute(
     "href",
     "https://mail.google.com/mail/?authuser=sender%40example.com#all/thread-approval",
   );
@@ -124,14 +135,16 @@ test("Send, revisit, and delete mail drafts from chat", async () => {
     "Open draft email: Vendor follow-up",
     "Please review vendor follow-up.",
   );
-  expect(vendor.getByRole("button", { name: "Send" })).toBeEnabled();
-  click(vendor.getByRole("button", { name: "Delete" }));
+  expect(getNamedButton("Send", vendor)).toBeEnabled();
+  click(getNamedButton("Delete", vendor));
 
   await waitFor(() => {
     expect(screen.queryByTestId("mail-draft-sidebar")).not.toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: /Vendor follow-up/u }),
-    ).not.toBeInTheDocument();
+      queryAllByRoleFast("button").find((button) => {
+        return button.getAttribute("aria-label")?.includes("Vendor follow-up");
+      }),
+    ).toBeUndefined();
   });
   expect(sentCard).toBeInTheDocument();
 });

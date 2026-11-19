@@ -547,21 +547,21 @@ settings-refresh-state-005	turbo/apps/platform/src/views/okou-page/__tests__/set
 settings-refresh-state-007	turbo/apps/platform/src/views/okou-page/__tests__/settings-refresh-state.test.tsx	saving time zone keeps enabled Morning brief unchanged	235	passed
 settings-refresh-state-008	turbo/apps/platform/src/views/okou-page/__tests__/settings-refresh-state.test.tsx	Updates Morning brief from the save response while leaving other preferences usable	268	passed
 settings-refresh-state-011	turbo/apps/platform/src/views/okou-page/__tests__/settings-refresh-state.test.tsx	a Morning brief refresh failure after returning to Preference reports the error and disables the switch	330	passed
-agent-suggestions-001	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx	A cached card still sends its action after server cleanup	432	passed
-agent-suggestions-008	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx	Choosing an action sends it to a new thread and keeps the homepage draft	457	passed
-agent-suggestions-009	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx	An existing-thread suggestion merges its content and attachments with the remote draft	702	passed
-agent-suggestions-011	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx	A choice is still sent when another session consumed the card	516	passed
-agent-suggestions-012	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx	A suggestion uses the ordinary composer to join a running target chat	761	passed
-agent-suggestions-013	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx	The loaded option keeps its draft and destination when the server responds with a later version	543	passed
-agent-suggestions-014	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx	A sent suggestion advances the stack and remains reachable in the chat list	586	passed
-agent-suggestions-015	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx	A choice that sends nothing returns its card to its place	617	passed
-agent-suggestions-018	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx	Suggestion options start in the default Agent after visiting a secondary Agent	647	passed
-agent-suggestions-019	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx	Custom direction opens a full composer for a new chat without touching the home draft	833	passed
-agent-suggestions-020	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx	Each card shows its own background in the direction editor	876	passed
-agent-suggestions-021	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx	A custom follow-up retains its editor on failure and reuses its identities until acceptance	913	passed
-agent-suggestions-022	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx	The custom direction editor sends the background files without the home draft	966	passed
-agent-suggestions-028	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx	Choosing an action confirms the send while its consumption is still saving	669	passed
-agent-suggestions-037	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx	For you expands the composer inside the active card and advances after sending	1008	passed
+agent-suggestions-001	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx	A cached card still sends its action after server cleanup	433	passed
+agent-suggestions-008	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx	Choosing an action sends it to a new thread and keeps the homepage draft	458	passed
+agent-suggestions-009	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx	An existing-thread suggestion merges its content and attachments with the remote draft	703	passed
+agent-suggestions-011	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx	A choice is still sent when another session consumed the card	517	passed
+agent-suggestions-012	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx	A suggestion uses the ordinary composer to join a running target chat	762	passed
+agent-suggestions-013	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx	The loaded option keeps its draft and destination when the server responds with a later version	544	passed
+agent-suggestions-014	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx	A sent suggestion advances the stack and remains reachable in the chat list	587	passed
+agent-suggestions-015	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx	A choice that sends nothing returns its card to its place	618	passed
+agent-suggestions-018	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx	Suggestion options start in the default Agent after visiting a secondary Agent	648	passed
+agent-suggestions-019	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx	Custom direction opens a full composer for a new chat without touching the home draft	834	passed
+agent-suggestions-020	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx	Each card shows its own background in the direction editor	877	passed
+agent-suggestions-021	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx	A custom follow-up retains its editor on failure and reuses its identities until acceptance	914	passed
+agent-suggestions-022	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx	The custom direction editor sends the background files without the home draft	967	passed
+agent-suggestions-028	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx	Choosing an action confirms the send while its consumption is still saving	670	passed
+agent-suggestions-037	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx	For you expands the composer inside the active card and advances after sending	1009	passed
 agent-suggestions-004	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions-deck.test.tsx	For you preloads details when its sidebar shows an unread dot	168	passed
 agent-suggestions-007	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions-deck.test.tsx	For you opens the new owner's cards after an active workspace change	203	passed
 agent-suggestions-023	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions-deck.test.tsx	Not planned advances to the next card and Undo restores the selected card	252	passed
@@ -766,14 +766,14 @@ browser-user-action-page-034	turbo/apps/platform/src/views/browser-user-action/_
 browser-user-action-page-036	turbo/apps/platform/src/views/browser-user-action/__tests__/browser-user-action-controls.test.tsx	A required multiple select cannot keep a disabled website choice and drops it on change	674	passed
 chat-capability-browser-actions-008	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-browser-actions.test.tsx	A Browser input card opens, reopens and completes (task context: true)	266	passed
 chat-capability-browser-actions-009	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-browser-actions.test.tsx	A Browser input card opens, reopens and completes (task context: false)	266	passed
-chat-capability-browser-actions-010	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-browser-actions.test.tsx	Closing an inline form clears password and code drafts while preserving ordinary text	381	passed
-chat-capability-browser-actions-011	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-browser-actions.test.tsx	Shared inline forms retain sensitive drafts until their final owner closes	421	passed
-chat-capability-browser-actions-012	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-browser-actions.test.tsx	An inline native datetime-local picker keeps a wall-clock string through callback	469	passed
-chat-capability-browser-actions-013	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-browser-actions.test.tsx	An inline Browser input dialog confirms a required native checkbox	500	passed
-chat-capability-browser-actions-016	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-browser-actions.test.tsx	An inline Browser file picker binds local bytes only after confirmation	536	passed
-chat-capability-browser-actions-022	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-browser-actions.test.tsx	Leaving an open dialog clears the Password draft	609	passed
-chat-capability-browser-actions-025	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-browser-actions.test.tsx	Absolute and relative Browser input URLs both render dialog cards	638	passed
-chat-capability-browser-actions-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-browser-actions.test.tsx	Render a live managed browser card	725	passed
+chat-capability-browser-actions-010	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-browser-actions.test.tsx	Closing an inline form clears password and code drafts while preserving ordinary text	386	passed
+chat-capability-browser-actions-011	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-browser-actions.test.tsx	Shared inline forms retain sensitive drafts until their final owner closes	426	passed
+chat-capability-browser-actions-012	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-browser-actions.test.tsx	An inline native datetime-local picker keeps a wall-clock string through callback	474	passed
+chat-capability-browser-actions-013	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-browser-actions.test.tsx	An inline Browser input dialog confirms a required native checkbox	505	passed
+chat-capability-browser-actions-016	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-browser-actions.test.tsx	An inline Browser file picker binds local bytes only after confirmation	541	passed
+chat-capability-browser-actions-022	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-browser-actions.test.tsx	Leaving an open dialog clears the Password draft	614	passed
+chat-capability-browser-actions-025	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-browser-actions.test.tsx	Absolute and relative Browser input URLs both render dialog cards	643	passed
+chat-capability-browser-actions-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-browser-actions.test.tsx	Render a live managed browser card	730	passed
 custom-connector-cloudflare-authoring-011	turbo/apps/platform/src/views/okou-page/__tests__/custom-connector-cloudflare-authoring.test.tsx	Resolve a http dependency through its settings link before a fresh network deletion	544	passed
 custom-connector-cloudflare-authoring-012	turbo/apps/platform/src/views/okou-page/__tests__/custom-connector-cloudflare-authoring.test.tsx	Resolve a mcp dependency through its settings link before a fresh network deletion	544	passed
 chat-capability-voice-forwarding-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-voice-forwarding.test.tsx	Keep forwarding suggestions isolated during preview navigation	109	passed
@@ -873,12 +873,15 @@ chat-thread-link-chips-001	turbo/apps/platform/src/views/okou-page/__tests__/cha
 chat-thread-timeline-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-thread-timeline.test.tsx	A conversation containing only today's messages does not need a Today divider	55	passed
 chat-thread-timeline-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-thread-timeline.test.tsx	Messages in the same user turn receive a date boundary at local midnight	73	passed
 chat-thread-timeline-006	turbo/apps/platform/src/views/okou-page/__tests__/chat-thread-timeline.test.tsx	An assistant reply can open a new date section	106	passed
-chat-capability-browser-actions-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-browser-actions.test.tsx	Open a stopped browser without the refined panel	742	passed
+chat-capability-browser-actions-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-browser-actions.test.tsx	Open a stopped browser without the refined panel	747	passed
 chat-capability-mail-feedback-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-mail-feedback.test.tsx	Keep inline feedback tied to the source email	23	passed
 chat-capability-voice-incremental-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-voice-incremental.test.tsx	Continue recording after an incremental transcription outage	34	passed
-chat-header-loading-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-header-loading.test.tsx	Open empty email and automation lists in a desktop chat	20	passed
-browser-session-page-002	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Window size settings retain each selected mode when reopened	73	passed
-chat-capability-browser-actions-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-browser-actions.test.tsx	Refresh the browser card after delayed attachment and a continuity gap	780	passed
-chat-capability-browser-actions-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-browser-actions.test.tsx	Follow suspension and resumption in the live browser panel	843	passed
-chat-capability-mail-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-mail.test.tsx	Send, revisit, and delete mail drafts from chat	21	passed
-browser-session-page-003	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	The Okou viewer shows its host blank page only while the blank tab is selected	103	passed
+chat-header-loading-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-header-loading.test.tsx	Open empty email and automation lists in a desktop chat	36	passed
+browser-session-page-002	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Window size settings retain each selected mode when reopened	96	passed
+chat-capability-browser-actions-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-browser-actions.test.tsx	Refresh the browser card after delayed attachment and a continuity gap	783	passed
+chat-capability-browser-actions-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-browser-actions.test.tsx	Follow suspension and resumption in the live browser panel	846	passed
+chat-capability-mail-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-mail.test.tsx	Send, revisit, and delete mail drafts from chat	30	passed
+browser-session-page-003	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	The Okou viewer shows its host blank page only while the blank tab is selected	122	passed
+chat-header-loading-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-header-loading.test.tsx	Keep header actions focusable and busy while the next chat loads	211	passed
+chat-header-loading-007	turbo/apps/platform/src/views/okou-page/__tests__/chat-header-loading.test.tsx	Open the destination's browser from the mobile menu after navigating	90	passed
+chat-header-loading-008	turbo/apps/platform/src/views/okou-page/__tests__/chat-header-loading.test.tsx	Let each pane open its own chat's mail	138	passed

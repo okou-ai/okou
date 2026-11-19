@@ -14,6 +14,11 @@ Main `4338aeea` retires the pre-draft API rollback scenario. See the
   draft. The send carries the draft ID and status, and the transcript displays
   the source label. One runtime row accounts for the sole frozen row.
 
+- Header loading 002, 005, 007 and 008 cover both empty states, focusable
+  busy actions while a destination metadata read is held, the destination
+  browser on mobile, and each split pane's own mail list. Four runtime rows
+  account for the four selected IDs out of eight frozen rows.
+
 ## Additional verified scenarios in files with open requirements
 
 - Browser actions 002 uses the message-port transport so the named Ably
@@ -35,7 +40,6 @@ Main `4338aeea` retires the pre-draft API rollback scenario. See the
 | Unified workspace 005–006     | Widths and fold state must survive reload. Replacing the page via `createTestRuntime` with real Router bootstrap hit `AbortError: signal is aborted without reason` in both cases. The child's disposal also calls `resetLocalStorageForTest$`, which removes registered keys. The browser-backed reload or a harness that preserves browser storage across app disposal is still needed. |
 | Voice recording 004–005       | Restored recordings with 128 and 129 completed segments must polish into 128 and 65 items without retranscribing. The workspace reload probe does not establish a supported browser-document replacement.                                                                                                                                                                                 |
 | Voice incremental 003         | A 502 configuration error shows feedback and preserves the removable draft. The Sentry SDK mock recorded no exception after the expected UI state, so the required report with status and code is still unverified.                                                                                                                                                                       |
-| Voice isolation 001–002       | Held VAD completion and failed-draft restoration must be checked across distinct identities. The same-page reload probe does not cover an identity replacement.                                                                                                                                                                                                                           |
+| Voice isolation 001–002       | Held VAD completion and failed-draft restoration must be checked across distinct identities. The 002 probe produced a failed, removable draft through the UI. Disposing its child runtime and bootstrapping a fresh identity rejected with the supplied AbortError before the replacement composer became ready. The VAD release scenario 001 remains open.                               |
 | Mail 002, 005                 | Trusted-link variants must preserve their labels and routing, and the complete mail detail must verify sanitization and both attachment previews.                                                                                                                                                                                                                                         |
-| Header loading 005, 007, 008  | Settling across navigation, destination browser targeting from the mobile menu, and pane-specific email lists are still open.                                                                                                                                                                                                                                                             |
 | Browser session page          | 002 verifies the three native window-size settings and 003 verifies switching between a blank tab and Example. The remaining selected browser page scenarios still need individual review and execution.                                                                                                                                                                                  |

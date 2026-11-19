@@ -10,7 +10,11 @@ import {
   mockBrowserCdp,
   TEST_BROWSER_EXTENSION,
 } from "../../../__tests__/browser-cdp-fixture.ts";
-import { click, setupPage } from "../../../__tests__/page-helper.ts";
+import {
+  click,
+  queryAllByRoleFast,
+  setupPage,
+} from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
@@ -70,6 +74,25 @@ async function openViewer(
   });
 }
 
+function viewerControl(role: "menuitemradio" | "tab", name: string) {
+  return queryAllByRoleFast(role).find((item) => {
+    return (
+      item.getAttribute("aria-label") === name ||
+      item.textContent?.trim() === name
+    );
+  });
+}
+
+async function findViewerControl(role: "menuitemradio" | "tab", name: string) {
+  return await waitFor(() => {
+    const control = viewerControl(role, name);
+    if (!control) {
+      throw new Error(`Expected ${role} named ${name}`);
+    }
+    return control;
+  });
+}
+
 test("Window size settings retain each selected mode when reopened", async () => {
   await openViewer();
   const settings = screen.getByLabelText("Browser settings");
@@ -79,24 +102,20 @@ test("Window size settings retain each selected mode when reopened", async () =>
   };
   await openWindowSize();
   expect(
-    await screen.findByRole("menuitemradio", { name: "Follow panel" }),
+    await findViewerControl("menuitemradio", "Follow panel"),
   ).toBeChecked();
 
   for (const label of ["On connection", "Follow panel", "Off"]) {
-    const option = await screen.findByRole("menuitemradio", { name: label });
+    const option = await findViewerControl("menuitemradio", label);
     await waitFor(() => {
       expect(option).not.toHaveAttribute("aria-disabled", "true");
     });
     click(option);
     await waitFor(() => {
-      expect(
-        screen.queryByRole("menuitemradio", { name: label }),
-      ).not.toBeInTheDocument();
+      expect(viewerControl("menuitemradio", label)).toBeUndefined();
     });
     await openWindowSize();
-    expect(
-      await screen.findByRole("menuitemradio", { name: label }),
-    ).toBeChecked();
+    expect(await findViewerControl("menuitemradio", label)).toBeChecked();
   }
 });
 
@@ -121,7 +140,7 @@ test("The Okou viewer shows its host blank page only while the blank tab is sele
   await expect(screen.findByText(emptyTitle)).resolves.toBeInTheDocument();
   expect(screen.getByText(guidance)).toBeInTheDocument();
 
-  click(await screen.findByRole("tab", { name: "Example" }));
+  click(await findViewerControl("tab", "Example"));
   const address = screen.getByLabelText("Address");
   await waitFor(() => {
     expect(address).toHaveValue("https://example.com");
@@ -130,7 +149,7 @@ test("The Okou viewer shows its host blank page only while the blank tab is sele
     expect(screen.queryByText(guidance)).not.toBeInTheDocument();
   });
 
-  click(await screen.findByRole("tab", { name: "New tab" }));
+  click(await findViewerControl("tab", "New tab"));
   await expect(screen.findByText(emptyTitle)).resolves.toBeInTheDocument();
   expect(screen.getByText(guidance)).toBeInTheDocument();
   expect(address).toBeEnabled();
