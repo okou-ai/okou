@@ -26,12 +26,9 @@ use super::{
 /// Maximum number of cache-fill groups that may be active across the runner.
 const BACKGROUND_FILL_ACTIVE_LIMIT: usize = CONCURRENCY;
 
-/// Maximum number of unique cache-fill groups waiting for a worker across the runner.
+/// Maximum number of groups waiting without expanded missing-archive admission.
 const BACKGROUND_FILL_QUEUE_CAPACITY: usize = 32;
 const BACKGROUND_FILL_EXPANDED_QUEUE_CAPACITY: usize = 64;
-/// Bound waiting archive maintenance independently of missing-archive bursts.
-const BACKGROUND_FILL_MAINTENANCE_QUEUE_LIMIT: usize =
-    BACKGROUND_FILL_QUEUE_CAPACITY - BACKGROUND_FILL_ACTIVE_LIMIT;
 /// Bound the number of missing archives dispatched while maintenance is waiting.
 const BACKGROUND_FILL_MISSING_BURST: usize = 3;
 /// Maximum number of completed telemetry tasks reaped between scheduler polls.
@@ -95,6 +92,8 @@ struct BackgroundFillEntry {
     action: BackgroundFillAction,
     subscribers: Vec<SandboxOpReporter>,
     state: BackgroundFillEntryState,
+    // Only a missing archive that could not enter under the base limits uses this slot.
+    uses_expanded_slot: bool,
 }
 
 struct BackgroundFillAdmissionState {
@@ -275,32 +274,36 @@ impl StorageCacheBackgroundFillCoordinator {
         // Leave one worker wave of waiting positions for the other class.
         // Already accepted same-key promotions above keep ownership even when
         // they exceed this class cap; no entry is evicted to make room.
-        let missing = action.is_missing();
-        // Maintenance can use its reserved positions once a missing-archive
-        // burst has expanded the shared queue.
-        let reserve_for_maintenance =
-            !missing && state.pending.len() > BACKGROUND_FILL_QUEUE_CAPACITY;
-        let queue_capacity = if (missing && expand_queue) || reserve_for_maintenance {
-            inner.queue_capacity
-        } else {
-            inner.queue_capacity.min(BACKGROUND_FILL_QUEUE_CAPACITY)
-        };
-        let same_class = state
-            .entries
-            .values()
-            .filter(|entry| {
-                entry.state == BackgroundFillEntryState::Queued
-                    && entry.action.is_missing() == missing
-            })
-            .count();
-        let reserved = inner.active_limit.min(queue_capacity / 2);
-        let mut class_capacity = queue_capacity - reserved;
-        if !missing {
-            class_capacity = class_capacity.min(BACKGROUND_FILL_MAINTENANCE_QUEUE_LIMIT);
-        }
-        if state.pending.len() >= queue_capacity || same_class >= class_capacity {
+        let queued = state.pending.len();
+        if queued >= inner.queue_capacity {
             return BackgroundFillAdmission::QueueSaturated;
         }
+        let base_capacity = inner.queue_capacity.min(BACKGROUND_FILL_QUEUE_CAPACITY);
+        let class_limit = |capacity| capacity - inner.active_limit.min(capacity / 2);
+        let missing = action.is_missing();
+        let queue_capacity = if missing && expand_queue {
+            inner.queue_capacity
+        } else {
+            base_capacity
+        };
+        // Expanded misses leave the base slots available to maintenance.
+        let mut occupied = queued;
+        let mut same_class = 0;
+        for entry in state
+            .entries
+            .values()
+            .filter(|entry| entry.state == BackgroundFillEntryState::Queued)
+        {
+            same_class += usize::from(entry.action.is_missing() == missing);
+            if !missing && entry.uses_expanded_slot {
+                occupied -= 1;
+            }
+        }
+        if occupied >= queue_capacity || same_class >= class_limit(queue_capacity) {
+            return BackgroundFillAdmission::QueueSaturated;
+        }
+        let uses_expanded_slot = queue_capacity > base_capacity
+            && (queued >= base_capacity || same_class >= class_limit(base_capacity));
         state.entries.insert(
             key.clone(),
             BackgroundFillEntry {
@@ -309,6 +312,7 @@ impl StorageCacheBackgroundFillCoordinator {
                 action,
                 subscribers: vec![reporter],
                 state: BackgroundFillEntryState::Queued,
+                uses_expanded_slot,
             },
         );
         state.pending.push_back(key);

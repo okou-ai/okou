@@ -3969,7 +3969,7 @@ async fn background_fill_coordinator_saturates_queue_without_starting_excess_wor
 
 #[tokio::test]
 async fn background_fill_only_expands_the_waiting_limit_with_slow_delivery() {
-    for (expand_queue, accepted) in [(false, 28), (true, 60)] {
+    for (expand_queue, submitted, accepted) in [(false, 64, 28), (true, 32, 32), (true, 64, 60)] {
         let temp = tempfile::tempdir().unwrap();
         let home = home_at(&temp);
         let body = tarball_bytes();
@@ -3987,7 +3987,7 @@ async fn background_fill_only_expands_the_waiting_limit_with_slow_delivery() {
                 background_fill_group(server.url.clone(), &name, "v1", Some(body.len() as u64));
             maintenance.push((group, BackgroundFillAction::RetireArchive(cache.clone())));
         }
-        let groups = (0..64)
+        let groups = (0..submitted)
             .map(|index| {
                 let group = background_fill_group(
                     server.url.clone(),
@@ -4037,7 +4037,7 @@ async fn background_fill_only_expands_the_waiting_limit_with_slow_delivery() {
             .await
             .unwrap();
         assert!(server.max_active.load(Ordering::SeqCst) <= 4);
-        for index in 0..64 {
+        for index in 0..submitted {
             let archive = home
                 .storage_cache_dir(&format!("archive-{index}"), "v1")
                 .join("archive.tar.gz");
@@ -4048,6 +4048,49 @@ async fn background_fill_only_expands_the_waiting_limit_with_slow_delivery() {
             }
         }
     }
+}
+
+#[tokio::test]
+async fn background_fill_promotion_keeps_the_ordinary_queue_limit() {
+    let temp = tempfile::tempdir().unwrap();
+    let home = home_at(&temp);
+    let cache = decoded::DecodedCache::new(home.clone());
+    let coordinator = StorageCacheBackgroundFillCoordinator::new().unwrap();
+    let reporter = new_telemetry().reporter();
+    let submit = |index, action| {
+        coordinator.submit(
+            background_fill_group(
+                "http://127.0.0.1:1/archive".into(),
+                &format!("promotion-{index}"),
+                "v1",
+                Some(1),
+            ),
+            home.clone(),
+            reporter.clone(),
+            action,
+        )
+    };
+
+    for index in 0..32 {
+        let action = if index < 28 {
+            BackgroundFillAction::Fill(None)
+        } else {
+            BackgroundFillAction::RetireArchive(cache.clone())
+        };
+        assert_eq!(submit(index, action), BackgroundFillAdmission::Accepted);
+    }
+    for index in 28..32 {
+        assert_eq!(
+            submit(index, BackgroundFillAction::Fill(None)),
+            BackgroundFillAdmission::Deduplicated
+        );
+    }
+    assert_eq!(
+        submit(32, BackgroundFillAction::RetireArchive(cache.clone())),
+        BackgroundFillAdmission::QueueSaturated
+    );
+    coordinator.shutdown().await;
+    cache.shutdown().await;
 }
 
 #[tokio::test]
