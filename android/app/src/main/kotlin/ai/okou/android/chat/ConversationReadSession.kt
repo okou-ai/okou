@@ -28,11 +28,13 @@ internal constructor(
     private val currentConfirmation: () -> HistoryConfirmation?,
     private val onFailure: (Exception) -> Unit,
     private val onRead: () -> Unit,
+    private val precedingReadWrite: () -> Job?,
 ) : AutoCloseable {
     private val scope = CoroutineScope(parent.coroutineContext + Job(parent.coroutineContext[Job]))
     private val mutable = MutableStateFlow(HistoryReadState.Idle)
     val readState = mutable.asStateFlow()
     private var closed = false
+    private var automaticRead = true
     private var displayed: HistoryConfirmation? = null
     private var attempted: HistoryConfirmation? = null
     private var lastMarked: HistoryCursor? = null
@@ -51,10 +53,16 @@ internal constructor(
         markDisplayedRead()
     }
 
+    internal fun stopAutomaticRead(): Job? {
+        automaticRead = false
+        return request
+    }
+
     private fun markDisplayedRead() {
         val confirmation = displayed ?: return
         if (
             !current() ||
+                !automaticRead ||
                 confirmation != currentConfirmation() ||
                 request?.isActive == true ||
                 lastMarked == confirmation.cursor ||
@@ -62,12 +70,15 @@ internal constructor(
         )
             return
         attempted = confirmation
+        // Capture the earlier write before a later list action can wait on this acknowledgement.
+        val preceding = precedingReadWrite()
         // Register ownership before even an immediately completing service can run its finalizer.
         val next =
             scope.launch(start = CoroutineStart.LAZY) {
                 try {
+                    preceding?.join()
                     requireCurrent()
-                    if (confirmation != currentConfirmation()) return@launch
+                    if (!automaticRead || confirmation != currentConfirmation()) return@launch
                     mutable.value = HistoryReadState.Pending
                     service.markRead(threadId)
                     requireCurrent()

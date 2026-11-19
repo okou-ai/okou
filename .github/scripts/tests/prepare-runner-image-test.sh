@@ -16,7 +16,7 @@ if JOB_REF=pr-123 \
   METAL_HOSTS=dev-1 \
   METAL_USER=ci \
   TARGET_TRIPLE='' \
-  "$PREPARE" >"${TMPDIR}/empty.out" 2>"${TMPDIR}/empty.err"; then
+  "$PREPARE" > "${TMPDIR}/empty.out" 2> "${TMPDIR}/empty.err"; then
   fail "expected empty target to fail"
 fi
 grep -q "missing runner image target" "${TMPDIR}/empty.err" || fail "expected missing target message"
@@ -26,7 +26,7 @@ if JOB_REF=pr-123 \
   METAL_HOSTS=dev-1 \
   METAL_USER=ci \
   TARGET_TRIPLE=powerpc-unknown-linux-musl \
-  "$PREPARE" >"${TMPDIR}/unsupported.out" 2>"${TMPDIR}/unsupported.err"; then
+  "$PREPARE" > "${TMPDIR}/unsupported.out" 2> "${TMPDIR}/unsupported.err"; then
   fail "expected unsupported target to fail"
 fi
 grep -q "unsupported runner image target: powerpc-unknown-linux-musl" "${TMPDIR}/unsupported.err" || fail "expected unsupported target message"
@@ -37,7 +37,7 @@ if JOB_REF=pr-123 \
   METAL_USER=ci \
   TARGET_TRIPLE=aarch64-unknown-linux-musl \
   EXPECTED_REMOTE_ARCH=aarch64 \
-  "$PREPARE" >"${TMPDIR}/empty-hosts.out" 2>"${TMPDIR}/empty-hosts.err"; then
+  "$PREPARE" > "${TMPDIR}/empty-hosts.out" 2> "${TMPDIR}/empty-hosts.err"; then
   fail "expected empty metal hosts to fail"
 fi
 grep -q "METAL_HOSTS is empty" "${TMPDIR}/empty-hosts.err" || fail "expected empty metal hosts message"
@@ -48,7 +48,7 @@ if JOB_REF=pr-123 \
   METAL_USER=ci \
   TARGET_TRIPLE=aarch64-unknown-linux-musl \
   EXPECTED_REMOTE_ARCH=aarch64 \
-  "$PREPARE" >"${TMPDIR}/invalid-hosts.out" 2>"${TMPDIR}/invalid-hosts.err"; then
+  "$PREPARE" > "${TMPDIR}/invalid-hosts.out" 2> "${TMPDIR}/invalid-hosts.err"; then
   fail "expected invalid metal hosts to fail"
 fi
 grep -q "invalid METAL_HOSTS entry: bad/host" "${TMPDIR}/invalid-hosts.err" || fail "expected invalid metal hosts message"
@@ -59,7 +59,7 @@ if JOB_REF=pr-123 \
   METAL_USER=ci \
   TARGET_TRIPLE=aarch64-unknown-linux-musl \
   EXPECTED_REMOTE_ARCH=aarch64 \
-  "$PREPARE" >"${TMPDIR}/invalid-user-host.out" 2>"${TMPDIR}/invalid-user-host.err"; then
+  "$PREPARE" > "${TMPDIR}/invalid-user-host.out" 2> "${TMPDIR}/invalid-user-host.err"; then
   fail "expected user-qualified metal host to fail"
 fi
 grep -q "invalid METAL_HOSTS entry: user@host" "${TMPDIR}/invalid-user-host.err" || fail "expected user-qualified metal host message"
@@ -70,7 +70,7 @@ if JOB_REF=pr-123 \
   METAL_USER=ci \
   TARGET_TRIPLE=aarch64-unknown-linux-musl \
   EXPECTED_REMOTE_ARCH=aarch64 \
-  "$PREPARE" >"${TMPDIR}/invalid-alias.out" 2>"${TMPDIR}/invalid-alias.err"; then
+  "$PREPARE" > "${TMPDIR}/invalid-alias.out" 2> "${TMPDIR}/invalid-alias.err"; then
   fail "expected invalid metal host alias to fail"
 fi
 grep -qF "invalid METAL_HOSTS entry: host-" "${TMPDIR}/invalid-alias.err" || fail "expected invalid metal host alias message"
@@ -81,7 +81,7 @@ if JOB_REF=pr-123 \
   METAL_USER=ci \
   TARGET_TRIPLE=aarch64-unknown-linux-musl \
   EXPECTED_REMOTE_ARCH=aarch64 \
-  "$PREPARE" >"${TMPDIR}/duplicate-hosts.out" 2>"${TMPDIR}/duplicate-hosts.err"; then
+  "$PREPARE" > "${TMPDIR}/duplicate-hosts.out" 2> "${TMPDIR}/duplicate-hosts.err"; then
   fail "expected duplicate metal hosts to fail"
 fi
 grep -q "duplicate METAL_HOSTS entry: dev-1" "${TMPDIR}/duplicate-hosts.err" || fail "expected duplicate metal hosts message"
@@ -92,7 +92,7 @@ if JOB_REF=pr-123 \
   METAL_USER=ci \
   TARGET_TRIPLE=aarch64-unknown-linux-musl \
   EXPECTED_REMOTE_ARCH=aarch64 \
-  "$PREPARE" >"${TMPDIR}/duplicate-hosts-case.out" 2>"${TMPDIR}/duplicate-hosts-case.err"; then
+  "$PREPARE" > "${TMPDIR}/duplicate-hosts-case.out" 2> "${TMPDIR}/duplicate-hosts-case.err"; then
   fail "expected case-insensitive duplicate metal hosts to fail"
 fi
 grep -q "duplicate METAL_HOSTS entry: dev-1" "${TMPDIR}/duplicate-hosts-case.err" || fail "expected case-insensitive duplicate metal hosts message"
@@ -103,7 +103,7 @@ if JOB_REF=pr-123 \
   METAL_USER=ci \
   TARGET_TRIPLE=aarch64-unknown-linux-musl \
   EXPECTED_REMOTE_ARCH='' \
-  "$PREPARE" >"${TMPDIR}/arch-empty.out" 2>"${TMPDIR}/arch-empty.err"; then
+  "$PREPARE" > "${TMPDIR}/arch-empty.out" 2> "${TMPDIR}/arch-empty.err"; then
   fail "expected empty expected remote arch to fail"
 fi
 grep -q "EXPECTED_REMOTE_ARCH is empty" "${TMPDIR}/arch-empty.err" || fail "expected empty expected remote arch message"
@@ -114,7 +114,7 @@ if JOB_REF=pr-123 \
   METAL_USER=ci \
   TARGET_TRIPLE=aarch64-unknown-linux-musl \
   EXPECTED_REMOTE_ARCH=x86_64 \
-  "$PREPARE" >"${TMPDIR}/arch-mismatch.out" 2>"${TMPDIR}/arch-mismatch.err"; then
+  "$PREPARE" > "${TMPDIR}/arch-mismatch.out" 2> "${TMPDIR}/arch-mismatch.err"; then
   fail "expected expected remote arch mismatch to fail"
 fi
 grep -q "EXPECTED_REMOTE_ARCH mismatch: aarch64-unknown-linux-musl maps to aarch64, got x86_64" "${TMPDIR}/arch-mismatch.err" || fail "expected expected remote arch mismatch message"
@@ -125,7 +125,7 @@ if JOB_REF=pr-123 \
   METAL_USER=ci \
   TARGET_TRIPLE=aarch64-unknown-linux-musl \
   EXPECTED_REMOTE_ARCH=aarch64 \
-  "$PREPARE" >"${TMPDIR}/missing-runner.out" 2>"${TMPDIR}/missing-runner.err"; then
+  "$PREPARE" > "${TMPDIR}/missing-runner.out" 2> "${TMPDIR}/missing-runner.err"; then
   fail "expected a missing supplied runner to fail"
 fi
 grep -q "missing required env: RUNNER_PATH" "${TMPDIR}/missing-runner.err" || fail "expected missing runner path message"
@@ -134,7 +134,7 @@ grep -q "missing required env: RUNNER_PATH" "${TMPDIR}/missing-runner.err" || fa
 . "${SCRIPT_DIR}/runner/runner-binary-build/contract.env"
 runner_guest_binaries_load
 runner="${TMPDIR}/runner"
-cat > "$runner" <<'BASH'
+cat > "$runner" << 'BASH'
 #!/usr/bin/env bash
 [ "${1:-}" = --version ] || exit 2
 echo runner-fixture
@@ -145,7 +145,7 @@ input_digest=$(printf 'a%.0s' {1..64})
 guest_json='{}'
 for guest in "${RUNNER_GUEST_BINARIES[@]}"; do
   guest_sha=$(printf '%s' "$guest" | sha256sum | awk '{print $1}')
-  guest_json=$(jq -c --arg guest "$guest" --arg sha "$guest_sha" '. + {($guest): $sha}' <<<"$guest_json")
+  guest_json=$(jq -c --arg guest "$guest" --arg sha "$guest_sha" '. + {($guest): $sha}' <<< "$guest_json")
 done
 metadata="${TMPDIR}/metadata.json"
 jq -n \
@@ -175,7 +175,7 @@ if JOB_REF=pr-123 \
   RUNNER_PATH="${TMPDIR}/wrong-runner" \
   FRESH_METADATA_PATH="$metadata" \
   EXPECTED_BINARY_INPUT_DIGEST="$input_digest" \
-  "$PREPARE" >"${TMPDIR}/wrong-bytes.out" 2>"${TMPDIR}/wrong-bytes.err"; then
+  "$PREPARE" > "${TMPDIR}/wrong-bytes.out" 2> "${TMPDIR}/wrong-bytes.err"; then
   fail "expected mismatched supplied runner bytes to fail"
 fi
 grep -q "fresh runner size mismatch" "${TMPDIR}/wrong-bytes.err" || fail "expected supplied runner validation message"
@@ -190,13 +190,13 @@ if JOB_REF=pr-123 \
   RUNNER_PATH="$runner" \
   FRESH_METADATA_PATH="${TMPDIR}/metadata-link.json" \
   EXPECTED_BINARY_INPUT_DIGEST="$input_digest" \
-  "$PREPARE" >"${TMPDIR}/metadata-link.out" 2>"${TMPDIR}/metadata-link.err"; then
+  "$PREPARE" > "${TMPDIR}/metadata-link.out" 2> "${TMPDIR}/metadata-link.err"; then
   fail "expected symlinked supplied metadata to fail"
 fi
 grep -q "fresh runner metadata is not a regular file" "${TMPDIR}/metadata-link.err" || fail "expected metadata symlink validation message"
 
 mkdir -p "${TMPDIR}/bin"
-cat > "${TMPDIR}/bin/ssh" <<'BASH'
+cat > "${TMPDIR}/bin/ssh" << 'BASH'
 #!/usr/bin/env bash
 set -euo pipefail
 
@@ -210,6 +210,41 @@ shift
 
 if [ "$#" -eq 2 ] && [ "$1" = "uname" ] && [ "$2" = "-m" ]; then
   echo "aarch64"
+  exit 0
+fi
+
+if [ "${1:-}" = env ] && [ "${3:-}" = python3 ]; then
+  shift 2
+fi
+if [ "${1:-}" = python3 ]; then
+  # Image service execution has its own process-boundary suite. This SSH
+  # endpoint returns the same public framed protocol to exercise preparation,
+  # identity validation, original failures and structured manifest publication.
+  MOCK_SSH_SELF="$0" MOCK_SSH_REMOTE="$remote" python3 -c '
+import hashlib, json, os, subprocess, sys
+from pathlib import Path
+r = json.load(sys.stdin)
+owner_marker = ".image-owner-" + hashlib.sha256(json.dumps(r["inputs"], sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+if r["action"] == "guard":
+    os.environ["RUNNER_IMAGE_OWNER_MARKER"] = owner_marker
+    p = subprocess.run([os.environ["MOCK_SSH_SELF"], os.environ["MOCK_SSH_REMOTE"], *r["command"]], input=r["stdin"], capture_output=True, text=True)
+    sys.stderr.write(p.stderr)
+    identity = hashlib.sha256(json.dumps({"inputs": r["inputs"], "phase": "guard", "nonce": r["nonce"], "commandDigest": hashlib.sha256(json.dumps({"command": r["command"], "stdin": r["stdin"]}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    print(json.dumps({"log": p.stdout, "offset": len(p.stdout)}))
+    print(json.dumps({"result": {"schemaVersion": 1, "identity": identity, "status": p.returncode, "logTruncated": False}}))
+elif r["action"] != "run":
+    if r["action"] == "claim":
+        (Path(os.environ["SSH_UPLOAD_DIR"]) / owner_marker).touch()
+    print(json.dumps({r["action"]: "ok"}))
+else:
+    identity = hashlib.sha256(json.dumps({"inputs": r["inputs"], "phase": r["phase"]}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    if r["phase"] == "build" and os.environ.get("SSH_BUILD_RELEASE_PIPE"):
+        print(json.dumps({"log": "live-build-progress\n", "offset": 20}), flush=True)
+        with open(os.environ["SSH_BUILD_RELEASE_PIPE"]) as stream:
+            stream.readline()
+    status = int(os.environ.get("SSH_WARM_STATUS" if r["phase"] == "warm" else "SSH_BUILD_STATUS", "0"))
+    print(json.dumps({"result": {"schemaVersion": 1, "identity": identity, "status": status, "logTruncated": False, "rootfsHash": "1" * 64, "snapshotHash": "2" * 64}}))
+'
   exit 0
 fi
 
@@ -310,20 +345,28 @@ fi
 
 exit 42
 BASH
-cat > "${TMPDIR}/bin/sudo" <<'BASH'
+cat > "${TMPDIR}/bin/sudo" << 'BASH'
 #!/usr/bin/env bash
 set -euo pipefail
 
 command=$1
 shift
 case "$command" in
+  test)
+    [ "$1" = -e ] && [ "$2" = /var/lib/vm0-runner/bin/pr-123-image-123/runner ]
+    test -e "${SSH_UPLOAD_DIR}/runner"
+    ;;
   sha256sum|mktemp)
+    if [ "$command" = sha256sum ] && [ "$1" = /var/lib/vm0-runner/bin/pr-123-image-123/runner ]; then
+      shift
+      set -- "${SSH_UPLOAD_DIR}/runner" "$@"
+    fi
     exec "$command" "$@"
     ;;
   mv)
     [ "$1" = -f ] || exit 1
     case "$3" in
-      /var/lib/vm0-runner/bin/pr-123/runner)
+      /var/lib/vm0-runner/bin/pr-123-image-123/runner)
         mv -f "$2" "${SSH_UPLOAD_DIR}/runner"
         ;;
       /var/lib/vm0-runner/bin/pr-123/okou-cli/*)
@@ -350,6 +393,10 @@ case "$command" in
       printf ' %s' "$@"
       printf '\n'
     } >> "$SYSTEMCTL_LOG"
+    if [ "$command" = find ] && [ "$1" = /var/lib/vm0-runner/bin/staging-aaaaaaaaaaaa ]; then
+      shift
+      exec find "$SSH_UPLOAD_DIR" "$@"
+    fi
     ;;
   *)
     echo "unexpected sudo command: ${command}" >&2
@@ -357,7 +404,7 @@ case "$command" in
     ;;
 esac
 BASH
-cat > "${TMPDIR}/bin/systemctl" <<'BASH'
+cat > "${TMPDIR}/bin/systemctl" << 'BASH'
 #!/usr/bin/env bash
 set -euo pipefail
 
@@ -421,7 +468,7 @@ esac
 BASH
 # Retry outcomes and candidate isolation are exercised through the real script;
 # waiting through each fixed backoff adds no independent coverage.
-cat > "${TMPDIR}/bin/sleep" <<'BASH'
+cat > "${TMPDIR}/bin/sleep" << 'BASH'
 #!/usr/bin/env bash
 exit 0
 BASH
@@ -471,8 +518,11 @@ run_remote_case() {
     SYSTEMCTL_LIST_FAILURE="$list_failure" \
     SYSTEMCTL_STOP_FAILURE_UNIT="$stop_failure_unit" \
     SYSTEMCTL_STICKY_UNIT="$sticky_unit" \
-    JOB_REF=pr-123 \
-    HEAD_SHA=abc \
+    JOB_REF="${REMOTE_JOB_REF:-pr-123}" \
+    HEAD_SHA=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
+    GITHUB_RUN_ID=123 \
+    RUNNER_IMAGE_RUN_CREATED_AT="2026-10-01T00:00:00Z" \
+    GITHUB_RUN_ATTEMPT=1 \
     METAL_HOSTS=dev-arm-1 \
     METAL_USER=ci \
     TARGET_TRIPLE=aarch64-unknown-linux-musl \
@@ -481,14 +531,20 @@ run_remote_case() {
     FRESH_METADATA_PATH="$metadata" \
     EXPECTED_BINARY_INPUT_DIGEST="$input_digest" \
     MANIFEST_PATH="${case_dir}/manifest.json" \
-    "$PREPARE" >"${REMOTE_STDOUT:-${case_dir}/out}" 2>"${case_dir}/err"; then
+    "$PREPARE" > "${REMOTE_STDOUT:-${case_dir}/out}" 2> "${case_dir}/err"; then
+    [ "${REMOTE_EXPECT_CANCELLED:-}" != 1 ] || fail "cancelled preparation must fail"
     if [ "${REMOTE_BUILD_STATUS:-0}" -ne 0 ] || [ "${REMOTE_WARM_STATUS:-0}" -ne 0 ]; then
       fail "expected the supplied SSH build status to fail preparation"
     fi
     [ "${REMOTE_COMPLETE:-}" = "1" ] || fail "expected mocked post-preparation SSH boundary to fail"
   else
+    local command_status=$?
+    if [ "${REMOTE_EXPECT_CANCELLED:-}" = 1 ]; then
+      [ "$command_status" -eq 143 ] || fail "expected cancellation status 143, got ${command_status}"
+      return
+    fi
     if [ "${REMOTE_COMPLETE:-}" = "1" ] &&
-       [ "${REMOTE_BUILD_STATUS:-0}" -eq 0 ] && [ "${REMOTE_WARM_STATUS:-0}" -eq 0 ]; then
+      [ "${REMOTE_BUILD_STATUS:-0}" -eq 0 ] && [ "${REMOTE_WARM_STATUS:-0}" -eq 0 ]; then
       fail "expected full mocked image preparation to succeed"
     fi
   fi
@@ -498,11 +554,6 @@ build_timeout_case="${TMPDIR}/remote-build-timeout"
 prepare_remote_case "$build_timeout_case"
 REMOTE_REACH_GC=1 REMOTE_GC_STATUSES=0 REMOTE_UPLOAD_STATUSES=0 \
   REMOTE_COMPLETE=1 REMOTE_BUILD_STATUS=124 run_remote_case "$build_timeout_case"
-grep -q 'runner image-build SSH failed: host=dev-arm-1 status=124' "${build_timeout_case}/out" || {
-  cat "${build_timeout_case}/out" "${build_timeout_case}/err"
-  fail "expected original SSH timeout status"
-}
-grep -q 'runner image-build SSH timed out: host=dev-arm-1 operation_timeout_seconds=600' "${build_timeout_case}/out" || fail "expected timeout budget diagnosis"
 grep -q 'Runner image build failed on dev-arm-1 (status 124)' "${build_timeout_case}/out" || fail "expected timeout status in the CI annotation"
 [ ! -e "${build_timeout_case}/manifest.json" ] || fail "timed-out build must not publish a manifest"
 
@@ -510,7 +561,7 @@ warm_timeout_case="${TMPDIR}/remote-warm-timeout"
 prepare_remote_case "$warm_timeout_case"
 REMOTE_REACH_GC=1 REMOTE_GC_STATUSES=0 REMOTE_UPLOAD_STATUSES=0 \
   REMOTE_COMPLETE=1 REMOTE_WARM_STATUS=124 run_remote_case "$warm_timeout_case"
-grep -q 'runner template-warm SSH failed: host=dev-arm-1 status=124' "${warm_timeout_case}/out" || fail "expected original warm timeout status"
+grep -q 'Shared template cache warm failed' "${warm_timeout_case}/out" || fail "expected warm failure to reach CI"
 [ ! -e "${warm_timeout_case}/manifest.json" ] || fail "timed-out warming must not publish a manifest"
 
 stream_case="${TMPDIR}/remote-live-build"
@@ -520,7 +571,7 @@ REMOTE_REACH_GC=1 REMOTE_GC_STATUSES=0 REMOTE_UPLOAD_STATUSES=0 REMOTE_COMPLETE=
   REMOTE_BUILD_RELEASE_PIPE="${stream_case}/release.pipe" REMOTE_STDOUT="${stream_case}/output.pipe" \
   run_remote_case "$stream_case" &
 stream_pid=$!
-if ! timeout 10 bash -s -- "$stream_case" <<'BASH'
+if ! timeout 10 bash -s -- "$stream_case" << 'BASH'; then
 set -euo pipefail
 case_dir=$1
 exec 3< "${case_dir}/output.pipe"
@@ -534,8 +585,7 @@ while IFS= read -r line <&3; do
 done
 exit 1
 BASH
-then
-  timeout 2 bash -s -- "${stream_case}/release.pipe" <<'BASH' || true
+  timeout 2 bash -s -- "${stream_case}/release.pipe" << 'BASH' || true
 printf 'continue\n' > "$1"
 BASH
   wait "$stream_pid" || true
@@ -544,33 +594,68 @@ fi
 wait "$stream_pid" || fail "expected the streamed build to finish successfully"
 [ -f "${stream_case}/manifest.json" ] || fail "streaming must preserve manifest hash extraction"
 
+cancel_case="${TMPDIR}/remote-cancel-build"
+prepare_remote_case "$cancel_case"
+mkfifo "${cancel_case}/output.pipe" "${cancel_case}/release.pipe"
+REMOTE_REACH_GC=1 REMOTE_GC_STATUSES=0 REMOTE_UPLOAD_STATUSES=0 REMOTE_COMPLETE=1 \
+  REMOTE_BUILD_RELEASE_PIPE="${cancel_case}/release.pipe" REMOTE_STDOUT="${cancel_case}/output.pipe" \
+  REMOTE_EXPECT_CANCELLED=1 run_remote_case "$cancel_case" &
+cancel_pid=$!
+if ! timeout 10 bash -s -- "$cancel_case" "$cancel_pid" << 'BASH'; then
+set -euo pipefail
+case_dir=$1
+owner=$2
+exec 3< "${case_dir}/output.pipe"
+while IFS= read -r line <&3; do
+  printf '%s\n' "$line" >> "${case_dir}/out"
+  if [ "$line" = '[dev-arm-1] live-build-progress' ]; then
+    prepare_pid=$(ps -o pid= --ppid "$owner" | awk 'NR == 1 { print $1 }')
+    [ -n "$prepare_pid" ]
+    kill -TERM "$prepare_pid"
+    # EOF proves that preparation retired the local adapter/SSH descendants,
+    # rather than leaving a pipe writer alive after its parent shell exited.
+    cat <&3 >> "${case_dir}/out"
+    exit 0
+  fi
+done
+exit 1
+BASH
+  timeout 2 bash -s -- "${cancel_case}/release.pipe" << 'BASH' || true
+printf 'continue\n' > "$1"
+BASH
+  wait "$cancel_pid" || true
+  fail "cancellation must retire image clients and close their output"
+fi
+wait "$cancel_pid" || fail "expected verified preparation cancellation"
+[ ! -e "${cancel_case}/manifest.json" ] || fail "cancelled preparation must not publish a manifest"
+
 success_case="${TMPDIR}/remote-success"
 prepare_remote_case "$success_case"
-set_unit_state "$success_case" "vm0-runner-pr-123-2.service" active
-set_unit_state "$success_case" "vm0-runner-pr-123-7.service" active
-set_unit_state "$success_case" "vm0-runner-pr-123-exec.service" active
-set_unit_state "$success_case" "vm0-runner-pr-123-keepalive.service" active
-set_unit_state "$success_case" "vm0-runner-pr-123-cancel.service" active
-set_unit_state "$success_case" "vm0-runner-pr-123-9.service" active not-found
-set_unit_state "$success_case" "vm0-runner-pr-123-10.service" active masked
-run_remote_case "$success_case"
+set_unit_state "$success_case" "vm0-runner-staging-aaaaaaaaaaaa-2.service" active
+set_unit_state "$success_case" "vm0-runner-staging-aaaaaaaaaaaa-7.service" active
+set_unit_state "$success_case" "vm0-runner-staging-aaaaaaaaaaaa-exec.service" active
+set_unit_state "$success_case" "vm0-runner-staging-aaaaaaaaaaaa-keepalive.service" active
+set_unit_state "$success_case" "vm0-runner-staging-aaaaaaaaaaaa-cancel.service" active
+set_unit_state "$success_case" "vm0-runner-staging-aaaaaaaaaaaa-9.service" active not-found
+set_unit_state "$success_case" "vm0-runner-staging-aaaaaaaaaaaa-10.service" active masked
+REMOTE_JOB_REF=staging-aaaaaaaaaaaa run_remote_case "$success_case"
 grep -q 'ci@dev-arm-1 uname -m' "${success_case}/ssh.log" || fail "valid supplied runner must reach the SSH boundary"
-grep -Eq '^stop .*vm0-runner-pr-123-2\.service([[:space:]]|$)' "${success_case}/systemctl.log" || fail "expected primary runner suffix 2 to stop"
-grep -Eq '^stop .*vm0-runner-pr-123-7\.service([[:space:]]|$)' "${success_case}/systemctl.log" || fail "expected primary runner suffix 7 to stop"
-if grep '^stop ' "${success_case}/systemctl.log" | grep -Eq 'vm0-runner-pr-123-(exec|keepalive|cancel)\.service'; then
+grep -Eq '^stop .*vm0-runner-staging-aaaaaaaaaaaa-2\.service([[:space:]]|$)' "${success_case}/systemctl.log" || fail "expected primary runner suffix 2 to stop"
+grep -Eq '^stop .*vm0-runner-staging-aaaaaaaaaaaa-7\.service([[:space:]]|$)' "${success_case}/systemctl.log" || fail "expected primary runner suffix 7 to stop"
+if grep '^stop ' "${success_case}/systemctl.log" | grep -Eq 'vm0-runner-staging-aaaaaaaaaaaa-(exec|keepalive|cancel)\.service'; then
   fail "auxiliary runner services must not stop"
 fi
-if grep '^stop ' "${success_case}/systemctl.log" | grep -q 'vm0-runner-pr-123-1\.service'; then
+if grep '^stop ' "${success_case}/systemctl.log" | grep -q 'vm0-runner-staging-aaaaaaaaaaaa-1\.service'; then
   fail "architecture-subset index must not determine the stopped service"
 fi
-if grep -Eq '^(stop|show|reset-failed).*vm0-runner-pr-123-(9|10)\.service' "${success_case}/systemctl.log"; then
+if grep -Eq '^(stop|show|reset-failed).*vm0-runner-staging-aaaaaaaaaaaa-(9|10)\.service' "${success_case}/systemctl.log"; then
   fail "non-loaded primary runner rows must not participate in cleanup"
 fi
-[ "$(< "${success_case}/state/vm0-runner-pr-123-2.service")" = "inactive" ] || fail "expected primary runner suffix 2 to be inactive"
-[ "$(< "${success_case}/state/vm0-runner-pr-123-7.service")" = "inactive" ] || fail "expected primary runner suffix 7 to be inactive"
-[ "$(< "${success_case}/state/vm0-runner-pr-123-exec.service")" = "active" ] || fail "expected auxiliary runner to remain active"
-[ "$(< "${success_case}/state/vm0-runner-pr-123-9.service")" = "active" ] || fail "expected not-found runner row to remain untouched"
-[ "$(< "${success_case}/state/vm0-runner-pr-123-10.service")" = "active" ] || fail "expected masked runner row to remain untouched"
+[ "$(< "${success_case}/state/vm0-runner-staging-aaaaaaaaaaaa-2.service")" = "inactive" ] || fail "expected primary runner suffix 2 to be inactive"
+[ "$(< "${success_case}/state/vm0-runner-staging-aaaaaaaaaaaa-7.service")" = "inactive" ] || fail "expected primary runner suffix 7 to be inactive"
+[ "$(< "${success_case}/state/vm0-runner-staging-aaaaaaaaaaaa-exec.service")" = "active" ] || fail "expected auxiliary runner to remain active"
+[ "$(< "${success_case}/state/vm0-runner-staging-aaaaaaaaaaaa-9.service")" = "active" ] || fail "expected not-found runner row to remain untouched"
+[ "$(< "${success_case}/state/vm0-runner-staging-aaaaaaaaaaaa-10.service")" = "active" ] || fail "expected masked runner row to remain untouched"
 last_show_line=$(grep -n '^show ' "${success_case}/systemctl.log" | tail -n1 | cut -d: -f1)
 first_mutation_line=$(grep -n '^mutate ' "${success_case}/systemctl.log" | head -n1 | cut -d: -f1)
 [ -n "$last_show_line" ] || fail "expected post-stop state verification"
@@ -579,8 +664,8 @@ first_mutation_line=$(grep -n '^mutate ' "${success_case}/systemctl.log" | head 
 
 no_primary_case="${TMPDIR}/remote-no-primary"
 prepare_remote_case "$no_primary_case"
-set_unit_state "$no_primary_case" "vm0-runner-pr-123-exec.service" active
-run_remote_case "$no_primary_case"
+set_unit_state "$no_primary_case" "vm0-runner-staging-aaaaaaaaaaaa-exec.service" active
+REMOTE_JOB_REF=staging-aaaaaaaaaaaa run_remote_case "$no_primary_case"
 if grep -q '^stop ' "${no_primary_case}/systemctl.log"; then
   fail "preparation without a primary runner must not stop auxiliary services"
 fi
@@ -588,8 +673,8 @@ grep -q '^mutate rm ' "${no_primary_case}/systemctl.log" || fail "preparation wi
 
 discovery_failure_case="${TMPDIR}/remote-discovery-failure"
 prepare_remote_case "$discovery_failure_case"
-set_unit_state "$discovery_failure_case" "vm0-runner-pr-123-2.service" active
-run_remote_case "$discovery_failure_case" 1
+set_unit_state "$discovery_failure_case" "vm0-runner-staging-aaaaaaaaaaaa-2.service" active
+REMOTE_JOB_REF=staging-aaaaaaaaaaaa run_remote_case "$discovery_failure_case" 1
 if grep -q '^mutate ' "${discovery_failure_case}/systemctl.log"; then
   fail "discovery failure must prevent shared-path mutation"
 fi
@@ -597,33 +682,33 @@ grep -q 'mock list-units failure' "${discovery_failure_case}/out" || fail "expec
 
 malformed_loaded_case="${TMPDIR}/remote-malformed-loaded"
 prepare_remote_case "$malformed_loaded_case"
-printf '%s\n' "vm0-runner-pr-123-2.service loaded active" >> "${malformed_loaded_case}/extra-list-rows"
-run_remote_case "$malformed_loaded_case"
+printf '%s\n' "vm0-runner-staging-aaaaaaaaaaaa-2.service loaded active" >> "${malformed_loaded_case}/extra-list-rows"
+REMOTE_JOB_REF=staging-aaaaaaaaaaaa run_remote_case "$malformed_loaded_case"
 if grep -q '^mutate ' "${malformed_loaded_case}/systemctl.log"; then
   fail "malformed loaded row must prevent shared-path mutation"
 fi
-grep -q 'malformed loaded runner service row: vm0-runner-pr-123-2.service loaded active' "${malformed_loaded_case}/out" || fail "expected malformed loaded row output"
+grep -q 'malformed loaded runner service row: vm0-runner-staging-aaaaaaaaaaaa-2.service loaded active' "${malformed_loaded_case}/out" || fail "expected malformed loaded row output"
 
 stop_failure_case="${TMPDIR}/remote-stop-failure"
 prepare_remote_case "$stop_failure_case"
-set_unit_state "$stop_failure_case" "vm0-runner-pr-123-2.service" active
-run_remote_case "$stop_failure_case" '' "vm0-runner-pr-123-2.service"
+set_unit_state "$stop_failure_case" "vm0-runner-staging-aaaaaaaaaaaa-2.service" active
+REMOTE_JOB_REF=staging-aaaaaaaaaaaa run_remote_case "$stop_failure_case" '' "vm0-runner-staging-aaaaaaaaaaaa-2.service"
 if grep -q '^mutate ' "${stop_failure_case}/systemctl.log"; then
   fail "stop failure must prevent shared-path mutation"
 fi
-grep -q 'mock stop failure for vm0-runner-pr-123-2.service' "${stop_failure_case}/out" || fail "expected stop failure output"
+grep -q 'mock stop failure for vm0-runner-staging-aaaaaaaaaaaa-2.service' "${stop_failure_case}/out" || fail "expected stop failure output"
 
 verification_failure_case="${TMPDIR}/remote-verification-failure"
 prepare_remote_case "$verification_failure_case"
-set_unit_state "$verification_failure_case" "vm0-runner-pr-123-2.service" active
-run_remote_case "$verification_failure_case" '' '' "vm0-runner-pr-123-2.service"
+set_unit_state "$verification_failure_case" "vm0-runner-staging-aaaaaaaaaaaa-2.service" active
+REMOTE_JOB_REF=staging-aaaaaaaaaaaa run_remote_case "$verification_failure_case" '' '' "vm0-runner-staging-aaaaaaaaaaaa-2.service"
 if grep -q '^mutate ' "${verification_failure_case}/systemctl.log"; then
   fail "verification failure must prevent shared-path mutation"
 fi
-grep -q 'runner service vm0-runner-pr-123-2.service is active after stop' "${verification_failure_case}/out" || fail "expected verification failure output"
+grep -q 'runner service vm0-runner-staging-aaaaaaaaaaaa-2.service is active after stop' "${verification_failure_case}/out" || fail "expected verification failure output"
 
-gc_command='ci@dev-arm-1 sudo /var/lib/vm0-runner/bin/pr-123/runner gc --keep-latest 6'
-setup_command='ci@dev-arm-1 sudo /var/lib/vm0-runner/bin/pr-123/runner setup'
+gc_command='ci@dev-arm-1 sudo /var/lib/vm0-runner/bin/pr-123-image-123/runner gc --keep-latest 6'
+setup_command='ci@dev-arm-1 sudo /var/lib/vm0-runner/bin/pr-123-image-123/runner setup'
 
 gc_success_case="${TMPDIR}/gc-success"
 prepare_remote_case "$gc_success_case"
@@ -631,17 +716,6 @@ REMOTE_REACH_GC=1 REMOTE_GC_STATUSES=0 run_remote_case "$gc_success_case"
 [ "$(< "${gc_success_case}/gc-count")" -eq 1 ] || fail "successful GC must run once"
 [ "$(grep -Fxc -- "$gc_command" "${gc_success_case}/ssh.log")" -eq 1 ] || fail "successful GC must invoke the runner directly once"
 grep -Fqx -- "$setup_command" "${gc_success_case}/ssh.log" || fail "successful GC must continue to runner setup"
-
-gc_retry_case="${TMPDIR}/gc-retry"
-prepare_remote_case "$gc_retry_case"
-REMOTE_REACH_GC=1 \
-REMOTE_GC_STATUSES=255,0 \
-  run_remote_case "$gc_retry_case"
-gc_retry_count=$(< "${gc_retry_case}/gc-count")
-[ "$gc_retry_count" -eq 2 ] || fail "SSH status 255 must retry GC once"
-[ "$(grep -Fxc -- "$gc_command" "${gc_retry_case}/ssh.log")" -eq 2 ] || fail "each GC retry must invoke the runner directly"
-grep -Fq 'runner GC SSH transport failed on dev-arm-1 with status 255; retrying once' "${gc_retry_case}/out" || fail "expected transient GC retry diagnostic"
-grep -Fqx -- "$setup_command" "${gc_retry_case}/ssh.log" || fail "recovered GC must continue to runner setup"
 
 gc_failure_case="${TMPDIR}/gc-failure"
 prepare_remote_case "$gc_failure_case"
@@ -652,12 +726,12 @@ if grep -Fqx -- "$setup_command" "${gc_failure_case}/ssh.log"; then
   fail "failed GC must not continue to runner setup"
 fi
 
-gc_transport_failure_case="${TMPDIR}/gc-transport-failure"
+gc_transport_failure_case="${TMPDIR}/gc-remote-status-255"
 prepare_remote_case "$gc_transport_failure_case"
-REMOTE_REACH_GC=1 REMOTE_GC_STATUSES=255,255 \
+REMOTE_REACH_GC=1 REMOTE_GC_STATUSES=255 \
   run_remote_case "$gc_transport_failure_case"
-[ "$(< "${gc_transport_failure_case}/gc-count")" -eq 2 ] || fail "persistent SSH failure must stop after one GC retry"
-[ "$(grep -Fxc -- "$gc_command" "${gc_transport_failure_case}/ssh.log")" -eq 2 ] || fail "persistent SSH attempts must invoke the runner directly"
+[ "$(< "${gc_transport_failure_case}/gc-count")" -eq 1 ] || fail "known original remote GC status 255 must not replay"
+[ "$(grep -Fxc -- "$gc_command" "${gc_transport_failure_case}/ssh.log")" -eq 1 ] || fail "known remote GC failure must run once"
 grep -Fq 'runner GC failed on dev-arm-1 with status 255' "${gc_transport_failure_case}/out" || fail "expected final SSH failure status"
 if grep -Fqx -- "$setup_command" "${gc_transport_failure_case}/ssh.log"; then
   fail "persistent SSH failure must not continue to runner setup"
@@ -672,6 +746,14 @@ cmp "$runner" "${upload_success_case}/uploads/runner" || fail "successful upload
 grep -Fqx -- "$setup_command" "${upload_success_case}/ssh.log" || fail "validated upload must continue to setup"
 grep -Fq 'runner upload completed: host=dev-arm-1 attempt=1/3 elapsed_seconds=' "${upload_success_case}/out" || fail "expected successful upload timing"
 
+generation_conflict_case="${TMPDIR}/generation-conflict"
+prepare_remote_case "$generation_conflict_case"
+printf 'runner from the existing generation\n' > "${generation_conflict_case}/uploads/runner"
+REMOTE_REACH_GC=1 REMOTE_GC_STATUSES=0 REMOTE_UPLOAD_STATUSES=0 run_remote_case "$generation_conflict_case"
+grep -Fq 'runner generation already has a different binary' "${generation_conflict_case}/out" || fail "expected immutable generation rejection"
+grep -Fxq 'runner from the existing generation' "${generation_conflict_case}/uploads/runner" || fail "a retry must preserve the published binary"
+[ "$(< "${generation_conflict_case}/gc-count")" -eq 0 ] || fail "an incompatible retry must not start GC"
+
 for status in 255 124 141; do
   for statuses in "${status},0" "${status},${status},0"; do
     upload_retry_case="${TMPDIR}/upload-retry-${statuses}"
@@ -685,7 +767,8 @@ for status in 255 124 141; do
     failed_candidate=$(< "${upload_retry_case}/uploads/failed-candidate")
     grep -Fxq 'late stale bytes' "$failed_candidate" || fail "expected a late write to the failed candidate"
     grep -Fqx -- "$setup_command" "${upload_retry_case}/ssh.log" || fail "recovered upload must continue to setup"
-    [ "$(grep -c '^mutate mkdir ' "${upload_retry_case}/systemctl.log")" -eq 1 ] || fail "upload retry must not repeat destructive preparation"
+    [ ! -s "${upload_retry_case}/systemctl.log" ] || fail "PR image preparation must not mutate preview services or runtime directories"
+    [ "$(find "${upload_retry_case}/uploads" -name '.image-owner-*' | wc -l)" -eq 1 ] || fail "preparation must preserve current owner admission"
     [ "$(< "${upload_retry_case}/gc-count")" -eq 1 ] || fail "upload retry must not repeat GC"
     grep -Fq "runner upload failed: host=dev-arm-1 attempt=1/3 status=${status} elapsed_seconds=" "${upload_retry_case}/out" || fail "expected original upload status and timing"
     grep -Fq "runner upload completed: host=dev-arm-1 attempt=${expected_attempts}/3 elapsed_seconds=" "${upload_retry_case}/out" || fail "expected recovered upload timing"
@@ -745,7 +828,7 @@ jq -e --arg sha "$cli_sha" '
     piSdkVersion: "0.86.1+okou.0123456789ab",
     packageSha256: $sha
   }
-' "${metadata_case}/manifest.json" >/dev/null || fail "image manifest must describe the validated embedded CLI"
+' "${metadata_case}/manifest.json" > /dev/null || fail "image manifest must describe the validated embedded CLI"
 
 printf 'tampered\n' > "${cli_input}/package.tgz"
 tampered_case="${TMPDIR}/embedded-cli-tampered"

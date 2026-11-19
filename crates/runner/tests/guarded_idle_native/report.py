@@ -2,6 +2,7 @@
 """Validate native terminal receipts and correlate their real P1 sample windows."""
 
 import argparse
+from contextlib import contextmanager
 import hashlib
 import json
 import os
@@ -11,15 +12,31 @@ import stat
 import uuid
 
 
-def regular(path, limit):
-    """Read bounded original evidence without following links or blocking on a special file."""
+@contextmanager
+def open_original_stream(path):
+    """Lend a binary stream while retaining the original evidence descriptor."""
     fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-    with os.fdopen(fd, "rb") as stream:
+    try:
+        with os.fdopen(fd, "rb", closefd=False) as stream:
+            yield stream
+    finally:
+        os.close(fd)
+
+
+def regular(
+    path,
+    limit,
+    *,
+    nonregular_message="original evidence must be a regular file",
+    oversize_message="original evidence exceeded its bound",
+):
+    """Read bounded original evidence without following links or blocking on a special file."""
+    with open_original_stream(path) as stream:
         if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
-            raise ValueError("original evidence must be a regular file")
-        raw = stream.read(limit+1)
+            raise ValueError(nonregular_message)
+        raw = stream.read(limit + 1)
     if len(raw) > limit:
-        raise ValueError("original evidence exceeded its bound")
+        raise ValueError(oversize_message)
     return raw
 
 
@@ -47,14 +64,15 @@ def validate_snapshot_preparation(directory, artifacts):
         return result
 
     try:
-        fd = os.open(directory / "snapshot-preparation.json", os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-        with os.fdopen(fd, "rb") as stream:
-            if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
-                raise ValueError("snapshot preparation record is not a regular file")
-            raw = stream.read(65537)
+        raw = regular(
+            directory / "snapshot-preparation.json",
+            65536,
+            nonregular_message="snapshot preparation record is not a regular file",
+            oversize_message="snapshot preparation record hash or size mismatch",
+        )
     except OSError as error:
         raise ValueError("snapshot preparation record is unavailable") from error
-    if len(raw) > 65536 or hashlib.sha256(raw).hexdigest() != artifacts["snapshot_preparation_sha256"]:
+    if hashlib.sha256(raw).hexdigest() != artifacts["snapshot_preparation_sha256"]:
         raise ValueError("snapshot preparation record hash or size mismatch")
     record = json.loads(raw, object_pairs_hook=unique_fields)
     if not isinstance(record, dict) or set(record) != {
@@ -76,8 +94,13 @@ def validate_snapshot_preparation(directory, artifacts):
     if record["completed_monotonic_ns"] <= record["started_monotonic_ns"]:
         raise ValueError("unordered snapshot preparation observation clocks")
     boot = record["creator_boot_id"]
-    if not isinstance(boot, str) or str(uuid.UUID(boot)) != boot:
+    if not isinstance(boot, str) or not is_canonical_uuid(boot):
         raise ValueError("invalid snapshot preparation creator boot identity")
+
+
+def is_canonical_uuid(value):
+    """Compare the original spelling, preserving UUID parsing errors."""
+    return str(uuid.UUID(value)) == value
 
 
 def positive_integer(value):
@@ -318,7 +341,7 @@ def _validate_receipts(directory, cases, phases, collector):
             raise ValueError("native phase clocks do not positively order the work")
         identity = (events[1]["sandbox_id"], events[1]["backing_generation"])
         for value in identity:
-            if str(uuid.UUID(value)) != value:
+            if not is_canonical_uuid(value):
                 raise ValueError("native identity is not one canonical original generation")
         if identity[0] in sandbox_ids or identity[1] in backing_generations or any(
                 (e["sandbox_id"], e["backing_generation"]) != identity for e in events[2:]):

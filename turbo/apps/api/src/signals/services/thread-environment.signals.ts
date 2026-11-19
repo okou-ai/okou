@@ -34,7 +34,6 @@ export function createModelProviderEnvironmentSignals(
         }).result,
       ),
       platformEnvironment: undefined,
-      secrets: undefined,
       secretConnectorMap: modelProvider.secretConnectorMap,
       secretConnectorMetadataMap: modelProvider.secretConnectorMetadataMap,
       firewalls: manifest?.firewalls ?? [],

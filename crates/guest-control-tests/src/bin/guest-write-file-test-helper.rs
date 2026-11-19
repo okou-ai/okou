@@ -8,6 +8,17 @@ const RELEASE_POLL_INTERVAL: Duration = Duration::from_millis(10);
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    #[cfg(target_os = "linux")]
+    if args.as_slice() == ["--sealed-batch"] {
+        let code = match validate_sealed_stdin() {
+            Ok(()) => guest_write_file::run_sealed_batch(io::stderr().lock()),
+            Err(error) => {
+                eprintln!("invalid sealed batch stdin: {error}");
+                1
+            }
+        };
+        std::process::exit(code);
+    }
     if let Some(path) = blocking_path(&args)
         && let Err(error) = wait_for_release(path)
     {
@@ -17,6 +28,17 @@ fn main() {
 
     let code = guest_write_file::run_cli(args, io::stdin().lock(), io::stderr().lock());
     std::process::exit(code);
+}
+
+#[cfg(target_os = "linux")]
+fn validate_sealed_stdin() -> io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let mode = std::fs::metadata("/proc/self/fd/0")?.permissions().mode();
+    if mode & 0o111 != 0 {
+        return Err(io::Error::other("sealed batch input is executable"));
+    }
+    Ok(())
 }
 
 fn wait_for_release(path: &Path) -> io::Result<()> {

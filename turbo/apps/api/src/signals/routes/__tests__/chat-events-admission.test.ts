@@ -13,9 +13,9 @@ import { mockEnv, mockOptionalEnv, optionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { clearAllDetached } from "../../utils";
-import { holdCurrentSecretKms } from "./helpers/hold-secret-kms";
+import { holdDownloadSigning } from "./helpers/hold-download-signing";
 import { mailRoutes } from "../mail";
-import { expectApiError } from "./helpers/api-bdd";
+import { createBddApi, expectApiError } from "./helpers/api-bdd";
 import { mockGmailConnectorOAuth } from "./helpers/api-bdd-connectors";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { createPublicChatAdmissionFixture } from "./helpers/public-chat-admission-fixture";
@@ -869,7 +869,12 @@ describe("CHAT-02: admission without spendable credits", () => {
     const fixture = createPublicChatAdmissionFixture(context);
     await fixture.run(async () => {
       const { actor, agentId } = await fixture.createPaidNativeActor();
-      const kms = holdCurrentSecretKms(context.signal);
+      await createBddApi(context).updateAgentInstructions(
+        actor,
+        agentId,
+        `Pending ${randomUUID()}`,
+      );
+      const signing = holdDownloadSigning(context);
       const pendingEventId = randomUUID();
       const accepted = await chat.requestSendEvent(
         actor,
@@ -883,7 +888,7 @@ describe("CHAT-02: admission without spendable credits", () => {
       if (accepted.status !== 201) {
         throw new Error("Expected the pending Run input");
       }
-      await kms.entered;
+      await signing.entered;
       const pendingRunId = (
         await chat.listThreadEvents(actor, accepted.body.threadId)
       ).events.find((event) => {
@@ -899,7 +904,7 @@ describe("CHAT-02: admission without spendable credits", () => {
       // The cancel's slot hand-off is left running: it may pick and reject the
       // next send's input before the send's own background pick does.
       await api.requestCancelRun(actor, pending.runId, [200]);
-      kms.release();
+      signing.release();
 
       const clientEventId = randomUUID();
       const sent = await chat.requestSendEvent(

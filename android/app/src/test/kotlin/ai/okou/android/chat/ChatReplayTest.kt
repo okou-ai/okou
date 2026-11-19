@@ -1,6 +1,7 @@
 package ai.okou.android.chat
 
 import ai.okou.android.CHAT_AGENT
+import ai.okou.android.CHAT_IN_PROJECT
 import ai.okou.android.CHAT_OTHER_AGENT
 import ai.okou.android.CHAT_PERSONAL
 import ai.okou.android.CHAT_PROJECT
@@ -170,6 +171,126 @@ class ChatReplayTest {
                 )
                 .all { it.threads.isEmpty() }
         )
+    }
+
+    @Test
+    fun pinBoundaryDependsOnTheRowsVisibleWithinEachGroup() {
+        val ordinary = "99999999-9999-4999-8999-999999999999"
+        val project =
+            ConfirmedProject(
+                CHAT_PROJECT,
+                "Research",
+                "2026-11-13T00:00:00Z",
+                "2026-11-13T00:00:00Z",
+            )
+        val projectMember = ",\"projectId\":\"$CHAT_PROJECT\""
+        val state =
+            ChatListUiState(
+                threads =
+                    replay(
+                        event(1, "created", thread = CHAT_IN_PROJECT, extra = projectMember),
+                        event(2, "created", thread = ordinary, extra = projectMember),
+                        event(3, "created"),
+                        event(4, "pinned", thread = CHAT_IN_PROJECT, extra = ",\"pinOrder\":\"a1\""),
+                    ),
+                agents = agents(),
+                projectsEnabled = true,
+                projects = listOf(project),
+                indicators =
+                    Indicators(
+                        emptyMap(),
+                        mapOf(CHAT_IN_PROJECT to IndicatorsThreadsValue.UNREAD),
+                        emptyMap(),
+                    ),
+            )
+        val (projectGroup, outsideGroup) = chatListGroups(state)
+        assertEquals(listOf(CHAT_IN_PROJECT, ordinary), projectGroup.threads.map { it.id })
+        assertEquals(0, projectGroup.pinnedTailIndex())
+        assertEquals(-1, outsideGroup.pinnedTailIndex())
+
+        val unreadProject = chatListGroups(state.copy(filter = ChatListFilter.Unread)).first()
+        assertEquals(listOf(CHAT_IN_PROJECT), unreadProject.threads.map { it.id })
+        assertEquals(-1, unreadProject.pinnedTailIndex())
+    }
+
+    @Test
+    fun mutedChatsKeepRunningStatusAndCollapsedProjectsPreferVisibleUnread() {
+        val rows =
+            replay(
+                event(1, "created"),
+                event(2, "created", thread = CHAT_IN_PROJECT),
+                event(3, "sort_touched", extra = ",\"muted\":true"),
+            )
+        val running = rows.single { it.id == CHAT_PERSONAL }
+        val unread = rows.single { it.id == CHAT_IN_PROJECT }
+        val indicators =
+            mapOf(
+                running.id to IndicatorsThreadsValue.ACTIVE,
+                unread.id to IndicatorsThreadsValue.UNREAD,
+            )
+        assertEquals(
+            ChatRowStatus.Running,
+            chatRowStatus(indicators[running.id], running.muted == true),
+        )
+        assertEquals(ChatRowStatus.Muted, chatRowStatus(indicators[unread.id], muted = true))
+        assertEquals(
+            ChatRowStatus.Unread,
+            collapsedProjectStatus(listOf(running, unread), indicators),
+        )
+        assertEquals(
+            ChatRowStatus.Running,
+            collapsedProjectStatus(listOf(running, unread.copy(muted = true)), indicators),
+        )
+        assertEquals(
+            ChatRowStatus.None,
+            collapsedProjectStatus(listOf(unread.copy(muted = true)), indicators),
+        )
+    }
+
+    @Test
+    fun waveCountsIdleRowsAndProjectHeadersButSkipsFoldedChildren() {
+        val member = ",\"projectId\":\"$CHAT_PROJECT\""
+        val threads =
+            replay(
+                event(1, "created"),
+                event(2, "created", extra = member, thread = CHAT_IN_PROJECT),
+                event(3, "created", extra = member, thread = "99999999-9999-4999-8999-999999999999"),
+            )
+        val project =
+            ConfirmedProject(
+                CHAT_PROJECT,
+                "Research",
+                "2026-11-13T00:00:00Z",
+                "2026-11-13T00:00:00Z",
+            )
+        val groups =
+            chatListGroups(
+                ChatListUiState(
+                    threads = threads,
+                    agents = agents(),
+                    projectsEnabled = true,
+                    projects = listOf(project),
+                )
+            )
+        val indicators = mapOf(CHAT_IN_PROJECT to IndicatorsThreadsValue.ACTIVE)
+
+        val (open, afterOpen) = chatListSections(groups, emptyList(), indicators)
+        assertEquals(0, open.firstRow)
+        assertEquals(1, open.firstChatRow)
+        assertEquals(3, afterOpen.firstChatRow)
+
+        val (folded, afterFolded) = chatListSections(groups, listOf(project.id), indicators)
+        assertEquals(ChatRowStatus.Running, folded.foldedStatus)
+        assertEquals(1, afterFolded.firstChatRow)
+    }
+
+    @Test
+    fun waveRowsTrailByTwoHundredMillisecondsAndWrapEveryTwelveRows() {
+        val time = 1_100_000_000L
+        assertEquals(runningWavePhase(time, 0), runningWavePhase(time + 200_000_000L, 1), 0f)
+        assertEquals(runningWavePhase(time, 0), runningWavePhase(time, 12), 0f)
+        assertEquals(runningWavePhase(time, 0), runningWavePhase(time + 2_400_000_000L, 0), 0f)
+        assertEquals(11f / 12f, runningWavePhase(0, 1), 0.00001f)
     }
 
     @Test

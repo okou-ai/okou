@@ -1,4 +1,3 @@
-import type { ChatThreadServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
 import { isMemberRunModelConfigurable } from "@okouai/api-contracts/contracts/member-run-model";
 import type { AvailableRunModel } from "@okouai/api-contracts/contracts/model-providers";
 import {
@@ -58,7 +57,7 @@ interface SelectOptions {
 async function resolveServiceTier(
   selected: AvailableRunModel,
   priority: boolean | undefined,
-): Promise<ChatThreadServiceTier | null> {
+): Promise<"priority" | null> {
   if (selected.model === null || isAutoSelectedModel(selected.model)) {
     if (priority === true) {
       throw new Error("Fast mode is unavailable for Auto");

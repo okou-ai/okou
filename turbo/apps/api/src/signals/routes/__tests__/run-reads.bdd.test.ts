@@ -30,7 +30,7 @@ import { storageTextFile } from "./helpers/api-bdd-storage-files";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { refreshConcurrencyEntitlement } from "./helpers/stripe-billing-webhook";
-import { holdCurrentSecretKms } from "./helpers/hold-secret-kms";
+import { holdDownloadSigning } from "./helpers/hold-download-signing";
 
 /*
  * RUN-03/RUN-04 read surfaces for agent runs (list/read/queue/cancel,
@@ -2890,7 +2890,12 @@ describe("RUN-04/OPS-01: agent run logs", () => {
     const owned = await publicChatActor(context);
     const { actor, agentId } = owned;
     await owned.run(async () => {
-      const kms = holdCurrentSecretKms(context.signal);
+      await bdd.updateAgentInstructions(
+        actor,
+        agentId,
+        `Run detail ${randomUUID()}`,
+      );
+      const signing = holdDownloadSigning(context);
       const clientEventId = randomUUID();
       let pendingRunId: string | undefined;
       const preparation = await settleIncludingAbort(async () => {
@@ -2906,7 +2911,7 @@ describe("RUN-04/OPS-01: agent run logs", () => {
         if (sent.status !== 201) {
           throw new Error("Expected the pending input to be accepted");
         }
-        await kms.entered;
+        await signing.entered;
         const messages = await chat.listThreadEvents(actor, sent.body.threadId);
         pendingRunId = messages.events.find((event) => {
           return event.revokesEventId === clientEventId;
@@ -2938,7 +2943,7 @@ describe("RUN-04/OPS-01: agent run logs", () => {
           }),
         ).toContain(pendingRunId);
       });
-      kms.release();
+      signing.release();
       if (!preparation.ok) {
         throw preparation.error;
       }

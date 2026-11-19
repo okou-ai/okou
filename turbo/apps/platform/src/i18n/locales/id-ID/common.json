@@ -2481,9 +2481,11 @@
       "relatedArtifactCount_other": "{{formattedCount}} artefak",
       "relatedArtifacts": "Artefak terkait",
       "selectedModelAppliesAfterCurrentRun": "Model {{model}} yang Anda pilih akan berlaku setelah eksekusi ini",
+      "speedChangedTo": "Kecepatan diubah ke {{speed}}",
       "thinking": {
         "default": "Sedang berpikir..."
       },
+      "ultrafastModelName": "{{model}} · Ultrafast",
       "viewActivityLogs": "Lihat log aktivitas",
       "viewLogs": "Lihat log eksekusi",
       "waitingIn": "Menunggu di",
@@ -5500,7 +5502,10 @@
         "models": "Model",
         "noConfiguredModels": "Tidak ada model yang dikonfigurasi",
         "pro": "Pro",
-        "standard": "Standar"
+        "speed": "Kecepatan",
+        "standard": "Standar",
+        "ultrafast": "Ultrafast",
+        "ultrafastUsage": "Menggunakan lebih banyak kuota Codex Anda."
       },
       "reset": {
         "confirmDescription": "Gunakan satu reset Codex untuk mereset jendela penggunaan saat ini. Anda memiliki {{remaining}}.",

@@ -251,15 +251,7 @@ async fn execute_cli_injects_user_env_without_runner_owned_bootstrap_env()
         Some("/tmp/explicit-uppercase-npm-cache")
     );
 
-    for key in [
-        guest_contracts::env::CANONICAL_API_TOKEN_ENV,
-        guest_contracts::env::VERCEL_PROTECTION_BYPASS_ENV,
-    ] {
-        assert!(
-            !cli_env.contains_key(key),
-            "Claude child env contains sensitive bootstrap key {key}"
-        );
-    }
+    assert!(!cli_env.contains_key(guest_contracts::env::CANONICAL_API_TOKEN_ENV));
     for key in [
         guest_contracts::runtime_paths::CANONICAL_GUEST_RUNTIME_DIR_ENV,
         guest_contracts::env::CANONICAL_USER_ENV_FILE_ENV,

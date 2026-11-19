@@ -17,7 +17,7 @@ import {
 } from "@okouai/db/schema/official-workflow-catalog";
 import { command } from "ccstate";
 import { array, string } from "zod";
-import { and, eq, isNotNull } from "drizzle-orm";
+import { and, eq, isNotNull, sql, type SQLWrapper } from "drizzle-orm";
 
 import { db$ } from "../external/db";
 
@@ -77,6 +77,19 @@ export function acceptedOfficialWorkflowCatalogReadPlan() {
       OFFICIAL_WORKFLOW_CATALOG_AUTHORITY,
     ),
   };
+}
+
+/** Locate only the first named Definition; the original payload still parses at runtime. */
+export function acceptedCatalogDefinitionRevision(definitionName: SQLWrapper) {
+  return sql`(SELECT CASE WHEN jsonb_typeof(definition.value->'revision') = 'string'
+      THEN definition.value->>'revision' END
+    FROM jsonb_array_elements(CASE
+      WHEN jsonb_typeof(${officialWorkflowCatalogReleases.payload}->'definitions') = 'array'
+      THEN ${officialWorkflowCatalogReleases.payload}->'definitions' ELSE '[]'::jsonb END)
+      WITH ORDINALITY AS definition(value, ordinal)
+    WHERE jsonb_typeof(definition.value->'name') = 'string'
+      AND definition.value->>'name' = ${definitionName}
+    ORDER BY definition.ordinal LIMIT 1)`;
 }
 
 export function acceptedCatalogFromRow(

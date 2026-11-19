@@ -1,9 +1,13 @@
 import { randomUUID } from "node:crypto";
+import { HeadObjectCommand } from "@aws-sdk/client-s3";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { mockEnv } from "../../../lib/env";
+import { buildArtifactKeyV2 } from "../../../lib/file-url";
 import { closeS3Clients } from "../../../lib/s3-client";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
+import { flushWaitUntilForTest } from "../../context/wait-until";
+import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { createPublicRunnerMemory } from "./helpers/public-runner-memory";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 
@@ -74,6 +78,104 @@ describe("Execution Storage URL freshness", () => {
         "Reuse the published execution URL",
       );
       expect(reused.memory).toStrictEqual(refreshed.memory);
+    });
+  });
+
+  it("dispatches the captured Memory archive when HEAD changes during chat startup", async () => {
+    const fixture = createPublicRunnerMemory(context);
+    const chat = createChatEventsFixture(context);
+    await fixture.run(async () => {
+      const agentId = await fixture.initializeNative();
+      fixture.installObjects();
+      const first = await fixture.startExecution(agentId, "Create Memory");
+      const version = await fixture.publish(first, [
+        { path: "MEMORY.md", content: "First version" },
+      ]);
+      const writer = await fixture.startExecution(agentId, "Update Memory");
+      const fileId = randomUUID();
+      const filename = "hold.txt";
+      const key = buildArtifactKeyV2(fileId, filename);
+      const entered = createDeferredPromise<void>(context.signal);
+      const release = createDeferredPromise<void>(context.signal);
+      const original = context.mocks.s3.send.getMockImplementation();
+      if (!original) {
+        throw new Error("Expected the Memory fixture's storage transport");
+      }
+      context.mocks.s3.send.mockImplementation(async (request: unknown) => {
+        if (request instanceof HeadObjectCommand && request.input.Key === key) {
+          entered.resolve(undefined);
+          await release.promise;
+          return {
+            ContentLength: 1,
+            ContentType: "text/plain",
+            LastModified: new Date(now()),
+            Metadata: {
+              "artifact-id": fileId,
+              "user-id": encodeURIComponent(fixture.actor.userId),
+              filename,
+            },
+          };
+        }
+        return await original(request);
+      });
+      const sending = settleIncludingAbort(
+        chat.sendChatRun(fixture.actor, {
+          agentId,
+          model: "claude-fable-5-1",
+          prompt: "Use the captured Memory",
+          userMessage: {
+            version: 1,
+            parts: [
+              {
+                type: "file",
+                fileId,
+                filenameSnapshot: filename,
+                contentType: "text/plain",
+              },
+              { type: "text", text: "Use the captured Memory" },
+            ],
+          },
+        }),
+      );
+      onTestFinished(async () => {
+        if (!release.settled()) {
+          release.resolve(undefined);
+        }
+        await sending;
+      });
+      await Promise.race([
+        entered.promise,
+        sending.then((result) => {
+          throw result.ok
+            ? new Error("The send finished before reading its attachment")
+            : result.error;
+        }),
+      ]);
+      await flushWaitUntilForTest();
+      const nextVersion = await fixture.publish(writer, [
+        { path: "MEMORY.md", content: "Second version" },
+      ]);
+      release.resolve(undefined);
+      const sent = await sending;
+      if (!sent.ok) {
+        throw sent.error;
+      }
+      fixture.registerRun(sent.value.runId);
+      const state = await fixture.api.readRun(fixture.actor, sent.value.runId);
+      const captured = await fixture.readExecution({
+        ...sent.value,
+        status: state.status,
+        createdAt: state.createdAt,
+      });
+      expect(captured.memory).toStrictEqual(writer.memory);
+      expect(captured.memory.versionId).toBe(version);
+      await fixture.cancel(captured);
+      const next = await fixture.startExecution(
+        agentId,
+        "Use the current Memory",
+      );
+      expect(next.memory.versionId).toBe(nextVersion);
+      await fixture.cancel(next);
     });
   });
 });

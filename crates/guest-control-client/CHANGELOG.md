@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.23.111](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.110...guest-control-client-v0.23.111) (2026-11-18)
+
+
+### Performance Improvements
+
+* **guest-control:** borrow large decoded storage payloads during frame writes ([#48745](https://github.com/okou-ai/okou/issues/48745)) ([1e3f727](https://github.com/okou-ai/okou/commit/1e3f727d0f87da52008d69386f1c983154c5a524))
+
+## [0.23.110](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.109...guest-control-client-v0.23.110) (2026-11-18)
+
 ## [0.23.109](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.108...guest-control-client-v0.23.109) (2026-11-18)
 
 ## [0.23.108](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.107...guest-control-client-v0.23.108) (2026-11-18)

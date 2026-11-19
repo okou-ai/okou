@@ -20,6 +20,9 @@ bash "$script"
 grep -Fxq 'ci@x86-1' "$SSH_LOG"
 grep -Fxq 'sudo /var/lib/vm0-runner/bin/pr-123/runner service prune-idle --name pr-123-2 --expected-runner-id 550e8400-e29b-41d4-a716-446655440000 --expected-heartbeat-generation 7 --timeout-secs 120' "$SSH_LOG"
 
+RUNNER_RECEIPT=$(jq -c '.binDir += "-image-1234"' <<<"$receipt") bash "$script"
+grep -Fq 'sudo /var/lib/vm0-runner/bin/pr-123-image-1234/runner service prune-idle' "$SSH_LOG"
+
 # A failed request (including a stale generation or unsupported old binary)
 # remains a failure, and never retries against a newly discovered generation.
 status=0
@@ -30,6 +33,7 @@ for invalid in \
   '.service = "pr-999-2"' \
   '.service = "pr-123-1"' \
   '.binDir = "/var/lib/vm0-runner/bin/pr-999"' \
+  '.binDir += "-image-1234/../"' \
   '.runnerId = "invalid"' \
   '.heartbeatGeneration = 0' \
   '.heartbeatGeneration = 1.5'; do

@@ -1,5 +1,5 @@
 {
-  "id": "ed083a83-4614-4262-a3af-3d6850752f7b",
+  "id": "3e8bcaa4-3bed-4ba8-a329-242f8f50494f",
   "prevId": "95a3d41f-c1c8-4072-8768-8020c17d60d4",
   "version": "7",
   "dialect": "postgresql",
@@ -9166,7 +9166,7 @@
         },
         "chk_chat_threads_codex_service_tier": {
           "name": "chk_chat_threads_codex_service_tier",
-          "value": "\"chat_threads\".\"codex_service_tier\" IS NULL OR \"chat_threads\".\"codex_service_tier\" = 'fast'"
+          "value": "\"chat_threads\".\"codex_service_tier\" IS NULL OR \"chat_threads\".\"codex_service_tier\" IN ('fast', 'ultrafast')"
         },
         "chat_threads_computer_access_check": {
           "name": "chat_threads_computer_access_check",
@@ -19986,18 +19986,6 @@
           "notNull": true,
           "default": true
         },
-        "widget_push_token": {
-          "name": "widget_push_token",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "widget_pushed_at": {
-          "name": "widget_pushed_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp",
@@ -22137,7 +22125,7 @@
         },
         "chk_model_routes_service_tiers": {
           "name": "chk_model_routes_service_tiers",
-          "value": "\"model_routes\".\"service_tiers\" <@ ARRAY['priority']::text[] AND (\"model_routes\".\"default_service_tier\" IS NULL OR \"model_routes\".\"default_service_tier\" = ANY(\"model_routes\".\"service_tiers\"))"
+          "value": "\"model_routes\".\"service_tiers\" <@ CASE WHEN \"model_routes\".\"subscription_type\" = 'codex-oauth-token' THEN ARRAY['priority', 'ultrafast']::text[] ELSE ARRAY['priority']::text[] END AND (\"model_routes\".\"default_service_tier\" IS NULL OR \"model_routes\".\"default_service_tier\" = ANY(\"model_routes\".\"service_tiers\"))"
         },
         "chk_model_routes_efforts": {
           "name": "chk_model_routes_efforts",

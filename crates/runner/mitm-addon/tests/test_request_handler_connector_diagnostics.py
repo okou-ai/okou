@@ -525,7 +525,7 @@ async def test_active_builtin_connector_url_uses_firewall_path(
         tmp_path,
         sandbox_info={
             **_sandbox_without_firewalls(tmp_path),
-            "encryptedSecrets": "iv:tag:data",
+            "firewallToken": "host-firewall-token",
             "firewalls": [{"kind": "builtin", "name": "fal"}],
         },
     )

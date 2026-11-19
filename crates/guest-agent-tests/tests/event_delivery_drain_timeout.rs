@@ -38,7 +38,6 @@ async fn event_delivery_aborts_after_the_global_drain_deadline()
     runtime.http = guest_agent::http::HttpClient::with_api_config(
         &server.base_url,
         "test-token",
-        "",
         run_id,
         Duration::from_secs(1),
     )?;

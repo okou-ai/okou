@@ -42,8 +42,7 @@ def supplied_policy(collector, result, key):
             or hashlib.sha256(raw.encode()).hexdigest() != result["artifacts"]["policy_sha256"]):
         raise ValueError("cleanup original policy identity changed")
     policy = json.loads(raw, object_pairs_hook=report.unique_object)
-    if (not isinstance(policy, dict) or set(policy) != pressure.POLICY_FIELDS
-            or any(not pressure.integer(v, 1) for v in policy.values())
+    if (not pressure.has_policy_shape(policy)
             or policy["operating_floor_bytes"] + policy["cleanup_reserve_bytes"] >= policy["host_total_bytes"]
             or not policy["operating_floor_bytes"] <= policy["critical_available_bytes"]
             < policy["recovery_available_bytes"] <= policy["host_total_bytes"]

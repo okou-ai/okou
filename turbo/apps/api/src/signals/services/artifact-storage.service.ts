@@ -413,22 +413,66 @@ function resolvedV2ArtifactObjectFromHead(args: {
   };
 }
 
+function publicArtifactObjectReads(
+  counts: S3ObjectReadCounts | undefined,
+  signal: AbortSignal,
+) {
+  const bucket = env("R2_USER_ARTIFACTS_BUCKET_NAME");
+  return {
+    head(key: string) {
+      return s3ObjectHead(bucket, key, counts, signal);
+    },
+    list(prefix: string) {
+      return listS3Objects(bucket, prefix, counts);
+    },
+  };
+}
+
+type PublicArtifactObjectReads = ReturnType<typeof publicArtifactObjectReads>;
+
+function memoizeObjectRead<T>(read: (key: string) => T) {
+  const reads = new Map<string, T>();
+  return (key: string): T => {
+    const existing = reads.get(key);
+    if (existing !== undefined) {
+      return existing;
+    }
+    const next = read(key);
+    reads.set(key, next);
+    return next;
+  };
+}
+
+/** Reuse each physical storage read across the filename hints in a send. */
+export function createPublicArtifactObjectReads(
+  counts: S3ObjectReadCounts,
+  signal: AbortSignal,
+): PublicArtifactObjectReads {
+  const reads = publicArtifactObjectReads(counts, signal);
+  return {
+    head: memoizeObjectRead(reads.head),
+    list: memoizeObjectRead(reads.list),
+  };
+}
+
+interface PublicArtifactLookup {
+  readonly reads: PublicArtifactObjectReads;
+  readonly userId: string;
+  readonly id: string;
+}
+
 const resolveExactV2ArtifactObject$ = command(
   async (
     { get },
-    args: {
-      readonly bucket: string;
-      readonly userId: string;
-      readonly id: string;
+    args: PublicArtifactLookup & {
       readonly filenameHint: string;
       readonly variant: string | undefined;
-      readonly counts?: S3ObjectReadCounts;
     },
     signal: AbortSignal,
   ): Promise<ResolvedArtifactObject | null> => {
-    const { bucket, userId, id, filenameHint, variant } = args;
+    const { reads, userId, id, filenameHint, variant } = args;
     const key = buildArtifactKeyV2(id, filenameHint, variant);
-    const head = await get(s3ObjectHead(bucket, key, args.counts, signal));
+    const head = await get(reads.head(key));
     signal.throwIfAborted();
     return resolvedV2ArtifactObjectFromHead({ userId, id, key, head });
   },
@@ -437,21 +481,13 @@ const resolveExactV2ArtifactObject$ = command(
 const resolveV2ArtifactObject$ = command(
   async (
     { get },
-    args: {
-      readonly bucket: string;
-      readonly userId: string;
-      readonly id: string;
-      readonly counts?: S3ObjectReadCounts;
-    },
+    { reads, userId, id }: PublicArtifactLookup,
     signal: AbortSignal,
   ): Promise<ResolvedArtifactObject | null> => {
-    const { bucket, userId, id, counts } = args;
-    const objects = await get(
-      listS3Objects(bucket, buildArtifactPrefixV2(id), counts),
-    );
+    const objects = await get(reads.list(buildArtifactPrefixV2(id)));
     signal.throwIfAborted();
     for (const object of objects) {
-      const head = await get(s3ObjectHead(bucket, object.key, counts, signal));
+      const head = await get(reads.head(object.key));
       signal.throwIfAborted();
       const resolved = resolvedV2ArtifactObjectFromHead({
         userId,
@@ -471,21 +507,13 @@ const resolveV2ArtifactObject$ = command(
 const resolveV1ArtifactObject$ = command(
   async (
     { get },
-    args: {
-      readonly bucket: string;
-      readonly userId: string;
-      readonly id: string;
-      readonly counts?: S3ObjectReadCounts;
-    },
+    { reads, userId, id }: PublicArtifactLookup,
     signal: AbortSignal,
   ): Promise<ResolvedArtifactObject | null> => {
-    const { bucket, userId, id, counts } = args;
     // V1 objects predate the layout marker and keep their legacy links for the
     // persisted object's lifetime. Remove with V1 reads once no V1 object
     // remains reachable; tracked by #28449.
-    const objects = await get(
-      listS3Objects(bucket, buildArtifactPrefix(userId, id), counts),
-    );
+    const objects = await get(reads.list(buildArtifactPrefix(userId, id)));
     signal.throwIfAborted();
     const object = objects[0];
     if (!object) {
@@ -512,16 +540,20 @@ export const resolvedArtifactObject$ = command(
       readonly id: string;
       readonly filenameHint?: string;
       readonly variant?: string;
-      readonly counts?: S3ObjectReadCounts;
+      readonly reads?: PublicArtifactObjectReads;
     },
     signal: AbortSignal,
   ): Promise<ResolvedArtifactObject | null> => {
     const { userId, id, filenameHint, variant } = args;
-    const bucket = env("R2_USER_ARTIFACTS_BUCKET_NAME");
+    const lookup = {
+      userId,
+      id,
+      reads: args.reads ?? publicArtifactObjectReads(undefined, signal),
+    };
     if (filenameHint !== undefined) {
       const exact = await set(
         resolveExactV2ArtifactObject$,
-        { bucket, userId, id, filenameHint, variant, counts: args.counts },
+        { ...lookup, filenameHint, variant },
         signal,
       );
       if (exact) {
@@ -532,16 +564,8 @@ export const resolvedArtifactObject$ = command(
       return null;
     }
     return (
-      (await set(
-        resolveV2ArtifactObject$,
-        { bucket, userId, id, counts: args.counts },
-        signal,
-      )) ??
-      (await set(
-        resolveV1ArtifactObject$,
-        { bucket, userId, id, counts: args.counts },
-        signal,
-      ))
+      (await set(resolveV2ArtifactObject$, lookup, signal)) ??
+      (await set(resolveV1ArtifactObject$, lookup, signal))
     );
   },
 );

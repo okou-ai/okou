@@ -18,7 +18,7 @@ import type {
 import type { Environment } from "./run-environment";
 import type { ConnectorServerFirewallMetadataCatalog } from "./connector-server-firewall-catalog.service";
 import type { ResolvedPermissionGrant } from "./user-permission-grants.service";
-import type { CapturedExecutionPackages } from "./direct-run-preparation.service";
+import type { CapturedExecutionPackages } from "./execution-workflow-selection";
 
 /** Captured policy sources; actual artifact expiry is evaluated at publication. */
 export interface ExecutionNetworkPolicyInputs {
@@ -45,7 +45,6 @@ export interface AdmittedExecutionFacts {
   >;
   readonly okouToken: string;
   readonly disabledPaidTools: readonly PaidToolId[];
-  readonly previewBypassAuthorized: boolean;
   readonly realAgentInPreview: boolean | undefined;
   readonly apiStartTime: number | undefined;
   readonly connectorRuntimeTargets: readonly ConnectorRuntimeTargetRegistration[];

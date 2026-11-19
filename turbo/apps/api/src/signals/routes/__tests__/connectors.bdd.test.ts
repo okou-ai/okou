@@ -115,10 +115,6 @@ async function createBuiltinCredentialConsumer(
     prompt: "Consume the connected account's current credential",
   });
   const { execution, sandboxHeaders } = await fixture.runExecution(sent.runId);
-  const encryptedSecrets = execution.encryptedSecrets;
-  if (!encryptedSecrets) {
-    throw new Error("Expected encrypted secrets from the actual claim");
-  }
   return {
     execution,
     resolve(alias: string, claimedAlias = alias) {
@@ -133,9 +129,8 @@ async function createBuiltinCredentialConsumer(
       }
       return own(() => {
         return firewall.requestFirewallAuth(
-          sandboxHeaders,
+          { authorization: `Bearer ${execution.firewallToken}` },
           {
-            encryptedSecrets,
             authHeaders: {
               Authorization: "Bearer ${{ secrets." + alias + " }}",
             },
@@ -3124,9 +3119,8 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     const apiId = api.id;
     const authorization = await own(() => {
       return firewall.requestFirewallAuth(
-        sandboxHeaders,
+        { authorization: `Bearer ${execution.firewallToken}` },
         {
-          encryptedSecrets: firewall.encryptedSecretsBody({}),
           authHeaders: api.auth.headers ?? {},
           matchedFirewall: {
             name: entry.firewall.name,
@@ -5332,9 +5326,8 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       const apiId = api.id;
       const authorization = await own(() => {
         return firewall.requestFirewallAuth(
-          sandboxHeaders,
+          { authorization: `Bearer ${execution.firewallToken}` },
           {
-            encryptedSecrets: firewall.encryptedSecretsBody({}),
             authHeaders: api.auth.headers ?? {},
             matchedFirewall: {
               name: entry.firewall.name,
@@ -5473,9 +5466,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
         agentId,
         prompt: "Use the configured custom credential",
       });
-      const { execution, sandboxHeaders } = await fixture.runExecution(
-        sent.runId,
-      );
+      const { execution } = await fixture.runExecution(sent.runId);
       const entry = execution.firewalls?.find((candidate) => {
         return (
           candidate.kind === "inline" &&
@@ -5501,7 +5492,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
         throw new Error("Expected the claimed custom API identity");
       }
       const authBody = {
-        encryptedSecrets: firewall.encryptedSecretsBody({}),
         authHeaders: api.auth.headers ?? {},
         matchedFirewall: {
           name: entry.firewall.name,
@@ -5512,7 +5502,11 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
         },
       };
       const admitted = await own(() => {
-        return firewall.requestFirewallAuth(sandboxHeaders, authBody, [200]);
+        return firewall.requestFirewallAuth(
+          { authorization: `Bearer ${execution.firewallToken}` },
+          authBody,
+          [200],
+        );
       });
       expect(admitted.body).toMatchObject({
         headers: { Authorization: "Bearer shared-secret" },
@@ -5524,7 +5518,11 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
         );
       });
       const rejected = await own(() => {
-        return firewall.requestFirewallAuth(sandboxHeaders, authBody, [424]);
+        return firewall.requestFirewallAuth(
+          { authorization: `Bearer ${execution.firewallToken}` },
+          authBody,
+          [424],
+        );
       });
       expect(rejected.status).toBe(424);
       await expectCustomAccountReadiness(
@@ -5679,9 +5677,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
         agentId,
         prompt: "Use both independent regions",
       });
-      const { execution, sandboxHeaders } = await fixture.runExecution(
-        sent.runId,
-      );
+      const { execution } = await fixture.runExecution(sent.runId);
       function resolveRegion(customConnectorId: string) {
         const entry = execution.firewalls?.find((candidate) => {
           return (
@@ -5708,9 +5704,8 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
         }
         return own(() => {
           return firewall.requestFirewallAuth(
-            sandboxHeaders,
+            { authorization: `Bearer ${execution.firewallToken}` },
             {
-              encryptedSecrets: firewall.encryptedSecretsBody({}),
               authHeaders: api.auth.headers ?? {},
               authQuery: api.auth.query,
               matchedFirewall: {
@@ -5798,7 +5793,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
           prompt: "Use the authorized custom connector",
         });
       });
-      const { execution, sandboxHeaders } = await own(() => {
+      const { execution } = await own(() => {
         return fixture.runExecution(sent.runId);
       });
       const entry = execution.firewalls?.find((candidate) => {
@@ -5824,7 +5819,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
         throw new Error("Expected the claimed custom runtime target");
       }
       const authBody = {
-        encryptedSecrets: firewall.encryptedSecretsBody({}),
         authHeaders: api.auth.headers ?? {},
         matchedFirewall: {
           name: entry.firewall.name,
@@ -5835,7 +5829,11 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
         },
       };
       const originalAuth = await own(() => {
-        return firewall.requestFirewallAuth(sandboxHeaders, authBody, [200]);
+        return firewall.requestFirewallAuth(
+          { authorization: `Bearer ${execution.firewallToken}` },
+          authBody,
+          [200],
+        );
       });
       expect(originalAuth.body).toMatchObject({
         headers: { Authorization: "Bearer rollback-original" },
@@ -5864,7 +5862,11 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
         }),
       ).resolves.toStrictEqual(beforeFailure);
       const retainedAuth = await own(() => {
-        return firewall.requestFirewallAuth(sandboxHeaders, authBody, [200]);
+        return firewall.requestFirewallAuth(
+          { authorization: `Bearer ${execution.firewallToken}` },
+          authBody,
+          [200],
+        );
       });
       expect(retainedAuth.body).toStrictEqual(originalAuth.body);
       expect(retainedAuth.body).toMatchObject({

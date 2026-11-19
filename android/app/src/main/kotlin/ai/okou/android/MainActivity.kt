@@ -3,6 +3,7 @@ package ai.okou.android
 import ai.okou.android.api.generated.AndroidUpdatesRelease
 import ai.okou.android.auth.SessionModel
 import ai.okou.android.auth.SessionRoot
+import ai.okou.android.auth.SessionStage
 import ai.okou.android.auth.WorkspaceSessionFactory
 import ai.okou.android.preferences.applyApplicationLocale
 import ai.okou.android.state.SavedStatePolicy
@@ -98,7 +99,7 @@ class MainActivity : AppCompatActivity() {
                     ?: ai.okou.android.api.generated.UserPreferencesColorTheme.DEFAULT,
             ) {
                 UpdateHost(
-                    if (sessionState.stage == ai.okou.android.auth.SessionStage.UpdateRequired)
+                    if (sessionState.stage == SessionStage.UpdateRequired)
                         updateState.copy(required = true)
                     else updateState,
                     { updates.check() },
@@ -107,6 +108,8 @@ class MainActivity : AppCompatActivity() {
                     updates::defer,
                     ::installUpdate,
                     updateSourceAuthorized,
+                    showAnnouncement =
+                        sessionState.stage != SessionStage.Ready || sessionState.ready == null,
                 ) { openUpdates ->
                     SessionRoot(
                         sessionState,
@@ -133,6 +136,7 @@ class MainActivity : AppCompatActivity() {
                         appUpdates = {
                             AppUpdateSettings(updateState, openUpdates, { updates.check() })
                         },
+                        openUpdate = openUpdates.takeIf { updateState.announce },
                     )
                 }
             }

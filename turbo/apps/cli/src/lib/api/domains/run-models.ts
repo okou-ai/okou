@@ -1,4 +1,3 @@
-import type { ChatThreadServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
 import type { AvailableRunModelsResponse } from "@okouai/api-contracts/contracts/model-providers";
 import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
 import { initClient } from "@okouai/api-contracts/contracts/trpc-contract";
@@ -39,7 +38,7 @@ export async function getUserModelPreference() {
  */
 export async function selectRunModel(
   model: string | null,
-  serviceTier: ChatThreadServiceTier | null,
+  serviceTier: "priority" | null,
 ) {
   const client = initClient(
     userModelPreferenceContract,

@@ -114,15 +114,17 @@ pub(crate) async fn request_on_shared(
 
 async fn write_request_frame(
     shared: &Arc<Shared>,
-    data: &[u8],
+    prefix: &[u8],
+    suffix: &[u8],
     budget: &RequestBudget,
     before_write: impl FnOnce() -> io::Result<()>,
     progress: &RequestWriteProgress,
     timing: Option<&mut RequestTiming>,
 ) -> io::Result<()> {
     let decision = shared
-        .write_frame(
-            data,
+        .write_frame_parts(
+            prefix,
+            suffix,
             || {
                 // A ready lock can be polled before timeout_at notices expiry.
                 // Reject before tracker/observer side effects or partial writes.
@@ -165,7 +167,7 @@ pub(crate) async fn write_request_frame_with_builder(
     write_request_frame_with_builder_and_progress(
         shared,
         seq,
-        build_frame,
+        |seq, frame| build_frame(seq, frame).map(|()| &[][..]),
         &budget,
         before_write,
         &progress,
@@ -174,10 +176,10 @@ pub(crate) async fn write_request_frame_with_builder(
     .await
 }
 
-async fn write_request_frame_with_builder_and_progress(
+async fn write_request_frame_with_builder_and_progress<'a>(
     shared: &Arc<Shared>,
     seq: u32,
-    build_frame: impl FnOnce(u32, &mut Vec<u8>) -> io::Result<()>,
+    build_frame: impl FnOnce(u32, &mut Vec<u8>) -> io::Result<&'a [u8]>,
     budget: &RequestBudget,
     before_write: impl FnOnce() -> io::Result<()>,
     progress: &RequestWriteProgress,
@@ -197,8 +199,17 @@ async fn write_request_frame_with_builder_and_progress(
     if let (Some(timing), Some(started)) = (timing.as_deref_mut(), encode_started) {
         timing.frame_encode = Some(started.elapsed());
     }
-    encoded?;
-    let result = write_request_frame(shared, &frame, budget, before_write, progress, timing).await;
+    let suffix = encoded?;
+    let result = write_request_frame(
+        shared,
+        &frame,
+        suffix,
+        budget,
+        before_write,
+        progress,
+        timing,
+    )
+    .await;
     drop(frame);
     drop(frame_builder_guard);
     result
@@ -260,7 +271,7 @@ async fn write_registered_request_and_wait(
     let budget = RequestBudget { deadline, timeout };
     time::timeout_at(
         deadline,
-        write_request_frame(shared, data, &budget, before_write, &progress, None),
+        write_request_frame(shared, data, &[], &budget, before_write, &progress, None),
     )
     .await
     .map_err(|_| request_timeout_error(progress.timeout_stage(), timeout))??;
@@ -268,10 +279,10 @@ async fn write_registered_request_and_wait(
     await_pending_response(rx, deadline, timeout).await
 }
 
-async fn write_registered_request_and_wait_with_frame_builder(
+async fn write_registered_request_and_wait_with_frame_builder<'a>(
     shared: &Arc<Shared>,
     seq: u32,
-    build_frame: impl FnOnce(u32, &mut Vec<u8>) -> io::Result<()>,
+    build_frame: impl FnOnce(u32, &mut Vec<u8>) -> io::Result<&'a [u8]>,
     budget: RequestBudget,
     before_write: impl FnOnce() -> io::Result<()>,
     rx: oneshot::Receiver<RawMessage>,
@@ -367,18 +378,19 @@ pub(crate) async fn normal_request_on_shared_with_write_observer_frame_builder(
         terminal_msg_types,
         timeout,
         write_observer,
-        build_frame,
+        |seq, frame| build_frame(seq, frame).map(|()| &[][..]),
         None,
     )
     .await
 }
 
-pub(crate) async fn normal_request_on_shared_with_timing_frame_builder(
+/// Build the frame into the owned buffer and return any borrowed suffix.
+pub(crate) async fn normal_request_on_shared_with_timing_frame_builder<'a>(
     shared: &Arc<Shared>,
     terminal_msg_types: &'static [u8],
     timeout: Duration,
     write_observer: FrameWriteObserver,
-    build_frame: impl FnOnce(u32, &mut Vec<u8>) -> io::Result<()>,
+    build_frame: impl FnOnce(u32, &mut Vec<u8>) -> io::Result<&'a [u8]>,
     mut timing: Option<&mut RequestTiming>,
 ) -> io::Result<RawMessage> {
     if timeout.is_zero() {
@@ -453,7 +465,7 @@ pub(crate) async fn request_on_shared_with_composite_operation_and_observer_fram
     write_registered_request_and_wait_with_frame_builder(
         shared,
         seq,
-        build_frame,
+        |seq, frame| build_frame(seq, frame).map(|()| &[][..]),
         RequestBudget { deadline, timeout },
         || {
             mark_pending_normal_operation_possible_guest_write(shared, route_id, |_| Ok(()))?;

@@ -4,14 +4,15 @@ import {
   type PreparedExecutionContext,
 } from "@okouai/api-contracts/contracts/runners";
 import type { agentRuns } from "@okouai/db/runtime/agent-run";
-import type { PersistedStorageMount } from "@okouai/db/types";
 import { computed, type Computed } from "ccstate";
-import { previewAutomationBypassSecret } from "../../lib/preview-automation-bypass";
 import { billableFirewallsForPermissions } from "./built-in-route-pricing";
 import type { AdmittedExecutionFacts } from "./admitted-execution-facts";
 import { NATIVE_CONTEXT_RECOVERY_PROMPT } from "./chat-session-continuity.service";
 import { dataRouterEnvironment } from "./data-router-environment";
-import { createAcceptedExecutionStorageObjects } from "./execution-storage.service";
+import {
+  createAcceptedExecutionStorage,
+  type AcceptedMemoryMount,
+} from "./execution-storage.service";
 import { executionSkillRoot } from "./execution-workflow-selection";
 import type { ModelFirstPin } from "./model-selection.service";
 import {
@@ -24,7 +25,6 @@ import {
   mergeRunSkillVolumes,
   resolveRunSkillVolumes,
 } from "./run-prompt-and-skills";
-import { storedMountFromPrepared } from "./run-storage-manifest.service";
 import {
   DEFAULT_DISALLOWED_TOOLS,
   runPlatformEnvironment,
@@ -58,12 +58,12 @@ export type ExecutionContextRun = Pick<
   readonly chatThreadId: string;
   readonly framework: "claude-code" | "codex" | "pi";
   readonly vars: Record<string, string>;
-  readonly storageMounts: readonly PersistedStorageMount[];
 };
 
 type ExecutionInput = {
   readonly run: ExecutionContextRun;
   readonly facts: AdmittedExecutionFacts;
+  readonly memoryMounts: readonly AcceptedMemoryMount[];
 };
 
 type ExecutionInput$ = Computed<Promise<ExecutionInput>>;
@@ -98,7 +98,11 @@ export function createExecutionRuntimeContext(input$: ExecutionInput$) {
       return (await get(input$)).facts.modelProviderPermissions;
     }),
   );
-  const storage$ = createExecutionStorage(input$);
+  const storage$ = createAcceptedExecutionStorage(
+    computed(async (get) => {
+      return (await get(input$)).memoryMounts;
+    }),
+  );
   const packages$ = createExecutionPackages(input$, storage$);
   const platform$ = createExecutionPlatform(input$, model$, disabledTools$);
   const environment$ = createExecutionEnvironment(
@@ -116,41 +120,6 @@ export function createExecutionRuntimeContext(input$: ExecutionInput$) {
   return { prepared$, packageContext$: packages$ };
 }
 
-function createExecutionStorage(input$: ExecutionInput$) {
-  const mounts$ = computed(async (get) => {
-    return (await get(input$)).run.storageMounts;
-  });
-  const objects = createAcceptedExecutionStorageObjects(mounts$);
-  return computed(async (get) => {
-    const [mounts, prepared] = await Promise.all([
-      get(mounts$),
-      get(objects.preparedMounts$),
-    ]);
-    const byPath = new Map(
-      mounts.map((mount) => {
-        return [mount.mountPath, mount];
-      }),
-    );
-    return {
-      storageMounts: prepared.map((mount) => {
-        const accepted = byPath.get(mount.mountPath);
-        if (!accepted) {
-          throw new Error("Prepared Storage mount has no accepted identity");
-        }
-        return storedMountFromPrepared(
-          mount,
-          accepted.missingRootPolicy !== undefined,
-        );
-      }),
-      cacheWrites: prepared.flatMap((mount) => {
-        return "presignedUrlCacheWrite" in mount && mount.presignedUrlCacheWrite
-          ? [mount.presignedUrlCacheWrite]
-          : [];
-      }),
-    };
-  });
-}
-
 function createExecutionModel(input$: ExecutionInput$) {
   return computed(async (get) => {
     const { modelProvider } = (await get(input$)).facts;
@@ -163,7 +132,7 @@ function createExecutionModel(input$: ExecutionInput$) {
 
 function createExecutionPackages(
   input$: ExecutionInput$,
-  storage$: ReturnType<typeof createExecutionStorage>,
+  storage$: ReturnType<typeof createAcceptedExecutionStorage>,
 ) {
   return computed(async (get) => {
     const { run, facts } = await get(input$);
@@ -222,12 +191,8 @@ function createExecutionPlatform(
     ]);
     const framework = run.framework;
     const integration = facts.integration;
-    const bypass = facts.previewBypassAuthorized
-      ? previewAutomationBypassSecret()
-      : undefined;
     return {
       ...emptyEnvironment(),
-      secrets: bypass ? { VERCEL_AUTOMATION_BYPASS_SECRET: bypass } : undefined,
       platformEnvironment: {
         ...runPlatformEnvironment(run),
         ...paidToolPlatformEnvironment({
@@ -243,7 +208,6 @@ function createExecutionPlatform(
         ...(run.codexServiceTier
           ? { OKOU_CODEX_SERVICE_TIER: run.codexServiceTier }
           : {}),
-        ...(bypass ? { VERCEL_AUTOMATION_BYPASS_SECRET: bypass } : {}),
       },
     };
   });
@@ -268,7 +232,7 @@ function createExecutionEnvironment(
     const tokenEnvironment = {
       ...emptyEnvironment(),
       platformEnvironment: { OKOU_TOKEN: token },
-      secrets: { OKOU_TOKEN: token },
+      reservedSecretAliases: ["OKOU_TOKEN"],
     };
     const environment = mergeEnvironments(
       [
@@ -291,23 +255,7 @@ function createExecutionEnvironment(
         return !key.startsWith("OKOU_") && !key.startsWith("ZERO_");
       }),
     );
-    const effective = {
-      ...untrustedEnvironment,
-      ...environment.platformEnvironment,
-    };
-    const keys = new Map<string, string>();
-    for (const [key, value] of Object.entries(effective)) {
-      if (!keys.has(value)) {
-        keys.set(value, key);
-      }
-    }
-    const secretKeys = environment.secrets
-      ? Object.values(environment.secrets).flatMap((value) => {
-          const key = keys.get(value);
-          return key === undefined ? [] : [key];
-        })
-      : null;
-    return { environment, untrustedEnvironment, secretKeys };
+    return { environment, untrustedEnvironment };
   });
 }
 
@@ -317,7 +265,7 @@ function createExecutionPreparedContext(
     readonly model$: ExecutionModel$;
     readonly packages$: ReturnType<typeof createExecutionPackages>;
     readonly environment$: ReturnType<typeof createExecutionEnvironment>;
-    readonly storage$: ReturnType<typeof createExecutionStorage>;
+    readonly storage$: ReturnType<typeof createAcceptedExecutionStorage>;
   },
 ) {
   return computed(async (get) => {
@@ -328,7 +276,7 @@ function createExecutionPreparedContext(
       get(dependencies.environment$),
       get(dependencies.storage$),
     ]);
-    const { environment, untrustedEnvironment, secretKeys } = resolved;
+    const { environment, untrustedEnvironment } = resolved;
     const prepared: PreparedExecutionContext = {
       ...executionModelConfiguration(run, model),
       customWorkflowSelection: facts.customWorkflowSelection,
@@ -348,8 +296,6 @@ function createExecutionPreparedContext(
           ? null
           : untrustedEnvironment,
       platformEnvironment: environment.platformEnvironment ?? {},
-      secretValueEnvironmentKeys: secretKeys,
-      encryptedSecrets: null,
       vars: environment.vars ?? null,
       firewalls: [...environment.firewalls],
       networkPolicies: environment.networkPolicies,
@@ -370,7 +316,6 @@ function createExecutionPreparedContext(
     };
     return {
       context: preparedExecutionContextSchema.parse(prepared),
-      secrets: environment.secrets ?? null,
       storageCacheWrites: storage.cacheWrites,
       networkPolicyInputs: facts.connectorNetworkPolicyInputs,
     };

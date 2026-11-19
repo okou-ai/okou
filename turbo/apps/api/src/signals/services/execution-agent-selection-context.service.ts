@@ -1,13 +1,12 @@
 import { computed, type Computed } from "ccstate";
 import { memberConnectorSelectionQueries } from "./member-connector-selection";
-import { and, asc, eq, isNull, or, sql } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";
 import { userCustomConnectors } from "@okouai/db/schema/user-custom-connector";
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { orgCustomConnectorOauthConfigs } from "@okouai/db/schema/org-custom-connector-oauth-config";
 import { userPermissionGrants } from "@okouai/db/schema/user-permission-grant";
-import { workflows } from "@okouai/db/schema/workflow";
 import { array, object, string, unknown as zUnknown } from "zod";
 import { zodDriverValueDecoder } from "../../lib/db-structured-result";
 import {
@@ -26,7 +25,6 @@ import {
 import { customConnectorNetworkMetadataSchema } from "@okouai/api-contracts/validators/custom-connector-network";
 import { customConnectorSkillBundleSelection } from "./custom-connector-skill-bundle-columns";
 import { activeUserPermissionGrantCondition } from "./user-permission-grants.service";
-import { workflowsForRunFromRows } from "./workflow-data.service";
 
 /** All selections have the same (org,user,agent) authority. */
 const builtinColumns = Object.freeze({
@@ -46,14 +44,6 @@ const permissionColumns = Object.freeze({
   permission: userPermissionGrants.permission,
   action: userPermissionGrants.action,
   expiresAt: userPermissionGrants.expiresAt,
-});
-const workflowColumns = Object.freeze({
-  id: workflows.id,
-  name: workflows.name,
-  visibility: workflows.visibility,
-  ownerUserId: workflows.ownerUserId,
-  officialDefinitionName: workflows.officialDefinitionName,
-  createdAt: workflows.createdAt,
 });
 function agentSelectionQueries(
   scope: AgentConnectorSelectionScope,
@@ -131,27 +121,6 @@ function agentSelectionQueries(
     : { builtin, custom, permissions };
 }
 
-function agentWorkflowQuery(scope: AgentConnectorSelectionScope) {
-  return new QueryBuilder()
-    .select({
-      payload: contextJsonProjection(workflowColumns)
-        .mapWith(zodDriverValueDecoder(zUnknown()))
-        .as("payload"),
-    })
-    .from(workflows)
-    .where(
-      and(
-        eq(workflows.orgId, scope.orgId),
-        eq(workflows.agentId, scope.agentId),
-        isNull(workflows.officialDefinitionName),
-        or(
-          eq(workflows.visibility, "public"),
-          eq(workflows.ownerUserId, scope.userId),
-        ),
-      ),
-    );
-}
-
 /** These related selections are included in the first account/environment statement. */
 export function agentSelectionColumns(
   scope: AgentConnectorSelectionScope,
@@ -171,20 +140,15 @@ export function agentSelectionColumns(
     permissions: contextJsonRows(permissions).mapWith(
       zodDriverValueDecoder(zUnknown()),
     ),
-    workflows: contextJsonRows(agentWorkflowQuery(scope)).mapWith(
-      zodDriverValueDecoder(zUnknown()),
-    ),
   };
 }
 
 export function createAgentSelectionContext(
-  scope$: Computed<Promise<AgentConnectorSelectionScope>>,
   raw$: Computed<
     Promise<{
       readonly builtin: unknown;
       readonly custom: unknown;
       readonly permissions: unknown;
-      readonly workflows: unknown;
     }>
   >,
 ) {
@@ -211,14 +175,5 @@ export function createAgentSelectionContext(
       (await get(raw$)).permissions,
     );
   });
-  const workflows$ = computed(async (get) => {
-    const scope = await get(scope$);
-    return workflowsForRunFromRows(
-      array(contextProjectionSchema(workflowColumns)).parse(
-        (await get(raw$)).workflows,
-      ),
-      scope.userId,
-    );
-  });
-  return { connectorSelection$, permissionGrants$, workflows$ };
+  return { connectorSelection$, permissionGrants$ };
 }

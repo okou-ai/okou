@@ -2481,9 +2481,11 @@
       "relatedArtifactCount_other": "{{formattedCount}} 個のアーティファクト",
       "relatedArtifacts": "関連するアーティファクト",
       "selectedModelAppliesAfterCurrentRun": "選択した{{model}}モデルはこの実行後に適用されます",
+      "speedChangedTo": "速度を {{speed}} に変更しました",
       "thinking": {
         "default": "考え中..."
       },
+      "ultrafastModelName": "{{model}} · Ultrafast",
       "viewActivityLogs": "アクティビティログを表示する",
       "viewLogs": "実行ログを表示する",
       "waitingIn": "待機中",
@@ -5500,7 +5502,10 @@
         "models": "モデル",
         "noConfiguredModels": "設定されたモデルはありません",
         "pro": "プロ",
-        "standard": "標準"
+        "speed": "速度",
+        "standard": "標準",
+        "ultrafast": "Ultrafast",
+        "ultrafastUsage": "Codex の利用枠をより多く消費します。"
       },
       "reset": {
         "confirmDescription": "Codexリセットを1回使用して、現在の使用枠をリセットします。{{remaining}}。",

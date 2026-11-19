@@ -765,7 +765,7 @@ test.each([
 ])(
   "Transfer the $label account manager between Chat panes with one dialog and the correct focus return",
   async ({ label, custom }) => {
-    const user = userEvent.setup({ delay: null });
+    const user = userEvent.setup({ delay: null, skipHover: true });
     installAccess({ custom, secondPane: true });
     await setup(`/chats/${SCOUT_THREAD_ID}?sidebar=${OTHER_THREAD_ID}`);
     for (const threadId of [
@@ -787,8 +787,8 @@ test.each([
       const menu = await screen.findByRole("dialog", { name: "Connectors" });
       await user.click(await within(menu).findByText(label));
       await user.click(await findFastControl("button", "Manage accounts"));
-      await screen.findAllByText(`Manage ${label} accounts`);
-      expect(screen.getAllByText(`Manage ${label} accounts`)).toHaveLength(1);
+      const titles = await screen.findAllByText(`Manage ${label} accounts`);
+      expect(titles).toHaveLength(1);
       const manager = await screen.findByRole("dialog", {
         name: `Manage ${label} accounts`,
       });

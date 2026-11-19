@@ -312,7 +312,7 @@ const pageChatThreadEventSelection = Object.freeze({
 export function chatThreadServiceTierFromCodex(
   codexServiceTier: CodexServiceTier | null,
 ): ChatThreadServiceTier | null {
-  return codexServiceTier === "fast" ? "priority" : null;
+  return codexServiceTier === "fast" ? "priority" : (codexServiceTier ?? null);
 }
 
 function hasCanonicalAgentReference(
@@ -347,8 +347,7 @@ function toApiChatThreadEvent(
             row.modelSettingsPatch,
           ),
         }),
-    // A stored retired Ultrafast tier reads as Standard.
-    serviceTier: row.serviceTier === "priority" ? "priority" : null,
+    serviceTier: row.serviceTier,
     computerUseHostId: row.computerUseHostId,
     cloudBrowserEnabled: row.cloudBrowserEnabled,
     createdAt: row.createdAt.toISOString(),

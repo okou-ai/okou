@@ -162,13 +162,9 @@ describe("chat connector credential placeholders", () => {
     expect(execution.secretConnectorMetadataMap?.OPENAI_TOKEN).toMatchObject({
       sourceId: openai.id,
     });
-    if (!execution.encryptedSecrets) {
-      throw new Error("Expected runner launch secrets");
-    }
     const resolved = await createFirewallApi(context).requestFirewallAuth(
-      sandboxHeaders,
+      { authorization: `Bearer ${execution.firewallToken}` },
       {
-        encryptedSecrets: execution.encryptedSecrets,
         secretConnectorMap: execution.secretConnectorMap ?? undefined,
         secretConnectorMetadataMap:
           execution.secretConnectorMetadataMap ?? undefined,
@@ -182,9 +178,8 @@ describe("chat connector credential placeholders", () => {
       headers: { Authorization: "Bearer request-time-openai-token" },
     });
     const deferred = await createFirewallApi(context).requestFirewallAuth(
-      sandboxHeaders,
+      { authorization: `Bearer ${execution.firewallToken}` },
       {
-        encryptedSecrets: execution.encryptedSecrets,
         authHeaders: {
           Authorization: `Bearer ${secretTemplate("FIGMA_TOKEN")}`,
         },
@@ -262,13 +257,9 @@ describe("chat connector credential placeholders", () => {
     expect(execution.secretConnectorMetadataMap?.OPENAI_TOKEN).toMatchObject({
       sourceId: good.id,
     });
-    if (!execution.encryptedSecrets) {
-      throw new Error("Expected runner launch secrets");
-    }
     const resolved = await createFirewallApi(context).requestFirewallAuth(
-      sandboxHeaders,
+      { authorization: `Bearer ${execution.firewallToken}` },
       {
-        encryptedSecrets: execution.encryptedSecrets,
         secretConnectorMap: execution.secretConnectorMap ?? undefined,
         secretConnectorMetadataMap:
           execution.secretConnectorMetadataMap ?? undefined,
@@ -648,11 +639,8 @@ describe("CHAT-02: thread connector account selection", () => {
         throw new Error("Expected the custom firewall API identity");
       }
       const auth = await firewall.requestFirewallAuth(
-        execution.sandboxHeaders,
+        { authorization: `Bearer ${execution.execution.firewallToken}` },
         {
-          encryptedSecrets:
-            execution.execution.encryptedSecrets ||
-            firewall.encryptedSecretsBody({}),
           authHeaders: api.auth.headers ?? {},
           matchedFirewall: {
             name: entry.firewall.name,

@@ -56,7 +56,7 @@ async fn cancellation_preserves_a_steer_response_already_in_flight()
     let active_input = ActiveInputRuntime::new_enabled(
         RUN_ID,
         &runtime.config.prompt,
-        HttpClient::with_api_config(server.base_url(), "test-token", "", RUN_ID, Duration::ZERO)?,
+        HttpClient::with_api_config(server.base_url(), "test-token", RUN_ID, Duration::ZERO)?,
     );
     let active_input_controller = active_input.controller();
     assert_eq!(

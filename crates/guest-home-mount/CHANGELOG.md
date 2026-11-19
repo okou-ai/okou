@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.2.87](https://github.com/okou-ai/okou/compare/guest-home-mount-v0.2.86...guest-home-mount-v0.2.87) (2026-11-18)
+
+
+### Refactoring
+
+* **rust:** use typed directory entry operations ([#48730](https://github.com/okou-ai/okou/issues/48730)) ([5856c31](https://github.com/okou-ai/okou/commit/5856c31954cc37ce63770f5747a02b3da7c8676d))
+
+## [0.2.86](https://github.com/okou-ai/okou/compare/guest-home-mount-v0.2.85...guest-home-mount-v0.2.86) (2026-11-18)
+
+## [0.2.85](https://github.com/okou-ai/okou/compare/guest-home-mount-v0.2.84...guest-home-mount-v0.2.85) (2026-11-18)
+
+
+### Refactoring
+
+* **rust:** retain file borrows for descriptor ownership updates ([#48691](https://github.com/okou-ai/okou/issues/48691)) ([b0dbcc9](https://github.com/okou-ai/okou/commit/b0dbcc9eef885f193ae9b69f2db38f9807eaaed2))
+
 ## [0.2.84](https://github.com/okou-ai/okou/compare/guest-home-mount-v0.2.83...guest-home-mount-v0.2.84) (2026-11-18)
 
 ## [0.2.83](https://github.com/okou-ai/okou/compare/guest-home-mount-v0.2.82...guest-home-mount-v0.2.83) (2026-11-18)

@@ -9,15 +9,16 @@
     <string name="chat_cache_unavailable">O armazenamento offline está indisponível. Estas conversas podem não estar disponíveis após reiniciar.</string>
     <string name="chat_metadata_loading">Carregando nomes do Okou e dos projetos…</string>
     <string name="chat_metadata_unavailable">Algumas informações do Okou ou dos projetos estão indisponíveis.</string>
-    <string name="chat_status_observed">Os estados de atividade e não lido são da última atualização.</string>
     <string name="chat_status_unavailable">Não foi possível atualizar o estado. Os indicadores anteriores podem estar desatualizados.</string>
     <string name="chat_status_loading">Verificando atividade e conversas não lidas…</string>
     <string name="chat_refresh_status">Atualizar estado</string>
-    <string name="chat_recent">Recentes</string>
+    <string name="chat_all">Todas</string>
+    <string name="chat_filter">Filtrar</string>
+    <string name="chat_clear_filter">Limpar filtro</string>
+    <string name="chat_more_actions">Mais ações</string>
     <string name="chat_unread">Não lidas</string>
     <string name="chat_archived">Arquivadas</string>
     <string name="chat_muted">Silenciadas</string>
-    <string name="chat_outside_projects">Conversas fora dos projetos</string>
     <string name="chat_project_empty">Nenhuma conversa neste projeto.</string>
     <string name="chat_empty">Nenhuma conversa nesta visualização.</string>
     <string name="chat_untitled">Conversa sem título</string>
@@ -25,4 +26,9 @@
     <string name="chat_pinned">Fixada</string>
     <string name="chat_active">Ativa</string>
     <string name="chat_metadata_cached">Exibindo os nomes salvos do Okou e dos projetos.</string>
+    <string name="chat_actions">Ações da conversa</string>
+    <string name="chat_mark_read">Marcar como lida</string>
+    <string name="chat_mark_unread">Marcar como não lida</string>
+    <string name="chat_read_action_pending">Atualizando o status de leitura…</string>
+    <string name="chat_read_action_failed">Não foi possível atualizar o status de leitura.</string>
 </resources>

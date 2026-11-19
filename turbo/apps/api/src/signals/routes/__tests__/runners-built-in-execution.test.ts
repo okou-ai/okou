@@ -1,13 +1,17 @@
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { MODEL_PROVIDER_ENV_PLACEHOLDERS } from "@okouai/api-contracts/contracts/model-provider-firewalls";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, onTestFinished } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { publicChatActor } from "./helpers/public-chat-actor";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
-import { decryptSecretForTests } from "./helpers/encrypt-secret";
+import {
+  getSecretKmsClient,
+  setSecretKmsClientForTests,
+} from "../../../lib/secret-kms-client";
+import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 
 const context = testContext();
@@ -21,6 +25,16 @@ describe("Runner built-in and personal dispatch", () => {
   it("dispatches managed Auto placeholders and resolves only the Run-owned credential", async () => {
     const owned = await publicChatActor(context);
     await owned.run(async () => {
+      const originalKms = getSecretKmsClient();
+      onTestFinished(() => {
+        setSecretKmsClientForTests(originalKms);
+      });
+      const unavailable = () => {
+        return Promise.reject(
+          new Error("KMS is unavailable during Run startup"),
+        );
+      };
+      const kms = useSecretKmsProbe(unavailable, unavailable);
       const run = await api.createThreadRun(owned.actor, {
         agentId: owned.agentId,
         prompt: "Use the captured Auto route",
@@ -40,12 +54,12 @@ describe("Runner built-in and personal dispatch", () => {
           catalogModel: "auto",
         },
       });
-      if (!input.encryptedSecrets) {
-        throw new Error("Expected the remaining global secret envelope");
-      }
+      expect(kms.generateDataKeyCalls).toBe(0);
+      expect(kms.decryptCalls).toBe(0);
+      setSecretKmsClientForTests(originalKms);
       expect(JSON.stringify(input)).not.toContain(MANAGED_KEY);
-      expect(decryptSecretForTests(input.encryptedSecrets)).not.toContain(
-        MANAGED_KEY,
+      expect(input.secretValues).toContain(
+        input.platformEnvironment.OKOU_TOKEN,
       );
       expect(input.environment?.OPENAI_API_KEY).toBe(
         MODEL_PROVIDER_ENV_PLACEHOLDERS.OPENAI_API_KEY,
@@ -53,12 +67,9 @@ describe("Runner built-in and personal dispatch", () => {
       const authHeaders = {
         Authorization: `Bearer ${secretTemplate("OPENROUTER_API_KEY")}`,
       };
-      if (!input.firewallToken) {
-        throw new Error("Expected the host firewall authority");
-      }
       expect(input.secretValues).not.toContain(input.firewallToken);
       const firewallHeaders = {
-        authorization: `Bearer ${input.firewallToken!}`,
+        authorization: `Bearer ${input.firewallToken}`,
       };
       await webhooks.requestAgentHeartbeat(
         { runId: run.runId },
@@ -73,7 +84,7 @@ describe("Runner built-in and personal dispatch", () => {
       await firewall.requestFirewallAuth(
         { authorization: `Bearer ${input.sandboxToken}` },
         { authHeaders },
-        [400],
+        [401],
       );
       await firewall.requestFirewallAuth(
         {
@@ -82,25 +93,16 @@ describe("Runner built-in and personal dispatch", () => {
         { authHeaders },
         [401],
       );
-      for (const { headers, encryptedSecrets } of [
-        { headers: firewallHeaders, encryptedSecrets: undefined },
-        { headers: firewallHeaders, encryptedSecrets: input.encryptedSecrets },
-        {
-          headers: { authorization: `Bearer ${input.sandboxToken}` },
-          encryptedSecrets: input.encryptedSecrets,
-        },
-      ]) {
-        const resolved = await firewall.requestFirewallAuth(
-          headers,
-          { encryptedSecrets, authHeaders, firewallBillable: true },
-          [200],
-        );
-        expect(resolved.body).toMatchObject({
-          headers: { Authorization: `Bearer ${MANAGED_KEY}` },
-          resolvedSecrets: ["OPENROUTER_API_KEY"],
-          expiresAt: expect.any(Number),
-        });
-      }
+      const resolved = await firewall.requestFirewallAuth(
+        firewallHeaders,
+        { authHeaders, firewallBillable: true },
+        [200],
+      );
+      expect(resolved.body).toMatchObject({
+        headers: { Authorization: `Bearer ${MANAGED_KEY}` },
+        resolvedSecrets: ["OPENROUTER_API_KEY"],
+        expiresAt: expect.any(Number),
+      });
       const mapped = await firewall.requestFirewallAuth(
         firewallHeaders,
         {
@@ -219,7 +221,7 @@ describe("Runner built-in and personal dispatch", () => {
         throw new Error("Expected the personal model's account references");
       }
       const personal = await firewall.requestFirewallAuth(
-        { authorization: `Bearer ${input.firewallToken!}` },
+        { authorization: `Bearer ${input.firewallToken}` },
         {
           authHeaders: {
             Authorization: `Bearer ${secretTemplate("CHATGPT_ACCESS_TOKEN")}`,
@@ -236,7 +238,7 @@ describe("Runner built-in and personal dispatch", () => {
         resolvedSecrets: ["CHATGPT_ACCESS_TOKEN"],
       });
       const unavailable = await firewall.requestFirewallAuth(
-        { authorization: `Bearer ${input.firewallToken!}` },
+        { authorization: `Bearer ${input.firewallToken}` },
         {
           authHeaders: {
             Authorization: `Bearer ${secretTemplate("OPENROUTER_API_KEY")}`,

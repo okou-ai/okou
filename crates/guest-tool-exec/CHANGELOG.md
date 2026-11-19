@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.3.91](https://github.com/okou-ai/okou/compare/guest-tool-exec-v0.3.90...guest-tool-exec-v0.3.91) (2026-11-18)
+
+## [0.3.90](https://github.com/okou-ai/okou/compare/guest-tool-exec-v0.3.89...guest-tool-exec-v0.3.90) (2026-11-18)
+
+## [0.3.89](https://github.com/okou-ai/okou/compare/guest-tool-exec-v0.3.88...guest-tool-exec-v0.3.89) (2026-11-18)
+
+
+### Refactoring
+
+* **ipc:** use typed abstract unix socket setup ([#48678](https://github.com/okou-ai/okou/issues/48678)) ([726303f](https://github.com/okou-ai/okou/commit/726303f47233bb7925eedd279bb90c1896dcfe31))
+
 ## [0.3.88](https://github.com/okou-ai/okou/compare/guest-tool-exec-v0.3.87...guest-tool-exec-v0.3.88) (2026-11-18)
 
 ## [0.3.87](https://github.com/okou-ai/okou/compare/guest-tool-exec-v0.3.86...guest-tool-exec-v0.3.87) (2026-11-18)

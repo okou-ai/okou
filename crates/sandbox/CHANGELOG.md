@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.28.43](https://github.com/okou-ai/okou/compare/sandbox-v0.28.42...sandbox-v0.28.43) (2026-11-18)
+
+
+### Refactoring
+
+* **sandbox:** use typed sparse image seeks ([#48754](https://github.com/okou-ai/okou/issues/48754)) ([b6af8f2](https://github.com/okou-ai/okou/commit/b6af8f2ef8a10ae96efad2c836310f287c42a7e6))
+
+## [0.28.42](https://github.com/okou-ai/okou/compare/sandbox-v0.28.41...sandbox-v0.28.42) (2026-11-18)
+
 ## [0.28.41](https://github.com/okou-ai/okou/compare/sandbox-v0.28.40...sandbox-v0.28.41) (2026-11-18)
 
 ## [0.28.40](https://github.com/okou-ai/okou/compare/sandbox-v0.28.39...sandbox-v0.28.40) (2026-11-18)

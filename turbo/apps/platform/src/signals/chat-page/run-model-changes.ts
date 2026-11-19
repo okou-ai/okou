@@ -42,6 +42,11 @@ export type RunModelChange =
   | {
       readonly kind: "fast-mode";
       readonly enabled: boolean;
+    }
+  | {
+      readonly kind: "speed";
+      readonly ultrafast: boolean;
+      readonly fast: boolean;
     };
 
 export function fastModeEnabled(selection: ChatRunModelSelection): boolean {
@@ -80,6 +85,16 @@ export function modelChangesByEventId(
         ) {
           changes.set(event.id, { kind: "model", selection });
         } else if (
+          selection.serviceTier !== previousSelection.serviceTier &&
+          (selection.serviceTier === "ultrafast" ||
+            previousSelection.serviceTier === "ultrafast")
+        ) {
+          changes.set(event.id, {
+            kind: "speed",
+            ultrafast: selection.serviceTier === "ultrafast",
+            fast: fastModeEnabled(selection),
+          });
+        } else if (
           fastModeEnabled(selection) !== fastModeEnabled(previousSelection)
         ) {
           changes.set(event.id, {
@@ -109,6 +124,9 @@ export function sameRunModelChange(
   }
   if (previous.kind === "fast-mode" && next.kind === "fast-mode") {
     return previous.enabled === next.enabled;
+  }
+  if (previous.kind === "speed" && next.kind === "speed") {
+    return previous.ultrafast === next.ultrafast && previous.fast === next.fast;
   }
   return false;
 }

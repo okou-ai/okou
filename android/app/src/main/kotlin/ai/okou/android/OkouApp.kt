@@ -4,6 +4,7 @@ import ai.okou.android.chat.AssistantRecoveryModel
 import ai.okou.android.chat.AssistantRecoveryPanel
 import ai.okou.android.chat.ChatComposerField
 import ai.okou.android.chat.ChatComposerModel
+import ai.okou.android.chat.ChatListFilter
 import ai.okou.android.chat.ChatListModel
 import ai.okou.android.chat.ChatListScreen
 import ai.okou.android.chat.ChatReadPhase
@@ -20,12 +21,18 @@ import ai.okou.android.state.rememberWorkspaceNavigation
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -37,6 +44,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -46,12 +54,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.structuralEqualityPolicy
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -71,31 +80,51 @@ internal fun OkouApp(
     account: @Composable () -> Unit = {},
     workspacePreferences: @Composable () -> Unit = {},
     recovery: AssistantRecoveryModel? = null,
+    workspaceTitle: @Composable (() -> Unit)? = null,
+    openUpdate: (() -> Unit)? = null,
 ) {
     val list by chats.uiState.collectAsStateWithLifecycle()
     var navigation by rememberWorkspaceNavigation()
     val target = navigation.target
+    // Window configuration changes on resize. IME insets only change the space inside the panes.
+    val window = LocalConfiguration.current
+    val listWidth = workspaceListPaneWidth(window.screenWidthDp, window.screenHeightDp)
+    val showList = listWidth != null || target == WorkspaceTarget.List
+    val showWorkspaceBack = listWidth == null && target != WorkspaceTarget.List
     val listPosition = rememberLazyListState()
     val collapsed = rememberCollapsedProjects()
     val conversations = rememberConversationUiState()
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val missingChat = stringResource(R.string.history_missing)
+    val readActionFailureMessage = stringResource(R.string.chat_read_action_failed)
     val focus = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     val settingsFocus = remember { FocusRequester() }
-    var settingsFocused by remember { mutableStateOf(false) }
     var restoreSettingsFocus by remember { mutableStateOf(false) }
     val thread =
         (target as? WorkspaceTarget.Chat)?.let { chat ->
             list.threads.firstOrNull { it.id == chat.id && it.hidden != true }
         }
 
+    LaunchedEffect(list.readActionFailed) {
+        if (list.readActionFailed) {
+            snackbar.showSnackbar(readActionFailureMessage)
+            chats.dismissReadActionFailure()
+        }
+    }
+
     fun openChat(chat: ConfirmedChat) {
         conversations.open(chat.id)
         navigation = navigation.copy(target = WorkspaceTarget.Chat(chat.id))
         composer.acknowledge(chat.id)
         chats.history.open(chat)
+    }
+
+    fun startNewChat(projectId: String?) {
+        composer.beginNew(projectId)
+        conversations.open(ComposerTarget(projectId = projectId).key)
+        navigation = navigation.copy(target = WorkspaceTarget.NewChat(projectId))
     }
 
     LaunchedEffect(target, thread, list.listPhase) {
@@ -134,7 +163,7 @@ internal fun OkouApp(
             else navigation.copy(target = WorkspaceTarget.List)
     }
 
-    BackHandler(navigation.settingsOpen || target != WorkspaceTarget.List, onBack = ::back)
+    BackHandler(navigation.settingsOpen || showWorkspaceBack, onBack = ::back)
 
     val title =
         if (navigation.settingsOpen) stringResource(R.string.settings)
@@ -156,13 +185,23 @@ internal fun OkouApp(
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             TopAppBar(
-                title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                title = {
+                    if (
+                        !navigation.settingsOpen &&
+                            target == WorkspaceTarget.List &&
+                            workspaceTitle != null
+                    ) {
+                        workspaceTitle()
+                    } else {
+                        Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                },
                 colors =
                     TopAppBarDefaults.topAppBarColors(
                         containerColor = MaterialTheme.colorScheme.background
                     ),
                 navigationIcon = {
-                    if (navigation.settingsOpen || target != WorkspaceTarget.List) {
+                    if (navigation.settingsOpen || showWorkspaceBack) {
                         IconButton(
                             onClick = {
                                 focus.clearFocus()
@@ -176,23 +215,19 @@ internal fun OkouApp(
                 },
                 actions = {
                     if (!navigation.settingsOpen) {
-                        IconButton(
-                            modifier =
-                                Modifier.focusRequester(settingsFocus).onFocusChanged {
-                                    settingsFocused = it.isFocused
-                                },
-                            onClick = {
-                                restoreSettingsFocus = settingsFocused
+                        WorkspaceToolbarActions(
+                            showFilter = showList,
+                            filter = list.filter,
+                            selectFilter = chats::selectFilter,
+                            openUpdate = openUpdate,
+                            settingsFocus = settingsFocus,
+                            openSettings = { restore ->
+                                restoreSettingsFocus = restore
                                 focus.clearFocus()
                                 keyboard?.hide()
                                 navigation = navigation.copy(settingsOpen = true)
                             },
-                        ) {
-                            Icon(
-                                painterResource(R.drawable.okou_mark),
-                                stringResource(R.string.settings),
-                            )
-                        }
+                        )
                         LaunchedEffect(Unit) {
                             if (restoreSettingsFocus) {
                                 restoreSettingsFocus = false
@@ -215,54 +250,104 @@ internal fun OkouApp(
                 )
             } else {
                 RealtimeNotice(chats.updates)
-                when (target) {
-                    WorkspaceTarget.List ->
-                        ChatListScreen(
-                            list,
-                            chats::refresh,
-                            chats::refreshList,
-                            chats::refreshMetadata,
-                            chats::refreshIndicators,
-                            chats::selectFilter,
-                            ::openChat,
-                            collapsed.values,
-                            collapsed::toggle,
-                            listPosition,
-                            newChat = { projectId ->
-                                composer.beginNew(projectId)
-                                conversations.open(ComposerTarget(projectId = projectId).key)
-                                navigation =
-                                    navigation.copy(target = WorkspaceTarget.NewChat(projectId))
-                            },
-                        )
-                    is WorkspaceTarget.Chat ->
-                        conversations.Content(target.id) {
-                            ConversationRoute(chats.history, target.id, list, Modifier.weight(1f))
-                            if (thread != null) {
-                                val composerTarget =
-                                    ComposerTarget(thread.id, thread.agentId, thread.projectId)
-                                RunControlsPanel(controls, chats.history, thread.id)
-                                recovery?.let {
-                                    AssistantRecoveryPanel(it, composer, composerTarget)
+                Row(Modifier.fillMaxSize()) {
+                    if (showList) {
+                        Column(
+                            if (listWidth == null) Modifier.weight(1f).fillMaxHeight()
+                            else Modifier.width(listWidth.dp).fillMaxHeight(),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            if (list.filter != ChatListFilter.Recent) {
+                                AppliedChatFilter(list.filter) {
+                                    chats.selectFilter(ChatListFilter.Recent)
                                 }
-                                ChatComposerField(composer, composerTarget)
+                            }
+                            ChatListScreen(
+                                list,
+                                chats::refresh,
+                                chats::refreshList,
+                                chats::refreshMetadata,
+                                chats::refreshIndicators,
+                                ::openChat,
+                                chats::changeReadState,
+                                collapsed.values,
+                                collapsed::toggle,
+                                listPosition,
+                                ::startNewChat,
+                                selectedChatId = if (listWidth != null) thread?.id else null,
+                            )
+                        }
+                    }
+                    if (listWidth != null) VerticalDivider()
+                    if (listWidth != null || target != WorkspaceTarget.List) {
+                        Box(
+                            Modifier.weight(1f).fillMaxHeight(),
+                            contentAlignment = Alignment.TopCenter,
+                        ) {
+                            Column(Modifier.widthIn(max = 768.dp).fillMaxWidth().fillMaxHeight()) {
+                                when (target) {
+                                    WorkspaceTarget.List ->
+                                        Box(
+                                            Modifier.fillMaxSize().testTag("workspace_new_chat"),
+                                            contentAlignment = Alignment.Center,
+                                        ) {
+                                            Button(onClick = { startNewChat(null) }) {
+                                                Text(stringResource(R.string.composer_new))
+                                            }
+                                        }
+                                    is WorkspaceTarget.Chat ->
+                                        conversations.Content(target.id) {
+                                            ConversationRoute(
+                                                chats.history,
+                                                target.id,
+                                                list,
+                                                Modifier.weight(1f),
+                                            )
+                                            if (thread != null) {
+                                                val composerTarget =
+                                                    ComposerTarget(
+                                                        thread.id,
+                                                        thread.agentId,
+                                                        thread.projectId,
+                                                    )
+                                                RunControlsPanel(controls, chats.history, thread.id)
+                                                recovery?.let {
+                                                    AssistantRecoveryPanel(
+                                                        it,
+                                                        composer,
+                                                        composerTarget,
+                                                    )
+                                                }
+                                                ChatComposerField(composer, composerTarget)
+                                            }
+                                        }
+                                    is WorkspaceTarget.NewChat ->
+                                        conversations.Content(checkNotNull(newTarget).key) {
+                                            Box(Modifier.weight(1f))
+                                            if (createdId != null) {
+                                                Text(
+                                                    stringResource(R.string.composer_accepted),
+                                                    Modifier.padding(16.dp),
+                                                )
+                                                TextButton(onClick = chats::refreshList) {
+                                                    Text(stringResource(R.string.chat_refresh))
+                                                }
+                                            } else ChatComposerField(composer, newTarget)
+                                        }
+                                }
                             }
                         }
-                    is WorkspaceTarget.NewChat ->
-                        conversations.Content(checkNotNull(newTarget).key) {
-                            Box(Modifier.weight(1f))
-                            if (createdId != null) {
-                                Text(
-                                    stringResource(R.string.composer_accepted),
-                                    Modifier.padding(16.dp),
-                                )
-                                TextButton(onClick = chats::refreshList) {
-                                    Text(stringResource(R.string.chat_refresh))
-                                }
-                            } else ChatComposerField(composer, newTarget)
-                        }
+                    }
                 }
             }
         }
     }
 }
+
+/** Returns the persistent list width in dp when the window has room for both panes. */
+internal fun workspaceListPaneWidth(widthDp: Int, heightDp: Int): Int? =
+    when {
+        widthDp < 840 || heightDp < 480 -> null
+        widthDp >= 1100 -> 344
+        else -> 320
+    }

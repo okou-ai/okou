@@ -30,8 +30,7 @@ import { createConnectorAdmissionSignals } from "./thread-connector-environment.
 import { modelProviderPermissionManifest } from "./permission-manifest.service";
 import { FirewallBaseUrlResolutionError } from "@okouai/connectors/firewall-types";
 import type { PaidToolId } from "@okouai/api-contracts/contracts/paid-tools";
-import { previewAutomationBypass$ } from "../context/hono";
-import { createOfficialWorkflowSignals } from "./thread-official-workflow.signals";
+import { createOfficialWorkflowSignal } from "./thread-official-workflow.signals";
 import { proactiveWorkflowKind } from "./proactive-workflow-definitions";
 import { OFFICIAL_WORKFLOW_AUTOMATION_ONLY_MESSAGE } from "./official-workflow-constants";
 import type {
@@ -91,13 +90,10 @@ import {
   tapError,
 } from "../utils";
 import type { DirectRunDispatchResult } from "./direct-run-dispatch.service";
-import {
-  captureExecutionPackages$,
-  type AdmittedRunLaunch,
-} from "./direct-run-preparation.service";
+import type { AdmittedRunLaunch } from "./direct-run-preparation.service";
 import {
   executionSkillRoot,
-  type ExecutionWorkflowInput,
+  selectExecutionPackages,
 } from "./execution-workflow-selection";
 import { dispatchCompleteSideEffects$ } from "./agent-run-lifecycle.service";
 import {
@@ -154,11 +150,11 @@ import {
   recordQueuedPromptRunLaunch$,
   rejectedQueuedRunAdmissionFailure,
 } from "./internal-chat-run-callback.service";
-import type { ModelCatalog } from "./model-catalog.service";
 import { morningBriefScheduleClaimBound$ } from "./morning-brief-schedule-claim.service";
 import {
   OFFICIAL_WORKFLOW_RUN_ADMISSION_MESSAGE,
   OfficialWorkflowRunAdmissionError,
+  exactMountsMatch,
   type OfficialWorkflowRunObservation,
 } from "./official-workflow-run.service";
 import { pendingLaunchBillingAttributionSql } from "./pending-launch-billing-plan";
@@ -167,17 +163,12 @@ import {
   pendingLaunchClaimFenceSql,
   pendingLaunchClaimProducerStatements,
 } from "./pending-launch-claim-plan";
-import { pendingOfficialAdmissionGuardSql } from "./pending-launch-official-plan";
 import {
   pendingAdmissionRecordSchema as admissionRow,
   advancePendingLaunchAdmission,
   pendingLaunchAdmissionStart,
 } from "./pending-launch-admission-plan";
 import { pendingLaunchInsertSql } from "./pending-launch-sql";
-import {
-  type PiModelPreparationInput,
-  resolvePreparedPiModelConfig,
-} from "./pi-sandbox-config";
 import {
   checkCatalogRunRoute,
   checkOrgPlanRunAdmission,
@@ -289,7 +280,6 @@ import { OFFICIAL_WORKFLOW_THREAD_READ_ONLY_MESSAGE } from "./official-workflow-
 import { billingRunAttributionWrite } from "./managed-usage-attribution";
 import { isPersonalSubscriptionProviderType } from "./model-provider-account.service";
 import type { ModelFirstPin } from "./model-selection.service";
-import type { OfficialWorkflowContextFacts } from "./official-workflow-context.signals";
 import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 
 import { teamsDeliveryTargetSchema } from "./teams-chat-callback-payload";
@@ -312,7 +302,8 @@ import {
 import { manualTriggerSource } from "./workflow-automation-trigger-source";
 import { recordWorkflowAdmissionDuration } from "./workflow-queue-admission-timing.service";
 import { prepareRunAdmissionMetadata } from "./run-storage-manifest.service";
-import { createStorageSignals, type Storage } from "./thread-storage.signals";
+import { createStorageSignals } from "./thread-storage.signals";
+import type { AcceptedMemoryMount } from "./execution-storage.service";
 import { settleRejectedAutomationInput$ } from "./workflow-schedule-failure.service";
 
 export interface ThreadClaim {
@@ -540,7 +531,6 @@ function queuedPromptRunInput(args: {
     queuedMessage: input.queuedMessage,
     selectedModel: model.pin.selectedModel,
     effectiveModelProvider: model.pin.modelProviderType,
-    piExecution: model.piExecution,
     codexServiceTier: model.codexServiceTier,
     reasoningEffort: model.reasoningEffort,
     triggerSource: launch.triggerSource,
@@ -560,7 +550,6 @@ function threadRunModelFields(model: ThreadModelSelection) {
     modelProvider: model.pin.modelProviderType,
     selectedModel: model.pin.selectedModel,
     codexServiceTier: model.codexServiceTier,
-    piExecution: model.piExecution,
   };
 }
 
@@ -582,7 +571,6 @@ function promptRunCommand(
       threadId: input.threadId,
       eventId: input.queuedMessage.id,
     },
-    piExecution: input.piExecution,
     agentRunMetadata: { autonomyBudget: input.autonomyBudget },
     modelProvider: input.effectiveModelProvider,
     ...(input.realAgentInPreview ? { realAgentInPreview: true } : {}),
@@ -811,7 +799,6 @@ function isDirectSendContext(contextType: string | null): boolean {
 interface RunPlan {
   readonly args: ThreadRunArgs;
   readonly integrationContext?: string;
-  readonly enforceBuiltInCredits: boolean;
   readonly runner: ThreadRunnerFacts;
   readonly persisted: ThreadRunPersistenceContext;
 }
@@ -860,7 +847,6 @@ export interface ThreadRunContext {
   readonly planCapabilities: OrgPlanCapabilities | null;
   readonly featureSwitchContext: FeatureSwitchContext;
   readonly input: {
-    readonly enforceBuiltInCredits: boolean;
     readonly context: ThreadRunPersistenceContext;
     readonly args: ThreadRunPersistenceArgs;
   };
@@ -924,7 +910,6 @@ function finalizeClaimRunContext(
     ...context,
     persistence: prepareAtomicLaunchPersistence({
       createArgs: context.input.args,
-      enforceBuiltInCredits: context.input.enforceBuiltInCredits,
       context: context.input.context,
       identity: context.identity,
       callbackRows: context.callbackRows,
@@ -1060,7 +1045,6 @@ function withEmailSystemPrompt(
 function claimCommitInput(input: RunPlan): ThreadRunContext["input"] {
   return {
     args: claimCommitArguments(input.args),
-    enforceBuiltInCredits: input.enforceBuiltInCredits,
     context: input.persisted,
   };
 }
@@ -2460,11 +2444,10 @@ export function createThreadClaimRunObjects(
     },
   );
   const preparedRunInput$ = computed(async (get) => {
-    const [input, resolution, fullCommand, catalog] = await Promise.all([
+    const [input, resolution, fullCommand] = await Promise.all([
       get(runPreparation$),
       get(threadContinuation$),
       get(assembledRun$),
-      get(claimCatalog$),
     ]);
     if (!fullCommand) {
       return null;
@@ -2479,7 +2462,6 @@ export function createThreadClaimRunObjects(
     }
     return {
       ...input,
-      catalog,
       command: fullCommand,
       threadContinuation: resolution,
     };
@@ -2524,8 +2506,10 @@ export function createThreadClaimRunObjects(
     bootstrap,
     threadContext,
   );
-  const { officialWorkflow$, officialWorkflowFacts$ } =
-    createOfficialWorkflowSignals(pickedEvent$, threadContext);
+  const officialWorkflow$ = createOfficialWorkflowSignal(
+    pickedEvent$,
+    threadContext,
+  );
   const storage$ = createStorageSignals(bootstrap, pickedEvent$, threadContext);
   const contextArgs$ = computed(async (get) => {
     const selected = await get(runArgs$);
@@ -2670,10 +2654,6 @@ export function createThreadClaimRunObjects(
     }
     const { content } = contentContext;
     const { modelProvider, framework } = runtimeContext;
-    const piSandbox = resolvePreparedPiModelConfig({
-      input: piModelPreparationInput(args),
-      modelProvider,
-    });
     const { resolved } = contentContext;
     const promptAndSkills = await get(preparedPromptAndSkillVolumes$);
     if (isRouteError(promptAndSkills)) {
@@ -2683,13 +2663,12 @@ export function createThreadClaimRunObjects(
       skillVolumes: promptAndSkills.skillVolumes,
       officialWorkflow: officialWorkflowRun,
       framework,
-      piSandbox,
+      piSandbox: modelProvider.piModelConfig,
     });
     return {
       content,
       resolved,
       framework,
-      piSandbox,
       modelProvider,
       connectorRuntimeTargets: runtimeContext.connectorRuntimeTargets,
       connectorEnvironment: runtimeContext.connectorEnvironment,
@@ -2702,7 +2681,6 @@ export function createThreadClaimRunObjects(
         promptAndSkills.systemPromptVariables.integrationContext,
       userTimezone: promptAndSkills.userTimezone,
       ...metadata,
-      officialWorkflowFacts: await get(officialWorkflowFacts$),
       featureSwitchContext: contentContext.featureSwitchContext,
       selectedImageModel,
     };
@@ -3046,10 +3024,13 @@ export function createThreadClaimRunObjects(
         return context;
       }
       const args = await get(contextArgs$);
+      const modelProvider = context.modelProvider;
       const launchSnapshot = {
         schemaVersion: 5 as const,
         framework:
-          context.piSandbox === undefined ? context.framework : ("pi" as const),
+          modelProvider.piModelConfig === undefined
+            ? context.framework
+            : ("pi" as const),
         runnerProfile: DEFAULT_PROFILE,
       };
       const { content } = context;
@@ -3083,22 +3064,15 @@ export function createThreadClaimRunObjects(
           integration = event.contextType ?? undefined;
         }
       }
-      const { officialWorkflowRun, officialWorkflowFacts, selectedImageModel } =
-        context;
-      const modelProvider = context.modelProvider;
+      const { officialWorkflowRun, selectedImageModel } = context;
       return {
         args,
         integrationContext: context.integrationContext,
-        enforceBuiltInCredits:
-          !(
-            officialWorkflowRun && args.agentRunMetadata.workflowAutomationId
-          ) && isBuiltInModelProviderType(modelProvider.type),
         persisted: {
           content,
           selectedImageModel,
           launchSnapshot,
           officialWorkflowRun,
-          officialWorkflowFacts,
           resolved: {
             agentId: context.resolved.agentId,
           },
@@ -3128,10 +3102,7 @@ export function createThreadClaimRunObjects(
             templateSkillVolumes: context.templateSkillVolumes,
             integration,
             captureNetworkBodies: args.captureNetworkBodies === true,
-            modelProvider: {
-              ...modelProvider,
-              piModelConfig: context.piSandbox,
-            },
+            modelProvider,
             modelProviderPermissions: context.modelProviderPermissions,
             connectorEnvironment: context.connectorEnvironment,
             connectorNetworkPolicyInputs: context.connectorNetworkPolicyInputs,
@@ -3166,7 +3137,11 @@ export function createThreadClaimRunObjects(
   // plan; storage runs alongside it and its failure matters only when the plan
   // is ready.
   const preparedStorage$ = computed(
-    async (get): Promise<Storage | CreateRunErrorResult | null> => {
+    async (
+      get,
+    ): Promise<
+      readonly AcceptedMemoryMount[] | CreateRunErrorResult | null
+    > => {
       if (!(await get(resourceAllowed$))) {
         return null;
       }
@@ -3216,34 +3191,39 @@ export function createThreadClaimRunObjects(
         args.officialWorkflowRun?.provenance.definitions.map((definition) => {
           return `${args.skillRoot}/${definition.name}`;
         }) ?? [];
-      const [tokenInput, executionPackages, disabledPaidTools] =
-        await Promise.all([
-          get(okouTokenInput$),
-          set(
-            captureExecutionPackages$,
-            {
-              orgId: bootstrap.orgId,
-              userId: bootstrap.userId,
-              selection: {
-                skillRoot: args.skillRoot,
-                selection: {
-                  ...customWorkflowSelection,
-                  protectedMountPaths: [
-                    ...customWorkflowSelection.protectedMountPaths,
-                    ...officialMountPaths,
-                  ],
-                },
-              },
-              singleAgent: isFeatureEnabled(
-                FeatureSwitchKey.SingleAgent,
-                args.featureSwitchContext,
-              ),
-            },
-            signal,
-          ),
-          get(bootstrap.disabledPaidTools$),
-        ]);
+      const timing = get(threadContext.dispatchTiming$);
+      const [
+        tokenInput,
+        packageSources,
+        ordinaryAutomation,
+        disabledPaidTools,
+      ] = await Promise.all([
+        get(okouTokenInput$),
+        timing.measure(
+          "api_dispatch_prepare_execution_package_wait",
+          "nested",
+          () => {
+            return get(threadContext.executionPackageSources$);
+          },
+        ),
+        args.workflowAutomationId && !args.officialWorkflowRun
+          ? get(automationTarget$)
+          : null,
+        get(bootstrap.disabledPaidTools$),
+      ]);
       signal.throwIfAborted();
+      const executionPackages = selectExecutionPackages(packageSources, {
+        skillRoot: args.skillRoot,
+        protectedMountPaths: [
+          ...args.protectedMountPaths,
+          ...officialMountPaths,
+        ],
+        singleAgent: isFeatureEnabled(
+          FeatureSwitchKey.SingleAgent,
+          args.featureSwitchContext,
+        ),
+        ordinaryAutomation,
+      });
       if (!executionPackages) {
         return conflict("Run packages or source authorization are unavailable");
       }
@@ -3254,7 +3234,6 @@ export function createThreadClaimRunObjects(
         executionPackages,
         okouToken,
         disabledPaidTools,
-        previewBypassAuthorized: !!get(previewAutomationBypass$),
       });
     },
   );
@@ -3292,7 +3271,10 @@ export function createThreadClaimRunObjects(
       }
       return {
         ...input,
-        runStorageMounts: preparedStorage.metadata.persistedStorageMounts,
+        memoryMounts: preparedStorage,
+        runStorageMounts: preparedStorage.map(({ mount }) => {
+          return mount;
+        }),
       };
     },
   );
@@ -3330,7 +3312,7 @@ export function createThreadClaimRunObjects(
         }
         return model;
       }
-      return await set(
+      const rejection = await set(
         checkRunAdmission$,
         {
           catalog: await get(claimCatalog$),
@@ -3342,6 +3324,20 @@ export function createThreadClaimRunObjects(
         },
         signal,
       );
+      if (rejection || input.command.codexServiceTier !== "ultrafast") {
+        return rejection;
+      }
+      const context = await get(contentContext$);
+      signal.throwIfAborted();
+      if (isRouteError(context)) {
+        return context;
+      }
+      return isFeatureEnabled(
+        FeatureSwitchKey.CodexSubscriptionUltrafast,
+        context.featureSwitchContext,
+      )
+        ? null
+        : badRequestMessage("Ultrafast is unavailable in this workspace");
     },
   );
   const authorizeIdentity$ = computed(async (get) => {
@@ -3527,8 +3523,6 @@ export function createThreadClaimRunObjects(
         const launch = await set(prepareAutomationLaunch$, head, signal);
         signal.throwIfAborted();
         if (launch.kind === "rejected") {
-          // The automation input was rejected from its captured reads;
-          // no launch read can change that, so none starts.
           return { kind: "rejected" as const, assembly: launch.assembly };
         }
         rewardArgs = await set(prepareAutomationRun$, launch.args, signal);
@@ -3782,7 +3776,6 @@ export function createThreadClaimRunObjects(
       const { input, identity, callbackRows, launch } = context;
       const commit: ThreadLaunchCommitInput = {
         createArgs: input.args,
-        enforceBuiltInCredits: input.enforceBuiltInCredits,
         context: input.context,
         identity,
         callbackRows,
@@ -4092,6 +4085,7 @@ interface PreparedRunnerLaunch {
   readonly reuseKey: string;
   readonly facts: Omit<AdmittedExecutionFacts, "connectorRuntimeTargets">;
   readonly runStorageMounts: readonly PersistedStorageMount[];
+  readonly memoryMounts: readonly AcceptedMemoryMount[];
   readonly connectorRuntimeTargets: readonly ConnectorRuntimeTargetRegistration[];
 }
 
@@ -4139,7 +4133,7 @@ interface ThreadRunPersistenceArgs {
   readonly chatThreadId: string;
   readonly agentRunMetadata: AgentRunMetadata;
   readonly modelSelection: ModelFirstPin;
-  readonly codexServiceTier?: "fast";
+  readonly codexServiceTier?: "fast" | "ultrafast";
   readonly queueFirstAssociation: QueueFirstRunAssociation;
   readonly timingDimensions: ApiDispatchTimingDimensions;
   readonly threadContinuation: PendingThreadContinuation;
@@ -4151,7 +4145,6 @@ interface ThreadRunPersistenceContext {
   readonly selectedImageModel: ImageModel;
   readonly launchSnapshot: AgentRunFullLaunchSnapshot;
   readonly officialWorkflowRun: OfficialWorkflowRunObservation | undefined;
-  readonly officialWorkflowFacts: OfficialWorkflowContextFacts;
   readonly resolved: {
     readonly agentId: string;
   };
@@ -4169,7 +4162,6 @@ interface ThreadRunPersistenceContext {
 
 interface ThreadLaunchCommitInput {
   readonly createArgs: ThreadRunPersistenceArgs;
-  readonly enforceBuiltInCredits: boolean;
   readonly context: ThreadRunPersistenceContext;
   readonly identity: LaunchRunIdentity;
   readonly callbackRows: readonly AgentRunCallbackInsert[];
@@ -4463,6 +4455,13 @@ function buildAtomicLaunchCteContext(args: AtomicLaunchRowsPlanArgs) {
     validatedThreadSession: args.validatedThreadSession,
   });
   ctes.push(updatedThread);
+  const automationId = metadata.workflowAutomationId;
+  // A deleted source has the same nullable history link as ON DELETE SET NULL.
+  // The key-share lock protects only the foreign key while publishing the Run.
+  const workflowAutomationId = automationId
+    ? sql`(SELECT ${workflowAutomations.id} FROM ${workflowAutomations}
+        WHERE ${eq(workflowAutomations.id, automationId)} FOR KEY SHARE)`
+    : null;
   const insertedRun = new QueryBuilder()
     .$with("inserted_launch_run", {
       id: agentRuns.id,
@@ -4475,9 +4474,10 @@ function buildAtomicLaunchCteContext(args: AtomicLaunchRowsPlanArgs) {
           ...launchRunValues(rowsArgs, createdAt, metadata),
           id: pendingLaunchGuardedRunId(args, updatedThread),
           modelProviderAccountIdentity: args.validatedAccountIdentity,
+          workflowAutomationId,
         },
         ["id", "createdAt"],
-        pendingLaunchRunEligibility(),
+        sql`EXISTS (SELECT 1 FROM inserted)`,
       ),
     );
   ctes.push(insertedRun);
@@ -4581,24 +4581,7 @@ interface ThreadRunCommand {
   readonly reasoningEffort?: ReasoningEffort | null;
   readonly agentRunMetadata?: AgentRunMetadata;
   readonly queueFirstAssociation: QueueFirstRunAssociation;
-  /** Immutable Pi eligibility captured by the caller's admission snapshot. */
-  readonly piExecution: boolean;
   readonly agentRunPreCreateSource?: AgentRunPreCreateSource;
-}
-
-/** The plain facts of a Thread run that Pi model preparation reads. */
-function piModelPreparationInput(
-  args: Pick<
-    ThreadRunArgs,
-    "catalog" | "piExecution" | "codexServiceTier" | "agentRunMetadata"
-  >,
-): PiModelPreparationInput {
-  return {
-    catalog: args.catalog,
-    piExecution: args.piExecution,
-    codexServiceTier: args.codexServiceTier,
-    reasoningEffort: args.agentRunMetadata.reasoningEffort,
-  };
 }
 
 // --- Thread-private implementation: launch input ---
@@ -4640,18 +4623,16 @@ interface ThreadRunnerFacts {
 /** Capture selectors and request receipts; admitted preparation assembles runtime input. */
 function prepareRunnerLaunch(input: {
   readonly args: ThreadRunnerFacts;
-  readonly customWorkflowSelection: ExecutionWorkflowInput["selection"];
+  readonly customWorkflowSelection: AdmittedExecutionFacts["customWorkflowSelection"];
   readonly executionPackages: AdmittedExecutionFacts["executionPackages"];
   readonly okouToken: string;
   readonly disabledPaidTools: readonly PaidToolId[];
-  readonly previewBypassAuthorized: boolean;
-}): Omit<PreparedRunnerLaunch, "runStorageMounts"> {
+}): Omit<PreparedRunnerLaunch, "runStorageMounts" | "memoryMounts"> {
   const { args } = input;
   const facts = {
     ...args.facts,
     executionPackages: input.executionPackages,
     nativeContinuation: args.nativeContinuation,
-    previewBypassAuthorized: input.previewBypassAuthorized,
     customWorkflowSelection: input.customWorkflowSelection,
     okouToken: input.okouToken,
     disabledPaidTools: input.disabledPaidTools,
@@ -4772,8 +4753,6 @@ interface ThreadRunPreparation {
 }
 
 interface ThreadRunArgsInput {
-  /** One catalog snapshot per run, loaded by the entry point. */
-  readonly catalog: ModelCatalog;
   readonly command: ThreadRunCommand;
   readonly modelSelection: ModelFirstPin;
   readonly threadContinuation: ChatThreadContinuation;
@@ -4788,11 +4767,9 @@ interface ThreadRunContent {
 
 /** The facts Thread uses to prepare and commit one claimed input. */
 interface ThreadRunArgs {
-  readonly catalog: ModelCatalog;
   readonly orgId: string;
   readonly userId: string;
-  readonly piExecution: boolean;
-  readonly codexServiceTier?: "fast";
+  readonly codexServiceTier?: "fast" | "ultrafast";
   readonly agentRunMetadata: AgentRunMetadata;
   readonly queueFirstAssociation: QueueFirstRunAssociation;
   readonly prompt: string;
@@ -4815,10 +4792,8 @@ function buildThreadRunArgs(
   return {
     orgId: command.owner.orgId,
     userId: command.owner.userId,
-    piExecution: command.piExecution,
     codexServiceTier: command.codexServiceTier,
     queueFirstAssociation: command.queueFirstAssociation,
-    catalog: args.catalog,
     prompt: prompt.userPrompt,
     realAgentInPreview: command.realAgentInPreview,
     captureNetworkBodies: command.captureNetworkBodies,
@@ -4999,7 +4974,6 @@ function admittedRunLaunch(
       prompt: rows.content.prompt,
       appendSystemPrompt: rows.content.appendSystemPrompt,
       vars: rows.content.vars,
-      storageMounts: args.launch.runStorageMounts,
       modelProvider: rows.modelSelection.modelProviderType,
       modelProviderId: metadata.modelProviderId,
       modelProviderAccountIdentity: admission.validatedAccountIdentity,
@@ -5013,6 +4987,7 @@ function admittedRunLaunch(
       reasoningEffort: metadata.reasoningEffort,
       codexServiceTier: metadata.codexServiceTier,
     },
+    memoryMounts: args.launch.memoryMounts,
     facts: {
       ...args.launch.facts,
       connectorRuntimeTargets:
@@ -5035,8 +5010,6 @@ const pendingLaunchRowSchema = discriminatedUnion("kind", [
     billingAttributionId: string().nullable(),
     marketingRewardEventId: uuid().nullable(),
   }),
-  object({ kind: literal("official") }),
-  object({ kind: literal("plan") }),
   object({ kind: literal("claim-lost") }),
 ]);
 
@@ -5044,20 +5017,9 @@ function pendingAtomicLaunchResult(
   args: PreparedThreadLaunchCommit,
   context: AtomicLaunchCteContext,
   row: zInfer<typeof pendingLaunchRowSchema> | undefined,
-):
-  | PersistedAtomicLaunchRows
-  | ReturnType<typeof conflict>
-  | QueueFirstRunClaimLost {
+): PersistedAtomicLaunchRows | QueueFirstRunClaimLost {
   if (!row) {
     throw new Error("Atomic pending launch persistence returned no row");
-  }
-  if (row.kind === "official") {
-    return conflict(OFFICIAL_WORKFLOW_RUN_ADMISSION_MESSAGE);
-  }
-  if (row.kind === "plan") {
-    throw new Error(
-      `Missing org plan entitlement for ${args.createArgs.orgId}`,
-    );
   }
   if (row.kind === "claim-lost") {
     return { kind: "queue-first-claim-lost" };
@@ -5153,7 +5115,6 @@ function pendingAtomicLaunchPlan(
     ${sql.join([...planned, ...producerCtes], sql`, `)},
     launch_active AS (${active})
     SELECT CASE
-      WHEN reason <> 'ready' THEN reason
       WHEN EXISTS (SELECT 1 FROM ${context.insertedRun}) THEN 'pending'
       ELSE 'claim-lost' END AS kind,
       (SELECT ${attribution.runId} FROM ${attribution}) AS "billingAttributionId",
@@ -5161,7 +5122,7 @@ function pendingAtomicLaunchPlan(
       (SELECT ${returnedCteColumn(context.insertedRun, "id")} FROM ${context.insertedRun}) AS "runId",
       (SELECT ${returnedCteColumn(context.insertedRun, "created_at")} FROM ${context.insertedRun})::text AS "createdAt",
       ${returnedCteId(context.updatedThread)} AS "boundThreadId"
-    FROM launch_official_guard WHERE (SELECT ${count()} FROM launch_active) >= 0`;
+    WHERE (SELECT ${count()} FROM launch_active) >= 0`;
 }
 
 function returnedCteColumn(cte: WithSubquery, name: string): SQL {
@@ -5208,11 +5169,9 @@ function pendingLaunchBarrier(names: readonly string[]): SQL {
 
 function pendingLaunchPublicationCtes(args: AtomicLaunchRowsPlanArgs): SQL {
   const { claim, queueFirst } = args.publication;
-  const official = sql`launch_official_guard AS MATERIALIZED (${pendingOfficialAdmissionGuardSql(args.commit)})`;
-  const ready = sql`(SELECT reason FROM launch_official_guard) = 'ready'`;
-  const claimCtes = sql`, ${canonicalChatEventInputCtes(
+  const claimCtes = sql`${canonicalChatEventInputCtes(
     [queueFirst.input],
-    sql`${ready} AND EXISTS (
+    sql`EXISTS (
         SELECT 1 FROM (${queueFirst.headSql}) AS current_head WHERE current_head.id = ${queueFirst.input.revokesEventId}::uuid)`,
   )},
       inserted AS (${canonicalChatEventInsertSql("any")}),
@@ -5230,7 +5189,7 @@ function pendingLaunchPublicationCtes(args: AtomicLaunchRowsPlanArgs): SQL {
     sql`EXISTS (SELECT 1 FROM inserted)
               AND (SELECT ${count()} FROM launch_claim_relations) >= 0`,
   )})`;
-  return sql`${official}${claimCtes}${released}`;
+  return sql`${claimCtes}${released}`;
 }
 
 function pendingLaunchGuardedRunId(
@@ -5244,11 +5203,6 @@ function pendingLaunchGuardedRunId(
   const guard = sql`CASE ${sql.join(guards, sql` `)} ELSE '0' END`;
   return sql`CASE WHEN (${guard})::integer = 0
     THEN ${args.commit.identity.runId}::uuid ELSE NULL END`;
-}
-
-function pendingLaunchRunEligibility(): SQL {
-  return sql`(SELECT reason FROM launch_official_guard) = 'ready'
-    AND EXISTS (SELECT 1 FROM inserted)`;
 }
 
 function pendingLaunchActivePublication(
@@ -5310,6 +5264,10 @@ const commitThreadLaunch$ = command(
     signal: AbortSignal,
   ): Promise<AtomicLaunchCommitAttempt> => {
     signal.throwIfAborted();
+    const official = args.context.officialWorkflowRun;
+    if (official && !exactMountsMatch(official, args.launch.runStorageMounts)) {
+      return conflict(OFFICIAL_WORKFLOW_RUN_ADMISSION_MESSAGE);
+    }
     const db = set(writeDb$);
     const { admissionTiming, timing } = args;
     admissionTiming.transactionStarted();

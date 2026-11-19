@@ -128,10 +128,10 @@ async fn memory_409_replays_original_delta_through_multiple_real_archive_publica
                 when.method(GET).path(format!("/head-{index}-archive"));
                 let bytes = archive_bytes(tree).unwrap();
                 then.respond_with(move |request| {
-                    let has_credentials = request.headers_vec().iter().any(|(name, _)| {
-                        name.eq_ignore_ascii_case("authorization")
-                            || name.eq_ignore_ascii_case("x-vercel-protection-bypass")
-                    });
+                    let has_credentials = request
+                        .headers_vec()
+                        .iter()
+                        .any(|(name, _)| name.eq_ignore_ascii_case("authorization"));
                     HttpMockResponse::builder()
                         .status(if has_credentials { 400 } else { 200 })
                         .body(bytes.clone())
@@ -208,7 +208,6 @@ async fn memory_409_replays_original_delta_through_multiple_real_archive_publica
         let http = HttpClient::with_api_config(
             server.base_url(),
             "private-api-token",
-            "private-bypass",
             "merge-run",
             Duration::ZERO,
         )

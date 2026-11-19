@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.32.24](https://github.com/okou-ai/okou/compare/guest-contracts-v0.32.23...guest-contracts-v0.32.24) (2026-11-18)
+
+
+### Refactoring
+
+* **rust:** use typed directory entry operations ([#48730](https://github.com/okou-ai/okou/issues/48730)) ([5856c31](https://github.com/okou-ai/okou/commit/5856c31954cc37ce63770f5747a02b3da7c8676d))
+
+## [0.32.23](https://github.com/okou-ai/okou/compare/guest-contracts-v0.32.22...guest-contracts-v0.32.23) (2026-11-18)
+
+
+### Performance Improvements
+
+* **api:** remove execution-startup secret encryption ([#48677](https://github.com/okou-ai/okou/issues/48677)) ([ffad11e](https://github.com/okou-ai/okou/commit/ffad11eaaca4de2da2218225794d16f39c2b7796))
+
 ## [0.32.22](https://github.com/okou-ai/okou/compare/guest-contracts-v0.32.21...guest-contracts-v0.32.22) (2026-11-18)
 
 ## [0.32.21](https://github.com/okou-ai/okou/compare/guest-contracts-v0.32.20...guest-contracts-v0.32.21) (2026-11-18)

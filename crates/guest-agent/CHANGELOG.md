@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.110.1](https://github.com/okou-ai/okou/compare/guest-agent-v0.110.0...guest-agent-v0.110.1) (2026-11-18)
+
+## [0.110.0](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.110...guest-agent-v0.110.0) (2026-11-18)
+
+
+### Features
+
+* add ultrafast for codex subscriptions ([#48736](https://github.com/okou-ai/okou/issues/48736)) ([c352dad](https://github.com/okou-ai/okou/commit/c352dadadbbec10cea8cf77adccfac8462ecdb94))
+
+
+### Refactoring
+
+* **rust:** use typed directory entry operations ([#48730](https://github.com/okou-ai/okou/issues/48730)) ([5856c31](https://github.com/okou-ai/okou/commit/5856c31954cc37ce63770f5747a02b3da7c8676d))
+
+## [0.109.110](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.109...guest-agent-v0.109.110) (2026-11-18)
+
+
+### Performance Improvements
+
+* **api:** remove execution-startup secret encryption ([#48677](https://github.com/okou-ai/okou/issues/48677)) ([ffad11e](https://github.com/okou-ai/okou/commit/ffad11eaaca4de2da2218225794d16f39c2b7796))
+
+## [0.109.109](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.108...guest-agent-v0.109.109) (2026-11-18)
+
+## [0.109.108](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.107...guest-agent-v0.109.108) (2026-11-18)
+
+
+### Bug Fixes
+
+* **pi:** preserve rpc input ownership through settlement ([#48564](https://github.com/okou-ai/okou/issues/48564)) ([cf45a8a](https://github.com/okou-ai/okou/commit/cf45a8a087521126c8fe79e8e3bae4f39d62eb37))
+
 ## [0.109.107](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.106...guest-agent-v0.109.107) (2026-11-18)
 
 ## [0.109.106](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.105...guest-agent-v0.109.106) (2026-11-18)

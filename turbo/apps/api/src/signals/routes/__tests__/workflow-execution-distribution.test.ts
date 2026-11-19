@@ -22,7 +22,7 @@ import {
   requireOrgId,
 } from "./helpers/chat-events-fixture";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import { holdCurrentSecretKms } from "./helpers/hold-secret-kms";
+import { holdDownloadSigning } from "./helpers/hold-download-signing";
 import { publicRunOwner } from "./helpers/public-run-owner";
 
 const context = testContext();
@@ -299,9 +299,9 @@ test.each(["sharing withdrawal", "rename", "deletion"] as const)(
       const author = bdd.user({ orgId: actor.orgId });
       const workflow = await createWorkflow(author, agent.agentId, {
         visibility: "public",
-        instruction: "Content whose sharing can be withdrawn by its author",
+        instruction: `Content whose sharing can be withdrawn by its author.\n${randomUUID()}`,
       });
-      const kms = holdCurrentSecretKms(context.signal);
+      const signing = holdDownloadSigning(context);
       const renamed = `${workflow.name}-renamed`;
       const clientEventId = randomUUID();
       const sent = await chatFixture.chat.requestSendEvent(
@@ -317,7 +317,7 @@ test.each(["sharing withdrawal", "rename", "deletion"] as const)(
         throw new Error("Expected the workflow user's prompt to be accepted");
       }
       const revocation = await settleIncludingAbort(async () => {
-        await kms.entered;
+        await signing.entered;
         const request = {
           headers: await headers(author),
           params: { workflowId: workflow.id },
@@ -349,7 +349,7 @@ test.each(["sharing withdrawal", "rename", "deletion"] as const)(
           await accept(detailClient().delete(request), [204]);
         }
       });
-      kms.release();
+      signing.release();
       if (!revocation.ok) {
         throw revocation.error;
       }
@@ -457,6 +457,108 @@ test("invokes the caller's Private Workflow when Public and foreign Private Work
     readExecutionContentBundle(s3.objects, skill).get("SKILL.md")?.toString(),
   ).toContain("private body");
   await finish(run.runId, execution.sandboxToken);
+});
+
+test("an ordinary Automation invokes the name of its bound Workflow package", async () => {
+  const { actor, agent, s3 } = await fixture();
+  const owner = publicRunOwner(context, actor);
+  await owner.run(async () => {
+    const author = bdd.user({ orgId: actor.orgId });
+    const shared = await createWorkflow(author, agent.agentId, {
+      visibility: "public",
+      instruction: "Shared Automation workflow",
+    });
+    const shadow = await createWorkflow(actor, agent.agentId, {
+      visibility: "private",
+      name: shared.name,
+      instruction: "Caller's private Workflow with the same name",
+    });
+    const automation = chatFixture.threadPiAutomationsClient();
+    const created = await accept(
+      automation.create({
+        headers: await headers(actor),
+        params: { workflowId: shared.id },
+        body: { schedule: { type: "loop", intervalSeconds: 3600 } },
+      }),
+      [201],
+    );
+    const launch = async () => {
+      return (
+        await accept(
+          automation.run({
+            headers: await headers(actor),
+            params: { id: created.body.id },
+          }),
+          [201],
+        )
+      ).body.chatThreadId;
+    };
+    const threadId = await launch();
+    await flushWaitUntilForTest();
+    const rejected = await chatFixture.chat.listThreadEvents(actor, threadId);
+    expect(rejected.events).toContainEqual(
+      expect.objectContaining({
+        eventType: "input.rejected",
+        error: "conflict",
+      }),
+    );
+
+    await accept(
+      detailClient().update({
+        headers: await headers(actor),
+        params: { workflowId: shadow.id },
+        body: { name: `${shadow.name}-private` },
+      }),
+      [200],
+    );
+    await expect(launch()).resolves.toBe(threadId);
+    const runId = await chatFixture.lastThreadPiAutomationRun(actor, threadId);
+    const execution = await owner.executionInput(runId);
+    const mounted = execution.contentBundles.skills.find((bundle) => {
+      return bundle.mountPath === `/home/user/.claude/skills/${shared.name}`;
+    });
+    if (!mounted) {
+      throw new Error("Expected the Automation's selected Workflow mount");
+    }
+    expect(
+      readExecutionContentBundle(s3.objects, mounted)
+        .get("SKILL.md")
+        ?.toString(),
+    ).toContain("Shared Automation workflow");
+
+    await expect(launch()).resolves.toBe(threadId);
+    const renamed = `${shared.name}-new`;
+    await accept(
+      detailClient().update({
+        headers: await headers(author),
+        params: { workflowId: shared.id },
+        body: { name: renamed, instruction: "Renamed Automation Workflow" },
+      }),
+      [200],
+    );
+    await finish(runId, execution.sandboxToken);
+    const queuedRunId = await chatFixture.lastThreadPiAutomationRun(
+      actor,
+      threadId,
+    );
+    expect(queuedRunId).not.toBe(runId);
+    const queuedExecution = await owner.executionInput(queuedRunId);
+    expect(queuedExecution.prompt.split("\n", 1)[0]).toBe(`/${renamed}`);
+    const renamedPackage = queuedExecution.contentBundles.skills.find(
+      (bundle) => {
+        return bundle.mountPath === `/home/user/.claude/skills/${renamed}`;
+      },
+    );
+    if (!renamedPackage) {
+      throw new Error("Expected the renamed Workflow mount");
+    }
+    expect(
+      readExecutionContentBundle(s3.objects, renamedPackage)
+        .get("SKILL.md")
+        ?.toString(),
+    ).toContain("Renamed Automation Workflow");
+    await finish(queuedRunId, queuedExecution.sandboxToken);
+  });
 });
 
 test("runs a queued explicit invocation without its deleted Workflow", async () => {

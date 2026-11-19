@@ -113,7 +113,10 @@ export const loadChatThreadSnapshotProjection$ = command(
             modelSettings: modelSettingsSchema.parse(
               thread.modelSettings ?? {},
             ),
-            serviceTier: thread.codexServiceTier === "fast" ? "priority" : null,
+            serviceTier:
+              thread.codexServiceTier === "fast"
+                ? "priority"
+                : thread.codexServiceTier,
             computerUseHostId: thread.computerUseHostId,
             cloudBrowserEnabled: thread.cloudBrowserEnabled,
           }),

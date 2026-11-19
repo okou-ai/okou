@@ -36,7 +36,7 @@ use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Component, Path, PathBuf};
 
 use nix::fcntl::{OFlag, open, openat};
-use nix::sys::stat::{Mode, SFlag, fstat, mkdirat};
+use nix::sys::stat::{Mode, SFlag, fchmod, fstat, mkdirat};
 
 pub const PRIVATE_DIR_MODE: u32 = 0o700;
 pub const PRIVATE_FILE_MODE: u32 = 0o600;
@@ -373,12 +373,15 @@ pub(crate) async fn write_private_atomic(
         .map_err(|e| wrap_io(e, format!("write {context} {}", path.display())))
 }
 
-pub fn secure_regular_private_file<Fd: AsRawFd>(
+pub fn secure_regular_private_file<Fd: AsFd>(
     file: &Fd,
     path: &Path,
     context: &str,
 ) -> io::Result<()> {
-    let stat = fstat_raw(file, path, context)?;
+    let stat = fstat(file).map_err(|error| {
+        let error = io::Error::from(error);
+        io::Error::other(format!("stat {context} {}: {error}", path.display()))
+    })?;
     let file_type = stat.st_mode & nix::libc::S_IFMT;
     if file_type != nix::libc::S_IFREG {
         return Err(permission_denied(format!(
@@ -791,34 +794,12 @@ fn validate_trusted_component_owner(
     Ok(())
 }
 
-fn fstat_raw<Fd: AsRawFd>(file: &Fd, path: &Path, context: &str) -> io::Result<nix::libc::stat> {
-    let mut stat = std::mem::MaybeUninit::<nix::libc::stat>::uninit();
-    // SAFETY: `stat` points to writable memory and `file` owns a live fd.
-    let result = unsafe { nix::libc::fstat(file.as_raw_fd(), stat.as_mut_ptr()) };
-    if result != 0 {
-        return Err(io::Error::other(format!(
-            "stat {context} {}: {}",
-            path.display(),
-            io::Error::last_os_error()
-        )));
-    }
-    // SAFETY: successful `fstat` initialized the full struct.
-    Ok(unsafe { stat.assume_init() })
-}
-
-fn chmod_private_file_fd<Fd: AsRawFd>(file: &Fd, path: &Path, context: &str) -> io::Result<()> {
-    // SAFETY: `fchmod` operates on the live fd and does not affect Rust aliasing.
-    let result =
-        unsafe { nix::libc::fchmod(file.as_raw_fd(), PRIVATE_FILE_MODE as nix::libc::mode_t) };
-    if result == 0 {
-        Ok(())
-    } else {
-        Err(io::Error::other(format!(
-            "chmod {context} {}: {}",
-            path.display(),
-            io::Error::last_os_error()
-        )))
-    }
+fn chmod_private_file_fd<Fd: AsFd>(file: &Fd, path: &Path, context: &str) -> io::Result<()> {
+    let mode = Mode::from_bits_truncate(PRIVATE_FILE_MODE as nix::libc::mode_t);
+    fchmod(file, mode).map_err(|error| {
+        let error = io::Error::from(error);
+        io::Error::other(format!("chmod {context} {}: {error}", path.display()))
+    })
 }
 
 #[cfg(target_os = "linux")]

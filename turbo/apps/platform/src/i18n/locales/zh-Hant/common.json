@@ -2481,9 +2481,11 @@
       "relatedArtifactCount_other": "{{formattedCount}} 個成果",
       "relatedArtifacts": "相關成果",
       "selectedModelAppliesAfterCurrentRun": "下次執行將使用{{model}}",
+      "speedChangedTo": "速度已切換至 {{speed}}",
       "thinking": {
         "default": "思考中…"
       },
+      "ultrafastModelName": "{{model}} · Ultrafast",
       "viewActivityLogs": "檢視活動日誌",
       "viewLogs": "檢視執行日誌",
       "waitingIn": "正在等待",
@@ -5500,7 +5502,10 @@
         "models": "模型",
         "noConfiguredModels": "沒有已配置的模型",
         "pro": "Pro",
-        "standard": "標準"
+        "speed": "速度",
+        "standard": "標準",
+        "ultrafast": "Ultrafast",
+        "ultrafastUsage": "會消耗更多 Codex 額度。"
       },
       "reset": {
         "confirmDescription": "消耗一次 Codex 重置額度，重置當前的用量週期。你還有{{remaining}}。",

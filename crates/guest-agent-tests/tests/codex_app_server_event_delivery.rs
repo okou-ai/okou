@@ -40,7 +40,6 @@ async fn codex_app_server_event_delivery_reports_the_highest_successful_sequence
     runtime.http = guest_agent::http::HttpClient::with_api_config(
         &server.base_url,
         "test-token",
-        "",
         RUN_ID,
         Duration::ZERO,
     )?;

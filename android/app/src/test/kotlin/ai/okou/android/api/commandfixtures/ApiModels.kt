@@ -157,7 +157,8 @@ class CanonicalOptionalSerializer<T>(private val serializer: KSerializer<T>) :
 
 @Serializable
 enum class CreateThreadRequestServiceTier {
-    @SerialName("priority") PRIORITY
+    @SerialName("priority") PRIORITY,
+    @SerialName("ultrafast") ULTRAFAST,
 }
 
 @Serializable
@@ -191,7 +192,8 @@ data class CreateThreadRequest(
 
 @Serializable
 enum class CreatedThreadServiceTier {
-    @SerialName("priority") PRIORITY
+    @SerialName("priority") PRIORITY,
+    @SerialName("ultrafast") ULTRAFAST,
 }
 
 @Serializable
@@ -220,7 +222,8 @@ enum class SendRequestVariant1RunOptionsReasoningEffort {
 
 @Serializable
 enum class SendRequestVariant1RunOptionsCodexServiceTier {
-    @SerialName("fast") FAST
+    @SerialName("fast") FAST,
+    @SerialName("ultrafast") ULTRAFAST,
 }
 
 @Serializable
@@ -1595,7 +1598,8 @@ enum class SendRequestVariant1UserMessagePartsItemVariant13Type {
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant13ServiceTier {
-    @SerialName("priority") PRIORITY
+    @SerialName("priority") PRIORITY,
+    @SerialName("ultrafast") ULTRAFAST,
 }
 
 @Serializable

@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.20.31](https://github.com/okou-ai/okou/compare/runner-provider-v0.20.30...runner-provider-v0.20.31) (2026-11-18)
+
+## [0.20.30](https://github.com/okou-ai/okou/compare/runner-provider-v0.20.29...runner-provider-v0.20.30) (2026-11-18)
+
+
+### Refactoring
+
+* **firewall:** retire legacy resolver and envelope compatibility ([#48739](https://github.com/okou-ai/okou/issues/48739)) ([7dcd7ca](https://github.com/okou-ai/okou/commit/7dcd7cac45f2b26e253703533fc7f1097609c0f6))
+
+## [0.20.29](https://github.com/okou-ai/okou/compare/runner-provider-v0.20.28...runner-provider-v0.20.29) (2026-11-18)
+
+## [0.20.28](https://github.com/okou-ai/okou/compare/runner-provider-v0.20.27...runner-provider-v0.20.28) (2026-11-18)
+
 ## [0.20.27](https://github.com/okou-ai/okou/compare/runner-provider-v0.20.26...runner-provider-v0.20.27) (2026-11-18)
 
 ## [0.20.26](https://github.com/okou-ai/okou/compare/runner-provider-v0.20.25...runner-provider-v0.20.26) (2026-11-18)

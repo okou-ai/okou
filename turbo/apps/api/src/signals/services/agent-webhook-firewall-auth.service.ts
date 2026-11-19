@@ -105,11 +105,11 @@ import { env, optionalEnv } from "../../lib/env";
 import { badRequestMessage, insufficientCredits } from "../../lib/error";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
-import type { SandboxAuth } from "../../types/auth";
+import type { FirewallAuth } from "../../types/auth";
 import type { CustomConnectorNetworkIntent } from "@okouai/api-contracts/validators/custom-connector-network";
 import { db$, writeDb$ } from "../external/db";
 import { recordSandboxOperations } from "../external/sandbox-op-log";
-import { safeSync, settle, settleIncludingAbort, tapError } from "../utils";
+import { safeSync, settle, settleIncludingAbort } from "../utils";
 import { resolveBuiltinConnectorAutomaticMcpCredential } from "./builtin-connector-automatic-oauth.service";
 import {
   builtinConnectorCredentialSecretReadCondition,
@@ -139,7 +139,6 @@ import {
   connectorOwnedVariableWrite,
 } from "./connector-credential-storage-write.service";
 import {
-  decryptPersistentSecretsMap,
   decryptStoredSecretValue,
   encryptStoredSecretValue,
 } from "./crypto.utils";
@@ -168,7 +167,6 @@ const ACTIVE_FIREWALL_AUTH_RUN_STATUSES = ["pending", "running"] as const;
 
 interface FirewallAuthBody {
   readonly networkIntent?: CustomConnectorNetworkIntent;
-  readonly encryptedSecrets?: string;
   readonly authHeaders: Record<string, string>;
   readonly authBase?: string;
   readonly authQuery?: Record<string, string>;
@@ -229,6 +227,28 @@ interface FirewallAuthResolutionContext {
 type PersonalSubscriptionCredentialReadArgs =
   PersonalSubscriptionCredentialScope;
 
+class SubscriptionCredentialDecryptionError extends Error {
+  constructor(
+    readonly providerType: PersonalSubscriptionCredentialReadArgs["type"],
+    cause: unknown,
+  ) {
+    super("Failed to decrypt personal subscription credentials", { cause });
+  }
+}
+
+async function decryptSubscriptionCredentialValues(
+  secrets: Parameters<typeof personalSubscriptionCredentialValues>[0],
+  args: PersonalSubscriptionCredentialReadArgs,
+) {
+  const values = await settle(
+    personalSubscriptionCredentialValues(secrets, args.featureSwitchContext),
+  );
+  if (!values.ok) {
+    throw new SubscriptionCredentialDecryptionError(args.type, values.error);
+  }
+  return values.value;
+}
+
 /** Request-scoped subscription credential reads. One firewall request decrypts
  * a bundle once; a refresh in the same request clears it so the rotated bundle
  * is read once more. */
@@ -267,9 +287,9 @@ const readSubscriptionBundle$ = command(function readSubscriptionBundle(
       return credentialCiphertexts
         ? {
             account: credentialCiphertexts.account,
-            values: await personalSubscriptionCredentialValues(
+            values: await decryptSubscriptionCredentialValues(
               credentialCiphertexts.secrets,
-              uncachedCredentialReadArgs.featureSwitchContext,
+              uncachedCredentialReadArgs,
             ),
           }
         : null;
@@ -303,9 +323,9 @@ const readSubscriptionBundle$ = command(function readSubscriptionBundle(
     return credentialCiphertexts
       ? {
           account: credentialCiphertexts.account,
-          values: await personalSubscriptionCredentialValues(
+          values: await decryptSubscriptionCredentialValues(
             credentialCiphertexts.secrets,
-            cachedCredentialReadArgs.featureSwitchContext,
+            cachedCredentialReadArgs,
           ),
         }
       : null;
@@ -532,7 +552,7 @@ export const resolveBillableFirewallCacheExpiry$ = command(
   async (
     { set },
     params: {
-      readonly auth: SandboxAuth;
+      readonly auth: FirewallAuth;
       readonly firewallBillable: boolean | undefined;
     },
     signal: AbortSignal,
@@ -761,7 +781,7 @@ function refreshFailedResult(
 interface RefreshExpiredTokensArgs {
   readonly subscriptionBundles: SubscriptionBundleReads;
   readonly connectorCatalogSnapshot: ConnectorRuntimeAuthSelection;
-  readonly auth: SandboxAuth;
+  readonly auth: FirewallAuth;
   readonly orgId: string;
   readonly featureSwitchContext: FeatureSwitchContext;
   readonly secrets: Record<string, string>;
@@ -779,7 +799,7 @@ interface RefreshExpiredTokensArgs {
 interface RefreshBatchContext {
   readonly subscriptionBundles: SubscriptionBundleReads;
   readonly connectorCatalogSnapshot: ConnectorRuntimeAuthSelection;
-  readonly auth: SandboxAuth;
+  readonly auth: FirewallAuth;
   readonly orgId: string;
   readonly userId: string;
   readonly secrets: Record<string, string>;
@@ -2924,7 +2944,7 @@ function buildMetadataByAccessSource(
 }
 
 function hasForbiddenModelProviderOwner(
-  auth: SandboxAuth,
+  auth: FirewallAuth,
   secretConnectorMap: Record<string, string>,
   secretConnectorMetadataMap:
     Record<string, SecretConnectorMetadata> | undefined,
@@ -3220,9 +3240,9 @@ const getModelProviderRuntimeSecretValue$ = command(
       return credentialCiphertexts
         ? {
             account: credentialCiphertexts.account,
-            values: await personalSubscriptionCredentialValues(
+            values: await decryptSubscriptionCredentialValues(
               credentialCiphertexts.secrets,
-              runtimeCredentialReadArgs.featureSwitchContext,
+              runtimeCredentialReadArgs,
             ),
           }
         : null;
@@ -3539,7 +3559,7 @@ const syncFirewallRuntimeSecrets$ = command(
   async function syncFirewallRuntimeSecrets(
     { get, set },
     args: {
-      readonly auth: SandboxAuth;
+      readonly auth: FirewallAuth;
       readonly body: FirewallAuthBody;
       readonly orgId: string;
       readonly secrets: Record<string, string>;
@@ -4081,7 +4101,7 @@ const prepareFirewallConnectorBindings$ = command(
     { set },
     args: {
       readonly connectorCatalogSnapshot: ConnectorRuntimeAuthSelection;
-      readonly auth: SandboxAuth;
+      readonly auth: FirewallAuth;
       readonly body: FirewallAuthBody;
       readonly orgId: string;
       readonly referenced: ReferencedAuthKeys;
@@ -4163,7 +4183,7 @@ const prepareFirewallAuthResolutionContext$ = command(
     { set },
     args: {
       readonly connectorCatalogSnapshot: ConnectorRuntimeAuthSelection;
-      readonly auth: SandboxAuth;
+      readonly auth: FirewallAuth;
       readonly body: FirewallAuthBody;
       readonly orgId: string;
       readonly featureSwitchContext: FeatureSwitchContext;
@@ -4376,7 +4396,7 @@ export const admitPreparedFirewallAuthResponse$ = command(
   async (
     { set },
     args: {
-      readonly auth: SandboxAuth;
+      readonly auth: FirewallAuth;
       readonly response: ResolveFirewallAuthResult;
     },
     signal: AbortSignal,
@@ -4427,7 +4447,7 @@ const prepareNonCustomFirewallSecrets$ = command(
   async function prepareNonCustomFirewallSecrets(
     { get },
     args: {
-      readonly auth: SandboxAuth;
+      readonly auth: FirewallAuth;
       readonly orgId: string;
       readonly body: FirewallAuthBody;
       readonly referenced: ReferencedAuthKeys;
@@ -4456,31 +4476,9 @@ const prepareNonCustomFirewallSecrets$ = command(
       auth.userId,
       featureSwitchContextRows0,
     );
-    // Legacy writers and active Runs still send an envelope. Omission only
-    // removes that namespace; server-owned sources keep their own authority.
-    // Retire the envelope reader after the deployment/Run drain in #48077.
-    const secrets =
-      body.encryptedSecrets === undefined
-        ? {}
-        : await tapError(
-            decryptPersistentSecretsMap(
-              body.encryptedSecrets,
-              featureSwitchContext,
-            ),
-          );
-    if (!secrets) {
-      return {
-        ok: false,
-        response: badRequestMessage("Failed to decrypt secrets"),
-      };
-    }
+    const secrets: Record<string, string> = {};
     const managedSecretName =
       MODEL_PROVIDER_TYPES[AUTO_RUN_PROVIDER].secretName;
-    if (referenced.secrets.has(managedSecretName)) {
-      // Neither a model nor a same-name connector may use an envelope snapshot.
-      // Its current Run/account authority must supply the requested material.
-      delete secrets[managedSecretName];
-    }
     if (
       referenced.secrets.has(managedSecretName) &&
       body.matchedFirewall === undefined &&
@@ -4512,20 +4510,18 @@ const prepareNonCustomFirewallSecrets$ = command(
       }
       secrets[managedSecretName] = key.apiKey;
     }
-    if (referenced.secrets.has("OKOU_DATA_TOKEN")) {
-      delete secrets.OKOU_DATA_TOKEN;
-      if (
-        body.matchedFirewall === undefined &&
-        !Object.hasOwn(body.secretConnectorMap ?? {}, "OKOU_DATA_TOKEN") &&
-        !Object.hasOwn(body.secretConnectorMetadataMap ?? {}, "OKOU_DATA_TOKEN")
-      ) {
-        const url = env("OKOU_DATA_ROUTER_URL");
-        const token = env("OKOU_DATA_TOKEN");
-        if (!url || !token) {
-          return { ok: false, response: connectorNotConfigured() };
-        }
-        secrets.OKOU_DATA_TOKEN = token;
+    if (
+      referenced.secrets.has("OKOU_DATA_TOKEN") &&
+      body.matchedFirewall === undefined &&
+      !Object.hasOwn(body.secretConnectorMap ?? {}, "OKOU_DATA_TOKEN") &&
+      !Object.hasOwn(body.secretConnectorMetadataMap ?? {}, "OKOU_DATA_TOKEN")
+    ) {
+      const url = env("OKOU_DATA_ROUTER_URL");
+      const token = env("OKOU_DATA_TOKEN");
+      if (!url || !token) {
+        return { ok: false, response: connectorNotConfigured() };
       }
+      secrets.OKOU_DATA_TOKEN = token;
     }
     return {
       ok: true,
@@ -5203,7 +5199,7 @@ const prepareCurrentCustomConnectorFirewallAuth$ = command(
   async (
     { get, set },
     args: {
-      readonly auth: SandboxAuth;
+      readonly auth: FirewallAuth;
       readonly body: FirewallAuthBody;
       readonly orgId: string;
       readonly referenced: ReferencedAuthKeys;
@@ -5315,7 +5311,7 @@ const resolveCurrentCustomConnectorSecrets$ = command(
   async (
     { get, set },
     args: {
-      readonly auth: SandboxAuth;
+      readonly auth: FirewallAuth;
       readonly prepared: PreparedCustomFirewallAuth;
       readonly forceRefresh: boolean;
       readonly referencedSecretKeys: ReadonlySet<string>;
@@ -5483,7 +5479,7 @@ const prepareNonCustomFirewallAuth$ = command(
   async function prepareNonCustomFirewallAuth(
     { get, set },
     args: {
-      readonly auth: SandboxAuth;
+      readonly auth: FirewallAuth;
       readonly body: FirewallAuthBody;
       readonly orgId: string;
       readonly referenced: ReferencedAuthKeys;
@@ -5565,14 +5561,14 @@ const prepareNonCustomFirewallAuth$ = command(
     if (!secretPreparation.ok) {
       return secretPreparation;
     }
-    const decrypted = secretPreparation.prepared;
+    const { featureSwitchContext, secrets } = secretPreparation.prepared;
     const prepared = await set(prepareFirewallAuthResolutionContext$, {
       connectorCatalogSnapshot,
       auth: args.auth,
       body: args.body,
       orgId: args.orgId,
-      featureSwitchContext: decrypted.featureSwitchContext,
-      secrets: decrypted.secrets,
+      featureSwitchContext,
+      secrets,
       referenced: args.referenced,
     });
     if (!prepared.ok) {
@@ -5589,8 +5585,8 @@ const prepareNonCustomFirewallAuth$ = command(
             ? builtinMcpExpiresAt
             : null,
         connectorCatalogSnapshot,
-        featureSwitchContext: decrypted.featureSwitchContext,
-        secrets: decrypted.secrets,
+        featureSwitchContext,
+        secrets,
         context: prepared.context,
       },
     };
@@ -5601,7 +5597,7 @@ const resolveCustomFirewallAuthMaterial$ = command(
   async (
     { set },
     args: {
-      readonly auth: SandboxAuth;
+      readonly auth: FirewallAuth;
       readonly body: FirewallAuthBody;
       readonly referenced: ReferencedAuthKeys;
       readonly prepared: PreparedCustomFirewallAuth;
@@ -5704,7 +5700,7 @@ const resolveNonCustomFirewallAuthMaterial$ = command(
   async function resolveNonCustomFirewallAuthMaterial(
     { set },
     args: {
-      readonly auth: SandboxAuth;
+      readonly auth: FirewallAuth;
       readonly body: FirewallAuthBody;
       readonly prepared: PreparedNonCustomFirewallAuth;
     },
@@ -5806,7 +5802,7 @@ const resolveFirewallAuthMaterial$ = command(
   async (
     { get, set },
     args: {
-      readonly auth: SandboxAuth;
+      readonly auth: FirewallAuth;
       readonly body: FirewallAuthBody;
       readonly referenced: ReferencedAuthKeys;
       readonly prepared: PreparedFirewallAuth;
@@ -5990,7 +5986,7 @@ function matchedConnectorSourceConflicts(args: {
 const prepareFirewallAuthRequest$ = command(
   async function prepareFirewallAuthRequest(
     { get, set },
-    auth: SandboxAuth,
+    auth: FirewallAuth,
     body: FirewallAuthBody,
     billableCacheExpiry: BillableFirewallCacheExpiry,
   ): Promise<PreparedFirewallAuthRequest> {
@@ -6080,7 +6076,7 @@ const resolveFirewallAuthWithTimings$ = command(
   async (
     { set },
     args: {
-      readonly auth: SandboxAuth;
+      readonly auth: FirewallAuth;
       readonly body: FirewallAuthBody;
       readonly billableCacheExpiry: BillableFirewallCacheExpiry;
       readonly timingRecords: FirewallAuthTimingRecord[];
@@ -6155,19 +6151,29 @@ const resolveFirewallAuthWithTimings$ = command(
 export const prepareFirewallAuthResponse$ = command(
   async (
     { set },
-    auth: SandboxAuth,
+    auth: FirewallAuth,
     body: FirewallAuthBody,
     billableCacheExpiry: BillableFirewallCacheExpiry,
     signal: AbortSignal,
   ): Promise<ResolveFirewallAuthResult> => {
     const timingRecords: FirewallAuthTimingRecord[] = [];
-    return await set(
-      resolveFirewallAuthWithTimings$,
-      { auth, body, billableCacheExpiry, timingRecords },
-      signal,
-    ).finally(() => {
-      recordFirewallAuthTimings(auth.runId, timingRecords);
-    });
+    const resolved = await settle(
+      set(
+        resolveFirewallAuthWithTimings$,
+        { auth, body, billableCacheExpiry, timingRecords },
+        signal,
+      ).finally(() => {
+        recordFirewallAuthTimings(auth.runId, timingRecords);
+      }),
+    );
+    signal.throwIfAborted();
+    if (resolved.ok) {
+      return resolved.value;
+    }
+    if (resolved.error instanceof SubscriptionCredentialDecryptionError) {
+      return tokenAccessResolutionFailed([resolved.error.providerType]);
+    }
+    throw resolved.error;
   },
 );
 
@@ -6332,9 +6338,9 @@ export const resolveCurrentPersonalSubscriptionBundleForApi$ = command(
       return credentialCiphertexts
         ? {
             account: credentialCiphertexts.account,
-            values: await personalSubscriptionCredentialValues(
+            values: await decryptSubscriptionCredentialValues(
               credentialCiphertexts.secrets,
-              initialCredentialReadArgs.featureSwitchContext,
+              initialCredentialReadArgs,
             ),
           }
         : null;
@@ -6381,9 +6387,9 @@ export const resolveCurrentPersonalSubscriptionBundleForApi$ = command(
       return credentialCiphertexts
         ? {
             account: credentialCiphertexts.account,
-            values: await personalSubscriptionCredentialValues(
+            values: await decryptSubscriptionCredentialValues(
               credentialCiphertexts.secrets,
-              refreshedCredentialReadArgs.featureSwitchContext,
+              refreshedCredentialReadArgs,
             ),
           }
         : null;

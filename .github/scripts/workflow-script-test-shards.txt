@@ -108,6 +108,7 @@
 3 crates/runner/tests/behavior/tests/runner-behavior-cancel-test.sh
 3 runner-binary-cache-test.sh
 3 runner-binary-download-test.sh
+3 runner-image-operation-test.sh
 3 runner-lifecycle-lock-diagnostics-test.sh
 3 runner-promotion-ansible-test.sh
 3 rust-ci-memory-workflow-test.sh

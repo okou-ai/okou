@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.12.200](https://github.com/okou-ai/okou/compare/guest-control-tests-v0.12.199...guest-control-tests-v0.12.200) (2026-11-18)
+
+
+### Refactoring
+
+* **guest-control:** use typed sealed batch descriptors ([#48773](https://github.com/okou-ai/okou/issues/48773)) ([b1c67a4](https://github.com/okou-ai/okou/commit/b1c67a477f6261d5953cc4010c975933bea6d195))
+
+## [0.12.199](https://github.com/okou-ai/okou/compare/guest-control-tests-v0.12.198...guest-control-tests-v0.12.199) (2026-11-18)
+
+## [0.12.198](https://github.com/okou-ai/okou/compare/guest-control-tests-v0.12.197...guest-control-tests-v0.12.198) (2026-11-18)
+
+## [0.12.197](https://github.com/okou-ai/okou/compare/guest-control-tests-v0.12.196...guest-control-tests-v0.12.197) (2026-11-18)
+
+## [0.12.196](https://github.com/okou-ai/okou/compare/guest-control-tests-v0.12.195...guest-control-tests-v0.12.196) (2026-11-18)
+
 ## [0.12.195](https://github.com/okou-ai/okou/compare/guest-control-tests-v0.12.194...guest-control-tests-v0.12.195) (2026-11-18)
 
 ## [0.12.194](https://github.com/okou-ai/okou/compare/guest-control-tests-v0.12.193...guest-control-tests-v0.12.194) (2026-11-18)

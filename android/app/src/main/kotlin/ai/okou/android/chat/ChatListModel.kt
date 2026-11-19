@@ -7,6 +7,7 @@ import ai.okou.android.auth.WorkspaceIdentity
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -41,6 +42,11 @@ enum class ChatListSource {
     Network,
 }
 
+internal enum class ChatReadAction {
+    MarkRead,
+    MarkUnread,
+}
+
 data class ChatListUiState(
     val projectsEnabled: Boolean = false,
     val projectsSettingsPhase: ChatReadPhase = ChatReadPhase.Idle,
@@ -60,7 +66,15 @@ data class ChatListUiState(
     val indicators: Indicators? = null,
     val indicatorsPhase: ChatReadPhase = ChatReadPhase.Idle,
     val filter: ChatListFilter = ChatListFilter.Recent,
+    val pendingReadActions: Set<String> = emptySet(),
+    val readActionFailed: Boolean = false,
 )
+
+internal fun ChatListUiState.readAction(thread: ConfirmedChat): ChatReadAction? {
+    val unreadAt = indicators?.unreadAt ?: return null
+    if (indicatorsPhase == ChatReadPhase.Failed || thread.muted == true) return null
+    return if (thread.id in unreadAt) ChatReadAction.MarkRead else ChatReadAction.MarkUnread
+}
 
 /** Workspace-retained HTTP observations; no row collector owns synchronization or durable state. */
 class ChatListModel(
@@ -77,6 +91,7 @@ class ChatListModel(
     val uiState = mutable.asStateFlow()
     @Volatile private var retired = false
     private val cache = cacheStore.open(identity) { current() }
+    private val readWrites = mutableMapOf<String, Job>()
     val history =
         ConversationHistoryModel(
             service,
@@ -86,6 +101,7 @@ class ChatListModel(
             onFailure,
             { invalidateIndicators() },
             dispatcher,
+            precedingReadWrite = { readWrites[it] },
         )
     private val sync = ChatListSync(service, dispatcher)
     private var confirmed: CachedChats? = null
@@ -190,7 +206,7 @@ class ChatListModel(
                     }
                 // A manual read can replace the job while this worker waits or throttles.
                 // Drain demand only after the current read finishes, so its guard cannot drop it.
-                while (indicatorsJob?.isCompleted == false) indicatorsJob?.join()
+                awaitIndicatorRead()
                 while (indicatorInvalidations.tryReceive().isSuccess) {}
                 immediateIndicators = false
                 if (current()) {
@@ -257,6 +273,56 @@ class ChatListModel(
 
     fun selectFilter(value: ChatListFilter) {
         if (current()) mutable.value = mutable.value.copy(filter = value)
+    }
+
+    internal fun changeReadState(threadId: String, action: ChatReadAction) {
+        if (!current()) return
+        val state = mutable.value
+        val thread = state.threads.firstOrNull { it.id == threadId && it.hidden != true } ?: return
+        if (threadId in state.pendingReadActions || state.readAction(thread) != action) return
+        val acknowledgement =
+            if (action == ChatReadAction.MarkUnread) history.stopAutomaticRead(threadId) else null
+        val write = CompletableDeferred<Unit>()
+        readWrites[threadId] = write
+        mutable.value = state.copy(pendingReadActions = state.pendingReadActions + threadId)
+        viewModelScope.launch {
+            try {
+                try {
+                    acknowledgement?.join()
+                    requireCurrent()
+                    when (action) {
+                        ChatReadAction.MarkRead -> service.markRead(threadId)
+                        ChatReadAction.MarkUnread -> service.markUnread(threadId)
+                    }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    requireCurrent()
+                    // The target may have disappeared while the workspace is still authorized.
+                    if (error !is ApiFailure.Http || error.status != 404) onFailure(error)
+                    if (current()) mutable.value = mutable.value.copy(readActionFailed = true)
+                } finally {
+                    readWrites.remove(threadId)
+                    write.complete(Unit)
+                }
+                // A read already in flight may have started before the write.
+                awaitIndicatorRead()
+                requireCurrent()
+                refreshIndicators()
+                indicatorsJob?.join()
+            } finally {
+                if (current()) {
+                    mutable.value =
+                        mutable.value.copy(
+                            pendingReadActions = mutable.value.pendingReadActions - threadId
+                        )
+                }
+            }
+        }
+    }
+
+    internal fun dismissReadActionFailure() {
+        if (current()) mutable.value = mutable.value.copy(readActionFailed = false)
     }
 
     fun refreshAfterSend(threadId: String) {
@@ -510,6 +576,10 @@ class ChatListModel(
     private fun requestIndicators(immediate: Boolean) {
         immediateIndicators = immediateIndicators || immediate
         indicatorInvalidations.trySend(Unit)
+    }
+
+    private suspend fun awaitIndicatorRead() {
+        while (indicatorsJob?.isCompleted == false) indicatorsJob?.join()
     }
 
     fun refreshIndicators() {

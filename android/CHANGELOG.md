@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.25.0](https://github.com/okou-ai/okou/compare/android-v0.24.0...android-v0.25.0) (2026-11-18)
+
+
+### Features
+
+* add ultrafast for codex subscriptions ([#48736](https://github.com/okou-ai/okou/issues/48736)) ([c352dad](https://github.com/okou-ai/okou/commit/c352dadadbbec10cea8cf77adccfac8462ecdb94))
+* **android:** add chat row read actions ([#48753](https://github.com/okou-ai/okou/issues/48753)) ([feff7f3](https://github.com/okou-ai/okou/commit/feff7f3e6cca99b946b91f974c654e2104703050))
+* **android:** animate the chat list running indicators ([#48728](https://github.com/okou-ai/okou/issues/48728)) ([c8e2f5b](https://github.com/okou-ai/okou/commit/c8e2f5ba16ae4da481e6eb5bae576c68abf2c28b))
+* **android:** refine workspace list toolbar and filters ([#48740](https://github.com/okou-ai/okou/issues/48740)) ([36a450c](https://github.com/okou-ai/okou/commit/36a450c21413c751116d92d0ecf60e654d991aa6))
+
+## [0.24.0](https://github.com/okou-ai/okou/compare/android-v0.23.0...android-v0.24.0) (2026-11-18)
+
+
+### Features
+
+* **android:** refine chat and project list rows ([#48706](https://github.com/okou-ai/okou/issues/48706)) ([0aab5ca](https://github.com/okou-ai/okou/commit/0aab5ca9058da249e600bf628badadda90cf7c65))
+
+## [0.23.0](https://github.com/okou-ai/okou/compare/android-v0.22.0...android-v0.23.0) (2026-11-18)
+
+
+### Features
+
+* **android:** adapt workspace to wide windows ([#48685](https://github.com/okou-ai/okou/issues/48685)) ([95b66b3](https://github.com/okou-ai/okou/commit/95b66b38c36968c65dcdd0e9156d0487bf4bf4f4))
+
+## [0.22.0](https://github.com/okou-ai/okou/compare/android-v0.21.1...android-v0.22.0) (2026-11-18)
+
+
+### Features
+
+* **android:** unify compact workspace navigation ([#48676](https://github.com/okou-ai/okou/issues/48676)) ([e9d5d0c](https://github.com/okou-ai/okou/commit/e9d5d0c4bae85b380fb7ae37a8ef03b6ef4d466b))
+
 ## [0.21.1](https://github.com/okou-ai/okou/compare/android-v0.21.0...android-v0.21.1) (2026-11-18)
 
 

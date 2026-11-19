@@ -36,6 +36,9 @@ open class TestChatService : ChatListService {
     override suspend fun markRead(threadId: String): ai.okou.android.api.generated.ReadState =
         error("Unexpected mark read")
 
+    override suspend fun markUnread(threadId: String): ai.okou.android.api.generated.ReadState =
+        error("Unexpected mark unread")
+
     override suspend fun featureSwitches() = FeatureSwitches(emptyMap(), emptyMap())
 
     override suspend fun chatSnapshot() =

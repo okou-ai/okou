@@ -42,6 +42,7 @@ lock_file="${MOCK_LOCK_ROOT}/${host}-${JOB_REF}.lock"
 # and the absolute lock path that only exist on a metal host.
 local_command=${remote_command#sudo }
 local_command=${local_command//"/var/lock/vm0-runner-lifecycle-${JOB_REF}.lock"/$lock_file}
+local_command=${local_command//"/run/vm0-runner-lifecycle-receipts"/"${MOCK_LOCK_ROOT}/receipts-${host}"}
 if [ -n "${MOCK_HOLDER_COMMAND_FILE:-}" ]; then
   printf '%s\n' "$local_command" >"$MOCK_HOLDER_COMMAND_FILE"
 fi

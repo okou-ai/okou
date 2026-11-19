@@ -1,5 +1,51 @@
 # Changelog
 
+## [0.249.55](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.54...runner-rs-v0.249.55) (2026-11-18)
+
+
+### Refactoring
+
+* **python:** unify metadata match pattern analysis ([#48788](https://github.com/okou-ai/okou/issues/48788)) ([2787e00](https://github.com/okou-ai/okou/commit/2787e00171be56c603d19b3412af022d84e91ce0))
+* **runner:** share canonical uuid checks in native reports ([#48779](https://github.com/okou-ai/okou/issues/48779)) ([447d84d](https://github.com/okou-ai/okou/commit/447d84dc01de62b238b698e77b2470bafd60b663))
+
+## [0.249.54](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.53...runner-rs-v0.249.54) (2026-11-18)
+
+
+### Refactoring
+
+* **firewall:** retire legacy resolver and envelope compatibility ([#48739](https://github.com/okou-ai/okou/issues/48739)) ([7dcd7ca](https://github.com/okou-ai/okou/commit/7dcd7cac45f2b26e253703533fc7f1097609c0f6))
+* **runner:** centralize native pressure policy shape validation ([#48742](https://github.com/okou-ai/okou/issues/48742)) ([6de7061](https://github.com/okou-ai/okou/commit/6de7061ded8a72209a0edb56a324f4d4f5cd9423))
+* **runner:** share original evidence stream ownership ([#48727](https://github.com/okou-ai/okou/issues/48727)) ([280030d](https://github.com/okou-ai/okou/commit/280030d05d8ea88752d6eefac4bc41664c1284e5))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.249.53](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.52...runner-rs-v0.249.53) (2026-11-18)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.249.52](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.51...runner-rs-v0.249.52) (2026-11-18)
+
+
+### Refactoring
+
+* **runner:** share the bounded snapshot evidence reader ([#48695](https://github.com/okou-ai/okou/issues/48695)) ([3851f07](https://github.com/okou-ai/okou/commit/3851f07037bd46cb7ab0bf98f8726048d3666168))
+
+## [0.249.51](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.50...runner-rs-v0.249.51) (2026-11-18)
+
+
+### Refactoring
+
+* **runner:** keep buffered response start with its inspector ([#48663](https://github.com/okou-ai/okou/issues/48663)) ([38a5680](https://github.com/okou-ai/okou/commit/38a5680d8d15ed7d2fdbdec6889be558883adc3f))
+* **runner:** keep interruption reporting with the connector finalizer ([#48675](https://github.com/okou-ai/okou/issues/48675)) ([16c80f1](https://github.com/okou-ai/okou/commit/16c80f1f3ae26087444ad8f39da77b42b115d1ee))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.249.50](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.49...runner-rs-v0.249.50) (2026-11-18)
 
 ### Release Dependencies

@@ -2491,9 +2491,11 @@
       "relatedArtifactCount_other": "{{formattedCount}} आर्टिफ़ैक्ट",
       "relatedArtifacts": "संबंधित आर्टिफ़ैक्ट",
       "selectedModelAppliesAfterCurrentRun": "आपका चुना हुआ {{model}} मॉडल इस रन के बाद लागू होगा",
+      "speedChangedTo": "गति बदलकर {{speed}} की गई",
       "thinking": {
         "default": "सोच रहा हूँ..."
       },
+      "ultrafastModelName": "{{model}} · Ultrafast",
       "viewActivityLogs": "गतिविधि लॉग देखें",
       "viewLogs": "रन लॉग देखें",
       "waitingIn": "प्रतीक्षा कर रहा है",
@@ -5519,7 +5521,10 @@
         "models": "मॉडल",
         "noConfiguredModels": "कोई कॉन्फ़िगर मॉडल नहीं",
         "pro": "प्रो",
-        "standard": "मानक"
+        "speed": "गति",
+        "standard": "मानक",
+        "ultrafast": "Ultrafast",
+        "ultrafastUsage": "आपके Codex कोटे का अधिक उपयोग होता है।"
       },
       "reset": {
         "confirmDescription": "अपनी वर्तमान उपयोग विंडो को रीसेट करने के लिए एक Codex रीसेट का उपयोग करें। आपके पास {{remaining}} है।",

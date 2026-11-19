@@ -18,12 +18,14 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -191,17 +193,23 @@ class OkouAppTest {
     fun chatFilterSurvivesSettingsAndBack() {
         render()
         compose.onNodeWithText("Chats").assertExists()
+        compose.onNodeWithContentDescription("More actions").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Filter").performClick()
+        compose.onNodeWithText("All").assertIsSelected()
         compose.onNodeWithText("Archived").performClick()
         compose.onNodeWithContentDescription("Settings").performClick()
         compose.onNodeWithText("Appearance").assertExists()
         compose.onNodeWithContentDescription("Back").performClick()
         compose.onNodeWithText("Archived").assertIsSelected()
+        compose.onNodeWithText("Archived").performClick()
+        compose.onNodeWithText("Archived").assertDoesNotExist()
     }
 
     @Test
     fun homeIsUsableBeforeAppearanceStorageReturns() {
         render(TestPreferencesStore().apply { initialRead = CompletableDeferred() })
         compose.onNodeWithText("Chats").assertExists()
+        compose.onNodeWithContentDescription("Filter").performClick()
         compose.onNodeWithText("Archived").performClick().assertIsSelected()
         compose.onNodeWithContentDescription("Settings").performClick()
         compose.onNodeWithText("Loading appearance…").assertExists()
@@ -258,12 +266,34 @@ class OkouAppTest {
 
     @Test
     @Config(qualifiers = "en-rUS-w900dp-h900dp")
-    fun expandedWindowRetainsAvatarAndConversationDestinations() {
+    fun expandedWindowShowsOneListAndAnUnselectedPaneUntilTheWindowShrinks() {
         render()
+        compose.onNodeWithTag("chat_list").assertExists()
+        compose.onNodeWithTag("workspace_new_chat").assertExists()
+        compose.onNodeWithTag("conversation").assertDoesNotExist()
         compose.onNodeWithContentDescription("Settings").performClick()
         compose.onNodeWithText("Follow system").assertExists()
         compose.onNodeWithContentDescription("Back").performClick()
-        compose.onNodeWithText("Chats").assertExists()
+        compose.onNodeWithTag("workspace_new_chat").assertExists()
+        compose.runOnIdle {
+            deviceConfiguration.value =
+                Configuration(compose.activity.resources.configuration).apply {
+                    screenHeightDp = 479
+                }
+        }
+        compose.onNodeWithTag("chat_list").assertExists()
+        compose.onNodeWithTag("workspace_new_chat").assertDoesNotExist()
+        compose.runOnIdle { deviceConfiguration.value = null }
+        compose.onNodeWithTag("workspace_new_chat").assertExists()
+    }
+
+    @Test
+    fun wideLayoutUsesTheWindowWidthAndMinimumHeight() {
+        assertEquals(null, workspaceListPaneWidth(839, 900))
+        assertEquals(null, workspaceListPaneWidth(1100, 479))
+        assertEquals(320, workspaceListPaneWidth(840, 480))
+        assertEquals(320, workspaceListPaneWidth(1099, 900))
+        assertEquals(344, workspaceListPaneWidth(1100, 480))
     }
 
     @Test
@@ -276,6 +306,15 @@ class OkouAppTest {
         compose.onNodeWithText("Auf diesem Gerät").performScrollTo().assertIsDisplayed()
         compose.onNodeWithContentDescription("Zurück").assertIsDisplayed().performClick()
         compose.onNodeWithText("Chats").assertIsDisplayed()
-        compose.onNodeWithText("Chats aktualisieren").assertIsDisplayed().performClick()
+        val refresh =
+            compose
+                .onNodeWithTag("chat_list")
+                .fetchSemanticsNode()
+                .config[SemanticsActions.CustomActions]
+                .single { it.label == "Chats aktualisieren" }
+        compose.runOnIdle { assertEquals(true, refresh.action()) }
+        compose.onNodeWithContentDescription("Filter").assertIsDisplayed().performClick()
+        compose.onNodeWithText("Archiviert").assertIsDisplayed().performClick()
+        compose.onNodeWithText("Archiviert").assertIsSelected()
     }
 }

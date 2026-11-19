@@ -68,7 +68,6 @@ import {
   type AcceptedBlueprintIdentity,
   acceptedCatalogRowSchema,
   acceptedCatalogReadStatement,
-  acceptedCatalogDefinitionRevision,
   acceptedCatalogLockStatement,
   acceptedRevisionRowSchema,
   acceptedRevisionReadStatement,
@@ -100,6 +99,7 @@ import {
   notionConfigWithConnectorId,
 } from "./notion-automation-account.service";
 import {
+  acceptedCatalogDefinitionRevision,
   acceptedCatalogFromRow,
   OFFICIAL_WORKFLOW_CATALOG_AUTHORITY,
   acceptedOfficialWorkflowCatalogReadPlan,
@@ -3727,7 +3727,7 @@ const validateDormantMaterialization$ = command(
           ),
           eq(
             officialWorkflowDefinitionRevisions.revision,
-            acceptedCatalogDefinitionRevision(args.definitionName),
+            acceptedCatalogDefinitionRevision(sql.param(args.definitionName)),
           ),
         ),
       )

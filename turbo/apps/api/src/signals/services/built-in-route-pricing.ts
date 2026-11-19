@@ -25,7 +25,7 @@ const MODEL_TOKEN_CATEGORIES = [
 ] as const;
 
 /** The run's requested Codex service tier (`agent_runs.codex_service_tier`). */
-type RunServiceTier = "fast" | null | undefined;
+type RunServiceTier = CodexServiceTier | null | undefined;
 
 function usagePricingKey(
   kind: string,

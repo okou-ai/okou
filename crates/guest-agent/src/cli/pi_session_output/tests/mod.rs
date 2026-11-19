@@ -58,9 +58,8 @@ async fn merged_requests_receive_contiguous_published_indices() {
             }));
         then.status(204);
     });
-    let http =
-        HttpClient::with_api_config(server.base_url(), "test-token", "", RUN_ID, Duration::ZERO)
-            .expect("HTTP client");
+    let http = HttpClient::with_api_config(server.base_url(), "test-token", RUN_ID, Duration::ZERO)
+        .expect("HTTP client");
     let (sender, rx) = test_channel(4, RUN_ID);
     let state = Arc::clone(&sender.state);
     assert!(sender.try_send("block-a", "a".repeat(2000)));
@@ -89,9 +88,8 @@ async fn failed_request_is_never_retried_and_closes_the_block() {
         when.method(POST).path("/api/webhooks/agent/session-output");
         then.status(503);
     });
-    let http =
-        HttpClient::with_api_config(server.base_url(), "test-token", "", RUN_ID, Duration::ZERO)
-            .expect("HTTP client");
+    let http = HttpClient::with_api_config(server.base_url(), "test-token", RUN_ID, Duration::ZERO)
+        .expect("HTTP client");
     let sender = start(http, RUN_ID, THREAD_ID, FirstSessionOutputTiming::default())
         .expect("session output sender");
 
@@ -111,9 +109,8 @@ async fn old_api_rejection_disables_future_blocks_without_affecting_the_caller()
         when.method(POST).path("/api/webhooks/agent/session-output");
         then.status(404);
     });
-    let http =
-        HttpClient::with_api_config(server.base_url(), "test-token", "", RUN_ID, Duration::ZERO)
-            .expect("HTTP client");
+    let http = HttpClient::with_api_config(server.base_url(), "test-token", RUN_ID, Duration::ZERO)
+        .expect("HTTP client");
     let sender = start(http, RUN_ID, THREAD_ID, FirstSessionOutputTiming::default())
         .expect("session output sender");
 
@@ -133,9 +130,8 @@ async fn only_the_first_published_chunk_records_first_output_timing() {
         when.method(POST).path("/api/webhooks/agent/session-output");
         then.status(204);
     });
-    let http =
-        HttpClient::with_api_config(server.base_url(), "test-token", "", RUN_ID, Duration::ZERO)
-            .expect("HTTP client");
+    let http = HttpClient::with_api_config(server.base_url(), "test-token", RUN_ID, Duration::ZERO)
+        .expect("HTTP client");
     let startup = Arc::new(OnceLock::new());
     startup
         .set(Instant::now())

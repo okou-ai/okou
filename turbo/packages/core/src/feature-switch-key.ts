@@ -36,6 +36,7 @@ export enum FeatureSwitchKey {
   WechatIntegration = "wechatIntegration",
   WhatsappIntegration = "whatsappIntegration",
   CodexExecution = "_codexExecution",
+  CodexSubscriptionUltrafast = "codexSubscriptionUltrafast",
   PresentationConvert = "presentationConvert",
   GoogleSlidesConversion = "googleSlidesConversion",
   AgentSuggestion = "agentSuggestion",

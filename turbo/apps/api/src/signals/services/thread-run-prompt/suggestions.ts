@@ -1,11 +1,8 @@
 import { computed, type Computed } from "ccstate";
-import { and, eq } from "drizzle-orm";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
 import { PROACTIVE_SUGGESTIONS_DEFINITION_NAME } from "@okouai/api-contracts/contracts/proactive-suggestions";
 import { isMorningBriefDefinitionName } from "@okouai/api-contracts/contracts/morning-brief-preference";
-import { db$ } from "../../external/db";
 import { settle } from "../../utils";
 import type { AgentRunContextSignals } from "../agent-run-context.signals";
 import type { ThreadContext } from "../thread-context.signals";
@@ -26,15 +23,8 @@ export function createSuggestionsPrompt(
       userPromptVariables: {},
       skillVolumes: [],
     };
-    const [agent, features] = await Promise.all([
-      get(bootstrap.agent$),
-      get(bootstrap.featureSwitches$),
-    ]);
-    if (
-      !agent ||
-      agent.id !== agent.defaultAgentId ||
-      !isFeatureEnabled(FeatureSwitchKey.AgentSuggestion, features)
-    ) {
+    const features = await get(bootstrap.featureSwitches$);
+    if (!isFeatureEnabled(FeatureSwitchKey.AgentSuggestion, features)) {
       return empty;
     }
     const event = await get(pickedEvent$);
@@ -52,17 +42,8 @@ export function createSuggestionsPrompt(
     ) {
       return empty;
     }
-    const [member] = await get(db$)
-      .select({ enabled: orgMembersMetadata.proactiveSuggestionsEnabled })
-      .from(orgMembersMetadata)
-      .where(
-        and(
-          eq(orgMembersMetadata.orgId, bootstrap.orgId),
-          eq(orgMembersMetadata.userId, bootstrap.userId),
-        ),
-      )
-      .limit(1);
-    if (!member?.enabled) {
+    const target = await get(threadContext.automationTarget$);
+    if (!target?.proactivePreferences?.suggestionsEnabled) {
       return empty;
     }
     const result = await settle(get(feedback$));

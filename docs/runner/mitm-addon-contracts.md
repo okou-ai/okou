@@ -5,6 +5,11 @@ normalization. Read the relevant section before changing the addon or its pinned
 mitmproxy/wsproto dependencies. See the [testing guide](mitm-addon-testing.md)
 for environment setup, commands, and executable coverage.
 
+Credential placement and resolver authority follow the shared
+[credential trust boundary](../credential-trust-boundary.md). Sandbox-visible
+identity does not grant raw upstream-secret resolution; host-only material
+stays outside Guest environment, configuration and masking payloads.
+
 ## Dependency compatibility policy
 
 Prefer documented addon hooks and public dependency APIs. Minimize monkey patches

@@ -82,7 +82,7 @@ def _write_resolved_host_policy_registry(
             "billableFirewalls": [],
             "cliAgentType": "claude-code",
             "sandboxToken": "tok-resolved-host-policy",
-            "encryptedSecrets": "iv:tag:data",
+            "firewallToken": "host-firewall-token",
             "networkLogPath": str(tmp_path / "net.jsonl"),
             "proxyLogPath": str(tmp_path / "proxy.jsonl"),
             "firewalls": [{"kind": "builtin", "name": firewall_name}],

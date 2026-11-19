@@ -94,7 +94,7 @@ async fn assert_rejection_scenario(
     let input = ActiveInputRuntime::new_enabled(
         RUN_ID,
         &runtime.config.prompt,
-        HttpClient::with_api_config(server.base_url(), "test-token", "", RUN_ID, Duration::ZERO)?,
+        HttpClient::with_api_config(server.base_url(), "test-token", RUN_ID, Duration::ZERO)?,
     );
     for (id, text) in [
         (ACCEPTED_ID, "accepted follow-up"),

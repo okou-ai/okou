@@ -29,6 +29,7 @@ import {
 } from "zod";
 
 import { env } from "../../lib/env";
+import { previewAutomationBypassSecret } from "../../lib/preview-automation-bypass";
 import {
   piModelConfigObservation,
   type PiModelConfigObservation,
@@ -153,6 +154,11 @@ export function recordRunContextSnapshot(args: {
     if (dataRouterToken) {
       secrets.add(dataRouterToken);
       secretNames.add("OKOU_DATA_TOKEN");
+    }
+    const previewBypass = previewAutomationBypassSecret();
+    if (previewBypass) {
+      secrets.add(previewBypass);
+      secretNames.add("VERCEL_AUTOMATION_BYPASS_SECRET");
     }
     const snapshot: RunContextAxiomSnapshot = {
       _time: args.recordedAt.toISOString(),

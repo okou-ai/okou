@@ -168,7 +168,7 @@ describe("builtin Automatic firewall credential destinations", () => {
       throw new Error("Expected the builtin Automatic firewall");
     }
     const refreshed = await firewall.requestFirewallAuth(
-      { authorization: `Bearer ${execution.firewallToken!}` },
+      { authorization: `Bearer ${execution.firewallToken}` },
       {
         authHeaders: catalog.firewallAuthHeaders,
         forceRefresh: true,
@@ -367,10 +367,8 @@ describe("builtin Automatic firewall credential destinations", () => {
     );
     const refresh = settleIncludingAbort(
       firewall.requestFirewallAuth(
-        { authorization: `Bearer ${execution.sandboxToken}` },
+        { authorization: `Bearer ${execution.firewallToken}` },
         {
-          encryptedSecrets:
-            execution.encryptedSecrets ?? firewall.encryptedSecretsBody({}),
           authHeaders: catalog.firewallAuthHeaders,
           forceRefresh: true,
           matchedFirewall: {
@@ -569,10 +567,10 @@ describe("builtin Automatic firewall credential destinations", () => {
       if (builtin?.kind !== "builtin") {
         throw new Error("Expected the builtin Automatic firewall");
       }
-      const authHeaders = { authorization: `Bearer ${execution.sandboxToken}` };
+      const authHeaders = {
+        authorization: `Bearer ${execution.firewallToken}`,
+      };
       const authBody = {
-        encryptedSecrets:
-          execution.encryptedSecrets ?? firewall.encryptedSecretsBody({}),
         authHeaders: catalog.firewallAuthHeaders,
         matchedFirewall: {
           name: catalog.slug,
@@ -882,11 +880,9 @@ describe("builtin Automatic firewall credential destinations", () => {
             })
           : null;
         const authHeaders = {
-          authorization: `Bearer ${execution.sandboxToken}`,
+          authorization: `Bearer ${execution.firewallToken}`,
         };
         const body = {
-          encryptedSecrets:
-            execution.encryptedSecrets ?? firewall.encryptedSecretsBody({}),
           authHeaders: catalog.firewallAuthHeaders,
           forceRefresh: true,
           matchedFirewall: {

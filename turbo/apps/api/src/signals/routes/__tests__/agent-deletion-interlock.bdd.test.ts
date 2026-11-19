@@ -1,6 +1,6 @@
 import { testContext } from "../../../__tests__/test-context";
 import { randomUUID } from "node:crypto";
-import { holdCurrentSecretKms } from "./helpers/hold-secret-kms";
+import { holdDownloadSigning } from "./helpers/hold-download-signing";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -39,8 +39,13 @@ describe("DELETE /api/agents/:id lifecycle cleanup", () => {
       const actor = bdd.user();
       await prepareRunCreation(actor);
       const target = await createAgent(actor, "Active Session Target");
-      const kms =
-        status === "pending" ? holdCurrentSecretKms(context.signal) : null;
+      await bdd.updateAgentInstructions(
+        actor,
+        target.agentId,
+        `Active ${randomUUID()}`,
+      );
+      const signing =
+        status === "pending" ? holdDownloadSigning(context) : null;
       const chat = createChatFilesBddApi(context);
       const clientEventId = randomUUID();
       const sent = await chat.requestSendEvent(
@@ -55,8 +60,8 @@ describe("DELETE /api/agents/:id lifecycle cleanup", () => {
       if (sent.status !== 201) {
         throw new Error("Expected the deletion-blocking input");
       }
-      if (kms) {
-        await kms.entered;
+      if (signing) {
+        await signing.entered;
       } else {
         await flushWaitUntilForTest();
       }
@@ -101,7 +106,7 @@ describe("DELETE /api/agents/:id lifecycle cleanup", () => {
           [200],
         );
       }
-      kms?.release();
+      signing?.release();
       await flushWaitUntilForTest();
     },
   );

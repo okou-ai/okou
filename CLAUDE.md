@@ -50,6 +50,7 @@ For Platform requests, async ownership, module state, or runtime loading, read
 | New user-facing features or switch changes    | [Feature switches](.claude/skills/feature-switch/SKILL.md)                                                                                                                  |
 | CLI commands                                  | [CLI design](.claude/skills/cli-design/SKILL.md)                                                                                                                            |
 | Fallbacks or compatibility removal            | [Fallbacks](docs/fallback.md)                                                                                                                                               |
+| Token or credential distribution              | [Credential trust boundary](docs/credential-trust-boundary.md)                                                                                                              |
 | Persistent or optimistic events               | [Event sourcing](docs/chat.md#event-sourcing-and-optimistic-events)                                                                                                         |
 | PR review                                     | [Review instructions](REVIEW.md)                                                                                                                                            |
 

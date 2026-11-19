@@ -1,6 +1,6 @@
 [package]
 name = "guest-control-server"
-version = "0.24.123"
+version = "0.24.128"
 edition.workspace = true
 
 [dependencies]
@@ -16,6 +16,9 @@ serde_json = { workspace = true, features = ["std"] }
 uuid = { workspace = true, features = ["std", "v4"] }
 shell-quote.workspace = true
 guest-control-proto.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+rustix = { workspace = true, features = ["fs"] }
 
 [features]
 # Enables local integration-test hooks. Do not enable for production guest binaries.

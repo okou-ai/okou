@@ -13,6 +13,79 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1148.1](https://github.com/okou-ai/okou/compare/app-v0.1148.0...app-v0.1148.1) (2026-11-18)
+
+
+### Bug Fixes
+
+* **app:** anchor variable-height dialogs to the top ([#48771](https://github.com/okou-ai/okou/issues/48771)) ([312092f](https://github.com/okou-ai/okou/commit/312092f8a3da89890bc8f7a8d6de0ca80b12ac01))
+
+
+### Performance Improvements
+
+* **test:** reuse account manager title matches ([#48777](https://github.com/okou-ai/okou/issues/48777)) ([1cb70ce](https://github.com/okou-ai/okou/commit/1cb70ce79ff71bfea7e88899a60e1131847d2cb3))
+
+## [0.1148.0](https://github.com/okou-ai/okou/compare/app-v0.1147.5...app-v0.1148.0) (2026-11-18)
+
+
+### Features
+
+* add ultrafast for codex subscriptions ([#48736](https://github.com/okou-ai/okou/issues/48736)) ([c352dad](https://github.com/okou-ai/okou/commit/c352dadadbbec10cea8cf77adccfac8462ecdb94))
+
+
+### Performance Improvements
+
+* **test:** narrow connector account readiness queries ([#48747](https://github.com/okou-ai/okou/issues/48747)) ([c596d5d](https://github.com/okou-ai/okou/commit/c596d5d82c02fab6155681fd86153ce4311b113a))
+* **test:** scope subscription reset tooltip text checks ([#48757](https://github.com/okou-ai/okou/issues/48757)) ([9e11c62](https://github.com/okou-ai/okou/commit/9e11c62ea74263555197b0d23515b9282f19584b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.87.0
+    * @okouai/core bumped to 8.854.0
+    * @okouai/ui bumped to 1.21.57
+
+## [0.1147.5](https://github.com/okou-ai/okou/compare/app-v0.1147.4...app-v0.1147.5) (2026-11-18)
+
+
+### Performance Improvements
+
+* **test:** scope fork and forward success toast waits ([#48709](https://github.com/okou-ai/okou/issues/48709)) ([9a8c6c8](https://github.com/okou-ai/okou/commit/9a8c6c8c2ec09c2fc6e8347ea9e07149b41d7ff0))
+* **test:** skip preparatory hover in account manager transfer tests ([#48722](https://github.com/okou-ai/okou/issues/48722)) ([96fbaf5](https://github.com/okou-ai/okou/commit/96fbaf5bc9c8c20fc3cdd6b84a4fead4a85d97af))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.86.4
+    * @okouai/core bumped to 8.853.2
+    * @okouai/ui bumped to 1.21.56
+
+## [0.1147.4](https://github.com/okou-ai/okou/compare/app-v0.1147.3...app-v0.1147.4) (2026-11-18)
+
+
+### Bug Fixes
+
+* **app:** keep website sharing anchored during permission refresh ([#48665](https://github.com/okou-ai/okou/issues/48665)) ([e431efb](https://github.com/okou-ai/okou/commit/e431efb3c35614c29763437b9f9c7d5a009dc5c5))
+* **artifacts:** reduce visibility update latency ([#48652](https://github.com/okou-ai/okou/issues/48652)) ([7f50485](https://github.com/okou-ai/okou/commit/7f50485e293fab339942a621798bd35ae9464bc2))
+
+
+### Performance Improvements
+
+* **test:** avoid missing-title dumps during browser regrant waits ([#48647](https://github.com/okou-ai/okou/issues/48647)) ([1e84fc5](https://github.com/okou-ai/okou/commit/1e84fc50bf39e6a6b202cc94ff89b602bce9a0f2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.86.3
+    * @okouai/core bumped to 8.853.1
+    * @okouai/ui bumped to 1.21.55
+
 ## [0.1147.3](https://github.com/okou-ai/okou/compare/app-v0.1147.2...app-v0.1147.3) (2026-11-18)
 
 

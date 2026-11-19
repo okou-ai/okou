@@ -136,8 +136,22 @@ export function isCatalogFastServiceTierSupported(
   model: string | null | undefined,
   providerType?: string | null,
 ): boolean {
+  return isCatalogCodexServiceTierSupported(
+    catalog,
+    model,
+    "fast",
+    providerType,
+  );
+}
+
+export function isCatalogCodexServiceTierSupported(
+  catalog: ModelCatalog,
+  model: string | null | undefined,
+  tier: "fast" | "ultrafast",
+  providerType?: string | null,
+): boolean {
   return capabilityRoutes(catalog, model, providerType).some((route) => {
-    return route.serviceTiers.includes("priority");
+    return route.serviceTiers.includes(tier === "fast" ? "priority" : tier);
   });
 }
 

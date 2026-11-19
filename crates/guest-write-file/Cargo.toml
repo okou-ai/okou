@@ -1,6 +1,6 @@
 [package]
 name = "guest-write-file"
-version = "0.1.307"
+version = "0.1.310"
 edition.workspace = true
 description = "Write guest files from stdin without shell startup overhead"
 
@@ -11,6 +11,9 @@ guest-control-proto.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 nix = { workspace = true, features = ["fs"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+rustix = { workspace = true, features = ["fs", "std"] }
 
 [dev-dependencies]
 cli-test-support = { workspace = true, features = ["test-support"] }

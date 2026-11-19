@@ -11,6 +11,14 @@ use std::sync::Mutex;
 
 static WRITE_FILE_CHILD_TESTS: Mutex<()> = Mutex::new(());
 
+#[cfg(target_os = "linux")]
+#[test]
+fn sealed_batch_requires_large_ordinary_payload() {
+    assert!(!use_sealed_batch(SEALED_BATCH_MIN_BYTES - 1, false));
+    assert!(use_sealed_batch(SEALED_BATCH_MIN_BYTES, false));
+    assert!(!use_sealed_batch(SEALED_BATCH_MIN_BYTES, true));
+}
+
 fn spawn_write_file_test_child(script: &str) -> Child {
     // Use a stable shell binary instead of a freshly written temp
     // executable; some CI filesystems can transiently reject immediate exec
@@ -94,7 +102,7 @@ fn write_file_timeout_kills_child_while_stdin_writer_is_blocked() {
 
     let (success, error) = wait_write_file_child_with_timeout(
         child,
-        &content,
+        Some(&content),
         10,
         &connection_cancel,
         &crate::file_write_progress::FileWriteProgress::default().start(1),
@@ -155,7 +163,7 @@ fn write_file_kills_lingering_process_group_after_parent_exit() {
 
     let (success, error) = wait_write_file_child_with_timeout(
         child,
-        &content,
+        Some(&content),
         1_000,
         &connection_cancel,
         &crate::file_write_progress::FileWriteProgress::default().start(1),

@@ -10,6 +10,7 @@ use super::*;
 use crate::test_fixtures::raw_http::{join_raw_http_task, read_http_request};
 
 const PEER_TIMEOUT: Duration = Duration::from_secs(5);
+const LARGE_CATALOG_COUNT: usize = 4_000;
 
 struct CatalogBodyPeer {
     // Request abort before releasing the remaining fixture fields.
@@ -104,26 +105,27 @@ impl CatalogBodyPeer {
     }
 }
 
-// This fixture varies names while keeping every API definition identical.
-// Keep the full expected objects for the real cache oracle, but encode APIs once.
+// Each wire entry uses the same name for its map key and firewall name.
+// Serialize the shared APIs once while still emitting each complete firewall.
 fn catalog_body_with_shared_apis(
-    expected: &BuiltinFirewallCatalog,
+    catalog: &BuiltinFirewallCatalog,
+    names: impl Iterator<Item = String>,
     apis: &[FirewallApi],
 ) -> Vec<u8> {
     let apis = serde_json::to_vec(apis).unwrap();
     let mut body = Vec::new();
     body.extend_from_slice(b"{\"catalogDigest\":");
-    serde_json::to_writer(&mut body, &expected.catalog_digest).unwrap();
+    serde_json::to_writer(&mut body, &catalog.catalog_digest).unwrap();
     body.extend_from_slice(b",\"catalogVersion\":");
-    serde_json::to_writer(&mut body, &expected.catalog_version).unwrap();
+    serde_json::to_writer(&mut body, &catalog.catalog_version).unwrap();
     body.extend_from_slice(b",\"firewalls\":{");
-    for (index, (key, firewall)) in expected.firewalls.iter().enumerate() {
+    for (index, name) in names.enumerate() {
         if index != 0 {
             body.push(b',');
         }
-        serde_json::to_writer(&mut body, key).unwrap();
+        serde_json::to_writer(&mut body, &name).unwrap();
         body.extend_from_slice(b":{\"name\":");
-        serde_json::to_writer(&mut body, &firewall.name).unwrap();
+        serde_json::to_writer(&mut body, &name).unwrap();
         body.extend_from_slice(b",\"apis\":");
         body.extend_from_slice(&apis);
         body.push(b'}');
@@ -147,26 +149,31 @@ fn shared_api_catalog_body_matches_canonical_serialization() {
             })
             .collect();
         assert_eq!(
-            catalog_body_with_shared_apis(&expected, &firewall.apis),
+            catalog_body_with_shared_apis(
+                &expected,
+                expected.firewalls.keys().cloned(),
+                &firewall.apis,
+            ),
             serde_json::to_vec(&expected).unwrap()
         );
     }
 }
 
+fn large_catalog_names() -> impl Iterator<Item = String> {
+    (0..LARGE_CATALOG_COUNT).map(|index| format!("connector-{index:04}"))
+}
+
 fn large_catalog() -> (BuiltinFirewallCatalog, Vec<u8>) {
     let mut expected = catalog("template");
-    let mut firewall = expected.firewalls.remove("template").unwrap();
+    let firewall = expected.firewalls.get_mut("template").unwrap();
     firewall.apis[0].permissions.as_mut().unwrap()[0].rules = (0..32)
         .map(|rule| format!("GET /resources/{rule}/records/{}", "a".repeat(64)))
         .collect();
-    expected.firewalls = (0..4_000)
-        .map(|index| {
-            let mut entry = firewall.clone();
-            entry.name = format!("connector-{index:04}");
-            (entry.name.clone(), entry)
-        })
-        .collect();
-    let body = catalog_body_with_shared_apis(&expected, &firewall.apis);
+    let body = catalog_body_with_shared_apis(
+        &expected,
+        large_catalog_names(),
+        &expected.firewalls["template"].apis,
+    );
     assert!(body.len() > 10 * 1024 * 1024);
     assert!(u64::try_from(body.len()).unwrap() < BUILTIN_FIREWALL_CATALOG_MAX_BYTES);
     (expected, body)
@@ -183,7 +190,7 @@ async fn advance_download_time(elapsed: Duration) {
 
 #[tokio::test]
 async fn initial_refresh_publishes_large_body_after_old_download_deadline() {
-    let (expected, body) = large_catalog();
+    let (mut expected, body) = large_catalog();
     let mut peer = CatalogBodyPeer::start(body, None).await;
     let api = peer.api();
     let dir = tempfile::tempdir().unwrap();
@@ -205,7 +212,13 @@ async fn initial_refresh_publishes_large_body_after_old_download_deadline() {
     let cache = read_catalog_cache(&cache_path).await.unwrap().unwrap();
     assert_eq!(cache.catalog_digest, expected.catalog_digest);
     assert_eq!(cache.catalog_version, expected.catalog_version);
-    assert_eq!(cache.firewalls, expected.firewalls);
+    assert_eq!(cache.firewalls.len(), LARGE_CATALOG_COUNT);
+    let mut firewall = expected.firewalls.remove("template").unwrap();
+    for ((key, actual), name) in cache.firewalls.iter().zip(large_catalog_names()) {
+        assert_eq!(key, &name);
+        firewall.name = name;
+        assert_eq!(actual, &firewall, "cached firewall {key}");
+    }
     peer.finish().await;
 }
 

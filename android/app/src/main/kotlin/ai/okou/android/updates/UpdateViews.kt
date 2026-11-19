@@ -50,6 +50,7 @@ fun UpdateHost(
     defer: (AndroidUpdatesRelease) -> Unit,
     install: (AndroidUpdatesRelease) -> Unit,
     sourceAuthorized: Boolean,
+    showAnnouncement: Boolean,
     content: @Composable (openUpdates: () -> Unit) -> Unit,
 ) {
     var details by remember { mutableStateOf(false) }
@@ -82,7 +83,7 @@ fun UpdateHost(
         }
     } else {
         Column(Modifier.fillMaxSize().safeDrawingPadding()) {
-            if (state.announce) {
+            if (showAnnouncement && state.announce) {
                 val release = checkNotNull(state.displayedRelease)
                 Surface(color = MaterialTheme.colorScheme.surfaceVariant) {
                     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {

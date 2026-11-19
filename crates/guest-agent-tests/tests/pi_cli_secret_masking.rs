@@ -159,7 +159,6 @@ async fn pi_masks_live_http_text_across_deltas_chunks_and_completion()
         http: guest_agent::http::HttpClient::with_api_config(
             &server.base_url,
             "test-token",
-            "",
             RUN_ID,
             Duration::ZERO,
         )?,

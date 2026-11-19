@@ -2,19 +2,28 @@ package ai.okou.android
 
 import ai.okou.android.auth.SessionModel
 import android.os.Looper
-import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipe
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.Job
 import org.junit.After
 import org.junit.Before
@@ -276,25 +285,130 @@ class ChatListRootTest {
     }
 
     @Test
-    fun heldTransportKeepsNativeNavigationAndThenShowsCanonicalProjectAndAgentContext() {
+    fun heldTransportKeepsNavigationAndRestoresTheListWithProjectStatus() {
         compose.onNodeWithText("Chats").assertExists()
         compose.onNodeWithText("Loading chats…").assertExists()
+        compose.onNodeWithContentDescription("Switch workspace").performClick()
+        compose.onNodeWithText("Workspace B").assertExists()
+        compose.onNodeWithText("Back").performClick()
         compose.onNodeWithContentDescription("Settings").performClick()
         compose.onNodeWithText("Appearance").assertExists()
         (compose.activity.application as ChatListApplication).responseGate.countDown()
         compose.onNodeWithContentDescription("Back").performClick()
         awaitListAndNames()
+        val unread = SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Unread")
         compose.onNodeWithTag("chat_list").performScrollToNode(hasText("Project chat"))
-        compose.onNodeWithText("Project chat").assertExists()
-        compose.onNodeWithText("Research Okou").assertExists()
+        compose.waitUntil(10_000) {
+            compose
+                .onAllNodes(hasText("Project chat").and(unread))
+                .fetchSemanticsNodes()
+                .isNotEmpty()
+        }
+        compose.onNodeWithText("Project chat").assert(unread)
+        compose.onNodeWithTag("chat_list").performScrollToNode(hasText("Research"))
+        compose.onNodeWithText("Research").assert(!unread).performClick()
+        compose.onNodeWithText("Research").assert(unread)
+        compose.onNodeWithText("Project chat").assertDoesNotExist()
         compose.onNodeWithTag("chat_list").performScrollToIndex(0)
-        compose.onNode(hasText("Archived").and(hasClickAction())).performClick()
+        compose.onNodeWithContentDescription("Filter").performClick()
+        compose.onNodeWithText("Archived").performClick()
         compose.onNodeWithTag("chat_list").performScrollToNode(hasText("No chats in this view."))
         compose.onNodeWithText("No chats in this view.").assertExists()
         compose.activityRule.scenario.recreate()
         awaitListAndNames()
         compose.onNodeWithTag("chat_list").performScrollToNode(hasText("No chats in this view."))
         compose.onNodeWithText("No chats in this view.").assertExists()
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w400dp-h800dp")
+    fun pullingBelowTheEmptyFilteredListRefreshesChats() {
+        val app = compose.activity.application as ChatListApplication
+        app.responseGate.countDown()
+        awaitListAndNames()
+        compose.onNodeWithContentDescription("Filter").performClick()
+        compose.onNodeWithText("Archived").performClick()
+        compose.onNodeWithText("No chats in this view.").assertExists()
+
+        app.fixture.events = { okhttp3.mockwebserver.MockResponse().setResponseCode(503) }
+        compose.onRoot().performTouchInput {
+            swipe(Offset(centerX, height * 0.6f), Offset(centerX, height * 0.9f))
+        }
+
+        val failure = app.getString(R.string.chat_refresh_failed)
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithText(failure).fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithText("Archived").assertExists()
+        compose.onNodeWithText(app.getString(R.string.retry)).assertExists()
+    }
+
+    @Test
+    fun chatRowReadActionsReconcileAndSurfaceFailedWrites() {
+        val app = compose.activity.application as ChatListApplication
+        val unread = AtomicBoolean(true)
+        val rejectUnread = AtomicBoolean(true)
+        app.fixture.indicators = {
+            if (unread.get()) {
+                jsonResponse(
+                    """{"agents":{},"threads":{"$CHAT_IN_PROJECT":"unread"},"unreadAt":{"$CHAT_IN_PROJECT":"$CHAT_DATE"}}"""
+                )
+            } else {
+                jsonResponse("""{"agents":{},"threads":{},"unreadAt":{}}""")
+            }
+        }
+        app.fixture.commandResponse = { request ->
+            if (request.method != "POST" || request.bodySize != 0L) null
+            else
+                when (request.requestUrl?.encodedPath) {
+                    "/api/chat-threads/$CHAT_IN_PROJECT/mark-read" -> {
+                        unread.set(false)
+                        jsonResponse("""{"lastReadAt":"$CHAT_DATE"}""")
+                    }
+                    "/api/chat-threads/$CHAT_IN_PROJECT/mark-unread" ->
+                        if (rejectUnread.get()) {
+                            okhttp3.mockwebserver.MockResponse().setResponseCode(503)
+                        } else {
+                            unread.set(true)
+                            jsonResponse("""{"lastReadAt":null}""")
+                        }
+                    else -> null
+                }
+        }
+        app.responseGate.countDown()
+        awaitListAndNames()
+        compose.onNodeWithTag("chat_list").performScrollToNode(hasText("Project chat"))
+        val target = hasText("Project chat")
+        val unreadStatus =
+            SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Unread")
+        val available = SemanticsMatcher.keyIsDefined(SemanticsActions.OnLongClick)
+        fun awaitAction(status: SemanticsMatcher) {
+            compose.waitUntil(10_000) {
+                compose
+                    .onAllNodes(target.and(status).and(available))
+                    .fetchSemanticsNodes()
+                    .isNotEmpty()
+            }
+        }
+        fun choose(label: String) {
+            compose.onNode(target).performSemanticsAction(SemanticsActions.OnLongClick)
+            compose.onNodeWithText(label).performClick()
+        }
+        awaitAction(unreadStatus)
+        choose("Mark as read")
+        awaitAction(!unreadStatus)
+        choose("Mark as unread")
+        compose.waitUntil(10_000) {
+            compose
+                .onAllNodesWithText("Could not update the read status.")
+                .fetchSemanticsNodes()
+                .isNotEmpty()
+        }
+        awaitAction(!unreadStatus)
+        rejectUnread.set(false)
+        choose("Mark as unread")
+        awaitAction(unreadStatus)
+        compose.onNodeWithTag("conversation").assertDoesNotExist()
     }
 
     private fun awaitListAndNames() {

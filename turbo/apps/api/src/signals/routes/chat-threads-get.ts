@@ -1,3 +1,4 @@
+import { iosChatUltrafastTransforms } from "@okouai/api-contracts/client-transforms/chat-ultrafast";
 import { command } from "ccstate";
 import { and, eq, inArray, isNotNull } from "drizzle-orm";
 import { chatThreadMetadataContract } from "@okouai/api-contracts/contracts/chat-threads";
@@ -80,6 +81,7 @@ const getInner$ = command(async ({ get }, signal: AbortSignal) => {
 export const chatThreadGetRoutes: readonly RouteEntry[] = [
   {
     route: chatThreadMetadataContract.get,
+    responseTransforms: [iosChatUltrafastTransforms.metadata],
     handler: authRoute(
       { requiredCapability: "chat-thread:read", oauthScope: "okou:chat:read" },
       getInner$,

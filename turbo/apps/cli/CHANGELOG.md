@@ -1,5 +1,43 @@
 # Changelog
 
+## [10.34.0](https://github.com/okou-ai/okou/compare/cli-v10.33.7...cli-v10.34.0) (2026-11-18)
+
+
+### Features
+
+* add ultrafast for codex subscriptions ([#48736](https://github.com/okou-ai/okou/issues/48736)) ([c352dad](https://github.com/okou-ai/okou/commit/c352dadadbbec10cea8cf77adccfac8462ecdb94))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.87.0
+    * @okouai/core bumped to 8.854.0
+    * @okouai/pi-agent-runtime bumped to 1.52.0
+
+## [10.33.7](https://github.com/okou-ai/okou/compare/cli-v10.33.6...cli-v10.33.7) (2026-11-18)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.86.4
+    * @okouai/core bumped to 8.853.2
+    * @okouai/pi-agent-runtime bumped to 1.51.162
+
+## [10.33.6](https://github.com/okou-ai/okou/compare/cli-v10.33.5...cli-v10.33.6) (2026-11-18)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.86.3
+    * @okouai/core bumped to 8.853.1
+    * @okouai/pi-agent-runtime bumped to 1.51.161
+
 ## [10.33.5](https://github.com/okou-ai/okou/compare/cli-v10.33.4...cli-v10.33.5) (2026-11-18)
 
 

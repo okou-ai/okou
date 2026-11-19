@@ -8,11 +8,21 @@ import { createWechatThreadContext } from "./wechat-context.service";
 import { randomUUID } from "node:crypto";
 import { computerUseHosts } from "@okouai/db/runtime/computer-use-host";
 import { workflows } from "@okouai/db/schema/workflow";
+import {
+  officialWorkflowCatalogState,
+  officialWorkflowCatalogReleases,
+  officialWorkflowDefinitionRevisions,
+} from "@okouai/db/schema/official-workflow-catalog";
+import { officialWorkflowSourcePlan } from "./official-workflow-context.signals";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { computed, type Computed } from "ccstate";
-import { and, eq, isNull } from "drizzle-orm";
-import { db$ } from "../external/db";
+import { and, eq, isNull, sql } from "drizzle-orm";
+import { object } from "zod";
+import { parseRawRows } from "../../lib/db-raw-rows";
+import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
+import { db$, rawSqlReadDb$ } from "../external/db";
 import type { AgentRunContextSignals } from "./agent-run-context.signals";
+import { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import {
   type ChatThreadContinuation,
@@ -20,6 +30,13 @@ import {
 } from "./chat-session-continuity.service";
 import type { ChatThreadRequestRow } from "./chat-thread-request-facts";
 import { createDiscordThreadContext } from "./discord-thread-prompt-context.service";
+import {
+  executionPackageSourcesDecoder,
+  executionPackageSourcesSchema,
+  executionPackageSourcesSql,
+  resolveOrdinaryAutomationWorkflowName,
+  type ExecutionPackageSources,
+} from "./execution-workflow-selection";
 import { createRunTemplates } from "./run-templates.service";
 import {
   type ConnectedAccounts,
@@ -46,6 +63,22 @@ import {
 export interface ThreadAutomationTarget {
   readonly automation: typeof workflowAutomations.$inferSelect;
   readonly agentId: string;
+  /** Authorized ordinary package winner for this picked Automation. */
+  readonly ordinaryWorkflowName: string | null;
+  readonly officialCatalog:
+    | (Pick<
+        typeof officialWorkflowCatalogReleases.$inferSelect,
+        "payload" | "hiddenThreadDefinitionNames"
+      > & { readonly releaseId: string })
+    | null;
+  readonly officialRevision: Pick<
+    typeof officialWorkflowDefinitionRevisions.$inferSelect,
+    "definitionName" | "revision" | "payload" | "contentBundle"
+  > | null;
+  readonly proactivePreferences: {
+    readonly suggestionsEnabled: boolean | null;
+    readonly learningEnabled: boolean | null;
+  } | null;
   readonly workflow: Pick<
     typeof workflows.$inferSelect,
     | "id"
@@ -58,6 +91,10 @@ export interface ThreadAutomationTarget {
     | "officialInstallationState"
   >;
 }
+
+type CapturedAutomationTarget = ThreadAutomationTarget & {
+  readonly packageSources: ExecutionPackageSources | null;
+};
 
 type ThreadModels = ReturnType<typeof createThreadModelSignals>;
 
@@ -93,6 +130,9 @@ export interface ThreadContext extends ThreadWorkflowContext {
   readonly discordContext$: ReturnType<typeof createDiscordThreadContext>;
   readonly automationContext$: ReturnType<typeof createThreadAutomationContext>;
   readonly automationTarget$: Computed<Promise<ThreadAutomationTarget | null>>;
+  readonly executionPackageSources$: Computed<
+    Promise<ExecutionPackageSources | null>
+  >;
   /** Event-resolved raw rows, independent of guidance/paid-tool assembly. */
   readonly templateSources$: ReturnType<typeof createRunTemplates>["sources$"];
   readonly templates$: ReturnType<typeof createRunTemplates>["templates$"];
@@ -102,7 +142,7 @@ export interface ThreadContext extends ThreadWorkflowContext {
   readonly requestedFramework$: ThreadModels["requestedFramework$"];
   readonly modelRoute$: ThreadModels["modelRoute$"];
   readonly providerFramework$: ThreadModels["providerFramework$"];
-  readonly dispatchTiming$: ThreadModels["dispatchTiming$"];
+  readonly dispatchTiming$: Computed<ApiDispatchTimingCollector>;
   /** Generated once per picked event's claim graph. */
   readonly runIds$: Computed<{
     readonly runId: string;
@@ -119,6 +159,9 @@ export function createThreadContext(
   chatThreadId: string,
 ): ThreadContext {
   const orgId = bootstrap.orgId;
+  const dispatchTiming$ = computed(() => {
+    return new ApiDispatchTimingCollector();
+  });
   const sourceSettings = createThreadSourceSettings(bootstrap);
   const threadConnectorSources$ = createThreadConnectorSourceContext(
     bootstrap,
@@ -129,18 +172,20 @@ export function createThreadContext(
   });
   const integrations = createThreadIntegrationContexts(
     pickedEvent$,
-    orgId,
+    bootstrap,
     sourceSettings.featureSwitches$,
+    dispatchTiming$,
   );
   const model = createThreadModelContext(
     bootstrap,
     pickedEvent$,
     integrations.automationTarget$,
+    dispatchTiming$,
   );
   const discordContext$ = createDiscordThreadContext(
     pickedEvent$,
     orgId,
-    model.dispatchTiming$,
+    dispatchTiming$,
   );
   const workflowContext = createThreadWorkflowContext(
     bootstrap,
@@ -173,7 +218,7 @@ export function createThreadContext(
     bootstrap,
     pickedEvent$,
     connectorSourceId$,
-    model.dispatchTiming$,
+    dispatchTiming$,
     threadConnectorSources$,
   );
   const emailMailboxConnections$ = createEmailMailboxConnections(
@@ -190,6 +235,7 @@ export function createThreadContext(
     threadContinuation$,
     discordContext$,
     emailMailboxConnections$,
+    executionPackageSources$: integrations.executionPackageSources$,
   };
   const resources = createThreadInputResources(
     pickedEvent$,
@@ -216,8 +262,7 @@ export function createThreadContext(
     discordContext$,
     automationContext$: integrations.automationContext$,
     automationTarget$: integrations.automationTarget$,
-    workflows$: workflowContext.workflows$,
-    officialWorkflows$: workflowContext.officialWorkflows$,
+    executionPackageSources$: integrations.executionPackageSources$,
     officialWorkflowObservation$: workflowContext.officialWorkflowObservation$,
     templateSources$: templates.sources$,
     templates$: templates.templates$,
@@ -227,7 +272,7 @@ export function createThreadContext(
     requestedFramework$: model.requestedFramework$,
     modelRoute$: model.modelRoute$,
     providerFramework$: model.providerFramework$,
-    dispatchTiming$: model.dispatchTiming$,
+    dispatchTiming$,
     runIds$,
     connectorSelection$: connectedAccounts.connectorSelection$,
     connectorSnapshot$: connectedAccounts.connectorSnapshot$,
@@ -270,13 +315,19 @@ function createThreadModelContext(
   bootstrap: AgentRunContextSignals,
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
   automationTarget$: Computed<Promise<ThreadAutomationTarget | null>>,
+  dispatchTiming$: ThreadContext["dispatchTiming$"],
 ) {
   const modelInput$ = createThreadModelInput(pickedEvent$, automationTarget$);
   const creditsWaived$ = createOfficialWorkflowCreditWaiver(
     pickedEvent$,
     automationTarget$,
   );
-  return createThreadModelSignals(bootstrap, modelInput$, creditsWaived$);
+  return createThreadModelSignals(
+    bootstrap,
+    modelInput$,
+    creditsWaived$,
+    dispatchTiming$,
+  );
 }
 
 function createThreadInputResources(
@@ -293,6 +344,7 @@ function createThreadInputResources(
     | "threadContinuation$"
     | "discordContext$"
     | "emailMailboxConnections$"
+    | "executionPackageSources$"
   >,
 ) {
   const projectContext$ = createThreadProjectContext(
@@ -326,8 +378,8 @@ function createThreadInputResources(
   };
   const inputResources$ = computed(async (get) => {
     const event = await get(pickedEvent$);
-    // The entry starts this only after it owns a pickable head and capacity.
-    // Automation retains its target/budget admission before resource reads.
+    // The entry starts this once it owns a pickable head and capacity.
+    // Automation reads its package candidates with its target.
     if (!event?.contextType || event.contextType === "automation") {
       return;
     }
@@ -343,6 +395,7 @@ function createThreadInputResources(
       get(integrationSources[event.contextType]),
       get(context.modelRoute$),
       get(context.threadContinuation$),
+      get(context.executionPackageSources$),
     ]);
   });
   return { inputResources$, projectContext$, incompleteContext$ };
@@ -360,9 +413,11 @@ function createThreadSourceSettings(bootstrap: AgentRunContextSignals) {
 
 function createThreadIntegrationContexts(
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
-  orgId: string,
+  bootstrap: AgentRunContextSignals,
   featureSwitches$: AgentRunContextSignals["featureSwitches$"],
+  dispatchTiming$: ThreadContext["dispatchTiming$"],
 ) {
+  const orgId = bootstrap.orgId;
   const slackContext$ = createSlackThreadContext(pickedEvent$, orgId);
   const feishuContext$ = createFeishuThreadContext(
     pickedEvent$,
@@ -379,7 +434,17 @@ function createThreadIntegrationContexts(
     featureSwitches$,
   );
   const automationContext$ = createThreadAutomationContext(pickedEvent$);
-  const automationTarget$ = createAutomationTarget(automationContext$);
+  const automationTarget$ = createAutomationTarget(
+    automationContext$,
+    bootstrap,
+    dispatchTiming$,
+  );
+  const executionPackageSources$ = createThreadExecutionPackageSources(
+    bootstrap,
+    pickedEvent$,
+    automationTarget$,
+    dispatchTiming$,
+  );
   return {
     slackContext$,
     feishuContext$,
@@ -390,6 +455,7 @@ function createThreadIntegrationContexts(
     wechatContext$,
     automationContext$,
     automationTarget$,
+    executionPackageSources$,
   };
 }
 
@@ -439,16 +505,23 @@ function createOfficialWorkflowCreditWaiver(
 
 function createAutomationTarget(
   automationContext$: ReturnType<typeof createThreadAutomationContext>,
+  bootstrap: AgentRunContextSignals,
+  dispatchTiming$: ThreadContext["dispatchTiming$"],
 ) {
-  return computed(async (get): Promise<ThreadAutomationTarget | null> => {
+  return computed(async (get): Promise<CapturedAutomationTarget | null> => {
     const event = await get(automationContext$);
     if (!event) {
       return null;
     }
-    const [row] = await get(db$)
+    const source = officialWorkflowSourcePlan(bootstrap);
+    const query = get(db$)
       .select({
+        ...source.columns,
         automation: workflowAutomationColumns(),
         agentId: workflows.agentId,
+        packageSources: executionPackageSourcesSql(bootstrap).mapWith(
+          nullableDriverValueDecoder(executionPackageSourcesDecoder),
+        ),
         workflow: {
           id: workflows.id,
           orgId: workflows.orgId,
@@ -462,9 +535,63 @@ function createAutomationTarget(
       })
       .from(workflowAutomations)
       .innerJoin(workflows, eq(workflows.id, workflowAutomations.workflowId))
+      .leftJoin(officialWorkflowCatalogState, source.catalogCondition)
+      .leftJoin(officialWorkflowCatalogReleases, source.releaseJoin)
+      .leftJoin(officialWorkflowDefinitionRevisions, source.revisionJoin)
+      .leftJoinLateral(source.preferences, sql`true`)
       .where(eq(workflowAutomations.id, event.automationId))
       .limit(1);
-    return row ?? null;
+    const [row] = await get(dispatchTiming$).measure(
+      "api_dispatch_prepare_execution_package_sources",
+      "nested",
+      () => {
+        return query;
+      },
+    );
+    return row
+      ? {
+          ...row,
+          ordinaryWorkflowName: resolveOrdinaryAutomationWorkflowName(
+            row,
+            bootstrap,
+            row.packageSources,
+          ),
+        }
+      : null;
+  });
+}
+
+const packageSourcesRowSchema = object({
+  packages: executionPackageSourcesSchema.nullable(),
+});
+
+function createThreadExecutionPackageSources(
+  bootstrap: AgentRunContextSignals,
+  pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
+  automationTarget$: Computed<Promise<CapturedAutomationTarget | null>>,
+  dispatchTiming$: ThreadContext["dispatchTiming$"],
+) {
+  return computed(async (get) => {
+    const event = await get(pickedEvent$);
+    if (!event?.contextType) {
+      return null;
+    }
+    if (event.contextType === "automation") {
+      const target = await get(automationTarget$);
+      return target?.packageSources ?? null;
+    }
+    const db = get(rawSqlReadDb$);
+    const rows = await get(dispatchTiming$).measure(
+      "api_dispatch_prepare_execution_package_sources",
+      "nested",
+      () => {
+        return db.execute(
+          sql`SELECT ${executionPackageSourcesSql(bootstrap)} AS packages`,
+        );
+      },
+    );
+    const [row] = parseRawRows(packageSourcesRowSchema, rows);
+    return row?.packages ?? null;
   });
 }
 

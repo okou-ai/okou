@@ -782,14 +782,6 @@ pub(super) fn build_env_json_with_host_env(
         normalized_cli_agent_type(&context.cli_agent_type).into(),
     );
 
-    // Vercel bypass
-    if let Some(bypass) = &host_env.vercel_automation_bypass_secret {
-        env.insert(
-            guest_contracts::env::VERCEL_PROTECTION_BYPASS_ENV.into(),
-            bypass.clone(),
-        );
-    }
-
     // Standalone local submissions retain their explicit native resume input.
     if let Some(session_id) = &context.local_resume_session_id {
         let session_id =
@@ -998,7 +990,6 @@ fn validate_run_payload_for_guest(
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(super) struct HostEnv {
-    pub(super) vercel_automation_bypass_secret: Option<String>,
     pub(super) use_mock_claude: Option<String>,
     pub(super) use_mock_codex: Option<String>,
 }
@@ -1006,7 +997,6 @@ pub(super) struct HostEnv {
 impl HostEnv {
     pub(super) fn from_process() -> Self {
         Self {
-            vercel_automation_bypass_secret: std::env::var("VERCEL_AUTOMATION_BYPASS_SECRET").ok(),
             use_mock_claude: std::env::var(guest_contracts::env::USE_MOCK_CLAUDE_ENV).ok(),
             use_mock_codex: std::env::var(guest_contracts::env::USE_MOCK_CODEX_ENV).ok(),
         }

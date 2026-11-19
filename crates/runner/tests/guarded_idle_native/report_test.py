@@ -111,6 +111,23 @@ class NativeReportTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "snapshot preparation"):
             self.validate()
 
+    def test_snapshot_preparation_directory_does_not_leak_descriptor(self):
+        path = self.root / "snapshot-preparation.json"
+        path.unlink()
+        path.mkdir()
+        # POSIX open returns the lowest available descriptor in this process.
+        with open(os.devnull, "rb") as marker:
+            available = marker.fileno()
+
+        with self.assertRaisesRegex(
+            ValueError, "snapshot preparation record is unavailable"
+        ) as error:
+            self.validate()
+
+        self.assertIsInstance(error.exception.__cause__, IsADirectoryError)
+        with open(os.devnull, "rb") as marker:
+            self.assertEqual(marker.fileno(), available)
+
     def write_preparation(self, record):
         raw = json.dumps(record).encode() if isinstance(record, dict) else record
         (self.root / "snapshot-preparation.json").write_bytes(raw)

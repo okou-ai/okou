@@ -514,7 +514,6 @@ fn build_env_json_claude_code_gets_only_claude_framework_env() {
         &HostEnv {
             use_mock_claude: Some("true".into()),
             use_mock_codex: Some("1".into()),
-            ..HostEnv::default()
         },
     );
 
@@ -535,7 +534,6 @@ fn build_env_json_codex_gets_only_codex_framework_env() {
         &HostEnv {
             use_mock_claude: Some("true".into()),
             use_mock_codex: Some("1".into()),
-            ..HostEnv::default()
         },
     );
 
@@ -556,7 +554,6 @@ fn build_env_json_unknown_framework_preserves_claude_compatible_env() {
         &HostEnv {
             use_mock_claude: Some("true".into()),
             use_mock_codex: Some("1".into()),
-            ..HostEnv::default()
         },
     );
 
@@ -577,8 +574,8 @@ fn platform_environment_claim_filters_reserved_keys_and_applies_trusted_last() {
         ("OKOU_FUTURE_PLATFORM_KEY".into(), "untrusted".into()),
         ("CUSTOM_USER_KEY".into(), "untrusted".into()),
         (
-            guest_contracts::env::VERCEL_PROTECTION_BYPASS_ENV.into(),
-            "untrusted-bypass".into(),
+            guest_contracts::env::USE_MOCK_CODEX_ENV.into(),
+            "false".into(),
         ),
     ]));
     ctx.platform_environment = HashMap::from([
@@ -586,8 +583,8 @@ fn platform_environment_claim_filters_reserved_keys_and_applies_trusted_last() {
         ("OKOU_TOKEN".into(), "trusted-token".into()),
         ("OKOU_PLATFORM_ONLY".into(), "trusted-platform".into()),
         (
-            guest_contracts::env::VERCEL_PROTECTION_BYPASS_ENV.into(),
-            "trusted-bypass".into(),
+            guest_contracts::env::USE_MOCK_CODEX_ENV.into(),
+            "true".into(),
         ),
     ]);
 
@@ -600,8 +597,8 @@ fn platform_environment_claim_filters_reserved_keys_and_applies_trusted_last() {
             ("OKOU_TOKEN".into(), "trusted-token".into()),
             ("OKOU_PLATFORM_ONLY".into(), "trusted-platform".into()),
             (
-                guest_contracts::env::VERCEL_PROTECTION_BYPASS_ENV.into(),
-                "trusted-bypass".into(),
+                guest_contracts::env::USE_MOCK_CODEX_ENV.into(),
+                "true".into(),
             ),
         ])
     );
@@ -629,7 +626,6 @@ fn emitted_bootstrap_env_keys_classify_as_runner_owned() {
         &ctx,
         "http://localhost",
         &HostEnv {
-            vercel_automation_bypass_secret: Some("bypass".into()),
             use_mock_claude: Some("true".into()),
             ..HostEnv::default()
         },
@@ -649,7 +645,6 @@ fn emitted_bootstrap_env_keys_classify_as_runner_owned() {
         guest_contracts::env::CLI_AGENT_TYPE_ENV,
         guest_contracts::env::USE_MOCK_CLAUDE_ENV,
         guest_contracts::env::USE_MOCK_CODEX_ENV,
-        guest_contracts::env::VERCEL_PROTECTION_BYPASS_ENV,
     ] {
         assert!(
             is_runner_owned_env_key(key),
@@ -1643,6 +1638,7 @@ fn execution_context_deserializes_with_firewalls() {
         "runId": "00000000-0000-0000-0000-000000000001",
         "prompt": "test",
         "sandboxToken": "tok",
+        "firewallToken": "host-firewall",
         "cliAgentType": "claude-code",
         "billableFirewalls": [],
         "platformEnvironment": {},
@@ -1694,6 +1690,7 @@ fn execution_context_deserializes_without_firewalls() {
         "runId": "00000000-0000-0000-0000-000000000001",
         "prompt": "test",
         "sandboxToken": "tok",
+        "firewallToken": "host-firewall",
         "cliAgentType": "claude-code",
         "billableFirewalls": [],
         "platformEnvironment": {},

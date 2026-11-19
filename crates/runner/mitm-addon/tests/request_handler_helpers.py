@@ -26,7 +26,6 @@ def _single_firewall_sandbox(
     api_entry: dict[str, object],
     network_policy: dict[str, object] | None,
     billable_firewalls: list[str] | None = None,
-    include_encrypted_secrets: bool = True,
     custom_connector_id: str | None = None,
     source_id: str | None = None,
     sandbox_fields: dict[str, object] | None = None,
@@ -44,6 +43,7 @@ def _single_firewall_sandbox(
         "cliAgentType": "claude-code",
         "billableFirewalls": billable_firewalls or [],
         "sandboxToken": sandbox_marker,
+        "firewallToken": "host-firewall-token",
         "networkLogPath": str(tmp_path / "net.jsonl"),
         "proxyLogPath": str(tmp_path / "proxy.jsonl"),
         "firewalls": [firewall_entry],
@@ -52,8 +52,6 @@ def _single_firewall_sandbox(
         sandbox_info["networkPolicies"] = {firewall_name: network_policy}
     if custom_connector_id is not None:
         sandbox_info["connectorRoutingVariables"] = {f"custom:{custom_connector_id}": {}}
-    if include_encrypted_secrets:
-        sandbox_info["encryptedSecrets"] = "iv:tag:data"
     if sandbox_fields is not None:
         sandbox_info.update(sandbox_fields)
     return sandbox_info
@@ -100,7 +98,7 @@ def _shared_route_sandbox(
         "billableFirewalls": [],
         "cliAgentType": "claude-code",
         "sandboxToken": "tok-shared-route",
-        "encryptedSecrets": "iv:tag:data",
+        "firewallToken": "host-firewall-token",
         "networkLogPath": str(tmp_path / "net.jsonl"),
         "proxyLogPath": str(tmp_path / "proxy.jsonl"),
         "captureNetworkBodies": True,
@@ -134,6 +132,7 @@ def _sandbox_without_firewalls(
         "billableFirewalls": [],
         "cliAgentType": "claude-code",
         "sandboxToken": sandbox_marker,
+        "firewallToken": "host-firewall-token",
         "networkLogPath": str(tmp_path / "net.jsonl"),
         "proxyLogPath": str(tmp_path / "proxy.jsonl"),
     }

@@ -767,9 +767,10 @@ export function createAssistantErrorRecoverySignals(deps: {
       const modelSelection = resolvedModel
         ? {
             selectedModel: resolvedModel,
-            ...(meta.serviceTier === "priority"
-              ? { codexServiceTier: "fast" as const }
-              : {}),
+            codexServiceTier:
+              meta.serviceTier === "priority"
+                ? ("fast" as const)
+                : (meta.serviceTier ?? undefined),
           }
         : null;
       const features = get(featureSwitch$);

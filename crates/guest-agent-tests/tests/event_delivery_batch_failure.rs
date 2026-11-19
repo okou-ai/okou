@@ -38,7 +38,6 @@ async fn failed_batch_retries_three_times_and_later_batches_continue()
     runtime.http = guest_agent::http::HttpClient::with_api_config(
         &server.base_url,
         "test-token",
-        "",
         run_id,
         Duration::ZERO,
     )?;

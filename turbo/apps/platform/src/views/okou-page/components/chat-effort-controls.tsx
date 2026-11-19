@@ -4,7 +4,7 @@ import {
   type ReasoningEffort,
 } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { Switch } from "@okouai/ui";
+import { SegmentControl, SegmentControlItem, Switch } from "@okouai/ui";
 import { useGet, useLastResolved } from "ccstate-react";
 import { Zap } from "lucide-react";
 import type { ReactNode } from "react";
@@ -212,5 +212,71 @@ export function ChatFastSetting({
         disabled={disabled}
       />
     </Field.Root>
+  );
+}
+
+/** Codex speed is independent of the model's reasoning effort. */
+export function ChatSpeedSetting({
+  selection,
+  disabled,
+  fastImpact,
+  onChange,
+}: {
+  selection: ModelProviderSelection;
+  disabled: boolean;
+  fastImpact: ReactNode;
+  onChange: (selection: ModelProviderSelection) => void;
+}) {
+  const { t } = useTranslation();
+  const label = t(($) => {
+    return $.settings.models.picker.speed;
+  });
+  const speed = selection.codexServiceTier ?? "standard";
+  return (
+    <div className="border-t border-divider px-2 py-2">
+      <div className="mb-1 text-[13px] font-medium">{label}</div>
+      <SegmentControl
+        value={speed}
+        aria-label={label}
+        disabled={disabled}
+        className="flex w-full border border-border p-0.5"
+        size="xs"
+        variant="plain"
+        onValueChange={(value: string) => {
+          onChange({
+            ...selection,
+            codexServiceTier:
+              value === "fast" || value === "ultrafast" ? value : undefined,
+          });
+        }}
+      >
+        <SegmentControlItem value="standard" className="flex-1">
+          {t(($) => {
+            return $.settings.models.picker.standard;
+          })}
+        </SegmentControlItem>
+        {fastImpact !== null && (
+          <SegmentControlItem value="fast" className="flex-1">
+            {t(($) => {
+              return $.settings.models.picker.fast;
+            })}
+          </SegmentControlItem>
+        )}
+        <SegmentControlItem value="ultrafast" className="flex-1">
+          {t(($) => {
+            return $.settings.models.picker.ultrafast;
+          })}
+        </SegmentControlItem>
+      </SegmentControl>
+      {speed !== "standard" && (
+        <div className="mt-1 text-[11px] text-gray-700">
+          {speed === "fast"
+            ? fastImpact
+            : t(($) => {
+                return $.settings.models.picker.ultrafastUsage;
+              })}
+        </div>
+      )}
+    </div>
   );
 }

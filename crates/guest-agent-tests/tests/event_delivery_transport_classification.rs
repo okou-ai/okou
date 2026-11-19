@@ -110,7 +110,6 @@ async fn run_connect_failure() -> Result<EventDeliveryDiagnostic, Box<dyn std::e
     runtime.http = guest_agent::http::HttpClient::with_api_config(
         "http://127.0.0.1:1",
         "test-token",
-        "",
         run_id,
         Duration::ZERO,
     )?;
@@ -162,7 +161,6 @@ async fn run_response_failures(
     runtime.http = guest_agent::http::HttpClient::with_api_config(
         &server.base_url,
         "test-token",
-        "",
         run_id,
         Duration::ZERO,
     )?;
@@ -267,7 +265,6 @@ async fn run_connect_timeout_failure() -> Result<EventDeliveryDiagnostic, Box<dy
     runtime.http = guest_agent::http::HttpClient::with_api_config_and_connect_timeout(
         &base_url,
         "test-token",
-        "",
         run_id,
         Duration::ZERO,
         Duration::from_millis(250),

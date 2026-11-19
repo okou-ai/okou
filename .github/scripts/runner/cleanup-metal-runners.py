@@ -332,12 +332,12 @@ class Session:
                 self.write_error = error
                 return
 
-    def cleanup(self, numbers):
+    def cleanup(self, closed_at):
         if self.write_error is not None or self.process.poll() is not None:
             raise RuntimeError(f"namespace lock worker unavailable on {self.host}")
-        self.send({"operation": "cleanup", "numbers": numbers})
+        self.send({"operation": "cleanup", "closedAt": closed_at})
         result = self.read(510)["results"]
-        if set(result) != {str(number) for number in numbers}:
+        if set(result) != {str(number) for number in closed_at}:
             raise RuntimeError(f"worker omitted namespace results on {self.host}")
         return {int(number): outcome for number, outcome in result.items()}
 
@@ -466,7 +466,10 @@ def reconcile_batch(github, hosts, user, numbers):
         if selected:
             with ThreadPoolExecutor(max_workers=min(len(hosts), 2)) as pool:
                 futures = {
-                    host: pool.submit(session.cleanup, selected)
+                    host: pool.submit(
+                        session.cleanup,
+                        {number: pulls[number]["closedAt"] for number in selected},
+                    )
                     for host, session in sessions.items()
                 }
                 for host, future in futures.items():
@@ -614,13 +617,16 @@ def main():
         file=sys.stderr,
     )
     incomplete = any(value is None for value in inventory.values())
+    # A close event names the PR before its first claim may have created any
+    # resources. Reconcile explicit selections even when inventory is empty.
     numbers = sorted(
-        {
+        selection
+        if selection is not None
+        else {
             number
             for resources in inventory.values()
             if resources is not None
             for number in resources
-            if selection is None or number in selection
         }
     )
     pulls = github.pulls(numbers)

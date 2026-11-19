@@ -329,3 +329,34 @@ test("Name the model and its effort on the trigger, with a bolt for Fast", async
   expect(fastTrigger).toHaveTextContent(/^GPT 5\.6 Sol\s*· Max$/u);
   expect(fastTrigger.querySelector("svg.lucide-zap")).toBeInTheDocument();
 });
+
+test("Select Ultrafast in the composer for a Codex model that offers it", async () => {
+  installRunChat({ selectedModel: "gpt-6.1-sol" });
+  installConnectedPersonalSubscriptions(context);
+  context.mocks.data.availableRunModels([
+    {
+      ...buildRunModel({ model: "gpt-6.1-sol" }),
+      subscriptionOptions: {
+        efforts: ["low", "high"],
+        serviceTier: "priority",
+        ultrafastAvailable: true,
+      },
+    },
+  ]);
+  await setupPage({ context, path: NEW_CHAT_PATH });
+  const panel = await openModelPanel("GPT 6.1 Sol");
+  const speeds = within(panel).getByRole("radiogroup", { name: "Speed" });
+
+  expect(within(speeds).getByRole("radio", { name: "Standard" })).toBeChecked();
+  expect(within(speeds).getByRole("radio", { name: "Fast" })).toBeVisible();
+  click(within(speeds).getByRole("radio", { name: "Ultrafast" }));
+
+  await waitFor(() => {
+    expect(
+      within(speeds).getByRole("radio", { name: "Ultrafast" }),
+    ).toBeChecked();
+  });
+  expect(
+    within(panel).getByText("Uses more of your Codex allowance."),
+  ).toBeVisible();
+});

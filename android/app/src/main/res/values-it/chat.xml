@@ -9,15 +9,16 @@
     <string name="chat_cache_unavailable">Lo spazio offline non è disponibile. Queste chat potrebbero non essere disponibili dopo un riavvio.</string>
     <string name="chat_metadata_loading">Caricamento dei nomi Okou e dei progetti…</string>
     <string name="chat_metadata_unavailable">Alcune informazioni su Okou o sui progetti non sono disponibili.</string>
-    <string name="chat_status_observed">Gli stati attivo e non letto risalgono all’ultimo aggiornamento.</string>
     <string name="chat_status_unavailable">Impossibile aggiornare lo stato. Gli indicatori precedenti potrebbero essere obsoleti.</string>
     <string name="chat_status_loading">Verifica degli stati attivo e non letto…</string>
     <string name="chat_refresh_status">Aggiorna stato</string>
-    <string name="chat_recent">Recenti</string>
+    <string name="chat_all">Tutte</string>
+    <string name="chat_filter">Filtra</string>
+    <string name="chat_clear_filter">Rimuovi filtro</string>
+    <string name="chat_more_actions">Altre azioni</string>
     <string name="chat_unread">Non lette</string>
     <string name="chat_archived">Archiviate</string>
     <string name="chat_muted">Silenziate</string>
-    <string name="chat_outside_projects">Chat fuori dai progetti</string>
     <string name="chat_project_empty">Nessuna chat in questo progetto.</string>
     <string name="chat_empty">Nessuna chat in questa vista.</string>
     <string name="chat_untitled">Chat senza titolo</string>
@@ -25,4 +26,9 @@
     <string name="chat_pinned">Fissata</string>
     <string name="chat_active">Attiva</string>
     <string name="chat_metadata_cached">Sono mostrati i nomi Okou e dei progetti salvati.</string>
+    <string name="chat_actions">Azioni della chat</string>
+    <string name="chat_mark_read">Segna come letto</string>
+    <string name="chat_mark_unread">Segna come non letto</string>
+    <string name="chat_read_action_pending">Aggiornamento dello stato di lettura…</string>
+    <string name="chat_read_action_failed">Impossibile aggiornare lo stato di lettura.</string>
 </resources>

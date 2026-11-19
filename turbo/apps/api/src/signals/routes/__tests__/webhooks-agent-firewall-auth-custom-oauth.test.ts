@@ -96,7 +96,7 @@ async function setupCustomOAuthFirewall(
   await runs.heartbeatRunner(runnerGroup);
   const execution = await runs.executionInput(run.runId);
   publicFixture.registerExecution(run.runId, execution.sandboxToken);
-  const headers = { authorization: `Bearer ${execution.sandboxToken}` };
+  const headers = { authorization: `Bearer ${execution.firewallToken}` };
   const connector = await connectors.createCustomConnector(
     actor,
     "endpoint" in provider
@@ -188,7 +188,7 @@ async function setupCustomOAuthFirewall(
     const internalName = `custom_connector_${connector.id.replaceAll("-", "")}`;
     const secretKey = `CUSTOM_${connector.id.replaceAll("-", "")}_S___OAUTH_ACCESS_TOKEN`;
     return fw.requestFirewallAuth(
-      { authorization: `Bearer ${execution.firewallToken!}` },
+      headers,
       {
         authHeaders: networkAdmission
           ? {}

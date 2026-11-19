@@ -11,7 +11,6 @@ import {
   literal,
   number,
   object,
-  preprocess,
   record,
   string,
   url,
@@ -192,18 +191,10 @@ export const indicatorsSchema = object({
 });
 
 export const chatThreadEventIdSchema = uuid();
-export const chatThreadServiceTierSchema = zEnum(["priority"]);
-/**
- * Persisted thread events, snapshot archives, and client caches can still carry
- * the retired Ultrafast tier. Read it as the Standard tier instead of failing.
- */
-const persistedChatThreadServiceTierSchema = zEnum(["priority", "ultrafast"])
+export const chatThreadServiceTierSchema = zEnum(["priority", "ultrafast"]);
+const persistedChatThreadServiceTierSchema = chatThreadServiceTierSchema
   .nullable()
-  .default(null)
-  .transform((tier) => {
-    return tier === "priority" ? tier : null;
-  })
-  .pipe(chatThreadServiceTierSchema.nullable());
+  .default(null);
 
 export const chatThreadSnapshotProjectionSchema = object({
   id: uuid(),
@@ -566,19 +557,10 @@ export const userMessageInputPartSchema = discriminatedUnion("type", [
     ),
 ]);
 
-/**
- * Model parts are written by the API into append-only chat events. Events
- * stored while Ultrafast was offered can still carry it; read it as the
- * Standard tier (absent) instead of failing the whole message.
- */
-const persistedUserMessageServiceTierSchema = preprocess((tier) => {
-  return tier === "ultrafast" ? undefined : tier;
-}, chatThreadServiceTierSchema.optional());
-
 const userMessageModelPartSchema = object({
   type: literal("model"),
   selectedModel: string().min(1),
-  serviceTier: persistedUserMessageServiceTierSchema,
+  serviceTier: chatThreadServiceTierSchema.optional(),
 }).strict();
 
 export const userMessagePartSchema = discriminatedUnion("type", [

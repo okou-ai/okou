@@ -72,6 +72,31 @@ fn make_fifo(path: &std::path::Path) -> std::io::Result<()> {
 }
 
 #[cfg(target_os = "linux")]
+fn link_fixture_files(
+    parent: &std::path::Path,
+    source: &str,
+    prefix: &str,
+    indices: std::ops::Range<usize>,
+) {
+    use rustix::fs::{AtFlags, Mode, OFlags, linkat, open};
+    use std::fmt::Write as _;
+
+    // Resolve the parent once for both sides of each hard link.
+    let parent = open(
+        parent,
+        OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC,
+        Mode::empty(),
+    )
+    .unwrap();
+    let mut name = String::new();
+    for index in indices {
+        name.clear();
+        write!(name, "{prefix}{index:05}").unwrap();
+        linkat(&parent, source, &parent, name.as_str(), AtFlags::empty()).unwrap();
+    }
+}
+
+#[cfg(target_os = "linux")]
 async fn artifact_snapshot_preflight_error(mount: &std::path::Path) -> String {
     let telemetry_dir = tempfile::tempdir().unwrap();
     let telemetry_path = telemetry_dir.path().join("sandbox-ops.jsonl");
@@ -94,7 +119,6 @@ async fn artifact_snapshot_preflight_error(mount: &std::path::Path) -> String {
     let http = HttpClient::with_api_config(
         server.base_url(),
         "test-token",
-        "",
         "test-run-001",
         Duration::ZERO,
     )
@@ -255,7 +279,6 @@ async fn artifact_snapshot_missing_mount_fails_before_storage_api_calls() {
     let http = HttpClient::with_api_config(
         server.base_url(),
         "test-token",
-        "",
         "test-run-001",
         Duration::ZERO,
     )
@@ -306,11 +329,8 @@ async fn artifact_snapshot_enforces_manifest_boundaries_before_storage_api_calls
     // Manifest limits count paths, so these immutable empty files can share an inode.
     #[cfg(target_os = "linux")]
     {
-        let source = mount.join("00000");
-        std::fs::File::create(&source).unwrap();
-        for index in 1..max_files {
-            std::fs::hard_link(&source, mount.join(format!("{index:05}"))).unwrap();
-        }
+        std::fs::File::create(mount.join("00000")).unwrap();
+        link_fixture_files(&mount, "00000", "", 1..max_files);
     }
     // Other platforms may impose lower per-inode link limits.
     #[cfg(not(target_os = "linux"))]
@@ -348,7 +368,6 @@ async fn artifact_snapshot_enforces_manifest_boundaries_before_storage_api_calls
     let http = HttpClient::with_api_config(
         server.base_url(),
         "test-token",
-        "",
         "test-run-001",
         Duration::ZERO,
     )
@@ -433,11 +452,7 @@ async fn artifact_snapshot_enforces_traversal_entry_limit_before_storage_api_cal
         std::fs::create_dir(&parent).unwrap();
         let source = parent.join("source");
         make_fifo(&source).unwrap();
-        let mut link = parent.join("l00000");
-        for link_index in 0..links_per_parent {
-            link.set_file_name(format!("l{link_index:05}"));
-            std::fs::hard_link(&source, &link).unwrap();
-        }
+        link_fixture_files(&parent, "source", "l", 0..links_per_parent);
     }
 
     let message = artifact_snapshot_preflight_error(&mount).await;
@@ -514,7 +529,6 @@ async fn artifact_snapshot_explicit_fail_policy_missing_mount_fails() {
     let http = HttpClient::with_api_config(
         server.base_url(),
         "test-token",
-        "",
         "test-run-001",
         Duration::ZERO,
     )
@@ -559,7 +573,6 @@ async fn artifact_snapshot_later_missing_mount_fails_before_any_storage_api_call
     let http = HttpClient::with_api_config(
         server.base_url(),
         "test-token",
-        "",
         "test-run-001",
         Duration::ZERO,
     )
@@ -626,9 +639,8 @@ async fn artifact_snapshot_pipelines_overlap_and_preserve_result_order() {
         },
     ];
     let (base_url, server) = start_artifact_finalization_test_server(entries.len()).await;
-    let http =
-        HttpClient::with_api_config(base_url, "test-token", "", "test-run-001", Duration::ZERO)
-            .unwrap();
+    let http = HttpClient::with_api_config(base_url, "test-token", "test-run-001", Duration::ZERO)
+        .unwrap();
 
     let snapshots = tokio::time::timeout(
         REQUEST_OVERLAP_TIMEOUT,
@@ -679,7 +691,6 @@ async fn artifact_snapshot_preserve_policy_missing_mount_preserves_parent_versio
     let http = HttpClient::with_api_config(
         server.base_url(),
         "test-token",
-        "",
         "test-run-001",
         Duration::ZERO,
     )
@@ -732,7 +743,6 @@ async fn artifact_snapshot_policy_still_fails_on_non_not_found_root_error() {
     let http = HttpClient::with_api_config(
         server.base_url(),
         "test-token",
-        "",
         "test-run-001",
         Duration::ZERO,
     )

@@ -9,15 +9,16 @@
     <string name="chat_cache_unavailable">Offline storage is unavailable. These chats may not be available after restarting.</string>
     <string name="chat_metadata_loading">Loading Okou and Project names…</string>
     <string name="chat_metadata_unavailable">Some Okou or Project information is unavailable.</string>
-    <string name="chat_status_observed">Activity and unread status are from the last refresh.</string>
     <string name="chat_status_unavailable">Could not refresh status. Previous indicators may be out of date.</string>
     <string name="chat_status_loading">Checking activity and unread status…</string>
     <string name="chat_refresh_status">Refresh status</string>
-    <string name="chat_recent">Recent</string>
+    <string name="chat_all">All</string>
+    <string name="chat_filter">Filter</string>
+    <string name="chat_clear_filter">Clear filter</string>
+    <string name="chat_more_actions">More actions</string>
     <string name="chat_unread">Unread</string>
     <string name="chat_archived">Archived</string>
     <string name="chat_muted">Muted</string>
-    <string name="chat_outside_projects">Chats outside Projects</string>
     <string name="chat_project_empty">No chats in this Project.</string>
     <string name="chat_empty">No chats in this view.</string>
     <string name="chat_untitled">Untitled chat</string>
@@ -25,4 +26,9 @@
     <string name="chat_pinned">Pinned</string>
     <string name="chat_active">Active</string>
     <string name="chat_metadata_cached">Showing saved Okou and Project names.</string>
+    <string name="chat_actions">Chat actions</string>
+    <string name="chat_mark_read">Mark as read</string>
+    <string name="chat_mark_unread">Mark as unread</string>
+    <string name="chat_read_action_pending">Updating read status…</string>
+    <string name="chat_read_action_failed">Could not update the read status.</string>
 </resources>

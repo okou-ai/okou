@@ -18,7 +18,6 @@ fn test_http_client(server: &httpmock::MockServer) -> Result<HttpClient, AgentEr
     HttpClient::with_api_config(
         server.base_url(),
         "test-token",
-        "",
         "test-run-001",
         Duration::ZERO,
     )

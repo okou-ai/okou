@@ -615,7 +615,7 @@ const piModelConfigVersionedSchema = object({
     "xhigh",
     "max",
   ]).optional(),
-  serviceTier: zEnum(["priority", "fast"]).optional(),
+  serviceTier: zEnum(["priority", "fast", "ultrafast"]).optional(),
   credentialBindings: array(piModelCredentialBindingSchema).min(1).max(2),
 })
   .strict()
@@ -708,7 +708,7 @@ export const piModelConfigV3Schema = discriminatedUnion("dialect", [
     dialect: literal("openai-codex-responses"),
     transport: zEnum(["sse"]),
     provider: zEnum(["openai-codex"]),
-    serviceTier: zEnum(["fast"]).optional(),
+    serviceTier: zEnum(["fast", "ultrafast"]).optional(),
   }),
 ]).readonly();
 
@@ -837,19 +837,10 @@ const preparedExecutionContextObjectSchema = object({
   ),
   environment: record(string(), string()).nullable(),
   platformEnvironment: record(string(), string()),
-  // API-only references used to reconstruct runner masking values from the
-  // effective prepared agent environment. Null means no secret map, and array
-  // order/repetition follows secret-map values.
-  // This field must not be included in the runner-facing ExecutionContext.
-  secretValueEnvironmentKeys: array(string()).nullable(),
   // Connector-owned runtime vars used by proxy/firewall template resolution.
   // Original Run vars travel in the admitted launch and merge during execution preparation.
   vars: record(string(), string()).nullable(),
   nativeContinuation: nativeContinuationSchema,
-  // AES-256-GCM encrypted Record<string, string>. Keys are the runtime secret
-  // names used by `${{ secrets.NAME }}`; connector/model-provider keys are env
-  // aliases, not backing storage secret names.
-  encryptedSecrets: string().nullable(),
   // Maps firewall auth secret env aliases (the `NAME` in `${{ secrets.NAME }}`) to
   // their connector or provider owner. Keys are env aliases, not storage secret names.
   secretConnectorMap: record(string(), string()).nullable(),
@@ -927,8 +918,7 @@ const executionContextObjectSchema = object({
   vars: record(string(), string()).nullable(),
   sandboxToken: string(),
   // Host-only resolver authority. Never export into Guest env/config/masking.
-  // Optional for launches from API versions predating host-scope separation.
-  firewallToken: string().min(1).optional(),
+  firewallToken: string().min(1),
   storageManifest: storageManifestSchema.nullable(),
   environment: record(string(), string()).nullable(),
   platformEnvironment: record(string(), string()),
@@ -936,11 +926,6 @@ const executionContextObjectSchema = object({
   // Plain secret values used by the runner for redaction. These are values, not
   // names, and are base64-encoded only when exported through OKOU_SECRET_VALUES.
   secretValues: array(string()).nullable(),
-  // AES-256-GCM encrypted Record<string, string>, passed through to mitm-addon
-  // for auth resolution. Keys are runtime secret names used by
-  // `${{ secrets.NAME }}`; connector/model-provider keys are env aliases, not
-  // backing storage secret names.
-  encryptedSecrets: string().nullable(),
   // Maps firewall auth secret env aliases (the `NAME` in `${{ secrets.NAME }}`) to
   // their connector or provider owner. Keys are env aliases, not storage secret names.
   secretConnectorMap: record(string(), string()).nullable().optional(),

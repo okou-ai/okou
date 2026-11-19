@@ -1,4 +1,3 @@
-import { contentBundleSchema } from "@okouai/api-contracts/contracts/content-bundle";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { command, computed, type Computed } from "ccstate";
@@ -11,15 +10,13 @@ import { nowDate } from "../../lib/time";
 import { rawSqlReadDb$ } from "../external/db";
 import { recordSandboxOperations } from "../external/sandbox-op-log";
 import type { AdmittedExecutionFacts } from "./admitted-execution-facts";
-import { agentInstructionsSelectionSql } from "./execution-instructions-selection";
+import type { AcceptedMemoryMount } from "./execution-storage.service";
 import { createExecutionRuntimeContext } from "./execution-runtime-context";
-import { contentBundleAvailableCondition } from "./execution-content-bundle";
 import {
   cachedContentBundleUrlSchema,
   contentBundleUrlCacheContext$,
   contentBundleUrlCacheSnapshotSql,
 } from "./content-bundle-presigned-url-cache";
-import { encryptExecutionSecrets$ } from "./execution-secrets.service";
 import {
   prepareExecutionPublication$,
   executionBundleHashes,
@@ -31,16 +28,14 @@ import {
   type StoragePresignedUrlCacheWrite,
 } from "./system-storage-presigned-url-cache.service";
 import {
-  executionWorkflowSchema,
   assertOfficialWorkflowMounts,
   executionSkillRoot,
-  executionWorkflowSelectionSql,
-  type ExecutionWorkflowInput,
 } from "./execution-workflow-selection";
 
 /** Receipt from durable Thread Run admission, before first-run classification. */
 export interface AdmittedRunLaunch {
   readonly run: Omit<ExecutionPublicationRun, "isFirstRun">;
+  readonly memoryMounts: readonly AcceptedMemoryMount[];
   readonly facts: AdmittedExecutionFacts;
   readonly runnerGroup: string;
   readonly profile: string;
@@ -48,47 +43,6 @@ export interface AdmittedRunLaunch {
   readonly createdAt: Date;
   readonly reusePreparation: RunnerReusePreparation;
 }
-
-const capturedPackagesSchema = object({
-  workflows: array(executionWorkflowSchema),
-  instructionsBundle: contentBundleSchema.nullable(),
-});
-
-export type CapturedExecutionPackages = ReturnType<
-  typeof capturedPackagesSchema.parse
->;
-
-/** Read authorized package descriptors from a single snapshot of the picked Run's sources. */
-export const captureExecutionPackages$ = command(
-  async (
-    { get },
-    args: {
-      readonly orgId: string;
-      readonly userId: string;
-      readonly singleAgent: boolean;
-      readonly selection: ExecutionWorkflowInput;
-    },
-    signal: AbortSignal,
-  ): Promise<CapturedExecutionPackages | null> => {
-    signal.throwIfAborted();
-    const { selection } = args;
-    const db = get(rawSqlReadDb$);
-    const rows = await db.execute(sql`WITH admitted_run AS MATERIALIZED (
-      SELECT ${args.orgId}::text AS "orgId", ${args.userId}::text AS "userId",
-        ${selection.selection.agentId}::uuid AS "agentId",
-        ${selection.selection.automationId ?? null}::uuid AS "workflowAutomationId"
-    ), ${agentInstructionsSelectionSql(sql`${args.singleAgent}`)},
-      ${executionWorkflowSelectionSql(selection)}
-    SELECT documents AS workflows,
-      (SELECT "instructionsBundle" FROM selected_agent) AS "instructionsBundle"
-    FROM workflow_admission
-    WHERE "bundlesAvailable"
-      AND NOT EXISTS(SELECT 1 FROM selected_agent WHERE NOT ${contentBundleAvailableCondition(sql`selected_agent."instructionsBundle"`)})`);
-    signal.throwIfAborted();
-    const [packages] = parseRawRows(capturedPackagesSchema, rows);
-    return packages ?? null;
-  },
-);
 
 const executionPublicationFactsSchema = object({
   pending: boolean(),
@@ -116,7 +70,7 @@ export function createDirectRunPreparation(
     const cache = get(contentBundleUrlCacheContext$);
     const { instructionsBundle, workflows } = input.facts.executionPackages;
     const bundleHashes = [
-      ...(instructionsBundle ? [instructionsBundle.sha256] : []),
+      instructionsBundle.sha256,
       ...workflows.map((workflow) => {
         return workflow.contentBundle.sha256;
       }),
@@ -165,14 +119,7 @@ export const prepareDirectRun$ = command(
       ...input.run,
       isFirstRun: packages.row.isFirstRun,
     };
-    const context = {
-      ...prepared.context,
-      encryptedSecrets: await set(
-        encryptExecutionSecrets$,
-        prepared.secrets,
-        signal,
-      ),
-    };
+    const context = prepared.context;
     const publication = await set(
       prepareExecutionPublication$,
       {
@@ -200,11 +147,8 @@ export const prepareDirectRun$ = command(
           ...context,
           networkPolicies: publication.executionContext.networkPolicies,
         },
-        secretNames: Object.keys(prepared.secrets ?? {}),
-        secretValues: [
-          ...Object.values(prepared.secrets ?? {}),
-          ...(publication.executionContext.secretValues ?? []),
-        ],
+        secretNames: ["OKOU_TOKEN"],
+        secretValues: publication.executionContext.secretValues,
       },
     };
   },

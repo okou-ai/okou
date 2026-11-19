@@ -100,6 +100,7 @@ fn execution_context_preserves_optional_first_run_context() {
             "runId": "11111111-1111-4111-8111-111111111111",
             "prompt": "hello",
             "sandboxToken": "tok",
+            "firewallToken": "host-firewall",
             "cliAgentType": "claude-code",
             "platformEnvironment": {},
             "contentBundles": {"format": "tar-gzip-v1", "skills": []},
@@ -119,6 +120,7 @@ fn execution_context_rejects_legacy_expanded_firewall_entry() {
         "runId": "11111111-1111-4111-8111-111111111111",
         "prompt": "hello",
         "sandboxToken": "tok",
+        "firewallToken": "host-firewall",
         "cliAgentType": "claude-code",
         "platformEnvironment": {},
         "contentBundles": {"format": "tar-gzip-v1", "skills": []},
@@ -146,6 +148,7 @@ fn execution_context_rejects_unknown_firewall_kind() {
         "runId": "11111111-1111-4111-8111-111111111111",
         "prompt": "hello",
         "sandboxToken": "tok",
+        "firewallToken": "host-firewall",
         "cliAgentType": "claude-code",
         "platformEnvironment": {},
         "contentBundles": {"format": "tar-gzip-v1", "skills": []},
@@ -521,6 +524,7 @@ fn cli_agent_session_id_returns_none_without_supplied_id() {
         "runId": "550e8400-e29b-41d4-a716-446655440000",
         "prompt": "hello",
         "sandboxToken": "tok",
+        "firewallToken": "host-firewall",
         "cliAgentType": "claude_code",
         "billableFirewalls": [],
         "platformEnvironment": {},
@@ -538,6 +542,7 @@ fn execution_context_requires_custom_connector_routing_values() {
             "runId": "550e8400-e29b-41d4-a716-446655440000",
             "prompt": "hello",
             "sandboxToken": "tok",
+            "firewallToken": "host-firewall",
             "cliAgentType": "claude_code",
             "billableFirewalls": [],
             "platformEnvironment": {},
@@ -589,7 +594,7 @@ fn execution_context_requires_custom_connector_routing_values() {
 #[test]
 fn cli_agent_session_identity_uses_native_intent_and_local_submission() {
     let mut context: ExecutionContext = serde_json::from_value(json!({
-            "runId": "550e8400-e29b-41d4-a716-446655440000", "prompt": "hello", "sandboxToken": "tok", "cliAgentType": "claude-code", "platformEnvironment": {},
+            "runId": "550e8400-e29b-41d4-a716-446655440000", "prompt": "hello", "sandboxToken": "tok", "firewallToken": "host-firewall", "cliAgentType": "claude-code", "platformEnvironment": {},
             "contentBundles": {"format": "tar-gzip-v1", "skills": []}, "connectorRuntimeTargets": [],
             "nativeContinuation": { "sessionId": "native-session", "generationRunId": "550e8400-e29b-41d4-a716-446655440001", "recoveryPrompt": null }
         })).unwrap();
@@ -606,6 +611,7 @@ fn execution_context_with_storage_manifest(
         "runId": "550e8400-e29b-41d4-a716-446655440000",
         "prompt": "hello",
         "sandboxToken": "tok",
+        "firewallToken": "host-firewall",
         "storageManifest": storage_manifest,
         "cliAgentType": "claude_code",
         "billableFirewalls": [],

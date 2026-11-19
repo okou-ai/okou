@@ -3,8 +3,6 @@ import { pathToFileURL } from "node:url";
 import { Client } from "pg";
 import { AUTO_RUN_PROVIDER } from "@okouai/core/auto-run-model";
 
-const SERVICE_TIERS: ReadonlySet<string> = new Set(["priority"]);
-
 interface CatalogRow {
   model: string;
   display_name: string;
@@ -108,7 +106,11 @@ function assertRoute(route: RouteRow): void {
   );
   assert.ok(
     route.service_tiers.every((tier) => {
-      return SERVICE_TIERS.has(tier);
+      return (
+        tier === "priority" ||
+        (tier === "ultrafast" &&
+          route.subscription_type === "codex-oauth-token")
+      );
     }),
     `${label}: unknown service tier`,
   );

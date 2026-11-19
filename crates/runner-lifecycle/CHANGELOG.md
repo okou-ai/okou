@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.18.4](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.18.3...runner-lifecycle-v0.18.4) (2026-11-18)
+
+## [0.18.3](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.18.2...runner-lifecycle-v0.18.3) (2026-11-18)
+
+
+### Refactoring
+
+* **rust:** use typed directory entry operations ([#48730](https://github.com/okou-ai/okou/issues/48730)) ([5856c31](https://github.com/okou-ai/okou/commit/5856c31954cc37ce63770f5747a02b3da7c8676d))
+
+## [0.18.2](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.18.1...runner-lifecycle-v0.18.2) (2026-11-18)
+
+## [0.18.1](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.18.0...runner-lifecycle-v0.18.1) (2026-11-18)
+
 ## [0.18.0](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.125...runner-lifecycle-v0.18.0) (2026-11-18)
 
 

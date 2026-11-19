@@ -71,12 +71,7 @@ async function fundedFreeRuns() {
     const peer = await startRunExecution(
       "Complete and settle shared credit usage",
     );
-    const encryptedSecrets = active.execution.encryptedSecrets;
-    if (!encryptedSecrets) {
-      throw new Error("Expected the real managed Run's encrypted secrets");
-    }
     const firewallBody = {
-      encryptedSecrets,
       authHeaders: {
         Authorization: `Bearer ${secretTemplate("OPENROUTER_API_KEY")}`,
       },
@@ -141,7 +136,7 @@ describe("current credit balance during an active free Run", () => {
         const { active, firewallBody } = scenario;
         const before = Math.floor(now() / 1000);
         const funded = await fw.requestFirewallAuth(
-          active.headers,
+          { authorization: `Bearer ${active.execution.firewallToken}` },
           firewallBody,
           [200],
         );
@@ -158,7 +153,7 @@ describe("current credit balance during an active free Run", () => {
         const toolHeaders = { authorization: `Bearer ${toolToken}` };
         await scenario.settleBalance(remainingCredits);
         const denied = await fw.requestFirewallAuth(
-          active.headers,
+          { authorization: `Bearer ${active.execution.firewallToken}` },
           firewallBody,
           [402],
         );
@@ -177,7 +172,7 @@ describe("current credit balance during an active free Run", () => {
         expect(imageDenied.body.error.code).toBe("INSUFFICIENT_CREDITS");
 
         await fw.requestFirewallAuth(
-          active.headers,
+          { authorization: `Bearer ${active.execution.firewallToken}` },
           { ...firewallBody, firewallBillable: false },
           [200],
         );
@@ -191,7 +186,7 @@ describe("current credit balance during an active free Run", () => {
       await scenario.settleBalance(500);
       const before = Math.floor(now() / 1000);
       const leased = await createFirewallApi(context).requestFirewallAuth(
-        scenario.active.headers,
+        { authorization: `Bearer ${scenario.active.execution.firewallToken}` },
         scenario.firewallBody,
         [200],
       );

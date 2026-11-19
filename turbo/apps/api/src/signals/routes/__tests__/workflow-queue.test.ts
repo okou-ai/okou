@@ -37,7 +37,7 @@ import { readProjectedChatEvents } from "./helpers/chat-event-test-reader";
 import { createRouteMocks } from "./helpers/route-test";
 import { readCompletedRunSessionId } from "./helpers/public-run-session";
 import { refreshConcurrencyEntitlement } from "./helpers/stripe-billing-webhook";
-import { holdCurrentSecretKms } from "./helpers/hold-secret-kms";
+import { holdDownloadSigning } from "./helpers/hold-download-signing";
 import { publicChatActor } from "./helpers/public-chat-actor";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 const TEST_APP_ROUTES = Object.freeze([
@@ -1096,10 +1096,15 @@ describe("workflow queue", () => {
   it("revokes queued automation input while an admitted Run prepares dispatch", async () => {
     const scenario = await setup();
     const automation = await createScheduleAutomation(scenario);
-    const kms = holdCurrentSecretKms(context.signal);
+    await bdd.updateAgentInstructions(
+      scenario.actor,
+      scenario.agentId,
+      `Queue preparation ${randomUUID()}`,
+    );
+    const signing = holdDownloadSigning(context);
     const preparation = await settleIncludingAbort(async () => {
       const admitted = await requestAutomationNow(automation.automationId);
-      await kms.entered;
+      await signing.entered;
       const admittedRunId = await latestThreadRunId(admitted.body.chatThreadId);
       const requested = await requestAutomationNow(automation.automationId);
       const threadId = requested.body.chatThreadId;
@@ -1115,7 +1120,7 @@ describe("workflow queue", () => {
         }),
         [204],
       );
-      kms.release();
+      signing.release();
       await flushWaitUntilForTest();
 
       await expect(
@@ -1154,7 +1159,7 @@ describe("workflow queue", () => {
       }
       await cancelAndCompleteChatRun(scenario.actor, successorRunId);
     });
-    kms.release();
+    signing.release();
     if (!preparation.ok) {
       throw preparation.error;
     }

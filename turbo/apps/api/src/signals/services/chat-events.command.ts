@@ -186,7 +186,7 @@ import {
 } from "./workflow-reward-source-publication";
 import { env } from "../../lib/env";
 import type { ModelCatalog } from "./model-catalog.service";
-import { isCatalogFastServiceTierSupported } from "./model-route-capabilities.service";
+import { isCatalogCodexServiceTierSupported } from "./model-route-capabilities.service";
 import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 import { selectedUserPresentationTemplateIds } from "./presentation-template-data.service";
 import { selectedUserTemplateIds } from "./user-template-data.service";
@@ -194,7 +194,10 @@ import {
   dispatchCancelSideEffects$,
   shouldDispatchCancelSideEffects,
 } from "./run-cancel.service";
-import { resolvedArtifactObject$ } from "./artifact-storage.service";
+import {
+  createPublicArtifactObjectReads,
+  resolvedArtifactObject$,
+} from "./artifact-storage.service";
 import {
   completedPrivateAttachmentSize,
   privateArtifactFromRow,
@@ -583,16 +586,17 @@ function isNormalSendBody(body: SendBody): body is NormalSendBody {
   return "prompt" in body && body.prompt !== undefined;
 }
 const ATTACHMENT_METADATA_CONCURRENCY = 4;
-const ATTACHMENT_RECORD_BATCH_SIZE = 1000;
+type AttachmentRecord = typeof runUploadedFiles.$inferSelect;
+type PrivateAttachmentRecord = Pick<AttachmentRecord, "id" | "metadata">;
 interface ResolvedChatAttachment {
   readonly file: ChatEventAttachFileMetadata;
-  readonly owned: typeof runUploadedFiles.$inferSelect | null;
+  readonly owned: PrivateAttachmentRecord | null;
 }
 interface AttachmentObject {
   readonly key: string;
   readonly size: number;
   readonly layout: LinkLayout;
-  readonly owned: typeof runUploadedFiles.$inferSelect | null;
+  readonly owned: PrivateAttachmentRecord | null;
 }
 interface AttachmentLookup {
   readonly file: ReturnType<typeof userMessagePhysicalFiles>[number];
@@ -622,6 +626,48 @@ function attachmentResolutionCounts(
     ].sort(),
   };
 }
+const startIncomingAttachmentRecords$ = command(
+  ({ get }, userMessage: UserMessageDocument, signal: AbortSignal) => {
+    const files = userMessagePhysicalFiles(userMessage);
+    if (files.length === 0) {
+      return undefined;
+    }
+    const counts = attachmentResolutionCounts(files);
+    const rows = settleIncludingAbort(async () => {
+      signal.throwIfAborted();
+      const ids = [
+        ...new Set(
+          files.flatMap((file) => {
+            return uuid().safeParse(file.fileId).success
+              ? [file.fileId.toLowerCase()]
+              : [];
+          }),
+        ),
+      ];
+      if (ids.length === 0) {
+        return new Map<string, AttachmentRecord>();
+      }
+      counts.sqlReads += 1;
+      // One statement captures every referenced record together. Binding the
+      // UUID array also keeps the parameter count independent of file count.
+      const loaded = await get(db$)
+        .select()
+        .from(runUploadedFiles)
+        .where(sql`${runUploadedFiles.id} = ANY(${sql.param(ids)}::uuid[])`);
+      signal.throwIfAborted();
+      return new Map(
+        loaded.map((row) => {
+          return [row.id, row];
+        }),
+      );
+    });
+    return { files, rows, counts };
+  },
+);
+type IncomingAttachmentRecords = NonNullable<
+  ReturnType<(typeof startIncomingAttachmentRecords$)["write"]>
+>;
+
 const resolveIncomingAttachmentObject$ = command(
   async (
     { get, set },
@@ -629,8 +675,9 @@ const resolveIncomingAttachmentObject$ = command(
       readonly userId: string;
       readonly orgId: string;
       readonly file: AttachmentLookup["file"];
-      readonly row: typeof runUploadedFiles.$inferSelect | undefined;
+      readonly row: AttachmentRecord | undefined;
       readonly counts: ReturnType<typeof attachmentResolutionCounts>;
+      readonly publicReads: ReturnType<typeof createPublicArtifactObjectReads>;
     },
     signal: AbortSignal,
   ): Promise<AttachmentObject> => {
@@ -645,6 +692,7 @@ const resolveIncomingAttachmentObject$ = command(
       ) {
         throw new Error(`User-message attachment not found: ${file.fileId}`);
       }
+      const record = { id: row.id, metadata: row.metadata };
       const completedSize = completedPrivateAttachmentSize(row);
       if (completedSize !== null) {
         counts.completedPrivate += 1;
@@ -652,7 +700,7 @@ const resolveIncomingAttachmentObject$ = command(
           key: owned.key,
           size: completedSize,
           layout: owned.layout,
-          owned: row,
+          owned: record,
         };
       }
       counts.verifiedPrivate += 1;
@@ -672,7 +720,7 @@ const resolveIncomingAttachmentObject$ = command(
         key: owned.key,
         size: head.contentLength,
         layout: owned.layout,
-        owned: row,
+        owned: record,
       };
     }
     counts.public += 1;
@@ -682,7 +730,7 @@ const resolveIncomingAttachmentObject$ = command(
         userId: args.userId,
         id: file.fileId,
         filenameHint: file.filenameSnapshot,
-        counts,
+        reads: args.publicReads,
       },
       signal,
     );
@@ -700,50 +748,29 @@ const resolveIncomingAttachmentObject$ = command(
  */
 const resolveIncomingAttachFileMetadata$ = command(
   async (
-    { get, set },
+    { set },
     args: {
       readonly userId: string;
       readonly orgId: string;
-      readonly userMessage: UserMessageDocument;
+      readonly attachmentRecords: IncomingAttachmentRecords | undefined;
       readonly enqueueTiming?: ChatEnqueueTimingCollector;
     },
     signal: AbortSignal,
   ): Promise<ResolvedChatAttachment[]> => {
-    const files = userMessagePhysicalFiles(args.userMessage);
-    const counts = attachmentResolutionCounts(files);
-    const rows = new Map<string, typeof runUploadedFiles.$inferSelect>();
-    const ids = [
-      ...new Set(
-        files.flatMap((file) => {
-          return uuid().safeParse(file.fileId).success
-            ? [file.fileId.toLowerCase()]
-            : [];
-        }),
-      ),
-    ];
+    const records = args.attachmentRecords;
+    if (!records) {
+      args.enqueueTiming?.setAttachmentDetails(attachmentResolutionCounts([]));
+      return [];
+    }
+    const { files, counts } = records;
     const resolved = await settleIncludingAbort(async () => {
-      const db = get(db$);
-      for (
-        let offset = 0;
-        offset < ids.length;
-        offset += ATTACHMENT_RECORD_BATCH_SIZE
-      ) {
-        signal.throwIfAborted();
-        counts.sqlReads += 1;
-        const loaded = await db
-          .select()
-          .from(runUploadedFiles)
-          .where(
-            inArray(
-              runUploadedFiles.id,
-              ids.slice(offset, offset + ATTACHMENT_RECORD_BATCH_SIZE),
-            ),
-          );
-        signal.throwIfAborted();
-        for (const row of loaded) {
-          rows.set(row.id, row);
-        }
+      const read = await records.rows;
+      signal.throwIfAborted();
+      if (!read.ok) {
+        throw read.error;
       }
+      const rows = read.value;
+      const publicReads = createPublicArtifactObjectReads(counts, signal);
       const lookups = new Map<string, AttachmentLookup>();
       const references = files.map((file) => {
         // Public-object resolution uses the filename hint. The request fixes
@@ -783,6 +810,7 @@ const resolveIncomingAttachFileMetadata$ = command(
                 file: lookup.file,
                 row: rows.get(lookup.file.fileId.toLowerCase()),
                 counts,
+                publicReads,
               },
               signal,
             );
@@ -956,11 +984,13 @@ function requestedThreadRunSettings(
   }
   const requestedTier = body.runOptions?.codexServiceTier;
   if (
-    requestedTier === "fast" &&
-    !isCatalogFastServiceTierSupported(catalog, selectedModel)
+    requestedTier !== undefined &&
+    !isCatalogCodexServiceTierSupported(catalog, selectedModel, requestedTier)
   ) {
     return badRequestMessage(
-      "Codex fast mode is only available for GPT 5.6 runs",
+      requestedTier === "fast"
+        ? "Codex fast mode is only available for GPT 5.6 runs"
+        : "Ultrafast is unavailable for this model route",
     );
   }
   // A model or run-option selection carries its tier; an effort-only change
@@ -1367,9 +1397,9 @@ function userModelPreferencePlan(
   }
   // The captured selection: a replaced model is stored as its successor.
   const selectedModel = runSettings.selectedModel;
-  const serviceTier = chatThreadServiceTierFromCodex(
-    runSettings.codexServiceTier,
-  );
+  // Ultrafast is scoped to this conversation.
+  const serviceTier: "priority" | null =
+    runSettings.codexServiceTier === "fast" ? "priority" : null;
   const patch = runSettings.modelSettingsPatch;
   const nowValue = nowDate();
   return {
@@ -1647,19 +1677,7 @@ function normalSendInputPlan(args: NormalSendArgs, input: NormalSendInput) {
       },
     },
     preferencePlan: userModelPreferencePlan(args, thread.runSettings),
-    attachments: input.attachFileMetadata.map(({ file, owned }) => {
-      const owner = {
-        chatThreadId: thread.threadId,
-        userId: args.userId,
-        orgId: args.orgId,
-        file,
-      };
-      return {
-        owner,
-        owned,
-        plan: owned ? null : canonicalWebInputPlan(owner),
-      };
-    }),
+    attachments: input.attachFileMetadata,
   };
 }
 
@@ -1814,45 +1832,6 @@ function normalSendPublicAssetWrite(
 }
 
 type NormalInputPlan = ReturnType<typeof normalSendInputPlan>;
-type NormalInputAsset = NormalInputPlan["attachments"][number];
-interface NormalInputAssetSnapshot {
-  readonly index: number;
-  readonly asset: NormalInputAsset;
-  readonly loaded:
-    | {
-        readonly ok: true;
-        readonly value: {
-          readonly owned: typeof runUploadedFiles.$inferSelect | undefined;
-          readonly plan: ReturnType<typeof canonicalPrivateWebInputPlan>;
-        };
-      }
-    | { readonly ok: false; readonly error: unknown }
-    | null;
-}
-function normalSendAssetSnapshots(
-  attachments: readonly NormalInputAsset[],
-): NormalInputAssetSnapshot[] {
-  return attachments.map((asset, index) => {
-    if (asset.plan) {
-      return { index, asset, loaded: null };
-    }
-    const loaded = safeSync(() => {
-      const owned = asset.owned ?? undefined;
-      return {
-        owned,
-        plan: canonicalPrivateWebInputPlan({ ...asset.owner, owned }),
-      };
-    });
-    return {
-      index,
-      asset,
-      loaded:
-        "ok" in loaded
-          ? { ok: true, value: loaded.ok }
-          : { ok: false, error: loaded.error },
-    };
-  });
-}
 type NormalPreparedEvent =
   | { readonly ok: true; readonly value: ReturnType<typeof prepareChatEvent> }
   | { readonly ok: false; readonly error: unknown };
@@ -1980,127 +1959,73 @@ function normalSendSelectionWrites(
   }
   return { writes, after };
 }
-/** Register one physical identity once while retaining every private validation. */
-function normalSendAssetRepetitions(
-  snapshots: readonly NormalInputAssetSnapshot[],
-) {
-  const seen = new Map<string, NormalInputAssetSnapshot>();
-  return snapshots.map((snapshot) => {
-    const identity = snapshot.asset.owned?.id ?? snapshot.asset.owner.file.id;
-    const previous = seen.get(identity);
-    if (!previous) {
-      seen.set(identity, snapshot);
-      return { snapshot, repeated: false, failure: null };
-    }
-    const loaded = snapshot.loaded;
-    const prior = previous.loaded;
-    let failure: { readonly error: unknown } | null = null;
-    if (loaded && !loaded.ok) {
-      failure = { error: loaded.error };
-    } else if (
-      (snapshot.asset.plan === null) !== (previous.asset.plan === null) ||
-      (loaded?.ok &&
-        prior?.ok &&
-        (snapshot.asset.owner.file.objectKey !==
-          previous.asset.owner.file.objectKey ||
-          JSON.stringify(loaded.value.owned?.metadata) !==
-            JSON.stringify(prior.value.owned?.metadata)))
-    ) {
-      failure = {
-        error: new Error(
-          "Chat input attachment storage changed during preparation",
-        ),
-      };
-    }
-    return { snapshot, repeated: true, failure };
-  });
-}
 function normalSendAssetWrites(
-  snapshots: readonly NormalInputAssetSnapshot[],
+  args: NormalSendArgs,
+  input: NormalInputPlan,
   previous?: string,
 ) {
   const writes: NormalChatInputWrite[] = [];
   const guards: NormalChatInputGuard[] = [];
   const failures: NormalSendPublicationFailure[] = [];
+  const seen = new Set<string>();
   let after = previous;
-  for (const repetition of normalSendAssetRepetitions(snapshots)) {
-    const { snapshot, repeated, failure } = repetition;
-    const { index, asset } = snapshot;
+  for (const [index, { file, owned }] of input.attachments.entries()) {
+    const id = owned?.id ?? file.id;
+    if (seen.has(id)) {
+      continue;
+    }
+    seen.add(id);
+    const owner = {
+      chatThreadId: input.thread.threadId,
+      userId: args.userId,
+      orgId: args.orgId,
+      file,
+    };
     const name = "normal_send_asset_" + index;
-    const token = normalSendFailureToken("ASSET_" + index);
-    if (failure) {
-      failures.push({ token, error: failure.error });
-      guards.push({ condition: normalChatInputWritten, token });
-      continue;
-    }
-    if (repeated) {
-      continue;
-    }
     const gate = normalChatInputWriteGate(after);
-    if (asset.plan) {
+    if (!owned) {
+      const token = normalSendFailureToken("ASSET_" + index);
       writes.push({
         name,
-        statement: normalSendPublicAssetWrite(asset.plan, gate),
+        statement: normalSendPublicAssetWrite(
+          canonicalWebInputPlan(owner),
+          gate,
+        ),
       });
       failures.push({
         token,
         error: new Error("Canonical web input asset conflict is missing"),
       });
+      guards.push({
+        condition: sql`${normalChatInputWritten} AND NOT EXISTS (SELECT 1 FROM ${sql.identifier(name)})`,
+        token,
+      });
     } else {
-      const owner = asset.owner;
-      const loaded = snapshot.loaded;
-      if (!loaded) {
-        throw new Error("Private chat input attachment preparation is missing");
-      }
-      if (!loaded.ok) {
-        failures.push({ token, error: loaded.error });
-        guards.push({ condition: normalChatInputWritten, token });
-        continue;
-      }
-      const { owned, plan } = loaded.value;
-      if (!owned) {
-        throw new Error(
-          "Private attachment validation did not retain its record",
-        );
-      }
-      if (!plan.where) {
-        throw new Error("Private input attachment write predicate is missing");
-      }
-      const values = normalChatInputConditionalValues(
-        runUploadedFiles,
-        plan.values,
-        plan.where,
-      );
-      const condition = and(
-        eq(runUploadedFiles.id, owner.file.id),
-        eq(runUploadedFiles.userId, owner.userId),
-        eq(runUploadedFiles.orgId, owner.orgId),
-        isNull(runUploadedFiles.deletedAt),
-        eq(runUploadedFiles.storageKey, owner.file.objectKey),
-        eq(runUploadedFiles.metadata, owned.metadata),
-        gate,
-      );
+      const plan = canonicalPrivateWebInputPlan({
+        chatThreadId: owner.chatThreadId,
+        file,
+        metadata: owned.metadata,
+      });
+      // Only the registration needs a live, still-unbound row. A withdrawn
+      // or already registered file does not invalidate the accepted input.
       writes.push({
         name,
         statement: new PgDialect().buildUpdateQuery({
           table: runUploadedFiles,
-          set: { ...values },
+          set: normalChatInputUpdateSet(runUploadedFiles, plan.values),
           joins: [],
-          where: condition,
+          where: and(
+            plan.where,
+            eq(runUploadedFiles.userId, owner.userId),
+            eq(runUploadedFiles.orgId, owner.orgId),
+            isNull(runUploadedFiles.deletedAt),
+            eq(runUploadedFiles.storageKey, file.objectKey),
+            gate,
+          ),
           returning: [{ path: ["id"], field: runUploadedFiles.id }],
         }),
       });
-      failures.push({
-        token,
-        error: new Error(
-          "Private attachment changed while input was being committed",
-        ),
-      });
     }
-    guards.push({
-      condition: sql`${normalChatInputWritten} AND NOT EXISTS (SELECT 1 FROM ${sql.identifier(name)})`,
-      token,
-    });
     after = name;
   }
   return { writes, guards, failures, after };
@@ -2169,13 +2094,12 @@ function normalSendPreparedPublication(
   args: NormalSendArgs,
   input: NormalInputPlan,
   target: readonly zInfer<typeof chatEventReplacementTargetSchema>[] | null,
-  snapshots: readonly NormalInputAssetSnapshot[],
   claimId: string,
 ) {
   const thread = input.thread;
   const base = normalSendBasePublication(args, input, target);
   const selection = normalSendSelectionWrites(args, input, base.after);
-  const assets = normalSendAssetWrites(snapshots, selection.after);
+  const assets = normalSendAssetWrites(args, input, selection.after);
   const source = input.relationSource;
   const relation =
     source && source.threadId !== thread.threadId
@@ -2231,13 +2155,11 @@ const appendNormalSendInput$ = command(
           : null
         : [input.replacementTarget];
     signal.throwIfAborted();
-    const snapshots = normalSendAssetSnapshots(input.attachments);
     const claimId = randomUUID();
     const prepared = normalSendPreparedPublication(
       args,
       input,
       target,
-      snapshots,
       claimId,
     );
     const created = prepared.createdPlan;
@@ -2527,6 +2449,7 @@ const prepareNormalSendInput$ = command(
       readonly catalog: ModelCatalog;
       readonly orgPlanCapabilities: OrgPlanCapabilities | null | undefined;
       readonly modelBootstrap: ModelSelectionBootstrap;
+      readonly attachmentRecords: IncomingAttachmentRecords | undefined;
       readonly enqueueTiming?: ChatEnqueueTimingCollector;
     },
     signal: AbortSignal,
@@ -2540,7 +2463,7 @@ const prepareNormalSendInput$ = command(
           {
             userId: args.userId,
             orgId: args.orgId,
-            userMessage: args.body.userMessage,
+            attachmentRecords: args.attachmentRecords,
             enqueueTiming: args.enqueueTiming,
           },
           signal,
@@ -2722,6 +2645,16 @@ const prepareNormalSendContext$ = command(
     // Start authenticated org/member reads immediately; authorization consumes
     // the same promises. Settled waitUntil work stays owned on rejection/abort.
     set(preloadAgentRunContext$, context, signal);
+    // Start the passive attachment read in this batch. Only a validated send
+    // consumes it and asks storage to verify an object.
+    const attachmentRecords = set(
+      startIncomingAttachmentRecords$,
+      args.body.userMessage,
+      signal,
+    );
+    if (attachmentRecords) {
+      waitUntil(attachmentRecords.rows);
+    }
     const prepared = await set(
       prepareNormalSend$,
       { ...args, context, existingThreadRow, agentRunSource },
@@ -2731,7 +2664,7 @@ const prepareNormalSendContext$ = command(
       return prepared;
     }
     const models = await set(prepareNormalSendModels$, context, signal);
-    return { ...prepared, ...models, context, inputId };
+    return { ...prepared, ...models, context, inputId, attachmentRecords };
   },
 );
 
@@ -2882,6 +2815,7 @@ export const sendNormalEvent$ = command(
         orgPlanCapabilities: orgModels.capabilities,
         catalog,
         modelBootstrap,
+        attachmentRecords: prepared.attachmentRecords,
       },
       signal,
     );

@@ -60,7 +60,7 @@ fn envelope(identity: RunnerProcessIdentity, run_id: RunId) -> Value {
         "runnerId": identity.runner_id(), "heartbeatGeneration": identity.heartbeat_generation(),
         "profile": "vm0/default", "notAfter": crate::ingress::dispatch::now_ms() + 60_000,
         "executionContext": {
-            "runId": run_id, "prompt": "supplied complete input", "sandboxToken": "run-scoped-token",
+            "runId": run_id, "prompt": "supplied complete input", "sandboxToken": "run-scoped-token", "firewallToken": "firewall-token",
             "cliAgentType": "claude-code", "platformEnvironment": {}, "connectorRuntimeTargets": [],
             "contentBundles": { "format": "tar-gzip-v1", "skills": [] }
         }

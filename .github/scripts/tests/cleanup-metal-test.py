@@ -60,9 +60,10 @@ import json,os,shlex,signal,subprocess,sys
 from pathlib import Path
 root=Path(os.environ['FIXTURE']);host=sys.argv[1].split('@')[1];args=sys.argv[2:]
 if os.environ.get('OFFLINE')==host:sys.exit(255)
-if len(args)==1 and args[0].startswith('sudo flock '):
+if len(args)==1 and args[0].startswith('sudo bash -c '):
  namespace=os.environ['JOB_REF'];lock=root/host/'var/lock'/f'vm0-runner-lifecycle-{namespace}.lock';lock.parent.mkdir(parents=True,exist_ok=True)
  command=args[0].removeprefix('sudo ').replace(f'/var/lock/vm0-runner-lifecycle-{namespace}.lock',str(lock))
+ command=command.replace('/run/vm0-runner-lifecycle-receipts',str(root/host/'receipts'))
  status=subprocess.call(['bash','-c',command])
  sys.exit(255 if os.environ.get('RELEASE_ERROR') else status)
 os.environ['FIXTURE_HOST']=str(root/host)
@@ -234,7 +235,14 @@ class CleanupTests(unittest.TestCase):
                         {"ready": sorted(numbers)},
                     )
                     process.stdin.write(
-                        json.dumps({"operation": "cleanup", "numbers": list(numbers)})
+                        json.dumps(
+                            {
+                                "operation": "cleanup",
+                                "closedAt": dict.fromkeys(
+                                    numbers, "2026-10-02T00:00:00Z"
+                                ),
+                            }
+                        )
                         + "\n"
                     )
                     process.stdin.flush()
@@ -337,6 +345,37 @@ class CleanupTests(unittest.TestCase):
         result, payload = self.worker("inventory")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue(payload["42"]["units"][0]["state"]["busy"])
+
+    def test_image_unit_associates_exact_namespace_and_retires_execution(self):
+        for number, digit in ((42, "a"), (420, "b")):
+            identity = digit * 64
+            name = f"vm0-ci-image-pr-{number}-{identity}.service"
+            self.resource("run/systemd/transient/" + name)
+            self.resource(f"var/lib/vm0-runner/bin/pr-{number}/runner")
+            self.state(
+                name,
+                ActiveState="active",
+                MainPID="123",
+                Job="91",
+            )
+        result, payload = self.worker("cleanup", 42)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(payload["42"]["outcome"], "cleaned")
+        self.assertEqual(payload["42"]["units"], 1)
+        result, payload = self.worker("inventory")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(set(payload), {"420"})
+        self.assertTrue(payload["420"]["units"][0]["state"]["busy"])
+
+    def test_unattributed_running_image_preserves_namespaces(self):
+        self.state(
+            "vm0-ci-image-" + "a" * 64 + ".service", ActiveState="active", MainPID="123"
+        )
+        resource = self.resource("var/lib/vm0-runner/bin/pr-42/runner")
+        result = self.controller(RUNNER_PR_NUMBERS="42")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("image unit ownership unavailable", result.stderr)
+        self.assertTrue(resource.exists())
 
     def test_unknown_stop_state_preserves_files_and_fails(self):
         unit = self.resource("etc/systemd/system/vm0-runner-pr-42-api.service")
@@ -837,6 +876,11 @@ class CleanupTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse(selected.exists())
         self.assertTrue(other.exists())
+        # A close event must fence a first claim even with no resources yet.
+        for host in ("metal-a", "metal-b"):
+            cutoff = self.root / host / "var/lock/vm0-runner-lifecycle-pr-9999.lock"
+            self.assertTrue(cutoff.is_file(), result.stdout)
+            self.assertEqual(cutoff.read_text(), "2026-10-02T00:00:00Z\n")
 
     def test_release_failure_does_not_claim_workflow_success(self):
         config = self.resource("var/lib/vm0-runner/stripe/pr-42/config")
@@ -992,7 +1036,13 @@ class CleanupTests(unittest.TestCase):
                     json.loads(process.stdout.readline()), {"ready": [41, 42]}
                 )
                 process.stdin.write(
-                    json.dumps({"operation": "cleanup", "numbers": [41, 42]}) + "\n"
+                    json.dumps(
+                        {
+                            "operation": "cleanup",
+                            "closedAt": dict.fromkeys([41, 42], "2026-10-02T00:00:00Z"),
+                        }
+                    )
+                    + "\n"
                 )
                 process.stdin.flush()
                 readable, _, _ = select.select([descriptor], [], [], 5)
@@ -1040,7 +1090,13 @@ class CleanupTests(unittest.TestCase):
                     json.loads(process.stdout.readline()), {"ready": [41, 42]}
                 )
                 process.stdin.write(
-                    json.dumps({"operation": "cleanup", "numbers": [41, 42]}) + "\n"
+                    json.dumps(
+                        {
+                            "operation": "cleanup",
+                            "closedAt": dict.fromkeys([41, 42], "2026-10-02T00:00:00Z"),
+                        }
+                    )
+                    + "\n"
                 )
                 process.stdin.flush()
                 self.assertTrue(select.select([descriptor], [], [], 5)[0])

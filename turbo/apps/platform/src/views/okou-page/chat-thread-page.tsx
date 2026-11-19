@@ -438,6 +438,14 @@ function runModelDisplayName(
 ): string {
   const model =
     catalog?.displayName(selection.selectedModel) ?? selection.selectedModel;
+  if (selection.serviceTier === "ultrafast") {
+    return t(
+      ($) => {
+        return $.chat.run.ultrafastModelName;
+      },
+      { model },
+    );
+  }
   return fastModeEnabled(selection)
     ? t(
         ($) => {
@@ -3027,7 +3035,7 @@ function ChatThreadNextRunModelNotice({
     selectedModel: selectedSelection.selectedModel ?? AUTO_SELECTED_MODEL,
     ...(selectedSelection.codexServiceTier === "fast"
       ? { serviceTier: "priority" as const }
-      : {}),
+      : { serviceTier: selectedSelection.codexServiceTier }),
   };
   let label: string;
   if (
@@ -3041,6 +3049,19 @@ function ChatThreadNextRunModelNotice({
         return $.chat.run.selectedModelAppliesAfterCurrentRun;
       },
       { model: runModelDisplayName(t, selectedRunSelection, catalog) },
+    );
+  } else if (
+    selectedRunSelection.serviceTier !== runningSelection.serviceTier &&
+    (selectedRunSelection.serviceTier === "ultrafast" ||
+      runningSelection.serviceTier === "ultrafast")
+  ) {
+    label = t(
+      ($) => {
+        return $.chat.run.selectedModelAppliesAfterCurrentRun;
+      },
+      {
+        model: runModelDisplayName(t, selectedRunSelection, catalog),
+      },
     );
   } else if (
     fastModeEnabled(selectedRunSelection) !== fastModeEnabled(runningSelection)
@@ -3287,6 +3308,26 @@ function modelChangeLabel(
   change: RunModelChange,
   catalog: ModelCatalog | undefined,
 ): string {
+  if (change.kind === "speed") {
+    return t(
+      ($) => {
+        return $.chat.run.speedChangedTo;
+      },
+      {
+        speed: change.ultrafast
+          ? t(($) => {
+              return $.settings.models.picker.ultrafast;
+            })
+          : change.fast
+            ? t(($) => {
+                return $.settings.models.picker.fast;
+              })
+            : t(($) => {
+                return $.settings.models.picker.standard;
+              }),
+      },
+    );
+  }
   return change.kind === "model"
     ? t(
         ($) => {

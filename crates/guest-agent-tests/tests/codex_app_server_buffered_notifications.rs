@@ -43,7 +43,6 @@ async fn codex_app_server_delivers_buffered_notifications_before_turn_start_resp
     runtime.http = guest_agent::http::HttpClient::with_api_config(
         &server.base_url,
         "test-token",
-        "",
         run_id,
         Duration::ZERO,
     )?;

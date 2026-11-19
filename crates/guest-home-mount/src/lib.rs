@@ -9,7 +9,7 @@ use std::fs::{self, File};
 use std::io::{self, Write};
 use std::os::fd::{AsFd, AsRawFd};
 use std::os::unix::ffi::OsStrExt;
-use std::os::unix::fs::{FileTypeExt, MetadataExt};
+use std::os::unix::fs::{FileTypeExt, MetadataExt, fchown};
 use std::path::{Component, Path, PathBuf};
 
 use guest_contracts::home_mount::{HOME_DEVICE, HOME_DIR};
@@ -275,12 +275,9 @@ fn open_child_directory_fd(parent: impl AsFd, name: impl AsRef<[u8]>) -> io::Res
     Ok(File::from(fd))
 }
 
-fn repair_owner(directory: &File, uid: u32, gid: u32) -> io::Result<()> {
-    // SAFETY: directory owns a live descriptor; IDs are account-derived.
-    if unsafe { libc::fchown(directory.as_raw_fd(), uid, gid) } != 0 {
-        return Err(io::Error::last_os_error());
-    }
-    validate_owner(directory, uid, gid)
+fn repair_owner(file: &File, uid: u32, gid: u32) -> io::Result<()> {
+    fchown(file, Some(uid), Some(gid))?;
+    validate_owner(file, uid, gid)
 }
 
 fn validate_owner(file: &File, uid: u32, gid: u32) -> io::Result<()> {
@@ -303,17 +300,14 @@ fn initialize_home(_path: &Path, home: &File, uid: u32, gid: u32) -> io::Result<
             break;
         }
     }
-    let cwd_name = CString::new("workspace").map_err(|_| invalid("invalid fixed cwd"))?;
-    // SAFETY: home is live and cwd_name is a fixed NUL-terminated component.
-    let result = unsafe { libc::mkdirat(home.as_raw_fd(), cwd_name.as_ptr(), 0o755) };
-    if result != 0 {
-        let error = io::Error::last_os_error();
-        if error.kind() != io::ErrorKind::AlreadyExists {
-            return Err(error);
-        }
-    }
+    let created =
+        match rustix::fs::mkdirat(home, c"workspace", rustix::fs::Mode::from_raw_mode(0o755)) {
+            Ok(()) => true,
+            Err(rustix::io::Errno::EXIST) => false,
+            Err(error) => return Err(error.into()),
+        };
     let cwd = open_child_directory(home, "workspace")?;
-    if result == 0 {
+    if created {
         repair_owner(&cwd, uid, gid)?;
     }
     // Do not recursively chown hit-owned ordinary files or repair a symlink.

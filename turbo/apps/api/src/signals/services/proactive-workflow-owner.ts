@@ -1,24 +1,65 @@
-import { sql } from "drizzle-orm";
+import { and, eq, exists, or, type SQL } from "drizzle-orm";
+import { alias, QueryBuilder } from "drizzle-orm/pg-core";
 import type { ProactiveWorkflowKind } from "@okouai/api-contracts/contracts/proactive";
+import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
+import { orgMetadata } from "@okouai/db/schema/org-metadata";
+import { agents } from "@okouai/db/schema/agent";
 import type { ProactiveWorkflowOwner } from "./proactive-workflows-eligibility.service";
 
-/** Saved intent and current Agent access are rechecked by the owning SQL write. */
+export function proactiveWorkflowOwnerPreferenceQuery(
+  owner: ProactiveWorkflowOwner,
+  agentId: string,
+  options?: {
+    readonly prerequisite?: SQL;
+    readonly requiredPreference?: ProactiveWorkflowKind;
+  },
+) {
+  const preference = alias(orgMembersMetadata, "proactive_owner_preference");
+  const organization = alias(orgMetadata, "proactive_owner_org");
+  const agent = alias(agents, "proactive_owner_agent");
+  const enabled = {
+    suggestions: preference.proactiveSuggestionsEnabled,
+    learning: preference.proactiveLearningEnabled,
+  };
+  return new QueryBuilder()
+    .select({
+      memberUserId: preference.userId,
+      suggestionsEnabled: enabled.suggestions,
+      learningEnabled: enabled.learning,
+    })
+    .from(preference)
+    .innerJoin(organization, eq(organization.orgId, preference.orgId))
+    .innerJoin(
+      agent,
+      and(
+        eq(agent.id, organization.defaultAgentId),
+        eq(agent.orgId, organization.orgId),
+      ),
+    )
+    .where(
+      and(
+        eq(preference.orgId, owner.orgId),
+        eq(preference.userId, owner.userId),
+        eq(agent.id, agentId),
+        or(eq(agent.visibility, "public"), eq(agent.owner, owner.userId)),
+        options?.prerequisite,
+        options?.requiredPreference === undefined
+          ? undefined
+          : eq(enabled[options.requiredPreference], true),
+      ),
+    );
+}
+
+/** Acquire saved preference and Agent authority together in the owning statement. */
 export function proactiveWorkflowOwnerEnabledSql(
   owner: ProactiveWorkflowOwner,
   agentId: string,
   kind: ProactiveWorkflowKind,
   requirePreference = true,
 ) {
-  const preference = {
-    suggestions: sql`preference.proactive_suggestions_enabled = true`,
-    learning: sql`preference.proactive_learning_enabled = true`,
-  }[kind];
-  return sql`EXISTS (
-    SELECT 1 FROM org_members_metadata AS preference
-    JOIN org_metadata AS organization ON organization.org_id = preference.org_id
-    JOIN agents AS primary_agent ON primary_agent.id = organization.default_agent_id AND primary_agent.org_id = organization.org_id
-    WHERE preference.org_id = ${owner.orgId} AND preference.user_id = ${owner.userId}
-      AND ${requirePreference ? preference : sql`true`} AND primary_agent.id = ${agentId}::uuid
-      AND (primary_agent.visibility = 'public' OR primary_agent.owner = ${owner.userId})
-  )`;
+  return exists(
+    proactiveWorkflowOwnerPreferenceQuery(owner, agentId, {
+      requiredPreference: requirePreference ? kind : undefined,
+    }),
+  );
 }

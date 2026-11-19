@@ -89,7 +89,7 @@ async function admittedConfiguredMcp(
     agentId: owned.agentId,
     prompt: "Use the admitted configured MCP profile",
   });
-  const { execution, sandboxHeaders } = await owned.runExecution(run.runId);
+  const { execution } = await owned.runExecution(run.runId);
   expect(execution.firewalls).toContainEqual({
     kind: "builtin",
     name: catalog.slug,
@@ -99,10 +99,8 @@ async function admittedConfiguredMcp(
     catalog,
     execution,
     connectionId,
-    sandboxHeaders,
+    firewallHeaders: { authorization: `Bearer ${execution.firewallToken}` },
     body: {
-      encryptedSecrets:
-        execution.encryptedSecrets ?? firewall.encryptedSecretsBody({}),
       authHeaders: catalog.firewallAuthHeaders,
       matchedFirewall: {
         name: catalog.slug,
@@ -124,7 +122,7 @@ describe("catalog-owned Automatic MCP static headers", () => {
         catalog,
         execution: receivedExecution,
         body,
-        sandboxHeaders,
+        firewallHeaders,
         connectionId,
       } = await admittedConfiguredMcp(owned);
       expect(receivedExecution.environment).not.toHaveProperty(
@@ -141,7 +139,7 @@ describe("catalog-owned Automatic MCP static headers", () => {
       );
 
       const initial = await accept(
-        firewall.requestFirewallAuth(sandboxHeaders, body, [200]),
+        firewall.requestFirewallAuth(firewallHeaders, body, [200]),
         [200],
       );
       expect(initial.body.headers).toStrictEqual({
@@ -151,7 +149,7 @@ describe("catalog-owned Automatic MCP static headers", () => {
       });
       const refreshed = await accept(
         firewall.requestFirewallAuth(
-          sandboxHeaders,
+          firewallHeaders,
           {
             ...body,
             forceRefresh: true,
@@ -172,7 +170,7 @@ describe("catalog-owned Automatic MCP static headers", () => {
         connectionId,
       );
       const deleted = await accept(
-        firewall.requestFirewallAuth(sandboxHeaders, body, [424]),
+        firewall.requestFirewallAuth(firewallHeaders, body, [424]),
         [424],
       );
       expect(deleted.body.error.code).toBe("CONNECTOR_NOT_CONFIGURED");
@@ -182,7 +180,7 @@ describe("catalog-owned Automatic MCP static headers", () => {
   it("denies omitted, changed and additional request policy without poisoning the accepted profile", async () => {
     const owned = await publicChatActor(context);
     await owned.run(async () => {
-      const { body, sandboxHeaders } = await admittedConfiguredMcp(owned);
+      const { body, firewallHeaders } = await admittedConfiguredMcp(owned);
       const authorization = body.authHeaders.Authorization;
       if (authorization === undefined) {
         throw new Error("Expected the configured catalog OAuth bearer");
@@ -197,7 +195,7 @@ describe("catalog-owned Automatic MCP static headers", () => {
       for (const authHeaders of rejectedProfiles) {
         const denied = await accept(
           firewall.requestFirewallAuth(
-            sandboxHeaders,
+            firewallHeaders,
             { ...body, authHeaders },
             [424],
           ),
@@ -211,7 +209,7 @@ describe("catalog-owned Automatic MCP static headers", () => {
       ]) {
         const denied = await accept(
           firewall.requestFirewallAuth(
-            sandboxHeaders,
+            firewallHeaders,
             { ...body, ...extra },
             [424],
           ),
@@ -220,7 +218,7 @@ describe("catalog-owned Automatic MCP static headers", () => {
         expect(denied.body.error.code).toBe("CONNECTOR_NOT_CONFIGURED");
       }
       const wrongSource = await firewall.requestFirewallAuth(
-        sandboxHeaders,
+        firewallHeaders,
         {
           ...body,
           matchedFirewall: { ...body.matchedFirewall, sourceId: randomUUID() },
@@ -230,7 +228,7 @@ describe("catalog-owned Automatic MCP static headers", () => {
       expect(wrongSource.status).not.toBe(200);
 
       const accepted = await accept(
-        firewall.requestFirewallAuth(sandboxHeaders, body, [200]),
+        firewall.requestFirewallAuth(firewallHeaders, body, [200]),
         [200],
       );
       expect(accepted.body.headers).toStrictEqual({

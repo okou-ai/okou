@@ -42,7 +42,6 @@ async fn codex_app_server_delivers_notification_above_former_stdout_limit()
     runtime.http = guest_agent::http::HttpClient::with_api_config(
         &server.base_url,
         "test-token",
-        "",
         run_id,
         Duration::ZERO,
     )?;
