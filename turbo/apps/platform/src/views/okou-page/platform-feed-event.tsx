@@ -1,6 +1,6 @@
-import { useGet, useLastResolved, useSet } from "ccstate-react";
+import type { ReactNode } from "react";
+import { useGet, useLastResolved } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
-import { Info } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@okouai/ui";
 import { resolvedAppLocale } from "../../i18n/format.ts";
@@ -10,7 +10,7 @@ import { ROUTES } from "../../signals/route-paths.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { Link } from "../router/link.tsx";
 import { userPreferences$ } from "../../signals/okou-page/settings/user-preferences.ts";
-import { focusSuggestionTitleOnRef$ } from "../../signals/okou-page/agent-suggestion-session.ts";
+import { ForYouCardHeading } from "./for-you-card-heading.tsx";
 
 function formatPauseTime(disabledAt: string, timeZone: string | undefined) {
   return new Date(disabledAt).toLocaleString(resolvedAppLocale(), {
@@ -27,61 +27,32 @@ function formatPauseTime(disabledAt: string, timeZone: string | undefined) {
 export function PlatformFeedEvent({
   entry,
   active,
+  navigation,
 }: {
   readonly entry: ReturnType<typeof createPlatformEventEntry>;
   readonly active: boolean;
+  readonly navigation: ReactNode;
 }) {
   const { t } = useTranslation();
   const signal = useGet(pageSignal$);
   const [dismissal, dismiss] = useLoadableSet(entry.dismiss$);
   const [activation, enable] = useLoadableSet(entry.enable$);
   const preferences = useLastResolved(userPreferences$);
-  const focusTitle = useSet(focusSuggestionTitleOnRef$);
   const { content } = entry.item;
   const busy = activation.state === "loading" || dismissal.state === "loading";
   return (
-    <>
-      <div className="mb-6 flex items-center gap-2 text-xs text-muted-foreground">
-        <Info aria-hidden className="size-4" />
-        {t(($) => {
-          return $.feedEvents.automationDisabled.systemSource;
+    <article
+      aria-labelledby={`suggestion-title-${entry.item.id}`}
+      className="flex flex-1 flex-col"
+    >
+      <ForYouCardHeading
+        id={entry.item.id}
+        active={active}
+        title={t(($) => {
+          return $.feedEvents.automationDisabled.title;
         })}
-      </div>
-      <div className="flex flex-1 flex-col gap-4">
-        <h2
-          ref={active ? focusTitle : undefined}
-          tabIndex={-1}
-          className="break-words text-xl font-medium leading-tight focus:outline-none"
-        >
-          {t(($) => {
-            return $.feedEvents.automationDisabled.title;
-          })}
-        </h2>
-        <div className="flex flex-col gap-1.5 text-sm leading-relaxed wrap-break-word">
-          <p className="font-medium">{content.automationName}</p>
-          {content.automationDescription && (
-            <p className="whitespace-pre-wrap text-muted-foreground">
-              {content.automationDescription}
-            </p>
-          )}
-        </div>
-        <p className="text-sm leading-relaxed text-muted-foreground">
-          {t(
-            ($) => {
-              return $.feedEvents.automationDisabled.reason;
-            },
-            {
-              count: content.consecutiveFailures,
-            },
-          )}
-          {content.recoveryScheduled && (
-            <>
-              {" "}
-              {t(($) => {
-                return $.feedEvents.automationDisabled.recoveryScheduled;
-              })}
-            </>
-          )}{" "}
+        description={content.automationDescription ?? undefined}
+        source={
           <Link
             pathname={ROUTES.workflowDetailAutomations}
             options={{
@@ -93,16 +64,39 @@ export function PlatformFeedEvent({
             }}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-block font-medium text-foreground underline decoration-foreground/40 underline-offset-2 transition-colors hover:decoration-current"
-          >
-            {t(($) => {
+            className="inline-block max-w-full truncate rounded-md text-xs text-muted-foreground underline decoration-border underline-offset-4 hover:bg-state-hover hover:text-foreground"
+            aria-label={t(($) => {
               return $.feedEvents.automationDisabled.viewAutomation;
             })}
+          >
+            {content.automationName}
           </Link>
+        }
+      />
+      <div className="mt-6 space-y-3 rounded-3xl bg-nested-fill p-4">
+        <p className="text-xs text-muted-foreground">
+          {t(($) => {
+            return $.feedEvents.automationDisabled.systemSource;
+          })}
         </p>
+        <p className="text-sm leading-6 text-foreground">
+          {t(
+            ($) => {
+              return $.feedEvents.automationDisabled.reason;
+            },
+            { count: content.consecutiveFailures },
+          )}
+        </p>
+        {content.recoveryScheduled && (
+          <p className="text-sm leading-6 text-muted-foreground">
+            {t(($) => {
+              return $.feedEvents.automationDisabled.recoveryScheduled;
+            })}
+          </p>
+        )}
         <time
           dateTime={content.disabledAt}
-          className="text-xs text-muted-foreground"
+          className="block text-xs text-muted-foreground"
         >
           {t(
             ($) => {
@@ -113,13 +107,15 @@ export function PlatformFeedEvent({
             },
           )}
         </time>
-        <div className="mt-auto flex flex-wrap items-center gap-3 pt-6">
+      </div>
+      <footer className="mt-6 flex items-center justify-between gap-3 border-t border-border pt-4">
+        <div className="flex flex-wrap items-center gap-2">
           <Button
             variant="default"
             disabled={busy}
             pending={activation.state === "loading"}
             onClick={() => {
-              return detach(enable(signal), Reason.DomCallback);
+              detach(enable(signal), Reason.DomCallback);
             }}
           >
             {t(($) => {
@@ -131,7 +127,7 @@ export function PlatformFeedEvent({
             disabled={busy}
             pending={dismissal.state === "loading"}
             onClick={() => {
-              return detach(dismiss(signal), Reason.DomCallback);
+              detach(dismiss(signal), Reason.DomCallback);
             }}
           >
             {t(($) => {
@@ -139,16 +135,16 @@ export function PlatformFeedEvent({
             })}
           </Button>
         </div>
-        {!busy &&
-          (activation.state === "hasError" ||
-            dismissal.state === "hasError") && (
-            <p role="alert" className="text-sm text-destructive">
-              {t(($) => {
-                return $.feedEvents.automationDisabled.actionFailed;
-              })}
-            </p>
-          )}
-      </div>
-    </>
+        {navigation}
+      </footer>
+      {!busy &&
+        (activation.state === "hasError" || dismissal.state === "hasError") && (
+          <p role="alert" className="mt-3 text-sm text-destructive">
+            {t(($) => {
+              return $.feedEvents.automationDisabled.actionFailed;
+            })}
+          </p>
+        )}
+    </article>
   );
 }

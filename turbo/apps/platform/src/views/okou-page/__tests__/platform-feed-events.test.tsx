@@ -421,12 +421,14 @@ test("A pause update explains the failure, shows the description, and links to t
   expect(within(card).getByText("Daily work summary")).toBeInTheDocument();
   expect(within(card).getByText(AUTOMATION_DESCRIPTION)).toBeInTheDocument();
   expect(within(card).getByText("System update")).toBeInTheDocument();
-  const reason = within(card).getByText(/3 consecutive run attempts/u);
+  expect(
+    within(card).getByText(/3 consecutive run attempts/u),
+  ).toBeInTheDocument();
   const timestamp = within(card).getByText(/^Paused on /u);
   expect(timestamp).toHaveAttribute("datetime", DISABLED_AT);
   expect(timestamp).toHaveTextContent("2026");
   expect(timestamp).toHaveTextContent("11:00 AM");
-  const link = control("link", "View automation", reason);
+  const link = control("link", "View automation", card);
   expect(link).toHaveAttribute("href", destination());
   expect(link).toHaveAttribute("target", "_blank");
   expect(link).toHaveAttribute("rel", "noopener noreferrer");

@@ -1650,7 +1650,11 @@
       "dismiss": "खारिज करें",
       "dismissRecorded": "Suggestion dismissed",
       "doneRecorded": "Noted — this is already done",
+      "dontNudge": "मुझे जल्दी न करवाएँ",
+      "dontNudgeRecorded": "नोट कर लिया: इस बारे में फिर जल्दी न करवाएँ",
+      "editDraft": "मौजूदा चैट में ड्राफ़्ट तैयार करें",
       "editReason": "Edit reason",
+      "feedbackPrompt": "यह सुझाव कैसा लगा?",
       "feedLabel": "फ़ीड",
       "forYou": {
         "loading": "सुझाव लोड हो रहे हैं",
@@ -1684,9 +1688,11 @@
       "reasonLabel": "Add a reason (optional)",
       "saveReason": "Save",
       "sending": "भेजा जा रहा है…",
+      "sendNew": "नई चैट में भेजें",
       "sent": "नई चैट में भेजा गया",
       "unavailable": "यह सुझाव अब उपलब्ध नहीं है। सुझाव रीफ़्रेश कर दिए गए हैं।",
-      "undoFeedback": "Undo"
+      "undoFeedback": "Undo",
+      "viewSource": "स्रोत देखें"
     },
     "attachments": {
       "attach": "अटैच करें",

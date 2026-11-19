@@ -1,6 +1,6 @@
 import { command, computed, state, type Computed } from "ccstate";
 import { searchParams$, updateSearchParams$ } from "../route.ts";
-import { onRef, waitForToken } from "../utils.ts";
+import { onDomEventFn, onRef, waitForToken } from "../utils.ts";
 import {
   agentSuggestionEntries$,
   agentSuggestionListItems$,
@@ -52,8 +52,18 @@ export const forYouDeck$ = computed(async (get) => {
     return item ? [item] : [];
   });
   const settledOrder = get(settledFeedOrder$);
+  const progressCards = entries.flatMap((entry) => {
+    const card = waiting.find((candidate) => {
+      return candidate.entry === entry;
+    });
+    return card ? [card] : [];
+  });
   return {
     cards,
+    progressCards,
+    illustrationIds: entries.map((entry) => {
+      return entry.item.id;
+    }),
     settled: items
       .filter(({ outcome }) => {
         return outcome !== null;
@@ -164,5 +174,58 @@ export const finishForYouPaginationOnRef$ = onRef(
     if (get(forYouPagination$) === pagination) {
       set(paginationState$, null);
     }
+  }),
+);
+
+/** Swipe is scoped to the card; native text inputs and links keep their gestures. */
+export const swipeForYouOnRef$ = onRef<HTMLElement>(
+  command(({ get, set }, card: HTMLElement, signal: AbortSignal) => {
+    let origin: { x: number; y: number; id: number } | null = null;
+    card.addEventListener(
+      "pointerdown",
+      (event) => {
+        if (
+          event.button !== 0 ||
+          !(event.target instanceof Element) ||
+          event.target.closest(
+            "button,a,input,textarea,select,[contenteditable],form",
+          )
+        ) {
+          return;
+        }
+        origin = { x: event.clientX, y: event.clientY, id: event.pointerId };
+      },
+      { signal },
+    );
+    card.addEventListener(
+      "pointercancel",
+      () => {
+        origin = null;
+      },
+      { signal },
+    );
+    card.addEventListener(
+      "pointerup",
+      onDomEventFn(async (event: PointerEvent) => {
+        const start = origin;
+        origin = null;
+        if (!start || start.id !== event.pointerId) {
+          return;
+        }
+        const dx = event.clientX - start.x;
+        const dy = event.clientY - start.y;
+        if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) {
+          return;
+        }
+        const { cards } = await get(forYouDeck$);
+        signal.throwIfAborted();
+        const direction = dx < 0 ? "next" : "previous";
+        const target = direction === "next" ? cards[1] : cards.at(-1);
+        if (target) {
+          await set(browseForYou$, target.entry.item.id, direction, signal);
+        }
+      }),
+      { signal },
+    );
   }),
 );

@@ -1646,7 +1646,11 @@
       "dismiss": "Abaikan",
       "dismissRecorded": "Suggestion dismissed",
       "doneRecorded": "Noted — this is already done",
+      "dontNudge": "Jangan desak saya",
+      "dontNudgeRecorded": "Dicatat: jangan desak saya lagi soal ini",
+      "editDraft": "Siapkan draf di chat yang ada",
       "editReason": "Edit reason",
+      "feedbackPrompt": "Bagaimana saran ini?",
       "feedLabel": "Feed",
       "forYou": {
         "loading": "Memuat saran",
@@ -1680,9 +1684,11 @@
       "reasonLabel": "Add a reason (optional)",
       "saveReason": "Save",
       "sending": "Mengirim…",
+      "sendNew": "Kirim ke chat baru",
       "sent": "Dikirim ke chat baru",
       "unavailable": "Saran itu sudah tidak tersedia. Daftar saran telah diperbarui.",
-      "undoFeedback": "Undo"
+      "undoFeedback": "Undo",
+      "viewSource": "Lihat sumber"
     },
     "attachments": {
       "attach": "Lampirkan",

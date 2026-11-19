@@ -1675,7 +1675,11 @@
       "dismiss": "Ignora",
       "dismissRecorded": "Suggestion dismissed",
       "doneRecorded": "Noted — this is already done",
+      "dontNudge": "Non insistere",
+      "dontNudgeRecorded": "Annotato: non insistere più su questo",
+      "editDraft": "Prepara una bozza nella chat esistente",
       "editReason": "Edit reason",
+      "feedbackPrompt": "Cosa pensi di questo suggerimento?",
       "feedLabel": "Feed",
       "forYou": {
         "loading": "Caricamento dei suggerimenti",
@@ -1709,9 +1713,11 @@
       "reasonLabel": "Add a reason (optional)",
       "saveReason": "Save",
       "sending": "Invio in corso…",
+      "sendNew": "Invia a una nuova chat",
       "sent": "Inviato in una nuova chat",
       "unavailable": "Questo suggerimento non è più disponibile. I suggerimenti sono stati aggiornati.",
-      "undoFeedback": "Undo"
+      "undoFeedback": "Undo",
+      "viewSource": "Vedi origine"
     },
     "attachments": {
       "attach": "Allega",

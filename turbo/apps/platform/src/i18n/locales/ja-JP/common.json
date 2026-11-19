@@ -1646,7 +1646,11 @@
       "dismiss": "非表示にする",
       "dismissRecorded": "Suggestion dismissed",
       "doneRecorded": "Noted — this is already done",
+      "dontNudge": "急かさないで",
+      "dontNudgeRecorded": "この件を急かさないように記録しました",
+      "editDraft": "既存のチャットに下書きを作成",
       "editReason": "Edit reason",
+      "feedbackPrompt": "この提案はいかがですか？",
       "feedLabel": "フィード",
       "forYou": {
         "loading": "提案を読み込み中",
@@ -1680,9 +1684,11 @@
       "reasonLabel": "Add a reason (optional)",
       "saveReason": "Save",
       "sending": "送信中…",
+      "sendNew": "新しいチャットに送信",
       "sent": "新しいチャットに送信しました",
       "unavailable": "この提案は利用できなくなりました。提案を更新しました。",
-      "undoFeedback": "Undo"
+      "undoFeedback": "Undo",
+      "viewSource": "参照元を見る"
     },
     "attachments": {
       "attach": "添付する",
