@@ -196,13 +196,13 @@ function PwaChatThreads({
   scrollSignals: SidebarChatThreadScrollSignals;
 }) {
   const { t } = useTranslation();
-  const count = useGet(listSignals.count$);
-  const rowCount = useGet(listSignals.rowCount$);
-  const window = useGet(listSignals.window$);
-  const hasHiddenArchivedThreads = useGet(
-    listSignals.hasHiddenArchivedThreads$,
-  );
+  const count = useLastResolved(listSignals.count$);
+  const hasHiddenArchivedThreads =
+    useLastResolved(listSignals.hasHiddenArchivedThreads$) ?? false;
 
+  if (count === undefined) {
+    return null;
+  }
   if (count === 0) {
     return (
       <PwaChatListEmpty hasHiddenArchivedThreads={hasHiddenArchivedThreads} />
@@ -224,13 +224,14 @@ function PwaChatThreads({
         touch
         layout="list"
         shortcuts={false}
-        height={rowCount * PWA_CHAT_THREAD_ROW_HEIGHT}
       >
-        {window.showAllChatsRow ? (
-          <div className="flex h-15 w-full items-center pb-1">
-            <ShowAllChatsButton />
-          </div>
-        ) : null}
+        {(showAllChatsRow) => {
+          return showAllChatsRow ? (
+            <div className="flex h-15 w-full items-center pb-1">
+              <ShowAllChatsButton />
+            </div>
+          ) : null;
+        }}
       </ChatThreadListRows>
     </OverlayScrollArea>
   );

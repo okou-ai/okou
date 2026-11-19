@@ -1,12 +1,7 @@
 import { command, computed, state } from "ccstate";
 import { eventDrivenChatThreads$ } from "../chat-page/chat-thread-event-sourcing.ts";
 import { onRef } from "../utils.ts";
-import {
-  moveProjectThread$,
-  projectedProjects$,
-  projects$,
-  projectsEnabled$,
-} from "./projects.ts";
+import { moveProjectThread$, projects$, projectsEnabled$ } from "./projects.ts";
 
 export const PROJECT_THREAD_DRAG_TYPE = "application/x-okou-chat-thread";
 
@@ -30,7 +25,7 @@ export const projectThreadDropTargetId$ = computed((get) => {
   return get(dropTarget$)?.projectId;
 });
 
-export const projectThreadDragHint$ = computed((get) => {
+export const projectThreadDragHint$ = computed(async (get) => {
   const target = get(dropTarget$);
   const thread = get(draggingProjectThread$);
   if (!target || !thread || thread.projectId === target.projectId) {
@@ -39,7 +34,7 @@ export const projectThreadDragHint$ = computed((get) => {
   if (target.projectId === null) {
     return { ...target, name: null };
   }
-  const project = get(projectedProjects$).find((item) => {
+  const project = (await get(projects$)).find((item) => {
     return item.id === target.projectId;
   });
   return project ? { ...target, name: project.name } : null;

@@ -32,40 +32,40 @@ export function setupGlobalShortcut(
   bindings: GlobalShortcutBindings,
   signal: AbortSignal,
   options: GlobalShortcutSetupOptions = {},
-): void {
+): () => void {
   const doc = options.doc ?? document;
-  doc.addEventListener(
-    "keydown",
-    onDomEventFn((e: KeyboardEvent) => {
-      if (
-        e.defaultPrevented ||
-        // The embedded browser owns its keyboard, including shortcuts that
-        // the host normally handles inside editable controls.
-        e.composedPath().some((node) => {
-          return (
-            node instanceof HTMLElement &&
-            node.dataset.browserSessionCdpViewer !== undefined
-          );
-        }) ||
-        hasOpenDialog(doc) ||
-        options.shouldHandleEvent?.(e) === false
-      ) {
-        return;
-      }
-      for (const [shortcut, binding] of Object.entries(bindings)) {
-        if (matchShortcut(shortcut, e)) {
-          if (binding.shouldHandle?.(e) === false) {
-            continue;
-          }
-          if (isEditableTarget(e.target) && !binding.allowInEditableTarget) {
-            return;
-          }
-          e.preventDefault();
-          e.stopPropagation();
-          return binding.run(e);
+  const onKeyDown = onDomEventFn((e: KeyboardEvent) => {
+    if (
+      e.defaultPrevented ||
+      // The embedded browser owns its keyboard, including shortcuts that
+      // the host normally handles inside editable controls.
+      e.composedPath().some((node) => {
+        return (
+          node instanceof HTMLElement &&
+          node.dataset.browserSessionCdpViewer !== undefined
+        );
+      }) ||
+      hasOpenDialog(doc) ||
+      options.shouldHandleEvent?.(e) === false
+    ) {
+      return;
+    }
+    for (const [shortcut, binding] of Object.entries(bindings)) {
+      if (matchShortcut(shortcut, e)) {
+        if (binding.shouldHandle?.(e) === false) {
+          continue;
         }
+        if (isEditableTarget(e.target) && !binding.allowInEditableTarget) {
+          return;
+        }
+        e.preventDefault();
+        e.stopPropagation();
+        return binding.run(e);
       }
-    }),
-    { capture: true, signal },
-  );
+    }
+  });
+  doc.addEventListener("keydown", onKeyDown, { capture: true, signal });
+  return () => {
+    doc.removeEventListener("keydown", onKeyDown, true);
+  };
 }

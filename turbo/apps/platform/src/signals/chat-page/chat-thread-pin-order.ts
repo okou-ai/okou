@@ -103,17 +103,19 @@ export const stepPinnedThread$ = command(
     signal.throwIfAborted();
     // A pin steps over the pins listed with it: the other chats of its
     // Project, or else the chats outside Projects.
-    const projectThreads = get(list.projectThreads$);
+    const projectThreads = await get(list.projectThreads$);
+    signal.throwIfAborted();
     const projectId =
       projectThreads.find((item) => {
         return item.id === threadId;
       })?.projectId ?? null;
     const listed =
       projectId === null
-        ? get(list.threads$)
+        ? await get(list.threads$)
         : projectThreads.filter((item) => {
             return item.projectId === projectId;
           });
+    signal.throwIfAborted();
     const pins = listed.filter((item) => {
       return item.pinnedAt !== null;
     });

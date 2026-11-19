@@ -24,6 +24,7 @@ export interface ProjectFoldMotion {
   readonly id: string;
   readonly projectId: string;
   readonly logicalRows: readonly SidebarChatThreadRow[];
+  readonly rowSource: Promise<readonly SidebarChatThreadRow[]>;
   readonly expandedRows: readonly SidebarChatThreadRow[];
   readonly geometry: ProjectFoldGeometry;
   readonly range: ReturnType<typeof getProjectFoldRange>;
@@ -38,7 +39,7 @@ interface FoldViewport {
   }>;
 }
 interface FoldRequest {
-  readonly rows$: Computed<readonly SidebarChatThreadRow[]>;
+  readonly rows$: Computed<Promise<readonly SidebarChatThreadRow[]>>;
   readonly trailingRow: boolean;
   readonly projectId: string;
   readonly expanded: boolean;
@@ -64,8 +65,8 @@ function createFoldDomSignals() {
     return get(internalMotion$);
   });
   const cancel$ = command(({ get, set }) => {
+    set(restart$);
     if (get(internalMotion$)) {
-      set(restart$);
       set(internalMotion$, null);
     }
   });
@@ -116,45 +117,48 @@ function createFoldDomSignals() {
 type FoldDomSignals = ReturnType<typeof createFoldDomSignals>;
 
 function createCaptureFoldCommand(dom: FoldDomSignals, rowHeight: number) {
-  return command(({ get, set }, request: FoldRequest) => {
-    const { rows$, projectId, expanded } = request;
-    const before = get(rows$);
-    const candidate = get(dom.internalMotion$);
-    // A source revision revokes retention; a later input cannot revive it.
-    const previous = candidate?.logicalRows === before ? candidate : null;
-    const header = before.find((row) => {
-      return row.kind === "project" && row.project.id === projectId;
-    });
-    if (!header || header.kind !== "project") {
-      set(dom.cancel$);
-      set(expanded ? expandProject$ : collapseProject$, projectId);
-      return null;
-    }
-    if (header.expanded === expanded) {
-      return null;
-    }
-    const host = get(dom.host$);
-    const oldBlock = host
-      ? [
-          ...host.querySelectorAll<HTMLElement>("[data-project-children-id]"),
-        ].find((element) => {
-          return element.dataset.projectChildrenId === projectId;
-        })
-      : undefined;
-    // Sample displayed geometry once, at reversal intent, before cancellation.
-    const fromHeight =
-      previous?.projectId === projectId && oldBlock
-        ? oldBlock.getBoundingClientRect().height
-        : expanded
-          ? 0
-          : before.filter((row) => {
-              return row.projectId === projectId && row.kind !== "project";
-            }).length * rowHeight;
-    return { previous, before, host, oldBlock, fromHeight };
-  });
+  return command(
+    async ({ get, set }, request: FoldRequest, signal: AbortSignal) => {
+      const { rows$, projectId, expanded } = request;
+      const before = await get(rows$);
+      signal.throwIfAborted();
+      const candidate = get(dom.internalMotion$);
+      // A source revision revokes retention; a later input cannot revive it.
+      const previous = candidate?.logicalRows === before ? candidate : null;
+      const header = before.find((row) => {
+        return row.kind === "project" && row.project.id === projectId;
+      });
+      if (!header || header.kind !== "project") {
+        set(dom.cancel$);
+        set(expanded ? expandProject$ : collapseProject$, projectId);
+        return null;
+      }
+      if (header.expanded === expanded) {
+        return null;
+      }
+      const host = get(dom.host$);
+      const oldBlock = host
+        ? [
+            ...host.querySelectorAll<HTMLElement>("[data-project-children-id]"),
+          ].find((element) => {
+            return element.dataset.projectChildrenId === projectId;
+          })
+        : undefined;
+      // Sample displayed geometry once, at reversal intent, before cancellation.
+      const fromHeight =
+        previous?.projectId === projectId && oldBlock
+          ? oldBlock.getBoundingClientRect().height
+          : expanded
+            ? 0
+            : before.filter((row) => {
+                return row.projectId === projectId && row.kind !== "project";
+              }).length * rowHeight;
+      return { previous, before, host, oldBlock, fromHeight };
+    },
+  );
 }
 type FoldCapture = NonNullable<
-  ReturnType<ReturnType<typeof createCaptureFoldCommand>["write"]>
+  Awaited<ReturnType<ReturnType<typeof createCaptureFoldCommand>["write"]>>
 >;
 
 function createPrepareFoldCommand(
@@ -163,7 +167,7 @@ function createPrepareFoldCommand(
   rowHeight: number,
 ) {
   return command(
-    (
+    async (
       { get, set },
       request: FoldRequest,
       capture: FoldCapture,
@@ -172,10 +176,12 @@ function createPrepareFoldCommand(
       signal.throwIfAborted();
       const { rows$, trailingRow, projectId, expanded } = request;
       const { previous, before, host, oldBlock, fromHeight } = capture;
-      // ccstate publishes the command's domain/presentation writes together.
+      // Capture the new domain projection before publishing motion.
       set(dom.internalMotion$, null);
       set(expanded ? expandProject$ : collapseProject$, projectId);
-      const logicalRows = get(rows$);
+      const rowSource = get(rows$);
+      const logicalRows = await rowSource;
+      signal.throwIfAborted();
       const expandedRows = expanded
         ? logicalRows
         : previous?.projectId === projectId
@@ -223,6 +229,7 @@ function createPrepareFoldCommand(
         id: crypto.randomUUID(),
         projectId,
         logicalRows,
+        rowSource,
         expandedRows,
         geometry,
         range,
@@ -296,7 +303,7 @@ function createRunFoldCommand(dom: FoldDomSignals) {
       const list = get(dom.list$);
       if (
         !list ||
-        get(list.rows$) !== prepared.logicalRows ||
+        get(list.rows$) !== prepared.rowSource ||
         get(dom.host$) !== host
       ) {
         finish();
@@ -316,7 +323,7 @@ function createRunFoldCommand(dom: FoldDomSignals) {
       block.getBoundingClientRect();
       await waitForFoldFrame(signal);
       signal.throwIfAborted();
-      if (get(list.rows$) !== prepared.logicalRows || get(dom.host$) !== host) {
+      if (get(list.rows$) !== prepared.rowSource || get(dom.host$) !== host) {
         finish();
         return;
       }
@@ -327,7 +334,7 @@ function createRunFoldCommand(dom: FoldDomSignals) {
       });
       signal.throwIfAborted();
       if (
-        get(list.rows$) !== prepared.logicalRows ||
+        get(list.rows$) !== prepared.rowSource ||
         get(dom.host$) !== host ||
         !matchesFoldDom(host, block, transaction)
       ) {
@@ -367,14 +374,15 @@ export function createProjectFoldMotionSignals(
   const prepare$ = createPrepareFoldCommand(viewport, dom, rowHeight);
   const run$ = createRunFoldCommand(dom);
   const fold$ = command(
-    async ({ set }, request: FoldRequest, owner: AbortSignal) => {
+    async ({ get, set }, request: FoldRequest, owner: AbortSignal) => {
       owner.throwIfAborted();
-      const capture = set(capture$, request);
-      if (!capture) {
+      const host = get(dom.host$);
+      const capture = await set(capture$, request, owner);
+      if (!capture || get(dom.host$) !== host) {
         return;
       }
       const signal = set(dom.restart$, owner);
-      const prepared = set(prepare$, request, capture, signal);
+      const prepared = await set(prepare$, request, capture, signal);
       if (prepared && capture.host) {
         await set(run$, prepared, capture.host, signal);
       }

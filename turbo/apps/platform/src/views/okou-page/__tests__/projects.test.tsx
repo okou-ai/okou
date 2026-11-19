@@ -376,7 +376,9 @@ test("Projects stay visible when returning from a chat to My Okou during a refre
     featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
     sharedWorkerTestTransport: "message-port",
   });
-  click(projectToggle("Launch"));
+  await act(() => {
+    click(projectToggle("Launch"));
+  });
   expect(namedLink(projectRows(), "Launch planning")).toBeInTheDocument();
   const home = await waitFor(() => {
     const link = document.querySelector('a[href="/"]');
@@ -482,8 +484,12 @@ test("Projects remember open and collapsed states after a page reload", async ()
     "false",
   );
 
-  click(projectToggle("Launch"));
-  click(projectToggle("Research", otherId));
+  await act(() => {
+    click(projectToggle("Launch"));
+  });
+  await act(() => {
+    click(projectToggle("Research", otherId));
+  });
   expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "false");
   expect(namedLink(projectRows(otherId), "Research notes")).toBeInTheDocument();
 
@@ -517,7 +523,9 @@ test.each(["account", "workspace"] as const)(
       featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
     };
     await setupPage({ context: { ...context, signal }, ...options });
-    click(projectToggle("Launch"));
+    await act(() => {
+      click(projectToggle("Launch"));
+    });
     expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "true");
 
     context.store.set(resetPage$);
@@ -540,7 +548,9 @@ test.each(["account", "workspace"] as const)(
     });
 
     expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "false");
-    click(projectToggle("Launch"));
+    await act(() => {
+      click(projectToggle("Launch"));
+    });
     expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "true");
   },
 );
@@ -569,9 +579,13 @@ test.each(["not json", '{"invalid":"true"}'])(
     });
 
     expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "false");
-    click(projectToggle("Launch"));
+    await act(() => {
+      click(projectToggle("Launch"));
+    });
     expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "true");
-    click(projectToggle("Launch"));
+    await act(() => {
+      click(projectToggle("Launch"));
+    });
     expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "false");
   },
 );
@@ -717,14 +731,18 @@ test("Project titles only fold chats, while the + link opens and selects their h
   const { b } = await setupProjectNavigation(223, "/chats/:b");
   expect(projectTitle("Launch")).toHaveAttribute("aria-expanded", "false");
 
-  click(projectTitle("Launch"));
+  await act(() => {
+    click(projectTitle("Launch"));
+  });
   expect(projectTitle("Launch")).toHaveAttribute("aria-expanded", "true");
   expect(namedLink(projectRows(), "Thread A2")).toBeInTheDocument();
   expect(threadLink(b.id)).toHaveAttribute("aria-current", "page");
   expect(location.pathname).toBe(`/chats/${b.id}`);
 
   // An expanded, unselected Project folds with one click too.
-  click(projectTitle("Launch"));
+  await act(() => {
+    click(projectTitle("Launch"));
+  });
   expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "false");
   expect(threadLink(b.id)).toHaveAttribute("aria-current", "page");
 
@@ -736,7 +754,9 @@ test("Project titles only fold chats, while the + link opens and selects their h
   expect(projectLink("Launch")).toHaveAttribute("aria-current", "page");
   expect(projectTitle("Launch")).toHaveAttribute("aria-expanded", "false");
 
-  click(projectTitle("Launch"));
+  await act(() => {
+    click(projectTitle("Launch"));
+  });
   expect(projectTitle("Launch")).toHaveAttribute("aria-expanded", "true");
   expect(namedLink(projectRows(), "Thread A2")).toBeInTheDocument();
   expect(projectLink("Launch")).toHaveAttribute("aria-current", "page");
@@ -936,7 +956,9 @@ test("A folded Project prioritizes unread over running chats, and an unfolded on
     runningIndicatorPhase(projectStateIndicator("Build", buildId)),
   ).toBeCloseTo(-10 / 12, 10);
 
-  click(projectToggle("Research", researchId));
+  await act(() => {
+    click(projectToggle("Research", researchId));
+  });
   await waitFor(() => {
     expect(threadLink(researchRunning.id)).toHaveAccessibleName(
       "Research build Running",
@@ -948,7 +970,9 @@ test("A folded Project prioritizes unread over running chats, and an unfolded on
   expect(projectTrigger(researchId)).toHaveAccessibleDescription("");
   expect(projectStateIndicator("Research", researchId)).toBeNull();
 
-  click(projectToggle("Research", researchId));
+  await act(() => {
+    click(projectToggle("Research", researchId));
+  });
   expect(projectTrigger(researchId)).toHaveAccessibleDescription("Unread");
 
   // The Unread list leaves the running chat out, so Research hides only
@@ -1940,7 +1964,9 @@ test("Dropping over an existing Project chat moves immediately while the request
     ...workspace.pageOptions,
     featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
   });
-  click(projectToggle("Launch"));
+  await act(() => {
+    click(projectToggle("Launch"));
+  });
   const source = threadLink(ordinary.id);
   const target = threadLink(member.id);
   const dataTransfer = createDataTransferStub({ "text/uri-list": source.href });
@@ -2074,7 +2100,9 @@ test("A cross-Agent Project chat can be dragged onto another collapsed Project",
     ...workspace.pageOptions,
     featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
   });
-  click(projectToggle("Launch"));
+  await act(() => {
+    click(projectToggle("Launch"));
+  });
   expect(projectToggle("Research", secondId)).toHaveAttribute(
     "aria-expanded",
     "false",
@@ -2121,7 +2149,9 @@ test("Escape cancels a Project drag, and unrelated drags or the current Project 
     ...workspace.pageOptions,
     featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
   });
-  click(projectToggle("Launch"));
+  await act(() => {
+    click(projectToggle("Launch"));
+  });
   const dataTransfer = createDataTransferStub();
   fireEvent.dragStart(threadLink(ordinary.id), { dataTransfer });
   fireEvent.dragOver(projectRow(), { dataTransfer });
@@ -3165,7 +3195,9 @@ test("Deleting another Agent's Project chat removes it before confirmation", asy
     ...workspace.pageOptions,
     featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
   });
-  click(projectToggle("Launch"));
+  await act(() => {
+    click(projectToggle("Launch"));
+  });
   const row = document.querySelector<HTMLElement>(
     `[data-sidebar-chat-thread-row-id="${member.id}"]`,
   );
