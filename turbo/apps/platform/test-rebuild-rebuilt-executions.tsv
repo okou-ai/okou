@@ -93,3 +93,15 @@ artifact-sharing-001	turbo/apps/platform/src/views/artifacts-page/__tests__/arti
 artifact-sharing-002	turbo/apps/platform/src/views/artifacts-page/__tests__/artifact-sharing.test.tsx	The owner changes three access levels and copies the same app link after each	134	passed
 artifact-sharing-004	turbo/apps/platform/src/views/artifacts-page/__tests__/artifact-sharing.test.tsx	The owner copies the canonical link returned by the API instead of its short link	171	passed
 artifact-sharing-007	turbo/apps/platform/src/views/artifacts-page/__tests__/artifact-sharing.test.tsx	Sign-in keeps an artifact's redirect query as part of its same-origin return URL	190	passed
+artifact-image-viewer-001	turbo/apps/platform/src/views/okou-page/__tests__/artifact-image-viewer.test.tsx	The image viewer keeps a preview hidden until it decodes	230	passed
+artifact-image-viewer-002	turbo/apps/platform/src/views/okou-page/__tests__/artifact-image-viewer.test.tsx	Arrow Right resolves and decodes the next image inside the viewer	252	passed
+artifact-image-viewer-003	turbo/apps/platform/src/views/okou-page/__tests__/artifact-image-viewer.test.tsx	Lightbox image gestures zoom continuously within their bounds	284	passed
+artifact-download-type-001	turbo/apps/platform/src/views/okou-page/__tests__/artifact-download-type.test.tsx	A hosted-site catalog download from the lightbox keeps its website type	49	passed
+artifact-download-type-005	turbo/apps/platform/src/views/okou-page/__tests__/artifact-download-type.test.tsx	A generic chat file link records spreadsheet downloads from its preview and menu	105	passed
+artifact-download-type-006	turbo/apps/platform/src/views/okou-page/__tests__/artifact-download-type.test.tsx	A MIME-only draft video download from its preview is recorded as video	166	passed
+artifact-download-type-007	turbo/apps/platform/src/views/okou-page/__tests__/artifact-download-type.test.tsx	A MIME-only sent audio attachment plays and downloads as audio in the sidebar	197	passed
+artifact-diagram-overlay-001	turbo/apps/platform/src/views/okou-page/__tests__/artifact-diagram-overlay.test.tsx	Closing an expanded diagram keeps the windowed document, source and reading position	60	passed
+artifact-diagram-overlay-003	turbo/apps/platform/src/views/okou-page/__tests__/artifact-diagram-overlay.test.tsx	Changing document fullscreen keeps the paragraph being read	127	passed
+artifact-action-telemetry-001	turbo/apps/platform/src/views/okou-page/__tests__/artifact-action-telemetry.test.tsx	A catalog ZIP records only its two downloads and copies its owner link	50	passed
+artifact-action-telemetry-002	turbo/apps/platform/src/views/okou-page/__tests__/artifact-action-telemetry.test.tsx	An Office chip preview records nothing and a binary chip download records type other	150	passed
+artifact-action-telemetry-004	turbo/apps/platform/src/views/okou-page/__tests__/artifact-action-telemetry.test.tsx	A shared-thread video records only its download with the fresh URL	224	passed
