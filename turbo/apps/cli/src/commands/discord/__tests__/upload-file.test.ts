@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, truncateSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -362,7 +362,7 @@ describe("okou discord upload-file", () => {
   });
 
   it("rejects oversized local files before an upload is initialized", async () => {
-    writeFileSync(filePath, Buffer.alloc(MAX_DISCORD_FILE_SIZE_BYTES + 1));
+    truncateSync(filePath, MAX_DISCORD_FILE_SIZE_BYTES + 1);
 
     await expect(upload()).rejects.toThrow("process.exit called");
 
