@@ -1,6 +1,6 @@
 import { command } from "ccstate";
 import { and, eq, lt, or, sql } from "drizzle-orm";
-import { iosPushRegistrations } from "@okouai/db/schema/ios-push-registration";
+import { iosPushRegistrations } from "@okouai/db/runtime/ios-push-registration";
 import { writeDb$ } from "../external/db";
 import {
   clerk$,
@@ -84,8 +84,6 @@ export const updateIosPushRegistration$ = command(
         set: binding.enabled
           ? {
               ...binding,
-              // A rebound installation must not inherit a previous widget token on API rollback.
-              widgetPushToken: null,
               updatedAt: sql`now()`,
               // Re-registration after a background launch must retain this user's acknowledgement.
               badgeClearedRevision: sql`CASE
