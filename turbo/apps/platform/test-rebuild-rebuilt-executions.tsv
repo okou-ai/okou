@@ -1569,3 +1569,23 @@ computer-use-authorization-card-009	turbo/apps/platform/src/views/okou-page/__te
 computer-use-authorization-card-012	turbo/apps/platform/src/views/okou-page/__tests__/computer-use-authorization-card.test.tsx	A failed computer callback retries the same input without reauthorizing	207	passed
 ssh-authorization-001	turbo/apps/platform/src/views/okou-page/__tests__/ssh-authorization.test.tsx	The inline card allows only this chat and shows the remote user and access effect	70	passed
 ssh-authorization-002	turbo/apps/platform/src/views/okou-page/__tests__/ssh-authorization.test.tsx	The direct page waits for connector approvals and requesting Run completion	104	passed
+chat-capability-computer-use-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-computer-use.test.tsx	Let the server apply the cloud browser default for an untouched new chat	171	passed
+chat-capability-computer-use-007	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-computer-use.test.tsx	Start a new chat with a selected local computer	185	passed
+chat-capability-computer-use-008	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-computer-use.test.tsx	Discover computers that are available for Computer Use	241	passed
+chat-capability-computer-use-010	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-computer-use.test.tsx	Explain Computer Use incompatibility on an Intel Mac	303	passed
+chat-capability-computer-use-011	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-computer-use.test.tsx	Save and retain an existing chat's Computer Use host before sending	383	passed
+chat-capability-computer-use-012	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-computer-use.test.tsx	Save an existing chat's Computer Use disconnection before sending	400	passed
+desktop-shell-authorization-001	turbo/apps/platform/src/views/okou-page/__tests__/desktop-shell-authorization.test.tsx	A user approves and revokes directly from the card	103	passed
+desktop-shell-authorization-002	turbo/apps/platform/src/views/okou-page/__tests__/desktop-shell-authorization.test.tsx	The direct page explains run_active before allowing approval	136	passed
+desktop-shell-authorization-006	turbo/apps/platform/src/views/okou-page/__tests__/desktop-shell-authorization.test.tsx	The complete authorization reason is readable directly in the card	160	passed
+desktop-shell-authorization-007	turbo/apps/platform/src/views/okou-page/__tests__/desktop-shell-authorization.test.tsx	A blocked card shows the reason and approval blocker together	178	passed
+desktop-shell-authorization-008	turbo/apps/platform/src/views/okou-page/__tests__/desktop-shell-authorization.test.tsx	A user denies directly from the card and can inspect the result	193	passed
+desktop-shell-authorization-009	turbo/apps/platform/src/views/okou-page/__tests__/desktop-shell-authorization.test.tsx	The card disables both actions during approval and shows an approval failure	214	passed
+desktop-shell-authorization-015	turbo/apps/platform/src/views/okou-page/__tests__/desktop-shell-authorization.test.tsx	A shell card retains approved content and actions while computerUseHostsChanged refreshes	245	passed
+desktop-shell-authorization-016	turbo/apps/platform/src/views/okou-page/__tests__/desktop-shell-authorization.test.tsx	A failed background read stops offering access and a later shell event recovers	292	passed
+desktop-shell-authorization-019	turbo/apps/platform/src/views/okou-page/__tests__/desktop-shell-authorization.test.tsx	Approving a request arms the grant deadline and removes revoke when access expires	321	passed
+desktop-shell-authorization-021	turbo/apps/platform/src/views/okou-page/__tests__/desktop-shell-authorization.test.tsx	A delayed approval event restores a later grant after the local request deadline elapsed	348	passed
+desktop-shell-authorization-023	turbo/apps/platform/src/views/okou-page/__tests__/desktop-shell-authorization.test.tsx	An external URL with the same path remains an ordinary link	384	passed
+desktop-shell-authorization-024	turbo/apps/platform/src/views/okou-page/__tests__/desktop-shell-authorization.test.tsx	Shell approval resumes only with an explicit callback (false)	396	passed
+desktop-shell-authorization-025	turbo/apps/platform/src/views/okou-page/__tests__/desktop-shell-authorization.test.tsx	Shell approval resumes only with an explicit callback (true)	396	passed
+desktop-shell-authorization-027	turbo/apps/platform/src/views/okou-page/__tests__/desktop-shell-authorization.test.tsx	The standalone Shell page honors the optional callback (false)	430	passed
