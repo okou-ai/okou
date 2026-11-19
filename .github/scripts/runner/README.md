@@ -219,8 +219,9 @@ authorization. Before dispatching cleanup, the controller checks each session's
 process and output pipe so a closed channel cannot appear active during diagnostics.
 If a previously ready session exits 255 before dispatch, the controller can retire
 the batch's sessions and restart preparation once within that host's remaining
-readiness budget. It reacquires the full lock set in the original host order and
-refreshes GitHub authorization before sending cleanup.
+readiness budget. The controller requests release from the other sessions before
+retiring their channels. It reacquires the full lock set in the original host
+order and refreshes GitHub authorization before sending cleanup.
 PR state and stabilized owner discovery are fresh under those locks.
 Exact owner association protects older CI generations; unresolved
 association fails closed instead of guessing from a reused branch. Proven live

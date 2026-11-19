@@ -494,6 +494,7 @@ def reconcile_batch(github, hosts, user, numbers):
     pages_before = github.requests
     try:
         recovery_deadline = None
+        attempt_started = started
         owners = None
         while True:
             # All hosts must hold the locks before reading fresh authority.
@@ -539,10 +540,28 @@ def reconcile_batch(github, hosts, user, numbers):
                 )
                 # No cleanup has been dispatched. Retire the entire set so
                 # reacquisition cannot invert the original host lock order.
-                for previous in reversed(list(sessions.values())):
-                    previous.abort()
-                sessions.clear()
+                for host in reversed(list(sessions)):
+                    previous = sessions[host]
+                    if previous is session:
+                        previous.abort()
+                    else:
+                        try:
+                            previous.close()
+                        except (
+                            OSError,
+                            ValueError,
+                            RuntimeError,
+                            subprocess.SubprocessError,
+                        ) as error:
+                            # Close retires the local channel even without a
+                            # receipt. Reacquisition verifies lock availability.
+                            print(
+                                f"Metal lock release before restart unconfirmed on {host}: {error}",
+                                file=sys.stderr,
+                            )
+                    del sessions[host]
                 decisions.clear()
+                attempt_started = time.monotonic()
             else:
                 break
         if selected:
@@ -585,7 +604,10 @@ def reconcile_batch(github, hosts, user, numbers):
             json.dumps(
                 {
                     "batch": numbers,
-                    "lock_seconds": round(locked - started, 3),
+                    "discarded_preparation_seconds": round(
+                        attempt_started - started, 3
+                    ),
+                    "lock_seconds": round(locked - attempt_started, 3),
                     "pr_state_seconds": round(state_finished - locked, 3),
                     "owner_seconds": round(owners_finished - state_finished, 3),
                     "authorization_seconds": round(authorized - owners_finished, 3),

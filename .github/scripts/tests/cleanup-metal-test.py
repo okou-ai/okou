@@ -134,11 +134,11 @@ if args[2]=='-c':
    worker.stdin.close()
    worker.wait(timeout=5)
   sys.exit(255)
- if prior_lost and host == 'metal-b' and session_count == 2:
+ retiring_b = prior_lost and host == 'metal-b' and session_count == 2
+ if retiring_b:
   (root / 'disconnect-a').write_text('ready\n')
   await_event('diagnosing-a')
- partial_release = os.environ.get('PARTIAL_RELEASE')
- if partial_release:
+ if retiring_b or os.environ.get('PARTIAL_RELEASE'):
   with subprocess.Popen(command,stdin=subprocess.PIPE,stdout=subprocess.PIPE,text=True,bufsize=1) as worker:
    print(worker.stdout.readline(),end='',flush=True)
    for line in sys.stdin:
@@ -146,6 +146,14 @@ if args[2]=='-c':
     if json.loads(line)['operation']=='heartbeat':continue
     reply=worker.stdout.readline()
     if json.loads(reply).get('released'):
+     if retiring_b:
+      (root / 'released-b').touch()
+      drop_receipt = os.environ.get('DROP_RESTART_RELEASE')
+      if not drop_receipt:
+       print(reply, end='', flush=True)
+      worker.stdin.close()
+      status = worker.wait(timeout=5)
+      sys.exit(255 if drop_receipt else status)
      worker.stdin.close();worker.wait(timeout=5)
      sys.stdout.write('{"released":');sys.stdout.flush()
      with (root/'reply-ready').open('w') as ready:ready.write(str(os.getpid())+'\n')
@@ -1033,7 +1041,7 @@ class CleanupTests(unittest.TestCase):
                     history.read_text(), "inventory\n" + "session\n" * sessions
                 )
 
-    def pre_dispatch_loss(self, failure):
+    def pre_dispatch_loss(self, failure, **env):
         files = [
             self.resource("var/lib/vm0-runner/stripe/pr-42/config", host=host)
             for host in ("metal-a", "metal-b")
@@ -1047,12 +1055,13 @@ class CleanupTests(unittest.TestCase):
                 event = self.root / name
                 os.mkfifo(event)
                 events.enter_context(open(event, "rb", opener=open_event))
-            return files, self.guarded_controller(READY_FAILURE=failure)
+            return files, self.guarded_controller(READY_FAILURE=failure, **env)
 
     def test_restarts_lock_preparation_after_ready_host_disconnects(self):
         files, result = self.pre_dispatch_loss("prior-lost")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue(all(not file.exists() for file in files), result.stdout)
+        self.assertTrue((self.root / "released-b").is_file(), result.stderr)
         self.assertIn('"cleaned": 1', result.stdout)
         self.assertEqual(
             (self.root / "metal-a/ssh.log").read_text(), "inventory\nsession\nsession\n"
@@ -1061,6 +1070,13 @@ class CleanupTests(unittest.TestCase):
             (self.root / "metal-b/ssh.log").read_text(),
             "inventory\nsession\nsession\nsession\n",
         )
+
+    def test_reacquires_locks_when_old_release_receipt_is_lost(self):
+        files, result = self.pre_dispatch_loss("prior-lost", DROP_RESTART_RELEASE="1")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((self.root / "released-b").is_file(), result.stderr)
+        self.assertTrue(all(not file.exists() for file in files), result.stdout)
+        self.assertIn('"cleaned": 1', result.stdout)
 
     def test_rechecks_github_authority_after_pre_dispatch_restart(self):
         self.github(reopen_after_recovery=42)
