@@ -34,7 +34,7 @@ import {
 } from "../chat-page/chat-thread-event-sourcing.ts";
 
 export const projectsEnabled$ = computed(async (get) => {
-  return (await get(featureSwitches$))[FeatureSwitchKey.SingleAgent] ?? false;
+  return (await get(featureSwitches$))[FeatureSwitchKey.SingleAgent];
 });
 type OptimisticProjectRename = Pick<
   ProjectEvent,
