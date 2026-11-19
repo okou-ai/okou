@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.115](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.114...guest-control-client-v0.23.115) (2026-11-19)
+
+
+### Refactoring
+
+* **guest-control:** centralize client codec error conversion ([#49210](https://github.com/okou-ai/okou/issues/49210)) ([edb4d61](https://github.com/okou-ai/okou/commit/edb4d6151a1ffa2be03aa1edc93cf32f9e3f70a9))
+
 ## [0.23.114](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.113...guest-control-client-v0.23.114) (2026-11-19)
 
 ## [0.23.113](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.112...guest-control-client-v0.23.113) (2026-11-19)
