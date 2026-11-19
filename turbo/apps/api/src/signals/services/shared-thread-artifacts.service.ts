@@ -1,8 +1,9 @@
 import { canReadSharedThreadPolicy$ } from "./shared-thread-access.service";
 import { randomUUID } from "node:crypto";
-import { command } from "ccstate";
-import { and, eq, sql } from "drizzle-orm";
+import { command, computed } from "ccstate";
+import { and, count, eq, exists, inArray, isNull, sql } from "drizzle-orm";
 import { artifacts } from "@okouai/db/schema/artifact";
+import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
 import { sharedThreads } from "@okouai/db/schema/shared-thread";
 import type { ArtifactDeliveryRecord } from "@okouai/api-contracts/contracts/artifact-delivery";
 import type { HostedSiteFilesResponse } from "@okouai/api-contracts/contracts/host";
@@ -308,6 +309,49 @@ export const initializeSharedThreadArtifacts$ = command(
   },
 );
 
+function createSharedThreadPublication(plan: SharedThreadArtifactPlan) {
+  return computed(async (get) => {
+    const db = get(db$);
+    const { ownerId, orgId, threadId } = plan.policy;
+    const attachmentIds = plan.privateAttachmentIds;
+    // Recheck cached attachment metadata alongside the existing publication read.
+    const attachmentsAvailable =
+      attachmentIds.length === 0
+        ? sql`true`
+        : exists(
+            db
+              .select({ total: count() })
+              .from(runUploadedFiles)
+              .where(
+                and(
+                  inArray(runUploadedFiles.id, attachmentIds),
+                  eq(runUploadedFiles.userId, ownerId),
+                  eq(runUploadedFiles.orgId, orgId),
+                  isNull(runUploadedFiles.deletedAt),
+                  eq(runUploadedFiles.materializationStatus, "ready"),
+                ),
+              )
+              .having(eq(count(), attachmentIds.length)),
+          );
+    const [publication] = await db
+      .select({
+        row: sharedThreads,
+        attachmentsAvailable: attachmentsAvailable.mapWith(
+          sharedThreads.hasArtifactSnapshot,
+        ),
+      })
+      .from(sharedThreads)
+      .where(
+        and(
+          eq(sharedThreads.id, threadId),
+          eq(sharedThreads.userId, ownerId),
+          eq(sharedThreads.orgId, orgId),
+        ),
+      );
+    return publication;
+  });
+}
+
 const changeSharedThreadArtifactPhase$ = command(
   async (
     { get, set },
@@ -315,20 +359,15 @@ const changeSharedThreadArtifactPhase$ = command(
     phase: "copy" | "publish",
     signal: AbortSignal,
   ) => {
-    const [row] = await get(db$)
-      .select()
-      .from(sharedThreads)
-      .where(
-        and(
-          eq(sharedThreads.id, plan.policy.threadId),
-          eq(sharedThreads.userId, plan.policy.ownerId),
-          eq(sharedThreads.orgId, plan.policy.orgId),
-        ),
-      );
+    const publication = await get(createSharedThreadPublication(plan));
     signal.throwIfAborted();
-    if (!row?.hasArtifactSnapshot) {
+    if (!publication?.row.hasArtifactSnapshot) {
       throw new Error("Conversation snapshot was removed before publication");
     }
+    if (!publication.attachmentsAvailable) {
+      throw new SharedThreadArtifactUnavailable();
+    }
+    const { row } = publication;
     const current = await set(readSharedThreadPolicy$, row, signal);
     if (!current || current.policy.status !== "preparing") {
       throw new Error("Conversation snapshot is no longer pending publication");
