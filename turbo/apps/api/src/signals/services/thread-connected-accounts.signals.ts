@@ -17,6 +17,7 @@ import {
 import { computed, type Computed } from "ccstate";
 
 import { badRequestMessage } from "../../lib/error";
+import { logger } from "../../lib/log";
 import { now, nowDate } from "../../lib/time";
 import { joinAll, safeSync } from "../utils";
 import type { AgentConnectorScope } from "./agent-connector-scope.service";
@@ -73,6 +74,8 @@ import type {
 } from "./execution-connector-sources.service";
 import type { createThreadConnectorSources } from "./thread-connector-sources.service";
 import type { PickedThreadInputEvent } from "./thread-run-prompt/types";
+
+const log = logger("api:thread-connected-accounts");
 
 type DispatchTiming$ = Computed<ApiDispatchTimingCollector>;
 
@@ -1385,16 +1388,45 @@ function storedConnectorContextFromSnapshot(
 }
 
 function buildStoredConnectorMaterializationPlan(args: {
-  readonly connectorRows: readonly StoredConnectorRuntimeRowCandidate[];
+  readonly connectorRows: readonly StoredConnectorMaterializationSnapshotRow[];
   readonly allowedConnectorSlugs: readonly ConnectorSlug[];
   readonly connectorCatalogSnapshot: ConnectorExecutionRuntimeSelection;
 }): StoredConnectorMaterializationPlan | null {
+  const rowsById = new Map(
+    args.connectorRows.map((row) => {
+      return [row.connectorId, row];
+    }),
+  );
   const allowedConnectorRows = allowedStoredConnectorRows(
     args.connectorRows,
     args.allowedConnectorSlugs,
     args.connectorCatalogSnapshot,
     nowDate(),
-  );
+  ).filter((row) => {
+    const stored = rowsById.get(row.access.connectorId);
+    if (!stored) {
+      throw new Error("Stored connector admission row is missing");
+    }
+    const { runtimeBindings } = connectorAuthMethodRuntimeMetadata(
+      row.runtimeMethod.method,
+    );
+    const missingVariables = runtimeBindings.filter(({ optional, source }) => {
+      return (
+        !optional &&
+        source.kind === "connector-variable" &&
+        stored.variableValues[source.name] === undefined
+      );
+    });
+    if (missingVariables.length === 0) {
+      return true;
+    }
+    log.warn("Connector excluded from Run admission", {
+      connectorSlug: row.connectorSlug,
+      sourceId: row.access.connectorId,
+      reason: "missing_required_variable",
+    });
+    return false;
+  });
   if (allowedConnectorRows.length === 0) {
     return null;
   }
