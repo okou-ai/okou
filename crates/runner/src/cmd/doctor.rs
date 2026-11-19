@@ -625,7 +625,10 @@ async fn inspect_runners(
             break;
         }
 
-        tokio::time::sleep(RECHECK_DELAY).await;
+        let delay = tokio::time::sleep(RECHECK_DELAY);
+        #[cfg(test)]
+        let delay = tests::wait_for_recheck_delay(delay);
+        delay.await;
 
         // Single /proc scan shared across all warning rechecks.
         let fresh = process::discover_all().await;
@@ -1688,3 +1691,6 @@ fn format_uptime(started_at: &str) -> String {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+pub(super) use tests::with_advanced_recheck_delays;
