@@ -87,7 +87,8 @@ final class PermissionBatchStore {
   }
 
   func confirm(reviewing reviewed: ChatPermissionBatchSnapshot? = nil) async {
-    guard let reviewed = reviewed ?? snapshot, canConfirm(reviewing: reviewed), !Task.isCancelled
+    guard let reviewed = reviewed ?? snapshot, canConfirm(reviewing: reviewed), operation == nil,
+      !Task.isCancelled
     else { return }
     snapshot = reviewed
     isSaving = !reviewed.allAllowed
