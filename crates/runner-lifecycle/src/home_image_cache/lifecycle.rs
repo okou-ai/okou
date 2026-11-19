@@ -576,32 +576,14 @@ impl HomeImageCache {
         }
     }
 
+    #[cfg(any(test, feature = "test-support"))]
     pub async fn prepare(&self, request: HomeImagePrepareRequest<'_>) -> HomeImageLease {
-        self.prepare_with_policy(request, HomeImagePreparePolicy::TryCacheWithLockWait)
+        self.prepare_with_policy(request, HomeImagePreparePolicy::TryCacheWithLockWait, None)
             .await
     }
 
+    /// Match a required producer under the entry lock before retaining image pins.
     pub async fn prepare_with_policy(
-        &self,
-        request: HomeImagePrepareRequest<'_>,
-        prepare_policy: HomeImagePreparePolicy,
-    ) -> HomeImageLease {
-        self.prepare_with_source_selection(request, prepare_policy, None)
-            .await
-    }
-
-    /// Match the producer after locking the entry, then retain its immutable image pins.
-    pub async fn prepare_from_source(
-        &self,
-        request: HomeImagePrepareRequest<'_>,
-        source_run_id: RunId,
-        prepare_policy: HomeImagePreparePolicy,
-    ) -> HomeImageLease {
-        self.prepare_with_source_selection(request, prepare_policy, Some(source_run_id))
-            .await
-    }
-
-    async fn prepare_with_source_selection(
         &self,
         request: HomeImagePrepareRequest<'_>,
         prepare_policy: HomeImagePreparePolicy,
