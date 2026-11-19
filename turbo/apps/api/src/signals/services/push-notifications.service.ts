@@ -1,6 +1,6 @@
 import { command } from "ccstate";
 import { recordIosNotificationFact } from "./ios-notification-telemetry";
-import { iosPushRegistrations } from "@okouai/db/runtime/ios-push-registration";
+import { iosPushRegistrations } from "@okouai/db/schema/ios-push-registration";
 import { hasApnsConfiguration, sendApnsNotification } from "../external/apns";
 import { isActiveIosPushSession$ } from "./ios-push-registrations.service";
 import webpush, { WebPushError } from "web-push";
