@@ -160,17 +160,15 @@ class ChatReplayTest {
                 it.threads.isEmpty()
             }
         )
-        assertTrue(
-            chatListGroups(
-                    state.copy(
-                        indicators =
-                            state.indicators?.copy(
-                                threads = mapOf(projectRow.id to IndicatorsThreadsValue.ACTIVE)
-                            )
-                    )
-                )
-                .all { it.threads.isEmpty() }
+        val active =
+            checkNotNull(state.indicators)
+                .copy(threads = mapOf(projectRow.id to IndicatorsThreadsValue.ACTIVE))
+        assertEquals(
+            projectRow,
+            chatListGroups(state.copy(indicators = active)).first().threads.single(),
         )
+        val read = state.copy(indicators = active.copy(unreadAt = emptyMap()))
+        assertTrue(chatListGroups(read).all { it.threads.isEmpty() })
     }
 
     @Test
