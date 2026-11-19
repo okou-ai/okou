@@ -540,7 +540,7 @@ struct ChatSidebarView: View {
   private func readAction(_ thread: ChatThread, read: Bool) -> some View {
     Button(
       read ? "Mark as read" : "Mark as unread",
-      okouSymbol: read ? "mail-open" : "mail"
+      okouSymbol: read ? "message-square-check" : "message-square-dot"
     ) { Task { await store.setRead(thread, read: read) } }
     .labelStyle(.iconOnly)
     .disabled(store.list.updatingThreads.contains(thread.id) || store.list.markingAgentRead)

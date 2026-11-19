@@ -32,7 +32,8 @@
         }
         OkouCatalogSection("Swipe actions") {
           HStack(spacing: OkouSpace.sm) {
-            swipeAction("Mark as unread", okouSymbol: "mail", tint: OkouSwipeTint.readState)
+            swipeAction(
+              "Mark as unread", okouSymbol: "message-square-dot", tint: OkouSwipeTint.readState)
             swipeAction("Archive", okouSymbol: "archive", tint: OkouSwipeTint.neutral)
             swipeAction("Delete chat", okouSymbol: "trash-2", tint: OkouSwipeTint.destructive)
           }

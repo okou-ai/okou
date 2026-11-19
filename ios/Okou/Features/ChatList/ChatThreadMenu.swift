@@ -80,8 +80,8 @@ struct ChatThreadMenu {
     if !thread.isMuted {
       items.append(
         Item(
-          action: .markUnread, title: String(localized: "Mark as unread"), icon: "mail",
-          enabled: enabled && !list.markingAgentRead))
+          action: .markUnread, title: String(localized: "Mark as unread"),
+          icon: "message-square-dot", enabled: enabled && !list.markingAgentRead))
     }
     items.append(
       Item(

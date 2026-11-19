@@ -286,6 +286,16 @@
   --animate-card-page-next-out: card-page-next-out 220ms ease-out both;
   --animate-card-page-previous-in: card-page-previous-in 220ms ease-out both;
   --animate-card-page-previous-out: card-page-previous-out 220ms ease-out both;
+  /* A suggestion's custom direction opens as its trigger's pill and grows to
+     the composer's height on a fast-start curve, since the row holds the
+     trigger's height until the composer's fraction of its own height passes
+     it. The composer fades in over the pill's fading fill. No fill mode: the
+     pill is clipped and filled only while it grows, so the composer's focus
+     veil and inline popovers are never cut afterwards. */
+  --animate-suggestion-direction-expand: suggestion-direction-expand 360ms
+    cubic-bezier(0.32, 0.72, 0, 1);
+  --animate-suggestion-direction-content-in: suggestion-direction-content-in
+    360ms ease-out;
 
   /* Illustration strokes. These are drawn artwork inside a scaled canvas, not
      product chrome, so they are a different decision from `--border-width-surface`
@@ -793,6 +803,36 @@ body {
   to {
     transform: translateX(12%) rotate(3deg);
     opacity: 0;
+  }
+}
+
+/* The pill keeps the trigger's fill while its grid row grows to the composer,
+   so the card and the stack centred around it follow every frame, then hands
+   over to the composer fading in. `clip`, unlike `hidden`, is not a scroll
+   container: focusing the composer mid-way cannot scroll it. */
+@keyframes suggestion-direction-expand {
+  from {
+    grid-template-rows: 0fr;
+    overflow: clip;
+    background-color: var(--color-nested-fill);
+  }
+  45% {
+    background-color: var(--color-nested-fill);
+  }
+  to {
+    grid-template-rows: 1fr;
+    overflow: clip;
+    background-color: transparent;
+  }
+}
+
+@keyframes suggestion-direction-content-in {
+  from,
+  35% {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
   }
 }
 
