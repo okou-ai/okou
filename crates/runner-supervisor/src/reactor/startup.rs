@@ -182,7 +182,24 @@ pub(super) async fn start(
         SignalSource::Override(controller) => controller,
     };
     let acceptance_slots = Arc::new(Semaphore::new(MAX_IN_FLIGHT_ACCEPTANCES));
-    let (dispatch_intake, dispatch_rx) = DispatchIntake::new(Arc::clone(&acceptance_slots));
+    let dispatch_home_cache = ingress.as_ref().and(ctx.exec_config.home_cache.as_ref());
+    let preferred_home_probe = dispatch_home_cache.map(|cache| {
+        PreferredHomeProbe::new(
+            cache.clone(),
+            inventory.snapshot.clone(),
+            ctx.runner
+                .profiles
+                .iter()
+                .map(|(name, profile)| (name.clone(), profile.home_disk_mb))
+                .collect(),
+            ctx.shared.active_runs.clone(),
+            Arc::clone(&ctx.shared.idle_pool),
+            ctx.device_rate_limits.clone(),
+            signal.mode_rx.clone(),
+        )
+    });
+    let (dispatch_intake, dispatch_rx) =
+        DispatchIntake::new(Arc::clone(&acceptance_slots), preferred_home_probe);
     let mut startup = StartupOwner {
         resources,
         signal,
@@ -310,8 +327,7 @@ pub(super) async fn start(
         }
     }
     let readiness = {
-        let cache_readiness =
-            finish_initial_inventory(&mut startup, &ctx, &inventory, dispatch_intake);
+        let cache_readiness = finish_initial_inventory(&mut startup, &inventory, dispatch_intake);
         let cache_readiness =
             tokio::time::timeout(INITIAL_HOME_CACHE_READINESS_TIMEOUT, cache_readiness);
         tokio::pin!(cache_readiness);
@@ -379,7 +395,6 @@ pub(super) async fn start(
 
 async fn finish_initial_inventory(
     startup: &mut StartupOwner,
-    ctx: &StartupContext<'_>,
     inventory: &StartupInventory<'_>,
     dispatch_intake: DispatchIntake,
 ) -> RunnerResult<()> {
@@ -416,22 +431,7 @@ async fn finish_initial_inventory(
             intake.work_queued = inventory.test_hooks.dispatch_work_queued.clone();
             intake
         };
-        let preferred_home_probe = ctx.exec_config.home_cache.clone().map(|cache| {
-            PreferredHomeProbe::new(
-                cache,
-                inventory.snapshot.clone(),
-                ctx.runner
-                    .profiles
-                    .iter()
-                    .map(|(name, profile)| (name.clone(), profile.home_disk_mb))
-                    .collect(),
-                ctx.shared.active_runs.clone(),
-                Arc::clone(&ctx.shared.idle_pool),
-                ctx.device_rate_limits.clone(),
-                startup.signal.mode_rx.clone(),
-            )
-        });
-        ingress.enable_dispatch(dispatch_intake.with_preferred_home_probe(preferred_home_probe));
+        ingress.enable_dispatch(dispatch_intake);
     }
     let controller = startup
         .heartbeat

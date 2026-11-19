@@ -63,7 +63,7 @@ async fn dispatch_rejects_untrusted_routing_auth_and_bounded_body_without_custod
         .await
         .unwrap();
     let (intake, mut receiver) =
-        dispatch::DispatchIntake::new(Arc::new(tokio::sync::Semaphore::new(4)));
+        dispatch::DispatchIntake::new(Arc::new(tokio::sync::Semaphore::new(4)), None);
     runtime.enable_dispatch(intake);
     let socket = directory.join(format!("{}.sock", id.runner_id()));
     let run_id = runner_types::ids::RunId::new_v4();
@@ -153,7 +153,7 @@ async fn dispatch_rejects_untrusted_routing_auth_and_bounded_body_without_custod
         .await
         .unwrap();
     let (intake, mut receiver) =
-        dispatch::DispatchIntake::new(Arc::new(tokio::sync::Semaphore::new(4)));
+        dispatch::DispatchIntake::new(Arc::new(tokio::sync::Semaphore::new(4)), None);
     runtime.enable_dispatch(intake);
     let response = request(
         &socket,
@@ -181,7 +181,7 @@ async fn expired_http_replay_is_unknown_and_new_runs_still_enter_intake() {
         .await
         .unwrap();
     let (intake, mut receiver) =
-        dispatch::DispatchIntake::new(Arc::new(tokio::sync::Semaphore::new(4)));
+        dispatch::DispatchIntake::new(Arc::new(tokio::sync::Semaphore::new(4)), None);
     runtime.enable_dispatch(intake);
     let socket = directory.join(format!("{}.sock", id.runner_id()));
     let run_id = runner_types::ids::RunId::new_v4();
@@ -246,7 +246,7 @@ async fn dispatch_bounds_chunked_bodies_even_without_content_length() {
         .await
         .unwrap();
     let (intake, mut receiver) =
-        dispatch::DispatchIntake::new(Arc::new(tokio::sync::Semaphore::new(4)));
+        dispatch::DispatchIntake::new(Arc::new(tokio::sync::Semaphore::new(4)), None);
     runtime.enable_dispatch(intake);
     let socket = directory.join(format!("{}.sock", id.runner_id()));
     let run_id = runner_types::ids::RunId::new_v4();
@@ -281,7 +281,7 @@ async fn incomplete_dispatch_body_times_out_and_releases_its_transaction_slot() 
         .await
         .unwrap();
     let (intake, _receiver) =
-        dispatch::DispatchIntake::new(Arc::new(tokio::sync::Semaphore::new(1)));
+        dispatch::DispatchIntake::new(Arc::new(tokio::sync::Semaphore::new(1)), None);
     runtime.enable_dispatch(intake);
     let socket = directory.join(format!("{}.sock", id.runner_id()));
     let run_id = runner_types::ids::RunId::new_v4();
