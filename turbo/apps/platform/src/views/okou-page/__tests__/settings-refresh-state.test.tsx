@@ -201,11 +201,10 @@ test("overlapping saves to one preference read back the committed value", async 
 });
 
 test.each([false, true])(
-  "saving Learning (initially %s) keeps enabled Suggestions unchanged during refresh",
+  "saving Learning (initially %s) keeps enabled Suggestions unchanged while the save is pending",
   async (initialEnabled) => {
-    let saved = false;
     let enabled = initialEnabled;
-    const refreshing = context.mocks.deferred<void>();
+    const saving = context.mocks.deferred<void>();
     const release = context.mocks.deferred<void>();
     context.mocks.api(proactiveSuggestionsContract.get, ({ respond }) => {
       return respond(200, {
@@ -214,13 +213,19 @@ test.each([false, true])(
         unavailableReason: null,
       });
     });
+    context.mocks.api(proactiveLearningContract.get, ({ respond }) => {
+      return respond(200, {
+        enabled,
+        status: enabled ? "enabled" : "paused",
+        unavailableReason: null,
+      });
+    });
     context.mocks.api(
-      proactiveLearningContract.get,
-      async ({ respond, withSignal }) => {
-        if (saved) {
-          refreshing.resolve();
-          await withSignal(release.promise);
-        }
+      proactiveLearningContract.update,
+      async ({ body, respond, withSignal }) => {
+        saving.resolve();
+        await withSignal(release.promise);
+        enabled = body.enabled;
         return respond(200, {
           enabled,
           status: enabled ? "enabled" : "paused",
@@ -228,15 +233,6 @@ test.each([false, true])(
         });
       },
     );
-    context.mocks.api(proactiveLearningContract.update, ({ body, respond }) => {
-      saved = true;
-      enabled = body.enabled;
-      return respond(200, {
-        enabled,
-        status: enabled ? "enabled" : "paused",
-        unavailableReason: null,
-      });
-    });
     await setupPage({
       context,
       path: "/agents?settings=preference",
@@ -255,7 +251,7 @@ test.each([false, true])(
       expect(learning).toHaveAttribute("aria-checked", String(initialEnabled));
     });
     click(learning);
-    await refreshing.promise;
+    await saving.promise;
     expect(learning).toHaveAttribute("aria-disabled", "true");
     expect(learning).toHaveAttribute("aria-checked", String(initialEnabled));
     expect(suggestions).toBeChecked();
@@ -270,10 +266,18 @@ test.each([false, true])(
 );
 
 test.each(["reopening Settings", "returning to Preference"])(
-  "%s refreshes a Learning preference changed elsewhere",
+  "%s refreshes a Learning preference changed elsewhere after a save",
   async (entry) => {
     let enabled = false;
     context.mocks.api(proactiveLearningContract.get, ({ respond }) => {
+      return respond(200, {
+        enabled,
+        status: enabled ? "enabled" : "paused",
+        unavailableReason: null,
+      });
+    });
+    context.mocks.api(proactiveLearningContract.update, ({ body, respond }) => {
+      enabled = body.enabled;
       return respond(200, {
         enabled,
         status: enabled ? "enabled" : "paused",
@@ -292,6 +296,11 @@ test.each(["reopening Settings", "returning to Preference"])(
       expect(learning).toBeEnabled();
       expect(learning).not.toBeChecked();
     });
+    click(learning);
+    await waitFor(() => {
+      expect(learning).toBeChecked();
+      expect(learning).toBeEnabled();
+    });
     const settings = screen.getByRole("dialog", { name: "Settings" });
     if (entry === "reopening Settings") {
       click(within(settings).getByLabelText("Close", { selector: "button" }));
@@ -305,7 +314,7 @@ test.each(["reopening Settings", "returning to Preference"])(
       );
     });
 
-    enabled = true;
+    enabled = false;
     if (entry === "reopening Settings") {
       const rail = await screen.findByTestId("labeled-nav-rail");
       click(within(rail).getByLabelText("Test User"));
@@ -319,7 +328,7 @@ test.each(["reopening Settings", "returning to Preference"])(
         name: "Learning",
       });
       expect(refreshed).toBeEnabled();
-      expect(refreshed).toBeChecked();
+      expect(refreshed).not.toBeChecked();
     });
   },
 );
@@ -362,30 +371,33 @@ test.each([
   { name: "Suggestions", contract: proactiveSuggestionsContract },
   { name: "Learning", contract: proactiveLearningContract },
 ])(
-  "keeps $name pending until its saved preference has been read back",
+  "updates $name from the save response while leaving other preferences usable",
   async ({ name, contract }) => {
-    let saved = false;
-    const refreshing = context.mocks.deferred<void>();
+    let enabled = true;
+    let reads = 0;
+    const saving = context.mocks.deferred<void>();
     const release = context.mocks.deferred<void>();
-    context.mocks.api(contract.get, async ({ respond, withSignal }) => {
-      if (saved) {
-        refreshing.resolve();
+    context.mocks.api(contract.get, ({ respond }) => {
+      reads++;
+      return respond(200, {
+        enabled,
+        status: enabled ? "enabled" : "paused",
+        unavailableReason: null,
+      });
+    });
+    context.mocks.api(
+      contract.update,
+      async ({ body, respond, withSignal }) => {
+        saving.resolve();
         await withSignal(release.promise);
-      }
-      return respond(200, {
-        enabled: !saved,
-        status: saved ? "paused" : "enabled",
-        unavailableReason: null,
-      });
-    });
-    context.mocks.api(contract.update, ({ body, respond }) => {
-      saved = true;
-      return respond(200, {
-        enabled: body.enabled,
-        status: "paused",
-        unavailableReason: null,
-      });
-    });
+        enabled = body.enabled;
+        return respond(200, {
+          enabled,
+          status: enabled ? "enabled" : "paused",
+          unavailableReason: null,
+        });
+      },
+    );
     await setupPage({
       context,
       path: "/agents?settings=preference",
@@ -399,9 +411,10 @@ test.each([
       expect(toggle).toBeChecked();
       expect(toggle).toBeEnabled();
     });
+    const initialReads = reads;
     toggle.focus();
     await userEvent.keyboard(" ");
-    await refreshing.promise;
+    await saving.promise;
     const independent = screen.getByRole("switch", {
       name: name === "Learning" ? "Morning brief" : "Learning",
     });
@@ -420,10 +433,11 @@ test.each([
       expect(toggle).not.toBeChecked();
       expect(toggle).toBeEnabled();
     });
+    expect(reads).toBe(initialReads);
   },
 );
 
-test("a Morning brief refresh failure still reports the error and disables the switch", async () => {
+test("a Morning brief refresh failure after returning to Preference reports the error and disables the switch", async () => {
   let saved = false;
   context.mocks.api(morningBriefPreferenceContract.get, ({ respond }) => {
     return saved
@@ -454,6 +468,16 @@ test("a Morning brief refresh failure still reports the error and disables the s
     expect(toggle).toBeChecked();
   });
   click(toggle);
-  await within(card).findByText(/could not be loaded or updated/u);
-  expect(toggle).toHaveAttribute("aria-disabled", "true");
+  await waitFor(() => {
+    expect(toggle).not.toBeChecked();
+    expect(toggle).toBeEnabled();
+  });
+  click(getSettingsButton("Chat"));
+  await screen.findByRole("switch", { name: "Cloud browser" });
+  click(getSettingsButton("Preference"));
+  const reopened = await screen.findByTestId("morning-brief-preference");
+  await within(reopened).findByText(/could not be loaded or updated/u);
+  expect(
+    within(reopened).getByRole("switch", { name: "Morning brief" }),
+  ).toHaveAttribute("aria-disabled", "true");
 });

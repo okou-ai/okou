@@ -1,4 +1,4 @@
-import { command, computed, state } from "ccstate";
+import { command } from "ccstate";
 import { morningBriefPreferenceContract } from "@okouai/api-contracts/client/morning-brief-preference";
 import { MORNING_BRIEF_PREFERENCES_FOCUS } from "@okouai/api-contracts/validators/morning-brief-preference";
 import type {
@@ -7,9 +7,9 @@ import type {
 } from "@okouai/api-contracts/contracts/morning-brief-preference";
 
 import { accept } from "../../../lib/accept.ts";
-import { apiClient$ } from "../../api-client.ts";
 import { searchParams$ } from "../../route.ts";
 import { onRef } from "../../utils.ts";
+import { createProactivePreference } from "./proactive-preference-resource.ts";
 import { userPreferences$ } from "./user-preferences.ts";
 
 export type MorningBriefPreferenceState =
@@ -22,8 +22,6 @@ export type MorningBriefPreferenceState =
       readonly code: MorningBriefPreferenceErrorCode;
       readonly message: string;
     };
-
-const morningBriefPreferenceVersion$ = state(0);
 
 function preferenceState(
   result:
@@ -47,35 +45,26 @@ function preferenceState(
       };
 }
 
-export const morningBriefPreference$ = computed(async (get) => {
-  get(morningBriefPreferenceVersion$);
-  get(searchParams$);
+export const {
+  preference$: morningBriefPreference$,
+  update$: updateMorningBriefPreference$,
+} = createProactivePreference(
   // Initialization and time zone saves can recover the existing installation.
-  await get(userPreferences$);
-  const client = get(apiClient$)(morningBriefPreferenceContract);
-  const result = await accept(client.get(), [200, 409]);
-  return preferenceState(result);
-});
-
-export const updateMorningBriefPreference$ = command(
-  async ({ get, set }, enabled: boolean, signal: AbortSignal) => {
-    const client = get(apiClient$)(morningBriefPreferenceContract);
+  userPreferences$,
+  async (client) => {
+    return preferenceState(
+      await accept(client(morningBriefPreferenceContract).get(), [200, 409]),
+    );
+  },
+  async (client, enabled, signal) => {
     const result = await accept(
-      client.update({
+      client(morningBriefPreferenceContract).update({
         body: { enabled },
         fetchOptions: { signal },
       }),
       [200, 400, 409],
     );
-    signal.throwIfAborted();
-    if (result.status === 200) {
-      set(morningBriefPreferenceVersion$, (version) => {
-        return version + 1;
-      });
-      await get(morningBriefPreference$);
-      signal.throwIfAborted();
-    }
-    return preferenceState(result);
+    return { saved: result.status === 200, value: preferenceState(result) };
   },
 );
 

@@ -12,11 +12,10 @@ import { featureSwitches$ } from "../../../../signals/external/feature-switch.ts
 import { pageSignal$ } from "../../../../signals/page-signal.ts";
 import { detach, Reason } from "../../../../signals/utils.ts";
 import {
-  proactiveSuggestionsPreference$,
-  updateProactiveSuggestionsPreference$,
-} from "../../../../signals/okou-page/settings/proactive-suggestions.ts";
+  proactiveLearningSignals,
+  proactiveSuggestionsSignals,
+} from "../../../../signals/okou-page/settings/proactive-preferences.ts";
 import { PreferenceCardRow } from "./preference-card-row.tsx";
-import { proactiveLearningSignals } from "../../../../signals/okou-page/settings/proactive-nightly.ts";
 
 function preferenceStatusKey(
   value: ProactivePreferenceValue | undefined,
@@ -36,10 +35,7 @@ function preferenceStatusKey(
 }
 
 const PREFERENCE_SIGNALS = {
-  suggestions: {
-    preference$: proactiveSuggestionsPreference$,
-    update$: updateProactiveSuggestionsPreference$,
-  },
+  suggestions: proactiveSuggestionsSignals,
   learning: proactiveLearningSignals,
 } as const;
 
