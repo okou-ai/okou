@@ -26,7 +26,11 @@ set -euo pipefail
 
 if [ "$1" = -n ]; then
   shift
-  printf '%s\n' "$1" >>"${MOCK_ROOT}/queries"
+  printf '%s %s\n' "$1" "$2" >>"${MOCK_ROOT}/queries"
+  if [ "$MOCK_MODE" = receipt-unreachable ] ||
+    { [ "$MOCK_MODE" = receipt-reset ] && [ "$(wc -l <"${MOCK_ROOT}/queries")" -eq 1 ]; }; then
+    exit 255
+  fi
   query=${2#sudo }
   query=${query//"/run/vm0-runner-lifecycle-receipts"/"${MOCK_ROOT}/receipts"}
   flock --exclusive --nonblock "${MOCK_ROOT}/holder.lock" true
@@ -49,7 +53,7 @@ case "$MOCK_MODE" in
     bash -c "$local_command"
     exit 255
     ;;
-  lost-release-ack|wrong-receipt)
+  lost-release-ack|wrong-receipt|receipt-reset|receipt-unreachable)
     bash -c "$local_command" 2>"${MOCK_ROOT}/remote.err"
     if [ "$MOCK_MODE" = wrong-receipt ]; then
       printf '%s\n' 'a different lifecycle operation' >"${MOCK_ROOT}/receipts/${JOB_REF}"
@@ -104,11 +108,11 @@ export JOB_REF=pr-42 METAL_HOSTS=metal.example.test METAL_USER=runner
 export RUNNER_LIFECYCLE_LOCK_TIMEOUT_SECONDS=5 RUNNER_LIFECYCLE_LOCK_LEASE_SECONDS=5
 export MOCK_ROOT MOCK_MODE
 
-for scenario in acquire-error release-error lost-release-ack wrong-receipt lost-release-request missing-confirmation receipt-write-error command-error early-eof; do
+for scenario in acquire-error release-error lost-release-ack wrong-receipt lost-release-request missing-confirmation receipt-write-error command-error early-eof receipt-reset receipt-unreachable; do
   MOCK_ROOT="${tmp_dir}/${scenario}"
   MOCK_MODE=$scenario
   mkdir -p "$MOCK_ROOT"
-  command=(true)
+  command=(bash -c 'echo executed >> "$1"' _ "${MOCK_ROOT}/executions")
   if [ "$scenario" = command-error ]; then
     MOCK_MODE=release-error
     command=(bash -c 'exit 37')
@@ -121,7 +125,7 @@ for scenario in acquire-error release-error lost-release-ack wrong-receipt lost-
   timeout 15 "$lock_script" "${command[@]}" >"${MOCK_ROOT}/out" 2>"${MOCK_ROOT}/err" || status=$?
   expected_status=1
   case "$scenario" in
-    release-error|lost-release-ack|receipt-write-error) expected_status=0 ;;
+    release-error|lost-release-ack|receipt-write-error|receipt-reset) expected_status=0 ;;
   esac
   [ "$scenario" != command-error ] || expected_status=37
   [ "$status" -eq "$expected_status" ] || {
@@ -147,8 +151,18 @@ for scenario in acquire-error release-error lost-release-ack wrong-receipt lost-
       grep -q 'remote_release=reconciled' "${MOCK_ROOT}/err"
       ;;
     wrong-receipt|lost-release-request)
-      [ -e "${MOCK_ROOT}/queries" ] || fail "missing exact release lookup"
+      [ "$(wc -l <"${MOCK_ROOT}/queries")" -eq 1 ] || fail "unexpected release lookup count"
       ! grep -q 'remote_release=reconciled' "${MOCK_ROOT}/err" || fail "accepted unproven release"
+      ;;
+    receipt-reset|receipt-unreachable)
+      [ "$(wc -l <"${MOCK_ROOT}/queries")" -eq 2 ] || fail "expected two receipt attempts"
+      [ "$(sort -u "${MOCK_ROOT}/queries" | wc -l)" -eq 1 ] || fail "retry changed release identity"
+      [ "$(wc -l <"${MOCK_ROOT}/executions")" -eq 1 ] || fail "protected command ran more than once"
+      if [ "$scenario" = receipt-reset ]; then
+        grep -q 'remote_release=reconciled' "${MOCK_ROOT}/err"
+      else
+        ! grep -q 'remote_release=reconciled' "${MOCK_ROOT}/err" || fail "accepted unproven release"
+      fi
       ;;
     command-error)
       [ ! -e "${MOCK_ROOT}/queries" ] || fail "command failure must not query for recovery"

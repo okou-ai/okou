@@ -185,13 +185,21 @@ report_holder_result() {
 }
 
 confirm_release_receipt() {
-  local host=$1
-  # shellcheck disable=SC2029
-  if timeout -k 1s 8s ssh -n "${METAL_USER}@${host}" \
-    "sudo grep -Fxq -- '${release_id}' '${receipt_path}'" >/dev/null 2>&1; then
-    printf 'Runner lifecycle lock: namespace=%s host=%s remote_release=reconciled\n' "$JOB_REF" "$host" >&2
-    return 0
-  fi
+  local host=$1 deadline=$2 remaining query_status attempts_left=2
+  while [ "$attempts_left" -gt 0 ]; do
+    attempts_left=$((attempts_left - 1))
+    remaining=$((deadline - SECONDS))
+    [ "$remaining" -gt 0 ] || return 1
+    query_status=0
+    # shellcheck disable=SC2029
+    timeout -k 1s "${remaining}s" ssh -n "${METAL_USER}@${host}" \
+      "sudo grep -Fxq -- '${release_id}' '${receipt_path}'" >/dev/null 2>&1 || query_status=$?
+    if [ "$query_status" -eq 0 ]; then
+      printf 'Runner lifecycle lock: namespace=%s host=%s remote_release=reconciled\n' "$JOB_REF" "$host" >&2
+      return 0
+    fi
+    [ "$query_status" -eq 255 ] || return 1
+  done
   return 1
 }
 
@@ -226,7 +234,7 @@ release_locks() {
   locks_released=true
 
   local require_commit=${1:-false}
-  local index holder_status status=0
+  local index holder_status status=0 receipt_deadline=""
   # Heartbeat writers hold the release descriptors, so the remote holders only
   # see end-of-input once every writer is gone.
   stop_heartbeats
@@ -244,8 +252,11 @@ release_locks() {
     if report_holder_result "${lock_hosts[$index]}" "$phase" "$holder_status" "${state_dir}/${index}.err" "$require_commit"; then
       continue
     fi
-    if "$require_commit" && [ "$holder_status" -eq 255 ] && confirm_release_receipt "${lock_hosts[$index]}"; then
-      continue
+    if "$require_commit" && [ "$holder_status" -eq 255 ]; then
+      receipt_deadline=${receipt_deadline:-$((SECONDS + 8))}
+      if confirm_release_receipt "${lock_hosts[$index]}" "$receipt_deadline"; then
+        continue
+      fi
     fi
     status=1
   done
