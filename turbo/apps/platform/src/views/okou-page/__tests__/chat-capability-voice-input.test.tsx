@@ -75,6 +75,27 @@ function placeCaret(
   composer.focus();
 }
 
+test("Show a recording error when the audio worklet fails to load", async () => {
+  context.mocks.browser.voiceInput({
+    rms: 0.12,
+    pcmWorkletReady: () => {
+      return Promise.reject(
+        new DOMException("Audio worklet is unavailable", "NotSupportedError"),
+      );
+    },
+  });
+  installAvailableVoiceQuota();
+  installRunChat();
+  await setupPage({ context, path: RUN_PATH });
+
+  click(await readyVoiceInput());
+
+  await expect(
+    screen.findByText("Could not start recording."),
+  ).resolves.toBeVisible();
+  await findEnabledButton("Voice input");
+});
+
 test("Start and stop voice input from the focused composer shortcut", async () => {
   context.mocks.browser.voiceInput({ rms: 0.12 });
   installAvailableVoiceQuota();
@@ -318,7 +339,7 @@ test("Finish a provider no-speech response and preserve the input", async () => 
   expect(normalizedComposerText()).toBe(initialText);
   await expect(findEnabledButton("Add")).resolves.toBeVisible();
   expect(queryButton("Send")).toBeEnabled();
-  expect(screen.queryByText("Voice transcription failed.")).toBeNull();
+  expect(screen.queryByText("Could not finish recording.")).toBeNull();
 
   await userEvent.type(currentComposer(), "New words", { skipClick: true });
   expect(normalizedComposerText()).toBe("New words");
