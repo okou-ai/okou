@@ -109,9 +109,11 @@ not masquerade as a saved preference, and cancellation retains its native meanin
 
 Resolve a saved display mode from the active workspace member preferences.
 Follow system derives from the device configuration and supplies the first
-display before workspace preferences are ready. Apply the matching generated
-day or night resources and use the resolved appearance for system bars.
-Keep the Activity context and its owners intact during resource lookup.
+display until an identified member's appearance is available. A confirmed,
+identity-scoped cache can color the workspace loading state while requests run.
+The current server response owns the workspace values. Apply the matching
+generated day or night resources and use the resolved appearance for system
+bars. Keep the Activity context and its owners intact during resource lookup.
 
 ### Saved Instance State
 

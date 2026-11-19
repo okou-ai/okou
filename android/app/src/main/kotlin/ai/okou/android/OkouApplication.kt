@@ -11,6 +11,7 @@ import ai.okou.android.chat.ChatCacheStore
 import ai.okou.android.chat.ComposerJournalStore
 import ai.okou.android.chat.RunControlJournalStore
 import ai.okou.android.instructions.PersonalInstructionsDraftStore
+import ai.okou.android.preferences.MemberAppearanceCache
 import ai.okou.android.updates.AndroidUpdateClient
 import ai.okou.android.updates.AppUpdates
 import ai.okou.android.updates.FileUpdateStore
@@ -36,6 +37,9 @@ open class OkouApplication : Application() {
         )
     }
     val chatCache by lazy { ChatCacheStore(this) }
+    val memberAppearanceCache by lazy {
+        MemberAppearanceCache({ noBackupFilesDir.resolve("member-appearance") })
+    }
     open val instructionsDrafts by lazy { PersonalInstructionsDraftStore(this) }
     open val composerJournal by lazy { ComposerJournalStore(this) }
     open val runControlJournal by lazy { RunControlJournalStore(this) }

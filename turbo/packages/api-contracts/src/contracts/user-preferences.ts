@@ -11,10 +11,14 @@ import {
 import { initContract, authHeadersSchema } from "./base";
 import { apiErrorSchema } from "./errors";
 import {
+  colorThemeSchema,
   type UserLocale,
   userLocaleSchema,
 } from "../validators/user-preferences";
 export {
+  COLOR_THEMES,
+  colorThemeSchema,
+  type ColorTheme,
   DEFAULT_USER_LOCALE,
   type UserLocale,
   userLocaleSchema,
@@ -31,23 +35,6 @@ export type SendMode = zInfer<typeof sendModeSchema>;
 
 export const themePreferenceSchema = zEnum(["light", "dark", "system"]);
 export type ThemePreference = zInfer<typeof themePreferenceSchema>;
-
-export const COLOR_THEMES = [
-  // The product's own palette. It is the absence of a preset rather than
-  // another one: the App clears both palette attributes while it is selected,
-  // so every token resolves to the shared values the interface carried before
-  // the gradient color themes shipped.
-  "default",
-  "golden-hour",
-  "citrus-spark",
-  "berry-blush",
-  "cotton-sky",
-  "blue-horizon",
-  "daydream",
-  "deep-lagoon",
-] as const;
-export const colorThemeSchema = zEnum(COLOR_THEMES);
-export type ColorTheme = zInfer<typeof colorThemeSchema>;
 
 export const userPreferencesResponseSchema = object({
   timezone: string().nullable(),

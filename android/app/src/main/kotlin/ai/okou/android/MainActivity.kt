@@ -1,6 +1,7 @@
 package ai.okou.android
 
 import ai.okou.android.api.generated.AndroidUpdatesRelease
+import ai.okou.android.api.generated.UserPreferencesColorTheme
 import ai.okou.android.auth.SessionModel
 import ai.okou.android.auth.SessionRoot
 import ai.okou.android.auth.SessionStage
@@ -48,6 +49,7 @@ class MainActivity : AppCompatActivity() {
                     app.instructionsDrafts,
                     app.composerJournal,
                     app.runControlJournal,
+                    app.memberAppearanceCache,
                     updatesRequired = app.updates.required,
                 )
             }
@@ -76,7 +78,9 @@ class MainActivity : AppCompatActivity() {
                 }
             }
             val systemDark = isSystemInDarkTheme()
-            val dark = preferences?.theme?.resolveDark(systemDark) ?: systemDark
+            val cachedAppearance = sessionState.cachedAppearance
+            val theme = preferences?.theme ?: cachedAppearance?.theme
+            val dark = theme?.resolveDark(systemDark) ?: systemDark
             LaunchedEffect(dark) {
                 val style =
                     if (dark) SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
@@ -90,7 +94,8 @@ class MainActivity : AppCompatActivity() {
             OkouTheme(
                 dark,
                 preferences?.colorTheme
-                    ?: ai.okou.android.api.generated.UserPreferencesColorTheme.DEFAULT,
+                    ?: cachedAppearance?.colorTheme
+                    ?: UserPreferencesColorTheme.DEFAULT,
             ) {
                 UpdateHost(
                     if (sessionState.stage == SessionStage.UpdateRequired)

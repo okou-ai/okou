@@ -1,8 +1,9 @@
 import { command, computed, state } from "ccstate";
-import type {
-  ColorTheme,
-  ThemePreference,
-} from "@okouai/api-contracts/contracts/user-preferences";
+import type { ThemePreference } from "@okouai/api-contracts/contracts/user-preferences";
+import {
+  COLOR_THEMES,
+  type ColorTheme,
+} from "@okouai/api-contracts/validators/user-preferences";
 import { cookieSignals, refreshCookies$ } from "./external/cookie.ts";
 import { authenticatedSessionKey$, clerk$, clerkUser$ } from "./auth.ts";
 import {
@@ -29,13 +30,22 @@ const internalPreference$ = state<ThemePreference>("system");
 const internalResolved$ = state<"light" | "dark">("light");
 const internalColorTheme$ = state<ColorTheme>(DEFAULT_COLOR_THEME);
 const workspaceThemeChosen$ = state(false);
+const workspaceColorThemeChosen$ = state(false);
 const shellDocumentAttributesMounted$ = state(false);
 
 const {
   get$: themeCookieGet$,
+  readFresh$: themeCookieReadFresh$,
   promoteToSharedDomain$: promoteThemeCookieToSharedDomain$,
   set$: themeCookieSet$,
 } = cookieSignals("theme");
+
+const {
+  get$: colorThemeCookieGet$,
+  readFresh$: colorThemeCookieReadFresh$,
+  set$: colorThemeCookieSet$,
+  clear$: colorThemeCookieClear$,
+} = cookieSignals("color-theme", { scope: "host" });
 
 /**
  * Current resolved theme value (always "light" or "dark").
@@ -86,15 +96,28 @@ function applyTheme(theme: "light" | "dark") {
   }
 }
 
-/**
- * Set theme preference and apply it.
- */
+const applyThemePreference$ = command(
+  ({ set }, preference: ThemePreference) => {
+    set(internalPreference$, preference);
+    const resolved = resolveTheme(preference);
+    set(internalResolved$, resolved);
+    applyTheme(resolved);
+  },
+);
+
+const cacheThemePreference$ = command(
+  ({ set }, preference: ThemePreference) => {
+    const value = encodeOkouThemePreference(preference);
+    if (set(themeCookieReadFresh$) !== value) {
+      set(themeCookieSet$, value);
+    }
+  },
+);
+
+/** Apply a local appearance choice from the sign-in or error screen. */
 export const setTheme$ = command(({ set }, preference: ThemePreference) => {
-  set(internalPreference$, preference);
-  const resolved = resolveTheme(preference);
-  set(internalResolved$, resolved);
-  applyTheme(resolved);
-  set(themeCookieSet$, encodeOkouThemePreference(preference));
+  set(applyThemePreference$, preference);
+  set(cacheThemePreference$, preference);
 });
 
 /**
@@ -102,9 +125,12 @@ export const setTheme$ = command(({ set }, preference: ThemePreference) => {
  */
 export const updateThemePreference$ = command(
   async ({ set }, theme: ThemePreference, signal: AbortSignal) => {
+    signal.throwIfAborted();
     set(workspaceThemeChosen$, true);
-    set(setTheme$, theme);
+    set(applyThemePreference$, theme);
     await set(updateUserPreference$, { theme }, signal);
+    signal.throwIfAborted();
+    set(cacheThemePreference$, theme);
   },
 );
 
@@ -116,20 +142,33 @@ const setColorTheme$ = command(({ set }, colorTheme: ColorTheme) => {
   set(syncShellDocumentAttributes$);
 });
 
-/**
- * Apply a color theme immediately, then persist it when supported by the API.
- */
+const cacheColorTheme$ = command(({ set }, colorTheme: ColorTheme) => {
+  const cached = set(colorThemeCookieReadFresh$);
+  if (colorTheme === DEFAULT_COLOR_THEME) {
+    if (cached !== null) {
+      set(colorThemeCookieClear$);
+    }
+  } else if (cached !== colorTheme) {
+    set(colorThemeCookieSet$, colorTheme);
+  }
+});
+
+/** Apply a member's palette locally, then save it to their workspace. */
 export const updateColorThemePreference$ = command(
   async ({ set }, colorTheme: ColorTheme, signal: AbortSignal) => {
+    signal.throwIfAborted();
+    set(workspaceColorThemeChosen$, true);
     set(setColorTheme$, colorTheme);
     await set(updateUserPreference$, { colorTheme }, signal);
+    signal.throwIfAborted();
+    set(cacheColorTheme$, colorTheme);
   },
 );
 
 /**
  * Apply the active member's shared appearance and palette once their workspace
- * preferences have loaded. The cookie supplies appearance for the first paint.
- * Missing values resolve in memory so defaults can evolve without writes.
+ * preferences have loaded. Cookies seed the first paint and are reconciled
+ * to the workspace values. Defaults never write back to the workspace.
  */
 export const syncThemePreferences$ = command(
   async ({ get, set }, signal: AbortSignal) => {
@@ -150,9 +189,15 @@ export const syncThemePreferences$ = command(
 
     // A choice made while startup was loading belongs to the current session.
     if (!get(workspaceThemeChosen$)) {
-      set(setTheme$, preferences.theme ?? "system");
+      const theme = preferences.theme ?? "system";
+      set(applyThemePreference$, theme);
+      set(cacheThemePreference$, theme);
     }
-    set(setColorTheme$, preferences.colorTheme ?? get(colorTheme$));
+    if (!get(workspaceColorThemeChosen$)) {
+      const colorTheme = preferences.colorTheme ?? DEFAULT_COLOR_THEME;
+      set(setColorTheme$, colorTheme);
+      set(cacheColorTheme$, colorTheme);
+    }
   },
 );
 
@@ -206,18 +251,22 @@ export const shellDocumentAttributesRef$ = onRef(
 );
 
 /**
- * Initialize theme from the shared cookie or system preference.
+ * Seed appearance and the first app shell palette before workspace IO.
  */
 export const initTheme$ = command(({ get, set }, signal: AbortSignal) => {
   const preference =
     decodeOkouThemePreference(set(promoteThemeCookieToSharedDomain$)) ??
     "system";
   set(workspaceThemeChosen$, false);
-  set(internalPreference$, preference);
-  set(internalColorTheme$, DEFAULT_COLOR_THEME);
-  const resolved = resolveTheme(preference);
-  set(internalResolved$, resolved);
-  applyTheme(resolved);
+  set(workspaceColorThemeChosen$, false);
+  set(applyThemePreference$, preference);
+  const cachedPalette = get(colorThemeCookieGet$);
+  set(
+    internalColorTheme$,
+    COLOR_THEMES.find((palette) => {
+      return palette === cachedPalette;
+    }) ?? DEFAULT_COLOR_THEME,
+  );
   set(themeCookieSet$, encodeOkouThemePreference(preference));
 
   // Listen for system theme changes when preference is "system"
@@ -241,12 +290,10 @@ export const initTheme$ = command(({ get, set }, signal: AbortSignal) => {
       return;
     }
     set(refreshCookies$);
-    const nextPreference =
-      decodeOkouThemePreference(get(themeCookieGet$)) ?? "system";
-    set(internalPreference$, nextPreference);
-    const nextResolved = resolveTheme(nextPreference);
-    set(internalResolved$, nextResolved);
-    applyTheme(nextResolved);
+    set(
+      applyThemePreference$,
+      decodeOkouThemePreference(get(themeCookieGet$)) ?? "system",
+    );
   };
   window.addEventListener("focus", syncThemeFromCookie, { signal });
   document.addEventListener(
