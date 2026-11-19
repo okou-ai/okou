@@ -1,7 +1,7 @@
 use std::fs::File;
 
 use guest_control_proto::{WriteFileBatchEntry, encode_write_files};
-use rustix::fs::{MemfdFlags, fcntl_add_seals, memfd_create};
+use rustix::fs::{MemfdFlags, SealFlags, fcntl_add_seals, memfd_create};
 
 use super::*;
 

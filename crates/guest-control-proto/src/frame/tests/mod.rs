@@ -40,6 +40,37 @@ fn decoder_handles_partial_reads() {
 }
 
 #[test]
+fn incomplete_frame_handoff_checks_type_and_encoded_size() {
+    use crate::wire::{MSG_WRITE_FILES, MSG_WRITE_PRIVATE_FILES};
+
+    const MIN_PAYLOAD: usize = 12 * 1024 * 1024;
+    for (msg_type, payload_len, eligible) in [
+        (MSG_WRITE_FILES, MIN_PAYLOAD - 1, false),
+        (MSG_WRITE_FILES, MIN_PAYLOAD, true),
+        (MSG_WRITE_PRIVATE_FILES, MIN_PAYLOAD, false),
+    ] {
+        let mut decoder = Decoder::new();
+        let mut wire_prefix = ((payload_len + MIN_BODY_SIZE) as u32)
+            .to_be_bytes()
+            .to_vec();
+        wire_prefix.push(msg_type);
+        wire_prefix.extend_from_slice(&7u32.to_be_bytes());
+        wire_prefix.push(b'x');
+        assert!(decoder.decode(&wire_prefix).unwrap().is_empty());
+
+        let pending = decoder.take_incomplete_frame(MSG_WRITE_FILES, MIN_PAYLOAD);
+        assert_eq!(pending.is_some(), eligible);
+        if let Some(pending) = pending {
+            assert_eq!(pending.seq, 7);
+            assert_eq!(pending.payload_len, payload_len);
+            assert_eq!(pending.received_payload(), b"x");
+            let ping = encode(MSG_PING, 8, &[]).unwrap();
+            assert_eq!(decoder.decode(&ping).unwrap()[0].seq, 8);
+        }
+    }
+}
+
+#[test]
 fn decoder_handles_multiple_messages() {
     let mut data = encode(MSG_PING, 1, &[]).unwrap();
     data.extend_from_slice(&encode(MSG_PONG, 1, &[]).unwrap());

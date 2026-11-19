@@ -49,8 +49,18 @@ pub(crate) struct DecodedWriteFileMessage<'a> {
 
 pub(crate) struct DecodedWriteFilesMessage<'a> {
     payload: &'a [u8],
+    stats: WriteFilesStats,
+}
+
+pub(crate) struct WriteFilesStats {
     file_count: usize,
     content_bytes: usize,
+}
+
+enum BatchInput<'a> {
+    Buffered(&'a [u8]),
+    #[cfg(target_os = "linux")]
+    Sealed(File),
 }
 
 /// Handle write_file message
@@ -91,9 +101,8 @@ fn handle_write_file(
 }
 
 fn handle_write_files(
-    payload: &[u8],
-    file_count: usize,
-    content_bytes: usize,
+    input: BatchInput<'_>,
+    stats: WriteFilesStats,
     private: bool,
     connection_cancel: &AtomicBool,
     progress: &FileWriteRequestProgress,
@@ -104,10 +113,22 @@ fn handle_write_files(
     } else {
         "write_files"
     };
+    let WriteFilesStats {
+        file_count,
+        content_bytes,
+    } = stats;
     log(
         "INFO",
         &format!("{operation}: files={file_count} content_bytes={content_bytes}"),
     );
+
+    let payload = match input {
+        BatchInput::Buffered(payload) => payload,
+        #[cfg(target_os = "linux")]
+        BatchInput::Sealed(input) => {
+            return run_sealed_batch(input, batch_deadline(), connection_cancel, progress);
+        }
+    };
 
     #[cfg(target_os = "linux")]
     if use_sealed_batch(payload.len(), private) {
@@ -134,51 +155,83 @@ fn use_sealed_batch(payload_len: usize, private: bool) -> bool {
 }
 
 #[cfg(target_os = "linux")]
+pub(crate) fn create_batch_input() -> io::Result<File> {
+    use rustix::fs::{MemfdFlags, memfd_create};
+
+    let flags = MemfdFlags::CLOEXEC | MemfdFlags::ALLOW_SEALING | MemfdFlags::NOEXEC_SEAL;
+    Ok(File::from(memfd_create(c"guest-write-files", flags)?))
+}
+
+#[cfg(target_os = "linux")]
+fn seal_batch_input(file: &File) -> io::Result<()> {
+    use rustix::fs::{SealFlags, fcntl_add_seals};
+
+    let seals = SealFlags::WRITE | SealFlags::SHRINK | SealFlags::GROW | SealFlags::SEAL;
+    Ok(fcntl_add_seals(file, seals)?)
+}
+
+#[cfg(target_os = "linux")]
+fn batch_deadline() -> std::time::Instant {
+    use std::time::{Duration, Instant};
+
+    Instant::now() + Duration::from_millis(u64::from(WRITE_FILE_HELPER_TIMEOUT_MS))
+}
+
+#[cfg(target_os = "linux")]
+fn check_sealed_write(
+    connection_cancel: &AtomicBool,
+    deadline: std::time::Instant,
+) -> Result<(), &'static str> {
+    use std::sync::atomic::Ordering;
+    use std::time::Instant;
+
+    if connection_cancel.load(Ordering::Acquire) {
+        Err("write cancelled")
+    } else if Instant::now() >= deadline {
+        Err("write timed out")
+    } else {
+        Ok(())
+    }
+}
+
+#[cfg(target_os = "linux")]
 fn handle_sealed_batch(
     payload: &[u8],
     connection_cancel: &AtomicBool,
     progress: &FileWriteRequestProgress,
 ) -> (bool, String) {
-    use std::sync::atomic::Ordering;
-    use std::time::{Duration, Instant};
-
-    use rustix::fs::{MemfdFlags, SealFlags, fcntl_add_seals, memfd_create};
-
-    let deadline = Instant::now() + Duration::from_millis(u64::from(WRITE_FILE_HELPER_TIMEOUT_MS));
-    let check = || {
-        if connection_cancel.load(Ordering::Acquire) {
-            Err("write cancelled")
-        } else if Instant::now() >= deadline {
-            Err("write timed out")
-        } else {
-            Ok(())
-        }
-    };
-    if let Err(error) = check() {
+    let deadline = batch_deadline();
+    if let Err(error) = check_sealed_write(connection_cancel, deadline) {
         return (false, error.to_string());
     }
-    let flags = MemfdFlags::CLOEXEC | MemfdFlags::ALLOW_SEALING | MemfdFlags::NOEXEC_SEAL;
-    let mut file = match memfd_create(c"guest-write-files", flags) {
-        Ok(fd) => File::from(fd),
+    let mut file = match create_batch_input() {
+        Ok(file) => file,
         Err(error) => {
-            let error = io::Error::from(error);
             return (false, format!("Failed to create batch input: {error}"));
         }
     };
     for chunk in payload.chunks(256 * 1024) {
-        if let Err(error) = check() {
+        if let Err(error) = check_sealed_write(connection_cancel, deadline) {
             return (false, error.to_string());
         }
         if let Err(error) = file.write_all(chunk) {
             return (false, format!("Failed to fill batch input: {error}"));
         }
     }
-    let seals = SealFlags::WRITE | SealFlags::SHRINK | SealFlags::GROW | SealFlags::SEAL;
-    if let Err(error) = fcntl_add_seals(&file, seals) {
-        let error = io::Error::from(error);
+    if let Err(error) = seal_batch_input(&file) {
         return (false, format!("Failed to seal batch input: {error}"));
     }
-    if let Err(error) = check() {
+    run_sealed_batch(file, deadline, connection_cancel, progress)
+}
+
+#[cfg(target_os = "linux")]
+fn run_sealed_batch(
+    file: File,
+    deadline: std::time::Instant,
+    connection_cancel: &AtomicBool,
+    progress: &FileWriteRequestProgress,
+) -> (bool, String) {
+    if let Err(error) = check_sealed_write(connection_cancel, deadline) {
         return (false, error.to_string());
     }
     let child = match spawn_write_files_command(false, Some(file)) {
@@ -190,12 +243,12 @@ fn handle_sealed_batch(
             );
         }
     };
-    if let Err(error) = check() {
+    if let Err(error) = check_sealed_write(connection_cancel, deadline) {
         kill_and_reap_child(child);
         return (false, error.to_string());
     }
     let remaining = deadline
-        .saturating_duration_since(Instant::now())
+        .saturating_duration_since(std::time::Instant::now())
         .as_millis();
     let timeout_ms = u32::try_from(remaining)
         .unwrap_or(WRITE_FILE_HELPER_TIMEOUT_MS)
@@ -462,9 +515,25 @@ pub(crate) fn decode_write_files_message(
     let content_bytes = files.iter().map(|file| file.content.len()).sum();
     Ok(DecodedWriteFilesMessage {
         payload,
-        file_count: files.len(),
-        content_bytes,
+        stats: WriteFilesStats {
+            file_count: files.len(),
+            content_bytes,
+        },
     })
+}
+
+#[cfg(target_os = "linux")]
+pub(crate) fn seal_and_validate_batch_input(file: &File) -> io::Result<WriteFilesStats> {
+    use std::os::fd::AsFd;
+
+    use guest_contracts::file_write::sealed_input::SealedInput;
+    use guest_control_proto::{MAX_MESSAGE_SIZE, MIN_BODY_SIZE};
+
+    seal_batch_input(file)?;
+    let mapping = SealedInput::map(file.as_fd(), MAX_MESSAGE_SIZE - MIN_BODY_SIZE)?;
+    decode_write_files_message(mapping.as_bytes())
+        .map(|decoded| decoded.stats)
+        .map_err(to_io_error)
 }
 
 pub(crate) fn handle_decoded_write_file_message(
@@ -493,14 +562,43 @@ pub(crate) fn handle_decoded_write_files_message(
     connection_cancel: &AtomicBool,
     progress: &FileWriteRequestProgress,
 ) -> io::Result<Vec<u8>> {
-    let (success, error) = handle_write_files(
-        decoded.payload,
-        decoded.file_count,
-        decoded.content_bytes,
+    handle_batch_input(
+        seq,
+        BatchInput::Buffered(decoded.payload),
+        decoded.stats,
         private,
         connection_cancel,
         progress,
-    );
+    )
+}
+
+#[cfg(target_os = "linux")]
+pub(crate) fn handle_sealed_write_files_message(
+    seq: u32,
+    file: File,
+    stats: WriteFilesStats,
+    connection_cancel: &AtomicBool,
+    progress: &FileWriteRequestProgress,
+) -> io::Result<Vec<u8>> {
+    handle_batch_input(
+        seq,
+        BatchInput::Sealed(file),
+        stats,
+        false,
+        connection_cancel,
+        progress,
+    )
+}
+
+fn handle_batch_input(
+    seq: u32,
+    input: BatchInput<'_>,
+    stats: WriteFilesStats,
+    private: bool,
+    connection_cancel: &AtomicBool,
+    progress: &FileWriteRequestProgress,
+) -> io::Result<Vec<u8>> {
+    let (success, error) = handle_write_files(input, stats, private, connection_cancel, progress);
     let payload = guest_control_proto::encode_write_files_result(success, &error);
     guest_control_proto::encode(MSG_WRITE_FILES_RESULT, seq, &payload).map_err(to_io_error)
 }

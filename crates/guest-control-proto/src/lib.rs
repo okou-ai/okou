@@ -220,7 +220,9 @@ mod read;
 mod wire;
 
 pub use error::ProtocolError;
-pub use frame::{BorrowedRawMessage, DecodeWithError, Decoder, RawMessage, encode};
+pub use frame::{
+    BorrowedRawMessage, DecodeWithError, Decoder, IncompleteFrame, RawMessage, encode,
+};
 pub use payloads::empty::decode_empty_payload;
 pub use payloads::error::{decode_error, encode_error};
 pub use payloads::exec_operation::{
