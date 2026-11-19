@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { cronOfficialWorkflowCatalogContract } from "@okouai/api-contracts/contracts/cron";
 import { morningBriefPreferenceContract } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   workflowsCollectionContract,
   workflowsDetailContract,
@@ -19,6 +20,7 @@ import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { createRouteMocks } from "./helpers/route-test";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
 
 const context = testContext();
@@ -323,6 +325,8 @@ describe("POST /api/workflows/recency/migrate", () => {
       name: "legacy-validation",
     });
     const invalidBodies = [
+      undefined,
+      "{",
       { workflowIds: [workflowId, "not-a-workflow-uuid"] },
       {
         workflowIds: Array.from({ length: 1001 }, () => {
@@ -343,7 +347,10 @@ describe("POST /api/workflows/recency/migrate", () => {
       }).request("/api/workflows/recency/migrate", {
         method: "POST",
         headers: { ...headers(actor), "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body:
+          typeof body === "string" || body === undefined
+            ? body
+            : JSON.stringify(body),
       });
       expect(response.status).toBe(400);
     }
@@ -355,7 +362,73 @@ describe("POST /api/workflows/recency/migrate", () => {
     });
   });
 
-  it("requires an authenticated workspace session and denies a default-off member", async () => {
+  it("returns before parsing or validating migration bodies when opted out, without changing history", async () => {
+    const { actor, agentId } = await setup();
+    const workflowId = await wf.createWorkflow(actor, {
+      agentId,
+      name: "legacy-disabled-validation",
+    });
+    if (!actor.orgId) {
+      throw new Error("Expected a workflow workspace");
+    }
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...actor, orgId: actor.orgId },
+      { [FeatureSwitchKey.WorkflowRecency]: false },
+    );
+    const before = await accept(
+      preferenceClient().get({ headers: headers(actor) }),
+      [200],
+    );
+    await flushWaitUntilForTest();
+    context.mocks.ably.publish.mockClear();
+    const bodies = [
+      undefined,
+      "{",
+      JSON.stringify({ workflowIds: [workflowId, "not-a-workflow-uuid"] }),
+      JSON.stringify({
+        workflowIds: Array.from({ length: 1001 }, () => {
+          return randomUUID();
+        }),
+      }),
+      JSON.stringify({ workflowIds: [workflowId], userId: actor.userId }),
+      JSON.stringify({ workflowIds: [workflowId] }),
+    ];
+    for (const body of bodies) {
+      const response = await createApp({
+        signal: context.signal,
+        routes: workflowsRoutes,
+      }).request("/api/workflows/recency/migrate", {
+        method: "POST",
+        headers: { ...headers(actor), "Content-Type": "application/json" },
+        body,
+      });
+      expect(response.status).toBe(403);
+    }
+    const after = await accept(
+      preferenceClient().get({ headers: headers(actor) }),
+      [200],
+    );
+    expect(after.body).toStrictEqual(before.body);
+    await flushWaitUntilForTest();
+    expect(context.mocks.ably.publish).not.toHaveBeenCalledWith(
+      "userPreferenceChanged",
+      { kinds: ["workflowRecency"] },
+    );
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...actor, orgId: actor.orgId },
+      { [FeatureSwitchKey.WorkflowRecency]: true },
+    );
+    await expect(composer(actor, agentId)).resolves.toContainEqual(
+      expect.objectContaining({ id: workflowId, lastUsedAt: null }),
+    );
+    expect((await migrate(actor, [workflowId])).body).toStrictEqual({
+      migrated: true,
+    });
+  });
+
+  it("requires an authenticated workspace member and denies a default-off member", async () => {
     context.mocks.clerk.authenticateRequest.mockResolvedValue({
       isAuthenticated: false,
     });

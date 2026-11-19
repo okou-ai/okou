@@ -441,17 +441,17 @@ const runAutomationInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
     const params = get(pathParamsOf(workflowAutomationsContract.run));
-    const recordWorkflowRecency =
-      auth.tokenType === "session" &&
-      isFeatureEnabled(
-        FeatureSwitchKey.WorkflowRecency,
-        await set(
-          loadUserFeatureSwitchContext$,
-          auth.orgId,
-          auth.userId,
-          signal,
-        ),
-      );
+    const features = await set(
+      loadUserFeatureSwitchContext$,
+      auth.orgId,
+      auth.userId,
+      signal,
+    );
+    signal.throwIfAborted();
+    const recordWorkflowRecency = isFeatureEnabled(
+      FeatureSwitchKey.WorkflowRecency,
+      features,
+    );
     const result = await set(
       runOwnedWorkflowAutomationNow$,
       {

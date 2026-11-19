@@ -297,19 +297,20 @@ const migrateWorkflowRecencyBody$ = bodyResultOf(
 const migrateWorkflowRecencyInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
-    const body = await get(migrateWorkflowRecencyBody$);
-    signal.throwIfAborted();
-    if (!body.ok) {
-      return body.response;
-    }
     const features = await set(
       loadUserFeatureSwitchContext$,
       auth.orgId,
       auth.userId,
       signal,
     );
+    signal.throwIfAborted();
     if (!isFeatureEnabled(FeatureSwitchKey.WorkflowRecency, features)) {
       return forbidden("Workflow recency is not available");
+    }
+    const body = await get(migrateWorkflowRecencyBody$);
+    signal.throwIfAborted();
+    if (!body.ok) {
+      return body.response;
     }
     const visible = await get(
       composerWorkflows({
@@ -2031,10 +2032,7 @@ export const workflowsRoutes: readonly RouteEntry[] = [
   },
   {
     route: workflowsCollectionContract.migrateRecency,
-    handler: authRoute(
-      { ...workflowWriteAuth, accept: ["session"] },
-      migrateWorkflowRecencyInner$,
-    ),
+    handler: authRoute(workflowWriteAuth, migrateWorkflowRecencyInner$),
   },
   {
     route: workflowsCollectionContract.create,

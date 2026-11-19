@@ -63,7 +63,7 @@ export interface RunWorkflowAutomationNowArgs {
   readonly queueEventId?: string;
   readonly apiStartTime: number;
   readonly agentRunSource?: ChatAgentRunSourceAnnotation;
-  /** Set only by the session-authenticated manual Run now entry. */
+  /** Set only for eligible explicit manual Run now requests. */
   readonly recordWorkflowRecency?: true;
   /** Exact member connector that durably delivered this provider event. */
   readonly connectorSourceId?: string;

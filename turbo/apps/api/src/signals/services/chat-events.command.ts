@@ -2458,7 +2458,6 @@ const normalSendWorkflowRecency$ = command(
   ) => {
     if (
       !args.recordWorkflowRecency ||
-      args.auth.tokenType !== "session" ||
       !args.body.userMessage.parts.some((part) => {
         return part.type === "text" && part.text.includes("/");
       })
