@@ -1,7 +1,5 @@
 package ai.okou.android.auth
 
-import ai.okou.android.AppearanceMode
-import ai.okou.android.AppearanceUiState
 import ai.okou.android.OkouApp
 import ai.okou.android.R
 import ai.okou.android.SettingsGroup
@@ -14,7 +12,6 @@ import ai.okou.android.instructions.PersonalInstructionsSettings
 import ai.okou.android.preferences.MemberPreferencesSettings
 import ai.okou.android.state.SettingsDestination
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -64,9 +61,6 @@ import com.clerk.ui.auth.AuthView
 @Composable
 fun SessionRoot(
     state: SessionUiState,
-    appearance: AppearanceUiState,
-    selectAppearance: (AppearanceMode) -> Unit,
-    retryAppearance: () -> Unit,
     retry: () -> Unit,
     chooseWorkspace: (String) -> Unit,
     signOut: () -> Unit,
@@ -89,15 +83,9 @@ fun SessionRoot(
                         when (destination) {
                             SettingsDestination.Overview ->
                                 SettingsScreen(
-                                    appearance,
-                                    selectAppearance,
-                                    retryAppearance,
                                     appUpdates = appUpdates,
                                     workspacePreferences = {
-                                        MemberPreferencesSettings(
-                                            ready.preferences,
-                                            appearance.mode.resolveDark(isSystemInDarkTheme()),
-                                        )
+                                        MemberPreferencesSettings(ready.preferences)
                                     },
                                     workspace = { WorkspaceSettings(state, chooseWorkspace) },
                                     account = { AccountSettings(openInstructions, signOut) },

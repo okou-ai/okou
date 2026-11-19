@@ -94,7 +94,7 @@ function expectSelected(element: HTMLElement): void {
   expect(selectionAttribute).toBe("true");
 }
 
-test("Theme preferences initialize from the cookie and save explicit choices to the workspace", async () => {
+test("A missing workspace theme follows the system and explicit choices are saved", async () => {
   const updates = mockPreferences({ theme: null });
   const cookieWrites: string[] = [];
   vi.spyOn(document, "cookie", "set").mockImplementation((value) => {
@@ -107,7 +107,14 @@ test("Theme preferences initialize from the cookie and save explicit choices to 
   await expect(
     screen.findByText("Your preferred color scheme"),
   ).resolves.toBeVisible();
-  expect(document.documentElement).toHaveAttribute("data-theme", "dark");
+  await waitFor(() => {
+    expectSelected(getFastRole("button", "System"));
+  });
+  expect(
+    updates.filter((update) => {
+      return update.theme !== undefined;
+    }),
+  ).toStrictEqual([]);
   click(getFastRole("button", "Light"));
 
   await waitFor(() => {
@@ -131,7 +138,7 @@ test("Theme preferences initialize from the cookie and save explicit choices to 
   );
 });
 
-test("Theme choices and color themes save independently while cookie restoration is preserved", async () => {
+test("A saved workspace mode overrides the cookie and saves independently of the palette", async () => {
   const updates = mockPreferences({
     theme: "dark",
     colorTheme: "golden-hour",
@@ -152,15 +159,18 @@ test("Theme choices and color themes save independently while cookie restoration
     screen.findByText("Your preferred color scheme"),
   ).resolves.toBeVisible();
   const colorTheme = await screen.findByRole("group", { name: "Color theme" });
-  expectSelected(getFastRole("button", "Light"));
-  expectSelected(getFastRole("button", "Golden hour", colorTheme));
-
-  click(getFastRole("button", "Dark"));
-
   await waitFor(() => {
     expectSelected(getFastRole("button", "Dark"));
-    expect(getFastRole("button", "Dark")).toBeEnabled();
-    expect(updates).toContainEqual({ theme: "dark" });
+  });
+  expect(document.documentElement).toHaveAttribute("data-theme", "dark");
+  expectSelected(getFastRole("button", "Golden hour", colorTheme));
+
+  click(getFastRole("button", "Light"));
+
+  await waitFor(() => {
+    expectSelected(getFastRole("button", "Light"));
+    expect(getFastRole("button", "Light")).toBeEnabled();
+    expect(updates).toContainEqual({ theme: "light" });
   });
 
   const selectedAppearance = ["Light", "Dark", "System"].find((name) => {
@@ -180,13 +190,13 @@ test("Theme choices and color themes save independently while cookie restoration
     expect(updates).toContainEqual({ colorTheme: "deep-lagoon" });
     expectSelected(getFastRole("button", "Deep lagoon", colorTheme));
   });
-  expect(document.documentElement).toHaveAttribute("data-theme", "dark");
+  expect(document.documentElement).toHaveAttribute("data-theme", "light");
   expect(document.documentElement).toHaveAttribute(
     "data-color-theme",
     "deep-lagoon",
   );
   expect(cookieWrites).toContain(
-    "__Secure-okou-theme=v1.dark; Domain=.okou.ai; Path=/; Max-Age=31536000; SameSite=Lax; Secure",
+    "__Secure-okou-theme=v1.light; Domain=.okou.ai; Path=/; Max-Age=31536000; SameSite=Lax; Secure",
   );
   expect(cookieWrites.join("\n")).not.toMatch(/golden-hour|deep-lagoon/u);
 });
@@ -533,7 +543,7 @@ test("A failed preference save shows its error and can be retried", async () => 
   });
 });
 
-test("A shared theme cookie supersedes and removes an older host-only duplicate", async () => {
+test("First paint cleans up duplicate cookies before the shared workspace mode loads", async () => {
   mockPreferences({ theme: "dark" });
   let cookie = "__Secure-okou-theme=v1.dark; __Secure-okou-theme=v1.light";
   const cookieWrites: string[] = [];
@@ -554,12 +564,17 @@ test("A shared theme cookie supersedes and removes an older host-only duplicate"
   await expect(
     screen.findByText("Your preferred color scheme"),
   ).resolves.toBeVisible();
-  expectSelected(getFastRole("button", "Light"));
-  expect(document.documentElement).toHaveAttribute("data-theme", "light");
+  await waitFor(() => {
+    expectSelected(getFastRole("button", "Dark"));
+  });
+  expect(document.documentElement).toHaveAttribute("data-theme", "dark");
   expect(cookieWrites).toContain(
     "__Secure-okou-theme=; Path=/; Max-Age=0; SameSite=Lax; Secure",
   );
   expect(cookieWrites).toContain(
     "__Secure-okou-theme=v1.light; Domain=.vm0.ai; Path=/; Max-Age=31536000; SameSite=Lax; Secure",
+  );
+  expect(cookieWrites).toContain(
+    "__Secure-okou-theme=v1.dark; Domain=.vm0.ai; Path=/; Max-Age=31536000; SameSite=Lax; Secure",
   );
 });

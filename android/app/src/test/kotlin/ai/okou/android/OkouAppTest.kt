@@ -1,7 +1,10 @@
 package ai.okou.android
 
 import ai.okou.android.api.WorkspaceTokenProvider
+import ai.okou.android.api.generated.UpdatePreferencesRequest
+import ai.okou.android.api.generated.UserPreferences
 import ai.okou.android.auth.WorkspaceIdentity
+import ai.okou.android.auth.WorkspaceSession
 import ai.okou.android.chat.ChatComposerModel
 import ai.okou.android.chat.ChatListModel
 import ai.okou.android.chat.RunControlsModel
@@ -20,8 +23,6 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.assertIsEnabled
-import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isSelectable
@@ -38,7 +39,7 @@ import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
-import kotlinx.coroutines.CompletableDeferred
+import java.io.IOException
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -55,11 +56,7 @@ class OkouAppTest {
     private var background: Color? = null
     private val deviceConfiguration = mutableStateOf<Configuration?>(null)
 
-    private fun render(
-        store: TestPreferencesStore = TestPreferencesStore(),
-        fontScale: Float = 1f,
-        withWorkspacePreferences: Boolean = false,
-    ) {
+    private fun render(fontScale: Float = 1f, failPreferenceSave: () -> Boolean = { false }) {
         val models =
             compose.runOnIdle {
                 val provider =
@@ -80,7 +77,6 @@ class OkouAppTest {
                                     {},
                                 )
                             }
-                            initializer { AppearanceModel(store) }
                             initializer {
                                 val app = compose.activity.application as TestOkouApplication
                                 ChatComposerModel(
@@ -98,8 +94,7 @@ class OkouAppTest {
                                 )
                             }
                             initializer {
-                                MemberPreferencesModel(
-                                    testBootstrap().preferences,
+                                val service =
                                     (compose.activity.application as TestOkouApplication)
                                         .createWorkspaceSession(
                                             WorkspaceIdentity(
@@ -109,19 +104,27 @@ class OkouAppTest {
                                                 "font-org",
                                             ),
                                             WorkspaceTokenProvider { "test-token" },
-                                        ),
+                                        )
+                                MemberPreferencesModel(
+                                    testBootstrap().preferences,
+                                    object : WorkspaceSession by service {
+                                        override suspend fun updatePreferences(
+                                            update: UpdatePreferencesRequest
+                                        ): UserPreferences {
+                                            if (failPreferenceSave()) throw IOException("offline")
+                                            return service.updatePreferences(update)
+                                        }
+                                    },
                                     { true },
                                     {},
                                 )
                             }
                         },
                     )
-                Triple(
+                Pair(
                     provider[ChatListModel::class.java].apply { refresh() } to
                         provider[ChatComposerModel::class.java],
-                    provider[AppearanceModel::class.java],
-                    if (withWorkspacePreferences) provider[MemberPreferencesModel::class.java]
-                    else null,
+                    provider[MemberPreferencesModel::class.java],
                 )
             }
         val controls =
@@ -160,7 +163,7 @@ class OkouAppTest {
                     (deviceConfiguration.value ?: LocalConfiguration.current),
                 LocalDensity provides Density(LocalDensity.current.density, fontScale),
             ) {
-                val dark = state.mode.resolveDark(isSystemInDarkTheme())
+                val dark = state.theme.resolveDark(isSystemInDarkTheme())
                 OkouTheme(dark) {
                     val color = MaterialTheme.colorScheme.background
                     SideEffect { background = color }
@@ -170,12 +173,7 @@ class OkouAppTest {
                         controls,
                         settingsContent = { _, _ ->
                             SettingsScreen(
-                                state,
-                                models.second::selectMode,
-                                models.second::retry,
-                                workspacePreferences = {
-                                    models.third?.let { MemberPreferencesSettings(it, dark) }
-                                },
+                                workspacePreferences = { MemberPreferencesSettings(models.second) }
                             )
                         },
                     )
@@ -191,7 +189,7 @@ class OkouAppTest {
 
     @Test
     fun workspaceLanguageChoicesRemainReachableWithLargeText() {
-        render(fontScale = 2f, withWorkspacePreferences = true)
+        render(fontScale = 2f)
         compose.onNodeWithContentDescription("Settings").performClick()
         compose.onNodeWithText("Language").performScrollTo().performClick()
         compose.onNodeWithText("繁體中文").performScrollTo().assertIsDisplayed()
@@ -214,31 +212,15 @@ class OkouAppTest {
     }
 
     @Test
-    fun homeIsUsableBeforeAppearanceStorageReturns() {
-        render(TestPreferencesStore().apply { initialRead = CompletableDeferred() })
-        compose.onNodeWithText("Chats").assertExists()
-        compose.onNodeWithContentDescription("Filter").performClick()
-        compose.onNodeWithText("Archived").performClick().assertIsSelected()
-        compose.onNodeWithContentDescription("Settings").performClick()
-        compose.onNodeWithText("Loading appearance…").assertExists()
-        compose.onNodeWithText("Appearance").assertIsNotEnabled()
-    }
-
-    @Test
     fun preferenceFailuresAreVisibleAndRetryRestoresNativeSelection() {
-        val storage = TestPreferencesStore().apply { readFailure = true }
-        render(storage)
+        var fail = true
+        render(failPreferenceSave = { fail })
         compose.onNodeWithContentDescription("Settings").performClick()
-        compose.onNodeWithText("Could not load appearance. Try again.").assertExists()
-        compose.onNodeWithText("Appearance").assertIsNotEnabled()
-        compose.runOnIdle { storage.readFailure = false }
-        compose.onNodeWithText("Try again").performScrollTo().performClick()
-        compose.onNodeWithText("Appearance").assertIsEnabled()
-        compose.runOnIdle { storage.writeFailure = true }
         selectAppearance("Dark")
-        compose.onNodeWithText("Could not save appearance. Try again.").assertExists()
-        compose.onNodeWithText("Follow system").assertIsDisplayed()
-        compose.runOnIdle { storage.writeFailure = false }
+        compose.onNodeWithText("Could not confirm the save. Try again or refresh.").assertExists()
+        compose.onNodeWithText("Dark").assertIsDisplayed()
+        compose.onNodeWithText("Refresh preferences").assertExists()
+        compose.runOnIdle { fail = false }
         compose.onNodeWithText("Try again").performScrollTo().performClick()
         compose.onNodeWithText("Appearance").performClick()
         compose.onNode(isSelectable() and hasText("Dark")).assertIsSelected()
@@ -323,7 +305,7 @@ class OkouAppTest {
         compose.onNodeWithContentDescription("Einstellungen").assertIsDisplayed().performClick()
         selectAppearance("Dunkel", row = "Erscheinungsbild")
         compose.onNodeWithText("Dunkel").assertIsDisplayed()
-        compose.onNodeWithText("Auf diesem Gerät").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Arbeitsbereichseinstellungen").performScrollTo().assertIsDisplayed()
         compose.onNodeWithContentDescription("Zurück").assertIsDisplayed().performClick()
         compose.onNodeWithText("Chats").assertIsDisplayed()
         val refresh =

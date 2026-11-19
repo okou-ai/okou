@@ -3,9 +3,11 @@ package ai.okou.android.preferences
 import ai.okou.android.api.generated.UpdatePreferencesRequest
 import ai.okou.android.api.generated.UpdatePreferencesRequestColorTheme
 import ai.okou.android.api.generated.UpdatePreferencesRequestLocale
+import ai.okou.android.api.generated.UpdatePreferencesRequestTheme
 import ai.okou.android.api.generated.UserPreferences
 import ai.okou.android.api.generated.UserPreferencesColorTheme
 import ai.okou.android.api.generated.UserPreferencesLocale
+import ai.okou.android.api.generated.UserPreferencesTheme
 import ai.okou.android.auth.WorkspaceSession
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -27,11 +29,13 @@ enum class PreferenceStatus {
 data class PreferenceChange(
     val colorTheme: UserPreferencesColorTheme? = null,
     val locale: UserPreferencesLocale? = null,
+    val theme: UserPreferencesTheme? = null,
 ) {
     fun request() =
         UpdatePreferencesRequest(
             colorTheme = colorTheme?.let { UpdatePreferencesRequestColorTheme.valueOf(it.name) },
             locale = locale?.let { UpdatePreferencesRequestLocale.valueOf(it.name) },
+            theme = theme?.let { UpdatePreferencesRequestTheme.valueOf(it.name) },
         )
 }
 
@@ -45,6 +49,9 @@ data class MemberPreferencesState(
 
     val colorTheme: UserPreferencesColorTheme
         get() = pending?.colorTheme ?: confirmed.colorTheme ?: UserPreferencesColorTheme.DEFAULT
+
+    val theme: UserPreferencesTheme
+        get() = pending?.theme ?: confirmed.theme ?: UserPreferencesTheme.SYSTEM
 
     val supportedLocales: List<UserPreferencesLocale>
         get() = confirmed.supportedLocales.map { UserPreferencesLocale.valueOf(it.name) }
@@ -67,6 +74,13 @@ class MemberPreferencesModel(
     private var retired = false
 
     private fun current() = !retired && authorized()
+
+    fun selectTheme(value: UserPreferencesTheme) {
+        val state = mutable.value
+        if (!current() || state.busy || state.pending == null && state.confirmed.theme == value)
+            return
+        save((state.pending ?: PreferenceChange()).copy(theme = value))
+    }
 
     fun selectColorTheme(value: UserPreferencesColorTheme) {
         val state = mutable.value

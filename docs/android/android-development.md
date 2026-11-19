@@ -107,10 +107,11 @@ that value can arrive separately; preserve pending intent until confirmation
 instead of accepting a newer action against an obsolete value. IO failure must
 not masquerade as a saved preference, and cancellation retains its native meaning.
 
-Resolve an explicit app appearance from the correct generated day/night
-resources, independently of the phone's mode. Keep the Activity context and its
-owners intact; a configuration-specific Resources instance is sufficient for
-token lookup. Native system-bar presentation follows the resolved app mode.
+Resolve a saved display mode from the active workspace member preferences.
+Follow system derives from the device configuration and supplies the first
+display before workspace preferences are ready. Apply the matching generated
+day or night resources and use the resolved appearance for system bars.
+Keep the Activity context and its owners intact during resource lookup.
 
 ### Saved Instance State
 

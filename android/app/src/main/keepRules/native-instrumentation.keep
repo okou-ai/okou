@@ -4,7 +4,6 @@
   public <init>();
   public ai.okou.android.auth.Authentication createAuthentication();
   public ai.okou.android.auth.WorkspaceSession createWorkspaceSession(ai.okou.android.auth.WorkspaceIdentity, ai.okou.android.api.WorkspaceTokenProvider);
-  public androidx.datastore.core.DataStore getAppearancePreferences();
   public ai.okou.android.auth.Authentication getAuthentication();
   public ai.okou.android.chat.ChatCacheStore getChatCache();
   public ai.okou.android.chat.ComposerJournalStore getComposerJournal();
@@ -157,10 +156,13 @@
 -keep,allowobfuscation class ai.okou.android.api.generated.UpdatePreferencesRequest {
   public ai.okou.android.api.generated.UpdatePreferencesRequestColorTheme getColorTheme();
   public ai.okou.android.api.generated.UpdatePreferencesRequestLocale getLocale();
+  public ai.okou.android.api.generated.UpdatePreferencesRequestTheme getTheme();
 }
 -keep enum ai.okou.android.api.generated.UpdatePreferencesRequestColorTheme {
 }
 -keep enum ai.okou.android.api.generated.UpdatePreferencesRequestLocale {
+}
+-keep enum ai.okou.android.api.generated.UpdatePreferencesRequestTheme {
 }
 -keep,allowobfuscation class ai.okou.android.api.generated.UserPreferences$Companion {
   public kotlinx.serialization.KSerializer serializer();
@@ -169,6 +171,7 @@
   public static ai.okou.android.api.generated.UserPreferences copy$default(ai.okou.android.api.generated.UserPreferences, java.lang.String, ai.okou.android.api.generated.UserPreferencesLocale, java.util.List, java.util.List, ai.okou.android.api.generated.UserPreferencesSendMode, boolean, boolean, ai.okou.android.api.generated.UserPreferencesTheme, ai.okou.android.api.generated.UserPreferencesColorTheme, long, boolean, int, java.lang.Object);
   public ai.okou.android.api.generated.UserPreferencesColorTheme getColorTheme();
   public ai.okou.android.api.generated.UserPreferencesLocale getLocale();
+  public ai.okou.android.api.generated.UserPreferencesTheme getTheme();
   ai.okou.android.api.generated.UserPreferences$Companion Companion;
 }
 -keep enum ai.okou.android.api.generated.UserPreferencesColorTheme {
@@ -180,6 +183,7 @@
 -keep enum ai.okou.android.api.generated.UserPreferencesSendMode {
 }
 -keep enum ai.okou.android.api.generated.UserPreferencesTheme {
+  public static ai.okou.android.api.generated.UserPreferencesTheme valueOf(java.lang.String);
 }
 -keep,allowobfuscation interface ai.okou.android.auth.Authentication {
   public kotlinx.coroutines.flow.StateFlow getState();
@@ -598,15 +602,6 @@
 -keep,allowobfuscation class androidx.core.view.WindowInsetsControllerCompat {
   public boolean isAppearanceLightNavigationBars();
   public boolean isAppearanceLightStatusBars();
-}
--keep,allowobfuscation interface androidx.datastore.core.DataStore {
-  public kotlinx.coroutines.flow.Flow getData();
-  public java.lang.Object updateData(kotlin.jvm.functions.Function2, kotlin.coroutines.Continuation);
-}
--keep,allowobfuscation class androidx.datastore.preferences.core.Preferences {
-}
--keep,allowobfuscation class androidx.datastore.preferences.core.PreferencesFactory {
-  public static androidx.datastore.preferences.core.Preferences createEmpty();
 }
 -keep enum androidx.lifecycle.Lifecycle$State {
   public static androidx.lifecycle.Lifecycle$State[] values();
@@ -1081,13 +1076,8 @@
 -keep,allowobfuscation interface kotlinx.coroutines.channels.SendChannel {
   public java.lang.Object trySend-JP2dKIU(java.lang.Object);
 }
--keep,allowobfuscation interface kotlinx.coroutines.flow.Flow {
-}
 -keep,allowobfuscation interface kotlinx.coroutines.flow.FlowCollector {
   public java.lang.Object emit(java.lang.Object, kotlin.coroutines.Continuation);
-}
--keep,allowobfuscation class kotlinx.coroutines.flow.FlowKt {
-  public static java.lang.Object first(kotlinx.coroutines.flow.Flow, kotlin.coroutines.Continuation);
 }
 -keep,allowobfuscation interface kotlinx.coroutines.flow.MutableStateFlow {
   public java.lang.Object getValue();

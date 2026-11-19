@@ -13,16 +13,13 @@ its conversation, and Back restores the same list position, filter
 and expanded Projects. Settings opens from the current app bar and returns to
 the same list, chat or new-chat draft. Windows at least 840dp wide and 480dp
 tall show the same list alongside the current chat or new-chat entry. Resizing
-keeps the current destination and the list state. Settings provides device-local
-Light/Dark/Follow system appearance. The conversation list remains usable while
-Preferences DataStore loads or reports an IO error;
-Settings exposes loading, saving and retry states. Appearance is confirmed from
-the stored data stream and restored across relaunch/configuration changes.
-Owned UI resources cover the twelve current Web locales, with distinct
-Simplified/Traditional Chinese resources. Workspace settings select the eight
-Web color palettes and the languages allowed by canonical `supportedLocales`.
-Palette/language preferences synchronize through the member/workspace API;
-Light/Dark/Follow system remains device-local and independent.
+keeps the current destination and the list state. Settings groups the member's
+display mode, palette and language in the active workspace. Android and Web
+use the same member preference API. Follow system uses each device's system
+appearance and is the default when the workspace has no saved mode. Settings
+shows saving, refresh and retry states. Workspace settings offer the eight Web
+palettes and languages in `supportedLocales`, including distinct
+Simplified and Traditional Chinese.
 
 My Okou in Settings reads and edits the signed-in user's personal Instructions
 for the selected workspace. It uses the existing `singleAgent` availability and
@@ -418,7 +415,7 @@ CI retains these outputs and the Gradle execution log for seven days in
 ## Components and Authority
 
 - `app`: native Activity, Home/Settings routes, retained presentation owners,
-  confirmed chat-list storage, local preferences and the shared native theme.
+  confirmed chat-list storage, member preferences and the shared native theme.
   Plain business logic can stay
   free of Android UI types without needing a separate Gradle module.
 - `scripts`: SDK setup, verification, shared-token synchronization and CI selection.
@@ -428,20 +425,18 @@ single sources of truth, derivation, semantic actions and async ownership using
 native Kotlin/Jetpack APIs. TS runtime/API parity is not required. The app uses
 ordinary ViewModel actions and collectAsStateWithLifecycle rather than a custom
 Store, dependency graph, command visitor or cancellation signal.
-AppearanceModelTest exercises real presentation/decoding against the
-DataStore IO boundary, including read/write recovery, confirmation ordering,
-cancellation and actual file-backed reopen. OkouAppTest and MainActivityTest
+OkouAppTest and MainActivityTest
 exercise real routes, chat filters, back/configuration retention,
 appearance and adaptive navigation. LocalizedResourcesTest verifies native
 locale/script matching on APIs 24 and 35. These are local tests; they do not
 establish physical-device IME/rendering or startup budgets.
-MemberPreferencesModelTest covers confirmed versus pending selections, failed
-saves/retry/readback and retired work. PaletteColorsTest resolves all sixteen
+MemberPreferencesModelTest covers shared display mode, confirmed and pending
+selections, failed saves, retry, readback and retired work. PaletteColorsTest resolves all sixteen
 mode/palette combinations from generated resources; LegacyLanguageSettingsTest
 exercises pre-Android13 app-language changes through the real Activity.
-Add modules/shared helpers only for actual application boundaries. Preferences
-DataStore has one lazy process owner; its observation starts asynchronously at
-the retained presentation owner and does not gate Home on disk IO.
+Add modules and shared helpers for actual application boundaries. Appearance
+uses the system during first display and the member preference when the
+workspace becomes ready.
 Shared font bytes/licenses are sourced from `ios/Okou/Resources/Fonts` during
 the build; the app does not keep a second font copy in source. Its launcher
 vector retains the geometry from `ios/Assets/AppIcon.svg`. Native navigation
@@ -628,8 +623,8 @@ Its manifest-only APK fixtures do not prove installation or production-key acces
 
 For protected acceptance, use the configured durable key to sign two builds
 of the real application from successive `main` commits with increasing
-`versionCode`, without publishing test versions. Install the first, open Settings
-and save an appearance preference:
+`versionCode`, without publishing test versions. Install the first, enter the
+test workspace and save its display mode in Settings:
 
 ```bash
 adb install first.apk
@@ -639,7 +634,8 @@ adb shell am force-stop ai.okou.android
 adb shell am start -n ai.okou.android/.MainActivity
 ```
 
-Confirm the upgraded package version and the saved appearance after relaunch.
+Confirm the upgraded package version and the saved display mode after relaunch
+in the same test workspace.
 Inspect each APK with `apksigner verify --verbose --print-certs` and compare its
 certificate with the previously distributed durable-signed APK when available.
 The first durable release bootstraps that identity. Report fixture tests, real

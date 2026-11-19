@@ -53,20 +53,13 @@ class MainActivity : AppCompatActivity() {
             }
         }
     }
-    private val appearance: AppearanceModel by viewModels {
-        viewModelFactory {
-            initializer { AppearanceModel((application as OkouApplication).appearancePreferences) }
-        }
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        val settings = appearance
         val authentication = session
         val updates = (application as OkouApplication).updates
         setContent {
-            val state by settings.uiState.collectAsStateWithLifecycle()
             val sessionState by authentication.uiState.collectAsStateWithLifecycle()
             val updateState by updates.state.collectAsStateWithLifecycle()
             // Capture the rendered owner, rather than reading a newer State value on an old click.
@@ -82,7 +75,8 @@ class MainActivity : AppCompatActivity() {
                     applyApplicationLocale(preferences?.locale)
                 }
             }
-            val dark = state.mode.resolveDark(isSystemInDarkTheme())
+            val systemDark = isSystemInDarkTheme()
+            val dark = preferences?.theme?.resolveDark(systemDark) ?: systemDark
             LaunchedEffect(dark) {
                 val style =
                     if (dark) SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
@@ -113,9 +107,6 @@ class MainActivity : AppCompatActivity() {
                 ) { openUpdates ->
                     SessionRoot(
                         sessionState,
-                        state,
-                        settings::selectMode,
-                        settings::retry,
                         { authentication.retry(presentedGeneration) },
                         { id -> authentication.chooseWorkspace(id, presentedGeneration) },
                         { authentication.signOut(presentedGeneration) },

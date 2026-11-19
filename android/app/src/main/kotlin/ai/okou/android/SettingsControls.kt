@@ -2,6 +2,7 @@ package ai.okou.android
 
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -21,8 +22,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.RadioButton
-import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -207,32 +206,51 @@ internal fun <T> SettingsRadioOptions(
 ) {
     Column(Modifier.fillMaxWidth().selectableGroup()) {
         options.forEach { option ->
-            val checked = option == selected
-            Row(
-                Modifier.fillMaxWidth()
-                    .heightIn(min = 52.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .selectable(
-                        selected = checked,
-                        enabled = enabled,
-                        role = Role.RadioButton,
-                        onClick = { onSelect(option) },
-                    )
-                    .padding(horizontal = 8.dp, vertical = 10.dp),
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                RadioButton(
-                    selected = checked,
-                    onClick = null,
-                    enabled = enabled,
-                    colors =
-                        RadioButtonDefaults.colors(
-                            selectedColor = MaterialTheme.colorScheme.onSurface
-                        ),
-                )
-                Text(stringResource(label(option)), style = MaterialTheme.typography.bodyLarge)
-            }
+            SettingsChoiceRow(
+                stringResource(label(option)),
+                selected = option == selected,
+                enabled = enabled,
+                onClick = { onSelect(option) },
+            )
         }
+    }
+}
+
+@Composable
+internal fun SettingsChoiceRow(
+    label: String,
+    selected: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    leading: @Composable () -> Unit = {},
+) {
+    val colors = MaterialTheme.colorScheme
+    val foreground = if (selected) colors.onSecondaryContainer else colors.onSurface
+    Row(
+        modifier
+            .fillMaxWidth()
+            .heightIn(min = 48.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .then(if (selected) Modifier.background(colors.secondaryContainer) else Modifier)
+            .selectable(selected, enabled = enabled, role = Role.RadioButton, onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        leading()
+        Text(
+            label,
+            Modifier.weight(1f),
+            color = foreground,
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        if (selected)
+            Icon(
+                painterResource(R.drawable.ic_settings_check),
+                contentDescription = null,
+                modifier = Modifier.size(16.dp),
+                tint = foreground,
+            )
     }
 }

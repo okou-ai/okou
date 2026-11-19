@@ -17,10 +17,6 @@ import ai.okou.android.updates.FileUpdateStore
 import android.app.Application
 import android.os.Build
 import androidx.core.app.LocaleManagerCompat
-import androidx.datastore.core.DataStore
-import androidx.datastore.preferences.core.PreferenceDataStoreFactory
-import androidx.datastore.preferences.core.Preferences
-import androidx.datastore.preferences.preferencesDataStoreFile
 import java.io.File
 import okhttp3.HttpUrl.Companion.toHttpUrl
 
@@ -63,10 +59,5 @@ open class OkouApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         authentication.initialize()
-    }
-
-    // Appearance storage is independent of authentication and constructed lazily.
-    val appearancePreferences: DataStore<Preferences> by lazy {
-        PreferenceDataStoreFactory.create { preferencesDataStoreFile("appearance") }
     }
 }

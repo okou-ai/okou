@@ -29,16 +29,10 @@
     <string name="settings">設定</string>
     <string name="back">戻る</string>
     <string name="appearance">外観</string>
-    <string name="appearance_description">このデバイスでの Okou の外観を選択します。</string>
     <string name="appearance_system">システム設定に従う</string>
     <string name="appearance_light">ライト</string>
     <string name="appearance_dark">ダーク</string>
     <string name="on_this_device">このデバイス</string>
-    <string name="appearance_local">外観の設定はこのデバイスにのみ保存されます。</string>
-    <string name="appearance_loading">外観を読み込み中…</string>
-    <string name="appearance_saving">外観を保存中…</string>
-    <string name="appearance_read_failed">外観を読み込めませんでした。もう一度お試しください。</string>
-    <string name="appearance_write_failed">外観を保存できませんでした。もう一度お試しください。</string>
     <string name="retry">再試行</string>
     <string name="auth_welcome">Okou へようこそ</string>
     <string name="auth_restoring">ログイン状態を復元しています…</string>
@@ -55,7 +49,6 @@
     <string name="auth_switch_workspace">ワークスペースを切り替え</string>
     <string name="auth_browser_unavailable">ワークスペースの設定を開くにはブラウザをインストールしてください。</string>
     <string name="preferences_title">ワークスペースの設定</string>
-    <string name="preferences_description">カラーテーマと言語はこのワークスペースに同期されます。</string>
     <string name="preference_loading">設定を更新しています…</string>
     <string name="preference_saving">設定を保存しています…</string>
     <string name="preference_save_failed">保存を確認できませんでした。再試行または更新してください。</string>
@@ -63,7 +56,6 @@
     <string name="preference_refresh">設定を更新</string>
     <string name="preference_color_theme">カラーテーマ</string>
     <string name="preference_language">言語</string>
-    <string name="preference_timezone">タイムゾーン</string>
     <string name="palette_default">デフォルト</string>
     <string name="palette_golden_hour">Golden hour</string>
     <string name="palette_citrus_spark">Citrus spark</string>
@@ -84,7 +76,6 @@
     <string name="language_hi_in">हिन्दी</string>
     <string name="language_zh_hans">简体中文</string>
     <string name="language_zh_hant">繁體中文</string>
-    <string name="instructions_section">マイ Okou</string>
     <string name="instructions_title">個人の指示</string>
     <string name="instructions_timing">保存した変更は今後のタスクに適用されます。</string>
     <string name="instructions_loading">指示を読み込み中…</string>
@@ -149,5 +140,4 @@
     <string name="realtime_connecting">リアルタイム更新に接続中…</string>
     <string name="realtime_unavailable">リアルタイム更新を利用できません。手動で更新できます。</string>
     <string name="settings_account">アカウント</string>
-    <string name="preference_color_theme_description">配色テーマを選んでください。表示モードは変わりません。</string>
 </resources>
