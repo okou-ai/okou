@@ -40,21 +40,15 @@ export type WorkflowQueueSourcePlan =
 
 export type AutomationRow = typeof workflowAutomations.$inferSelect;
 
-export interface DueWorkflowAutomation {
-  readonly automation: AutomationRow;
-  // The owning agent is derived from the workflow row (hard 1:N); automations no
-  // longer carry an agentId column, so callers resolve it and pass it here.
-  readonly agentId: string;
-  readonly chatThreadId: string;
-}
-
 export type RunWorkflowAutomationResult = {
   readonly kind: "enqueued";
   readonly scheduleOccurrence?: "claimed" | "superseded";
 };
 
 export interface RunWorkflowAutomationNowArgs {
-  readonly due: DueWorkflowAutomation;
+  readonly automation: AutomationRow;
+  readonly agentId: string;
+  readonly chatThreadId: string;
   readonly automationContext: WorkflowAutomationContext;
   /** Stable ingress identity when a source callback may retry the same event. */
   readonly queueEventId?: string;

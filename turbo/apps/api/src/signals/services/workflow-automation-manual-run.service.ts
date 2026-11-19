@@ -15,7 +15,7 @@ import { buildWorkflowScheduleAutomationBrief } from "./workflow-automation-brie
 import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
 import type { AutomationRow } from "./workflow-automation-enqueue.service";
 import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
-import { manualTriggerSource } from "./workflow-automation-trigger-source";
+import { workflowAutomationTriggerSource } from "./workflow-automation-trigger-source";
 import { ensureWorkflowUserAutomationThread$ } from "./workflow-user-automation-thread.service";
 import { OFFICIAL_WORKFLOW_AUTOMATION_ONLY_MESSAGE } from "./official-workflow-constants";
 
@@ -149,14 +149,12 @@ export const runOwnedWorkflowAutomationNow$ = command(
     await set(
       runWorkflowAutomationNow$,
       {
-        due: {
-          automation,
-          agentId: target.agentId,
-          chatThreadId,
-        },
+        automation,
+        agentId: target.agentId,
+        chatThreadId,
         automationContext: manualContext,
         apiStartTime: currentTime.getTime(),
-        triggerSource: manualTriggerSource(automation),
+        triggerSource: workflowAutomationTriggerSource(automation),
         triggerBrief:
           buildWorkflowScheduleAutomationBrief({
             createdAt: currentTime,

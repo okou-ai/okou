@@ -162,14 +162,18 @@ def ssh(arguments):
 
 def systemd_run(arguments):
     record("systemd", arguments)
-    if any(argument.startswith("--on-active=") for argument in arguments):
+    unit = next(
+        argument.split("=", 1)[1] for argument in arguments if argument.startswith("--unit=")
+    )
+    if unit.endswith("-expire"):
+        if MODE == "expiration-submission-failed":
+            operation = Path(arguments[-1])
+            record("expiration-credentials-present", (operation / "credentials.json").exists())
+            return 1
         if MODE in ("pending-launch", "late-prior-launch"):
             (ROOT / "launch-pending").touch()
             wait_for(lambda: (ROOT / "release-launch").exists())
         return 0  # Record the real retention contract without waiting one hour.
-    unit = next(
-        argument.split("=", 1)[1] for argument in arguments if argument.startswith("--unit=")
-    )
     command = arguments[arguments.index("/usr/bin/python3") :]
     if MODE == "absent-launch":
         return 1
