@@ -451,10 +451,10 @@ function createThreadAccountSignals(inputs: ConnectorInputSignals) {
           defaults.set(key, { target, connectionId: row.connectorId });
         }
       }
-      return runThreadConnectorCandidates(
-        [...projectedSelections, ...defaults.values()],
-        null,
-      );
+      return runThreadConnectorCandidates([
+        ...projectedSelections,
+        ...defaults.values(),
+      ]);
     },
   );
   const accountCandidates$ = computed(async (get) => {
@@ -1107,7 +1107,7 @@ export interface EffectiveConnectorScope {
 }
 
 interface ThreadConnectorSelectionIds {
-  /** Candidates are ordered from run-scoped source to persisted preference. */
+  /** Each Chat selection uses the materializer's candidate list format. */
   readonly connectorIdCandidatesBySlug: ReadonlyMap<
     ConnectorSlug,
     readonly string[]
@@ -1718,22 +1718,7 @@ function runConnectorTargetIsAuthorized(
 
 function runThreadConnectorCandidates(
   selections: readonly ConnectorAccountSelection[],
-  source: ConnectorAccountSelection | null,
 ): ThreadConnectorSelectionIds {
-  const candidates = new Map<string, readonly ConnectorAccountSelection[]>();
-  for (const selection of selections) {
-    candidates.set(connectorAccountTargetKey(selection.target), [selection]);
-  }
-  if (source) {
-    const key = connectorAccountTargetKey(source.target);
-    const selected = candidates.get(key)?.[0];
-    candidates.set(
-      key,
-      selected && selected.connectionId !== source.connectionId
-        ? [source, selected]
-        : [source],
-    );
-  }
   const connectorIdCandidatesBySlug = new Map<
     ConnectorSlug,
     readonly string[]
@@ -1742,24 +1727,16 @@ function runThreadConnectorCandidates(
     string,
     readonly string[]
   >();
-  for (const values of candidates.values()) {
-    const first = values[0];
-    if (!first) {
-      continue;
-    }
-    const ids = values.map((value) => {
-      return value.connectionId;
-    });
-    if (first.target.kind === "builtin") {
+  for (const { target, connectionId } of selections) {
+    if (target.kind === "builtin") {
       connectorIdCandidatesBySlug.set(
-        connectorSlugSchema.parse(first.target.connectorSlug),
-        ids,
+        connectorSlugSchema.parse(target.connectorSlug),
+        [connectionId],
       );
     } else {
-      connectorIdCandidatesByCustomConnectorId.set(
-        first.target.customConnectorId,
-        ids,
-      );
+      connectorIdCandidatesByCustomConnectorId.set(target.customConnectorId, [
+        connectionId,
+      ]);
     }
   }
   return {

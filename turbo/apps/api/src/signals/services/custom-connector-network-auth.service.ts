@@ -162,7 +162,6 @@ export const admitCustomConnectorNetworkRequest$ = command(
       scope: {
         orgId: args.auth.orgId,
         userId: args.auth.userId,
-        agentId: run.agentId,
         runId: args.auth.runId,
       },
       targets: [

@@ -275,7 +275,6 @@ interface CustomRuntimeSnapshotInput {
   readonly scope: {
     readonly orgId: string;
     readonly userId: string;
-    readonly agentId: string;
   };
   readonly registrations: readonly {
     readonly customConnectorId: string;

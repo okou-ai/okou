@@ -98,8 +98,7 @@ function nextMemberPermissionSync(
 interface ConnectorRuntimeScope {
   readonly orgId: string;
   readonly userId: string;
-  readonly agentId: string;
-  readonly runId?: string;
+  readonly runId: string;
 }
 
 type ConnectorRuntimeBuiltinSyncResult = Extract<
@@ -655,13 +654,9 @@ const selectChatRuntimeAccounts$ = command(
       .from(connectorPermissionGrants)
       .where(activeMemberConnectorPermissionCondition(args.scope, nowDate()));
     const unavailableTargets = new Set<string>();
-    if (!args.scope.runId) {
-      throw new Error("Chat connector runtime requires a Run identity");
-    }
     const read = chatConnectorExecutionReadPlan({
       ...args.scope,
       kind: "run",
-      runId: args.scope.runId,
     }).as("chat_execution_accounts");
     const execution = chatConnectorExecutionFromRows(
       await db.select().from(read),
