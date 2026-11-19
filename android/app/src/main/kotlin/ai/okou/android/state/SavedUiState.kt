@@ -1,5 +1,6 @@
 package ai.okou.android.state
 
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
@@ -37,23 +38,82 @@ internal enum class SearchRoute {
 
 private const val MAX_SAVED_SEARCH_QUERY_CHARS = 256
 
+internal data class SearchResultAnchor(val chatId: String, val offset: Int)
+
+internal class ChatSearchState(
+    query: TextFieldValue = TextFieldValue(),
+    anchor: SearchResultAnchor? = null,
+) {
+    var query by mutableStateOf(query)
+        private set
+
+    val position = LazyListState()
+    var pendingAnchor by mutableStateOf(anchor)
+        private set
+
+    fun edit(value: TextFieldValue) {
+        if (query.text != value.text) {
+            pendingAnchor = null
+            position.requestScrollToItem(0)
+        }
+        query = value
+    }
+
+    fun reset() {
+        pendingAnchor = null
+        position.requestScrollToItem(0)
+        query = TextFieldValue()
+    }
+
+    fun restorePosition(index: Int?) {
+        val anchor = pendingAnchor ?: return
+        if (index != null) position.requestScrollToItem(index, anchor.offset)
+        pendingAnchor = null
+    }
+
+    fun savedAnchor(): SearchResultAnchor? {
+        pendingAnchor?.let {
+            return it
+        }
+        return position.layoutInfo.visibleItemsInfo
+            .firstOrNull { it.index == position.firstVisibleItemIndex }
+            ?.let { item ->
+                (item.key as? String)?.let {
+                    SearchResultAnchor(it, position.firstVisibleItemScrollOffset)
+                }
+            }
+    }
+}
+
 @Composable
-internal fun rememberChatSearchQuery(): MutableState<TextFieldValue> =
+internal fun rememberChatSearchState(): ChatSearchState =
     rememberSaveable(
-        stateSaver =
-            listSaver<TextFieldValue, Any>(
+        saver =
+            listSaver<ChatSearchState, Any>(
                 save = {
-                    // Bound the Activity payload while retaining the full value in the live editor.
-                    if (it.text.length <= MAX_SAVED_SEARCH_QUERY_CHARS) {
-                        listOf(it.text, it.selection.start, it.selection.end)
+                    val query = it.query
+                    if (query.text.length <= MAX_SAVED_SEARCH_QUERY_CHARS) {
+                        val anchor = it.savedAnchor()
+                        listOf(
+                            query.text,
+                            query.selection.start,
+                            query.selection.end,
+                            anchor?.chatId.orEmpty(),
+                            anchor?.offset ?: 0,
+                        )
                     } else emptyList()
                 },
-                restore = { (text, start, end) ->
-                    TextFieldValue(text as String, TextRange(start as Int, end as Int))
+                restore = { (text, start, end, chatId, offset) ->
+                    ChatSearchState(
+                        TextFieldValue(text as String, TextRange(start as Int, end as Int)),
+                        (chatId as String)
+                            .takeIf { it.isNotEmpty() }
+                            ?.let { SearchResultAnchor(it, offset as Int) },
+                    )
                 },
             )
     ) {
-        mutableStateOf(TextFieldValue())
+        ChatSearchState()
     }
 
 internal data class WorkspaceNavigation(

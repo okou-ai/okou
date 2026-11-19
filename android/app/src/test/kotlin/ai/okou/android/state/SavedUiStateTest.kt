@@ -24,18 +24,20 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextInputSelection
 import androidx.compose.ui.text.TextRange
-import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertEquals
@@ -51,27 +53,48 @@ class SavedUiStateTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
 
     @Test
-    fun searchRestoresTheSameResultWhenTheListReopensFromCache() {
+    fun searchRestoresTheSameResultWhenCacheAddsAnEarlierMatch() {
+        checkSearchRestoration("Result", "Result 5")
+    }
+
+    @Test
+    fun searchDropsTheOldResultPositionWhenTheQueryIsTooLongToRestore() {
+        val longQuery = "Result " + "x".repeat(256)
+        checkSearchRestoration(longQuery, "$longQuery 5", queryIsSaved = false)
+    }
+
+    private fun checkSearchRestoration(
+        query: String,
+        targetTitle: String,
+        queryIsSaved: Boolean = true,
+    ) {
         val restoration = StateRestorationTester(compose)
         var source by mutableStateOf(ChatListSource.Network)
-        val rows =
-            List(40) { index ->
-                val date = "2026-11-13T00:00:00Z"
-                ConfirmedChat(
-                    id = index.toString(),
-                    agentId = "agent",
-                    title = "Result $index",
-                    sortAt = date,
-                    createdAt = date,
-                    updatedAt = date,
-                    pinnedAt = null,
-                    archived = false,
-                    renamedAt = null,
-                )
-            }
+        var rows by
+            mutableStateOf(
+                List(40) { index ->
+                    val date = "2026-11-13T00:00:00Z"
+                    ConfirmedChat(
+                        id = index.toString(),
+                        agentId = "agent",
+                        title = "$query $index",
+                        sortAt = date,
+                        createdAt = date,
+                        updatedAt = date,
+                        pinnedAt = null,
+                        archived = false,
+                        renamedAt = null,
+                    )
+                }
+            )
         restoration.setContent {
-            DisposableEffect(Unit) { onDispose { source = ChatListSource.Cache } }
-            val position = rememberLazyListState()
+            DisposableEffect(Unit) {
+                onDispose {
+                    source = ChatListSource.Cache
+                    rows = listOf(rows.first().copy(id = "new", title = "$query newest")) + rows
+                }
+            }
+            val search = rememberChatSearchState()
             OkouTheme(false) {
                 ChatTitleSearch(
                     state =
@@ -81,9 +104,7 @@ class SavedUiStateTest {
                             source = source,
                             threadsByRecency = rows,
                         ),
-                    query = TextFieldValue("Result"),
-                    onQueryChange = {},
-                    position = position,
+                    search = search,
                     focusOnEntry = false,
                     onFocused = {},
                     onClose = {},
@@ -93,11 +114,19 @@ class SavedUiStateTest {
             }
         }
         val results = compose.onNodeWithTag("chat_search_results")
-        val target = compose.onNodeWithText("Result 5")
+        val field = compose.onNodeWithTag("chat_search_query")
+        field.performTextInput(query)
+        val target = compose.onNodeWithText(targetTitle)
         results.performScrollToIndex(6)
         val originalTop = target.fetchSemanticsNode().boundsInRoot.top
         restoration.emulateSavedInstanceStateRestore()
-        assertEquals(originalTop, target.fetchSemanticsNode().boundsInRoot.top)
+        if (queryIsSaved) {
+            field.assert(hasText(query))
+            assertEquals(originalTop, target.fetchSemanticsNode().boundsInRoot.top)
+        } else {
+            compose.onNodeWithText("Recent chats").assertIsDisplayed()
+            compose.onNodeWithText("$query newest").assertIsDisplayed()
+        }
     }
 
     @Test

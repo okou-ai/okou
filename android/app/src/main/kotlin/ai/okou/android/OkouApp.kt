@@ -19,7 +19,7 @@ import ai.okou.android.chat.RunControlsPanel
 import ai.okou.android.state.SearchRoute
 import ai.okou.android.state.SettingsDestination
 import ai.okou.android.state.WorkspaceTarget
-import ai.okou.android.state.rememberChatSearchQuery
+import ai.okou.android.state.rememberChatSearchState
 import ai.okou.android.state.rememberCollapsedProjects
 import ai.okou.android.state.rememberConversationUiState
 import ai.okou.android.state.rememberWorkspaceNavigation
@@ -72,7 +72,6 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -103,13 +102,12 @@ internal fun OkouApp(
     // Window configuration changes on resize. IME insets only change the space inside the panes.
     val window = LocalConfiguration.current
     val listWidth = workspaceListPaneWidth(window.screenWidthDp, window.screenHeightDp)
-    var searchQuery by rememberChatSearchQuery()
+    val searchState = rememberChatSearchState()
     var focusSearch by remember { mutableStateOf(false) }
     val searchActive = chats != null && composer != null && navigation.search == SearchRoute.Open
     val showList = listWidth != null || searchActive || target == WorkspaceTarget.List
     val showWorkspaceBack = listWidth == null && !searchActive && target != WorkspaceTarget.List
     val listPosition = rememberLazyListState()
-    val searchPosition = rememberLazyListState()
     val settingsPosition = rememberScrollState()
     val collapsed = rememberCollapsedProjects()
     val conversations = rememberConversationUiState()
@@ -129,13 +127,12 @@ internal fun OkouApp(
 
     fun closeSearch() {
         releaseSearchFocus()
-        searchQuery = TextFieldValue()
+        searchState.reset()
         navigation = navigation.copy(search = SearchRoute.Closed)
     }
 
     fun openSearch() {
-        searchQuery = TextFieldValue()
-        searchPosition.requestScrollToItem(0)
+        searchState.reset()
         focusSearch = true
         navigation = navigation.copy(search = SearchRoute.Open)
     }
@@ -149,7 +146,7 @@ internal fun OkouApp(
                 SearchRoute.Closed -> SearchRoute.Closed
             }
         if (search == SearchRoute.Closed) {
-            searchQuery = TextFieldValue()
+            searchState.reset()
         }
         navigation = navigation.copy(target = WorkspaceTarget.List, search = search)
     }
@@ -182,8 +179,8 @@ internal fun OkouApp(
             }
         if (fromSearch) releaseSearchFocus()
         when (search) {
-            SearchRoute.Closed -> searchQuery = TextFieldValue()
-            SearchRoute.ReturnOnBack -> searchQuery = searchQuery.copy(composition = null)
+            SearchRoute.Closed -> searchState.reset()
+            SearchRoute.ReturnOnBack -> searchState.edit(searchState.query.copy(composition = null))
             SearchRoute.Open -> Unit
         }
         conversations.open(chat.id)
@@ -198,7 +195,7 @@ internal fun OkouApp(
         conversations.open(ComposerTarget(projectId = projectId).key)
         val search =
             if (navigation.search == SearchRoute.Open) SearchRoute.Open else SearchRoute.Closed
-        if (search == SearchRoute.Closed) searchQuery = TextFieldValue()
+        if (search == SearchRoute.Closed) searchState.reset()
         navigation = navigation.copy(target = WorkspaceTarget.NewChat(projectId), search = search)
     }
 
@@ -350,13 +347,7 @@ internal fun OkouApp(
                             if (searchActive && chats != null) {
                                 ChatTitleSearch(
                                     state = list,
-                                    query = searchQuery,
-                                    onQueryChange = {
-                                        if (it.text != searchQuery.text)
-                                            searchPosition.requestScrollToItem(0)
-                                        searchQuery = it
-                                    },
-                                    position = searchPosition,
+                                    search = searchState,
                                     focusOnEntry = focusSearch,
                                     onFocused = { focusSearch = false },
                                     onClose = ::closeSearch,

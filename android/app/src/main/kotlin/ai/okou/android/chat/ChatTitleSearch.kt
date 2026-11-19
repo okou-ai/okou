@@ -1,6 +1,7 @@
 package ai.okou.android.chat
 
 import ai.okou.android.R
+import ai.okou.android.state.ChatSearchState
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -16,7 +17,6 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -49,7 +49,6 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -57,15 +56,14 @@ import androidx.compose.ui.unit.sp
 @Composable
 internal fun ChatTitleSearch(
     state: ChatListUiState,
-    query: TextFieldValue,
-    onQueryChange: (TextFieldValue) -> Unit,
-    position: LazyListState,
+    search: ChatSearchState,
     focusOnEntry: Boolean,
     onFocused: () -> Unit,
     onClose: () -> Unit,
     onOpen: (ConfirmedChat) -> Unit,
     retry: () -> Unit,
 ) {
+    val query = search.query
     val colors = MaterialTheme.colorScheme
     val keyboard = LocalSoftwareKeyboardController.current
     val inputFocus = remember { FocusRequester() }
@@ -101,7 +99,7 @@ internal fun ChatTitleSearch(
             }
             BasicTextField(
                 value = query,
-                onValueChange = onQueryChange,
+                onValueChange = search::edit,
                 modifier =
                     Modifier.weight(1f)
                         .focusRequester(inputFocus)
@@ -144,7 +142,7 @@ internal fun ChatTitleSearch(
                         if (query.text.isNotEmpty()) {
                             IconButton(
                                 onClick = {
-                                    onQueryChange(TextFieldValue())
+                                    search.reset()
                                     inputFocus.requestFocus()
                                     keyboard?.show()
                                 }
@@ -168,12 +166,21 @@ internal fun ChatTitleSearch(
             )
             return@Column
         }
+        val anchor = search.pendingAnchor
+        if (anchor != null) {
+            LaunchedEffect(anchor, results) {
+                val index = results.indexOfFirst { it.id == anchor.chatId }
+                // The heading occupies the first lazy item.
+                search.restorePosition(index.takeIf { it >= 0 }?.plus(1))
+            }
+            return@Column
+        }
         LazyColumn(
             Modifier.fillMaxWidth()
                 .weight(1f)
                 .padding(horizontal = 16.dp)
                 .testTag("chat_search_results"),
-            state = position,
+            state = search.position,
         ) {
             // Keep result indices stable when the cache or refresh notice changes.
             item {
