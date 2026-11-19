@@ -26,10 +26,20 @@ import {
 } from "./for-you-sources.ts";
 
 type FeedbackKind =
-  "already_done" | "not_planned" | "less_like_this" | "dismissed";
+  | "already_done"
+  | "not_planned"
+  | "dont_nudge"
+  | "less_like_this"
+  | "dismissed";
 type SuggestionMutation =
   | { readonly type: "feedback"; readonly request: SuggestionFeedbackRequest }
   | { readonly type: "consume"; readonly optionId: string };
+
+// Unsent directions belong to the authenticated member, across For you visits.
+const customDirections$ = computed((get) => {
+  get(authenticatedSessionKey$);
+  return state<Readonly<Record<string, string>>>({});
+});
 
 function createSuggestionEntry(item: Suggestion) {
   const hidden$ = state(false);
@@ -129,8 +139,29 @@ function createSuggestionEntry(item: Suggestion) {
   const optionDraft = createDraftSignals();
   // The chosen action's send, whose progress and failure its sent row shows.
   const sending$ = state<Promise<void> | undefined>(undefined);
+  const customText$ = computed((get) => {
+    return get(get(customDirections$))[item.id] ?? "";
+  });
+  const customExpanded$ = state(false);
+  const customSending$ = state<Promise<void> | undefined>(undefined);
+  const customDraft = createDraftSignals();
+  const setCustomText$ = command(({ get, set }, text: string) => {
+    set(get(customDirections$), (drafts) => {
+      return { ...drafts, [item.id]: text };
+    });
+  });
+  const setCustomExpanded$ = command(({ set }, expanded: boolean) => {
+    set(customExpanded$, expanded);
+  });
   return {
     item,
+    customText$,
+    customExpanded$,
+    customSending$,
+    customDraft,
+    customDraftId: item.id,
+    setCustomText$,
+    setCustomExpanded$,
     readOnRef$: createForYouReadRef(item.id),
     hidden$,
     unavailable$,
@@ -544,7 +575,13 @@ const submitAgentSuggestionFeedback$ = command(
       entry.enqueue$,
       {
         type: "feedback",
-        request: { id, kind, targetId: null, note: "" },
+        request: {
+          id,
+          kind: kind === "dont_nudge" ? "not_planned" : kind,
+          targetId: null,
+          note:
+            kind === "dont_nudge" ? "Do not nudge me about this again." : "",
+        },
       },
       get(rootSignal$),
     );
@@ -614,6 +651,7 @@ export const submitSuggestionFeedbackWithUndo$ = command(
       dismissed: messages.dismissRecorded,
       already_done: messages.doneRecorded,
       not_planned: messages.notPlannedRecorded,
+      dont_nudge: messages.dontNudgeRecorded,
       less_like_this: messages.lessRecorded,
     }[kind];
     toast.success(message, {

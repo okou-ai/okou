@@ -1648,7 +1648,11 @@
       "dismiss": "Dismiss",
       "dismissRecorded": "Suggestion dismissed",
       "doneRecorded": "Noted — this is already done",
+      "dontNudge": "Don’t nudge me",
+      "dontNudgeRecorded": "Noted — please don’t nudge me about this again",
+      "editDraft": "Prepare a draft in the existing chat",
       "editReason": "Edit reason",
+      "feedbackPrompt": "How is this suggestion?",
       "feedLabel": "Feed",
       "forYou": {
         "loading": "Loading suggestions",
@@ -1682,9 +1686,11 @@
       "reasonLabel": "Add a reason (optional)",
       "saveReason": "Save",
       "sending": "Sending…",
+      "sendNew": "Send to a new chat",
       "sent": "Sent to a new chat",
       "unavailable": "That suggestion is no longer available. Suggestions have been refreshed.",
-      "undoFeedback": "Undo"
+      "undoFeedback": "Undo",
+      "viewSource": "View source"
     },
     "attachments": {
       "attach": "Attach",

@@ -1644,7 +1644,11 @@
       "dismiss": "忽略",
       "dismissRecorded": "已收起这条建议",
       "doneRecorded": "已记下，这件事已经处理了",
+      "dontNudge": "别催了",
+      "dontNudgeRecorded": "已记录，请不要再催这件事",
+      "editDraft": "在原对话中准备草稿",
       "editReason": "修改原因",
+      "feedbackPrompt": "这条建议怎么样？",
       "feedLabel": "动态",
       "forYou": {
         "loading": "正在加载建议",
@@ -1678,9 +1682,11 @@
       "reasonLabel": "补充原因（选填）",
       "saveReason": "保存",
       "sending": "正在发送…",
+      "sendNew": "发送到新对话",
       "sent": "已发送到新聊天",
       "unavailable": "这条建议已不可用，建议列表已刷新。",
-      "undoFeedback": "撤销"
+      "undoFeedback": "撤销",
+      "viewSource": "查看来源"
     },
     "attachments": {
       "attach": "添加附件",

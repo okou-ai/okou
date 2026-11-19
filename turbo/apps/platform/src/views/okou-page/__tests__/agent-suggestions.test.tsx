@@ -1,6 +1,12 @@
 import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import { suggestionFeedbacks } from "@okouai/api-contracts/contracts/suggestion-context";
-import { act, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import {
@@ -24,7 +30,6 @@ import {
 } from "@okouai/api-contracts/contracts/agents";
 import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { DEFAULT_AGENT_AVATAR_URL } from "@okouai/core/agent-avatar";
 import {
   click,
   fill,
@@ -333,17 +338,17 @@ function captureSend(): Promise<SentInput> {
   return sent.promise;
 }
 async function openCustomDirection(
-  container: ParentNode = document.body,
-): Promise<{
-  dialog: HTMLElement;
-  note: HTMLElement;
-}> {
-  click(button("I’d like to…", "button", container));
-  const dialog = await screen.findByRole("dialog");
-  const note = await within(dialog).findByRole("textbox", {
+  container: HTMLElement = document.body,
+): Promise<{ form: HTMLElement; note: HTMLElement }> {
+  const note = within(container).getByRole("textbox", {
     name: "What do you have in mind?",
   });
-  return { dialog, note };
+  await userEvent.setup().click(note);
+  const form = note.closest("form");
+  if (!form) {
+    throw new Error("Missing custom direction form");
+  }
+  return { form, note };
 }
 async function writeDirection(note: HTMLElement, text: string): Promise<void> {
   const user = userEvent.setup();
@@ -980,33 +985,21 @@ test("Suggestion options start in the default Agent after visiting a secondary A
   await expect(sender.promise).resolves.toBe(agentId);
   expect(pathname()).toBe(suggestionPath);
 });
-test("Custom direction opens a dialog composer for the default Agent without touching its home draft", async () => {
+test("Custom direction opens a form composer for the default Agent without touching its home draft", async () => {
   const pool = mockPool();
   await openSuggestionsWithDraft("Keep my original draft");
   await screen.findByText(makeSuggestion().content.title);
-  const custom = button("I’d like to…");
-  expect(custom).toHaveTextContent(
-    "Ask a question or describe what you’d like to do.",
-  );
-  expect(
-    custom.compareDocumentPosition(button("Dismiss")) &
-      Node.DOCUMENT_POSITION_FOLLOWING,
-  ).toBeTruthy();
-  const { dialog, note } = await openCustomDirection();
+  const { form, note } = await openCustomDirection();
   expect(pathname()).toBe(suggestionPath);
-  expect(composer(dialog)).toHaveTextContent(makeSuggestion().content.title);
-  expect(composer(dialog)).not.toHaveTextContent("launch-plan-v2");
-  expect(composer(dialog)).not.toHaveTextContent("Keep my original draft");
-  expect(button("Send", "button", dialog)).toBeDisabled();
+  expect(form).toHaveTextContent(makeSuggestion().content.title);
+  expect(form).not.toHaveTextContent("launch-plan-v2");
+  expect(form).not.toHaveTextContent("Keep my original draft");
+  expect(button("Send", "button", form)).toBeDisabled();
   await writeDirection(note, "What decision should I make first?");
   await waitFor(() => {
-    expect(button("Send", "button", dialog)).toBeEnabled();
+    expect(button("Send", "button", form)).toBeEnabled();
   });
   expect(pool.consumed).toStrictEqual([]);
-  click(within(dialog).getByLabelText("Close"));
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-  });
   expect(
     screen.getByRole("article", { name: makeSuggestion().content.title }),
   ).toBeInTheDocument();
@@ -1015,8 +1008,15 @@ test("Custom direction opens a dialog composer for the default Agent without tou
     expect(composer()).toHaveTextContent("Keep my original draft");
   });
   expect(composer()).not.toHaveTextContent(makeSuggestion().content.title);
+  click(link(suggestionPath));
+  const restored = await screen.findByRole("article", {
+    name: makeSuggestion().content.title,
+  });
+  expect(within(restored).getByRole("textbox")).toHaveValue(
+    "What decision should I make first?",
+  );
 });
-test("Each custom direction dialog starts from its own card's background", async () => {
+test("Each inline direction keeps its own background and retains its text while browsing", async () => {
   const first = makeSuggestion();
   const second: Suggestion = {
     ...makeSuggestion(),
@@ -1048,31 +1048,30 @@ test("Each custom direction dialog starts from its own card's background", async
   const opened = await openCustomDirection(
     screen.getByRole("article", { name: first.content.title }),
   );
-  expect(composer(opened.dialog)).toHaveTextContent(first.content.title);
+  expect(opened.form).toHaveTextContent(first.content.title);
   await writeDirection(opened.note, "Assess the risks first");
-  click(within(opened.dialog).getByLabelText("Close"));
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-  });
   click(link(`/for-you?suggestion=${second.id}`));
   await screen.findByRole("article", { name: second.content.title });
   const reopened = await openCustomDirection(
     screen.getByRole("article", { name: second.content.title }),
   );
-  expect(composer(reopened.dialog)).toHaveTextContent(second.content.title);
-  expect(composer(reopened.dialog)).not.toHaveTextContent(first.content.title);
-  expect(composer(reopened.dialog)).not.toHaveTextContent(
+  expect(reopened.form).toHaveTextContent(second.content.title);
+  expect(reopened.form).not.toHaveTextContent(first.content.title);
+  expect(reopened.note).toHaveValue("");
+  click(link(`/for-you?suggestion=${first.id}`));
+  const restored = await screen.findByRole("article", {
+    name: first.content.title,
+  });
+  expect(within(restored).getByRole("textbox")).toHaveValue(
     "Assess the risks first",
   );
-  click(within(screen.getByRole("dialog")).getByLabelText("Close"));
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-  });
+  click(link(`/for-you?suggestion=${second.id}`));
+  await screen.findByRole("article", { name: second.content.title });
   expect(
     screen.getByRole("article", { name: second.content.title }),
   ).toBeInTheDocument();
 });
-test("A custom follow-up retains its dialog on failure and reuses its identities until acceptance", async () => {
+test("A custom follow-up retains its form on failure and reuses its identities until acceptance", async () => {
   const pool = mockPool();
   mockChatLifecycle(context);
   const attempts: {
@@ -1106,20 +1105,20 @@ test("A custom follow-up retains its dialog on failure and reuses its identities
   });
   await openSuggestions();
   await screen.findByText(makeSuggestion().content.title);
-  const { dialog, note } = await openCustomDirection();
+  const { form, note } = await openCustomDirection();
   await writeDirection(note, "Assess the budget risk first");
   await waitFor(() => {
-    return expect(button("Send", "button", dialog)).not.toBeDisabled();
+    return expect(button("Send", "button", form)).not.toBeDisabled();
   });
-  click(button("Send", "button", dialog));
+  click(button("Send", "button", form));
   await screen.findByText("Follow-up temporarily unavailable");
   expect(pathname()).toBe(suggestionPath);
-  expect(composer(dialog)).toHaveTextContent("Assess the budget risk first");
-  expect(composer(dialog)).toHaveTextContent(makeSuggestion().content.title);
+  expect(note).toHaveValue("Assess the budget risk first");
+  expect(form).toHaveTextContent(makeSuggestion().content.title);
   failing = false;
-  click(button("Send", "button", dialog));
+  click(button("Send", "button", form));
   await retryRequested.promise;
-  expect(composer(dialog)).toHaveTextContent("Assess the budget risk first");
+  expect(note).toHaveValue("Assess the budget risk first");
   expect(attempts[1]).toStrictEqual(attempts[0]);
   const [quote] = suggestionFeedbacks(
     attempts[1].userMessage ?? { version: 1, parts: [] },
@@ -1131,7 +1130,7 @@ test("A custom follow-up retains its dialog on failure and reuses its identities
   acceptRetry.resolve();
   await screen.findByText(SENT);
   await waitFor(() => {
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.queryByRole("form")).not.toBeInTheDocument();
   });
   expect(pathname()).toBe(suggestionPath);
   expect(
@@ -1141,7 +1140,45 @@ test("A custom follow-up retains its dialog on failure and reuses its identities
   // The API records the custom follow-up when it accepts the input.
   expect(pool.consumed).toStrictEqual([]);
 });
-test("The custom direction dialog sends the background files without the home draft", async () => {
+test("An accepted custom follow-up preserves a newer direction entered after returning to the page", async () => {
+  mockPool();
+  mockChatLifecycle(context);
+  const sendRequested = context.mocks.deferred<void>();
+  const acceptSend = context.mocks.deferred<void>();
+  context.mocks.api(chatEventsContract.send, async ({ body, respond }) => {
+    sendRequested.resolve();
+    await acceptSend.promise;
+    return respond(201, {
+      threadId: body.threadId ?? threadId,
+      createdAt: "2026-10-27T00:00:00Z",
+    });
+  });
+  await openSuggestions();
+  await screen.findByText(makeSuggestion().content.title);
+  const { form, note } = await openCustomDirection();
+  await writeDirection(note, "Assess the budget risk first");
+  click(button("Send", "button", form));
+  await sendRequested.promise;
+
+  click(okouRow());
+  await waitFor(() => {
+    expect(composer()).toBeInTheDocument();
+  });
+  click(link(suggestionPath));
+  const returnedCard = await screen.findByRole("article", {
+    name: makeSuggestion().content.title,
+  });
+  const returnedNote = within(returnedCard).getByRole("textbox", {
+    name: "What do you have in mind?",
+  });
+  expect(returnedNote).toHaveValue("Assess the budget risk first");
+  await fill(returnedNote, "Compare the launch options next");
+
+  acceptSend.resolve();
+  await screen.findByText(SENT);
+  expect(returnedNote).toHaveValue("Compare the launch options next");
+});
+test("The custom direction form sends the background files without the home draft", async () => {
   const incoming = draftAttachment("suggestion-background.txt", {
     id: "a0000000-0000-4000-a000-000000000091",
     contentType: "text/plain",
@@ -1192,15 +1229,15 @@ test("The custom direction dialog sends the background files without the home dr
   await screen.findByText("my-original.txt");
   click(link(suggestionPath));
   await screen.findByText(suggestion.content.title);
-  const { dialog, note } = await openCustomDirection();
-  await within(dialog).findByText("suggestion-background.txt");
-  expect(within(dialog).queryByText("my-original.txt")).not.toBeInTheDocument();
-  expect(composer(dialog)).not.toHaveTextContent("My saved draft");
+  const { form, note } = await openCustomDirection();
+  await within(form).findByText("suggestion-background.txt");
+  expect(within(form).queryByText("my-original.txt")).not.toBeInTheDocument();
+  expect(form).not.toHaveTextContent("My saved draft");
   await writeDirection(note, "Keep my own requirements");
   await waitFor(() => {
-    expect(button("Send", "button", dialog)).toBeEnabled();
+    expect(button("Send", "button", form)).toBeEnabled();
   });
-  click(button("Send", "button", dialog));
+  click(button("Send", "button", form));
   await screen.findByText(SENT);
   const { threadId: sentThreadId, title, userMessage: message } = await sent;
   expect(title).toBe(suggestion.content.title);
@@ -1555,21 +1592,16 @@ function holdCardDeparture(article: HTMLElement) {
 test("For you mounts only the foreground content and retains a departure until its animation finishes", async () => {
   const items = numberedSuggestions(10);
   const pool = mockPool(items);
-  context.mocks.data.agents([
-    { agentId, isDefaultAgent: true, avatarUrl: DEFAULT_AGENT_AVATAR_URL },
-  ]);
-  await setupPage({
-    context,
-    path: suggestionPath,
-    featureSwitches: {
-      ...features,
-      [FeatureSwitchKey.OkouAnimatedAvatar]: true,
-    },
-  });
+  await openForYou();
   const first = await activeForYouCard("Suggested action 1");
-  const firstAvatar = first.parentElement?.querySelector("[data-okou-avatar]");
-  expect(firstAvatar).toHaveAttribute("data-okou-avatar", "animated");
-  expect(firstAvatar?.querySelector("svg")).toBeInTheDocument();
+  await waitFor(() => {
+    expect(
+      first.querySelector('[data-slot="for-you-illustration"]'),
+    ).toBeInTheDocument();
+  });
+  const illustration = first
+    .querySelector('[data-slot="for-you-illustration"]')
+    ?.getAttribute("src");
   expect(screen.queryByText("Suggested action 2")).not.toBeInTheDocument();
   const departure = holdCardDeparture(first);
   click(link(`/for-you?suggestion=${items[1].id}`));
@@ -1578,8 +1610,8 @@ test("For you mounts only the foreground content and retains a departure until i
   expect(first.closest("[inert]")).not.toBeNull();
   expect(second.closest("[inert]")).toBeNull();
   expect(
-    first.parentElement?.querySelector("[data-okou-avatar] svg"),
-  ).toBeInTheDocument();
+    first.querySelector('[data-slot="for-you-illustration"]'),
+  ).toHaveAttribute("src", illustration);
   expect(screen.queryByText("Suggested action 3")).not.toBeInTheDocument();
   departure.resolve();
   await waitFor(() => {
@@ -1655,17 +1687,17 @@ test("For you sends a suggestion in place while retaining the next card and its 
   expect(pathname()).toBe("/for-you");
 });
 
-test("For you keeps custom directions in the existing composer and advances after sending", async () => {
+test("For you keeps custom directions in the inline composer and advances after sending", async () => {
   mockPool(numberedSuggestions(2));
   const sent = captureSend();
   await openForYou();
   const card = await activeForYouCard("Suggested action 1");
-  const { dialog, note } = await openCustomDirection(card);
+  const { form, note } = await openCustomDirection(card);
   await writeDirection(note, "Summarize the open budget question first");
   await waitFor(() => {
-    expect(button("Send", "button", dialog)).toBeEnabled();
+    expect(button("Send", "button", form)).toBeEnabled();
   });
-  click(button("Send", "button", dialog));
+  click(button("Send", "button", form));
   const message = await sent;
   expect(JSON.stringify(message.userMessage)).toContain(
     "Summarize the open budget question first",
@@ -2005,4 +2037,135 @@ test("System updates remain unread with optional sources off until their card is
   expect(
     within(dialog).getByRole("switch", { name: "System updates" }),
   ).toHaveAttribute("aria-checked", "true");
+});
+
+test("Don't nudge records the no-repeat direction and Undo targets that feedback", async () => {
+  const items = numberedSuggestions(2);
+  mockPool(items);
+  const writes: {
+    id: string;
+    kind: string;
+    targetId: string | null;
+    note: string;
+  }[] = [];
+  context.mocks.api(feedContract.feedback, ({ body, respond }) => {
+    writes.push(body);
+    return respond(200, { restored: body.kind === "undo" });
+  });
+  await openForYou();
+  const first = await activeForYouCard(items[0].content.title);
+  click(button("Don’t nudge me", "button", first));
+  await activeForYouCard(items[1].content.title);
+  await screen.findByText("Noted — please don’t nudge me about this again");
+  expect(writes[0]).toMatchObject({
+    kind: "not_planned",
+    note: "Do not nudge me about this again.",
+    targetId: null,
+  });
+  click(button("Undo"));
+  await activeForYouCard(items[0].content.title);
+  await waitFor(() => {
+    expect(writes[1]).toMatchObject({ kind: "undo", targetId: writes[0].id });
+  });
+});
+
+test("Background and card artwork stay fixed through browsing, feedback and Undo", async () => {
+  const items = numberedSuggestions(10);
+  mockPool(items);
+  await openForYou();
+  await activeForYouCard(items[0].content.title);
+  const background = document
+    .querySelector('[data-slot="for-you-background"]')
+    ?.getAttribute("src");
+  const illustrations: string[] = [];
+  for (const item of items) {
+    click(link(`/for-you?suggestion=${item.id}`));
+    const card = await activeForYouCard(item.content.title);
+    await waitFor(() => {
+      expect(
+        card.querySelector('[data-slot="for-you-illustration"]'),
+      ).toBeInTheDocument();
+    });
+    const src = card
+      .querySelector('[data-slot="for-you-illustration"]')
+      ?.getAttribute("src");
+    if (!src) {
+      throw new Error("Missing illustration source");
+    }
+    illustrations.push(src);
+    expect(
+      document.querySelector('[data-slot="for-you-background"]'),
+    ).toHaveAttribute("src", background);
+  }
+  expect(new Set(illustrations).size).toBe(items.length);
+  click(link(`/for-you?suggestion=${items[0].id}`));
+  const first = await activeForYouCard(items[0].content.title);
+  click(button("Dismiss", "button", first));
+  const second = await activeForYouCard(items[1].content.title);
+  await waitFor(() => {
+    expect(
+      second.querySelector('[data-slot="for-you-illustration"]'),
+    ).toHaveAttribute("src", illustrations[1]);
+  });
+  await screen.findByText("Suggestion dismissed");
+  click(button("Undo"));
+  const restored = await activeForYouCard(items[0].content.title);
+  await waitFor(() => {
+    expect(
+      restored.querySelector('[data-slot="for-you-illustration"]'),
+    ).toHaveAttribute("src", illustrations[0]);
+  });
+  expect(
+    document.querySelector('[data-slot="for-you-background"]'),
+  ).toHaveAttribute("src", background);
+});
+
+test("Horizontal swipes browse without consuming while vertical and input gestures stay local", async () => {
+  const items = numberedSuggestions(3);
+  const pool = mockPool(items);
+  await openForYou();
+  const first = await activeForYouCard(items[0].content.title);
+  fireEvent.pointerDown(first, {
+    clientX: 200,
+    clientY: 100,
+    pointerId: 1,
+    button: 0,
+  });
+  fireEvent.pointerUp(first, {
+    clientX: 100,
+    clientY: 100,
+    pointerId: 1,
+    button: 0,
+  });
+  const second = await activeForYouCard(items[1].content.title);
+  fireEvent.pointerDown(second, {
+    clientX: 200,
+    clientY: 100,
+    pointerId: 2,
+    button: 0,
+  });
+  fireEvent.pointerUp(second, {
+    clientX: 100,
+    clientY: 300,
+    pointerId: 2,
+    button: 0,
+  });
+  const input = within(second).getByRole("textbox");
+  fireEvent.pointerDown(input, {
+    clientX: 200,
+    clientY: 100,
+    pointerId: 3,
+    button: 0,
+  });
+  fireEvent.pointerUp(input, {
+    clientX: 100,
+    clientY: 100,
+    pointerId: 3,
+    button: 0,
+  });
+  expect(second).toBeInTheDocument();
+  expect(pool.consumed).toStrictEqual([]);
+  expect(new URLSearchParams(window.location.search).get("suggestion")).toBe(
+    items[1].id,
+  );
 });

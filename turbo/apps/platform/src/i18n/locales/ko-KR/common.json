@@ -1644,7 +1644,11 @@
       "dismiss": "무시",
       "dismissRecorded": "Suggestion dismissed",
       "doneRecorded": "Noted — this is already done",
+      "dontNudge": "재촉하지 마세요",
+      "dontNudgeRecorded": "이 일은 더 이상 재촉하지 않도록 기록했어요",
+      "editDraft": "기존 채팅에 초안 준비",
       "editReason": "Edit reason",
+      "feedbackPrompt": "이 제안은 어떤가요?",
       "feedLabel": "피드",
       "forYou": {
         "loading": "제안 불러오는 중",
@@ -1678,9 +1682,11 @@
       "reasonLabel": "Add a reason (optional)",
       "saveReason": "Save",
       "sending": "보내는 중…",
+      "sendNew": "새 채팅으로 보내기",
       "sent": "새 채팅으로 보냈습니다",
       "unavailable": "이 제안은 더 이상 사용할 수 없습니다. 제안을 새로고침했습니다.",
-      "undoFeedback": "Undo"
+      "undoFeedback": "Undo",
+      "viewSource": "출처 보기"
     },
     "attachments": {
       "attach": "첨부",

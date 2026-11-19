@@ -1644,7 +1644,11 @@
       "dismiss": "忽略",
       "dismissRecorded": "已收起這則建議",
       "doneRecorded": "已記下，這件事已經處理了",
+      "dontNudge": "別催了",
+      "dontNudgeRecorded": "已記錄，請不要再催這件事",
+      "editDraft": "在原對話中準備草稿",
       "editReason": "修改原因",
+      "feedbackPrompt": "這則建議怎麼樣？",
       "feedLabel": "動態",
       "forYou": {
         "loading": "正在載入建議",
@@ -1678,9 +1682,11 @@
       "reasonLabel": "補充原因（選填）",
       "saveReason": "儲存",
       "sending": "正在傳送…",
+      "sendNew": "傳送到新對話",
       "sent": "已傳送到新聊天",
       "unavailable": "這則建議已無法使用，建議清單已重新整理。",
-      "undoFeedback": "復原"
+      "undoFeedback": "復原",
+      "viewSource": "查看來源"
     },
     "attachments": {
       "attach": "新增附件",
