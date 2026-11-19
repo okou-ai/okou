@@ -1448,3 +1448,37 @@ vnc-authorization-005	turbo/apps/platform/src/views/okou-page/__tests__/vnc-auth
 vnc-access-001	turbo/apps/platform/src/views/okou-page/__tests__/vnc-access.test.tsx	Chat VNC setup appears and filters	19	passed
 vnc-delete-conflicts-001	turbo/apps/platform/src/views/okou-page/__tests__/vnc-delete-conflicts.test.tsx	A stale VNC host generation blocks deletion	92	passed
 vnc-delete-conflicts-002	turbo/apps/platform/src/views/okou-page/__tests__/vnc-delete-conflicts.test.tsx	A VNC credential deletion rejected with VNC_CREDENTIAL_REVISION_CONFLICT remains blocked	131	passed
+vnc-settings-001	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	Native cloudflare_access RFB and detached KDC routes preserve identity and open an explicit rebind editor	266	passed
+vnc-settings-002	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	Native direct RFB and detached KDC routes preserve identity and open an explicit rebind editor	266	passed
+vnc-settings-003	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	A conflicting VNC edit preserves the draft and blocks saving	338	passed
+vnc-settings-004	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	VNC settings show a current-generation failure and its observation time	370	passed
+vnc-settings-007	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	VNC settings refresh observations when their SSH carrier changes	418	passed
+vnc-settings-011	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	VNC settings never retain the previous owner's diagnostic warning	469	passed
+vnc-settings-012	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	Returning to Connectors refreshes VNC hosts changed elsewhere	545	passed
+vnc-settings-013	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	X509None is an explicit credentialless choice with persistent client-authentication warning	566	passed
+vnc-settings-016	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	An owner creates an SSH-backed route with a distinct RFB destination and certificate identity	630	passed
+vnc-settings-019	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	An SSH-backed card shows topology and a missing saved SSH host blocks edits	675	passed
+vnc-settings-020	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	Editing an Apple IPv6 loopback host preserves its SSH route and custom port	739	passed
+vnc-settings-021	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	Direct route explains canonical IPv6 loopback and private mapped literals	795	passed
+vnc-settings-024	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	QEMU SCRAM creates only its explicit X509SASL pair and keeps its password out of state	823	passed
+vnc-settings-026	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	A supplied service ticket is imported without saving and retains its exact service on Save	973	passed
+vnc-settings-027	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	Changing a ticket's service away and back invalidates its pending import	1011	passed
+vnc-settings-028	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	A replacement keytab is saved without a late file overwriting it	1040	passed
+vnc-settings-029	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	Changing an initiator away and back invalidates a pending keytab import	1073	passed
+vnc-settings-030	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	A closed dialog cannot deliver its pending keytab into a new dialog	1106	passed
+vnc-settings-031	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	A keytab read failure is reported and a newly selected file can be saved	1132	passed
+vnc-settings-032	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	Switching authentication profiles away and back discards a pending keytab	1157	passed
+vnc-settings-033	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	Changing owners discards a pending keytab even after the original owner returns	1185	passed
+vnc-settings-034	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	Kerberos metadata can be read and its stored password replaced without revealing it	1221	passed
+vnc-settings-043	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	Plain credential cards and edits expose only password-free metadata	1278	passed
+vnc-settings-044	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	Plain oversized UTF-8 password validation fails before an API write	1359	passed
+vnc-settings-047	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	Deleting a host requires confirmation and uses its displayed generation	1387	passed
+vnc-settings-048	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	A reusable credential explains bound-host impact and only replaces its password explicitly	1418	passed
+vnc-settings-051	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	An uncertain host creation preserves its frozen draft	1472	passed
+vnc-settings-052	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	An unsupported password 密码 remains intact and cannot be saved	1496	passed
+vnc-settings-053	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	A known invalid credential response retains an editable draft without leaking server details	1521	passed
+vnc-settings-054	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	Changing owner while token acquisition is pending cancels the save and clears the secret	1546	passed
+vnc-settings-063	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	Trusted RSA public-key import only fills the pin and does not save or establish provenance	1586	passed
+vnc-settings-064	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	A late RSA import cannot associate its old pin with a newer public-key draft	1628	passed
+remote-connection-order-001	turbo/apps/platform/src/views/okou-page/__tests__/remote-connection-order.test.tsx	Remote host names follow the active Chinese locale	30	passed
+remote-connection-order-003	turbo/apps/platform/src/views/okou-page/__tests__/remote-connection-order.test.tsx	A chat keeps remote choices in natural name order across access states with existing thread false	59	passed
