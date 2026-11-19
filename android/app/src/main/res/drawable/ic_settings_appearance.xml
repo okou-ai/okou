@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- Lucide sun-moon. ISC license in assets/licenses. -->
-<vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="24dp" android:height="24dp"
-    android:viewportWidth="24" android:viewportHeight="24">
-    <path android:pathData="M12 2v2 M14.837 16.385a6 6 0 1 1-7.223-7.222c.624-.147.97.66.715 1.248a4 4 0 0 0 5.26 5.259c.589-.255 1.396.09 1.248.715 M16 12a4 4 0 0 0-4-4 M19 5l-1.256 1.256 M20 12h2"
-        android:fillColor="@android:color/transparent" android:strokeColor="@android:color/black"
-        android:strokeWidth="2" android:strokeLineCap="round" android:strokeLineJoin="round" />
-</vector>

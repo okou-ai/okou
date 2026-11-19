@@ -5,10 +5,12 @@ import ai.okou.android.chat.label
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
@@ -53,7 +55,7 @@ internal fun AppliedChatFilter(filter: ChatListFilter, clear: () -> Unit) {
             onClick = clear,
             label = { Text(stringResource(filter.label())) },
             trailingIcon = {
-                Icon(painterResource(R.drawable.ic_chat_clear), null, Modifier.size(16.dp))
+                Icon(painterResource(R.drawable.ic_close), null, Modifier.size(16.dp))
             },
             modifier = Modifier.semantics { onClick(label = clearLabel, action = null) },
         )
@@ -79,13 +81,13 @@ internal fun WorkspaceToolbarActions(
         if (showFilter) {
             IconButton(onClick = { filterOpen = true }) {
                 Icon(
-                    painterResource(R.drawable.ic_chat_filter),
+                    painterResource(R.drawable.ic_filter_list),
                     stringResource(R.string.chat_filter),
                 )
             }
         }
         IconButton(modifier = settingsAnchor, onClick = { openSettings(anchorFocused) }) {
-            Icon(painterResource(R.drawable.okou_mark), stringResource(R.string.settings))
+            Icon(painterResource(R.drawable.ic_settings), stringResource(R.string.settings))
         }
     } else {
         TextButton(
@@ -93,6 +95,8 @@ internal fun WorkspaceToolbarActions(
             modifier = Modifier.widthIn(max = 136.dp),
             colors = textButtonColors,
         ) {
+            Icon(painterResource(R.drawable.ic_download), contentDescription = null)
+            Spacer(Modifier.width(ButtonDefaults.IconSpacing))
             Text(
                 stringResource(R.string.updates_view),
                 maxLines = 1,
@@ -110,7 +114,7 @@ internal fun WorkspaceToolbarActions(
                 },
             ) {
                 Icon(
-                    painterResource(R.drawable.ic_more),
+                    painterResource(R.drawable.ic_more_horiz),
                     stringResource(R.string.chat_more_actions),
                 )
             }
@@ -118,6 +122,12 @@ internal fun WorkspaceToolbarActions(
                 if (showFilter) {
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.chat_filter)) },
+                        leadingIcon = {
+                            Icon(
+                                painterResource(R.drawable.ic_filter_list),
+                                contentDescription = null,
+                            )
+                        },
                         onClick = {
                             expanded = false
                             filterOpen = true
@@ -126,6 +136,9 @@ internal fun WorkspaceToolbarActions(
                 }
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.settings)) },
+                    leadingIcon = {
+                        Icon(painterResource(R.drawable.ic_settings), contentDescription = null)
+                    },
                     onClick = {
                         expanded = false
                         openSettings(restoreAnchor)
