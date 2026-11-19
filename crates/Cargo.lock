@@ -2223,7 +2223,7 @@ dependencies = [
 
 [[package]]
 name = "guest-storage-apply"
-version = "0.32.28"
+version = "0.32.29"
 dependencies = [
  "cli-test-support",
  "flate2",
@@ -4106,7 +4106,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.249.59"
+version = "0.249.60"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4180,7 +4180,7 @@ dependencies = [
 
 [[package]]
 name = "runner-executor"
-version = "0.22.6"
+version = "0.22.7"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4253,7 +4253,7 @@ dependencies = [
 
 [[package]]
 name = "runner-lifecycle"
-version = "0.18.6"
+version = "0.18.7"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4462,7 +4462,7 @@ dependencies = [
 
 [[package]]
 name = "runner-storage"
-version = "0.11.6"
+version = "0.11.7"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4507,7 +4507,7 @@ dependencies = [
 
 [[package]]
 name = "runner-supervisor"
-version = "0.26.6"
+version = "0.26.7"
 dependencies = [
  "api-contracts",
  "async-trait",

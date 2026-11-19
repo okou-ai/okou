@@ -4,7 +4,7 @@
  *
  * These live server-side only so the frontend never sends stale seed skills.
  */
-export const SEED_SKILLS: readonly string[] = [
+export const BUILT_IN_SKILLS: readonly string[] = [
   "computer-use",
   "gen",
   "workflow-setup",

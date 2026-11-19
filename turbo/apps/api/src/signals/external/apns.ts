@@ -66,24 +66,6 @@ async function providerToken(environment: ApnsEnvironment): Promise<string> {
   return jwt;
 }
 
-/**
- * Alerts go to the app's topic. Widget pushes go to its WidgetKit topic and carry
- * no data: WidgetKit reloads the widgets, which read their state from the API.
- */
-function pushHeaders(pushType: "alert" | "widgets", notificationId: string) {
-  return pushType === "alert"
-    ? {
-        "apns-topic": "ai.okou.ios",
-        "apns-push-type": "alert",
-        "apns-priority": "10",
-        "apns-collapse-id": notificationId,
-      }
-    : {
-        "apns-topic": "ai.okou.ios.push-type.widgets",
-        "apns-push-type": "widgets",
-      };
-}
-
 /** One bounded provider attempt. Callback replay retains the existing at-least-once semantics. */
 export async function sendApnsNotification(
   args: {
@@ -91,7 +73,6 @@ export async function sendApnsNotification(
     readonly deviceToken: string;
     readonly notificationId: string;
     readonly payload: string;
-    readonly pushType?: "alert" | "widgets";
   },
   signal: AbortSignal,
 ): Promise<{ readonly status: number; readonly reason?: string }> {
@@ -109,8 +90,11 @@ export async function sendApnsNotification(
         ":method": "POST",
         ":path": `/3/device/${args.deviceToken}`,
         authorization: `bearer ${jwt}`,
-        ...pushHeaders(args.pushType ?? "alert", args.notificationId),
+        "apns-topic": "ai.okou.ios",
+        "apns-push-type": "alert",
+        "apns-priority": "10",
         "apns-expiration": String(Math.floor(now() / 1000) + 3600),
+        "apns-collapse-id": args.notificationId,
         "apns-id": uuidv5(args.notificationId, uuidv5.URL),
       },
       { signal: deadline },

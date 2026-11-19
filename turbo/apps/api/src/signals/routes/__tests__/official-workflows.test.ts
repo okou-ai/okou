@@ -1,4 +1,4 @@
-import { SEED_SKILLS } from "@okouai/core/seed-skills";
+import { BUILT_IN_SKILLS } from "@okouai/core/built-in-skills";
 import { debugMorningBriefContract } from "@okouai/api-contracts/contracts/debug-morning-brief";
 import {
   MORNING_BRIEF_OFFICIAL_DEFINITION_NAMES,
@@ -719,7 +719,7 @@ describe("Workflow Run admission", () => {
         current.runId,
       );
       const skills = execution.contentBundles.skills;
-      expect(skills).toHaveLength(2 + SEED_SKILLS.length);
+      expect(skills).toHaveLength(2 + BUILT_IN_SKILLS.length);
       for (const workflow of published) {
         const skill = skills.find((item) => {
           return item.mountPath.endsWith(`/${workflow.workflowName}`);
