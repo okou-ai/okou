@@ -321,3 +321,44 @@ chat-composer-connector-loading-002	turbo/apps/platform/src/views/okou-page/__te
 chat-composer-connector-loading-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-loading.test.tsx	Render connected connectors while remote resources are unavailable	100	passed
 chat-composer-connector-loading-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-loading.test.tsx	Reopening a pending menu shares the Chat page's inventory request	115	passed
 chat-composer-connector-loading-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-loading.test.tsx	Render remote resources while connected connectors are unavailable	145	passed
+chat-composer-feedback-selection-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-feedback-selection.test.tsx	ArrowDown at the end of a quote note keeps the caret there for the sent note	35	passed
+chat-composer-nodeview-actions-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-nodeview-actions.test.tsx	A legacy template attachment keeps copied metadata without a native hover title	27	passed
+chat-composer-presigned-previews-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-presigned-previews.test.tsx	restored private composer images show a presigned thumbnail and open the same original	25	passed
+chat-composer-inline-template-replacement-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-inline-template-replacement.test.tsx	Replacing an inline template keeps the previously sent reference	23	passed
+chat-composer-template-titles-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-template-titles.test.tsx	Leaving a built-in caption dismisses its title hint	28	passed
+chat-composer-presentation-options-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-presentation-options.test.tsx	Create opens presentation templates and keeps the draft	131	passed
+chat-composer-presentation-options-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-presentation-options.test.tsx	Presentation sends the chosen slide count in additional info	143	passed
+chat-composer-presentation-options-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-presentation-options.test.tsx	Leaving presentation hides its picker and drops its settings	164	passed
+chat-composer-presentation-gallery-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-presentation-gallery.test.tsx	Select a presentation theme from its preview	107	passed
+chat-composer-presentation-gallery-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-presentation-gallery.test.tsx	Send a presentation theme restored from a saved draft	170	passed
+chat-composer-presentation-gallery-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-presentation-gallery.test.tsx	Use a presentation template's default theme	192	passed
+chat-composer-presentation-gallery-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-presentation-gallery.test.tsx	Navigate every slide in a presentation template	215	passed
+chat-composer-slash-custom-templates-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-slash-custom-templates.test.tsx	The Templates overview's Presentation type offers accessible custom templates and sends their references	185	passed
+chat-composer-slash-custom-templates-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-slash-custom-templates.test.tsx	The Templates overview's Illustration type offers accessible custom templates with their preview image and sends their references	199	passed
+chat-composer-slash-custom-templates-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-slash-custom-templates.test.tsx	The Templates overview's Document type offers accessible custom templates and sends their references	185	passed
+chat-composer-document-templates-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-document-templates.test.tsx	Document category and scroll survive preview	71	passed
+chat-composer-document-templates-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-document-templates.test.tsx	Using a document template preserves the draft until the user sends it	109	passed
+chat-composer-document-templates-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-document-templates.test.tsx	The Document tray opens its picker with the keyboard	141	passed
+chat-composer-document-templates-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-document-templates.test.tsx	A Document tray cover attaches its template and keeps the draft	164	passed
+chat-composer-create-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-create.test.tsx	Persisted additional info stays out of the message and copied text	126	passed
+chat-composer-create-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-create.test.tsx	A queued Create message keeps its intent separate from user-authored text	166	passed
+chat-composer-create-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-create.test.tsx	Image adds a template without replacing the existing text	221	passed
+chat-composer-create-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-create.test.tsx	Create image sends every edited draft template reference	249	passed
+chat-composer-create-008	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-create.test.tsx	Image mode opens its style picker from the Add menu	334	passed
+chat-composer-create-009	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-create.test.tsx	Exiting Create mode sends the ordinary draft and template	348	passed
+chat-composer-workflows-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-workflows.test.tsx	Multiple inline templates preserve every reference when you send	90	passed
+chat-composer-workflows-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-workflows.test.tsx	Reopen workflow suggestions after clearing a pending draft	170	passed
+chat-composer-workflows-006	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-workflows.test.tsx	Send a template while the current run is active	210	passed
+chat-composer-workflows-007	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-workflows.test.tsx	Use the workflow template picker to send a workflow template	241	passed
+chat-composer-workflows-009	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-workflows.test.tsx	Wait for a template attachment before sending	304	passed
+chat-composer-workflows-010	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-workflows.test.tsx	Distinguish workflow tokens from text inside URLs	370	passed
+chat-composer-add-menu-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-add-menu.test.tsx	Import skills opens its dialog and View workflows leaves it for the workflows page	42	passed
+chat-composer-add-menu-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-add-menu.test.tsx	The Attach row attaches the file chosen after the menu closes	74	passed
+chat-composer-media-previews-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-media-previews.test.tsx	An uploading image shows its local thumbnail and enables preview after completion	40	passed
+chat-composer-media-previews-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-media-previews.test.tsx	Sending local media uses the uploaded file identity and releases its draft preview	104	passed
+chat-composer-media-previews-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-media-previews.test.tsx	A restored private video opens its authenticated player even when its thumbnail fails	146	passed
+chat-composer-presentation-import-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-presentation-import.test.tsx	Import a presentation deck over a saved template in an existing chat	66	passed
+chat-composer-presentation-import-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-presentation-import.test.tsx	Import a presentation deck from a new chat	115	passed
+chat-composer-template-media-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-template-media.test.tsx	Select and send a website template	21	passed
+chat-composer-template-tabs-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-template-tabs.test.tsx	Built-in templates stay usable while custom templates load after switching categories	51	passed
+chat-composer-template-tabs-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-template-tabs.test.tsx	Category arrows select the matching panel and keep focus on the selected tab	93	passed
