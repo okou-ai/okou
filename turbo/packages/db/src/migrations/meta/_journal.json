@@ -3480,6 +3480,13 @@
       "when": 1795041679110,
       "tag": "1575_activate_active_default_agent_workspaces",
       "breakpoints": true
+    },
+    {
+      "idx": 1576,
+      "version": "7",
+      "when": 1795053710241,
+      "tag": "1576_activate_active_multi_agent_workspaces",
+      "breakpoints": true
     }
   ]
 }
