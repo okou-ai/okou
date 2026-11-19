@@ -445,28 +445,6 @@ export function waitForToken<T>(
   });
 }
 
-/** Track whether a ccstate-owned async load is still available for joining. */
-export interface TrackedAsyncResource<T> {
-  readonly pending: () => boolean;
-  readonly promise: Promise<T>;
-}
-
-export function trackAsyncResource<T>(
-  promise: Promise<T>,
-): TrackedAsyncResource<T> {
-  let pending = true;
-  // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
-  const trackedPromise = withCleanup(promise, () => {
-    pending = false;
-  });
-  return {
-    pending: () => {
-      return pending;
-    },
-    promise: trackedPromise,
-  };
-}
-
 export function waitForBrowserPaint(signal: AbortSignal): Promise<void> {
   if (
     typeof window === "undefined" ||
