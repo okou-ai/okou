@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
+import { HttpResponse } from "msw";
 import { testContext } from "../../../__tests__/test-context";
 import { mockNow, now, nowDate } from "../../../lib/time";
+import { mockEnv } from "../../../lib/env";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { flushWaitUntilForTest } from "../../context/wait-until";
@@ -223,6 +225,97 @@ describe("Independent finalizing resource dispatch", () => {
       receiver.heartbeatGeneration,
     );
   });
+
+  it.each(["accept", "alternate", "stale", "disabled"] as const)(
+    "bounds Home dispatch and same-byte retry with %s",
+    async (scenario) => {
+      const f = await terminalPredecessor(context, "completed");
+      if (scenario !== "disabled") {
+        mockEnv("RUNNER_PREFERRED_HOME_CHECKOUT_ENABLED", "true");
+      }
+      await heartbeat(f, {
+        snapshotSequence: 2,
+        mode: "draining",
+        activeReuseProducers: scenario === "stale" ? [] : [producer(f)],
+      });
+      mockNow(f.clock + 2000);
+      const sentAt = now();
+      const preferredBytes: string[] = [];
+      const preferredDeadlines: number[] = [];
+      const alternativeDeadlines: number[] = [];
+      const replacement = await f.owned.run(async () => {
+        const identity = await f.api.registerDirectRunner(f.group, {
+          hostname: `runner-${f.runnerId}.okou.app`,
+          maxConcurrent: 1,
+          reply: (envelope, bytes) => {
+            preferredBytes.push(bytes);
+            preferredDeadlines.push(envelope.notAfter);
+            const hint = envelope.preferredHomeCheckout;
+            if (scenario === "stale" || scenario === "disabled") {
+              expect(hint).toBeUndefined();
+            } else {
+              expect(hint).toBeDefined();
+              expect(hint?.predecessorRunId).toBe(f.run.runId);
+              expect(hint?.waitUntil).toBeGreaterThan(sentAt);
+              expect(hint?.waitUntil).toBeLessThanOrEqual(sentAt + 1000);
+              expect(hint?.waitUntil).toBeLessThan(envelope.notAfter);
+            }
+            const busy =
+              scenario === "alternate" ||
+              (scenario === "accept" && preferredBytes.length === 1);
+            if (busy && hint) {
+              mockNow(hint.waitUntil + 1);
+            }
+            return HttpResponse.json(
+              {
+                runnerId: envelope.runnerId,
+                heartbeatGeneration: envelope.heartbeatGeneration,
+                runId: envelope.executionContext.runId,
+                disposition: busy ? "busy" : "accepted",
+              },
+              { status: busy ? 429 : 200 },
+            );
+          },
+        });
+        const alternative = await f.api.registerDirectRunner(f.group, {
+          maxConcurrent: 8,
+          heartbeat: { totalVcpu: 32, totalMemoryMb: 65_536 },
+          reply: (envelope) => {
+            expect(envelope.preferredHomeCheckout).toBeUndefined();
+            alternativeDeadlines.push(envelope.notAfter);
+            return HttpResponse.json({
+              runnerId: envelope.runnerId,
+              heartbeatGeneration: envelope.heartbeatGeneration,
+              runId: envelope.executionContext.runId,
+              disposition: "accepted",
+            });
+          },
+        });
+        return { identity, alternative };
+      });
+      const next = await continuation(f);
+      expect(next.status).toBe("running");
+      const useAlternative = scenario === "alternate";
+      const owner = useAlternative
+        ? replacement.alternative
+        : replacement.identity;
+      await expectOwner(
+        f,
+        next.runId,
+        owner.runnerId,
+        owner.heartbeatGeneration,
+      );
+      expect(preferredBytes).toHaveLength(
+        scenario === "stale" || scenario === "disabled" ? 1 : 2,
+      );
+      if (preferredBytes.length === 2) {
+        expect(preferredBytes[1]).toBe(preferredBytes[0]);
+      }
+      expect(alternativeDeadlines).toStrictEqual(
+        useAlternative ? [preferredDeadlines[0]] : [],
+      );
+    },
+  );
 
   it("keeps another Chat's producer out of a new Thread's placement", async () => {
     const f = await terminalPredecessor(context, "failed", false);
