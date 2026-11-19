@@ -7,24 +7,23 @@ load '../../helpers/runner-api'
 setup() {
     runner_e2e_use_mock_codex_profile
     runner_e2e_require_environment
-    : "${E2E_RUNNER_PERMISSION_SESSION_TOKEN:?A session for the mock Runner member is required}"
     runner_e2e_setup_test
+    run install_permission_test_browser
+    assert_success
 }
 
 teardown() {
-    local permissions_status=0
-    if [[ -n "${CONNECTOR_ACCOUNT_ID:-}" ]]; then
-        apply_postmark_permissions \
-            '{"target":{"kind":"builtin","connectorSlug":"postmark"},"mode":"replace","grants":[]}' \
-            >/dev/null || permissions_status=$?
-    fi
     runner_e2e_teardown_test postmark
-    return "$permissions_status"
 }
 
-apply_postmark_permissions() {
-    E2E_API_TOKEN="$E2E_RUNNER_PERMISSION_SESSION_TOKEN" \
-        runner_api_curl /api/connector-permissions -X PUT -d "$1"
+install_permission_test_browser() {
+    cd "$BATS_TEST_DIRNAME/../.." || return
+    pnpm exec playwright install --only-shell chromium
+}
+
+apply_postmark_permission() {
+    cd "$BATS_TEST_DIRNAME/../.." || return
+    pnpm exec tsx playwright/runner-permission-approval.ts "$1"
 }
 
 @test "runner refreshes connector permissions during an active run" {
@@ -43,8 +42,8 @@ apply_postmark_permissions() {
     CONNECTOR_ACCOUNT_ID=$(jq -er \
         '.connectionId | select(type == "string" and length > 0)' \
         <<<"$output")
-    run apply_postmark_permissions \
-        '{"target":{"kind":"builtin","connectorSlug":"postmark"},"mode":"patch","grants":[{"permission":"templates.manage","action":"deny"}]}'
+    run apply_postmark_permission deny
+    echo "$output"
     assert_success
 
     # Raw DNS has dedicated runner coverage. Pin the provider's public sink so
@@ -125,18 +124,7 @@ EOF
     echo "$output"
     assert_success
 
-    local grant_payload
-    grant_payload=$(jq -nc \
-        '{
-            target: {kind: "builtin", connectorSlug: "postmark"},
-            mode: "patch",
-            grants: [{
-                permission: "templates.manage",
-                action: "allow",
-                expiresIn: "1h"
-            }]
-        }')
-    run apply_postmark_permissions "$grant_payload"
+    run apply_postmark_permission allow
     echo "$output"
     assert_success
 

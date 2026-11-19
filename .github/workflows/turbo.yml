@@ -2635,35 +2635,11 @@ jobs:
           ' <<<"$E2E_RUNNER_TEST_FILES_JSON" >/dev/null
           test_count="$(jq 'length' <<<"$E2E_RUNNER_TEST_FILES_JSON")"
           echo "Runner E2E shard ${E2E_RUNNER_SHARD_INDEX}/${E2E_RUNNER_SHARD_TOTAL} has ${test_count} file(s)"
-      - name: Mint the Runner permission test's member session
-        if: contains(matrix.files, 'tests/03-runner/run-t05-firewall-permission-refresh.bats')
-        shell: bash
-        env:
-          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
-        run: |
-          set -euo pipefail
-          session_id=$(jq -er '.sessionId | select(test("^sess_[A-Za-z0-9]+$"))' /tmp/e2e-api-credentials-runner-mock-claude.json)
-          token=$(curl --fail --silent --show-error --max-time 15 \
-            -H "Authorization: Bearer ${CLERK_SECRET_KEY:?}" \
-            -H 'Content-Type: application/json' \
-            -d '{"expires_in_seconds":300}' \
-            "https://api.clerk.com/v1/sessions/${session_id}/tokens" | jq -er '.jwt | select(test("^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$"))')
-          echo "::add-mask::$token"
-          printf '%s' "$token" | node -e '
-            const token = require("node:fs").readFileSync(0, "utf8");
-            const claims = JSON.parse(Buffer.from(token.split(".")[1], "base64url").toString("utf8"));
-            if (claims.sid !== process.argv[1] ||
-                (claims.o?.id ?? claims.org_id) !== process.env.E2E_RUNNER_MOCK_CLAUDE_ORG_ID) {
-              throw new Error("Runner permission test token must belong to the prepared mock session and workspace");
-            }
-          ' "$session_id"
-          printf 'E2E_RUNNER_PERMISSION_SESSION_TOKEN=%s\n' "$token" >> "$GITHUB_ENV"
       - name: Run runner E2E tests (shard ${{ matrix.index }})
         shell: bash
         run: |
           set -euo pipefail
-          # Run the permission probe first while its Clerk JWT is fresh.
-          mapfile -t test_files < <(jq -er 'sort_by(. != "tests/03-runner/run-t05-firewall-permission-refresh.bats")[]' <<<"$E2E_RUNNER_TEST_FILES_JSON")
+          mapfile -t test_files < <(jq -er '.[]' <<<"$E2E_RUNNER_TEST_FILES_JSON")
           if (( ${#test_files[@]} == 0 )); then
             echo "::error::Runner E2E shard has no test files"
             exit 1

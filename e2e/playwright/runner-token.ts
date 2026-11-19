@@ -27,7 +27,6 @@ interface RunnerCredentialTarget {
   readonly fileName: string;
   readonly organizationId: string;
   readonly upgradeToPro: boolean;
-  readonly preparePermissionSession?: boolean;
 }
 
 interface ProvisionRunnerCredentialOptions {
@@ -69,7 +68,6 @@ async function main(): Promise<void> {
         "E2E_RUNNER_MOCK_CLAUDE_ORGANIZATION_ID",
       ),
       upgradeToPro: true,
-      preparePermissionSession: true,
     },
     {
       email: accounts.codexBuiltIn,
@@ -189,24 +187,12 @@ async function provisionRunnerCredential(
       clerkSessionToken,
       vercelAutomationBypassSecret,
     });
-    const credential: { token: string; apiUrl: string; sessionId?: string } = {
-      token,
-      apiUrl,
-    };
-    if (target.preparePermissionSession) {
-      const sessionId = await page.evaluate(() => window.Clerk?.session?.id);
-      if (!sessionId) {
-        throw new Error(
-          "Runner permission refresh requires the mock member's Clerk session",
-        );
-      }
-      credential.sessionId = sessionId;
-    }
     const outputFile = join(outputDirectory, target.fileName);
-    await writeFile(outputFile, `${JSON.stringify(credential, null, 2)}\n`, {
-      encoding: "utf8",
-      mode: 0o600,
-    });
+    await writeFile(
+      outputFile,
+      `${JSON.stringify({ token, apiUrl, appUrl }, null, 2)}\n`,
+      { encoding: "utf8", mode: 0o600 },
+    );
     console.log("Generated runner E2E API credential", {
       email: target.email,
       outputFile,
