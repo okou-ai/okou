@@ -15,6 +15,7 @@ import {
   TableLayoutType,
   TableRow,
   TextRun,
+  UnderlineType,
   WidthType,
 } from "docx";
 import type { Element, Root, RootContent } from "hast";
@@ -24,6 +25,7 @@ import { i18n } from "../i18n/index.ts";
 import { parseMessagePdfTree } from "./message-pdf/document.ts";
 import type { PdfAssets, PdfRasterImage } from "./message-pdf/types.ts";
 
+const BLACK = "000000";
 const MAX_IMAGE_WIDTH = 600;
 const A4_WIDTH = 11_906;
 const A4_HEIGHT = 16_838;
@@ -47,6 +49,7 @@ interface InlineStyle {
   readonly italics?: boolean;
   readonly strike?: boolean;
   readonly code?: boolean;
+  readonly hyperlink?: boolean;
   readonly maxImageWidth?: number;
 }
 
@@ -110,7 +113,8 @@ function textRun(value: string, style: InlineStyle): TextRun {
     ...(style.bold ? { bold: true } : {}),
     ...(style.italics ? { italics: true } : {}),
     ...(style.strike ? { strike: true } : {}),
-    ...(style.code ? { font: "Consolas", color: "344054", size: 20 } : {}),
+    ...(style.code ? { font: "Consolas", size: 20 } : {}),
+    ...(style.hyperlink ? { style: "Hyperlink" } : {}),
   });
 }
 
@@ -179,11 +183,14 @@ function inlineElement(
     strike: style.strike || ["del", "s"].includes(node.tagName),
     code: style.code || node.tagName === "code",
   };
-  const children = inlineChildren(node.children, baseUrl, assets, nextStyle);
   const link =
     node.tagName === "a"
       ? safeDocxLink(node.properties.href, baseUrl)
       : undefined;
+  const children = inlineChildren(node.children, baseUrl, assets, {
+    ...nextStyle,
+    hyperlink: nextStyle.hyperlink || link !== undefined,
+  });
   return link ? [new ExternalHyperlink({ children, link })] : children;
 }
 
@@ -386,7 +393,7 @@ function blockquoteBlocks(
             indent: { left: 360 },
             border: {
               left: {
-                color: "98A2B3",
+                color: BLACK,
                 space: 8,
                 style: BorderStyle.SINGLE,
                 size: 12,
@@ -445,12 +452,10 @@ function blockChildren(
                 text: line,
                 break: index === 0 ? 0 : 1,
                 font: "Consolas",
-                color: "344054",
                 size: 20,
               });
             }),
           {
-            shading: { fill: "F2F4F7" },
             indent: { left: 180, right: 180 },
             spacing: { before: 80, after: 160 },
           },
@@ -469,6 +474,7 @@ function blockChildren(
         return [];
       }
       const columnWidths = tableColumnWidths(cells, layout.tableWidth);
+      const tableBorder = { style: BorderStyle.SINGLE, size: 1, color: BLACK };
       return [
         new Table({
           rows: tableRows(cells, columnWidths, layout),
@@ -482,20 +488,12 @@ function blockChildren(
             left: TABLE_CELL_HORIZONTAL_PADDING,
           },
           borders: {
-            top: { style: BorderStyle.SINGLE, size: 1, color: "D0D5DD" },
-            bottom: { style: BorderStyle.SINGLE, size: 1, color: "D0D5DD" },
-            left: { style: BorderStyle.SINGLE, size: 1, color: "D0D5DD" },
-            right: { style: BorderStyle.SINGLE, size: 1, color: "D0D5DD" },
-            insideHorizontal: {
-              style: BorderStyle.SINGLE,
-              size: 1,
-              color: "D0D5DD",
-            },
-            insideVertical: {
-              style: BorderStyle.SINGLE,
-              size: 1,
-              color: "D0D5DD",
-            },
+            top: tableBorder,
+            bottom: tableBorder,
+            left: tableBorder,
+            right: tableBorder,
+            insideHorizontal: tableBorder,
+            insideVertical: tableBorder,
           },
         }),
       ];
@@ -551,6 +549,23 @@ export function buildMarkdownDocxDocument(
   };
   const children = blockChildren(tree.children, layout);
   return new Document({
+    styles: {
+      default: {
+        document: { run: { color: BLACK, size: 22 } },
+        heading1: { run: { color: BLACK, size: 32, bold: true } },
+        heading2: { run: { color: BLACK, size: 26, bold: true } },
+        heading3: { run: { color: BLACK, size: 24, bold: true } },
+        heading4: {
+          run: { color: BLACK, size: 22, bold: true, italics: true },
+        },
+        heading5: { run: { color: BLACK, size: 22, bold: true } },
+        heading6: { run: { color: BLACK, size: 22, italics: true } },
+        caption: { run: { color: BLACK, size: 18, italics: true } },
+        hyperlink: {
+          run: { color: BLACK, underline: { type: UnderlineType.SINGLE } },
+        },
+      },
+    },
     numbering: { config: layout.numbering },
     creator: "Okou",
     title: i18n.t(($) => {

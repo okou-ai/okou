@@ -32,6 +32,15 @@ describe("markdown DOCX export", () => {
     expect(documentXml).toContain("Revenue");
     expect(documentXml).toContain("$42m");
     expect(relationshipsXml).toContain("https://example.test/report");
+    const stylesXml = new TextDecoder().decode(files["word/styles.xml"]);
+    const colors = [...stylesXml.matchAll(/<w:color w:val="([^"]+)"/gu)].map(
+      (match) => {
+        return match[1];
+      },
+    );
+    expect(new Set(colors)).toStrictEqual(new Set(["000000"]));
+    expect(documentXml).toContain('<w:rStyle w:val="Hyperlink"/>');
+    expect(documentXml).toContain('w:color="000000"');
   });
 
   it("fits wide CJK tables to a landscape page with content-sized columns", async () => {
