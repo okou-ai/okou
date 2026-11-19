@@ -16,10 +16,13 @@ import ai.okou.android.chat.ConversationRoute
 import ai.okou.android.chat.RealtimeNotice
 import ai.okou.android.chat.RunControlsModel
 import ai.okou.android.chat.RunControlsPanel
+import ai.okou.android.state.SearchRoute
 import ai.okou.android.state.SettingsDestination
 import ai.okou.android.state.WorkspaceTarget
+import ai.okou.android.state.rememberChatSearchQuery
 import ai.okou.android.state.rememberCollapsedProjects
 import ai.okou.android.state.rememberConversationUiState
+import ai.okou.android.state.rememberSearchRoute
 import ai.okou.android.state.rememberWorkspaceNavigation
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
@@ -59,7 +62,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.structuralEqualityPolicy
 import androidx.compose.ui.Alignment
@@ -75,12 +77,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
-
-private enum class SearchRoute {
-    List,
-    Search,
-    ReturnToSearch,
-}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -107,8 +103,8 @@ internal fun OkouApp(
     // Window configuration changes on resize. IME insets only change the space inside the panes.
     val window = LocalConfiguration.current
     val listWidth = workspaceListPaneWidth(window.screenWidthDp, window.screenHeightDp)
-    var searchRoute by rememberSaveable { mutableStateOf(SearchRoute.List) }
-    var searchQuery by rememberSaveable { mutableStateOf("") }
+    var searchRoute by rememberSearchRoute()
+    var searchQuery by rememberChatSearchQuery()
     var focusSearch by remember { mutableStateOf(false) }
     val searchActive = chats != null && composer != null && searchRoute == SearchRoute.Search
     val showList = listWidth != null || searchActive || target == WorkspaceTarget.List

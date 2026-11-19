@@ -29,6 +29,22 @@ internal enum class SettingsDestination {
     Instructions,
 }
 
+internal enum class SearchRoute {
+    List,
+    Search,
+    ReturnToSearch,
+}
+
+@Composable
+internal fun rememberSearchRoute(): MutableState<SearchRoute> = rememberSaveable {
+    mutableStateOf(SearchRoute.List)
+}
+
+@Composable
+internal fun rememberChatSearchQuery(): MutableState<String> = rememberSaveable {
+    mutableStateOf("")
+}
+
 internal data class WorkspaceNavigation(
     val target: WorkspaceTarget = WorkspaceTarget.List,
     val settings: SettingsDestination? = null,
