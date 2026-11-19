@@ -663,10 +663,9 @@ Permission recovery:
   review routing/permission definitions. There is no custom unknown-endpoint
   approval control.
   An allowed permission check does not verify credentials or upstream API success.
-  Callback examples are for a single supported action in the current web chat
-  for its current Agent. When multiple access actions are needed, use ordinary
-  links and wait for all confirmations. Return every action URL verbatim. Custom
-  settings guidance has no callback approval flow.`,
+  Use a callback for a single supported action in the current Web Chat. For
+  multiple access actions, use ordinary links and wait for all confirmations.
+  Return every action URL verbatim. Use Connectors settings for custom permissions.`,
       `
 Diagnose the exact failed URL and method, or a builtin environment name.
 Examples:

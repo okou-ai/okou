@@ -123,6 +123,20 @@ describe("agent-facing operational CLI help", () => {
     );
     expect(accounts).toContain("account already admitted to the current Run");
 
+    const connect = await helpFor(connectorCommand, ["connect"]);
+    expect(connect).toContain("--json to inspect Chat allowance");
+
+    const oauth = await helpFor(connectorCommand, ["oauth", "start"]);
+    expect(oauth).toContain("--json to inspect Chat allowance");
+    expect(oauth).toContain("Return the authorization URL verbatim");
+
+    const disconnect = await helpFor(connectorCommand, [
+      "account",
+      "disconnect",
+    ]);
+    expect(disconnect).toContain("connector account impact");
+    expect(disconnect).toContain("supplying the API token again");
+
     const check = await helpFor(connectorCommand, ["check"]);
     expect(check).toContain("omit query strings and fragments");
     expect(check).toContain("okou whoami --permissions");

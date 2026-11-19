@@ -127,8 +127,9 @@ export const disconnectConnectorAccountCommand = accountCommand(
     "after",
     `
 Disconnect removes one exact saved account throughout the workspace. Use an
-ID from connector account list and run account impact to inspect affected
-references. Reconnecting can require signing in again.
+ID from connector account list. Use connector account impact to inspect
+affected references. Reconnecting can require signing in or supplying the API
+token again.
 
 To limit access for one Chat, use its connector account controls.
 `,

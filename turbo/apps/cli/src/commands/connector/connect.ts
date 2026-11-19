@@ -1,4 +1,3 @@
-import { modeHelp } from "../../lib/command/single-agent";
 import { record, string } from "zod";
 import { Command, Option } from "commander";
 import chalk from "chalk";
@@ -151,37 +150,23 @@ export const connectCommand = addAccountMutationOptions(
   .option("--json", "Print the connection receipt and verified account as JSON")
   .addHelpText(
     "after",
-    modeHelp(
-      `
-Input is a JSON object: {"apiKey":"..."}. Use a protected temporary file or stdin.
-Custom connections require --add or --reconnect <connection-id>. none accepts an
-empty object; HTTP non-secret variables use declared field names. Existing
-builtin connect syntax still reconnects the current default, or adds if absent.
-This command stores a saved account. Use connector oauth start for OAuth.
+    `
+Save your own connector account. Pass a JSON object such as {"apiKey":"..."}
+through stdin or a protected temporary file. Keep credential values out of chat
+and logs. Custom connectors require --add or --reconnect <connection-id> and use
+their declared field names. Use an empty object when no fields are required.
+With neither option, builtin connect reconnects the saved default account or
+adds the first account. Use okou connector oauth start for OAuth, OpenID, or
+automatic setup.
 
-Examples:
+Inside a Run, use okou connector account list <selector> --json to inspect
+Chat allowance. Firewall permissions are shared across your Chats and accounts.
+
+Examples
   okou connector connect openai --add --input ./credentials.json
   okou connector connect custom:<uuid> --reconnect <connection-id> --input -
   okou connector connect custom:<uuid> --add
-  okou connector account list <selector> --json`,
-      `
-Connect your own builtin manual or custom manual/no-auth account.
-Input is a JSON object: {"apiKey":"..."}. Use a protected temporary file or stdin;
-never print credentials or put them in chat. Custom connections require --add for
-a new account or --reconnect <connection-id> for an existing one. none accepts an
-empty object; HTTP non-secret variables use declared field names. Builtin connect
-without either option reconnects the current default, or adds if absent.
-OAuth/OpenID/automatic flows use connector oauth start instead.
-A connection does not grant Okou access or change fine-grained permissions.
-Inspect connector account list/status after completion. Return action URLs verbatim.
-
-Examples:
-  okou connector connect openai --add --input ./credentials.json
-  okou connector connect custom:<uuid> --reconnect <connection-id> --input -
-  okou connector connect custom:<uuid> --add
-  okou connector account list <selector> --json
 `,
-    ),
   )
   .action(
     withErrorHandler(async (selector: string, options: ConnectOptions) => {
