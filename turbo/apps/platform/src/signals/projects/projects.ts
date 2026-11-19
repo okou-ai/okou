@@ -93,7 +93,10 @@ function unsettledMoves(
   }
   return moves.slice(settledThrough + 1);
 }
-export const projectedProjects$ = computed((get) => {
+export const projects$ = computed(async (get) => {
+  if (!(await get(projectsEnabled$))) {
+    return [];
+  }
   const owner = get(projectState$);
   const value = get(owner.events$);
   const persistedIds = new Set(
@@ -139,9 +142,6 @@ export const projectedProjects$ = computed((get) => {
     .sort(compareProjectSortOrder);
 });
 
-export const projects$ = computed(async (get) => {
-  return (await get(projectsEnabled$)) ? get(projectedProjects$) : [];
-});
 /**
  * Projects created on this page that the server has not persisted yet. A chat
  * cannot start inside one until its creation lands.
@@ -261,20 +261,24 @@ export const createProject$ = command(
       name,
       fromThreadId,
       open = false,
+      onOptimisticCommit,
     }: {
       readonly name: string;
       /** A chat that moves into the new Project as it is created. */
       readonly fromThreadId?: string;
       /** Open the new Project's page, where the next chat starts inside it. */
       readonly open?: boolean;
+      readonly onOptimisticCommit?: () => Promise<void>;
     },
     signal: AbortSignal,
   ) => {
     signal.throwIfAborted();
+    const projects = await get(projects$);
+    signal.throwIfAborted();
     const owner = get(projectState$);
     const eventId = operation();
     const createdAt = nowDate().toISOString();
-    const sortOrder = lastProjectSortOrder(get(projectedProjects$));
+    const sortOrder = lastProjectSortOrder(projects);
     const confirmation = accept(
       get(apiClient$)(projectsContract).create({
         body: { id: eventId, eventId, name, fromThreadId },
@@ -320,7 +324,7 @@ export const createProject$ = command(
         createdAt: thread.sortAt,
       });
     }
-    const result = await confirmation;
+    const [result] = await Promise.all([confirmation, onOptimisticCommit?.()]);
     signal.throwIfAborted();
     await set(syncProjects$, signal);
     await set(catchUpChatThreadEventSource$, signal);
@@ -432,7 +436,7 @@ export const deleteProject$ = command(
   async (
     { get, set },
     id: string,
-    onDeleted: () => void,
+    onDeleted: () => Promise<void>,
     signal: AbortSignal,
   ) => {
     await set(waitForProjectCreation$, id, signal);
@@ -449,7 +453,8 @@ export const deleteProject$ = command(
     // The Project has left the list; chat synchronization must not keep its
     // confirmation dialog open.
     signal.throwIfAborted();
-    onDeleted();
+    await onDeleted();
+    signal.throwIfAborted();
     await set(catchUpChatThreadEventSource$, signal);
   },
 );

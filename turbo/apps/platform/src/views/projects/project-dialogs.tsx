@@ -42,7 +42,7 @@ import { eventDrivenChatThreads$ } from "../../signals/chat-page/chat-thread-eve
 import { mobileChatViewport$ } from "../../signals/okou-page/pwa-navigation.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { rootSignal$ } from "../../signals/root-signal.ts";
-import { detach, Reason } from "../../signals/utils.ts";
+import { detach, Reason, waitForBrowserPaint } from "../../signals/utils.ts";
 // A rename keeps its Project menu; deleting a Project returns to the list's
 // create control. Creating from a chat returns to that chat's surviving row,
 // and creating from a new chat's composer returns to the message.
@@ -111,20 +111,24 @@ function ProjectEditor({ dialog }: { dialog: EditorDialog }) {
   const error = creation.state === "hasError" || renaming.state === "hasError";
   async function submit() {
     // A newly visible Project can be used while its creation is still in flight.
-    const completion = dialog.projectId
-      ? rename(dialog.projectId, name, signal)
-      : create(
-          {
-            name,
-            ...(dialog.fromThreadId
-              ? { fromThreadId: dialog.fromThreadId }
-              : {}),
-            open: dialog.fromComposer === true,
-          },
-          creationSignal,
-        );
-    close(dialog);
-    await completion;
+    if (dialog.projectId) {
+      const completion = rename(dialog.projectId, name, signal);
+      close(dialog);
+      await completion;
+      return;
+    }
+    await create(
+      {
+        name,
+        ...(dialog.fromThreadId ? { fromThreadId: dialog.fromThreadId } : {}),
+        open: dialog.fromComposer === true,
+        onOptimisticCommit: async () => {
+          await waitForBrowserPaint(creationSignal);
+          close(dialog);
+        },
+      },
+      creationSignal,
+    );
   }
   return (
     <Dialog
@@ -337,10 +341,12 @@ function ProjectMembershipPicker({
       .toLocaleLowerCase()
       .includes(search.trim().toLocaleLowerCase());
   });
-  async function select(id: string | null) {
-    const completion = move(dialog.threadId, id, signal);
+  async function closeAfterPaint() {
+    await waitForBrowserPaint(signal);
     close(dialog);
-    await completion;
+  }
+  async function select(id: string | null) {
+    await Promise.all([move(dialog.threadId, id, signal), closeAfterPaint()]);
   }
   function onOpenChange(open: boolean) {
     if (!open) {
@@ -451,7 +457,8 @@ function DeleteProjectDialog({
   async function submit() {
     await remove(
       dialog.projectId,
-      () => {
+      async () => {
+        await waitForBrowserPaint(signal);
         close(dialog);
       },
       signal,
