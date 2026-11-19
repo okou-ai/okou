@@ -365,7 +365,7 @@ function BrowserSavedPasswordHelp() {
   return (
     <div className="flex min-w-0 flex-col gap-1 break-words text-xs leading-5 text-muted-foreground">
       <details>
-        <summary className="w-fit cursor-pointer rounded-md px-1 py-1 hover:bg-gray-50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        <summary className="w-fit cursor-default rounded-md px-1 py-1 hover:bg-gray-50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
           {t(($) => {
             return $.chat.browserInput.savedPasswordsHelp;
           })}
@@ -1058,10 +1058,7 @@ function BrowserInputFieldHeader({
       <label
         id={`${inputId}-label`}
         htmlFor={inputId}
-        className={cn(
-          "min-w-0 break-words font-medium",
-          field.fieldKind === "checkbox" && "cursor-pointer",
-        )}
+        className="min-w-0 break-words font-medium"
       >
         {field.label}
       </label>
