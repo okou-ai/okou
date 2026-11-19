@@ -4,13 +4,7 @@ import type {
 } from "@okouai/api-contracts/client/types";
 import type { AuthOptions } from "ably";
 import type { platformRealtimeTokenContract } from "@okouai/api-contracts/contracts/realtime";
-import {
-  abortAfter,
-  detach,
-  onRejection,
-  Reason,
-  throwIfAbort,
-} from "../signals/utils.ts";
+import { detach, Reason, throwIfAbort } from "../signals/utils.ts";
 import { accept } from "./accept.ts";
 
 type RealtimeTokenClient = InitClientReturn<
@@ -36,49 +30,28 @@ type AuthCallback = NonNullable<AuthOptions["authCallback"]>;
  * `try/catch` to bridge that error surface into the callback's error
  * argument — both patterns are restricted inside `signals/`.
  *
- * Each invocation has a five-second budget shared by token acquisition and
- * HTTP through the existing cancellation-aware token and request pipeline.
- * Report a deadline failure to Ably before its own ten-second timeout, but
- * never invoke its callback after the connection's root signal aborts.
+ * Connection teardown cancels token acquisition and suppresses the callback.
  */
 export function createAblyAuthCallback(
   createClient: () => RealtimeTokenClient,
   rootSignal: AbortSignal,
 ): AuthCallback {
   return (_params, callback) => {
-    const signal = abortAfter(5000, rootSignal);
     detach(
       (async () => {
         // eslint-disable-next-line no-restricted-syntax -- bridging Ably's node-style auth callback into our promise-based `accept()` helper; justified per eslint.config.js "If genuinely needed (JSON.parse, clipboard, polling), add an inline eslint-disable with justification"
         try {
-          signal.throwIfAborted();
+          rootSignal.throwIfAborted();
           const client = createClient();
-          // eslint-disable-next-line ccstate/no-on-rejection -- 存量 2026/10/21: distinguish an authentication timeout from root cancellation.
-          const res = await onRejection(
-            async () => {
-              const response = await accept(
-                client.create({ body: {}, fetchOptions: { signal } }),
-                [200],
-                signal,
-              );
-              signal.throwIfAborted();
-              return response;
-            },
-            () => {
-              rootSignal.throwIfAborted();
-              if (signal.aborted) {
-                // Downstream waits cancel with AbortError, but Ably still
-                // needs its callback completed for this invocation's deadline.
-                throw new Error("Ably authentication timed out");
-              }
-            },
+          const res = await accept(
+            client.create({ body: {}, fetchOptions: { signal: rootSignal } }),
+            [200],
+            rootSignal,
           );
-          signal.throwIfAborted();
+          rootSignal.throwIfAborted();
           callback(null, res.body);
         } catch (error) {
           throwIfAbort(error);
-          // Connection teardown suppresses callbacks; a per-invocation
-          // deadline must instead finish Ably's pending authentication.
           rootSignal.throwIfAborted();
           callback(
             error instanceof Error ? error.message : String(error),
