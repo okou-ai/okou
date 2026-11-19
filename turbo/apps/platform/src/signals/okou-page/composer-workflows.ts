@@ -316,23 +316,3 @@ export function createComposerWorkflows<T extends AgentIdValue>(
     }),
   };
 }
-
-/** Manual Run now can be the first recency writer after upgrading the App. */
-export const prepareWorkflowRecencyForAcceptance$ = command(
-  async ({ get, set }, agentId: string, signal: AbortSignal) => {
-    signal.throwIfAborted();
-    const owner = get(authenticatedSessionKey$);
-    const enabled = await get(workflowRecencyEnabled$);
-    signal.throwIfAborted();
-    if (owner !== get(authenticatedSessionKey$)) {
-      throw new DOMException("Workflow recency owner changed", "AbortError");
-    }
-    if (!enabled) {
-      return;
-    }
-    if (set(readLegacyWorkflowIdsForMigration$).length === 0) {
-      return;
-    }
-    await set(get(recencyOwner$).load$, agentId, true, signal);
-  },
-);

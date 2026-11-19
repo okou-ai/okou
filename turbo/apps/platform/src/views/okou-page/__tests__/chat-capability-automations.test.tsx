@@ -213,7 +213,7 @@ async function openAutomationBrowser(
   return automations;
 }
 
-test("Chat-header Run now waits for a pending legacy import before accepting server usage", async () => {
+test("Chat-header Run now completes while a slash query's legacy import is pending", async () => {
   const legacyId = "a0000000-0000-4000-a000-000000000872";
   const runWorkflowId = "a0000000-0000-4000-a000-000000000871";
   const legacy = JSON.stringify([legacyId]);
@@ -230,8 +230,8 @@ test("Chat-header Run now waits for a pending legacy import before accepting ser
   const importRequested = context.mocks.deferred<void>();
   const imported = context.mocks.deferred<void>();
   const runRequested = context.mocks.deferred<void>();
+  const runResponse = context.mocks.deferred<void>();
   let importFinished = false;
-  let accepted = false;
   context.mocks.api(workflowsCollectionContract.composer, ({ respond }) => {
     return respond(200, [
       {
@@ -246,7 +246,7 @@ test("Chat-header Run now waits for a pending legacy import before accepting ser
         name: "active-release-schedule",
         displayName: null,
         description: null,
-        lastUsedAt: accepted ? "2026-11-19T00:00:00.000001Z" : null,
+        lastUsedAt: null,
       },
       {
         id: "a0000000-0000-4000-a000-000000000875",
@@ -267,16 +267,18 @@ test("Chat-header Run now waits for a pending legacy import before accepting ser
       return respond(200, { migrated: true });
     },
   );
-  context.mocks.api(workflowAutomationsContract.run, ({ params, respond }) => {
-    expect(params.id).toBe(ACTIVE_SCHEDULE_ID);
-    expect(importFinished).toBeTruthy();
-    accepted = true;
-    runRequested.resolve();
-    return respond(201, {
-      chatThreadId: RUN_THREAD_ID,
-      runId: "accepted-recency-run",
-    });
-  });
+  context.mocks.api(
+    workflowAutomationsContract.run,
+    async ({ params, respond }) => {
+      expect(params.id).toBe(ACTIVE_SCHEDULE_ID);
+      runRequested.resolve();
+      await runResponse.promise;
+      return respond(201, {
+        chatThreadId: RUN_THREAD_ID,
+        runId: "accepted-automation-run",
+      });
+    },
+  );
   await openAutomationBrowser(true);
   const editor = await findComposerEditor();
   await fill(editor, "Draft /");
@@ -288,17 +290,27 @@ test("Chat-header Run now waits for a pending legacy import before accepting ser
     "Run now",
   );
   click(run);
+  await runRequested.promise;
   await waitFor(() => {
     expect(run).toBeDisabled();
   });
-  expect(accepted).toBeFalsy();
-  imported.resolve();
-  await runRequested.promise;
+  runResponse.resolve();
   await waitFor(() => {
-    expect(run).toBeEnabled();
+    expect(
+      automationControl(
+        automationPanel("Active release schedule"),
+        "button",
+        "Run now",
+      ),
+    ).toBeEnabled();
   });
+  expect(importFinished).toBeFalsy();
+  expect(values.get("okou_recent-workflows")).toBe(legacy);
+  // Run now blurs the composer; reopen its still-pending slash query.
   await fill(editor, "Draft");
   await fill(editor, "Draft /");
+  await screen.findByRole("status", { name: "Loading workflows..." });
+  imported.resolve();
   await waitFor(() => {
     const menu = screen.getByTestId("slash-workflow-menu");
     const names = queryAllByRoleFast("button", menu)
@@ -308,8 +320,8 @@ test("Chat-header Run now waits for a pending legacy import before accepting ser
       })
       .filter(Boolean);
     expect(names).toStrictEqual([
-      "/active-release-schedule",
       "/zulu",
+      "/active-release-schedule",
       "/alpha",
     ]);
   });

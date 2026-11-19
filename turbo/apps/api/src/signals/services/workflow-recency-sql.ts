@@ -21,7 +21,7 @@ function mergeRecentWorkflows(stored: SQL, accepted: SQL): SQL {
   )`;
 }
 
-/** Both acceptance owners expose only newly inserted initial inputs as inserted. */
+/** Use the accepted normal-message input exposed by the inserted CTE. */
 export function workflowRecencyWritePlan(args: {
   readonly orgId: string;
   readonly userId: string;

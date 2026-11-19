@@ -13,12 +13,6 @@ import { userPreferences$ } from "../okou-page/settings/user-preferences.ts";
 import { listThreadWorkflowAutomations } from "../okou-page/workflow-automations-api.ts";
 import { i18n } from "../../i18n/index.ts";
 import { locale$ } from "../locale.ts";
-import { authenticatedSessionKey$ } from "../auth.ts";
-import {
-  prepareWorkflowRecencyForAcceptance$,
-  reloadComposerWorkflowRecency$,
-  workflowRecencyEnabled$,
-} from "../okou-page/composer-workflows.ts";
 
 /** A workflow automation bound to a chat thread, projected for the header automation sidebar. */
 export interface HeaderWorkflowAutomationEntry {
@@ -251,35 +245,6 @@ export function createHeaderAutomationSignals<Editor>(
 
   const runNow$ = command(
     async ({ get, set }, automationId: string, signal: AbortSignal) => {
-      signal.throwIfAborted();
-      const owner = get(authenticatedSessionKey$);
-      const serverRecency = await get(workflowRecencyEnabled$);
-      signal.throwIfAborted();
-      if (owner !== get(authenticatedSessionKey$)) {
-        throw new DOMException("Automation owner changed", "AbortError");
-      }
-      if (serverRecency) {
-        const automations = await get(automations$);
-        signal.throwIfAborted();
-        if (owner !== get(authenticatedSessionKey$)) {
-          throw new DOMException("Automation owner changed", "AbortError");
-        }
-        const selected = automations.find((automation) => {
-          return automation.id === automationId;
-        });
-        if (!selected) {
-          throw new Error("The selected workflow automation is unavailable");
-        }
-        await set(
-          prepareWorkflowRecencyForAcceptance$,
-          selected.workflowAgentId,
-          signal,
-        );
-      }
-      signal.throwIfAborted();
-      if (owner !== get(authenticatedSessionKey$)) {
-        throw new DOMException("Automation owner changed", "AbortError");
-      }
       const client = get(apiClient$)(workflowAutomationsContract);
       await accept(
         client.run({
@@ -289,7 +254,6 @@ export function createHeaderAutomationSignals<Editor>(
         [201],
       );
       signal.throwIfAborted();
-      await set(reloadComposerWorkflowRecency$, signal);
       set(reloadAutomations$);
     },
   );

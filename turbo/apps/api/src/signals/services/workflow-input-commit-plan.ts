@@ -25,13 +25,6 @@ import {
   journalWorkflowScheduleClaimSql,
 } from "./workflow-schedule-queue.service";
 import { workflowRewardQueuedEventInsert } from "./workflow-reward-source-publication";
-import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
-import {
-  normalChatInputConflictSql,
-  normalChatInputInsertSql,
-  normalChatInputWriteGate,
-} from "./normal-chat-input-publication-sql";
-import { workflowRecencyWritePlan } from "./workflow-recency-sql";
 
 export const workflowInputCommitRowSchema = object({
   eventId: uuid(),
@@ -146,33 +139,6 @@ function modelReplacementCtes(statement: SQL, scope: ModelEventScope) {
   ];
 }
 
-function workflowInputRecencyCte(
-  args: Pick<
-    Parameters<typeof workflowInputCommitSql>[0],
-    "rewardSource" | "replacement"
-  >,
-): SQL {
-  const recency = workflowRecencyWritePlan({
-    orgId: args.rewardSource.orgId,
-    userId: args.rewardSource.userId,
-    workflowIds: [args.rewardSource.workflowId],
-  });
-  return sql`workflow_recency AS (${normalChatInputInsertSql(
-    orgMembersMetadata,
-    recency.values,
-    // Model events reserve the same member list sequence as a normal send.
-    // Finish that lock owner before taking the member preference row.
-    normalChatInputWriteGate(
-      args.replacement ? "workflow_model_events" : undefined,
-    ),
-    normalChatInputConflictSql(
-      orgMembersMetadata,
-      recency.conflict.target,
-      recency.conflict.set,
-    ),
-  )})`;
-}
-
 /**
  * The queue event, receipts, claim, model events and queue row have one statement
  * rollback boundary. A tagged conversion error rolls back every CTE on a lost
@@ -191,7 +157,6 @@ export function workflowInputCommitSql(args: {
     readonly eventScope: ModelEventScope;
   };
   readonly rewardSource: Parameters<typeof workflowRewardQueuedEventInsert>[0];
-  readonly recordWorkflowRecency?: true;
 }) {
   const { plan, source, currentTime } = args;
   const chatThreadId = plan.context.chatThreadId;
@@ -277,9 +242,6 @@ export function workflowInputCommitSql(args: {
         args.replacement.eventScope,
       ),
     );
-  }
-  if (args.recordWorkflowRecency) {
-    ctes.push(workflowInputRecencyCte(args));
   }
   ctes.push(sql`workflow_queued AS (${args.queueStatement})`);
   ctes.push(

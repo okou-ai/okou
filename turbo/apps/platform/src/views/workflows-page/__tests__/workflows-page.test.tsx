@@ -2261,7 +2261,7 @@ test.each([
   "Run now preserves acceptance with server recency $serverRecency and browser cache failure $cacheWriteFails",
   async ({ serverRecency, cacheWriteFails }) => {
     const runAutomationIds: string[] = [];
-    const migratedAtAcceptance: boolean[] = [];
+    const recencyResponses = context.mocks.deferred<void>();
     const user = serverRecency
       ? {
           id: "user_3EWY21Oe3f15kfs3yYmbGgDb3NV",
@@ -2291,8 +2291,9 @@ test.each([
     let migrated = false;
     context.mocks.api(
       workflowsCollectionContract.migrateRecency,
-      ({ body, respond }) => {
+      async ({ body, respond }) => {
         expect(body).toStrictEqual({ workflowIds: [OPS_WORKFLOW_ID] });
+        await recencyResponses.promise;
         migrated = true;
         return respond(200, { migrated: true });
       },
@@ -2309,28 +2310,30 @@ test.each([
     ]);
     mockChatLifecycle(context, { threadId: AUTOMATION_RUN_THREAD_ID });
     mockRunWorkflowAutomation((automationId) => {
-      migratedAtAcceptance.push(migrated);
       runAutomationIds.push(automationId);
     });
-    context.mocks.api(workflowsCollectionContract.composer, ({ respond }) => {
-      return respond(200, [
-        {
-          id: OPS_WORKFLOW_ID,
-          name: "alpha",
-          displayName: null,
-          description: null,
-          lastUsedAt: migrated ? "1970-01-01T00:00:00.000010Z" : null,
-        },
-        {
-          id: SALES_WORKFLOW_ID,
-          name: "sales-research",
-          displayName: null,
-          description: null,
-          lastUsedAt:
-            runAutomationIds.length > 0 ? "2026-11-16T00:00:00.000000Z" : null,
-        },
-      ]);
-    });
+    context.mocks.api(
+      workflowsCollectionContract.composer,
+      async ({ respond }) => {
+        await recencyResponses.promise;
+        return respond(200, [
+          {
+            id: OPS_WORKFLOW_ID,
+            name: "alpha",
+            displayName: null,
+            description: null,
+            lastUsedAt: migrated ? "1970-01-01T00:00:00.000010Z" : null,
+          },
+          {
+            id: SALES_WORKFLOW_ID,
+            name: "sales-research",
+            displayName: null,
+            description: null,
+            lastUsedAt: null,
+          },
+        ]);
+      },
+    );
 
     mockBillingTier("team");
     await setupPage({
@@ -2350,12 +2353,20 @@ test.each([
         "workflow-automation-weekday-brief",
       ]);
     });
-    expect(migratedAtAcceptance).toStrictEqual([serverRecency]);
     await waitFor(() => {
       expect(pathname()).toBe(`/chats/${AUTOMATION_RUN_THREAD_ID}`);
     });
     expect(search()).toBe("");
-    await fill(await findComposerEditor(), "Draft /");
+    const editor = await findComposerEditor();
+    const expectedLegacy = JSON.stringify(
+      serverRecency || cacheWriteFails
+        ? [OPS_WORKFLOW_ID]
+        : [SALES_WORKFLOW_ID, OPS_WORKFLOW_ID],
+    );
+    expect(storage.get("okou_recent-workflows")).toBe(expectedLegacy);
+    // Run now completes before either history or import can respond.
+    recencyResponses.resolve();
+    await fill(editor, "Draft /");
     await waitFor(() => {
       const menu = screen.getByTestId("slash-workflow-menu");
       const names = queryAllByRoleFast("button", menu)
@@ -2367,18 +2378,12 @@ test.each([
         });
       // The highest priority is nearest the composer in the anchored menu.
       expect(names).toStrictEqual(
-        cacheWriteFails
+        serverRecency || cacheWriteFails
           ? ["/alpha", "/sales-research"]
           : ["/sales-research", "/alpha"],
       );
     });
-    expect(storage.get("okou_recent-workflows")).toBe(
-      JSON.stringify(
-        serverRecency || cacheWriteFails
-          ? [OPS_WORKFLOW_ID]
-          : [SALES_WORKFLOW_ID, OPS_WORKFLOW_ID],
-      ),
-    );
+    expect(storage.get("okou_recent-workflows")).toBe(expectedLegacy);
   },
 );
 

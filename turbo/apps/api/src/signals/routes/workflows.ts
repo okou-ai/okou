@@ -1719,7 +1719,6 @@ const runWorkflowInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       userId: auth.userId,
       orgId: auth.orgId,
       agentRunPreCreateSource: "workflow_slash_command",
-      recordWorkflowRecency: true,
       getStartedWorkflowId: workflow.id,
     },
     signal,

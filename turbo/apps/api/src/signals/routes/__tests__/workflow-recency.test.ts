@@ -1,6 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { aroundEach, describe, expect, it } from "vitest";
-import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-event-send";
+import {
+  chatEventsContract,
+  type ChatEventSendBody,
+} from "@okouai/api-contracts/contracts/chat-event-send";
+import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { cronExecuteWorkflowAutomationsContract } from "@okouai/api-contracts/contracts/cron";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
@@ -16,6 +20,7 @@ import { computeHmacSignature } from "../../../lib/event-consumer/hmac";
 import { mockNow, now, withNowScopeForTest } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { chatEventsRoutes } from "../chat-events";
+import { chatThreadCreateRoutes } from "../chat-threads-create";
 import { cronExecuteWorkflowAutomationsRoutes } from "../cron-execute-workflow-automations";
 import { userModelPreferenceRoutes } from "../user-model-preference";
 import { webhooksWorkflowAutomationsRoutes } from "../webhooks-workflow-automations";
@@ -108,7 +113,7 @@ async function createWorkflow(
 }
 
 describe("server-owned workflow recency", () => {
-  it("keeps default-off sessions on the baseline without recording slash, manual or Run now usage", async () => {
+  it("keeps default-off sessions on the baseline without recording slash, direct runs or Run now usage", async () => {
     const { actor, agentId } = await setup("pro", false);
     const workflowId = await createWorkflow(actor, agentId, "recency-disabled");
     const automation = await accept(
@@ -450,7 +455,7 @@ describe("server-owned workflow recency", () => {
     },
   );
 
-  it("does not count preparation or automated webhooks, but accepts each manual Run now as a distinct use", async () => {
+  it("does not count preparation, direct runs, webhooks or repeated manual Run now requests", async () => {
     const { actor, agentId } = await setup("team");
     const workflowId = await createWorkflow(actor, agentId, "recency-manual");
     await accept(
@@ -502,38 +507,38 @@ describe("server-owned workflow recency", () => {
       expect.objectContaining({ id: workflowId, lastUsedAt: null }),
     );
 
+    await flushWaitUntilForTest();
+    context.mocks.ably.publish.mockClear();
     const firstTime = now();
-    mockNow(firstTime);
+    for (const offset of [0, 60_000]) {
+      mockNow(firstTime + offset);
+      await accept(
+        automationsClient().run({
+          headers: headers(actor),
+          params: { id: automation.body.id },
+        }),
+        [201],
+      );
+      await expect(composer(actor, agentId)).resolves.toContainEqual(
+        expect.objectContaining({ id: workflowId, lastUsedAt: null }),
+      );
+      await flushWaitUntilForTest();
+    }
     await accept(
-      automationsClient().run({
-        headers: headers(actor),
-        params: { id: automation.body.id },
-      }),
-      [201],
+      detailClient().run({ headers: headers(actor), params: { workflowId } }),
+      [200],
     );
     await expect(composer(actor, agentId)).resolves.toContainEqual(
-      expect.objectContaining({
-        id: workflowId,
-        lastUsedAt: recencyTime(firstTime),
-      }),
+      expect.objectContaining({ id: workflowId, lastUsedAt: null }),
     );
-    mockNow(firstTime + 60_000);
-    await accept(
-      automationsClient().run({
-        headers: headers(actor),
-        params: { id: automation.body.id },
-      }),
-      [201],
-    );
-    await expect(composer(actor, agentId)).resolves.toContainEqual(
-      expect.objectContaining({
-        id: workflowId,
-        lastUsedAt: recencyTime(firstTime + 60_000),
-      }),
+    await flushWaitUntilForTest();
+    expect(context.mocks.ably.publish).not.toHaveBeenCalledWith(
+      "userPreferenceChanged",
+      { kinds: ["workflowRecency"] },
     );
   });
 
-  it("leaves scheduled acceptance out of recency while counting Run now on that same schedule", async () => {
+  it("preserves accepted slash history through scheduled acceptance and Run now", async () => {
     const cron = await setupApp({
       context,
       routes: cronExecuteWorkflowAutomationsRoutes,
@@ -541,6 +546,19 @@ describe("server-owned workflow recency", () => {
     });
     const { actor, agentId } = await setup();
     const workflowId = await createWorkflow(actor, agentId, "recency-schedule");
+    mockNow(now());
+    await chat.requestSendEvent(
+      actor,
+      { agentId, prompt: "/recency-schedule" },
+      [201],
+    );
+    const beforeSchedule = await composer(actor, agentId);
+    expect(beforeSchedule).toContainEqual(
+      expect.objectContaining({
+        id: workflowId,
+        lastUsedAt: recencyTime(now()),
+      }),
+    );
     const automation = await accept(
       automationsClient().create({
         headers: headers(actor),
@@ -552,6 +570,7 @@ describe("server-owned workflow recency", () => {
     if (!automation.body.nextRunAt) {
       throw new Error("Expected a due schedule occurrence");
     }
+    await flushWaitUntilForTest();
     mockNow(new Date(automation.body.nextRunAt));
     const tick = await accept(
       cron(cronExecuteWorkflowAutomationsContract).execute({
@@ -568,8 +587,8 @@ describe("server-owned workflow recency", () => {
       [200],
     );
     expect(updated.body.nextRunAt).not.toBe(automation.body.nextRunAt);
-    await expect(composer(actor, agentId)).resolves.toContainEqual(
-      expect.objectContaining({ id: workflowId, lastUsedAt: null }),
+    await expect(composer(actor, agentId)).resolves.toStrictEqual(
+      beforeSchedule,
     );
     await accept(
       automationsClient().run({
@@ -578,11 +597,8 @@ describe("server-owned workflow recency", () => {
       }),
       [201],
     );
-    await expect(composer(actor, agentId)).resolves.toContainEqual(
-      expect.objectContaining({
-        id: workflowId,
-        lastUsedAt: recencyTime(now()),
-      }),
+    await expect(composer(actor, agentId)).resolves.toStrictEqual(
+      beforeSchedule,
     );
   });
 
@@ -666,7 +682,7 @@ describe("server-owned workflow recency", () => {
   });
 
   it.each([true, false])(
-    "honors the recency flag for PAT migration, slash, direct runs and Run now (enabled: %s)",
+    "honors the recency flag for PAT migration and slash, excluding direct runs and Run now (enabled: %s)",
     async (enabled) => {
       const { actor, agentId } = await setup();
       const workflowId = await createWorkflow(actor, agentId, "recency-pat");
@@ -730,6 +746,7 @@ describe("server-owned workflow recency", () => {
         [201],
       );
       const manualAt = slashAt + 60_000;
+      await flushWaitUntilForTest();
       mockNow(manualAt);
       await accept(
         automationsClient().run({
@@ -741,10 +758,11 @@ describe("server-owned workflow recency", () => {
       await expect(composer(actor, agentId)).resolves.toContainEqual(
         expect.objectContaining({
           id: workflowId,
-          lastUsedAt: enabled ? recencyTime(manualAt) : null,
+          lastUsedAt: enabled ? recencyTime(acceptedTime(sent.body)) : null,
         }),
       );
       const directAt = manualAt + 60_000;
+      await flushWaitUntilForTest();
       mockNow(directAt);
       await accept(
         detailClient().run({
@@ -763,14 +781,14 @@ describe("server-owned workflow recency", () => {
       await expect(composer(actor, agentId)).resolves.toContainEqual(
         expect.objectContaining({
           id: workflowId,
-          lastUsedAt: enabled ? recencyTime(directAt) : null,
+          lastUsedAt: enabled ? recencyTime(acceptedTime(sent.body)) : null,
         }),
       );
       await flushWaitUntilForTest();
     },
   );
 
-  it("accepts real agent-token migration and sends while retaining the internal Run now source exclusion", async () => {
+  it("records a real agent token's prompt in its newly created chat, not creation, replay, Run now or direct runs", async () => {
     const { actor, agentId } = await setup();
     const workflowId = await createWorkflow(actor, agentId, "recency-agent");
     const anchor = await runs.createThreadRun(actor, {
@@ -782,34 +800,68 @@ describe("server-owned workflow recency", () => {
     if (!token) {
       throw new Error("Expected the production Run agent token");
     }
+    const tokenHeaders = { authorization: `Bearer ${token}` };
     await accept(
       collectionClient().migrateRecency({
-        headers: { authorization: `Bearer ${token}` },
+        headers: tokenHeaders,
         body: { workflowIds: [workflowId] },
       }),
       [200],
     );
-    await expect(composer(actor, agentId)).resolves.toContainEqual(
+    const beforeCreation = await composer(actor, agentId);
+    expect(beforeCreation).toContainEqual(
       expect.objectContaining({
         id: workflowId,
         lastUsedAt: "1970-01-01T00:00:00.000010Z",
       }),
     );
-    const sent = await accept(
-      setupApp({ context, routes: chatEventsRoutes })(chatEventsContract).send({
-        headers: { authorization: `Bearer ${token}` },
-        body: {
-          agentId,
-          prompt: "/recency-agent",
-          hasTextContent: true,
-          userMessage: {
-            version: 1,
-            parts: [{ type: "text", text: "/recency-agent" }],
-          },
-        },
+    const thread = await accept(
+      setupApp({ context, routes: chatThreadCreateRoutes })(
+        chatThreadsContract,
+      ).create({
+        headers: tokenHeaders,
+        body: { agentId, title: "Agent-created workflow chat" },
       }),
       [201],
     );
+    await expect(composer(actor, agentId)).resolves.toStrictEqual(
+      beforeCreation,
+    );
+    const sendBody = {
+      agentId,
+      threadId: thread.body.id,
+      clientEventId: randomUUID(),
+      chatThreadSortEventId: randomUUID(),
+      prompt: "/recency-agent",
+      hasTextContent: true,
+      userMessage: {
+        version: 1,
+        parts: [{ type: "text", text: "/recency-agent" }],
+      },
+    } satisfies ChatEventSendBody;
+    const sendClient = setupApp({ context, routes: chatEventsRoutes })(
+      chatEventsContract,
+    );
+    const sent = await accept(
+      sendClient.send({ headers: tokenHeaders, body: sendBody }),
+      [201],
+    );
+    expect(sent.body.threadId).toBe(thread.body.id);
+    const afterPrompt = await composer(actor, agentId);
+    expect(afterPrompt).toContainEqual(
+      expect.objectContaining({
+        id: workflowId,
+        lastUsedAt: recencyTime(acceptedTime(sent.body)),
+      }),
+    );
+    await flushWaitUntilForTest();
+    mockNow(Date.parse(acceptedTime(sent.body)) + 60_000);
+    const replayed = await accept(
+      sendClient.send({ headers: tokenHeaders, body: sendBody }),
+      [201],
+    );
+    expect(replayed.body.threadId).toBe(thread.body.id);
+    await expect(composer(actor, agentId)).resolves.toStrictEqual(afterPrompt);
     const automation = await accept(
       automationsClient().create({
         headers: headers(actor),
@@ -818,39 +870,24 @@ describe("server-owned workflow recency", () => {
       }),
       [201],
     );
-    const beforeInternalRun = await composer(actor, agentId);
-    expect(beforeInternalRun).toContainEqual(
-      expect.objectContaining({
-        id: workflowId,
-        lastUsedAt: recencyTime(acceptedTime(sent.body)),
-      }),
-    );
-    const directAt = Date.parse(acceptedTime(sent.body)) + 120_000;
-    mockNow(directAt - 60_000);
     await accept(
       automationsClient().run({
-        headers: { authorization: `Bearer ${token}` },
+        headers: tokenHeaders,
         params: { id: automation.body.id },
       }),
       [201],
     );
-    await expect(composer(actor, agentId)).resolves.toStrictEqual(
-      beforeInternalRun,
-    );
-    mockNow(directAt);
+    await expect(composer(actor, agentId)).resolves.toStrictEqual(afterPrompt);
+    await flushWaitUntilForTest();
+    mockNow(Date.parse(acceptedTime(sent.body)) + 120_000);
     await accept(
       detailClient().run({
-        headers: { authorization: `Bearer ${token}` },
+        headers: tokenHeaders,
         params: { workflowId },
       }),
       [200],
     );
-    await expect(composer(actor, agentId)).resolves.toContainEqual(
-      expect.objectContaining({
-        id: workflowId,
-        lastUsedAt: recencyTime(directAt),
-      }),
-    );
+    await expect(composer(actor, agentId)).resolves.toStrictEqual(afterPrompt);
     await flushWaitUntilForTest();
   });
 });

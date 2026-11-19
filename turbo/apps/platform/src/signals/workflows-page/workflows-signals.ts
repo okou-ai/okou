@@ -64,11 +64,6 @@ import {
   workflowReloadVersion$,
 } from "./workflow-reload.ts";
 import { onRef, settle } from "../utils.ts";
-import {
-  prepareWorkflowRecencyForAcceptance$,
-  reloadComposerWorkflowRecency$,
-  workflowRecencyEnabled$,
-} from "../okou-page/composer-workflows.ts";
 import { recordRecentWorkflowUse$ } from "../okou-page/recent-workflows.ts";
 
 export const singleAgentWorkflows$ = computed(async (get) => {
@@ -1691,26 +1686,6 @@ export const runWorkflowAutomationNow$ = command(
   ): Promise<{ chatThreadId: string; runId: string | null }> => {
     const owner = get(authenticatedSessionKey$);
     const workflowId = get(currentWorkflowId$);
-    signal.throwIfAborted();
-    const serverRecency = await get(workflowRecencyEnabled$);
-    signal.throwIfAborted();
-    if (owner !== get(authenticatedSessionKey$)) {
-      throw new DOMException("Workflow owner changed", "AbortError");
-    }
-    if (serverRecency) {
-      const detail = await get(currentWorkflowDetail$);
-      signal.throwIfAborted();
-      if (owner !== get(authenticatedSessionKey$)) {
-        throw new DOMException("Workflow owner changed", "AbortError");
-      }
-      if (detail) {
-        await set(prepareWorkflowRecencyForAcceptance$, detail.agentId, signal);
-      }
-    }
-    signal.throwIfAborted();
-    if (owner !== get(authenticatedSessionKey$)) {
-      throw new DOMException("Workflow owner changed", "AbortError");
-    }
     const client = get(apiClient$)(workflowAutomationsContract);
     const result = await accept(
       client.run({
@@ -1720,8 +1695,7 @@ export const runWorkflowAutomationNow$ = command(
       [201],
     );
     signal.throwIfAborted();
-    await set(reloadComposerWorkflowRecency$, signal);
-    if (!serverRecency && workflowId) {
+    if (workflowId) {
       // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
       await settle(() => {
         return set(

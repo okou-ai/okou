@@ -270,7 +270,7 @@ interface NormalSendArgs {
   readonly agentRunPreCreateSource?: AgentRunPreCreateSource;
   readonly requiredOfficialWorkflowIds?: readonly string[];
   readonly getStartedWorkflowId?: string;
-  /** Only interactive production routes opt in; internal continuations do not. */
+  /** Only the chat send route opts in; direct runs and continuations do not. */
   readonly recordWorkflowRecency?: true;
   /** Server-resolved ordinary workflow tokens, never caller-provided IDs. */
   readonly recentWorkflowIds?: readonly string[];
