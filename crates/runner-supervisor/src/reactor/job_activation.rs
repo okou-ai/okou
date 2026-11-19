@@ -126,9 +126,9 @@ impl JobActivationResult {
                 .setup()
                 .map_err(|error| ReactorError::Internal(error.to_string()))?;
             let home_policy = home_prepare_policy_for_job(setup, ctx);
-            let request = finish_spawn_job_request(&mut activation, home_policy)
+            let request = finish_spawn_job_request(&mut activation)
                 .map_err(|error| ReactorError::Internal(error.to_string()))?;
-            spawn_job(request, ctx, jobs);
+            spawn_job(request, home_policy, ctx, jobs);
         }
         Ok(self)
     }
@@ -519,7 +519,6 @@ pub(super) fn home_prepare_policy_for_job(
 
 pub(super) fn finish_spawn_job_request(
     activation: &mut JobActivationGuard,
-    home_image_prepare_policy: HomeImagePreparePolicy,
 ) -> Result<SpawnJobRequest, JobActivationError> {
     let sandbox_id = activation.sandbox_id();
     let JobActivationSetup {
@@ -559,7 +558,6 @@ pub(super) fn finish_spawn_job_request(
             budget_lease: active_lease,
             restore_guest_state,
             device_rate_limits,
-            home_image_prepare_policy,
             factory,
             cancellation,
         },

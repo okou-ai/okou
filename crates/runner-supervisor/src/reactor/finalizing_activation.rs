@@ -403,28 +403,19 @@ async fn run_finalizing_activation(
         },
         job_activation_resources(&ctx),
     );
-    let request = match AssertUnwindSafe(async {
+    let (request, home_policy) = match AssertUnwindSafe(async {
         prepare_spawn_job_request(&mut activation, &ctx).await?;
         let home_policy = if home_fallback && preferred_home_source.is_none() {
-            drop(activation_transfer_guard.take());
-            let (predecessor_state, lock_policy) = handoff_context.fallback_home_prepare_policy();
-            if lock_policy == HomeImagePreparePolicy::TryCacheWithoutLockWait {
-                info!(
-                    run_id = %run_id,
-                    ?predecessor_state,
-                    "finalizing fallback will skip home cache lock retry"
-                );
-            }
-            lock_policy
+            None
         } else {
-            home_prepare_policy_for_job(activation.setup()?, &ctx)
+            Some(home_prepare_policy_for_job(activation.setup()?, &ctx))
         };
-        finish_spawn_job_request(&mut activation, home_policy)
+        finish_spawn_job_request(&mut activation).map(|request| (request, home_policy))
     })
     .catch_unwind()
     .await
     {
-        Ok(Ok(request)) => request,
+        Ok(Ok(prepared)) => prepared,
         Ok(Err(error)) => {
             return Ok(activation
                 .recover(error.recovery_reason(), error.to_string())
@@ -440,7 +431,18 @@ async fn run_finalizing_activation(
         }
     };
     drop(activation_transfer_guard);
-    Ok(run_job(request, ctx).await)
+    let home_policy = home_policy.unwrap_or_else(|| {
+        let (predecessor_state, lock_policy) = handoff_context.fallback_home_prepare_policy();
+        if lock_policy == HomeImagePreparePolicy::TryCacheWithoutLockWait {
+            info!(
+                run_id = %run_id,
+                ?predecessor_state,
+                "finalizing fallback will skip home cache lock retry"
+            );
+        }
+        lock_policy
+    });
+    Ok(run_job(request, home_policy, ctx).await)
 }
 
 async fn prepare_finalizing_resource(
