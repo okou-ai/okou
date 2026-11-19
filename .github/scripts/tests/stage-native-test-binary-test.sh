@@ -15,6 +15,31 @@ cleanup() {
   rm -rf -- "$test_root"
 }
 trap cleanup EXIT
+
+assert_ssh_exited() {
+  local case_dir=$1 initial current pid
+  local -a initial_fields current_fields
+  IFS= read -r initial < "$case_dir/ssh.stat"
+  pid=${initial%% *}
+  if IFS= read -r current 2>/dev/null < "/proc/$pid/stat"; then
+    # Compare start times to identify the original process. A reaper may
+    # still have an exited process in its table after staging has returned.
+    read -r -a initial_fields <<< "${initial##*) }"
+    read -r -a current_fields <<< "${current##*) }"
+    if [[ ${current_fields[19]} != "${initial_fields[19]}" ||
+      ${current_fields[0]} == Z || ${current_fields[0]} == X ]]; then
+      return 0
+    fi
+    echo "staging transfer $pid is still running (state=${current_fields[0]})" >&2
+  elif [[ -d /proc/$pid ]]; then
+    echo "could not read the staging transfer's process state: $pid" >&2
+  else
+    return 0
+  fi
+  cat "$case_dir/out" >&2
+  return 1
+}
+
 mkdir "$test_root/bin"
 cat >"$test_root/test binary" <<'BINARY'
 #!/usr/bin/env bash
@@ -46,6 +71,13 @@ if [[ "$2" == *native-chunk* ]]; then
   fi
   stat -Lc %s "/proc/$$/fd/0" >> "$CASE_DIR/bytes"
 fi
+
+record_ssh_process() {
+  local stat
+  IFS= read -r stat < "/proc/$$/stat"
+  printf '%s\n' "$stat" > "$CASE_DIR/ssh.stat"
+}
+
 count=0
 if [ -f "$CASE_DIR/count" ]; then count=$(cat "$CASE_DIR/count"); fi
 count=$((count + 1))
@@ -54,15 +86,15 @@ case "$SCENARIO" in
   permanent) exit 7 ;;
   exhausted) exit 255 ;;
   cancelled)
-    echo "$$" > "$CASE_DIR/ssh.pid"
     trap 'exit 143' TERM
+    record_ssh_process
     echo ready > "$CASE_DIR/ready"
     read -r _ < "$CASE_DIR/hold"
     ;;
   guarded-timeout)
     if [ "$count" -eq 1 ]; then
-      echo "$$" > "$CASE_DIR/ssh.pid"
       trap 'exit 143' TERM
+      record_ssh_process
       read -r _ < "$CASE_DIR/hold"
     fi
     ;;
@@ -237,10 +269,7 @@ if [ "$status" -ne 0 ]; then
 fi
 test "$(cat "$case_dir/count")" -eq 2
 cmp "$test_root/test binary" "$destination"
-if kill -0 "$(cat "$case_dir/ssh.pid")" 2>/dev/null; then
-  echo 'timed-out guarded upload retained its SSH child' >&2
-  exit 1
-fi
+assert_ssh_exited "$case_dir"
 
 # Cancellation retires the external transfer rather than submitting again.
 case_dir="$test_root/cancelled"
@@ -267,8 +296,5 @@ if [ "$status" -ne 143 ]; then
   exit 1
 fi
 test "$(cat "$case_dir/count")" -eq 1
-if kill -0 "$(cat "$case_dir/ssh.pid")" 2>/dev/null; then
-  echo 'cancelled upload retained its SSH child' >&2
-  exit 1
-fi
+assert_ssh_exited "$case_dir"
 echo 'stage-native-test-binary: verified publication, isolated writers and cancellation passed'
