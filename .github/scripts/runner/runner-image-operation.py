@@ -19,6 +19,7 @@ from datetime import datetime
 from pathlib import Path
 
 WORK_SECONDS = 570  # Reserve reconciliation/termination inside the existing 600s call.
+RESULT_RETENTION_MS = 60 * 60 * 1_000
 # Cover the deployment holder's default 150s lease, with 30s for admission
 # and its reply inside the existing image job budget.
 PR_CLAIM_SECONDS = 180
@@ -572,13 +573,16 @@ def remote(request):
             unit = unit_for(operation)
             service_owner = (f"--uid={os.getuid()}", f"--gid={os.getgid()}")
             # Establish expiration before materializing credentials or starting work.
+            # OnBootSec uses the monotonic epoch on the native CI host. Align to systemd's
+            # millisecond serialization so the deadline survives reloads.
+            expiration_ms = (time.monotonic_ns() + 999_999) // 1_000_000 + RESULT_RETENTION_MS
             system(
                 "systemd-run",
                 "--quiet",
                 "--collect",
                 "--unit=vm0-ci-image-" + identity + "-expire",
                 *service_owner,
-                "--on-active=1h",
+                f"--on-boot={expiration_ms}ms",
                 "--timer-property=AccuracySec=1s",
                 "--property=RuntimeMaxSec=60",
                 "--property=TimeoutStopSec=10",

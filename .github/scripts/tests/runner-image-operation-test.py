@@ -586,6 +586,17 @@ class ImageOperationTest(unittest.TestCase):
             1,
         )
 
+    def test_expiration_submission_failure_blocks_worker_launch(self):
+        self.invoke("claim")
+        self.environment["IMAGE_FAULT"] = "expiration-submission-failed"
+        outcome = self.invoke("run", "build", str(self.result), check=False)
+        self.assertNotEqual(outcome.returncode, 0)
+        self.assertIn("image service command failed: systemd-run", outcome.stderr)
+        self.assertEqual(self.records("expiration-credentials-present"), [False])
+        self.assertFalse(self.records("executions"))
+        self.assertFalse(self.result.exists())
+        self.assertEqual(len(self.records("systemd")), 1)
+
     def test_truncated_result_reattaches_to_verified_build(self):
         self.environment["IMAGE_FAULT"] = "partial-result"
         self.invoke("claim")
@@ -601,7 +612,6 @@ class ImageOperationTest(unittest.TestCase):
         calls = json.dumps(self.records("privileged"))
         self.assertNotIn(self.environment["R2_SECRET_ACCESS_KEY"], calls)
         self.assertIn("--property=RuntimeMaxSec=570", calls)
-        self.assertIn("--on-active=1h", calls)
         for path in self.root.glob("vm0-runner-image-*/*/*/*"):
             if path.is_file():
                 self.assertNotIn(
@@ -838,9 +848,18 @@ class ImageOperationTest(unittest.TestCase):
 
     def test_expired_result_cannot_permit_execution_again(self):
         self.invoke("claim")
+        before = time.monotonic_ns()
         self.invoke("run", "build", str(self.result))
+        after = time.monotonic_ns()
         operation = next(self.root.glob("vm0-runner-image-*/*/*/intent.json")).parent
-        timer = next(args for args in self.records("systemd") if "--on-active=1h" in args)
+        unit = f"--unit=vm0-ci-image-{operation.name}-expire"
+        timer = next(args for args in self.records("systemd") if unit in args)
+        schedule = next(arg for arg in timer if arg.startswith("--on-boot="))
+        self.assertRegex(schedule, r"^--on-boot=[0-9]+ms$")
+        expiration_ms = int(schedule.removeprefix("--on-boot=").removesuffix("ms"))
+        submitted_at = (expiration_ms - 3_600_000) * 1_000_000
+        self.assertLessEqual(before, submitted_at)
+        self.assertLess(submitted_at, after + 1_000_000)
         self.assertIn(f"--uid={os.getuid()}", timer)
         self.assertIn(f"--gid={os.getgid()}", timer)
         expiration = subprocess.run(
