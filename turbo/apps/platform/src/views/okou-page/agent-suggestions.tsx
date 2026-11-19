@@ -13,7 +13,7 @@ import {
   SquarePen,
   Send,
 } from "lucide-react";
-import { Button, buttonVariants } from "@okouai/ui";
+import { Button, buttonVariants, cn } from "@okouai/ui";
 import type { SuggestionOption } from "@okouai/api-contracts/contracts/feed";
 import {
   agentSuggestionEntries$,
@@ -251,6 +251,10 @@ function SuggestionDirection({
 /**
  * The card's own composer. A direction that continues a chat names that chat
  * in its header; a new chat keeps only the close control.
+ *
+ * It opens at its trigger's height and grows into the full composer once the
+ * composer is ready, so the card, and the stack centred around it, follow the
+ * height every frame.
  */
 function SuggestionDirectionComposer({
   direction,
@@ -269,65 +273,84 @@ function SuggestionDirectionComposer({
   const newChatTitle = t(($) => {
     return $.chat.newChat;
   });
-  return (
-    <section
-      aria-labelledby={headingId}
-      className="relative flex min-w-0 flex-col gap-3"
+  const composer =
+    prepared.state === "hasData" && prepared.data ? prepared.data : null;
+  const ready = composer !== null || prepared.state === "hasError";
+  const header = (
+    <div
+      className={
+        continuing
+          ? "flex min-w-0 items-center gap-2"
+          : "absolute -top-2 right-2 z-20"
+      }
     >
-      <div
+      <h3
+        id={headingId}
         className={
-          continuing
-            ? "flex min-w-0 items-center gap-2"
-            : "absolute -top-2 right-2 z-20"
+          continuing ? "min-w-0 flex-1 truncate text-sm font-medium" : "sr-only"
         }
       >
-        <h3
-          id={headingId}
-          className={
-            continuing
-              ? "min-w-0 flex-1 truncate text-sm font-medium"
-              : "sr-only"
-          }
-        >
-          {target.kind === "thread"
-            ? (target.title ?? newChatTitle)
-            : newChatTitle}
-        </h3>
-        <Button
-          type="button"
-          variant="quiet"
-          size="icon-xs"
-          className={
-            continuing ? undefined : "rounded-full border border-border bg-card"
-          }
-          showTooltip
-          aria-label={t(($) => {
-            return $.workflows.common.close;
-          })}
-          onClick={() => {
-            close();
-          }}
-        >
-          <X />
-        </Button>
+        {target.kind === "thread"
+          ? (target.title ?? newChatTitle)
+          : newChatTitle}
+      </h3>
+      <Button
+        type="button"
+        variant="quiet"
+        size="icon-xs"
+        className={
+          continuing ? undefined : "rounded-full border border-border bg-card"
+        }
+        showTooltip
+        aria-label={t(($) => {
+          return $.workflows.common.close;
+        })}
+        onClick={() => {
+          close();
+        }}
+      >
+        <X />
+      </Button>
+    </div>
+  );
+  return (
+    <section aria-labelledby={headingId} className="relative min-w-0">
+      {/* The floating close control sits outside the clipped row. */}
+      {!continuing && header}
+      <div
+        className={cn(
+          "grid min-w-0",
+          ready
+            ? "grid-rows-[1fr] motion-safe:animate-suggestion-direction-expand"
+            : "grid-rows-[0fr] overflow-clip",
+        )}
+      >
+        <div className="flex min-h-14 min-w-0 flex-col gap-3">
+          {continuing && header}
+          {prepared.state === "hasError" ? (
+            <p role="alert" className="text-sm text-muted-foreground">
+              {prepared.error instanceof Error
+                ? prepared.error.message
+                : t(($) => {
+                    return $.global.errors.requestFailed;
+                  })}
+            </p>
+          ) : composer ? (
+            <div className="w-full min-w-0" data-chat-composer>
+              <ChatComposer signals={composer} showPendingItems={false} />
+            </div>
+          ) : (
+            <div
+              className={cn(
+                "flex items-center justify-center text-muted-foreground",
+                continuing ? "min-h-6" : "min-h-14",
+              )}
+            >
+              <Loader2 size={16} className="animate-spin" aria-hidden />
+            </div>
+          )}
+        </div>
       </div>
-      {prepared.state === "hasError" ? (
-        <p role="alert" className="text-sm text-muted-foreground">
-          {prepared.error instanceof Error
-            ? prepared.error.message
-            : t(($) => {
-                return $.global.errors.requestFailed;
-              })}
-        </p>
-      ) : prepared.state === "hasData" && prepared.data ? (
-        <div className="w-full min-w-0" data-chat-composer>
-          <ChatComposer signals={prepared.data} showPendingItems={false} />
-        </div>
-      ) : (
-        <div className="flex min-h-40 items-center justify-center text-muted-foreground">
-          <Loader2 size={16} className="animate-spin" aria-hidden />
-        </div>
-      )}
     </section>
   );
 }
