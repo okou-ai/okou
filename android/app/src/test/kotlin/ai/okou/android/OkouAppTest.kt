@@ -23,12 +23,15 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isSelectable
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.unit.Density
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
@@ -157,18 +160,23 @@ class OkouAppTest {
                     (deviceConfiguration.value ?: LocalConfiguration.current),
                 LocalDensity provides Density(LocalDensity.current.density, fontScale),
             ) {
-                OkouTheme(state.mode.resolveDark(isSystemInDarkTheme())) {
+                val dark = state.mode.resolveDark(isSystemInDarkTheme())
+                OkouTheme(dark) {
                     val color = MaterialTheme.colorScheme.background
                     SideEffect { background = color }
                     OkouApp(
                         models.first.first,
                         models.first.second,
                         controls,
-                        state,
-                        models.second::selectMode,
-                        models.second::retry,
-                        workspacePreferences = {
-                            models.third?.let { MemberPreferencesSettings(it) }
+                        settingsContent = { _, _ ->
+                            SettingsScreen(
+                                state,
+                                models.second::selectMode,
+                                models.second::retry,
+                                workspacePreferences = {
+                                    models.third?.let { MemberPreferencesSettings(it, dark) }
+                                },
+                            )
                         },
                     )
                 }
@@ -185,7 +193,7 @@ class OkouAppTest {
     fun workspaceLanguageChoicesRemainReachableWithLargeText() {
         render(fontScale = 2f, withWorkspacePreferences = true)
         compose.onNodeWithContentDescription("Settings").performClick()
-        compose.onNodeWithText("English").performScrollTo().performClick()
+        compose.onNodeWithText("Language").performScrollTo().performClick()
         compose.onNodeWithText("繁體中文").performScrollTo().assertIsDisplayed()
     }
 
@@ -213,7 +221,7 @@ class OkouAppTest {
         compose.onNodeWithText("Archived").performClick().assertIsSelected()
         compose.onNodeWithContentDescription("Settings").performClick()
         compose.onNodeWithText("Loading appearance…").assertExists()
-        compose.onNodeWithText("Dark").assertIsNotEnabled()
+        compose.onNodeWithText("Appearance").assertIsNotEnabled()
     }
 
     @Test
@@ -222,19 +230,22 @@ class OkouAppTest {
         render(storage)
         compose.onNodeWithContentDescription("Settings").performClick()
         compose.onNodeWithText("Could not load appearance. Try again.").assertExists()
-        compose.onNodeWithText("Light").assertIsNotEnabled()
+        compose.onNodeWithText("Appearance").assertIsNotEnabled()
         compose.runOnIdle { storage.readFailure = false }
         compose.onNodeWithText("Try again").performScrollTo().performClick()
-        compose.onNodeWithText("Light").assertIsEnabled()
+        compose.onNodeWithText("Appearance").assertIsEnabled()
         compose.runOnIdle { storage.writeFailure = true }
-        compose.onNodeWithText("Dark").performClick()
+        selectAppearance("Dark")
         compose.onNodeWithText("Could not save appearance. Try again.").assertExists()
-        compose.onNodeWithText("Follow system").assertIsSelected()
+        compose.onNodeWithText("Follow system").assertIsDisplayed()
         compose.runOnIdle { storage.writeFailure = false }
         compose.onNodeWithText("Try again").performScrollTo().performClick()
-        compose.onNodeWithText("Dark").assertIsSelected()
-        compose.onNodeWithText("Light").performClick()
-        compose.onNodeWithText("Light").assertIsSelected()
+        compose.onNodeWithText("Appearance").performClick()
+        compose.onNode(isSelectable() and hasText("Dark")).assertIsSelected()
+        compose
+            .onNode(isSelectable() and hasText("Light"))
+            .performSemanticsAction(SemanticsActions.OnClick)
+        compose.onNodeWithText("Light").assertIsDisplayed()
     }
 
     @Test
@@ -243,10 +254,10 @@ class OkouAppTest {
         render()
         val light = compose.runOnIdle { background }
         compose.onNodeWithContentDescription("Settings").performClick()
-        compose.onNodeWithText("Dark").performClick()
-        compose.onNodeWithText("Dark").assertIsSelected()
+        selectAppearance("Dark")
+        compose.onNodeWithText("Dark").assertIsDisplayed()
         compose.runOnIdle { org.junit.Assert.assertNotEquals(light, background) }
-        compose.onNodeWithText("Follow system").performClick()
+        selectAppearance("Follow system")
         compose.runOnIdle { assertEquals(light, background) }
         compose.runOnIdle {
             deviceConfiguration.value =
@@ -256,12 +267,21 @@ class OkouAppTest {
                             Configuration.UI_MODE_NIGHT_YES
                 }
         }
-        compose.onNodeWithText("Follow system").assertIsSelected()
+        compose.onNodeWithText("Follow system").assertIsDisplayed()
         compose.runOnIdle { org.junit.Assert.assertNotEquals(light, background) }
-        compose.onNodeWithText("Light").performClick()
+        selectAppearance("Light")
         compose.runOnIdle { assertEquals(light, background) }
-        compose.onNodeWithText("Follow system").performClick()
+        selectAppearance("Follow system")
         compose.runOnIdle { org.junit.Assert.assertNotEquals(light, background) }
+    }
+
+    private fun selectAppearance(mode: String, row: String = "Appearance") {
+        compose.onNodeWithText(row).performScrollTo().performClick()
+        compose
+            .onNode(isSelectable() and hasText(mode))
+            .performScrollTo()
+            .assertIsDisplayed()
+            .performSemanticsAction(SemanticsActions.OnClick)
     }
 
     @Test
@@ -301,8 +321,8 @@ class OkouAppTest {
     fun longLocalizedLabelsRemainOperableAtLargeFontScale() {
         render(fontScale = 2f)
         compose.onNodeWithContentDescription("Einstellungen").assertIsDisplayed().performClick()
-        compose.onNodeWithText("Dunkel").performScrollTo().assertIsDisplayed().performClick()
-        compose.onNodeWithText("Dunkel").assertIsSelected()
+        selectAppearance("Dunkel", row = "Erscheinungsbild")
+        compose.onNodeWithText("Dunkel").assertIsDisplayed()
         compose.onNodeWithText("Auf diesem Gerät").performScrollTo().assertIsDisplayed()
         compose.onNodeWithContentDescription("Zurück").assertIsDisplayed().performClick()
         compose.onNodeWithText("Chats").assertIsDisplayed()

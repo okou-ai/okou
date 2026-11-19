@@ -148,4 +148,6 @@
     <string name="updates_android_unsupported">Pembaruan ini memerlukan versi sistem Android yang lebih baru.</string>
     <string name="realtime_connecting">Menghubungkan pembaruan langsung…</string>
     <string name="realtime_unavailable">Pembaruan langsung tidak tersedia. Anda tetap dapat menyegarkan secara manual.</string>
+    <string name="settings_account">Akun</string>
+    <string name="preference_color_theme_description">Pilih tema warna. Mode tampilan Anda tetap sama.</string>
 </resources>

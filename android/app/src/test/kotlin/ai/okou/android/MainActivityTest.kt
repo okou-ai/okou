@@ -4,6 +4,8 @@ import ai.okou.android.api.generated.UserPreferencesColorTheme
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isSelectable
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -27,14 +29,16 @@ class MainActivityTest {
     @Config(qualifiers = "en-rUS-notnight")
     fun pastelPaletteKeepsSettingsAndDialogActionsReadable() {
         compose.onNodeWithContentDescription("Settings").performClick()
-        compose.onNodeWithText("Default").performScrollTo().performClick()
-        compose.onNodeWithText("Cotton sky").performScrollTo().performClick()
+        compose.onNodeWithText("Color theme").performScrollTo().performClick()
+        val choice = compose.onNode(isSelectable() and hasText("Cotton sky"))
+        choice.performScrollTo().performSemanticsAction(SemanticsActions.OnClick)
+        choice.assertDoesNotExist()
         val colors =
             resolvePalette(compose.activity, false, UserPreferencesColorTheme.COTTON_SKY).scheme
-        fun readable(value: String, surface: Color = colors.background, scroll: Boolean = true) {
+        fun readable(value: String, surface: Color = colors.surface) {
             val layouts = mutableListOf<TextLayoutResult>()
-            val node = compose.onNodeWithText(value)
-            if (scroll) node.performScrollTo()
+            val node = compose.onNodeWithText(value, useUnmergedTree = true)
+            node.performScrollTo()
             node.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
             val foreground = layouts.single().layoutInput.style.color
             assertTrue("$value exposes its rendered text color", foreground != Color.Unspecified)
@@ -46,8 +50,8 @@ class MainActivityTest {
         readable("Sign out")
         readable("Cotton sky")
         readable("English")
-        readable("Refresh preferences")
-        compose.onNodeWithText("English").performScrollTo().performClick()
-        readable("Back", colors.surfaceContainerHigh, scroll = false)
+        readable("Refresh preferences", colors.background)
+        compose.onNodeWithText("Language").performScrollTo().performClick()
+        readable("日本語")
     }
 }

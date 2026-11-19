@@ -133,9 +133,7 @@ class MainActivity : AppCompatActivity() {
                                     .show()
                             }
                         },
-                        appUpdates = {
-                            AppUpdateSettings(updateState, openUpdates, { updates.check() })
-                        },
+                        appUpdates = { AppUpdateSettings(updateState, openUpdates) },
                         openUpdate = openUpdates.takeIf { updateState.announce },
                     )
                 }

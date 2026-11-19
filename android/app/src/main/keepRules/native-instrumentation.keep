@@ -47,6 +47,7 @@
   int language_zh_hant;
   int palette_blue_horizon;
   int palette_default;
+  int preference_color_theme;
   int realtime_connecting;
   int realtime_unavailable;
   int recovery_continue;
@@ -54,6 +55,7 @@
   int updates_check;
   int updates_required;
   int updates_target;
+  int updates_title;
   int updates_view;
 }
 -keep,allowobfuscation class ai.okou.android.R {

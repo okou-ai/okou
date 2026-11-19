@@ -147,6 +147,7 @@ class PersonalInstructionsSettingsTest {
         compose.onNodeWithText("Chats").assertExists()
         compose.onNodeWithContentDescription("Settings").performClick()
         compose.onNodeWithText("Appearance").assertExists()
+        compose.onNodeWithText("Instructions").performScrollTo().performClick()
         compose.onNodeWithText("Loading Instructions…").assertExists()
         val model =
             compose.runOnIdle {
@@ -210,6 +211,10 @@ class PersonalInstructionsSettingsTest {
             TextRange(13),
             input.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange],
         )
+        compose.onNodeWithContentDescription("Back").performClick()
+        compose.onNodeWithText("Appearance").assertExists()
+        compose.onNodeWithContentDescription("Back").performClick()
+        compose.onNodeWithText("Chats").assertExists()
     }
 
     @After
