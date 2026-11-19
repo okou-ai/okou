@@ -1,10 +1,12 @@
 # Authorization, subscription and recovery screening
 
 The Draft started at `ade351370eb5` with main `39d40e3eaa0f`.
-Main advanced to `d972a616` through #48934 (ESLint rule sharing),
-#48945 (runner receipt comparison) and #48937 (Teams API launch delivery).
-The Platform tree is unchanged. The six previously inventoried upstream additions remain separate,
-and the Workflow attribution is unchanged.
+Main advanced to `03698f76`. The Platform changes are from
+#48933, which shares the artifact catalog across views. Its three
+changed executions and two additions are in the
+[upstream mapping](test-rebuild-upstream-03698f76.tsv).
+Eight upstream additions are now recorded separately. The Workflow
+attribution and the frozen denominator are unchanged.
 
 | Family                               | First source reviews | Rechecks | Confirmed deductions |
 | ------------------------------------ | -------------------: | -------: | -------------------: |

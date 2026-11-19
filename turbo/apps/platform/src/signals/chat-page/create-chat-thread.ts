@@ -40,7 +40,7 @@ import {
 import { i18n } from "../../i18n/index.ts";
 import { createChatResourceSignals } from "./chat-resources.ts";
 import { createThreadMailSignals } from "./thread-mail.ts";
-import { createArtifactCatalogSignals } from "../artifacts-page/create-artifact-catalog-signals.ts";
+import { createThreadArtifactCatalogs } from "../artifacts-page/create-artifact-catalog-signals.ts";
 import { createChatRelationSignals } from "./chat-relations.ts";
 import {
   createDraftSignals,
@@ -1526,22 +1526,13 @@ function createLatestEventSignals(
   };
 }
 
-function createArtifacts(threadId: string) {
-  // Resources stay unfiltered even when the utility sidebar changes its kind.
-  const resourceCatalog = createArtifactCatalogSignals({
-    chatThreadId: threadId,
-  });
-  const artifacts$ = computed(async (get): Promise<ChatThreadArtifactRun[]> => {
+function createThreadArtifactRuns(threadId: string) {
+  return computed(async (get): Promise<ChatThreadArtifactRun[]> => {
     get(artifactCatalogRevision$);
     const client = get(apiClient$)(chatThreadArtifactsContract);
     const result = await accept(client.list({ params: { threadId } }), [200]);
     return result.body.runs;
   });
-
-  return {
-    artifacts$,
-    resourceCatalog,
-  };
 }
 
 interface EventTreeRegistries {
@@ -2312,7 +2303,12 @@ function createEventChangeEffects({
     [boolean, AbortSignal]
   >;
 }) {
-  const sidebar = createThreadSidebarSignals(threadId, mailDraftCardSignals);
+  const catalogs = createThreadArtifactCatalogs(threadId);
+  const sidebar = createThreadSidebarSignals(
+    threadId,
+    mailDraftCardSignals,
+    catalogs.gallery,
+  );
   const locallyMarkedReadAt$ = state<string | undefined>(undefined);
   const markThreadReadIfNeeded$ = createMarkThreadReadIfNeeded({
     threadId,
@@ -2358,7 +2354,7 @@ function createEventChangeEffects({
   const eventChangeHandler: ChatEventChangeHandler = Object.freeze({
     command$: afterEventsChange$,
   });
-  return { sidebar, eventChangeHandler };
+  return { sidebar, resourceCatalog: catalogs.resources, eventChangeHandler };
 }
 
 function createChatEventPresentationLifecycle({
@@ -2570,6 +2566,7 @@ function createChatThreadMessagePipeline({
   return {
     scroll,
     sidebar: effects.sidebar,
+    resourceCatalog: effects.resourceCatalog,
     imageNavigation: createThreadImageNavigationSignals(
       projections.eventImageGroups$,
       effects.sidebar.target$,
@@ -2665,7 +2662,6 @@ interface RunTrackingDeps {
   automationSignals: Pick<ChatPanelSignals, "headerAutomations">;
   cancellationRecovery: ReturnType<typeof createCancellationRecoverySignals>;
   reloadConnectorAccountPreference$: Command<void, []>;
-  resourceCatalog: ReturnType<typeof createArtifacts>["resourceCatalog"];
 }
 
 const INITIAL_RENDER_GROUP_COUNT = 5;
@@ -3078,7 +3074,6 @@ function createRunTracking({
   automationSignals,
   cancellationRecovery,
   reloadConnectorAccountPreference$,
-  resourceCatalog,
 }: RunTrackingDeps) {
   const onSubscribed$ = createOnSubscribedCommand({
     threadId,
@@ -3100,10 +3095,7 @@ function createRunTracking({
         {
           threadId,
           invalidations: {
-            artifactCatalog: [
-              resourceCatalog.reload$,
-              messages.sidebar.artifactCatalog.reload$,
-            ],
+            artifactCatalog: [messages.sidebar.artifactCatalog.reload$],
             artifacts: [
               messages.sidebar.artifactCatalog.reloadSelectedArtifactDetail$,
             ],
@@ -3985,7 +3977,7 @@ export function createChatPanelSignals(
   persistence: ThreadDraftPersistence,
 ): ChatPanelSignals {
   const chatEvents = createChatEventSignals(threadId);
-  const artifact = createArtifacts(threadId);
+  const artifacts$ = createThreadArtifactRuns(threadId);
   const threadDraft$ = createRemoteChatThreadDraft(threadId);
   const threadMeta$ = createThreadMeta(threadId);
   const optimisticCreateUnsettled$ =
@@ -4031,7 +4023,7 @@ export function createChatPanelSignals(
     liveRunId$: messagePipeline.liveRunId$,
     sendEvent$: chatEvents.sendEvent$,
   });
-  const messages: MessageListSignals = { ...messagePipeline, ...artifact };
+  const messages: MessageListSignals = { ...messagePipeline, artifacts$ };
   const threadOwned = createThreadOwnedSignals(threadId, messages.sidebar);
   const feedback = createChatThreadFeedbackSignals(
     threadId,
@@ -4060,7 +4052,6 @@ export function createChatPanelSignals(
     cancellationRecovery,
     reloadConnectorAccountPreference$:
       composer.connector.reloadAccountPreference$,
-    resourceCatalog: artifact.resourceCatalog,
   });
   const relations = createChatRelationSignals(threadId, messagePipeline);
   return {
@@ -4087,9 +4078,10 @@ export function createChatPanelSignals(
       messagePipeline.latestRunFinishCreatedAt$,
     ),
     resources: createChatResourceSignals(
-      artifact.resourceCatalog,
+      messagePipeline.resourceCatalog,
       messagePipeline.initialEventsReady$,
       relations,
+      messages.sidebar,
     ),
     relations,
     browserPresence,
