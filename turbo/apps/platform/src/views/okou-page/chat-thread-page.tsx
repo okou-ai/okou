@@ -6097,10 +6097,10 @@ function SelectablePagedGroupRow({
           nameLine
             ? "@[960px]:-mr-3 @[960px]:-ml-[54px] @[960px]:grid-cols-[2.25rem_minmax(0,1fr)] @[960px]:gap-2.5 @[960px]:pr-3"
             : "@[1060px]:-mr-3 @[1060px]:-ml-[100px] @[1060px]:grid-cols-[2.25rem_minmax(0,1fr)] @[1060px]:gap-2.5 @[1060px]:pr-3",
-          "data-selected:bg-state-selected",
+          "data-selected:bg-gray-50 dark:data-selected:bg-gray-100",
           phase === "selecting" &&
             (hasSelection
-              ? "[@media(hover:hover)]:has-[[data-chat-share-selection]:hover]:bg-state-selected-hover"
+              ? "[@media(hover:hover)]:has-[[data-chat-share-selection]:hover]:bg-state-hover-overlay"
               : "[@media(hover:hover)]:has-[[data-chat-share-selection]:hover]:bg-state-hover"),
         )}
       >
