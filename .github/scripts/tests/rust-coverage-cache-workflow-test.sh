@@ -17,10 +17,10 @@ done
 workflow_json=$(yq -o=json '.' "$WORKFLOW")
 
 jq -e '
-  .jobs.coverage as $coverage |
-  any($coverage.steps[];
+  [.jobs.coverage.steps[] | select(.uses == "./.github/actions/setup-r2-sccache")] as $setups |
+  ($setups | length) == 1 and
+  ($setups[0] |
     .if == "(github.event_name != '\''pull_request'\'' || (github.event.pull_request.user.login != '\''dependabot[bot]'\'' && github.event.pull_request.head.repo.full_name == github.repository))" and
-    .uses == "./.github/actions/setup-r2-sccache" and
     .with.architecture == "x86_64" and
     .with["r2-access-key-id"] == "${{ secrets.R2_ACCESS_KEY_ID }}" and
     .with["r2-secret-access-key"] == "${{ secrets.R2_SECRET_ACCESS_KEY }}" and
