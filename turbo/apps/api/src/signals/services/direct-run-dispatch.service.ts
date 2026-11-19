@@ -186,6 +186,8 @@ interface DeliveryWindow {
   readonly notAfter: number;
   readonly monotonicDeadline: number;
 }
+type DispatchEnvelope = output<typeof runnerDispatchEnvelopeSchema>;
+
 function remainingDelivery(window: DeliveryWindow): number {
   return Math.min(
     window.notAfter - now(),
@@ -194,11 +196,12 @@ function remainingDelivery(window: DeliveryWindow): number {
 }
 
 function preferredHomeOffer(
-  envelope: output<typeof runnerDispatchEnvelopeSchema>,
+  envelope: DispatchEnvelope,
+  ordinaryBody: string,
   preference: RunnerPreference,
   preferredUntil: number,
   window: DeliveryWindow,
-): { body: string; waitUntil: number } | undefined {
+): { body: string; waitUntil?: number } {
   if (
     preferredUntil <= 0 ||
     preference.kind !== "preference" ||
@@ -206,7 +209,7 @@ function preferredHomeOffer(
     preference.home.evidence !== "expected" ||
     env("RUNNER_PREFERRED_HOME_CHECKOUT_ENABLED") !== "true"
   ) {
-    return undefined;
+    return { body: ordinaryBody };
   }
   const sentAt = now();
   const waitUntil = Math.floor(
@@ -218,7 +221,7 @@ function preferredHomeOffer(
     ),
   );
   if (waitUntil <= sentAt) {
-    return undefined;
+    return { body: ordinaryBody };
   }
   const body = JSON.stringify({
     ...envelope,
@@ -229,7 +232,7 @@ function preferredHomeOffer(
   });
   return Buffer.byteLength(body, "utf8") <= RUNNER_DISPATCH_MAX_BODY_BYTES
     ? { body, waitUntil }
-    : undefined;
+    : { body: ordinaryBody };
 }
 
 function busyRetry(
@@ -286,34 +289,43 @@ const offerToProcess$ = command(
       readonly target: DirectRunTarget;
       readonly runId: string;
       readonly body: string;
+      readonly envelope: DispatchEnvelope;
+      readonly preference: RunnerPreference;
       readonly token: string;
       readonly window: DeliveryWindow;
       readonly preferredUntil: number;
-      readonly homeWaitUntil: number | undefined;
     },
     signal: AbortSignal,
   ) => {
     signal.throwIfAborted();
     let uncertain = false;
     let retry = 0;
+    let offer: ReturnType<typeof preferredHomeOffer> | undefined;
     for (;;) {
       const state = await set(readDirectRunState$, args.runId, signal);
       if (!isCurrentOwner(state, args.target)) {
         return uncertain ? ("uncertain" as const) : ("stopped" as const);
       }
+      offer ??= preferredHomeOffer(
+        args.envelope,
+        args.body,
+        args.preference,
+        args.preferredUntil,
+        args.window,
+      );
       const remaining = remainingDelivery(args.window);
       if (remaining <= 0) {
         return uncertain ? ("uncertain" as const) : ("not-accepted" as const);
       }
       const finalHomeAttempt =
-        args.homeWaitUntil !== undefined && now() >= args.homeWaitUntil;
+        offer.waitUntil !== undefined && now() >= offer.waitUntil;
       const earlierUncertainty: boolean = uncertain;
       uncertain = true;
       const observation = await postRunnerDispatch(
         {
           target: args.target,
           runId: args.runId,
-          body: args.body,
+          body: offer.body,
           serviceToken: args.token,
           timeoutMs: Math.min(15_000, remaining),
         },
@@ -329,15 +341,11 @@ const offerToProcess$ = command(
         uncertain = earlierUncertainty;
       }
       const preferredRemaining =
-        (args.homeWaitUntil ?? args.preferredUntil) - now();
+        (offer.waitUntil ?? args.preferredUntil) - now();
       if (!uncertain) {
         const retryPolicy =
           observation === "busy"
-            ? busyRetry(
-                preferredRemaining,
-                args.homeWaitUntil,
-                finalHomeAttempt,
-              )
+            ? busyRetry(preferredRemaining, offer.waitUntil, finalHomeAttempt)
             : "stop";
         if (retryPolicy === "stop") {
           return "not-accepted" as const;
@@ -428,12 +436,6 @@ export const dispatchPreparedRun$ = command(
         }
         const preference = fleet.preference;
         const preferredUntil = preferredRouteDeadline(preference, target);
-        const homeOffer = preferredHomeOffer(
-          envelope,
-          preference,
-          preferredUntil,
-          window,
-        );
         // An exception after entering this command cannot prove non-acceptance.
         uncertain = true;
         const delivery = await set(
@@ -441,11 +443,12 @@ export const dispatchPreparedRun$ = command(
           {
             target,
             runId: input.run.id,
-            body: homeOffer?.body ?? body,
+            body,
+            envelope,
+            preference,
             token,
             window,
             preferredUntil,
-            homeWaitUntil: homeOffer?.waitUntil,
           },
           signal,
         );
