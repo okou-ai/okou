@@ -88,7 +88,6 @@ describe("current Run phase timing", () => {
   });
 
   it("gives the allowlisted owner the completion-callback prompt and preserves mark authorization after opting out", async () => {
-    await setupApp({ context, routes: runPhaseTimingRoutes, isolatePg: true });
     const f = await fixture({
       actor: createBddApi(context).user({ userId: timingOwnerId }),
     });
@@ -114,7 +113,6 @@ describe("current Run phase timing", () => {
   });
 
   it("preserves the exact two-point prompt and capability for an owner who opts out of three-point timing", async () => {
-    await setupApp({ context, routes: runPhaseTimingRoutes, isolatePg: true });
     const f = await fixture({
       actor: createBddApi(context).user({ userId: timingOwnerId }),
       threePointEnabled: false,
@@ -189,7 +187,6 @@ describe("current Run phase timing", () => {
   });
 
   it("requires the original timing switch for the owner's prompt, capability and mark authorization", async () => {
-    await setupApp({ context, routes: runPhaseTimingRoutes, isolatePg: true });
     const f = await fixture({
       actor: createBddApi(context).user({ userId: timingOwnerId }),
       timingEnabled: false,

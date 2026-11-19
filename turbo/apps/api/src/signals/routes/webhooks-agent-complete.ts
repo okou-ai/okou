@@ -32,7 +32,6 @@ function createAuthorizedCompletion(runId: string) {
     return {
       auth,
       completion: createAgentRunCompletion(runId, auth.userId),
-      phaseCallback: createRunPhaseCallback(auth),
     };
   });
 }
@@ -51,6 +50,12 @@ const completeRequest$ = computed(async (get) => {
     ),
   };
 });
+
+const completionIdentity$ = computed(async (get) => {
+  const request = await get(completeRequest$);
+  return request.ok ? (get(request.authorizedCompletion$)?.auth ?? null) : null;
+});
+const phaseCallback = createRunPhaseCallback(completionIdentity$);
 
 const completeAgentRunRoute$ = command(
   async ({ get, set }, signal: AbortSignal) => {
@@ -84,7 +89,7 @@ const completeAgentRunRoute$ = command(
       ]);
       waitUntil(
         settleIncludingAbort(
-          set(authorized.phaseCallback.record$, receivedAt, telemetrySignal),
+          set(phaseCallback.record$, receivedAt, telemetrySignal),
         ),
       );
     }

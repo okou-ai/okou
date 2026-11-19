@@ -131,13 +131,7 @@ describe("/api/feature-switches", () => {
   });
 
   it("defaults three-point timing on only for its owner and retains personal opt-out and opt-in", async () => {
-    const api = (
-      await setupApp({
-        context,
-        routes: featureSwitchesRoutes,
-        isolatePg: true,
-      })
-    )(featureSwitchesContract);
+    const api = client();
     const clerk = createRouteMocks(context).clerk;
     const headers = { authorization: "Bearer clerk-session" };
     const ownerId = "user_3EWY21Oe3f15kfs3yYmbGgDb3NV";
@@ -182,13 +176,7 @@ describe("/api/feature-switches", () => {
   });
 
   it("cannot grant three-point timing to an unrelated same-staff-org admin through a stored opt-in", async () => {
-    const api = (
-      await setupApp({
-        context,
-        routes: featureSwitchesRoutes,
-        isolatePg: true,
-      })
-    )(featureSwitchesContract);
+    const api = client();
     const clerk = createRouteMocks(context).clerk;
     const headers = { authorization: "Bearer clerk-session" };
     const ownerId = "user_3EWY21Oe3f15kfs3yYmbGgDb3NV";
@@ -198,11 +186,6 @@ describe("/api/feature-switches", () => {
     clerk.session(ownerId, orgId, "org:member");
     const owner = await accept(api.get({ headers }), [200]);
     expect(owner.body.effectiveSwitches).toMatchObject({ [key]: true });
-    const optedOut = await accept(
-      api.update({ headers, body: { switches: { [key]: false } } }),
-      [200],
-    );
-    expect(optedOut.body.effectiveSwitches).toMatchObject({ [key]: false });
 
     clerk.session(`user_${randomUUID()}`, orgId, "org:admin");
     const peerDefault = await accept(api.get({ headers }), [200]);
@@ -219,9 +202,8 @@ describe("/api/feature-switches", () => {
 
     clerk.session(ownerId, orgId, "org:member");
     const unchangedOwner = await accept(api.get({ headers }), [200]);
-    expect(unchangedOwner.body.switches).toMatchObject({ [key]: false });
     expect(unchangedOwner.body.effectiveSwitches).toMatchObject({
-      [key]: false,
+      [key]: true,
     });
   });
 

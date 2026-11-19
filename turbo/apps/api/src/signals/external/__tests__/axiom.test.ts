@@ -15,7 +15,6 @@ import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { webhooksAgentHealthUsageTelemetryRoutes } from "../../routes/webhooks-agent-health-usage-telemetry";
 import { runPhaseTimingRoutes } from "../../routes/run-phase-timing";
-import { webhooksAgentCompleteRoutes } from "../../routes/webhooks-agent-complete";
 import {
   createBddApi,
   type ApiTestUser,
@@ -839,11 +838,6 @@ describe("Run phase observation transport", () => {
     async (skipResearch) => {
       // Telemetry-client exception: these optional events have no raw API read
       // route. Construct every stage through its authenticated production API.
-      await setupApp({
-        context,
-        routes: runPhaseTimingRoutes,
-        isolatePg: true,
-      });
       const owned = await publicChatActor(context, {
         actor: createBddApi(context).user({ userId: timingOwnerId }),
       });
@@ -1002,11 +996,6 @@ describe("Run phase completion transport", () => {
   }
 
   it("emits one callback observation without start marks and ignores completion replay", async () => {
-    await setupApp({
-      context,
-      routes: webhooksAgentCompleteRoutes,
-      isolatePg: true,
-    });
     const f = await callbackFixture();
     await f.owned.run(async () => {
       await completePublicClaudeRun(context, f.run, f.headers, "Task ready");
@@ -1064,13 +1053,6 @@ describe("Run phase completion transport", () => {
   ])(
     "preserves the exact v1 start payloads without a completion point for $scenario",
     async ({ userId, threePointEnabled }) => {
-      if (userId === timingOwnerId) {
-        await setupApp({
-          context,
-          routes: runPhaseTimingRoutes,
-          isolatePg: true,
-        });
-      }
       const f = await callbackFixture({
         actor: createBddApi(context).user({ userId }),
         threePointEnabled,
@@ -1128,7 +1110,6 @@ describe("Run phase completion transport", () => {
   );
 
   it("applies a live three-point opt-out without disabling legacy start marks", async () => {
-    await setupApp({ context, routes: runPhaseTimingRoutes, isolatePg: true });
     const f = await callbackFixture();
     await f.owned.run(async () => {
       const api = setupApp({ context, routes: runPhaseTimingRoutes })(
@@ -1193,11 +1174,6 @@ describe("Run phase completion transport", () => {
   it.each(["before launch", "before completion"])(
     "honors a disabled original timing switch %s without changing completion",
     async (disabledAt) => {
-      await setupApp({
-        context,
-        routes: webhooksAgentCompleteRoutes,
-        isolatePg: true,
-      });
       const f = await callbackFixture({
         timingEnabled: disabledAt !== "before launch",
       });
@@ -1217,11 +1193,6 @@ describe("Run phase completion transport", () => {
   );
 
   it("preserves a reported execution failure without inventing a completion point", async () => {
-    await setupApp({
-      context,
-      routes: webhooksAgentCompleteRoutes,
-      isolatePg: true,
-    });
     const f = await callbackFixture();
     await f.owned.run(async () => {
       const failed = await webhooks.requestAgentComplete(
@@ -1239,11 +1210,6 @@ describe("Run phase completion transport", () => {
   });
 
   it("waits for valid native completion output before recording the callback point", async () => {
-    await setupApp({
-      context,
-      routes: webhooksAgentCompleteRoutes,
-      isolatePg: true,
-    });
     const f = await callbackFixture();
     await f.owned.run(async () => {
       await webhooks.requestAgentComplete(
@@ -1278,11 +1244,6 @@ describe("Run phase completion transport", () => {
   });
 
   it("preserves cancelled output recovery without recording a normal completion point", async () => {
-    await setupApp({
-      context,
-      routes: webhooksAgentCompleteRoutes,
-      isolatePg: true,
-    });
     const f = await callbackFixture();
     await f.owned.run(async () => {
       await runs.requestCancelRun(f.owned.actor, f.run.runId, [200]);
@@ -1301,11 +1262,6 @@ describe("Run phase completion transport", () => {
 
   // The real five-second transport deadline needs headroom for API fixture work.
   it("bounds a stalled completion observation without changing normal completion", async () => {
-    await setupApp({
-      context,
-      routes: webhooksAgentCompleteRoutes,
-      isolatePg: true,
-    });
     const f = await callbackFixture();
     const aborted = createDeferredPromise<void>(context.signal);
     let attempts = 0;
@@ -1344,11 +1300,6 @@ describe("Run phase completion transport", () => {
   }, 10_000);
 
   it("keeps normal completion successful when the telemetry provider is unavailable", async () => {
-    await setupApp({
-      context,
-      routes: webhooksAgentCompleteRoutes,
-      isolatePg: true,
-    });
     const f = await callbackFixture();
     let attempts = 0;
     server.use(
