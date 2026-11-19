@@ -29,6 +29,8 @@ export interface ExecutionNetworkPolicyInputs {
 /** Process-local admission facts; this receipt itself is never serialized. */
 export interface AdmittedExecutionFacts {
   readonly executionPackages: CapturedExecutionPackages;
+  readonly skillRoot: string;
+  readonly officialWorkflowBundles: PreparedExecutionContext["officialWorkflowBundles"];
   /** Same member observation as the admission Prompt; later edits affect later Runs. */
   readonly userTimezone: string | undefined;
   /** Accepted immutable Seed contributions, before framework paths and overlays. */

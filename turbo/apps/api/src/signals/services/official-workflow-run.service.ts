@@ -6,7 +6,6 @@ import type {
   AgentRunOfficialWorkflowBundleDefinitionProvenance,
   AgentRunOfficialWorkflowProvenance,
 } from "@okouai/db/jsonb-contracts/agent-run-session-conversation";
-import type { PersistedStorageMount } from "@okouai/db/types";
 
 export const OFFICIAL_WORKFLOW_RUN_ADMISSION_MESSAGE =
   "Official Workflow execution state is not current; retry";
@@ -29,7 +28,6 @@ interface OfficialWorkflowRunBlueprintIdentity {
 type ResolvedOfficialWorkflowDefinition =
   AgentRunOfficialWorkflowBundleDefinitionProvenance & {
     readonly workflowId: string;
-    readonly workflowName: string;
   };
 
 export interface OfficialWorkflowObservation {
@@ -38,15 +36,6 @@ export interface OfficialWorkflowObservation {
     AgentRunOfficialWorkflowProvenance,
     { readonly schemaVersion: 2 }
   >;
-}
-
-export type ResolvedOfficialWorkflowRunDefinition =
-  ResolvedOfficialWorkflowDefinition & {
-    readonly mountPath: string;
-  };
-
-export interface OfficialWorkflowRunObservation extends OfficialWorkflowObservation {
-  readonly definitions: readonly ResolvedOfficialWorkflowRunDefinition[];
 }
 
 function acceptedDeliveryMatches(
@@ -112,7 +101,7 @@ export function acceptedDefinitionForName(
 }
 
 export function assembleWorkflowObservation(
-  workflow: { readonly workflowId: string; readonly workflowName: string },
+  workflowId: string,
   definition: OfficialWorkflowAcceptedDefinition,
   revision: OfficialWorkflowAcceptedRevision,
 ): OfficialWorkflowObservation {
@@ -125,21 +114,7 @@ export function assembleWorkflowObservation(
     contentBundle: definition.contentBundle,
   };
   return {
-    definitions: [{ ...workflow, ...source }],
+    definitions: [{ workflowId, ...source }],
     provenance: { schemaVersion: 2, definitions: [source] },
   };
-}
-
-export function exactMountsMatch(
-  observation: OfficialWorkflowRunObservation,
-  mounts: readonly PersistedStorageMount[] | undefined,
-): boolean {
-  if (!mounts) {
-    return false;
-  }
-  return observation.definitions.every((definition) => {
-    return !mounts.some((mount) => {
-      return mount.mountPath === definition.mountPath;
-    });
-  });
 }
