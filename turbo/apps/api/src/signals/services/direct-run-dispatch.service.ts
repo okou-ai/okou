@@ -6,7 +6,10 @@ import {
   isCanonicalRunnerHostname,
 } from "@okouai/api-contracts/contracts/runner-dispatch";
 import { OFFICIAL_RUNNER_TOKEN_PREFIX } from "@okouai/api-contracts/contracts/runner-primitives";
-import type { ExecutionContext } from "@okouai/api-contracts/contracts/runners";
+import type {
+  ExecutionContext,
+  RunnerPreference,
+} from "@okouai/api-contracts/contracts/runners";
 import { runnerState } from "@okouai/db/runtime/runner-state";
 import { command, computed, type Command, type Computed } from "ccstate";
 import { and, arrayContains, eq, gt } from "drizzle-orm";
@@ -286,6 +289,34 @@ interface PreparedRunDelivery {
   >;
 }
 
+function preferenceForOffer(
+  preference: RunnerPreference,
+  target: DirectRunTarget,
+  notAfter: number,
+) {
+  if (
+    preference.kind !== "preference" ||
+    preference.runnerIdentity.runnerId !== target.runnerId ||
+    preference.runnerIdentity.heartbeatGeneration !== target.heartbeatGeneration
+  ) {
+    return { preferredUntil: 0, preferredHomeCheckout: null };
+  }
+  const preferredUntil = Date.parse(preference.expiresAt);
+  const preferredHomeCheckout =
+    preference.tier === "predecessorHome" &&
+    preference.home.evidence === "expected"
+      ? {
+          predecessorRunId: preference.predecessorRunId,
+          notAfter: Math.min(
+            notAfter,
+            preferredUntil,
+            Date.parse(preference.home.homeWaitUntil),
+          ),
+        }
+      : null;
+  return { preferredUntil, preferredHomeCheckout };
+}
+
 export const dispatchPreparedRun$ = command(
   async ({ get, set }, args: PreparedRunDelivery, signal: AbortSignal) => {
     signal.throwIfAborted();
@@ -310,27 +341,11 @@ export const dispatchPreparedRun$ = command(
         if (remainingDelivery(window) <= 0) {
           break;
         }
-        const preference = fleet.preference;
-        const preferred =
-          preference.kind === "preference" &&
-          preference.runnerIdentity.runnerId === target.runnerId &&
-          preference.runnerIdentity.heartbeatGeneration ===
-            target.heartbeatGeneration
-            ? preference
-            : null;
-        const preferredUntil = preferred ? Date.parse(preferred.expiresAt) : 0;
-        const preferredHomeCheckout =
-          preferred?.tier === "predecessorHome" &&
-          preferred.home.evidence === "expected"
-            ? {
-                predecessorRunId: preferred.predecessorRunId,
-                notAfter: Math.min(
-                  notAfter,
-                  preferredUntil,
-                  Date.parse(preferred.home.homeWaitUntil),
-                ),
-              }
-            : null;
+        const { preferredUntil, preferredHomeCheckout } = preferenceForOffer(
+          fleet.preference,
+          target,
+          notAfter,
+        );
         const body = JSON.stringify({
           runnerId: target.runnerId,
           heartbeatGeneration: target.heartbeatGeneration,

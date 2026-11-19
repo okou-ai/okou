@@ -231,7 +231,7 @@ describe("Independent finalizing resource dispatch", () => {
       mockNow(f.clock + 2000);
       const next = await continuation(f);
       expect(next.status).toBe("running");
-      expect(checkoutDecisions).toEqual([
+      expect(checkoutDecisions).toStrictEqual([
         { predecessorRunId: f.run.runId, notAfter: f.clock + 4000 },
       ]);
       const assigned = rejects ? alternative : receiver;
