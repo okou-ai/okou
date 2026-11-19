@@ -139,6 +139,15 @@ if [ "$SCENARIO" = lost-ack ] && [ "$count" -eq 1 ]; then exit 255; fi
 SSH
 chmod +x "$test_root/bin/ssh"
 
+assert_checksum_rejection() {
+  local log=$1 expected=$2
+  if ! grep -Fxq -- "$expected" "$log"; then
+    cat "$log" >&2
+    echo "missing checksum rejection: $expected" >&2
+    exit 1
+  fi
+}
+
 for scenario in success pipe lost-ack late-writer corrupt permanent exhausted; do
   case_dir="$test_root/$scenario"
   mkdir "$case_dir"
@@ -176,6 +185,10 @@ for scenario in success pipe lost-ack late-writer corrupt permanent exhausted; d
     exit 1
   fi
   test "$(cat "$case_dir/count")" -eq "$attempts"
+  case "$scenario" in
+    corrupt) assert_checksum_rejection "$case_dir/out" "native test binary checksum mismatch" ;;
+    late-writer) assert_checksum_rejection "$case_dir/late.log" "native test binary checksum mismatch" ;;
+  esac
   if [ "$status" -eq 0 ]; then
     cmp "$test_root/test binary" "$destination"
     test -x "$destination"
@@ -224,6 +237,7 @@ if [ "$status" -ne 1 ]; then
   exit 1
 fi
 test "$(wc -l <"$case_dir/chunks")" -eq 1
+assert_checksum_rejection "$case_dir/out" "native test chunk checksum mismatch"
 test ! -e "$destination"
 if compgen -G "$destination.upload.*" >/dev/null; then
   echo "failed upload leaked staging files" >&2
