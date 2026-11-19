@@ -6,8 +6,7 @@ import {
 import { command } from "ccstate";
 import { eq } from "drizzle-orm";
 import { chatFeishuContext } from "@okouai/db/schema/chat-feishu-context";
-import { chatEvents } from "@okouai/db/schema/chat-event";
-import { db$, writeDb$ } from "../external/db";
+import { writeDb$ } from "../external/db";
 import { getOfficialTelegramBotConfig } from "../external/telegram-official";
 import { sendChatAction } from "../external/telegram-client";
 import { publishThreadListChangedSafely } from "../external/realtime";
@@ -24,12 +23,9 @@ import { loadWechatQueuedLaunchMaterial$ } from "./wechat-context.service";
 import { reconcileWechatThreadTyping$ } from "./wechat-thread-typing.service";
 import { sendAgentPhoneRunTyping } from "./agentphone-run-typing.service";
 import {
-  feishuQueuedLaunchContextReadPlan,
+  createFeishuStoredLaunchContext,
   requiredFeishuLaunchContext,
 } from "./feishu-queued-launch-context.service";
-import { feishuChatThreadRoutes } from "@okouai/db/schema/feishu-chat-thread-route";
-import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
-import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
 import { addFeishuThinkingReaction$ } from "./feishu-thinking-indicator.service";
 import {
   pickEnqueuedChatThread$,
@@ -76,16 +72,7 @@ const showRecoveryIndicator$ = command(
         break;
       }
       case "feishu": {
-        const plan = feishuQueuedLaunchContextReadPlan(source);
-        const [row] = await get(db$)
-          .select(plan.columns)
-          .from(chatEvents)
-          .innerJoin(chatFeishuContext, plan.contextJoin)
-          .innerJoin(feishuChatThreadRoutes, plan.routeJoin)
-          .innerJoin(feishuOrgConnections, plan.connectionJoin)
-          .innerJoin(feishuOrgInstallations, plan.installationJoin)
-          .where(plan.condition)
-          .limit(1);
+        const row = await get(createFeishuStoredLaunchContext(input));
         signal.throwIfAborted();
         const context = requiredFeishuLaunchContext(row);
         if (context) {

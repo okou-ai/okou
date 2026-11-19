@@ -37,11 +37,9 @@ import type {
   ThreadModelError,
   ThreadModelSelection,
 } from "./thread-model.signals";
-import type {
-  FeishuThreadContext,
-  SlackThreadContext,
-  TelegramThreadContext,
-} from "./thread-run-context.service";
+import { feishuDeliveryFromContext } from "./feishu-queued-launch-context.service";
+import type { SlackThreadContext } from "./slack-queued-launch-context.service";
+import type { TelegramThreadContext } from "./telegram-queued-launch-context.service";
 import {
   createPromptAndSkillVolumesSignals,
   type PromptAndSkillVolumes,
@@ -438,19 +436,6 @@ function queuedSlackDelivery(context: NonNullable<SlackThreadContext>) {
     channelId: context.channelId,
     threadTs: context.threadTs,
     ...(context.routeThreadTs ? { routeThreadTs: context.routeThreadTs } : {}),
-  };
-}
-
-function queuedFeishuDelivery(context: NonNullable<FeishuThreadContext>) {
-  return {
-    installationId: context.installationId,
-    connectionId: context.connectionId,
-    chatId: context.chatId,
-    messageId: context.messageId,
-    threadId: context.routeThreadId,
-    replyInThread: context.replyInThread,
-    ...(context.reactionId ? { reactionId: context.reactionId } : {}),
-    files: [...context.messageFiles],
   };
 }
 
@@ -1487,7 +1472,7 @@ export function createThreadClaimRunObjects(
           return {
             triggerSource: context.platform,
             delivery: {
-              feishuDelivery: queuedFeishuDelivery(context),
+              feishuDelivery: feishuDeliveryFromContext(context),
             },
           };
         }
