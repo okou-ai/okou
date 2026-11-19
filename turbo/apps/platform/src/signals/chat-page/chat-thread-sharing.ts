@@ -1,3 +1,4 @@
+import { messageDocumentToDisplayText } from "../okou-page/user-message-document-codec.ts";
 import { sharedThreadVisibilityContract } from "@okouai/api-contracts/client/shared-thread-visibility";
 import type { SharedThreadAudience } from "@okouai/api-contracts/contracts/shared-thread-visibility";
 import {
@@ -20,7 +21,7 @@ import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { writeToClipboard } from "../okou-page/clipboard.ts";
 import { resetSignal } from "../utils.ts";
-import type { ChatEventGroup } from "./chat-event.ts";
+import type { ChatEventGroup, EnrichedChatEvent } from "./chat-event.ts";
 import type { ChatThreadScrollSignals } from "./chat-thread-scroll.ts";
 import { buildRunWorkFolding } from "./run-work-folding.ts";
 
@@ -37,14 +38,26 @@ export type ToggleSharedThreadSelectionResult =
 
 export interface ChatThreadSharingSignals {
   readonly phase$: Computed<SharedThreadSelectionPhase>;
-  readonly audience$: Computed<SharedThreadAudience>;
+  readonly audience$: Computed<SharedThreadAudience | null>;
+  readonly creation$: Computed<Promise<void> | null>;
+  readonly allSelected$: Computed<boolean>;
+  readonly totalCount$: Computed<number>;
+  readonly previewGroups$: Computed<ChatEventGroup[]>;
+  readonly previewOpen$: Computed<boolean>;
+  readonly setPreviewOpen$: Command<void, [boolean]>;
+  readonly toggleAll$: Command<ToggleSharedThreadSelectionResult, []>;
+  readonly editSelection$: Command<void, []>;
+  readonly startMessage$: Command<
+    Promise<void>,
+    [readonly string[], AbortSignal]
+  >;
   readonly changeAudience$: Command<void, [SharedThreadAudience]>;
   readonly visibility$: Computed<SharedThreadVisibilitySignals | null>;
   readonly selectedEventIds$: Computed<ReadonlySet<string>>;
   readonly selectedCount$: Computed<number>;
   readonly createdSharedThreadId$: Computed<string | null>;
   readonly copiedMessageEventId$: Computed<string | null>;
-  readonly start$: Command<Promise<void>, [AbortSignal]>;
+  readonly start$: Command<Promise<void>, [boolean, AbortSignal]>;
   readonly close$: Command<Promise<void>, [AbortSignal]>;
   readonly toggle$: Command<
     ToggleSharedThreadSelectionResult,
@@ -92,21 +105,69 @@ export function chatGroupForSharing(group: ChatEventGroup): ChatEventGroup {
     : group;
 }
 
-function shareableEventIds(
-  groups: readonly ChatEventGroup[],
-): ReadonlySet<string> {
+export function shareableEventFromChatEvent(
+  event: EnrichedChatEvent,
+): ShareableChatEvent | null {
+  if (event.seqId === undefined || event.isQueued) {
+    return null;
+  }
+  if (event.eventType === "output.message") {
+    return event.content ? { id: event.id, text: event.content } : null;
+  }
+  if (
+    event.eventType !== "input.prompt" &&
+    event.eventType !== "input.automation"
+  ) {
+    return null;
+  }
+  const displayText = messageDocumentToDisplayText(event.userMessage)?.trim();
+  if (displayText) {
+    return { id: event.id, text: displayText };
+  }
+  const automation = event.userMessage?.parts.find((part) => {
+    return part.type === "automation";
+  });
+  const text =
+    automation?.automationBrief?.trim() || automation?.workflowName.trim();
+  return text ? { id: event.id, text } : null;
+}
+
+function shareableGroups(groups: readonly ChatEventGroup[]): ChatEventGroup[] {
   const activeGroups = groups.flatMap((group) => {
     const events = group.events.filter((event) => {
       return !event.isQueued;
     });
     return events.length === 0 ? [] : [{ ...group, events }];
   });
-  return new Set(
-    buildRunWorkFolding(activeGroups).visibleGroups.flatMap((group) => {
-      return chatGroupForSharing(group).events.map((event) => {
-        return event.id;
+  return buildRunWorkFolding(activeGroups).visibleGroups.flatMap((group) => {
+    const events = chatGroupForSharing(group).events.filter((event) => {
+      return shareableEventFromChatEvent(event) !== null;
+    });
+    return events.length > 0 ? [{ ...group, events }] : [];
+  });
+}
+
+function selectionForGroups(
+  groups: readonly ChatEventGroup[],
+): ReadonlyMap<string, SelectedGroup> {
+  return new Map(
+    groups.map((group) => {
+      const events = group.events.flatMap((event) => {
+        const shareable = shareableEventFromChatEvent(event);
+        return shareable ? [shareable] : [];
       });
+      return [group.beginEventId, { events, bytes: groupBytes(events) }];
     }),
+  );
+}
+
+function selectionTooLarge(
+  groups: ReadonlyMap<string, SelectedGroup>,
+): boolean {
+  return (
+    [...groups.values()].reduce((total, group) => {
+      return total + group.bytes;
+    }, 0) > SHARED_THREAD_SELECTION_TEXT_LIMIT_BYTES
   );
 }
 
@@ -259,7 +320,7 @@ function createMessageSharingSignals(
 function createShareCommand(
   threadId: string,
   selectedGroups$: Computed<ReadonlyMap<string, SelectedGroup>>,
-  audience$: Computed<SharedThreadAudience>,
+  audience$: Computed<SharedThreadAudience | null>,
   internalCreatedSharedThreadId$: State<string | null>,
   internalPhase$: State<SharedThreadSelectionPhase>,
 ): ChatThreadSharingSignals["create$"] {
@@ -269,13 +330,14 @@ function createShareCommand(
         return event.id;
       });
     });
-    if (eventIds.length === 0) {
+    const audience = get(audience$);
+    if (eventIds.length === 0 || audience === null) {
       return;
     }
     const result = await accept(
       get(apiClient$)(sharedThreadVisibilityContract).create({
         params: { threadId },
-        body: { eventIds, audience: get(audience$) },
+        body: { eventIds, audience },
         fetchOptions: { signal },
       }),
       [201, 400, 413],
@@ -313,150 +375,315 @@ function createShareVisibility$(id$: State<string | null>) {
   });
 }
 
-function createSharedThreadAudienceSignals() {
-  const draft$ = state<SharedThreadAudience>("public");
+function createSharingDraft() {
   return {
-    audience$: computed((get) => {
-      return get(draft$);
+    phase$: state<SharedThreadSelectionPhase>("idle"),
+    audience$: state<SharedThreadAudience | null>(null),
+    request$: state<Promise<void> | null>(null),
+    previewOpen$: state(false),
+    preserveDraft$: state(false),
+    selected$: state<ReadonlyMap<string, SelectedGroup>>(new Map()),
+    createdId$: state<string | null>(null),
+  };
+}
+type SharingDraft = ReturnType<typeof createSharingDraft>;
+
+function createSharingSelection(
+  allChatGroups$: Computed<ChatEventGroup[]>,
+  draft: SharingDraft,
+) {
+  const groups$ = computed((get) => {
+    return shareableGroups(get(allChatGroups$));
+  });
+  const eventIds$ = computed((get) => {
+    // Selection belongs to the complete transcript, including unmounted rows.
+    return new Set(
+      get(groups$).flatMap((group) => {
+        return group.events.map((event) => {
+          return event.id;
+        });
+      }),
+    );
+  });
+  const selectedGroups$ = computed((get) => {
+    const selected = get(draft.selected$);
+    return selected.size > 0
+      ? filterSelectedGroups(selected, get(eventIds$))
+      : selected;
+  });
+  const selectedEventIds$ = computed((get) => {
+    return new Set(
+      [...get(selectedGroups$).values()].flatMap((group) => {
+        return group.events.map((event) => {
+          return event.id;
+        });
+      }),
+    );
+  });
+  return {
+    groups$,
+    selectedGroups$,
+    selectedEventIds$,
+    selectedCount$: computed((get) => {
+      return get(selectedGroups$).size;
     }),
-    changeAudience$: command(({ set }, audience: SharedThreadAudience) => {
-      set(draft$, audience);
+    totalCount$: computed((get) => {
+      return get(groups$).length;
+    }),
+    allSelected$: computed((get) => {
+      const ids = get(eventIds$);
+      const selected = get(selectedEventIds$);
+      return (
+        ids.size > 0 &&
+        [...ids].every((id) => {
+          return selected.has(id);
+        })
+      );
+    }),
+    previewGroups$: computed((get) => {
+      const selected = get(selectedEventIds$);
+      return get(groups$).flatMap((group) => {
+        const events = group.events.filter((event) => {
+          return selected.has(event.id);
+        });
+        return events.length > 0 ? [{ ...group, events }] : [];
+      });
     }),
   };
 }
+type SharingSelection = ReturnType<typeof createSharingSelection>;
 
-export function createChatThreadSharingSignals(
-  threadId: string,
-  scroll: Pick<
-    ChatThreadScrollSignals,
-    "autoScroll$" | "readRenderedThreadScrollPosition$"
-  >,
-  allChatGroups$: Computed<ChatEventGroup[]>,
-  closeFeedbackSelection$: Command<void, []>,
-): ChatThreadSharingSignals {
-  const internalPhase$ = state<SharedThreadSelectionPhase>("idle");
-  const { audience$, changeAudience$ } = createSharedThreadAudienceSignals();
-  const internalSelectedGroups$ = state<ReadonlyMap<string, SelectedGroup>>(
-    new Map(),
-  );
-  const internalCreatedSharedThreadId$ = state<string | null>(null);
-  const sharingEventIds$ = computed((get) => {
-    // Use the complete transcript: scrolling a selected row out of the render
-    // window must not remove it from the share.
-    return shareableEventIds(get(allChatGroups$));
-  });
-  const selectedGroups$ = computed((get) => {
-    const selected = get(internalSelectedGroups$);
-    if (selected.size === 0) {
-      return selected;
-    }
-    return filterSelectedGroups(selected, get(sharingEventIds$));
-  });
-
-  const start$ = command(({ set }, signal: AbortSignal) => {
-    // History and status-tail messages disappear in the sharing projection.
-    // Capture a surviving message before the phase changes the rendered DOM.
-    const position = set(
-      scroll.readRenderedThreadScrollPosition$,
-      "[data-chat-run-work-history], [data-chat-run-status-tail]",
-    );
-    set(closeFeedbackSelection$);
-    set(internalSelectedGroups$, new Map());
-    set(internalCreatedSharedThreadId$, null);
-    set(changeAudience$, "public");
-    set(internalPhase$, "selecting");
-    return set(scroll.autoScroll$, position, signal);
-  });
-
-  const close$ = command(({ set }, signal: AbortSignal) => {
-    const position = set(scroll.readRenderedThreadScrollPosition$);
-    set(internalSelectedGroups$, new Map());
-    set(internalCreatedSharedThreadId$, null);
-    set(changeAudience$, "public");
-    set(internalPhase$, "idle");
-    return set(scroll.autoScroll$, position, signal);
-  });
-
+function createSharingSelectionCommands(
+  draft: SharingDraft,
+  selection: SharingSelection,
+) {
   const toggle$ = command(
     (
       { get, set },
       groupKey: string,
       events: readonly ShareableChatEvent[],
     ): ToggleSharedThreadSelectionResult => {
-      const selected = get(selectedGroups$);
+      if (get(draft.request$) !== null || get(draft.phase$) !== "selecting") {
+        return "deselected";
+      }
+      const selected = get(selection.selectedGroups$);
       const stored = selected.get(groupKey);
-      // A group that grew while it was selected reads as partially selected,
-      // so ticking it again covers the new messages instead of clearing it.
-      const storedEventIds = new Set(
+      // A growing group is partial; selecting it includes the newly arrived messages.
+      const storedIds = new Set(
         stored?.events.map((event) => {
           return event.id;
         }),
       );
       const allSelected = events.every((event) => {
-        return storedEventIds.has(event.id);
+        return storedIds.has(event.id);
       });
       if (stored !== undefined && allSelected) {
         const next = new Map(selected);
         next.delete(groupKey);
-        set(internalSelectedGroups$, next);
+        set(draft.selected$, next);
         return "deselected";
       }
-
       const next = new Map(selected).set(groupKey, {
         events,
         bytes: groupBytes(events),
       });
-      const selectedBytes = [...next.values()].reduce((total, group) => {
-        return total + group.bytes;
-      }, 0);
-      if (selectedBytes > SHARED_THREAD_SELECTION_TEXT_LIMIT_BYTES) {
+      if (selectionTooLarge(next)) {
         return "too-large";
       }
-      set(internalSelectedGroups$, next);
+      set(draft.selected$, next);
       return "selected";
     },
   );
-
-  const create$ = createShareCommand(
-    threadId,
-    selectedGroups$,
-    audience$,
-    internalCreatedSharedThreadId$,
-    internalPhase$,
-  );
-
-  const { shareMessage$, copiedMessageEventId$ } = createMessageSharingSignals(
-    threadId,
-    allChatGroups$,
-  );
-
-  return {
-    audience$,
-    changeAudience$,
-    visibility$: createShareVisibility$(internalCreatedSharedThreadId$),
-    phase$: computed((get) => {
-      return get(internalPhase$);
-    }),
-    selectedEventIds$: computed((get) => {
-      const ids = new Set<string>();
-      for (const group of get(selectedGroups$).values()) {
-        for (const event of group.events) {
-          ids.add(event.id);
-        }
+  const toggleAll$ = command(
+    ({ get, set }): ToggleSharedThreadSelectionResult => {
+      if (get(draft.request$) !== null || get(draft.phase$) !== "selecting") {
+        return "deselected";
       }
-      return ids;
+      if (get(selection.allSelected$)) {
+        set(draft.selected$, new Map());
+        return "deselected";
+      }
+      const selected = selectionForGroups(get(selection.groups$));
+      if (selectionTooLarge(selected)) {
+        return "too-large";
+      }
+      set(draft.selected$, selected);
+      return "selected";
+    },
+  );
+  return { toggle$, toggleAll$ };
+}
+
+type SharingScroll = Pick<
+  ChatThreadScrollSignals,
+  "autoScroll$" | "readRenderedThreadScrollPosition$"
+>;
+
+function createSharingLifecycle(
+  draft: SharingDraft,
+  scroll: SharingScroll,
+  closeFeedbackSelection$: Command<void, []>,
+) {
+  const reset$ = command(({ set }) => {
+    set(draft.selected$, new Map());
+    set(draft.createdId$, null);
+    set(draft.audience$, "public");
+  });
+  return {
+    start$: command(
+      async ({ get, set }, preserveDraft: boolean, signal: AbortSignal) => {
+        signal.throwIfAborted();
+        if (get(draft.request$) !== null) {
+          return;
+        }
+        set(draft.preserveDraft$, preserveDraft);
+        const position = set(
+          scroll.readRenderedThreadScrollPosition$,
+          "[data-chat-run-work-history], [data-chat-run-status-tail]",
+        );
+        set(closeFeedbackSelection$);
+        if (!preserveDraft) {
+          set(reset$);
+        }
+        set(draft.phase$, get(draft.createdId$) ? "created" : "selecting");
+        await set(scroll.autoScroll$, position, signal);
+      },
+    ),
+    close$: command(async ({ get, set }, signal: AbortSignal) => {
+      signal.throwIfAborted();
+      if (get(draft.request$) !== null) {
+        return;
+      }
+      const position = set(scroll.readRenderedThreadScrollPosition$);
+      if (!get(draft.preserveDraft$)) {
+        set(reset$);
+      }
+      set(draft.previewOpen$, false);
+      set(draft.phase$, "idle");
+      await set(scroll.autoScroll$, position, signal);
     }),
-    selectedCount$: computed((get) => {
-      return get(selectedGroups$).size;
+    editSelection$: command(({ get, set }) => {
+      if (get(draft.request$) !== null) {
+        return;
+      }
+      // The saved snapshot is immutable. Editing this draft creates a new link.
+      set(draft.createdId$, null);
+      set(draft.phase$, "selecting");
+    }),
+  };
+}
+
+function createMessageSelectionCommand(
+  allChatGroups$: Computed<ChatEventGroup[]>,
+  draft: SharingDraft,
+  selection: SharingSelection,
+  start$: ChatThreadSharingSignals["start$"],
+) {
+  return command(
+    async ({ get, set }, eventIds: readonly string[], signal: AbortSignal) => {
+      signal.throwIfAborted();
+      if (get(draft.request$) !== null) {
+        return;
+      }
+      const ids = new Set(messageShareEventIds(get(allChatGroups$), eventIds));
+      const groups = get(selection.groups$).flatMap((group) => {
+        const events = group.events.filter((event) => {
+          return ids.has(event.id);
+        });
+        return events.length > 0 ? [{ ...group, events }] : [];
+      });
+      const selected = selectionForGroups(groups);
+      if (selectionTooLarge(selected)) {
+        toast.error(
+          i18n.t(($) => {
+            return $.chat.sharing.tooLarge;
+          }),
+        );
+        return;
+      }
+      set(draft.selected$, selected);
+      set(draft.createdId$, null);
+      set(draft.audience$, null);
+      await set(start$, true, signal);
+    },
+  );
+}
+
+export function createChatThreadSharingSignals(
+  threadId: string,
+  scroll: SharingScroll,
+  allChatGroups$: Computed<ChatEventGroup[]>,
+  closeFeedbackSelection$: Command<void, []>,
+): ChatThreadSharingSignals {
+  const draft = createSharingDraft();
+  const selection = createSharingSelection(allChatGroups$, draft);
+  const lifecycle = createSharingLifecycle(
+    draft,
+    scroll,
+    closeFeedbackSelection$,
+  );
+  const audience$ = computed((get) => {
+    return get(draft.audience$);
+  });
+  const createSnapshot$ = createShareCommand(
+    threadId,
+    selection.selectedGroups$,
+    audience$,
+    draft.createdId$,
+    draft.phase$,
+  );
+  const create$ = command(async ({ get, set }, signal: AbortSignal) => {
+    if (get(draft.request$) !== null || get(draft.phase$) !== "selecting") {
+      return;
+    }
+    const request = set(createSnapshot$, signal);
+    set(draft.request$, request);
+    await request.finally(() => {
+      set(draft.request$, null);
+    });
+  });
+  return {
+    ...lifecycle,
+    ...createSharingSelectionCommands(draft, selection),
+    ...createMessageSharingSignals(threadId, allChatGroups$),
+    audience$,
+    changeAudience$: command(({ get, set }, audience: SharedThreadAudience) => {
+      if (get(draft.request$) === null) {
+        set(draft.audience$, audience);
+      }
+    }),
+    creation$: computed((get) => {
+      return get(draft.request$);
+    }),
+    phase$: computed((get) => {
+      return get(draft.phase$);
     }),
     createdSharedThreadId$: computed((get) => {
-      return get(internalCreatedSharedThreadId$);
+      return get(draft.createdId$);
     }),
-    start$,
-    close$,
-    toggle$,
+    visibility$: createShareVisibility$(draft.createdId$),
+    selectedEventIds$: selection.selectedEventIds$,
+    selectedCount$: selection.selectedCount$,
+    allSelected$: selection.allSelected$,
+    totalCount$: selection.totalCount$,
+    previewGroups$: selection.previewGroups$,
+    previewOpen$: computed((get) => {
+      return get(draft.previewOpen$);
+    }),
+    setPreviewOpen$: command(({ get, set }, open: boolean) => {
+      if (
+        !open ||
+        (get(draft.request$) === null && get(selection.selectedCount$) > 0)
+      ) {
+        set(draft.previewOpen$, open);
+      }
+    }),
+    startMessage$: createMessageSelectionCommand(
+      allChatGroups$,
+      draft,
+      selection,
+      lifecycle.start$,
+    ),
     create$,
-    shareMessage$,
-    copiedMessageEventId$,
   };
 }

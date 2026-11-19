@@ -119,7 +119,7 @@ export function SharedThreadAudiencePicker({
   disabled,
   onChange,
 }: {
-  readonly audience: SharedThreadAudience;
+  readonly audience: SharedThreadAudience | null;
   readonly disabled: boolean;
   readonly onChange: (audience: SharedThreadAudience) => void;
 }) {
@@ -155,7 +155,7 @@ export function SharedThreadAudiencePicker({
         label={t(($) => {
           return $.artifacts.sharing.accessLabel;
         })}
-        selected={audience}
+        selected={audience ?? undefined}
         organizationName={organization?.name ?? null}
         unavailable={disabled}
         onChange={onChange}
@@ -167,9 +167,11 @@ export function SharedThreadAudiencePicker({
 export function SharedThreadShareMenu({
   session,
   showLabel = false,
+  manageAccess = false,
 }: {
   readonly session: SharedThreadVisibilitySignals;
   readonly showLabel?: boolean;
+  readonly manageAccess?: boolean;
 }) {
   const { t } = useTranslation();
   const status = useLoadable(session.status$);
@@ -186,10 +188,12 @@ export function SharedThreadShareMenu({
       <PopoverTrigger
         render={
           <Button
-            variant={showLabel ? "default" : "quiet"}
+            variant={manageAccess ? "neutral" : showLabel ? "default" : "quiet"}
             size={showLabel ? "default" : "icon-sm"}
             aria-label={t(($) => {
-              return $.sharedThread.share;
+              return manageAccess
+                ? $.chat.sharing.whoCanOpen
+                : $.sharedThread.share;
             })}
           />
         }
@@ -197,7 +201,9 @@ export function SharedThreadShareMenu({
         <Share2 size={showLabel ? 16 : 18} />
         {showLabel
           ? t(($) => {
-              return $.sharedThread.share;
+              return manageAccess
+                ? $.chat.sharing.whoCanOpen
+                : $.sharedThread.share;
             })
           : null}
       </PopoverTrigger>

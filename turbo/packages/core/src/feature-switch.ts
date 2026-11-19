@@ -205,6 +205,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Show who is in control with Take over and Hand back, use a floating loading status instead of the permanent footer, and refine the start button.",
     enabled: false,
   },
+  [FeatureSwitchKey.ThreadSharingSelection]: {
+    maintainer: "ming@okou.ai",
+    displayName: "Thread sharing selection",
+    description:
+      "Select all messages, preview a share, and choose access before creating and copying a conversation link.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.ShareAudienceDescriptions]: {
     maintainer: "ming@okou.ai",
     displayName: "Share audience descriptions",

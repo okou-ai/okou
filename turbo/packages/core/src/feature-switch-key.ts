@@ -46,6 +46,7 @@ export enum FeatureSwitchKey {
   SlashActions = "slashActions",
   ChatReplyNameLine = "chatReplyNameLine",
   CloudBrowserPanel = "cloudBrowserPanel",
+  ThreadSharingSelection = "threadSharingSelection",
   ShareAudienceDescriptions = "shareAudienceDescriptions",
   HostedSiteShareRows = "hostedSiteShareRows",
   FreePlanArtifactPaywall = "freePlanArtifactPaywall",

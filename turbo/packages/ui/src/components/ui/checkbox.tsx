@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { Checkbox as CheckboxPrimitive } from "@base-ui/react/checkbox";
-import { Check } from "lucide-react";
+import { Check, Minus } from "lucide-react";
 
 import { cn } from "../../lib/utils";
 
@@ -23,9 +23,18 @@ const Checkbox = React.forwardRef<HTMLElement, CheckboxPrimitive.Root.Props>(
         <CheckboxPrimitive.Indicator
           data-slot="checkbox-indicator"
           className="flex h-full w-full items-center justify-center text-[hsl(var(--on-filled))]"
-        >
-          <Check className="h-3.5 w-3.5" />
-        </CheckboxPrimitive.Indicator>
+          render={(indicatorProps, state) => {
+            return (
+              <span {...indicatorProps}>
+                {state.indeterminate ? (
+                  <Minus className="h-3.5 w-3.5" />
+                ) : (
+                  <Check className="h-3.5 w-3.5" />
+                )}
+              </span>
+            );
+          }}
+        />
       </CheckboxPrimitive.Root>
     );
   },

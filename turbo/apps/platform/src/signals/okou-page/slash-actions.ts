@@ -1,3 +1,5 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitches$ } from "../external/feature-switch.ts";
 import { command, computed, state } from "ccstate";
 import type { UserTemplateKind } from "@okouai/api-contracts/contracts/user-templates";
 import {
@@ -12,13 +14,17 @@ import { customTemplateCatalog$ } from "./custom-template-library.ts";
  * not hold, so this finds it among the open panes.
  */
 export const startComposerThreadSharing$ = command(
-  ({ get, set }, threadId: string, signal: AbortSignal) => {
+  async ({ get, set }, threadId: string, signal: AbortSignal) => {
+    const enhanced = (await get(featureSwitches$))[
+      FeatureSwitchKey.ThreadSharingSelection
+    ];
+    signal.throwIfAborted();
     const thread = [get(currentLeftThread$), get(currentRightThread$)].find(
       (candidate) => {
         return candidate?.threadId === threadId;
       },
     );
-    return thread ? set(thread.sharing.start$, signal) : undefined;
+    return thread ? set(thread.sharing.start$, enhanced, signal) : undefined;
   },
 );
 

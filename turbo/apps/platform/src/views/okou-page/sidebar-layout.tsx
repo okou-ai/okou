@@ -1,3 +1,5 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitches$ } from "../../signals/external/feature-switch.ts";
 import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
 import { ProjectDialogs } from "../projects/project-dialogs.tsx";
 import { PersonalSubscriptionDialogs } from "./subscription-linking.tsx";
@@ -14,6 +16,7 @@ import {
   useSet,
   useLastLoadable,
   useLastResolved,
+  useLoadable,
 } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { Share2, UserPlus } from "lucide-react";
@@ -198,6 +201,10 @@ function MobileShareButtonInner({
   const { t } = useTranslation();
   const phase = useGet(thread.sharing.phase$);
   const start = useSet(thread.sharing.start$);
+  const enhanced =
+    useLastResolved(featureSwitches$)?.[
+      FeatureSwitchKey.ThreadSharingSelection
+    ] === true;
   const pageSignal = useGet(pageSignal$);
   if (phase !== "idle") {
     return null;
@@ -214,7 +221,7 @@ function MobileShareButtonInner({
         kind: "action",
         onClick: () => {
           detach(
-            start(pageSignal),
+            start(enhanced, pageSignal),
             Reason.DomCallback,
             "start shared thread selection",
           );
@@ -230,9 +237,14 @@ function MobileShareButtonLeaf() {
 }
 
 function MobileSharingOverlayInner({ thread }: { thread: ChatPanelSignals }) {
+  const enhanced =
+    useLastResolved(featureSwitches$)?.[
+      FeatureSwitchKey.ThreadSharingSelection
+    ] === true;
   const { t } = useTranslation();
   const phase = useGet(thread.sharing.phase$);
   const selectedCount = useGet(thread.sharing.selectedCount$);
+  const creating = useLoadable(thread.sharing.creation$).state === "loading";
   const close = useSet(thread.sharing.close$);
   const pageSignal = useGet(pageSignal$);
   if (phase === "idle") {
@@ -241,16 +253,21 @@ function MobileSharingOverlayInner({ thread }: { thread: ChatPanelSignals }) {
   return (
     <div className="absolute inset-0 z-20 flex items-center justify-between bg-background px-4">
       <span className="text-sm font-medium text-foreground">
-        {t(
-          ($) => {
-            return $.chat.sharing.selectedCount;
-          },
-          { count: selectedCount },
-        )}
+        {enhanced
+          ? t(($) => {
+              return $.chat.sharing.start;
+            })
+          : t(
+              ($) => {
+                return $.chat.sharing.selectedCount;
+              },
+              { count: selectedCount },
+            )}
       </span>
       <Button
-        variant="ghost"
+        variant={enhanced ? "quiet" : "ghost"}
         size="sm"
+        disabled={creating}
         onClick={() => {
           detach(
             close(pageSignal),
@@ -260,7 +277,7 @@ function MobileSharingOverlayInner({ thread }: { thread: ChatPanelSignals }) {
         }}
       >
         {t(($) => {
-          return $.chat.sharing.cancel;
+          return enhanced ? $.chat.sharing.close : $.chat.sharing.cancel;
         })}
       </Button>
     </div>

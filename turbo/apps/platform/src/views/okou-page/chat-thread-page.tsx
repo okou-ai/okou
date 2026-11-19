@@ -1,4 +1,9 @@
 import {
+  ChatThreadSharingHeader,
+  ChatThreadSharingFooter,
+  SharedThreadCreatedLink,
+} from "./chat-thread-sharing.tsx";
+import {
   ChatComposerFooter,
   ChatPageHeader,
   ChatPageLayout,
@@ -8,7 +13,6 @@ import { ProjectReference } from "../projects/project-reference.tsx";
 import {
   MessageShareMenu,
   SharedThreadAudiencePicker,
-  SharedThreadShareMenu,
 } from "./shared-thread-share-menu.tsx";
 import type { SharedThreadAudience } from "@okouai/api-contracts/contracts/shared-thread-visibility";
 import { emptyChatRunUsage$ } from "../../signals/chat-page/chat-run-usage.ts";
@@ -102,6 +106,7 @@ import {
   ScrollBar,
   Dialog,
   DialogContent,
+  DialogBody,
   DialogClose,
   DialogDescription,
   DialogFooter,
@@ -209,7 +214,6 @@ import {
 import {
   asInputChatEvent,
   chatEventDisplayError,
-  isInputChatEvent,
   isRenderableAssistantEvent,
   isWorkflowUserMessage,
   rendersUserBubble,
@@ -229,7 +233,10 @@ import {
   type ChatThreadRowSignals,
 } from "../../signals/chat-page/chat-thread-rows.ts";
 import { chatEventRenderKey } from "../../signals/chat-page/chat-event-group-keys.ts";
-import { chatGroupForSharing } from "../../signals/chat-page/chat-thread-sharing.ts";
+import {
+  chatGroupForSharing,
+  shareableEventFromChatEvent,
+} from "../../signals/chat-page/chat-thread-sharing.ts";
 import { ConnectModal } from "./components/settings/add-connection-dialog.tsx";
 import { useConnectorAccountLabel } from "./components/settings/use-connector-account-label.ts";
 import { CustomConnectorConnectDialog } from "./components/settings/custom-connector-connect-dialog.tsx";
@@ -409,12 +416,6 @@ type UserMessageAnnotationRenderPart = Extract<
   { readonly type: "source" | "automation" }
 >;
 
-function isUserMessageNonContentPart(
-  part: UserMessagePart,
-): part is UserMessageNonContentPart {
-  return part.type === "source" || part.type === "automation";
-}
-
 type UserMessageHiddenPart = Extract<
   UserMessageRenderPart["part"],
   {
@@ -457,12 +458,6 @@ function runModelDisplayName(
     : model;
 }
 
-function userMessageNonContentPart(
-  document: UserMessageDocument | undefined,
-): UserMessageNonContentPart | undefined {
-  return document?.parts.find(isUserMessageNonContentPart);
-}
-
 function userMessageAnnotationRenderPart(
   document: UserMessageRenderDocument | undefined,
 ): UserMessageAnnotationRenderPart | undefined {
@@ -470,14 +465,6 @@ function userMessageAnnotationRenderPart(
     (renderPart): renderPart is UserMessageAnnotationRenderPart => {
       return renderPart.type === "source" || renderPart.type === "automation";
     },
-  );
-}
-
-function eventNonContentPart(
-  event: EnrichedChatEvent,
-): UserMessageNonContentPart | undefined {
-  return userMessageNonContentPart(
-    isInputChatEvent(event) ? event.userMessage : undefined,
   );
 }
 
@@ -566,6 +553,18 @@ export function ChatThreadHeaderTitle({
 
 function ChatThreadHeader({ thread }: { thread: ChatPanelSignals }) {
   const isDesktop = useMediaQuery(SIDEBAR_DESKTOP_MEDIA_QUERY);
+  const phase = useGet(thread.sharing.phase$);
+  const enhanced =
+    useLastResolved(featureSwitches$)?.[
+      FeatureSwitchKey.ThreadSharingSelection
+    ] === true;
+  if (enhanced && phase !== "idle") {
+    return (
+      <ChatThreadSharingHeader thread={thread} showTitle={isDesktop}>
+        <ChatThreadSharingPreview thread={thread} />
+      </ChatThreadSharingHeader>
+    );
+  }
   // Only mount one emoji picker for the thread's shared menu state.
   return isDesktop ? <DesktopChatThreadHeader thread={thread} /> : null;
 }
@@ -586,6 +585,10 @@ function DesktopChatThreadHeader({ thread }: { thread: ChatPanelSignals }) {
   const sharingPhase = useGet(thread.sharing.phase$);
   const selectedCount = useGet(thread.sharing.selectedCount$);
   const startSharing = useSet(thread.sharing.start$);
+  const enhanced =
+    useLastResolved(featureSwitches$)?.[
+      FeatureSwitchKey.ThreadSharingSelection
+    ] === true;
   const closeSharing = useSet(thread.sharing.close$);
   if (sharingPhase !== "idle") {
     return (
@@ -637,7 +640,7 @@ function DesktopChatThreadHeader({ thread }: { thread: ChatPanelSignals }) {
               kind: "action",
               onClick: () => {
                 detach(
-                  startSharing(pageSignal),
+                  startSharing(enhanced, pageSignal),
                   Reason.DomCallback,
                   "start shared thread selection",
                 );
@@ -3604,48 +3607,6 @@ function ChatThreadBody({ thread }: { thread: ChatPanelSignals }) {
   );
 }
 
-function SharedThreadCreatedLink({
-  thread,
-  shareUrl,
-}: {
-  readonly thread: ChatPanelSignals;
-  readonly shareUrl: string;
-}) {
-  const { t } = useTranslation();
-  const visibility = useGet(thread.sharing.visibility$);
-  const close = useSet(thread.sharing.close$);
-  const pageSignal = useGet(pageSignal$);
-  return (
-    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-      <Input
-        readOnly
-        value={shareUrl}
-        aria-label={t(($) => {
-          return $.chat.sharing.shareLink;
-        })}
-        className="min-w-0 flex-1"
-      />
-      <div className="flex shrink-0 items-center gap-2">
-        {visibility && <SharedThreadShareMenu session={visibility} showLabel />}
-        <Button
-          variant="outline"
-          onClick={() => {
-            detach(
-              close(pageSignal),
-              Reason.DomCallback,
-              "close shared thread selection",
-            );
-          }}
-        >
-          {t(($) => {
-            return $.chat.sharing.close;
-          })}
-        </Button>
-      </div>
-    </div>
-  );
-}
-
 function ChatThreadBottomBar({
   thread,
   discoveryInContent,
@@ -3655,6 +3616,10 @@ function ChatThreadBottomBar({
 }) {
   const { t } = useTranslation();
   const phase = useGet(thread.sharing.phase$);
+  const enhanced =
+    useLastResolved(featureSwitches$)?.[
+      FeatureSwitchKey.ThreadSharingSelection
+    ] === true;
   const selectedCount = useGet(thread.sharing.selectedCount$);
   const sharedThreadId = useGet(thread.sharing.createdSharedThreadId$);
   const audience = useGet(thread.sharing.audience$);
@@ -3672,6 +3637,9 @@ function ChatThreadBottomBar({
     );
   }
 
+  if (enhanced) {
+    return withChatScrollLayout(<ChatThreadSharingFooter thread={thread} />);
+  }
   const creating = createLoadable.state === "loading";
   const shareUrl = sharedThreadId
     ? `${window.location.origin}/share/threads/${sharedThreadId}`
@@ -6004,36 +5972,45 @@ function PagedGroupRow({
   );
 }
 
-function shareableEventFromChatEvent(
-  event: EnrichedChatEvent,
-): { readonly id: string; readonly text: string } | null {
-  if (event.seqId === undefined) {
-    return null;
-  }
-  if (event.eventType === "output.message") {
-    return event.content && event.content.length > 0
-      ? { id: event.id, text: event.content }
-      : null;
-  }
-  if (
-    event.eventType !== "input.prompt" &&
-    event.eventType !== "input.automation"
-  ) {
-    return null;
-  }
-  const displayText = messageDocumentToDisplayText(event.userMessage)?.trim();
-  if (displayText) {
-    return { id: event.id, text: displayText };
-  }
-  const automation = eventNonContentPart(event);
-  if (automation?.type !== "automation") {
-    return null;
-  }
-  const automationText =
-    automation.automationBrief?.trim() || automation.workflowName.trim();
-  return automationText.length > 0
-    ? { id: event.id, text: automationText }
-    : null;
+function ChatThreadSharingPreview({ thread }: { thread: ChatPanelSignals }) {
+  const { t } = useTranslation();
+  const groups = useGet(thread.sharing.previewGroups$);
+  return (
+    <DialogContent
+      maxWidth="4xl"
+      height={800}
+      scrollable={false}
+      contentClassName="flex flex-col gap-4 p-6"
+    >
+      <DialogHeader>
+        <DialogTitle>
+          {t(($) => {
+            return $.chat.sharing.previewTitle;
+          })}
+        </DialogTitle>
+        <DialogDescription>
+          {t(($) => {
+            return $.chat.sharing.previewDescription;
+          })}
+        </DialogDescription>
+      </DialogHeader>
+      <DialogBody className="@container min-h-0 flex-1">
+        <div className={CHAT_THREAD_MESSAGE_LIST_CLASS}>
+          {groups.map((group) => {
+            return (
+              <PagedGroupRow
+                key={group.beginEventId}
+                group={group}
+                thread={thread}
+                modelChanges={new Map()}
+                dateDividers={new Map()}
+              />
+            );
+          })}
+        </div>
+      </DialogBody>
+    </DialogContent>
+  );
 }
 
 function SelectablePagedGroupRow({
@@ -6049,6 +6026,7 @@ function SelectablePagedGroupRow({
   const { t } = useTranslation();
   const phase = useGet(thread.sharing.phase$);
   const selectedEventIds = useGet(thread.sharing.selectedEventIds$);
+  const creating = useLoadable(thread.sharing.creation$).state === "loading";
   const toggle = useSet(thread.sharing.toggle$);
   const nameLine =
     useLastResolved(featureSwitches$)?.[FeatureSwitchKey.ChatReplyNameLine] ===
@@ -6081,7 +6059,7 @@ function SelectablePagedGroupRow({
   const indeterminate = selectedCount > 0 && !allSelected;
 
   const toggleGroup = () => {
-    if (phase !== "selecting") {
+    if (phase !== "selecting" || creating) {
       return;
     }
     const result = toggle(group.beginEventId, events);
@@ -6112,7 +6090,7 @@ function SelectablePagedGroupRow({
   const selection = {
     allSelected,
     indeterminate,
-    selecting: phase === "selecting",
+    selecting: phase === "selecting" && !creating,
     onToggle: toggleGroup,
   };
   // Preserve the message list's rhythm inside this group, including the gaps
@@ -8399,6 +8377,7 @@ function PagedGroupPrimaryActions({
   thread,
   onCopy,
   onShare,
+  onSelectShare,
   shareCopied,
   pdfAction,
   relatedArtifacts,
@@ -8409,6 +8388,7 @@ function PagedGroupPrimaryActions({
   thread: ChatPanelSignals;
   onCopy: () => Promise<boolean>;
   onShare: ((audience: SharedThreadAudience) => void) | undefined;
+  onSelectShare?: () => void;
   shareCopied: boolean;
   pdfAction?: ReactNode;
   relatedArtifacts?: RunWorkSectionControl["remainingArtifactCards"];
@@ -8465,7 +8445,24 @@ function PagedGroupPrimaryActions({
           }}
         />
       )}
-      {onShare && <MessageShareMenu onShare={onShare} copied={shareCopied} />}
+      {onSelectShare ? (
+        <Button
+          variant="quiet"
+          size="icon-xs"
+          className="text-muted-foreground/60"
+          aria-label={t(($) => {
+            return $.chat.actions.shareMessage;
+          })}
+          showTooltip
+          tooltipSide="bottom"
+          onClick={onSelectShare}
+          data-testid="chat-message-share"
+        >
+          <Share2 />
+        </Button>
+      ) : onShare ? (
+        <MessageShareMenu onShare={onShare} copied={shareCopied} />
+      ) : null}
       {pdfAction}
       {relatedArtifacts ? (
         <RelatedArtifactsDialog cards={relatedArtifacts} />
@@ -8496,6 +8493,7 @@ function PagedGroupActions({
   const pageSignal = useGet(pageSignal$);
   const copyEvent = useSet(thread.copyEvent$);
   const shareMessage = useSet(thread.sharing.shareMessage$);
+  const startMessageShare = useSet(thread.sharing.startMessage$);
   const copiedMessageEventId = useGet(thread.sharing.copiedMessageEventId$);
   const sharingPhase = useGet(thread.sharing.phase$);
   const switches = useLastResolved(featureSwitches$);
@@ -8548,6 +8546,18 @@ function PagedGroupActions({
         thread={thread}
         onCopy={handleCopy}
         onShare={handleShare}
+        onSelectShare={
+          switches?.[FeatureSwitchKey.ThreadSharingSelection] &&
+          shareEventIds.length > 0
+            ? () => {
+                detach(
+                  startMessageShare(shareEventIds, pageSignal),
+                  Reason.DomCallback,
+                  "select message to share",
+                );
+              }
+            : undefined
+        }
         shareCopied={copiedMessageEventId === shareEventIds[0]}
         pdfAction={
           hasContent &&
