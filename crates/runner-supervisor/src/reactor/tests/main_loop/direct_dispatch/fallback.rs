@@ -1,6 +1,7 @@
 use super::*;
 use crate::home_image_cache::{
-    HomeCacheTerminalStatus, HomeImageCache, HomeImageLeaseIdentity, HomeImageLeaseRequest,
+    HomeCacheTerminalStatus, HomeImageCache, HomeImageLease, HomeImageLeaseIdentity,
+    HomeImageLeaseRequest,
 };
 use crate::idle_pool::{ParkResult, ParkedIdleCandidate};
 use crate::reactor::tests::support::{
@@ -13,6 +14,151 @@ use sandbox_mock::{MockLifecycleGate, MockSandbox, MockSandboxFactory, MockSandb
 
 const WAIT: Duration = Duration::from_secs(5);
 const IMAGE_BYTES: u64 = 1024 * 1024;
+
+#[tokio::test]
+async fn preferred_dispatch_retries_after_cross_process_home_publication() {
+    let execution = MockLifecycleGate::new();
+    let overrides = Arc::new(MockSandboxOverrides::new());
+    overrides.set_wait_process_lifecycle_gate(execution.clone());
+    let mut profiles = test_profiles();
+    profiles.get_mut("vm0/default").unwrap().home_disk_mb = 1;
+    let (mut config, env) =
+        mock_run_config_with_overrides(profiles, 8, 16384, 2, overrides.clone());
+    config.provider.provider = Arc::new(SuppliedProvider(config.provider.provider.clone(), None));
+    let paths = RunnerPaths::new(config.paths.base_dir.clone());
+    let cache = HomeImageCache::shared(paths.clone(), &config.paths.home, &config.runner.group);
+    let publisher = HomeImageCache::shared(paths.clone(), &config.paths.home, &config.runner.group);
+    Arc::get_mut(&mut config.exec_config).unwrap().home_cache = Some(cache);
+    let key = "thread:preferred-cross-process";
+    let predecessor = RunId::new_v4();
+    let publication = stage_home(&publisher, &paths, key, predecessor).await;
+
+    let peer = super::super::startup::configure_public_ingress(&mut config).await;
+    let identity = config.runner.identity;
+    let socket = config
+        .paths
+        .home
+        .ingress_dir()
+        .join(format!("{}.sock", identity.runner_id()));
+    let runner = tokio::spawn(run(config));
+    peer.wait_connected().await;
+    peer.allow_health();
+    wait_status_mode(&env._temp_dir.path().join("status.json"), "running", WAIT).await;
+
+    let run_id = RunId::new_v4();
+    let mut preferred = envelope(identity, run_id);
+    preferred["executionContext"]["reuseKey"] = json!(key);
+    preferred["preferredHomeCheckout"] = json!({
+        "predecessorRunId": predecessor,
+        "waitUntil": crate::ingress::dispatch::now_ms() + 1_000,
+    });
+    let body = preferred.to_string();
+    let busy = client(&socket, identity, run_id, &body).await;
+    assert_eq!(busy.0, 429);
+    assert_eq!(busy.2["disposition"], "busy");
+    assert!(env.cancel_tokens.handle(run_id).await.is_none());
+
+    // Neither an ordinary offer nor an expired preference defers on this lock.
+    for (start_count, other_key, expired) in
+        [(1, "thread:ordinary", false), (2, "thread:expired", true)]
+    {
+        // Neither case should see a previously parked VM for this key.
+        let other_publication = stage_home(&publisher, &paths, other_key, predecessor).await;
+        let other_id = RunId::new_v4();
+        let mut other = envelope(identity, other_id);
+        other["executionContext"]["reuseKey"] = json!(other_key);
+        if expired {
+            other["preferredHomeCheckout"] = json!({
+                "predecessorRunId": predecessor,
+                "waitUntil": 0,
+            });
+        }
+        assert_eq!(
+            client(&socket, identity, other_id, &other.to_string())
+                .await
+                .2["disposition"],
+            "accepted"
+        );
+        execution.wait_entered(start_count, WAIT).await.unwrap();
+        execution.release_one();
+        assert_eq!(
+            env.handle
+                .wait_completion(other_id, WAIT)
+                .await
+                .unwrap()
+                .exit_code,
+            0
+        );
+        wait_cancel_token_removed(&env.cancel_tokens, other_id, WAIT).await;
+        drop(other_publication);
+    }
+
+    let before = env.handle.heartbeat_count();
+    publish_staged_home(publication, predecessor).await;
+    assert!(
+        wait_heartbeat_matching_after(&env.handle, before, WAIT, |heartbeat| {
+            heartbeat.held_home_states.iter().any(|state| {
+                state.reuse_key == key
+                    && state
+                        .home_caches
+                        .iter()
+                        .any(|home| home.source_run_id == predecessor)
+            })
+        })
+        .await,
+        "published source must be observed before retrying from the ready path"
+    );
+    assert_eq!(
+        client(&socket, identity, run_id, &body).await.2["disposition"],
+        "accepted"
+    );
+    execution.wait_entered(3, WAIT).await.unwrap();
+    assert_eq!(
+        client(&socket, identity, run_id, &body).await.2["disposition"],
+        "accepted"
+    );
+    preferred["preferredHomeCheckout"]["predecessorRunId"] = json!(RunId::new_v4());
+    assert_eq!(
+        client(&socket, identity, run_id, &preferred.to_string())
+            .await
+            .2["disposition"],
+        "conflict"
+    );
+    let draining_key = "thread:preferred-during-drain";
+    let draining_publication = stage_home(&publisher, &paths, draining_key, predecessor).await;
+    env.drain();
+    wait_status_mode(&env._temp_dir.path().join("status.json"), "draining", WAIT).await;
+    let draining_run = RunId::new_v4();
+    let mut draining = envelope(identity, draining_run);
+    draining["executionContext"]["reuseKey"] = json!(draining_key);
+    draining["preferredHomeCheckout"] = json!({
+        "predecessorRunId": predecessor,
+        "waitUntil": crate::ingress::dispatch::now_ms() + 1_000,
+    });
+    assert_eq!(
+        client(&socket, identity, draining_run, &draining.to_string())
+            .await
+            .2["disposition"],
+        "rejected"
+    );
+    drop(draining_publication);
+    execution.release_one();
+    let completed = env.handle.wait_completion(run_id, WAIT).await.unwrap();
+    assert_eq!(completed.exit_code, 0);
+    let sandbox = overrides
+        .create_configs()
+        .into_iter()
+        .find(|config| Some(config.id) == completed.sandbox_id)
+        .expect("preferred run started in a fresh sandbox");
+    assert!(
+        sandbox
+            .home_drive
+            .and_then(|drive| drive.seed_image)
+            .is_some()
+    );
+    peer.shutdown().await;
+    shutdown(&env, runner).await;
+}
 
 enum Available {
     Retained,
@@ -325,6 +471,15 @@ async fn assert_fallback(available: Available) {
 
 async fn publish_replacement_home(cache: &HomeImageCache, paths: &RunnerPaths, key: &str) {
     let source = RunId::new_v4();
+    publish_staged_home(stage_home(cache, paths, key, source).await, source).await;
+}
+
+async fn stage_home(
+    cache: &HomeImageCache,
+    paths: &RunnerPaths,
+    key: &str,
+    source: RunId,
+) -> HomeImageLease {
     let sandbox_id = SandboxId::new_v4();
     // Use the executor's real lease/publication path for the competing home.
     let lease = cache
@@ -348,6 +503,10 @@ async fn publish_replacement_home(cache: &HomeImageCache, paths: &RunnerPaths, k
     tokio::fs::write(&image, vec![0x5a; IMAGE_BYTES as usize])
         .await
         .unwrap();
+    lease
+}
+
+async fn publish_staged_home(lease: HomeImageLease, source: RunId) {
     assert!(
         lease
             .promote(

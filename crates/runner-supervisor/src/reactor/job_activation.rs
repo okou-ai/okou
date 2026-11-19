@@ -38,7 +38,6 @@ use crate::status::StatusTracker;
 use crate::telemetry::JobTelemetry;
 use runner_provider::{ExecutionJob, JobCandidate};
 use runner_provider::{RunCancellationRegistration, RunCancellationRegistry};
-#[cfg(test)]
 use runner_types::ids::RunId;
 use runner_types::types::CompleteRequest;
 
@@ -63,6 +62,7 @@ pub(super) struct PreparedLocalJob {
 
 /// Ordinary job custody, excluding the specialized finalizing successor.
 pub(super) struct SandboxAcceptedJob {
+    pub(super) preferred_home_source: Option<RunId>,
     pub(super) job: ExecutionJob,
     pub(super) resource: SandboxAcceptedResource,
     pub(super) cancellation: RunCancellationRegistration,
@@ -226,6 +226,7 @@ pub(super) async fn prepare_accepted_job(
     let factory = &factory;
     let device_rate_limits = ctx.spawn_ctx.device_rate_limits.clone();
     let SandboxAcceptedJob {
+        preferred_home_source,
         job,
         resource,
         cancellation,
@@ -404,7 +405,7 @@ pub(super) async fn prepare_accepted_job(
 
     let mut activation = JobActivationGuard::new(
         JobActivationSetup {
-            required_home_source_run_id: None,
+            required_home_source_run_id: preferred_home_source,
             job,
             rootfs_hash: job_rootfs_hash,
             cancellation,
@@ -518,11 +519,14 @@ fn finish_spawn_job_request(
     } = resource;
     drop(idle_snapshot);
 
-    let home_image_prepare_policy = if ctx.exec_config.home_cache.is_some()
+    let home_image_prepare_policy = if required_home_source_run_id.is_some() {
+        crate::home_image_cache::HomeImagePreparePolicy::TryCacheWithoutLockWait
+    } else if ctx.exec_config.home_cache.is_some()
         && job.context().reuse_key().is_some_and(|key| {
             ctx.home_cache_snapshot
                 .has_compatible_home_hint(key, &profile_name)
-        }) {
+        })
+    {
         crate::home_image_cache::HomeImagePreparePolicy::TryCacheWithLockWait
     } else if job.is_supplied() {
         // Assigned direct work can check a ready home without waiting for an

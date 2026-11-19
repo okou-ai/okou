@@ -358,6 +358,12 @@ after a later recovery. No pressure-state lock survives IO or provider work.
   Assigned complete input may still check a ready on-disk entry when the hint
   is absent, without waiting for an unknown owner. Advisory absence is not proof
   that a publication is missing.
+  A valid preferred dispatch can probe an existing Home entry lock before Run
+  custody. The probe has a dedicated slot and releases its ordinary admission
+  permit while awaiting the filesystem. Observed contention can return HTTP
+  429 `busy` to the sender's existing retry window. Once a dispatch record
+  exists it owns replay. Actual checkout still matches the source generation
+  under the entry lock.
   Watcher classification does not own an idle-pool or
   status waiter needed by an inline reactor branch. The observation owner admits
   one independent inventory refresh with bounded coalesced dirty keys. Ordinary
