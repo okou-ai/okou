@@ -228,26 +228,6 @@ export async function withCleanup<T>(
   }
 }
 
-/** Add an owner-bound deadline, preserving the owner's reason on cancellation. */
-export function abortAfter(
-  ms: number,
-  parentSignal: AbortSignal,
-  timeoutReason: unknown = new DOMException(
-    "Operation timed out",
-    "AbortError",
-  ),
-): AbortSignal {
-  const controller = new AbortController();
-  timeout(
-    () => {
-      controller.abort(timeoutReason);
-    },
-    ms,
-    { signal: parentSignal },
-  );
-  return AbortSignal.any([parentSignal, controller.signal]);
-}
-
 const MAX_LOOP_COUNT_IN_TEST = 100;
 // A round that fails before reaching its own wait must not retry in a spin.
 const FAILED_LOOP_ROUND_MIN_DELAY_MS = 1000;
