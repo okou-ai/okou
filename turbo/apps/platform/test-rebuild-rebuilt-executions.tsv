@@ -547,3 +547,26 @@ settings-refresh-state-005	turbo/apps/platform/src/views/okou-page/__tests__/set
 settings-refresh-state-007	turbo/apps/platform/src/views/okou-page/__tests__/settings-refresh-state.test.tsx	saving time zone keeps enabled Morning brief unchanged	235	passed
 settings-refresh-state-008	turbo/apps/platform/src/views/okou-page/__tests__/settings-refresh-state.test.tsx	Updates Morning brief from the save response while leaving other preferences usable	268	passed
 settings-refresh-state-011	turbo/apps/platform/src/views/okou-page/__tests__/settings-refresh-state.test.tsx	a Morning brief refresh failure after returning to Preference reports the error and disables the switch	330	passed
+agent-suggestions-001	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx	A cached card still sends its action after server cleanup	431	passed
+agent-suggestions-008	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx	Choosing an action sends it to a new thread and keeps the homepage draft	456	passed
+agent-suggestions-009	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx	An existing-thread suggestion merges its content and attachments with the remote draft	701	passed
+agent-suggestions-011	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx	A choice is still sent when another session consumed the card	515	passed
+agent-suggestions-012	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx	A suggestion uses the ordinary composer to join a running target chat	760	passed
+agent-suggestions-013	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx	The loaded option keeps its draft and destination when the server responds with a later version	542	passed
+agent-suggestions-014	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx	A sent suggestion advances the stack and remains reachable in the chat list	585	passed
+agent-suggestions-015	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx	A choice that sends nothing returns its card to its place	616	passed
+agent-suggestions-018	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx	Suggestion options start in the default Agent after visiting a secondary Agent	646	passed
+agent-suggestions-019	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx	Custom direction opens a full composer for a new chat without touching the home draft	832	passed
+agent-suggestions-020	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx	Each card shows its own background in the direction editor	875	passed
+agent-suggestions-021	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx	A custom follow-up retains its editor on failure and reuses its identities until acceptance	912	passed
+agent-suggestions-022	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx	The custom direction editor sends the background files without the home draft	965	passed
+agent-suggestions-028	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx	Choosing an action confirms the send while its consumption is still saving	668	passed
+agent-suggestions-037	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx	For you expands the composer inside the active card and advances after sending	1007	passed
+agent-suggestions-004	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions-deck.test.tsx	For you preloads details when its sidebar shows an unread dot	168	passed
+agent-suggestions-007	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions-deck.test.tsx	For you opens the new owner's cards after an active workspace change	203	passed
+agent-suggestions-023	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions-deck.test.tsx	Not planned advances to the next card and Undo restores the selected card	252	passed
+agent-suggestions-025	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions-deck.test.tsx	Feedback on a card that left the pool refreshes the suggestions with a notice	274	passed
+agent-suggestions-026	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions-deck.test.tsx	Retrying feedback for a card that has since left the pool refreshes the suggestions	330	passed
+agent-suggestions-027	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions-deck.test.tsx	Slow feedback leaves other cards usable and Undo restores the original card in order	378	passed
+agent-suggestions-039	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions-deck.test.tsx	An empty For you page stays accessible and reports zero suggestions	428	passed
+agent-suggestions-041	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions-deck.test.tsx	For you handles a suggestion and a platform event in the same deck	440	passed

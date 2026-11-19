@@ -1,33 +1,21 @@
 # For you updates in a678cec8
 
 Compared `edb4d615` with [a678cec8 (#49200)](https://github.com/okou-ai/okou/pull/49200).
-The product changes are integrated. Rebuild the cleared
-`agent-suggestions.test.tsx` against this revision. These changes await
-selection and runtime verification and do not alter the frozen baseline.
+The product changes are integrated and `agent-suggestions` is rebuilt as
+`agent-suggestions.test.tsx` (send and custom-direction paths) and
+`agent-suggestions-deck.test.tsx` (feed, feedback and deck paths). The
+frozen baseline is unchanged.
 
-Six registrations change their title and behavior. Reconcile the source
-at lines 1002 (full composer and isolated home draft), 1056 (card-specific
-background when browsing), 1102 (retry preserves the editor and send
-identities), 1171 (background files), 1796 (in-place send and advance), and
-2229 (browsing and control gestures). The older registration “An accepted
-custom follow-up preserves a newer direction entered after returning
-to the page” is absent. Reconcile its selected ID against the current
-editor lifecycle before retiring it.
+The [scenario ledger](test-rebuild-upstream-a678cec8-scenarios.tsv) records
+each registration change. Five selected frozen IDs (-019, -020, -021, -022
+and -037) map to the current in-card editor registrations and are counted
+once under their frozen IDs. The eaae30ac additions they superseded add no
+upstream executions. The removed eaae30ac addition 1143-01 is retired with
+its registration.
 
-## upstream-a678cec8-agent-suggestions-1032-01
-
-- **Given** A For you card opens a new-chat direction composer prefilled with the suggestion quote.
-- **When** The member writes a message, removes the quote, and sends.
-- **Then** The standalone text is sent, and the same suggestion stays available on For you.
-
-## upstream-a678cec8-agent-suggestions-1244-01
-
-- **Given** A For you suggestion references a chat that already has a saved draft.
-- **When** The member selects the related chat, writes a direction in the card, and sends.
-- **Then** One message goes to that chat with the suggestion and the direction. The saved draft is neither loaded into the card composer nor overwritten. For you advances after the send.
-
-## upstream-a678cec8-agent-suggestions-1312-01
-
-- **Given** A For you card offers a related chat.
-- **When** The member selects the chat, goes back, chooses New chat, enters a direction, and sends.
-- **Then** The message starts a different chat titled after the suggestion and retains the suggestion context.
+Of the three new registrations, the per-file high-value rule selects two:
+replying in a related chat without touching its saved draft (1244-01) and
+sending standalone text after removing the quote (1032-01). Returning from
+the related-chat choice to a new chat (1312-01) is not selected. Its new-chat
+send is covered by the current paths of -019, -022 and -037. The temporary
+scenario text was removed after verification.
