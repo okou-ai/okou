@@ -21,7 +21,6 @@ public struct ChatConnectorDiscovery: Decodable, Sendable {
 public struct ChatConnectorPermissionState: Sendable {
   public let metadata: ChatPermissionMetadata
   public let grants: [ChatPermissionRule]
-  public let connectorScoped: Bool
 }
 
 public struct ChatPermissionEdit: Encodable, Sendable {
@@ -72,49 +71,19 @@ extension ChatComposerAccess {
     return result.connectors
   }
 
-  public func permissions(slug: String, agentID: String) async throws
-    -> ChatConnectorPermissionState
-  {
-    if try await chatAccountAccessEnabled() {
-      let result = try await ChatPermissions(client: client).connectorPermissions(slug: slug)
-      guard let metadata = result.metadata else {
-        throw APIClientError.http(
-          status: 404, message: "Connector permission metadata is unavailable.")
-      }
-      return ChatConnectorPermissionState(
-        metadata: metadata, grants: result.grants, connectorScoped: true)
+  public func permissions(slug: String) async throws -> ChatConnectorPermissionState {
+    let result = try await ChatPermissions(client: client).connectorPermissions(slug: slug)
+    guard let metadata = result.metadata else {
+      throw APIClientError.http(
+        status: 404, message: "Connector permission metadata is unavailable.")
     }
-    struct Metadata: Decodable, Sendable { let permissions: ChatPermissionMetadata }
-    async let metadata: Metadata = client.request("/api/connector-catalog/\(slug)/permissions")
-    async let grants: [ChatPermissionGrant] = client.request(
-      "/api/user-permission-grants", query: [URLQueryItem(name: "agentId", value: agentID)])
-    let (detail, current) = try await (metadata, grants)
-    guard detail.permissions.connectorSlug == slug,
-      current.allSatisfy({ $0.agentId.lowercased() == agentID.lowercased() })
-    else { throw APIClientError.invalidResponse }
-    return ChatConnectorPermissionState(
-      metadata: detail.permissions,
-      grants: current.filter { $0.connectorSlug == slug }.map(\.rule), connectorScoped: false)
+    return ChatConnectorPermissionState(metadata: metadata, grants: result.grants)
   }
 
   public func savePermissions(
-    slug: String, agentID: String, edits: [ChatPermissionEdit], reset: Bool = false
+    slug: String, edits: [ChatPermissionEdit], reset: Bool = false
   ) async throws {
-    if try await chatAccountAccessEnabled() {
-      _ = try await ChatPermissions(client: client).applyConnectorPermissions(
-        slug: slug, edits: edits, reset: reset)
-      return
-    }
-    struct Body: Encodable {
-      let agentId: String
-      let connectorSlug: String
-      let mode: String
-      let grants: [ChatPermissionEdit]
-    }
-    try await client.data(
-      "/api/user-permission-grants/apply", method: "PUT",
-      body: JSONEncoder().encode(
-        Body(
-          agentId: agentID, connectorSlug: slug, mode: reset ? "replace" : "patch", grants: edits)))
+    _ = try await ChatPermissions(client: client).applyConnectorPermissions(
+      slug: slug, edits: edits, reset: reset)
   }
 }

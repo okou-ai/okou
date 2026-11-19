@@ -152,13 +152,8 @@ private struct ConnectorActionCardContent: View {
       }
     case .ready(let status):
       ChatCardHeader(title: status.label, icon: "link", titleLineLimit: 1) {
-        Text(
-          status.account?.label
-            ?? (status.chatAccountAccess
-              ? String(localized: "Connect an account")
-              : String(localized: "Connect an account for this Agent"))
-        )
-        .lineLimit(1, reservesSpace: true).textSelection(.enabled)
+        Text(status.account?.label ?? String(localized: "Connect an account"))
+          .lineLimit(1, reservesSpace: true).textSelection(.enabled)
         (store.notices[action.id].map { Text($0) } ?? Text(reason(status)))
           .lineLimit(2, reservesSpace: true)
       }
@@ -168,7 +163,7 @@ private struct ConnectorActionCardContent: View {
     switch action.kind {
     case .reconnect: false
     case .select: status.selected
-    default: status.complete
+    default: status.connected
     }
   }
   private func button(_ status: ChatConnectorStatus) -> LocalizedStringKey {
@@ -177,7 +172,6 @@ private struct ConnectorActionCardContent: View {
     case .select: return "Use this account"
     case .reconnect: return "Reconnect"
     default:
-      if status.connected { return status.chatAccountAccess ? "Connected" : "Authorize Agent" }
       return status.account == nil ? "Connect" : "Reconnect"
     }
   }
@@ -186,11 +180,7 @@ private struct ConnectorActionCardContent: View {
     case .select: return "Confirm this account for the chat and continue."
     case .reconnect: return "Reconnect this exact account to continue."
     default:
-      if status.complete {
-        return status.chatAccountAccess
-          ? "Account connected." : "Connected and authorized for this Agent."
-      }
-      if status.connected { return "Allow this Agent to use the connected account." }
+      if status.connected { return "Account connected." }
       if let reconnectReason = status.account?.reconnectReason {
         if reconnectReason == "configuration_incomplete"
           || reconnectReason == "configuration_invalid"
@@ -224,12 +214,8 @@ struct ConnectorAuthorizationSheet: View {
             }
           }
         } footer: {
-          Text(
-            flow.status.chatAccountAccess
-              ? "Connect this account to make it available in your account settings."
-              : "Authorization applies to the Agent in this chat."
-          )
-          .okouSectionNote()
+          Text("Connect this account to make it available in your account settings.")
+            .okouSectionNote()
         }
         if flow.needsConnection {
           if flow.status.builtin != nil {

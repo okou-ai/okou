@@ -1336,7 +1336,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const readonlySkills = await readonlyConnectorSkills(
           context,
           actor,
-          agentId,
           Array.from({ length: 17 }, (_, index) => {
             return `overlap ${String(index)}`;
           }),
@@ -1537,12 +1536,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             }),
           );
         });
-        const [readonlySkill] = await readonlyConnectorSkills(
-          context,
-          actor,
-          agentId,
-          ["exact candidate"],
-        );
+        const [readonlySkill] = await readonlyConnectorSkills(context, actor, [
+          "exact candidate",
+        ]);
         if (!readonlySkill) {
           throw new Error("Expected a readonly Connector skill");
         }
@@ -1638,7 +1634,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           NATIVE_RUNNER_ROUTE,
         );
         const workflowMounts = (
-          await readonlyConnectorSkills(context, actor, agentId, [
+          await readonlyConnectorSkills(context, actor, [
             "primary",
             "additional",
           ])

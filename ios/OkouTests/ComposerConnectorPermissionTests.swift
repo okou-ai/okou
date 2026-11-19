@@ -27,10 +27,10 @@ final class ComposerConnectorPermissionTests: XCTestCase {
     let empty = try await resources.store.get(resources.page).value
     XCTAssertTrue(empty.permissions.isEmpty)
     XCTAssertEqual(server.requests(path: "/api/connector-catalog/gmail/permissions").count, 1)
-    let grants = try XCTUnwrap(server.requests(path: "/api/user-permission-grants").first)
-    XCTAssertEqual(
-      URLComponents(url: grants.url!, resolvingAgainstBaseURL: false)?.queryItems?.first?.value,
-      PermissionEditorFixture.agentID)
+    let grants = try XCTUnwrap(server.requests(path: "/api/connector-permissions").first)
+    let query = URLComponents(url: grants.url!, resolvingAgainstBaseURL: false)?.queryItems
+    XCTAssertEqual(query?.first { $0.name == "kind" }?.value, "builtin")
+    XCTAssertEqual(query?.first { $0.name == "connectorSlug" }?.value, "gmail")
   }
 
   func testFilteredBulkChangeSingleDenyAndResetReadBackCanonicalRules() async throws {
@@ -47,8 +47,8 @@ final class ComposerConnectorPermissionTests: XCTestCase {
     let request = try XCTUnwrap(server.writes.first)
     let body = try JSONDecoder().decode(
       PermissionEditorFixture.Write.self, from: chatRequestBody(request))
-    XCTAssertEqual(body.agentId, PermissionEditorFixture.agentID)
-    XCTAssertEqual(body.connectorSlug, "gmail")
+    XCTAssertEqual(body.target.kind, "builtin")
+    XCTAssertEqual(body.target.connectorSlug, "gmail")
     XCTAssertEqual(body.mode, "patch")
     XCTAssertEqual(body.grants.map(\.expiresIn), ["24h", "24h"])
     await resources.apply(.deny("__unknown__"))
@@ -87,25 +87,22 @@ final class ComposerConnectorPermissionTests: XCTestCase {
     XCTAssertEqual(server.requests(path: "/api/connector-catalog/discovery").count, 1)
   }
 
-  func testConnectorScopedPermissionChangeUsesTheMemberContract() async throws {
+  func testAlwaysAllowPersistsWithoutExpiration() async throws {
     let server = PermissionEditorFixture()
-    server.state.withLock { $0.memberScoped = true }
     let composer = makeComposer(server.http)
     defer { composer.close() }
     let resources = try open(composer)
     resources.update(duration: "always")
     await resources.apply(.allow("mail.send"))
     let value = try await resources.store.get(resources.page).value
-    XCTAssertTrue(value.state.connectorScoped)
     XCTAssertEqual(value.state.grants.first?.permission, "mail.send")
     XCTAssertNil(value.state.grants.first?.expiresAt)
     let request = try XCTUnwrap(server.writes.first)
     XCTAssertEqual(request.url?.path, "/api/connector-permissions")
     let body = try JSONDecoder().decode(
       PermissionEditorFixture.Write.self, from: chatRequestBody(request))
-    XCTAssertEqual(body.target?.kind, "builtin")
-    XCTAssertEqual(body.target?.connectorSlug, "gmail")
-    XCTAssertNil(body.agentId)
+    XCTAssertEqual(body.target.kind, "builtin")
+    XCTAssertEqual(body.target.connectorSlug, "gmail")
   }
 
   func testReadFailureRemainsAnErrorUntilExplicitRetry() async throws {
@@ -206,7 +203,11 @@ final class ComposerConnectorPermissionTests: XCTestCase {
     let request = try XCTUnwrap(server.writes.first)
     let body = try JSONDecoder().decode(
       PermissionEditorFixture.Write.self, from: chatRequestBody(request))
-    XCTAssertEqual(body.agentId, PermissionEditorFixture.nextAgentID)
+    XCTAssertEqual(body.target.connectorSlug, "gmail")
+    XCTAssertEqual(body.grants.first?.permission, "mail.read")
+    XCTAssertEqual(body.grants.first?.action, "deny")
+    XCTAssertEqual(
+      server.requests(path: "/api/agents/\(PermissionEditorFixture.nextAgentID)").count, 2)
   }
 
   func testDismissingTheEditorKeepsTheComposerOwnedWriteAndReadback() async throws {
@@ -283,20 +284,16 @@ final class PermissionEditorFixture: Sendable {
     let connectorSlug: String
   }
   struct Write: Decodable, Sendable {
-    let agentId: String?
-    let connectorSlug: String?
-    let target: Target?
+    let target: Target
     let mode: String
     let grants: [Edit]
   }
   struct State: Sendable {
-    var memberScoped = false
     var failRead = false
     var writeStatus = 200
     var loseWriteResponse = false
     var grants: [String: Edit] = [:]
     var expirations: [String: String] = [:]
-    var agentID = PermissionEditorFixture.agentID
     var requests: [URLRequest] = []
   }
   final class ServerState: Sendable {
@@ -323,7 +320,7 @@ final class PermissionEditorFixture: Sendable {
         value.requests.append(request)
         let path = request.url!.path
         if request.httpMethod == "PUT" {
-          guard path == "/api/user-permission-grants/apply" || path == "/api/connector-permissions"
+          guard path == "/api/connector-permissions"
           else {
             throw URLError(.unsupportedURL)
           }
@@ -337,7 +334,6 @@ final class PermissionEditorFixture: Sendable {
             value.grants = [:]
             value.expirations = [:]
           }
-          if let agent = body.agentId { value.agentID = agent }
           for edit in body.grants {
             value.grants[edit.permission] = edit
             let seconds: [String: TimeInterval] = ["1h": 3600, "24h": 86400, "7d": 604800]
@@ -360,16 +356,13 @@ final class PermissionEditorFixture: Sendable {
         switch path {
         case "/api/connector-catalog/discovery":
           return ChatHTTPResponse(body: Self.catalog)
-        case "/api/feature-switches":
-          return ChatHTTPResponse(
-            body: "{\"effectiveSwitches\":{\"connectorChatAccountAccess\":\(value.memberScoped)}}")
         case "/api/connector-catalog/gmail/permissions":
           if value.failRead {
             return ChatHTTPResponse(
               status: 503, body: #"{"error":{"message":"Permission service unavailable"}}"#)
           }
           return ChatHTTPResponse(body: Self.metadata)
-        case "/api/user-permission-grants", "/api/connector-permissions":
+        case "/api/connector-permissions":
           return ChatHTTPResponse(body: try Self.grants(value))
         case "/api/connectors/connected":
           return ChatHTTPResponse(body: #"{"builtinConnectors":[],"customConnectors":[]}"#)
@@ -379,9 +372,6 @@ final class PermissionEditorFixture: Sendable {
               #"{"computerUseHosts":[],"cloudBrowserAvailable":true,"cloudBrowserEnabledByDefault":false,"sshHosts":[],"vncHosts":[]}"#
           )
         default:
-          if path.hasSuffix("/connector-access") {
-            return ChatHTTPResponse(body: #"{"enabledConnectorSlugs":[],"customConnectorIds":[]}"#)
-          }
           if path.hasPrefix("/api/agents/") {
             return ChatHTTPResponse(body: "{\"agentId\":\"\(request.url!.lastPathComponent)\"}")
           }
@@ -394,19 +384,14 @@ final class PermissionEditorFixture: Sendable {
   private static func grants(_ state: State) throws -> String {
     let grants: [[String: Any]] = state.grants.keys.sorted().compactMap { name in
       guard let edit = state.grants[name] else { return nil }
-      var result: [String: Any] = [
+      return [
         "permission": edit.permission, "action": edit.action,
         "expiresAt": state.expirations[edit.permission].map { $0 as Any } ?? NSNull()
       ]
-      if !state.memberScoped {
-        result["agentId"] = state.agentID
-        result["connectorSlug"] = "gmail"
-      }
-      return result
     }
-    let body: Any =
-      state.memberScoped
-      ? ["target": ["kind": "builtin", "connectorSlug": "gmail"], "grants": grants] : grants
+    let body: [String: Any] = [
+      "target": ["kind": "builtin", "connectorSlug": "gmail"], "grants": grants
+    ]
     return try JSONSerialization.string(withJSONObject: body)
   }
 

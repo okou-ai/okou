@@ -33,7 +33,8 @@ final class AttachmentFlowFixture: Sendable {
     workflows: (@Sendable (URLRequest) async throws -> ChatHTTPResponse)? = nil,
     voiceInput: ChatHTTPFixture.Handler? = nil,
     attachment: ChatAttachment? = nil,
-    threadList: ChatHTTPFixture.Handler? = nil
+    threadList: ChatHTTPFixture.Handler? = nil,
+    connectorSettings: ChatHTTPFixture.Handler? = nil
   ) {
     let state = self.state
     http = ChatHTTPFixture { request in
@@ -49,6 +50,20 @@ final class AttachmentFlowFixture: Sendable {
       }
       if let response = Self.supportResponse(path: path) { return response }
       switch path {
+      case "/api/agents/\(Self.agentID)":
+        return ChatHTTPResponse(body: "{\"agentId\":\"\(Self.agentID)\"}")
+      case "/api/remotes/overview":
+        return ChatHTTPResponse(
+          body:
+            #"{"computerUseHosts":[],"cloudBrowserAvailable":true,"cloudBrowserEnabledByDefault":false,"sshHosts":[],"vncHosts":[]}"#
+        )
+      case "/api/connectors/connected",
+        "/api/connector-account-access/defaults",
+        _
+      where path.hasPrefix("/api/connector-accounts/")
+        || path.contains("/connector-access/") || path.hasSuffix("/connector-current"):
+        guard let connectorSettings else { throw URLError(.unsupportedURL) }
+        return try await connectorSettings(request)
       case "/api/voice-io/quota", "/api/voice-io/transcribe/segment",
         "/api/voice-io/polish/segments":
         guard let voiceInput else { throw URLError(.unsupportedURL) }

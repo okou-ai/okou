@@ -85,7 +85,7 @@ private struct ComposerConnectorAccountsContent: View {
       case .hasData(let value):
         if resources.managesDefaults {
           ComposerConnectorDefaults(store: store, resources: resources, page: value, busy: busy)
-        } else if resources.chatAccountAccess {
+        } else {
           ComposerChatConnectorAccounts(
             store: store, resources: resources, page: value, busy: busy, search: search,
             openPermissions: {
@@ -98,8 +98,6 @@ private struct ComposerConnectorAccountsContent: View {
               accountDestination?.close()
               accountDestination = store.openAccounts(resources.connector, managesDefaults: true)
             })
-        } else {
-          legacy(value, search: search)
         }
       }
       if case .hasError(let error) = pagination {
@@ -132,62 +130,4 @@ private struct ComposerConnectorAccountsContent: View {
     }
   }
 
-  private func legacy(_ page: ComposerConnectorAccountResources.Page, search: String) -> some View {
-    Section {
-      Button {
-        Task { await resources.apply(.select(nil)) }
-      } label: {
-        accountLabel(
-          "Use default", detail: page.defaultAccount?.label ?? "No usable default account",
-          checked: page.selectedID == nil)
-      }.disabled(busy)
-      ForEach(page.accounts) { account in
-        VStack(alignment: .leading, spacing: OkouSpace.six) {
-          Button {
-            Task { await resources.apply(.select(account.id)) }
-          } label: {
-            accountLabel(
-              account.label, detail: account.ready ? "Connected" : "Reconnect required",
-              checked: page.selectedID == account.id)
-          }.disabled(busy)
-          if !account.ready {
-            Button("Reconnect this account") {
-              store.connect(target: resources.connector.target, accountID: account.id)
-            }.font(.okou(.footnote)).disabled(busy)
-          }
-        }
-      }
-      if let selectedID = page.selectedID, !page.accounts.contains(where: { $0.id == selectedID }) {
-        Text("The selected account is unavailable. Choose an account or use default.")
-          .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
-      }
-      if page.accounts.isEmpty, !search.isEmpty {
-        Text("No accounts found").foregroundStyle(OkouColor.mutedForeground)
-      }
-      accountActions(page: page)
-    } footer: {
-      Text("This account choice applies to this chat. The default account stays unchanged.")
-        .okouSectionNote()
-    }
-  }
-
-  @ViewBuilder private func accountActions(page: ComposerConnectorAccountResources.Page)
-    -> some View
-  {
-    if page.nextCursor != nil {
-      Button("Load more") { Task { await resources.loadMore() } }.disabled(busy)
-    }
-    Button("Add account") { store.connect(target: resources.connector.target) }.disabled(busy)
-  }
-
-  private func accountLabel(_ label: String, detail: String, checked: Bool) -> some View {
-    HStack {
-      VStack(alignment: .leading, spacing: OkouSpace.three) {
-        Text(label).foregroundStyle(OkouColor.foreground)
-        Text(detail).font(.okou(.caption)).foregroundStyle(OkouColor.mutedForeground)
-      }
-      Spacer()
-      if checked { OkouIcon("check").foregroundStyle(.tint) }
-    }.contentShape(Rectangle())
-  }
 }

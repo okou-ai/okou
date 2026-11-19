@@ -584,32 +584,47 @@ final class NewChatAttachmentTests: XCTestCase {
     XCTAssertNotNil(store.error)
   }
 
-  func testUnavailableNewChatAccountKeepsDraftAndAttachmentUntilDefaultIsChosen() async throws {
-    let requests = Mutex<[Data]>([])
-    let message =
-      "The account selected for this chat is unavailable. Choose another account or use default."
-    let fixture = AttachmentFlowFixture(creationResponse: { request in
-      let count = requests.withLock {
-        $0.append(chatRequestBody(request))
-        return $0.count
-      }
-      if count == 1 {
+  func testFailedChatAccountWriteKeepsDraftAndAttachmentUntilTheChoiceIsCorrected() async throws {
+    let accountID = ConnectorHTTPFixtures.accountID
+    let rejected = Mutex(0)
+    let message = "The account selected for this chat is unavailable."
+    let fixture = AttachmentFlowFixture(connectorSettings: { request in
+      switch request.url?.path {
+      case "/api/connectors/connected":
+        return ChatHTTPResponse(
+          body:
+            #"{"builtinConnectors":[{"slug":"slack","label":"Slack","hasPermissions":false}],"customConnectors":[]}"#
+        )
+      case "/api/connector-account-access/defaults":
+        return ChatHTTPResponse(
+          body: """
+            [{"connectionId":"\(accountID)","defaultEnabled":true,"isDefault":true}]
+            """)
+      case "/api/connector-accounts/\(accountID)":
+        return ChatHTTPResponse(body: ConnectorHTTPFixtures.account())
+      case "/api/chat-threads/\(AttachmentFlowFixture.threadID)/connector-access/\(accountID)":
+        let body =
+          try JSONSerialization.jsonObject(with: chatRequestBody(request)) as? [String: Any]
+        XCTAssertEqual(request.httpMethod, "PUT")
+        XCTAssertEqual(body?["enabled"] as? Bool, false)
+        rejected.withLock { $0 += 1 }
         return ChatHTTPResponse(
           status: 400,
           body: """
             {"error":{"code":"CONNECTOR_ACCOUNT_UNAVAILABLE","message":"\(message)"}}
             """)
+      case "/api/chat-threads/\(AttachmentFlowFixture.threadID)/connector-current":
+        let choice = try JSONDecoder().decode(
+          ChatConnectorSelection.self, from: chatRequestBody(request))
+        XCTAssertEqual(choice.connectionId, accountID)
+        return ChatHTTPResponse(body: ConnectorHTTPFixtures.access())
+      default: throw URLError(.unsupportedURL)
       }
-      return ChatHTTPResponse(
-        status: 201,
-        body: """
-          {"id":"\(AttachmentFlowFixture.threadID)","createdAt":"2026-10-27T00:00:00Z"}
-          """)
     })
     let store = WorkspaceStore(client: fixture.http.client, webURL: fixture.http.baseURL)
     defer { store.close() }
     await store.refreshNavigation()
-    store.newChatDraft = "Use my selected GitHub account"
+    store.newChatDraft = "Use my selected Slack account"
     let source = try makeFile()
     defer { try? FileManager.default.removeItem(at: source.deletingLastPathComponent()) }
     store.newAttachmentDraft.importFiles([source])
@@ -618,25 +633,22 @@ final class NewChatAttachmentTests: XCTestCase {
     }
     let connectors = store.newModelSelection.connectors
     connectors.configure(agentID: AttachmentFlowFixture.agentID)
-    await connectors.selectAccount(
-      target: .builtin("github"), connectionID: AttachmentFlowFixture.fileID)
+    await connectors.refresh()
+    await connectors.setAccountAccess(
+      target: .builtin("slack"), connectionID: accountID, enabled: false)
 
     await store.sendNewChat()
 
     XCTAssertEqual(store.error, message)
     XCTAssertNil(store.selectedThreadID)
-    XCTAssertEqual(store.newChatDraft, "Use my selected GitHub account")
+    XCTAssertEqual(store.newChatDraft, "Use my selected Slack account")
     XCTAssertEqual(store.newAttachmentDraft.items.first?.file.filename, "notes.txt")
     XCTAssertTrue(store.newAttachmentDraft.isReady)
     XCTAssertTrue(fixture.state.value.withLock { $0.messages.isEmpty })
-    let firstRequest = try XCTUnwrap(requests.withLock { $0.first })
-    let firstBody = try XCTUnwrap(
-      JSONSerialization.jsonObject(with: firstRequest) as? [String: Any])
-    let selections = try XCTUnwrap(firstBody["connectorSelections"] as? [[String: Any]])
-    XCTAssertEqual(selections.first?["connectionId"] as? String, AttachmentFlowFixture.fileID)
-    XCTAssertEqual(firstBody["connectorSelectionPolicy"] as? String, "required")
+    XCTAssertEqual(rejected.withLock { $0 }, 1)
 
-    await connectors.selectAccount(target: .builtin("github"), connectionID: nil)
+    await connectors.setAccountAccess(
+      target: .builtin("slack"), connectionID: accountID, enabled: nil)
     await store.sendNewChat()
 
     XCTAssertEqual(store.selectedThreadID, AttachmentFlowFixture.threadID)
@@ -645,10 +657,7 @@ final class NewChatAttachmentTests: XCTestCase {
     }
     XCTAssertEqual(sent.count, 1)
     XCTAssertEqual(sent.first?.userMessage.parts.last?.filenameSnapshot, "notes.txt")
-    let correctedRequest = try XCTUnwrap(requests.withLock { $0.last })
-    let correctedBody = try XCTUnwrap(
-      JSONSerialization.jsonObject(with: correctedRequest) as? [String: Any])
-    XCTAssertEqual((correctedBody["connectorSelections"] as? [[String: Any]])?.count, 0)
+    XCTAssertEqual(rejected.withLock { $0 }, 1)
   }
 
   func testFailedNewChatCreationCannotSendAttachmentsIntoAChatOpenedWhileWaiting() async throws {

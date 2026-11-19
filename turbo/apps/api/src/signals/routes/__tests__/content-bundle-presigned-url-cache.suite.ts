@@ -131,7 +131,6 @@ describe("content bundle presigned URL cache", () => {
     }
     const api = createRunsApi(context);
     context.mocks.s3.send.mockResolvedValue({ ContentLength: 2048 });
-    // Skill availability is independent of a connected runtime account.
     const connectors = createConnectorBddApi(context);
 
     const custom = await connectors.createCustomConnector(actor, {
@@ -152,7 +151,11 @@ describe("content bundle presigned URL cache", () => {
     onTestFinished(async () => {
       await connectors.deleteCustomConnector(actor, custom.id);
     });
-    await connectors.updateAgentCustomConnectors(actor, agentId, [custom.id]);
+    const account = await connectors.setCustomConnectorValues(
+      actor,
+      custom.id,
+      [{ key: "secret", kind: "secret", value: "readonly-cache-test-token" }],
+    );
     const mountPath = `/home/user/.claude/skills/${getCustomConnectorSkillName(custom.slug, custom.id)}`;
     mockUniquePresignedUrls();
     const createExecution = async (prompt: string) => {
@@ -171,10 +174,11 @@ describe("content bundle presigned URL cache", () => {
       expect(mount.mountPath).toBe(
         `/home/user/.claude/skills/custom-${custom.slug.slice(1, 49)}-${custom.id.replaceAll("-", "").slice(0, 8)}`,
       );
-      expect(execution.connectorRuntimeTargets).not.toContainEqual(
+      expect(execution.connectorRuntimeTargets).toContainEqual(
         expect.objectContaining({
           kind: "custom",
           customConnectorId: custom.id,
+          sourceId: account.connectionId,
         }),
       );
       return { runId: run.runId, archiveUrl: mount.downloadUrl };

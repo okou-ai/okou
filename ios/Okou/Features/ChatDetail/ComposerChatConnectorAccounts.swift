@@ -27,7 +27,7 @@ struct ComposerChatConnectorAccounts: View {
   var body: some View {
     Section {
       ForEach(page.accounts) { account in
-        if let access = page.access?.accounts.first(where: { $0.connectionId == account.id }) {
+        if let access = page.access.accounts.first(where: { $0.connectionId == account.id }) {
           accountRow(account, access: access)
         }
       }

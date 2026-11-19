@@ -125,17 +125,12 @@ final class ChatComposerAccessTests: XCTestCase {
         }
         struct Body: Decodable {
           let account: Account
-          let agentId: String
-          let authorizeAgent: Bool
         }
         let body = try JSONDecoder().decode(Body.self, from: chatRequestBody(request))
         XCTAssertEqual(body.account.intent, "add")
         XCTAssertNil(body.account.connectionId)
-        XCTAssertEqual(body.agentId, FixtureData.agentID)
-        XCTAssertTrue(body.authorizeAgent)
         return ChatHTTPResponse(body: "{\"connectionId\":\"\(FixtureData.accountID)\"}")
-      case "/api/feature-switches", "/api/connector-catalog/slack",
-        "/api/agents/\(FixtureData.agentID)/user-connectors":
+      case "/api/connector-catalog/slack":
         return try XCTUnwrap(FixtureData.response(request))
       default: throw URLError(.unsupportedURL)
       }
@@ -147,7 +142,7 @@ final class ChatComposerAccessTests: XCTestCase {
     let status = try XCTUnwrap(loaded)
     XCTAssertNil(status.account)
     let result = try await service.start(
-      action, status: status, method: status.builtin?.authMethods.first, values: [:], options: [:])
+      status: status, method: status.builtin?.authMethods.first, values: [:], options: [:])
     XCTAssertEqual(try result.operatedID, FixtureData.accountID)
   }
 
@@ -166,13 +161,9 @@ final class ChatComposerAccessTests: XCTestCase {
       }
       if request.url!.path == "/api/chat-threads" {
         struct Body: Decodable {
-          let connectorSelections: [ChatConnectorSelection]
-          let connectorSelectionPolicy: String
           let initialRemoteAccessOverrides: [ChatRemoteOverride]
         }
         let body = try JSONDecoder().decode(Body.self, from: chatRequestBody(request))
-        XCTAssertEqual(body.connectorSelections.first?.connectionId, FixtureData.accountID)
-        XCTAssertEqual(body.connectorSelectionPolicy, "required")
         XCTAssertEqual(body.initialRemoteAccessOverrides.first?.protocol, .vnc)
         XCTAssertEqual(body.initialRemoteAccessOverrides.first?.enabled, true)
         return ChatHTTPResponse(
@@ -180,6 +171,14 @@ final class ChatComposerAccessTests: XCTestCase {
           body:
             "{\"id\":\"\(FixtureData.threadID)\",\"createdAt\":\"2026-10-24T00:00:00Z\",\"selectedModel\":null}"
         )
+      }
+      if request.url!.path == "/api/chat-threads/\(FixtureData.threadID)/connector-current" {
+        XCTAssertEqual(request.httpMethod, "PUT")
+        let choice = try JSONDecoder().decode(
+          ChatConnectorSelection.self, from: chatRequestBody(request))
+        XCTAssertEqual(choice.target, .builtin("slack"))
+        XCTAssertEqual(choice.connectionId, FixtureData.accountID)
+        return ChatHTTPResponse(body: FixtureData.access())
       }
       throw URLError(.unsupportedURL)
     }
