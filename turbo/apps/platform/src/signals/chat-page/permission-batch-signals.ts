@@ -1,9 +1,6 @@
 import { command, computed, state } from "ccstate";
 
-import type {
-  ApplyUserPermissionGrantsBatchRequest,
-  UserPermissionGrantExpiresIn,
-} from "@okouai/api-contracts/contracts/user-permission-grants";
+import type { UserPermissionGrantExpiresIn } from "@okouai/api-contracts/contracts/user-permission-grants";
 import { chatThreadMetadataContract } from "@okouai/api-contracts/client/chat-threads";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept } from "../../lib/accept.ts";
@@ -126,7 +123,7 @@ function missingPermissionGroups(
   grants: readonly PlatformUserPermissionGrant[],
   metadata: readonly PlatformConnectorPermissionMetadata[],
   expiresIn: UserPermissionGrantExpiresIn,
-): ApplyUserPermissionGrantsBatchRequest["groups"] {
+) {
   return metadata.flatMap((entry) => {
     const missing = descriptor.items.filter((item) => {
       return (
@@ -170,8 +167,7 @@ function allBatchPermissionsAllowed(
 }
 
 function mergeBatchAcknowledgements(
-  agentId: string | undefined,
-  groups: ApplyUserPermissionGrantsBatchRequest["groups"],
+  groups: ReturnType<typeof missingPermissionGroups>,
   previous: readonly PlatformUserPermissionGrant[],
   returned: readonly PlatformUserPermissionGrant[],
 ): readonly PlatformUserPermissionGrant[] {
@@ -181,10 +177,6 @@ function mergeBatchAcknowledgements(
     for (const requested of group.grants) {
       const grant = returned.find((candidate) => {
         return (
-          (agentId === undefined
-            ? candidate.agentId === undefined
-            : candidate.agentId !== undefined &&
-              chatActionIdMatches(candidate.agentId, agentId)) &&
           candidate.connectorSlug === group.connectorSlug &&
           candidate.permission === requested.permission
         );
@@ -258,12 +250,7 @@ function createBatchSaveCommand(
             )),
           );
         }
-        acknowledged = mergeBatchAcknowledgements(
-          undefined,
-          groups,
-          grants,
-          saved,
-        );
+        acknowledged = mergeBatchAcknowledgements(groups, grants, saved);
       }
       if (!allBatchPermissionsAllowed(descriptor, acknowledged, metadata)) {
         throw new Error(
