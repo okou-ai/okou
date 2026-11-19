@@ -494,7 +494,7 @@ jq '.createdAt = "2026-10-07T00:00:00Z" |
 [ "$(cli_digest_value)" = "$embedded_arm_digest" ] \
   || fail "unconsumed CLI metadata must not affect the digest"
 cli_manifest_compact=$(jq -c . "$cli_manifest_base")
-printf '%s,"unused":1.25,"unused":{"cli":1,"cli":2},"commitSha":"second"}\n' \
+printf '%s,"ignoredNumber":1.25,"unused":1,"unused":2,"ignoredObject":{"cli":1,"cli":2},"commitSha":"second"}\n' \
   "${cli_manifest_compact%?}" > "$cli_manifest"
 [ "$(cli_digest_value)" = "$embedded_arm_digest" ] \
   || fail "valid ignored JSON metadata must not affect the digest"
