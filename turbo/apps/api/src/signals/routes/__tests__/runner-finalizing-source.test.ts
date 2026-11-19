@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { mockNow, now, nowDate } from "../../../lib/time";
@@ -194,60 +193,36 @@ describe("Independent finalizing resource dispatch", () => {
     });
   });
 
-  it.each([false, true])(
-    "offers expected Home only to the preferred same-host replacement (rejects: %s)",
-    async (rejects) => {
-      const f = await terminalPredecessor(context, "completed");
-      await heartbeat(f, {
-        snapshotSequence: 2,
-        mode: "draining",
-        activeReuseProducers: [producer(f)],
+  it("routes to a same-host replacement while its predecessor drains", async () => {
+    const f = await terminalPredecessor(context, "completed");
+    await heartbeat(f, {
+      snapshotSequence: 2,
+      mode: "draining",
+      activeReuseProducers: [producer(f)],
+    });
+    const receiver = await f.owned.run(() => {
+      return f.api.registerDirectRunner(f.group, {
+        runnerIdentity: { runnerId: randomUUID(), heartbeatGeneration: 8 },
+        hostname: `runner-${f.runnerId}.okou.app`,
+        maxConcurrent: 1,
       });
-      const checkoutDecisions: unknown[] = [];
-      const receiver = await f.owned.run(() => {
-        return f.api.registerDirectRunner(f.group, {
-          runnerIdentity: { runnerId: randomUUID(), heartbeatGeneration: 8 },
-          hostname: `runner-${f.runnerId}.okou.app`,
-          maxConcurrent: 1,
-          reply(envelope) {
-            checkoutDecisions.push(
-              envelope.executionContext.preferredHomeCheckout,
-            );
-            return HttpResponse.json({
-              runnerId: envelope.runnerId,
-              heartbeatGeneration: envelope.heartbeatGeneration,
-              runId: envelope.executionContext.runId,
-              disposition: rejects ? "rejected" : "accepted",
-            });
-          },
-        });
+    });
+    await f.owned.run(() => {
+      return f.api.registerDirectRunner(f.group, {
+        maxConcurrent: 8,
+        heartbeat: { totalVcpu: 32, totalMemoryMb: 65_536 },
       });
-      const alternative = await f.owned.run(() => {
-        return f.api.registerDirectRunner(f.group, {
-          maxConcurrent: 8,
-          heartbeat: { totalVcpu: 32, totalMemoryMb: 65_536 },
-        });
-      });
-      mockNow(f.clock + 2000);
-      const next = await continuation(f);
-      expect(next.status).toBe("running");
-      expect(checkoutDecisions).toStrictEqual([
-        { predecessorRunId: f.run.runId, notAfter: f.clock + 4000 },
-      ]);
-      const assigned = rejects ? alternative : receiver;
-      await expectOwner(
-        f,
-        next.runId,
-        assigned.runnerId,
-        assigned.heartbeatGeneration,
-      );
-      if (rejects) {
-        expect(
-          (await f.owned.executionInput(next.runId)).preferredHomeCheckout,
-        ).toBeNull();
-      }
-    },
-  );
+    });
+    mockNow(f.clock + 2000);
+    const next = await continuation(f);
+    expect(next.status).toBe("running");
+    await expectOwner(
+      f,
+      next.runId,
+      receiver.runnerId,
+      receiver.heartbeatGeneration,
+    );
+  });
 
   it("keeps another Chat's producer out of a new Thread's placement", async () => {
     const f = await terminalPredecessor(context, "failed", false);
@@ -283,9 +258,9 @@ describe("Independent finalizing resource dispatch", () => {
         other.runnerId,
         other.heartbeatGeneration,
       );
-      const input = await f.owned.executionInput(next.runId);
-      expect(input.isFirstRun).toBeTruthy();
-      expect(input.preferredHomeCheckout).toBeNull();
+      expect(
+        (await f.owned.executionInput(next.runId)).isFirstRun,
+      ).toBeTruthy();
     });
   });
 

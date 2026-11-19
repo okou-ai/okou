@@ -36,8 +36,9 @@ async fn preferred_home_checkout_survives_direct_dispatch() {
     let (intake, mut receiver) = DispatchIntake::new(Arc::new(Semaphore::new(1)));
     let mut payload =
         serde_json::from_str::<serde_json::Value>(&body(identity, run_id, 2_000)).unwrap();
-    payload["executionContext"]["preferredHomeCheckout"] =
-        json!({ "predecessorRunId": predecessor, "notAfter": 1_500 });
+    payload["futureDispatchMetadata"] = json!({"version": 2});
+    payload["preferredHomeCheckout"] =
+        json!({ "predecessorRunId": predecessor, "waitUntil": 1_500 });
     let submitted = submit(
         &Arc::new(intake),
         identity,
@@ -46,14 +47,12 @@ async fn preferred_home_checkout_survives_direct_dispatch() {
         1_000,
     );
     let work = receiver.recv().await.unwrap();
-    let checkout = work
-        .context
-        .as_ref()
-        .unwrap()
-        .preferred_home_checkout
-        .unwrap();
+    let checkout = work.preferred_home_checkout.unwrap();
     assert_eq!(checkout.predecessor_run_id, predecessor);
-    assert_eq!(checkout.not_after, 1_500);
+    assert_eq!(
+        work.deadline - checkout.wait_until,
+        std::time::Duration::from_millis(500)
+    );
     work.settle(Disposition::Accepted);
     assert_eq!(submitted.await.unwrap(), Disposition::Accepted);
 }

@@ -104,7 +104,8 @@ impl AcceptanceTasks {
             let outcome = match acceptance {
                 SuppliedAcceptance::Accepted(acceptance) => {
                     work.settle(Disposition::Accepted);
-                    prepare_accepted(*acceptance, profile, context).await
+                    prepare_accepted(*acceptance, profile, context, work.preferred_home_checkout)
+                        .await
                 }
                 SuppliedAcceptance::Rejected => {
                     work.settle(Disposition::Rejected);
@@ -189,7 +190,7 @@ impl AcceptanceTasks {
             .await;
             let outcome = match outcome {
                 LocalAcceptanceOutcome::Accepted(acceptance) => {
-                    prepare_accepted(*acceptance, job.profile, context).await
+                    prepare_accepted(*acceptance, job.profile, context, None).await
                 }
                 LocalAcceptanceOutcome::Deferred => AcceptanceTaskOutcome::Deferred,
             };
@@ -276,6 +277,7 @@ async fn prepare_accepted(
     acceptance: AcceptedJob,
     profile: ExecutionProfile,
     context: Arc<AcceptanceContext>,
+    preferred_home_checkout: Option<crate::ingress::dispatch::PreferredHomeCheckout>,
 ) -> AcceptanceTaskOutcome {
     let AcceptedJob {
         job,
@@ -297,6 +299,7 @@ async fn prepare_accepted(
             } = profile;
             return AcceptanceTaskOutcome::Finalizing(Box::new(UnconsumedFinalizingActivation {
                 request: Some(FinalizingActivationRequest {
+                    preferred_home_checkout,
                     job,
                     cancellation,
                     handoff_context,
@@ -320,6 +323,7 @@ async fn prepare_accepted(
     let spawn_ctx = &context.spawn_ctx;
     let prepared = prepare_accepted_job(
         SandboxAcceptedJob {
+            preferred_home_checkout,
             job,
             resource,
             cancellation,

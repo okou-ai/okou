@@ -17,15 +17,12 @@ export const runnerDispatchEnvelopeSchema = object({
   heartbeatGeneration: runnerHeartbeatGenerationSchema,
   profile: string(),
   notAfter: number().int().nonnegative(),
-  executionContext: executionContextSchema.safeExtend({
-    preferredHomeCheckout: object({
-      predecessorRunId: uuid(),
-      notAfter: number().int().nonnegative(),
-    })
-      .strict()
-      .nullable(),
-  }),
-}).strict();
+  executionContext: executionContextSchema,
+  preferredHomeCheckout: object({
+    predecessorRunId: uuid(),
+    waitUntil: number().int().nonnegative(),
+  }).optional(),
+});
 
 export const runnerDispatchResponseSchema = object({
   runnerId: uuid(),

@@ -25,6 +25,7 @@ use crate::executor::{
 };
 use crate::home_image_cache::HomeImagePreparePolicy;
 use crate::idle_lifecycle::SharedIdlePool;
+use crate::ingress::dispatch::PreferredHomeCheckout;
 use crate::job_acceptance::{
     AcceptanceResources, SandboxAcceptedResource, rollback_sandbox_accepted_resource,
 };
@@ -63,6 +64,7 @@ pub(super) struct PreparedLocalJob {
 
 /// Ordinary job custody, excluding the specialized finalizing successor.
 pub(super) struct SandboxAcceptedJob {
+    pub(super) preferred_home_checkout: Option<PreferredHomeCheckout>,
     pub(super) job: ExecutionJob,
     pub(super) resource: SandboxAcceptedResource,
     pub(super) cancellation: RunCancellationRegistration,
@@ -226,6 +228,7 @@ pub(super) async fn prepare_accepted_job(
     let factory = &factory;
     let device_rate_limits = ctx.spawn_ctx.device_rate_limits.clone();
     let SandboxAcceptedJob {
+        preferred_home_checkout,
         job,
         resource,
         cancellation,
@@ -405,6 +408,7 @@ pub(super) async fn prepare_accepted_job(
     let mut activation = JobActivationGuard::new(
         JobActivationSetup {
             required_home_source_run_id: None,
+            preferred_home_checkout,
             job,
             rootfs_hash: job_rootfs_hash,
             cancellation,
@@ -496,6 +500,7 @@ fn finish_spawn_job_request(
     let sandbox_id = activation.sandbox_id();
     let JobActivationSetup {
         required_home_source_run_id,
+        preferred_home_checkout: checkout,
         job,
         rootfs_hash,
         cancellation,
@@ -522,7 +527,7 @@ fn finish_spawn_job_request(
         && job.is_supplied()
         && ctx.exec_config.home_cache.is_some()
     {
-        preferred_home_checkout(job.context())
+        preferred_home_checkout(job.context(), checkout)
     } else {
         None
     };
@@ -569,23 +574,24 @@ fn finish_spawn_job_request(
     })
 }
 
-fn preferred_home_checkout(context: &ExecutionContext) -> Option<(RunId, tokio::time::Instant)> {
+fn preferred_home_checkout(
+    context: &ExecutionContext,
+    checkout: Option<PreferredHomeCheckout>,
+) -> Option<(RunId, tokio::time::Instant)> {
     const MAX_PREFERRED_HOME_WAIT: Duration = Duration::from_millis(500);
-    let checkout = context.preferred_home_checkout?;
+    let checkout = checkout?;
     if context.is_first_run == Some(true) || checkout.predecessor_run_id == context.run_id {
         return None;
     }
     context.reuse_key().filter(|key| !key.is_empty())?;
     let now = tokio::time::Instant::now();
-    let wall_now = u64::try_from(chrono::Utc::now().timestamp_millis()).ok()?;
-    let remaining = Duration::from_millis(checkout.not_after.checked_sub(wall_now)?);
-    if remaining.is_zero() {
+    if checkout.wait_until <= now {
         return None;
     }
     // One absolute budget follows the accepted job through executor retries.
     Some((
         checkout.predecessor_run_id,
-        now + remaining.min(MAX_PREFERRED_HOME_WAIT),
+        checkout.wait_until.min(now + MAX_PREFERRED_HOME_WAIT),
     ))
 }
 

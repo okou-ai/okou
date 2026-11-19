@@ -65,10 +65,6 @@ pub struct ExecutionContext {
     pub run_id: RunId,
     #[serde(default)]
     pub reuse_key: Option<String>,
-    /// Host-only wait permission attached by the API to the selected offer.
-    // Remove the missing-field fallback after the API writer rollback floor is set (#48867).
-    #[serde(default)]
-    pub preferred_home_checkout: Option<PreferredHomeCheckout>,
     pub prompt: String,
     #[serde(default)]
     pub append_system_prompt: Option<String>,
@@ -160,14 +156,6 @@ pub struct ExecutionContext {
     /// Chat Thread id used as Pi's official JSONL session id.
     #[serde(default)]
     pub pi_session_id: Option<String>,
-}
-
-/// The generation and deadline associated with an expected predecessor Home.
-#[derive(Clone, Copy, Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PreferredHomeCheckout {
-    pub predecessor_run_id: RunId,
-    pub not_after: u64,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

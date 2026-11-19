@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { describe, expect, it } from "vitest";
+import { runnerDispatchEnvelopeSchema } from "../runner-dispatch";
 
 import {
   AGENT_EXECUTION_TIMEOUT_SECONDS,
@@ -118,6 +119,27 @@ function loadRunnerExecutionContextFixture(): unknown {
     ),
   );
 }
+
+it("accepts additional dispatch metadata while validating known envelope fields", () => {
+  const runnerId = "00000000-0000-4000-8000-000000000001";
+  const checkout = { predecessorRunId: runnerId, waitUntil: 1_500 };
+  const envelope = {
+    runnerId,
+    heartbeatGeneration: 1,
+    profile: "vm0/default",
+    notAfter: 2_000,
+    executionContext: loadRunnerExecutionContextFixture(),
+    futureDispatchMetadata: { version: 2 },
+    preferredHomeCheckout: checkout,
+  };
+  expect(
+    runnerDispatchEnvelopeSchema.parse(envelope).preferredHomeCheckout,
+  ).toStrictEqual(checkout);
+  expect(
+    runnerDispatchEnvelopeSchema.safeParse({ ...envelope, notAfter: "2000" })
+      .success,
+  ).toBe(false);
+});
 
 function preparedExecutionContextFixture() {
   return {

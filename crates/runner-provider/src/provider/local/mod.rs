@@ -312,7 +312,6 @@ impl super::LocalJobSource for LocalProvider {
             environment: environment_merge.environment,
             platform_environment: HashMap::new(),
             native_continuation: None,
-            preferred_home_checkout: None,
             local_resume_session_id: req.session_id,
             secret_values: environment_merge.secret_values,
             local_secret_env_keys: environment_merge.local_secret_env_keys,

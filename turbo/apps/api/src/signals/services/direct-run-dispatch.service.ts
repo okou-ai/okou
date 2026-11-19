@@ -6,10 +6,7 @@ import {
   isCanonicalRunnerHostname,
 } from "@okouai/api-contracts/contracts/runner-dispatch";
 import { OFFICIAL_RUNNER_TOKEN_PREFIX } from "@okouai/api-contracts/contracts/runner-primitives";
-import type {
-  ExecutionContext,
-  RunnerPreference,
-} from "@okouai/api-contracts/contracts/runners";
+import type { ExecutionContext } from "@okouai/api-contracts/contracts/runners";
 import { runnerState } from "@okouai/db/runtime/runner-state";
 import { command, computed, type Command, type Computed } from "ccstate";
 import { and, arrayContains, eq, gt } from "drizzle-orm";
@@ -289,34 +286,6 @@ interface PreparedRunDelivery {
   >;
 }
 
-function preferenceForOffer(
-  preference: RunnerPreference,
-  target: DirectRunTarget,
-  notAfter: number,
-) {
-  if (
-    preference.kind !== "preference" ||
-    preference.runnerIdentity.runnerId !== target.runnerId ||
-    preference.runnerIdentity.heartbeatGeneration !== target.heartbeatGeneration
-  ) {
-    return { preferredUntil: 0, preferredHomeCheckout: null };
-  }
-  const preferredUntil = Date.parse(preference.expiresAt);
-  const preferredHomeCheckout =
-    preference.tier === "predecessorHome" &&
-    preference.home.evidence === "expected"
-      ? {
-          predecessorRunId: preference.predecessorRunId,
-          notAfter: Math.min(
-            notAfter,
-            preferredUntil,
-            Date.parse(preference.home.homeWaitUntil),
-          ),
-        }
-      : null;
-  return { preferredUntil, preferredHomeCheckout };
-}
-
 export const dispatchPreparedRun$ = command(
   async ({ get, set }, args: PreparedRunDelivery, signal: AbortSignal) => {
     signal.throwIfAborted();
@@ -341,17 +310,12 @@ export const dispatchPreparedRun$ = command(
         if (remainingDelivery(window) <= 0) {
           break;
         }
-        const { preferredUntil, preferredHomeCheckout } = preferenceForOffer(
-          fleet.preference,
-          target,
-          notAfter,
-        );
         const body = JSON.stringify({
           runnerId: target.runnerId,
           heartbeatGeneration: target.heartbeatGeneration,
           profile: input.profile,
           notAfter,
-          executionContext: { ...executionContext, preferredHomeCheckout },
+          executionContext,
         });
         if (Buffer.byteLength(body, "utf8") > RUNNER_DISPATCH_MAX_BODY_BYTES) {
           break;
@@ -378,6 +342,14 @@ export const dispatchPreparedRun$ = command(
             recordedAt: nowDate(),
           });
         }
+        const preference = fleet.preference;
+        const preferredUntil =
+          preference.kind === "preference" &&
+          preference.runnerIdentity.runnerId === target.runnerId &&
+          preference.runnerIdentity.heartbeatGeneration ===
+            target.heartbeatGeneration
+            ? Date.parse(preference.expiresAt)
+            : 0;
         // An exception after entering this command cannot prove non-acceptance.
         uncertain = true;
         const delivery = await set(
