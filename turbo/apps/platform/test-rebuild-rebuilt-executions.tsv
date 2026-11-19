@@ -482,3 +482,11 @@ chat-composer-custom-templates-027	turbo/apps/platform/src/views/okou-page/__tes
 chat-composer-custom-templates-030	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-custom-templates.test.tsx	A failed visibility change keeps the template and reports the error	762	passed
 chat-composer-custom-templates-033	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-custom-templates.test.tsx	Importing a document uses the custom template dispatcher	783	passed
 chat-composer-custom-templates-036	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-custom-templates.test.tsx	A failed custom catalog leaves built-in templates available	820	passed
+chat-batch-permissions-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-batch-permissions.test.tsx	Review full scopes grouped by connector and apply the selected duration together	175	passed
+chat-batch-permissions-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-batch-permissions.test.tsx	Approve only missing scopes without reapplying or extending active grants	270	passed
+chat-batch-permissions-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-batch-permissions.test.tsx	Keep the whole batch unavailable when one connector's delayed authoritative metadata fails	303	passed
+chat-batch-permissions-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-batch-permissions.test.tsx	Reject the entire batch with an invalid original row	359	passed
+chat-capability-permissions-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-permissions.test.tsx	Fail closed on permission load and save errors	134	passed
+chat-capability-permissions-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-permissions.test.tsx	Reflect current connector permission decisions	197	passed
+chat-capability-permissions-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-permissions.test.tsx	Permission cards keep the full operation pending and expose callback failure	279	passed
+chat-capability-permissions-006	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-permissions.test.tsx	Review and confirm connector permissions individually	339	passed

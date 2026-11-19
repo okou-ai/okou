@@ -2,51 +2,6 @@
 
 Use the upstream scenario title and registration link to verify the scoped action and any specific outcome before rebuilding. Frozen rows preserve the original ID where the registration was matched. The scenario ledger records remaining owner or entry-point questions. New rows stay outside the frozen reduction.
 
-## upstream-eaae30ac-markdown-docx-21-01
-
-markdown DOCX export > creates a Word package with headings, emphasis, tables, and safe links. [Registration](https://github.com/okou-ai/okou/blob/4bf10b89e09adce4c9253418d2ad8de1937e3e9e/turbo/apps/platform/src/lib/__tests__/markdown-docx.test.ts#L21).
-
-- **Given** An exportable Markdown result contains headings, emphasis, a table and a link.
-- **When** Export the result as DOCX.
-- **Then** The Word package retains the heading, emphasis and table, and contains the safe hyperlink.
-- **Disposition** retain.
-
-## upstream-eaae30ac-markdown-docx-51-01
-
-markdown DOCX export > fits wide CJK tables to a landscape page with content-sized columns. [Registration](https://github.com/okou-ai/okou/blob/4bf10b89e09adce4c9253418d2ad8de1937e3e9e/turbo/apps/platform/src/lib/__tests__/markdown-docx.test.ts#L51).
-
-- **Given** A Markdown result contains a wide table with CJK text.
-- **When** Export the table to Word.
-- **Then** The document uses a landscape section with columns sized to its content.
-- **Disposition** retain.
-
-## upstream-eaae30ac-markdown-docx-110-01
-
-markdown DOCX export > preserves independent list start values and Word line breaks. [Registration](https://github.com/okou-ai/okou/blob/4bf10b89e09adce4c9253418d2ad8de1937e3e9e/turbo/apps/platform/src/lib/__tests__/markdown-docx.test.ts#L110).
-
-- **Given** The result has separate ordered lists and an explicit line break.
-- **When** Export the Markdown to Word.
-- **Then** Each list keeps its own starting number and the explicit line break is encoded in Word.
-- **Disposition** not_selected.
-
-## upstream-eaae30ac-markdown-docx-132-01
-
-markdown DOCX export > exports native bookmarks, footnotes, equations, and task states. [Registration](https://github.com/okou-ai/okou/blob/4bf10b89e09adce4c9253418d2ad8de1937e3e9e/turbo/apps/platform/src/lib/__tests__/markdown-docx.test.ts#L132).
-
-- **Given** The result contains bookmarks, notes, math and task items.
-- **When** Export the Markdown to Word.
-- **Then** The resulting document contains native bookmarks, footnotes, equations and task state.
-- **Disposition** retain.
-
-## upstream-eaae30ac-markdown-docx-164-01
-
-markdown DOCX export > honors cancellation before creating the document. [Registration](https://github.com/okou-ai/okou/blob/4bf10b89e09adce4c9253418d2ad8de1937e3e9e/turbo/apps/platform/src/lib/__tests__/markdown-docx.test.ts#L164).
-
-- **Given** The export owner has already cancelled the operation.
-- **When** Request DOCX export.
-- **Then** The operation rejects cancellation before delivering Word bytes.
-- **Disposition** not_selected.
-
 ## upstream-eaae30ac-agent-suggestions-988-01
 
 Custom direction opens a form composer for the default Agent without touching its home draft. [Registration](https://github.com/okou-ai/okou/blob/4bf10b89e09adce4c9253418d2ad8de1937e3e9e/turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx#L988).
@@ -137,42 +92,6 @@ Horizontal swipes browse without consuming while vertical and input gestures sta
 - **Then** Horizontal swipes browse without consuming while vertical and input gestures stay local.
 - **Disposition** not_selected.
 
-## chat-batch-permissions-001
-
-Review full scopes grouped by connector and apply the selected duration together. [Registration](https://github.com/okou-ai/okou/blob/4bf10b89e09adce4c9253418d2ad8de1937e3e9e/turbo/apps/platform/src/views/okou-page/__tests__/chat-batch-permissions.test.tsx#L184).
-
-- **Given** The actor starts in the product surface described by the scenario.
-- **When** The actor opens the indicated connection surface and follows the available account action.
-- **Then** Review full scopes grouped by connector and apply the selected duration together. Relevant visible labels or feedback in the upstream scenario include “Calendar Service”, “Reports Service”, “Other endpoints”, “Permission duration”.
-- **Disposition** retain.
-
-## chat-batch-permissions-002
-
-Review every scope in a large batch as metadata and grants arrive separately. [Registration](https://github.com/okou-ai/okou/blob/4bf10b89e09adce4c9253418d2ad8de1937e3e9e/turbo/apps/platform/src/views/okou-page/__tests__/chat-batch-permissions.test.tsx#L279).
-
-- **Given** The actor starts in the product surface described by the scenario.
-- **When** The actor opens the permission surface and reviews or confirms the requested access.
-- **Then** Review every scope in a large batch as metadata and grants arrive separately. Relevant visible labels or feedback in the upstream scenario include “Loading permissions”, “Always”, “These permissions stay allowed until you change or revoke them.”, “Permissions allowed”.
-- **Disposition** not_selected.
-
-## chat-batch-permissions-003
-
-Approve only missing scopes without reapplying or extending active grants. [Registration](https://github.com/okou-ai/okou/blob/4bf10b89e09adce4c9253418d2ad8de1937e3e9e/turbo/apps/platform/src/views/okou-page/__tests__/chat-batch-permissions.test.tsx#L390).
-
-- **Given** The actor starts in the product surface described by the scenario.
-- **When** The actor opens the permission surface and reviews or confirms the requested access.
-- **Then** Approve only missing scopes without reapplying or extending active grants. Relevant visible labels or feedback in the upstream scenario include “Permissions allowed”.
-- **Disposition** retain.
-
-## chat-batch-permissions-006
-
-A batch save does not empty sibling permission cards during a grants reload. [Registration](https://github.com/okou-ai/okou/blob/4bf10b89e09adce4c9253418d2ad8de1937e3e9e/turbo/apps/platform/src/views/okou-page/__tests__/chat-batch-permissions.test.tsx#L503).
-
-- **Given** The actor starts in the product surface described by the scenario.
-- **When** The actor opens the permission surface and reviews or confirms the requested access.
-- **Then** A batch save does not empty sibling permission cards during a grants reload. Relevant visible labels or feedback in the upstream scenario include “Permissions allowed”, “Already allowed”.
-- **Disposition** not_selected.
-
 ## upstream-eaae30ac-chat-capability-connectors-565-01
 
 Read a canonical custom default only on action activation (connected). [Registration](https://github.com/okou-ai/okou/blob/4bf10b89e09adce4c9253418d2ad8de1937e3e9e/turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-connectors.test.tsx#L565).
@@ -253,60 +172,6 @@ Preserve an existing custom connector permission during reconnection. [Registrat
 - **When** The actor opens the permission surface and reviews or confirms the requested access.
 - **Then** Preserve an existing custom connector permission during reconnection.
 - **Disposition** not_selected.
-
-## chat-capability-permissions-001
-
-Expose the full permission scope on the card itself. [Registration](https://github.com/okou-ai/okou/blob/4bf10b89e09adce4c9253418d2ad8de1937e3e9e/turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-permissions.test.tsx#L134).
-
-- **Given** The actor starts in the product surface described by the scenario.
-- **When** The actor opens the permission surface and reviews or confirms the requested access.
-- **Then** Expose the full permission scope on the card itself. Relevant visible labels or feedback in the upstream scenario include “Scope Service permissions”.
-- **Disposition** not_selected.
-
-## chat-capability-permissions-002
-
-Fail closed on permission load and save errors. [Registration](https://github.com/okou-ai/okou/blob/4bf10b89e09adce4c9253418d2ad8de1937e3e9e/turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-permissions.test.tsx#L168).
-
-- **Given** The actor starts in the product surface described by the scenario.
-- **When** The actor opens the permission surface and reviews or confirms the requested access.
-- **Then** Fail closed on permission load and save errors. Relevant visible labels or feedback in the upstream scenario include “Couldn”.
-- **Disposition** retain.
-
-## chat-capability-permissions-003
-
-Hide confirmation when connector permission details are invalid. [Registration](https://github.com/okou-ai/okou/blob/4bf10b89e09adce4c9253418d2ad8de1937e3e9e/turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-permissions.test.tsx#L231).
-
-- **Given** The scenario starts with connector permission details are invalid.
-- **When** The actor opens the permission surface and reviews or confirms the requested access.
-- **Then** Hide confirmation when connector permission details are invalid. Relevant visible labels or feedback in the upstream scenario include “Couldn”, “Unknown permission”.
-- **Disposition** not_selected.
-
-## chat-capability-permissions-004
-
-Reflect current connector permission decisions. [Registration](https://github.com/okou-ai/okou/blob/4bf10b89e09adce4c9253418d2ad8de1937e3e9e/turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-permissions.test.tsx#L286).
-
-- **Given** The actor starts in the product surface described by the scenario.
-- **When** The actor opens the permission surface and reviews or confirms the requested access.
-- **Then** Reflect current connector permission decisions. Relevant visible labels or feedback in the upstream scenario include “Already denied”, “Expired”.
-- **Disposition** retain.
-
-## chat-capability-permissions-005
-
-Permission cards keep the full operation pending and expose callback failure. [Registration](https://github.com/okou-ai/okou/blob/4bf10b89e09adce4c9253418d2ad8de1937e3e9e/turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-permissions.test.tsx#L368).
-
-- **Given** The actor starts in the product surface described by the scenario.
-- **When** The actor opens the permission surface and reviews or confirms the requested access.
-- **Then** Permission cards keep the full operation pending and expose callback failure. Relevant visible labels or feedback in the upstream scenario include “Couldn”.
-- **Disposition** retain.
-
-## chat-capability-permissions-006
-
-Review and confirm connector permissions individually. [Registration](https://github.com/okou-ai/okou/blob/4bf10b89e09adce4c9253418d2ad8de1937e3e9e/turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-permissions.test.tsx#L428).
-
-- **Given** The actor starts in the product surface described by the scenario.
-- **When** The actor opens the permission surface and reviews or confirms the requested access.
-- **Then** Review and confirm connector permissions individually. Relevant visible labels or feedback in the upstream scenario include “Permission duration”.
-- **Disposition** retain.
 
 ## chat-capability-phone-use-002
 
