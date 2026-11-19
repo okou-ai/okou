@@ -7,11 +7,14 @@ import {
   artifactReferencePath,
   artifactReferencesContract,
 } from "@okouai/api-contracts/contracts/artifact-references";
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
-import { click, setupPage } from "../../../__tests__/page-helper.ts";
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { click, setupPage, startPage } from "../../../__tests__/page-helper.ts";
+import {
+  createTestRuntime,
+  testContext,
+} from "../../../signals/__tests__/test-helpers.ts";
 import {
   artifact,
   findArtifactAction,
@@ -244,11 +247,12 @@ test("Closing a routed sidebar while it loads lets catalog setup finish", async 
     await release.promise;
     return respond(200, detail);
   });
-  const pageSetup = setupPage({
+  const page = await startPage({
     context,
     path: `/artifacts?tab=file&artifact=${ARTIFACT_ID}&source=search#catalog`,
     featureSwitches: { [FeatureSwitchKey.ArtifactSidebarPreview]: true },
   });
+  await page.content;
   try {
     const preview = await screen.findByRole("complementary", {
       name: "Artifact",
@@ -260,7 +264,7 @@ test("Closing a routed sidebar while it loads lets catalog setup finish", async 
     });
   } finally {
     release.resolve();
-    await pageSetup;
+    await page.ready;
   }
   await expect(findArtifactAction("pending.pdf")).resolves.toBeInTheDocument();
   await expect(
@@ -269,6 +273,141 @@ test("Closing a routed sidebar while it loads lets catalog setup finish", async 
   expect(window.location.hash).toBe("#catalog");
   expect(screen.queryByTestId("artifact-sidebar")).not.toBeInTheDocument();
   expect(screen.queryByTestId("attachment-lightbox")).not.toBeInTheDocument();
+});
+
+test("Closing a loading routed sidebar does not swallow a detail failure", async () => {
+  const release = context.mocks.deferred<void>();
+  const detail = fileDetail("pending.pdf", "application/pdf");
+  context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
+    return respond(200, { artifacts: [detail], nextCursor: null });
+  });
+  context.mocks.api(artifactCatalogContract.get, async ({ respond }) => {
+    await release.promise;
+    return respond(403, {
+      error: { code: "FORBIDDEN", message: "Artifact access revoked" },
+    });
+  });
+  const page = await startPage({
+    context,
+    path: `/artifacts?tab=file&artifact=${ARTIFACT_ID}&source=search`,
+    featureSwitches: { [FeatureSwitchKey.ArtifactSidebarPreview]: true },
+  });
+  await page.content;
+  const preview = await screen.findByRole("complementary", {
+    name: "Artifact",
+  });
+  click(getButtonByName("Close artifact", preview));
+  await waitFor(() => {
+    expect(preview).not.toBeInTheDocument();
+    expect(window.location.search).toBe("?tab=file&source=search");
+  });
+
+  release.resolve();
+  await expect(page.ready).rejects.toMatchObject({
+    name: "ApiError",
+    status: 403,
+    message: "Artifact access revoked",
+  });
+  expect(screen.queryByTestId("artifact-sidebar")).not.toBeInTheDocument();
+  expect(screen.queryByTestId("attachment-lightbox")).not.toBeInTheDocument();
+});
+
+test("Parent cancellation still rejects startup after a local preview dismissal", async () => {
+  const runtime = createTestRuntime(context);
+  const release = context.mocks.deferred<void>();
+  const detail = fileDetail("pending.pdf", "application/pdf");
+  context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
+    return respond(200, { artifacts: [detail], nextCursor: null });
+  });
+  context.mocks.api(artifactCatalogContract.get, async ({ respond }) => {
+    await release.promise;
+    return respond(200, detail);
+  });
+  const page = await startPage({
+    context: runtime,
+    path: `/artifacts?tab=file&artifact=${ARTIFACT_ID}&source=search`,
+    featureSwitches: { [FeatureSwitchKey.ArtifactSidebarPreview]: true },
+  });
+  await page.content;
+  const preview = await screen.findByRole("complementary", {
+    name: "Artifact",
+  });
+  click(getButtonByName("Close artifact", preview));
+  await waitFor(() => {
+    expect(preview).not.toBeInTheDocument();
+    expect(window.location.search).toBe("?tab=file&source=search");
+  });
+
+  const reason = new DOMException("Catalog app stopped", "AbortError");
+  act(() => {
+    runtime.dispose(reason);
+  });
+  release.resolve();
+  await expect(page.ready).rejects.toBe(reason);
+  expect(window.location.search).toBe("?tab=file&source=search");
+  expect(screen.queryByTestId("artifact-sidebar")).not.toBeInTheDocument();
+  expect(screen.queryByTestId("attachment-lightbox")).not.toBeInTheDocument();
+});
+
+test("A late dismissed preview cannot replace a different open artifact", async () => {
+  const release = context.mocks.deferred<void>();
+  const first = fileDetail("first.pdf", "application/pdf");
+  const second = {
+    ...fileDetail("second.pdf", "application/pdf"),
+    id: "a0000000-0000-4000-a000-000000000002",
+    file: {
+      ...fileDetail("second.pdf", "application/pdf").file,
+      id: "f0000000-0000-4000-a000-000000000002",
+    },
+  };
+  context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
+    return respond(200, { artifacts: [first, second], nextCursor: null });
+  });
+  context.mocks.api(
+    artifactCatalogContract.get,
+    async ({ params, respond }) => {
+      if (params.artifactId === first.id) {
+        await release.promise;
+        return respond(200, first);
+      }
+      return respond(200, second);
+    },
+  );
+  const page = await startPage({
+    context,
+    path: `/artifacts?tab=file&artifact=${first.id}&source=search#catalog`,
+    featureSwitches: { [FeatureSwitchKey.ArtifactSidebarPreview]: true },
+  });
+  await page.content;
+  const preview = await screen.findByRole("complementary", {
+    name: "Artifact",
+  });
+  click(getButtonByName("Close artifact", preview));
+  await waitFor(() => {
+    expect(preview).not.toBeInTheDocument();
+  });
+  click(await findArtifactAction("second.pdf"));
+  const replacement = await screen.findByTestId("artifact-sidebar");
+  await expect(
+    within(replacement).findByTitle("second.pdf preview"),
+  ).resolves.toHaveAttribute(
+    "src",
+    "https://artifacts.example.com/second.pdf#navpanes=0",
+  );
+
+  release.resolve();
+  await page.ready;
+
+  expect(screen.getByTestId("artifact-sidebar")).toBeInTheDocument();
+  expect(within(replacement).getByTitle("second.pdf preview")).toHaveAttribute(
+    "src",
+    "https://artifacts.example.com/second.pdf#navpanes=0",
+  );
+  expect(
+    within(replacement).queryByTitle("first.pdf preview"),
+  ).not.toBeInTheDocument();
+  expect(window.location.search).toBe("?tab=file&source=search");
+  expect(window.location.hash).toBe("#catalog");
 });
 
 test("Closing a loading sidebar cancels its preview and allows a later reopen", async () => {
