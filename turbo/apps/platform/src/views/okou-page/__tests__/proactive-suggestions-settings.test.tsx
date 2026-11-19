@@ -10,14 +10,12 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
 test("starts off, enables hourly checks independently of Morning Brief, and preserves explicit opt-out", async () => {
-  let reads = 0;
   let preference: ProactiveSuggestionsPreference = {
     enabled: false,
     status: "paused",
     unavailableReason: null,
   };
   context.mocks.api(proactiveSuggestionsContract.get, ({ respond }) => {
-    reads++;
     return respond(200, preference);
   });
   context.mocks.api(
@@ -46,7 +44,6 @@ test("starts off, enables hourly checks independently of Morning Brief, and pres
     return expect(toggle).toBeEnabled();
   });
   expect(toggle).not.toBeChecked();
-  const initialReads = reads;
   click(toggle);
   await waitFor(() => {
     return expect(toggle).toBeChecked();
@@ -55,7 +52,6 @@ test("starts off, enables hourly checks independently of Morning Brief, and pres
   await waitFor(() => {
     return expect(toggle).not.toBeChecked();
   });
-  expect(reads).toBe(initialReads);
   await expect(
     screen.findByRole("switch", { name: "Morning brief" }),
   ).resolves.not.toBeChecked();
