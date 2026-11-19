@@ -1049,9 +1049,9 @@ type PendingClaimRun = {
   readonly admittedLaunch: AdmittedRunLaunch;
   readonly kind: "pending";
   readonly marketingRewardEventId: string | null;
-  readonly runId: string;
   readonly apiStartTime: number;
-  readonly context: ThreadRunContext;
+  readonly head: ChatQueueHeadContext;
+  readonly launchRecord: ClaimLaunchRecord;
 };
 
 type ClaimRunCommit =
@@ -2230,24 +2230,6 @@ export function createThreadClaimRunObjects(
       return (await get(threadContext.threadContinuation$)) ?? undefined;
     },
   );
-  const selectedRunInput$ = computed(
-    async (get): Promise<ThreadRunSelectionInput> => {
-      const input = await get(selectionInput$);
-      if (!input) {
-        throw new Error("Agent preparation has no selected input");
-      }
-      return input;
-    },
-  );
-  const selectedIdentity$ = computed(
-    async (get): Promise<ThreadRunIdentityInput> => {
-      const input = await get(identityInput$);
-      if (!input) {
-        throw new Error("Run identity is unavailable");
-      }
-      return input;
-    },
-  );
   const selectedAgent$ = computed((get) => {
     return get(threadContext.dispatchTiming$).measure(
       "api_dispatch_pre_create_agent_load_agent",
@@ -2257,35 +2239,17 @@ export function createThreadClaimRunObjects(
       },
     );
   });
-  const runPreparation$ = computed(
-    async (get): Promise<ThreadRunPreparation | CreateRunErrorResult> => {
-      const [agentResult, model] = await Promise.all([
-        get(selectedAgent$),
-        get(threadContext.subscriptionSelection$),
-      ]);
-      const agent = agentResult;
-      if ("status" in model) {
-        return model;
-      }
-      if (!agent) {
-        throw new Error("Agent disappeared after preparation authorization");
-      }
-      return {
-        modelSelection: model.pin,
-      };
-    },
-  );
   const preparedRunInput$ = computed(async (get) => {
-    const [input, resolution, fullCommand] = await Promise.all([
-      get(runPreparation$),
+    const [model, resolution, fullCommand] = await Promise.all([
+      get(threadContext.subscriptionSelection$),
       get(threadContinuation$),
       get(assembledRun$),
     ]);
     if (!fullCommand) {
       return null;
     }
-    if ("status" in input) {
-      return input;
+    if ("status" in model) {
+      return model;
     }
     if (!resolution) {
       throw new Error(
@@ -2293,7 +2257,7 @@ export function createThreadClaimRunObjects(
       );
     }
     return {
-      ...input,
+      modelSelection: model.pin,
       command: fullCommand,
       threadContinuation: resolution,
     };
@@ -2309,7 +2273,6 @@ export function createThreadClaimRunObjects(
     }
     return buildThreadRunArgs(input, promptAndSkills);
   });
-  const runFramework$ = threadContext.requestedFramework$;
   const modelRoute$ = threadContext.modelRoute$;
   const promptAndSkillVolumes$ = createPromptAndSkillVolumesSignals(
     bootstrap,
@@ -2343,69 +2306,30 @@ export function createThreadClaimRunObjects(
     threadContext,
   );
   const storage$ = createStorageSignals(bootstrap, pickedEvent$, threadContext);
-  const contextArgs$ = computed(async (get) => {
-    const selected = await get(runArgs$);
-    if (!selected || "status" in selected) {
-      throw new Error("Run context requires an authorized ready input");
-    }
-    return selected;
-  });
-  const execution$ = computed(
-    async (get): Promise<ThreadExecution | CreateRunErrorResult> => {
-      const [{ command }, agent] = await Promise.all([
-        get(selectedRunInput$),
-        get(selectedAgent$),
-      ]);
-      if (!agent) {
-        throw new Error("Agent disappeared after preparation authorization");
-      }
-      if (agent.orgId !== command.owner.orgId) {
-        return notFound("Agent not found");
-      }
-      return {
-        agentId: agent.id,
-        orgId: agent.orgId,
-        agentInstructions: agent.instructionsBundle,
-      };
-    },
-  );
-  const contentContext$ = computed(async (get) => {
-    const [args, resolved, vars, requestedFramework, featureSwitchContext] =
-      await Promise.all([
-        get(contextArgs$),
-        get(execution$),
-        get(bootstrap.runVariables$),
-        get(runFramework$),
-        get(bootstrap.featureSwitches$),
-      ]);
-    if (isRouteError(resolved)) {
-      return resolved;
-    }
-    if (resolved.orgId !== args.orgId) {
-      return notFound("Resource not found");
-    }
-    if (isRouteError(requestedFramework)) {
-      return requestedFramework;
-    }
-    return {
-      resolved,
-      content: {
-        prompt: args.prompt,
-        appendSystemPrompt: args.appendSystemPrompt,
-        triggerSource: args.triggerSource,
-        vars,
-      },
+  const runRuntimeInputs$ = computed(async (get) => {
+    const [
+      { authorization },
+      vars,
+      requestedFramework,
       featureSwitchContext,
-    };
-  });
-  const runtimeContext$ = computed(async (get) => {
-    const [contentContext, modelProvider, connector] = await Promise.all([
-      get(contentContext$),
+      modelProvider,
+      connector,
+    ] = await Promise.all([
+      get(authorizeIdentity$),
+      get(bootstrap.runVariables$),
+      get(threadContext.requestedFramework$),
+      get(bootstrap.featureSwitches$),
       get(modelRoute$),
       get(connectorAdmission$),
     ]);
-    if (isRouteError(contentContext)) {
-      return contentContext;
+    if (!authorization) {
+      throw new Error("Run plan requires an authorized Agent");
+    }
+    if (isRouteError(authorization)) {
+      return authorization;
+    }
+    if (isRouteError(requestedFramework)) {
+      return requestedFramework;
     }
     if (isRouteError(modelProvider)) {
       return modelProvider;
@@ -2414,10 +2338,7 @@ export function createThreadClaimRunObjects(
       return connector;
     }
     const providerPermissions = safeSync(() => {
-      return modelProviderPermissionManifest(
-        modelProvider,
-        contentContext.content.vars,
-      );
+      return modelProviderPermissionManifest(modelProvider, vars);
     });
     if ("error" in providerPermissions) {
       if (providerPermissions.error instanceof FirewallBaseUrlResolutionError) {
@@ -2425,128 +2346,180 @@ export function createThreadClaimRunObjects(
       }
       throw providerPermissions.error;
     }
-    const catalog = await get(claimCatalog$);
-    const usage = prepareModelUsageContext({
-      catalog,
+    return {
+      authorization,
+      vars,
+      featureSwitchContext,
       modelProvider,
-      permissionManifest: {
+      connector,
+      providerPermissions: providerPermissions.ok,
+      usagePermissions: {
         firewalls: [
           ...(providerPermissions.ok?.firewalls ?? []),
           ...(connector.permissions?.firewalls ?? []),
         ],
         billableFirewalls: connector.permissions?.billableFirewalls ?? [],
       },
-      routePricing: runRoutePricingFromSnapshot(
-        {
-          modelProvider,
-          serviceTier: (await get(contextArgs$)).codexServiceTier,
-        },
-        await get(bootstrap.modelPricing$),
-      ),
-    });
-    if ("kind" in usage) {
-      return providerUnavailable(usage.message);
-    }
-    return {
-      framework: modelProviderFramework(modelProvider),
-      modelProvider,
-      connectorEnvironment: connector.environment,
-      connectorNetworkPolicyInputs: connector.networkPolicyInputs,
-      modelProviderPermissions: providerPermissions.ok,
     };
   });
-  const executionPlan$ = computed(async (get) => {
-    const args = await get(contextArgs$);
-    const gate = enforceCaptureNetworkBodiesGate(
-      args.orgId,
-      args.captureNetworkBodies,
-    );
-    if (gate) {
-      return gate;
+  const runIntegration$ = computed(async (get) => {
+    const event = await get(queuedInput$);
+    if (!event) {
+      throw new Error("Run integration requires its selected input");
     }
-    const [
-      contentContext,
-      runtimeContext,
-      selectedImageModel,
-      officialWorkflowRun,
-    ] = await Promise.all([
-      get(contentContext$),
-      get(runtimeContext$),
-      get(bootstrap.selectedImageModel$),
-      get(officialWorkflow$),
-    ]);
-    if (isRouteError(contentContext)) {
-      return contentContext;
+    let integration: string | undefined;
+    switch (event.contextType) {
+      case "web":
+      case "agent_run": {
+        integration = "web";
+        break;
+      }
+      case "automation": {
+        integration = undefined;
+        break;
+      }
+      case "feishu": {
+        integration = (await get(feishuContext$))?.platform;
+        break;
+      }
+      case "agentphone": {
+        integration =
+          (await get(agentPhoneContext$))?.channel === "whatsapp"
+            ? "whatsapp"
+            : "phone";
+        break;
+      }
+      default: {
+        integration = event.contextType ?? undefined;
+      }
     }
-    if (isRouteError(runtimeContext)) {
-      return runtimeContext;
-    }
-    if (isRouteError(officialWorkflowRun)) {
-      return officialWorkflowRun;
-    }
-    const { content } = contentContext;
-    const { modelProvider, framework } = runtimeContext;
-    const { resolved } = contentContext;
-    const promptAndSkills = await get(preparedPromptAndSkillVolumes$);
-    if (isRouteError(promptAndSkills)) {
-      return promptAndSkills;
-    }
-    const tierError = checkRunServiceTier(
-      args.codexServiceTier,
-      contentContext.featureSwitchContext,
-    );
-    if (tierError) {
-      return tierError;
-    }
-    const launchFramework =
-      modelProvider.piModelConfig === undefined ? framework : ("pi" as const);
-    const packageMounts = prepareRunPackageMounts({
-      framework: launchFramework,
-      skillVolumes: promptAndSkills.skillVolumes,
-      officialWorkflow: officialWorkflowRun,
-    });
-    return {
-      content,
-      resolved,
-      modelProvider,
-      connectorEnvironment: runtimeContext.connectorEnvironment,
-      connectorNetworkPolicyInputs: runtimeContext.connectorNetworkPolicyInputs,
-      modelProviderPermissions: runtimeContext.modelProviderPermissions,
-      integrationContext:
-        promptAndSkills.systemPromptVariables.integrationContext,
-      userTimezone: promptAndSkills.userTimezone,
-      launchFramework,
-      officialWorkflowProvenance: officialWorkflowRun?.provenance,
-      ...packageMounts,
-      featureSwitchContext: contentContext.featureSwitchContext,
-      selectedImageModel,
-    };
+
+    return integration;
   });
-  const preparedRunPlan$ = computed(async (get) => {
-    const selected = await get(runArgs$);
-    if (!selected || "status" in selected) {
-      return selected;
-    }
-    return get(executionPlan$);
-  });
-  const authorizeSelectedAgentRun$ = computed(async (get) => {
-    const [identity, agent] = await Promise.all([
-      get(selectedIdentity$),
-      get(selectedAgent$),
-    ]);
-    if (!agent || agent.orgId !== identity.owner.orgId) {
-      return notFound("Agent not found");
-    }
-    if (
-      agent.visibility !== "public" &&
-      agent.owner !== identity.owner.userId
-    ) {
-      return agentRunsCreateForbidden(
-        "Only the private agent owner can run this agent",
+  const runPlan$ = computed(
+    async (get): Promise<RunPlan | CreateRunErrorResult | null> => {
+      if (!(await get(selectionInput$))) {
+        return null;
+      }
+      const args = await get(runArgs$);
+      if (!args || isRouteError(args)) {
+        return args;
+      }
+      const gate = enforceCaptureNetworkBodiesGate(
+        args.orgId,
+        args.captureNetworkBodies,
       );
-    }
-    return undefined;
-  });
+      if (gate) {
+        return gate;
+      }
+      const [runtime, selectedImageModel, officialWorkflowRun] =
+        await Promise.all([
+          get(runRuntimeInputs$),
+          get(bootstrap.selectedImageModel$),
+          get(officialWorkflow$),
+        ]);
+      if (isRouteError(runtime)) {
+        return runtime;
+      }
+      const { authorization, vars, featureSwitchContext, modelProvider } =
+        runtime;
+      const catalog = await get(claimCatalog$);
+      const usage = prepareModelUsageContext({
+        catalog,
+        modelProvider,
+        permissionManifest: runtime.usagePermissions,
+        routePricing: runRoutePricingFromSnapshot(
+          {
+            modelProvider,
+            serviceTier: args.codexServiceTier,
+          },
+          await get(bootstrap.modelPricing$),
+        ),
+      });
+      if ("kind" in usage) {
+        return providerUnavailable(usage.message);
+      }
+      if (isRouteError(officialWorkflowRun)) {
+        return officialWorkflowRun;
+      }
+      const promptAndSkills = await get(preparedPromptAndSkillVolumes$);
+      if (isRouteError(promptAndSkills)) {
+        return promptAndSkills;
+      }
+      const tierError = checkRunServiceTier(
+        args.codexServiceTier,
+        featureSwitchContext,
+      );
+      if (tierError) {
+        return tierError;
+      }
+      const launchFramework =
+        modelProvider.piModelConfig === undefined
+          ? modelProviderFramework(modelProvider)
+          : ("pi" as const);
+      const packageMounts = prepareRunPackageMounts({
+        framework: launchFramework,
+        skillVolumes: promptAndSkills.skillVolumes,
+        officialWorkflow: officialWorkflowRun,
+      });
+      const content = {
+        prompt: args.prompt,
+        appendSystemPrompt: args.appendSystemPrompt,
+        triggerSource: args.triggerSource,
+        vars,
+      };
+      const launchSnapshot = {
+        schemaVersion: 5 as const,
+        framework: launchFramework,
+        runnerProfile: DEFAULT_PROFILE,
+      };
+      const event = await get(queuedInput$);
+      if (!event) {
+        throw new Error("Run preparation requires its selected input");
+      }
+      const integration = await get(runIntegration$);
+      return {
+        args,
+        integrationContext:
+          promptAndSkills.systemPromptVariables.integrationContext,
+        persisted: {
+          inputEvent: event,
+          content,
+          selectedImageModel,
+          launchSnapshot,
+          officialWorkflowProvenance: officialWorkflowRun?.provenance,
+          resolved: {
+            agentId: authorization.agentId,
+          },
+          modelProvider: persistedModelProvider(modelProvider),
+        },
+        runner: {
+          workflowAutomationId: args.agentRunMetadata.workflowAutomationId,
+          agentInstructions: authorization.agentInstructions,
+          protectedMountPaths: packageMounts.protectedMountPaths,
+          nativeContinuation:
+            args.threadContinuation.executionSnapshot.nativeContinuation,
+          realAgentInPreview: args.realAgentInPreview,
+          profile: launchSnapshot.runnerProfile,
+          featureSwitchContext: featureSwitchContext,
+          facts: {
+            skillRoot: packageMounts.skillRoot,
+            skillMounts: packageMounts.skillMounts,
+            officialWorkflowBundles: packageMounts.officialWorkflowBundles,
+            integration,
+            captureNetworkBodies: args.captureNetworkBodies === true,
+            modelProvider,
+            modelProviderPermissions: runtime.providerPermissions,
+            connectorEnvironment: runtime.connector.environment,
+            connectorNetworkPolicyInputs: runtime.connector.networkPolicyInputs,
+            userTimezone: promptAndSkills.userTimezone,
+          },
+          apiStartTime: await get(runnerApiStartTime$),
+          chatThreadId: args.chatThreadId,
+        },
+      };
+    },
+  );
   const directSendInsufficientCreditsMessage$ = computed(async (get) => {
     const capabilities = await get(bootstrap.plan$);
     const appUrl = env("APP_URL");
@@ -2736,112 +2709,6 @@ export function createThreadClaimRunObjects(
       runId: ids.runId,
     };
   });
-  const runPlan$ = computed(
-    async (get): Promise<RunPlan | CreateRunErrorResult | null> => {
-      if (!(await get(selectionInput$))) {
-        return null;
-      }
-      const [selected, context] = await Promise.all([
-        get(runArgs$),
-        get(preparedRunPlan$),
-      ]);
-      if (!selected || isRouteError(selected)) {
-        return selected;
-      }
-      if (!context) {
-        return context;
-      }
-      if ("status" in context) {
-        return context;
-      }
-      const args = await get(contextArgs$);
-      const modelProvider = context.modelProvider;
-      const launchSnapshot = {
-        schemaVersion: 5 as const,
-        framework: context.launchFramework,
-        runnerProfile: DEFAULT_PROFILE,
-      };
-      const { content } = context;
-      const event = await get(queuedInput$);
-      if (!event) {
-        throw new Error("Run preparation requires its selected input");
-      }
-      let integration: string | undefined;
-      switch (event.contextType) {
-        case "web":
-        case "agent_run": {
-          integration = "web";
-          break;
-        }
-        case "automation": {
-          integration = undefined;
-          break;
-        }
-        case "feishu": {
-          integration = (await get(feishuContext$))?.platform;
-          break;
-        }
-        case "agentphone": {
-          integration =
-            (await get(agentPhoneContext$))?.channel === "whatsapp"
-              ? "whatsapp"
-              : "phone";
-          break;
-        }
-        default: {
-          integration = event.contextType ?? undefined;
-        }
-      }
-      const { officialWorkflowProvenance, selectedImageModel } = context;
-      return {
-        args,
-        integrationContext: context.integrationContext,
-        persisted: {
-          inputEvent: event,
-          content,
-          selectedImageModel,
-          launchSnapshot,
-          officialWorkflowProvenance,
-          resolved: {
-            agentId: context.resolved.agentId,
-          },
-          modelProvider: {
-            credentialOwner: modelProvider.credentialOwner,
-            accountIdentity: modelProvider.accountIdentity,
-            id: modelProvider.id,
-            type: modelProvider.type,
-            selectedModel: modelProvider.selectedModel,
-            upstreamModel: modelProvider.upstreamModel,
-            builtInModelRuntimeRoute: modelProvider.builtInModelRuntimeRoute,
-          },
-        },
-        runner: {
-          workflowAutomationId: args.agentRunMetadata.workflowAutomationId,
-          agentInstructions: context.resolved.agentInstructions,
-          protectedMountPaths: context.protectedMountPaths,
-          nativeContinuation:
-            args.threadContinuation.executionSnapshot.nativeContinuation,
-          realAgentInPreview: args.realAgentInPreview,
-          profile: launchSnapshot.runnerProfile,
-          featureSwitchContext: context.featureSwitchContext,
-          facts: {
-            skillRoot: context.skillRoot,
-            skillMounts: context.skillMounts,
-            officialWorkflowBundles: context.officialWorkflowBundles,
-            integration,
-            captureNetworkBodies: args.captureNetworkBodies === true,
-            modelProvider,
-            modelProviderPermissions: context.modelProviderPermissions,
-            connectorEnvironment: context.connectorEnvironment,
-            connectorNetworkPolicyInputs: context.connectorNetworkPolicyInputs,
-            userTimezone: context.userTimezone,
-          },
-          apiStartTime: await get(runnerApiStartTime$),
-          chatThreadId: args.chatThreadId,
-        },
-      };
-    },
-  );
   // Resource reads do not wait for credit admission: its failure is checked
   // with the prepared resources before anything is committed.
   const resourceAllowed$ = computed(async (get) => {
@@ -3004,18 +2871,29 @@ export function createThreadClaimRunObjects(
     if (!identityInput) {
       return { identityInput, authorization: undefined };
     }
+    const agent = await get(selectedAgent$);
+    if (!agent || agent.orgId !== identityInput.owner.orgId) {
+      return { identityInput, authorization: notFound("Agent not found") };
+    }
+    if (
+      agent.visibility !== "public" &&
+      agent.owner !== identityInput.owner.userId
+    ) {
+      return {
+        identityInput,
+        authorization: agentRunsCreateForbidden(
+          "Only the private agent owner can run this agent",
+        ),
+      };
+    }
     return {
       identityInput,
-      authorization: await get(authorizeSelectedAgentRun$),
+      authorization: {
+        agentId: agent.id,
+        agentInstructions: agent.instructionsBundle,
+      },
     };
   });
-  const authorizeClaimIdentity$ = command(
-    async ({ get }, signal: AbortSignal) => {
-      const authorized = await get(authorizeIdentity$);
-      signal.throwIfAborted();
-      return authorized;
-    },
-  );
   const initializeRunPreparation$ = command(
     async ({ get, set }, timing: ClaimRunTiming, signal: AbortSignal) => {
       signal.throwIfAborted();
@@ -3041,10 +2919,7 @@ export function createThreadClaimRunObjects(
         await set(recordPromptQueueAge$, head, signal);
       }
       signal.throwIfAborted();
-      const { identityInput, authorization } = await set(
-        authorizeClaimIdentity$,
-        signal,
-      );
+      const { identityInput, authorization } = await get(authorizeIdentity$);
       signal.throwIfAborted();
       if (!identityInput) {
         const assembly =
@@ -3065,7 +2940,7 @@ export function createThreadClaimRunObjects(
         );
         return null;
       }
-      if (authorization) {
+      if (isRouteError(authorization)) {
         const rejection =
           head.contextType === "automation"
             ? {
@@ -3401,9 +3276,9 @@ export function createThreadClaimRunObjects(
         kind: "pending",
         admittedLaunch: committed.result.admittedLaunch,
         marketingRewardEventId: committed.result.marketingRewardEventId,
-        runId: committed.result.run.id,
         apiStartTime: input.args.apiStartTime,
-        context,
+        head: context.head,
+        launchRecord: context.launchRecord,
       };
     },
   );
@@ -3511,19 +3386,17 @@ export function createThreadClaimRunObjects(
       signal.throwIfAborted();
       // Immediate and queued picks have committed their active-run slot here.
       // Pending shell approvals must re-read chat_busy before the runner starts.
-      await publishDesktopShellAuthorizationChangedSafely(
-        pending.context.head.userId,
-      );
+      await publishDesktopShellAuthorizationChangedSafely(pending.head.userId);
       signal.throwIfAborted();
       // The committed pending Run is the active indicator's only start edge.
       await publishChatIndicatorsChangedSafely({
-        userId: pending.context.head.userId,
-        orgId: pending.context.head.orgId,
+        userId: pending.head.userId,
+        orgId: pending.head.orgId,
       });
       signal.throwIfAborted();
       recordThreadRunActivationMarkers(
         {
-          runId: pending.runId,
+          runId: pending.admittedLaunch.run.id,
         },
         pending.apiStartTime,
       );
@@ -3558,7 +3431,7 @@ export function createThreadClaimRunObjects(
                 runId: terminal.runId,
                 orgId: terminal.orgId,
                 userId: terminal.userId,
-                chatThreadId: pending.context.head.chatThreadId,
+                chatThreadId: pending.head.chatThreadId,
                 chatEventsAppended: false,
               },
           signal,
@@ -3567,12 +3440,12 @@ export function createThreadClaimRunObjects(
       if (dispatched.failure !== undefined) {
         throw dispatched.failure;
       }
-      const launched = pending.context.launchRecord;
+      const launched = pending.launchRecord;
       if (launched.kind === "prompt") {
         set(
           recordQueuedPromptRunLaunch$,
           launched.context,
-          pending.runId,
+          pending.admittedLaunch.run.id,
           launched.timing,
           signal,
         );
@@ -3590,13 +3463,21 @@ export function createThreadClaimRunObjects(
         const database = set(writeDb$);
         const lastRunFields = () => {
           return {
-            ...(launched.recordLastRunId ? { lastRunId: pending.runId } : {}),
+            ...(launched.recordLastRunId
+              ? { lastRunId: pending.admittedLaunch.run.id }
+              : {}),
             ...(launched.recordLastRunAt ? { lastRunAt: nowDate() } : {}),
             ...(launched.disableClaimedOnceSchedule ? { enabled: false } : {}),
             updatedAt: nowDate(),
           };
         };
-        if (await set(morningBriefScheduleClaimBound$, pending.runId, signal)) {
+        if (
+          await set(
+            morningBriefScheduleClaimBound$,
+            pending.admittedLaunch.run.id,
+            signal,
+          )
+        ) {
           signal.throwIfAborted();
         } else {
           await database
@@ -3606,7 +3487,7 @@ export function createThreadClaimRunObjects(
         }
         signal.throwIfAborted();
       }
-      await set(publishChatQueueHeadConsumed$, pending.context.head, signal);
+      await set(publishChatQueueHeadConsumed$, pending.head, signal);
     },
   );
 
@@ -4156,6 +4037,26 @@ function recordAtomicLaunchTiming(args: {
 }
 // --- Thread-private implementation: model provider environment ---
 
+function persistedModelProvider({
+  credentialOwner,
+  accountIdentity,
+  id,
+  type,
+  selectedModel,
+  upstreamModel,
+  builtInModelRuntimeRoute,
+}: ResolvedModelProviderEnvironment): RunPlan["persisted"]["modelProvider"] {
+  return {
+    credentialOwner,
+    accountIdentity,
+    id,
+    type,
+    selectedModel,
+    upstreamModel,
+    builtInModelRuntimeRoute,
+  };
+}
+
 function modelProviderFramework(
   modelProvider: ResolvedModelProviderEnvironment,
 ): SupportedFramework {
@@ -4185,12 +4086,6 @@ interface ThreadRunCommand {
 }
 
 // --- Thread-private implementation: launch input ---
-
-interface ThreadExecution {
-  readonly agentId: string;
-  readonly orgId: string;
-  readonly agentInstructions: ContentBundle | null;
-}
 
 /** The Thread facts needed to prepare one Runner launch. */
 interface ThreadRunnerFacts {
@@ -4329,10 +4224,6 @@ function agentRunOrigin(args: {
     return "workflow_automation";
   }
   return "direct";
-}
-
-interface ThreadRunPreparation {
-  readonly modelSelection: ModelFirstPin;
 }
 
 interface ThreadRunArgsInput {
