@@ -1207,7 +1207,9 @@ export function ThreeColumnSearchDialog({
   const query = useGet(chatListQuery$);
   const setQuery = useSet(setChatListQuery$);
   const signal = useGet(pageSignal$);
-  const filter = useLastResolved(threeColumnSearchFilter$) ?? "all";
+  const rawFilter = useGet(threeColumnSearchFilter$);
+  const singleAgent = useLastResolved(singleAgentEnabled$);
+  const filter = singleAgent && rawFilter === "agents" ? "all" : rawFilter;
   const setFilter = useSet(setThreeColumnSearchFilter$);
   const threadLoadable = useLoadable(threeColumnSearchChatThreads$);
   const shortcutIndex = useSet(threadNumberShortcutIndex$);

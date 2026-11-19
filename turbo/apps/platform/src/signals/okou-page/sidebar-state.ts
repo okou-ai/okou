@@ -1,4 +1,3 @@
-import { singleAgentEnabled$ } from "../single-agent.ts";
 import { command, computed, state } from "ccstate";
 import { debounceCommand, onRef, resetSignal } from "../utils.ts";
 import { hideKeyboardShortcutHints$ } from "../keyboard-shortcut-hints.ts";
@@ -156,11 +155,8 @@ export const setThreeColumnSearchOpen$ = command(({ set }, open: boolean) => {
 });
 
 const internalThreeColumnSearchFilter$ = state<ThreeColumnSearchFilter>("all");
-export const threeColumnSearchFilter$ = computed(async (get) => {
-  const filter = get(internalThreeColumnSearchFilter$);
-  return (await get(singleAgentEnabled$)) && filter === "agents"
-    ? "all"
-    : filter;
+export const threeColumnSearchFilter$ = computed((get) => {
+  return get(internalThreeColumnSearchFilter$);
 });
 export const setThreeColumnSearchFilter$ = command(
   ({ set }, filter: ThreeColumnSearchFilter) => {
