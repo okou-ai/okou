@@ -575,7 +575,7 @@ fn preferred_home_checkout(context: &ExecutionContext) -> Option<(RunId, tokio::
     if context.is_first_run == Some(true) || checkout.predecessor_run_id == context.run_id {
         return None;
     }
-    context.reuse_key()?;
+    context.reuse_key().filter(|key| !key.is_empty())?;
     let now = tokio::time::Instant::now();
     let wall_now = u64::try_from(chrono::Utc::now().timestamp_millis()).ok()?;
     let remaining = Duration::from_millis(checkout.not_after.checked_sub(wall_now)?);

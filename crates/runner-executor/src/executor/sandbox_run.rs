@@ -1032,19 +1032,20 @@ pub(super) async fn prepare_home_image(
     } else {
         cache.prepare_with_policy(request, policy).await
     };
+    let prepare_elapsed = prepare_started.elapsed();
+    let prepare_error = home_image_prepare_error(lease.result());
     if matches!(policy, HomeImagePreparePolicy::TryCacheUntil(_)) {
         telemetry.record_with_outcome(
             "runner_preferred_home_image_checkout",
-            prepare_started.elapsed(),
-            lease.is_cache_hit(),
-            home_image_prepare_error(lease.result()),
+            prepare_elapsed,
+            prepare_error.is_none(),
+            prepare_error,
             Some(if lease.is_cache_hit() { "hit" } else { "miss" }),
         );
     }
-    let prepare_error = home_image_prepare_error(lease.result());
     telemetry.record(
         RUNNER_FRESH_HOME_IMAGE_PREPARE,
-        prepare_started.elapsed(),
+        prepare_elapsed,
         prepare_error.is_none(),
         prepare_error,
     );
