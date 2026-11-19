@@ -253,8 +253,8 @@ release_locks() {
   return "$status"
 }
 
-# ShellCheck does not model functions invoked through traps.
-# shellcheck disable=SC2317
+# The EXIT trap below is the only caller.
+# shellcheck disable=SC2317,SC2329
 cleanup_on_exit() {
   local status=$?
   trap - EXIT INT TERM

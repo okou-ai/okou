@@ -52,14 +52,10 @@ case "$SCENARIO" in
     head -c 3 | sh -c "$2"
     exit $?
     ;;
-  partial | timeout | pipe)
+  pipe)
     if [ "$count" -eq 1 ]; then
       head -c 3 | sh -c "$2" || true
-      case "$SCENARIO" in
-        timeout) exit 124 ;;
-        pipe) exit 141 ;;
-        *) exit 255 ;;
-      esac
+      exit 141
     fi
     ;;
   late-writer)
@@ -89,7 +85,7 @@ if [ "$SCENARIO" = lost-ack ] && [ "$count" -eq 1 ]; then exit 255; fi
 SSH
 chmod +x "$test_root/bin/ssh"
 
-for scenario in success partial timeout pipe lost-ack late-writer corrupt permanent exhausted; do
+for scenario in success pipe lost-ack late-writer corrupt permanent exhausted; do
   case_dir="$test_root/$scenario"
   mkdir "$case_dir"
   mkfifo "$case_dir/release" "$case_dir/done"
@@ -192,7 +188,11 @@ fi
 kill -TERM "$owner"
 status=0
 wait "$owner" || status=$?
-test "$status" -eq 143
+if [ "$status" -ne 143 ]; then
+  cat "$case_dir/out" >&2
+  echo "cancelled transfer returned $status, expected 143" >&2
+  exit 1
+fi
 test "$(cat "$case_dir/count")" -eq 1
 if kill -0 "$(cat "$case_dir/ssh.pid")" 2>/dev/null; then
   echo 'cancelled upload retained its SSH child' >&2

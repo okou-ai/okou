@@ -29,6 +29,8 @@ inputs:
 runs:
   using: "composite"
   steps:
+    - uses: ./.github/actions/setup-gnu-timeout
+
     - name: Install cloudflared
       shell: bash
       run: |
