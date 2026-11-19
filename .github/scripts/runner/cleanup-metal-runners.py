@@ -147,9 +147,8 @@ class GitHub:
         # owners() reconciles known run IDs and stabilizes selected PR owners.
         return records
 
-    def owners(self, pulls):
-        previous = None
-        for _ in range(4):
+    def owners(self, pulls, previous=None):
+        for sweep in range(4):
             runs = {}
             for status in ACTIVE_STATUSES:
                 for record in self.status_runs(status).values():
@@ -182,7 +181,9 @@ class GitHub:
                         )
             owners = self.resolve_owners(pulls, runs)
             identities = {number: sorted(set(ids)) for number, ids in owners.items()}
-            if previous == identities:
+            # A previous preparation can seed exact rechecks, but the new
+            # preparation still needs two matching owner sweeps.
+            if sweep and previous == identities:
                 return identities
             previous = identities
         raise RuntimeError("selected owner discovery did not stabilize")
@@ -265,7 +266,7 @@ class WorkerChannelClosed(RuntimeError):
 class Session:
     """One SSH channel whose remote mutation worker owns the namespace locks."""
 
-    def __init__(self, host, user, numbers):
+    def __init__(self, host, user, numbers, *, recovery_deadline=None):
         self.host = host
         self.numbers = numbers
         self.stopped = threading.Event()
@@ -285,8 +286,12 @@ class Session:
             "session",
             *map(str, numbers),
         ]
-        deadline = time.monotonic() + 70
-        for attempt in range(2):
+        self.deadline = (
+            time.monotonic() + 70 if recovery_deadline is None else recovery_deadline
+        )
+        for attempt in range(2 if recovery_deadline is None else 1):
+            if time.monotonic() >= self.deadline:
+                raise TimeoutError(f"lock readiness deadline exceeded on {host}")
             self.response_buffer = b""
             self.process = subprocess.Popen(
                 command,
@@ -298,19 +303,14 @@ class Session:
             )
             CHILDREN.add(self.process.pid)
             try:
-                if self.read(deadline - time.monotonic()) != {"ready": numbers}:
+                if self.read(self.deadline - time.monotonic()) != {"ready": numbers}:
                     raise RuntimeError(f"invalid lock readiness from {host}")
-            except WorkerChannelClosed as error:
-                # The wrapper closes stdout before finishing its diagnostics.
+            except WorkerChannelClosed:
                 try:
-                    status = self.process.wait(
-                        timeout=max(0, deadline - time.monotonic())
-                    )
-                except subprocess.TimeoutExpired:
-                    raise error from None
+                    can_retry = self.exited_255_before_deadline()
                 finally:
                     self._close_process()
-                if attempt or status != 255 or time.monotonic() >= deadline:
+                if attempt or recovery_deadline is not None or not can_retry:
                     raise
                 # No cleanup was sent. The replacement still has to acquire
                 # the same flock, even if the first worker has yet to retire.
@@ -325,6 +325,14 @@ class Session:
                 break
         self.heartbeat = threading.Thread(target=self.keep_alive, daemon=True)
         self.heartbeat.start()
+
+    def exited_255_before_deadline(self):
+        # The wrapper closes stdout before finishing its diagnostics.
+        try:
+            status = self.process.wait(timeout=max(0, self.deadline - time.monotonic()))
+        except subprocess.TimeoutExpired:
+            return False
+        return status == 255 and time.monotonic() < self.deadline
 
     def send(self, message):
         with self.writer:
@@ -358,15 +366,17 @@ class Session:
                 return
 
     def require_active(self):
-        # An idle lock worker has no pending reply. Readability can signal
-        # EOF while the SSH wrapper is still emitting diagnostics.
-        if (
-            self.write_error is not None
-            or self.process.poll() is not None
-            or self.response_buffer
-            or select.select([self.process.stdout], [], [], 0)[0]
+        # An idle worker sends no frames. Reject unexpected output as a
+        # protocol failure, and classify a readable EOF as a lost channel.
+        readable = select.select([self.process.stdout], [], [], 0)[0]
+        if self.response_buffer or (
+            readable and os.read(self.process.stdout.fileno(), 65536)
         ):
-            raise RuntimeError(f"namespace lock worker unavailable on {self.host}")
+            raise RuntimeError(f"unexpected idle worker output on {self.host}")
+        if readable or self.write_error is not None or self.process.poll() is not None:
+            raise WorkerChannelClosed(
+                f"namespace lock worker unavailable on {self.host}"
+            )
 
     def cleanup(self, closed_at):
         self.require_active()
@@ -483,36 +493,59 @@ def reconcile_batch(github, hosts, user, numbers):
     started = time.monotonic()
     pages_before = github.requests
     try:
-        # Lock all selected namespaces on every configured host before asking
-        # for fresh authority. The mutation worker itself retains each flock.
-        for host in hosts:
-            sessions[host] = Session(host, user, numbers)
-        locked = time.monotonic()
-        pulls = github.pulls(numbers)
-        state_finished = time.monotonic()
-        owners = github.owners(pulls)
-        owners_finished = time.monotonic()
-        # Owner discovery may take several API pages. A scheduled sweep is not
-        # cancelled by a reopen event, so refresh PR state at the mutation
-        # boundary instead of authorizing from the earlier CLOSED snapshot.
-        pulls = github.pulls(numbers)
-        authorized = time.monotonic()
-        selected = []
-        for number in numbers:
-            if pulls[number]["state"] == "OPEN":
-                decisions[number] = {"outcome": "skipped_open"}
-            elif owners[number]:
-                decisions[number] = {
-                    "outcome": "deferred_owner",
-                    "runs": owners[number],
-                }
+        recovery_deadline = None
+        owners = None
+        while True:
+            # All hosts must hold the locks before reading fresh authority.
+            for host in hosts:
+                sessions[host] = Session(
+                    host, user, numbers, recovery_deadline=recovery_deadline
+                )
+            locked = time.monotonic()
+            pulls = github.pulls(numbers)
+            state_finished = time.monotonic()
+            owners = github.owners(pulls, previous=owners)
+            owners_finished = time.monotonic()
+            # A scheduled sweep is not cancelled by a reopen event. Refresh
+            # PR state after owner discovery, at the mutation boundary.
+            pulls = github.pulls(numbers)
+            authorized = time.monotonic()
+            selected = []
+            for number in numbers:
+                if pulls[number]["state"] == "OPEN":
+                    decisions[number] = {"outcome": "skipped_open"}
+                elif owners[number]:
+                    decisions[number] = {
+                        "outcome": "deferred_owner",
+                        "runs": owners[number],
+                    }
+                else:
+                    selected.append(number)
+            if not selected:
+                break
+            try:
+                for session in sessions.values():
+                    session.require_active()
+            except WorkerChannelClosed:
+                if (
+                    recovery_deadline is not None
+                    or not session.exited_255_before_deadline()
+                ):
+                    raise
+                recovery_deadline = session.deadline
+                print(
+                    f"Restarting metal cleanup preparation after SSH exit 255 on {session.host}",
+                    file=sys.stderr,
+                )
+                # No cleanup has been dispatched. Retire the entire set so
+                # reacquisition cannot invert the original host lock order.
+                for previous in reversed(list(sessions.values())):
+                    previous.abort()
+                sessions.clear()
+                decisions.clear()
             else:
-                selected.append(number)
+                break
         if selected:
-            # A previously ready worker can exit while another acquires its
-            # locks. Check all channels before sending any cleanup command.
-            for session in sessions.values():
-                session.require_active()
             with ThreadPoolExecutor(max_workers=min(len(hosts), 2)) as pool:
                 futures = {
                     host: pool.submit(

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Exercise the cleanup CLI with real files/flocks and external command fixtures."""
 
+import contextlib
 import json
 import os
 import select
@@ -28,7 +29,10 @@ if 'graphql' in args:
    with path.open('a') as lock:
     try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB);locked=False
     except BlockingIOError:pass
-  state='OPEN' if data.get('reopen')==n and locked else 'CLOSED'
+  reopened = data.get('reopen') == n
+  if locked and data.get('reopen_after_recovery') == n:
+   reopened = (root / 'metal-a/ssh.log').read_text().count('session\n') == 2
+  state = 'OPEN' if locked and reopened else 'CLOSED'
   pulls[f'p{n}']={'number':n,'state':state,'createdAt':'2026-10-01T00:00:00Z','closedAt':'2026-10-02T00:00:00Z','headRefName':'reused','headRepository':{'nameWithOwner':'okou-ai/okou'}}
  print(json.dumps({'data':{'repository':pulls}}))
 elif any(a.endswith('/actions/runs') for a in args):
@@ -42,6 +46,8 @@ elif any(a.endswith('/actions/runs') for a in args):
    scans.pop(0);(root/'github.json').write_text(json.dumps(data))
   print(json.dumps(pages));sys.exit(0)
  runs=[dict(r) for r in data.get('runs',[]) if r['status']==status]
+ if data.get('hide_owners_after_recovery') and (root / 'metal-a/ssh.log').read_text().count('session\n') == 2:
+  runs=[]
  if data.get('churn'):
   for run in runs:run['id']+=len((root/'github.log').read_text().splitlines())
  pages=[{'total_count':len(runs),'workflow_runs':runs[offset:offset+100]} for offset in range(0,min(len(runs),1000),100)]
@@ -56,7 +62,7 @@ else:raise SystemExit('unexpected gh call')
 """
 
 SSH = r"""#!/usr/bin/env python3
-import json,os,select,shlex,signal,subprocess,sys
+import fcntl,json,os,select,shlex,signal,subprocess,sys
 from pathlib import Path
 root = Path(os.environ['FIXTURE'])
 if sys.argv[1:4] == ['-v', '-n', '-T'] and sys.argv[-1] == 'true':
@@ -95,13 +101,23 @@ if args[2]=='-c':
   source='import runpy;runpy.run_path('+repr(str(root/'clock.py'))+');'+source
  command=[sys.executable,'-c',source,*args[4:],'--root',str(root/host)]
  failure = os.environ.get('READY_FAILURE')
- if failure == 'prior-lost' and host == 'metal-a':
+ prior_lost = failure in ('prior-lost', 'prior-lost-command', 'prior-lost-repeat')
+ session_count = history.read_text().count('session\n')
+ if prior_lost and host == 'metal-a' and session_count == 1:
   with subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True) as worker:
    print(worker.stdout.readline(), end='', flush=True)
    await_event('disconnect-a')
    worker.stdin.close()
    worker.wait(timeout=5)
-  sys.exit(255)
+  sys.exit(7 if failure == 'prior-lost-command' else 255)
+ if prior_lost and host == 'metal-a':
+  # Reacquiring the first host while retaining B would invert lock order.
+  for number in args[5:]:
+   path = root / 'metal-b/var/lock' / f'vm0-runner-lifecycle-pr-{number}.lock'
+   with path.open() as lock:
+    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+  if failure == 'prior-lost-repeat':
+   sys.exit(255)
  failure = failure if host == 'metal-b' else None
  if failure == 'invalid':
   print('{"ready":[]}')
@@ -109,7 +125,7 @@ if args[2]=='-c':
  if failure == 'command':
   sys.exit(7)
  if failure == 'reset-always' or (
-  failure in ('reset-once', 'prior-lost') and history.read_text().count('session\n') == 1
+  (failure == 'reset-once' or (prior_lost and host == 'metal-b')) and session_count == 1
  ):
   with subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True) as worker:
    assert json.loads(worker.stdout.readline()) == {'ready': [int(n) for n in args[5:]]}
@@ -118,21 +134,18 @@ if args[2]=='-c':
    worker.stdin.close()
    worker.wait(timeout=5)
   sys.exit(255)
- if failure == 'prior-lost':
+ if prior_lost and host == 'metal-b' and session_count == 2:
   (root / 'disconnect-a').write_text('ready\n')
   await_event('diagnosing-a')
  partial_release = os.environ.get('PARTIAL_RELEASE')
- if partial_release or failure == 'prior-lost':
+ if partial_release:
   with subprocess.Popen(command,stdin=subprocess.PIPE,stdout=subprocess.PIPE,text=True,bufsize=1) as worker:
    print(worker.stdout.readline(),end='',flush=True)
    for line in sys.stdin:
     worker.stdin.write(line);worker.stdin.flush()
     if json.loads(line)['operation']=='heartbeat':continue
     reply=worker.stdout.readline()
-    if failure == 'prior-lost':
-     (root / 'finish-diagnostics').write_text('ready\n')
-     failure = None
-    if partial_release and json.loads(reply).get('released'):
+    if json.loads(reply).get('released'):
      worker.stdin.close();worker.wait(timeout=5)
      sys.stdout.write('{"released":');sys.stdout.flush()
      with (root/'reply-ready').open('w') as ready:ready.write(str(os.getpid())+'\n')
@@ -147,7 +160,6 @@ os.execv(sys.executable,[sys.executable,*args[2:],'--root',str(root/host)])
 
 BLOCKED_DIAGNOSTICS = r"""
 import os
-import select
 import sys
 import time
 from pathlib import Path
@@ -156,12 +168,11 @@ args = sys.argv[1:]
 if len(args) == 3 and args[1] == "master":
     probe = Path(args[2]).read_text()
     failure = os.environ.get("READY_FAILURE")
-    if failure == "prior-lost" and "metal-a.vm3.ai" in probe:
+    if failure in ("prior-lost", "prior-lost-command", "prior-lost-repeat") and "metal-a.vm3.ai" in probe:
         root = Path(os.environ["FIXTURE"])
         (root / "diagnosing-a").write_text("ready\n")
-        with (root / "finish-diagnostics").open() as event:
-            assert select.select([event], [], [], 10)[0], "diagnostics were not released"
-            assert event.readline() == "ready\n"
+        # Keep the wrapper alive briefly after the native command closes.
+        time.sleep(1.5)
     elif failure == "reset-once" and "metal-b.vm3.ai" in probe:
         # Reproduce diagnostics finishing after the former five-second exit wait.
         time.sleep(6)
@@ -1022,16 +1033,61 @@ class CleanupTests(unittest.TestCase):
                     history.read_text(), "inventory\n" + "session\n" * sessions
                 )
 
-    def test_lock_readiness_retry_cannot_dispatch_during_prior_host_diagnostics(self):
+    def pre_dispatch_loss(self, failure):
         files = [
             self.resource("var/lib/vm0-runner/stripe/pr-42/config", host=host)
             for host in ("metal-a", "metal-b")
         ]
-        for name in ("disconnect-a", "diagnosing-a", "finish-diagnostics"):
-            event = self.root / name
-            os.mkfifo(event)
-            self.addCleanup(os.close, os.open(event, os.O_RDWR | os.O_NONBLOCK))
-        result = self.guarded_controller(READY_FAILURE="prior-lost")
+
+        def open_event(path, flags):
+            return os.open(path, flags | os.O_RDWR | os.O_NONBLOCK)
+
+        with contextlib.ExitStack() as events:
+            for name in ("disconnect-a", "diagnosing-a"):
+                event = self.root / name
+                os.mkfifo(event)
+                events.enter_context(open(event, "rb", opener=open_event))
+            return files, self.guarded_controller(READY_FAILURE=failure)
+
+    def test_restarts_lock_preparation_after_ready_host_disconnects(self):
+        files, result = self.pre_dispatch_loss("prior-lost")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(all(not file.exists() for file in files), result.stdout)
+        self.assertIn('"cleaned": 1', result.stdout)
+        self.assertEqual(
+            (self.root / "metal-a/ssh.log").read_text(), "inventory\nsession\nsession\n"
+        )
+        self.assertEqual(
+            (self.root / "metal-b/ssh.log").read_text(),
+            "inventory\nsession\nsession\nsession\n",
+        )
+
+    def test_rechecks_github_authority_after_pre_dispatch_restart(self):
+        self.github(reopen_after_recovery=42)
+        files, result = self.pre_dispatch_loss("prior-lost")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(all(file.is_file() for file in files), result.stdout)
+        self.assertIn('"skipped_open": 1', result.stdout)
+
+    def test_rechecks_a_previously_seen_owner_after_pre_dispatch_restart(self):
+        owner = self.owner()
+        self.github(
+            runs=[owner],
+            hide_owners_after_recovery=True,
+            run_details={str(owner["id"]): owner},
+        )
+        selected = [
+            self.resource("var/lib/vm0-runner/stripe/pr-43/config", host=host)
+            for host in ("metal-a", "metal-b")
+        ]
+        owned, result = self.pre_dispatch_loss("prior-lost")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(all(file.is_file() for file in owned), result.stdout)
+        self.assertTrue(all(not file.exists() for file in selected), result.stdout)
+        self.assertIn('"deferred_owner": 1', result.stdout)
+
+    def test_pre_dispatch_command_failure_keeps_all_host_resources(self):
+        files, result = self.pre_dispatch_loss("prior-lost-command")
         self.assertEqual(result.returncode, 1, result.stderr)
         self.assertTrue(all(file.is_file() for file in files), result.stdout)
         self.assertIn(
@@ -1039,6 +1095,14 @@ class CleanupTests(unittest.TestCase):
         )
         self.assertEqual(
             (self.root / "metal-b/ssh.log").read_text(), "inventory\nsession\nsession\n"
+        )
+
+    def test_pre_dispatch_restart_does_not_retry_a_second_disconnect(self):
+        files, result = self.pre_dispatch_loss("prior-lost-repeat")
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertTrue(all(file.is_file() for file in files), result.stdout)
+        self.assertEqual(
+            (self.root / "metal-a/ssh.log").read_text(), "inventory\nsession\nsession\n"
         )
 
     def test_namespace_selection_is_explicit_and_fails_closed(self):

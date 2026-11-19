@@ -217,6 +217,10 @@ that host within the original 70-second deadline. Each worker holds the namespac
 flock itself. All configured hosts must report readiness before fresh GitHub
 authorization. Before dispatching cleanup, the controller checks each session's
 process and output pipe so a closed channel cannot appear active during diagnostics.
+If a previously ready session exits 255 before dispatch, the controller can retire
+the batch's sessions and restart preparation once within that host's remaining
+readiness budget. It reacquires the full lock set in the original host order and
+refreshes GitHub authorization before sending cleanup.
 PR state and stabilized owner discovery are fresh under those locks.
 Exact owner association protects older CI generations; unresolved
 association fails closed instead of guessing from a reused branch. Proven live
