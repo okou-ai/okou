@@ -1,4 +1,4 @@
-import { SEED_SKILLS } from "@okouai/core/seed-skills";
+import { BUILT_IN_SKILLS } from "@okouai/core/built-in-skills";
 import { randomUUID } from "node:crypto";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
@@ -274,7 +274,7 @@ test("re-evaluates private/public precedence without exposing another member's p
     execution.contentBundles.skills.map((entry) => {
       return entry.mountPath.split("/").at(-1);
     }),
-  ).toStrictEqual([privateWorkflow.name, ...SEED_SKILLS]);
+  ).toStrictEqual([privateWorkflow.name, ...BUILT_IN_SKILLS]);
   expect(
     readExecutionContentBundle(s3.objects, execution.contentBundles.skills[0]!)
       .get("SKILL.md")
@@ -582,7 +582,7 @@ test("runs a queued explicit invocation without its deleted Workflow", async () 
     execution.contentBundles.skills.map((entry) => {
       return entry.mountPath.split("/").at(-1);
     }),
-  ).toStrictEqual([...SEED_SKILLS]);
+  ).toStrictEqual([...BUILT_IN_SKILLS]);
   await finish(run.runId, execution.sandboxToken);
 });
 

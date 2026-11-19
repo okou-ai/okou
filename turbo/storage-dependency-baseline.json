@@ -22,7 +22,7 @@
     },
     {
       "file": "turbo/apps/api/src/signals/services/cron-sync-skills.service.ts",
-      "uses": 17,
+      "uses": 7,
       "dependency": "module:turbo/packages/db/src/schema/skill"
     },
     {
