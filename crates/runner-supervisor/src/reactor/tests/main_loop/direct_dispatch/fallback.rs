@@ -177,6 +177,7 @@ enum Available {
     UnadvertisedHomeOnBlank,
     UnadvertisedHomeOnFresh,
     DifferentPreferredHomeSource,
+    DifferentPreferredHomeSourceAfterHandoff,
     ReplacedHome,
     Blank,
     Home,
@@ -214,6 +215,11 @@ async fn supplied_expired_preference_still_requires_its_exact_home_source() {
 }
 
 #[tokio::test]
+async fn supplied_preference_fences_blank_home_after_local_handoff_falls_back() {
+    assert_fallback(Available::DifferentPreferredHomeSourceAfterHandoff).await;
+}
+
+#[tokio::test]
 async fn supplied_fallback_keeps_selected_home_source_through_blank_activation() {
     assert_fallback(Available::ReplacedHome).await;
 }
@@ -245,6 +251,11 @@ async fn assert_fallback(available: Available) {
             | Available::UnadvertisedHomeOnFresh
             | Available::DifferentPreferredHomeSource
     );
+    let different_preferred_home_source = matches!(
+        available,
+        Available::DifferentPreferredHomeSource
+            | Available::DifferentPreferredHomeSourceAfterHandoff
+    );
     let execution = MockLifecycleGate::new();
     let overrides = Arc::new(MockSandboxOverrides::new());
     overrides.set_wait_process_lifecycle_gate(execution.clone());
@@ -269,6 +280,7 @@ async fn assert_fallback(available: Available) {
         Available::Retained
             | Available::BlankAndHome
             | Available::BlankAndHomeLateRetained
+            | Available::DifferentPreferredHomeSourceAfterHandoff
             | Available::ReplacedHome
             | Available::Home
     );
@@ -308,6 +320,7 @@ async fn assert_fallback(available: Available) {
             | Available::BlankAndHomeLateRetained
             | Available::LateHome
             | Available::UnadvertisedHomeOnBlank
+            | Available::DifferentPreferredHomeSourceAfterHandoff
             | Available::ReplacedHome
             | Available::Blank
     ) {
@@ -360,7 +373,7 @@ async fn assert_fallback(available: Available) {
     body["executionContext"]["nativeContinuation"] = json!({
         "sessionId": RunId::new_v4(), "generationRunId": source, "recoveryPrompt": null
     });
-    if matches!(available, Available::DifferentPreferredHomeSource) {
+    if different_preferred_home_source {
         body["preferredHomeCheckout"] = json!({
             "predecessorRunId": RunId::new_v4(),
             "waitUntil": 0,
@@ -450,15 +463,20 @@ async fn assert_fallback(available: Available) {
         unpark.release_many(usize::MAX);
     }
     execution.wait_entered(1, WAIT).await.unwrap();
-    if matches!(available, Available::DifferentPreferredHomeSource) {
-        assert!(
+    if different_preferred_home_source {
+        let other_source_unused = if blank.is_some() {
+            overrides.home_drive_replacements().is_empty()
+        } else {
             overrides.create_configs()[0]
                 .home_drive
                 .as_ref()
                 .unwrap()
                 .seed_image
-                .is_none(),
-            "an expired deferral window must still fence checkout to the supplied source"
+                .is_none()
+        };
+        assert!(
+            other_source_unused,
+            "checkout must use only the preferred source even after deferral expires"
         );
     } else if matches!(available, Available::ReplacedHome) {
         assert!(

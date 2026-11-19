@@ -302,6 +302,7 @@ async fn prepare_accepted(
                     job,
                     cancellation,
                     handoff_context,
+                    preferred_home_source,
                     accepted_at,
                     profile_name,
                     rootfs_hash,
