@@ -8559,7 +8559,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           "A single agent run has a maximum execution time of 2 hours.",
         );
         expect(appendSystemPrompt).toContain(
-          "provide a final response before the run ends",
+          "the user keeps the messages and files delivered before then",
         );
         expect(appendSystemPrompt).toContain("# Agent Tools");
         for (const toolHint of [
