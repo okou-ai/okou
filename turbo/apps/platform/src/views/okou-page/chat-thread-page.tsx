@@ -6109,10 +6109,11 @@ function SelectablePagedGroupRow({
       <div
         data-chat-share-selectable-group
         data-chat-scroll-anchor-alias-event-ids={aliasEventIds}
-        className="group/share-row grid grid-cols-[2rem_minmax(0,1fr)] gap-2 rounded-xl"
+        className="grid grid-cols-[2rem_minmax(0,1fr)] gap-2 rounded-xl"
       >
         <ShareGroupSelectionColumn role={group.role} {...selection} />
-        {messages}
+        {/* Wide message rows extend their avatar gutter 46px to the left. */}
+        <div className="min-w-0 @[900px]:pl-[46px]">{messages}</div>
       </div>
     );
   }
