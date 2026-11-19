@@ -23,7 +23,7 @@ permission-batch-page-002	turbo/apps/platform/src/views/permission-allow/__tests
 permission-batch-page-006	turbo/apps/platform/src/views/permission-allow/__tests__/permission-batch-page.test.tsx	Dismissing a batch leaves a second agent's request and chat continuation independent	158	passed
 permission-batch-page-008	turbo/apps/platform/src/views/permission-allow/__tests__/permission-batch-page.test.tsx	Permissions allowed by policy appear complete without a new grant	234	passed
 permission-batch-page-009	turbo/apps/platform/src/views/permission-allow/__tests__/permission-batch-page.test.tsx	Missing metadata prevents approval and still lets the user dismiss the request	247	passed
-permission-batch-page-011	turbo/apps/platform/src/views/permission-allow/__tests__/permission-batch-page.test.tsx	An unacknowledged grant cannot continue the chat	267	passed
+permission-batch-page-011	turbo/apps/platform/src/views/permission-allow/__tests__/permission-batch-page.test.tsx	An unacknowledged grant cannot continue the chat	266	passed
 notification-navigation-001	turbo/apps/platform/src/views/notifications/__tests__/notification-navigation.test.tsx	A relative chat notification opens the linked conversation	8	passed
 service-status-notice-001	turbo/apps/platform/src/views/router/__tests__/service-status-notice.test.tsx	A desktop user can open or dismiss an active service incident	31	passed
 service-status-notice-003	turbo/apps/platform/src/views/router/__tests__/service-status-notice.test.tsx	A mobile user can see an active incident alongside main navigation	55	passed
@@ -60,3 +60,36 @@ shared-thread-actions-005	turbo/apps/platform/src/views/shared-thread-page/__tes
 shared-thread-actions-006	turbo/apps/platform/src/views/shared-thread-page/__tests__/shared-thread-actions.test.tsx	A visitor copies the public conversation link from Share	148	passed
 shared-thread-actions-007	turbo/apps/platform/src/views/shared-thread-page/__tests__/shared-thread-actions.test.tsx	The creator can copy the link and change workspace visibility to anyone with the link	171	passed
 shared-thread-actions-009	turbo/apps/platform/src/views/shared-thread-page/__tests__/shared-thread-actions.test.tsx	A signed-in recipient copies the shared link without access controls	247	passed
+shared-artifact-deletion-001	turbo/apps/platform/src/views/shared-artifact-page/__tests__/shared-artifact-deletion.test.tsx	The owner can cancel and then delete a shared file	178	passed
+shared-artifact-deletion-004	turbo/apps/platform/src/views/shared-artifact-page/__tests__/shared-artifact-deletion.test.tsx	The owner can cancel and then delete a shared conversation whose link stops working	188	passed
+shared-artifact-deletion-005	turbo/apps/platform/src/views/shared-artifact-page/__tests__/shared-artifact-deletion.test.tsx	A failed shared file deletion stays open for a successful retry	201	passed
+shared-artifact-deletion-006	turbo/apps/platform/src/views/shared-artifact-page/__tests__/shared-artifact-deletion.test.tsx	Cancelling file deletion during a token refresh returns focus to Delete	230	passed
+shared-artifact-deletion-007	turbo/apps/platform/src/views/shared-artifact-page/__tests__/shared-artifact-deletion.test.tsx	Cancelling shared-thread deletion during a token refresh returns focus to Delete	230	passed
+shared-artifact-deletion-008	turbo/apps/platform/src/views/shared-artifact-page/__tests__/shared-artifact-deletion.test.tsx	A read-only recipient can share a file but not delete it	256	passed
+shared-thread-artifact-lightbox-001	turbo/apps/platform/src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	A signed-out visitor opens a shared site cover in an independent viewer	197	passed
+shared-thread-artifact-lightbox-003	turbo/apps/platform/src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	A signed-in viewer downloads an allowed shared video from its public download URL	249	passed
+shared-thread-artifact-lightbox-010	turbo/apps/platform/src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Shared prompt attachments keep their covers and open in the independent viewer	300	passed
+shared-thread-artifact-lightbox-011	turbo/apps/platform/src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	Revoked download access reports a failure without leaving the shared conversation	380	passed
+shared-thread-artifact-lightbox-012	turbo/apps/platform/src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	A shared image keeps its new-tab destination and opens in the conversation	406	passed
+shared-thread-artifact-lightbox-013	turbo/apps/platform/src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	A shared document opens in the conversation from its card and its link	440	passed
+shared-thread-artifact-lightbox-014	turbo/apps/platform/src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	A prompt image attachment opens in the conversation instead of a new tab	475	passed
+shared-thread-artifact-lightbox-015	turbo/apps/platform/src/views/shared-thread-page/__tests__/shared-thread-artifact-lightbox.test.tsx	A shared note closes its diagram, fullscreen and viewer one Escape at a time	519	passed
+artifact-catalog-cards-001	turbo/apps/platform/src/views/artifacts-page/__tests__/artifact-catalog-cards.test.tsx	Artifact cards identify hosted sites and avatars and show available previews	13	passed
+artifact-catalog-cards-003	turbo/apps/platform/src/views/artifacts-page/__tests__/artifact-catalog-cards.test.tsx	An artifact change event re-reads the catalog	53	passed
+artifact-catalog-filters-002	turbo/apps/platform/src/views/artifacts-page/__tests__/artifact-catalog-filters.test.tsx	Every kind filter stays available after choosing Files in an empty catalog	20	passed
+artifact-catalog-filters-003	turbo/apps/platform/src/views/artifacts-page/__tests__/artifact-catalog-filters.test.tsx	A shared conversation links directly to its shared thread with sidebar preview false	53	passed
+artifact-catalog-filters-004	turbo/apps/platform/src/views/artifacts-page/__tests__/artifact-catalog-filters.test.tsx	A shared conversation links directly to its shared thread with sidebar preview true	53	passed
+artifact-catalog-preview-001	turbo/apps/platform/src/views/artifacts-page/__tests__/artifact-catalog-preview.test.tsx	A hosted-site card shows its resolved private cover image	38	passed
+artifact-catalog-preview-003	turbo/apps/platform/src/views/artifacts-page/__tests__/artifact-catalog-preview.test.tsx	A binary file downloads from its preview with the original URL	72	passed
+artifact-catalog-preview-004	turbo/apps/platform/src/views/artifacts-page/__tests__/artifact-catalog-preview.test.tsx	A native PPTX keeps its Office preview and downloads the original file	105	passed
+artifact-deletion-001	turbo/apps/platform/src/views/artifacts-page/__tests__/artifact-deletion.test.tsx	Cancelling, dismissing and then deleting from a preview keeps the catalog consistent	77	passed
+artifact-deletion-003	turbo/apps/platform/src/views/artifacts-page/__tests__/artifact-deletion.test.tsx	A failed deletion can be cancelled, reopened and retried	152	passed
+artifact-deletion-004	turbo/apps/platform/src/views/artifacts-page/__tests__/artifact-deletion.test.tsx	Deleting a later-page artifact discards the stale page when the catalog refreshes	206	passed
+artifact-catalog-sidebar-001	turbo/apps/platform/src/views/artifacts-page/__tests__/artifact-catalog-sidebar.test.tsx	Without sidebar previews a text artifact opens in the lightbox and closes back to the catalog	56	passed
+artifact-catalog-sidebar-005	turbo/apps/platform/src/views/artifacts-page/__tests__/artifact-catalog-sidebar.test.tsx	A routed website preview toggles fullscreen and Close returns to its catalog	82	passed
+artifact-catalog-sidebar-006	turbo/apps/platform/src/views/artifacts-page/__tests__/artifact-catalog-sidebar.test.tsx	A binary artifact opens a download-capable sidebar without downloading	124	passed
+artifact-catalog-sidebar-008	turbo/apps/platform/src/views/artifacts-page/__tests__/artifact-catalog-sidebar.test.tsx	Closing a loading sidebar cancels its preview and allows a later reopen	142	passed
+artifact-sharing-001	turbo/apps/platform/src/views/artifacts-page/__tests__/artifact-sharing.test.tsx	The owner's share menu describes each audience for a private artifact	112	passed
+artifact-sharing-002	turbo/apps/platform/src/views/artifacts-page/__tests__/artifact-sharing.test.tsx	The owner changes three access levels and copies the same app link after each	134	passed
+artifact-sharing-004	turbo/apps/platform/src/views/artifacts-page/__tests__/artifact-sharing.test.tsx	The owner copies the canonical link returned by the API instead of its short link	171	passed
+artifact-sharing-007	turbo/apps/platform/src/views/artifacts-page/__tests__/artifact-sharing.test.tsx	Sign-in keeps an artifact's redirect query as part of its same-origin return URL	190	passed
