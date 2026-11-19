@@ -30,6 +30,12 @@ if [[ "$badging" != "package: name='ai.okou.android' versionCode='$version_code'
   echo 'Built APK package/version does not match the Android release' >&2
   exit 1
 fi
+# The intermediate APK name is the same with and without a signing config.
+test -x "$tools/apksigner"
+if "$tools/apksigner" verify "$unsigned" >/dev/null 2>&1; then
+  echo 'Expected an unsigned Android release APK' >&2
+  exit 1
+fi
 "$tools/zipalign" -f -P 16 4 "$unsigned" "$work/aligned.apk"
 "$tools/zipalign" -c -P 16 4 "$work/aligned.apk"
 mkdir -p "$output"
