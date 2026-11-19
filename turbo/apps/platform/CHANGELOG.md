@@ -13,6 +13,34 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1149.1](https://github.com/okou-ai/okou/compare/app-v0.1149.0...app-v0.1149.1) (2026-11-19)
+
+
+### Bug Fixes
+
+* **app:** align artifact close button hover shape ([#48846](https://github.com/okou-ai/okou/issues/48846)) ([e74770e](https://github.com/okou-ai/okou/commit/e74770e52f002811f5800f8de1c171021b22ed22))
+* **app:** replace empty state icons with brand scenes ([#48856](https://github.com/okou-ai/okou/issues/48856)) ([4d82887](https://github.com/okou-ai/okou/commit/4d82887c52325b7ab7876150807fd87e133043f1))
+* **app:** resolve feature switches before mounting ([#48834](https://github.com/okou-ai/okou/issues/48834)) ([65206e8](https://github.com/okou-ai/okou/commit/65206e8e543d5ce23699fd8d2feea21e94e33413))
+
+
+### Refactoring
+
+* **app:** refresh device lists when opening the connector menu ([#48849](https://github.com/okou-ai/okou/issues/48849)) ([81e93c7](https://github.com/okou-ai/okou/commit/81e93c76a220f826e3b340b5465fe1db06efde10))
+
+
+### Performance Improvements
+
+* **app:** restore home lcp and load only the capability art on screen ([#48785](https://github.com/okou-ai/okou/issues/48785)) ([8451248](https://github.com/okou-ai/okou/commit/8451248be534efa0786da6df0fa1b1203c93f866))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.90.0
+    * @okouai/core bumped to 8.854.3
+    * @okouai/ui bumped to 1.21.60
+
 ## [0.1149.0](https://github.com/okou-ai/okou/compare/app-v0.1148.2...app-v0.1149.0) (2026-11-19)
 
 
