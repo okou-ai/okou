@@ -300,6 +300,14 @@ public actor ChatCommands {
     }
   }
 
+  /// Permanently deletes the chat. The server stops its running work and pauses linked
+  /// automations.
+  public func deleteThread(threadID: String, eventID: String) async throws {
+    try await client.data(
+      "/api/chat-threads/\(threadID)", method: "DELETE",
+      query: [URLQueryItem(name: "eventId", value: eventID)])
+  }
+
   public func rename(threadID: String, title: String, eventID: String) async throws {
     let body = try JSONEncoder().encode(["title": title, "eventId": eventID])
     try await client.data("/api/chat-threads/\(threadID)/rename", method: "POST", body: body)

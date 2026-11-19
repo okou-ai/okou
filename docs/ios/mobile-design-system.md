@@ -262,10 +262,10 @@ Reusable views, grouped by what they do. Each group is a folder in
   own actions, on every sheet and full-screen viewer (`OkouCloseToolbarItem`; never
   `.cancellationAction` or the leading side). The system's own pickers (Photos, Files)
   keep theirs.
-- **Swipe-action fills** (`OkouSwipeTint`) carry the system's white label in both
+- **Swipe-action fills** (`OkouSwipeTint`) carry the system's white glyph in both
   appearances and say what kind of change it is: `neutral` (brand dark grey) for moving a
-  chat, `readState` (the unread dot's sky blue) for read state. Never amber or the warning
-  orange.
+  chat, `readState` (the unread dot's sky blue) for read state, `destructive` (the system
+  red Messages uses) for Delete. Never amber or the warning orange.
 
 ### Selection and input
 
@@ -857,9 +857,15 @@ feature; the catalog shows each one.
   with vertical scrolling through public delegate failure relationships;
   preserve horizontal content arbitration.
   A page swipe never also taps the row under it. Dragging a chat row from left to right
-  reveals Mark as read/unread; dragging it from right to left reveals Archive/Unarchive.
-  Continuing either gesture to a full swipe executes that action; a shorter swipe leaves
-  the button available to tap.
+  reveals Mark as read/unread; dragging it from right to left reveals Archive/Unarchive
+  and, inside it, Delete. Swipe actions are icons only, as Messages draws them; their
+  titles remain the accessible names. Continuing either gesture to a full swipe executes
+  Mark as read/unread or Archive/Unarchive; a shorter swipe leaves the buttons available
+  to tap. Delete is never the full swipe and always asks first in the system
+  confirmation dialog. List, swipe actions and the dialog own every row's motion: an
+  Archive that takes the chat out of the current list uses the destructive role so the
+  system slides the row away; Delete keeps no role, because the destructive role would
+  remove the row before the user confirms.
 
 ### Sign-in and account
 
