@@ -24,3 +24,4 @@ permission-batch-page-006	turbo/apps/platform/src/views/permission-allow/__tests
 permission-batch-page-008	turbo/apps/platform/src/views/permission-allow/__tests__/permission-batch-page.test.tsx	Permissions allowed by policy appear complete without a new grant	224	passed
 permission-batch-page-009	turbo/apps/platform/src/views/permission-allow/__tests__/permission-batch-page.test.tsx	Missing metadata prevents approval and still lets the user dismiss the request	237	passed
 permission-batch-page-011	turbo/apps/platform/src/views/permission-allow/__tests__/permission-batch-page.test.tsx	An unacknowledged grant cannot continue the chat	257	passed
+notification-navigation-001	turbo/apps/platform/src/views/notifications/__tests__/notification-navigation.test.tsx	A relative chat notification opens the linked conversation	8	passed
