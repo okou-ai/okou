@@ -1,0 +1,1109 @@
+import {
+  catalogFixture,
+  httpConnectorFixture,
+  type HttpFixtureOverrides,
+} from "../../../mocks/handlers/connector-account-fixtures.ts";
+import {
+  customConnectorAccount,
+  mockOAuthCompletions,
+} from "./connector-page-test-helpers.ts";
+import {
+  builtinConnectorOpenIdStartContract,
+  builtinConnectorOauthStartContract,
+  builtinConnectorManualGrantContract,
+  builtinConnectorNoAuthGrantContract,
+} from "@okouai/api-contracts/contracts/connectors";
+import {
+  type CustomConnectorHttpResponse,
+  customConnectorOAuth2Contract,
+  customConnectorsContract,
+} from "@okouai/api-contracts/contracts/custom-connectors";
+import {
+  connectorCatalogContract,
+  type PublicConnectorCatalogStatusItem,
+} from "@okouai/api-contracts/contracts/connector-catalog";
+import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
+import {
+  connectorAccountTargetKey,
+  connectorAccountsContract,
+  type ConnectorAccountConnection,
+} from "@okouai/api-contracts/contracts/connector-accounts";
+import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
+import {
+  agentCustomConnectorsContract,
+  type AgentCustomConnectorGrant,
+} from "@okouai/api-contracts/contracts/agent-custom-connectors";
+
+import type { BuiltinConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
+import { screen, waitFor, within } from "@testing-library/react";
+import { expect, test, vi } from "vitest";
+
+import {
+  click,
+  fill,
+  queryAllByRoleFast,
+  setupPage,
+} from "../../../__tests__/page-helper.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+
+const context = testContext();
+const AGENT_ID = "00000000-0000-0000-0000-000000000001";
+
+function mockAccounts(read: () => readonly ConnectorAccountConnection[]) {
+  context.mocks.api(
+    connectorAccountsContract.connection,
+    ({ params, respond }) => {
+      const account = read().find((candidate) => {
+        return candidate.id === params.connectionId;
+      });
+      return account
+        ? respond(200, account)
+        : respond(404, {
+            error: { code: "NOT_FOUND", message: "Account not found" },
+          });
+    },
+  );
+  context.mocks.api(
+    connectorAccountsContract.connections,
+    ({ query, respond }) => {
+      const accounts = read().filter((account) => {
+        return (
+          connectorAccountTargetKey(account.target) ===
+          connectorAccountTargetKey(query)
+        );
+      });
+      return respond(200, {
+        connections: accounts,
+        nextCursor: null,
+        defaultConnection:
+          accounts.find((account) => {
+            return account.isDefault;
+          }) ?? null,
+      });
+    },
+  );
+}
+
+function savedBuiltinResponse(connector: BuiltinConnectorResponse) {
+  context.mocks.data.connectors([connector]);
+  context.mocks.ably.trigger("connector:changed", {
+    connectorSlug: connector.slug,
+  });
+  return connector;
+}
+
+function connectorIcon(connectorSlug: string) {
+  return {
+    url: `https://icons.example.test/${connectorSlug}.svg`,
+    invertInDarkMode: false,
+  };
+}
+
+function mockPublicConnectorStatus(
+  connector: PublicConnectorCatalogStatusItem,
+): void {
+  mockPublicConnectorStatuses([connector]);
+}
+
+function mockPublicConnectorStatuses(
+  connectors: readonly PublicConnectorCatalogStatusItem[],
+): void {
+  context.mocks.api(connectorCatalogContract.get, ({ params, respond }) => {
+    const connector = connectors.find((candidate) => {
+      return candidate.slug === params.connectorSlug;
+    });
+    return connector
+      ? respond(200, { connector })
+      : respond(404, {
+          error: { code: "NOT_FOUND", message: "Connector not found" },
+        });
+  });
+  // Registered after the slug route, which would otherwise also match it.
+  context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
+    return respond(200, { connectors: [...connectors] });
+  });
+}
+
+function publicManualTokenConnectorStatus(args: {
+  readonly slug: PublicConnectorCatalogStatusItem["slug"];
+  readonly label: string;
+  readonly placeholder: string;
+}): PublicConnectorCatalogStatusItem {
+  return catalogFixture({
+    slug: args.slug,
+    label: args.label,
+    description: `${args.label} description`,
+    icon: connectorIcon(args.slug),
+    category: "data-automation-infrastructure",
+    generation: [],
+    tags: [],
+    authMethods: [
+      {
+        id: "api-token",
+        label: "Public API Token",
+        description: null,
+        grantKind: "manual",
+        supportsRefresh: false,
+        manualFields: [
+          {
+            id: "apiToken",
+            label: "Public API token",
+            required: true,
+            placeholder: args.placeholder,
+            inputType: "password",
+          },
+        ],
+        startOptions: [],
+      },
+    ],
+    permissionSummary: {
+      hasPermissions: false,
+      permissionCount: 0,
+      hasCategories: false,
+      hasDefaultPolicyOverrides: false,
+    },
+    singleAuthCodeAuthMethodId: null,
+    connectNotice: null,
+  });
+}
+
+function publicOAuthConnectorStatus(args: {
+  readonly slug: PublicConnectorCatalogStatusItem["slug"];
+  readonly label: string;
+  readonly singleAuthCodeAuthMethodId: string | null;
+}): PublicConnectorCatalogStatusItem {
+  return catalogFixture({
+    slug: args.slug,
+    label: args.label,
+    description: `${args.label} description`,
+    icon: connectorIcon(args.slug),
+    category: "engineering-team-execution",
+    generation: [],
+    tags: [],
+    authMethods: [
+      {
+        id: "oauth",
+        label: "Public OAuth",
+        description: "Public OAuth description",
+        grantKind: "auth-code",
+        supportsRefresh: true,
+        manualFields: [],
+        startOptions: [],
+      },
+    ],
+    permissionSummary: {
+      hasPermissions: false,
+      permissionCount: 0,
+      hasCategories: false,
+      hasDefaultPolicyOverrides: false,
+    },
+    singleAuthCodeAuthMethodId: args.singleAuthCodeAuthMethodId,
+    connectNotice: null,
+  });
+}
+
+function publicNoAuthConnectorStatus(args: {
+  readonly slug: PublicConnectorCatalogStatusItem["slug"];
+  readonly label: string;
+}): PublicConnectorCatalogStatusItem {
+  return catalogFixture({
+    slug: args.slug,
+    label: args.label,
+    description: `${args.label} description`,
+    icon: connectorIcon(args.slug),
+    category: "data-automation-infrastructure",
+    generation: [],
+    tags: [],
+    authMethods: [
+      {
+        id: "api",
+        label: "Public catalog",
+        description: null,
+        grantKind: "none",
+        supportsRefresh: false,
+        manualFields: [],
+        startOptions: [],
+      },
+    ],
+    permissionSummary: {
+      hasPermissions: false,
+      permissionCount: 0,
+      hasCategories: false,
+      hasDefaultPolicyOverrides: false,
+    },
+    singleAuthCodeAuthMethodId: null,
+    connectNotice: null,
+  });
+}
+
+function connectedConnectorResponse(args: {
+  readonly slug: BuiltinConnectorResponse["slug"];
+  readonly authMethod: string;
+  readonly updatedAt: string;
+}): BuiltinConnectorResponse {
+  return {
+    id: "00000000-0000-4000-8000-000000000001",
+    slug: args.slug,
+    authMethod: args.authMethod,
+    externalId: "mock-connected-account",
+    externalUsername: "mock-connected-account",
+    externalEmail: null,
+    oauthScopes: [],
+    connectionStatus: "connected",
+    reconnectReason: null,
+    tokenExpiresAt: null,
+    createdAt: "2026-01-01T00:00:00Z",
+    updatedAt: args.updatedAt,
+  };
+}
+
+function customConnector(
+  overrides: HttpFixtureOverrides = {},
+): CustomConnectorHttpResponse {
+  return httpConnectorFixture({
+    kind: "http",
+    id: "33333333-3333-4333-8333-333333333333",
+    storageVersion: 1,
+    slug: "_acme-api",
+    displayName: "Acme API",
+    prefixTemplates: ["https://api.acme.test/v1/"],
+    fields: [
+      {
+        key: "secret",
+        label: "Secret",
+        kind: "secret",
+        required: true,
+      },
+    ],
+    headerInjections: [
+      {
+        name: "Authorization",
+        valueTemplate: "Bearer {{secrets.secret}}",
+      },
+    ],
+    queryInjections: [],
+    authMode: "manual",
+    createdAt: "2026-01-01T00:00:00Z",
+    updatedAt: "2026-01-01T00:00:00Z",
+    ...overrides,
+  });
+}
+
+function steamOpenIdConnectorStatus(): PublicConnectorCatalogStatusItem {
+  return catalogFixture({
+    slug: "steam",
+    label: "Public Steam",
+    description: "Public Steam description",
+    icon: connectorIcon("steam"),
+    category: "data-automation-infrastructure",
+    generation: [],
+    tags: [],
+    authMethods: [
+      {
+        id: "openid",
+        label: "Public Steam sign-in",
+        description: "Public Steam sign-in description",
+        grantKind: "openid-auth",
+        supportsRefresh: true,
+        manualFields: [],
+        startOptions: [],
+      },
+    ],
+    permissionSummary: {
+      hasPermissions: false,
+      permissionCount: 0,
+      hasCategories: false,
+      hasDefaultPolicyOverrides: false,
+    },
+    singleAuthCodeAuthMethodId: null,
+    connectNotice: null,
+  });
+}
+
+function mockConnectorOauthStart(args?: {
+  readonly popupClosed?: boolean;
+  readonly onStart?: (
+    agentId: string | undefined,
+    authorizeAgent: true | undefined,
+  ) => void;
+}): {
+  readonly authWindow: Window;
+} {
+  mockOAuthCompletions(context);
+  const authWindow = context.mocks.browser.authWindow();
+  authWindow.closed = args?.popupClosed ?? true;
+  Object.defineProperty(authWindow, "location", {
+    value: { href: "" },
+    configurable: true,
+  });
+
+  context.mocks.api(
+    builtinConnectorOauthStartContract.start,
+    ({ body, params, respond }) => {
+      args?.onStart?.(body.agentId, body.authorizeAgent);
+      return respond(200, {
+        authorizationUrl: `https://oauth.test/${params.connectorSlug}/authorize`,
+        oauthAttemptId: crypto.randomUUID(),
+      });
+    },
+  );
+  context.mocks.browser.open(authWindow);
+  return { authWindow };
+}
+
+function mockConnectorOpenIdStart(args: {
+  readonly oauthAttemptId: string;
+  readonly onStart?: () => void;
+  readonly popupClosed?: boolean;
+}): {
+  readonly authWindow: Window;
+} {
+  const authWindow = context.mocks.browser.authWindow();
+  authWindow.closed = args?.popupClosed ?? true;
+  Object.defineProperty(authWindow, "location", {
+    value: { href: "" },
+    configurable: true,
+  });
+
+  context.mocks.api(
+    builtinConnectorOpenIdStartContract.start,
+    ({ params, respond }) => {
+      args?.onStart?.();
+      return respond(200, {
+        authorizationUrl: `https://openid.test/${params.connectorSlug}/authorize`,
+        oauthAttemptId: args.oauthAttemptId,
+      });
+    },
+  );
+  context.mocks.api(builtinConnectorOauthStartContract.start, ({ never }) => {
+    return never();
+  });
+  context.mocks.browser.open(authWindow);
+  return { authWindow };
+}
+
+function getButtonByText(text: string, container?: ParentNode): HTMLElement {
+  const button = queryAllByRoleFast("button", container).find((element) => {
+    return element.textContent?.trim() === text;
+  });
+  if (!button) {
+    throw new Error(`Button not found: ${text}`);
+  }
+  return button;
+}
+
+test("Connect a custom OAuth connector from a directed link", async () => {
+  const completedAttempts = mockOAuthCompletions(context);
+  const oauthAttemptId = crypto.randomUUID();
+  let connected = false;
+  const connectionId = crypto.randomUUID();
+  let grants: AgentCustomConnectorGrant[] = [];
+  const connector = customConnector({
+    slug: "_acme-oauth",
+    displayName: "Acme OAuth",
+    authMode: "oauth",
+    fields: [],
+    headerInjections: [
+      {
+        name: "Authorization",
+        valueTemplate: "Bearer {{oauth.access_token}}",
+      },
+    ],
+    oauthConfig: {
+      providerAdapter: "standard",
+      clientId: "client-id",
+      authorizationUrl: "https://acme.test/oauth/authorize",
+      tokenUrl: "https://acme.test/oauth/token",
+      tokenEndpointAuthMethod: "client_secret_post",
+      pkceMethod: "S256",
+      scopes: ["read"],
+      authorizationParams: {},
+    },
+  });
+  mockAccounts(() => {
+    return connected
+      ? [
+          customConnectorAccount(connector.id, {
+            id: connectionId,
+            authMethod: "oauth",
+          }),
+        ]
+      : [];
+  });
+  context.mocks.api(customConnectorsContract.list, ({ respond }) => {
+    return respond(200, {
+      connectors: [connector],
+    });
+  });
+  context.mocks.api(
+    customConnectorOAuth2Contract.start,
+    ({ body, params, respond }) => {
+      expect(params.id).toBe(connector.id);
+      expect(body.account).toStrictEqual({ intent: "add" });
+      connected = true;
+      completedAttempts.set(oauthAttemptId, connectionId);
+      return respond(200, {
+        result: "authorization",
+        oauthAttemptId,
+        authorizationUrl: "https://acme.test/oauth/authorize",
+        connectionId,
+      });
+    },
+  );
+  context.mocks.api(
+    agentCustomConnectorsContract.update,
+    ({ body, params, respond }) => {
+      expect(params.id).toBe(AGENT_ID);
+      grants = body.grants;
+      return respond(200, { grants });
+    },
+  );
+  const authWindow = context.mocks.browser.authWindow();
+  authWindow.closed = true;
+  Object.defineProperty(authWindow, "location", {
+    value: { href: "" },
+    configurable: true,
+  });
+  context.mocks.browser.open(authWindow);
+
+  await setupPage({
+    context,
+    path: `/connectors/${connector.slug}/connect?agentId=${AGENT_ID}`,
+  });
+
+  const heading = await screen.findByText("Okou needs Acme OAuth to proceed");
+  expect(heading).toBeInTheDocument();
+  click(getButtonByText("Connect"));
+  await screen.findByRole("dialog", { name: "Connect Acme OAuth" });
+  click(getButtonByText("Continue"));
+
+  await waitFor(() => {
+    expect(authWindow.location.href).toBe("https://acme.test/oauth/authorize");
+    expect(grants).toStrictEqual([]);
+    expect(screen.getByText("Acme OAuth connected")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("dialog", { name: "Connect Acme OAuth" }),
+    ).toBeNull();
+  });
+});
+
+test("Continue from an existing connector authorization link using the saved account", async () => {
+  mockPublicConnectorStatus(
+    publicNoAuthConnectorStatus({ slug: "stripe", label: "Public Stripe" }),
+  );
+  savedBuiltinResponse({
+    id: crypto.randomUUID(),
+    slug: "stripe",
+    authMethod: "api",
+    externalId: null,
+    externalUsername: null,
+    externalEmail: null,
+    oauthScopes: null,
+    connectionStatus: "connected",
+    reconnectReason: null,
+    tokenExpiresAt: null,
+    createdAt: "2026-01-01T00:00:00Z",
+    updatedAt: "2026-01-01T00:00:00Z",
+  });
+  const threadId = "00000000-0000-4000-a000-000000000101";
+  const callbackPrompt = "Re-check Stripe, then continue";
+  const continuations: {
+    readonly clientEventId: string | undefined;
+    readonly chatThreadSortEventId: string | undefined;
+    readonly userMessage: unknown;
+  }[] = [];
+  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+    expect(body).toMatchObject({ threadId });
+    continuations.push({
+      clientEventId: body.clientEventId,
+      chatThreadSortEventId: body.chatThreadSortEventId,
+      userMessage: body.userMessage,
+    });
+    if (continuations.length === 1) {
+      return respond(500, {
+        error: {
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Chat continuation unavailable",
+        },
+      });
+    }
+    return respond(201, { threadId });
+  });
+  context.mocks.api(userBuiltinConnectorsContract.update, () => {
+    throw new Error("A connection link cannot grant agent access");
+  });
+  await setupPage({
+    context,
+    path: `/connectors/stripe/authorize?agentId=${AGENT_ID}&threadId=${threadId}&callbackPrompt=${encodeURIComponent(callbackPrompt)}`,
+  });
+
+  click(
+    await waitFor(() => {
+      return getButtonByText("Continue");
+    }),
+  );
+  await waitFor(() => {
+    expect(continuations).toHaveLength(1);
+    expect(getButtonByText("Continue")).toBeEnabled();
+  });
+  click(getButtonByText("Continue"));
+  await waitFor(() => {
+    expect(continuations).toHaveLength(2);
+    expect(continuations[0]).toStrictEqual({
+      clientEventId: expect.any(String),
+      chatThreadSortEventId: expect.any(String),
+      userMessage: {
+        version: 1,
+        parts: [{ type: "text", text: callbackPrompt }],
+      },
+    });
+    expect(continuations[1]).toStrictEqual(continuations[0]);
+    expect(screen.getByText("Public Stripe connected")).toBeInTheDocument();
+    expect(screen.queryByText("Continue")).toBeNull();
+  });
+});
+
+test("Connect a no-auth connector and continue the originating chat", async () => {
+  let savedConnection: BuiltinConnectorResponse | null = null;
+  mockPublicConnectorStatus(
+    publicNoAuthConnectorStatus({
+      slug: "stripe",
+      label: "Public Stripe",
+    }),
+  );
+  let connectCalls = 0;
+  let visibleAgentAuthorizationUpdates = 0;
+  const threadId = "00000000-0000-4000-a000-000000000101";
+  const callbackPrompt = "Re-check Stripe, then continue";
+  let continuationPrompt: string | null = null;
+  context.mocks.api(
+    builtinConnectorNoAuthGrantContract.connect,
+    ({ body, params, respond }) => {
+      connectCalls += 1;
+      expect(params.connectorSlug).toBe("stripe");
+      expect(body).toStrictEqual({
+        account: { intent: "add" },
+        authMethod: "api",
+      });
+      savedConnection = savedBuiltinResponse({
+        id: crypto.randomUUID(),
+        slug: "stripe",
+        authMethod: body.authMethod,
+        externalId: null,
+        externalUsername: null,
+        externalEmail: null,
+        oauthScopes: null,
+        connectionStatus: "connected",
+        reconnectReason: null,
+        tokenExpiresAt: null,
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+      });
+      return respond(200, { connectionId: savedConnection.id });
+    },
+  );
+  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+    if ("prompt" in body) {
+      continuationPrompt = body.prompt ?? null;
+    }
+    return respond(201, {
+      threadId,
+    });
+  });
+  context.mocks.api(
+    userBuiltinConnectorsContract.update,
+    ({ body, respond }) => {
+      visibleAgentAuthorizationUpdates += 1;
+      return respond(200, {
+        enabledConnectorSlugs: [...body.enabledConnectorSlugs],
+      });
+    },
+  );
+  await setupPage({
+    context,
+    path: `/connectors/stripe/connect?agentId=${AGENT_ID}&threadId=${threadId}&callbackPrompt=${encodeURIComponent(callbackPrompt)}`,
+  });
+
+  await waitFor(() => {
+    expect(
+      screen.getByText("Okou needs Public Stripe to proceed"),
+    ).toBeInTheDocument();
+  });
+  click(getButtonByText("Connect"));
+
+  await waitFor(() => {
+    expect(connectCalls).toBe(1);
+    expect(screen.getByText("Public Stripe connected")).toBeInTheDocument();
+    expect(continuationPrompt).toBe(callbackPrompt);
+  });
+  expect(visibleAgentAuthorizationUpdates).toBe(0);
+  expect(screen.queryByText("Continue")).toBeNull();
+  expect(
+    screen.queryByRole("dialog", { name: "Public Stripe" }),
+  ).not.toBeInTheDocument();
+});
+
+test("Complete OpenID and continue the originating chat", async () => {
+  const completedAttempts = mockOAuthCompletions(context);
+  const oauthAttemptId = crypto.randomUUID();
+  context.mocks.data.connectors([]);
+  const threadId = "00000000-0000-4000-a000-000000000102";
+  const callbackPrompt = "Re-check Steam, then continue";
+  let continuationPrompt: string | null = null;
+  const { authWindow } = mockConnectorOpenIdStart({
+    oauthAttemptId,
+    popupClosed: false,
+    onStart: () => {
+      completedAttempts.set(
+        oauthAttemptId,
+        "00000000-0000-4000-8000-000000000001",
+      );
+      savedBuiltinResponse(
+        connectedConnectorResponse({
+          slug: "steam",
+          authMethod: "openid",
+          updatedAt: "2026-01-01T00:00:01Z",
+        }),
+      );
+    },
+  });
+  mockPublicConnectorStatus(steamOpenIdConnectorStatus());
+  context.mocks.api(userBuiltinConnectorsContract.get, ({ respond }) => {
+    return respond(200, { enabledConnectorSlugs: ["steam"] });
+  });
+  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+    continuationPrompt = body.prompt ?? null;
+    return respond(201, {
+      threadId,
+    });
+  });
+
+  await setupPage({
+    context,
+    path: `/connectors/steam/connect?agentId=${AGENT_ID}&threadId=${threadId}&callbackPrompt=${encodeURIComponent(callbackPrompt)}`,
+  });
+
+  await waitFor(() => {
+    expect(
+      screen.getByText("Okou needs Public Steam to proceed"),
+    ).toBeInTheDocument();
+  });
+  click(getButtonByText("Connect"));
+
+  await waitFor(() => {
+    expect(authWindow.location.href).toBe(
+      "https://openid.test/steam/authorize",
+    );
+    expect(screen.getByText("Public Steam connected")).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(continuationPrompt).toBe(callbackPrompt);
+  });
+});
+
+test("Show the saved builtin account's configuration_invalid reason in the connect dialog", async () => {
+  const account: ConnectorAccountConnection = {
+    id: crypto.randomUUID(),
+    target: { kind: "builtin", connectorSlug: "github" },
+    authMethod: "api-token",
+    displayName: null,
+    isDefault: true,
+    externalId: null,
+    externalUsername: null,
+    externalEmail: null,
+    oauthScopes: null,
+    connectionStatus: "reconnect-required",
+    scopeMismatch: false,
+    reconnectReason: "configuration_invalid",
+    missingRequiredFields: ["apiToken"],
+    configuredFieldKeys: [],
+    tokenExpiresAt: null,
+    createdAt: "2026-01-01T00:00:00Z",
+    updatedAt: "2026-01-01T00:00:00Z",
+  };
+  mockAccounts(() => {
+    return [account];
+  });
+  const connector = publicManualTokenConnectorStatus({
+    slug: "github",
+    label: "Public GitHub",
+    placeholder: "github-token",
+  });
+  mockPublicConnectorStatus(
+    catalogFixture({
+      ...connector,
+      authMethods: [
+        ...connector.authMethods,
+        {
+          id: "oauth",
+          label: "Public OAuth",
+          description: null,
+          grantKind: "auth-code",
+          supportsRefresh: true,
+          manualFields: [],
+          startOptions: [],
+        },
+      ],
+      account: {
+        id: account.id,
+        authMethod: account.authMethod,
+        externalUsername: null,
+        externalEmail: null,
+        reconnectReason: "configuration_invalid",
+        connectionStatus: "reconnect-required",
+      },
+    }),
+  );
+
+  await setupPage({
+    context,
+    path: `/connectors/github/connect?agentId=${AGENT_ID}`,
+  });
+  await expect(
+    screen.findByText("Okou needs Public GitHub to proceed"),
+  ).resolves.toBeInTheDocument();
+  click(getButtonByText("Connect"));
+  const dialog = await screen.findByRole("dialog", { name: "Public GitHub" });
+  expect(
+    within(dialog).getByText("Account status unavailable"),
+  ).toBeInTheDocument();
+  expect(within(dialog).queryByText("Connected")).not.toBeInTheDocument();
+  expect(
+    within(dialog).getByPlaceholderText("github-token"),
+  ).toBeInTheDocument();
+});
+
+test("Reconnect the expired public OAuth account", async () => {
+  const connectionId = crypto.randomUUID();
+  context.mocks.data.connectors([
+    {
+      ...connectedConnectorResponse({
+        slug: "github",
+        authMethod: "oauth",
+        updatedAt: "2026-01-01T00:00:00Z",
+      }),
+      id: connectionId,
+      connectionStatus: "reconnect-required",
+      reconnectReason: "authorization_expired_or_revoked",
+    },
+  ]);
+  const connector = publicOAuthConnectorStatus({
+    slug: "github",
+    label: "Public GitHub",
+    singleAuthCodeAuthMethodId: null,
+  });
+  mockPublicConnectorStatus(
+    catalogFixture({
+      ...connector,
+      authMethods: [
+        ...connector.authMethods,
+        {
+          id: "api-token",
+          label: "Alternate API token",
+          description: null,
+          grantKind: "manual",
+          supportsRefresh: false,
+          manualFields: [
+            {
+              id: "apiToken",
+              label: "Alternate API token",
+              required: true,
+              placeholder: "alternate-token",
+              inputType: "password",
+            },
+          ],
+          startOptions: [],
+        },
+      ],
+      account: {
+        id: connectionId,
+        authMethod: "oauth",
+        externalUsername: "mock-connected-account",
+        externalEmail: null,
+        reconnectReason: "authorization_expired_or_revoked",
+        connectionStatus: "reconnect-required",
+      },
+    }),
+  );
+  const authWindow = context.mocks.browser.authWindow();
+  Object.defineProperty(authWindow, "location", {
+    value: { href: "" },
+    configurable: true,
+  });
+  context.mocks.browser.open(authWindow);
+  let oauthStarted = false;
+  let startedConnectorSlug: string | null = null;
+  let startedAccountIntent: string | null = null;
+  let startedAuthMethod: string | null = null;
+  let startedAgentId: string | null = null;
+  let startedAuthorizeAgent = false;
+  let startedConnectionId: string | null = null;
+  const completedAttempts = mockOAuthCompletions(context);
+  const oauthAttemptId = crypto.randomUUID();
+  context.mocks.api(
+    builtinConnectorOauthStartContract.start,
+    ({ body, params, respond }) => {
+      oauthStarted = true;
+      startedConnectorSlug = params.connectorSlug;
+      startedAccountIntent = body.account.intent;
+      startedAuthMethod = body.authMethod;
+      startedAgentId = body.agentId ?? null;
+      startedAuthorizeAgent = body.authorizeAgent === true;
+      if (body.account.intent === "reconnect") {
+        startedConnectionId = body.account.connectionId;
+      }
+      return respond(200, {
+        authorizationUrl: "https://oauth.test/github/reconnect",
+        oauthAttemptId,
+      });
+    },
+  );
+
+  await setupPage({
+    context,
+    path: `/connectors/github/connect?agentId=${AGENT_ID}`,
+  });
+
+  await screen.findByText("Okou needs Public GitHub to proceed");
+  expect(screen.queryByText("Public GitHub connected")).not.toBeInTheDocument();
+  click(getButtonByText("Connect"));
+  const dialog = await screen.findByRole("dialog", {
+    name: "Public GitHub",
+  });
+  expect(within(dialog).getByText("Connection expired")).toBeInTheDocument();
+  expect(
+    within(dialog).queryByLabelText("Alternate API token"),
+  ).not.toBeInTheDocument();
+  click(getButtonByText("Reconnect", dialog));
+
+  await waitFor(() => {
+    expect(oauthStarted).toBeTruthy();
+  });
+  expect(startedConnectorSlug).toBe("github");
+  expect(startedAccountIntent).toBe("reconnect");
+  expect(startedAuthMethod).toBe("oauth");
+  expect(startedAgentId).toBeNull();
+  expect(startedAuthorizeAgent).toBeFalsy();
+  expect(startedConnectionId).toBe(connectionId);
+
+  context.mocks.data.connectors([
+    {
+      ...connectedConnectorResponse({
+        slug: "github",
+        authMethod: "oauth",
+        updatedAt: "2026-01-01T00:00:01Z",
+      }),
+      id: connectionId,
+    },
+  ]);
+  completedAttempts.set(oauthAttemptId, connectionId);
+  context.mocks.ably.trigger("connector:changed", {
+    connectorSlug: "github",
+  });
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("dialog", { name: "Public GitHub" }),
+    ).not.toBeInTheDocument();
+  });
+});
+
+test("Reconnect the exact account and continue the originating chat only after success", async () => {
+  mockPublicConnectorStatus(
+    publicManualTokenConnectorStatus({
+      slug: "axiom",
+      label: "Public Axiom",
+      placeholder: "public-xaat",
+    }),
+  );
+  const connectionId = "00000000-0000-4000-a000-000000000701";
+  const threadId = "00000000-0000-4000-a000-000000000103";
+  const callbackPrompt = "Re-check the work Axiom account, then continue";
+  let submittedAccount: unknown = null;
+  let continuationPrompt: string | null = null;
+  context.mocks.api(
+    connectorAccountsContract.connection,
+    ({ params, query, respond }) => {
+      expect(params.connectionId).toBe(connectionId);
+      expect(query).toStrictEqual({ kind: "builtin", connectorSlug: "axiom" });
+      return respond(200, {
+        id: connectionId,
+        target: { kind: "builtin", connectorSlug: "axiom" },
+        authMethod: "api-token",
+        displayName: "Work Axiom",
+        isDefault: false,
+        externalId: null,
+        externalUsername: null,
+        externalEmail: null,
+        oauthScopes: [],
+        connectionStatus:
+          submittedAccount === null ? "reconnect-required" : "connected",
+        missingRequiredFields: [],
+        configuredFieldKeys: ["apiToken"],
+        reconnectReason:
+          submittedAccount === null ? "authorization_expired_or_revoked" : null,
+        tokenExpiresAt: null,
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+      });
+    },
+  );
+  context.mocks.api(
+    builtinConnectorManualGrantContract.connect,
+    ({ body, respond }) => {
+      submittedAccount = body.account;
+      return respond(200, { connectionId: connectionId });
+    },
+  );
+  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+    continuationPrompt = body.prompt ?? null;
+    return respond(201, {
+      threadId,
+    });
+  });
+  await setupPage({
+    context,
+    path: `/connectors/axiom/reconnect/${connectionId}?agentId=${AGENT_ID}&threadId=${threadId}&callbackPrompt=${encodeURIComponent(callbackPrompt)}`,
+  });
+
+  await waitFor(() => {
+    expect(getButtonByText("Reconnect")).toBeInTheDocument();
+  });
+  expect(continuationPrompt).toBeNull();
+  click(getButtonByText("Reconnect"));
+
+  const dialog = await screen.findByRole("dialog", { name: "Public Axiom" });
+  await fill(within(dialog).getByPlaceholderText("public-xaat"), "xaat-work");
+  expect(continuationPrompt).toBeNull();
+  click(getButtonByText("Save"));
+
+  await waitFor(() => {
+    expect(submittedAccount).toStrictEqual({
+      intent: "reconnect",
+      connectionId,
+    });
+    expect(continuationPrompt).toBe(callbackPrompt);
+  });
+});
+
+test("Connect a manual grant and continue the originating chat", async () => {
+  let savedConnection: BuiltinConnectorResponse | null = null;
+  mockPublicConnectorStatus(
+    publicManualTokenConnectorStatus({
+      slug: "axiom",
+      label: "Public Axiom",
+      placeholder: "public-xaat",
+    }),
+  );
+  let submittedValues: Record<string, string> | null = null;
+  const threadId = "00000000-0000-4000-a000-000000000103";
+  const callbackPrompt = "Re-check Axiom, then continue";
+  const callbackStarted = context.mocks.deferred<void>();
+  const releaseCallback = context.mocks.deferred<void>();
+  let continuationPrompt: string | null = null;
+  context.mocks.api(
+    builtinConnectorManualGrantContract.connect,
+    ({ body, params, respond }) => {
+      expect(params.connectorSlug).toBe("axiom");
+      expect(body.agentId).toBeUndefined();
+      submittedValues = body.values;
+      savedConnection = savedBuiltinResponse({
+        id: crypto.randomUUID(),
+        slug: "axiom",
+        authMethod: body.authMethod,
+        externalId: null,
+        externalUsername: null,
+        externalEmail: null,
+        oauthScopes: null,
+        connectionStatus: "connected",
+        reconnectReason: null,
+        tokenExpiresAt: null,
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+      });
+      return respond(200, { connectionId: savedConnection.id });
+    },
+  );
+  context.mocks.api(chatEventsContract.send, async ({ body, respond }) => {
+    continuationPrompt = body.prompt ?? null;
+    callbackStarted.resolve();
+    await releaseCallback.promise;
+    return respond(201, {
+      threadId,
+    });
+  });
+  await setupPage({
+    context,
+    path: `/connectors/axiom/connect?agentId=${AGENT_ID}&threadId=${threadId}&callbackPrompt=${encodeURIComponent(callbackPrompt)}`,
+  });
+
+  await waitFor(() => {
+    expect(
+      screen.getByText("Okou needs Public Axiom to proceed"),
+    ).toBeInTheDocument();
+  });
+  click(getButtonByText("Connect"));
+
+  const axiomDialog = await screen.findByRole("dialog", {
+    name: "Public Axiom",
+  });
+  const tokenInput = within(axiomDialog).getByPlaceholderText("public-xaat");
+  expect(tokenInput).toHaveAttribute("type", "password");
+  expect(tokenInput).toHaveAttribute("autocomplete", "off");
+  expect(tokenInput.closest("form")).toHaveAttribute("autocomplete", "off");
+  await fill(tokenInput, "xaat-directed-connect");
+  click(getButtonByText("Save"));
+
+  await callbackStarted.promise;
+  await expect(
+    screen.findByText("Public Axiom connected"),
+  ).resolves.toBeInTheDocument();
+  expect(axiomDialog).toBeInTheDocument();
+  releaseCallback.resolve();
+
+  await waitFor(() => {
+    expect(submittedValues).toStrictEqual({
+      apiToken: "xaat-directed-connect",
+    });
+    expect(continuationPrompt).toBe(callbackPrompt);
+    expect(
+      screen.queryByRole("dialog", { name: "Public Axiom" }),
+    ).not.toBeInTheDocument();
+  });
+});
+
+test("Closing directed OAuth before completion leaves GitHub disconnected", async () => {
+  const { authWindow } = mockConnectorOauthStart({ popupClosed: false });
+  mockPublicConnectorStatus(
+    publicOAuthConnectorStatus({
+      slug: "github",
+      label: "Public GitHub",
+      singleAuthCodeAuthMethodId: "oauth",
+    }),
+  );
+  const continuations = vi.fn<() => void>();
+  context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    continuations();
+    return respond(201, { threadId: "00000000-0000-4000-a000-000000000101" });
+  });
+  context.mocks.api(userBuiltinConnectorsContract.update, () => {
+    throw new Error("Closing OAuth must not grant agent access");
+  });
+  await setupPage({
+    context,
+    path: `/connectors/github/authorize?agentId=${AGENT_ID}&threadId=00000000-0000-4000-a000-000000000101&callbackPrompt=Continue+GitHub+work`,
+  });
+  await screen.findByText("Okou needs Public GitHub to proceed");
+  click(getButtonByText("Connect"));
+  await waitFor(() => {
+    expect(authWindow.location.href).toBe(
+      "https://oauth.test/github/authorize",
+    );
+  });
+
+  authWindow.close();
+
+  await waitFor(() => {
+    expect(getButtonByText("Connect")).toBeEnabled();
+  });
+  expect(screen.queryByText("Public GitHub connected")).not.toBeInTheDocument();
+  expect(continuations).not.toHaveBeenCalled();
+});
