@@ -340,7 +340,12 @@ class Host:
         selected = [pr for pr in selected if pr not in revocation_failures]
         if not selected:
             return revocation_failures
-        before = self.inventory(selected)
+        try:
+            before = self.inventory(selected)
+        except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as error:
+            return revocation_failures | {
+                pr: {"outcome": "unverified", "error": str(error)} for pr in selected
+            }
         outcomes = {}
         command_errors = {pr: [] for pr in selected}
         dirty = False

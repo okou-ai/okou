@@ -250,7 +250,8 @@ image workers check that admission marker after taking the same lock, so a
 later teardown failure can leave the runner directory without admitting work.
 An unverified revocation fails that namespace. The executor then reobserves
 runner and Stripe resources, verifies stopped execution before bulk removal,
-and verifies final state.
+and verifies final state. If this inventory fails, the executor reports the
+remaining selected namespaces as unverified and leaves their services untouched.
 It submits all selected stops before polling with one shared 330s stop budget
 (Runner units allow 300s). Inactive/failed state, no main PID, no queued/running
 job and an unpopulated cgroup are all required before bulk removal. A stop
@@ -281,9 +282,9 @@ retire.
 Cleanup controllers already running from an earlier revision still share the
 lifecycle lock and remove the admission marker. Per-unit retirement of a
 worker with the new name requires the updated controller.
-A running legacy unit without PR attribution makes current
-cleanup inventory unverified and preserves resources. Expiry timers keep their
-separate `vm0-ci-image-DIGEST-expire` names and remain image-owned.
+A running legacy unit without PR attribution leaves cleanup inventory unverified
+and prevents bulk removal. Expiry timers keep their separate
+`vm0-ci-image-DIGEST-expire` names and remain image-owned.
 
 Stripe replacement uses the same lifecycle exclusion. Its Ansible playbooks
 remain deployment adapters; closed-PR teardown does not start Ansible per PR.

@@ -728,6 +728,29 @@ class CleanupTests(unittest.TestCase):
         self.assertEqual(payload["43"]["operation_result"]["outcome"], "cleaned")
         self.assertFalse(unit.exists())
 
+    def test_initial_inventory_failure_preserves_image_revocation_failure(self):
+        marker = self.resource("external-image/.image-owner-" + "a" * 64)
+        sibling_marker = self.resource(
+            "var/lib/vm0-runner/bin/pr-43-image-1234/.image-owner-" + "b" * 64
+        )
+        (sibling_marker.parent.parent / "pr-42-image-1234").symlink_to(
+            marker.parent, target_is_directory=True
+        )
+        unit = self.resource("etc/systemd/system/vm0-runner-pr-43.service")
+        legacy = "vm0-ci-image-" + "c" * 64 + ".service"
+        self.resource("run/systemd/transient/" + legacy)
+        self.state(legacy, ActiveState="active", MainPID="123")
+
+        result, payload = self.worker("cleanup", 42, 43)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(payload["42"]["outcome"], "failed")
+        self.assertIn("resource ancestor is a symlink", payload["42"]["error"])
+        self.assertTrue(marker.is_file())
+        self.assertEqual(payload["43"]["outcome"], "unverified")
+        self.assertIn("image unit ownership unavailable", payload["43"]["error"])
+        self.assertFalse(sibling_marker.exists())
+        self.assertTrue(unit.exists())
+
     @unittest.skipIf(os.getuid() == 0, "requires normal filesystem permissions")
     def test_permission_failure_keeps_resource_and_other_pr_progresses(self):
         unit = self.resource("etc/systemd/system/vm0-runner-pr-42-api.service")
