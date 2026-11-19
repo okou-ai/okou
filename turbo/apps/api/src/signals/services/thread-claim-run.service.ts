@@ -2028,7 +2028,11 @@ export function createThreadClaimRunObjects(
     pickedEvent$,
     threadContext,
   );
-  const storage$ = createStorageSignals(bootstrap, pickedEvent$, threadContext);
+  const { storage$, recoverMemoryMounts$ } = createStorageSignals(
+    bootstrap,
+    pickedEvent$,
+    threadContext,
+  );
   const runRuntimeInputs$ = computed(async (get) => {
     const [
       { authorization },
@@ -2448,28 +2452,22 @@ export function createThreadClaimRunObjects(
   // Storage is read only for an admitted source. Rejections come from the Run
   // plan; storage runs alongside it and its failure matters only when the plan
   // is ready.
-  const preparedStorage$ = computed(
-    async (
-      get,
-    ): Promise<
-      readonly AcceptedMemoryMount[] | CreateRunErrorResult | null
-    > => {
-      if (!(await get(resourceAllowed$))) {
-        return null;
-      }
-      const [plan, storage] = await Promise.all([
-        get(runPlan$),
-        settle(get(storage$)),
-      ]);
-      if (!plan || isRouteError(plan)) {
-        return plan;
-      }
-      if (!storage.ok) {
-        throw storage.error;
-      }
-      return storage.value;
-    },
-  );
+  const preparedStorage$ = computed(async (get) => {
+    if (!(await get(resourceAllowed$))) {
+      return null;
+    }
+    const [plan, storage] = await Promise.all([
+      get(runPlan$),
+      settle(get(storage$)),
+    ]);
+    if (!plan || isRouteError(plan)) {
+      return plan;
+    }
+    if (!storage.ok) {
+      throw storage.error;
+    }
+    return storage.value;
+  });
   /** Captured launch facts before Run-scoped token creation. */
   const runnerFacts$ = computed(async (get) => {
     const [input, allowed] = await Promise.all([
@@ -2532,8 +2530,8 @@ export function createThreadClaimRunObjects(
         ),
         ordinaryAutomation,
       });
-      if (!executionPackages) {
-        return conflict("Run packages or source authorization are unavailable");
+      if ("error" in executionPackages) {
+        return conflict(executionPackages.error);
       }
       const okouToken = set(prepareOkouToken$, tokenInput, signal);
       return prepareRunnerLaunch({
@@ -2576,10 +2574,14 @@ export function createThreadClaimRunObjects(
       if (!preparedStorage || isRouteError(preparedStorage)) {
         return preparedStorage;
       }
+      const memoryMounts =
+        preparedStorage.kind === "ready"
+          ? preparedStorage.mounts
+          : await set(recoverMemoryMounts$, preparedStorage.input, signal);
       return {
         ...input,
-        memoryMounts: preparedStorage,
-        runStorageMounts: preparedStorage.map(({ mount }) => {
+        memoryMounts,
+        runStorageMounts: memoryMounts.map(({ mount }) => {
           return mount;
         }),
       };

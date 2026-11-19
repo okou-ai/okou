@@ -1414,6 +1414,56 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await finishCancelledRun(retry.runId, largeExecution.sandboxToken);
       });
 
+      it("starts a Run for a member before Memory initialization finishes", async () => {
+        const bdd = createBddApi(context);
+        const api = createRunsApi(context);
+        const { actor, runnerGroup } = await entitledRunActor(
+          {},
+          NATIVE_RUNNER_ROUTE,
+        );
+        const shared = await bdd.createAgent(actor, {
+          displayName: "Shared Agent for first-run Memory",
+          visibility: "public",
+        });
+        // A member can send before the Clerk membership webhook initializes
+        // Memory or before opening the Web onboarding/preferences flow.
+        const member = bdd.user({ orgId: actor.orgId, orgRole: "org:member" });
+        await api.ensurePersonalSubscriptionModel(member, NATIVE_RUNNER_ROUTE);
+        await api.heartbeatRunner(runnerGroup);
+
+        const first = await api.createThreadRun(member, {
+          agentId: shared.agentId,
+          prompt: "Start without a provisioned Memory",
+          model: NATIVE_RUNNER_ROUTE.model,
+        });
+        const firstExecution = await api.executionInput(first.runId);
+        const firstMemory = expectCanonicalStorageManifest(
+          firstExecution.storageManifest,
+        )?.storageMounts.find(({ name }) => name === "memory");
+        expect(firstMemory).toMatchObject({
+          empty: true,
+          writeback: true,
+          storageId: expect.any(String),
+          versionId: expect.any(String),
+        });
+        await api.requestCancelRun(member, first.runId, [200]);
+        await finishCancelledRun(first.runId, firstExecution.sandboxToken);
+
+        const next = await api.createThreadRun(member, {
+          agentId: shared.agentId,
+          prompt: "Reuse the initialized Memory",
+          model: NATIVE_RUNNER_ROUTE.model,
+        });
+        const nextExecution = await api.executionInput(next.runId);
+        expect(
+          expectCanonicalStorageManifest(
+            nextExecution.storageManifest,
+          )?.storageMounts.find(({ name }) => name === "memory"),
+        ).toStrictEqual(firstMemory);
+        await api.requestCancelRun(member, next.runId, [200]);
+        await finishCancelledRun(next.runId, nextExecution.sandboxToken);
+      });
+
       it("prepares the storage manifest without uploading empty artifact objects", async () => {
         const api = createRunsApi(context);
         const { actor, agentId } = await entitledRunActor(

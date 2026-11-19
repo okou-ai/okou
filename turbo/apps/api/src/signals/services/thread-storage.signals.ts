@@ -1,5 +1,5 @@
 import { performance } from "node:perf_hooks";
-import { computed, type Computed } from "ccstate";
+import { command, computed, type Computed } from "ccstate";
 import { getFrameworkForType } from "@okouai/api-contracts/contracts/model-providers";
 import { isValidVersionPrefix } from "@okouai/core/version-id";
 import { memoryVersions } from "@okouai/db/schema/member-memory";
@@ -9,8 +9,9 @@ import { unionAll } from "drizzle-orm/pg-core";
 import { now } from "../../lib/time";
 import { db$ } from "../external/db";
 import type { AgentRunContextSignals } from "./agent-run-context.signals";
+import { createMemberMemoryContext } from "./agent-storage-context.service";
 import { storageVersionCacheKeySql } from "./execution-storage-cache-read.service";
-import type { AcceptedMemoryMount } from "./execution-storage.service";
+import { initializeMemberMemory$ } from "./member-memory-initialization.service";
 import {
   type AgentRunStorageInput,
   type AgentRunStoragePlan,
@@ -48,8 +49,34 @@ export function createStorageSignals(
     threadContext,
   );
   const index = createStorageIndexSignals(bootstrap, storageInput$);
-  const plan = createStoragePlanSignals(index);
-  return createStorageMetadataSignal(plan);
+  const { plan$ } = createStoragePlanSignals(index);
+  const storage$ = computed(async (get) => {
+    const plan = await get(plan$);
+    if (plan.missingArtifacts.length > 0) {
+      return { kind: "missing" as const, input: plan.requested.input };
+    }
+    return {
+      kind: "ready" as const,
+      mounts: await finalizeMemoryMounts(plan.requested),
+    };
+  });
+  const owner = { orgId: bootstrap.orgId, userId: bootstrap.userId };
+  const initializedMemory$ = createMemberMemoryContext(owner);
+  const recoverMemoryMounts$ = command(
+    async (
+      { get, set },
+      input: AgentRunStoragePlan["requested"]["input"],
+      signal: AbortSignal,
+    ) => {
+      await set(initializeMemberMemory$, owner, signal);
+      const { index: storageIndex } = await get(initializedMemory$);
+      signal.throwIfAborted();
+      return await finalizeMemoryMounts(
+        await resolveStorageEntries({ ...input, storageIndex }),
+      );
+    },
+  );
+  return { storage$, recoverMemoryMounts$ };
 }
 
 function createStorageInputSignal(
@@ -300,23 +327,4 @@ function createStoragePlanSignals(
     });
   });
   return { plan$ };
-}
-
-function createStorageMetadataSignal(
-  plan: ReturnType<typeof createStoragePlanSignals>,
-) {
-  const { plan$ } = plan;
-  return computed(async (get): Promise<readonly AcceptedMemoryMount[]> => {
-    const plan = await get(plan$);
-    if (plan.missingArtifacts.length > 0) {
-      throw new Error(
-        `Run storage must be initialized before execution: ${plan.missingArtifacts
-          .map((artifact) => {
-            return artifact.name;
-          })
-          .join(", ")}`,
-      );
-    }
-    return await finalizeMemoryMounts(plan.requested);
-  });
 }
