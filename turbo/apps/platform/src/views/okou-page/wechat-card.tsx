@@ -85,14 +85,14 @@ export function WechatCard() {
           actions={
             <>
               {connected ? (
-                <ConnectedIndicator wrap />
+                <ConnectedIndicator variant="text" wrap />
               ) : (
                 <DialogTrigger
                   render={
                     <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-8 shrink-0 gap-1.5 rounded-lg"
+                      variant="quiet"
+                      size="xs"
+                      className="shrink-0 gap-1.5 px-2 text-xs"
                     />
                   }
                   disabled={!status?.configured}

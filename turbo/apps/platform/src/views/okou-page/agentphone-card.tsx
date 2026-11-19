@@ -1,7 +1,7 @@
 import { WorksChannelCardContent } from "./components/works-channel-card-content.tsx";
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
-import { CircleCheck, EllipsisVertical } from "lucide-react";
+import { EllipsisVertical } from "lucide-react";
 import { surfaceVariants, Button } from "@okouai/ui";
 import {
   Popover,
@@ -56,9 +56,8 @@ function AgentPhoneCardActions({
               render={
                 <span
                   data-testid="agentphone-connected-indicator"
-                  className="mr-auto inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-lg border border-border bg-background px-1.5 py-1 text-xs font-medium text-secondary-foreground"
+                  className="min-w-0 flex-1 text-xs text-muted-foreground"
                 >
-                  <CircleCheck className="h-3 w-3 shrink-0 text-green-600" />
                   <span className="min-w-0 break-all">
                     {connectedPhone ??
                       t(($) => {
@@ -80,9 +79,9 @@ function AgentPhoneCardActions({
       {status !== null && !isConnected && canConnect ? (
         <Button
           type="button"
-          variant="outline"
-          size="sm"
-          className="h-8 shrink-0 gap-1.5 rounded-lg"
+          variant="quiet"
+          size="xs"
+          className="shrink-0 gap-1.5 px-2 text-xs"
           aria-label={t(($) => {
             return $.connectors.providerSettings.agentphone.connectAria;
           })}

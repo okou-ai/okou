@@ -168,6 +168,7 @@ export function WhatsappCard() {
               {status?.linked ? (
                 <>
                   <ConnectedIndicator
+                    variant="text"
                     wrap
                     connectedDetail={status.phoneHandle}
                   />
@@ -187,9 +188,9 @@ export function WhatsappCard() {
               ) : (
                 <Button
                   type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-8 shrink-0 gap-1.5 rounded-lg"
+                  variant="quiet"
+                  size="xs"
+                  className="shrink-0 gap-1.5 px-2 text-xs"
                   disabled={!status?.configured}
                   aria-label={t(($) => {
                     return $.works.whatsapp.connect;

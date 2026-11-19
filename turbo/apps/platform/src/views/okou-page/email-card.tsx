@@ -1,7 +1,7 @@
 import { WorksChannelCardContent } from "./components/works-channel-card-content.tsx";
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
-import { CircleCheck, EllipsisVertical, Mail } from "lucide-react";
-import { Badge, Button, surfaceVariants } from "@okouai/ui";
+import { EllipsisVertical, Mail } from "lucide-react";
+import { Button, surfaceVariants } from "@okouai/ui";
 import {
   Popover,
   PopoverContent,
@@ -74,8 +74,7 @@ export function EmailCard() {
                     <Tooltip>
                       <TooltipTrigger
                         render={
-                          <Badge className="mr-auto min-w-0 max-w-full text-xs font-medium text-secondary-foreground">
-                            <CircleCheck className="shrink-0 text-green-600" />
+                          <span className="inline-flex min-w-0 flex-1 items-center gap-1.5 text-xs text-muted-foreground">
                             <span className="whitespace-normal break-all">
                               {email}
                             </span>
@@ -84,7 +83,7 @@ export function EmailCard() {
                                 +{emails.length - 1}
                               </span>
                             ) : null}
-                          </Badge>
+                          </span>
                         }
                       />
                       <TooltipContent>{emails.join(", ")}</TooltipContent>
@@ -131,9 +130,9 @@ export function EmailCard() {
                 <Button
                   ref={setTrigger}
                   type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-8 shrink-0 gap-1.5 rounded-lg"
+                  variant="quiet"
+                  size="xs"
+                  className="shrink-0 gap-1.5 px-2 text-xs"
                   onClick={() => {
                     detach(addEmail(signal), Reason.DomCallback);
                   }}

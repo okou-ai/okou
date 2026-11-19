@@ -135,6 +135,7 @@ function ProviderCardActions({
     <>
       {isConnected ? (
         <ConnectedIndicator
+          variant="text"
           wrap
           testId={connectedTestId}
           connectedDetail={connectedDetail}
@@ -143,9 +144,9 @@ function ProviderCardActions({
       {!isInstalled && isAdmin && installUrl && (
         <Button
           data-testid={installTestId}
-          variant="outline"
-          size="sm"
-          className="h-8 shrink-0 gap-1.5 rounded-lg"
+          variant="quiet"
+          size="xs"
+          className="shrink-0 gap-1.5 px-2 text-xs"
           onClick={() => {
             return openFreshOAuth(installUrl);
           }}
@@ -157,9 +158,9 @@ function ProviderCardActions({
       {(isInstalled || independentIdentity) && !isConnected && connectUrl && (
         <Button
           data-testid={connectTestId}
-          variant="outline"
-          size="sm"
-          className="h-8 shrink-0 gap-1.5 rounded-lg"
+          variant="quiet"
+          size="xs"
+          className="shrink-0 gap-1.5 px-2 text-xs"
           onClick={() => {
             return openFreshOAuth(connectUrl);
           }}
@@ -205,9 +206,9 @@ function PermissionWarning({
         </span>
       </div>
       <Button
-        variant="outline"
-        size="sm"
-        className="h-7 shrink-0 self-end text-xs"
+        variant="quiet"
+        size="xs"
+        className="shrink-0 self-end px-2 text-xs"
         onClick={() => {
           return openFreshOAuth(reinstallUrl);
         }}
@@ -500,6 +501,7 @@ function DiscordCard() {
               {data?.isConnected ? (
                 <>
                   <ConnectedIndicator
+                    variant="text"
                     wrap
                     testId="discord-connected-indicator"
                   />
@@ -742,6 +744,7 @@ function GithubCard() {
           <>
             {githubData?.isConnected ? (
               <ConnectedIndicator
+                variant="text"
                 wrap
                 testId="github-connected-indicator"
                 connectedDetail={connectedDetail}
@@ -754,8 +757,8 @@ function GithubCard() {
                 target="_blank"
                 rel="noreferrer"
                 className={cn(
-                  buttonVariants({ variant: "outline", size: "sm" }),
-                  "h-8 shrink-0 gap-1.5 rounded-lg",
+                  buttonVariants({ variant: "quiet", size: "xs" }),
+                  "shrink-0 gap-1.5 px-2 text-xs",
                 )}
               >
                 <Download size={14} />
@@ -768,9 +771,9 @@ function GithubCard() {
               <Button
                 data-testid="github-connect-button"
                 type="button"
-                variant="outline"
-                size="sm"
-                className="h-8 shrink-0 gap-1.5 rounded-lg"
+                variant="quiet"
+                size="xs"
+                className="shrink-0 gap-1.5 px-2 text-xs"
                 disabled={connecting}
                 onClick={() => {
                   return detach(
@@ -874,6 +877,7 @@ function TelegramCard() {
             {bot?.isConnected ? (
               <>
                 <ConnectedIndicator
+                  variant="text"
                   wrap
                   testId="telegram-connected-indicator"
                   connectedDetail={connectedDetail}
@@ -924,9 +928,9 @@ function TelegramCard() {
             ) : (
               <Button
                 data-testid="telegram-connect-button"
-                variant="outline"
-                size="sm"
-                className="h-8 shrink-0 gap-1.5 rounded-lg"
+                variant="quiet"
+                size="xs"
+                className="shrink-0 gap-1.5 px-2 text-xs"
                 disabled={loading || !configured || connecting}
                 onClick={() => {
                   detach(
