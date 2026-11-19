@@ -2,6 +2,11 @@ package ai.okou.android.state
 
 import ai.okou.android.OkouTheme
 import ai.okou.android.TestOkouApplication
+import ai.okou.android.chat.ChatListSource
+import ai.okou.android.chat.ChatListUiState
+import ai.okou.android.chat.ChatReadPhase
+import ai.okou.android.chat.ChatTitleSearch
+import ai.okou.android.chat.ConfirmedChat
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Column
@@ -30,6 +35,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performTextInputSelection
 import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertEquals
@@ -43,6 +49,56 @@ import org.robolectric.annotation.Config
 @Config(sdk = [35], qualifiers = "en-rUS-w400dp-h800dp", application = TestOkouApplication::class)
 class SavedUiStateTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
+
+    @Test
+    fun searchRestoresTheSameResultWhenTheListReopensFromCache() {
+        val restoration = StateRestorationTester(compose)
+        var source by mutableStateOf(ChatListSource.Network)
+        val rows =
+            List(40) { index ->
+                val date = "2026-11-13T00:00:00Z"
+                ConfirmedChat(
+                    id = index.toString(),
+                    agentId = "agent",
+                    title = "Result $index",
+                    sortAt = date,
+                    createdAt = date,
+                    updatedAt = date,
+                    pinnedAt = null,
+                    archived = false,
+                    renamedAt = null,
+                )
+            }
+        restoration.setContent {
+            DisposableEffect(Unit) { onDispose { source = ChatListSource.Cache } }
+            val position = rememberLazyListState()
+            OkouTheme(false) {
+                ChatTitleSearch(
+                    state =
+                        ChatListUiState(
+                            listPhase = ChatReadPhase.Ready,
+                            confirmedAt = 1,
+                            source = source,
+                            threadsByRecency = rows,
+                        ),
+                    query = TextFieldValue("Result"),
+                    onQueryChange = {},
+                    position = position,
+                    focusOnEntry = false,
+                    onFocused = {},
+                    onClose = {},
+                    onOpen = {},
+                    retry = {},
+                )
+            }
+        }
+        val results = compose.onNodeWithTag("chat_search_results")
+        val target = compose.onNodeWithText("Result 5")
+        results.performScrollToIndex(6)
+        val originalTop = target.fetchSemanticsNode().boundsInRoot.top
+        restoration.emulateSavedInstanceStateRestore()
+        assertEquals(originalTop, target.fetchSemanticsNode().boundsInRoot.top)
+    }
 
     @Test
     fun restoredSelectionWaitsForTheJournalBody() {

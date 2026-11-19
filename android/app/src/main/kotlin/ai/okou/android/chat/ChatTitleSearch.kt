@@ -175,15 +175,16 @@ internal fun ChatTitleSearch(
                 .testTag("chat_search_results"),
             state = position,
         ) {
-            if (failed) {
-                item { SearchNotice(R.string.chat_refresh_failed, retry) }
-            } else if (state.source == ChatListSource.Cache) {
-                item { SearchNotice(R.string.chat_cached) }
-            }
-            if (results.isEmpty() && !failed) {
-                item { SearchNotice(R.string.chat_search_empty) }
-            } else if (results.isNotEmpty()) {
-                item {
+            // Keep result indices stable when the cache or refresh notice changes.
+            item {
+                if (failed) {
+                    SearchNotice(R.string.chat_refresh_failed, retry)
+                } else if (state.source == ChatListSource.Cache) {
+                    SearchNotice(R.string.chat_cached)
+                }
+                if (results.isEmpty() && !failed) {
+                    SearchNotice(R.string.chat_search_empty)
+                } else if (results.isNotEmpty()) {
                     Text(
                         stringResource(
                             if (keyword.isEmpty()) R.string.chat_search_recent
@@ -195,6 +196,8 @@ internal fun ChatTitleSearch(
                         style = MaterialTheme.typography.titleSmall,
                     )
                 }
+            }
+            if (results.isNotEmpty()) {
                 items(results, key = { it.id }) { chat ->
                     val project = projectNames[chat.projectId]
                     val subtitle =
