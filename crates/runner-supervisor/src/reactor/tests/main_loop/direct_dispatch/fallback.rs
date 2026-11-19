@@ -1,6 +1,7 @@
 use super::*;
 use crate::home_image_cache::{
-    HomeCacheTerminalStatus, HomeImageCache, HomeImageLeaseIdentity, HomeImageLeaseRequest,
+    HomeCacheTerminalStatus, HomeImageCache, HomeImageLease, HomeImageLeaseIdentity,
+    HomeImageLeaseRequest, HomeImagePrepareLockTestGate,
 };
 use crate::idle_pool::{ParkResult, ParkedIdleCandidate};
 use crate::reactor::tests::support::{
@@ -75,6 +76,93 @@ async fn supplied_fallback_uses_home_for_new_vm_when_no_sandbox_is_available() {
 #[tokio::test]
 async fn supplied_fallback_creates_cold_vm_when_sandbox_and_home_are_unavailable() {
     assert_fallback(Available::Neither).await;
+}
+
+#[tokio::test]
+async fn preferred_home_contention_leaves_fresh_admission_available() {
+    let execution = MockLifecycleGate::new();
+    let overrides = Arc::new(MockSandboxOverrides::new());
+    overrides.set_wait_process_lifecycle_gate(execution.clone());
+    let mut profiles = test_profiles();
+    profiles.get_mut("vm0/default").unwrap().home_disk_mb = 1;
+    let (mut config, env) =
+        mock_run_config_with_overrides(profiles, 8, 16384, 2, overrides.clone());
+    config.provider.provider = Arc::new(SuppliedProvider(config.provider.provider.clone(), None));
+    let budget = config.capacity.budget.clone();
+    let paths = RunnerPaths::new(config.paths.base_dir.clone());
+    let cache = HomeImageCache::shared(paths.clone(), &config.paths.home, &config.runner.group);
+    let publisher = HomeImageCache::shared(paths.clone(), &config.paths.home, &config.runner.group);
+    let key = "thread:preferred-home-contention";
+    let (predecessor, unpublished_home) = stage_home_publication(&publisher, &paths, key).await;
+    let lock_gate = HomeImagePrepareLockTestGate::default();
+    Arc::get_mut(&mut config.exec_config).unwrap().home_cache =
+        Some(cache.with_prepare_lock_test_gate(lock_gate.clone()));
+
+    let peer = super::super::startup::configure_public_ingress(&mut config).await;
+    let identity = config.runner.identity;
+    let socket = config
+        .paths
+        .home
+        .ingress_dir()
+        .join(format!("{}.sock", identity.runner_id()));
+    let runner = tokio::spawn(run(config));
+    peer.wait_connected().await;
+    peer.allow_health();
+    wait_status_mode(&env._temp_dir.path().join("status.json"), "running", WAIT).await;
+
+    let preferred = RunId::new_v4();
+    let mut body = envelope(identity, preferred);
+    body["executionContext"]["reuseKey"] = json!(key);
+    body["executionContext"]["isFirstRun"] = json!(false);
+    body["preferredHomeCheckout"] = json!({
+        "predecessorRunId": predecessor,
+        "waitUntil": body["notAfter"],
+    });
+    assert_eq!(
+        client(&socket, identity, preferred, &body.to_string())
+            .await
+            .2["disposition"],
+        "accepted"
+    );
+    lock_gate.wait_entered(WAIT).await;
+
+    let ordinary = RunId::new_v4();
+    let body = envelope(identity, ordinary).to_string();
+    assert_eq!(
+        client(&socket, identity, ordinary, &body).await.2["disposition"],
+        "accepted"
+    );
+    execution
+        .wait_entered(1, WAIT)
+        .await
+        .expect("ordinary run must start while the predecessor still holds the Home lock");
+    execution.release_one();
+    let ordinary_completion = env.handle.wait_completion(ordinary, WAIT).await.unwrap();
+    assert_eq!(ordinary_completion.exit_code, 0);
+
+    publish_staged_home(predecessor, unpublished_home).await;
+    lock_gate.release();
+    execution.wait_entered(2, WAIT).await.unwrap();
+    let created = overrides.create_configs();
+    let [ordinary_vm, preferred_vm] = created.as_slice() else {
+        panic!("each dispatch must start one fresh sandbox");
+    };
+    assert_eq!(ordinary_completion.sandbox_id, Some(ordinary_vm.id));
+    let seed = preferred_vm
+        .home_drive
+        .as_ref()
+        .and_then(|home| home.seed_image.as_ref())
+        .expect("preferred run must start with the published Home");
+    let (HomeDriveSeedImage::Move(seed) | HomeDriveSeedImage::Copy(seed)) = seed;
+    assert_eq!(tokio::fs::metadata(seed).await.unwrap().len(), IMAGE_BYTES);
+    execution.release_one();
+    let completion = env.handle.wait_completion(preferred, WAIT).await.unwrap();
+    assert_eq!(completion.exit_code, 0);
+    assert_eq!(completion.sandbox_id, Some(preferred_vm.id));
+
+    peer.shutdown().await;
+    shutdown(&env, runner).await;
+    wait_budget_count(&budget, 0, WAIT).await;
 }
 
 async fn assert_fallback(available: Available) {
@@ -258,7 +346,8 @@ async fn assert_fallback(available: Available) {
     if matches!(available, Available::ReplacedHome) {
         unpark.wait_entered(1, WAIT).await.unwrap();
         let before = env.handle.heartbeat_count();
-        publish_replacement_home(&cache, &paths, key).await;
+        let (replacement, home) = stage_home_publication(&cache, &paths, key).await;
+        publish_staged_home(replacement, home).await;
         // The sentinel heartbeat is a causal barrier after cache replacement
         // has refreshed inventory, without relying on elapsed time.
         let sentinel = "thread:source-binding-refresh-barrier";
@@ -323,10 +412,13 @@ async fn assert_fallback(available: Available) {
     wait_budget_count(&budget, 0, WAIT).await;
 }
 
-async fn publish_replacement_home(cache: &HomeImageCache, paths: &RunnerPaths, key: &str) {
+async fn stage_home_publication(
+    cache: &HomeImageCache,
+    paths: &RunnerPaths,
+    key: &str,
+) -> (RunId, HomeImageLease) {
     let source = RunId::new_v4();
     let sandbox_id = SandboxId::new_v4();
-    // Use the executor's real lease/publication path for the competing home.
     let lease = cache
         .lease_active(HomeImageLeaseRequest {
             identity: HomeImageLeaseIdentity {
@@ -348,6 +440,10 @@ async fn publish_replacement_home(cache: &HomeImageCache, paths: &RunnerPaths, k
     tokio::fs::write(&image, vec![0x5a; IMAGE_BYTES as usize])
         .await
         .unwrap();
+    (source, lease)
+}
+
+async fn publish_staged_home(source: RunId, lease: HomeImageLease) {
     assert!(
         lease
             .promote(

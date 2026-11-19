@@ -511,10 +511,25 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
         prepared_run_payload,
         sandbox_prepared,
     } = hooks;
-    // The gate intentionally starts before every fresh preparation stage and remains held through
-    // the authenticated Agent-ready boundary. Current production tails span both factory work and
-    // the later mount/restore/storage/bootstrap stages, so a narrower Firecracker-only gate would
-    // allow the same cohort to reconverge before Agent readiness completes.
+    let checkout_home = preparation != FreshPreparation::DiskReplacement;
+    let checkout_before_admission = checkout_home
+        && matches!(
+            params.home_image_prepare_policy,
+            HomeImagePreparePolicy::TryCacheUntil(_)
+        );
+    // A Runner finishing the predecessor can still hold this Home lock. Keep
+    // weighted startup capacity available while the preferred checkout waits.
+    let mut home_image = if checkout_before_admission {
+        if controls.cancel.is_cancelled() {
+            return Err(RunnerError::Cancelled);
+        }
+        prepare_home_image(context, sandbox_id, config, params, telemetry).await
+    } else {
+        None
+    };
+    // Hold admission through the authenticated Agent-ready boundary. Factory
+    // work and the later mount, restore, storage and bootstrap stages all
+    // contribute to fresh startup contention.
     let admission_started = Instant::now();
     let admission_lease = match config
         .pre_spawn_admission
@@ -548,11 +563,9 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
     };
     controls.pre_spawn_admission_lease = Some(admission_lease);
     let prepare_started = Instant::now();
-    let mut home_image = if preparation == FreshPreparation::DiskReplacement {
-        None
-    } else {
-        prepare_home_image(context, sandbox_id, config, params, telemetry).await
-    };
+    if checkout_home && !checkout_before_admission {
+        home_image = prepare_home_image(context, sandbox_id, config, params, telemetry).await;
+    }
     let prepared_storage = prepare_storage(
         context,
         home_image
