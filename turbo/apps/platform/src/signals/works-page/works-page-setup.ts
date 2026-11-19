@@ -1,4 +1,5 @@
 import { watchWhatsappConnection$ } from "../okou-page/whatsapp.ts";
+import { reloadFeishuChannelStatus$ } from "./feishu-channel-status.ts";
 import {
   setEmailConnectDialogOpen$,
   watchEmailConnection$,
@@ -81,6 +82,7 @@ export const setupWorksPage$ = command(
     set(setAgentPhoneConnectDialogOpen$, false);
     set(setEmailConnectDialogOpen$, false);
     set(reloadTelegramBots$);
+    set(reloadFeishuChannelStatus$);
     set(initWechat$);
     set(updatePage$, createElement(WorksPage), "sidebar");
     set(

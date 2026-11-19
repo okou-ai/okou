@@ -1,5 +1,6 @@
 import type { DiscordOrgStatus } from "@okouai/api-contracts/contracts/integrations-discord";
 import { Button } from "@okouai/ui";
+import { Link2 } from "lucide-react";
 import { useGet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
@@ -46,18 +47,20 @@ export function DiscordAuthorizationActions({
 
   return (
     <Button
+      showTooltip
       data-testid="discord-connect-button"
       variant="quiet"
-      size="xs"
-      className="shrink-0 gap-1.5 px-2 text-xs"
+      size="icon-xs"
+      className="shrink-0"
+      aria-label={t(($) => {
+        return $.works.actions.connect;
+      })}
       disabled={disabled || authorizationState.state === "loading"}
       onClick={() => {
         detach(authorize({}, pageSignal), Reason.DomCallback);
       }}
     >
-      {t(($) => {
-        return $.works.actions.connect;
-      })}
+      <Link2 size={16} aria-hidden="true" />
     </Button>
   );
 }

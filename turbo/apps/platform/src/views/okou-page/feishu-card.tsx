@@ -1,3 +1,11 @@
+import { ConnectedIndicator } from "./components/connected-indicator.tsx";
+import { worksFeishuConnections } from "../../signals/works-page/feishu-channel-status.ts";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@okouai/ui/components/ui/tooltip";
 import { WorksChannelCardContent } from "./components/works-channel-card-content.tsx";
 import {
   FEISHU_PLATFORMS,
@@ -19,6 +27,7 @@ import {
   Copy,
   EllipsisVertical,
   Loader2,
+  Link2,
   Plus,
   Settings,
   Eye,
@@ -1136,42 +1145,69 @@ export function FeishuCard({
   platform?: FeishuPlatform;
 }) {
   const { t } = useTranslation();
+  const connection = useLastLoadable(worksFeishuConnections[platform]);
+  const connected = connection.state === "hasData" && connection.data;
+  const title = t(($) => {
+    return $.connectors.providerSettings[platform].documentTitle;
+  });
+  const actionLabel = connected
+    ? t(($) => {
+        return $.connectors.providerSettings[platform].manage;
+      })
+    : t(($) => {
+        return $.connectors.actions.connect;
+      });
   return (
-    <Link
-      pathname={
-        platform === "lark" ? ROUTES.settingsLark : ROUTES.settingsFeishu
-      }
-      data-slot="integration-card"
-      data-testid={`${platform}-setup-button`}
-      className={surfaceVariants({
-        interactive: true,
-        className: "flex min-w-0 flex-col",
-      })}
-    >
-      <WorksChannelCardContent
-        icon={<img src={feishuIconImg} alt="" className="size-5" />}
-        title={t(($) => {
-          return $.connectors.providerSettings[platform].documentTitle;
-        })}
-        description={t(($) => {
-          return $.connectors.providerSettings[platform].routeDescription;
-        })}
-        actions={
-          <span
-            className={buttonVariants({
-              variant: "quiet",
-              size: "xs",
-              className: "shrink-0 gap-1.5 px-2 text-xs",
-            })}
-          >
-            <Settings size={14} />
-            {t(($) => {
-              return $.connectors.providerSettings[platform].manage;
-            })}
-          </span>
-        }
-      />
-    </Link>
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Link
+              pathname={
+                platform === "lark"
+                  ? ROUTES.settingsLark
+                  : ROUTES.settingsFeishu
+              }
+              aria-label={`${title}: ${actionLabel}`}
+              data-slot="integration-card"
+              data-testid={`${platform}-setup-button`}
+              className={surfaceVariants({
+                interactive: true,
+                className: "flex min-w-0 flex-col",
+              })}
+            >
+              <WorksChannelCardContent
+                actionsPlacement={connected ? "footer" : "header"}
+                icon={<img src={feishuIconImg} alt="" className="size-5" />}
+                title={title}
+                description={t(($) => {
+                  return $.connectors.providerSettings[platform]
+                    .routeDescription;
+                })}
+                actions={
+                  <>
+                    {connected ? (
+                      <ConnectedIndicator variant="text" wrap />
+                    ) : null}
+                    <span
+                      className={buttonVariants({
+                        variant: "quiet",
+                        size: "icon-xs",
+                        className: "shrink-0",
+                      })}
+                      aria-hidden="true"
+                    >
+                      {connected ? <Settings size={16} /> : <Link2 size={16} />}
+                    </span>
+                  </>
+                }
+              />
+            </Link>
+          }
+        />
+        <TooltipContent>{actionLabel}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }
 

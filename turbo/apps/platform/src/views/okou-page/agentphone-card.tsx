@@ -1,7 +1,7 @@
 import { WorksChannelCardContent } from "./components/works-channel-card-content.tsx";
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
-import { EllipsisVertical } from "lucide-react";
+import { Settings, Link2 } from "lucide-react";
 import { surfaceVariants, Button } from "@okouai/ui";
 import {
   Popover,
@@ -78,18 +78,17 @@ function AgentPhoneCardActions({
       ) : null}
       {status !== null && !isConnected && canConnect ? (
         <Button
+          showTooltip
           type="button"
           variant="quiet"
-          size="xs"
-          className="shrink-0 gap-1.5 px-2 text-xs"
+          size="icon-xs"
+          className="shrink-0"
           aria-label={t(($) => {
             return $.connectors.providerSettings.agentphone.connectAria;
           })}
           onClick={onConnect}
         >
-          {t(($) => {
-            return $.connectors.actions.connect;
-          })}
+          <Link2 size={16} aria-hidden="true" />
         </Button>
       ) : null}
       {isConnected ? (
@@ -106,7 +105,7 @@ function AgentPhoneCardActions({
                   return $.connectors.providerSettings.agentphone.options;
                 })}
               >
-                <EllipsisVertical size={16} />
+                <Settings size={16} />
               </Button>
             }
           />

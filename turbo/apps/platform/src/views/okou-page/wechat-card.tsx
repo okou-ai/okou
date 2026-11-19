@@ -3,6 +3,7 @@ import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { Button, surfaceVariants } from "@okouai/ui";
+import { Link2 } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -59,6 +60,7 @@ export function WechatCard() {
       >
         <WorksChannelCardContent
           actionsPlacement={connected ? "footer" : "header"}
+          showDescription={!connected || !status?.configured}
           icon={<img src={wechatIconImg} alt="" className="size-5" />}
           title={t(($) => {
             return $.works.wechat.name;
@@ -76,7 +78,7 @@ export function WechatCard() {
                   : t(($) => {
                       return $.works.wechat.description;
                     })}
-              {status?.binding ? (
+              {status?.binding && !connected ? (
                 <p className="mt-1 break-all">
                   {status.binding.workspace.name} · {status.binding.accountId}
                 </p>
@@ -86,25 +88,37 @@ export function WechatCard() {
           actions={
             <>
               {connected ? (
-                <ConnectedIndicator variant="text" wrap />
+                <ConnectedIndicator
+                  variant="text"
+                  wrap
+                  connectedDetail={
+                    status?.binding
+                      ? `${status.binding.workspace.name} · ${status.binding.accountId}`
+                      : null
+                  }
+                />
               ) : (
                 <DialogTrigger
                   render={
                     <Button
+                      showTooltip
                       variant="quiet"
-                      size="xs"
-                      className="shrink-0 gap-1.5 px-2 text-xs"
+                      size="icon-xs"
+                      className="shrink-0"
+                      aria-label={
+                        status?.status === "reconnect_required"
+                          ? t(($) => {
+                              return $.works.wechat.reconnect;
+                            })
+                          : t(($) => {
+                              return $.works.wechat.connect;
+                            })
+                      }
                     />
                   }
                   disabled={!status?.configured}
                 >
-                  {status?.status === "reconnect_required"
-                    ? t(($) => {
-                        return $.works.wechat.reconnect;
-                      })
-                    : t(($) => {
-                        return $.works.wechat.connect;
-                      })}
+                  <Link2 size={16} aria-hidden="true" />
                 </DialogTrigger>
               )}
               {status && status.status !== "disconnected" ? (

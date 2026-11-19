@@ -115,9 +115,9 @@ test("adds an email from the Works card with a short code and updates the open d
   });
   const card = getIntegrationCard("Email");
   await waitFor(() => {
-    expect(getAction("button", "Add email", card)).toBeEnabled();
+    expect(getAction("button", "Connect", card)).toBeEnabled();
   });
-  click(getAction("button", "Add email", card));
+  click(getAction("button", "Connect", card));
   const dialog = await screen.findByRole("dialog", {
     name: "Email connections",
   });
@@ -150,6 +150,11 @@ test("adds an email from the Works card with a short code and updates the open d
   await waitFor(() => {
     expect(getAction("button", "Email options", card)).toHaveFocus();
   });
+  click(getAction("button", "Email options", card));
+  expect(getAction("link", "okou@okou.io")).toHaveAttribute(
+    "href",
+    "mailto:okou@okou.io",
+  );
 });
 
 test("opens unsigned email settings with the login email connected", async () => {
@@ -208,9 +213,9 @@ test("keeps a failed code request in the dialog and lets the user retry", async 
   });
   const card = getIntegrationCard("Email");
   await waitFor(() => {
-    expect(getAction("button", "Add email", card)).toBeEnabled();
+    expect(getAction("button", "Connect", card)).toBeEnabled();
   });
-  click(getAction("button", "Add email", card));
+  click(getAction("button", "Connect", card));
   const dialog = await screen.findByRole("dialog", {
     name: "Email connections",
   });
@@ -224,7 +229,7 @@ test("keeps a failed code request in the dialog and lets the user retry", async 
   ).resolves.toBeInTheDocument();
 });
 
-test("deletes each linked address from Manage and returns focus to Add email", async () => {
+test("deletes each linked address from Manage and returns focus to Connect", async () => {
   const secondEmail = "second@example.com";
   let emails = [emailAddress, secondEmail];
   context.mocks.api(integrationsEmailContract.getLinkStatus, ({ respond }) => {
@@ -275,7 +280,7 @@ test("deletes each linked address from Manage and returns focus to Add email", a
   });
   click(getAction("button", "Close", dialog));
   await waitFor(() => {
-    expect(getAction("button", "Add email", card)).toHaveFocus();
+    expect(getAction("button", "Connect", card)).toHaveFocus();
   });
 });
 

@@ -14,8 +14,14 @@ import {
 } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import { AlertTriangle, EllipsisVertical, Download } from "lucide-react";
+import { AlertTriangle, Settings, Link2, RefreshCw } from "lucide-react";
 import { surfaceVariants, Button, buttonVariants, cn } from "@okouai/ui";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@okouai/ui/components/ui/tooltip";
 import { OFFICIAL_TELEGRAM_BOT_ID } from "@okouai/api-contracts/validators/integrations-telegram";
 import type { TelegramBot } from "@okouai/api-contracts/contracts/integrations-telegram";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -131,6 +137,12 @@ function ProviderCardActions({
   disconnecting: boolean;
 }) {
   const { t } = useTranslation();
+  const needsInstallation = !isInstalled && isAdmin && !!installUrl;
+  const connectionUrl = needsInstallation
+    ? installUrl
+    : isInstalled || independentIdentity
+      ? connectUrl
+      : null;
   return (
     <>
       {isConnected ? (
@@ -141,45 +153,45 @@ function ProviderCardActions({
           connectedDetail={connectedDetail}
         />
       ) : null}
-      {!isInstalled && isAdmin && installUrl && (
+      {!isConnected && connectionUrl ? (
         <Button
-          data-testid={installTestId}
+          showTooltip
+          data-testid={needsInstallation ? installTestId : connectTestId}
           variant="quiet"
-          size="xs"
-          className="shrink-0 gap-1.5 px-2 text-xs"
-          onClick={() => {
-            return openFreshOAuth(installUrl);
-          }}
-        >
-          <Download size={14} />
-          {installLabel}
-        </Button>
-      )}
-      {(isInstalled || independentIdentity) && !isConnected && connectUrl && (
-        <Button
-          data-testid={connectTestId}
-          variant="quiet"
-          size="xs"
-          className="shrink-0 gap-1.5 px-2 text-xs"
-          onClick={() => {
-            return openFreshOAuth(connectUrl);
-          }}
-        >
-          {t(($) => {
+          size="icon-xs"
+          className="shrink-0"
+          aria-label={t(($) => {
             return $.works.actions.connect;
           })}
+          onClick={() => {
+            return openFreshOAuth(connectionUrl);
+          }}
+        >
+          <Link2 size={16} aria-hidden="true" />
         </Button>
-      )}
-      {((isInstalled && (isConnected || isAdmin)) ||
-        (independentIdentity && isConnected)) && (
+      ) : null}
+      {isConnected && (
         <ProviderCardMenu
           moreOptionsLabel={moreOptionsLabel}
           disconnectLabel={disconnectLabel}
           uninstallLabel={uninstallLabel}
           disconnecting={disconnecting}
-          onDisconnect={isConnected ? onDisconnect : undefined}
+          onDisconnect={onDisconnect}
           onUninstall={isAdmin && isInstalled ? onUninstall : undefined}
-        />
+        >
+          {needsInstallation && installUrl ? (
+            <button
+              type="button"
+              data-testid={installTestId}
+              className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-state-hover hover:text-accent-foreground"
+              onClick={() => {
+                return openFreshOAuth(installUrl);
+              }}
+            >
+              {installLabel}
+            </button>
+          ) : null}
+        </ProviderCardMenu>
       )}
     </>
   );
@@ -206,16 +218,18 @@ function PermissionWarning({
         </span>
       </div>
       <Button
+        showTooltip
         variant="quiet"
-        size="xs"
-        className="shrink-0 self-end px-2 text-xs"
+        size="icon-xs"
+        className="shrink-0 self-end"
+        aria-label={t(($) => {
+          return $.works.actions.updatePermissions;
+        })}
         onClick={() => {
           return openFreshOAuth(reinstallUrl);
         }}
       >
-        {t(($) => {
-          return $.works.actions.updatePermissions;
-        })}
+        <RefreshCw size={16} aria-hidden="true" />
       </Button>
     </div>
   );
@@ -491,6 +505,7 @@ function DiscordCard() {
       >
         <WorksChannelCardContent
           actionsPlacement={data?.isConnected ? "footer" : "header"}
+          showDescription={!data?.isConnected || !data.isAvailable}
           icon={<DiscordMark size={20} />}
           title={title}
           description={<DiscordCardDescription data={data} />}
@@ -731,6 +746,7 @@ function GithubCard() {
     >
       <WorksChannelCardContent
         actionsPlacement={githubData?.isConnected ? "footer" : "header"}
+        showDescription={!githubData?.isConnected || adminInstallRequired}
         icon={<img src={githubIconImg} alt="" className="size-5" />}
         title={t(($) => {
           return $.works.github.title;
@@ -755,29 +771,46 @@ function GithubCard() {
               />
             ) : null}
             {githubData && !githubData.isInstalled && githubData.installUrl ? (
-              <a
-                data-testid="github-install-button"
-                href={githubData.installUrl}
-                target="_blank"
-                rel="noreferrer"
-                className={cn(
-                  buttonVariants({ variant: "quiet", size: "xs" }),
-                  "shrink-0 gap-1.5 px-2 text-xs",
-                )}
-              >
-                <Download size={14} />
-                {t(($) => {
-                  return $.works.github.install;
-                })}
-              </a>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <a
+                        data-testid="github-install-button"
+                        href={githubData.installUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        aria-label={t(($) => {
+                          return $.works.actions.connect;
+                        })}
+                        className={cn(
+                          buttonVariants({ variant: "quiet", size: "icon-xs" }),
+                          "shrink-0",
+                        )}
+                      >
+                        <Link2 size={16} aria-hidden="true" />
+                      </a>
+                    }
+                  />
+                  <TooltipContent>
+                    {t(($) => {
+                      return $.works.actions.connect;
+                    })}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
             ) : null}
             {githubData?.isInstalled && !githubData.isConnected ? (
               <Button
+                showTooltip
                 data-testid="github-connect-button"
                 type="button"
                 variant="quiet"
-                size="xs"
-                className="shrink-0 gap-1.5 px-2 text-xs"
+                size="icon-xs"
+                className="shrink-0"
+                aria-label={t(($) => {
+                  return $.works.actions.connect;
+                })}
                 disabled={connecting}
                 onClick={() => {
                   return detach(
@@ -786,9 +819,7 @@ function GithubCard() {
                   );
                 }}
               >
-                {t(($) => {
-                  return $.works.actions.connect;
-                })}
+                <Link2 size={16} aria-hidden="true" />
               </Button>
             ) : null}
           </>
@@ -860,6 +891,7 @@ function TelegramCard() {
     >
       <WorksChannelCardContent
         actionsPlacement={bot?.isConnected ? "footer" : "header"}
+        showDescription={!bot?.isConnected || !configured}
         icon={<img src={telegramIconImg} alt="" className="size-5" />}
         title={t(($) => {
           return $.works.telegram.title;
@@ -900,7 +932,7 @@ function TelegramCard() {
                           return $.works.actions.moreOptions;
                         })}
                       >
-                        <EllipsisVertical size={16} />
+                        <Settings size={16} />
                       </Button>
                     }
                   />
@@ -932,10 +964,14 @@ function TelegramCard() {
               </>
             ) : (
               <Button
+                showTooltip
                 data-testid="telegram-connect-button"
                 variant="quiet"
-                size="xs"
-                className="shrink-0 gap-1.5 px-2 text-xs"
+                size="icon-xs"
+                className="shrink-0"
+                aria-label={t(($) => {
+                  return $.works.actions.connect;
+                })}
                 disabled={loading || !configured || connecting}
                 onClick={() => {
                   detach(
@@ -944,9 +980,7 @@ function TelegramCard() {
                   );
                 }}
               >
-                {t(($) => {
-                  return $.works.actions.connect;
-                })}
+                <Link2 size={16} aria-hidden="true" />
               </Button>
             )}
           </>

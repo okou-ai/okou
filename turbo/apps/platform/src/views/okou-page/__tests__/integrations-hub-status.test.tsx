@@ -66,7 +66,9 @@ test("Integrations show current status and refresh after GitHub connects", async
 
   await expect(screen.findByText("Slack")).resolves.toBeInTheDocument();
   expect(screen.getByText("Connected (Okou HQ)")).toBeInTheDocument();
-  expect(screen.getByText(/update permissions/iu)).toBeInTheDocument();
+  expect(
+    getAction("button", "Update Permissions", getIntegrationCard("Slack")),
+  ).toBeInTheDocument();
   expect(getIntegrationCard("Phone")).toHaveTextContent("+15555551212");
   expect(
     getAction("button", "Connect", getIntegrationCard("Discord")),
@@ -164,7 +166,7 @@ test("A workspace member is directed to an admin for GitHub installation", async
       "Ask an organization admin to install the GitHub App",
     ),
   ).toBeInTheDocument();
-  expect(queryAction("link", "Install GitHub App", githubCard)).toBeNull();
+  expect(queryAction("link", "Connect", githubCard)).toBeNull();
   expect(queryAction("button", "Connect", githubCard)).toBeNull();
 });
 
@@ -401,7 +403,7 @@ test("An admin can begin Microsoft Teams installation", async () => {
   const teamsCard = await waitFor(() => {
     return getIntegrationCard("Microsoft Teams");
   });
-  const install = getAction("button", "Install in Teams", teamsCard);
+  const install = getAction("button", "Connect", teamsCard);
   expect(
     screen.getByText("Connect your Microsoft account to finish setup"),
   ).toBeInTheDocument();
@@ -427,7 +429,6 @@ test("Microsoft Teams offers Connect after installation", async () => {
     return getIntegrationCard("Microsoft Teams");
   });
   expect(getAction("button", "Connect", teamsCard)).toBeInTheDocument();
-  expect(queryAction("button", "Install in Teams", teamsCard)).toBeNull();
 });
 
 test("Microsoft Teams shows its connected account name", async () => {
@@ -454,12 +455,12 @@ test("Microsoft Teams shows its connected account name", async () => {
     screen.findByText("Microsoft Teams"),
   ).resolves.toBeInTheDocument();
   expect(screen.getByText("Connected (Avery)")).toBeInTheDocument();
-  expect(getAction("link", "Install GitHub App")).toBeInTheDocument();
+  expect(getAction("link", "Connect")).toBeInTheDocument();
 });
 
-test("Uninstalling Microsoft Teams requires confirmation", async () => {
+test("Uninstalling connected Microsoft Teams requires confirmation", async () => {
   mockSlack(context, { isConnected: true, isInstalled: true, isAdmin: true });
-  mockTeams(context, { isConnected: false, isInstalled: true, isAdmin: true });
+  mockTeams(context, { isConnected: true, isInstalled: true, isAdmin: true });
 
   await setupIntegrationsPage(context);
 
@@ -493,9 +494,7 @@ test.each([false, true])(
     const opened = context.mocks.browser.open();
     await setupIntegrationsPage(context);
     const card = getIntegrationCard("Slack");
-    click(
-      getAction("button", isInstalled ? "Connect" : "Install to Slack", card),
-    );
+    click(getAction("button", "Connect", card));
     const url = new URL(opened.calls[0]!.url!);
     expect(url.origin).toBe("https://slack.example.test");
     expect(url.pathname).toBe(isInstalled ? "/connect" : "/install");

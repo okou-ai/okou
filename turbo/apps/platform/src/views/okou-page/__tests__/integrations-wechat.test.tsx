@@ -245,7 +245,7 @@ test("the connected card identifies its workspace and WeChat account", async () 
   });
   await setup();
   await expect(
-    screen.findByText("Operations workspace · scanner-owner"),
+    screen.findByText("Connected (Operations workspace · scanner-owner)"),
   ).resolves.toBeInTheDocument();
 });
 

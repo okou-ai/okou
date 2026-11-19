@@ -1,6 +1,6 @@
 import { WorksChannelCardContent } from "./components/works-channel-card-content.tsx";
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
-import { EllipsisVertical, Mail } from "lucide-react";
+import { Settings, Mail, Link2 } from "lucide-react";
 import { Button, surfaceVariants } from "@okouai/ui";
 import {
   Popover,
@@ -104,7 +104,7 @@ export function EmailCard() {
                             return $.works.email.options;
                           })}
                         >
-                          <EllipsisVertical size={16} />
+                          <Settings size={16} />
                         </Button>
                       }
                     />
@@ -114,6 +114,21 @@ export function EmailCard() {
                       // Manage hands focus to the dialog, which returns to the card action.
                       finalFocus={dialogOpen ? false : undefined}
                     >
+                      {address ? (
+                        <PopoverClose
+                          nativeButton={false}
+                          role="link"
+                          render={<a href={`mailto:${address}`} />}
+                          className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-state-hover hover:text-accent-foreground"
+                        >
+                          <Mail
+                            size={16}
+                            className="shrink-0"
+                            aria-hidden="true"
+                          />
+                          <span className="min-w-0 break-all">{address}</span>
+                        </PopoverClose>
+                      ) : null}
                       <PopoverClose
                         className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-state-hover hover:text-accent-foreground"
                         onClick={() => {
@@ -130,20 +145,22 @@ export function EmailCard() {
               ) : status.state === "hasData" && status.data.configured ? (
                 <Button
                   ref={setTrigger}
+                  showTooltip
                   type="button"
                   variant="quiet"
-                  size="xs"
-                  className="shrink-0 gap-1.5 px-2 text-xs"
+                  size="icon-xs"
+                  className="shrink-0"
+                  aria-label={t(($) => {
+                    return $.works.actions.connect;
+                  })}
                   onClick={() => {
                     detach(addEmail(signal), Reason.DomCallback);
                   }}
                 >
-                  {t(($) => {
-                    return $.works.email.addEmail;
-                  })}
+                  <Link2 size={16} aria-hidden="true" />
                 </Button>
               ) : (
-                <span className="h-8 w-20 shrink-0" aria-hidden="true" />
+                <span className="size-7 shrink-0" aria-hidden="true" />
               )}
             </>
           }

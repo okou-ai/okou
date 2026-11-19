@@ -1,4 +1,5 @@
 import { WorksChannelCardContent } from "./components/works-channel-card-content.tsx";
+import { Link2 } from "lucide-react";
 import { LoadingSkeleton } from "../components/loading-skeleton.tsx";
 import type { WhatsappLinkCodeResponse } from "@okouai/api-contracts/contracts/integrations-whatsapp";
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
@@ -151,6 +152,7 @@ export function WhatsappCard() {
       >
         <WorksChannelCardContent
           actionsPlacement={status?.linked ? "footer" : "header"}
+          showDescription={!status?.linked || !status.configured}
           icon={<WhatsappMark size={20} className="text-green-600" />}
           title={t(($) => {
             return $.works.whatsapp.name;
@@ -188,10 +190,11 @@ export function WhatsappCard() {
                 </>
               ) : (
                 <Button
+                  showTooltip
                   type="button"
                   variant="quiet"
-                  size="xs"
-                  className="shrink-0 gap-1.5 px-2 text-xs"
+                  size="icon-xs"
+                  className="shrink-0"
                   disabled={!status?.configured}
                   aria-label={t(($) => {
                     return $.works.whatsapp.connect;
@@ -201,9 +204,7 @@ export function WhatsappCard() {
                     generateCode();
                   }}
                 >
-                  {t(($) => {
-                    return $.connectors.actions.connect;
-                  })}
+                  <Link2 size={16} aria-hidden="true" />
                 </Button>
               )}
             </>

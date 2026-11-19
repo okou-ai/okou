@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { EllipsisVertical } from "lucide-react";
+import { Settings } from "lucide-react";
 import { Button } from "@okouai/ui";
 import {
   Popover,
@@ -40,7 +40,7 @@ export function ProviderCardMenu({
             className="shrink-0"
             aria-label={moreOptionsLabel}
           >
-            <EllipsisVertical size={16} />
+            <Settings size={16} />
           </Button>
         }
       />
