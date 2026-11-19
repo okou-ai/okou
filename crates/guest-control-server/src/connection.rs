@@ -560,7 +560,7 @@ fn handle_connection_with_outcome(
     loop {
         #[cfg(target_os = "linux")]
         let trailing = if let Some(frame) =
-            decoder.take_incomplete_frame(MSG_WRITE_FILES, large_frame::STREAMED_BATCH_MIN_BYTES)
+            decoder.take_incomplete_frame(MSG_WRITE_FILES, large_frame::STREAMED_BATCH_MIN_BYTES..)
         {
             let Some((file, retained)) = large_frame::receive_write(&mut reader, &mut buf, &frame)
                 .map_err(|error| session.failure(error))?
@@ -574,7 +574,7 @@ fn handle_connection_with_outcome(
             Some(retained)
         } else if let Some(frame) = decoder.take_incomplete_frame(
             MSG_GUEST_STORAGE_MANIFEST,
-            large_frame::OWNED_STORAGE_MIN_BYTES,
+            large_frame::OWNED_STORAGE_PAYLOAD_BYTES,
         ) {
             let mut payload = Vec::with_capacity(frame.payload_len);
             let Some(retained) =

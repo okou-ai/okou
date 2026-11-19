@@ -10,7 +10,7 @@ fn consumes_payload_and_retains_following_frame() {
     let frame = encode(MSG_WRITE_FILES, 17, b"payload").unwrap();
     let prefix_len = guest_control_proto::HEADER_SIZE + guest_control_proto::MIN_BODY_SIZE + 3;
     assert!(decoder.decode(&frame[..prefix_len]).unwrap().is_empty());
-    let incomplete = decoder.take_incomplete_frame(MSG_WRITE_FILES, 7).unwrap();
+    let incomplete = decoder.take_incomplete_frame(MSG_WRITE_FILES, 7..).unwrap();
     let ping = encode(MSG_PING, 18, &[]).unwrap();
     let stream = [&frame[prefix_len..], &ping].concat();
     let mut reader = stream.as_slice();
@@ -33,7 +33,7 @@ fn rejects_invalid_trailing_frame_before_returning_the_payload() {
     let frame = encode(MSG_WRITE_FILES, 17, b"payload").unwrap();
     let prefix_len = guest_control_proto::HEADER_SIZE + guest_control_proto::MIN_BODY_SIZE;
     assert!(decoder.decode(&frame[..prefix_len]).unwrap().is_empty());
-    let frame = decoder.take_incomplete_frame(MSG_WRITE_FILES, 7).unwrap();
+    let frame = decoder.take_incomplete_frame(MSG_WRITE_FILES, 7..).unwrap();
     let mut body_and_trailing = b"payload\0\0\0\0".as_slice();
     let mut scratch = [0; 16];
     let mut input = Vec::new();

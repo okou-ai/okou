@@ -1,5 +1,6 @@
 use std::fs::File;
 use std::io::{self, Read, Write};
+use std::ops::RangeInclusive;
 
 use guest_control_proto::{Decoder, IncompleteFrame};
 
@@ -10,9 +11,10 @@ use crate::handlers::create_batch_input;
 // writes keep the existing decoder and worker path.
 pub(super) const STREAMED_BATCH_MIN_BYTES: usize = 12 * 1024 * 1024;
 
-// These frames exceed the decoder's retained capacity. Let the decoder keep
-// its reusable buffer for smaller inputs that mix with ordinary writes.
-pub(super) const OWNED_STORAGE_MIN_BYTES: usize = 4 * 1024 * 1024;
+// Smaller inputs benefit from the decoder's reusable buffer. Above this
+// range, the 9.36 MB mixed replay regressed on three Guests during first use.
+pub(super) const OWNED_STORAGE_PAYLOAD_BYTES: RangeInclusive<usize> =
+    4 * 1024 * 1024..=8 * 1024 * 1024;
 
 pub(super) fn receive_write(
     reader: &mut impl Read,
