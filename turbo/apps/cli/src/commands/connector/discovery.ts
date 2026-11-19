@@ -4,7 +4,6 @@ import type { ConnectorAccountTarget } from "@okouai/api-contracts/contracts/con
 import type { CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connectors";
 import type { ConnectorCatalogItem } from "../../lib/api/domains/connectors";
 import type { ConnectedConnectors } from "@okouai/api-contracts/contracts/connected-connectors";
-import type { ConnectorDiscoveryAgentContext } from "./agent-context";
 import { connectorInspectionType } from "./inspection";
 
 interface CatalogConnectorDiscoveryDefinition {
@@ -128,7 +127,6 @@ export function renderConnectorDiscoveryConnectedAsCell(
 
 export function connectorDiscoveryJson(
   connector: ConnectorDiscoveryItem,
-  agentContext: ConnectorDiscoveryAgentContext | null,
   directory: ConnectedConnectors,
 ) {
   const target = connectorDiscoveryTarget(connector);
@@ -148,20 +146,5 @@ export function connectorDiscoveryJson(
       connector.kind === "custom" &&
       isIntegrationManagedCustomConnector(connector.customConnector),
     hasSavedAccounts: connectorHasSavedAccounts(connector, directory),
-    authorized: agentContext
-      ? isConnectorDiscoveryAuthorized(connector, agentContext)
-      : null,
   };
-}
-
-export function isConnectorDiscoveryAuthorized(
-  connector: ConnectorDiscoveryDefinition,
-  agentContext: ConnectorDiscoveryAgentContext,
-): boolean {
-  if (connector.kind === "catalog") {
-    return agentContext.authorizedConnectorSlugs.has(connector.slug);
-  }
-  return agentContext.authorizedCustomConnectorIds.has(
-    connector.customConnector.id,
-  );
 }

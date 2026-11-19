@@ -1,4 +1,5 @@
 import {
+  connectorAccountTargetKey,
   type ConnectorAccountTarget,
   type ConnectorAccountInspectionResult,
 } from "@okouai/api-contracts/contracts/connector-accounts";
@@ -11,7 +12,7 @@ import {
 } from "../../../lib/api/domains/connectors";
 import { withErrorHandler } from "../../../lib/command/with-error-handler";
 import { getOkouAgentId } from "../../../lib/okou-env";
-import { chatConnectorAccountsEnabled } from "../../../lib/api/domains/run-connector-accounts";
+import { listRunConnectorAccounts } from "../../../lib/api/domains/run-connector-accounts";
 import { isUuid } from "../../../lib/utils/uuid";
 import { getPlatformOrigin } from "../../../lib/platform-url";
 import { connectorAccountCliLabel } from "../account-label";
@@ -23,26 +24,13 @@ import {
 } from "../action-url";
 import {
   connectorDiscoveryItems,
-  isConnectorDiscoveryAuthorized,
-  type ConnectorDiscoveryItem,
+  connectorDiscoveryTarget,
 } from "../discovery";
-import { resolveConnectorDiscoveryAgentContext } from "../agent-context";
 import { findConnectorBySelector } from "../connector-selector";
 
 interface SwitchConnectorAccountRequestOptions {
   readonly connectionId: string;
   readonly callbackPrompt: string;
-}
-
-function accountTarget(
-  connector: ConnectorDiscoveryItem,
-): ConnectorAccountTarget {
-  return connector.kind === "catalog"
-    ? { kind: "builtin", connectorSlug: connector.slug }
-    : {
-        kind: "custom",
-        customConnectorId: connector.customConnector.id,
-      };
 }
 
 function addTargetSearchParams(
@@ -77,9 +65,7 @@ function availableInspection(
 export const switchConnectorAccountRequestCommand = new Command()
   .name("switch-request")
   .description(
-    chatConnectorAccountsEnabled()
-      ? "Ask the owner to allow and select one exact account in this Chat"
-      : "Ask the user to use one exact connector account for future runs in this chat",
+    "Ask the owner to allow and select one exact account in this Chat",
   )
   .argument(
     "<selector>",
@@ -105,7 +91,7 @@ Example:
 
 Notes:
   - First run okou connector account list <slug> --json and use an exact returned connectionId
-  - ${chatConnectorAccountsEnabled() ? "Owner confirmation allows and selects only this exact account in this Chat; it does not change global defaults or another Chat" : "This changes only future runs in the current web chat thread, not the current run or global default"}
+  - Owner confirmation allows and selects this exact account in the current Chat
   - ${CALLBACK_PROMPT_GUIDANCE}
   - Use this callback flow only when account switching is this turn's single access action
   - Return the generated URL verbatim with all query parameters, then end the current turn`,
@@ -126,17 +112,13 @@ Notes:
             "Connector account switches require the current web chat execution context",
           );
         }
-        const [{ connectors }, customConnectors, agentContext] =
-          await Promise.all([
+        const [{ connectors }, customConnectors, inventory] = await Promise.all(
+          [
             listConnectorCatalog(),
             listCustomConnectors(),
-            resolveConnectorDiscoveryAgentContext(agentId),
-          ]);
-        if (!agentContext) {
-          throw new Error(
-            "Connector account switches require the current web chat execution context",
-          );
-        }
+            listRunConnectorAccounts(),
+          ],
+        );
         const discoveredConnectors = connectorDiscoveryItems(
           connectors,
           customConnectors,
@@ -167,16 +149,20 @@ Notes:
             ),
           });
         }
+        const target = connectorDiscoveryTarget(connector);
+        const targetKey = connectorAccountTargetKey(target);
         if (
-          !chatConnectorAccountsEnabled() &&
-          !isConnectorDiscoveryAuthorized(connector, agentContext)
+          !inventory.accounts.some((account) => {
+            return (
+              account.connectionId === connectionId &&
+              connectorAccountTargetKey(account.target) === targetKey
+            );
+          })
         ) {
           throw new Error(
-            `Connector ${slug} is not authorized for the current web chat execution context`,
+            `Connector account ${connectionId} is unavailable for ${connector.slug}`,
           );
         }
-
-        const target = accountTarget(connector);
         const inspection = availableInspection(
           await inspectConnectorAccounts([{ connectionId, target }]),
           connector.slug,
@@ -197,7 +183,7 @@ Notes:
         });
 
         console.log(
-          `You can use ${label} for ${connector.label} in future runs of this chat: [Confirm account switch](${url})`,
+          `Allow and select ${label} for ${connector.label} in this Chat: [Confirm account switch](${url})`,
         );
         printCallbackTurnInstruction();
       },

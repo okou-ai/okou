@@ -6,7 +6,9 @@ import {
   type ConnectorAccountInspectionResult,
   type ConnectorAccountTarget,
 } from "@okouai/api-contracts/contracts/connector-accounts";
+import type { runConnectorAccountsContract } from "@okouai/api-contracts/contracts/run-connector-accounts";
 import { http, HttpResponse } from "msw";
+import type { infer as zInfer } from "zod";
 
 type RunConnectorAccountContextTarget = ConnectorAccountTarget & {
   readonly connectionId: string | null;
@@ -60,4 +62,24 @@ export function stubRunConnectorAccountInspection(
       });
     },
   );
+}
+
+type RunConnectorAccountInventory = zInfer<
+  (typeof runConnectorAccountsContract.list.responses)[200]
+>;
+
+export function stubRunConnectorAccountInventory(
+  inventory: Partial<RunConnectorAccountInventory>,
+  origin = "http://localhost:3000",
+  onRequest?: () => void,
+) {
+  return http.get(`${origin}/api/run/connector-accounts`, () => {
+    onRequest?.();
+    return HttpResponse.json({
+      chatThreadId: "22222222-2222-4222-8222-222222222222",
+      accounts: [],
+      permissionGrants: [],
+      ...inventory,
+    });
+  });
 }

@@ -108,9 +108,13 @@ describe("captured personal CLI help and dispatch", () => {
       expect(text).toContain("Requires an organization admin");
     }
     if (path[1] === "custom" && path[2] !== "create") {
-      expect(text).toContain("including");
-      expect(text).toContain("admitted to");
-      expect(text).toContain("connector " + path[2]);
+      const guidance = text.replaceAll(/\s+/g, " ");
+      expect(guidance).toContain("including inside a Run");
+      expect(guidance).toMatch(
+        new RegExp(
+          `Use connector ${path[2]} for the exact accounts? admitted to the Run`,
+        ),
+      );
     }
   });
 

@@ -14,13 +14,12 @@ import {
 } from "../../../lib/api/domains/connectors";
 import { withErrorHandler } from "../../../lib/command/with-error-handler";
 import { findConnectorBySelector } from "../connector-selector";
-import {
-  chatConnectorAccountsEnabled,
-  listRunConnectorAccounts,
-} from "../../../lib/api/domains/run-connector-accounts";
+import { listRunConnectorAccounts } from "../../../lib/api/domains/run-connector-accounts";
+import { isRunBoundConnectorContext } from "../run-account-context";
 import { connectorAccountCliInventoryLabel } from "../account-label";
 import {
   connectorDiscoveryItems,
+  connectorDiscoveryTarget,
   type ConnectorDiscoveryItem,
 } from "../discovery";
 
@@ -31,17 +30,6 @@ interface ListConnectorAccountOptions {
 
 function accountFallbackLabel(account: ConnectorAccountConnection): string {
   return `Account #${account.id.slice(0, 8)}`;
-}
-
-function resolveTarget(
-  connector: ConnectorDiscoveryItem,
-): ConnectorAccountTarget {
-  return connector.kind === "catalog"
-    ? { kind: "builtin", connectorSlug: connector.slug }
-    : {
-        kind: "custom",
-        customConnectorId: connector.customConnector.id,
-      };
 }
 
 function printTable(connections: readonly ConnectorAccountConnection[]): void {
@@ -131,6 +119,9 @@ function jsonOutput(
     },
     defaultConnectionId: defaultConnection?.id ?? null,
     accounts: connections.map((account) => {
+      const chatAccount = access?.accounts.find((entry) => {
+        return entry.connectionId === account.id;
+      });
       return {
         connectionId: account.id,
         effectiveLabel: connectorAccountEffectiveLabel(
@@ -147,14 +138,8 @@ function jsonOutput(
         reconnectReason: account.reconnectReason,
         ...(access
           ? {
-              enabled:
-                access.accounts.find((entry) => {
-                  return entry.connectionId === account.id;
-                })?.enabled === true,
-              isCurrent:
-                access.accounts.find((entry) => {
-                  return entry.connectionId === account.id;
-                })?.isCurrent === true,
+              enabled: chatAccount?.enabled === true,
+              isCurrent: chatAccount?.isCurrent === true,
             }
           : {}),
       };
@@ -175,7 +160,13 @@ export const listConnectorAccountsCommand = new Command()
   .addHelpText(
     "after",
     `
-Use only an exact connectionId returned for this connector; never invent an ID or reuse one from another connector. ${chatConnectorAccountsEnabled() ? "Inspect the current account with okou connector status <slug> --json. JSON includes enabled and isCurrent for this Chat. Switch an enabled account directly with connector account switch; request owner approval for a disabled account with switch-request." : "This is available-account inventory, not the account already admitted to the current Run. Inspect that selection with okou connector status <slug> --json. Requesting a switch changes only future runs in the current web chat."}`,
+Lists saved accounts for the connector. Inside a Run, JSON includes enabled and
+isCurrent for this Chat. Use connector status <selector> --json to inspect the
+account already admitted to the current Run.
+
+Use the exact connectionId returned for the connector. Use that ID only with its
+listed connector. Switch an enabled account with connector account switch.
+Request owner approval for a disabled account with connector account switch-request.`,
   )
   .action(
     withErrorHandler(
@@ -220,7 +211,7 @@ Use only an exact connectionId returned for this connector; never invent an ID o
           });
         }
 
-        const target = resolveTarget(connector);
+        const target = connectorDiscoveryTarget(connector);
         const result = await listConnectorAccountConnections(target, search);
         if (result.state === "unavailable") {
           throw new Error(
@@ -229,7 +220,7 @@ Use only an exact connectionId returned for this connector; never invent an ID o
         }
 
         if (options.json) {
-          const access = chatConnectorAccountsEnabled()
+          const access = isRunBoundConnectorContext()
             ? await listRunConnectorAccounts()
             : undefined;
           console.log(
