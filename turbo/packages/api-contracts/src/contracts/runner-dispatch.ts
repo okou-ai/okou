@@ -18,6 +18,10 @@ export const runnerDispatchEnvelopeSchema = object({
   profile: string(),
   notAfter: number().int().nonnegative(),
   executionContext: executionContextSchema,
+  preferredHomeCheckout: object({
+    predecessorRunId: uuid(),
+    waitUntil: number().int().nonnegative(),
+  }).nullish(),
 });
 
 export const runnerDispatchResponseSchema = object({

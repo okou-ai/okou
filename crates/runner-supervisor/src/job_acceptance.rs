@@ -7,7 +7,7 @@ use crate::idle_lifecycle::{
     select_idle_entries_for_pressure, set_idle_status_snapshot,
 };
 use runner_executor::executor::BlankPoolSelection;
-use runner_lifecycle::active_runs::ActiveRuns;
+use runner_lifecycle::active_runs::{ActiveRunReuseProof, ActiveRuns};
 use runner_lifecycle::lifecycle::RunnerMode;
 use runner_lifecycle::resource_budget::{BudgetLease, ResourceBudget};
 use runner_lifecycle::status::StatusTracker;
@@ -16,6 +16,7 @@ use runner_provider::{
     RunCancellationRegistry,
 };
 use runner_types::ids::RunId;
+use runner_types::types::ExecutionContext;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::{Notify, oneshot, watch};
@@ -75,9 +76,26 @@ pub(crate) enum SuppliedAcceptance {
     Unknown,
 }
 
+pub(crate) fn supplied_finalizing_predecessor<'a>(
+    context: &'a ExecutionContext,
+    profile_name: &str,
+    active_runs: &ActiveRuns,
+) -> Option<(RunId, &'a str, ActiveRunReuseProof)> {
+    // Local handoff authority comes from complete native continuation input.
+    let native = context.native_continuation.as_ref()?;
+    native.session_id.as_ref()?;
+    let source = native.generation_run_id.as_deref()?.parse::<RunId>().ok()?;
+    if source == context.run_id {
+        return None;
+    }
+    let reuse_key = context.reuse_key()?;
+    let predecessor = active_runs.finalizing_predecessor(source, reuse_key, profile_name)?;
+    Some((source, reuse_key, predecessor))
+}
+
 /// Accept complete execution input after local resource and producer checks.
 pub(crate) async fn accept_supplied(
-    context: runner_types::types::ExecutionContext,
+    context: ExecutionContext,
     request: AcceptanceRequest<'_>,
     deadline: tokio::time::Instant,
     ctx: &AcceptanceResources<'_>,
@@ -93,31 +111,18 @@ pub(crate) async fn accept_supplied(
     }
     // Public completion can precede local sandbox/home publication. Identify
     // the actual producer from authoritative complete input, never acquisition advice.
-    let finalizing = context
-        .native_continuation
-        .as_ref()
-        .filter(|native| native.session_id.is_some())
-        .and_then(|native| native.generation_run_id.as_deref())
-        .and_then(|source| source.parse::<RunId>().ok())
-        .filter(|source| *source != run_id)
-        .and_then(|source_run_id| {
-            let reuse_key = context.reuse_key()?;
-            let predecessor = ctx.active_runs.finalizing_predecessor(
-                source_run_id,
-                reuse_key,
-                request.profile_name,
-            )?;
-            Some(FinalizingHandoffContext {
-                predecessor,
-                deadline: deadline.into_std(),
-                reuse_key: reuse_key.to_owned(),
-                source_run_id,
-                // Revalidated against the bound execution context before waiting.
-                native_generation_run_id: None,
-            })
-        });
-    let (resource, blank_pool_selection) = if let Some(finalizing) = finalizing {
-        (AcceptedResource::Finalizing(finalizing), None)
+    let (resource, blank_pool_selection) = if let Some((source_run_id, reuse_key, predecessor)) =
+        supplied_finalizing_predecessor(&context, request.profile_name, ctx.active_runs)
+    {
+        let handoff = FinalizingHandoffContext {
+            predecessor,
+            deadline: deadline.into_std(),
+            reuse_key: reuse_key.to_owned(),
+            source_run_id,
+            // Revalidated against the bound execution context before waiting.
+            native_generation_run_id: None,
+        };
+        (AcceptedResource::Finalizing(handoff), None)
     } else {
         let Some(resource) = acquire_local_acceptance_resource(
             run_id,

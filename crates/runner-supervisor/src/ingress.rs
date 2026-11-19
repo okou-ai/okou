@@ -167,9 +167,7 @@ impl IngressHandler {
                 return self.dispatch_response(run_id, dispatch::Disposition::Unknown);
             };
             let Some(permit) = intake.try_reserve() else {
-                let mut result = self.dispatch_response(run_id, dispatch::Disposition::Busy);
-                *result.status_mut() = StatusCode::TOO_MANY_REQUESTS;
-                return result;
+                return self.dispatch_response(run_id, dispatch::Disposition::Busy);
             };
             let read = async {
                 let mut bytes = Vec::new();
@@ -223,7 +221,12 @@ impl IngressHandler {
             "disposition": disposition,
         })
         .to_string();
-        let mut result = response(StatusCode::OK, &body);
+        let status = if disposition == dispatch::Disposition::Busy {
+            StatusCode::TOO_MANY_REQUESTS
+        } else {
+            StatusCode::OK
+        };
+        let mut result = response(status, &body);
         result.headers_mut().insert(
             "content-type",
             hyper::header::HeaderValue::from_static("application/json"),
