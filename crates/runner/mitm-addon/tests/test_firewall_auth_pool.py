@@ -13,8 +13,10 @@ from unittest.mock import patch
 
 import pytest
 
+import data_router
 import firewall_auth_client as auth_client
 import platform_http_pool
+import platform_http_transport as transport
 from tests.auth_endpoint_helpers import firewall_auth_success_response
 from tests.firewall_auth_helpers import firewall_auth_request
 from tests.test_firewall_auth_client import (
@@ -80,7 +82,7 @@ class _Peer:
 
 
 async def _send(origin: str, path: str, *, credential: str = "synthetic-token") -> None:
-    await auth_client.post_platform_json(origin + path, b"{}", credential)
+    await data_router.post_registration(origin + path, b"{}", credential)
 
 
 @pytest.fixture(autouse=True)
@@ -122,11 +124,11 @@ async def test_auth_and_registration_reuse_connection_without_sharing_request_au
         if tls:
             # A different trust context must establish a new TLS connection,
             # even when its CA happens to trust the same fixture server.
-            auth_client._https_context = ssl.create_default_context()
+            transport._https_context = ssl.create_default_context()
             await _send(origin, "/new-trust-context")
             await _send(origin, "/new-trust-context-reused")
             assert [identity for identity, _ in peer.requests] == [0, 0, 0, 1, 1]
-        auth_client.close_transport()
+        transport.close_transport()
         await asyncio.wait_for(peer.closed[0].wait(), 2)
 
 
@@ -257,14 +259,14 @@ async def test_active_exchange_lifecycle_closes_only_its_owned_connection(stop, 
                     await _send(origin, "/held")
 
             if stop == "deadline":
-                monkeypatch.setattr(auth_client, "FIREWALL_AUTH_FETCH_DEADLINE_SECONDS", 0.05)
+                monkeypatch.setattr(transport, "REQUEST_DEADLINE_SECONDS", 0.05)
             held = tasks.create_task(held_call())
             identity, _ = await asyncio.wait_for(peer.arrived.get(), 2)
             assert identity == prime_identity
             if stop == "shutdown":
                 await _send(origin, "/idle")
                 idle_identity, _ = await peer.arrived.get()
-                auth_client.close_transport()
+                transport.close_transport()
                 await asyncio.wait_for(peer.closed[idle_identity].wait(), 2)
                 assert not held.done()
                 assert not peer.closed[identity].is_set()
@@ -330,7 +332,7 @@ async def test_idle_limit_and_idle_expiry_release_sockets(monkeypatch, expiry):
             await asyncio.wait_for(peer.closed[0].wait(), 2)
             assert not peer.closed[1].is_set()
             assert not peer.closed[2].is_set()
-            auth_client.close_transport()
+            transport.close_transport()
         for closed in peer.closed:
             await asyncio.wait_for(closed.wait(), 2)
         if expiry:
