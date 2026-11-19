@@ -252,6 +252,34 @@ final class ThreadListMutations {
     }
   }
 
+  /// The chat leaves the list at once. A rejected delete removed nothing, so the chat returns.
+  @discardableResult
+  func delete(
+    _ thread: ChatThread, eventID: String, onFailure: (@MainActor (String) -> Void)? = nil
+  ) async -> Bool {
+    guard canUpdate(thread.id), !Task.isCancelled,
+      let current = threads.first(where: { $0.id == thread.id })
+    else { return false }
+    optimisticChanges.append(
+      (
+        eventID,
+        ChatThreadChange(
+          kind: .deleted, chatThreadId: current.id, agentId: current.agentID, createdAt: .now)
+      ))
+    projectThreads(threads)
+    let deleted = await updateThread(
+      current.id, includingIndicators: true, onFailure: onFailure
+    ) { [commands] in
+      try await commands.deleteThread(threadID: current.id, eventID: eventID)
+    }
+    if !deleted, !closed {
+      optimisticChanges.removeAll { $0.id == eventID }
+      let present = threads.contains { $0.id == current.id }
+      projectThreads(present ? threads : threads + [current])
+    }
+    return deleted
+  }
+
   @discardableResult
   func setMuted(
     _ id: String, muted: Bool, markRead: Bool = true,

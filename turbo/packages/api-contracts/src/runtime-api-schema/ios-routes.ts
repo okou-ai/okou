@@ -204,6 +204,10 @@ const iosContracts: readonly {
     route: chatThreadByIdContract.patch,
   },
   {
+    id: "ios.chatThreadByIdContract.delete",
+    route: chatThreadByIdContract.delete,
+  },
+  {
     id: "ios.chatThreadComputerUseHostContract.update",
     route: chatThreadComputerUseHostContract.update,
   },

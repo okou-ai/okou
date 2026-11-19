@@ -261,6 +261,33 @@ final class WorkspaceChatActions {
     return succeeded
   }
 
+  /// Deletes a chat the user has confirmed. It leaves the list at once; if the server rejects
+  /// the delete, the chat returns with Retry.
+  @discardableResult
+  func deleteThread(_ id: String, eventID: String = UUID().uuidString.lowercased()) async -> Bool {
+    guard let workspace else { return false }
+    guard !closed, !needsUpgrade, workspace.list.canUpdate(id),
+      let thread = workspace.list.threads.first(where: { $0.id == id })
+    else { return false }
+    // Earlier feedback for this chat (Undo archive) has nothing left to act on.
+    if threadFeedback?.threadID == id { threadFeedback = nil }
+    var failure: String?
+    let deleted = await workspace.list.delete(
+      thread, eventID: eventID, onFailure: { failure = $0 })
+    guard !closed, !needsUpgrade else { return false }
+    if deleted {
+      workspace.notificationReadStateChanged()
+    } else {
+      threadFeedback = ChatThreadFeedback(
+        threadID: id, message: failure ?? String(localized: "The chat was not deleted."),
+        actionTitle: String(localized: "Retry"), persists: true, kind: .error
+      ) { [weak self] in
+        await self?.deleteThread(id, eventID: eventID)
+      }
+    }
+    return deleted
+  }
+
   func setMuted(_ id: String, muted: Bool, markRead: Bool = true) async {
     guard let workspace else { return }
     guard !closed, !needsUpgrade, workspace.list.canMute(id) else { return }
@@ -388,6 +415,11 @@ extension WorkspaceStore {
     return await navigationActions.setArchived(
       id, archived: archived, leaveDetail: leaveDetail, restoreOnUndo: restoreOnUndo,
       reopenOnSuccess: reopenOnSuccess, eventID: eventID)
+  }
+
+  @discardableResult
+  func deleteThread(_ id: String) async -> Bool {
+    return await navigationActions.deleteThread(id)
   }
 
   func setMuted(_ id: String, muted: Bool, markRead: Bool = true) async {

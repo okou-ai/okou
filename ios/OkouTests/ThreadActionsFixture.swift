@@ -106,7 +106,9 @@ final class ThreadActionsFixture: Sendable {
             "{\"id\":\"\(Self.createdThread)\",\"title\":null,\"createdAt\":\"\(Self.date)\",\"selectedModel\":null}"
         )
       }
-      if request.httpMethod == "POST" {
+      if request.httpMethod == "POST"
+        || (request.httpMethod == "DELETE" && path == "/api/chat-threads/\(Self.thread)")
+      {
         return try await Self.mutate(request, path: path, state: state)
       }
       return try Self.read(request, path: path, state: state, muted: muted)
@@ -119,7 +121,8 @@ final class ThreadActionsFixture: Sendable {
     XCTAssertEqual(
       request.value(forHTTPHeaderField: "Authorization"), "Bearer local-test-session")
     XCTAssertEqual(request.value(forHTTPHeaderField: "X-Client-Type"), "iOS")
-    let action = String(path.split(separator: "/").last ?? "")
+    let action =
+      request.httpMethod == "DELETE" ? "delete" : String(path.split(separator: "/").last ?? "")
     let renameBody =
       action == "rename"
       ? try JSONDecoder().decode([String: String].self, from: chatRequestBody(request)) : [:]
@@ -162,6 +165,8 @@ final class ThreadActionsFixture: Sendable {
       case "unarchive":
         kind = "unarchived"
         state.archived = false
+      case "delete":
+        kind = "deleted"
       case "rename":
         kind = "renamed"
         state.title = title ?? ""

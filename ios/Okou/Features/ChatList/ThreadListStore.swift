@@ -567,3 +567,12 @@ final class ThreadListStore {
 
   isolated deinit { listTask?.cancel() }
 }
+
+extension ThreadListStore {
+  @discardableResult
+  func delete(
+    _ thread: ChatThread, eventID: String, onFailure: (@MainActor (String) -> Void)? = nil
+  ) async -> Bool {
+    return await actions.delete(thread, eventID: eventID, onFailure: onFailure)
+  }
+}
