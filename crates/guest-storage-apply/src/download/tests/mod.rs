@@ -7,6 +7,8 @@ fn only_large_remote_batches_get_the_wider_download_window() {
     assert_eq!(download_concurrency(17, 128), 16);
     assert_eq!(download_concurrency(63, 128), 16);
     assert_eq!(download_concurrency(64, 128), 24);
+    assert_eq!(download_concurrency(95, 128), 24);
+    assert_eq!(download_concurrency(96, 128), 32);
 }
 
 fn normalized_path(path: &str) -> PathBuf {
