@@ -209,17 +209,8 @@ function switches() {
   };
 }
 
-test("Deleting all Project threads requires a second confirmation and includes every archived page", async () => {
+test("Project deletion confirmation includes every archived page and returns safely to choices", async () => {
   const fixture = installDeletion(members(101));
-  const gate = context.mocks.deferred<void>();
-  context.mocks.api(
-    chatThreadByIdContract.delete,
-    async ({ params, query, respond }) => {
-      await gate.promise;
-      fixture.deleteThread(params.id, query?.eventId ?? crypto.randomUUID());
-      return respond(204);
-    },
-  );
   await setupPage({
     context,
     path: `/chats/${fixture.ordinary.id}`,
@@ -231,7 +222,7 @@ test("Deleting all Project threads requires a second confirmation and includes e
     return button("Delete project and 101 threads…", first);
   });
   click(fullDelete);
-  let confirmation = await screen.findByRole("dialog", {
+  const confirmation = await screen.findByRole("dialog", {
     name: "Delete project and threads?",
   });
   expect(within(confirmation).getByText("Planning 101")).toBeInTheDocument();
@@ -245,29 +236,14 @@ test("Deleting all Project threads requires a second confirmation and includes e
   await waitFor(() => {
     return expect(fullDelete).toHaveFocus();
   });
-  click(fullDelete);
-  confirmation = await screen.findByRole("dialog", {
-    name: "Delete project and threads?",
-  });
-  click(button("Permanently delete", confirmation));
-  await waitFor(() => {
-    return expect(button("Deleting…", confirmation)).toBeDisabled();
-  });
-  expect(button("Back", confirmation)).toBeDisabled();
   await userEvent.setup({ delay: null }).keyboard("{Escape}");
-  expect(confirmation).toBeInTheDocument();
-  gate.resolve();
-  await fixture.projectDeleted.promise;
   await waitFor(() => {
-    expect(button("Create Project")).toHaveFocus();
+    return expect(button("Options for Launch")).toHaveFocus();
   });
-  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-  expect(location.pathname).toBe(`/chats/${fixture.ordinary.id}`);
   expect(
-    document.querySelector(
-      `[data-sidebar-chat-thread-id="${fixture.ordinary.id}"]`,
-    ),
-  ).toHaveTextContent("Unrelated chat");
+    document.querySelector(`[data-project-row-id="${projectId}"]`),
+  ).toHaveTextContent("Launch");
+  expect(location.pathname).toBe(`/chats/${fixture.ordinary.id}`);
 });
 
 test("Retry reconciles an unknown deletion of the open thread and recovers navigation", async () => {
@@ -387,6 +363,15 @@ test("Deleting an empty Project keeps the Project-only action available", async 
 test("Deleting the open Project thread finishes the batch before navigating to a new chat", async () => {
   const threads = members(3);
   const fixture = installDeletion(threads);
+  const gate = context.mocks.deferred<void>();
+  context.mocks.api(
+    chatThreadByIdContract.delete,
+    async ({ params, query, respond }) => {
+      await gate.promise;
+      fixture.deleteThread(params.id, query?.eventId ?? crypto.randomUUID());
+      return respond(204);
+    },
+  );
   await setupPage({
     context,
     path: `/chats/${threads[0]!.id}`,
@@ -403,6 +388,14 @@ test("Deleting the open Project thread finishes the batch before navigating to a
     name: "Delete project and threads?",
   });
   click(button("Permanently delete", confirmation));
+  await waitFor(() => {
+    return expect(button("Deleting…", confirmation)).toBeDisabled();
+  });
+  expect(button("Back", confirmation)).toBeDisabled();
+  await userEvent.setup({ delay: null }).keyboard("{Escape}");
+  expect(confirmation).toBeInTheDocument();
+  gate.resolve();
+  await fixture.projectDeleted.promise;
   await waitFor(() => {
     return expect(location.pathname).toBe("/");
   });
