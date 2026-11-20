@@ -12,6 +12,7 @@ import sys
 import tempfile
 import time
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -206,7 +207,7 @@ time.monotonic=monotonic;time.sleep=sleep
 """
 
 SYSTEMCTL = r"""#!/usr/bin/env python3
-import fcntl,json,os,sys
+import fcntl,json,os,sys,time
 from pathlib import Path
 root=Path(os.environ['FIXTURE_HOST']);statefile=root/'states.json';states=json.loads(statefile.read_text()) if statefile.exists() else {};args=sys.argv[1:];op=args[0]
 jobsfile=root/'stop-jobs.json';jobs=json.loads(jobsfile.read_text()) if jobsfile.exists() else {}
@@ -222,6 +223,12 @@ if op=='list-units':
  for name in sorted(states):
   if any(fnmatch.fnmatch(name,p) for p in patterns):print(name+' loaded inactive dead Fixture')
 elif op=='show':
+ if '--property=LoadState,FragmentPath,NeedDaemonReload' in args:
+  name,=names
+  print('LoadState=loaded')
+  print('FragmentPath='+str(root/files[name].lstrip('/')))
+  print('NeedDaemonReload='+('yes' if os.environ.get('STALE_STRIPE_UNIT') else 'no'))
+  sys.exit(0)
  if os.environ.get('STATE_ERROR') and (root/'stopped').exists():sys.exit(1)
  if os.environ.get('WAIT_DRAIN') and (root/'stopped').exists() and 'populated 1' in (root/'sys/fs/cgroup/system.slice/fixture.service/cgroup.events').read_text():
   fixture=Path(os.environ['FIXTURE'])
@@ -255,6 +262,12 @@ elif op in ('stop','reset-failed'):
   for name in names:
    if name not in jobs:(root/'run/systemd/transient'/name).unlink(missing_ok=True)
  statefile.write_text(json.dumps(states));jobsfile.write_text(json.dumps(jobs))
+ if op=='reset-failed' and os.environ.get('PAUSE_CLEANUP_BEFORE_RELOAD'):
+  (root/'cleanup-wrote-unit-files').touch()
+  deadline=time.monotonic()+4
+  while not (root/'cleanup-can-reload').exists():
+   assert time.monotonic()<deadline
+   time.sleep(.02)
 elif op=='disable':
  for d in roots:
   for directory in (root/d).glob('*.wants'):
@@ -619,6 +632,11 @@ class CleanupTests(unittest.TestCase):
         self.assertEqual(failed["operation_result"]["outcome"], "cleaned")
         self.assertEqual(failed["operation_result"]["units"], 1)
         self.assertEqual(failed["operation_result"]["directories"], 1)
+        result, payload = self.worker("cleanup", 42)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(payload["42"]["outcome"], "already_absent")
+        log = (self.root / "metal-a/systemctl.log").read_text()
+        self.assertEqual(log.count('"daemon-reload"'), 2)
 
     def test_pending_systemd_job_is_not_an_empty_manager_record(self):
         name = "vm0-runner-pr-42-api.service"
@@ -1582,6 +1600,52 @@ class CleanupTests(unittest.TestCase):
         self.assertIn("failed to retire original listener", errors)
         self.assertEqual(self.stripe_unit.read_text(), "fixture")
         self.assertNotIn("start", self.stripe_unit_mutations())
+
+    def test_stripe_refuses_to_start_if_manager_still_needs_reload(self):
+        self.stripe_fixture()
+        with self.stripe_controller(STALE_STRIPE_UNIT="1") as process:
+            output, errors = process.communicate(timeout=10)
+            self.assertNotEqual(process.returncode, 0, output + errors)
+        self.assertNotIn("start", self.stripe_unit_mutations())
+
+    def test_stripe_startup_and_cleanup_share_the_reload(self):
+        self.stripe_fixture()
+        removed = self.resource(
+            "etc/systemd/system/vm0-stripe-listener-pr-43.service", host="metal-b"
+        )
+        host = self.stripe_host
+
+        def wait_for(path):
+            deadline = time.monotonic() + 3
+            while not path.exists() and time.monotonic() < deadline:
+                time.sleep(0.02)
+            self.assertTrue(path.exists(), str(path))
+
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            cleanup = pool.submit(
+                self.worker,
+                "cleanup",
+                43,
+                host="metal-b",
+                PAUSE_CLEANUP_BEFORE_RELOAD="1",
+            )
+            try:
+                wait_for(host / "cleanup-wrote-unit-files")
+                self.assertFalse(removed.exists())
+                with self.stripe_controller() as process:
+                    wait_for(host / "var/lib/vm0-runner/stripe/pr-42/.deployment")
+                    (host / "cleanup-can-reload").touch()
+                    output, errors = process.communicate(timeout=10)
+                    self.assertEqual(process.returncode, 0, output + errors)
+            finally:
+                (host / "cleanup-can-reload").touch()
+            result, payload = cleanup.result(timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(payload["43"]["outcome"], "cleaned")
+        self.assertEqual(
+            (host / "systemctl.log").read_text().count('"daemon-reload"'), 1
+        )
+        self.assertEqual(self.stripe_unit_mutations().count("start"), 1)
 
     def test_stripe_queued_worker_checks_closure_and_cleanup_retires_receipt(self):
         self.stripe_fixture()
