@@ -47,7 +47,10 @@ class NativeTextSendTest {
         val journal = ComposerJournalStore(app, directory)
         val fixture = ComposerApiFixture()
         val held = CountDownLatch(1)
+        val create = CountDownLatch(1)
+        val followup = CountDownLatch(1)
         fixture.beforeContextReturn = { held.await() }
+        fixture.beforeCreateReturn = { create.await() }
         app.chatService = fixture.service
         app.composerService = fixture.service
         app.journalStore = journal
@@ -143,6 +146,9 @@ class NativeTextSendTest {
             }
             readyToSend(ComposerTarget())
             checkNotNull(device.findObject(send)).click()
+            text("Native first message\n你好")
+            assertEquals(0, fixture.inputs.size)
+            create.countDown()
             text("New conversation")
             assertEquals(1, fixture.inputs.size)
             editor().click()
@@ -156,7 +162,11 @@ class NativeTextSendTest {
                     CHAT_AGENT,
                 )
             )
+            fixture.beforeSendReturn = { followup.await() }
             checkNotNull(device.findObject(send)).click()
+            text("Native follow-up")
+            assertEquals("", editor().text)
+            followup.countDown()
             assertTrue(
                 device.wait(
                     object : Condition<UiDevice, Boolean> {
@@ -179,6 +189,8 @@ class NativeTextSendTest {
             }
         } finally {
             held.countDown()
+            create.countDown()
+            followup.countDown()
             for (cleanup in
                 listOf<() -> Unit>(
                     { scenario?.close() },

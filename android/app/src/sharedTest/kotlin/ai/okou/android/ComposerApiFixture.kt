@@ -32,7 +32,10 @@ class ComposerApiFixture : Closeable {
     private val inputOrder = CopyOnWriteArrayList<String>()
     val created = CopyOnWriteArrayList<JsonObject>()
     @Volatile var disconnectSend = false
+    @Volatile var beforeCreateReturn: () -> Unit = {}
     @Volatile var beforeSendReturn: () -> Unit = {}
+    @Volatile var beforeListReturn: () -> Unit = {}
+    @Volatile var beforeHistoryReturn: (String) -> Unit = {}
     @Volatile var beforeContextReturn: () -> Unit = {}
     @Volatile var inputDisposition = "queued"
     val drafts = ConcurrentHashMap<String, JsonObject>()
@@ -76,6 +79,7 @@ class ComposerApiFixture : Closeable {
                     val id = body.getValue("clientThreadId").jsonPrimitive.content
                     if (created.none { it.getValue("clientThreadId").jsonPrimitive.content == id })
                         created += body
+                    beforeCreateReturn()
                     json(
                             buildJsonObject {
                                     put("id", JsonPrimitive(id))
@@ -188,6 +192,7 @@ class ComposerApiFixture : Closeable {
                             )
                             .jsonObject
             }
+            beforeListReturn()
             json("""{"events":${JsonArray(rows)},"hasMore":false}""")
         }
         chats.historyRows = ::rows
@@ -225,6 +230,7 @@ class ComposerApiFixture : Closeable {
         val url = checkNotNull(request.requestUrl)
         val since = checkNotNull(url.queryParameter("sinceSeqId")).toLong()
         val rows = history(url.pathSegments[2], since)
+        beforeHistoryReturn(url.pathSegments[2])
         val cursor =
             rows.lastOrNull()?.let {
                 "{\"lastEventId\":${it.getValue("id")},\"lastSeqId\":${it.getValue("seqId")}}"

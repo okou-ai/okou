@@ -102,6 +102,7 @@
     <string name="composer_target_loading">Cargando disponibilidad del chat…</string>
     <string name="composer_target_unavailable">No hay un nuevo chat disponible para esta cuenta.</string>
     <string name="composer_unconfirmed">La entrega del mensaje no está confirmada.</string>
+    <string name="composer_sending">Enviando…</string>
     <string name="composer_check">Comprobar entrega</string>
     <string name="composer_retry">Reintentar el mismo mensaje</string>
     <string name="composer_not_observed">El mensaje aún no es visible. La entrega sigue sin confirmar.</string>

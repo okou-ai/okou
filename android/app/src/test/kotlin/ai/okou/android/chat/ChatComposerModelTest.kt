@@ -501,6 +501,11 @@ class ChatComposerModelTest {
             runCurrent()
             assertEquals(1, service.requests.size)
             assertEquals(frozen, model.uiState.value.entry(existing).pending!!.send)
+            val restored = model.uiState.value.messagesFor(checkNotNull(existing.threadId)).single()
+            assertEquals(frozen.clientEventId, restored.eventId)
+            assertEquals("immutable submission", restored.text)
+            assertNull(restored.disposition)
+            assertFalse(restored.sending)
             assertTrue(existing.key in model.uiState.value.unobserved)
             service.write = { request ->
                 assertEquals(frozen, request)
@@ -536,6 +541,9 @@ class ChatComposerModelTest {
                 model.uiState.value.entry(existing).receipt!!.disposition,
             )
             assertEquals("later edit", model.uiState.value.entry(existing).text)
+            val rejected = model.uiState.value.messagesFor(checkNotNull(existing.threadId)).single()
+            assertEquals("submitted", rejected.text)
+            assertEquals(TextDisposition.Rejected, rejected.disposition)
             assertEquals(1, service.requests.size)
         }
 
@@ -634,6 +642,10 @@ class ChatComposerModelTest {
         assertEquals(2, service.requests.size)
         val second = service.requests.last().clientEventId
         assertEquals(second, model.uiState.value.entry(existing).receipt!!.eventId)
+        assertEquals(
+            service.requests.map { it.clientEventId },
+            model.uiState.value.messagesFor(checkNotNull(existing.threadId)).map { it.eventId },
+        )
         gate.complete(Unit)
         runCurrent()
         assertEquals(second, model.uiState.value.entry(existing).receipt!!.eventId)

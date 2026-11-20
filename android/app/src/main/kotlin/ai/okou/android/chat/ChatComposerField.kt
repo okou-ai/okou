@@ -308,12 +308,7 @@ private fun ComposerFeedback(
                 Text(stringResource(R.string.retry))
             }
     }
-    entry.pending?.let { pending ->
-        Text(
-            stringResource(R.string.composer_unconfirmed),
-            style = MaterialTheme.typography.labelLarge,
-        )
-        Text(pending.send.prompt, maxLines = 3, overflow = TextOverflow.Ellipsis)
+    if (entry.pending != null) {
         FlowRow {
             TextButton(
                 onClick = { model.observe(target) },
@@ -332,7 +327,11 @@ private fun ComposerFeedback(
         }
     }
     entry.receipt?.let {
-        Text(stringResource(it.disposition.label()), modifier = Modifier.testTag("send_receipt"))
+        if (it.eventId !in state.receiptMessages)
+            Text(
+                stringResource(it.disposition.label()),
+                modifier = Modifier.testTag("send_receipt"),
+            )
         TextButton(
             onClick = { model.observe(target) },
             enabled = target.key !in state.busy,
@@ -347,7 +346,7 @@ private fun ComposerFeedback(
         Text(stringResource(R.string.composer_saving), style = MaterialTheme.typography.labelSmall)
 }
 
-private fun TextDisposition.label() =
+internal fun TextDisposition.label() =
     when (this) {
         TextDisposition.Accepted -> R.string.composer_accepted
         TextDisposition.Queued -> R.string.history_queued

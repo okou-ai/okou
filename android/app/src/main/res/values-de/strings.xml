@@ -102,6 +102,7 @@
     <string name="composer_target_loading">Chat-Verfügbarkeit wird geladen…</string>
     <string name="composer_target_unavailable">Für dieses Konto ist kein neuer Chat verfügbar.</string>
     <string name="composer_unconfirmed">Die Zustellung der Nachricht ist unbestätigt.</string>
+    <string name="composer_sending">Wird gesendet…</string>
     <string name="composer_check">Zustellung prüfen</string>
     <string name="composer_retry">Dieselbe Nachricht erneut senden</string>
     <string name="composer_not_observed">Die Nachricht ist noch nicht sichtbar. Ihre Zustellung bleibt unbestätigt.</string>
