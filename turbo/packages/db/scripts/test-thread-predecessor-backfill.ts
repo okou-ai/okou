@@ -377,9 +377,9 @@ try {
   await seedSkewedHistory();
   // This transition checks physical row versions across the predecessor repair.
   // Later migrations may legitimately rewrite the same rows.
-  const repair = journal.entries.find(
-    ({ tag }) => tag === "1463_repair_historical_thread_predecessor_agent",
-  );
+  const repair = journal.entries.find(({ tag }) => {
+    return tag === "1463_repair_historical_thread_predecessor_agent";
+  });
   assert.ok(repair);
   const beforeMillis = repair.when + 1;
   await assertRetryAndPlans(batch, beforeMillis);

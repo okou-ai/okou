@@ -140,7 +140,7 @@ try {
         const frontier =
           await sql`SELECT max(created_at)::text AS value FROM drizzle.__drizzle_migrations`;
         await assert.rejects(
-          applyPendingMigrations(sql),
+          applyPendingMigrations(sql, { beforeMillis: migration.when + 1 }),
           /Inactive pilot Project identity belongs/u,
         );
         assert.equal(await preserved(), before);
@@ -158,7 +158,7 @@ try {
         );
         await sql`DELETE FROM projects WHERE id=${collision}`;
       }
-      await applyPendingMigrations(sql);
+      await applyPendingMigrations(sql, { beforeMillis: migration.when + 1 });
       assert.equal(await preserved(), before);
       for (const [index, member] of cohort.entries()) {
         const chatId = chats[index];
@@ -229,7 +229,7 @@ try {
         Array.from(await sql`SELECT * FROM project_events ORDER BY id`),
         Array.from(await sql`SELECT * FROM chat_thread_events ORDER BY id`),
       ]);
-      await applyPendingMigrations(sql);
+      await applyPendingMigrations(sql, { beforeMillis: migration.when + 1 });
       assert.equal(
         JSON.stringify([
           Array.from(await sql`SELECT * FROM workflows ORDER BY id`),
