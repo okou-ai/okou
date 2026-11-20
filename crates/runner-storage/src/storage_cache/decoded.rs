@@ -41,12 +41,6 @@ pub struct CachedFiles {
     _memory: OwnedSemaphorePermit,
 }
 
-pub(super) enum DecodedLookup {
-    Miss,
-    Ready(Arc<CachedFiles>),
-    Unavailable(io::Error),
-}
-
 struct Inner {
     home: HomePaths,
     closed: Mutex<bool>,
@@ -168,31 +162,11 @@ impl DecodedCache {
             .flatten())
     }
 
-    #[cfg(any(test, feature = "test-support"))]
+    /// Amortize blocking-task dispatch without retaining contents between runs.
     pub(crate) async fn get_ready_batch(
         &self,
         keys: &[Option<(&str, &str)>],
     ) -> io::Result<Vec<Option<Arc<CachedFiles>>>> {
-        let keys = keys
-            .iter()
-            .map(|key| key.map(|(name, version)| (name, version, false)))
-            .collect::<Vec<_>>();
-        self.lookup_ready_batch(&keys)
-            .await?
-            .into_iter()
-            .map(|lookup| match lookup {
-                DecodedLookup::Miss => Ok(None),
-                DecodedLookup::Ready(files) => Ok(Some(files)),
-                DecodedLookup::Unavailable(error) => Err(error),
-            })
-            .collect()
-    }
-
-    /// Amortize blocking-task dispatch while keeping key-local optional failures.
-    pub(super) async fn lookup_ready_batch(
-        &self,
-        keys: &[Option<(&str, &str, bool)>],
-    ) -> io::Result<Vec<DecodedLookup>> {
         if keys.len() > LOOKUP_BATCH_SIZE {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -204,8 +178,8 @@ impl DecodedCache {
         let keys = keys
             .iter()
             .map(|key| {
-                key.filter(|(name, version, _)| name.len() <= 4096 && version.len() <= 4096)
-                    .filter(|(name, version, _)| {
+                key.filter(|(name, version)| name.len() <= 4096 && version.len() <= 4096)
+                    .filter(|(name, version)| {
                         let bytes = name.len() + version.len();
                         if key_bytes + bytes > LOOKUP_KEY_BYTES {
                             return false;
@@ -213,15 +187,11 @@ impl DecodedCache {
                         key_bytes += bytes;
                         true
                     })
-                    .map(|(name, version, optional)| {
-                        (name.to_owned(), version.to_owned(), optional)
-                    })
+                    .map(|(name, version)| (name.to_owned(), version.to_owned()))
             })
             .collect::<Vec<_>>();
         if keys.iter().all(Option::is_none) {
-            return Ok(std::iter::repeat_with(|| DecodedLookup::Miss)
-                .take(count)
-                .collect());
+            return Ok(vec![None; count]);
         }
         let result = self
             .work(move |inner, memory| {
@@ -231,14 +201,14 @@ impl DecodedCache {
                 let mut ready_files = 0;
                 let mut reader = disk::BatchReader::new(&inner.home, &inner.cancel);
                 for key in keys {
-                    let Some((name, version, optional)) = key else {
-                        result.push(DecodedLookup::Miss);
+                    let Some((name, version)) = key else {
+                        result.push(None);
                         continue;
                     };
                     // Keep the existing payload stop. Check remaining file capacity
                     // only after metadata validation, even when its budget is full.
                     if ready_bytes >= storage_files::MAX_PAYLOAD_BYTES {
-                        result.push(DecodedLookup::Miss);
+                        result.push(None);
                         continue;
                     }
                     let memory = first_memory.take().or_else(|| {
@@ -247,25 +217,20 @@ impl DecodedCache {
                             .ok()
                     });
                     let Some(memory) = memory else {
-                        result.push(DecodedLookup::Miss);
+                        result.push(None);
                         continue;
                     };
-                    let files = match reader.read(
+                    let files = reader.read(
                         &name,
                         &version,
                         READ_AHEAD_BYTES - ready_bytes,
                         READ_AHEAD_FILES - ready_files,
-                    ) {
-                        Ok(files) => files,
-                        Err(error) if optional && error.kind() != io::ErrorKind::Interrupted => {
-                            result.push(DecodedLookup::Unavailable(error));
-                            continue;
-                        }
-                        Err(error) => return Err(error),
-                    };
-                    if let Some(files) = files {
+                    )?;
+                    if let Some(files) = &files {
                         ready_bytes += files.iter().map(|file| file.content.len()).sum::<usize>();
                         ready_files += files.len();
+                    }
+                    result.push(files.map(|files| {
                         // Only a scheduling hint, not authority to delete. An
                         // absent archive must not repeatedly consume the bounded
                         // background queue. Errors are handled by retirement,
@@ -276,19 +241,13 @@ impl DecodedCache {
                             .join("archive.tar.gz");
                         let candidate = !matches!(std::fs::symlink_metadata(archive),
                             Err(error) if error.kind() == io::ErrorKind::NotFound);
-                        result.push(DecodedLookup::Ready(cached_files(files, memory, candidate)));
-                    } else {
-                        result.push(DecodedLookup::Miss);
-                    }
+                        cached_files(files, memory, candidate)
+                    }));
                 }
                 Ok(result)
             })
             .await?;
-        Ok(result.unwrap_or_else(|| {
-            std::iter::repeat_with(|| DecodedLookup::Miss)
-                .take(count)
-                .collect()
-        }))
+        Ok(result.unwrap_or_else(|| vec![None; count]))
     }
 
     /// Called only by the existing post-spawn background-fill owner.

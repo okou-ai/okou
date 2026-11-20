@@ -188,11 +188,7 @@ fn run(input: ManifestInput, runtime_dir: &Path) -> bool {
                 log_error!(LOG_TAG, "Failed to read bounded storage files input");
                 return false;
             };
-            guest_storage_apply::run_storage_files_bytes_in_runtime(
-                bytes,
-                runtime_dir,
-                &mut io::stdout().lock(),
-            )
+            guest_storage_apply::run_storage_files_bytes_in_runtime(bytes, runtime_dir)
         }
         ManifestInput::Path(manifest_path) => run_path(&manifest_path, runtime_dir),
         ManifestInput::Stdin => {
@@ -205,11 +201,7 @@ fn run(input: ManifestInput, runtime_dir: &Path) -> bool {
                 log_error!(LOG_TAG, "Failed to read manifest from stdin: {e}");
                 return false;
             }
-            guest_storage_apply::run_manifest_bytes_in_runtime(
-                &manifest_json,
-                runtime_dir,
-                &mut io::stdout().lock(),
-            )
+            guest_storage_apply::run_manifest_bytes_in_runtime(&manifest_json, runtime_dir)
         }
     }
 }
@@ -218,7 +210,7 @@ fn run_path(manifest_path: &str, runtime_dir: &Path) -> bool {
     if manifest_path == runtime_paths::STORAGE_MANIFEST_PATH {
         run_manifest_file_and_remove(manifest_path, runtime_dir)
     } else {
-        guest_storage_apply::run_in_runtime(manifest_path, runtime_dir, &mut io::stdout().lock())
+        guest_storage_apply::run_in_runtime(manifest_path, runtime_dir)
     }
 }
 
@@ -236,11 +228,7 @@ fn run_manifest_file_and_remove(manifest_path: &str, runtime_dir: &Path) -> bool
         return false;
     }
 
-    guest_storage_apply::run_manifest_bytes_in_runtime(
-        &manifest_json,
-        runtime_dir,
-        &mut io::stdout().lock(),
-    )
+    guest_storage_apply::run_manifest_bytes_in_runtime(&manifest_json, runtime_dir)
 }
 
 fn read_manifest_file(path: &str) -> io::Result<Vec<u8>> {

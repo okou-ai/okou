@@ -28,7 +28,6 @@ async fn dropped_delivery_keeps_publication_joined_by_runner_shutdown() {
         slow_headers: 0,
         classification: JoinSet::new(),
         groups: None,
-        unavailable: Vec::new(),
         owned_keys: HashSet::new(),
         apply: Vec::new(),
         fetches: JoinSet::new(),

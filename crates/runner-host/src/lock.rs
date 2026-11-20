@@ -15,20 +15,11 @@ const LOCK_REPLACED_MAX_RETRIES: usize = 64;
 const LOCK_RETRY_INITIAL_DELAY: Duration = Duration::from_millis(5);
 const LOCK_RETRY_MAX_DELAY: Duration = Duration::from_millis(50);
 
-// Preserve filesystem error kinds for callers that can isolate a failed lock.
-fn lock_io_error(operation: &str, path: &Path, error: io::Error) -> HostError {
-    io::Error::new(
-        error.kind(),
-        format!("{operation} {}: {error}", path.display()),
-    )
-    .into()
-}
-
 /// Open (or create) the lock file, creating parent directories as needed.
 pub fn open_lock_file(path: &Path) -> HostResult<File> {
     let parent = host_file::file_parent(path);
     host_file::ensure_dir(parent, DirMode::TrustedParent, "lock directory")
-        .map_err(|error| lock_io_error("create lock dir", parent, error))?;
+        .map_err(|e| HostError::Internal(format!("create lock dir {}: {e}", parent.display())))?;
 
     let file = File::options()
         .create(true)
@@ -38,9 +29,9 @@ pub fn open_lock_file(path: &Path) -> HostResult<File> {
         .mode(PRIVATE_FILE_MODE)
         .custom_flags(host_file::private_file_open_flags())
         .open(path)
-        .map_err(|error| lock_io_error("open lock", path, error))?;
+        .map_err(|e| HostError::Internal(format!("open lock {}: {e}", path.display())))?;
     host_file::secure_regular_private_file(&file, path, "lock file")
-        .map_err(|error| lock_io_error("validate lock", path, error))?;
+        .map_err(|e| HostError::Internal(format!("validate lock {}: {e}", path.display())))?;
     Ok(file)
 }
 
@@ -48,7 +39,12 @@ fn metadata_is_current_inode(lock_meta: std::fs::Metadata, path: &Path) -> HostR
     let path_meta = match std::fs::symlink_metadata(path) {
         Ok(path_meta) => path_meta,
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(false),
-        Err(error) => return Err(lock_io_error("lstat lock", path, error)),
+        Err(e) => {
+            return Err(HostError::Internal(format!(
+                "lstat lock {}: {e}",
+                path.display()
+            )));
+        }
     };
     Ok(lock_meta.dev() == path_meta.dev() && lock_meta.ino() == path_meta.ino())
 }
@@ -57,14 +53,14 @@ fn metadata_is_current_inode(lock_meta: std::fs::Metadata, path: &Path) -> HostR
 pub fn lock_matches_path(lock: &Flock<File>, path: &Path) -> HostResult<bool> {
     let lock_meta = lock
         .metadata()
-        .map_err(|error| lock_io_error("stat locked fd for", path, error))?;
+        .map_err(|e| HostError::Internal(format!("stat locked fd for {}: {e}", path.display())))?;
     metadata_is_current_inode(lock_meta, path)
 }
 
 fn file_matches_path(file: &File, path: &Path) -> HostResult<bool> {
     let lock_meta = file
         .metadata()
-        .map_err(|error| lock_io_error("stat lock fd for", path, error))?;
+        .map_err(|e| HostError::Internal(format!("stat lock fd for {}: {e}", path.display())))?;
     metadata_is_current_inode(lock_meta, path)
 }
 
@@ -86,6 +82,10 @@ impl LockMode {
 
     fn waits(self) -> bool {
         matches!(self, Self::Exclusive | Self::Shared)
+    }
+
+    fn map_error(self, path: &Path, e: nix::errno::Errno) -> HostError {
+        HostError::Internal(format!("flock {}: {e}", path.display()))
     }
 }
 
@@ -189,7 +189,7 @@ fn acquire_result_blocking_with_open(
                 }
                 continue;
             }
-            Err((_file, error)) => return Err(lock_io_error("flock", path, error.into())),
+            Err((_file, e)) => return Err(mode.map_error(path, e)),
         };
         if lock_matches_path(&lock, path)? {
             return Ok(Some(LockAcquire::Acquired(lock)));
@@ -206,12 +206,20 @@ fn open_existing_lock_parent(path: &Path) -> HostResult<Option<File>> {
     match std::fs::symlink_metadata(parent) {
         Ok(_) => {}
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => return Err(lock_io_error("stat lock parent", parent, error)),
+        Err(e) => {
+            return Err(HostError::Internal(format!(
+                "stat lock parent {}: {e}",
+                parent.display()
+            )));
+        }
     }
     match host_file::open_file_parent(path, "lock directory") {
         Ok(directory) => Ok(Some(directory)),
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
-        Err(error) => Err(lock_io_error("validate lock parent", path, error)),
+        Err(e) => Err(HostError::Internal(format!(
+            "validate lock parent {}: {e}",
+            path.display()
+        ))),
     }
 }
 
@@ -231,10 +239,15 @@ fn validate_existing_lock_file(path: &Path, opened: io::Result<File>) -> HostRes
     let file = match opened {
         Ok(file) => file,
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => return Err(lock_io_error("open lock", path, error)),
+        Err(e) => {
+            return Err(HostError::Internal(format!(
+                "open lock {}: {e}",
+                path.display()
+            )));
+        }
     };
     host_file::secure_regular_private_file(&file, path, "lock file")
-        .map_err(|error| lock_io_error("validate lock", path, error))?;
+        .map_err(|e| HostError::Internal(format!("validate lock {}: {e}", path.display())))?;
     Ok(Some(file))
 }
 

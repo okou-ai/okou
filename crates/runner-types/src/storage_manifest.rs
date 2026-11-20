@@ -4,7 +4,8 @@ use api_contracts::generated::types::runners::storage::{
 use guest_contracts::storage_manifest::validate_unique_mount_paths;
 use serde::Deserialize;
 
-pub use guest_contracts::storage_manifest::WORKFLOW_STORAGE_NAME;
+/// Business cache namespace for complete Workflow packages.
+pub const WORKFLOW_STORAGE_NAME: &str = "workflow";
 /// Business cache namespace for complete Agent instruction packages.
 pub const INSTRUCTION_STORAGE_NAME: &str = "instruction";
 
@@ -47,8 +48,6 @@ pub fn validate_workflow_mount(mount_path: &str) -> Result<(), String> {
 pub struct StorageEntry {
     /// Present only for an explicitly captured immutable template bundle.
     pub template_guidance: Option<guest_contracts::storage_manifest::TemplateGuidanceReference>,
-    /// Whether the API explicitly selected this execution package as optional.
-    pub optional: bool,
     pub name: String,
     pub mount_path: String,
     pub vas_storage_name: String,
@@ -128,7 +127,6 @@ fn normalize_storage_mounts(
             .ok_or_else(|| "storage manifest read-only mount requires archiveUrl".to_string())?;
         storages.push(StorageEntry {
             template_guidance: None,
-            optional: false,
             name: mount.name.clone(),
             mount_path: mount.mount_path,
             vas_storage_name: mount.name,
