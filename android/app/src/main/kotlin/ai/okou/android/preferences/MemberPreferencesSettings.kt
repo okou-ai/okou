@@ -14,7 +14,6 @@ import ai.okou.android.api.generated.UserPreferencesTheme
 import ai.okou.android.resolveDark
 import ai.okou.android.resolvePalette
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -25,7 +24,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -42,6 +40,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
@@ -76,7 +75,7 @@ internal fun MemberPreferencesSettings(model: MemberPreferencesModel) {
             SettingsPickerRow(
                 colorTitle,
                 value = stringResource(paletteLabel(state.colorTheme)),
-                leading = { PaletteSwatch(MaterialTheme.colorScheme) },
+                leading = { PaletteSwatch(state.colorTheme, dark, size = 20.dp) },
                 enabled = !state.busy,
             ) { dismiss ->
                 SettingsSheet(colorTitle, dismiss) {
@@ -151,8 +150,6 @@ private fun PaletteOptions(
     enabled: Boolean,
     onSelect: (UserPreferencesColorTheme) -> Unit,
 ) {
-    val context = LocalContext.current
-    val configuration = LocalConfiguration.current
     Column(
         Modifier.fillMaxWidth().selectableGroup(),
         verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -160,17 +157,13 @@ private fun PaletteOptions(
         UserPreferencesColorTheme.entries.chunked(2).forEach { choices ->
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 choices.forEach { palette ->
-                    val preview =
-                        remember(context, configuration, dark, palette) {
-                            resolvePalette(context, dark, palette).scheme
-                        }
                     SettingsChoiceRow(
                         stringResource(paletteLabel(palette)),
                         selected = palette == selected,
                         enabled = enabled,
                         onClick = { onSelect(palette) },
                         modifier = Modifier.weight(1f),
-                        leading = { PaletteSwatch(preview) },
+                        leading = { PaletteSwatch(palette, dark) },
                     )
                 }
             }
@@ -179,14 +172,17 @@ private fun PaletteOptions(
 }
 
 @Composable
-private fun PaletteSwatch(colors: ColorScheme) {
+private fun PaletteSwatch(palette: UserPreferencesColorTheme, dark: Boolean, size: Dp = 24.dp) {
+    val context = LocalContext.current
+    val configuration = LocalConfiguration.current
+    val preview =
+        remember(context, configuration, dark, palette) { resolvePalette(context, dark, palette) }
     Box(
-        Modifier.size(20.dp)
+        Modifier.size(size)
             .background(
-                Brush.linearGradient(listOf(colors.primary, colors.primaryContainer)),
+                Brush.linearGradient(listOf(preview.scheme.primary, preview.swatchCompanion)),
                 CircleShape,
             )
-            .border(1.dp, colors.outlineVariant, CircleShape)
     )
 }
 

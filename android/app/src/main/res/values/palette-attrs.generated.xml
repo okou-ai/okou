@@ -15,4 +15,5 @@
     <attr name="okou_palette_destructive" format="color" />
     <attr name="okou_palette_destructive_foreground" format="color" />
     <attr name="okou_palette_selection" format="color" />
+    <attr name="okou_palette_swatch_companion" format="color" />
 </resources>

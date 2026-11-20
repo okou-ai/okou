@@ -15,6 +15,7 @@
     <color name="okou_destructive">#FFBC3500</color>
     <color name="okou_destructive_foreground">#FFFFFFFF</color>
     <color name="okou_selection">#FFFFCA8F</color>
+    <color name="okou_swatch_companion">#FFFFA500</color>
     <style name="OkouPalette_default">
         <item name="okou_palette_primary">@color/okou_primary</item>
         <item name="okou_palette_primary_foreground">@color/okou_primary_foreground</item>
@@ -30,6 +31,7 @@
         <item name="okou_palette_destructive">@color/okou_destructive</item>
         <item name="okou_palette_destructive_foreground">@color/okou_destructive_foreground</item>
         <item name="okou_palette_selection">@color/okou_selection</item>
+        <item name="okou_palette_swatch_companion">@color/okou_swatch_companion</item>
     </style>
     <color name="okou_golden_hour_primary">#FFBB731B</color>
     <color name="okou_golden_hour_primary_foreground">#FFFFFFFF</color>
@@ -45,6 +47,7 @@
     <color name="okou_golden_hour_destructive">#FFBC3500</color>
     <color name="okou_golden_hour_destructive_foreground">#FFFFFFFF</color>
     <color name="okou_golden_hour_selection">#FFEFD4B3</color>
+    <color name="okou_golden_hour_swatch_companion">#FFF4E33C</color>
     <style name="OkouPalette_golden_hour">
         <item name="okou_palette_primary">@color/okou_golden_hour_primary</item>
         <item name="okou_palette_primary_foreground">@color/okou_golden_hour_primary_foreground</item>
@@ -60,6 +63,7 @@
         <item name="okou_palette_destructive">@color/okou_golden_hour_destructive</item>
         <item name="okou_palette_destructive_foreground">@color/okou_golden_hour_destructive_foreground</item>
         <item name="okou_palette_selection">@color/okou_golden_hour_selection</item>
+        <item name="okou_palette_swatch_companion">@color/okou_golden_hour_swatch_companion</item>
     </style>
     <color name="okou_citrus_spark_primary">#FFF4E33C</color>
     <color name="okou_citrus_spark_primary_foreground">#FF242321</color>
@@ -75,6 +79,7 @@
     <color name="okou_citrus_spark_destructive">#FFBC3500</color>
     <color name="okou_citrus_spark_destructive_foreground">#FFFFFFFF</color>
     <color name="okou_citrus_spark_selection">#FFE2DB8D</color>
+    <color name="okou_citrus_spark_swatch_companion">#FFB5D329</color>
     <style name="OkouPalette_citrus_spark">
         <item name="okou_palette_primary">@color/okou_citrus_spark_primary</item>
         <item name="okou_palette_primary_foreground">@color/okou_citrus_spark_primary_foreground</item>
@@ -90,6 +95,7 @@
         <item name="okou_palette_destructive">@color/okou_citrus_spark_destructive</item>
         <item name="okou_palette_destructive_foreground">@color/okou_citrus_spark_destructive_foreground</item>
         <item name="okou_palette_selection">@color/okou_citrus_spark_selection</item>
+        <item name="okou_palette_swatch_companion">@color/okou_citrus_spark_swatch_companion</item>
     </style>
     <color name="okou_berry_blush_primary">#FFC22E5A</color>
     <color name="okou_berry_blush_primary_foreground">#FFFFFFFF</color>
@@ -105,6 +111,7 @@
     <color name="okou_berry_blush_destructive">#FFBC3500</color>
     <color name="okou_berry_blush_destructive_foreground">#FFFFFFFF</color>
     <color name="okou_berry_blush_selection">#FFEFB3C5</color>
+    <color name="okou_berry_blush_swatch_companion">#FFE4ABC8</color>
     <style name="OkouPalette_berry_blush">
         <item name="okou_palette_primary">@color/okou_berry_blush_primary</item>
         <item name="okou_palette_primary_foreground">@color/okou_berry_blush_primary_foreground</item>
@@ -120,6 +127,7 @@
         <item name="okou_palette_destructive">@color/okou_berry_blush_destructive</item>
         <item name="okou_palette_destructive_foreground">@color/okou_berry_blush_destructive_foreground</item>
         <item name="okou_palette_selection">@color/okou_berry_blush_selection</item>
+        <item name="okou_palette_swatch_companion">@color/okou_berry_blush_swatch_companion</item>
     </style>
     <color name="okou_cotton_sky_primary">#FFE4ABC8</color>
     <color name="okou_cotton_sky_primary_foreground">#FF242321</color>
@@ -135,6 +143,7 @@
     <color name="okou_cotton_sky_destructive">#FFBC3500</color>
     <color name="okou_cotton_sky_destructive_foreground">#FFFFFFFF</color>
     <color name="okou_cotton_sky_selection">#FFEFB3D2</color>
+    <color name="okou_cotton_sky_swatch_companion">#FFB5D4E5</color>
     <style name="OkouPalette_cotton_sky">
         <item name="okou_palette_primary">@color/okou_cotton_sky_primary</item>
         <item name="okou_palette_primary_foreground">@color/okou_cotton_sky_primary_foreground</item>
@@ -150,6 +159,7 @@
         <item name="okou_palette_destructive">@color/okou_cotton_sky_destructive</item>
         <item name="okou_palette_destructive_foreground">@color/okou_cotton_sky_destructive_foreground</item>
         <item name="okou_palette_selection">@color/okou_cotton_sky_selection</item>
+        <item name="okou_palette_swatch_companion">@color/okou_cotton_sky_swatch_companion</item>
     </style>
     <color name="okou_blue_horizon_primary">#FF3758A1</color>
     <color name="okou_blue_horizon_primary_foreground">#FFFFFFFF</color>
@@ -165,6 +175,7 @@
     <color name="okou_blue_horizon_destructive">#FFBC3500</color>
     <color name="okou_blue_horizon_destructive_foreground">#FFFFFFFF</color>
     <color name="okou_blue_horizon_selection">#FFB3C6EF</color>
+    <color name="okou_blue_horizon_swatch_companion">#FFB5D4E5</color>
     <style name="OkouPalette_blue_horizon">
         <item name="okou_palette_primary">@color/okou_blue_horizon_primary</item>
         <item name="okou_palette_primary_foreground">@color/okou_blue_horizon_primary_foreground</item>
@@ -180,6 +191,7 @@
         <item name="okou_palette_destructive">@color/okou_blue_horizon_destructive</item>
         <item name="okou_palette_destructive_foreground">@color/okou_blue_horizon_destructive_foreground</item>
         <item name="okou_palette_selection">@color/okou_blue_horizon_selection</item>
+        <item name="okou_palette_swatch_companion">@color/okou_blue_horizon_swatch_companion</item>
     </style>
     <color name="okou_daydream_primary">#FF9CB7F2</color>
     <color name="okou_daydream_primary_foreground">#FF242321</color>
@@ -195,6 +207,7 @@
     <color name="okou_daydream_destructive">#FFBC3500</color>
     <color name="okou_daydream_destructive_foreground">#FFFFFFFF</color>
     <color name="okou_daydream_selection">#FFB3BBEF</color>
+    <color name="okou_daydream_swatch_companion">#FF9C78D8</color>
     <style name="OkouPalette_daydream">
         <item name="okou_palette_primary">@color/okou_daydream_primary</item>
         <item name="okou_palette_primary_foreground">@color/okou_daydream_primary_foreground</item>
@@ -210,6 +223,7 @@
         <item name="okou_palette_destructive">@color/okou_daydream_destructive</item>
         <item name="okou_palette_destructive_foreground">@color/okou_daydream_destructive_foreground</item>
         <item name="okou_palette_selection">@color/okou_daydream_selection</item>
+        <item name="okou_palette_swatch_companion">@color/okou_daydream_swatch_companion</item>
     </style>
     <color name="okou_deep_lagoon_primary">#FF017562</color>
     <color name="okou_deep_lagoon_primary_foreground">#FFFFFFFF</color>
@@ -225,6 +239,7 @@
     <color name="okou_deep_lagoon_destructive">#FFBC3500</color>
     <color name="okou_deep_lagoon_destructive_foreground">#FFFFFFFF</color>
     <color name="okou_deep_lagoon_selection">#FFB3EFE5</color>
+    <color name="okou_deep_lagoon_swatch_companion">#FF3758A1</color>
     <style name="OkouPalette_deep_lagoon">
         <item name="okou_palette_primary">@color/okou_deep_lagoon_primary</item>
         <item name="okou_palette_primary_foreground">@color/okou_deep_lagoon_primary_foreground</item>
@@ -240,5 +255,6 @@
         <item name="okou_palette_destructive">@color/okou_deep_lagoon_destructive</item>
         <item name="okou_palette_destructive_foreground">@color/okou_deep_lagoon_destructive_foreground</item>
         <item name="okou_palette_selection">@color/okou_deep_lagoon_selection</item>
+        <item name="okou_palette_swatch_companion">@color/okou_deep_lagoon_swatch_companion</item>
     </style>
 </resources>

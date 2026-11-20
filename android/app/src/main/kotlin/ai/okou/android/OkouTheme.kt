@@ -93,7 +93,11 @@ fun OkouTheme(
     )
 }
 
-internal data class PaletteColors(val scheme: ColorScheme, val selection: Color)
+internal data class PaletteColors(
+    val scheme: ColorScheme,
+    val selection: Color,
+    val swatchCompanion: Color,
+)
 
 /** The wrapper is used only for color lookup; native controls keep the real Activity context. */
 internal fun resolvePalette(
@@ -161,5 +165,9 @@ internal fun resolvePalette(
             inverseOnSurface = role(R.attr.okou_palette_background),
             inversePrimary = role(R.attr.okou_palette_primary),
         )
-    return PaletteColors(colors, role(R.attr.okou_palette_selection))
+    return PaletteColors(
+        colors,
+        role(R.attr.okou_palette_selection),
+        role(R.attr.okou_palette_swatch_companion),
+    )
 }
