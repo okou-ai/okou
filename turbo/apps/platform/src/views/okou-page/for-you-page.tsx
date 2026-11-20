@@ -7,13 +7,15 @@ import {
   useSet,
 } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
-import { Check, ChevronLeft, ChevronRight, ImageIcon } from "lucide-react";
+import { ChevronLeft, ChevronRight, ImageIcon } from "lucide-react";
 import {
   Button,
   Card,
   Popover,
   PopoverContent,
   PopoverTrigger,
+  Radio,
+  RadioGroup,
   buttonVariants,
   cn,
 } from "@okouai/ui";
@@ -337,30 +339,23 @@ function ForYouCover() {
               })}
             </Button>
           </div>
-          <div
-            role="radiogroup"
+          <RadioGroup
+            value={cover.id}
+            onValueChange={(value) => {
+              select(String(value));
+            }}
+            aria-label={t(($) => {
+              return $.chat.agentSuggestions.forYou.cover.gallery;
+            })}
             className="grid max-h-80 grid-cols-3 gap-2 overflow-y-auto p-0.5"
           >
             {forYouCovers.map((option, index) => {
-              const selected = option.id === cover.id;
               return (
-                <button
+                <label
                   key={option.id}
-                  type="button"
-                  role="radio"
-                  aria-checked={selected}
-                  aria-label={t(
-                    ($) => {
-                      return $.chat.agentSuggestions.forYou.cover.option;
-                    },
-                    { index: index + 1 },
-                  )}
-                  onClick={() => {
-                    select(option.id);
-                  }}
                   className={cn(
-                    "relative aspect-[5/2] overflow-hidden rounded-lg outline-2 outline-offset-2 outline-transparent transition-[outline-color] focus-visible:outline-ring",
-                    selected && "outline-primary",
+                    "relative aspect-[5/2] cursor-default overflow-hidden rounded-lg outline-2 outline-offset-2 outline-transparent transition-[outline-color] has-focus-visible:outline-ring",
+                    option.id === cover.id && "outline-primary",
                   )}
                 >
                   <img
@@ -377,15 +372,20 @@ function ForYouCover() {
                       })}
                     </span>
                   )}
-                  {selected && (
-                    <span className="absolute top-1.5 right-1.5 grid size-4.5 place-items-center rounded-full bg-primary text-primary-foreground">
-                      <Check aria-hidden className="size-3" />
-                    </span>
-                  )}
-                </button>
+                  <Radio
+                    value={option.id}
+                    aria-label={t(
+                      ($) => {
+                        return $.chat.agentSuggestions.forYou.cover.option;
+                      },
+                      { index: index + 1 },
+                    )}
+                    className="absolute top-1.5 right-1.5 focus-visible:ring-0"
+                  />
+                </label>
               );
             })}
-          </div>
+          </RadioGroup>
         </PopoverContent>
       </Popover>
     </div>

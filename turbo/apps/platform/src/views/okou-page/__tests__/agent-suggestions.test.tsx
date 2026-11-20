@@ -2365,6 +2365,18 @@ test("The member picks a For you cover, keeps it after reload and can reset it",
   await waitFor(() => {
     expect(cover()).toBe(forYouCovers[0].src);
   });
+
+  // The gallery is a radio group: arrow keys move the selection.
+  const user = userEvent.setup();
+  button("Cover 1", "radio", reopened).focus();
+  await user.keyboard("{ArrowRight}");
+  await waitFor(() => {
+    expect(cover()).toBe(forYouCovers[1].src);
+  });
+  expect(button("Cover 2", "radio", reopened)).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
 });
 
 test("Horizontal swipes browse without consuming while vertical and control gestures stay local", async () => {
