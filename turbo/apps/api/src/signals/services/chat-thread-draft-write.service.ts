@@ -56,17 +56,23 @@ export const persistChatThreadDraft$ = command(
         db
           .select({
             chatThreadId: chatThreads.id,
-            userId: sql`${draft.userId}::text`.as("user_id"),
+            userId: sql`${draft.userId}::text`
+              .mapWith(chatThreadDrafts.userId)
+              .as("user_id"),
             draftUserMessage:
-              sql`${sql.param(draftUserMessage, chatThreadDrafts.draftUserMessage)}::jsonb`.as(
-                "draft_user_message",
-              ),
+              sql`${sql.param(draftUserMessage, chatThreadDrafts.draftUserMessage)}::jsonb`
+                .mapWith(chatThreadDrafts.draftUserMessage)
+                .as("draft_user_message"),
             draftAttachments:
-              sql`${sql.param(draft.draftAttachments, chatThreadDrafts.draftAttachments)}::jsonb`.as(
-                "draft_attachments",
-              ),
-            createdAt: sql`now()`.as("created_at"),
-            updatedAt: sql`now()`.as("updated_at"),
+              sql`${sql.param(draft.draftAttachments, chatThreadDrafts.draftAttachments)}::jsonb`
+                .mapWith(chatThreadDrafts.draftAttachments)
+                .as("draft_attachments"),
+            createdAt: sql`now()`
+              .mapWith(chatThreadDrafts.createdAt)
+              .as("created_at"),
+            updatedAt: sql`now()`
+              .mapWith(chatThreadDrafts.updatedAt)
+              .as("updated_at"),
           })
           .from(chatThreads)
           .where(scopedThread),

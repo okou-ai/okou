@@ -184,6 +184,7 @@ export const advanceChatThreadReadCursors$ = command(
     { set },
     args: {
       readonly userId: string;
+      readonly orgId: string;
       readonly cursors: readonly {
         readonly threadId: string;
         readonly watermark: Date;
@@ -217,6 +218,7 @@ export const advanceChatThreadReadCursors$ = command(
       .where(
         and(
           eq(chatThreads.userId, args.userId),
+          chatThreadOrganizationPredicate(args.orgId),
           args.unmutedOnly ? eq(chatThreads.muted, false) : undefined,
           or(
             isNull(chatThreads.lastReadAt),

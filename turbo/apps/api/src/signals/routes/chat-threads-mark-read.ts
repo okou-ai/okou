@@ -41,7 +41,7 @@ const markReadInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     (
       await set(
         advanceChatThreadReadCursors$,
-        { userId, cursors: [{ threadId, watermark }] },
+        { userId, orgId, cursors: [{ threadId, watermark }] },
         signal,
       )
     ).length > 0;
