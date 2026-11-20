@@ -1,19 +1,13 @@
-import type {
-  NativeContinuation,
-  PreparedExecutionContext,
-} from "@okouai/api-contracts/contracts/runners";
+import type { NativeContinuation } from "@okouai/api-contracts/contracts/runners";
 import type { PaidToolId } from "@okouai/api-contracts/contracts/paid-tools";
 import type { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type {
   PermissionManifest,
   ResolvedModelProviderEnvironment,
 } from "./agent-run-contracts";
-import type { ResolvedSkillVolume } from "./run-prompt-and-skills";
-
 import type { Environment } from "./run-environment";
 import type { ConnectorServerFirewallMetadataCatalog } from "./connector-server-firewall-catalog.service";
 import type { ResolvedPermissionGrant } from "./connector-network-policy-refresh.service";
-import type { CapturedExecutionPackages } from "./execution-workflow-selection";
 
 /** Captured policy sources; actual artifact expiry is evaluated at publication. */
 export interface ExecutionNetworkPolicyInputs {
@@ -23,10 +17,6 @@ export interface ExecutionNetworkPolicyInputs {
 
 /** Process-local admission facts; this receipt itself is never serialized. */
 export interface AdmittedExecutionFacts {
-  readonly executionPackages: CapturedExecutionPackages;
-  readonly skillRoot: string;
-  readonly skillMounts: readonly ResolvedSkillVolume[];
-  readonly officialWorkflowBundles: PreparedExecutionContext["officialWorkflowBundles"];
   /** Same member observation as the admission Prompt; later edits affect later Runs. */
   readonly userTimezone: string | undefined;
   readonly nativeContinuation: NativeContinuation;

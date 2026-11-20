@@ -583,7 +583,7 @@ function createIdentityContext(
           return capturedFeatureSwitchContext(scope, member, overrides, agent);
         });
   const connectorContext = createConnectorContextGroups(userId, orgId, agentId);
-  const memory$ = createMemberMemoryHead(scope);
+  const memory$ = sharedMember?.memory$ ?? createMemberMemoryHead(scope);
   const disabledPaidTools$ =
     sharedMember?.disabledPaidTools$ ?? memberContext.disabledPaidTools$;
   const environment$ = computed(async (get) => {

@@ -49,6 +49,11 @@ export interface CapturedExecutionPackages {
   readonly instructionsBundle: ContentBundle;
 }
 
+export type ExecutionPackageMounts = Pick<
+  PreparedExecutionContext,
+  "officialWorkflowBundles" | "seedSkillBundles" | "templateGuidanceBundles"
+>;
+
 /**
  * Shared projection for prompt picks and the Automation target statement.
  * Mount exclusions apply to the captured winner for each Workflow name.
@@ -175,6 +180,7 @@ export function selectExecutionPackages(
 /** Resolve package destinations for this Run's accepted launch framework. */
 export function prepareRunPackageMounts(args: {
   readonly framework: PreparedExecutionContext["cliAgentType"];
+  readonly memoryMountPath: string;
   readonly skillVolumes: readonly SkillVolume[];
   readonly officialWorkflow: OfficialWorkflowObservation | undefined;
 }) {
@@ -187,15 +193,39 @@ export function prepareRunPackageMounts(args: {
   const skillMounts = normalizeMountOverlay(
     resolveRunSkillVolumes(args.skillVolumes, skillRoot),
   );
+  // Memory is applied last. Its destination is known before its HEAD is ready.
+  const packageMounts = skillMounts.filter(({ mountPath }) => {
+    return mountPath !== args.memoryMountPath;
+  });
   return {
     skillRoot,
-    skillMounts,
     protectedMountPaths: skillMounts.flatMap((mount) => {
       return "templateGuidanceBundle" in mount ? [mount.mountPath] : [];
     }),
-    officialWorkflowBundles:
-      args.officialWorkflow?.definitions.map(({ name, contentBundle }) => {
-        return { ...contentBundle, mountPath: `${skillRoot}/${name}` };
-      }) ?? [],
+    mounts: {
+      officialWorkflowBundles:
+        args.officialWorkflow?.definitions.map(({ name, contentBundle }) => {
+          return { ...contentBundle, mountPath: `${skillRoot}/${name}` };
+        }) ?? [],
+      seedSkillBundles: packageMounts.flatMap((mount) => {
+        return "contentBundle" in mount
+          ? [{ ...mount.contentBundle, mountPath: mount.mountPath }]
+          : [];
+      }),
+      templateGuidanceBundles: packageMounts.flatMap((mount, index) => {
+        if (!("templateGuidanceBundle" in mount)) {
+          return [];
+        }
+        const laterPaths = packageMounts.slice(index + 1).map((later) => {
+          return later.mountPath;
+        });
+        return [
+          {
+            ...mount.templateGuidanceBundle,
+            beforeMountPaths: [...laterPaths, args.memoryMountPath],
+          },
+        ];
+      }),
+    } satisfies ExecutionPackageMounts,
   };
 }

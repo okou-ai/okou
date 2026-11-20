@@ -40,17 +40,23 @@ const memoryMountPaths = Object.freeze({
   pi: CANONICAL_PI_MEMORY_MOUNT_PATH,
 });
 
+export function memberMemoryMountPath(
+  framework: keyof typeof memoryMountPaths,
+) {
+  return memoryMountPaths[framework];
+}
+
 export function buildMemberMemoryMount(
   owner: MemberMemoryOwner,
   head: MemberMemoryHead,
-  framework: keyof typeof memoryMountPaths,
+  mountPath: ReturnType<typeof memberMemoryMountPath>,
 ): AcceptedMemoryMount {
   const mount = {
     ...owner,
     name: MEMORY_ARTIFACT_NAME,
     storageId: head.storageId,
     version: head.versionId,
-    mountPath: memoryMountPaths[framework],
+    mountPath,
     writeback: true as const,
     missingRootPolicy: "preserveParentVersion" as const,
   };

@@ -92,9 +92,10 @@ import {
 } from "../utils";
 import type { DirectRunDispatchResult } from "./direct-run-dispatch.service";
 import {
-  prepareDirectRunPackages,
+  createExecutionBundleCache,
   type AdmittedRunLaunch,
 } from "./direct-run-preparation.service";
+import { selectExecutionContentBundles } from "./execution-content-bundle";
 import {
   prepareRunPackageMounts,
   selectExecutionPackages,
@@ -274,6 +275,7 @@ import { createMemberMemoryHead } from "./member-memory-head.service";
 import { initializeMemberMemory$ } from "./member-memory-initialization.service";
 import {
   buildMemberMemoryMount,
+  memberMemoryMountPath,
   type AcceptedMemoryMount,
 } from "./execution-storage.service";
 import { settleRejectedAutomationInput$ } from "./workflow-schedule-failure.service";
@@ -645,11 +647,6 @@ interface ThreadRunContext {
   readonly launchRecord: ClaimLaunchRecord;
 }
 
-interface PreparedClaimAdmission {
-  readonly context: ThreadRunContext;
-  readonly packages: ReturnType<typeof prepareDirectRunPackages>;
-}
-
 function claimCommitArguments(
   args: ThreadRunPersistenceArgs,
 ): ThreadRunContext["input"]["args"] {
@@ -860,8 +857,9 @@ export interface ThreadClaimRunObjects {
   readonly threadHasActiveRun$: Computed<Promise<boolean>>;
   readonly hasFirstPickableChatEvent$: Computed<Promise<boolean>>;
   readonly orgHasCapacity$: Computed<Promise<boolean>>;
+  readonly executionBundleCache$: ReturnType<typeof createExecutionBundleCache>;
   readonly prepareRunAdmission$: Command<
-    Promise<PreparedClaimAdmission | null>,
+    Promise<ThreadRunContext | null>,
     [signal: AbortSignal]
   >;
   readonly admitRun$: Command<
@@ -1941,8 +1939,10 @@ export function createThreadClaimRunObjects(
         modelProvider.piModelConfig === undefined
           ? modelProviderFramework(modelProvider)
           : ("pi" as const);
+      const memoryMountPath = memberMemoryMountPath(launchFramework);
       const packageMounts = prepareRunPackageMounts({
         framework: launchFramework,
+        memoryMountPath,
         skillVolumes: promptAndSkills.skillVolumes,
         officialWorkflow: officialWorkflowRun,
       });
@@ -1979,18 +1979,15 @@ export function createThreadClaimRunObjects(
         },
         runner: {
           workflowAutomationId: args.agentRunMetadata.workflowAutomationId,
-          framework: launchFramework,
+          memoryMountPath,
           agentInstructions: authorization.agentInstructions,
-          protectedMountPaths: packageMounts.protectedMountPaths,
+          packageMounts,
           nativeContinuation:
             args.threadContinuation.executionSnapshot.nativeContinuation,
           realAgentInPreview: args.realAgentInPreview,
           profile: launchSnapshot.runnerProfile,
           featureSwitchContext: featureSwitchContext,
           facts: {
-            skillRoot: packageMounts.skillRoot,
-            skillMounts: packageMounts.skillMounts,
-            officialWorkflowBundles: packageMounts.officialWorkflowBundles,
             integration,
             captureNetworkBodies: args.captureNetworkBodies === true,
             modelProvider,
@@ -2219,57 +2216,80 @@ export function createThreadClaimRunObjects(
     }
     return { head: memory.value };
   });
+  const runnerPackages$ = computed(async (get) => {
+    const plan = await get(runPlan$);
+    if (!plan || isRouteError(plan)) {
+      return plan;
+    }
+    const { runner } = plan;
+    const { skillRoot, protectedMountPaths, mounts } = runner.packageMounts;
+    const officialMountPaths = mounts.officialWorkflowBundles.map(
+      ({ mountPath }) => {
+        return mountPath;
+      },
+    );
+    const timing = get(threadContext.dispatchTiming$);
+    const [packageSources, ordinaryAutomation] = await Promise.all([
+      timing.measure(
+        "api_dispatch_prepare_execution_package_wait",
+        "nested",
+        () => {
+          return get(threadContext.executionPackageSources$);
+        },
+      ),
+      runner.workflowAutomationId && officialMountPaths.length === 0
+        ? get(threadContext.automationTarget$)
+        : null,
+    ]);
+    const selected = selectExecutionPackages(packageSources, {
+      agentInstructions: runner.agentInstructions,
+      skillRoot,
+      protectedMountPaths: [...protectedMountPaths, ...officialMountPaths],
+      singleAgent: isFeatureEnabled(
+        FeatureSwitchKey.SingleAgent,
+        runner.featureSwitchContext,
+      ),
+      ordinaryAutomation,
+    });
+    if ("error" in selected) {
+      return conflict(selected.error);
+    }
+    if (officialMountPaths.includes(runner.memoryMountPath)) {
+      return conflict(OFFICIAL_WORKFLOW_RUN_ADMISSION_MESSAGE);
+    }
+    return {
+      mounts,
+      bundles: selectExecutionContentBundles(selected, {
+        skillRoot,
+        ...mounts,
+      }),
+    };
+  });
+  const bundleHashes$ = computed(async (get) => {
+    if (!(await get(resourceAllowed$))) {
+      return null;
+    }
+    const packages = await get(runnerPackages$);
+    return packages && !isRouteError(packages) ? packages.bundles.hashes : null;
+  });
+  const executionBundleCache$ = createExecutionBundleCache(bundleHashes$);
   /** The run token makes runner input a command; its result is passed on. */
   const prepareRunnerInput$ = command(
     async ({ get, set }, args: ThreadRunnerFacts, signal: AbortSignal) => {
       signal.throwIfAborted();
-      const officialMountPaths = args.facts.officialWorkflowBundles.map(
-        ({ mountPath }) => {
-          return mountPath;
-        },
-      );
-      const timing = get(threadContext.dispatchTiming$);
-      const [
-        tokenInput,
-        packageSources,
-        ordinaryAutomation,
-        disabledPaidTools,
-      ] = await Promise.all([
+      const [tokenInput, packages, disabledPaidTools] = await Promise.all([
         get(okouTokenInput$),
-        timing.measure(
-          "api_dispatch_prepare_execution_package_wait",
-          "nested",
-          () => {
-            return get(threadContext.executionPackageSources$);
-          },
-        ),
-        args.workflowAutomationId &&
-        args.facts.officialWorkflowBundles.length === 0
-          ? get(threadContext.automationTarget$)
-          : null,
+        get(runnerPackages$),
         get(bootstrap.disabledPaidTools$),
       ]);
       signal.throwIfAborted();
-      const executionPackages = selectExecutionPackages(packageSources, {
-        agentInstructions: args.agentInstructions,
-        skillRoot: args.facts.skillRoot,
-        protectedMountPaths: [
-          ...args.protectedMountPaths,
-          ...officialMountPaths,
-        ],
-        singleAgent: isFeatureEnabled(
-          FeatureSwitchKey.SingleAgent,
-          args.featureSwitchContext,
-        ),
-        ordinaryAutomation,
-      });
-      if ("error" in executionPackages) {
-        return conflict(executionPackages.error);
+      if (!packages || isRouteError(packages)) {
+        return packages;
       }
       const okouToken = set(prepareOkouToken$, tokenInput, signal);
       return prepareRunnerLaunch({
         args,
-        executionPackages,
+        packages,
         okouToken,
         disabledPaidTools,
       });
@@ -2297,7 +2317,7 @@ export function createThreadClaimRunObjects(
         get(preparedMemory$),
       ]);
       signal.throwIfAborted();
-      if (isRouteError(input)) {
+      if (!input || isRouteError(input)) {
         return input;
       }
       if (!memory || isRouteError(memory)) {
@@ -2315,7 +2335,11 @@ export function createThreadClaimRunObjects(
       }
       return {
         ...input,
-        memoryMount: buildMemberMemoryMount(memoryOwner, head, args.framework),
+        memoryMount: buildMemberMemoryMount(
+          memoryOwner,
+          head,
+          args.memoryMountPath,
+        ),
       };
     },
   );
@@ -2577,7 +2601,7 @@ export function createThreadClaimRunObjects(
       { get, set },
       timing: ClaimRunTiming,
       signal: AbortSignal,
-    ): Promise<PreparedClaimAdmission | null> => {
+    ): Promise<ThreadRunContext | null> => {
       const head = await set(initializeRunPreparation$, timing, signal);
       signal.throwIfAborted();
       if (!head) {
@@ -2613,25 +2637,6 @@ export function createThreadClaimRunObjects(
       const { runId } = get(runIds$);
       await set(recordQueuedInputAdmissionTiming$, head, timing.run, signal);
       signal.throwIfAborted();
-      if (
-        runnerLaunch.facts.officialWorkflowBundles.some(({ mountPath }) => {
-          return runnerLaunch.memoryMount.mount.mountPath === mountPath;
-        })
-      ) {
-        await set(
-          rejectChatQueueHead$,
-          {
-            head,
-            rejection: claimAssemblyRejection(
-              assembly,
-              head,
-              conflict(OFFICIAL_WORKFLOW_RUN_ADMISSION_MESSAGE).body.error,
-            ),
-          },
-          signal,
-        );
-        return null;
-      }
       const preparedContext = await timing.run.measure(
         "api_dispatch_prepare_atomic_launch_persistence",
         "nested",
@@ -2655,9 +2660,8 @@ export function createThreadClaimRunObjects(
         },
       );
       signal.throwIfAborted();
-      const packages = prepareDirectRunPackages(preparedContext.launch);
       timing.phase.checkpoint("api_dispatch_phase_prepare_launch", now());
-      return { context: preparedContext, packages };
+      return preparedContext;
     },
   );
 
@@ -2996,6 +3000,7 @@ export function createThreadClaimRunObjects(
     inputResources$,
     hasFirstPickableChatEvent$,
     orgHasCapacity$,
+    executionBundleCache$,
     prepareRunAdmission$,
     admitRun$,
     publishPendingRun$,
@@ -3025,6 +3030,7 @@ interface PreparedRunnerLaunch {
   readonly profile: string;
   readonly reuseKey: string;
   readonly facts: AdmittedExecutionFacts;
+  readonly packages: AdmittedRunLaunch["packages"];
   readonly memoryMount: AcceptedMemoryMount;
 }
 
@@ -3508,14 +3514,11 @@ interface ThreadRunCommand {
 /** The Thread facts needed to prepare one Runner launch. */
 interface ThreadRunnerFacts {
   readonly workflowAutomationId: string | undefined;
-  readonly framework: SupportedFramework | "pi";
+  readonly memoryMountPath: ReturnType<typeof memberMemoryMountPath>;
   readonly agentInstructions: ContentBundle | null;
-  readonly protectedMountPaths: readonly string[];
+  readonly packageMounts: ReturnType<typeof prepareRunPackageMounts>;
   readonly facts: Pick<
     AdmittedExecutionFacts,
-    | "skillRoot"
-    | "skillMounts"
-    | "officialWorkflowBundles"
     | "integration"
     | "captureNetworkBodies"
     | "modelProvider"
@@ -3535,14 +3538,13 @@ interface ThreadRunnerFacts {
 /** Capture selectors and request receipts; admitted preparation assembles runtime input. */
 function prepareRunnerLaunch(input: {
   readonly args: ThreadRunnerFacts;
-  readonly executionPackages: AdmittedExecutionFacts["executionPackages"];
+  readonly packages: AdmittedRunLaunch["packages"];
   readonly okouToken: string;
   readonly disabledPaidTools: readonly PaidToolId[];
 }): Omit<PreparedRunnerLaunch, "memoryMount"> {
   const { args } = input;
   const facts = {
     ...args.facts,
-    executionPackages: input.executionPackages,
     nativeContinuation: args.nativeContinuation,
     okouToken: input.okouToken,
     disabledPaidTools: input.disabledPaidTools,
@@ -3564,6 +3566,7 @@ function prepareRunnerLaunch(input: {
     profile: args.profile,
     reuseKey: runnerReuseKey(args.chatThreadId),
     facts,
+    packages: input.packages,
   };
 }
 
@@ -3806,6 +3809,7 @@ function admittedRunLaunch(
       codexServiceTier: metadata.codexServiceTier,
     },
     memoryMount: args.launch.memoryMount,
+    packages: args.launch.packages,
     facts: {
       ...args.launch.facts,
       connectorEnvironment: {
