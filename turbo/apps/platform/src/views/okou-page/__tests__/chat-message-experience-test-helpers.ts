@@ -65,6 +65,9 @@ export function createMessageExperienceHelpers(context: TestContext) {
   function installMessageExperienceChat(
     options: MockChatLifecycleOptions = {},
   ): ReturnType<typeof mockChatLifecycle> {
+    context.mocks.data.onboardingStatus({
+      defaultAgentId: MESSAGE_EXPERIENCE_AGENT_ID,
+    });
     context.mocks.data.agents([
       {
         agentId: MESSAGE_EXPERIENCE_AGENT_ID,

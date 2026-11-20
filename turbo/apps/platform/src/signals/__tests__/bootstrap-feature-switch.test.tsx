@@ -44,7 +44,7 @@ test("The app waits for authoritative workspace features before mounting", async
     },
   );
 
-  const page = await startPage({ context, path: "/agents" });
+  const page = await startPage({ context, path: "/workflows" });
   await requestStarted.promise;
   expect(bootstrapSkeleton()).toBeVisible();
   expect(document.getElementById("root")).toBeNull();
@@ -53,7 +53,7 @@ test("The app waits for authoritative workspace features before mounting", async
   await page.ready;
 
   await expect(
-    screen.findByRole("heading", { name: "Agents" }),
+    screen.findByRole("heading", { name: "Workflows" }),
   ).resolves.toBeInTheDocument();
 });
 
@@ -65,12 +65,12 @@ test("An upgrade required by the workspace switch request is shown during startu
     );
   });
 
-  const page = await startPage({ context, path: "/agents" });
+  const page = await startPage({ context, path: "/workflows" });
   await expect(page.ready).rejects.toMatchObject({
     status: CLIENT_FORCE_UPGRADE_STATUS,
   });
   await expect(
     screen.findByRole("dialog", { name: "Update required" }),
   ).resolves.toBeVisible();
-  expect(screen.queryByRole("heading", { name: "Agents" })).toBeNull();
+  expect(screen.queryByRole("heading", { name: "Workflows" })).toBeNull();
 });

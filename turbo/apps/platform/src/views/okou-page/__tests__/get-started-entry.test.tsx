@@ -401,6 +401,7 @@ function configureQuestPage(
     name: "Quest Workspace",
     role,
   });
+  context.mocks.data.onboardingStatus({ defaultAgentId: QUEST_AGENT_ID });
   context.mocks.data.agents([
     {
       agentId: QUEST_AGENT_ID,
@@ -489,7 +490,7 @@ function makeCheckinGrant(serverNow: string): GetStartedClaim {
 }
 
 function questChatPath(): string {
-  return `/agents/${QUEST_AGENT_ID}/chat`;
+  return "/";
 }
 
 async function openQuestPanel(): Promise<HTMLElement> {

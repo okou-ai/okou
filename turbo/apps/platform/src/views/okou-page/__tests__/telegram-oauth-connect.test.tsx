@@ -395,12 +395,12 @@ test("Leaving Works cancels authorization and ignores a later tab result", async
 
   click(connect);
   await expectAuthorization(popup);
-  click(getAction("link", "Agents"));
+  click(getAction("link", "Workflows"));
 
   await expect(
-    screen.findByRole("heading", { name: "Agents" }),
+    screen.findByRole("heading", { name: "Workflows" }),
   ).resolves.toBeInTheDocument();
-  expect(pathname()).toBe("/agents");
+  expect(pathname()).toBe("/workflows");
   expect({ value: popup.closed }).toStrictEqual({ value: false });
   authorize(popup);
   act(() => {

@@ -88,25 +88,22 @@ async function setupFixture(): Promise<{
   readonly workflowId: string;
 }> {
   await runsApi.configureRunnerGroup();
-  const { actor } = await wf.setupWorkflowOrg();
+  const { actor, defaultAgentId: agentId } = await wf.setupWorkflowOrg();
   if (!actor.orgId) {
     throw new Error("Expected an org-scoped workflow actor");
   }
   await runsApi.ensurePersonalSubscriptionModel(actor, {
     model: "claude-fable-5-1",
   });
-  const agent = await wf.createAgent(actor, {
-    displayName: "GitHub Webhook Agent",
-  });
   const workflowId = await wf.createWorkflow(actor, {
-    agentId: agent.agentId,
+    agentId,
     name: WORKFLOW_NAME,
   });
   const fixture = { orgId: actor.orgId, userId: actor.userId };
   mocks.clerk.session(fixture.userId, fixture.orgId, "org:member");
   context.mocks.s3.send.mockResolvedValue({ ContentLength: 1024 });
   runsApi.acceptStorageDownloads();
-  return { fixture, actor, agentId: agent.agentId, workflowId };
+  return { fixture, actor, agentId, workflowId };
 }
 
 function githubPullRequestPayload(args: {

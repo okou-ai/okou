@@ -34,7 +34,7 @@ function workspaceSwitcher(): HTMLElement {
 test("A temporary authentication refresh keeps the active workspace", async () => {
   await setupPage({
     context,
-    path: "/agents",
+    path: "/workflows",
     auth: {
       user: {
         id: "user_org_a",
@@ -48,7 +48,9 @@ test("A temporary authentication refresh keeps the active workspace", async () =
     },
   });
 
-  const agentsHeading = await screen.findByRole("heading", { name: "Agents" });
+  const agentsHeading = await screen.findByRole("heading", {
+    name: "Workflows",
+  });
   expect(agentsHeading).toBeVisible();
   click(workspaceSwitcher());
   const initialWorkspaceMenu = await screen.findByRole("menu");
@@ -67,8 +69,8 @@ test("A temporary authentication refresh keeps the active workspace", async () =
     clerk.stateChanged();
   });
 
-  expect(screen.getByRole("heading", { name: "Agents" })).toBeVisible();
-  expect(window.location.pathname).toBe("/agents");
+  expect(screen.getByRole("heading", { name: "Workflows" })).toBeVisible();
+  expect(window.location.pathname).toBe("/workflows");
   click(workspaceSwitcher());
   const refreshingWorkspaceMenu = await screen.findByRole("menu");
   expect(within(refreshingWorkspaceMenu).getByText("Org A")).toBeVisible();
@@ -88,14 +90,14 @@ test("A temporary authentication refresh keeps the active workspace", async () =
   click(workspaceSwitcher());
   const restoredWorkspaceMenu = await screen.findByRole("menu");
   expect(within(restoredWorkspaceMenu).getByText("Org A")).toBeVisible();
-  expect(screen.getByRole("heading", { name: "Agents" })).toBeVisible();
-  expect(window.location.pathname).toBe("/agents");
+  expect(screen.getByRole("heading", { name: "Workflows" })).toBeVisible();
+  expect(window.location.pathname).toBe("/workflows");
 });
 
 test("Reload the changed tab before using a new workspace", async () => {
   await setupPage({
     context,
-    path: "/agents",
+    path: "/workflows",
     auth: {
       user: {
         id: "user_org_a",
@@ -115,7 +117,9 @@ test("Reload the changed tab before using a new workspace", async () => {
     },
   });
 
-  const agentsHeading = await screen.findByRole("heading", { name: "Agents" });
+  const agentsHeading = await screen.findByRole("heading", {
+    name: "Workflows",
+  });
   expect(agentsHeading).toBeVisible();
   const clerk = context.mocks.clerk();
 

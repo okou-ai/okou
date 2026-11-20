@@ -296,7 +296,7 @@ const features = {
 } as const;
 // Suggestions live independently of the default Agent's new-chat draft.
 const suggestionPath = "/for-you";
-const homePath = `/agents/${agentId}/chat`;
+const homePath = "/";
 async function openSuggestions(): Promise<void> {
   await setupPage({ context, path: suggestionPath, featureSwitches: features });
 }
@@ -428,8 +428,8 @@ test.each(["notification", "reconnect"] as const)(
         context.mocks.ably.hasSubscription(SUGGESTIONS_TOPIC),
       ).toBeTruthy();
     });
-    click(link("/agents"));
-    await screen.findByRole("heading", { name: "Agents" });
+    click(link("/workflows"));
+    await screen.findByRole("heading", { name: "Workflows" });
     pool.publish(second);
     if (delivery === "notification") {
       notifySuggestionsChanged();
@@ -506,8 +506,8 @@ test.each(["account", "workspace"] as const)(
     mockPool([first]);
     await openSuggestions();
     await screen.findByRole("article", { name: first.content.title });
-    click(link("/agents"));
-    await screen.findByRole("heading", { name: "Agents" });
+    click(link("/workflows"));
+    await screen.findByRole("heading", { name: "Workflows" });
     mockPool([second]);
     const clerk = context.mocks.clerk();
     act(() => {
@@ -524,7 +524,7 @@ test.each(["account", "workspace"] as const)(
       }
       clerk.stateChanged();
     });
-    await screen.findByRole("heading", { name: "Agents" });
+    await screen.findByRole("heading", { name: "Workflows" });
     click(link(suggestionPath));
     const card = await screen.findByRole("article", {
       name: second.content.title,
@@ -2018,8 +2018,8 @@ test("A hidden For you page leaves its card unread until the member sees it", as
     featureSwitches: features,
   });
   await activeForYouCard("Review the pending decision");
-  click(link("/agents"));
-  await screen.findByRole("heading", { name: "Agents" });
+  click(link("/workflows"));
+  await screen.findByRole("heading", { name: "Workflows" });
   await within(link(suggestionPath)).findByText("Unread");
   click(link(suggestionPath));
   await activeForYouCard("Review the pending decision");
@@ -2068,8 +2068,8 @@ test("A failed system update source change keeps the saved choice and allows an 
     featureSwitches: features,
   });
   await activeForYouCard("Suggested action 1");
-  click(button("For you sources"));
-  const dialog = await screen.findByRole("dialog", { name: "For you sources" });
+  click(button("My Okou"));
+  const dialog = await screen.findByRole("dialog", { name: "Settings" });
   const toggle = await within(dialog).findByRole("switch", {
     name: "System updates",
   });
@@ -2104,8 +2104,8 @@ test("For you marks only displayed cards as read and new deliveries restore its 
   });
   expect(screen.getByText("3 to go")).toBeInTheDocument();
   expect(pool.consumed).toStrictEqual([]);
-  click(link("/agents"));
-  await screen.findByRole("heading", { name: "Agents" });
+  click(link("/workflows"));
+  await screen.findByRole("heading", { name: "Workflows" });
   click(link(suggestionPath));
   await activeForYouCard("Suggested action 1");
   expect(
@@ -2126,8 +2126,8 @@ test("For you source choices persist without removing delivered cards and only e
   await activeForYouCard("Suggested action 1");
   let row = link(suggestionPath);
   await within(row).findByText("Unread");
-  click(button("For you sources"));
-  const dialog = await screen.findByRole("dialog", { name: "For you sources" });
+  click(button("My Okou"));
+  const dialog = await screen.findByRole("dialog", { name: "Settings" });
   const suggestions = await within(dialog).findByRole("switch", {
     name: "Suggestions",
   });
@@ -2166,14 +2166,14 @@ test("For you source choices persist without removing delivered cards and only e
   });
   click(button("Close", "button", dialog));
   await activeForYouCard("Suggested action 1");
-  click(link("/agents"));
-  await screen.findByRole("heading", { name: "Agents" });
+  click(link("/workflows"));
+  await screen.findByRole("heading", { name: "Workflows" });
   click(link(suggestionPath));
   await activeForYouCard("Suggested action 1");
   row = link(suggestionPath);
-  click(button("For you sources"));
+  click(button("My Okou"));
   const reopened = await screen.findByRole("dialog", {
-    name: "For you sources",
+    name: "Settings",
   });
   const toggle = await within(reopened).findByRole("switch", {
     name: "Suggestions",
@@ -2229,8 +2229,8 @@ test("System updates remain unread with optional sources off until their card is
   });
   expect(screen.getByText(event.content.automationName)).toBeInTheDocument();
   expect(screen.getByText("1 to go")).toBeInTheDocument();
-  click(button("For you sources"));
-  const dialog = await screen.findByRole("dialog", { name: "For you sources" });
+  click(button("My Okou"));
+  const dialog = await screen.findByRole("dialog", { name: "Settings" });
   const suggestions = await within(dialog).findByRole("switch", {
     name: "Suggestions",
   });

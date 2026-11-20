@@ -31,7 +31,7 @@ test("starts off, enables hourly checks independently of Morning Brief, and pres
   );
   await setupPage({
     context,
-    path: "/agents?settings=preference",
+    path: "/?settings=my-okou",
     featureSwitches: {
       [FeatureSwitchKey.AgentSuggestion]: true,
     },
@@ -74,7 +74,7 @@ test("keeps a pending opt-in cancellable when the primary Agent is unavailable",
   );
   await setupPage({
     context,
-    path: "/agents?settings=preference",
+    path: "/?settings=my-okou",
     featureSwitches: {
       [FeatureSwitchKey.AgentSuggestion]: true,
     },
@@ -120,7 +120,7 @@ test("a failed opt-out preserves the current preference", async () => {
   );
   await setupPage({
     context,
-    path: "/agents?settings=preference",
+    path: "/?settings=my-okou",
     featureSwitches: {
       [FeatureSwitchKey.AgentSuggestion]: true,
     },
@@ -154,7 +154,7 @@ test("keeps suggestions opted in during platform recovery without asking the use
   );
   await setupPage({
     context,
-    path: "/agents?settings=preference",
+    path: "/?settings=my-okou",
     featureSwitches: {
       [FeatureSwitchKey.AgentSuggestion]: true,
     },

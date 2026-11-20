@@ -425,7 +425,7 @@ test("Changing runs replaces the channel and leaving the thread cancels the subs
   });
   click(await findLink("Agents"));
   await expect(
-    screen.findByRole("heading", { name: "Agents" }),
+    screen.findByRole("heading", { name: "Workflows" }),
   ).resolves.toBeVisible();
   expect(hasSubscriptionOnChannel(nextChannel, nextRunId)).toBeFalsy();
 });

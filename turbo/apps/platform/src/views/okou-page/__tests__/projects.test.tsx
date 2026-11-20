@@ -2680,32 +2680,6 @@ test("A Project named from the composer's + menu opens with the message and acce
   expect(created.projectId).toBe(projectId);
 });
 
-test("Without Projects the new chat's add menu keeps capabilities available", async () => {
-  const ordinary = continuityThread(120, 1, "Thread B");
-  const workspace = installContinuityWorkspace(context, {
-    caseId: 120,
-    threads: [ordinary],
-  });
-  context.mocks.data.onboardingStatus({ defaultAgentId: ordinary.agentId });
-  metadata();
-  await setupPage({
-    context,
-    path: `/agents/${ordinary.agentId}/chat`,
-    ...workspace.pageOptions,
-  });
-  await screen.findByRole("textbox", { name: "Message" });
-  const menu = await openComposerProjectMenu();
-  expect(menuLabels(menu)).toStrictEqual([
-    "Attach",
-    "Template",
-    "Find people",
-    "Research",
-    "Create",
-    "Workflow",
-    "Import skills",
-  ]);
-});
-
 test("The Project home starts a conversation with the default Agent after visiting another Agent's chat", async () => {
   const confirmation = context.mocks.deferred<void>();
   const persisted = context.mocks.deferred<void>();
@@ -2758,7 +2732,7 @@ test("The Project home starts a conversation with the default Agent after visiti
     }
     // Projects compose with the workspace's default Agent from the
     // onboarding status, whichever Agent's chat was open.
-    expect(body.agentId).toBe("c0000000-0000-4000-a000-000000000001");
+    expect(body.agentId).toBe(ordinary.agentId);
     expect(body.projectId).toBe(id);
     createdId = body.clientThreadId;
     await confirmation.promise;

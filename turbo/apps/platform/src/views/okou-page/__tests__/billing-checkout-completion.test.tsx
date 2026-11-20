@@ -34,7 +34,7 @@ function getButton(name: string, container: ParentNode = document.body) {
 test("Returning from concurrency checkout confirms purchased capacity", async () => {
   await setupPage({
     context,
-    path: "/agents?concurrency=purchased",
+    path: "/workflows?concurrency=purchased",
     host: "app.okou.ai",
   });
 
@@ -46,7 +46,7 @@ test("Returning from concurrency checkout confirms purchased capacity", async ()
   expect(window.history.replaceState).toHaveBeenLastCalledWith(
     {},
     "",
-    "/agents",
+    "/workflows",
   );
 });
 
@@ -58,18 +58,18 @@ test("A pending subscription completes checkout and clears its return parameters
 
   await setupPage({
     context,
-    path: "/agents?billing=team&billing_session_id=cs_completed_subscription",
+    path: "/workflows?billing=team&billing_session_id=cs_completed_subscription",
     host: "app.okou.ai",
   });
 
   await expect(
-    screen.findByRole("heading", { name: "Agents" }),
+    screen.findByRole("heading", { name: "Workflows" }),
   ).resolves.toBeInTheDocument();
   await waitFor(() => {
     expect(window.history.replaceState).toHaveBeenLastCalledWith(
       {},
       "",
-      "/agents",
+      "/workflows",
     );
   });
 });

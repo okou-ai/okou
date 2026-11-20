@@ -1,19 +1,11 @@
-import { MORNING_BRIEF_PREFERENCES_FOCUS } from "@okouai/api-contracts/validators/morning-brief-preference";
-import { detachedNavigateTo$, searchParams$ } from "../route.ts";
 import { command } from "ccstate";
+import { detachedNavigateTo$, searchParams$ } from "../route.ts";
 
 export const setupAgentsPage$ = command(({ get, set }) => {
-  const params = get(searchParams$);
-  const morningBrief =
-    params.get("settings") === "preference" &&
-    params.get("focus") === MORNING_BRIEF_PREFERENCES_FOCUS;
-  set(detachedNavigateTo$, "/", {
-    searchParams: morningBrief
-      ? new URLSearchParams({
-          settings: "preference",
-          focus: MORNING_BRIEF_PREFERENCES_FOCUS,
-        })
-      : new URLSearchParams({ settings: "my-okou" }),
-    replace: true,
-  });
+  const params = new URLSearchParams(get(searchParams$));
+  // Previously issued settings and checkout links can use the old Agents path.
+  if (params.size === 0) {
+    params.set("settings", "my-okou");
+  }
+  set(detachedNavigateTo$, "/", { searchParams: params, replace: true });
 });

@@ -296,24 +296,21 @@ async function setupFixture(): Promise<CalendarScenario> {
   const runnerGroup = await runsApi.configureRunnerGroup();
   runsApi.acceptStorageDownloads();
   runsApi.acceptTelemetryIngest();
-  const { actor } = await wf.setupWorkflowOrg();
+  const { actor, defaultAgentId: agentId } = await wf.setupWorkflowOrg();
   await runsApi.ensurePersonalSubscriptionModel(actor);
   await runsApi.updateUserModelPreference(actor, "claude-fable-5-1");
   if (!actor.orgId) {
     throw new Error("Expected an org-scoped workflow actor");
   }
-  const agent = await wf.createAgent(actor, {
-    displayName: "Calendar Webhook Agent",
-  });
   const workflowId = await wf.createWorkflow(actor, {
-    agentId: agent.agentId,
+    agentId,
     name: WORKFLOW_NAME,
   });
   mocks.clerk.session(actor.userId, actor.orgId, "org:member");
   context.mocks.s3.send.mockResolvedValue({});
   return {
     actor: { ...actor, orgId: actor.orgId },
-    agentId: agent.agentId,
+    agentId,
     runnerGroup,
     workflowId,
   };

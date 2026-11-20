@@ -586,7 +586,12 @@ describe("okou workflow automations", () => {
     options: { readonly maxAutonomyBudget?: number } = {},
   ): Promise<AutomationScenario> {
     // Fable keeps automation runs on the native Runner execution route.
-    const { actor, customerId, subscriptionId } = await wf.setupWorkflowOrg({
+    const {
+      actor,
+      defaultAgentId: agentId,
+      customerId,
+      subscriptionId,
+    } = await wf.setupWorkflowOrg({
       tier,
       model: "claude-fable-5-1",
       ...options,
@@ -594,11 +599,8 @@ describe("okou workflow automations", () => {
     if (!actor.orgId) {
       throw new Error("Expected an org-scoped workflow actor");
     }
-    const agent = await wf.createAgent(actor, {
-      displayName: "Automation Agent",
-    });
     const workflowId = await wf.createWorkflow(actor, {
-      agentId: agent.agentId,
+      agentId,
       name: WORKFLOW_NAME,
     });
     const fixture = { orgId: actor.orgId, userId: actor.userId };
@@ -607,7 +609,7 @@ describe("okou workflow automations", () => {
     return {
       fixture,
       actor,
-      agentId: agent.agentId,
+      agentId,
       workflowId,
       customerId,
       subscriptionId,

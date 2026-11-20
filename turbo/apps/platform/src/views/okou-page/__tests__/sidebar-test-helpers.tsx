@@ -388,19 +388,6 @@ export function sidebar(): HTMLElement {
   return screen.getByTestId("chat-list-column");
 }
 
-export function pinnedAgentLink(
-  container: HTMLElement,
-  name: string,
-): HTMLAnchorElement {
-  const link = queryAllByRoleFast("link", container).find((candidate) => {
-    return candidate.textContent?.trim() === name;
-  });
-  if (!(link instanceof HTMLAnchorElement)) {
-    throw new Error(`${name} pinned agent link not found`);
-  }
-  return link;
-}
-
 export function setupSidebarPage(
   options: Parameters<typeof setupPage>[0],
 ): Promise<void> {

@@ -184,10 +184,10 @@ test("Hiding the compliance block keeps it hidden on this device", async () => {
   // Leaving home and coming back does not bring it back.
   click(
     link((element) => {
-      return element.getAttribute("href") === "/agents";
+      return element.getAttribute("href") === "/workflows";
     }),
   );
-  await screen.findByRole("heading", { name: "Agents" });
+  await screen.findByRole("heading", { name: "Workflows" });
   click(
     link((element) => {
       return element.textContent?.trim() === "Chat";

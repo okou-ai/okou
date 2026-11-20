@@ -409,9 +409,9 @@ async function openStructuredContextChat() {
 
 test("Structured message context survives navigation away and back", async () => {
   await openStructuredContextChat();
-  fireEvent.click(await findFastControl("link", "Agents"));
+  fireEvent.click(await findFastControl("link", "Workflows"));
   await expect(
-    screen.findByRole("heading", { name: "Agents" }),
+    screen.findByRole("heading", { name: "Workflows" }),
   ).resolves.toBeVisible();
   window.history.back();
   await waitFor(() => {

@@ -141,8 +141,8 @@ describe("okou connector permission-request command", () => {
   beforeEach(() => {
     vi.stubEnv("OKOU_TOKEN", "test-token");
     server.use(
-      http.get("*/api/agents", () =>
-        HttpResponse.json([
+      http.get("*/api/agents", () => {
+        return HttpResponse.json([
           {
             agentId: "current-workspace-executor",
             isDefaultAgent: true,
@@ -153,8 +153,8 @@ describe("okou connector permission-request command", () => {
             avatarUrl: null,
             visibility: "public",
           },
-        ]),
-      ),
+        ]);
+      }),
     );
     vi.stubEnv("OKOU_CHAT_THREAD_ID", "");
     vi.stubEnv("OKOU_API_BACKEND_URL", "https://app.okou.ai");

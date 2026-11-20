@@ -342,12 +342,12 @@ test("Returning to an interrupted chat does not reuse abandoned details", async 
 
   const page = await startPage({
     context,
-    path: "/agents",
+    path: "/workflows",
     auth: isolatedAuth(),
   });
   await page.content;
   await expect(
-    screen.findByRole("heading", { name: "Agents" }),
+    screen.findByRole("heading", { name: "Workflows" }),
   ).resolves.toBeInTheDocument();
 
   // Enter the pending chat after startup: the initial skeleton intentionally
@@ -359,26 +359,28 @@ test("Returning to an interrupted chat does not reuse abandoned details", async 
   await abandonedDetailsRequested.promise;
   await waitFor(() => {
     expect(
-      screen.queryByRole("heading", { name: "Agents" }),
+      screen.queryByRole("heading", { name: "Workflows" }),
     ).not.toBeInTheDocument();
   });
 
-  const agentsLink = await findLink("Agents");
-  await user.click(agentsLink);
-  const agentsHeading = await screen.findByRole("heading", { name: "Agents" });
+  const workflowsLink = await findLink("Agents");
+  await user.click(workflowsLink);
+  const agentsHeading = await screen.findByRole("heading", {
+    name: "Workflows",
+  });
   expect(agentsHeading).toBeVisible();
 
   abandonedDetails.resolve(undefined);
 
   expect(screen.queryByText("Abandoned visit title")).not.toBeInTheDocument();
-  expect(document.title).toBe("Agents | Okou");
+  expect(document.title).toBe("Workflows | Okou");
 
   window.history.back();
   await returningDetailsRequested.promise;
 
   await waitFor(() => {
     expect(
-      screen.queryByRole("heading", { name: "Agents" }),
+      screen.queryByRole("heading", { name: "Workflows" }),
     ).not.toBeInTheDocument();
     expect(screen.queryByText("Abandoned visit title")).not.toBeInTheDocument();
     expect(

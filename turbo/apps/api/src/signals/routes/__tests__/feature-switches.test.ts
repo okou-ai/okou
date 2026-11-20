@@ -37,10 +37,19 @@ describe("/api/feature-switches", () => {
     const updated = await accept(
       client().update({
         headers,
-        body: { switches: { [FeatureSwitchKey.Dummy]: false } },
+        body: {
+          switches: {
+            singleAgent: false,
+            projects: false,
+            [FeatureSwitchKey.Dummy]: false,
+          },
+        },
       }),
       [200],
     );
+    expect(updated.body.switches).toStrictEqual({
+      [FeatureSwitchKey.Dummy]: false,
+    });
     expect(updated.body.effectiveSwitches).toMatchObject({
       singleAgent: true,
       projects: true,

@@ -18,7 +18,7 @@ const UNREACHABLE_DEFAULT_ID = "c9000000-0000-4000-a000-000000000003";
 function visibleAgents(agentIds: readonly string[]): void {
   context.mocks.data.agents(
     agentIds.map((agentId) => {
-      return { agentId };
+      return { agentId, isDefaultAgent: agentId === DEFAULT_AGENT_ID };
     }),
   );
 }
@@ -45,57 +45,23 @@ async function recoveredPathname(destination: string): Promise<string> {
   return window.location.pathname;
 }
 
-test("A missing agent falls back to the recorded default agent that is visible", async () => {
+test("A historical agent chat opens My Okou with the recorded default executor", async () => {
   visibleAgents([DEFAULT_AGENT_ID, VISIBLE_AGENT_ID]);
   recordedDefaultAgent(DEFAULT_AGENT_ID);
-
-  const destination = `/agents/${DEFAULT_AGENT_ID}/chat`;
-  await expect(recoveredPathname(destination)).resolves.toBe(destination);
+  await expect(recoveredPathname("/")).resolves.toBe("/");
+  await expect(
+    screen.findByRole("textbox", { name: "Message" }),
+  ).resolves.toBeVisible();
 });
 
-test("A missing agent never falls back to a default the user cannot reach", async () => {
-  visibleAgents([VISIBLE_AGENT_ID]);
-  recordedDefaultAgent(UNREACHABLE_DEFAULT_ID);
-
-  const destination = `/agents/${VISIBLE_AGENT_ID}/chat`;
-  await expect(recoveredPathname(destination)).resolves.toBe(destination);
-});
-
-test("A missing agent falls back to a visible agent when no default is recorded", async () => {
-  visibleAgents([VISIBLE_AGENT_ID]);
-  recordedDefaultAgent(null);
-
-  const destination = `/agents/${VISIBLE_AGENT_ID}/chat`;
-  await expect(recoveredPathname(destination)).resolves.toBe(destination);
-});
-
-test("A missing agent with no visible agent and no recorded default opens home", async () => {
-  visibleAgents([]);
-  recordedDefaultAgent(null);
-
-  const destination = "/";
-  await expect(recoveredPathname(destination)).resolves.toBe(destination);
-});
-
-test("A missing agent with no visible agent opens the agent list instead of bouncing through home", async () => {
-  // Home redirects to the recorded default, which is the page that just failed,
-  // so recovering through home here would navigate back and forth forever.
-  visibleAgents([]);
-  recordedDefaultAgent(UNREACHABLE_DEFAULT_ID);
-
-  const destination = "/agents";
-  await expect(recoveredPathname(destination)).resolves.toBe(destination);
-});
-
-test("A resolvable agent still opens its chat page", async () => {
-  context.mocks.data.agents([
-    { agentId: VISIBLE_AGENT_ID, displayName: "Scout" },
-  ]);
-  recordedDefaultAgent(VISIBLE_AGENT_ID);
-
-  await setupPage({ context, path: `/agents/${VISIBLE_AGENT_ID}/chat` });
-
-  expect(window.location.pathname).toBe(`/agents/${VISIBLE_AGENT_ID}/chat`);
-  expect(document.title).toContain("Scout");
-  expect(screen.getByRole("textbox", { name: "Message" })).toBeInTheDocument();
-});
+test.each([UNREACHABLE_DEFAULT_ID, null])(
+  "A historical agent chat opens settings when the default executor is unavailable (%s)",
+  async (defaultAgentId) => {
+    visibleAgents([VISIBLE_AGENT_ID]);
+    recordedDefaultAgent(defaultAgentId);
+    await expect(recoveredPathname("/connectors")).resolves.toBe("/connectors");
+    await expect(
+      screen.findByRole("dialog", { name: "Settings" }),
+    ).resolves.toBeVisible();
+  },
+);

@@ -165,12 +165,7 @@ test.each(["app.okou.ai", "pr-1-app.omby.ai"])(
     expect(fireEvent.click(link)).toBeTruthy();
     expect(browser.blobForUrl(url)).toBe(pdf);
 
-    const newChat = queryAllByRoleFast("button").find((element) => {
-      return element.getAttribute("aria-label") === "New chat";
-    });
-    if (!newChat) {
-      throw new Error("New chat button not found");
-    }
+    const newChat = screen.getByRole("link", { name: "New chat" });
     click(newChat);
     await waitFor(() => {
       expect(location.pathname).not.toBe(`/chats/${THREAD_ID}`);
