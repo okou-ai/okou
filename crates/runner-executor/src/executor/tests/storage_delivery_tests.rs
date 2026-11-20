@@ -543,6 +543,89 @@ async fn oversized_optional_manifest_keeps_all_mounts_in_one_decoded_application
 }
 
 #[tokio::test]
+async fn complete_application_stages_only_the_manifest_when_the_frame_is_full() {
+    use super::support::sandbox_write_file_error;
+    use guest_contracts::runtime_paths::staged_storage_manifest_file;
+    use std::path::Path;
+
+    let archive = archive_with_content(&vec![b'x'; storage_files::MAX_FILE_BYTES - 256]);
+    let fixture = DeliveryFixture::with_archive(1, 1, 604, archive).await;
+    let sandbox = MockSandbox::new("decoded-staged-manifest");
+    let (mut manifest, mut files) = fixture.prepare(&sandbox).await;
+    let entry = manifest.storages.pop().unwrap();
+    let (_, cached) = files.pop().unwrap();
+    let query = "x".repeat(21 * 1024);
+    for index in 0..60 {
+        let mut mount = entry.clone();
+        mount.mount_path = fixture
+            .root
+            .path()
+            .join(format!("guest/entry-{index:03}"))
+            .to_str()
+            .unwrap()
+            .into();
+        mount.archive_url = Some(format!("https://storage.example/{index}?signature={query}"));
+        files.push((mount.mount_path.clone(), Arc::clone(&cached)));
+        manifest.storages.push(mount);
+    }
+    manifest.removed_package_paths.push(
+        fixture
+            .root
+            .path()
+            .join("guest/retired")
+            .to_str()
+            .unwrap()
+            .into(),
+    );
+
+    apply_with_telemetry(&fixture, &sandbox, manifest, &files)
+        .await
+        .unwrap();
+    assert!(sandbox.write_file_calls().is_empty());
+    let calls = sandbox.storage_manifest_calls();
+    let [call] = calls.as_slice() else {
+        panic!("expected one Guest application")
+    };
+    let writes = sandbox.private_write_file_calls();
+    let [write] = writes.as_slice() else {
+        panic!("expected one private manifest write")
+    };
+    assert_eq!(
+        Path::new(&write.path),
+        staged_storage_manifest_file(&call.runtime_dir)
+    );
+    let manifest: Manifest = serde_json::from_slice(&write.content).unwrap();
+    let (inline, payload) = storage_files::split_input(&call.manifest_json).unwrap();
+    assert!(inline.is_empty());
+    assert_eq!(manifest.storages.len(), files.len());
+    assert_eq!(manifest.removed_package_paths.len(), 1);
+    let groups = storage_files::decode(payload).unwrap();
+    assert_eq!(groups.len(), files.len());
+    storage_files::validate_bindings(
+        &manifest,
+        groups.iter().map(|group| group.mount_path.as_str()),
+    )
+    .unwrap();
+
+    let failed = MockSandbox::new("staged-manifest-write-failed");
+    failed.push_private_write_file_result(Err(sandbox_write_file_error("staging failed")));
+    assert!(
+        apply_with_telemetry(&fixture, &failed, manifest, &files)
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("staging failed")
+    );
+    assert!(failed.storage_manifest_calls().is_empty());
+    let attempted = failed.private_write_file_calls();
+    assert_eq!(
+        failed.exec_calls()[0].cmd,
+        format!("rm -f -- {}", attempted[0].path)
+    );
+    fixture.shutdown().await;
+}
+
+#[tokio::test]
 async fn oversized_mixed_manifest_preserves_decoded_entry_kinds() {
     let fixture = DeliveryFixture::artifacts(2, 2, 35_000).await;
     let sandbox = MockSandbox::new("decoded-large-mixed");

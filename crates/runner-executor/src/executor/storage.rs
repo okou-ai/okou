@@ -1,7 +1,6 @@
 //! Guest storage-manifest transport.
 
 use std::collections::{HashMap, HashSet};
-use std::io::{self, Write};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -118,13 +117,13 @@ pub(super) async fn download_storages(
     context: &ExecutionContext,
     manifest: &Manifest,
 ) -> RunnerResult<()> {
-    let input = StorageInput::Json(manifest_json(manifest)?);
+    let mut input = StorageInput::Json(manifest_json(manifest)?);
     let mut guest_duration_ms = None;
     let mut host_timing = StorageManifestTiming::default();
     apply_storage_input(
         sandbox,
         context,
-        &input,
+        &mut input,
         &optional_mounts(manifest),
         &mut guest_duration_ms,
         &mut host_timing,
@@ -191,13 +190,13 @@ async fn download_storages_with_files_inner(
             return Err(RunnerError::Cancelled);
         }
         let started = Instant::now();
-        let input = prepared.transport.into_input();
+        let mut input = prepared.transport.into_input();
         let mut guest_duration_ms = None;
         let mut host_timing = StorageManifestTiming::default();
         let result = apply_storage_input(
             sandbox,
             context,
-            &input,
+            &mut input,
             &prepared.optional_mounts,
             &mut guest_duration_ms,
             &mut host_timing,
@@ -269,20 +268,29 @@ impl<'a> PreparedStorageBatch<'a> {
 
 enum PreparedStorageInput<'a> {
     Json(Vec<u8>),
-    Files(storage_files::PreparedInput<'a>),
+    Files {
+        input: storage_files::PreparedInput<'a>,
+        staged_manifest: Option<Vec<u8>>,
+    },
 }
 
 impl PreparedStorageInput<'_> {
     fn into_input(self) -> StorageInput {
         match self {
             Self::Json(bytes) => StorageInput::Json(bytes),
-            Self::Files(input) => {
-                let manifest_bytes = input.manifest_len();
+            Self::Files {
+                input,
+                staged_manifest,
+            } => {
+                let manifest_bytes = staged_manifest
+                    .as_ref()
+                    .map_or_else(|| input.manifest_len(), Vec::len);
                 let payload_size_bucket = binary_payload_size_bucket(input.payload_len());
                 StorageInput::Files {
                     bytes: input.into_bytes(),
                     manifest_bytes,
                     payload_size_bucket,
+                    staged_manifest,
                 }
             }
         }
@@ -295,6 +303,7 @@ enum StorageInput {
         bytes: Vec<u8>,
         manifest_bytes: usize,
         payload_size_bucket: &'static str,
+        staged_manifest: Option<Vec<u8>>,
     },
 }
 
@@ -319,6 +328,15 @@ impl StorageInput {
     fn uses_dedicated_transport(&self) -> bool {
         matches!(self, Self::Files { .. })
             || self.manifest_bytes() <= guest_control_proto::MAX_EXEC_STDIN_BYTES
+    }
+
+    fn take_staged_manifest(&mut self) -> Option<Vec<u8>> {
+        match self {
+            Self::Files {
+                staged_manifest, ..
+            } => staged_manifest.take(),
+            Self::Json(_) => None,
+        }
     }
 }
 
@@ -396,39 +414,24 @@ fn manifest_json(manifest: &Manifest) -> RunnerResult<Vec<u8>> {
     serde_json::to_vec(manifest).map_err(|e| RunnerError::Internal(format!("manifest json: {e}")))
 }
 
-#[derive(Default)]
-struct ManifestSize(usize);
-
-impl Write for ManifestSize {
-    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-        self.0 = self
-            .0
-            .checked_add(bytes.len())
-            .ok_or_else(|| io::Error::other("manifest JSON size overflow"))?;
-        Ok(bytes.len())
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        Ok(())
-    }
-}
-
 // Probe exact canonical bytes without retaining output that would be discarded
 // when decoded input must split. Actual transport serialization remains below.
 fn manifest_json_size(manifest: &Manifest) -> RunnerResult<usize> {
-    let mut size = ManifestSize::default();
-    serde_json::to_writer(&mut size, manifest)
-        .map_err(|e| RunnerError::Internal(format!("manifest json: {e}")))?;
-    Ok(size.0)
+    manifest
+        .json_size()
+        .map_err(|e| RunnerError::Internal(format!("manifest json: {e}")))
 }
 
 fn files_input<'a>(
     json: Vec<u8>,
     groups: Vec<(&'a str, &'a [StorageFile])>,
 ) -> RunnerResult<PreparedStorageInput<'a>> {
-    storage_files::PreparedInput::new(json, groups)
-        .map(PreparedStorageInput::Files)
-        .map_err(|e| RunnerError::Internal(format!("storage files input: {e}")))
+    let input = storage_files::PreparedInput::new(json, groups)
+        .map_err(|e| RunnerError::Internal(format!("storage files input: {e}")))?;
+    Ok(PreparedStorageInput::Files {
+        input,
+        staged_manifest: None,
+    })
 }
 
 fn empty_storage_manifest() -> Manifest {
@@ -456,12 +459,18 @@ fn storage_inputs(
     storage_files::validate_bindings(&manifest, groups.iter().map(|(mount, _)| *mount))
         .map_err(|e| RunnerError::Internal(format!("storage files bindings: {e}")))?;
     if manifest.requires_complete_mount_list() {
-        let input = storage_files::PreparedInput::new_complete(manifest_json(&manifest)?, groups)
-            .map(PreparedStorageInput::Files)
-            .map_err(|error| {
-                RunnerError::Internal(format!("complete storage files input: {error}"))
-            })?;
-        return Ok(vec![PreparedStorageBatch::new(&manifest, input)]);
+        let (input, staged_manifest) =
+            storage_files::PreparedInput::prepare_complete(manifest_json(&manifest)?, groups)
+                .map_err(|error| {
+                    RunnerError::Internal(format!("complete storage files input: {error}"))
+                })?;
+        return Ok(vec![PreparedStorageBatch::new(
+            &manifest,
+            PreparedStorageInput::Files {
+                input,
+                staged_manifest,
+            },
+        )]);
     }
     if manifest_json_size(&manifest)? <= storage_files::MAX_MANIFEST_BYTES {
         let input = files_input(manifest_json(&manifest)?, groups)?;
@@ -582,12 +591,22 @@ fn prepare_decoded_batch<'a>(
 async fn apply_storage_input(
     sandbox: &dyn Sandbox,
     context: &ExecutionContext,
-    input: &StorageInput,
+    input: &mut StorageInput,
     optional_mounts: &HashMap<usize, OptionalMount>,
     guest_duration_ms: &mut Option<u32>,
     host_timing: &mut StorageManifestTiming,
 ) -> RunnerResult<HashSet<String>> {
-    let manifest_json = match input {
+    let staged_manifest = input.take_staged_manifest();
+    let staged_path = staged_manifest
+        .as_ref()
+        .map(|_| {
+            super::guest_runtime_path(
+                context.run_id,
+                guest_contracts::runtime_paths::staged_storage_manifest_file,
+            )
+        })
+        .transpose()?;
+    let manifest_json = match &*input {
         StorageInput::Json(bytes) => bytes,
         StorageInput::Files { bytes, .. } => bytes,
     };
@@ -608,10 +627,13 @@ async fn apply_storage_input(
     );
     // Stale-file removal must succeed before this attempt can write a manifest.
     if !use_dedicated {
-        remove_fallback_storage_manifest(sandbox).await?;
+        remove_storage_manifest(sandbox, &guest_storage_manifest_cleanup_command()).await?;
     }
     let result = async {
         let result = if use_dedicated {
+            if let Some((path, manifest)) = staged_path.as_deref().zip(staged_manifest) {
+                sandbox.write_private_file(path, &manifest).await?;
+            }
             sandbox
                 .apply_storage_manifest_with_timing(
                     &StorageManifestRequest {
@@ -655,8 +677,24 @@ async fn apply_storage_input(
         read_storage_receipt(&result, optional_mounts)
     }
     .await;
-    if !use_dedicated && result.is_err() {
-        cleanup_fallback_storage_manifest_after_failure(sandbox, context).await;
+    if result.is_err() {
+        let cleanup = if let Some(path) = &staged_path {
+            // The path is derived from the fixed runtime layout and a Run UUID.
+            Some(format!("rm -f -- {path}"))
+        } else if !use_dedicated {
+            Some(guest_storage_manifest_cleanup_command())
+        } else {
+            None
+        };
+        if let Some(command) = cleanup
+            && let Err(error) = remove_storage_manifest(sandbox, &command).await
+        {
+            warn!(
+                run_id = %context.run_id,
+                %error,
+                "failed to remove storage manifest after delivery failure"
+            );
+        }
     }
     result
 }
@@ -690,28 +728,11 @@ fn read_storage_receipt(
     Ok(skipped)
 }
 
-async fn cleanup_fallback_storage_manifest_after_failure(
-    sandbox: &dyn Sandbox,
-    context: &ExecutionContext,
-) {
-    match remove_fallback_storage_manifest(sandbox).await {
-        Ok(()) => {}
-        Err(error) => {
-            warn!(
-                run_id = %context.run_id,
-                error = %error,
-                "failed to remove fallback storage manifest after fallback failure"
-            );
-        }
-    }
-}
-
-async fn remove_fallback_storage_manifest(sandbox: &dyn Sandbox) -> RunnerResult<()> {
-    let cleanup_cmd = guest_storage_manifest_cleanup_command();
+async fn remove_storage_manifest(sandbox: &dyn Sandbox, cleanup_cmd: &str) -> RunnerResult<()> {
     let result = sandbox
         .exec_with_diagnostic_label(
             &ExecRequest {
-                cmd: &cleanup_cmd,
+                cmd: cleanup_cmd,
                 timeout: STORAGE_MANIFEST_CLEANUP_TIMEOUT,
                 env: &[],
                 sudo: false,

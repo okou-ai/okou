@@ -39,6 +39,12 @@ const PRIVATE_DIR_MODE: libc::mode_t = 0o700;
 #[cfg(unix)]
 const PRIVATE_FILE_MODE: libc::mode_t = 0o600;
 
+/// Complete manifest paired with decoded files in a dedicated storage operation.
+#[must_use]
+pub fn staged_storage_manifest_file(run_dir: impl AsRef<Path>) -> PathBuf {
+    run_dir.as_ref().join("storage-manifest.input.json")
+}
+
 /// Error returned when resolving a guest runtime path contract.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RuntimePathError {

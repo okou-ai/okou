@@ -69,6 +69,11 @@ async fn optional_mounts_keep_decoded_hits_within_the_complete_manifest_budget()
     for (limit, expected_decoded) in [
         (guest_contracts::storage_files::MAX_MANIFEST_BYTES, 1),
         (
+            guest_contracts::storage_files::MAX_COMPLETE_MANIFEST_BYTES
+                - guest_contracts::storage_files::MAX_PAYLOAD_BYTES,
+            1,
+        ),
+        (
             guest_contracts::storage_files::MAX_COMPLETE_MANIFEST_BYTES,
             0,
         ),

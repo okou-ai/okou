@@ -35,7 +35,10 @@ async fn optional_prefetch_overlaps_large_decoded_application_and_publishes_its_
         "/mnt/ready".into(),
         format!(
             "https://example.test/ready?{}",
-            "p".repeat(guest_contracts::storage_files::MAX_MANIFEST_BYTES)
+            "p".repeat(
+                guest_contracts::storage_files::MAX_COMPLETE_MANIFEST_BYTES
+                    - guest_contracts::storage_files::MAX_PAYLOAD_BYTES
+            )
         ),
         "ready",
         "v1",

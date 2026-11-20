@@ -195,6 +195,13 @@ fn run_storage_files_in_context(
         // cannot be treated as a zero-byte payload.
         record_payload_size(framed.as_ref().ok().map(|(_, payload)| payload.len()));
         let (json, payload) = framed?;
+        let staged;
+        let json = if json.is_empty() {
+            staged = read_staged_storage_manifest(runtime_dir)?;
+            staged.as_slice()
+        } else {
+            json
+        };
         let manifest = measure_phase(InputPhase::Parse, || {
             manifest::parse(json)
                 .map_err(|_| std::io::Error::other("invalid storage manifest JSON"))
@@ -219,6 +226,18 @@ fn run_storage_files_in_context(
             false
         }
     }
+}
+
+fn read_staged_storage_manifest(runtime_dir: Option<&Path>) -> io::Result<Vec<u8>> {
+    use guest_contracts::{runtime_paths, storage_files};
+
+    let runtime = runtime_dir.ok_or_else(|| io::Error::other("missing Run runtime"))?;
+    let path = runtime_paths::staged_storage_manifest_file(runtime);
+    let manifest =
+        runtime_paths::read_private_bounded(&path, storage_files::MAX_COMPLETE_MANIFEST_BYTES)?
+            .ok_or_else(|| io::Error::other("missing staged storage manifest"))?;
+    std::fs::remove_file(path)?;
+    Ok(manifest)
 }
 
 fn run_manifest_with_files_in_runtime(

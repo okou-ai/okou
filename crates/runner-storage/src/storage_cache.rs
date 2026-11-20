@@ -1314,10 +1314,10 @@ fn complete_manifest_fits_decoded_input(plan: &StoragePlan) -> RunnerResult<bool
         )
         .map(|url| staged_url_len.saturating_sub(url.len()))
         .sum();
-    let json = serde_json::to_vec(&manifest).map_err(|error| {
+    let json_size = manifest.json_size().map_err(|error| {
         RunnerError::Internal(format!("complete storage manifest sizing: {error}"))
     })?;
-    Ok(json.len().saturating_add(staged_growth)
+    Ok(json_size.saturating_add(staged_growth)
         <= guest_contracts::storage_files::MAX_COMPLETE_MANIFEST_BYTES)
 }
 

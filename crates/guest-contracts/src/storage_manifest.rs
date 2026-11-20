@@ -38,6 +38,7 @@
 //! is not an input requirement of this decoder.
 
 use std::collections::HashSet;
+use std::io;
 use std::path::{Component, Path};
 
 use serde::{Deserialize, Serialize};
@@ -179,6 +180,29 @@ impl<'de> Deserialize<'de> for Manifest {
 }
 
 impl Manifest {
+    /// Count the canonical JSON bytes without allocating an output buffer.
+    pub fn json_size(&self) -> serde_json::Result<usize> {
+        struct Count(usize);
+
+        impl io::Write for Count {
+            fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+                self.0 = self
+                    .0
+                    .checked_add(bytes.len())
+                    .ok_or_else(|| io::Error::other("manifest JSON size overflow"))?;
+                Ok(bytes.len())
+            }
+
+            fn flush(&mut self) -> io::Result<()> {
+                Ok(())
+            }
+        }
+
+        let mut count = Count(0);
+        serde_json::to_writer(&mut count, self)?;
+        Ok(count.0)
+    }
+
     /// Package-root cleanup must see the other mounts in the application.
     pub fn requires_complete_mount_list(&self) -> bool {
         !self.removed_package_paths.is_empty() || self.storages.iter().any(|entry| entry.optional)

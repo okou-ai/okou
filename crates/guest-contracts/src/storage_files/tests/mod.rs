@@ -158,14 +158,24 @@ fn final_input_accepts_exact_payload_cap_and_rejects_one_extra_byte() {
         .map(|(mount, files)| (mount.as_str(), files.as_slice()))
         .collect();
     assert_eq!(encoded_payload_len(&groups).unwrap(), MAX_PAYLOAD_BYTES);
-    let prepared =
-        PreparedInput::new_complete(vec![b' '; MAX_COMPLETE_MANIFEST_BYTES], groups).unwrap();
-    assert_eq!(prepared.manifest_len(), MAX_COMPLETE_MANIFEST_BYTES);
+    let inline_manifest_bytes = MAX_COMPLETE_MANIFEST_BYTES - MAX_PAYLOAD_BYTES;
+    let (prepared, staged) =
+        PreparedInput::prepare_complete(vec![b' '; inline_manifest_bytes], groups.clone()).unwrap();
+    assert!(staged.is_none());
+    assert_eq!(prepared.manifest_len(), inline_manifest_bytes);
     assert_eq!(prepared.payload_len(), MAX_PAYLOAD_BYTES);
     let encoded = prepared.into_bytes();
     assert_eq!(encoded.len(), MAX_INPUT_BYTES);
     let (manifest, payload) = split_input(&encoded).unwrap();
-    assert_eq!(manifest.len(), MAX_COMPLETE_MANIFEST_BYTES);
+    assert_eq!(manifest.len(), inline_manifest_bytes);
+    assert_eq!(payload.len(), MAX_PAYLOAD_BYTES);
+
+    let (prepared, staged) =
+        PreparedInput::prepare_complete(vec![b' '; inline_manifest_bytes + 1], groups).unwrap();
+    assert_eq!(staged.unwrap().len(), inline_manifest_bytes + 1);
+    let encoded = prepared.into_bytes();
+    let (manifest, payload) = split_input(&encoded).unwrap();
+    assert!(manifest.is_empty());
     assert_eq!(payload.len(), MAX_PAYLOAD_BYTES);
 
     files[14][3].content.push(0);
@@ -217,7 +227,7 @@ fn enforces_storage_count_path_metadata_and_manifest_bounds() {
         PreparedInput::new(vec![b' '; MAX_MANIFEST_BYTES + 1], vec![("/mount", &files)]).is_err()
     );
     assert!(
-        PreparedInput::new_complete(
+        PreparedInput::prepare_complete(
             vec![b' '; MAX_COMPLETE_MANIFEST_BYTES + 1],
             vec![("/mount", &files)],
         )
