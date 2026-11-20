@@ -3606,6 +3606,13 @@
       "when": 1795159373060,
       "tag": "1593_drop_legacy_skills",
       "breakpoints": true
+    },
+    {
+      "idx": 1594,
+      "version": "7",
+      "when": 1795161273116,
+      "tag": "1594_activate_held_my_okou_workspace",
+      "breakpoints": true
     }
   ]
 }
