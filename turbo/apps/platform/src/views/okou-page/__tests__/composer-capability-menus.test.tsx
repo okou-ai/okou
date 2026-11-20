@@ -88,28 +88,6 @@ async function expectComposerFocusedWithDraft(): Promise<void> {
   expect(editor).toHaveTextContent(DRAFT);
 }
 
-test("A successful send dismisses menu discovery in an existing conversation", async () => {
-  mockTemplateChat();
-  await setupPage({ context, path: `/chats/${THREAD_ID}` });
-  await typeDraft("Draft the launch recap");
-  await chooseAddItem("Research");
-  await waitFor(() => {
-    expect(capability("Research")).toBeInTheDocument();
-  });
-
-  await userEvent.keyboard("{Enter}");
-
-  await expect(
-    screen.findByText("Draft the launch recap", {
-      selector: "[data-role='user'] *",
-    }),
-  ).resolves.toBeInTheDocument();
-  await waitFor(() => {
-    expect(capability("Research")).not.toBeInTheDocument();
-  });
-  expect(window.location.pathname).toBe(`/chats/${THREAD_ID}`);
-});
-
 function useDesktopLayout(): void {
   context.mocks.browser.matchMedia((query) => {
     return (
@@ -122,6 +100,95 @@ function slashMenuItems(): HTMLElement[] {
   const menu = document.querySelector<HTMLElement>("[role=dialog]");
   return menu ? [...menu.querySelectorAll<HTMLElement>("button")] : [];
 }
+
+test("The add menu opens each home capability and restores its own trigger only on dismissal", async () => {
+  mockTemplateChat();
+  await setupPage({ context, path: "/" });
+  await typeDraft(DRAFT);
+  const homeChat = window.location.pathname;
+  const card = await composerCard();
+  const attach = card.querySelector<HTMLInputElement>(
+    'input[aria-label="Attach"]',
+  );
+  if (!attach) {
+    throw new Error("Expected the Attach file input");
+  }
+  // Happy DOM has no native file picker, so its opening is recorded here.
+  const picker = { opened: false };
+  Object.defineProperty(attach, "showPicker", {
+    value: () => {
+      picker.opened = true;
+    },
+  });
+
+  click(labelled(card, "Add") as HTMLElement);
+  const menu = await findPopup("menu", "Add");
+  expect(
+    queryAllByRoleFast("menuitem", menu).map((item) => {
+      return item.textContent?.trim();
+    }),
+  ).toStrictEqual([
+    "Attach",
+    "Template",
+    "Find people",
+    "Research",
+    "Create",
+    "Workflow",
+    "Import skills",
+  ]);
+  const template = queryAllByRoleFast("menuitem", menu).find((item) => {
+    return item.textContent?.trim() === "Template";
+  });
+  click(template as HTMLElement);
+  await expect(findPopup("dialog", "Template")).resolves.toBeInTheDocument();
+  await userEvent.keyboard("{Escape}");
+  await expectComposerFocusedWithDraft();
+
+  for (const name of ["Find people", "Research"]) {
+    await chooseAddItem(name);
+    await waitFor(() => {
+      expect(capability(name)).toBeInTheDocument();
+    });
+    expect(labelled(card, `Remove ${name}`)).toBeInTheDocument();
+    await expectComposerFocusedWithDraft();
+  }
+
+  await chooseAddItem("Create");
+  await waitFor(() => {
+    expect(labelled(card, "Remove Presentation")).toBeInTheDocument();
+  });
+  await expectComposerFocusedWithDraft();
+
+  await chooseAddItem("Workflow");
+  await waitFor(() => {
+    expect(labelled(card, "Remove Workflow")).toBeInTheDocument();
+  });
+  await expectComposerFocusedWithDraft();
+
+  await chooseAddItem("Import skills");
+  await expect(
+    findPopup("dialog", "Import your skills"),
+  ).resolves.toBeInTheDocument();
+  await userEvent.keyboard("{Escape}");
+  await expectComposerFocusedWithDraft();
+
+  // Attach hands off to the browser's file picker; the draft stays.
+  await chooseAddItem("Attach");
+  await waitFor(() => {
+    expect(picker.opened).toBeTruthy();
+  });
+  await expect(findComposerEditor()).resolves.toHaveTextContent(DRAFT);
+  expect(window.location.pathname).toBe(homeChat);
+
+  // Dismissing the menu, rather than choosing an item, restores its trigger.
+  await userEvent.click(await findComposerEditor());
+  click(labelled(card, "Add") as HTMLElement);
+  await findPopup("menu", "Add");
+  await userEvent.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(document.activeElement).toBe(labelled(card, "Add"));
+  });
+});
 
 test("Slash capabilities preserve the draft with SlashActions=false and desktop=true", async () => {
   useDesktopLayout();
@@ -249,93 +316,24 @@ test("The Templates browser preserves the draft when opening its picker", async 
   expect(editor.textContent).not.toContain("/");
 });
 
-test("The add menu opens each home capability and restores its own trigger only on dismissal", async () => {
+test("A successful send dismisses menu discovery in an existing conversation", async () => {
   mockTemplateChat();
-  await setupPage({ context, path: "/" });
-  await typeDraft(DRAFT);
-  const homeChat = window.location.pathname;
-  const card = await composerCard();
-  const attach = card.querySelector<HTMLInputElement>(
-    'input[aria-label="Attach"]',
-  );
-  if (!attach) {
-    throw new Error("Expected the Attach file input");
-  }
-  // Happy DOM has no native file picker, so its opening is recorded here.
-  const picker = { opened: false };
-  Object.defineProperty(attach, "showPicker", {
-    value: () => {
-      picker.opened = true;
-    },
+  await setupPage({ context, path: `/chats/${THREAD_ID}` });
+  await typeDraft("Draft the launch recap");
+  await chooseAddItem("Research");
+  await waitFor(() => {
+    expect(capability("Research")).toBeInTheDocument();
   });
 
-  click(labelled(card, "Add") as HTMLElement);
-  const menu = await findPopup("menu", "Add");
-  expect(
-    queryAllByRoleFast("menuitem", menu).map((item) => {
-      return item.textContent?.trim();
-    }),
-  ).toStrictEqual([
-    "Attach",
-    "Template",
-    "Find people",
-    "Research",
-    "Create",
-    "Workflow",
-    "Import skills",
-  ]);
-  const template = queryAllByRoleFast("menuitem", menu).find((item) => {
-    return item.textContent?.trim() === "Template";
-  });
-  click(template as HTMLElement);
-  await expect(findPopup("dialog", "Template")).resolves.toBeInTheDocument();
-  await userEvent.keyboard("{Escape}");
-  await expectComposerFocusedWithDraft();
+  await userEvent.keyboard("{Enter}");
 
-  for (const name of ["Find people", "Research"]) {
-    await chooseAddItem(name);
-    await waitFor(() => {
-      expect(capability(name)).toBeInTheDocument();
-    });
-    expect(labelled(card, `Remove ${name}`)).toBeInTheDocument();
-    await expectComposerFocusedWithDraft();
-  }
-
-  await chooseAddItem("Create");
   await expect(
-    waitFor(() => {
-      return labelled(card, "Remove Presentation");
+    screen.findByText("Draft the launch recap", {
+      selector: "[data-role='user'] *",
     }),
   ).resolves.toBeInTheDocument();
-  await expectComposerFocusedWithDraft();
-
-  await chooseAddItem("Workflow");
   await waitFor(() => {
-    expect(labelled(card, "Remove Workflow")).toBeInTheDocument();
+    expect(capability("Research")).not.toBeInTheDocument();
   });
-  await expectComposerFocusedWithDraft();
-
-  await chooseAddItem("Import skills");
-  await expect(
-    findPopup("dialog", "Import your skills"),
-  ).resolves.toBeInTheDocument();
-  await userEvent.keyboard("{Escape}");
-  await expectComposerFocusedWithDraft();
-
-  // Attach hands off to the browser's file picker; the draft stays.
-  await chooseAddItem("Attach");
-  await waitFor(() => {
-    expect(picker.opened).toBeTruthy();
-  });
-  await expect(findComposerEditor()).resolves.toHaveTextContent(DRAFT);
-  expect(window.location.pathname).toBe(homeChat);
-
-  // Dismissing the menu, rather than choosing an item, restores its trigger.
-  await userEvent.click(await findComposerEditor());
-  click(labelled(card, "Add") as HTMLElement);
-  await findPopup("menu", "Add");
-  await userEvent.keyboard("{Escape}");
-  await waitFor(() => {
-    expect(document.activeElement).toBe(labelled(card, "Add"));
-  });
+  expect(window.location.pathname).toBe(`/chats/${THREAD_ID}`);
 });
