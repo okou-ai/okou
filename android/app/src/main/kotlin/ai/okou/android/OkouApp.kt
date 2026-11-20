@@ -6,6 +6,7 @@ import ai.okou.android.chat.ChatComposerField
 import ai.okou.android.chat.ChatComposerModel
 import ai.okou.android.chat.ChatListFilter
 import ai.okou.android.chat.ChatListModel
+import ai.okou.android.chat.ChatListReadFailure
 import ai.okou.android.chat.ChatListScreen
 import ai.okou.android.chat.ChatListUiState
 import ai.okou.android.chat.ChatReadPhase
@@ -139,10 +140,6 @@ internal fun OkouApp(
     }
     val showList = listWidth != null || searchActive || target == WorkspaceTarget.List
     val showChatList = settings == null && showList && !searchActive
-    DisposableEffect(chats, showChatList) {
-        chats?.listVisibilityChanged(showChatList)
-        onDispose { chats?.listVisibilityChanged(false) }
-    }
     val showWorkspaceBack = listWidth == null && !searchActive && target != WorkspaceTarget.List
     val listPositions =
         ChatListFilter.entries.map { filter -> key(filter) { rememberLazyListState() } }
@@ -308,6 +305,15 @@ internal fun OkouApp(
     val provisionalId = pendingId ?: createdId
     val provisionalChat =
         provisionalId?.let { id -> list.threads.firstOrNull { it.id == id && it.hidden != true } }
+    val needsChatList =
+        settings == null &&
+            (showList ||
+                (provisionalId != null && provisionalChat == null) ||
+                (target is WorkspaceTarget.Chat && thread == null))
+    DisposableEffect(chats, needsChatList, showChatList) {
+        chats?.listVisibilityChanged(needsChatList, showingFilter = showChatList)
+        onDispose { chats?.listVisibilityChanged(false) }
+    }
     LaunchedEffect(newChat, provisionalId, provisionalChat, createdId) {
         if (newChat != null && navigation.target == newChat && provisionalId != null) {
             conversations.open(provisionalId)
@@ -534,13 +540,14 @@ internal fun OkouApp(
                                     focusOnEntry = focusSearch,
                                     onFocused = { focusSearch = false },
                                     onClose = ::closeSearch,
-                                    retry = chats::refreshList,
+                                    retry = chats::retryList,
                                     onOpen = { openChat(it, fromSearch = true) },
                                 )
                             } else {
                                 if (listWidth != null) listToolbar()
                                 ChatListScreen(
                                     list,
+                                    { chats?.retryList() },
                                     { chats?.refreshMetadata() },
                                     { chats?.refreshIndicators() },
                                     ::openChat,
@@ -665,7 +672,14 @@ internal fun OkouApp(
                                         } else Box(Modifier.weight(1f))
                                         conversations.Content(checkNotNull(newTarget).key) {
                                             if (createdId != null) {
-                                                TextButton(onClick = chats::refreshList) {
+                                                TextButton(
+                                                    onClick = chats::retryList,
+                                                    enabled =
+                                                        !list.offline &&
+                                                            list.listReadFailure !=
+                                                                ChatListReadFailure.Retrying &&
+                                                            list.listPhase != ChatReadPhase.Loading,
+                                                ) {
                                                     Text(stringResource(R.string.chat_refresh))
                                                 }
                                             } else

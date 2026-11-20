@@ -43,6 +43,7 @@ import ai.okou.android.chat.historyJson
 import ai.okou.android.chat.readHistoryNdjson
 import ai.okou.android.instructions.PersonalInstructionsService
 import java.io.Closeable
+import java.io.IOException
 import java.util.Locale
 import java.util.TimeZone
 import kotlinx.coroutines.Dispatchers
@@ -307,7 +308,9 @@ class CanonicalWorkspaceSession(
             try {
                 transfers.download(address) { archiveJson.decodeFromStream<T>(it) }
             } catch (error: ApiFailure.Http) {
-                throw ChatSnapshotUnavailable(error.status)
+                throw ChatSnapshotUnavailable(error.status, error.retryAfterSeconds)
+            } catch (error: IOException) {
+                throw ApiFailure.Network(error)
             } catch (_: SerializationException) {
                 throw ApiFailure.IncompatibleResponse()
             } catch (_: IllegalArgumentException) {
