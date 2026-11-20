@@ -336,12 +336,11 @@ directory-specific overrides. Strict mode and configuration-warning checks
 reject unknown rules. CI emits GitHub annotations; local output uses Xcode
 diagnostics.
 
-CI builds/caches the custom binary in a dedicated Linux job, runs its real CLI
-fixtures, and transfers the binary plus receipt to the existing five-minute lint
-job. Both jobs use the same digest-pinned Swift image. The artifact name survives
-downstream-only reruns; every use still verifies current inputs. Update source
-revision/version and relevant toolchain pins together. Validate with the commands
-above, `bash ios/scripts/test-lint.sh`, and
+The Linux SwiftLint job restores or builds the pinned binary, runs the CLI rule
+fixtures, checks lint scope and failure handling, and scans the owned Swift
+sources in one digest-pinned container. Only `main` saves the tool cache.
+Update the source revision, version and relevant toolchain pins together.
+Validate with the commands above, `bash ios/scripts/test-lint.sh`, and
 `python3 ios/scripts/install-swiftlint.test.py`.
 
 ## CI
@@ -351,9 +350,10 @@ and manual dispatch. Lightweight Linux jobs detect changes and test CI contracts
 on every run. Native jobs start after change detection while script checks run
 in parallel; archive publication and the required gate both require those checks.
 An independent Linux SwiftLint job runs for selected iOS changes on PRs, merge
-groups, main pushes and manual dispatch. Both `ci-gate-ios` and archive
-publication require it; failed, cancelled or unexpectedly skipped lint cannot
-pass the gate, even when exact-input evidence reuses native tests.
+groups, main pushes and manual dispatch. On the native path, `ci-gate-ios`
+and archive publication require successful lint, including when only test
+evidence is reused. A release merge group skips lint when `resolve-release`
+verifies both the published archive and matching test evidence.
 On pull requests, merge groups, and manual dispatch, changes selected by
 `ios/scripts/ci-changed.sh` trigger Swift formatting, property-list validation,
 an app build, standalone ChatDomain/ChatData tests, and simulator tests on the
