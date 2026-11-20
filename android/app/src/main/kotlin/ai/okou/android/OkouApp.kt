@@ -10,6 +10,7 @@ import ai.okou.android.chat.ChatListReadFailure
 import ai.okou.android.chat.ChatListScreen
 import ai.okou.android.chat.ChatListUiState
 import ai.okou.android.chat.ChatReadPhase
+import ai.okou.android.chat.ChatRowAction
 import ai.okou.android.chat.ChatTitleSearch
 import ai.okou.android.chat.ComposerTarget
 import ai.okou.android.chat.ConfirmedChat
@@ -191,44 +192,70 @@ internal fun OkouApp(
             list.threads.firstOrNull { it.id == chat.id && it.hidden != true }
         }
 
-    list.failedRowAction?.let { action ->
-        val message =
-            stringResource(
-                if (action.updatesChat) R.string.chat_row_action_failed
-                else R.string.chat_read_action_failed
-            )
-        val refreshLabel = stringResource(R.string.chat_refresh)
-        LaunchedEffect(chats, action, message, showChatList) {
-            if (
-                showChatList &&
-                    snackbar.showSnackbar(
-                        message,
-                        actionLabel = refreshLabel,
-                        duration = SnackbarDuration.Indefinite,
-                    ) == SnackbarResult.ActionPerformed
-            ) {
-                if (action.updatesChat) chats?.reloadAfterRowActionFailure()
-                else chats?.refreshIndicators()
-            }
-            chats?.dismissRowActionFailure(action)
-        }
-    }
-    list.markAllReadResult?.let { result ->
-        val message =
-            if (result.confirmed == result.requested) {
-                pluralStringResource(
-                    R.plurals.chat_mark_all_read_success,
-                    result.confirmed,
-                    result.confirmed,
+    LaunchedEffect(chats, showChatList) { if (!showChatList) chats?.clearRowUndo() }
+    list.rowUndo
+        ?.takeIf { showChatList }
+        ?.let { undo ->
+            val message =
+                stringResource(
+                    when (undo.action) {
+                        ChatRowAction.Archive -> R.string.chat_undo_archived
+                        ChatRowAction.Unarchive -> R.string.chat_undo_unarchived
+                        else -> R.string.chat_undo_marked_read
+                    }
                 )
-            } else {
-                stringResource(R.string.chat_mark_all_read_unconfirmed)
+            val label = stringResource(R.string.chat_undo)
+            LaunchedEffect(chats, undo, message, label) {
+                snackbar.currentSnackbarData?.dismiss()
+                when (snackbar.showSnackbar(message, label, withDismissAction = true)) {
+                    SnackbarResult.ActionPerformed -> chats?.undoRowAction(undo)
+                    SnackbarResult.Dismissed -> chats?.dismissRowUndo(undo)
+                }
             }
-        LaunchedEffect(chats, result, message, showChatList) {
-            if (showChatList) snackbar.showSnackbar(message, duration = SnackbarDuration.Indefinite)
-            chats?.dismissMarkAllReadResult(result)
         }
-    }
+    list.failedRowAction
+        ?.takeIf { list.rowUndo == null }
+        ?.let { action ->
+            val message =
+                stringResource(
+                    if (action.updatesChat) R.string.chat_row_action_failed
+                    else R.string.chat_read_action_failed
+                )
+            val refreshLabel = stringResource(R.string.chat_refresh)
+            LaunchedEffect(chats, action, message, showChatList) {
+                if (
+                    showChatList &&
+                        snackbar.showSnackbar(
+                            message,
+                            actionLabel = refreshLabel,
+                            duration = SnackbarDuration.Indefinite,
+                        ) == SnackbarResult.ActionPerformed
+                ) {
+                    if (action.updatesChat) chats?.reloadAfterRowActionFailure()
+                    else chats?.refreshIndicators()
+                }
+                chats?.dismissRowActionFailure(action)
+            }
+        }
+    list.markAllReadResult
+        ?.takeIf { list.rowUndo == null }
+        ?.let { result ->
+            val message =
+                if (result.confirmed == result.requested) {
+                    pluralStringResource(
+                        R.plurals.chat_mark_all_read_success,
+                        result.confirmed,
+                        result.confirmed,
+                    )
+                } else {
+                    stringResource(R.string.chat_mark_all_read_unconfirmed)
+                }
+            LaunchedEffect(chats, result, message, showChatList) {
+                if (showChatList)
+                    snackbar.showSnackbar(message, duration = SnackbarDuration.Indefinite)
+                chats?.dismissMarkAllReadResult(result)
+            }
+        }
 
     fun openChat(chat: ConfirmedChat, fromSearch: Boolean = false) {
         val activeChats = chats ?: return
@@ -701,7 +728,7 @@ private fun WorkspaceFeedbackHost(state: SnackbarHostState, modifier: Modifier) 
     val accessibility = LocalAccessibilityManager.current
     val current = state.currentSnackbarData
     LaunchedEffect(current, accessibility) {
-        if (current != null) {
+        if (current != null && !current.visuals.withDismissAction) {
             val duration =
                 accessibility?.calculateRecommendedTimeoutMillis(
                     5_000L,
@@ -740,10 +767,20 @@ private fun WorkspaceFeedbackHost(state: SnackbarHostState, modifier: Modifier) 
                         onClick = data::performAction,
                         colors =
                             ButtonDefaults.textButtonColors(
-                                contentColor = MaterialTheme.colorScheme.inversePrimary
+                                contentColor =
+                                    if (data.visuals.withDismissAction) LocalUndoActionColor.current
+                                    else MaterialTheme.colorScheme.inversePrimary
                             ),
                     ) {
                         Text(action)
+                    }
+                }
+                if (data.visuals.withDismissAction) {
+                    IconButton(onClick = data::dismiss) {
+                        Icon(
+                            painterResource(R.drawable.ic_close),
+                            stringResource(R.string.chat_undo_close),
+                        )
                     }
                 }
             }
