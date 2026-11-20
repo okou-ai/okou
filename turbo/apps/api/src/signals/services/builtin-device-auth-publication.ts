@@ -1,4 +1,4 @@
-import { builtinConnectorOauthDeviceAuthorizationSessions as sessions } from "@okouai/db/runtime/connector-oauth-device-authorization-session";
+import { builtinConnectorOauthDeviceAuthorizationSessions as sessions } from "@okouai/db/schema/connector-oauth-device-authorization-session";
 import {
   and,
   count,

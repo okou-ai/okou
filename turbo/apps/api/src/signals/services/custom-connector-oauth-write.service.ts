@@ -7,7 +7,7 @@ import {
 } from "./connector-connection-write.service";
 import type { ConnectorAccountMutationIntent } from "@okouai/api-contracts/contracts/connector-accounts";
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
-import { connectorOauthStates } from "@okouai/db/runtime/connector-oauth-state";
+import { connectorOauthStates } from "@okouai/db/schema/connector-oauth-state";
 import { boolean, object, uuid } from "zod";
 import { connectors } from "@okouai/db/schema/connector";
 import { secrets } from "@okouai/db/schema/secret";

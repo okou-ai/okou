@@ -1232,6 +1232,21 @@ if ! git merge-base --is-ancestor "$widget_push_columns_floor" "$TARGET_COMMIT";
   fail "Rollback target predates the iOS widget push columns retirement: ${widget_push_columns_floor}."
 fi
 
+# Only artifacts with Agent connector SQL retirement support the contracted schema.
+agent_connector_schema_floor_path=.github/rollback-floors/agent-connector-schema-independent-api
+if ! agent_connector_schema_floor=$(git show "origin/main:${agent_connector_schema_floor_path}"); then
+  fail "Cannot read the Agent connector schema rollback floor from main."
+fi
+if [[ ! "$agent_connector_schema_floor" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Missing or invalid Agent connector schema rollback floor."
+fi
+if ! git merge-base --is-ancestor "$agent_connector_schema_floor" origin/main; then
+  fail "Agent connector schema rollback floor is not on main."
+fi
+if ! git merge-base --is-ancestor "$agent_connector_schema_floor" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the Agent connector schema retirement: ${agent_connector_schema_floor}."
+fi
+
 deployments=$(curl -fsS --get "https://api.vercel.com/v6/deployments" \
   -H "Authorization: Bearer ${VERCEL_TOKEN}" \
   --data-urlencode "teamId=${VERCEL_ORG_ID}" \
