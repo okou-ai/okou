@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.136](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.135...guest-control-server-v0.24.136) (2026-11-20)
+
+
+### Refactoring
+
+* **guest-control:** centralize worker completion release ([#49419](https://github.com/okou-ai/okou/issues/49419)) ([83e3ed4](https://github.com/okou-ai/okou/commit/83e3ed43d7fb6b78ae40d44d25017beb726db66d))
+
 ## [0.24.135](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.134...guest-control-server-v0.24.135) (2026-11-20)
 
 
