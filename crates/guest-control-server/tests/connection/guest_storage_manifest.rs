@@ -354,12 +354,13 @@ fn truncated_large_storage_input_does_not_start_helper() {
 }
 
 #[test]
-fn guest_storage_manifest_returns_nonzero_exit_and_captured_diagnostic_output() {
+fn guest_storage_manifest_captures_stdout_and_stderr_on_failed_exit() {
     let (_directory, program) = create_program(
         r#"
 cat >/dev/null
+printf '{"skippedOptional":[1]}\n'
 printf 'manifest failed\n' >&2
-exit 7
+exit 1
 "#,
     );
     let (handle, mut host_stream) = start_guest_connection_with_storage_manifest_program(program);
@@ -367,8 +368,8 @@ exit 7
     send_request(&mut host_stream, 411, 1_000, "run", "/run", b"{}");
     let result = read_result(&mut host_stream, 411);
 
-    assert_eq!(result.termination, ExecTermination::Exited { exit_code: 7 });
-    assert!(result.stdout.is_empty());
+    assert_eq!(result.termination, ExecTermination::Exited { exit_code: 1 });
+    assert_eq!(result.stdout, b"{\"skippedOptional\":[1]}\n");
     assert_eq!(result.stderr, b"manifest failed\n");
     assert!(!result.stdout_truncated);
     assert!(!result.stderr_truncated);

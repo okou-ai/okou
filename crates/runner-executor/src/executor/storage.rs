@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 use guest_contracts::storage_files::{self, StorageFile};
 use guest_contracts::storage_manifest::{Manifest, StorageApplyReceipt};
 use sandbox::{
-    EXEC_OUTPUT_LIMIT_1_MIB, EXEC_OUTPUT_LIMIT_64_KIB, ExecRequest, Sandbox,
+    EXEC_OUTPUT_LIMIT_1_MIB, EXEC_OUTPUT_LIMIT_64_KIB, ExecRequest, ExecTermination, Sandbox,
     StorageManifestRequest, StorageManifestTiming,
 };
 use tracing::{info, warn};
@@ -125,44 +125,24 @@ pub(super) async fn download_storages(
         context,
         &mut input,
         &optional_mounts(manifest),
+        &mut HashSet::new(),
         &mut guest_duration_ms,
         &mut host_timing,
     )
     .await
-    .map(|_| ())
 }
 
+/// Keep confirmed skips for the Run even when application fails. An optional
+/// cancellation token stops later batches without abandoning accepted Guest IO.
 pub(super) async fn download_storages_with_files(
     sandbox: &dyn Sandbox,
     context: &ExecutionContext,
     manifest: Manifest,
     files: &[(String, Arc<CachedFiles>)],
     telemetry: &mut JobTelemetry,
-) -> RunnerResult<HashSet<String>> {
-    download_storages_with_files_inner(sandbox, context, manifest, files, telemetry, None).await
-}
-
-/// Stop later batches on a sibling failure without abandoning accepted Guest IO.
-pub(super) async fn download_storages_with_files_until_cancelled(
-    sandbox: &dyn Sandbox,
-    context: &ExecutionContext,
-    manifest: Manifest,
-    files: &[(String, Arc<CachedFiles>)],
-    telemetry: &mut JobTelemetry,
-    cancel: &tokio_util::sync::CancellationToken,
-) -> RunnerResult<HashSet<String>> {
-    download_storages_with_files_inner(sandbox, context, manifest, files, telemetry, Some(cancel))
-        .await
-}
-
-async fn download_storages_with_files_inner(
-    sandbox: &dyn Sandbox,
-    context: &ExecutionContext,
-    manifest: Manifest,
-    files: &[(String, Arc<CachedFiles>)],
-    telemetry: &mut JobTelemetry,
+    skipped: &mut HashSet<String>,
     cancel: Option<&tokio_util::sync::CancellationToken>,
-) -> RunnerResult<HashSet<String>> {
+) -> RunnerResult<()> {
     // Complete all fallible preparation before the first Guest mutation.
     let prepare_started = Instant::now();
     let inputs = storage_inputs(manifest, files);
@@ -184,7 +164,6 @@ async fn download_storages_with_files_inner(
         None,
     );
     // Only the current transport buffer is materialized across Guest IO.
-    let mut skipped = HashSet::new();
     for (index, prepared) in inputs.into_iter().enumerate() {
         if cancel.is_some_and(tokio_util::sync::CancellationToken::is_cancelled) {
             return Err(RunnerError::Cancelled);
@@ -198,6 +177,7 @@ async fn download_storages_with_files_inner(
             context,
             &mut input,
             &prepared.optional_mounts,
+            skipped,
             &mut guest_duration_ms,
             &mut host_timing,
         )
@@ -217,9 +197,9 @@ async fn download_storages_with_files_inner(
                 },
             );
         }
-        skipped.extend(result?);
+        result?;
     }
-    Ok(skipped)
+    Ok(())
 }
 
 struct OptionalMount {
@@ -593,9 +573,10 @@ async fn apply_storage_input(
     context: &ExecutionContext,
     input: &mut StorageInput,
     optional_mounts: &HashMap<usize, OptionalMount>,
+    skipped: &mut HashSet<String>,
     guest_duration_ms: &mut Option<u32>,
     host_timing: &mut StorageManifestTiming,
-) -> RunnerResult<HashSet<String>> {
+) -> RunnerResult<()> {
     let staged_manifest = input.take_staged_manifest();
     let manifest_json = match &*input {
         StorageInput::Json(bytes) => bytes,
@@ -665,12 +646,26 @@ async fn apply_storage_input(
 
         *guest_duration_ms = result.guest_duration_ms;
 
-        if !helper_exec_succeeded(&result) {
+        let applied = helper_exec_succeeded(&result);
+        if !optional_mounts.is_empty()
+            && (applied
+                || matches!(result.termination, ExecTermination::Exited { exit_code: 1 })
+                    && !result.stdout.is_empty())
+        {
+            match read_storage_receipt(&result, optional_mounts, applied) {
+                Ok(receipt) if skipped.is_empty() => *skipped = receipt,
+                Ok(receipt) => skipped.extend(receipt),
+                Err(error) if applied => return Err(error),
+                // A failed helper may leave incomplete stdout. Keep the primary error.
+                Err(_) => {}
+            }
+        }
+        if !applied {
             return Err(RunnerError::Internal(format_guest_storage_apply_failure(
                 &result,
             )));
         }
-        read_storage_receipt(&result, optional_mounts)
+        Ok(())
     }
     .await;
     // Interrupted private staging belongs to the Run runtime's reuse cleanup.
@@ -692,10 +687,8 @@ async fn apply_storage_input(
 fn read_storage_receipt(
     result: &sandbox::ExecResult,
     optional_mounts: &HashMap<usize, OptionalMount>,
+    applied: bool,
 ) -> RunnerResult<HashSet<String>> {
-    if optional_mounts.is_empty() {
-        return Ok(HashSet::new());
-    }
     let invalid_receipt = || RunnerError::Internal("invalid Guest storage apply receipt".into());
     if result.stdout_truncated {
         return Err(invalid_receipt());
@@ -709,9 +702,10 @@ fn read_storage_receipt(
             return Err(invalid_receipt());
         }
     }
-    if optional_mounts
-        .values()
-        .any(|mount| mount.unavailable && !skipped.contains(&mount.path))
+    if applied
+        && optional_mounts
+            .values()
+            .any(|mount| mount.unavailable && !skipped.contains(&mount.path))
     {
         return Err(invalid_receipt());
     }

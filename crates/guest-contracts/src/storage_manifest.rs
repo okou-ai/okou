@@ -51,10 +51,11 @@ pub use template_guidance::*;
 /// Cache namespace for complete Skill and Workflow packages.
 pub const WORKFLOW_STORAGE_NAME: &str = "workflow";
 
-/// Successful application of a batch containing optional packages.
+/// Confirmed optional-package skips from a normally exited storage helper.
 ///
 /// Each index identifies a read-only entry in the batch's `Manifest::storages`
-/// whose mount was skipped and cleaned. Required-only batches omit the receipt.
+/// whose mount was skipped and cleaned. This can describe a subset of a failed
+/// batch. The exit status still determines whether the application succeeded.
 #[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StorageApplyReceipt {

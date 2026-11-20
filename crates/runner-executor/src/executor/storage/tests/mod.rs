@@ -20,23 +20,30 @@ fn receipt_must_account_for_unavailable_sources_and_only_reference_optional_moun
     ]
     .into_iter()
     .collect();
-    let parsed = |stdout: &[u8]| {
-        read_storage_receipt(
-            &sandbox::ExecResult::new(0, stdout.to_vec(), Vec::new()),
-            &mounts,
-        )
+    let parsed = |applied: bool, stdout: &[u8]| {
+        let result = sandbox::ExecResult::new(i32::from(!applied), stdout.to_vec(), Vec::new());
+        read_storage_receipt(&result, &mounts, applied)
     };
     assert_eq!(
-        parsed(br#"{"skippedOptional":[2]}"#).unwrap(),
+        parsed(true, br#"{"skippedOptional":[2]}"#).unwrap(),
         HashSet::from(["/skills/unavailable".into()])
     );
+    let partial = br#"{"skippedOptional":[1]}"#;
+    assert!(parsed(true, partial).is_err());
+    assert_eq!(
+        parsed(false, partial).unwrap(),
+        HashSet::from(["/skills/optional".into()])
+    );
+    let mut truncated = sandbox::ExecResult::new(1, partial.to_vec(), Vec::new());
+    truncated.stdout_truncated = true;
+    assert!(read_storage_receipt(&truncated, &mounts, false).is_err());
     for invalid in [
         b"".as_slice(),
-        br#"{"skippedOptional":[]}"#,
         br#"{"skippedOptional":[0,2]}"#,
         br#"{"skippedOptional":[1,2,2]}"#,
     ] {
-        assert!(parsed(invalid).is_err());
+        assert!(parsed(true, invalid).is_err());
+        assert!(parsed(false, invalid).is_err());
     }
 }
 

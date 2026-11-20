@@ -28,7 +28,8 @@
 //! preventing launch with incomplete inputs. Earlier filesystem effects are not
 //! rolled back. Missing stale paths count as already cleaned.
 //! Failed optional packages are logged and removed before a batch can report
-//! success. The runtime receipt identifies the skipped mounts.
+//! success. The runtime receipt identifies confirmed skips even if a separate
+//! failure prevented the rest of the batch from completing.
 //!
 //! Cached storages and artifacts preserve their mount roots during stale cleanup. Empty artifacts
 //! retain root identity and ownership while clearing stale contents, including
@@ -104,7 +105,7 @@ pub fn run(manifest_path: &str) -> bool {
 
 /// Apply a manifest with discarded inputs owned by the existing runtime cleanup.
 /// Noncanonical runtime layouts retain synchronous cleanup.
-/// An optional-package batch writes its cleanup receipt to `output` on success.
+/// The receipt written to `output` records confirmed skips independently of the batch result.
 pub fn run_in_runtime(manifest_path: &str, runtime_dir: &Path, output: &mut dyn Write) -> bool {
     run_path_in_runtime(manifest_path, Some(runtime_dir), output)
 }
@@ -424,11 +425,11 @@ fn run_manifest_with_files_in_runtime(
         skipped.iter().map(String::as_str),
         quarantine.as_ref(),
     );
-    if !applied || !cleaned {
+    if !cleaned {
         return false;
     }
-    if optional_mounts.is_empty() {
-        return true;
+    if optional_mounts.is_empty() || (!applied && skipped.is_empty()) {
+        return applied;
     }
     let receipt = StorageApplyReceipt {
         skipped_optional: manifest
@@ -438,7 +439,7 @@ fn run_manifest_with_files_in_runtime(
             .filter_map(|(index, entry)| skipped.contains(&entry.mount_path).then_some(index))
             .collect(),
     };
-    write_result(output, &receipt)
+    write_result(output, &receipt) && applied
 }
 
 fn clean_package_mounts<'a>(

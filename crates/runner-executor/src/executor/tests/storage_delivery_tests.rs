@@ -4,12 +4,12 @@ use std::sync::Arc;
 use api_contracts::generated::types::runners::storage::ArtifactEntryMissingRootPolicy;
 use guest_contracts::storage_files;
 use guest_contracts::storage_manifest::{Manifest, StorageEntry};
-use sandbox::ExecResult;
+use sandbox::{ExecResult, Sandbox};
 use sandbox_mock::{MockLifecycleGate, MockSandbox, MockSandboxOverrides};
 use tracing::instrument::WithSubscriber;
 use tracing_subscriber::layer::SubscriberExt;
 
-use super::super::storage::download_storages_with_files;
+use super::super::storage;
 use super::super::{ExecutorConfig, RunnerResult};
 use super::support::{
     CapturedEvents, RUN_IN_SANDBOX_TEST_TIMEOUT, api_artifact, api_storage,
@@ -20,9 +20,28 @@ use crate::storage_cache::decoded::CachedFiles;
 use crate::storage_cache::{populate_cache_with_fresh_delivery, prepare_fresh_archive_delivery};
 use crate::storage_plan::build_storage_plan;
 use guest_contracts::runtime_paths::STORAGE_MANIFEST_PATH;
-use runner_types::storage_manifest::StorageManifest;
+use runner_types::{storage_manifest::StorageManifest, types::ExecutionContext};
 
 mod memory;
+
+async fn download_storages_with_files(
+    sandbox: &dyn Sandbox,
+    context: &ExecutionContext,
+    manifest: Manifest,
+    files: &[(String, Arc<CachedFiles>)],
+    telemetry: &mut super::super::JobTelemetry,
+) -> RunnerResult<()> {
+    storage::download_storages_with_files(
+        sandbox,
+        context,
+        manifest,
+        files,
+        telemetry,
+        &mut Default::default(),
+        None,
+    )
+    .await
+}
 
 struct DeliveryFixture {
     root: tempfile::TempDir,
@@ -285,9 +304,7 @@ async fn apply_with_telemetry(
 ) -> RunnerResult<()> {
     let context = minimal_context();
     let mut telemetry = test_telemetry(&fixture.config, &context);
-    download_storages_with_files(sandbox, &context, manifest, files, &mut telemetry)
-        .await
-        .map(|_| ())
+    download_storages_with_files(sandbox, &context, manifest, files, &mut telemetry).await
 }
 
 #[tokio::test]

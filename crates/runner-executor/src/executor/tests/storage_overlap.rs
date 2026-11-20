@@ -36,6 +36,15 @@ async fn split_storage_application_waits_for_both_owners_before_decoded_tail() {
 
 #[tokio::test]
 async fn replacing_guest_keeps_a_storage_receipt_observed_before_publication_failure() {
+    assert_replacement_keeps_storage_receipt(false).await;
+}
+
+#[tokio::test]
+async fn replacing_guest_keeps_a_storage_receipt_from_an_aborted_application() {
+    assert_replacement_keeps_storage_receipt(true).await;
+}
+
+async fn assert_replacement_keeps_storage_receipt(aborted: bool) {
     use super::super::agent_run::{RunControls, RunStart, run_in_sandbox};
     use super::super::sandbox_run::prepare_storage;
     use super::support::test_telemetry;
@@ -85,7 +94,7 @@ async fn replacing_guest_keeps_a_storage_receipt_observed_before_publication_fai
     overrides.set_storage_manifest_lifecycle_gate(application.clone());
     overrides.push_storage_manifest_result(Ok(ExecResult::new(0, b"true".to_vec(), Vec::new())));
     overrides.push_storage_manifest_result(Ok(ExecResult::new(
-        0,
+        i32::from(aborted),
         serde_json::to_vec(&StorageApplyReceipt {
             skipped_optional: vec![2],
         })
@@ -120,18 +129,34 @@ async fn replacing_guest_keeps_a_storage_receipt_observed_before_publication_fai
         application.wait_entered(2, timeout).await.unwrap();
         release_body.send(()).unwrap();
         publication.wait_entered(1, timeout).await.unwrap();
-        // The complete Guest receipt can settle before the publisher receives
-        // the final marker acknowledgement.
-        application.release_one();
-        tokio::time::timeout(timeout, async {
-            while overrides.completed_storage_manifest_calls() < 2 {
-                tokio::task::yield_now().await;
-            }
-        })
-        .await
-        .unwrap();
+        if !aborted {
+            // The complete receipt arrives before the failed marker acknowledgement.
+            application.release_one();
+            tokio::time::timeout(timeout, async {
+                while overrides.completed_storage_manifest_calls() < 2 {
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .unwrap();
+        }
         overrides.clear_private_write_file_lifecycle_gate();
         publication.release_one();
+        if aborted {
+            // The helper receives the abort and replies with a failed exit and its receipt.
+            tokio::time::timeout(timeout, async {
+                while !overrides
+                    .private_write_file_calls()
+                    .iter()
+                    .any(|call| call.path.ends_with("/failed"))
+                {
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .unwrap();
+            application.release_one();
+        }
     };
     let (result, ()) = tokio::join!(
         Box::pin(run_in_sandbox(
