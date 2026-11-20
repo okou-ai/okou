@@ -10,7 +10,6 @@ import { connectorPermissionsContract } from "@okouai/api-contracts/contracts/co
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { customConnectorByIdContract } from "@okouai/api-contracts/contracts/custom-connectors";
 import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
-import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { remotesContract } from "@okouai/api-contracts/contracts/remotes";
 import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
 import {
@@ -495,7 +494,7 @@ test("Directory details omit unavailable permission configuration", async () => 
 });
 
 test.each([false, true])(
-  "Connect an account without Agent authorization, custom=%s",
+  "Connect and enable a no-auth account in Chat, custom=%s",
   async (custom) => {
     const user = userEvent.setup({ delay: null });
     const label = custom ? "Public Custom" : "Public Tools";
@@ -521,14 +520,6 @@ test.each([false, true])(
             }),
           ]
         : [],
-    });
-    context.mocks.api(userBuiltinConnectorsContract.update, ({ respond }) => {
-      return respond(403, {
-        error: {
-          code: "FORBIDDEN",
-          message: "Agent connector settings unavailable",
-        },
-      });
     });
     await setup(`/agents/${SCOUT_AGENT_ID}/chat`);
     const directory = await openDirectory(user);

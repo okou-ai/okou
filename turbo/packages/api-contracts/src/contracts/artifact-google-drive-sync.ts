@@ -11,7 +11,6 @@ import {
 export const chatThreadArtifactGoogleDriveRecoverySchema = discriminatedUnion(
   "action",
   [
-    object({ action: literal("authorize") }),
     object({ action: literal("connect") }),
     object({
       action: literal("reconnect"),
@@ -23,8 +22,7 @@ export const chatThreadArtifactGoogleDriveRecoverySchema = discriminatedUnion(
 
 const chatThreadArtifactGoogleDriveAccountReadyShape = {
   /**
-   * Emitted after the thread account, credentials, and agent authorization
-   * resolve. The disconnected variant carries no readiness marker.
+   * Emitted when the Chat allows the account and its credentials are ready.
    */
   accountReady: literal(true),
 };

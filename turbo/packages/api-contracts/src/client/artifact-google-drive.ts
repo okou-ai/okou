@@ -7,30 +7,6 @@ import type { ClientDescriptor } from "./types";
 export const artifactGoogleDriveContract: ClientDescriptor<
   typeof OriginalArtifactGoogleDriveContract
 > = {
-  upload: {
-    method: "POST",
-    path: "/api/artifacts/:artifactId/google-drive",
-    statuses: {
-      200: true,
-      400: true,
-      401: true,
-      403: true,
-      404: true,
-      503: true,
-    },
-  },
-  uploadWithMode: {
-    method: "POST",
-    path: "/api/artifacts/:artifactId/google-drive/uploads",
-    statuses: {
-      200: true,
-      400: true,
-      401: true,
-      403: true,
-      404: true,
-      503: true,
-    },
-  },
   uploadFromChat: {
     method: "POST",
     path: "/api/artifacts/:artifactId/google-drive/chat-uploads",

@@ -88,7 +88,6 @@ const getArtifactCatalogEntryInner$ = command(
             {
               ...context,
               artifactId: artifact.id,
-              driveAccountModel: query.driveAccountModel,
             },
             signal,
           );

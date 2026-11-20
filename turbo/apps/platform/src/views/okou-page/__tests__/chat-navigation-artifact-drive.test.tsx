@@ -605,7 +605,7 @@ test.each([
     context.mocks.api(artifactCatalogContract.get, ({ query, respond }) => {
       return respond(200, {
         ...detail,
-        ...(query.chatThreadId && query.driveAccountModel === "chat"
+        ...(query.chatThreadId
           ? {
               googleDriveConnectionId: driveAccounts[query.chatThreadId],
               googleDriveSync: { status: "not_synced", accountReady: true },

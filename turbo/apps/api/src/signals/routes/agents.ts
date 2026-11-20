@@ -10,7 +10,6 @@ import {
   type AgentResponse,
   type AgentVisibility,
 } from "@okouai/api-contracts/contracts/agents";
-import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { randomAvatarUrl } from "@okouai/core/agent-avatar";
 import { agentIdentityUpdateError } from "@okouai/core/agent-protection";
 import { agents } from "@okouai/db/schema/agent";
@@ -35,12 +34,9 @@ import {
   agentResponse,
   visibleAgentIdentityCondition,
   agentList,
-  visibleJoinedAgentCondition,
   nonDefaultAgentCondition,
   publicAgentCountReadPlan,
 } from "../services/agent-data.service";
-import { readConnectorResolver$ } from "../services/connector-action-resolver.service";
-import { updateUserBuiltinConnectors$ } from "../services/user-connectors.service";
 import type { RouteEntry } from "../route-entry";
 
 // This is a soft limit: concurrent requests may both observe an available slot.
@@ -77,13 +73,6 @@ function forbidden(message: string) {
   return {
     status: 403 as const,
     body: { error: { message, code: "FORBIDDEN" as const } },
-  };
-}
-
-function validationError(message: string) {
-  return {
-    status: 400 as const,
-    body: { error: { message, code: "VALIDATION_ERROR" as const } },
   };
 }
 
@@ -807,83 +796,6 @@ const deleteAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   return { status: 204 as const, body: undefined };
 });
 
-const updateAgentUserConnectorsBody$ = bodyResultOf(
-  userBuiltinConnectorsContract.update,
-);
-
-const updateAgentUserConnectorsInner$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    const auth = get(organizationAuthContext$);
-    const params = get(pathParamsOf(userBuiltinConnectorsContract.update));
-    const body = await get(updateAgentUserConnectorsBody$);
-    signal.throwIfAborted();
-    if (!body.ok) {
-      return body.response;
-    }
-
-    const writeDb = set(writeDb$);
-    const [agent] = await writeDb
-      .select({
-        id: agents.id,
-      })
-      .from(agents)
-      .where(
-        and(
-          eq(agents.orgId, auth.orgId),
-          eq(agents.id, params.id),
-          visibleJoinedAgentCondition(auth.userId),
-        ),
-      )
-      .limit(1);
-    signal.throwIfAborted();
-
-    if (!agent) {
-      return agentNotFound(params.id);
-    }
-
-    const uniqueConnectorSlugs = Array.from(
-      new Set(body.data.enabledConnectorSlugs),
-    );
-    const operation = body.data.operation ?? "replace";
-    if (operation !== "remove") {
-      // Validate stored connector slugs against catalog capability. Catalog
-      // visibility and rollout switches govern discovery.
-      const resolver = await set(readConnectorResolver$, uniqueConnectorSlugs);
-      signal.throwIfAborted();
-      const resolved = await resolver.resolveSlugs({
-        connectorSlugs: uniqueConnectorSlugs,
-        requireExecutable: true,
-      });
-      signal.throwIfAborted();
-      if (!resolved.ok) {
-        return validationError(
-          `Invalid connector slugs: ${resolved.connectorSlug}`,
-        );
-      }
-    }
-
-    const updated = await set(updateUserBuiltinConnectors$, {
-      orgId: auth.orgId,
-      userId: auth.userId,
-      agentId: params.id,
-      enabledConnectorSlugs: uniqueConnectorSlugs,
-      operation,
-    });
-    signal.throwIfAborted();
-    if (updated.status === "agentNotFound") {
-      return agentNotFound(params.id);
-    }
-
-    const enabledConnectorSlugs = [...updated.enabledConnectorSlugs];
-    return {
-      status: 200 as const,
-      body: {
-        enabledConnectorSlugs,
-      },
-    };
-  },
-);
-
 const agentReadAuth = {
   requireOrganization: true,
   missingOrganizationStatus: 401,
@@ -929,9 +841,5 @@ export const agentsRoutes: readonly RouteEntry[] = [
   {
     route: agentsByIdContract.delete,
     handler: authRoute(agentDeleteAuth, deleteAgentInner$),
-  },
-  {
-    route: userBuiltinConnectorsContract.update,
-    handler: authRoute(agentReadAuth, updateAgentUserConnectorsInner$),
   },
 ];

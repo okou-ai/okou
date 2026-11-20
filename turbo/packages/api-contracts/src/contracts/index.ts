@@ -824,12 +824,6 @@ export {
   type WorkflowAutomationsContract,
 } from "./workflows";
 export {
-  userBuiltinConnectorsContract,
-  userBuiltinConnectorEnabledSlugsSchema,
-  type UserBuiltinConnectorEnabledSlugs,
-  type UserBuiltinConnectorsContract,
-} from "./user-connectors";
-export {
   remotesContract,
   remotesOverviewSchema,
   computerUseHostBriefSchema,
