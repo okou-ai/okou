@@ -1,6 +1,7 @@
 package ai.okou.android.chat
 
 import ai.okou.android.R
+import ai.okou.android.currentWindowSizeDp
 import ai.okou.android.state.rememberJournalEditor
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
@@ -46,6 +47,7 @@ fun ChatComposerField(
     val focus = LocalFocusManager.current
     val entry = state.entry(target)
     val input = rememberJournalEditor(state.journal?.let { entry.text }, target.key)
+    val maxVisibleLines = if (currentWindowSizeDp().height < 480) 1 else 6
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     DisposableEffect(model, target, lifecycle) {
         fun open() {
@@ -152,7 +154,7 @@ fun ChatComposerField(
                     .testTag("message_input"),
             enabled = state.journal != null,
             label = { Text(stringResource(R.string.composer_message)) },
-            maxLines = 6,
+            maxLines = maxVisibleLines,
         )
         FlowRow {
             Button(

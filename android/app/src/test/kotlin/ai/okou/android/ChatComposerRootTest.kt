@@ -4,12 +4,16 @@ import ai.okou.android.auth.SessionModel
 import ai.okou.android.chat.ChatReadPhase
 import ai.okou.android.chat.ComposerJournalStore
 import ai.okou.android.chat.ComposerPersistence
+import ai.okou.android.chat.plainText
 import android.content.Intent
 import android.os.Looper
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
@@ -37,6 +41,7 @@ import org.junit.runners.model.MultipleFailureException
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 
 class ComposerRootApplication : TestOkouApplication() {
     lateinit var fixture: ComposerApiFixture
@@ -152,6 +157,43 @@ class ChatComposerRootTest {
         compose.onNodeWithContentDescription("Chats").assertExists()
         assertEquals("{}", file.readText())
         assertEquals(0, app.fixture.requests.count { it.method == "POST" })
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w540dp-h320dp")
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun shortConversationKeepsSpaceForTheTranscriptWhenTheDraftGrows() {
+        val app = compose.activity.application as ComposerRootApplication
+        app.contextGate.countDown()
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithText("Personal chat").fetchSemanticsNodes().size == 1
+        }
+        compose.onNodeWithText("Personal chat").performClick()
+        captureOwners()
+        val input = compose.onNodeWithTag("message_input").assertIsEnabled()
+        val transcript = compose.onNodeWithTag("conversation").assertIsDisplayed()
+        val saving = hasText("Saving draft on this device…") or hasText("Syncing draft…")
+        fun enterDraft(text: String) {
+            input.performTextReplacement(text)
+            compose.waitUntil(10_000) {
+                compose.onAllNodes(saving).fetchSemanticsNodes().isEmpty() &&
+                    app.fixture.drafts["/api/chat-threads/$CHAT_PERSONAL/draft"]?.plainText() ==
+                        text
+            }
+        }
+
+        enterDraft("First line")
+        val initialBounds = transcript.getUnclippedBoundsInRoot()
+        val draft = "First line\nSecond line\nThird line\nFinal line"
+        enterDraft(draft)
+
+        val finalBounds = transcript.assertIsDisplayed().getUnclippedBoundsInRoot()
+        assertEquals(initialBounds.bottom - initialBounds.top, finalBounds.bottom - finalBounds.top)
+        assertEquals(
+            draft,
+            input.fetchSemanticsNode().config[SemanticsProperties.EditableText].text,
+        )
+        compose.onNodeWithText("Send").assertIsDisplayed()
     }
 
     @Test

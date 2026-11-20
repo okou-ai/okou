@@ -31,9 +31,11 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.WindowInfo
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertHeightIsEqualTo
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertWidthIsEqualTo
@@ -48,7 +50,10 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.test.performTextInputSelection
+import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -440,6 +445,42 @@ class OkouAppTest {
         compose.onNodeWithTag("workspace_new_chat").assertDoesNotExist()
         compose.runOnIdle { windowSize.value = null }
         compose.onNodeWithTag("workspace_new_chat").assertExists()
+    }
+
+    @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun shortNewChatEditorKeepsTheDraftAndSelectionWhenResized() {
+        render()
+        compose.onNodeWithText("New chat").performClick()
+        val input = compose.onNodeWithTag("message_input").assertIsDisplayed().assertIsEnabled()
+        fun editorHeight() = input.getUnclippedBoundsInRoot().let { it.bottom - it.top }
+        fun resize(heightDp: Int) =
+            compose.runOnIdle {
+                val density = compose.activity.resources.displayMetrics.density
+                windowSize.value = IntSize((400 * density).toInt(), (heightDp * density).toInt())
+            }
+        val draft = "First line\nSecond line\nThird line\nFinal line"
+        val selection = TextRange(12)
+        fun assertDraftAndSelection() {
+            val semantics = input.fetchSemanticsNode().config
+            assertEquals(draft, semantics[SemanticsProperties.EditableText].text)
+            assertEquals(selection, semantics[SemanticsProperties.TextSelectionRange])
+        }
+
+        val singleLineHeight = editorHeight()
+        input.performTextReplacement(draft)
+        input.performTextInputSelection(selection)
+        val expandedHeight = editorHeight()
+        assertTrue(expandedHeight > singleLineHeight)
+
+        resize(479)
+        assertEquals(singleLineHeight, editorHeight())
+        compose.onNodeWithText("Send").assertIsDisplayed()
+        assertDraftAndSelection()
+
+        resize(480)
+        assertEquals(expandedHeight, editorHeight())
+        assertDraftAndSelection()
     }
 
     @Test
