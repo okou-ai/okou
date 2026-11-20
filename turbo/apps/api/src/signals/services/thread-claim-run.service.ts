@@ -81,7 +81,6 @@ import {
 } from "../external/realtime";
 
 import { getOfficialTelegramBotConfig } from "../external/telegram-official";
-import { waitUntil } from "../context/wait-until";
 import {
   joinAll,
   joinAllInOrder,
@@ -94,7 +93,6 @@ import {
 import type { DirectRunDispatchResult } from "./direct-run-dispatch.service";
 import {
   prepareDirectRunPackages,
-  readExecutionBundleCache$,
   type AdmittedRunLaunch,
 } from "./direct-run-preparation.service";
 import {
@@ -104,10 +102,7 @@ import {
 import { dispatchCompleteSideEffects$ } from "./agent-run-lifecycle.service";
 import type { AgentRunContextSignals } from "./agent-run-context.signals";
 import type { ResolvedModelProviderEnvironment } from "./agent-run-contracts";
-import {
-  type AdmissionAttemptOutcome,
-  AdmissionAttemptTiming,
-} from "./api-dispatch-admission-timing.service";
+import { AdmissionAttemptTiming } from "./api-dispatch-admission-timing.service";
 import {
   runRoutePricingFromSnapshot,
   validateModelUsage,
@@ -637,8 +632,7 @@ interface ClaimRunTiming {
   readonly phase: ApiDispatchPhaseCollector;
 }
 
-export interface ThreadRunContext {
-  readonly kind: "prepared";
+interface ThreadRunContext {
   readonly input: {
     readonly context: ThreadRunPersistenceContext;
     readonly args: ThreadRunPersistenceArgs;
@@ -648,8 +642,12 @@ export interface ThreadRunContext {
   readonly launch: ThreadLaunchCommitInput["launch"];
   readonly persistence: ReturnType<typeof prepareAtomicLaunchPersistence>;
   readonly head: ChatQueueHeadContext;
-  readonly rejection: ClaimRejectionContext;
   readonly launchRecord: ClaimLaunchRecord;
+}
+
+interface PreparedClaimAdmission {
+  readonly context: ThreadRunContext;
+  readonly packages: ReturnType<typeof prepareDirectRunPackages>;
 }
 
 function claimCommitArguments(
@@ -830,20 +828,11 @@ function claimLaunchRecord(
 
 type PendingClaimRun = {
   readonly admittedLaunch: AdmittedRunLaunch;
-  readonly kind: "pending";
   readonly marketingRewardEventId: string | null;
   readonly apiStartTime: number;
   readonly head: ChatQueueHeadContext;
   readonly launchRecord: ClaimLaunchRecord;
 };
-
-type ClaimRunCommit =
-  | PendingClaimRun
-  | { readonly kind: "passed" }
-  | {
-      readonly kind: "rejected";
-      readonly error: { readonly code: string; readonly message: string };
-    };
 
 /** A picked input whose preparation or commit failed unexpectedly. */
 const ABANDONED_HEAD_ERROR = {
@@ -871,9 +860,13 @@ export interface ThreadClaimRunObjects {
   readonly threadHasActiveRun$: Computed<Promise<boolean>>;
   readonly hasFirstPickableChatEvent$: Computed<Promise<boolean>>;
   readonly orgHasCapacity$: Computed<Promise<boolean>>;
+  readonly prepareRunAdmission$: Command<
+    Promise<PreparedClaimAdmission | null>,
+    [signal: AbortSignal]
+  >;
   readonly admitRun$: Command<
     Promise<PendingClaimRun | null>,
-    [signal: AbortSignal]
+    [context: ThreadRunContext, signal: AbortSignal]
   >;
   readonly publishPendingRun$: Command<
     Promise<void>,
@@ -2320,11 +2313,9 @@ export function createThreadClaimRunObjects(
       if (!head) {
         throw new Error("Member Memory has no HEAD after initialization");
       }
-      const mount = buildMemberMemoryMount(memoryOwner, head, args.framework);
       return {
         ...input,
-        memoryMounts: [mount],
-        runStorageMounts: [mount.mount],
+        memoryMount: buildMemberMemoryMount(memoryOwner, head, args.framework),
       };
     },
   );
@@ -2586,11 +2577,11 @@ export function createThreadClaimRunObjects(
       { get, set },
       timing: ClaimRunTiming,
       signal: AbortSignal,
-    ): Promise<ThreadRunContext | { readonly kind: "passed" }> => {
+    ): Promise<PreparedClaimAdmission | null> => {
       const head = await set(initializeRunPreparation$, timing, signal);
       signal.throwIfAborted();
       if (!head) {
-        return { kind: "passed" };
+        return null;
       }
       const [resources] = await joinAll([
         set(prepareLaunchResources$, head, signal),
@@ -2616,12 +2607,31 @@ export function createThreadClaimRunObjects(
           },
           signal,
         );
-        return { kind: "passed" };
+        return null;
       }
       const { input, runnerLaunch, callbacks, assembly } = resources;
       const { runId } = get(runIds$);
       await set(recordQueuedInputAdmissionTiming$, head, timing.run, signal);
       signal.throwIfAborted();
+      if (
+        runnerLaunch.facts.officialWorkflowBundles.some(({ mountPath }) => {
+          return runnerLaunch.memoryMount.mount.mountPath === mountPath;
+        })
+      ) {
+        await set(
+          rejectChatQueueHead$,
+          {
+            head,
+            rejection: claimAssemblyRejection(
+              assembly,
+              head,
+              conflict(OFFICIAL_WORKFLOW_RUN_ADMISSION_MESSAGE).body.error,
+            ),
+          },
+          signal,
+        );
+        return null;
+      }
       const preparedContext = await timing.run.measure(
         "api_dispatch_prepare_atomic_launch_persistence",
         "nested",
@@ -2629,13 +2639,11 @@ export function createThreadClaimRunObjects(
           return Promise.resolve(
             finalizeClaimRunContext(
               {
-                kind: "prepared",
                 input: claimCommitInput(input),
                 identity: { runId },
                 callbacks,
                 launch: runnerLaunch,
                 head,
-                rejection: assembly.rejection,
                 launchRecord: claimLaunchRecord(
                   assembly.launchRecord,
                   input.integrationContext,
@@ -2647,22 +2655,9 @@ export function createThreadClaimRunObjects(
         },
       );
       signal.throwIfAborted();
+      const packages = prepareDirectRunPackages(preparedContext.launch);
       timing.phase.checkpoint("api_dispatch_phase_prepare_launch", now());
-      return preparedContext;
-    },
-  );
-  const rejectEvent$ = command(
-    async (
-      { set },
-      context: ThreadRunContext,
-      error: { readonly code: string; readonly message: string },
-      signal: AbortSignal,
-    ): Promise<void> => {
-      await set(
-        rejectChatQueueHead$,
-        { head: context.head, rejection: { ...context.rejection, error } },
-        signal,
-      );
+      return { context: preparedContext, packages };
     },
   );
 
@@ -2675,12 +2670,9 @@ export function createThreadClaimRunObjects(
       committed: AtomicLaunchCommitCompletion,
       timing: ClaimRunTiming,
       signal: AbortSignal,
-    ): ClaimRunCommit => {
+    ): PendingClaimRun | null => {
       const { input, identity, launch } = context;
       signal.throwIfAborted();
-      if ("status" in committed.result) {
-        return { kind: "rejected", error: committed.result.body.error };
-      }
       if (committed.result.kind === "queue-first-claim-lost") {
         flushQueueFirstClaimLostTiming({
           createArgs: input.args,
@@ -2689,7 +2681,7 @@ export function createThreadClaimRunObjects(
           timing: timing.run,
           phaseTiming: timing.phase,
         });
-        return { kind: "passed" };
+        return null;
       }
       recordAtomicLaunchTiming({
         createArgs: input.args,
@@ -2699,7 +2691,6 @@ export function createThreadClaimRunObjects(
         phaseTiming: timing.phase,
       });
       return {
-        kind: "pending",
         admittedLaunch: committed.result.admittedLaunch,
         marketingRewardEventId: committed.result.marketingRewardEventId,
         apiStartTime: input.args.apiStartTime,
@@ -2722,7 +2713,7 @@ export function createThreadClaimRunObjects(
         readonly timing: ClaimRunTiming;
       },
       signal: AbortSignal,
-    ): Promise<ClaimRunCommit> => {
+    ): Promise<PendingClaimRun | null> => {
       signal.throwIfAborted();
       const { input, identity, callbacks, launch } = context;
       const commit: ThreadLaunchCommitInput = {
@@ -2765,7 +2756,7 @@ export function createThreadClaimRunObjects(
           },
           signal,
         );
-        if ("kind" in result && result.kind === "pending") {
+        if (result.kind === "pending") {
           set(internalCommittedRunId$, result.admittedLaunch.run.id);
           const launched = context.launchRecord;
           if (launched.kind === "prompt") {
@@ -2786,10 +2777,10 @@ export function createThreadClaimRunObjects(
           }
         }
         const transactionReturnedAt =
-          "kind" in result && result.kind === "pending"
-            ? result.publicationReturnedAt
-            : now();
-        await admissionTiming.finish(admissionAttemptOutcome(result));
+          result.kind === "pending" ? result.publicationReturnedAt : now();
+        await admissionTiming.finish(
+          result.kind === "pending" ? "pending" : "queue_first_claim_lost",
+        );
         return { result, transactionReturnedAt };
       })().finally(() => {
         commitTiming.recordDuration(
@@ -2917,80 +2908,86 @@ export function createThreadClaimRunObjects(
     get(pickStartedAt$);
     return (await get(pickedEvent$)) !== null;
   });
-  const admitRun$ = command(
+  const failRunAdmission$ = command(
     async (
       { get, set },
+      error: unknown,
       signal: AbortSignal,
-    ): Promise<PendingClaimRun | null> => {
+    ): Promise<null> => {
+      // A durable Run commit is creation success, even if subsequent
+      // telemetry or cancellation fails. Never reject its consumed input.
+      if (get(internalCommittedRunId$) !== null) {
+        throw error;
+      }
+      // Temporary staff cutover reader: a preparation can capture the old
+      // Chat binding just before SQL reassigns it. The atomic binding fence
+      // rolled back publication; keep its input queued for a fresh normal
+      // pick instead of permanently rejecting it. No admission guard is
+      // bypassed. Remove after pre-cutover request preparations have drained
+      // and their rollback consumers are excluded (#46783).
+      if (
+        claim.orgId === STAFF_SINGLE_AGENT_ORG_ID &&
+        error instanceof ChatThreadBindingChanged
+      ) {
+        return null;
+      }
+      const event = await get(pickedEvent$);
+      signal.throwIfAborted();
+      if (!event) {
+        throw error;
+      }
+      await settle(
+        set(
+          rejectChatQueueHead$,
+          {
+            head: {
+              id: event.id,
+              chatThreadId: claim.chatThreadId,
+              orgId: claim.orgId,
+              userId: event.userId,
+              agentId: event.agentId,
+              contextType: event.contextType,
+              contextId: event.contextId,
+            },
+            rejection: { userId: event.userId, error: ABANDONED_HEAD_ERROR },
+            lease: claim,
+          },
+          signal,
+        ),
+        signal,
+      );
+      throw error;
+    },
+  );
+  const prepareRunAdmission$ = command(
+    async ({ get, set }, signal: AbortSignal) => {
       const event = await get(pickedEvent$);
       signal.throwIfAborted();
       if (!event) {
         return null;
       }
-      const timing = get(claimRunTiming$);
-      const settled = await settle(
-        (async (): Promise<PendingClaimRun | null> => {
-          const context = await set(prepareRunContext$, timing, signal);
-          signal.throwIfAborted();
-          if (context.kind === "passed") {
-            return null;
-          }
-          const committed = await set(
-            createRun$,
-            { claim, context, timing },
-            signal,
-          );
-          if (committed.kind === "pending") {
-            return committed;
-          }
-          if (committed.kind === "rejected") {
-            await set(rejectEvent$, context, committed.error, signal);
-          }
-          return null;
-        })(),
+      const prepared = await settle(
+        set(prepareRunContext$, get(claimRunTiming$), signal),
         signal,
       );
-      if (!settled.ok) {
-        // A durable Run commit is creation success, even if subsequent
-        // telemetry or cancellation fails. Never reject its consumed input.
-        if (get(internalCommittedRunId$) !== null) {
-          throw settled.error;
-        }
-        // Temporary staff cutover reader: a preparation can capture the old
-        // Chat binding just before SQL reassigns it. The atomic binding fence
-        // rolled back publication; keep its input queued for a fresh normal
-        // pick instead of permanently rejecting it. No admission guard is
-        // bypassed. Remove after pre-cutover request preparations have drained
-        // and their rollback consumers are excluded (#46783).
-        if (
-          claim.orgId === STAFF_SINGLE_AGENT_ORG_ID &&
-          settled.error instanceof ChatThreadBindingChanged
-        ) {
-          return null;
-        }
-        await settle(
-          set(
-            rejectChatQueueHead$,
-            {
-              head: {
-                id: event.id,
-                chatThreadId: claim.chatThreadId,
-                orgId: claim.orgId,
-                userId: event.userId,
-                agentId: event.agentId,
-                contextType: event.contextType,
-                contextId: event.contextId,
-              },
-              rejection: { userId: event.userId, error: ABANDONED_HEAD_ERROR },
-              lease: claim,
-            },
-            signal,
-          ),
+      return prepared.ok
+        ? prepared.value
+        : await set(failRunAdmission$, prepared.error, signal);
+    },
+  );
+  const admitRun$ = command(
+    async ({ get, set }, context: ThreadRunContext, signal: AbortSignal) => {
+      const committed = await settle(
+        set(
+          createRun$,
+          { claim, context, timing: get(claimRunTiming$) },
           signal,
-        );
-        throw settled.error;
-      }
-      return settled.value;
+        ),
+        signal,
+      );
+      return committed.ok
+        ? committed.value
+        : await set(failRunAdmission$, committed.error, signal);
     },
   );
   return {
@@ -2999,6 +2996,7 @@ export function createThreadClaimRunObjects(
     inputResources$,
     hasFirstPickableChatEvent$,
     orgHasCapacity$,
+    prepareRunAdmission$,
     admitRun$,
     publishPendingRun$,
     finishPendingRun$,
@@ -3027,8 +3025,7 @@ interface PreparedRunnerLaunch {
   readonly profile: string;
   readonly reuseKey: string;
   readonly facts: AdmittedExecutionFacts;
-  readonly runStorageMounts: readonly PersistedStorageMount[];
-  readonly memoryMounts: readonly AcceptedMemoryMount[];
+  readonly memoryMount: AcceptedMemoryMount;
 }
 
 interface PreparedLaunchCallback {
@@ -3111,7 +3108,7 @@ interface LaunchRunRowsArgs {
   readonly identity: LaunchRunIdentity;
   readonly resolved: ThreadRunPersistenceContext["resolved"];
   readonly content: ThreadRunContent;
-  readonly runStorageMounts: readonly PersistedStorageMount[];
+  readonly memoryMount: PersistedStorageMount;
   readonly modelProvider: ThreadRunPersistenceContext["modelProvider"];
   readonly modelSelection: ModelFirstPin;
   readonly selectedImageModel: ImageModel;
@@ -3138,7 +3135,7 @@ function launchRunValues(
     agentId: args.resolved.agentId,
     modelProviderAccountIdentity: args.modelProvider.accountIdentity,
     prompt: args.content.prompt,
-    storageMounts: [...args.runStorageMounts],
+    storageMounts: [args.memoryMount],
     runnerGroup: args.runnerGroup,
     launchSnapshot: args.launchSnapshot,
     officialWorkflowProvenance: args.officialWorkflowProvenance ?? null,
@@ -3242,7 +3239,7 @@ function preparedLaunchRowsArgs(
     identity: commit.identity,
     resolved: commit.context.resolved,
     content: commit.context.content,
-    runStorageMounts: commit.launch.runStorageMounts,
+    memoryMount: commit.launch.memoryMount.mount,
     modelProvider: commit.context.modelProvider,
     modelSelection: commit.createArgs.modelSelection,
     selectedImageModel: commit.context.selectedImageModel,
@@ -3541,7 +3538,7 @@ function prepareRunnerLaunch(input: {
   readonly executionPackages: AdmittedExecutionFacts["executionPackages"];
   readonly okouToken: string;
   readonly disabledPaidTools: readonly PaidToolId[];
-}): Omit<PreparedRunnerLaunch, "runStorageMounts" | "memoryMounts"> {
+}): Omit<PreparedRunnerLaunch, "memoryMount"> {
   const { args } = input;
   const facts = {
     ...args.facts,
@@ -3689,26 +3686,9 @@ interface ThreadRunIdentityInput {
 
 // --- Thread-private implementation: launch admission ---
 
-type AtomicLaunchCommitAttempt =
-  AtomicLaunchCommitResult | CreateRunErrorResult;
-
 interface AtomicLaunchCommitCompletion {
-  readonly result: AtomicLaunchCommitAttempt;
+  readonly result: AtomicLaunchCommitResult;
   readonly transactionReturnedAt: number;
-}
-
-function admissionAttemptOutcome(
-  result: AtomicLaunchCommitResult | CreateRunErrorResult,
-): AdmissionAttemptOutcome {
-  if ("kind" in result) {
-    if (result.kind === "pending") {
-      return "pending";
-    }
-    if (result.kind === "queue-first-claim-lost") {
-      return "queue_first_claim_lost";
-    }
-  }
-  return "rejected";
 }
 
 function flushQueueFirstClaimLostTiming(args: {
@@ -3786,8 +3766,7 @@ async function pendingLaunchCommitResult(
     readonly persisted: ReturnType<typeof pendingAtomicLaunchResult>;
     readonly publicationReturnedAt: number;
   }>,
-  packages: AdmittedRunLaunch["packages"],
-): Promise<AtomicLaunchCommitAttempt> {
+): Promise<AtomicLaunchCommitResult> {
   const { persisted, publicationReturnedAt } = await publication;
   args.admissionTiming.callbackFinished();
   if (persisted.kind === "queue-first-claim-lost") {
@@ -3796,7 +3775,7 @@ async function pendingLaunchCommitResult(
   return {
     kind: "pending",
     marketingRewardEventId: persisted.marketingRewardEventId,
-    admittedLaunch: admittedRunLaunch(args, persisted, packages),
+    admittedLaunch: admittedRunLaunch(args, persisted),
     publicationReturnedAt,
   };
 }
@@ -3804,11 +3783,9 @@ async function pendingLaunchCommitResult(
 function admittedRunLaunch(
   args: PreparedThreadLaunchCommit,
   persisted: PersistedAtomicLaunchRows,
-  packages: AdmittedRunLaunch["packages"],
 ): AdmittedRunLaunch {
   const { rowsArgs: rows, metadata } = args.persistence.rows;
   return {
-    packages,
     run: {
       id: args.identity.runId,
       isFirstRun: persisted.isFirstRun,
@@ -3828,7 +3805,7 @@ function admittedRunLaunch(
       reasoningEffort: metadata.reasoningEffort,
       codexServiceTier: metadata.codexServiceTier,
     },
-    memoryMounts: args.launch.memoryMounts,
+    memoryMount: args.launch.memoryMount,
     facts: {
       ...args.launch.facts,
       connectorEnvironment: {
@@ -4121,19 +4098,8 @@ const commitThreadLaunch$ = command(
     args: PreparedThreadLaunchCommit,
     claim: PendingLaunchClaim,
     signal: AbortSignal,
-  ): Promise<AtomicLaunchCommitAttempt> => {
+  ): Promise<AtomicLaunchCommitResult> => {
     signal.throwIfAborted();
-    const { officialWorkflowBundles } = args.launch.facts;
-    if (
-      officialWorkflowBundles.some(({ mountPath }) => {
-        return args.launch.runStorageMounts.some((mount) => {
-          return mount.mountPath === mountPath;
-        });
-      })
-    ) {
-      return conflict(OFFICIAL_WORKFLOW_RUN_ADMISSION_MESSAGE);
-    }
-    const packages = prepareDirectRunPackages(args.launch);
     const db = set(writeDb$);
     const { admissionTiming, timing } = args;
     admissionTiming.transactionStarted();
@@ -4193,16 +4159,6 @@ const commitThreadLaunch$ = command(
     })().finally(() => {
       admissionTiming.recordLeafElapsed("persistence", leafStartedAt);
     });
-    const bundleCache = set(
-      readExecutionBundleCache$,
-      packages.bundles.hashes,
-      signal,
-    );
-    // Own the speculative read even if the lease is lost or the pick aborts.
-    waitUntil(bundleCache);
-    return await pendingLaunchCommitResult(args, publication, {
-      ...packages,
-      cache: bundleCache,
-    });
+    return await pendingLaunchCommitResult(args, publication);
   },
 );

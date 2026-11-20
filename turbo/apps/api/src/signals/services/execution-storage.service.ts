@@ -66,72 +66,56 @@ export function buildMemberMemoryMount(
   };
 }
 
-interface ExecutionStorage {
-  readonly storageMounts: StoredStorageMountEntry[];
+interface ExecutionMemoryMount {
+  readonly mount: StoredStorageMountEntry;
   readonly cacheWrites: readonly StoragePresignedUrlCacheWrite[];
 }
 
 /** Sign the accepted archive at dispatch time using its captured cache row. */
-export const prepareAcceptedExecutionStorage$ = command(
+export const prepareExecutionMemoryMount$ = command(
   async (
     { get },
-    mounts: readonly AcceptedMemoryMount[],
+    memory: AcceptedMemoryMount,
     signal: AbortSignal,
-  ): Promise<ExecutionStorage> => {
+  ): Promise<ExecutionMemoryMount> => {
     signal.throwIfAborted();
-    const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
-    const selected = mounts.map(({ mount, s3Key, archiveSize, fileCount }) => {
-      const identity = {
-        orgId: mount.orgId,
-        userId: mount.userId,
-        storageId: mount.storageId,
-        versionId: mount.version,
-        name: mount.name,
-        mountPath: mount.mountPath,
-        writeback: mount.writeback,
-        missingRootPolicy: mount.missingRootPolicy,
-      };
-      const request =
-        fileCount === 0
-          ? undefined
-          : readOnlyStorageSigningRequest({
-              bucket,
-              objectKey: `${s3Key}/archive.tar.gz`,
-              storageVersionId: mount.version,
-              resolvedOrgId: mount.orgId,
-            });
-      return { identity, archiveSize, request };
+    const { mount, s3Key, archiveSize, fileCount, archiveCache } = memory;
+    const identity = {
+      orgId: mount.orgId,
+      userId: mount.userId,
+      storageId: mount.storageId,
+      versionId: mount.version,
+      name: mount.name,
+      mountPath: mount.mountPath,
+      writeback: mount.writeback,
+      missingRootPolicy: mount.missingRootPolicy,
+    };
+    if (fileCount === 0) {
+      return { mount: { ...identity, empty: true }, cacheWrites: [] };
+    }
+    const request = readOnlyStorageSigningRequest({
+      bucket: env("R2_USER_STORAGES_BUCKET_NAME"),
+      objectKey: `${s3Key}/archive.tar.gz`,
+      storageVersionId: mount.version,
+      resolvedOrgId: mount.orgId,
     });
-    const readOnlyRequests = selected.flatMap(({ request }) => {
-      return request ? [request] : [];
+    const signed = await signStoragePresignedUrls({
+      requests: [request],
+      rows: archiveCache ? [archiveCache] : [],
+      sign: get(publicPresignedGetUrlSigner$),
     });
-    const signed =
-      readOnlyRequests.length === 0
-        ? undefined
-        : await signStoragePresignedUrls({
-            requests: readOnlyRequests,
-            rows: mounts.flatMap(({ archiveCache }) => {
-              return archiveCache ? [archiveCache] : [];
-            }),
-            sign: get(publicPresignedGetUrlSigner$),
-          });
     signal.throwIfAborted();
+    const archiveUrl = signed.results.get(request.cacheKey)?.url;
+    if (!archiveUrl) {
+      throw new Error("Prepared Memory archive URL is missing");
+    }
     return {
-      storageMounts: selected.map(({ identity, request, archiveSize }) => {
-        if (!request) {
-          return { ...identity, empty: true as const };
-        }
-        const archiveUrl = signed?.results.get(request.cacheKey)?.url;
-        if (!archiveUrl) {
-          throw new Error("Prepared storage URL is missing");
-        }
-        return {
-          ...identity,
-          archiveUrl,
-          ...(archiveSize > 0 ? { archiveSize } : {}),
-        };
-      }),
-      cacheWrites: signed?.freshValues ?? [],
+      mount: {
+        ...identity,
+        archiveUrl,
+        ...(archiveSize > 0 ? { archiveSize } : {}),
+      },
+      cacheWrites: signed.freshValues,
     };
   },
 );

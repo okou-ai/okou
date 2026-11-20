@@ -31,7 +31,10 @@ import {
   dispatchPreparedRun$,
   type DirectRunDispatchResult,
 } from "./direct-run-dispatch.service";
-import { publishDirectRunCache$ } from "./direct-run-preparation.service";
+import {
+  publishDirectRunCache$,
+  readExecutionBundleCache$,
+} from "./direct-run-preparation.service";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import {
   CHAT_THREAD_LEASE_MS,
@@ -455,7 +458,26 @@ function createPickObjects() {
       set(preloadAgentRunContext$, claimed.context, signal);
       waitUntil(settle(get(claimed.inputResources$)));
       signal.throwIfAborted();
-      const pending = await set(claimed.admitRun$, signal);
+      const admission = await (async () => {
+        const prepared = await set(claimed.prepareRunAdmission$, signal);
+        if (!prepared) {
+          return null;
+        }
+        const commit = set(claimed.admitRun$, prepared.context, signal);
+        const cache = set(
+          readExecutionBundleCache$,
+          prepared.packages.bundles.hashes,
+          signal,
+        );
+        // The pick owns the in-flight cache read even when admission loses.
+        waitUntil(cache);
+        const pending = await commit;
+        signal.throwIfAborted();
+        return pending
+          ? { pending, packages: { ...prepared.packages, cache } }
+          : null;
+      })();
+      signal.throwIfAborted();
       // Admission can append a claim or a public rejection. This pick owns
       // publication for its captured thread, independently of Runner dispatch.
       waitUntil(
@@ -469,10 +491,11 @@ function createPickObjects() {
           signal,
         ),
       );
-      if (pending === null) {
+      if (!admission) {
         await set(releaseClaim$, claim, signal);
         return { kind: "none" };
       }
+      const { pending, packages } = admission;
       if (pending.marketingRewardEventId) {
         waitUntil(
           set(
@@ -490,7 +513,12 @@ function createPickObjects() {
       const [, preparation] = await joinAllInOrder(
         [
           set(claimed.publishPendingRun$, pending, signal),
-          set(prepareDirectRunDispatch$, pending.admittedLaunch, signal),
+          set(
+            prepareDirectRunDispatch$,
+            pending.admittedLaunch,
+            packages,
+            signal,
+          ),
         ],
         signal,
       );
@@ -498,20 +526,10 @@ function createPickObjects() {
       if (preparation.kind === "failed") {
         dispatched = preparation.result;
       } else {
-        const { input } = preparation.delivery;
         // Signed URLs are already in the payload; optional reuse publication
         // must not hold up ownership, intake or the pick's terminal effects.
         waitUntil(
-          set(
-            publishDirectRunCache$,
-            {
-              runId: input.run.id,
-              runnerGroup: input.runnerGroup,
-              profile: input.profile,
-              ...preparation.cachePublication,
-            },
-            signal,
-          ),
+          set(publishDirectRunCache$, preparation.cachePublication, signal),
         );
         dispatched = await set(
           dispatchPreparedRun$,

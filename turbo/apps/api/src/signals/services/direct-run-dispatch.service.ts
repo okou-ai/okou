@@ -20,6 +20,7 @@ import {
   prepareDirectRun$,
   type AdmittedRunLaunch,
   type DirectRunCachePublication,
+  type PrefetchedDirectRunPackages,
 } from "./direct-run-preparation.service";
 import {
   selectDirectRunOwner$,
@@ -61,12 +62,13 @@ export const prepareDirectRunDispatch$ = command(
   async (
     { set },
     input: AdmittedRunLaunch,
+    packages: PrefetchedDirectRunPackages,
     signal: AbortSignal,
   ): Promise<DirectRunDispatchPreparation> => {
     signal.throwIfAborted();
     const prepared = await settleIncludingAbort(async () => {
       const [publication, placement] = await joinAll([
-        set(prepareDirectRun$, input, signal),
+        set(prepareDirectRun$, input, packages, signal),
         (async () => {
           const candidates = await set(readDirectRunCandidates$, input, signal);
           return { candidates, candidatesReadyAt: monotonicNow() };

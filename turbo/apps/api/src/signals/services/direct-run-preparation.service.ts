@@ -36,11 +36,8 @@ import {
 /** Receipt from durable Thread Run admission. */
 export interface AdmittedRunLaunch {
   readonly run: ExecutionPublicationRun;
-  readonly memoryMounts: readonly AcceptedMemoryMount[];
+  readonly memoryMount: AcceptedMemoryMount;
   readonly facts: AdmittedExecutionFacts;
-  readonly packages: ReturnType<typeof prepareDirectRunPackages> & {
-    readonly cache: ReturnType<typeof readExecutionBundleCache$.write>;
-  };
   readonly runnerGroup: string;
   readonly profile: string;
   readonly reuseKey: string;
@@ -48,7 +45,16 @@ export interface AdmittedRunLaunch {
   readonly predecessorRunId: string | null;
 }
 
+export type PrefetchedDirectRunPackages = ReturnType<
+  typeof prepareDirectRunPackages
+> & {
+  readonly cache: ReturnType<typeof readExecutionBundleCache$.write>;
+};
+
 export interface DirectRunCachePublication {
+  readonly runId: string;
+  readonly runnerGroup: string;
+  readonly profile: string;
   readonly cacheWrites: readonly StoragePresignedUrlCacheWrite[];
   readonly bundleCacheRead: {
     readonly startedAt: string;
@@ -62,7 +68,7 @@ const bundleCacheRowSchema = object({
 });
 
 export function prepareDirectRunPackages(
-  input: Pick<AdmittedRunLaunch, "facts" | "memoryMounts">,
+  input: Pick<AdmittedRunLaunch, "facts" | "memoryMount">,
 ) {
   const context = executionPackages(input);
   const bundles = selectExecutionContentBundles(
@@ -97,9 +103,14 @@ export const readExecutionBundleCache$ = command(
 );
 
 export const prepareDirectRun$ = command(
-  async ({ set }, input: AdmittedRunLaunch, signal: AbortSignal) => {
+  async (
+    { set },
+    input: AdmittedRunLaunch,
+    packages: PrefetchedDirectRunPackages,
+    signal: AbortSignal,
+  ) => {
     signal.throwIfAborted();
-    const { context: packageContext, bundles, cache } = input.packages;
+    const { context: packageContext, bundles, cache } = packages;
     const [runtime, publication] = await joinAll([
       (async () => {
         const prepared = await set(
@@ -148,6 +159,9 @@ export const prepareDirectRun$ = command(
     });
     return {
       cachePublication: {
+        runId: run.id,
+        runnerGroup: input.runnerGroup,
+        profile: input.profile,
         cacheWrites: [
           ...prepared.storageCacheWrites,
           ...publication.signed.cacheWrites,
@@ -178,15 +192,7 @@ export const prepareDirectRun$ = command(
 
 /** The pick entry owns this optional publication independently of delivery. */
 export const publishDirectRunCache$ = command(
-  async (
-    { set },
-    args: DirectRunCachePublication & {
-      readonly runId: string;
-      readonly runnerGroup: string;
-      readonly profile: string;
-    },
-    signal: AbortSignal,
-  ) => {
+  async ({ set }, args: DirectRunCachePublication, signal: AbortSignal) => {
     const publication = await set(
       persistStoragePresignedUrls$,
       args.cacheWrites,
