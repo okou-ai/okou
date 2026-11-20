@@ -67,7 +67,7 @@ def validate(directory):
         prep = core[0]["evidence"]["preparation"]
         new, new_backing = identity(prep["sandbox_id"]), identity(prep["backing_generation"])
         identity(prep["operation_id"])
-        if any((e["sandbox_id"], e["backing_generation"]) != (old, old_backing) for e in events):
+        if report.witness_identity_changed(events, (old, old_backing)):
             raise ValueError("dual-history witnesses lost the original owner")
         # Raw data restoration precedes the next publication; both added saving
         # producers finish before the unchanged C6 final ownership joins.

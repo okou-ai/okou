@@ -59,8 +59,8 @@ def validate(directory):
         report.validate_witness_phases(
             events, PHASES, "missing duplicate or unordered returned Guest phases",
         )
-        identity = terminal[1]["sandbox_id"], terminal[1]["backing_generation"]
-        if any((e["sandbox_id"], e["backing_generation"]) != identity for e in events):
+        identity = report.witness_identity(terminal[1])
+        if report.witness_identity_changed(events, identity):
             raise ValueError("returned Guest lost original identity")
         create.ordered([terminal[1]["monotonic_ns"], *(e["monotonic_ns"] for e in events[:-1]), terminal[2]["monotonic_ns"]])
         create.ordered([terminal[4]["monotonic_ns"], events[-1]["monotonic_ns"], terminal[-1]["monotonic_ns"]])
