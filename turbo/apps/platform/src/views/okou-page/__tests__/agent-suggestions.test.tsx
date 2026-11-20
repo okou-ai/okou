@@ -410,9 +410,12 @@ async function typeDirection(
 }
 
 async function sendFrom(composer: HTMLElement): Promise<void> {
-  const send = control("button", "Send", composer);
-  await waitFor(() => {
-    expect(send).toBeEnabled();
+  // A disabled Send renders inside a tooltip wrapper, so enabling it mounts a
+  // new button. Query it each time and click the enabled element.
+  const send = await waitFor(() => {
+    const button = control("button", "Send", composer);
+    expect(button).toBeEnabled();
+    return button;
   });
   click(send);
 }

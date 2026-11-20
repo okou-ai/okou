@@ -263,9 +263,10 @@ test("A successful send dismisses menu discovery in an existing conversation", a
   await selectAddCapability(editor, user, "Research");
   await expectCapability(CAPABILITIES[1]);
   await expectDraftFocus(editor, prompt);
-  const send = control("button", "Send", composerCard(editor));
-  await waitFor(() => {
-    expect(send).toBeEnabled();
+  const send = await waitFor(() => {
+    const button = control("button", "Send", composerCard(editor));
+    expect(button).toBeEnabled();
+    return button;
   });
   click(send);
   await waitFor(() => {
