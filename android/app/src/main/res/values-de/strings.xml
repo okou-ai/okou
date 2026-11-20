@@ -130,12 +130,9 @@
     <string name="updates_downloading">Update läuft · %1$s</string>
     <string name="updates_new_version">Neue Version verfügbar</string>
     <string name="updates_package_size">Paket: %1$s</string>
-    <string name="updates_background">Das Update läuft nach dem Schließen weiter.</string>
     <string name="updates_check_in_progress">Wird geprüft…</string>
-    <string name="updates_required_resume">Nach der Installation kannst du weiterarbeiten.</string>
     <string name="updates_check_failed">Prüfung fehlgeschlagen</string>
     <string name="updates_version">Neue Version: %1$s</string>
-    <string name="updates_ready_description">Das Update ist heruntergeladen und bereit zur Installation.</string>
     <string name="updates_open_settings">Einstellungen öffnen</string>
     <string name="updates_close">Schließen</string>
     <string name="updates_interrupted">Update unterbrochen</string>

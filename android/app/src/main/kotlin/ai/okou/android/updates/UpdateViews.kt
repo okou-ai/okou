@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -25,6 +26,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -67,7 +69,12 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -84,11 +91,13 @@ internal data class UpdateToolbarAction(
 private fun UpdateTransfer.Downloading.fraction(): Float =
     (downloadedBytes.toDouble() / release.size).coerceIn(0.0, 1.0).toFloat()
 
+@Composable private fun UpdateTransfer.Downloading.percent() = updatePercent(fraction())
+
 @Composable
-private fun UpdateTransfer.Downloading.percent(): String {
+private fun updatePercent(fraction: Float): String {
     val locale = LocalConfiguration.current.locales[0]
     val format = remember(locale) { NumberFormat.getPercentInstance(locale) }
-    return format.format((fraction() * 100).toInt() / 100.0)
+    return format.format((fraction * 100).toInt() / 100.0)
 }
 
 private val UpdateUiState.interrupted
@@ -264,66 +273,79 @@ private fun UpdateSheet(
         }
         val transfer = state.transfer
         val release = state.displayedRelease?.takeIf { state.available }
-        Column(
+        BoxWithConstraints(
             Modifier.fillMaxWidth()
                 .heightIn(max = windowHeight * 0.8f)
-                .padding(start = 24.dp, end = 24.dp, bottom = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(20.dp),
+                .padding(start = 24.dp, end = 24.dp, bottom = 24.dp)
         ) {
+            val actions = measureUpdateSheetActions(maxWidth)
+            val headingStyle = MaterialTheme.typography.headlineSmall
+            val titleLineHeight = with(LocalDensity.current) { headingStyle.lineHeight.toDp() }
+            val scroll = rememberScrollState()
+            val contentSpacing = 20.dp
+            val scrollWholePanel = maxHeight < actions.height + contentSpacing + titleLineHeight
             Column(
-                Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                if (scrollWholePanel) Modifier.fillMaxWidth().verticalScroll(scroll)
+                else Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(contentSpacing),
             ) {
-                Text(
-                    if (release == null) stringResource(R.string.updates_title)
-                    else stringResource(R.string.updates_target, release.version),
-                    style =
-                        MaterialTheme.typography.headlineSmall.copy(
-                            fontWeight = FontWeight.SemiBold
-                        ),
-                    modifier = Modifier.semantics { heading() },
-                )
-                if (release != null) {
-                    UpdateMetadata(state.installedVersion, release)
+                Column(
+                    if (scrollWholePanel) Modifier
+                    else Modifier.weight(1f, fill = false).verticalScroll(scroll)
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text(
+                            if (release == null) stringResource(R.string.updates_title)
+                            else stringResource(R.string.updates_target, release.version),
+                            style = headingStyle.copy(fontWeight = FontWeight.SemiBold),
+                            modifier = Modifier.semantics { heading() },
+                        )
+                        if (release != null) {
+                            UpdateMetadata(state.installedVersion, release)
+                            if (release.notes.isNotBlank()) UpdateCopy(release.notes)
+                        } else {
+                            when (state.check) {
+                                UpdateCheck.Checked ->
+                                    UpdateCopy(stringResource(R.string.updates_current))
+                                UpdateCheck.Checking ->
+                                    UpdateCopy(stringResource(R.string.updates_checking))
+                                UpdateCheck.Unknown,
+                                UpdateCheck.Failed -> Unit
+                            }
+                        }
+                    }
+                    UpdateProblemText(state, Modifier.padding(top = 16.dp))
                 }
-                when {
-                    transfer is UpdateTransfer.Downloading ->
-                        UpdateCopy(stringResource(R.string.updates_background))
-                    state.canInstall && state.problem == null ->
-                        UpdateCopy(stringResource(R.string.updates_ready_description))
-                    state.check == UpdateCheck.Checked && release == null ->
-                        UpdateCopy(stringResource(R.string.updates_current))
-                    state.check == UpdateCheck.Checking ->
-                        UpdateCopy(stringResource(R.string.updates_checking))
-                }
-                if (release != null && release.notes.isNotBlank()) UpdateCopy(release.notes)
-                UpdateProblemText(state)
-            }
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                val dismissLabel =
-                    if (
-                        transfer is UpdateTransfer.Downloading ||
-                            state.interrupted ||
-                            release == null
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(updateSheetActionGap),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    val dismissLabel =
+                        if (
+                            transfer is UpdateTransfer.Downloading ||
+                                state.interrupted ||
+                                release == null
+                        )
+                            R.string.updates_close
+                        else R.string.updates_later
+                    ActionText(
+                        stringResource(dismissLabel),
+                        close,
+                        Modifier.width(actions.dismissWidth).heightIn(min = actions.height),
                     )
-                        R.string.updates_close
-                    else R.string.updates_later
-                ActionText(stringResource(dismissLabel), close, Modifier.widthIn(min = 72.dp))
-                UpdateAction(
-                    state,
-                    check,
-                    download,
-                    install = {
-                        close()
-                        install(it)
-                    },
-                    installEnabled,
-                    Modifier.weight(1f),
-                )
+                    UpdateAction(
+                        state,
+                        check,
+                        download,
+                        install = {
+                            close()
+                            install(it)
+                        },
+                        installEnabled,
+                        Modifier.weight(1f).heightIn(min = actions.height),
+                    )
+                }
             }
         }
     }
@@ -414,8 +436,6 @@ private fun RequiredUpdateScreen(
                 Spacer(Modifier.height(24.dp))
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     UpdateProblemText(state)
-                    if (state.canInstall && state.problem == null)
-                        UpdateCopy(stringResource(R.string.updates_required_resume), muted = true)
                     UpdateAction(
                         state,
                         check,
@@ -454,35 +474,41 @@ private fun UpdateMetadata(
 }
 
 @Composable
-private fun UpdateProblemText(state: UpdateUiState) {
-    val release = state.displayedRelease
-    if (release != null && (state.available || state.required) && !state.isEligible(release)) {
-        Text(
-            stringResource(
-                if (release.minimumSdk > state.sdk) R.string.updates_android_unsupported
+private fun UpdateProblemText(state: UpdateUiState, modifier: Modifier = Modifier) {
+    val availability =
+        state.displayedRelease
+            ?.takeIf { (state.available || state.required) && !state.isEligible(it) }
+            ?.let {
+                if (it.minimumSdk > state.sdk) R.string.updates_android_unsupported
                 else R.string.updates_unavailable
-            ),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.error,
-        )
-    }
-    state.problem?.let { problem ->
-        val message =
-            when (problem) {
-                UpdateProblem.Check -> R.string.updates_error_check
-                UpdateProblem.Download -> R.string.updates_error_download
-                UpdateProblem.Integrity -> R.string.updates_error_integrity
-                UpdateProblem.Identity -> R.string.updates_error_identity
-                UpdateProblem.Storage -> R.string.updates_error_storage
-                UpdateProblem.Interrupted -> R.string.updates_error_interrupted
-                UpdateProblem.Install -> R.string.updates_error_install
             }
-        Text(
-            stringResource(message),
-            color = MaterialTheme.colorScheme.error,
-            style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-        )
+    if (availability == null && state.problem == null) return
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (availability != null) {
+            Text(
+                stringResource(availability),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
+        state.problem?.let { problem ->
+            val message =
+                when (problem) {
+                    UpdateProblem.Check -> R.string.updates_error_check
+                    UpdateProblem.Download -> R.string.updates_error_download
+                    UpdateProblem.Integrity -> R.string.updates_error_integrity
+                    UpdateProblem.Identity -> R.string.updates_error_identity
+                    UpdateProblem.Storage -> R.string.updates_error_storage
+                    UpdateProblem.Interrupted -> R.string.updates_error_interrupted
+                    UpdateProblem.Install -> R.string.updates_error_install
+                }
+            Text(
+                stringResource(message),
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+            )
+        }
     }
 }
 
@@ -509,30 +535,31 @@ private fun UpdateAction(
     val transfer = state.transfer
     val colors = MaterialTheme.colorScheme
     val shape = RoundedCornerShape(12.dp)
-    val statusColor = if (state.required) colors.onSurfaceVariant else colors.onBackground
     val checking = state.check == UpdateCheck.Checking && !state.canInstall && !state.canDownload
     if (transfer is UpdateTransfer.Downloading || checking) {
         val fraction = (transfer as? UpdateTransfer.Downloading)?.fraction()
-        val progressStyle =
-            if (state.required) updateActionLabelStyle() else MaterialTheme.typography.bodyMedium
         Box(
             modifier
-                .heightIn(min = 48.dp)
+                .heightIn(min = updateActionMinHeight)
                 .background(colors.surfaceVariant, shape)
                 .semantics {
                     progressBarRangeInfo =
                         if (fraction == null) ProgressBarRangeInfo.Indeterminate
                         else ProgressBarRangeInfo(fraction, 0f..1f)
                 }
-                .padding(horizontal = 12.dp, vertical = 6.dp),
+                .padding(
+                    horizontal = updateActionHorizontalPadding,
+                    vertical = updateActionVerticalPadding,
+                ),
             contentAlignment = Alignment.Center,
         ) {
             Text(
                 if (transfer is UpdateTransfer.Downloading)
                     stringResource(R.string.updates_downloading, transfer.percent())
                 else stringResource(R.string.updates_check_in_progress),
-                color = statusColor,
-                style = progressStyle.copy(fontFeatureSettings = "tnum"),
+                color = colors.onBackground,
+                style = updateProgressStyle(),
+                textAlign = TextAlign.Center,
             )
         }
         return
@@ -555,17 +582,20 @@ private fun UpdateAction(
         onClick = { action?.invoke() },
         enabled = action != null,
         modifier =
-            modifier.heightIn(min = 48.dp).updateFocusOutline(shape, colors.inverseOnSurface),
+            modifier
+                .heightIn(min = updateActionMinHeight)
+                .updateFocusOutline(shape, colors.inverseOnSurface),
         shape = shape,
+        contentPadding = updateActionPadding,
         colors =
             ButtonDefaults.buttonColors(
                 containerColor = colors.inverseSurface,
                 contentColor = colors.inverseOnSurface,
                 disabledContainerColor = colors.surfaceVariant,
-                disabledContentColor = statusColor,
+                disabledContentColor = colors.onSurfaceVariant,
             ),
     ) {
-        Text(stringResource(label), style = updateActionLabelStyle())
+        Text(stringResource(label), style = updateActionLabelStyle(), textAlign = TextAlign.Center)
     }
 }
 
@@ -575,17 +605,72 @@ private fun ActionText(label: String, action: () -> Unit, modifier: Modifier = M
         onClick = action,
         modifier =
             modifier
-                .heightIn(min = 48.dp)
+                .heightIn(min = updateActionMinHeight)
                 .updateFocusOutline(ButtonDefaults.shape, LocalActivityStatusColor.current),
+        contentPadding = updateActionPadding,
         colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
     ) {
-        Text(label, style = updateActionLabelStyle())
+        Text(label, style = updateActionLabelStyle(), textAlign = TextAlign.Center)
     }
 }
 
+private val updateActionMinHeight = 48.dp
+private val updateActionHorizontalPadding = 12.dp
+private val updateActionVerticalPadding = 8.dp
+private val updateSheetActionGap = 8.dp
+private val updateActionPadding =
+    PaddingValues(updateActionHorizontalPadding, updateActionVerticalPadding)
+
 @Composable
 private fun updateActionLabelStyle() =
-    MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp, fontWeight = FontWeight(550))
+    MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight(550))
+
+@Composable
+private fun updateProgressStyle() =
+    MaterialTheme.typography.bodyMedium.copy(fontFeatureSettings = "tnum")
+
+private data class UpdateSheetActionSize(val dismissWidth: Dp, val height: Dp)
+
+// Reserve room for both buttons and progress so localized wrapping cannot move the footer.
+@Composable
+private fun measureUpdateSheetActions(width: Dp): UpdateSheetActionSize {
+    val measurer = rememberTextMeasurer()
+    val dismissLabels =
+        listOf(stringResource(R.string.updates_later), stringResource(R.string.updates_close))
+    val mainLabels =
+        listOf(stringResource(R.string.updates_toolbar), stringResource(R.string.updates_ready))
+    val fullProgress = stringResource(R.string.updates_downloading, updatePercent(1f))
+    val labelStyle = updateActionLabelStyle()
+    val progressStyle = updateProgressStyle()
+    return with(LocalDensity.current) {
+        val dismissWidth =
+            (dismissLabels.maxOf {
+                    measurer.measure(it, labelStyle, softWrap = false).size.width.toDp()
+                } + updateActionHorizontalPadding * 2)
+                .coerceAtLeast(72.dp)
+                .coerceAtMost((width - updateSheetActionGap - 48.dp).coerceAtLeast(0.dp))
+        val mainWidth = width - dismissWidth - updateSheetActionGap
+        fun textHeight(label: String, style: TextStyle, slotWidth: Dp): Dp {
+            val available =
+                (slotWidth - updateActionHorizontalPadding * 2).roundToPx().coerceAtLeast(0)
+            return measurer
+                .measure(label, style, constraints = Constraints(maxWidth = available))
+                .size
+                .height
+                .toDp()
+        }
+        val textHeight =
+            maxOf(
+                dismissLabels.maxOf { textHeight(it, labelStyle, dismissWidth) },
+                mainLabels.maxOf { textHeight(it, labelStyle, mainWidth) },
+                textHeight(fullProgress, progressStyle, mainWidth),
+            )
+        UpdateSheetActionSize(
+            dismissWidth,
+            (textHeight + updateActionVerticalPadding * 2).coerceAtLeast(updateActionMinHeight),
+        )
+    }
+}
 
 @Composable
 internal fun Modifier.updateFocusOutline(shape: Shape, color: Color): Modifier {

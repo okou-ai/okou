@@ -41,7 +41,7 @@ class NativeUpdateTest {
         val app = instrumentation.targetContext.applicationContext as TestOkouApplication
         val device = UiDevice.getInstance(instrumentation)
         val gate = CompletableDeferred<Unit>()
-        val download = CompletableDeferred<File>()
+        val download = AtomicReference(CompletableDeferred<File>())
         val release =
             AndroidUpdatesRelease(
                 "99.0.0",
@@ -74,7 +74,7 @@ class NativeUpdateTest {
                         progress: (Long) -> Unit,
                     ): File {
                         progress(release.size / 2)
-                        return download.await()
+                        return download.get().await()
                     }
 
                     override fun close() = Unit
@@ -234,7 +234,7 @@ class NativeUpdateTest {
             assertNotNull(text(filter))
             check(file.parentFile!!.isDirectory || file.parentFile!!.mkdirs())
             file.writeText("verified package from the service fixture")
-            download.complete(file)
+            download.get().complete(file)
             assertTrue(
                 device.wait(
                     object : Condition<UiDevice, Boolean> {
@@ -259,8 +259,13 @@ class NativeUpdateTest {
             click(R.string.settings)
             exists(R.string.updates_ready)
             captureState("settings-ready")
+            click(R.string.updates_title)
+            assertNotNull(text(updateTarget))
+            captureState("details-ready")
+            closeDetails()
 
             val activeLocale = app.resources.configuration.locales.toLanguageTags()
+            download.set(CompletableDeferred())
             candidate.set(release.copy(version = "99.1.0"))
             owner.requireUpdate(RequiredUpdate("99.1.0"))
             exists(R.string.updates_required)
@@ -273,6 +278,9 @@ class NativeUpdateTest {
             assertEquals(activeLocale, app.resources.configuration.locales.toLanguageTags())
             assertTrue(owner.state.value.required)
             takeScreenshot().writeToTestStorage("android-update-required-restored")
+            click(R.string.updates_toolbar)
+            assertNotNull(text(progressLabel))
+            captureState("required-progress")
         } catch (error: Throwable) {
             failures += error
             try {

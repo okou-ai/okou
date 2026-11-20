@@ -14,11 +14,15 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.LocaleList
 import android.provider.Settings
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -33,8 +37,10 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 
 class UpdateRootApplication : TestOkouApplication() {
     internal val fixture =
@@ -93,6 +99,50 @@ class UpdateRootTest {
         compose.onNodeWithText("Update Okou to continue").assertExists()
         compose.onNodeWithText("Updating · 50%").assertExists()
         compose.onNodeWithText("Sign out").assertDoesNotExist()
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w240dp-h450dp")
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun detailsKeepTheSameActionBoundsWithLargeTextThroughDownloadAndReady() {
+        val originalFontScale = RuntimeEnvironment.getFontScale()
+        try {
+            RuntimeEnvironment.setFontScale(2f)
+            compose.activityRule.scenario.recreate()
+            shadowOf(app.packageManager).setCanRequestPackageInstalls(false)
+            app.fixture.heldCheck!!.complete(Unit)
+            compose.waitUntil(10_000) { app.updates.state.value.canDownload }
+            val openDetails = compose.onNodeWithText("View update")
+            openDetails.performClick()
+            val title = compose.onNodeWithText("Update to 99.0.0")
+            val update = compose.onNodeWithText("Update")
+            val titleBounds = title.assertIsDisplayed().getUnclippedBoundsInRoot()
+            val actionBounds = update.assertIsDisplayed().getUnclippedBoundsInRoot()
+            update.performSemanticsAction(SemanticsActions.OnClick)
+            compose.waitUntil(10_000) { app.fixture.progress != null }
+            app.fixture.progress!!(617)
+            val progress =
+                compose.onNode(
+                    SemanticsMatcher.expectValue(
+                        SemanticsProperties.ProgressBarRangeInfo,
+                        ProgressBarRangeInfo(0.5f, 0f..1f),
+                    )
+                )
+            assertEquals(actionBounds, progress.assertIsDisplayed().getUnclippedBoundsInRoot())
+            assertEquals(titleBounds, title.getUnclippedBoundsInRoot())
+
+            compose.onNodeWithText("Close").performSemanticsAction(SemanticsActions.OnClick)
+            compose.activityRule.scenario.onActivity { it.onWindowFocusChanged(true) }
+            finishDownload()
+            compose.onNodeWithText("Allow update installation").assertIsDisplayed()
+            compose.onNodeWithText("Later").performSemanticsAction(SemanticsActions.OnClick)
+            openDetails.performClick()
+            val ready = compose.onNodeWithText("Continue installation")
+            assertEquals(actionBounds, ready.assertIsDisplayed().getUnclippedBoundsInRoot())
+            assertEquals(titleBounds, title.getUnclippedBoundsInRoot())
+        } finally {
+            RuntimeEnvironment.setFontScale(originalFontScale)
+        }
     }
 
     @Test

@@ -130,12 +130,9 @@
     <string name="updates_downloading">更新中 · %1$s</string>
     <string name="updates_new_version">有新版本</string>
     <string name="updates_package_size">安裝套件 %1$s</string>
-    <string name="updates_background">關閉面板後，更新仍會繼續。</string>
     <string name="updates_check_in_progress">檢查中</string>
-    <string name="updates_required_resume">安裝完成後可繼續目前的工作。</string>
     <string name="updates_check_failed">檢查失敗</string>
     <string name="updates_version">新版本 %1$s</string>
-    <string name="updates_ready_description">已下載完成，可以繼續安裝。</string>
     <string name="updates_open_settings">前往設定</string>
     <string name="updates_close">關閉</string>
     <string name="updates_interrupted">更新中斷</string>

@@ -131,12 +131,9 @@
     <string name="updates_downloading">Updating · %1$s</string>
     <string name="updates_new_version">New version available</string>
     <string name="updates_package_size">Package: %1$s</string>
-    <string name="updates_background">The update continues after you close this panel.</string>
     <string name="updates_check_in_progress">Checking…</string>
-    <string name="updates_required_resume">You can resume your work after installation.</string>
     <string name="updates_check_failed">Check failed</string>
     <string name="updates_version">New version: %1$s</string>
-    <string name="updates_ready_description">The update is downloaded and ready to install.</string>
     <string name="updates_open_settings">Open Settings</string>
     <string name="updates_close">Close</string>
     <string name="updates_interrupted">Update interrupted</string>

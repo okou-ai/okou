@@ -130,12 +130,9 @@
     <string name="updates_downloading">Mise à jour · %1$s</string>
     <string name="updates_new_version">Nouvelle version disponible</string>
     <string name="updates_package_size">Paquet : %1$s</string>
-    <string name="updates_background">La mise à jour continue après la fermeture de ce panneau.</string>
     <string name="updates_check_in_progress">Recherche…</string>
-    <string name="updates_required_resume">Vous pourrez reprendre votre travail après l’installation.</string>
     <string name="updates_check_failed">Échec de la recherche</string>
     <string name="updates_version">Nouvelle version : %1$s</string>
-    <string name="updates_ready_description">La mise à jour est téléchargée et prête à être installée.</string>
     <string name="updates_open_settings">Ouvrir les paramètres</string>
     <string name="updates_close">Fermer</string>
     <string name="updates_interrupted">Mise à jour interrompue</string>

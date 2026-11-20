@@ -130,12 +130,9 @@
     <string name="updates_downloading">अपडेट हो रहा है · %1$s</string>
     <string name="updates_new_version">नया वर्शन उपलब्ध है</string>
     <string name="updates_package_size">पैकेज: %1$s</string>
-    <string name="updates_background">इस पैनल को बंद करने के बाद भी अपडेट जारी रहेगा।</string>
     <string name="updates_check_in_progress">जाँच जारी है…</string>
-    <string name="updates_required_resume">इंस्टॉल होने के बाद अपना काम जारी रख सकते हैं।</string>
     <string name="updates_check_failed">जाँच विफल रही</string>
     <string name="updates_version">नया वर्शन: %1$s</string>
-    <string name="updates_ready_description">अपडेट डाउनलोड हो गया है और इंस्टॉल करने के लिए तैयार है।</string>
     <string name="updates_open_settings">सेटिंग खोलें</string>
     <string name="updates_close">बंद करें</string>
     <string name="updates_interrupted">अपडेट रुक गया</string>

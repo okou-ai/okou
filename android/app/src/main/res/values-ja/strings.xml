@@ -130,12 +130,9 @@
     <string name="updates_downloading">更新中 · %1$s</string>
     <string name="updates_new_version">新しいバージョンがあります</string>
     <string name="updates_package_size">パッケージ %1$s</string>
-    <string name="updates_background">このパネルを閉じても更新は続きます。</string>
     <string name="updates_check_in_progress">確認中…</string>
-    <string name="updates_required_resume">インストール後、作業を再開できます。</string>
     <string name="updates_check_failed">確認できませんでした</string>
     <string name="updates_version">新しいバージョン %1$s</string>
-    <string name="updates_ready_description">ダウンロードが完了しました。インストールを続けられます。</string>
     <string name="updates_open_settings">設定を開く</string>
     <string name="updates_close">閉じる</string>
     <string name="updates_interrupted">更新が中断されました</string>

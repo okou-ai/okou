@@ -130,12 +130,9 @@
     <string name="updates_downloading">Atualizando · %1$s</string>
     <string name="updates_new_version">Nova versão disponível</string>
     <string name="updates_package_size">Pacote: %1$s</string>
-    <string name="updates_background">A atualização continua após fechar este painel.</string>
     <string name="updates_check_in_progress">Verificando…</string>
-    <string name="updates_required_resume">Você pode retomar seu trabalho após a instalação.</string>
     <string name="updates_check_failed">Falha na verificação</string>
     <string name="updates_version">Nova versão: %1$s</string>
-    <string name="updates_ready_description">A atualização foi baixada e está pronta para instalar.</string>
     <string name="updates_open_settings">Abrir Configurações</string>
     <string name="updates_close">Fechar</string>
     <string name="updates_interrupted">Atualização interrompida</string>
