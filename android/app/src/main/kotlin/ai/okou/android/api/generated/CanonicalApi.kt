@@ -150,9 +150,6 @@ internal interface CanonicalApi {
         @Query("sinceSeqId") `querySinceSeqId`: Long,
     ): Response<ProjectEvents>
 
-    @GET("/api/feature-switches")
-    suspend fun `featureSwitches`(@Header("Authorization") token: String): Response<FeatureSwitches>
-
     @POST("/api/chat/events/catch-up")
     suspend fun `historyCatchUp`(
         @Header("Authorization") token: String,

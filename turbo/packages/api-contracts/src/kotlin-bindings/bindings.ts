@@ -25,7 +25,6 @@ import { chatEventRowSchema } from "../contracts/chat-event-rows";
 import { agentsMainContract } from "../contracts/agents";
 import { projectsContract } from "../contracts/projects";
 import { projectSnapshotArchiveSchema } from "../validators/projects";
-import { featureSwitchesContract } from "../contracts/feature-switches";
 import { instructionsContract } from "../contracts/instructions";
 import { chatEventsContract } from "../contracts/chat-event-send";
 import { chatInputStatusContract } from "../contracts/chat-input-status";
@@ -79,11 +78,6 @@ const chatReadBindings = [
     name: "projectEvents",
     response: "ProjectEvents",
     route: projectsContract.events,
-  },
-  {
-    name: "featureSwitches",
-    response: "FeatureSwitches",
-    route: featureSwitchesContract.get,
   },
 ] satisfies readonly KotlinRouteBinding[];
 

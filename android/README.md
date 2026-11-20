@@ -30,8 +30,8 @@ response takes precedence and refreshes the cache. Only the server-confirmed
 workspace can open workspace content.
 
 My Okou in Settings reads and edits the signed-in user's personal Instructions
-for the selected workspace. It uses the existing `singleAgent` availability and
-canonical Instructions API without blocking chat or Appearance while loading.
+for the selected workspace through the canonical Instructions API. Loading
+Instructions leaves chat and Appearance available.
 Saves always carry the displayed base version; a concurrent Web edit preserves
 the local draft and requires explicitly loading the latest version. Clearing the
 field and saving clears Instructions. A lost save response reads the server back;
@@ -126,10 +126,10 @@ The workspace retains the confirmed checkpoint and projected timeline for the
 active conversation and up to three recent inactive conversations. A revisit
 can display that timeline before Room or network work. Catch-up uses its
 canonical cursor and cached display alone never marks the conversation read.
-Room schema v2 adds `history_scopes` (thread, authorization, canonical event format,
-paired cursor and confirmation time) and `history_events` (lossless raw event JSON,
-identity and sequence). Rebuildable v1 databases are recreated; there is no draft
-or credential migration. Snapshot replacement and tail appends commit atomically,
+Room stores thread authorization, event format, paired cursor and confirmation
+time in `history_scopes`, and lossless raw event JSON, identity and sequence in
+`history_events`. Version 2 caches upgrade in place. Rebuildable v1 databases
+are recreated. Snapshot replacement and tail appends commit atomically,
 and disk readback precedes publication when storage succeeds. A failed write keeps
 the confirmed network result available and retries it on refresh. Thread-local
 403/404 clears that history without retiring the workspace.
