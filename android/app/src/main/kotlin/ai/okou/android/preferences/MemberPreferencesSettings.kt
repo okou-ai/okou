@@ -14,7 +14,6 @@ import ai.okou.android.api.generated.UserPreferencesTheme
 import ai.okou.android.resolveDark
 import ai.okou.android.resolvePalette
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -184,7 +183,6 @@ private fun PaletteSwatch(palette: UserPreferencesColorTheme, dark: Boolean, siz
                 Brush.linearGradient(listOf(preview.scheme.primary, preview.swatchCompanion)),
                 CircleShape,
             )
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape)
     )
 }
 
