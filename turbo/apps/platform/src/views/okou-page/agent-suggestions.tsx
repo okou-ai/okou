@@ -410,7 +410,7 @@ export function AgentSuggestionCard({
           ) : null
         }
       />
-      <div className="mb-7 mt-7 flex flex-col gap-2.5">
+      <div className="mb-6 mt-5 flex flex-col gap-2.5">
         {item.content.options.map((option) => {
           return (
             <Button
