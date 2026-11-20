@@ -218,7 +218,7 @@ describe("CHAT-02: web chat send and client ids", () => {
   });
 
   it("creates a web chat run with client-provided ids", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor, defaultAgentId: agentId } = await entitledChatActor();
 
     const clientThreadId = randomUUID();
     const clientEventId = randomUUID();
@@ -373,10 +373,10 @@ describe("CHAT-02: web chat send and client ids", () => {
     );
   }, 90_000);
 
-  it("rejects unauthenticated, unknown-agent, and foreign private-agent sends", async () => {
+  it("requires authentication and a default executor for new chats", async () => {
     const unauthenticated = await chat.requestSendEvent(
       null,
-      { agentId: randomUUID(), prompt: "hello" },
+      { prompt: "hello" },
       [401],
     );
     expectApiError(unauthenticated.body);
@@ -388,28 +388,16 @@ describe("CHAT-02: web chat send and client ids", () => {
       displayName: "Private chat-send guard agent",
       visibility: "private",
     });
-
-    const unknownAgent = await chat.requestSendEvent(
+    const missingDefault = await chat.requestSendEvent(
       actor,
-      { agentId: randomUUID(), prompt: "hello" },
+      { agentId: agent.agentId, prompt: "hello" },
       [404],
     );
-    expectApiError(unknownAgent.body);
-    expect(unknownAgent.body.error.code).toBe("NOT_FOUND");
-
-    const peer = bdd.user({ orgId: actor.orgId });
-    const forbidden = await chat.requestSendEvent(
-      peer,
-      { agentId: agent.agentId, prompt: "hello" },
-      [403],
-    );
-    expectApiError(forbidden.body);
-    expect(forbidden.body.error.message).toBe(
-      "Only the private agent owner can run this agent",
-    );
+    expectApiError(missingDefault.body);
+    expect(missingDefault.body.error.code).toBe("NOT_FOUND");
   }, 30_000);
 
-  it("authorizes existing-thread sends against the thread's agent", async () => {
+  it("uses the stored executor for existing-thread sends", async () => {
     const actor = bdd.user();
     bdd.acceptAgentStorageWrites();
     const threadAgent = await bdd.createAgent(actor, {
@@ -423,8 +411,9 @@ describe("CHAT-02: web chat send and client ids", () => {
       title: "Agent mismatch thread",
     });
 
-    const mismatched = await chat.requestSendEvent(
-      actor,
+    const peer = bdd.user({ orgId: actor.orgId });
+    const denied = await chat.requestSendEvent(
+      peer,
       {
         agentId: otherAgent.agentId,
         threadId: thread.id,
@@ -432,8 +421,8 @@ describe("CHAT-02: web chat send and client ids", () => {
       },
       [404],
     );
-    expectApiError(mismatched.body);
-    expect(mismatched.body.error.message).toBe("Chat thread not found");
+    expectApiError(denied.body);
+    expect(denied.body.error.message).toBe("Chat thread not found");
     const events = await chat.listThreadEvents(actor, thread.id);
     expect(events.events).toStrictEqual([]);
 
@@ -441,13 +430,16 @@ describe("CHAT-02: web chat send and client ids", () => {
     await chat.requestSendEvent(
       actor,
       {
-        agentId: threadAgent.agentId,
+        agentId: otherAgent.agentId,
         threadId: thread.id,
         clientEventId,
-        prompt: "send through the owning agent",
+        prompt: "send through the existing thread",
       },
       [201],
     );
+    await expect(
+      chat.readThreadMetadata(actor, thread.id),
+    ).resolves.toMatchObject({ agentId: threadAgent.agentId });
     const accepted = await chat.listThreadEvents(actor, thread.id);
     expect(userMessages(accepted.events)).toContainEqual(
       expect.objectContaining({ id: clientEventId, eventType: "input.prompt" }),
@@ -751,12 +743,13 @@ describe("CHAT-02: admission without spendable credits", () => {
       const agent = await bdd.createAgent(actor, {
         displayName: "Suspended chat agent",
       });
+      const thread = await chat.createThread(actor, { agentId: agent.agentId });
       await fixture.activateWithoutCredits();
       await fixture.suspend(0);
 
       const clientEventId = randomUUID();
       const sendBody: ChatRunSendBody = {
-        agentId: agent.agentId,
+        threadId: thread.id,
         prompt: "blocked by suspended plan",
         model: null,
         clientEventId,
@@ -876,12 +869,13 @@ describe("CHAT-02: admission without spendable credits", () => {
         agentId,
         `Pending ${randomUUID()}`,
       );
+      const thread = await chat.createThread(actor, { agentId });
       const signing = holdDownloadSigning(context);
       const pendingEventId = randomUUID();
       const accepted = await chat.requestSendEvent(
         actor,
         {
-          agentId,
+          threadId: thread.id,
           clientEventId: pendingEventId,
           prompt: "never started",
         },
@@ -949,7 +943,7 @@ describe("CHAT-02: admission without spendable credits", () => {
 
 describe("CHAT-02: Okou Mail link delivery", () => {
   it("delivers a linked Gmail draft exactly once through the agent reply", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor, defaultAgentId: agentId } = await entitledChatActor();
     mockGmailConnectorOAuth({
       accessToken: "gmail-agent-reply-token",
       email: "sender@example.com",

@@ -109,7 +109,7 @@ interface AuthHeaders {
 
 type BddSendEventBody =
   | {
-      readonly agentId: string;
+      readonly agentId?: string;
       readonly prompt: string;
       readonly threadId?: string;
       readonly clientThreadId?: string;
@@ -1647,7 +1647,9 @@ export function createChatFilesBddApi(context: TestContext) {
               const selectedModel =
                 body.model === undefined ? defaultModel : body.model;
               return {
-                agentId: body.agentId,
+                ...(body.agentId === undefined
+                  ? {}
+                  : { agentId: body.agentId }),
                 prompt: body.prompt,
                 ...(body.threadId === undefined
                   ? {}

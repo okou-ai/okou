@@ -486,7 +486,7 @@ describe("CHAT-02: shared user message queue", () => {
   }, 90_000);
 
   it("persists agent-run provenance for messages sent across chat threads", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor, defaultAgentId: agentId } = await entitledChatActor();
 
     const firstTargetThread = await chat.createThread(actor, { agentId });
     const secondTargetThread = await chat.createThread(actor, { agentId });

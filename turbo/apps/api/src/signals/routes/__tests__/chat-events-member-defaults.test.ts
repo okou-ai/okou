@@ -36,11 +36,6 @@ describe("new chat event member defaults", () => {
       type: "claude-code-oauth-token",
       secret: "bdd-member-defaults-claude-token",
     });
-    const { agentId } = await bdd.createAgent(actor, {
-      displayName: "Member without saved preferences",
-      description: "Uses absent preference defaults",
-      visibility: "private",
-    });
     // The membership entry initializes memory without creating Web preferences.
     webhooks.configureClerkWebhookSecret();
     webhooks.verifyNextClerkWebhook({
@@ -62,13 +57,13 @@ describe("new chat event member defaults", () => {
     expect(preference.body.updatedAt).toBeNull();
 
     const run = await sendChatRun(actor, {
-      agentId,
       model: "claude-fable-5-1",
       prompt: "use missing member defaults",
     });
     await expect(
       chat.readThreadMetadata(actor, run.threadId),
     ).resolves.toMatchObject({
+      agentId: owner.defaultAgentId,
       modelSettings: {},
       cloudBrowserEnabled: true,
     });
@@ -78,7 +73,8 @@ describe("new chat event member defaults", () => {
   it.each([true, false])(
     "captures saved model settings and cloud browser (%s), retaining them on continuation",
     async (enabled) => {
-      const { actor, agentId } = await entitledNativeChatActor();
+      const { actor, agentId, defaultAgentId } =
+        await entitledNativeChatActor();
       await misc.updatePreferences(
         actor,
         { cloudBrowserEnabledByDefault: enabled },
@@ -102,6 +98,7 @@ describe("new chat event member defaults", () => {
       await expect(
         chat.readThreadMetadata(actor, first.threadId),
       ).resolves.toMatchObject({
+        agentId: defaultAgentId,
         modelSettings: { "claude-fable-5-1": { effort: "high" } },
         cloudBrowserEnabled: enabled,
       });
@@ -126,7 +123,6 @@ describe("new chat event member defaults", () => {
         [200],
       );
       const continued = await sendChatRun(actor, {
-        agentId,
         threadId: first.threadId,
         prompt: "keep the thread snapshot",
       });

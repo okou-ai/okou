@@ -237,7 +237,7 @@ describe("chat agent bootstrap prefetch", () => {
   });
 
   it("selects the same current Workflow from prefetch and a later independent pick", async () => {
-    const { actor, agentId } = await entitledNativeChatActor();
+    const { actor, defaultAgentId: agentId } = await entitledNativeChatActor();
     const misc = createMiscRoutesApi(context);
     const s3 = installWorkflowVolumeS3Fixture(context);
     const workflow = await misc.createWorkflow(
@@ -532,9 +532,9 @@ describe("chat agent bootstrap prefetch", () => {
   it.each(["web", "cli"] as const)(
     "preserves the queued input and claimable run through %s",
     async (entry) => {
-      const { actor, agentId } = await entitledNativeChatActor();
+      const { actor, defaultAgentId } = await entitledNativeChatActor();
       const clientEventId = randomUUID();
-      const body = { agentId, prompt: "prepare my agent", clientEventId };
+      const body = { prompt: "prepare my agent", clientEventId };
       const sent =
         entry === "web"
           ? await chat.requestSendEvent(actor, body, [201])
@@ -560,7 +560,7 @@ describe("chat agent bootstrap prefetch", () => {
       const run = await api.readRun(actor, associated.runId);
       expect(run).toMatchObject({ prompt: "prepare my agent" });
       const metadata = await chat.readThreadMetadata(actor, sent.body.threadId);
-      expect(metadata.agentId).toBe(agentId);
+      expect(metadata.agentId).toBe(defaultAgentId);
       const execution = await runExecution(associated.runId);
       expect(execution.execution.platformEnvironment).toHaveProperty(
         "OKOU_TOKEN",

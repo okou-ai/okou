@@ -127,7 +127,6 @@ import {
   chatThreadEventSequences,
   chatThreadEvents,
 } from "@okouai/db/schema/chat-thread-event";
-import { agents } from "@okouai/db/schema/agent";
 import {
   deliverQueuedPromptRejection$,
   deliverUnexpectedQueuedPromptRejection$,
@@ -308,8 +307,7 @@ function queueRejectionLeaseCte(lease: ThreadClaim | undefined): SQL {
 function queueRejectionSortCtes(eventId: string): SQL {
   return sql`thread_reserved AS (
     INSERT INTO ${chatThreadEventSequences} (user_id, org_id, last_seq_id)
-    SELECT touched.user_id,
-      (SELECT ${agents.orgId} FROM ${agents} WHERE ${eq(agents.id, sql`touched.agent_id`)}), 1
+    SELECT touched.user_id, touched.org_id, 1
     FROM touched
     ON CONFLICT (user_id, org_id) DO UPDATE
       SET last_seq_id = ${chatThreadEventSequences.lastSeqId} + 1
@@ -356,7 +354,8 @@ function queueHeadRejectionSql(args: {
       FROM assistant
       WHERE ${and(eq(chatThreads.id, args.threadId), isNotNull(chatThreads.agentId))}
       RETURNING ${chatThreads.id} AS id, ${chatThreads.userId} AS user_id,
-        ${chatThreads.agentId} AS agent_id, ${chatThreads.lastMessageAt} AS last_message_at
+        ${chatThreads.orgId} AS org_id, ${chatThreads.agentId} AS agent_id,
+        ${chatThreads.lastMessageAt} AS last_message_at
     ), ${queueRejectionSortCtes(randomUUID())}
     SELECT ${exists(sql`(SELECT 1 FROM rejected)`)} AS rejected,
       (SELECT id FROM assistant) AS "assistantEventId"`;
@@ -433,28 +432,6 @@ class QueuedPromptLaunchUnavailableError extends Error {
     super(message);
     this.name = "QueuedPromptLaunchUnavailableError";
   }
-}
-
-function bindQueuedPromptDelivery(
-  launchMaterial: QueuedLaunchMaterial,
-  agentId: string,
-): QueuedLaunchMaterial {
-  const { delivery } = launchMaterial;
-  return {
-    ...launchMaterial,
-    delivery: {
-      ...delivery,
-      ...(delivery.telegramDelivery
-        ? { telegramDelivery: { ...delivery.telegramDelivery, agentId } }
-        : {}),
-      ...(delivery.emailDelivery
-        ? { emailDelivery: { ...delivery.emailDelivery, agentId } }
-        : {}),
-      ...(delivery.agentphoneDelivery
-        ? { agentphoneDelivery: { ...delivery.agentphoneDelivery, agentId } }
-        : {}),
-    },
-  };
 }
 
 type ChatQueueRunAssembly =
@@ -1031,6 +1008,8 @@ export function createThreadClaimRunObjects(
     if (!event) {
       throw new Error("Claim has no picked event");
     }
+    if (!event.thread.agentId)
+      throw new Error("Thread delivery binding is missing");
     return {
       id: event.id,
       chatThreadId: event.chatThreadId,
@@ -1039,7 +1018,7 @@ export function createThreadClaimRunObjects(
       contextType: event.contextType,
       contextId: event.contextId,
       userId: bootstrap.userId,
-      agentId: bootstrap.agentId,
+      agentId: event.thread.agentId,
       captureNetworkBodies: event.preparation.captureNetworkBodies,
     };
   });
@@ -1106,7 +1085,7 @@ export function createThreadClaimRunObjects(
     return {
       threadId: head.chatThreadId,
       userId: bootstrap.userId,
-      agent: { id: bootstrap.agentId, orgId: bootstrap.orgId },
+      agent: { id: head.agentId, orgId: bootstrap.orgId },
       queuedMessage,
     };
   });
@@ -1256,7 +1235,7 @@ export function createThreadClaimRunObjects(
     const source = await get(promptSourceMaterial$);
     return {
       source,
-      launch: bindQueuedPromptDelivery(source, bootstrap.agentId),
+      launch: source,
     };
   });
   const runTemplates$ = threadContext.templates$;
@@ -1694,15 +1673,6 @@ export function createThreadClaimRunObjects(
     }
     return null;
   });
-  const selectedAgent$ = computed((get) => {
-    return get(threadContext.dispatchTiming$).measure(
-      "api_dispatch_pre_create_agent_load_agent",
-      "nested",
-      () => {
-        return get(bootstrap.agent$);
-      },
-    );
-  });
   const captureNetworkBodiesGate$ = computed(async (get) => {
     const head = await get(head$);
     return enforceCaptureNetworkBodiesGate(
@@ -1785,21 +1755,11 @@ export function createThreadClaimRunObjects(
   const memoryOwner = { orgId: bootstrap.orgId, userId: bootstrap.userId };
   const memoryHeadAfterInitialization$ = createMemberMemoryHead(memoryOwner);
   const authorizedRunRoute$ = computed(async (get) => {
-    const [{ authorization }, modelProvider] = await Promise.all([
-      get(authorizeIdentity$),
-      get(threadContext.modelRoute$),
-    ]);
-    if (!authorization) {
-      throw new Error("Run preparation requires an authorized Agent");
-    }
-    if (isRouteError(authorization)) {
-      return authorization;
-    }
+    const modelProvider = await get(threadContext.modelRoute$);
     if (isRouteError(modelProvider)) {
       return modelProvider;
     }
     return {
-      authorization,
       modelProvider,
       framework:
         modelProvider.piModelConfig === undefined
@@ -1892,8 +1852,7 @@ export function createThreadClaimRunObjects(
       if (isRouteError(runtime)) {
         return runtime;
       }
-      const { authorization, vars, featureSwitchContext, modelProvider } =
-        runtime;
+      const { vars, featureSwitchContext, modelProvider } = runtime;
       const catalog = await get(claimCatalog$);
       const usageError = validateModelUsage({
         catalog,
@@ -1943,7 +1902,7 @@ export function createThreadClaimRunObjects(
           launchSnapshot,
           officialWorkflowProvenance: officialWorkflowRun?.provenance,
           resolved: {
-            agentId: authorization.agentId,
+            agentId: (await get(head$)).agentId,
           },
           modelProvider: persistedModelProvider(modelProvider),
         },
@@ -2183,13 +2142,11 @@ export function createThreadClaimRunObjects(
     return { head: memory.value };
   });
   const runnerPackages$ = computed(async (get) => {
-    const [route, featureSwitchContext, officialWorkflow, automation] =
-      await Promise.all([
-        get(authorizedRunRoute$),
-        get(bootstrap.featureSwitches$),
-        get(officialWorkflow$),
-        get(isAutomation$),
-      ]);
+    const [route, officialWorkflow, automation] = await Promise.all([
+      get(authorizedRunRoute$),
+      get(officialWorkflow$),
+      get(isAutomation$),
+    ]);
     if (isRouteError(route)) {
       return route;
     }
@@ -2223,10 +2180,8 @@ export function createThreadClaimRunObjects(
       },
     );
     const selected = selectExecutionPackages(packageSources, {
-      agentInstructions: route.authorization.agentInstructions,
       skillRoot,
       protectedMountPaths: [...protectedMountPaths, ...officialMountPaths],
-      singleAgent: featureSwitchContext.personalExecution,
       ordinaryAutomation,
     });
     if ("error" in selected) {
@@ -2335,34 +2290,6 @@ export function createThreadClaimRunObjects(
       };
     },
   );
-  const authorizeIdentity$ = computed(async (get) => {
-    const identityInput = await get(identityInput$);
-    if (!identityInput) {
-      return { identityInput, authorization: undefined };
-    }
-    const agent = await get(selectedAgent$);
-    if (!agent || agent.orgId !== identityInput.owner.orgId) {
-      return { identityInput, authorization: notFound("Agent not found") };
-    }
-    if (
-      agent.visibility !== "public" &&
-      agent.owner !== identityInput.owner.userId
-    ) {
-      return {
-        identityInput,
-        authorization: agentRunsCreateForbidden(
-          "Only the private agent owner can run this agent",
-        ),
-      };
-    }
-    return {
-      identityInput,
-      authorization: {
-        agentId: agent.id,
-        agentInstructions: agent.instructionsBundle,
-      },
-    };
-  });
   const initializeRunPreparation$ = command(
     async ({ get, set }, timing: ClaimRunTiming, signal: AbortSignal) => {
       signal.throwIfAborted();
@@ -2395,7 +2322,7 @@ export function createThreadClaimRunObjects(
         }
       }
       signal.throwIfAborted();
-      const { identityInput, authorization } = await get(authorizeIdentity$);
+      const identityInput = await get(identityInput$);
       signal.throwIfAborted();
       if (!identityInput) {
         const assembly = await get(assembly$);
@@ -2411,22 +2338,6 @@ export function createThreadClaimRunObjects(
           },
           signal,
         );
-        return null;
-      }
-      if (isRouteError(authorization)) {
-        const rejection =
-          head.contextType === "automation"
-            ? {
-                userId: identityInput.owner.userId,
-                error: authorization.body.error,
-              }
-            : claimAssemblyRejection(
-                await get(assembly$),
-                head,
-                authorization.body.error,
-              );
-        signal.throwIfAborted();
-        await set(rejectChatQueueHead$, { head, rejection }, signal);
         return null;
       }
       return head;
@@ -3582,20 +3493,6 @@ function enforceCaptureNetworkBodiesGate(
     return forbidden("captureNetworkBodies is restricted to internal accounts");
   }
   return null;
-}
-
-function agentRunsCreateForbidden(
-  message: string,
-): ApiErrorResponse<403, "FORBIDDEN"> {
-  return {
-    status: 403 as const,
-    body: {
-      error: {
-        message,
-        code: "FORBIDDEN",
-      },
-    },
-  };
 }
 
 interface ThreadRunArgsInput {

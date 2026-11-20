@@ -46,6 +46,7 @@ interface BankingFixture {
 }
 
 interface BankingFixtureArgs {
+  readonly grantOnAnotherAgent?: boolean;
   readonly triggerSource?: (typeof UNATTENDED_TRIGGER_SOURCES)[number];
   readonly featureSwitchEnabled?: boolean;
   readonly bankingEnabledAtLaunch?: boolean;
@@ -248,11 +249,17 @@ async function connectBankingFixture(
   if (!accountId) {
     throw new Error("Expected a publicly connected banking account");
   }
+  const grantAgentId = args.grantOnAnotherAgent
+    ? (await createBddApi(context).createAgent(actor, {
+        displayName: "Historical authorization",
+        visibility: "private",
+      })).agentId
+    : agentId;
   await accept(
     client.saveAgentGrant({
       headers,
       body: {
-        agentId,
+        agentId: grantAgentId,
         accountIds: [accountId],
         duration: "7d",
         purpose: "Read the connected checking account",
@@ -331,8 +338,8 @@ describe("/api/banking/*", () => {
     expect(authRequestCount).toBe(0);
   });
 
-  it("lists only accounts enabled for the current agent", async () => {
-    const fixture = await connectBankingFixture();
+  it("honors another historical agent grant for the same member and filters accounts", async () => {
+    const fixture = await connectBankingFixture({ grantOnAnotherAgent: true });
     let accountsRequestHeaders: Headers | undefined;
     server.use(
       finicityAuthHandler(),

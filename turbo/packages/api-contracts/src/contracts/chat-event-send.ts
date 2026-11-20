@@ -21,8 +21,11 @@ import {
 
 const c = initContract();
 
+// Older clients still send this field. Executor selection is server-owned.
+const legacyAgentId = string().min(1).optional();
+
 export const chatNormalSendBodyShape = {
-  agentId: string().min(1),
+  agentId: legacyAgentId,
   prompt: string().min(1),
   threadId: string().optional(),
   clientThreadId: uuid().optional(),
@@ -96,7 +99,7 @@ export const chatEventsContract = c.router({
     body: union([
       chatEventNormalSendBodySchema,
       object({
-        agentId: string().min(1),
+        agentId: legacyAgentId,
         threadId: string().min(1),
         revokesEventId: string().min(1),
         clientEventId: uuid().optional(),
@@ -115,7 +118,7 @@ export const chatEventsContract = c.router({
         interruptsRunId: zNever().optional(),
       }).strict(),
       object({
-        agentId: string().min(1),
+        agentId: legacyAgentId,
         threadId: string().min(1),
         interruptsRunId: uuid().toLowerCase(),
         clientEventId: uuid().optional(),

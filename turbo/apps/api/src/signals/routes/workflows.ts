@@ -1631,7 +1631,6 @@ const runWorkflowInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     prompt,
     userMessage: createUserMessageDocument({ text: prompt }),
     hasTextContent: true,
-    agentId: agent.id,
     threadId: chatThreadId,
   };
   timing.recordElapsed(
@@ -1644,6 +1643,7 @@ const runWorkflowInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     {
       auth,
       body,
+      expectedAgentId: agent.id,
       userId: auth.userId,
       orgId: auth.orgId,
       skipThreadSortTouch: true,

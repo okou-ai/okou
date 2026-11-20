@@ -398,15 +398,27 @@ export function createRunsApi(context: TestContext) {
     },
   ) {
     const chat = createChatFilesBddApi(context);
+    let threadId = body.threadId;
+    if (threadId === undefined) {
+      const { defaultAgentId } =
+        await createBddApi(context).readOnboardingStatus(actor);
+      if (body.agentId !== defaultAgentId) {
+        // Retained-executor fixtures have an existing binding before the send.
+        const thread = await chat.createThread(actor, {
+          agentId: body.agentId,
+          model: body.model,
+        });
+        threadId = thread.id;
+      }
+    }
     const clientEventId = randomUUID();
     const sent = await chat.requestSendEvent(
       actor,
       {
-        agentId: body.agentId,
         prompt: body.prompt,
         clientEventId,
         ...(body.model === undefined ? {} : { model: body.model }),
-        ...(body.threadId === undefined ? {} : { threadId: body.threadId }),
+        ...(threadId === undefined ? {} : { threadId }),
         ...(body.captureNetworkBodies === undefined
           ? {}
           : { captureNetworkBodies: body.captureNetworkBodies }),

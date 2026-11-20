@@ -134,8 +134,11 @@ describe("CHAT-02: model-first routing", () => {
         visibility: "public",
       });
     });
+    const sourceThread = await own(() => {
+      return chat.createThread(actor, { agentId });
+    });
     const source = await sendChatRun(actor, {
-      agentId,
+      threadId: sourceThread.id,
       prompt: "delegate a non-interactive Pi turn",
       model: "claude-fable-5-1",
     });

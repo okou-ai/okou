@@ -15,12 +15,11 @@ import { proactiveWorkflowOwnerPreferenceQuery } from "./proactive-workflow-owne
 export function officialWorkflowSourcePlan(scope: {
   readonly orgId: string;
   readonly userId: string;
-  readonly agentId: string;
 }) {
   const catalog = acceptedOfficialWorkflowCatalogReadPlan();
   const preferences = proactiveWorkflowOwnerPreferenceQuery(
     scope,
-    scope.agentId,
+    workflows.agentId,
     {
       prerequisite: isNotNull(officialWorkflowCatalogReleases.id),
     },
@@ -31,7 +30,6 @@ export function officialWorkflowSourcePlan(scope: {
       eq(workflowAutomations.orgId, scope.orgId),
       eq(workflowAutomations.ownerUserId, scope.userId),
       eq(workflows.orgId, scope.orgId),
-      eq(workflows.agentId, scope.agentId),
       eq(workflows.ownerUserId, scope.userId),
       eq(workflows.visibility, "private"),
       eq(workflows.officialInstallationState, "installed"),

@@ -242,7 +242,6 @@ function createThreadConnectorSourceContext(
       chatThreadId,
       userId: bootstrap.userId,
       orgId,
-      agentId: bootstrap.agentId,
     });
   });
   const ownConnectorSources$ = createThreadConnectorSources(identity$);
@@ -251,8 +250,7 @@ function createThreadConnectorSourceContext(
     const matches =
       identity?.chatThreadId === chatThreadId &&
       identity.userId === bootstrap.userId &&
-      identity.orgId === orgId &&
-      identity.agentId === bootstrap.agentId;
+      identity.orgId === orgId;
     // A matching cached miss or failure remains authoritative. The cold source
     // is selected only for another identity, never to recheck accepted data.
     return await get(

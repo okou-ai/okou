@@ -539,7 +539,10 @@ describe("thin MCP Web adapters", () => {
   });
 
   it("reflects committed Run transitions without marking indicator or history reads as read", async () => {
-    const f = await publicChatActor(context, { stripeTransport: "http" });
+    const f = await publicChatActor(context, {
+      stripeTransport: "http",
+      useDefaultAgent: true,
+    });
     const token = mcp.authorize(f.actor);
     const runs = createRunsApi(context);
     await f.run(async () => {
@@ -846,7 +849,6 @@ describe("thin MCP Web adapters", () => {
     );
     expect(recalled.isError).not.toBeTruthy();
     const web = await mcp.web(f.token(), "/api/chat/events", "POST", {
-      agentId: f.agentId,
       threadId: args.threadId,
       revokesEventId: args.eventId,
     });

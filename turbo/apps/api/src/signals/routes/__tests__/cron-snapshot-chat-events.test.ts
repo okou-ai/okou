@@ -285,9 +285,10 @@ describe("cron snapshot chat events", () => {
     const marker = `snapshot-deletion-${randomUUID()}`;
     const threadIds: string[] = [];
     for (let index = 0; index < 2; index += 1) {
+      const thread = await chat.createThread(owner, { agentId: agent.agentId });
       const sent = await chat.requestSendEvent(
         owner,
-        { agentId: agent.agentId, model: null, prompt: marker },
+        { threadId: thread.id, model: null, prompt: marker },
         [201],
       );
       if (sent.status !== 201) {
@@ -388,15 +389,16 @@ describe("cron snapshot chat events", () => {
       `snapshot-first-${randomUUID()}`,
       `snapshot-second-${randomUUID()}`,
     ];
-    let threadId: string | undefined;
+    const { id: threadId } = await chat.createThread(owner, {
+      agentId: agent.agentId,
+    });
     let priorRows: ChatEventRow[] = [];
     let priorSeqId = 0;
     for (const marker of markers) {
       const sent = await chat.requestSendEvent(
         owner,
         {
-          agentId: agent.agentId,
-          ...(threadId === undefined ? {} : { threadId }),
+          threadId,
           model: null,
           prompt: marker,
         },
@@ -405,7 +407,7 @@ describe("cron snapshot chat events", () => {
       if (sent.status !== 201) {
         throw new Error("Expected the no-credit Auto input to be accepted");
       }
-      threadId = sent.body.threadId;
+
       await flushWaitUntilForTest();
 
       const headers = { authorization: "Bearer test-cron-secret" };

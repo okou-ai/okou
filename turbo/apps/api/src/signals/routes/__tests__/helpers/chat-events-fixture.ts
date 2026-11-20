@@ -117,7 +117,7 @@ export interface EntitledChatActor {
 }
 
 export interface ChatRunSendBody {
-  readonly agentId: string;
+  readonly agentId?: string;
   readonly prompt: string;
   readonly userMessage?: UserMessageInputDocument;
   readonly threadId?: string;
@@ -884,7 +884,7 @@ export function createChatEventsFixture(context: TestContext) {
   async function requestSendEventWithBearer(
     token: string,
     body: {
-      readonly agentId: string;
+      readonly agentId?: string;
       readonly clientEventId?: string;
       readonly clientThreadId?: string;
       readonly prompt: string;

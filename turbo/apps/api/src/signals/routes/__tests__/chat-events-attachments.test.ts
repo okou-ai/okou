@@ -309,8 +309,9 @@ describe("CHAT-02: generation templates and attachments", () => {
       ],
     };
 
+    const thread = await chat.createThread(actor, { agentId });
     const sent = await sendChatRun(actor, {
-      agentId,
+      threadId: thread.id,
       prompt: "legacy fallback",
       userMessage,
     });
@@ -388,7 +389,7 @@ describe("CHAT-02: generation templates and attachments", () => {
   }, 90_000);
 
   it("projects forwarded passages from the authoritative source title", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor, defaultAgentId: agentId } = await entitledChatActor();
 
     const source = await sendChatRun(actor, {
       agentId,
@@ -1672,11 +1673,7 @@ describe("CHAT-02: generation templates and attachments", () => {
   }, 60_000);
 
   it("rejects unknown generation template selections", async () => {
-    const actor = bdd.user();
-    bdd.acceptAgentStorageWrites();
-    const agent = await bdd.createAgent(actor, {
-      displayName: "Invalid template agent",
-    });
+    const { actor } = await entitledChatActor();
     const template = PRESENTATION_TEMPLATE_PICKER_ITEMS[0];
     if (!template) {
       throw new Error("Expected a registered presentation runbook item");
@@ -1733,7 +1730,6 @@ describe("CHAT-02: generation templates and attachments", () => {
       const rejected = await chat.requestSendEvent(
         actor,
         {
-          agentId: agent.agentId,
           prompt: "make something from a bad template",
           userMessage: userMessageWithTemplate(
             "make something from a bad template",

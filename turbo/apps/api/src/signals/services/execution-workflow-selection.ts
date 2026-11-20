@@ -69,7 +69,6 @@ export function executionPackageSourcesSql(scope: ExecutionPackageScope) {
       FROM ${workflows}
       WHERE ${and(
         eq(workflows.orgId, scope.orgId),
-        eq(workflows.agentId, scope.agentId),
         isNull(workflows.officialDefinitionName),
         or(
           eq(workflows.visibility, "public"),
@@ -124,8 +123,6 @@ export function resolveOrdinaryAutomationWorkflowName(
 export function selectExecutionPackages(
   sources: ExecutionPackageSources | null,
   input: {
-    readonly singleAgent: boolean;
-    readonly agentInstructions: ContentBundle | null;
     readonly skillRoot: string;
     readonly protectedMountPaths: readonly string[];
     readonly ordinaryAutomation: Pick<
@@ -143,7 +140,7 @@ export function selectExecutionPackages(
   };
   const requiredWorkflow = input.ordinaryAutomation?.ordinaryWorkflowName;
   const instructionsBundle = contentBundleSchema.safeParse(
-    input.singleAgent ? sources.memberInstructions : input.agentInstructions,
+    sources.memberInstructions,
   );
   if (!instructionsBundle.success) {
     return { error: "Run Instructions package is unavailable" };

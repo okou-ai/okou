@@ -2,12 +2,13 @@ import { and, eq, exists, or, type SQL } from "drizzle-orm";
 import { alias, QueryBuilder } from "drizzle-orm/pg-core";
 import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
+import { workflows } from "@okouai/db/schema/workflow";
 import { agents } from "@okouai/db/schema/agent";
 import type { ProactiveWorkflowOwner } from "./proactive-workflows-eligibility.service";
 
 export function proactiveWorkflowOwnerPreferenceQuery(
   owner: ProactiveWorkflowOwner,
-  agentId: string,
+  agentId: string | typeof workflows.agentId,
   options?: {
     readonly prerequisite?: SQL;
     readonly requirePreference?: boolean;

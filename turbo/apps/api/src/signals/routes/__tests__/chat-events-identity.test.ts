@@ -90,7 +90,7 @@ async function readThreadComputerUseHostId(
 }
 
 describe("CHAT-02: default assistant identity", () => {
-  it("keeps the default name as Okou through queued runs without renaming custom agents", async () => {
+  it("uses the fixed Okou identity on immediate, queued and historical threads", async () => {
     mockEnv("APP_URL", "https://app.okou.ai");
     const { actor } = await entitledNativeChatActor();
     bdd.acceptAgentStorageWrites();
@@ -179,14 +179,17 @@ describe("CHAT-02: default assistant identity", () => {
       displayName: "Nova",
       visibility: "private",
     });
-    const customRun = await sendChatRun(actor, {
+    const legacyThread = await chat.createThread(actor, {
       agentId: customAgent.agentId,
+    });
+    const customRun = await sendChatRun(actor, {
+      threadId: legacyThread.id,
       prompt: "keep my custom name",
     });
     const customPrompt = (await api.executionInput(customRun.runId))
       .appendSystemPrompt;
-    expect(customPrompt).toContain("Your name is Nova.");
-    expect(customPrompt).not.toContain("Your name is Okou.");
+    expect(customPrompt).not.toContain("Your name is Nova.");
+    expect(customPrompt).toContain("Your name is Okou.");
     const customExecution = await runExecution(customRun.runId);
     await expectRunAppContext({
       actor,
@@ -606,13 +609,9 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
       await run(() => {
         return api.ensurePersonalSubscriptionModel(actor);
       });
-      bdd.acceptAgentStorageWrites();
-      const agent = await run(() => {
-        return bdd.createAgent(actor, {
-          displayName: "Computer-use guard agent",
-        });
+      const { defaultAgentId: agentId } = await run(() => {
+        return api.grantProEntitlement(actor);
       });
-      const agentId = agent.agentId;
 
       const unknownHost = await run(() => {
         return chat.requestSendEvent(

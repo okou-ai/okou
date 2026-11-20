@@ -336,26 +336,18 @@ function createConnectorInputSignals(
     })();
   });
   const ownedThread$ = computed(async (get) => {
-    const [event, sources, agent] = await Promise.all([
+    const [event, sources] = await Promise.all([
       get(pickedEvent$),
       get(threadSources$),
-      get(execution.agent$),
     ]);
     const identity = sources?.identity;
-    if (
-      !event ||
-      !identity ||
-      identity.chatThreadId !== event.chatThreadId ||
-      identity.userId !== execution.userId ||
-      identity.orgId !== execution.orgId ||
-      identity.agentId !== event.thread.agentId ||
-      identity.agentId !== execution.agentId
-    ) {
-      return null;
-    }
-    return agent?.orgId === execution.orgId
-      ? { agentId: event.thread.agentId }
-      : null;
+    return Boolean(
+      event &&
+      identity &&
+      identity.chatThreadId === event.chatThreadId &&
+      identity.userId === execution.userId &&
+      identity.orgId === execution.orgId,
+    );
   });
   return {
     connectorInput$,

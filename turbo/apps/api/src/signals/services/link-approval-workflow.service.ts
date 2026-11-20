@@ -222,8 +222,8 @@ export const pollLinkApproval$ = command(
         auth,
         orgId: row.orgId,
         userId: row.userId,
+        expectedAgentId: row.agentId,
         body: {
-          agentId: row.agentId,
           threadId: row.approvalThreadId,
           clientEventId: row.id,
           chatThreadSortEventId: row.id,
