@@ -226,7 +226,7 @@ class ChatCacheStoreTest {
             .open(identity) { true }
             .use { lease ->
                 val original = checkpoint()
-                lease.save(original, 1234)
+                assertTrue(lease.save(original, 1234))
                 val newer =
                     checkpoint(
                         chatEventWire() +
@@ -238,8 +238,8 @@ class ChatCacheStoreTest {
                                 title = "New title",
                             )
                     )
-                lease.save(newer, 2345)
-                lease.save(original, 1234)
+                assertTrue(lease.save(newer, 2345))
+                assertFalse(lease.save(original, 1234))
                 assertEquals(newer, checkNotNull(lease.load()).checkpoint)
                 val rebased =
                     ChatCheckpoint(
@@ -248,7 +248,7 @@ class ChatCacheStoreTest {
                         emptyList(),
                         newer.cursor,
                     )
-                lease.save(rebased, 3456)
+                assertTrue(lease.save(rebased, 3456))
                 store.close()
                 store
                     .open(identity) { true }
