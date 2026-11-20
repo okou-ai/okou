@@ -10,6 +10,7 @@ import { after, before, test } from "node:test";
 import { createSecureContext } from "node:tls";
 import { setImmediate } from "node:timers/promises";
 import { createRunnerDispatchTransport } from "../src/runner-dispatch-transport.node.ts";
+
 let directory;
 let cert;
 let key;
@@ -127,7 +128,7 @@ async function send(transport, origin) {
 }
 
 test(
-  "adopts a pending handshake and reuses the resulting pooled socket",
+  "keeps an adopted handshake when its reserving Run aborts and reuses the socket",
   { timeout: 5000 },
   async (test) => {
     await withPeer(async (peer) => {
@@ -151,6 +152,7 @@ test(
       try {
         const post = send(transport, peer.origin);
         await connecting.promise;
+        run.abort();
         peer.releaseHandshake();
         await post;
       } finally {
@@ -165,9 +167,10 @@ test(
       assert.deepEqual(peer.bodyPorts, peer.ports);
 
       await setImmediate();
-      transport.reserve("second", peer.origin, run.signal);
+      const nextRun = new globalThis.AbortController();
+      transport.reserve("second", peer.origin, nextRun.signal);
       await send(transport, peer.origin);
-      run.abort();
+      nextRun.abort();
       assert.equal(peer.ports.length, 1);
       assert.deepEqual(peer.bodyPorts, [peer.ports[0], peer.ports[0]]);
       assert.equal(observe.mock.callCount(), 1);

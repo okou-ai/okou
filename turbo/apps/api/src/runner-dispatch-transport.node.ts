@@ -64,10 +64,7 @@ export function createRunnerDispatchTransport({
       ALPNProtocols: ["http/1.1"],
       ca,
     });
-    const lifetime = AbortSignal.any([
-      signal,
-      AbortSignal.timeout(PRECONNECTION_LIFETIME_MS),
-    ]);
+    const expiry = AbortSignal.timeout(PRECONNECTION_LIFETIME_MS);
     let ready = false;
     let claimant:
       | {
@@ -82,7 +79,8 @@ export function createRunnerDispatchTransport({
         return;
       }
       reservations.delete(origin);
-      lifetime.removeEventListener("abort", onAbort);
+      signal.removeEventListener("abort", onAbort);
+      expiry.removeEventListener("abort", onExpiry);
       const used = outcome === "ready" || outcome === "pending";
       if (used && claimant) {
         socket.off("error", onFailure);
@@ -100,7 +98,10 @@ export function createRunnerDispatchTransport({
     };
 
     const onAbort = () => {
-      return finish(signal.aborted ? "cancelled" : "expired");
+      return finish("cancelled");
+    };
+    const onExpiry = () => {
+      return finish("expired");
     };
     const onFailure = () => {
       return finish("failed");
@@ -110,6 +111,8 @@ export function createRunnerDispatchTransport({
         return false;
       }
       claimant = { options, callback, use: ready ? "ready" : "pending" };
+      // The pool now owns the handshake and may be serving a different Run.
+      signal.removeEventListener("abort", onAbort);
       if (ready) {
         // Undici calls the connector from its resume loop. Delivering a ready
         // socket inline would re-enter the loop and lose its send wake-up.
@@ -128,7 +131,8 @@ export function createRunnerDispatchTransport({
     });
     socket.once("error", onFailure);
     socket.once("close", onFailure);
-    lifetime.addEventListener("abort", onAbort, { once: true });
+    signal.addEventListener("abort", onAbort, { once: true });
+    expiry.addEventListener("abort", onExpiry, { once: true });
   }
 
   return {
