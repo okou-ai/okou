@@ -10,6 +10,7 @@
   public ai.okou.android.instructions.PersonalInstructionsDraftStore getInstructionsDrafts();
   public ai.okou.android.chat.RunControlJournalStore getRunControlJournal();
   public ai.okou.android.updates.AppUpdates getUpdates();
+  protected void startCrashReporting();
 }
 -keep,allowobfuscation class ai.okou.android.R$string {
   int appearance;

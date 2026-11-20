@@ -8,6 +8,17 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
     alias(libs.plugins.room)
+    alias(libs.plugins.sentry.android)
+}
+
+sentry {
+    ignoredBuildTypes.set(setOf("debug"))
+    autoUploadProguardMapping.set(false)
+    autoInstallation.enabled.set(false)
+    includeDependenciesReport.set(false)
+    runtimeOptimizations.enabled.set(false)
+    tracingInstrumentation.enabled.set(false)
+    telemetry.set(false)
 }
 
 val appVersion = rootProject.file("version.txt").readText().trim()
@@ -16,6 +27,11 @@ val apiOrigin = providers.gradleProperty("okou.apiOrigin").getOrElse("https://ap
 val webOrigin = providers.gradleProperty("okou.webOrigin").getOrElse("https://app.okou.ai")
 val clerkPublishableKey =
     providers.gradleProperty("okou.clerkPublishableKey").getOrElse("pk_live_Y2xlcmsub2tvdS5haSQ")
+val sentryDsn = providers.environmentVariable("SENTRY_DSN_ANDROID").getOrElse("")
+
+require(sentryDsn.matches(Regex("(https://[A-Za-z0-9]+@[A-Za-z0-9.-]+/[0-9]+)?"))) {
+    "SENTRY_DSN_ANDROID must be a public HTTPS Sentry DSN"
+}
 
 for (origin in listOf(apiOrigin, webOrigin)) {
     val uri = URI(origin)
@@ -65,8 +81,14 @@ android {
         buildConfigField("String", "CLERK_PUBLISHABLE_KEY", "\"$clerkPublishableKey\"")
     }
     buildTypes {
-        debug { applicationIdSuffix = ".debug" }
-        release { optimization { enable = true } }
+        debug {
+            applicationIdSuffix = ".debug"
+            buildConfigField("String", "SENTRY_DSN", "\"\"")
+        }
+        release {
+            optimization { enable = true }
+            buildConfigField("String", "SENTRY_DSN", "\"$sentryDsn\"")
+        }
     }
     testBuildType = if (screenshotScenarioDir == null) "release" else "debug"
     buildFeatures {
@@ -309,6 +331,7 @@ androidComponents.onVariants { variant ->
 }
 
 dependencies {
+    implementation(libs.sentry.android.core)
     implementation(libs.appcompat)
     implementation(libs.clerk.ui)
     implementation(platform(libs.compose.bom))
