@@ -400,6 +400,7 @@ function artifactDialogMetadataFromItem(params: {
   threadId: string;
 }): AttachmentArtifactMetadata {
   const connectionId = params.item.file.googleDriveConnectionId;
+  const driveStatus = params.item.file.googleDriveSync?.status;
   return {
     ...(params.item.file.artifactId
       ? { artifactId: params.item.file.artifactId }
@@ -413,10 +414,8 @@ function artifactDialogMetadataFromItem(params: {
     fileId: params.item.file.id,
     filename: params.item.file.filename,
     googleDriveAccountReady:
-      params.item.file.googleDriveSync?.status !== "disconnected" &&
-      params.item.file.googleDriveSync?.accountReady === true,
-    googleDriveDisconnected:
-      params.item.file.googleDriveSync?.status === "disconnected",
+      driveStatus !== undefined && driveStatus !== "disconnected",
+    googleDriveDisconnected: driveStatus === "disconnected",
     googleDriveRecovery:
       params.item.file.googleDriveSync?.status === "disconnected"
         ? params.item.file.googleDriveSync.recovery
