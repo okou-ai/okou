@@ -46,13 +46,12 @@ const SUGGESTION_ROW =
 
 // An option is a raised button on the card; the direction trigger stays a
 // quiet input-like row in the muted fill, the gray ramp's Linen stop that the
-// brand's Off White sits on. The option's outline is an inset ring rather
-// than a border, so it takes no width and the label keeps the 16px inset the
-// heading aligns to. The ring is 1px because that is what the hairline border
-// on the feedback buttons beside it renders at: the browser rounds a 0.5px
-// border up, but not a 0.5px box-shadow, which would draw fainter.
+// brand's Off White sits on. The option's outline is a real hairline border on
+// a pointer-transparent layer, so it rounds to device pixels exactly like the
+// feedback buttons' border beside it, yet takes no width: the label keeps the
+// 16px inset the heading aligns to.
 const SUGGESTION_OPTION =
-  "bg-card text-foreground shadow-[0_1px_2px_rgb(37_33_33/0.04)] inset-ring inset-ring-border hover:bg-card hover:shadow-surface hover:inset-ring-control-border";
+  "relative bg-card text-foreground shadow-[0_1px_2px_rgb(37_33_33/0.04)] after:pointer-events-none after:absolute after:inset-0 after:rounded-3xl after:border after:border-border hover:bg-card hover:shadow-surface hover:after:border-control-border";
 
 const SUGGESTION_DIRECTION_TRIGGER =
   "bg-muted text-muted-foreground hover:bg-muted";
