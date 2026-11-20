@@ -40,7 +40,7 @@ import { ChatComposer } from "./composer.tsx";
 // Option rows and the direction trigger share one surface. Hover lays the state
 // overlay over the nested fill, so the row darkens instead of losing its fill.
 const SUGGESTION_ROW =
-  "h-auto min-h-14 w-full justify-between gap-3 whitespace-normal rounded-2xl bg-nested-fill px-4 py-3 text-left text-base font-normal hover:bg-nested-fill [&:hover]:bg-state-hover-overlay";
+  "h-auto min-h-14 w-full justify-between gap-3 whitespace-normal rounded-3xl bg-nested-fill px-4 py-3 text-left text-base font-normal hover:bg-nested-fill [&:hover]:bg-state-hover-overlay";
 
 function SuggestionOptionContent({
   option,
@@ -256,7 +256,8 @@ function SuggestionDirection({
  * The card's own composer opens in place of the direction trigger, as an
  * accordion: the row keeps its fill and becomes a header that names the chat
  * the direction goes to, with the close control in the column the trigger's
- * icon used. The composer grows in beneath it once it is ready.
+ * icon used. The composer grows in beneath it once it is ready, keeping its
+ * standard radius; the fill around it adds its 4px inset to that radius.
  */
 function SuggestionDirectionComposer({
   direction,
@@ -280,7 +281,7 @@ function SuggestionDirectionComposer({
   return (
     <section
       aria-labelledby={headingId}
-      className="min-w-0 rounded-2xl bg-nested-fill p-1"
+      className="min-w-0 rounded-[1.75rem] bg-nested-fill p-1"
     >
       <div className="flex min-h-12 min-w-0 items-center gap-2 pr-1 pl-3">
         <h3
@@ -337,7 +338,7 @@ function SuggestionDirectionComposer({
             </p>
           ) : composer ? (
             <div
-              className="w-full min-w-0 [&_[data-slot=chat-composer-card]]:rounded-xl"
+              className="w-full min-w-0"
               data-chat-composer
             >
               <ChatComposer signals={composer} showPendingItems={false} />
@@ -523,7 +524,7 @@ function SuggestionFeedback({
             key={kind}
             type="button"
             variant="neutral"
-            className="h-auto min-h-10 gap-1.5 rounded-2xl px-3 py-2 text-sm font-normal whitespace-normal [&_svg]:text-muted-foreground"
+            className="h-auto min-h-10 gap-1.5 rounded-3xl px-3 py-2 text-sm font-normal whitespace-normal [&_svg]:text-muted-foreground"
             onClick={() => {
               detach(submitFeedback(item.id, kind, signal), Reason.DomCallback);
             }}
