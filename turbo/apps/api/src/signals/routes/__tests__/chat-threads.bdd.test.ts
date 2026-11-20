@@ -4355,7 +4355,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     10_000,
   );
 
-  it("retains bounded folder lookup failure diagnostics without private provider content", async () => {
+  it("retains bounded Google Drive failure diagnostics without private provider content", async () => {
     const fixture = await publicOfficeConversionSource(
       docsImportFixture(),
       "docx",
@@ -4532,6 +4532,98 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       expect(lookup.queries, scenario.name).toHaveLength(afterRefresh ? 2 : 1);
       expect(upload.metadata, scenario.name).toHaveLength(0);
       expect(upload.bodies, scenario.name).toHaveLength(0);
+    }
+
+    for (const phase of ["upload_session", "upload_content"] as const) {
+      const oauth = mockGoogleDriveConnectorOAuth();
+      const upload = mockGoogleDriveArtifactUpload(
+        { id: "unexpected", name: "report" },
+        phase === "upload_session"
+          ? {
+              sessionResponse: () => {
+                return HttpResponse.json(
+                  {
+                    error: {
+                      message: `private provider response ${secret}`,
+                      errors: [
+                        { reason: "insufficientPermissions", location: secret },
+                      ],
+                      details: [
+                        {
+                          reason: "ACCESS_TOKEN_SCOPE_INSUFFICIENT",
+                          metadata: {
+                            url: `https://drive.google.com/${secret}?token=${secret}`,
+                          },
+                        },
+                      ],
+                    },
+                  },
+                  { status: 403 },
+                );
+              },
+            }
+          : {
+              contentResponse: () => {
+                return HttpResponse.json(
+                  {
+                    error: {
+                      message: `private provider response ${secret}`,
+                      errors: [
+                        { reason: "insufficientPermissions", location: secret },
+                      ],
+                      details: [
+                        {
+                          reason: "ACCESS_TOKEN_SCOPE_INSUFFICIENT",
+                          metadata: {
+                            url: `https://drive.google.com/${secret}?token=${secret}`,
+                          },
+                        },
+                      ],
+                    },
+                  },
+                  { status: 403 },
+                );
+              },
+            },
+      );
+      const before = output.mock.calls.length;
+      const response = await fixture.upload("original", [400]);
+      expect(response.status).toBe(400);
+      expect(response.body).toStrictEqual({
+        error: {
+          code: "BAD_REQUEST",
+          message: "Google Drive upload failed with HTTP 403",
+        },
+      });
+      const calls = output.mock.calls.slice(before);
+      const records = calls.filter(([message]) => {
+        return (
+          typeof message === "string" &&
+          message.endsWith("Google Drive artifact upload failed")
+        );
+      });
+      expect(records).toStrictEqual([
+        [
+          expect.stringContaining("[WARN]"),
+          {
+            operation: "artifact_upload",
+            phase,
+            providerStatus: 403,
+            providerReasons: [
+              "insufficientPermissions",
+              "ACCESS_TOKEN_SCOPE_INSUFFICIENT",
+            ],
+            attempt: "initial",
+          },
+        ],
+      ]);
+      const serialized = JSON.stringify(calls);
+      for (const privateValue of [secret, "private provider response"]) {
+        expect(serialized).not.toContain(privateValue);
+      }
+      expect(oauth.refreshBodies).toHaveLength(0);
+      expect(upload.metadata).toHaveLength(1);
+      expect(upload.bodies).toHaveLength(phase === "upload_content" ? 1 : 0);
     }
   }, 120_000);
 
