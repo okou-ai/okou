@@ -10,6 +10,25 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.95.7](https://github.com/okou-ai/okou/compare/api-v2.95.6...api-v2.95.7) (2026-11-20)
+
+
+### Bug Fixes
+
+* **db:** drop retired agent connector access storage ([#49382](https://github.com/okou-ai/okou/issues/49382)) ([1705898](https://github.com/okou-ai/okou/commit/1705898f6c9c9bf65db78be502dc3ccf5a17a6ab))
+
+
+### Refactoring
+
+* **api:** simplify queued prompt timing and routing ([#49391](https://github.com/okou-ai/okou/issues/49391)) ([e647058](https://github.com/okou-ai/okou/commit/e647058478c46b17bb46e55860054d48590ec706))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/db bumped to 2.54.1
+
 ## [2.95.6](https://github.com/okou-ai/okou/compare/api-v2.95.5...api-v2.95.6) (2026-11-20)
 
 
