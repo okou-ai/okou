@@ -270,8 +270,11 @@ impl AppServerState {
         });
     }
 
-    fn current_thread(&self, requested_thread_id: &str) -> Result<&AppServerThread, &str> {
-        let Some(current_thread) = &self.current_thread else {
+    fn current_thread_mut<'a>(
+        slot: &'a mut Option<AppServerThread>,
+        requested_thread_id: &str,
+    ) -> Result<&'a mut AppServerThread, &'static str> {
+        let Some(current_thread) = slot.as_mut() else {
             return Err("no active thread");
         };
         if requested_thread_id != current_thread.protocol_thread_id {

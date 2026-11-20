@@ -1,3 +1,4 @@
+use super::AppServerThread;
 use crate::session;
 use chrono::{DateTime, Utc};
 use serde_json::{Value, json};
@@ -6,21 +7,11 @@ use uuid::Uuid;
 
 pub(super) const MOCK_CODEX_SESSION_TIMESTAMP_ENV: &str = "MOCK_CODEX_SESSION_TIMESTAMP";
 
-pub(super) struct InputEventContext<'a> {
-    pub(super) artifact_thread_id: &'a str,
-    pub(super) thread_id: &'a str,
-    pub(super) turn_id: &'a str,
-    pub(super) kind: &'a str,
-    pub(super) thread_request_has_runtime_workspace_roots: bool,
-    pub(super) thread_request_excludes_turns: bool,
-    pub(super) thread_request_model: Option<&'a str>,
-    pub(super) thread_request_model_provider: Option<&'a str>,
-    pub(super) rollout_timestamp: &'a DateTime<Utc>,
-    pub(super) turn_params: &'a Value,
-}
-
 pub(super) fn persist_input_events(
-    context: &InputEventContext<'_>,
+    thread: &AppServerThread,
+    turn_id: &str,
+    kind: &str,
+    turn_params: &Value,
     inputs: &[String],
 ) -> io::Result<()> {
     let mut events = inputs
@@ -28,21 +19,21 @@ pub(super) fn persist_input_events(
         .map(|text| {
             json!({
                 "type": "mock.app_server.input",
-                "kind": context.kind,
-                "thread_id": context.thread_id,
-                "turn_id": context.turn_id,
+                "kind": kind,
+                "thread_id": thread.protocol_thread_id.as_str(),
+                "turn_id": turn_id,
                 "text": text,
-                "thread_request_has_runtime_workspace_roots": context.thread_request_has_runtime_workspace_roots,
-                "thread_request_excludes_turns": context.thread_request_excludes_turns,
-                "thread_request_model": context.thread_request_model,
-                "thread_request_model_provider": context.thread_request_model_provider,
-                "turn_request_has_runtime_workspace_roots": context.turn_params.get("runtimeWorkspaceRoots").is_some(),
-                "turn_request_cwd": context.turn_params.get("cwd"),
-                "turn_request_effort": context.turn_params.get("effort"),
-                "turn_request_approval_policy": context.turn_params.get("approvalPolicy"),
-                "turn_request_approvals_reviewer": context.turn_params.get("approvalsReviewer"),
-                "turn_request_sandbox_policy": context.turn_params.get("sandboxPolicy"),
-                "turn_request_client_user_message_id": context.turn_params.get("clientUserMessageId"),
+                "thread_request_has_runtime_workspace_roots": thread.thread_request_has_runtime_workspace_roots,
+                "thread_request_excludes_turns": thread.thread_request_excludes_turns,
+                "thread_request_model": thread.thread_request_model.as_deref(),
+                "thread_request_model_provider": thread.thread_request_model_provider.as_deref(),
+                "turn_request_has_runtime_workspace_roots": turn_params.get("runtimeWorkspaceRoots").is_some(),
+                "turn_request_cwd": turn_params.get("cwd"),
+                "turn_request_effort": turn_params.get("effort"),
+                "turn_request_approval_policy": turn_params.get("approvalPolicy"),
+                "turn_request_approvals_reviewer": turn_params.get("approvalsReviewer"),
+                "turn_request_sandbox_policy": turn_params.get("sandboxPolicy"),
+                "turn_request_client_user_message_id": turn_params.get("clientUserMessageId"),
                 "child_env_home": std::env::var("HOME").ok(),
                 "child_env_api_url": std::env::var(guest_contracts::env::CANONICAL_API_URL_ENV).ok(),
                 "child_env_custom_user_env": std::env::var("CUSTOM_USER_ENV").ok(),
@@ -68,8 +59,8 @@ pub(super) fn persist_input_events(
     let home = session::codex_home();
     session::persist_resume_session(
         &home,
-        context.rollout_timestamp.to_owned(),
-        context.artifact_thread_id,
+        thread.rollout_timestamp,
+        &thread.artifact_thread_id,
         &events,
     )
 }
