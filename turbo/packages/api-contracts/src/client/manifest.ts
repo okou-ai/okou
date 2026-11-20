@@ -597,10 +597,6 @@ export const clientDescriptorManifest = [
     contracts: ["presentationTemplatesContract"],
   },
   {
-    module: "proactive-nightly",
-    contracts: ["proactiveLearningContract"],
-  },
-  {
     module: "proactive-suggestions",
     contracts: ["proactiveSuggestionsContract"],
   },

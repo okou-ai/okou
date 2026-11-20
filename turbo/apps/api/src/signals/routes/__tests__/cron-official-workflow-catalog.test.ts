@@ -30,10 +30,7 @@ import {
   PI_SKILLS_ROOT,
   type ExecutionContext,
 } from "@okouai/api-contracts/contracts/runners";
-import {
-  proactiveSuggestionsRoutes,
-  proactiveLearningRoutes,
-} from "../proactive-preferences";
+import { proactiveSuggestionsRoutes } from "../proactive-preferences";
 import { workflowAutomationsRoutes } from "../workflow-automations";
 import { workflowsRoutes } from "../workflows";
 import { flushWaitUntilForTest } from "../../context/wait-until";
@@ -835,7 +832,6 @@ test.each(scenarios)(
         ...cronOfficialWorkflowCatalogRoutes,
         ...cronExecuteWorkflowAutomationsRoutes,
         ...proactiveSuggestionsRoutes,
-        ...proactiveLearningRoutes,
         ...morningBriefPreferenceRoutes,
         ...workflowAutomationsRoutes,
         ...workflowsRoutes,

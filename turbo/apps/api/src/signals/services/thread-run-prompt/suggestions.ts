@@ -2,7 +2,7 @@ import { computed, type Computed } from "ccstate";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { PROACTIVE_SUGGESTIONS_DEFINITION_NAME } from "@okouai/api-contracts/contracts/proactive-suggestions";
-import { PROACTIVE_LEARNING_DEFINITION_NAME } from "@okouai/api-contracts/contracts/proactive-nightly";
+import { PROACTIVE_LEARNING_DEFINITION_NAME } from "@okouai/api-contracts/contracts/proactive";
 import { isMorningBriefDefinitionName } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { settle } from "../../utils";
 import type { AgentRunContextSignals } from "../agent-run-context.signals";

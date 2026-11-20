@@ -54,7 +54,7 @@ import {
   hasValidSuggestionConsumeToken,
   withSuggestionConsumeToken,
 } from "./agent-suggestion-consumption-token";
-import { PROACTIVE_LEARNING_DEFINITION_NAME } from "@okouai/api-contracts/contracts/proactive-nightly";
+import { PROACTIVE_LEARNING_DEFINITION_NAME } from "@okouai/api-contracts/contracts/proactive";
 import { readFeedSources$ } from "./feed-sources.service";
 
 interface Owner {

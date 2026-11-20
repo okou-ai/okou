@@ -8,7 +8,7 @@ import { RETIRED_PROACTIVE_DEFINITION_NAMES } from "../services/proactive-workfl
 import {
   PROACTIVE_LEARNING_DEFINITION_NAME,
   PROACTIVE_LEARNING_BLUEPRINT_KEY,
-} from "@okouai/api-contracts/contracts/proactive-nightly";
+} from "@okouai/api-contracts/contracts/proactive";
 import { PROACTIVE_LEARNING_INSTRUCTION } from "../services/proactive-nightly-instructions";
 import {
   OFFICIAL_WORKFLOW_CATALOG_PUBLICATION_SCHEMA_VERSION,

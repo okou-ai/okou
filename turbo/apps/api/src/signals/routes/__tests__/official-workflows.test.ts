@@ -18,7 +18,6 @@ import {
 } from "@okouai/api-contracts/contracts/workflows";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
-import { proactiveLearningContract } from "@okouai/api-contracts/contracts/proactive-nightly";
 import { feedContract } from "@okouai/api-contracts/contracts/feed";
 import { feedRoutes } from "../feed";
 import { proactiveSuggestionsContract } from "@okouai/api-contracts/contracts/proactive-suggestions";
@@ -29,10 +28,7 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { mockNow } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { morningBriefPreferenceRoutes } from "../morning-brief-preference";
-import {
-  proactiveLearningRoutes,
-  proactiveSuggestionsRoutes,
-} from "../proactive-preferences";
+import { proactiveSuggestionsRoutes } from "../proactive-preferences";
 
 import { userPreferencesRoutes } from "../user-preferences";
 import { workflowAutomationsRoutes } from "../workflow-automations";
@@ -264,62 +260,11 @@ describe("My Okou proactive settings", () => {
   });
 });
 
-describe("Legacy Learning preference alias", () => {
-  it("uses the Suggestions choice for hourly checks and daily profile updates", async () => {
-    const app = setupApp({
-      context,
-      routes: [...proactiveLearningRoutes, ...proactiveSuggestionsRoutes],
-    });
-    const { actor } = await prepareBriefMember();
-    await bdd.completeOnboarding(actor, { timezone: "UTC" });
-    if (!actor.orgId) {
-      throw new Error("Expected organization");
-    }
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId: actor.orgId },
-      {
-        [FeatureSwitchKey.AgentSuggestion]: true,
-      },
-    );
-    const client = app(proactiveLearningContract);
-    await accept(
-      app(proactiveSuggestionsContract).update({
-        headers: authHeaders(actor),
-        body: { enabled: true },
-      }),
-      [200],
-    );
-    const initial = await accept(
-      client.get({ headers: authHeaders(actor) }),
-      [200],
-    );
-    expect(initial.body.enabled).toBeTruthy();
-    await accept(
-      client.update({ headers: authHeaders(actor), body: { enabled: true } }),
-      [200],
-    );
-    const saved = await accept(
-      client.get({ headers: authHeaders(actor) }),
-      [200],
-    );
-    expect(saved.body.enabled).toBeTruthy();
-    const paused = await accept(
-      client.update({ headers: authHeaders(actor), body: { enabled: false } }),
-      [200],
-    );
-    expect(paused.body).toMatchObject({ enabled: false, status: "paused" });
-    const suggestions = await accept(
-      app(proactiveSuggestionsContract).get({ headers: authHeaders(actor) }),
-      [200],
-    );
-    expect(suggestions.body.enabled).toBeFalsy();
-  });
-
+describe("Daily profile learning through Suggestions", () => {
   it("keeps an opt-in cancellable while the Learning time zone is unavailable", async () => {
     const app = setupApp({
       context,
-      routes: proactiveLearningRoutes,
+      routes: proactiveSuggestionsRoutes,
     });
     const { actor } = await prepareBriefMember();
     await bdd.completeOnboarding(actor);
@@ -331,14 +276,14 @@ describe("Legacy Learning preference alias", () => {
       { ...actor, orgId: actor.orgId },
       { [FeatureSwitchKey.AgentSuggestion]: true },
     );
-    const client = app(proactiveLearningContract);
+    const client = app(proactiveSuggestionsContract);
     const pending = await accept(
       client.update({ headers: authHeaders(actor), body: { enabled: true } }),
       [200],
     );
     expect(pending.body).toMatchObject({
       enabled: true,
-      status: "paused",
+      status: "preparing",
       unavailableReason: "missing-timezone",
     });
     const cancelled = await accept(
@@ -363,7 +308,7 @@ describe("Proactive Suggestions preference", () => {
   it("keeps the shared Suggestions choice while the catalog is unavailable", async () => {
     const app = setupApp({
       context,
-      routes: [...proactiveSuggestionsRoutes, ...proactiveLearningRoutes],
+      routes: proactiveSuggestionsRoutes,
     });
     const { actor } = await prepareBriefMember();
     await bdd.completeOnboarding(actor);
@@ -385,10 +330,6 @@ describe("Proactive Suggestions preference", () => {
       {
         [FeatureSwitchKey.AgentSuggestion]: true,
       },
-    );
-    await accept(
-      app(proactiveLearningContract).get({ headers: authHeaders(actor) }),
-      [200],
     );
     const initial = await accept(
       client.get({ headers: authHeaders(actor) }),
