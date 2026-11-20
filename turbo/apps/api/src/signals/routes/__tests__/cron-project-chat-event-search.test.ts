@@ -189,8 +189,18 @@ describe("chat search publication", () => {
     }
     const native = await chat.searchChat(owner, keyword);
     expect(
-      new Set(native.results.map(({ chatThreadId }) => chatThreadId)),
-    ).toStrictEqual(new Set(ownerInputs.map(({ threadId }) => threadId)));
+      new Set(
+        native.results.map(({ chatThreadId }) => {
+          return chatThreadId;
+        }),
+      ),
+    ).toStrictEqual(
+      new Set(
+        ownerInputs.map(({ threadId }) => {
+          return threadId;
+        }),
+      ),
+    );
     await expect(
       chat.searchChat(owner, keyword, { agentId: foreign.agentId }),
     ).resolves.toStrictEqual(native);
