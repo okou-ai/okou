@@ -9,7 +9,6 @@ import {
   INCIDENT_THREAD_ID,
   menuItemByText,
   openThreadMenu,
-  pinnedAgentLink,
   setupSidebarPage,
   sidebar,
   SUPPORT_AGENT_ID,
@@ -32,14 +31,8 @@ import { mockNow } from "../../../lib/time.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
-const {
-  mockChatThreadSnapshot,
-  mockSidebarThreadStory,
-  mockUnreadAgents,
-  prepareAgents,
-  prepareDefaultAgent,
-  prepareOverflowingPinnedAgents,
-} = createSidebarHelpers(context);
+const { mockSidebarThreadStory, prepareAgents, prepareDefaultAgent } =
+  createSidebarHelpers(context);
 
 test("Open and use workspace search with the keyboard", async () => {
   prepareAgents();

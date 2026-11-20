@@ -1,4 +1,3 @@
-import { detach, Reason } from "../../signals/utils.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { useGet, useSet } from "ccstate-react";
 import { locateProject$ } from "../../signals/projects/project-navigation.ts";
@@ -23,7 +22,7 @@ export function ProjectReference({
         if (shouldHandleLinkClick(event)) {
           // The mention locates the Project without leaving the conversation.
           event.preventDefault();
-          detach(locate(part.projectId, pageSignal), Reason.DomCallback);
+          locate(part.projectId, pageSignal);
         }
       }}
       className={className}

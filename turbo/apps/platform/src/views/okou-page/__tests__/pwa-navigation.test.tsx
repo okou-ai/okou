@@ -147,7 +147,12 @@ test.each([false, true])(
       queryAllByRoleFast("button", header).map((button) => {
         return button.getAttribute("aria-label");
       }),
-    ).toStrictEqual(["Search workspace", "New chat", "Open chat list menu"]);
+    ).toStrictEqual([
+      "Search workspace",
+      "Create Project",
+      "New chat",
+      "Open chat list menu",
+    ]);
 
     click(search);
     const dialog = await screen.findByRole("dialog", {

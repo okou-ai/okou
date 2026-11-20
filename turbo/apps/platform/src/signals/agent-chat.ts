@@ -146,11 +146,13 @@ function threadIdsOf(threads: readonly EventDrivenChatThread[]) {
 }
 
 // Projects collect chats across Agents, so every Agent list shows them.
-const allProjectThreads$ = computed((get): EventDrivenChatThread[] => {
-  return sortChatThreads(
-    get(eventDrivenChatThreads$).filter((thread) => {
-      return thread.projectId !== null;
-    }),
+const allProjectThreads$ = computed((get): Promise<EventDrivenChatThread[]> => {
+  return Promise.resolve(
+    sortChatThreads(
+      get(eventDrivenChatThreads$).filter((thread) => {
+        return thread.projectId !== null;
+      }),
+    ),
   );
 });
 
@@ -166,9 +168,7 @@ function createChatThreadListView({
   threads$: Computed<Promise<EventDrivenChatThread[]>>;
   allThreadIds$: Computed<Promise<readonly string[]>>;
   projectThreads$: Computed<Promise<readonly EventDrivenChatThread[]>>;
-  allProjectThreads$: Computed<
-    Promise<readonly EventDrivenChatThread[]> | readonly EventDrivenChatThread[]
-  >;
+  allProjectThreads$: Computed<Promise<readonly EventDrivenChatThread[]>>;
   projectIdsWithHiddenArchivedThreads$: Computed<Promise<ReadonlySet<string>>>;
   hideEmptyProjects: boolean;
   hasHiddenArchivedThreads$: Computed<Promise<boolean>>;
@@ -239,15 +239,16 @@ function createChatThreadListSignals(
   agentId: string | null,
   filter: ChatThreadListFilter,
 ): ChatThreadListSignals {
-  const allThreads$ = computed((get): EventDrivenChatThread[] => {
+  const allThreads$ = computed((get): Promise<EventDrivenChatThread[]> => {
     if (!agentId) {
-      return [];
+      return Promise.resolve([]);
     }
-
-    return sortChatThreads(
-      get(eventDrivenChatThreads$).filter((thread) => {
-        return thread.agentId === agentId && thread.projectId === null;
-      }),
+    return Promise.resolve(
+      sortChatThreads(
+        get(eventDrivenChatThreads$).filter((thread) => {
+          return thread.agentId === agentId && thread.projectId === null;
+        }),
+      ),
     );
   });
   const listed = (thread: EventDrivenChatThread) => {
@@ -258,19 +259,19 @@ function createChatThreadListSignals(
   };
   // Only the inbox leaves archived chats out and explains an empty list.
   const inbox = !filter.onlyArchived && !filter.onlyMuted;
-  const threads$ = computed((get): EventDrivenChatThread[] => {
-    return get(allThreads$).filter(listed);
+  const threads$ = computed(async (get): Promise<EventDrivenChatThread[]> => {
+    return (await get(allThreads$)).filter(listed);
   });
 
   return createChatThreadListView({
     threads$,
     allThreadIds$: computed(async (get): Promise<readonly string[]> => {
-      return threadIdsOf(get(allThreads$));
+      return threadIdsOf(await get(allThreads$));
     }),
     // A filter applies to the chats inside Projects as it does to the rest.
     projectThreads$: computed(
       async (get): Promise<readonly EventDrivenChatThread[]> => {
-        return get(allProjectThreads$).filter(listed);
+        return (await get(allProjectThreads$)).filter(listed);
       },
     ),
     allProjectThreads$,
@@ -278,7 +279,7 @@ function createChatThreadListSignals(
       async (get): Promise<ReadonlySet<string>> => {
         const projectIds = new Set<string>();
         if (inbox) {
-          for (const thread of get(allProjectThreads$)) {
+          for (const thread of await get(allProjectThreads$)) {
             if (thread.archived && thread.projectId !== null) {
               projectIds.add(thread.projectId);
             }
@@ -291,7 +292,7 @@ function createChatThreadListSignals(
     hasHiddenArchivedThreads$: computed(async (get): Promise<boolean> => {
       return (
         inbox &&
-        get(allThreads$).some((thread) => {
+        (await get(allThreads$)).some((thread) => {
           return thread.archived;
         })
       );
@@ -377,10 +378,12 @@ export const currentChatThreadList$ = computed(
   },
 );
 
-export const chatThreads$ = computed((get): EventDrivenChatThread[] => {
-  const list = await get(currentChatThreadList$);
-  return get(list.threads$);
-});
+export const chatThreads$ = computed(
+  async (get): Promise<EventDrivenChatThread[]> => {
+    const list = await get(currentChatThreadList$);
+    return get(list.threads$);
+  },
+);
 
 export const currentChatThreadListIds$ = computed(
   async (get): Promise<readonly string[]> => {

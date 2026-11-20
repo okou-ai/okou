@@ -42,10 +42,6 @@ const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
 const runs = createRunsApi(context);
 const MODEL = "claude-fable-5-1";
-const WELCOME_STEP_BASE =
-  "https://static.vm0.io/vm0/welcome-thread/2026-09-17-3f913309fe14";
-const WELCOME_SCENE_BASE =
-  "https://static.vm0.io/vm0/welcome-thread/2026-09-17-1e76170cef99";
 
 function headers(actor: ApiTestUser) {
   createRouteMocks(context).clerk.session(

@@ -68,10 +68,6 @@ export type WorkflowDetailTab = "automations" | "instructions" | "info";
 export type WorkflowFilter =
   "all" | "automated" | "without" | "private" | "public";
 export type WorkflowSortMode = "next-run" | "alphabetical" | "created";
-export interface WorkflowCopyFormState {
-  readonly selectedAgentId: string | null;
-  readonly removeOriginal: boolean;
-}
 
 type GmailTextField = "from" | "subject" | "body" | "to" | "cc";
 export type GmailTextOperator = "contains" | "containsAny" | "doesNotContain";
@@ -87,12 +83,6 @@ function defaultGmailMatchConditions(): readonly GmailMatchCondition[] {
   return [{ field: "from", operator: "contains", value: "" }];
 }
 
-function defaultWorkflowCopyForm(): WorkflowCopyFormState {
-  return {
-    selectedAgentId: null,
-    removeOriginal: false,
-  };
-}
 export type WorkflowAutomationCreateDialog =
   | "chat-run-finished"
   | "interval"
@@ -246,9 +236,6 @@ const internalWorkflowDetailActiveTab$ =
 const internalSelectedFilePath$ = state<string | null>(null);
 const internalWorkflowActionDialog$ = state<WorkflowDetailActionDialog>(null);
 const internalWorkflowDemoteConfirmOpen$ = state<boolean>(false);
-const internalWorkflowCopyForm$ = state<WorkflowCopyFormState>(
-  defaultWorkflowCopyForm(),
-);
 const internalWorkflowFileDraft$ = state<WorkflowDetailFileDraft | null>(null);
 const internalWorkflowFileEditorRevision$ = state(0);
 const internalWorkflowAutomationEditor$ = state<{
@@ -304,10 +291,6 @@ export const setWorkflowDemoteConfirmOpen$ = command(
     set(internalWorkflowDemoteConfirmOpen$, open);
   },
 );
-
-export const workflowCopyForm$ = computed((get) => {
-  return get(internalWorkflowCopyForm$);
-});
 
 const FILTER_PARAM = "filter";
 const SORT_MODE_PARAM = "sort";
@@ -379,16 +362,7 @@ export const setWorkflowSortMode$ = command(
 
 export const setWorkflowActionDialog$ = command(
   ({ set }, dialog: WorkflowDetailActionDialog) => {
-    if (dialog === "copy") {
-      set(internalWorkflowCopyForm$, defaultWorkflowCopyForm());
-    }
     set(internalWorkflowActionDialog$, dialog);
-  },
-);
-
-export const setWorkflowCopyForm$ = command(
-  ({ set }, form: WorkflowCopyFormState) => {
-    set(internalWorkflowCopyForm$, form);
   },
 );
 
@@ -442,7 +416,7 @@ export const resetWorkflowDetailUiState$ = command(({ set }) => {
   set(internalWorkflowDetailActiveTab$, "automations");
   set(internalSelectedFilePath$, null);
   set(internalWorkflowActionDialog$, null);
-  set(internalWorkflowCopyForm$, defaultWorkflowCopyForm());
+
   set(internalWorkflowFileDraft$, null);
   set(internalWorkflowFileEditorRevision$, 0);
   set(internalWorkflowAutomationEditor$, null);
@@ -1615,34 +1589,6 @@ export const setWorkflowAutomationEnabled$ = command(
       throw new Error(result.body.error.message);
     }
     set(reloadWorkflows$);
-  },
-);
-
-export const pauseWorkflowAutomations$ = command(
-  async (
-    { get, set },
-    automationIds: readonly string[],
-    signal: AbortSignal,
-  ): Promise<{ readonly pausedCount: number }> => {
-    if (automationIds.length === 0) {
-      return { pausedCount: 0 };
-    }
-
-    const client = get(apiClient$)(workflowAutomationsContract);
-    await Promise.all(
-      automationIds.map((automationId) => {
-        return accept(
-          client.disable({
-            params: { id: automationId },
-            fetchOptions: { signal },
-          }),
-          [200],
-        );
-      }),
-    );
-    signal.throwIfAborted();
-    set(reloadWorkflows$);
-    return { pausedCount: automationIds.length };
   },
 );
 

@@ -25,7 +25,7 @@ export const projectThreadDropTargetId$ = computed((get) => {
   return get(dropTarget$)?.projectId;
 });
 
-export const projectThreadDragHint$ = computed(async (get) => {
+export const projectThreadDragHint$ = computed((get) => {
   const target = get(dropTarget$);
   const thread = get(draggingProjectThread$);
   if (!target || !thread || thread.projectId === target.projectId) {

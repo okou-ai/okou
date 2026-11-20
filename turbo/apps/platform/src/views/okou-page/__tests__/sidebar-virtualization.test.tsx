@@ -1107,31 +1107,6 @@ test("Follow full-list wave positions across scrolling and pinning", async () =>
   );
 });
 
-function mockPinnedGrid(): string {
-  const agents = Array.from({ length: 5 }, (_, index) => {
-    return {
-      agentId: `c0000000-0000-4000-a000-${String(index + 1).padStart(12, "0")}`,
-      ownerId: "test-user-123",
-      displayName: index === 0 ? "Nova" : `Agent ${index + 1}`,
-      description: null,
-      sound: null,
-      avatarUrl: null,
-      visibility: "public" as const,
-    };
-  });
-  context.mocks.data.agents(agents);
-  context.mocks.data.userPreferences({
-    pinnedAgentIds: agents.slice(1, 4).map((agent) => {
-      return agent.agentId;
-    }),
-  });
-  return "c0000000-0000-4000-a000-000000000005";
-}
-
-function pinToggle(container: HTMLElement, name: "Pin" | "Unpin"): HTMLElement {
-  return within(container).getByRole("option", { name: `Agent 5 ${name}` });
-}
-
 test("Measure the mobile chat list only after the main stylesheet bounds it", async () => {
   const pwaRowHeight = 60;
   const threadCount = 120;

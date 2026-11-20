@@ -1,6 +1,5 @@
 import type { TestContext } from "../../../../__tests__/test-context";
-import type { ApiTestUser } from "./api-bdd";
-import { createBddApi } from "./api-bdd";
+import { createBddApi, type ApiTestUser } from "./api-bdd";
 import { createRunsApi } from "./api-bdd-runs";
 import { captureConnectorExternalState } from "./public-connector-actor";
 import { publicRunOwner } from "./public-run-owner";
@@ -46,7 +45,9 @@ export function retainedWorkflowCaller(context: TestContext) {
         });
         const execution = await owner.executionInput(run.runId);
         const token = execution.platformEnvironment.OKOU_TOKEN;
-        if (!token) throw new Error("Expected a retained Run credential");
+        if (!token) {
+          throw new Error("Expected a retained Run credential");
+        }
         return { authorization: "Bearer " + token };
       });
     } finally {

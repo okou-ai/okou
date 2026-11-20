@@ -674,6 +674,8 @@ Examples:
   okou connector check --connector custom:<uuid> --url https://api.example.com/items
 
 Your current workspace execution context supplies accounts and grants automatically.
+Inspect okou whoami --permissions for grants. For diagnostic URLs, omit query strings and fragments
+when they may contain secrets. Provider errors such as missing_scope or needed describe OAuth scopes.
 A connection is not a permission grant. Missing admitted accounts remain unavailable.
 For AWS SigV4, include the observed non-secret service/action/target/query/header
 selectors required by the diagnostic; URL and method alone can be insufficient.

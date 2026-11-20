@@ -97,8 +97,8 @@ Examples:
   okou chat create "Launch plan"
   okou chat create "Launch plan" --project-id <id> --model auto --json
 
-Creates an empty personal chat in this workspace. Send a self-contained first message
-with okou chat send; this does not start work or inherit conversation history.
+Creating a chat does not start a run or copy this conversation. The first message must be self-contained.
+Send it with okou chat send.
 Model, effort and priority use your existing preferences unless specified.
 `
       : `

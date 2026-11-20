@@ -111,7 +111,9 @@ function authHeaders(actor: ApiTestUser) {
 
 async function workspaceExecutor(actor: ApiTestUser) {
   const { defaultAgentId } = await bdd.readOnboardingStatus(actor);
-  if (!defaultAgentId) throw new Error("Expected a workspace executor");
+  if (!defaultAgentId) {
+    throw new Error("Expected a workspace executor");
+  }
   installVolumeS3Fixture(workflowObjects());
   return { agentId: defaultAgentId };
 }

@@ -10,12 +10,10 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { createDeferredPromise } from "../../utils";
 import { workflowsRoutes } from "../workflows";
 import { createBddApi } from "./helpers/api-bdd";
-import { createRouteMocks } from "./helpers/route-test";
 import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
 
 const context = testContext();
 const bdd = createBddApi(context);
-const mocks = createRouteMocks(context);
 const headers = retainedWorkflowCaller(context);
 function collection(signal = context.signal, rethrowErrors = false) {
   return setupApp({ context, routes: workflowsRoutes, signal, rethrowErrors })(

@@ -11,10 +11,7 @@ import {
   OkouAvatar,
 } from "@okouai/ui";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
-import type {
-  ChatForwardSelection,
-  ChatForwardTarget,
-} from "../../signals/chat-page/chat-forward.ts";
+import type { ChatForwardTarget } from "../../signals/chat-page/chat-forward.ts";
 import { ChatComposer } from "./composer.tsx";
 
 function ForwardTargetContent({
@@ -46,7 +43,6 @@ export function ChatForwardDialog({
   feedback,
   onDismiss,
 }: {
-  readonly selection: ChatForwardSelection;
   readonly feedback: ChatThreadFeedbackSignals;
   readonly onDismiss: () => void;
 }) {
@@ -85,11 +81,7 @@ export function ChatForwardDialog({
             })}
           </DialogDescription>
         </DialogHeader>
-        {target && prepared.state === "loading" ? (
-          <div className="flex min-h-40 items-center justify-center text-muted-foreground">
-            <Loader2 size={16} className="animate-spin" aria-hidden />
-          </div>
-        ) : target && prepared.state === "hasData" && prepared.data ? (
+        {prepared.state === "hasData" && prepared.data ? (
           <ForwardComposerSurface composer={prepared.data.composer} />
         ) : prepared.state === "hasError" ? (
           <p role="alert" className="text-sm text-muted-foreground">

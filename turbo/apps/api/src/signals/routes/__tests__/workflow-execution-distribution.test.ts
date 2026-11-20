@@ -77,7 +77,7 @@ async function fixture(
   return { actor, agent, group, s3 };
 }
 
-async function saveInstructions(actor: ApiTestUser, content: string) {
+function saveInstructions(actor: ApiTestUser, content: string) {
   const client = setupApp({ context, routes: instructionsRoutes })(
     instructionsContract,
   );

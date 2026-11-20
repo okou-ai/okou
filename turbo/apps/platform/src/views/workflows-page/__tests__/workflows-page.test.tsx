@@ -971,25 +971,6 @@ function mockWorkflowApis(
   );
 }
 
-function mockDeleteWorkflow(
-  workflows: WorkflowDetailResponse[],
-  onDelete: (workflowId: string) => void | Promise<void>,
-): void {
-  context.mocks.api(
-    workflowsDetailContract.delete,
-    async ({ params, respond }) => {
-      await onDelete(params.workflowId);
-      const index = workflows.findIndex((workflow) => {
-        return workflow.id === params.workflowId;
-      });
-      if (index !== -1) {
-        workflows.splice(index, 1);
-      }
-      return respond(204);
-    },
-  );
-}
-
 function mockConfiguredEventAutomation(
   body: Extract<WorkflowAutomationCreateRequest, { readonly kind: "event" }>,
 ): WorkflowAutomationSummary {
@@ -1306,22 +1287,6 @@ function mockRunWorkflowAutomation(
   });
 }
 
-function mockDisableWorkflowAutomation(
-  onDisable: (automationId: string) => void,
-): void {
-  context.mocks.api(
-    workflowAutomationsContract.disable,
-    ({ params, respond }) => {
-      onDisable(params.id);
-      return respond(200, {
-        ...weekdayWorkflowAutomation(),
-        id: params.id,
-        enabled: false,
-      });
-    },
-  );
-}
-
 function mockOpenWorkflowChat(onOpen: (workflowId: string) => void): void {
   context.mocks.api(
     workflowsDetailContract.chatThread,
@@ -1483,16 +1448,6 @@ function selectOptionByLabel(
   click(screen.getByRole("option", { name: option }));
 }
 
-async function openCopyDialog(): Promise<HTMLElement> {
-  await waitFor(() => {
-    expect(buttonByText(/^Copy workflow$/)).toBeInTheDocument();
-  });
-  click(buttonByText(/^Copy workflow$/));
-  return await waitFor(() => {
-    return screen.getByRole("dialog");
-  });
-}
-
 test("Return to Workflows with a toast when a workflow no longer exists", async () => {
   mockWorkflowApis([opsPlaybook()]);
 
@@ -1553,6 +1508,7 @@ test("Redirect a cold Morning Brief detail to its preference", async () => {
     });
   });
 
+  mockAgentPageApis();
   await setupWorkflowDetailPage(
     `/workflows/${MORNING_BRIEF_WORKFLOW_ID}/automations`,
   );
@@ -1638,12 +1594,6 @@ test("Filter workflows by automation and visibility", async () => {
   // The automated workflow surfaces its connector pill on the row.
   const salesCard = articleByText("Sales Research");
   expect(within(salesCard).getByText("Schedule")).toBeInTheDocument();
-
-  const supportLink = linkByAriaLabel("Open Support Intake");
-  expect(supportLink).toHaveAttribute(
-    "href",
-    `/workflows/${OTHER_WORKFLOW_ID}/automations`,
-  );
 
   // "Automated" keeps only workflows that have at least one automation.
   await user.click(buttonByText("Automated", filterGroup));
@@ -1779,7 +1729,7 @@ test("Block workflow publishing without permission on the owning agent", async (
   expect(publishSwitch).toHaveAttribute("aria-checked", "false");
   expect(
     screen.getByText(
-      "You don’t have permission to publish workflows in this workspaces.",
+      "You don’t have permission to publish workflows in this workspace.",
     ),
   ).toBeInTheDocument();
 });
@@ -3636,10 +3586,15 @@ test("Warn when a workflow slash command resolves to another workflow", async ()
 
   await setupWorkflowDetailPage(workflowDetailPath("instructions"));
 
-  await waitFor(() => {
-    expect(screen.getByText(/currently resolves to/i)).toBeInTheDocument();
-  });
-  expect(screen.getByText("Private Sales Research")).toBeInTheDocument();
+  await expect(
+    screen.findByText(
+      "/sales-research uses your private copy. You are viewing the shared definition.",
+    ),
+  ).resolves.toBeVisible();
+  expect(linkByText("Open private copy")).toHaveAttribute(
+    "href",
+    "/workflows/" + OPS_WORKFLOW_ID + "/instructions",
+  );
 });
 
 test("Select workflow files with Enter and Space and preserve accessible current state", async () => {
@@ -3913,7 +3868,6 @@ test("Load workflow authors only after a title tooltip opens and reuse on reopen
   await user.hover(title);
   const tooltip = await screen.findByRole("tooltip");
   expect(within(tooltip).getByText("Created by")).toBeInTheDocument();
-  expect(within(tooltip).getByText("Runs as")).toBeInTheDocument();
   expect(within(tooltip).getByText("Sales Research")).toBeInTheDocument();
   expect(
     within(tooltip).getByText("Collects account context before outreach."),

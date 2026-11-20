@@ -148,6 +148,7 @@ async function setupMentionSearch(newChat: boolean) {
     threads: [current, projectBeta, untitledThread, projectBetaFollowUp],
   });
   installAgents([agent(AGENT_ID, "Scout", SCOUT_AVATAR)]);
+  context.mocks.data.onboardingStatus({ defaultAgentId: AGENT_ID });
 
   await setupPage({
     context,

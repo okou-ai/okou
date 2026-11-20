@@ -1,7 +1,7 @@
 import { decodeSandboxTokenPayload } from "../../lib/api/sandbox-token";
 import { personalExecutorId } from "../../lib/command/single-agent";
 import { isPersonalExecution } from "../../lib/personal-execution";
-import { getOkouAgentId } from "../../lib/okou-env";
+import { getOkouAgentId, getOkouToken } from "../../lib/okou-env";
 
 // The Web permission action route uses the executor ID as a locator.
 export async function resolvePermissionActionAgentId(
@@ -20,7 +20,7 @@ export async function resolvePermissionActionAgentId(
         );
       return executorId;
     }
-    return personalExecutorId();
+    return getOkouToken() ? personalExecutorId() : undefined;
   }
   const runAgentId = getOkouAgentId();
   if (

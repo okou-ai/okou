@@ -190,10 +190,6 @@ export function ChatForwardDialogMount({
   const selection = useGet(feedback.forwardSelection$);
   const close = useSet(feedback.closeForward$);
   return selection ? (
-    <ChatForwardDialog
-      selection={selection}
-      feedback={feedback}
-      onDismiss={close}
-    />
+    <ChatForwardDialog feedback={feedback} onDismiss={close} />
   ) : null;
 }

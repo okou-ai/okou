@@ -366,6 +366,10 @@ Inspect okou whoami --permissions first; already-allowed permissions need no app
 Supply a selector, --permission, the failed --url and --method, plus observed AWS
 selectors when applicable. Provider OAuth scope names are not Okou permissions.
 Custom HTTP permissions use Connectors settings; MCP has connector-level access.
+An unknown-endpoint has no named permission match. An unknown-policy supplies its
+fallback. Neither label alone means access was denied. Follow policy.outcome:
+allow needs no additional permission approval; unavailable means permission status could not be determined.
+For custom unknown endpoints, only deny/ask outcomes need an administrator to review the connector definition.
 
 For several diagnosed operations use --batch-file <path>. The JSON array contains
 { connector, permission, url, method } and optional AWS diagnostic selectors.
@@ -374,7 +378,8 @@ The user chooses the grant duration on the confirmation page.
 
 Use --callback-prompt only for this turn's sole access action (one batch counts as
 one action), in the current web chat. Keep it concise and free of secrets. Return
-the exact URL and end the turn. With multiple actions, return ordinary links.
+the URL verbatim with all query parameters and end the turn. With multiple actions,
+do not use callbacks; return the ordinary links.
 Accounts and authorization resolve from your workspace execution context; switching
 accounts never resets permissions. Browser/Computer Use consent remains separate.
 `,

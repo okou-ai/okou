@@ -13,7 +13,6 @@ import { workflowsRoutes } from "../workflows";
 import { workflowAutomationsRoutes } from "../workflow-automations";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { createRouteMocks } from "./helpers/route-test";
 import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
@@ -22,7 +21,6 @@ import { publicRunOwner } from "./helpers/public-run-owner";
 
 const context = testContext();
 const bdd = createBddApi(context);
-const billing = createBillingMediaApi(context);
 const workflowBdd = createWorkflowsBddApi(context);
 const mocks = createRouteMocks(context);
 function headers(actor: ApiTestUser) {
@@ -313,7 +311,7 @@ test("lists workspace Workflows and restricts member writes to the default execu
   expect(listed.body.map((workflow) => workflow.id)).toContain(source.id);
   expect(
     listed.body.every((workflow) => workflow.agentId === defaultAgentId),
-  ).toBe(true);
+  ).toBeTruthy();
   await accept(
     detail().copy({
       headers: headers(alice),

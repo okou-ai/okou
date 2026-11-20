@@ -287,12 +287,14 @@ test("publishes an owned ZIP, deduplicates concurrent requests and excludes peer
   const agentId = await ownedAgent(fixture, owner);
   const { defaultAgentId } = await createBddApi(context).readOnboardingStatus({
     ...owner,
+    email: owner.userId + "@example.com",
     orgRole: "org:admin",
   });
-  if (!defaultAgentId)
+  if (!defaultAgentId) {
     throw new Error(
       "Expected the workspace executor for the exported Workflow",
     );
+  }
   authenticate(owner);
   const rawInstructions =
     "[AGENT_PROFILE]\nLegacy display metadata\n[/AGENT_PROFILE]\nExported current instructions";

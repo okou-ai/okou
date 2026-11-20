@@ -87,7 +87,7 @@ export const featureGuide$ = computed(
   },
 );
 
-export const featureGuideReady$ = computed(async (get) => {
+export const featureGuideReady$ = computed((get) => {
   if (!get(appContentReady$)) {
     return false;
   }

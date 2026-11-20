@@ -13,7 +13,6 @@ describe("captured My Okou execution guidance", () => {
     if (!actor.orgId) {
       throw new Error("Expected a workspace member");
     }
-    const member = { ...actor, orgId: actor.orgId };
     await owned.run(async () => {
       fixture.bdd.acceptAgentStorageWrites();
       const status = await fixture.bdd.readOnboardingStatus(actor);

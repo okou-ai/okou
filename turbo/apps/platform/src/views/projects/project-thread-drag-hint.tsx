@@ -1,4 +1,4 @@
-import { useGet, useLastResolved } from "ccstate-react";
+import { useGet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { FolderInput, FolderOutput } from "lucide-react";
 import { Tooltip, TooltipContent } from "@okouai/ui";
@@ -12,7 +12,7 @@ export function ProjectThreadDragHint() {
   const { t } = useTranslation();
   const dragging = useGet(draggingProjectThread$);
   const targetId = useGet(projectThreadDropTargetId$);
-  const hint = useLastResolved(projectThreadDragHint$);
+  const hint = useGet(projectThreadDragHint$);
   if (!dragging || !hint || hint.projectId !== targetId) {
     return null;
   }

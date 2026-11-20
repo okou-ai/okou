@@ -206,12 +206,6 @@ function setupAuthSidebarPageWrapper(
 const setupAuthenticatedPwaMePage$ =
   setupAuthSidebarPageWrapper(setupPwaMePage$);
 
-// My Okou renders its chat page at `/`, which applies its own settings param;
-// otherwise `/` forwards to the default agent's chat.
-const setupHomeRoute$ = command(async ({ set }, signal: AbortSignal) => {
-  await set(setupHomeChatPage$, signal);
-});
-
 const setupPwaMeRoute$ = command(async ({ get, set }, signal: AbortSignal) => {
   await set(
     get(mobileChatViewport$)
@@ -575,7 +569,7 @@ const ROUTE_CONFIG = [
   },
   {
     path: ROUTES.home,
-    setup: setupAuthPageWrapper(setupHomeRoute$),
+    setup: setupAuthPageWrapper(setupHomeChatPage$),
   },
 
   // --- Redirect routes (backward compatibility) ---

@@ -12,7 +12,6 @@ import {
   mockSidebarViewport,
   openChatListMenu,
   openThreadMenu,
-  pinnedAgentLink,
   queryMenuItemByText,
   RESEARCH_AGENT_ID,
   RESEARCH_THREAD_ID,
@@ -840,9 +839,7 @@ test("Hide the current chat after archiving it without changing its title", asyn
   await waitFor(() => {
     expect(threadLinkByTitle("New chat", sidebar())).toBeInTheDocument();
   });
-  expect(
-    within(sidebar()).getByText("Archived · Chats with Okou"),
-  ).toBeInTheDocument();
+  expect(within(sidebar()).getByText("Archived")).toBeInTheDocument();
   openThreadMenu("New chat");
   click(menuItemByText("Unarchive chat"));
 

@@ -114,19 +114,6 @@ export const agents$ = computed(async (get) => {
   return result.body;
 });
 
-export const sortedAgents$ = computed(async (get) => {
-  const agents = await get(agents$);
-  const defaultId = await get(defaultAgentId$);
-  return [
-    ...agents.filter((a) => {
-      return a.agentId === defaultId;
-    }),
-    ...agents.filter((a) => {
-      return a.agentId !== defaultId;
-    }),
-  ];
-});
-
 /** Bump to refetch the agents list. */
 export const reloadAgents$ = command(({ set }) => {
   discardApiBootstrapResponse(
@@ -138,20 +125,6 @@ export const reloadAgents$ = command(({ set }) => {
   });
 });
 
-/** Non-default agents. */
-export const subagents$ = computed(async (get) => {
-  const all = await get(agents$);
-  const defaultId = await get(defaultAgentId$);
-  return all.filter((a) => {
-    return a.agentId !== defaultId;
-  });
-});
-
 // ---------------------------------------------------------------------------
 // Metadata
 // ---------------------------------------------------------------------------
-
-export interface SubagentInfo {
-  agentId: string;
-  displayName?: string | null;
-}
