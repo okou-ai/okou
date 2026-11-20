@@ -300,7 +300,7 @@ function ForYouCover() {
             <Button
               variant="neutral"
               size="sm"
-              className="absolute right-4 bottom-14 gap-1.5 bg-card/85 opacity-0 shadow-surface backdrop-blur-md transition-opacity group-hover/cover:opacity-100 focus-visible:opacity-100 data-popup-open:opacity-100 sm:right-6 [@media(hover:none)]:opacity-100"
+              className="absolute top-3 right-4 gap-1.5 bg-card/85 opacity-0 shadow-surface backdrop-blur-md transition-opacity group-hover/cover:opacity-100 focus-visible:opacity-100 data-popup-open:opacity-100 sm:top-auto sm:right-6 sm:bottom-14"
             />
           }
         >
