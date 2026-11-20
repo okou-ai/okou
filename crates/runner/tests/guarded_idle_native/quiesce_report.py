@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
 """Strict original Guest dispatcher acknowledgement and retained Dirty custody."""
-import argparse
-import json
-import pathlib
 
 import guest_preparation_report as preparation
+import report
 
 
 def wire(value, kind, sequence=None, unix_window=None, history=None):
@@ -26,6 +24,4 @@ def validate(directory):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("directory", type=pathlib.Path)
-    print(json.dumps(validate(parser.parse_args().directory), indent=2, sort_keys=True))
+    report.run_cli(validate, __doc__, sort_keys=True)

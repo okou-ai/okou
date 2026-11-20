@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 """Validate fixed native batch completion with positively retained later inventory."""
 
-import argparse
-import json
 import pathlib
 
 import progress_report as foreground
@@ -162,7 +160,4 @@ def validate(directory):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("directory", type=pathlib.Path)
-    args = parser.parse_args()
-    print(json.dumps(validate(args.directory), indent=2, sort_keys=True))
+    report.run_cli(validate, __doc__, sort_keys=True)
