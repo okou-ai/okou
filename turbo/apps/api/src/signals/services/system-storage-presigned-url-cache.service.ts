@@ -22,7 +22,7 @@ import {
   presignedGetUrlSignerForBucket,
   type PresignedGetUrlSigner,
 } from "../external/s3";
-import { settle } from "../utils";
+import { joinAll, settle } from "../utils";
 
 const L = logger("StoragePresignedUrlCache");
 
@@ -668,7 +668,7 @@ export async function signStoragePresignedUrls(args: {
     args.rows,
     nowDate(),
   );
-  const freshValues = await Promise.all(
+  const freshValues = await joinAll(
     missing.map((entry) => {
       return signCacheValue({
         ...entry,

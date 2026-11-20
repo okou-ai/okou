@@ -119,10 +119,8 @@ function createIntegrationPrompts(
       featureSwitches$,
     ),
     automation: createAutomationThreadPrompt(
-      pickedEvent$,
-      threadContext.automationContext$,
+      threadContext.automationSnapshot$,
       threadContext.automationPayload$,
-      threadContext.automationTarget$,
       singleAgent$,
     ),
   };

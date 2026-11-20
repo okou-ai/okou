@@ -81,7 +81,15 @@ import {
 } from "../external/realtime";
 
 import { getOfficialTelegramBotConfig } from "../external/telegram-official";
-import { joinAllInOrder, safeSync, settle, tapError } from "../utils";
+import {
+  joinAll,
+  joinAllInOrder,
+  onRejection,
+  safeSync,
+  settle,
+  settleIncludingAbort,
+  tapError,
+} from "../utils";
 import type { DirectRunDispatchResult } from "./direct-run-dispatch.service";
 import type { AdmittedRunLaunch } from "./direct-run-preparation.service";
 import {
@@ -746,22 +754,25 @@ function buildWorkflowAutomationCallbacks(
 
 function withEmailSystemPrompt(
   plan: RunPlan,
-  prompt: {
-    readonly appendSystemPrompt: string;
-    readonly integrationContext: string;
-  } | null,
+  integrationContext: string,
+  promptAndSkills: PromptAndSkillVolumes,
 ): RunPlan {
-  if (prompt === null) {
-    return plan;
-  }
+  const appendSystemPrompt = renderRunPrompts({
+    systemPromptVariables: {
+      ...promptAndSkills.systemPromptVariables,
+      integrationContext,
+    },
+    userPromptVariables: { message: promptAndSkills.userPrompt },
+    skillVolumes: promptAndSkills.skillVolumes,
+  }).systemPrompt;
   return {
     ...plan,
-    integrationContext: prompt.integrationContext,
+    integrationContext,
     persisted: {
       ...plan.persisted,
       content: {
         ...plan.persisted.content,
-        appendSystemPrompt: prompt.appendSystemPrompt,
+        appendSystemPrompt,
       },
     },
   };
@@ -1006,7 +1017,6 @@ export function createThreadClaimRunObjects(
   const telegramContext$ = threadContext.telegramContext$;
   const agentPhoneContext$ = threadContext.agentPhoneContext$;
   const discordContext$ = threadContext.discordContext$;
-  const automationEvent$ = threadContext.automationContext$;
   // Per-claim dispatch timing collectors, created once per graph like the run
   // ids; commands record into them in their own order.
   const claimRunTiming$ = computed((get): ClaimRunTiming => {
@@ -1452,12 +1462,9 @@ export function createThreadClaimRunObjects(
     });
   });
   const automationSource$ = computed(async (get) => {
-    const [event, target] = await Promise.all([
-      get(automationEvent$),
-      get(threadContext.automationTarget$),
-    ]);
-    if (event && target) {
-      return { kind: "ready" as const, event, target };
+    const snapshot = await get(threadContext.automationSnapshot$);
+    if (snapshot?.target) {
+      return { ...snapshot, kind: "ready" as const, target: snapshot.target };
     }
     const head = await get(head$);
     const assembly: RejectedQueueRunAssembly = {
@@ -1467,58 +1474,23 @@ export function createThreadClaimRunObjects(
         error: conflict("Workflow automation no longer exists").body.error,
       },
     };
-    return { kind: "rejected" as const, event, assembly };
-  });
-  const automationSourceBudget$ = computed(async (get) => {
-    const event = await get(automationEvent$);
-    if (!event) {
-      return null;
-    }
-    const sourceRunId =
-      event.eventType === "chat-run-finished"
-        ? event.eventPayload?.["runId"]
-        : event.eventType === "manual"
-          ? event.eventPayload?.["sourceRunId"]
-          : undefined;
-    if (typeof sourceRunId !== "string") {
-      return { sourceRunId, autonomyBudget: null };
-    }
-    const [run] = await get(db$)
-      .select({ autonomyBudget: agentRuns.autonomyBudget })
-      .from(agentRuns)
-      .where(
-        and(eq(agentRuns.id, sourceRunId), isNotNull(agentRuns.triggerSource)),
-      )
-      .limit(1);
-    return { sourceRunId, autonomyBudget: run?.autonomyBudget ?? null };
+    return { kind: "rejected" as const, event: snapshot?.event, assembly };
   });
   const automationBudget$ = computed(
     async (get): Promise<AutonomyBudgetResult> => {
-      const [input, source] = await Promise.all([
-        get(automationSource$),
-        get(automationSourceBudget$),
-      ]);
-      if (input.kind === "rejected" || !source) {
-        return {
-          kind: "invalid",
-          error: {
-            code: "CONFLICT",
-            message: "Workflow automation no longer exists",
-          },
-        };
+      const input = await get(automationSource$);
+      if (input.kind === "rejected") {
+        return { kind: "invalid", error: input.assembly.rejection.error };
       }
-      const { event, target } = input;
-      if (
-        event.eventType !== "chat-run-finished" &&
-        source.sourceRunId === undefined
-      ) {
+      const { event, target, sourceRunIdType, sourceAutonomyBudget } = input;
+      if (event.eventType !== "chat-run-finished" && sourceRunIdType === null) {
         return { kind: "ok", autonomyBudget: target.automation.autonomyBudget };
       }
       const label =
         event.eventType === "manual"
           ? "Manual automation"
           : "Chat run finished";
-      if (typeof source.sourceRunId !== "string") {
+      if (sourceRunIdType !== "string") {
         return {
           kind: "invalid",
           error: {
@@ -1527,7 +1499,7 @@ export function createThreadClaimRunObjects(
           },
         };
       }
-      if (source.autonomyBudget === null) {
+      if (sourceAutonomyBudget === null) {
         return {
           kind: "invalid",
           error: {
@@ -1536,7 +1508,7 @@ export function createThreadClaimRunObjects(
           },
         };
       }
-      const derived = childAutonomyBudget(source.autonomyBudget);
+      const derived = childAutonomyBudget(sourceAutonomyBudget);
       return derived.kind === "exhausted"
         ? {
             kind: "invalid",
@@ -1602,7 +1574,7 @@ export function createThreadClaimRunObjects(
         eventType: event.eventType,
         eventPayload: await get(threadContext.automationPayload$),
         automation: target.automation,
-        agentId: target.agentId,
+        agentId: target.workflow.agentId,
         chatThreadId: event.chatThreadId,
       });
       if (!material) {
@@ -1708,10 +1680,7 @@ export function createThreadClaimRunObjects(
   });
   const inputResources$ = computed(async (get) => {
     if (await get(isAutomation$)) {
-      await Promise.allSettled([
-        get(automationSourceBudget$),
-        get(automationModel$),
-      ]);
+      await settle(get(automationModel$));
       return;
     }
     await get(threadContext.inputResources$);
@@ -2458,31 +2427,25 @@ export function createThreadClaimRunObjects(
       return head;
     },
   );
-  const prepareEmailSystemPrompt$ = command(
-    async (
-      { get, set },
-      signal: AbortSignal,
-    ): Promise<{
-      readonly appendSystemPrompt: string;
-      readonly integrationContext: string;
-    } | null> => {
-      const email = await get(threadContext.emailContext$);
-      signal.throwIfAborted();
-      if (!email) {
+  const prepareEmailIntegrationContext$ = command(
+    async ({ get, set }, signal: AbortSignal): Promise<string | null> => {
+      if (!(await get(resourceAllowed$))) {
         return null;
       }
-      const mailboxes = await get(threadContext.emailMailboxConnections$);
       signal.throwIfAborted();
-      if (mailboxes.length === 0) {
+      const [email, mailboxes] = await Promise.all([
+        get(threadContext.emailContext$),
+        get(threadContext.emailMailboxConnections$),
+      ]);
+      signal.throwIfAborted();
+      if (!email || mailboxes.length === 0) {
         return null;
       }
-      const [snapshot, policies, featureSwitchContext, promptAndSkills] =
-        await Promise.all([
-          get(bootstrap.catalog$),
-          get(bootstrap.permissionPolicies$),
-          get(bootstrap.featureSwitches$),
-          get(promptAndSkillVolumes$),
-        ]);
+      const [snapshot, policies, featureSwitchContext] = await Promise.all([
+        get(bootstrap.catalog$),
+        get(bootstrap.permissionPolicies$),
+        get(bootstrap.featureSwitches$),
+      ]);
       signal.throwIfAborted();
       if (!snapshot) {
         throw new Error(
@@ -2502,7 +2465,7 @@ export function createThreadClaimRunObjects(
         },
         signal,
       );
-      const integrationContext = buildEmailPrompt(
+      return buildEmailPrompt(
         email,
         resolveIntegrationNotePrompt({
           triggerSource: "email",
@@ -2512,37 +2475,66 @@ export function createThreadClaimRunObjects(
         mailboxes,
         messageContext,
       );
-      return {
-        integrationContext,
-        appendSystemPrompt: renderRunPrompts({
-          systemPromptVariables: {
-            ...promptAndSkills.systemPromptVariables,
-            integrationContext,
-          },
-          userPromptVariables: { message: promptAndSkills.userPrompt },
-          skillVolumes: promptAndSkills.skillVolumes,
-        }).systemPrompt,
-      };
     },
   );
   /** Join Email prompt enrichment and the independent Runner inputs. */
   const prepareRunnerResources$ = command(
-    async ({ get, set }, signal: AbortSignal) => {
-      const plan = await get(runPlan$);
-      signal.throwIfAborted();
-      if (!plan || isRouteError(plan)) {
-        return { plan, runnerLaunch: null };
-      }
-      // Email enrichment can persist refreshed credentials. Keep it owned by
-      // this preparation even if the Runner inputs fail first.
-      const [emailPrompt, runnerLaunch] = await joinAllInOrder(
+    async ({ get, set }, head: ChatQueueHeadContext, signal: AbortSignal) => {
+      const emailAbort =
+        head.contextType === "email" ? new AbortController() : null;
+      const emailLookup = emailAbort
+        ? settleIncludingAbort(() => {
+            return set(
+              prepareEmailIntegrationContext$,
+              AbortSignal.any([signal, emailAbort.signal]),
+            );
+          })
+        : null;
+      const planned = onRejection(
+        (async () => {
+          const plan = await get(runPlan$);
+          signal.throwIfAborted();
+          if (!plan || isRouteError(plan)) {
+            emailAbort?.abort();
+          }
+          return plan;
+        })(),
+        () => {
+          emailAbort?.abort();
+        },
+      );
+      const [plan, runnerLaunch] = await joinAllInOrder(
         [
-          set(prepareEmailSystemPrompt$, signal),
-          set(prepareRunnerStorage$, plan.runner, signal),
+          (async () => {
+            // Join the lookup even if planning rejects. Credential refresh can
+            // persist changes while the provider operation is being cancelled.
+            const email = await emailLookup;
+            const plan = await planned;
+            if (!plan || isRouteError(plan)) {
+              return plan;
+            }
+            if (email?.ok === false) {
+              throw email.error;
+            }
+            const integrationContext = email?.value ?? null;
+            return integrationContext === null
+              ? plan
+              : withEmailSystemPrompt(
+                  plan,
+                  integrationContext,
+                  await get(promptAndSkillVolumes$),
+                );
+          })(),
+          (async () => {
+            const plan = await planned;
+            return !plan || isRouteError(plan)
+              ? null
+              : await set(prepareRunnerStorage$, plan.runner, signal);
+          })(),
         ],
         signal,
       );
-      return { plan: withEmailSystemPrompt(plan, emailPrompt), runnerLaunch };
+      return { plan, runnerLaunch };
     },
   );
   /** Validate the automation source before starting shared launch reads. */
@@ -2558,8 +2550,8 @@ export function createThreadClaimRunObjects(
         signal.throwIfAborted();
       }
       const [{ plan: input, runnerLaunch }, callbacks, assembly] =
-        await Promise.all([
-          set(prepareRunnerResources$, signal),
+        await joinAll([
+          set(prepareRunnerResources$, head, signal),
           get(preparedCallbacks$),
           get(assembly$),
         ]);
@@ -2602,7 +2594,7 @@ export function createThreadClaimRunObjects(
       if (!head) {
         return { kind: "passed" };
       }
-      const [resources] = await Promise.all([
+      const [resources] = await joinAll([
         set(prepareLaunchResources$, head, signal),
         get(preparedStorage$),
         // Connector reads start independently of prompt/model material. A

@@ -1522,6 +1522,16 @@ describe("Email integration", () => {
     await connectEmailMailbox(actor, "gmail", actor.email);
     verifiedDirectory(actor);
     await setGmailContextReadPermission("deny");
+    let mailboxRequests = 0;
+    server.use(
+      http.get(
+        "https://gmail.googleapis.com/gmail/v1/users/me/messages",
+        () => {
+          mailboxRequests += 1;
+          return HttpResponse.json({ messages: [] });
+        },
+      ),
+    );
     await incoming({
       sender: actor.email,
       text: "The received email remains usable",
@@ -1533,9 +1543,10 @@ describe("Email integration", () => {
     expect(receivedExecution.appendSystemPrompt).toContain(
       "- LOOKUP_STATUS: permission-required",
     );
+    expect(mailboxRequests).toBe(0);
   });
 
-  it("retains admitted timezone and Seed bundles when sources change during mailbox lookup", async () => {
+  it("retains captured timezone and Seed bundles when sources change during mailbox lookup", async () => {
     const app = await setupApp({
       context,
       routes: cronSyncSkillsRoutes,
@@ -1572,7 +1583,7 @@ describe("Email integration", () => {
       http.get(
         "https://gmail.googleapis.com/gmail/v1/users/me/messages",
         async () => {
-          // The mailbox body is read after the complete admission Run plan.
+          // Model selection and Email authorization already captured these sources.
           await bdd.updateUserTimezone(actor, "Asia/Shanghai");
           githubSource("3".repeat(40), laterSource.archive);
           expect((await sync()).body.failed).toBe(0);

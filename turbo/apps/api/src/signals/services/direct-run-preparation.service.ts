@@ -1,4 +1,3 @@
-import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { command } from "ccstate";
 import { and, eq, isNotNull, ne, sql } from "drizzle-orm";
@@ -11,6 +10,7 @@ import { rawSqlReadDb$ } from "../external/db";
 import { recordSandboxOperations } from "../external/sandbox-op-log";
 import { joinAll } from "../utils";
 import type { AdmittedExecutionFacts } from "./admitted-execution-facts";
+import { selectExecutionContentBundles } from "./execution-content-bundle";
 import type { AcceptedMemoryMount } from "./execution-storage.service";
 import {
   executionPackages,
@@ -23,7 +23,6 @@ import {
 } from "./content-bundle-presigned-url-cache";
 import {
   prepareExecutionPublication$,
-  executionBundleHashes,
   type ExecutionPublicationRun,
 } from "./run-execution-publication.service";
 import type { RunnerReusePreparation } from "./runner-reuse-preference";
@@ -54,47 +53,34 @@ export interface DirectRunCachePublication {
 }
 
 const executionPublicationFactsSchema = object({
-  pending: boolean(),
   isFirstRun: boolean(),
   cachedBundleUrls: array(cachedContentBundleUrlSchema),
 });
 
-const readExecutionPackages$ = command(
+const readExecutionPublicationFacts$ = command(
   async (
     { get },
-    input: AdmittedRunLaunch,
-    packageContext: ReturnType<typeof executionPackages>,
+    run: AdmittedRunLaunch["run"],
+    bundleHashes: readonly string[],
     signal: AbortSignal,
   ) => {
     signal.throwIfAborted();
     const db = get(rawSqlReadDb$);
     const cache = get(contentBundleUrlCacheContext$);
-    const { instructionsBundle, workflows } = input.facts.executionPackages;
-    const bundleHashes = [
-      instructionsBundle.sha256,
-      ...workflows.map((workflow) => {
-        return workflow.contentBundle.sha256;
-      }),
-      ...executionBundleHashes(packageContext),
-    ];
     const timestamp = nowDate().toISOString();
     const startedAt = monotonicNow();
-    const rows = await db.execute(sql`SELECT EXISTS(
-      SELECT 1 FROM ${agentRuns}
-      WHERE ${and(eq(agentRuns.id, input.run.id), eq(agentRuns.userId, input.run.userId), eq(agentRuns.orgId, input.run.orgId), eq(agentRuns.status, "pending"))}
-    ) AS pending,
-      NOT EXISTS(SELECT 1 FROM ${chatEvents} WHERE ${and(eq(chatEvents.chatThreadId, input.run.chatThreadId), isNotNull(chatEvents.runId), ne(chatEvents.runId, input.run.id))}) AS "isFirstRun",
+    const rows = await db.execute(sql`SELECT
+      NOT EXISTS(SELECT 1 FROM ${chatEvents} WHERE ${and(eq(chatEvents.chatThreadId, run.chatThreadId), isNotNull(chatEvents.runId), ne(chatEvents.runId, run.id))}) AS "isFirstRun",
       ${contentBundleUrlCacheSnapshotSql(cache, bundleHashes)} AS "cachedBundleUrls"`);
     signal.throwIfAborted();
     const [row] = parseRawRows(executionPublicationFactsSchema, rows);
-    if (!row?.pending) {
-      throw new Error("Run is no longer pending for execution publication");
+    if (!row) {
+      throw new Error("Execution publication query returned no row");
     }
     const readyAt = monotonicNow();
     return {
-      row: { ...input.facts.executionPackages, ...row },
-      skillRoot: packageContext.skillRoot,
-      cache,
+      isFirstRun: row.isFirstRun,
+      bundleUrlCache: { context: cache, rows: row.cachedBundleUrls },
       timing: { timestamp, startedAt, readyAt },
     };
   },
@@ -104,7 +90,11 @@ export const prepareDirectRun$ = command(
   async ({ set }, input: AdmittedRunLaunch, signal: AbortSignal) => {
     signal.throwIfAborted();
     const packageContext = executionPackages(input);
-    const [runtime, packages] = await joinAll([
+    const bundles = selectExecutionContentBundles(
+      input.facts.executionPackages,
+      packageContext,
+    );
+    const [runtime, publicationFacts] = await joinAll([
       (async () => {
         const prepared = await set(
           prepareExecutionRuntimeContext$,
@@ -114,17 +104,17 @@ export const prepareDirectRun$ = command(
         );
         return { prepared, readyAt: monotonicNow() };
       })(),
-      set(readExecutionPackages$, input, packageContext, signal),
+      set(readExecutionPublicationFacts$, input.run, bundles.hashes, signal),
     ]);
     signal.throwIfAborted();
     const { prepared } = runtime;
     const bundleCacheWaitMs = Math.max(
       0,
-      packages.timing.readyAt - runtime.readyAt,
+      publicationFacts.timing.readyAt - runtime.readyAt,
     );
     const run = {
       ...input.run,
-      isFirstRun: packages.row.isFirstRun,
+      isFirstRun: publicationFacts.isFirstRun,
     };
     const context = prepared.context;
     const publication = await set(
@@ -134,9 +124,8 @@ export const prepareDirectRun$ = command(
         reuseKey: input.reuseKey,
         preparedContext: context,
         networkPolicyInputs: prepared.networkPolicyInputs,
-        packages: packages.row,
-        skillRoot: packages.skillRoot,
-        bundleUrlCache: packages.cache,
+        bundles,
+        bundleUrlCache: publicationFacts.bundleUrlCache,
       },
       signal,
     );
@@ -148,8 +137,9 @@ export const prepareDirectRun$ = command(
           ...publication.cacheWrites,
         ],
         bundleCacheRead: {
-          startedAt: packages.timing.timestamp,
-          durationMs: packages.timing.readyAt - packages.timing.startedAt,
+          startedAt: publicationFacts.timing.timestamp,
+          durationMs:
+            publicationFacts.timing.readyAt - publicationFacts.timing.startedAt,
           consumerWaitMs: bundleCacheWaitMs,
         },
       } satisfies DirectRunCachePublication,
