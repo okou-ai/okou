@@ -1740,7 +1740,6 @@ test("For you keeps deck navigation and moves source settings into My Okou", asy
     featureSwitches: {
       ...features,
       [FeatureSwitchKey.SingleAgent]: true,
-      [FeatureSwitchKey.MyOkouProactiveSettings]: true,
     },
   });
   await activeForYouCard("Suggested action 1");

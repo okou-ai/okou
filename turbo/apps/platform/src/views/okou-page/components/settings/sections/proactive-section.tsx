@@ -1,6 +1,3 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { useLastResolved } from "ccstate-react";
-import { featureSwitches$ } from "../../../../../signals/external/feature-switch.ts";
 import { SourceChoices } from "../../../for-you-sources.tsx";
 import { surfaceVariants } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
@@ -16,8 +13,6 @@ export function ProactiveSection({
 }: {
   readonly inMyOkou?: boolean;
 }) {
-  const features = useLastResolved(featureSwitches$);
-  const showSources = inMyOkou && features?.[FeatureSwitchKey.AgentSuggestion];
   const { t } = useTranslation();
   const title = t(($) => {
     return $.settings.dialog.sections.proactiveLearning.title;
@@ -37,9 +32,9 @@ export function ProactiveSection({
         <MorningBriefSettings inline={inMyOkou} />
         <ProactiveSuggestionsSettings inMyOkou={inMyOkou} />
         <ProactiveLearningSettings inline={inMyOkou} />
-        {showSources && <SourceChoices inMyOkou />}
+        {inMyOkou && <SourceChoices inMyOkou />}
       </div>
-      {showSources && (
+      {inMyOkou && (
         <p className="text-xs text-muted-foreground">
           {t(($) => {
             return $.myOkou.proactiveSettings.sourcesHint;

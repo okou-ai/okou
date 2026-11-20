@@ -7,7 +7,7 @@ import { command, computed, state } from "ccstate";
 import { isOrgAdmin$ } from "../../org.ts";
 import { MORNING_BRIEF_PREFERENCES_FOCUS } from "@okouai/api-contracts/validators/morning-brief-preference";
 import {
-  myOkouProactiveSettingsEnabled$,
+  proactiveSettingsInMyOkou$,
   singleAgentEnabled$,
 } from "../../single-agent.ts";
 import {
@@ -404,7 +404,7 @@ export const checkUnifiedSettingsParam$ = command(
     const section =
       value === "preference" &&
       params.get("focus") === MORNING_BRIEF_PREFERENCES_FOCUS &&
-      (await get(myOkouProactiveSettingsEnabled$))
+      (await get(proactiveSettingsInMyOkou$))
         ? "my-okou"
         : value;
     signal.throwIfAborted();

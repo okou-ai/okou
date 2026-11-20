@@ -35,7 +35,7 @@ import {
   SuggestionSentNotice,
 } from "./agent-suggestions.tsx";
 import { SuggestionsComplete } from "./suggestions-complete.tsx";
-import { myOkouProactiveSettingsEnabled$ } from "../../signals/single-agent.ts";
+import { proactiveSettingsInMyOkou$ } from "../../signals/single-agent.ts";
 import { ForYouSources } from "./for-you-sources.tsx";
 import { PlatformFeedEvent } from "./platform-feed-event.tsx";
 import { forYouBackground$ } from "../../signals/okou-page/for-you-artwork.ts";
@@ -256,7 +256,7 @@ function ForYouNavigation() {
 }
 
 function ForYouHeader() {
-  const proactiveInMyOkou = useLastResolved(myOkouProactiveSettingsEnabled$);
+  const proactiveInMyOkou = useLastResolved(proactiveSettingsInMyOkou$);
   const { t } = useTranslation();
   const deck = useLastResolved(forYouDeck$);
   const cards = deck?.progressCards ?? [];
