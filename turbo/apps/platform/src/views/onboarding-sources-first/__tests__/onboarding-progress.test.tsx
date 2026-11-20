@@ -4,6 +4,7 @@ import { expect, test } from "vitest";
 
 import {
   click,
+  fill,
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
@@ -155,22 +156,28 @@ test("The first server save imports both browser draft keys before clearing them
   ]);
 });
 
-test("A rollback to an older API still resumes the browser draft", async () => {
+test("Another member's saved task and step survive editing on a shared browser", async () => {
   context.mocks.data.onboardingStatus({
     needsOnboarding: true,
     onboardingComplete: false,
   });
-  mockOnboardingConnectorCatalog(context, []);
-  seedProgress("ready");
   context.mocks.api(onboardingDraftContract.get, ({ respond }) => {
-    return respond(404, { error: { message: "Not found", code: "NOT_FOUND" } });
+    return respond(404, {
+      error: { code: "NOT_FOUND", message: "Onboarding draft is unavailable" },
+    });
   });
+  mockOnboardingConnectorCatalog(context, []);
+  seedProgress("sources", { orgId: "org_default", userId: "previous-member" });
+  const previousTask = context.store.set(draftStorage.readFresh$);
+  const previousStep = context.store.set(stepStorage.readFresh$);
 
-  await setupPage({ context, locale: "en-US", path: ROUTES.onboarding });
-  await screen.findByRole("heading", { name: "Let’s start your first task" });
-  expect(screen.getByLabelText("Your first task")).toHaveValue(
-    "Draft my launch plan",
-  );
+  await setupPage({ context, locale: "en-US", path: ROUTES.onboardingReady });
+  const input = await screen.findByRole("textbox", { name: "Your first task" });
+  await fill(input, "Summarize this week's work");
+
+  expect(input).toHaveValue("Summarize this week's work");
+  expect(context.store.set(draftStorage.readFresh$)).toBe(previousTask);
+  expect(context.store.set(stepStorage.readFresh$)).toBe(previousStep);
 });
 
 test("An explicit step URL takes precedence over saved progress", async () => {
