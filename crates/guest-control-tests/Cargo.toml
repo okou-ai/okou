@@ -1,6 +1,6 @@
 [package]
 name = "guest-control-tests"
-version = "0.12.205"
+version = "0.12.206"
 edition.workspace = true
 
 [dependencies]

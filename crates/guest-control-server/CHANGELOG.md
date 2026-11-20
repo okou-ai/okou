@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.133](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.132...guest-control-server-v0.24.133) (2026-11-20)
+
+
+### Performance Improvements
+
+* **guest-storage:** pass large decoded inputs in sealed descriptors ([#49206](https://github.com/okou-ai/okou/issues/49206)) ([b48b19f](https://github.com/okou-ai/okou/commit/b48b19f606fe851dc9faa04995c2d1fdaef7203a))
+
 ## [0.24.132](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.131...guest-control-server-v0.24.132) (2026-11-19)
 
 

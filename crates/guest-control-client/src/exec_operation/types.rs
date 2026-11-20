@@ -44,6 +44,18 @@ pub enum ExecOwnedCapturedOutput {
     },
 }
 
+impl ExecOwnedCapturedOutput {
+    /// Consume the output and return its retained bytes and guest truncation flag.
+    ///
+    /// An empty capture still returns the pair. Discarded output returns `None`.
+    pub fn into_captured(self) -> Option<(Vec<u8>, bool)> {
+        match self {
+            Self::Discarded => None,
+            Self::Captured { bytes, truncated } => Some((bytes, truncated)),
+        }
+    }
+}
+
 /// Terminal result for a host exec operation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExecOperationResult {

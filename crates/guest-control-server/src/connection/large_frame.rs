@@ -1,10 +1,14 @@
 use std::fs::File;
-use std::io::{self, Read, Write};
+use std::io::{self, Read, Seek, Write};
 use std::ops::RangeInclusive;
+use std::os::fd::AsFd;
 
+use bytes::Bytes;
+use guest_contracts::sealed_input::SealedInput;
 use guest_control_proto::{Decoder, IncompleteFrame};
 
 use crate::error::to_io_error;
+use crate::log::log;
 use crate::sealed_input;
 
 // Ordinary batches at the sealed-helper cutoff are still incomplete after a
@@ -24,6 +28,102 @@ pub(super) fn receive_write(
 ) -> io::Result<Option<(File, usize)>> {
     let mut input = sealed_input::create(c"guest-write-files")?;
     Ok(receive_into(reader, scratch, frame, &mut input)?.map(|retained| (input, retained)))
+}
+
+pub(super) enum ReceivedStorage {
+    Buffered(Bytes),
+    Sealed { file: File, mapping: SealedInput },
+}
+
+pub(super) fn receive_storage(
+    reader: &mut impl Read,
+    scratch: &mut [u8],
+    frame: &IncompleteFrame,
+) -> io::Result<Option<(ReceivedStorage, usize)>> {
+    let mut input = match sealed_input::create(c"guest-storage-receive") {
+        Ok(file) => StorageBuffer::File(file),
+        Err(error) => {
+            log_storage_buffer_fallback(&error);
+            StorageBuffer::Heap(Vec::with_capacity(frame.payload_len))
+        }
+    };
+    let Some(retained) = receive_into(reader, scratch, frame, &mut input)? else {
+        return Ok(None);
+    };
+    Ok(Some((input.finish()?, retained)))
+}
+
+enum StorageBuffer {
+    File(File),
+    Heap(Vec<u8>),
+}
+
+impl StorageBuffer {
+    fn finish(self) -> io::Result<ReceivedStorage> {
+        match self {
+            Self::Heap(payload) => Ok(ReceivedStorage::Buffered(payload.into())),
+            Self::File(mut file) => {
+                let mapping = sealed_input::seal(&file).and_then(|()| {
+                    SealedInput::map(file.as_fd(), *OWNED_STORAGE_PAYLOAD_BYTES.end())
+                });
+                match mapping {
+                    Ok(mapping) => Ok(ReceivedStorage::Sealed { file, mapping }),
+                    Err(error) => {
+                        let payload = recover_storage_prefix(&mut file, &error)?;
+                        Ok(ReceivedStorage::Buffered(payload.into()))
+                    }
+                }
+            }
+        }
+    }
+}
+
+impl Write for StorageBuffer {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        match self {
+            Self::Heap(payload) => payload.write(bytes),
+            Self::File(file) => match file.write(bytes) {
+                Err(error) if error.kind() != io::ErrorKind::Interrupted => {
+                    let mut payload = recover_storage_prefix(file, &error)?;
+                    payload.extend_from_slice(bytes);
+                    *self = Self::Heap(payload);
+                    Ok(bytes.len())
+                }
+                result => result,
+            },
+        }
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        match self {
+            Self::Heap(payload) => payload.flush(),
+            Self::File(file) => file.flush(),
+        }
+    }
+}
+
+fn log_storage_buffer_fallback(error: &io::Error) {
+    log(
+        "WARN",
+        &format!("Could not stream Storage input to a sealed file: {error}"),
+    );
+}
+
+fn recover_storage_prefix(file: &mut File, error: &io::Error) -> io::Result<Vec<u8>> {
+    log_storage_buffer_fallback(error);
+    // The receiver owns the file and has only made sequential writes. Its
+    // cursor marks the prefix already consumed, including any short writes.
+    let length = file.stream_position()?;
+    file.rewind()?;
+    let mut payload = Vec::new();
+    file.take(length).read_to_end(&mut payload)?;
+    if payload.len() as u64 != length {
+        return Err(io::Error::new(
+            io::ErrorKind::UnexpectedEof,
+            "could not recover the consumed Storage frame prefix",
+        ));
+    }
+    Ok(payload)
 }
 
 /// Finish receiving the bounded payload. Preflight coalesced following bytes

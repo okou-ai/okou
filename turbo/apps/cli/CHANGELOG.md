@@ -1,5 +1,21 @@
 # Changelog
 
+## [10.34.12](https://github.com/okou-ai/okou/compare/cli-v10.34.11...cli-v10.34.12) (2026-11-20)
+
+
+### Refactoring
+
+* **api:** retire agent connector execution grants ([#49268](https://github.com/okou-ai/okou/issues/49268)) ([596e8ca](https://github.com/okou-ai/okou/commit/596e8ca5d65c2ba7d7b447816042a9bc48fa8b44))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.93.2
+    * @okouai/core bumped to 8.856.2
+    * @okouai/pi-agent-runtime bumped to 1.52.11
+
 ## [10.34.11](https://github.com/okou-ai/okou/compare/cli-v10.34.10...cli-v10.34.11) (2026-11-19)
 
 

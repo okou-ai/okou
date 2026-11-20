@@ -16,13 +16,12 @@ fn read_exec_output(
     name: &str,
     output: ExecOwnedCapturedOutput,
 ) -> io::Result<(Vec<u8>, bool)> {
-    match output {
-        ExecOwnedCapturedOutput::Captured { bytes, truncated } => Ok((bytes, truncated)),
-        ExecOwnedCapturedOutput::Discarded => Err(io::Error::new(
+    output.into_captured().ok_or_else(|| {
+        io::Error::new(
             io::ErrorKind::InvalidData,
             format!("read_file result for {path} discarded {name} capture"),
-        )),
-    }
+        )
+    })
 }
 
 fn validate_read_exec_result(

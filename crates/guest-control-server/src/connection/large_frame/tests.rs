@@ -39,3 +39,32 @@ fn rejects_invalid_trailing_frame_before_returning_the_payload() {
     let mut input = Vec::new();
     assert!(receive_into(&mut body_and_trailing, &mut scratch, &frame, &mut input).is_err());
 }
+
+#[test]
+fn storage_recovers_the_written_prefix_when_the_file_stops_accepting_writes() {
+    let mut file = sealed_input::create(c"storage-receive-write-failure").unwrap();
+    file.write_all(b"prefix").unwrap();
+    sealed_input::seal(&file).unwrap();
+    let mut storage = StorageBuffer::File(file);
+    storage.write_all(b"remaining").unwrap();
+
+    let ReceivedStorage::Buffered(payload) = storage.finish().unwrap() else {
+        panic!("expected the owned buffer after descriptor write failure");
+    };
+    assert_eq!(payload.as_ref(), b"prefixremaining");
+}
+
+#[test]
+fn storage_retains_the_complete_payload_when_sealing_fails() {
+    use rustix::fs::{SealFlags, fcntl_add_seals};
+
+    let file = sealed_input::create(c"storage-receive-seal-failure").unwrap();
+    fcntl_add_seals(&file, SealFlags::SEAL).unwrap();
+    let mut storage = StorageBuffer::File(file);
+    storage.write_all(b"complete").unwrap();
+
+    let ReceivedStorage::Buffered(payload) = storage.finish().unwrap() else {
+        panic!("expected the owned buffer after descriptor sealing failure");
+    };
+    assert_eq!(payload.as_ref(), b"complete");
+}

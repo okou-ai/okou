@@ -50,6 +50,9 @@
           - stripe_secret_key | length > 0
         fail_msg: "Required variables: job_ref, forward_url, stripe_secret_key"
 
+    - name: Retire the existing listener before replacement
+      ansible.builtin.import_tasks: tasks/retire-stripe-listener.yml
+
     - name: Create Stripe listener directory
       file:
         path: "{{ item }}"
@@ -113,12 +116,6 @@
       file:
         path: "{{ stripe_archive }}"
         state: absent
-
-    - name: Stop existing listener service
-      command: systemctl stop {{ service_name }}.service
-      register: stop_existing
-      changed_when: stop_existing.rc == 0
-      failed_when: false
 
     - name: Write Stripe listener environment
       copy:

@@ -288,16 +288,6 @@ async fn write_copy_stream_event(
     temp_file.write_all(&event.chunk).await
 }
 
-fn copy_exec_stderr(result: &ExecOperationResult) -> io::Result<(Vec<u8>, bool)> {
-    match &result.stderr {
-        ExecOwnedCapturedOutput::Captured { bytes, truncated } => Ok((bytes.clone(), *truncated)),
-        ExecOwnedCapturedOutput::Discarded => Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "copy_file exec operation discarded stderr capture",
-        )),
-    }
-}
-
 fn validate_copy_exec_result(
     path: &str,
     result: ExecOperationResult,
@@ -313,7 +303,12 @@ fn validate_copy_exec_result(
             "copy_file exec operation unexpectedly captured stdout",
         ));
     }
-    let (stderr, stderr_truncated) = copy_exec_stderr(&result)?;
+    let (stderr, stderr_truncated) = result.stderr.into_captured().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            "copy_file exec operation discarded stderr capture",
+        )
+    })?;
     let stderr = normalize_file_exec_stderr(stderr, stderr_truncated);
     match file_exec_exit_code(
         result.termination,

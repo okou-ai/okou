@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.0](https://github.com/okou-ai/okou/compare/runner-executor-v0.22.13...runner-executor-v0.23.0) (2026-11-20)
+
+
+### Features
+
+* **runner:** accept optionality on execution Skill bundles ([#49266](https://github.com/okou-ai/okou/issues/49266)) ([64bd508](https://github.com/okou-ai/okou/commit/64bd508da7156eac1672d135fdca8fe9437501ec))
+
 ## [0.22.13](https://github.com/okou-ai/okou/compare/runner-executor-v0.22.12...runner-executor-v0.22.13) (2026-11-20)
 
 ## [0.22.12](https://github.com/okou-ai/okou/compare/runner-executor-v0.22.11...runner-executor-v0.22.12) (2026-11-19)

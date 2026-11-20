@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.27.0](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.26.13...runner-supervisor-v0.27.0) (2026-11-20)
+
+
+### Features
+
+* **runner:** accept optionality on execution Skill bundles ([#49266](https://github.com/okou-ai/okou/issues/49266)) ([64bd508](https://github.com/okou-ai/okou/commit/64bd508da7156eac1672d135fdca8fe9437501ec))
+
 ## [0.26.13](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.26.12...runner-supervisor-v0.26.13) (2026-11-20)
 
 ## [0.26.12](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.26.11...runner-supervisor-v0.26.12) (2026-11-19)

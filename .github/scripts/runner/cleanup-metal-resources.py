@@ -2,6 +2,7 @@
 """Observe/reconcile PR resources on one host; GitHub authority stays in the caller.
 
 The session worker owns every selected namespace's lifecycle lock through cleanup.
+The Stripe retirement command runs under the deployment's existing lifecycle lock.
 Input is an explicit PR-number selection, never paths or shell fragments. Output
 is JSON; command errors go to stderr. No mutation is replayed after a timeout.
 --root relocates filesystem access for execution in an isolated host namespace.
@@ -310,6 +311,16 @@ class Host:
                     time.sleep(0.1)
             yield
 
+    def stop_stripe_listener(self, pr):
+        unit = f"vm0-stripe-listener-pr-{pr}.service"
+        previous = self.states([unit])[unit]
+        if not previous["busy"]:
+            return False
+        command("systemctl", "stop", "--no-block", unit)
+        while self.states([unit])[unit]["busy"] or self.populated(previous["ControlGroup"]):
+            time.sleep(0.5)
+        return True
+
     def revoke_image_admission(self, selected):
         # The session holds these namespace locks. Older image workers check
         # the marker after acquiring the same lock, without reading the cutoff.
@@ -548,7 +559,7 @@ class Host:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=["inventory", "session"])
+    parser.add_argument("operation", choices=["inventory", "session", "stop-stripe"])
     parser.add_argument("numbers", nargs="*", type=int)
     parser.add_argument("--root", default="/")
     args = parser.parse_args()
@@ -557,6 +568,13 @@ def main():
     ):
         parser.error("cleanup requires positive PR numbers")
     host = Host(args.root)
+    if args.operation == "stop-stripe":
+        if len(args.numbers) != 1:
+            parser.error("stop-stripe requires exactly one PR number")
+        # The calling deployment holds the lifecycle lock. Keep the initial
+        # operation alarm armed across the stop request and all observations.
+        print(json.dumps({"stopped": host.stop_stripe_listener(args.numbers[0])}))
+        return
     if args.operation == "session":
         if len(args.numbers) > 8:
             parser.error("session batch exceeds eight namespaces")

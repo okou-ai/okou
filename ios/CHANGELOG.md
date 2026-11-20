@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.51.2](https://github.com/okou-ai/okou/compare/ios-v0.51.1...ios-v0.51.2) (2026-11-20)
+
+
+### Refactoring
+
+* **api:** retire agent connector execution grants ([#49268](https://github.com/okou-ai/okou/issues/49268)) ([596e8ca](https://github.com/okou-ai/okou/commit/596e8ca5d65c2ba7d7b447816042a9bc48fa8b44))
+
 ## [0.51.1](https://github.com/okou-ai/okou/compare/ios-v0.51.0...ios-v0.51.1) (2026-11-20)
 
 
