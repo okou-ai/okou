@@ -231,6 +231,7 @@ internal fun OkouApp(
 
     fun openChat(chat: ConfirmedChat, fromSearch: Boolean = false) {
         val activeChats = chats ?: return
+        val pending = composer?.uiState?.value?.pendingNewChat(chat.id)
         val search =
             when {
                 fromSearch && listWidth == null -> SearchRoute.ReturnOnBack
@@ -246,11 +247,13 @@ internal fun OkouApp(
         conversations.open(chat.id)
         navigation =
             navigation.copy(
-                target = WorkspaceTarget.Chat(chat.id),
+                target =
+                    if (pending == null) WorkspaceTarget.Chat(chat.id)
+                    else WorkspaceTarget.NewChat(pending.projectId),
                 settings = null,
                 search = search,
             )
-        composer?.acknowledge(chat.id)
+        if (pending == null) composer?.acknowledge(chat.id)
         activeChats.history.open(chat)
     }
 
@@ -264,9 +267,21 @@ internal fun OkouApp(
         navigation = navigation.copy(target = WorkspaceTarget.NewChat(projectId), search = search)
     }
 
-    LaunchedEffect(target, thread, list.listPhase, listWidth) {
+    val composerInput = composer?.uiState?.collectAsStateWithLifecycle()
+    val pendingNewChat by
+        remember(composerInput, target) {
+            derivedStateOf(structuralEqualityPolicy()) {
+                (target as? WorkspaceTarget.Chat)?.let {
+                    composerInput?.value?.pendingNewChat(it.id)
+                }
+            }
+        }
+    LaunchedEffect(target, thread, list.listPhase, listWidth, pendingNewChat) {
         if (target is WorkspaceTarget.Chat) {
-            if (thread != null) chats?.history?.open(thread)
+            val pending = pendingNewChat
+            if (pending != null && navigation.target == target) {
+                navigation = navigation.copy(target = WorkspaceTarget.NewChat(pending.projectId))
+            } else if (thread != null) chats?.history?.open(thread)
             else if (list.listPhase == ChatReadPhase.Ready && navigation.target == target) {
                 returnToList()
                 scope.launch {
@@ -277,23 +292,25 @@ internal fun OkouApp(
     }
     val newChat = target as? WorkspaceTarget.NewChat
     val newTarget = newChat?.let { ComposerTarget(projectId = it.projectId) }
-    val createdId =
-        if (newTarget != null && composer != null) {
-            val draft = newTarget
-            val input = composer.uiState.collectAsStateWithLifecycle()
-            val created by
-                remember(input, draft) {
-                    derivedStateOf(structuralEqualityPolicy()) {
-                        input.value.entry(draft).createdThreadId
-                    }
-                }
-            created
-        } else null
-    val createdChat =
-        createdId?.let { id -> list.threads.firstOrNull { it.id == id && it.hidden != true } }
-    LaunchedEffect(newChat, createdChat) {
-        if (newChat != null && navigation.target == newChat && createdChat != null) {
-            openChat(createdChat)
+    val submission by
+        remember(composerInput, newTarget) {
+            derivedStateOf(structuralEqualityPolicy()) {
+                newTarget
+                    ?.let { composerInput?.value?.entry(it) }
+                    ?.let { it.pending?.threadId to it.createdThreadId }
+            }
+        }
+    val (pendingId, createdId) = submission ?: (null to null)
+    val provisionalId = pendingId ?: createdId
+    val provisionalChat =
+        provisionalId?.let { id -> list.threads.firstOrNull { it.id == id && it.hidden != true } }
+    LaunchedEffect(newChat, provisionalId, provisionalChat, createdId) {
+        if (newChat != null && navigation.target == newChat && provisionalId != null) {
+            conversations.open(provisionalId)
+            if (provisionalChat != null) {
+                if (createdId != null) openChat(provisionalChat)
+                else chats?.history?.open(provisionalChat)
+            }
         }
     }
 
@@ -606,9 +623,11 @@ internal fun OkouApp(
                                                 target.id,
                                                 list,
                                                 Modifier.weight(1f),
+                                                composer = composer,
                                             )
                                             if (
                                                 thread != null &&
+                                                    pendingNewChat == null &&
                                                     composer != null &&
                                                     controls != null
                                             ) {
@@ -633,20 +652,28 @@ internal fun OkouApp(
                                                 )
                                             }
                                         }
-                                    is WorkspaceTarget.NewChat ->
-                                        conversations.Content(checkNotNull(newTarget).key) {
-                                            Box(Modifier.weight(1f))
-                                            if (createdId != null) {
-                                                Text(
-                                                    stringResource(R.string.composer_accepted),
-                                                    Modifier.padding(16.dp),
+                                    is WorkspaceTarget.NewChat -> {
+                                        if (provisionalId != null) {
+                                            conversations.Content(provisionalId) {
+                                                ConversationRoute(
+                                                    chats.history,
+                                                    provisionalId,
+                                                    list,
+                                                    Modifier.weight(1f),
+                                                    composer = composer,
+                                                    historyAvailable = provisionalChat != null,
                                                 )
+                                            }
+                                        } else Box(Modifier.weight(1f))
+                                        conversations.Content(checkNotNull(newTarget).key) {
+                                            if (createdId != null) {
                                                 TextButton(onClick = chats::refreshList) {
                                                     Text(stringResource(R.string.chat_refresh))
                                                 }
                                             } else
                                                 ChatComposerField(checkNotNull(composer), newTarget)
                                         }
+                                    }
                                 }
                             }
                         }

@@ -16,7 +16,6 @@ class PersonalInstructionsApiTest {
     fun canonicalConditionalRequestsKeepOwnerVersionHeadersAndIntentionalEmptyContent() =
         runBlocking {
             InstructionsApiFixture().use { fixture ->
-                assertTrue(fixture.service.personalInstructionsEnabled())
                 val initial = fixture.service.personalInstructions()
                 val content = "**你好** 👋\nPersonal instructions"
                 val saved = fixture.service.updatePersonalInstructions(content, initial.version)

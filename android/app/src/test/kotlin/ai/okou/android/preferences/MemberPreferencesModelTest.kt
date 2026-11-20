@@ -43,8 +43,6 @@ class MemberPreferencesModelTest {
             request: ai.okou.android.api.generated.SendRequest
         ): ai.okou.android.api.generated.AcceptedInput = error("No control backend in this fixture")
 
-        override suspend fun personalInstructionsEnabled() = false
-
         override suspend fun personalInstructions():
             ai.okou.android.api.generated.PersonalInstructions =
             error("Instructions are not enabled in this fixture")

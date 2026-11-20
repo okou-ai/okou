@@ -372,8 +372,7 @@ internal constructor(
                                                 dao.agents(key).map {
                                                     json.decodeFromString(it.payload)
                                                 }
-                                            else null,
-                                        projectsEnabled = scope.projectsEnabled,
+                                            else null
                                     )
                                 checkpoint.validate()
                                 navigation.validate()
@@ -465,7 +464,7 @@ internal constructor(
                             checkpoint.snapshotCursor.eventId,
                             checkpoint.snapshotCursor.seqId,
                             navigation.agents != null,
-                            navigation.projectsEnabled,
+                            projectsEnabled = true,
                         )
                     )
                     if (replacement) {

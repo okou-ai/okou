@@ -102,6 +102,7 @@
     <string name="composer_target_loading">Carregando disponibilidade da conversa…</string>
     <string name="composer_target_unavailable">Uma nova conversa não está disponível para esta conta.</string>
     <string name="composer_unconfirmed">A entrega da mensagem não foi confirmada.</string>
+    <string name="composer_sending">Enviando…</string>
     <string name="composer_check">Verificar entrega</string>
     <string name="composer_retry">Reenviar a mesma mensagem</string>
     <string name="composer_not_observed">A mensagem ainda não está visível. A entrega continua sem confirmação.</string>

@@ -398,6 +398,7 @@ class SessionModel(
                     { workspaceFailure(ticket, snapshot, it) },
                     chats::refreshAfterSend,
                     recovery,
+                    chats.history,
                 )
             }
         mutable.value =

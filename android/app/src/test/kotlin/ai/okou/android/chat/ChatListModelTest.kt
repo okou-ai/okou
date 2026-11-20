@@ -17,7 +17,6 @@ import ai.okou.android.api.generated.ChatArchive
 import ai.okou.android.api.generated.ChatEvents
 import ai.okou.android.api.generated.ChatSnapshot
 import ai.okou.android.api.generated.ChatSnapshotVariant1
-import ai.okou.android.api.generated.FeatureSwitches
 import ai.okou.android.api.generated.Indicators
 import ai.okou.android.api.generated.IndicatorsThreadsValue
 import ai.okou.android.api.generated.ProjectEvents
@@ -96,7 +95,6 @@ class ChatListModelTest {
         )
 
     private open inner class Service : TestChatService() {
-        var flagsRead: suspend () -> FeatureSwitches = { FeatureSwitches(emptyMap(), emptyMap()) }
         var agentRead: suspend () -> Agents = {
             listOf(
                 AgentsItem(
@@ -119,8 +117,6 @@ class ChatListModelTest {
                 emptyMap(),
             )
         }
-
-        override suspend fun featureSwitches() = flagsRead()
 
         override suspend fun chatSnapshot() =
             json.decodeFromString<ChatSnapshot>(
@@ -550,7 +546,6 @@ class ChatListModelTest {
         var indicatorReads = 0
         val source =
             Service().apply {
-                flagsRead = { FeatureSwitches(emptyMap(), mapOf("projects" to true)) }
                 listRead = {
                     listReads++
                     page(events)
@@ -925,7 +920,6 @@ class ChatListModelTest {
             val service =
                 Service().apply {
                     listRead = { gate.await() }
-                    flagsRead = { throw IOException("offline") }
                     agentRead = { throw IOException("offline") }
                     statusRead = { throw IOException("offline") }
                 }
@@ -947,7 +941,6 @@ class ChatListModelTest {
                 "Personal chat",
                 chatListGroups(model.uiState.value).last().threads.single().title,
             )
-            assertEquals(ChatReadPhase.Failed, model.uiState.value.projectsSettingsPhase)
             assertEquals(ChatListSource.Cache, model.uiState.value.agentsSource)
             gate.completeExceptionally(IOException("offline"))
             advanceUntilIdle()
@@ -1012,7 +1005,6 @@ class ChatListModelTest {
             assertEquals(unsaved.confirmedAt, model.uiState.value.confirmedAt)
             assertFalse(model.uiState.value.cacheUnavailable)
             service.agentRead = { Service().agents().map { it.copy(displayName = "Updated Okou") } }
-            service.flagsRead = { FeatureSwitches(emptyMap(), mapOf("projects" to true)) }
             model.refreshMetadata()
             advanceUntilIdle()
             store.clear()
@@ -1024,7 +1016,6 @@ class ChatListModelTest {
                     assertEquals(23L, saved.checkpoint.cursor.seqId)
                     assertEquals("Updated", replayChats(saved.checkpoint).single().title)
                     assertEquals("Updated Okou", saved.navigation.agents?.single()?.displayName)
-                    assertTrue(saved.navigation.projectsEnabled)
                 }
         } finally {
             store.clear()
@@ -1199,9 +1190,6 @@ class ChatListModelTest {
         var page = ProjectEvents(emptyList(), false)
         val service =
             object : TestChatService() {
-                override suspend fun featureSwitches() =
-                    FeatureSwitches(emptyMap(), mapOf("projects" to true))
-
                 override suspend fun projectSnapshot() =
                     json.decodeFromString<ProjectSnapshot>(
                         """{"projects":[{"id":"$CHAT_PROJECT","name":"Before","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE"}],"latestEventId":null,"latestSeqId":0}"""
@@ -1355,14 +1343,17 @@ class ChatListModelTest {
     }
 
     @Test
-    fun heldProjectsSettingsDoNotBlockTheListAndFailureRetainsConfirmedContent() = runTest {
+    fun heldProjectSnapshotDoesNotBlockTheListAndFailureRetainsConfirmedContent() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(dispatcher)
         val cache = cache(temporary.newFolder(), dispatcher)
         val store = ViewModelStore()
-        val flags = CompletableDeferred<FeatureSwitches>()
+        val snapshot = CompletableDeferred<ProjectSnapshot>()
         try {
-            val service = Service().apply { flagsRead = { flags.await() } }
+            val service =
+                object : Service() {
+                    override suspend fun projectSnapshot() = snapshot.await()
+                }
             val model =
                 ViewModelProvider(
                     store,
@@ -1378,9 +1369,9 @@ class ChatListModelTest {
             assertEquals("Personal chat", model.uiState.value.threads.single().title)
             assertEquals(ChatReadPhase.Ready, model.uiState.value.agentsPhase)
             assertEquals(ChatReadPhase.Ready, model.uiState.value.indicatorsPhase)
-            flags.completeExceptionally(IOException("offline"))
+            snapshot.completeExceptionally(IOException("offline"))
             advanceUntilIdle()
-            assertEquals(ChatReadPhase.Failed, model.uiState.value.projectsSettingsPhase)
+            assertEquals(ChatReadPhase.Failed, model.uiState.value.projectsPhase)
             assertEquals("Personal chat", model.uiState.value.threads.single().title)
             store.clear()
             cache
@@ -1392,7 +1383,7 @@ class ChatListModelTest {
                     )
                 }
         } finally {
-            flags.complete(FeatureSwitches(emptyMap(), emptyMap()))
+            snapshot.cancel()
             store.clear()
             runCurrent()
             Dispatchers.resetMain()

@@ -13,6 +13,7 @@ class ChatComposerModel(
     onFailure: (Exception) -> Unit,
     accepted: (String) -> Unit,
     recovery: AssistantRecoveryModel? = null,
+    history: ConversationHistoryModel? = recovery?.history,
 ) : ViewModel() {
     private val connection =
         ChatComposerOwner.Connection(
@@ -22,18 +23,22 @@ class ChatComposerModel(
             onFailure,
             accepted,
             recovery,
+            history,
         )
     private val owner = store.attach(identity, connection)
     val uiState = owner.uiState
 
     init {
-        if (recovery != null)
+        if (history != null)
             viewModelScope.launch {
-                recovery.history.uiState.collect { state ->
-                    state.thread
-                        ?.id
-                        ?.let { recovery.history.checkpoint(it) }
-                        ?.let { owner.reconcileRecovery(connection, it) }
+                history.uiState.collect { state ->
+                    val threadId = state.thread?.id ?: return@collect
+                    val transcript = state.transcript ?: return@collect
+                    owner.reconcileMessages(connection, threadId, transcript.persistedIds)
+                    if (recovery != null)
+                        history.checkpoint(threadId)?.let {
+                            owner.reconcileRecovery(connection, it)
+                        }
                 }
             }
     }

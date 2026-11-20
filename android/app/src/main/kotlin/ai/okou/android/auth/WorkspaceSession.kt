@@ -150,7 +150,6 @@ class CanonicalWorkspaceSession(
     override suspend fun agents() = api.agents()
 
     override suspend fun newChatAgent(): String? {
-        if (api.featureSwitches().effectiveSwitches["singleAgent"] != true) return null
         val status = api.onboardingStatus()
         return status.defaultAgentId?.takeIf {
             status.hasOrg && status.hasDefaultAgent && status.onboardingComplete
@@ -215,11 +214,6 @@ class CanonicalWorkspaceSession(
     override suspend fun projectSnapshot() = api.projectSnapshot()
 
     override suspend fun projectEvents(since: Long) = api.projectEvents(since)
-
-    override suspend fun featureSwitches() = api.featureSwitches()
-
-    override suspend fun personalInstructionsEnabled() =
-        api.featureSwitches().effectiveSwitches["singleAgent"] == true
 
     override suspend fun personalInstructions() = api.personalInstructions().owned()
 

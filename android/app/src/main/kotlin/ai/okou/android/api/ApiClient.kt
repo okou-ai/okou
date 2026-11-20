@@ -11,7 +11,6 @@ import ai.okou.android.api.generated.ChatEvents
 import ai.okou.android.api.generated.ChatSnapshot
 import ai.okou.android.api.generated.ComposerDraft
 import ai.okou.android.api.generated.CreateThreadRequest
-import ai.okou.android.api.generated.FeatureSwitches
 import ai.okou.android.api.generated.HistoryCatchUpRequestItem
 import ai.okou.android.api.generated.HistoryRowsQueryVariant1
 import ai.okou.android.api.generated.HistoryRowsQueryVariant2
@@ -227,8 +226,6 @@ class ApiClient(
     suspend fun projectEvents(since: Long): ProjectEvents = execute {
         reads.projectEvents(it, since)
     }
-
-    suspend fun featureSwitches(): FeatureSwitches = execute { reads.featureSwitches(it) }
 
     suspend fun historySnapshot(threadId: String) = execute { reads.historySnapshot(it, threadId) }
 

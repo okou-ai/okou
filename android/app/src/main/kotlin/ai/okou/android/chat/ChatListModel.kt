@@ -77,9 +77,6 @@ enum class ChatRowAction(
 }
 
 data class ChatListUiState(
-    val projectsEnabled: Boolean = false,
-    val projectsSettingsPhase: ChatReadPhase = ChatReadPhase.Idle,
-    val projectsSettingsSource: ChatListSource? = null,
     val threads: List<ConfirmedChat> = emptyList(),
     val listPhase: ChatReadPhase = ChatReadPhase.Idle,
     val confirmedAt: Long? = null,
@@ -137,8 +134,7 @@ internal fun ChatListUiState.rowActions(
         group != null &&
             source == ChatListSource.Network &&
             listPhase != ChatReadPhase.Failed &&
-            projectsSettingsSource != null &&
-            (!projectsEnabled || projectsSource != null) &&
+            projectsSource != null &&
             pendingRowActions.values.none { it.changesPinOrder }
     ) {
         val pinned = thread.pinnedAt != null
@@ -200,7 +196,6 @@ class ChatListModel(
     private val unconfirmedRowEvents = mutableSetOf<String>()
     private var confirmedProjects: CachedProjects? = null
     private var cacheRead = false
-    private var projectsSettingsJob: Job? = null
     private var restoreJob: Job? = null
     private var projectsRestoreJob: Job? = null
     private var agentsJob: Job? = null
@@ -332,10 +327,7 @@ class ChatListModel(
 
     private fun navigation() =
         mutable.value.let { state ->
-            CachedChatNavigation(
-                agents = state.agents.takeIf { state.agentsSource != null },
-                projectsEnabled = state.projectsEnabled,
-            )
+            CachedChatNavigation(agents = state.agents.takeIf { state.agentsSource != null })
         }
 
     /** The commit identifies when a newer checkpoint already on disk needs to be loaded. */
@@ -730,39 +722,6 @@ class ChatListModel(
         refreshIndicators()
     }
 
-    private fun refreshProjectsSettings() {
-        if (!current() || projectsSettingsJob?.isActive == true) return
-        mutable.value = mutable.value.copy(projectsSettingsPhase = ChatReadPhase.Loading)
-        projectsSettingsJob =
-            viewModelScope.launch {
-                try {
-                    val flags = service.featureSwitches().effectiveSwitches
-                    currentCoroutineContext().ensureActive()
-                    if (!current()) return@launch
-                    val projects = flags["projects"] == true
-                    val changed = projects != mutable.value.projectsEnabled
-                    if (!projects) projectsJob?.cancel()
-                    mutable.value =
-                        mutable.value.copy(
-                            projectsSettingsSource = ChatListSource.Network,
-                            projectsSettingsPhase = ChatReadPhase.Ready,
-                            projectsEnabled = projects,
-                            projects = if (projects) mutable.value.projects else emptyList(),
-                            projectsSource = if (projects) mutable.value.projectsSource else null,
-                            projectsPhase =
-                                if (projects) mutable.value.projectsPhase else ChatReadPhase.Idle,
-                        )
-                    showCachedProjects()
-                    refreshProjects()
-                    if (changed || mutable.value.cacheUnavailable) persistChats()
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (error: Exception) {
-                    fail(error) { it.copy(projectsSettingsPhase = ChatReadPhase.Failed) }
-                }
-            }
-    }
-
     private fun restoreCache() {
         if (cacheRead) return
         cacheRead = true
@@ -773,17 +732,10 @@ class ChatListModel(
                     val projection = withContext(dispatcher) { replayChatList(saved.checkpoint) }
                     requireCurrent()
                     val state = mutable.value
-                    val networkSettings = state.projectsSettingsSource == ChatListSource.Network
                     confirmed = saved
                     confirmedRows = projection
                     publishRows(
                         state.copy(
-                            projectsSettingsSource =
-                                if (networkSettings) ChatListSource.Network
-                                else ChatListSource.Cache,
-                            projectsEnabled =
-                                if (networkSettings) state.projectsEnabled
-                                else saved.navigation.projectsEnabled,
                             confirmedAt = saved.confirmedAt,
                             source = ChatListSource.Cache,
                             agents =
@@ -795,7 +747,6 @@ class ChatListModel(
                                 else saved.navigation.agents?.let { ChatListSource.Cache },
                         )
                     )
-                    showCachedProjects()
                     if (navigation() != saved.navigation) persistChats()
                 } catch (cancelled: CancellationException) {
                     throw cancelled
@@ -823,15 +774,10 @@ class ChatListModel(
 
     private suspend fun showCachedProjects() {
         val saved = confirmedProjects ?: return
-        if (
-            !current() ||
-                !mutable.value.projectsEnabled ||
-                mutable.value.projectsSource == ChatListSource.Network
-        )
-            return
+        if (!current() || mutable.value.projectsSource == ChatListSource.Network) return
         val rows = withContext(dispatcher) { replayProjects(saved.checkpoint) }
         requireCurrent()
-        if (mutable.value.projectsEnabled && mutable.value.projectsSource != ChatListSource.Network)
+        if (mutable.value.projectsSource != ChatListSource.Network)
             mutable.value =
                 mutable.value.copy(projects = rows, projectsSource = ChatListSource.Cache)
     }
@@ -1015,7 +961,6 @@ class ChatListModel(
 
     fun refreshMetadata() {
         if (!current()) return
-        refreshProjectsSettings()
         if (agentsJob?.isActive != true) {
             mutable.value = mutable.value.copy(agentsPhase = ChatReadPhase.Loading)
             agentsJob =
@@ -1044,7 +989,7 @@ class ChatListModel(
     }
 
     private fun refreshProjects() {
-        if (current() && mutable.value.projectsEnabled && projectsJob?.isActive != true) {
+        if (current() && projectsJob?.isActive != true) {
             mutable.value = mutable.value.copy(projectsPhase = ChatReadPhase.Loading)
             projectsJob =
                 viewModelScope.launch {
@@ -1070,18 +1015,16 @@ class ChatListModel(
                         val rows = withContext(dispatcher) { replayProjects(saved.checkpoint) }
                         requireCurrent()
                         confirmedProjects = saved
-                        if (mutable.value.projectsEnabled)
-                            mutable.value =
-                                mutable.value.copy(
-                                    projects = rows,
-                                    projectsPhase = ChatReadPhase.Ready,
-                                    projectsSource = ChatListSource.Network,
-                                )
+                        mutable.value =
+                            mutable.value.copy(
+                                projects = rows,
+                                projectsPhase = ChatReadPhase.Ready,
+                                projectsSource = ChatListSource.Network,
+                            )
                     } catch (cancelled: CancellationException) {
                         throw cancelled
                     } catch (error: Exception) {
-                        // The Projects collection itself returns 404 when its rollout is off.
-                        // A stale switch read must not turn that into workspace revocation.
+                        // A missing Projects collection does not revoke the workspace session.
                         if (error is ApiFailure.Http && error.status == 404) {
                             if (current()) {
                                 mutable.value =

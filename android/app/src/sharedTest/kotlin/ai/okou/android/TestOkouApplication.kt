@@ -135,9 +135,6 @@ open class TestOkouApplication : OkouApplication() {
                 checkNotNull(controlService) { "No control backend in this external fixture" }
                     .sendControl(request)
 
-            override suspend fun personalInstructionsEnabled() =
-                instructionsService?.personalInstructionsEnabled() == true
-
             override suspend fun personalInstructions() =
                 checkNotNull(instructionsService).personalInstructions()
 

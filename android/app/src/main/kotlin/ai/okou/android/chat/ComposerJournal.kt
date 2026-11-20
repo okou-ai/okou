@@ -38,6 +38,15 @@ enum class TextDisposition {
 @Serializable
 data class TextReceipt(val threadId: String, val eventId: String, val disposition: TextDisposition)
 
+/** Local presentation of a frozen input while its history row is unavailable. */
+data class ComposerMessagePreview(
+    val eventId: String,
+    val threadId: String,
+    val text: String,
+    val disposition: TextDisposition? = null,
+    val sending: Boolean = false,
+)
+
 @Serializable
 data class ComposerEntry(
     val text: String = "",
@@ -90,6 +99,7 @@ data class ComposerState(
     val failed: Set<String> = emptySet(),
     val unobserved: Set<String> = emptySet(),
     val synchronization: Map<String, ComposerSync> = emptyMap(),
+    internal val receiptMessages: Map<String, ComposerMessagePreview> = emptyMap(),
 ) {
     fun draftKey(target: ComposerTarget): String {
         val redirected = journal?.entries?.get(target.key)?.createdThreadId
@@ -108,13 +118,33 @@ data class ComposerState(
 
     fun sync(target: ComposerTarget) = synchronization[draftKey(target)] ?: ComposerSync.Idle
 
+    internal fun messagesFor(threadId: String): List<ComposerMessagePreview> = buildList {
+        receiptMessages.values.filterTo(this) { it.threadId == threadId }
+        journal?.entries?.forEach { (key, entry) ->
+            val pending = entry.pending?.takeIf { it.threadId == threadId } ?: return@forEach
+            add(pending.preview(sending = key in busy && key !in checking))
+        }
+    }
+
+    internal fun pendingNewChat(threadId: String): ComposerTarget? =
+        journal?.entries?.values?.firstNotNullOfOrNull { entry ->
+            entry.pending
+                ?.takeIf { it.threadId == threadId }
+                ?.create
+                ?.let { ComposerTarget(projectId = it.projectId) }
+        }
+
     fun canSend(target: ComposerTarget): Boolean =
         journal != null &&
             persistence != ComposerPersistence.Failed &&
             (target.key !in busy || target.key in checking) &&
             entry(target).pending == null &&
+            target.threadId?.let(::pendingNewChat) == null &&
             entry(target).createdThreadId == null &&
             !entry(target).text.isBlankWebDraft() &&
             (if (target.threadId != null) target.agentId != null
             else context == ComposerContext.Ready)
 }
+
+internal fun PendingText.preview(disposition: TextDisposition? = null, sending: Boolean = false) =
+    ComposerMessagePreview(eventId, threadId, send.prompt, disposition, sending)

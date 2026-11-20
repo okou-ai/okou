@@ -138,7 +138,6 @@ internal fun ChatListScreen(
         remember(
             state.threads,
             state.projects,
-            state.projectsEnabled,
             state.agents,
             state.filter,
             state.indicators,
@@ -178,17 +177,10 @@ internal fun ChatListScreen(
         }
     val runningFrame = rememberRunningWaveFrame(listState, runningKeys)
     val metadataPending =
-        state.projectsSettingsPhase == ChatReadPhase.Loading ||
-            state.agentsPhase == ChatReadPhase.Loading ||
-            state.projectsEnabled && state.projectsPhase == ChatReadPhase.Loading
+        state.agentsPhase == ChatReadPhase.Loading || state.projectsPhase == ChatReadPhase.Loading
     val metadataFailed =
-        state.projectsSettingsPhase == ChatReadPhase.Failed ||
-            state.agentsPhase == ChatReadPhase.Failed ||
-            state.projectsEnabled && state.projectsPhase == ChatReadPhase.Failed
-    val knownProjects =
-        remember(state.projectsEnabled, state.projects) {
-            if (state.projectsEnabled) state.projects.mapTo(hashSetOf()) { it.id } else emptySet()
-        }
+        state.agentsPhase == ChatReadPhase.Failed || state.projectsPhase == ChatReadPhase.Failed
+    val knownProjects = remember(state.projects) { state.projects.mapTo(hashSetOf()) { it.id } }
     val missingDefault =
         state.agentsPhase == ChatReadPhase.Ready &&
             state.agents.none { it.isDefaultAgent } &&
