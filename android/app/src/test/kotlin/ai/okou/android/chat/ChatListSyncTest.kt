@@ -19,9 +19,9 @@ import org.junit.Test
 class ChatListSyncTest {
     private fun eventId(seq: Int) = "${seq.toString().padStart(8, '0')}-0000-4000-8000-000000000000"
 
-    private fun longTail(): ChatCheckpoint {
+    private fun longTail(lastSeqId: Int = 101): ChatCheckpoint {
         val events =
-            (1..101).joinToString(",") {
+            (1..lastSeqId).joinToString(",") {
                 chatEventWire(
                     id = eventId(it),
                     seq = it.toLong(),
@@ -219,6 +219,39 @@ class ChatListSyncTest {
                 "/api/chat-threads/events?sinceSeqId=102",
                 fixture.server.takeRequest().path,
             )
+        }
+    }
+
+    @Test
+    fun optionalRebaseSkipsDownloadingTheCurrentSnapshot() = runTest {
+        ChatListApiFixture().use { fixture ->
+            val full = longTail(lastSeqId = 102)
+            val creation = full.events.first()
+            val cursor = creation.cursor()
+            val archive =
+                ChatArchive(replayChats(full.copy(events = listOf(creation), cursor = cursor)))
+            fixture.snapshot = {
+                jsonResponse(
+                    """{"url":"${fixture.server.url("/archive")}","expiresInSeconds":60,"latestEventId":"${cursor.eventId}","latestSeqId":${cursor.seqId}}"""
+                )
+            }
+            fixture.archive = { jsonResponse(Json.encodeToString(archive)) }
+            fixture.events = { request ->
+                val since = checkNotNull(request.requestUrl?.queryParameter("sinceSeqId")).toLong()
+                val events = full.events.filter { it.cursor().seqId > since }
+                jsonResponse(Json.encodeToString(ChatEvents(events, hasMore = false)))
+            }
+            val sync = ChatListSync(fixture.service)
+            val previous = sync.synchronize(null).checkpoint
+            val unchanged = sync.synchronize(previous)
+            assertSame(previous, unchanged.checkpoint)
+            assertTrue(unchanged.shouldRebase)
+            val requestsBeforeRebase = fixture.server.requestCount
+
+            val rebased = sync.rebase(unchanged.checkpoint)
+
+            assertEquals(requestsBeforeRebase + 1, fixture.server.requestCount)
+            assertNull(rebased)
         }
     }
 

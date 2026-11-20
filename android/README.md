@@ -83,11 +83,12 @@ Data is scoped to API origin/user/workspace and the current authorization snapsh
 an older synchronization cannot replace a newer persisted tail. Last-confirmed
 Agent/Project references keep the scoped list usable after a process restart while
 their network reads are unavailable. Cache display precedes network catch-up;
-chat tails over 100 events request a server snapshot in the background after
-publishing the incremental result. The workspace list worker applies that snapshot
-and its tail if a newer read has not superseded the operation. A pending local edit
-defers a snapshot that would cover events Android has yet to read. Server errors
-during the optional rebase leave the synchronized result usable.
+chat tails over 100 events check the server's snapshot cursor in the background
+after publishing the incremental result. An advancing cursor triggers a download
+and replay. The workspace list worker applies that snapshot and its tail if a newer
+read has not superseded the operation. A pending local edit defers a snapshot
+that would cover events Android has yet to read. Server errors during the
+optional rebase leave the synchronized result usable.
 Project tails retain their event identities. Chat's absent cursor refreshes its
 snapshot; Project's valid zero cursor continues through events. An expired cursor
 rebuilds from the server and resumes catch-up. A freshly loaded

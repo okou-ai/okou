@@ -2,6 +2,7 @@ package ai.okou.android.chat
 
 import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.generated.ChatArchive
+import ai.okou.android.api.generated.ChatSnapshot
 import ai.okou.android.api.generated.ChatSnapshotVariant1
 import ai.okou.android.api.generated.ChatSnapshotVariant2
 import kotlinx.coroutines.CoroutineDispatcher
@@ -44,7 +45,14 @@ class ChatListSync(
         withContext(dispatcher) {
             val snapshot =
                 try {
-                    snapshot()
+                    val descriptor = service.chatSnapshot()
+                    // Only an advancing snapshot can compact this tail.
+                    if (
+                        descriptor !is ChatSnapshotVariant1 ||
+                            (descriptor.latestSeqId ?: 0) <= confirmed.snapshotCursor.seqId
+                    )
+                        return@withContext null
+                    snapshot(descriptor)
                 } catch (error: ApiFailure.Http) {
                     if (error.status >= 500) return@withContext null
                     throw error
@@ -64,8 +72,9 @@ class ChatListSync(
                 )
         }
 
-    private suspend fun snapshot(): ChatCheckpoint {
-        val descriptor = service.chatSnapshot()
+    private suspend fun snapshot(): ChatCheckpoint = snapshot(service.chatSnapshot())
+
+    private suspend fun snapshot(descriptor: ChatSnapshot): ChatCheckpoint {
         val archive: ChatArchive
         val cursor: ChatCursor
         when (descriptor) {
