@@ -6,12 +6,9 @@ fn parse_create_parents() {
 
     assert_eq!(
         args,
-        Args {
-            append: false,
-            batch: false,
-            create_parents: true,
-            private: false,
-            path: Some(PathBuf::from("/tmp/out.txt")),
+        Args::Single {
+            path: PathBuf::from("/tmp/out.txt"),
+            output: OutputMode::CreateParents,
         }
     );
 }
@@ -27,12 +24,9 @@ fn parse_append_after_separator_path_starting_with_dash() {
 
     assert_eq!(
         args,
-        Args {
-            append: true,
-            batch: false,
-            create_parents: false,
-            private: false,
-            path: Some(PathBuf::from("-literal")),
+        Args::Single {
+            path: PathBuf::from("-literal"),
+            output: OutputMode::Ordinary { append: true },
         }
     );
 }
@@ -74,12 +68,9 @@ fn parse_private_append() {
 
     assert_eq!(
         args,
-        Args {
-            append: true,
-            batch: false,
-            create_parents: false,
-            private: true,
-            path: Some(PathBuf::from("/tmp/out.txt")),
+        Args::Single {
+            path: PathBuf::from("/tmp/out.txt"),
+            output: OutputMode::Private { append: true },
         }
     );
 }
@@ -90,12 +81,8 @@ fn parse_batch() {
 
     assert_eq!(
         args,
-        Args {
-            append: false,
-            batch: true,
-            create_parents: false,
-            private: false,
-            path: None,
+        Args::Batch {
+            output: OutputMode::CreateParents,
         }
     );
 }
@@ -106,12 +93,8 @@ fn parse_private_batch() {
 
     assert_eq!(
         args,
-        Args {
-            append: false,
-            batch: true,
-            create_parents: false,
-            private: true,
-            path: None,
+        Args::Batch {
+            output: OutputMode::Private { append: false },
         }
     );
 }
