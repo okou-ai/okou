@@ -855,13 +855,13 @@ chat-sharing-018	turbo/apps/platform/src/views/okou-page/__tests__/chat-sharing.
 chat-sharing-020	turbo/apps/platform/src/views/okou-page/__tests__/chat-sharing.test.tsx	Dismiss the audience menu without copying	690	passed
 chat-sharing-022	turbo/apps/platform/src/views/okou-page/__tests__/chat-sharing.test.tsx	A failed message share (403) reverts the optimistic copy and keeps the composer	709	passed
 chat-sharing-026	turbo/apps/platform/src/views/okou-page/__tests__/chat-sharing.test.tsx	A denied clipboard write reverts the optimistic message share confirmation	737	passed
-chat-scroll-020	turbo/apps/platform/src/views/okou-page/__tests__/chat-scroll.test.tsx	Preserve the visible message as content grows	210	passed
-chat-scroll-023	turbo/apps/platform/src/views/okou-page/__tests__/chat-scroll.test.tsx	Preserve the reading position when new messages are added	238	passed
-chat-scroll-024	turbo/apps/platform/src/views/okou-page/__tests__/chat-scroll.test.tsx	Loading older messages preserves the reading position	261	passed
-chat-scroll-025	turbo/apps/platform/src/views/okou-page/__tests__/chat-scroll.test.tsx	Load earlier messages once scrolling stops near the top	276	passed
-chat-scroll-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-scroll.test.tsx	Restore history once after a narrow automation sidebar reveals the transcript	349	passed
-chat-scroll-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-scroll.test.tsx	Restore tail once after a narrow automation sidebar reveals the transcript	366	passed
-chat-scroll-007	turbo/apps/platform/src/views/okou-page/__tests__/chat-scroll.test.tsx	Keep a fresh live history capture after tail when incoming messages arrive while hidden	385	passed
+chat-scroll-020	turbo/apps/platform/src/views/okou-page/__tests__/chat-scroll.test.tsx	Preserve the visible message as content grows	1054	passed
+chat-scroll-023	turbo/apps/platform/src/views/okou-page/__tests__/chat-scroll.test.tsx	Preserve the reading position when new messages are added	1079	passed
+chat-scroll-024	turbo/apps/platform/src/views/okou-page/__tests__/chat-scroll.test.tsx	Loading older messages preserves the reading position	1120	passed
+chat-scroll-025	turbo/apps/platform/src/views/okou-page/__tests__/chat-scroll.test.tsx	Load earlier messages once scrolling stops near the top	1147	passed
+chat-scroll-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-scroll.test.tsx	Restore history once after a narrow automation sidebar reveals the transcript	563	passed
+chat-scroll-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-scroll.test.tsx	Restore tail once after a narrow automation sidebar reveals the transcript	563	passed
+chat-scroll-007	turbo/apps/platform/src/views/okou-page/__tests__/chat-scroll.test.tsx	Keep a fresh live history capture after tail when incoming messages arrive while hidden	734	passed
 chat-thread-header-actions-006	turbo/apps/platform/src/views/okou-page/__tests__/chat-thread-header-actions.test.tsx	Undo a header archive from its toast and return to the thread	131	passed
 chat-thread-header-actions-008	turbo/apps/platform/src/views/okou-page/__tests__/chat-thread-header-actions.test.tsx	Show the archive API error after leaving the thread	168	passed
 chat-thread-header-actions-007	turbo/apps/platform/src/views/okou-page/__tests__/chat-thread-header-actions.test.tsx	Mute from the mobile header and unmute from the desktop header	184	passed
@@ -2594,3 +2594,10 @@ integrations-discord-048	turbo/apps/platform/src/views/okou-page/__tests__/integ
 chat-capability-voice-incremental-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-voice-incremental.test.tsx	Keep genuine transcription failures actionable	88	passed
 chat-capability-voice-recording-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-voice-recording.test.tsx	Restore 128 completed segments with 1 transcripts per polish item	139	passed
 chat-capability-voice-recording-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-voice-recording.test.tsx	Restore 129 completed segments with 2 transcripts per polish item	139	passed
+chat-scroll-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-scroll.test.tsx	Keep the pre-hide anchor when incoming messages arrive behind automations	608	passed
+chat-scroll-006	turbo/apps/platform/src/views/okou-page/__tests__/chat-scroll.test.tsx	Hand the retained primary transcript restore to the new Router page when the chat list opens a side conversation	635	passed
+chat-scroll-008	turbo/apps/platform/src/views/okou-page/__tests__/chat-scroll.test.tsx	Keep the captured oldest message when automations closes during incoming Mermaid image preparation	768	passed
+chat-scroll-016	turbo/apps/platform/src/views/okou-page/__tests__/chat-scroll.test.tsx	Keep tail through PWA keyboard cycles	874	passed
+chat-scroll-017	turbo/apps/platform/src/views/okou-page/__tests__/chat-scroll.test.tsx	Keep history through PWA keyboard cycles	874	passed
+chat-scroll-018	turbo/apps/platform/src/views/okou-page/__tests__/chat-scroll.test.tsx	Keep tail when opening and closing capabilities in a completed conversation	965	passed
+chat-scroll-019	turbo/apps/platform/src/views/okou-page/__tests__/chat-scroll.test.tsx	Keep history when opening and closing capabilities in a stopped conversation	965	passed

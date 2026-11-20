@@ -176,3 +176,12 @@ main bodies beside the earlier rebuilt cases. Only the helpers and imports
 those cases use are brought over. All three match their Given, When and Then:
 the failure is shown and reported with its code and status, and restored long
 recordings send grouped polish segments without a second transcription.
+
+`chat-scroll` now uses the current main bodies for all 14 selected rows. The
+seven pending cases (`005`, `006`, `008`, `016` to `019`) depend on main's
+viewport and automation fixtures. The earlier rebuilt file replaced those
+with its own helpers, so the file is restored from main as a whole. The seven
+previously accepted rows keep their titles. Their execution lines are
+re-anchored, and their checklist rows are replaced by rows for the restored
+bodies. An independent review covered all 42 items with no gaps, and all 14
+rows pass.
