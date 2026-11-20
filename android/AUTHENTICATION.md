@@ -68,10 +68,12 @@ in-memory generation fences replaced work; it is not persisted as identity.
 
 A locally restored active SDK session with a selected workspace opens the native
 chat list immediately in its loading state. The workspace owner refreshes Clerk
-and its memberships and confirms the organization with the origin-bound API client.
-Only a confirmed membership may be selected. Once the organization matches, the
-list restores the identity- and authorization-scoped Room cache and starts
-synchronization while canonical preferences are loaded.
+and confirms the organization with the origin-bound API client. A selected
+membership with known permissions in both the refreshed and observed SDK state
+allows the complete workspace picker to load separately. Startup falls back to
+the complete membership request when that evidence is unavailable. The existing
+Room connection can open during these checks. Scoped rows are restored after
+authorization while canonical preferences and list synchronization run.
 
 A 409 or incomplete timezone, locale or member memory invokes the existing
 idempotent preferences initialization endpoint. Complete preferences enable the

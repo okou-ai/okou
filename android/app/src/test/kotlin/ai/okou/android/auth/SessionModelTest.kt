@@ -330,6 +330,28 @@ class SessionModelTest {
     }
 
     @Test
+    fun selectedWorkspaceBecomesReadyWhileFullMembershipListIsPending() {
+        val auth =
+            TestAuthentication(
+                testAuthenticationState()
+                    .copy(
+                        membershipAccess =
+                            listOf(MembershipAccess("org-a", "org:member", emptyList()))
+                    )
+            )
+        val memberships = CompletableDeferred<List<WorkspaceMembership>>()
+        auth.membershipsAction = { memberships.await() }
+        check(auth) { model, _ ->
+            runCurrent()
+            assertEquals(SessionStage.Ready, model.uiState.value.stage)
+            assertEquals(listOf("org-a"), model.uiState.value.memberships.map { it.id })
+            memberships.complete(auth.available)
+            runCurrent()
+            assertEquals(listOf("org-a", "org-b"), model.uiState.value.memberships.map { it.id })
+        }
+    }
+
+    @Test
     fun membershipRevocationWithoutAnIdentityChangeRechecksAndClosesAccess() {
         val auth =
             TestAuthentication(

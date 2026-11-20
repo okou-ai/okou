@@ -96,11 +96,15 @@ class ClerkAuthentication(private val context: Context) : Authentication {
         }
     }
 
-    override suspend fun refresh(expected: NativeSession) {
+    override suspend fun refresh(expected: NativeSession): MembershipAccess? {
         requireSession(expected)
         Clerk.refreshClient().required()
         currentCoroutineContext().ensureActive()
         requireSession(expected)
+        return Clerk.user
+            ?.organizationMemberships
+            ?.firstOrNull { it.organization.id == expected.workspaceId }
+            ?.let { MembershipAccess(it.organization.id, it.role, it.permissions?.sorted()) }
     }
 
     override suspend fun memberships(expected: NativeSession): List<WorkspaceMembership> {
