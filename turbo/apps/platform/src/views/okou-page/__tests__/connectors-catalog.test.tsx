@@ -116,7 +116,11 @@ function searchParam(name: string): string | null {
 }
 
 function scope(name: "Connected" | "Custom" | "Discover"): HTMLElement {
-  return screen.getByRole("radio", { name: new RegExp(`^${name}`, "u") });
+  return screen.getByRole("radio", {
+    name: (accessibleName) => {
+      return accessibleName.startsWith(name);
+    },
+  });
 }
 
 test("Search connectors and keep the query in the URL", async () => {

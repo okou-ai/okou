@@ -80,7 +80,11 @@ function mockNoAccounts(): void {
 function scope(
   name: "Discover" | "Custom" | "Remote control" | "Connected",
 ): HTMLElement {
-  return screen.getByRole("radio", { name: new RegExp(`^${name}`, "u") });
+  return screen.getByRole("radio", {
+    name: (accessibleName) => {
+      return accessibleName.startsWith(name);
+    },
+  });
 }
 
 function searchParam(name: string): string | null {
