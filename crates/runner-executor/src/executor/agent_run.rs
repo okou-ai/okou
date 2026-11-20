@@ -834,6 +834,8 @@ pub(super) struct RunControls {
     pub(super) home_history_proof:
         Option<guest_contracts::home_cache_history::HomeCacheHistoryProofBinding>,
     pub(super) prepared_storage: Option<crate::storage_cache::PreparedStorage>,
+    /// Terminal package outcomes retained when this Run needs a different storage plan.
+    pub(super) skipped_optional_mounts: HashSet<String>,
     pub(super) prepared_guest_runtime: Option<PreparedGuestRuntime>,
     pub(super) pre_spawn_admission_lease:
         Option<crate::pre_spawn_admission::PreSpawnAdmissionLease>,
@@ -1026,6 +1028,7 @@ impl RunControls {
             spawn_timing: None,
             home_history_proof: None,
             prepared_storage: None,
+            skipped_optional_mounts: HashSet::new(),
             prepared_guest_runtime: None,
             pre_spawn_admission_lease: None,
             guest_state_prepared: false,
@@ -1547,6 +1550,7 @@ async fn prepare_guest_storage(
     start: &RunStart<'_>,
     telemetry: &mut JobTelemetry,
     prepared_storage: &mut Option<crate::storage_cache::PreparedStorage>,
+    skipped_optional_mounts: &mut HashSet<String>,
 ) -> RunnerResult<GuestStoragePreparation> {
     let reuse = super::storage::check_instruction_reuse(
         sandbox,
@@ -1562,8 +1566,10 @@ async fn prepare_guest_storage(
         super::storage::InstructionReuse::Repair(previous) => {
             // Early candidate groups predate the instruction reuse decision.
             // Retire their IO before ordinary planning/classification repairs it.
-            if let Some(mut prepared) = prepared_storage.take() {
-                prepared.delivery.cancel_and_drain(telemetry).await;
+            if let Some(prepared) = prepared_storage.take() {
+                prepared
+                    .cancel_and_keep_skips(telemetry, skipped_optional_mounts)
+                    .await;
             }
             Some(previous)
         }
@@ -1628,7 +1634,9 @@ async fn prepare_guest_storage(
                     )
                 })?;
                 let files = prepared.plan.take_decoded();
-                let guest_manifest = prepared.plan.into_guest_manifest();
+                let guest_manifest = prepared
+                    .plan
+                    .into_guest_manifest_retaining_skips(skipped_optional_mounts);
                 let download_started = Instant::now();
                 let download_result = super::storage::download_storages_with_files(
                     sandbox,
@@ -1651,6 +1659,7 @@ async fn prepare_guest_storage(
             }
         } else {
             let mut plan = build_storage_plan(manifest, previous)?;
+            plan.skip_optional_mounts(skipped_optional_mounts);
             record_storage_plan_state(
                 &plan,
                 start.prev_storage.is_some(),
@@ -1671,7 +1680,7 @@ async fn prepare_guest_storage(
                 let deferred =
                     populate_storage_plan(&mut plan, None, sandbox, config, telemetry, None).await?;
                 let files = plan.take_decoded();
-                let guest_manifest = plan.into_guest_manifest();
+                let guest_manifest = plan.into_guest_manifest_retaining_skips(skipped_optional_mounts);
                 let download_started = Instant::now();
                 let download_result = super::storage::download_storages_with_files(
                     sandbox,
@@ -1888,9 +1897,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
     let mut model_catalog_prefetch = match guest_preparation {
         Ok(prefetch) => prefetch.supervise(sandbox),
         Err(error) => {
-            if let Some(prepared) = controls.prepared_storage.as_mut() {
-                prepared.delivery.cancel_and_drain(telemetry).await;
-            }
+            super::sandbox_run::cancel_prepared_storage(&mut controls, telemetry).await;
             let result = match error {
                 Some(error) => pre_agent_preparation_failure(error, controls, prepared_run_payload),
                 None => {
@@ -1926,6 +1933,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                     &start,
                     telemetry,
                     &mut controls.prepared_storage,
+                    &mut controls.skipped_optional_mounts,
                 )),
             ))
             .await;
@@ -1944,9 +1952,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                 )
             }
             Err(error) => {
-                if let Some(prepared) = controls.prepared_storage.as_mut() {
-                    prepared.delivery.cancel_and_drain(telemetry).await;
-                }
+                super::sandbox_run::cancel_prepared_storage(&mut controls, telemetry).await;
                 model_catalog_prefetch.finish(telemetry).await;
                 let result = match error {
                     Some(error) => {
@@ -1978,6 +1984,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
         spawn_timing,
         home_history_proof,
         prepared_storage: _prepared_storage,
+        skipped_optional_mounts: _,
         prepared_guest_runtime: _,
         mut pre_spawn_admission_lease,
         guest_state_prepared: _,
@@ -2176,6 +2183,10 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                                 spawn_timing,
                                 home_history_proof: None,
                                 prepared_storage: None,
+                                skipped_optional_mounts: lifecycle
+                                    .skipped_optional_storage
+                                    .clone()
+                                    .unwrap_or_default(),
                                 prepared_guest_runtime: None,
                                 pre_spawn_admission_lease,
                                 guest_state_prepared: false,

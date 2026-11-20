@@ -47,6 +47,7 @@ pub(super) async fn execute_reused_sandbox(
         start.prev_storage,
         config,
         &inputs.controls.cancel,
+        &inputs.controls.skipped_optional_mounts,
         telemetry,
     )
     .await;

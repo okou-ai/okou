@@ -21,6 +21,8 @@ use sandbox_mock::{MockLifecycleGate, MockSandboxFactory, MockSandboxOverrides};
 use sha2::{Digest, Sha256};
 use tokio_util::sync::CancellationToken;
 
+use super::super::agent_run::{RunControls, RunStart, run_in_sandbox};
+use super::super::sandbox_run::prepare_storage;
 use super::super::{
     ExecutionHooks, NewSandboxDispatch, ReusedSandboxDispatch, SandboxReuseDisposition,
     SandboxReuseTerminal, execute_job, execute_job_reuse, execute_job_reuse_with_hooks,
@@ -28,7 +30,7 @@ use super::super::{
 use super::support::{
     RUN_IN_SANDBOX_TEST_TIMEOUT, api_storage, create_overridden_sandbox, default_params,
     instruction_context, make_reusable_idle_sandbox_with_fingerprints, minimal_context,
-    seed_home_image_cache_with_fingerprints, test_executor_config_with_startup_api,
+    seed_home_image_cache_with_fingerprints, test_executor_config_with_startup_api, test_telemetry,
     workflow_context as context,
 };
 use runner_provider::RunCancellationHandle;
@@ -1481,6 +1483,114 @@ async fn optional_package_obstruction_does_not_block_instruction_reuse() {
     assert_eq!(fs::read(&target).unwrap(), b"retained instructions");
     assert_eq!(fs::read(&obstruction).unwrap(), b"retained file");
     assert!(!outcome.storage_fingerprints.storages.contains_key(mount));
+    assert_eq!(overrides.start_agent_process_calls().len(), 1);
+    config.background_fill.shutdown().await;
+    config.decoded_cache.shutdown().await;
+}
+
+#[tokio::test]
+async fn instruction_repair_keeps_the_run_skip_for_an_already_failed_package() {
+    use runner_host::paths::short_digest;
+    use runner_types::types::{HomeReuseResult, SandboxStartupPath};
+
+    let directory = tempfile::tempdir().unwrap();
+    let (config, _api) = test_executor_config_with_startup_api(directory.path()).await;
+    let guest = tempfile::tempdir().unwrap();
+    let instructions = archive(&[(SOURCE_FILENAME, b"new instructions")]);
+    let instruction_version = hex::encode(Sha256::digest(&instructions));
+    let mut context = instruction_context(
+        &instruction_version,
+        instructions.len() as u64,
+        "codex",
+        "repair-instructions",
+    );
+    let previous = context.storage_fingerprints();
+    let mount = "/home/user/.codex/skills/optional";
+    let mut optional = api_storage(
+        WORKFLOW_STORAGE_NAME,
+        mount,
+        "optional-v1",
+        "https://unreachable.invalid/optional",
+    );
+    optional.optional = true;
+    context
+        .storage_manifest
+        .as_mut()
+        .unwrap()
+        .storages
+        .push(optional);
+
+    for (name, version, bytes) in [
+        (
+            INSTRUCTION_STORAGE_NAME,
+            instruction_version.as_str(),
+            &instructions,
+        ),
+        (
+            WORKFLOW_STORAGE_NAME,
+            "optional-v1",
+            &archive(&[("SKILL.md", b"healthy compressed copy")]),
+        ),
+    ] {
+        let cached = config.home.storage_cache_dir(name, version);
+        fs::create_dir_all(&cached).unwrap();
+        fs::write(cached.join("archive.tar.gz"), bytes).unwrap();
+    }
+    // The first plan sees a terminal decoded-cache failure even though a
+    // compressed copy exists. Remove the obstruction before instruction repair.
+    let broken = config
+        .home
+        .storages_dir()
+        .join(short_digest(WORKFLOW_STORAGE_NAME))
+        .join(format!("decoded-v2-{}", short_digest("optional-v1")));
+    fs::write(&broken, b"unexpected file at the cache root").unwrap();
+    let mut controls = RunControls::new(CancellationToken::new(), None);
+    let mut telemetry = test_telemetry(&config, &context);
+    controls.prepared_storage = prepare_storage(
+        &context,
+        Some(&previous),
+        &config,
+        &controls.cancel,
+        &controls.skipped_optional_mounts,
+        &mut telemetry,
+    )
+    .await
+    .unwrap();
+    fs::remove_file(broken).unwrap();
+    let optional_root = guest_path(guest.path(), mount);
+    fs::create_dir_all(&optional_root).unwrap();
+    fs::write(optional_root.join("SKILL.md"), b"stale").unwrap();
+
+    let overrides = Arc::new(MockSandboxOverrides::new());
+    let sandbox = create_overridden_sandbox(Arc::clone(&overrides)).await;
+    instruction_check(&overrides, guest.path(), "codex");
+    let result = complete_guest_storage(
+        run_in_sandbox(
+            sandbox.as_ref(),
+            &context,
+            &config,
+            RunStart {
+                restore_guest_state: false,
+                reuse_result: SandboxReuseResult::Reused,
+                home_reuse_result: HomeReuseResult::SandboxReused,
+                sandbox_startup_path: SandboxStartupPath::Sandbox,
+                prev_storage: Some(&previous),
+            },
+            &mut telemetry,
+            controls,
+        ),
+        &overrides,
+        guest.path(),
+    )
+    .await
+    .unwrap();
+    assert!(result.failure.is_none(), "{:?}", result.failure);
+    assert!(!optional_root.exists());
+    apply_guest_instructions(&overrides, guest.path(), 0);
+    assert_eq!(
+        fs::read(guest_path(guest.path(), "/home/user/.codex/AGENTS.md")).unwrap(),
+        b"new instructions"
+    );
     assert_eq!(overrides.start_agent_process_calls().len(), 1);
     config.background_fill.shutdown().await;
     config.decoded_cache.shutdown().await;

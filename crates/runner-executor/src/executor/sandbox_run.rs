@@ -1,5 +1,6 @@
 //! Sandbox preparation, reuse, and post-run cleanup glue.
 
+use std::collections::HashSet;
 use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -452,6 +453,7 @@ pub(super) async fn prepare_storage(
     previous_storage: Option<&StorageFingerprints>,
     config: &ExecutorConfig,
     cancel: &CancellationToken,
+    skipped_optional_mounts: &HashSet<String>,
     telemetry: &mut JobTelemetry,
 ) -> RunnerResult<Option<PreparedStorage>> {
     let empty_manifest = runner_types::storage_manifest::StorageManifest::default();
@@ -459,6 +461,7 @@ pub(super) async fn prepare_storage(
     let apply_started = Instant::now();
     let result: RunnerResult<Option<PreparedStorage>> = async {
         let mut plan = build_storage_plan(manifest, previous_storage)?;
+        plan.skip_optional_mounts(skipped_optional_mounts);
         let delivery = crate::storage_cache::prepare_fresh_archive_delivery(
             &mut plan,
             &config.home,
@@ -486,8 +489,10 @@ pub(super) async fn cancel_prepared_storage(
     controls: &mut RunControls,
     telemetry: &mut JobTelemetry,
 ) {
-    if let Some(mut prepared) = controls.prepared_storage.take() {
-        prepared.delivery.cancel_and_drain(telemetry).await;
+    if let Some(prepared) = controls.prepared_storage.take() {
+        prepared
+            .cancel_and_keep_skips(telemetry, &mut controls.skipped_optional_mounts)
+            .await;
     }
 }
 
@@ -559,6 +564,7 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
             .and_then(HomeImageLease::previous_storage),
         config,
         &controls.cancel,
+        &controls.skipped_optional_mounts,
         telemetry,
     )
     .await;
@@ -753,7 +759,16 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
                     "home image cache hit failed during sandbox preparation; retrying with fresh home image"
                 );
                 home_image = None;
-                match prepare_storage(context, None, config, &controls.cancel, telemetry).await {
+                match prepare_storage(
+                    context,
+                    None,
+                    config,
+                    &controls.cancel,
+                    &controls.skipped_optional_mounts,
+                    telemetry,
+                )
+                .await
+                {
                     Ok(prepared_storage) => controls.prepared_storage = prepared_storage,
                     Err(error) => {
                         if let Some(replacement) = dns_replacement.take() {

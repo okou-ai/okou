@@ -734,6 +734,26 @@ pub struct PreparedStorage {
     pub delivery: FreshArchiveDelivery,
 }
 
+impl PreparedStorage {
+    /// Retire a filesystem plan while preserving failures already observed for the Run.
+    pub async fn cancel_and_keep_skips(
+        self,
+        telemetry: &mut JobTelemetry,
+        skipped: &mut HashSet<String>,
+    ) {
+        let Self { plan, mut delivery } = self;
+        delivery.cancel_and_drain(telemetry).await;
+        skipped.extend(plan.unavailable_optional_mounts().map(str::to_owned));
+        skipped.extend(
+            delivery
+                .unavailable
+                .iter()
+                .filter_map(|handle| plan.entry_mount(*handle))
+                .map(str::to_owned),
+        );
+    }
+}
+
 impl Drop for FreshArchiveDelivery {
     fn drop(&mut self) {
         self.cancel.cancel();
@@ -821,17 +841,30 @@ impl FreshArchiveDelivery {
         self.apply.clear();
         self.fetches.abort_all();
         while let Some(result) = self.fetches.join_next().await {
-            if let Err(error) = result
-                && !error.is_cancelled()
-            {
-                warn!(%error, "runner-owned archive fetch task failed while draining");
+            match result {
+                Ok(FreshArchiveFetchTaskResult::Terminal { group, error }) => {
+                    self.remember_optional_download_failure(&group, &error);
+                }
+                Err(error) if !error.is_cancelled() => {
+                    warn!(%error, "runner-owned archive fetch task failed while draining");
+                }
+                _ => {}
             }
         }
         // Once a complete response enters publication, wait for the atomic
         // cache transaction even when the run itself has been cancelled.
         while let Some(result) = self.publications.join_next().await {
-            if let Err(error) = result {
-                warn!(%error, "runner-owned archive publication task failed while draining");
+            match result {
+                Ok(FreshArchivePublicationTaskResult {
+                    group,
+                    result: Err(error),
+                }) => {
+                    self.remember_optional_publication_failure(&group, &error);
+                }
+                Err(error) => {
+                    warn!(%error, "runner-owned archive publication task failed while draining");
+                }
+                Ok(_) => {}
             }
         }
         self.phase_records.record_to(telemetry);
@@ -842,6 +875,39 @@ impl FreshArchiveDelivery {
                 true,
                 None,
             );
+        }
+    }
+
+    fn remember_optional_download_failure(
+        &mut self,
+        group: &CacheTargetGroup,
+        error: &FreshArchiveFetchError,
+    ) -> bool {
+        if error.reason != "cancelled" && group.optional_only() {
+            group.log_optional_preparation_failure("archive download", error);
+            self.unavailable
+                .extend(group.targets().map(|target| target.handle));
+            true
+        } else {
+            false
+        }
+    }
+
+    fn remember_optional_publication_failure(
+        &mut self,
+        group: &CacheTargetGroup,
+        error: &RunnerError,
+    ) -> bool {
+        if let RunnerError::Io(error) = error
+            && error.kind() != io::ErrorKind::Interrupted
+            && group.optional_only()
+        {
+            group.log_optional_preparation_failure("archive cache publication", error);
+            self.unavailable
+                .extend(group.targets().map(|target| target.handle));
+            true
+        } else {
+            false
         }
     }
 
@@ -888,7 +954,7 @@ impl FreshArchiveDelivery {
             let task = task.map_err(|error| {
                 RunnerError::Internal(format!("runner-owned archive publication task: {error}"))
             })?;
-            resolved.push(Self::accept_published(task, telemetry)?);
+            resolved.push(self.accept_published(task, telemetry)?);
         }
         Ok(resolved)
     }
@@ -951,8 +1017,7 @@ impl FreshArchiveDelivery {
                     STORAGE_CACHE_FRESH_DELIVERY_FAILED
                 };
                 telemetry.record(action, Duration::ZERO, reason == "cancelled", Some(reason));
-                if reason != "cancelled" && group.optional_only() {
-                    group.log_optional_preparation_failure("archive download", &error);
+                if self.remember_optional_download_failure(&group, &error) {
                     return Ok(Some(FreshArchiveResolved {
                         group,
                         archive: None,
@@ -1003,11 +1068,12 @@ impl FreshArchiveDelivery {
             let Some(task) = published else {
                 continue;
             };
-            return Self::accept_published(task, telemetry).map(Some);
+            return self.accept_published(task, telemetry).map(Some);
         }
     }
 
     fn accept_published(
+        &mut self,
         task: FreshArchivePublicationTaskResult,
         telemetry: &mut CacheProcessMetrics,
     ) -> RunnerResult<FreshArchiveResolved> {
@@ -1031,12 +1097,7 @@ impl FreshArchiveDelivery {
                     false,
                     Some("publication"),
                 );
-                if let RunnerError::Io(error) = &error
-                    && error.kind() != io::ErrorKind::Interrupted
-                    && task.group.optional_only()
-                {
-                    task.group
-                        .log_optional_preparation_failure("archive cache publication", error);
+                if self.remember_optional_publication_failure(&task.group, &error) {
                     Ok(FreshArchiveResolved {
                         group: task.group,
                         archive: None,

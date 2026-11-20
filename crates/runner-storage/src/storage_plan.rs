@@ -599,7 +599,7 @@ impl StoragePlan {
         Some(mount_path)
     }
 
-    fn entry_mount(&self, handle: ArchiveHandle) -> Option<&str> {
+    pub(crate) fn entry_mount(&self, handle: ArchiveHandle) -> Option<&str> {
         match handle.kind {
             ArchiveKind::Storage => self
                 .storages
@@ -755,6 +755,27 @@ impl StoragePlan {
                 .is_some_and(|entry| matches!(entry.action, StorageAction::Unavailable))
     }
 
+    /// Keep terminal package failures when rebuilding a plan for the same Run.
+    pub fn skip_optional_mounts(&mut self, skipped: &HashSet<String>) {
+        if skipped.is_empty() {
+            return;
+        }
+        for entry in &mut self.storages {
+            if entry.optional && skipped.contains(&entry.mount_path) {
+                self.reused_entries -=
+                    usize::from(matches!(entry.action, StorageAction::ReuseExisting));
+                entry.action = StorageAction::Unavailable;
+            }
+        }
+    }
+
+    pub(crate) fn unavailable_optional_mounts(&self) -> impl Iterator<Item = &str> {
+        self.storages
+            .iter()
+            .filter(|entry| matches!(entry.action, StorageAction::Unavailable))
+            .map(|entry| entry.mount_path.as_str())
+    }
+
     /// Replace one eligible remote archive source with a guest-staged source.
     ///
     /// The handle, entry name, version, and current remote URL must all match. A successful
@@ -806,12 +827,34 @@ impl StoragePlan {
     /// detection and cache source resolution; the wire value is transport state, not a second
     /// planning representation.
     pub fn into_guest_manifest(self) -> wire::Manifest {
+        self.into_guest_manifest_reporting_skips(|_| {})
+    }
+
+    /// Capture Runner-observed failures while transferring the plan to Guest.
+    pub fn into_guest_manifest_retaining_skips(
+        self,
+        skipped: &mut HashSet<String>,
+    ) -> wire::Manifest {
+        self.into_guest_manifest_reporting_skips(|mount| {
+            skipped.insert(mount.to_owned());
+        })
+    }
+
+    fn into_guest_manifest_reporting_skips(
+        self,
+        mut record_skip: impl FnMut(&str),
+    ) -> wire::Manifest {
         wire::Manifest {
             archive_readiness: None,
             storages: self
                 .storages
                 .into_iter()
-                .map(StoragePlanEntry::into_guest_entry)
+                .map(|entry| {
+                    if matches!(entry.action, StorageAction::Unavailable) {
+                        record_skip(&entry.mount_path);
+                    }
+                    entry.into_guest_entry()
+                })
                 .collect(),
             artifacts: self
                 .artifacts

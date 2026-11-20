@@ -603,17 +603,23 @@ async fn cancelled_storage_preparation_releases_pinned_files_without_retirement(
     });
     let cancel = CancellationToken::new();
     let mut telemetry = test_telemetry(&config, &ctx);
-    let prepared =
-        crate::executor::sandbox_run::prepare_storage(&ctx, None, &config, &cancel, &mut telemetry)
-            .await
-            .unwrap()
-            .unwrap();
+    let mut controls = RunControls::new(cancel.clone(), None);
+    let prepared = crate::executor::sandbox_run::prepare_storage(
+        &ctx,
+        None,
+        &config,
+        &controls.cancel,
+        &controls.skipped_optional_mounts,
+        &mut telemetry,
+    )
+    .await
+    .unwrap()
+    .unwrap();
     let mut cloned_plan = prepared.plan.clone();
     let files = cloned_plan.take_decoded();
     assert_eq!(files.len(), 1);
     let pinned = Arc::downgrade(&files[0].1);
     drop(files);
-    let mut controls = RunControls::new(cancel.clone(), None);
     controls.prepared_storage = Some(prepared);
     assert!(pinned.upgrade().is_some());
     cancel.cancel();
