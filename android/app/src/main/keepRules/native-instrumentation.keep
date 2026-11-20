@@ -53,8 +53,19 @@
   int realtime_connecting;
   int realtime_unavailable;
   int recovery_continue;
+  int retry;
   int settings;
+  int updates_allow_install;
   int updates_check;
+  int updates_checking;
+  int updates_close;
+  int updates_current;
+  int updates_downloading;
+  int updates_error_check;
+  int updates_install_toolbar;
+  int updates_new_version;
+  int updates_open_settings;
+  int updates_ready;
   int updates_required;
   int updates_target;
   int updates_title;
@@ -77,6 +88,8 @@
 }
 -keep,allowobfuscation class ai.okou.android.api.generated.AndroidUpdatesRelease {
   public <init>(java.lang.String, long, long, java.lang.String, java.lang.String, java.lang.String);
+  public static ai.okou.android.api.generated.AndroidUpdatesRelease copy$default(ai.okou.android.api.generated.AndroidUpdatesRelease, java.lang.String, long, long, java.lang.String, java.lang.String, java.lang.String, int, java.lang.Object);
+  public long getSize();
 }
 -keep,allowobfuscation class ai.okou.android.api.generated.ChatArchive {
 }
@@ -515,8 +528,14 @@
   public java.lang.Object load(kotlin.coroutines.Continuation);
   public java.lang.Object save(ai.okou.android.updates.UpdateRecord, kotlin.coroutines.Continuation);
 }
+-keep,allowobfuscation class ai.okou.android.updates.UpdateTransfer$Downloading {
+}
+-keep,allowobfuscation interface ai.okou.android.updates.UpdateTransfer {
+}
 -keep,allowobfuscation class ai.okou.android.updates.UpdateUiState {
+  public boolean getCanInstall();
   public boolean getRequired();
+  public ai.okou.android.updates.UpdateTransfer getTransfer();
 }
 -keep,allowobfuscation @interface androidx.annotation.ChecksSdkIntAtLeast {
   public int api();
@@ -780,6 +799,7 @@
 }
 -keep,allowobfuscation class kotlin.coroutines.jvm.internal.Boxing {
   public static java.lang.Boolean boxBoolean(boolean);
+  public static java.lang.Long boxLong(long);
 }
 -keep,allowobfuscation class kotlin.coroutines.jvm.internal.ContinuationImpl {
   public <init>(kotlin.coroutines.Continuation);
@@ -818,6 +838,9 @@
 -keep,allowobfuscation class kotlin.internal.ProgressionUtilKt {
   public static int getProgressionLastElement(int, int, int);
 }
+-keep,allowobfuscation class kotlin.io.ByteStreamsKt {
+  public static byte[] readBytes(java.io.InputStream);
+}
 -keep,allowobfuscation class kotlin.io.CloseableKt {
   public static void closeFinally(java.io.Closeable, java.lang.Throwable);
 }
@@ -828,6 +851,7 @@
   public static void writeBytes(java.io.File, byte[]);
 }
 -keep,allowobfuscation class kotlin.io.FilesKt__UtilsKt {
+  public static java.io.File copyTo$default(java.io.File, java.io.File, boolean, int, int, java.lang.Object);
   public static boolean deleteRecursively(java.io.File);
   public static java.io.File resolve(java.io.File, java.lang.String);
 }
@@ -935,6 +959,11 @@
 }
 -keep,allowobfuscation interface kotlin.sequences.Sequence {
   public java.util.Iterator iterator();
+}
+-keep,allowobfuscation class kotlin.sequences.SequencesKt {
+}
+-keep,allowobfuscation class kotlin.sequences.SequencesKt__SequencesKt {
+  public static kotlin.sequences.Sequence generateSequence(java.lang.Object, kotlin.jvm.functions.Function1);
 }
 -keep,allowobfuscation class kotlin.text.CharsKt {
 }

@@ -290,10 +290,10 @@ class AppUpdates(
         }
     }
 
-    fun download(release: AndroidUpdatesRelease) {
+    fun download(release: AndroidUpdatesRelease): Boolean {
         val offered = mutable.value
-        if (!offered.canDownload || offered.candidate != release) return
-        if (transferJob?.isActive == true) return
+        if (!offered.canDownload || offered.candidate != release) return false
+        if (transferJob?.isActive == true) return false
         transferJob =
             scope.launch {
                 val snapshot = mutable.value
@@ -325,12 +325,7 @@ class AppUpdates(
                     }
                 }
             }
-    }
-
-    fun cancelDownload(release: AndroidUpdatesRelease) {
-        val transfer = mutable.value.transfer
-        if (transfer !is UpdateTransfer.Downloading || transfer.release != release) return
-        discardTransfer()
+        return true
     }
 
     private fun discardTransfer() {

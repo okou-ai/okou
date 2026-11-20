@@ -23,6 +23,7 @@ import ai.okou.android.state.rememberChatSearchState
 import ai.okou.android.state.rememberCollapsedProjects
 import ai.okou.android.state.rememberConversationUiState
 import ai.okou.android.state.rememberWorkspaceNavigation
+import ai.okou.android.updates.UpdateToolbarAction
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -61,6 +62,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -99,7 +101,8 @@ internal fun OkouApp(
     settingsContent: @Composable (SettingsDestination, openInstructions: () -> Unit) -> Unit,
     recovery: AssistantRecoveryModel? = null,
     workspaceTitle: @Composable ((ChatListFilter) -> Unit)? = null,
-    openUpdate: (() -> Unit)? = null,
+    updateToolbarAction: UpdateToolbarAction? = null,
+    onUpdateEditingChanged: (Boolean) -> Unit = {},
     startupRecovery: @Composable (() -> Unit)? = null,
 ) {
     val list =
@@ -118,6 +121,15 @@ internal fun OkouApp(
     val searchState = rememberChatSearchState()
     var focusSearch by remember { mutableStateOf(false) }
     val searchActive = chats != null && composer != null && navigation.search == SearchRoute.Open
+    var composerFocused by remember(target, settings, searchActive) { mutableStateOf(false) }
+    val editing =
+        searchActive ||
+            settings == SettingsDestination.Instructions ||
+            (settings == null && (target is WorkspaceTarget.NewChat || composerFocused))
+    DisposableEffect(editing) {
+        onUpdateEditingChanged(editing)
+        onDispose { onUpdateEditingChanged(false) }
+    }
     val showList = listWidth != null || searchActive || target == WorkspaceTarget.List
     val showChatList = settings == null && showList && !searchActive
     val showWorkspaceBack = listWidth == null && !searchActive && target != WorkspaceTarget.List
@@ -349,7 +361,7 @@ internal fun OkouApp(
                     selectFilter = chats::selectFilter,
                     markAllRead = chats::markAllRead,
                     openSearch = if (showList) ::openSearch else null,
-                    openUpdate = openUpdate,
+                    update = updateToolbarAction,
                     settingsFocus = settingsFocus,
                     openSettings = { restore ->
                         restoreSettingsFocus = restore
@@ -577,7 +589,11 @@ internal fun OkouApp(
                                                         composerTarget,
                                                     )
                                                 }
-                                                ChatComposerField(composer, composerTarget)
+                                                ChatComposerField(
+                                                    composer,
+                                                    composerTarget,
+                                                    onInputFocusChanged = { composerFocused = it },
+                                                )
                                             }
                                         }
                                     is WorkspaceTarget.NewChat ->

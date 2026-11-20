@@ -10,6 +10,7 @@ import ai.okou.android.chat.ChatListModel
 import ai.okou.android.chat.RunControlsModel
 import ai.okou.android.preferences.MemberPreferencesModel
 import ai.okou.android.preferences.MemberPreferencesSettings
+import ai.okou.android.updates.UpdateToolbarAction
 import android.content.res.Configuration
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -187,7 +188,7 @@ class OkouAppTest {
                                 workspacePreferences = { MemberPreferencesSettings(models.second) }
                             )
                         },
-                        openUpdate = openUpdate,
+                        updateToolbarAction = openUpdate?.let { UpdateToolbarAction("Update", it) },
                     )
                 }
             }

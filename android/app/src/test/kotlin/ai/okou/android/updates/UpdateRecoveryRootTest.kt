@@ -75,14 +75,15 @@ class UpdateRecoveryRootTest {
     fun recoveryKeepsPackageIdentityAndControlsUnavailableAcrossRecreation() {
         compose.onNodeWithText("Preparing update…").assertIsDisplayed().assertIsNotEnabled()
         compose.onNodeWithText("New version: 99.0.0").assertExists()
-        compose.onNodeWithText("Download update").assertDoesNotExist()
+        compose.onNodeWithText("Update").assertDoesNotExist()
         compose.onNodeWithText("Allow update installation").assertDoesNotExist()
         compose.activityRule.scenario.recreate()
         compose.onNodeWithText("Preparing update…").assertIsDisplayed().assertIsNotEnabled()
         app.fixture.heldRecovery!!.complete(Unit)
         compose.waitUntil(10_000) { app.updates.state.value.canInstall }
         compose.onNodeWithText("New version: 99.0.0").assertExists()
-        compose.onNodeWithText("Allow update installation").assertIsDisplayed().assertIsEnabled()
+        compose.onNodeWithText("Continue installation").assertIsDisplayed().assertIsEnabled()
+        compose.onNodeWithText("Allow update installation").assertDoesNotExist()
         assertTrue(app.fixture.downloadedReleases.isEmpty())
         assertTrue(app.updates.state.value.required)
     }
@@ -95,14 +96,10 @@ class UpdateRecoveryRootTest {
         app.fixture.heldRecovery!!.complete(Unit)
         compose.waitUntil(10_000) { app.updates.state.value.canDownload }
         compose.onNodeWithText("New version: 99.1.0").assertExists()
-        compose
-            .onNodeWithText("Download update")
-            .assertIsDisplayed()
-            .assertIsEnabled()
-            .performClick()
+        compose.onNodeWithText("Try again").assertIsDisplayed().assertIsEnabled().performClick()
         compose.waitUntil(10_000) { app.fixture.downloadedReleases.isNotEmpty() }
         assertEquals(listOf(app.latest), app.fixture.downloadedReleases)
-        compose.onNodeWithText("Cancel download").assertIsDisplayed()
+        compose.onNodeWithText("Updating · 0%").assertIsDisplayed()
         assertTrue(app.updates.state.value.required)
     }
 }

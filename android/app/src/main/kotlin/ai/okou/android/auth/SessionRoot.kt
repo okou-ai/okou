@@ -14,6 +14,7 @@ import ai.okou.android.chat.WorkspaceRealtimeLifecycle
 import ai.okou.android.instructions.PersonalInstructionsSettings
 import ai.okou.android.preferences.MemberPreferencesSettings
 import ai.okou.android.state.SettingsDestination
+import ai.okou.android.updates.UpdateToolbarAction
 import ai.okou.android.workspaceListPaneWidth
 import ai.okou.android.workspaceListTitleStyle
 import androidx.compose.foundation.Image
@@ -66,14 +67,15 @@ import com.clerk.api.ui.ClerkTypography
 import com.clerk.ui.auth.AuthView
 
 @Composable
-fun SessionRoot(
+internal fun SessionRoot(
     state: SessionUiState,
     retry: () -> Unit,
     chooseWorkspace: (String) -> Unit,
     signOut: () -> Unit,
     openWorkspaceSetup: () -> Unit,
     appUpdates: @Composable (() -> Unit)? = null,
-    openUpdate: (() -> Unit)? = null,
+    updateToolbarAction: UpdateToolbarAction? = null,
+    onUpdateEditingChanged: (Boolean) -> Unit = {},
 ) {
     val textButtonColors =
         ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurface)
@@ -117,7 +119,8 @@ fun SessionRoot(
                         organization?.let { workspace ->
                             { filter -> WorkspaceTitle(workspace, state, filter, chooseWorkspace) }
                         },
-                    openUpdate = openUpdate,
+                    updateToolbarAction = updateToolbarAction,
+                    onUpdateEditingChanged = onUpdateEditingChanged,
                     startupRecovery =
                         if (state.stage == SessionStage.Unavailable) {
                             {

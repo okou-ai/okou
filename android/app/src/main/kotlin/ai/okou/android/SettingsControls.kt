@@ -86,6 +86,7 @@ internal fun SettingsRow(
     onClick: (() -> Unit)? = null,
     enabled: Boolean = true,
     showChevron: Boolean = onClick != null,
+    valueLeading: (@Composable () -> Unit)? = null,
 ) {
     val colors = MaterialTheme.colorScheme
     val muted = colors.onSurfaceVariant
@@ -105,17 +106,31 @@ internal fun SettingsRow(
         leading()
         Column(Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.bodyLarge)
-            if (expandedText && value != null)
-                Text(value, color = muted, style = MaterialTheme.typography.bodyMedium)
+            if (expandedText && value != null) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    valueLeading?.invoke()
+                    Text(value, color = muted, style = MaterialTheme.typography.bodyMedium)
+                }
+            }
         }
-        if (!expandedText && value != null)
-            Text(
-                value,
-                Modifier.widthIn(max = 144.dp),
-                color = muted,
-                style = MaterialTheme.typography.bodyMedium,
-                textAlign = TextAlign.End,
-            )
+        if (!expandedText && value != null) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                valueLeading?.invoke()
+                Text(
+                    value,
+                    Modifier.widthIn(max = 144.dp),
+                    color = muted,
+                    style = MaterialTheme.typography.bodyMedium,
+                    textAlign = TextAlign.End,
+                )
+            }
+        }
         if (showChevron)
             Icon(
                 painterResource(R.drawable.ic_chevron_right),

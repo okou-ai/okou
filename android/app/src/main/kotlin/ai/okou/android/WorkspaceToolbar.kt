@@ -4,6 +4,7 @@ import ai.okou.android.chat.ChatListFilter
 import ai.okou.android.chat.ChatListUiState
 import ai.okou.android.chat.label
 import ai.okou.android.chat.markAllReadTargets
+import ai.okou.android.updates.UpdateToolbarAction
 import android.os.Build
 import android.window.OnBackInvokedCallback
 import android.window.OnBackInvokedDispatcher
@@ -11,6 +12,8 @@ import androidx.annotation.DrawableRes
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -152,11 +155,11 @@ internal fun WorkspaceToolbarActions(
     selectFilter: (ChatListFilter) -> Unit,
     markAllRead: () -> Unit,
     openSearch: (() -> Unit)? = null,
-    openUpdate: (() -> Unit)?,
+    update: UpdateToolbarAction?,
     settingsFocus: FocusRequester,
     openSettings: (restoreFocus: Boolean) -> Unit,
 ) {
-    val hasUpdate = openUpdate != null
+    val hasUpdate = update != null
     var menu by remember(showFilter, hasUpdate) { mutableStateOf<WorkspaceMenuPage?>(null) }
     val filterFocus = remember { FocusRequester() }
     var restoreMenuFocus by remember(showFilter, hasUpdate) { mutableStateOf(false) }
@@ -245,7 +248,7 @@ internal fun WorkspaceToolbarActions(
                 }
             }
         }
-    if (openUpdate == null) {
+    if (update == null) {
         if (showFilter) {
             Box {
                 val currentFilter = stringResource(list.filter.label())
@@ -273,26 +276,33 @@ internal fun WorkspaceToolbarActions(
             Icon(painterResource(R.drawable.ic_settings), stringResource(R.string.settings))
         }
     } else {
+        val interactions = remember { MutableInteractionSource() }
+        val pressed by interactions.collectIsPressedAsState()
         TextButton(
-            onClick = openUpdate,
+            onClick = { update.activate?.invoke() },
+            enabled = update.activate != null,
             modifier = Modifier.width(104.dp).heightIn(min = 48.dp),
-            shape = RoundedCornerShape(14.dp),
-            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+            shape = RoundedCornerShape(12.dp),
+            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
+            interactionSource = interactions,
             colors =
                 ButtonDefaults.textButtonColors(
-                    containerColor = colors.inverseSurface,
+                    containerColor =
+                        if (pressed) colors.onSurfaceVariant else colors.inverseSurface,
                     contentColor = colors.inverseOnSurface,
+                    disabledContainerColor = colors.inverseSurface,
+                    disabledContentColor = colors.inverseOnSurface,
                 ),
         ) {
             Icon(
-                painterResource(R.drawable.ic_download),
+                painterResource(update.icon),
                 contentDescription = null,
                 modifier = Modifier.size(18.dp),
             )
-            Spacer(Modifier.width(4.dp))
+            Spacer(Modifier.width(8.dp))
             Text(
-                stringResource(R.string.updates_toolbar),
-                style = filterLabelStyle(),
+                update.label,
+                style = filterLabelStyle().copy(fontFeatureSettings = "tnum"),
                 fontWeight = FontWeight(550),
             )
         }

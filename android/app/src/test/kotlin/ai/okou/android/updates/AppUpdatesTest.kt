@@ -131,7 +131,6 @@ class AppUpdatesTest {
                     assertEquals("0.13.0", owner.state.value.displayedRelease!!.version)
                     assertEquals("0.14.0", owner.state.value.candidate!!.version)
                     owner.download(updateRelease("0.14.0"))
-                    owner.cancelDownload(updateRelease())
                     owner.defer(updateRelease())
                     assertNull(owner.installationFile(updateRelease()))
                     runCurrent()
@@ -255,7 +254,6 @@ class AppUpdatesTest {
             assertNull(owner.state.value.deferred)
             owner.download(latest)
             runCurrent()
-            owner.cancelDownload(old)
             assertEquals(UpdateTransfer.Downloading(latest), owner.state.value.transfer)
             service.transfer.complete(File("latest.apk"))
             advanceUntilIdle()
@@ -447,7 +445,7 @@ class AppUpdatesTest {
     }
 
     @Test
-    fun cancellationRetiresProgressAndReadyStateRequiresActualCompletion() = runTest {
+    fun higherMinimumRetiresProgressAndReadyStateRequiresActualCompletion() = runTest {
         val service = ControlledUpdates()
         val store = MemoryUpdateStore()
         val owner = AppUpdates(service, store, "0.12.0", 35, StandardTestDispatcher(testScheduler))
@@ -462,22 +460,24 @@ class AppUpdatesTest {
                 (owner.state.value.transfer as UpdateTransfer.Downloading).downloadedBytes,
             )
             val staleProgress = service.progress!!
-            owner.cancelDownload(updateRelease())
-            runCurrent()
+            val newer = updateRelease("0.14.0")
+            service.response = AndroidUpdates(null, newer)
+            owner.requireUpdate(RequiredUpdate(newer.version))
+            advanceUntilIdle()
             staleProgress(1000)
             assertEquals(UpdateTransfer.Idle, owner.state.value.transfer)
             service.transfer = CompletableDeferred()
-            owner.download(updateRelease())
+            owner.download(newer)
             runCurrent()
             service.transfer.complete(File("verified.apk"))
             advanceUntilIdle()
             assertTrue(owner.state.value.transfer is UpdateTransfer.Ready)
-            assertEquals(File("verified.apk"), owner.installationFile(updateRelease()))
-            owner.installFailed(updateRelease())
+            assertEquals(File("verified.apk"), owner.installationFile(newer))
+            owner.installFailed(newer)
             assertTrue(owner.state.value.transfer is UpdateTransfer.Ready)
             assertEquals(UpdateProblem.Install, owner.state.value.problem)
             service.downloaded = null
-            assertNull(owner.installationFile(updateRelease()))
+            assertNull(owner.installationFile(newer))
             assertEquals(UpdateTransfer.Failed, owner.state.value.transfer)
         } finally {
             owner.close()
