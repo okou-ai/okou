@@ -6,7 +6,7 @@ import {
   type ConnectorPermissions,
 } from "@okouai/api-contracts/contracts/connector-permissions";
 import { chatThreadMetadataContract } from "@okouai/api-contracts/contracts/chat-threads";
-import type { UserPermissionGrantBatchItem } from "@okouai/api-contracts/contracts/user-permission-grants";
+import type { UserPermissionGrantBatchItem } from "@okouai/api-contracts/validators/user-permission-grants";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";

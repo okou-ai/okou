@@ -930,7 +930,7 @@ describe("POST /api/webhooks/notion", () => {
   async function setupNotionAccountLifecycle() {
     const runnerGroup = await runsApi.configureRunnerGroup();
     const scenario = await setupFixture();
-    const { actor, agentId, fixture, workflowId, entities } = scenario;
+    const { actor, fixture, workflowId, entities } = scenario;
     await connectNotion(scenario);
     const [firstAccount] = await connectorsApi.listBuiltinConnectorAccounts(
       actor,
@@ -945,13 +945,10 @@ describe("POST /api/webhooks/notion", () => {
       ownerId: "notion-user-2",
       ownerName: "Second Notion User",
     });
-    const oauth = await connectorsApi.startOauth(
-      actor,
-      "notion",
-      "oauth",
-      agentId,
-      { intent: "add", displayName: "Second Notion" },
-    );
+    const oauth = await connectorsApi.startOauth(actor, "notion", "oauth", {
+      intent: "add",
+      displayName: "Second Notion",
+    });
     const state = new URL(oauth.authorizationUrl).searchParams.get("state");
     if (!state) {
       throw new Error("Expected the Notion OAuth start URL to include state");
@@ -1064,7 +1061,6 @@ describe("POST /api/webhooks/notion", () => {
   it("repairs Notion selection after account deletion and re-add", async () => {
     const {
       actor,
-      agentId,
       threadId,
       firstAccount,
       secondAccount,
@@ -1088,7 +1084,6 @@ describe("POST /api/webhooks/notion", () => {
       actor,
       "notion",
       "oauth",
-      agentId,
       { intent: "add", displayName: "Second Notion Re-added" },
     );
     const readdState = new URL(readdOauth.authorizationUrl).searchParams.get(
@@ -1201,7 +1196,6 @@ describe("POST /api/webhooks/notion", () => {
     async (deletedAccount) => {
       const {
         actor,
-        agentId,
         threadId,
         firstAccount,
         secondAccount,
@@ -1214,13 +1208,10 @@ describe("POST /api/webhooks/notion", () => {
         ownerId: thirdOwner,
         ownerName: "Third Notion User",
       });
-      const oauth = await connectorsApi.startOauth(
-        actor,
-        "notion",
-        "oauth",
-        agentId,
-        { intent: "add", displayName: "Third Notion" },
-      );
+      const oauth = await connectorsApi.startOauth(actor, "notion", "oauth", {
+        intent: "add",
+        displayName: "Third Notion",
+      });
       const state = new URL(oauth.authorizationUrl).searchParams.get("state");
       if (!state) {
         throw new Error("Expected third Notion account OAuth state");

@@ -415,12 +415,6 @@ const chatThreadCreateBodySchema = object({
   agentId: string().min(1),
   clientThreadId: uuid().optional(),
   eventId: chatThreadEventIdSchema.optional(),
-  connectorSelections: array(connectorAccountSelectionSchema).optional(),
-  /**
-   * Retired opt-in still sent by current clients. Every create rejects an
-   * unavailable selected account; the field no longer changes behavior.
-   */
-  connectorSelectionPolicy: literal("required").optional(),
   initialRemoteAccessOverrides: array(initialRemoteAccessOverrideSchema)
     .superRefine((overrides, ctx) => {
       const seen = new Set<string>();

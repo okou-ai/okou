@@ -79,7 +79,6 @@ async function setupAnalyticsFirewall(publicFixture: PublicFirewallFixture) {
       actor,
       "google-analytics",
       "oauth",
-      agent.agentId,
       account,
     );
     const state = new URL(started.authorizationUrl).searchParams.get("state");

@@ -1,4 +1,4 @@
-import type { UserPermissionGrantExpiresIn } from "@okouai/api-contracts/contracts/user-permission-grants";
+import type { UserPermissionGrantExpiresIn } from "@okouai/api-contracts/validators/user-permission-grants";
 import { parseUserPermissionGrantExpiresIn } from "../permission-allow/permission-grant-expiration.ts";
 import {
   chatActionCallbackFromUrl,

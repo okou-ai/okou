@@ -111,12 +111,7 @@ describe("onboarding recommendations", () => {
         email: "owner@example.test",
         subject: `gmail-context-${randomUUID()}`,
       });
-      const oauth = await connectorsApi.startOauth(
-        actor,
-        "gmail",
-        "oauth",
-        onboarding.defaultAgentId,
-      );
+      const oauth = await connectorsApi.startOauth(actor, "gmail", "oauth");
       const state = new URL(oauth.authorizationUrl).searchParams.get("state");
       if (!state) {
         throw new Error("Expected a Gmail OAuth state");
@@ -134,7 +129,6 @@ describe("onboarding recommendations", () => {
         actor,
         "github",
         "oauth",
-        onboarding.defaultAgentId,
       );
       const githubState = new URL(
         githubOauth.authorizationUrl,

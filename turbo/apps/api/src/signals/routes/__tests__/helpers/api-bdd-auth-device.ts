@@ -7,7 +7,6 @@ import {
   cliAuthDeviceContract,
   cliAuthTokenContract,
 } from "@okouai/api-contracts/contracts/cli-auth";
-import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
 import { platformRealtimeTokenContract } from "@okouai/api-contracts/contracts/realtime";
 import {
@@ -437,15 +436,6 @@ export function createAuthDeviceApiActions(context: TestContext) {
         }),
         statuses,
       );
-    },
-
-    async readUserConnectors(actor: ApiTestUser, agentId: string) {
-      const client = authDeviceApp(context)(userBuiltinConnectorsContract);
-      const response = await accept(
-        client.get({ params: { id: agentId }, headers: authenticate(actor) }),
-        [200],
-      );
-      return response.body;
     },
 
     async readBillingStatus(actor: ApiTestUser) {

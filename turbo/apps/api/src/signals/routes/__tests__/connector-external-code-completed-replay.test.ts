@@ -1,29 +1,21 @@
 import type { BuiltinConnectorExternalCodeSessionStartResponse } from "@okouai/api-contracts/contracts/connector-schemas";
-import { builtinConnectorExternalCodeSessionContract } from "@okouai/api-contracts/contracts/connectors";
-import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { http, HttpResponse } from "msw";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { accept, testContext } from "../../../__tests__/test-context";
-import { setupApp } from "../../../__tests__/test-helpers";
+import { testContext } from "../../../__tests__/test-context";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import { agentsRoutes } from "../agents";
-import { builtinConnectorsExternalCodeRoutes } from "../connectors-external-code";
-import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import type { ApiTestUser } from "./helpers/api-bdd";
 import {
   awsVerificationCode,
   createConnectorBddApi,
   mockAwsExternalCodeProvider,
 } from "./helpers/api-bdd-connectors";
 import { createPublicConnectorActor } from "./helpers/public-connector-actor";
-import { createRouteMocks } from "./helpers/route-test";
 import { mockSecretKmsHttp } from "./helpers/secret-kms-http";
 
 const context = testContext();
-const bdd = createBddApi(context);
 const connectors = createConnectorBddApi(context);
-const mocks = createRouteMocks(context);
 
 function createActor() {
   mockAwsExternalCodeProvider();
@@ -206,79 +198,6 @@ describe("Builtin external-code completed replay", () => {
       ).resolves.toMatchObject({
         id: defaultAccount.connectionId,
       });
-    });
-  });
-
-  it("rechecks explicit Agent authorization when a completed session is replayed after Agent deletion", async () => {
-    const owned = createActor();
-    await owned.run(async () => {
-      const actor = owned.actor;
-      owned.ownsFeatureSwitches();
-      await connectors.updateFeatureSwitches(actor, {});
-      bdd.acceptAgentStorageWrites();
-      const agent = await bdd.createAgent(actor, {
-        displayName: "Replay authorization target",
-      });
-      mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-      const grants = setupApp({ context, routes: agentsRoutes })(
-        userBuiltinConnectorsContract,
-      );
-      const headers = { authorization: "Bearer clerk-session" };
-      const before = await accept(
-        grants.get({ headers, params: { id: agent.agentId } }),
-        [200],
-      );
-      expect(before.body.enabledConnectorSlugs).toStrictEqual([]);
-      const started = await accept(
-        setupApp({ context, routes: builtinConnectorsExternalCodeRoutes })(
-          builtinConnectorExternalCodeSessionContract,
-        ).create({
-          headers,
-          params: { connectorSlug: "aws" },
-          body: {
-            authMethod: "cli",
-            agentId: agent.agentId,
-            authorizeAgent: true,
-            account: { intent: "add" },
-          },
-        }),
-        [200],
-      );
-      const completed = await completeSession(actor, started.body);
-      const authorized = await accept(
-        grants.get({ headers, params: { id: agent.agentId } }),
-        [200],
-      );
-      expect(authorized.body.enabledConnectorSlugs).toStrictEqual(["aws"]);
-      await bdd.deleteAgent(actor, agent.agentId);
-
-      const replay = await connectors.requestExternalCodeComplete(
-        actor,
-        "aws",
-        completionInput(started.body),
-        [400],
-      );
-      expect(replay.body).toStrictEqual({
-        error: {
-          code: "BAD_REQUEST",
-          message: `Agent not found: ${agent.agentId}`,
-        },
-      });
-      expectNoSecrets(replay.body, started.body.sessionToken);
-      await expectAccounts(actor, [
-        { id: completed.connectionId, isDefault: true },
-      ]);
-      await expect(
-        connectors.readDefaultBuiltinAccount(actor, "aws"),
-      ).resolves.toMatchObject({
-        id: completed.connectionId,
-      });
-      const agents = await bdd.listAgents(actor);
-      expect(
-        agents.map(({ agentId }) => {
-          return agentId;
-        }),
-      ).not.toContain(agent.agentId);
     });
   });
 });

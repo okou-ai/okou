@@ -31,7 +31,6 @@ teardown() {
     run runner_e2e_connect_manual_connector \
         strapi \
         api-token \
-        "$AGENT_ID" \
         "$values"
     echo "$output"
     assert_success

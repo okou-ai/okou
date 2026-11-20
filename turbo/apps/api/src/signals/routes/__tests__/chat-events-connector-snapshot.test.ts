@@ -174,14 +174,12 @@ describe("accepted Connector preparation", () => {
         "runtime",
         "api-token",
         { apiKey: "accepted-runtime-key" },
-        agentId,
       );
       const nextAccount = await connectors.connectManualGrant(
         actor,
         "runtime",
         "api-token",
         { apiKey: "next-runtime-key" },
-        agentId,
         { intent: "add", displayName: "Later account" },
       );
       const thread = await fixture.chat.createThread(actor, { agentId });
@@ -281,9 +279,6 @@ describe("accepted Connector preparation", () => {
           connector.id,
           [],
         );
-        await connectors.updateAgentCustomConnectors(actor, agentId, [
-          connector.id,
-        ]);
         return { connector, connectionId: account.connectionId, s3 };
       });
       const held = holdAttachment(actor.userId);

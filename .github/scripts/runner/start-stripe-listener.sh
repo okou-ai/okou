@@ -3,9 +3,8 @@ set -euo pipefail
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "${script_dir}/../../../ansible"
 
-STRIPE_LISTENER_HOST="$(printf '%s\n' "$METAL_HOSTS" | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | sed '/^$/d' | head -n 1)"
-if [[ -z "$STRIPE_LISTENER_HOST" ]]; then
-  echo "::error::AWS_METAL_RUNNER_HOSTS is empty"
+if [[ ! "${METAL_HOSTS:-}" =~ ^[A-Za-z0-9]([A-Za-z0-9._-]*[A-Za-z0-9])?$ ]]; then
+  echo "::error::Stripe listener requires a single Runner host"
   exit 1
 fi
 
@@ -33,7 +32,7 @@ EXTRA_VARS="$(jq -nc \
   '{ansible_user: $ansible_user, job_ref: $job_ref, forward_url: $forward_url, stripe_secret_key: $stripe_secret_key}')"
 
 ansible-playbook \
-  -i "${STRIPE_LISTENER_HOST}," \
+  -i "${METAL_HOSTS}," \
   playbooks/start-stripe-listener.yml \
   --extra-vars "$EXTRA_VARS" \
   -v

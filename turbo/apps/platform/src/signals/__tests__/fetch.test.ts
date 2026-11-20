@@ -1,6 +1,6 @@
 import { screen } from "@testing-library/react";
 import { CLIENT_FORCE_UPGRADE_STATUS } from "@okouai/api-contracts/contracts/client-headers";
-import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
+import { agentsByIdContract } from "@okouai/api-contracts/contracts/agents";
 import { expect, test } from "vitest";
 
 import { setupPage } from "../../__tests__/page-helper.ts";
@@ -17,11 +17,11 @@ async function waitForReadyPage(): Promise<void> {
 }
 
 function client() {
-  return context.store.get(apiClient$)(userBuiltinConnectorsContract);
+  return context.store.get(apiClient$)(agentsByIdContract);
 }
 
 test("An empty service error still gives the user a useful status", async () => {
-  context.mocks.api(userBuiltinConnectorsContract.get, ({ respond }) => {
+  context.mocks.api(agentsByIdContract.get, ({ respond }) => {
     return respond(403, {
       error: { code: "FORBIDDEN", message: "" },
     });
@@ -39,7 +39,7 @@ test("An empty service error still gives the user a useful status", async () => 
 });
 
 test("The update dialog appears only when an update is required", async () => {
-  context.mocks.http.get("*/api/agents/:id/user-connectors", () => {
+  context.mocks.http.get("*/api/agents/:id", () => {
     return Response.json(
       { error: "Client update required" },
       { status: CLIENT_FORCE_UPGRADE_STATUS },

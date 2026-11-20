@@ -75,11 +75,6 @@ import type { CancelRunResult } from "./agent-run-terminal-transition.service";
 import { cancellationRecoveryPendingForThread } from "./chat-active-run.service";
 import { reconcileAutomationEventWatches$ } from "./automation-event-watch-lifecycle.service";
 import {
-  selectionParentMissing,
-  prepareChatThreadConnectorSelections$,
-  type PreparedChatThreadConnectorSelection,
-} from "./chat-thread-connector-selection.service";
-import {
   prepareChatThreadInsert,
   createdChatThreadFromRow,
 } from "./chat-thread-create.service";
@@ -842,7 +837,6 @@ interface CreateChatThreadArgs {
   readonly modelSettings?: ModelSettings;
   readonly cloudBrowserEnabled?: boolean;
   readonly codexServiceTier: CodexServiceTier | null;
-  readonly connectorSelections?: readonly PreparedChatThreadConnectorSelection[];
   readonly committedThread?: ExistingChatThread;
   readonly initialRemoteAccessOverrides?: readonly InitialRemoteAccessOverride[];
   /** Welcome delivery seeds one immutable message only for the winning INSERT. */
@@ -946,15 +940,6 @@ function createdThreadResult(thread: {
   return { kind: "created", id: thread.id, createdAt: thread.createdAt };
 }
 
-function initialConnectorSelectionInput(args: CreateChatThreadArgs) {
-  return {
-    orgId: args.orgId,
-    userId: args.userId,
-    agentId: args.agentId,
-    selections: args.connectorSelections ?? [],
-  };
-}
-
 function initialRemoteOwnershipSelection(args: CreateChatThreadArgs) {
   return {
     owned: initialRemoteAccessOwnershipPredicate(
@@ -986,28 +971,6 @@ function createdChatRelationCtes(args: CreateChatThreadArgs) {
   ];
 }
 
-function failedChatThreadInitialization(error: unknown) {
-  // Classify only after the complete initialization has rolled back. Other
-  // constraints and database failures remain errors.
-  if (selectionParentMissing(error) === "account") {
-    return { kind: "connector_account_unavailable" as const };
-  }
-  throw error;
-}
-
-function invalidInitialConnectorSelection(prepared: {
-  readonly message: string;
-  readonly accountUnavailable?: true;
-}) {
-  if (prepared.accountUnavailable) {
-    return { kind: "connector_account_unavailable" as const };
-  }
-  return {
-    kind: "invalid_connector_selection" as const,
-    message: prepared.message,
-  };
-}
-
 /** Initialization and the ordered created event commit together. */
 export const createChatThread$ = command(
   async ({ get, set }, args: CreateChatThreadArgs, signal: AbortSignal) => {
@@ -1015,98 +978,80 @@ export const createChatThread$ = command(
     if (args.committedThread) {
       return args.committedThread;
     }
-    const preparedConnectorSelections = await set(
-      prepareChatThreadConnectorSelections$,
-      initialConnectorSelectionInput(args),
-      signal,
-    );
-    if (preparedConnectorSelections.kind === "invalid") {
-      return invalidInitialConnectorSelection(preparedConnectorSelections);
-    }
-    const thread = await settle(
-      (async () => {
-        const readDb = get(db$);
-        const [remoteOwnership] =
-          (args.initialRemoteAccessOverrides?.length ?? 0) > 0
-            ? await readDb
-                .select(initialRemoteOwnershipSelection(args))
-                .from(sql`(SELECT 1) AS initial_remote_ownership`)
-            : [{ owned: true }];
-        signal.throwIfAborted();
-        if (!remoteOwnership) {
-          throw new Error("Initial remote access ownership result is missing");
-        }
-        if (remoteOwnership.owned) {
-          const plan = ordinaryChatThreadInsertPlan(args);
-          const [read] = await readDb
-            .with(...plan.defaults)
-            .select(ordinaryInitializationRead(plan))
-            .from(sql`(SELECT 1) AS initial_thread_values`);
-          signal.throwIfAborted();
-          if (!read) {
-            throw new Error("Initial chat thread values are missing");
-          }
-          const prepared = preparedOrdinaryThread(args, plan, read);
-          const db = set(writeDb$);
-          const insertion = db
-            .insert(chatThreads)
-            .values(prepared.values)
-            .onConflictDoNothing()
-            .returning({
-              id: chatThreads.id,
-              createdAt: chatThreads.createdAt,
-            });
-          const ctes = [
-            sql`created_chat_thread AS (${insertion.getSQL()})`,
-            ...createdChatRelationCtes(args),
-            ...chatThreadInitializationCtes({
-              orgId: args.orgId,
-              eventId: args.eventId,
-              thread: prepared.thread,
-              selections: preparedConnectorSelections.selections,
-              remoteOverrides: args.initialRemoteAccessOverrides ?? [],
-              assistantMessage: args.initialAssistantMessage,
-            }),
-          ];
-          const [created] = parseRawRows(
-            initializedThreadRowSchema,
-            await db.execute(sql`WITH ${sql.join(ctes, sql`, `)}
-              SELECT id, created_at::text AS "createdAt" FROM created_chat_thread`),
-          );
-          signal.throwIfAborted();
-          if (created) {
-            return {
-              ...createdThreadResult(created),
-              projectId: args.projectId ?? null,
-            };
-          }
-        }
-        if (canReplayClientThread(args)) {
-          // A conflicting INSERT may have waited for an uncommitted winner.
-          // Read again after that statement; its initial snapshot cannot replay it.
-          const [existing] = await readDb
-            .select(existingClientThreadSelection)
-            .from(chatThreads)
-            .where(existingClientThreadCondition(args))
-            .limit(1);
-          signal.throwIfAborted();
-          if (existing) {
-            return { kind: "existing" as const, ...existing };
-          }
-        }
-        return remoteOwnership.owned
-          ? { kind: "client_thread_conflict" as const }
-          : {
-              kind: "invalid_remote_access_selection" as const,
-              message: "Remote access host not found",
-            };
-      })(),
-      signal,
-    );
+    const readDb = get(db$);
+    const [remoteOwnership] =
+      (args.initialRemoteAccessOverrides?.length ?? 0) > 0
+        ? await readDb
+            .select(initialRemoteOwnershipSelection(args))
+            .from(sql`(SELECT 1) AS initial_remote_ownership`)
+        : [{ owned: true }];
     signal.throwIfAborted();
-    return thread.ok
-      ? thread.value
-      : failedChatThreadInitialization(thread.error);
+    if (!remoteOwnership) {
+      throw new Error("Initial remote access ownership result is missing");
+    }
+    if (remoteOwnership.owned) {
+      const plan = ordinaryChatThreadInsertPlan(args);
+      const [read] = await readDb
+        .with(...plan.defaults)
+        .select(ordinaryInitializationRead(plan))
+        .from(sql`(SELECT 1) AS initial_thread_values`);
+      signal.throwIfAborted();
+      if (!read) {
+        throw new Error("Initial chat thread values are missing");
+      }
+      const prepared = preparedOrdinaryThread(args, plan, read);
+      const db = set(writeDb$);
+      const insertion = db
+        .insert(chatThreads)
+        .values(prepared.values)
+        .onConflictDoNothing()
+        .returning({
+          id: chatThreads.id,
+          createdAt: chatThreads.createdAt,
+        });
+      const ctes = [
+        sql`created_chat_thread AS (${insertion.getSQL()})`,
+        ...createdChatRelationCtes(args),
+        ...chatThreadInitializationCtes({
+          orgId: args.orgId,
+          eventId: args.eventId,
+          thread: prepared.thread,
+          remoteOverrides: args.initialRemoteAccessOverrides ?? [],
+          assistantMessage: args.initialAssistantMessage,
+        }),
+      ];
+      const [created] = parseRawRows(
+        initializedThreadRowSchema,
+        await db.execute(sql`WITH ${sql.join(ctes, sql`, `)}
+          SELECT id, created_at::text AS "createdAt" FROM created_chat_thread`),
+      );
+      signal.throwIfAborted();
+      if (created) {
+        return {
+          ...createdThreadResult(created),
+          projectId: args.projectId ?? null,
+        };
+      }
+    }
+    if (canReplayClientThread(args)) {
+      // A conflicting INSERT may have waited for an uncommitted winner.
+      // Read again after that statement; its initial snapshot cannot replay it.
+      const [existing] = await readDb
+        .select(existingClientThreadSelection)
+        .from(chatThreads)
+        .where(existingClientThreadCondition(args))
+        .limit(1);
+      signal.throwIfAborted();
+      if (existing) {
+        return { kind: "existing" as const, ...existing };
+      }
+    }
+    return remoteOwnership.owned
+      ? { kind: "client_thread_conflict" as const }
+      : {
+          kind: "invalid_remote_access_selection" as const,
+          message: "Remote access host not found",
+        };
   },
 );
 

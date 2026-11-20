@@ -47,7 +47,6 @@ async function addAccount(actor: ReturnType<typeof bdd.user>, name: string) {
     "openai",
     "api-token",
     { apiKey: `key-${name}` },
-    undefined,
     { intent: "add", displayName: name },
   );
 }

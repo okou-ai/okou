@@ -3,10 +3,6 @@ import {
   mcpConnectorFixture,
 } from "../../../mocks/handlers/connector-account-fixtures.ts";
 import {
-  agentCustomConnectorsContract,
-  type AgentCustomConnectorGrant,
-} from "@okouai/api-contracts/contracts/agent-custom-connectors";
-import {
   connectorAccountsContract,
   type ConnectorAccountConnection,
   type ConnectorAccountMutationIntent,
@@ -68,7 +64,6 @@ interface ConnectorStore {
   accounts: ConnectorAccountConnection[];
   readonly creates: CreateCustomConnectorBody[];
   readonly updates: UpdateCustomConnectorBody[];
-  readonly grants: AgentCustomConnectorGrant[][];
 }
 
 function definitionFor(
@@ -107,7 +102,6 @@ function mockConnectorStore(
     accounts: [...(initial.accounts ?? [])],
     creates: [],
     updates: [],
-    grants: [],
   };
   const find = (id: string): CustomConnectorResponse => {
     const connector = store.connectors.find((candidate) => {
@@ -220,13 +214,6 @@ function mockConnectorStore(
         return connector.id !== params.id;
       });
       return respond(204);
-    },
-  );
-  context.mocks.api(
-    agentCustomConnectorsContract.update,
-    ({ body, respond }) => {
-      store.grants.push(body.grants);
-      return respond(200, { grants: body.grants });
     },
   );
   return store;
@@ -397,7 +384,6 @@ test("Do not complete or authorize an exact account when required configuration 
   expect(
     screen.queryByRole("dialog", { name: "Name your Acme Search account" }),
   ).toBeNull();
-  expect(store.grants).toStrictEqual([]);
 });
 
 test("Create a custom connector without authentication", async () => {
@@ -601,7 +587,6 @@ test("Do not grant access after an unsuccessful custom connection", async () => 
       "This account needs additional setup. Review its connector settings and try again.",
     );
   });
-  expect(store.grants).toStrictEqual([]);
 });
 
 test("Manage a custom connector before it is connected", async () => {

@@ -36,7 +36,7 @@ apply_postmark_permission() {
     values=$(jq -nc \
         --arg serverToken "00000000-0000-4000-8000-000000000000" \
         '{serverToken: $serverToken}')
-    run runner_e2e_connect_manual_connector postmark server-token "$AGENT_ID" "$values"
+    run runner_e2e_connect_manual_connector postmark server-token "$values"
     echo "$output"
     assert_success
     CONNECTOR_ACCOUNT_ID=$(jq -er \

@@ -1,16 +1,11 @@
-import { randomUUID } from "node:crypto";
-
-import { agentsMainContract } from "@okouai/api-contracts/contracts/agents";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
-import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { http, HttpResponse } from "msw";
 import { onTestFinished } from "vitest";
 
-import { accept, testContext } from "../../../__tests__/test-context";
+import { testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockOptionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
-import { agentsRoutes } from "../agents";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { createBddApi } from "./helpers/api-bdd";
 import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
@@ -18,65 +13,6 @@ import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
-
-test("each successful grant notifies readers when another grant is rejected", async () => {
-  const headers = { authorization: "Bearer clerk-session" };
-  const userId = `user_${randomUUID()}`;
-  mocks.clerk.session(userId, `org_${randomUUID()}`);
-  context.mocks.s3.send.mockResolvedValue({});
-  const app = setupApp({ context, routes: agentsRoutes });
-  const agents = await Promise.all(
-    ["First agent", "Second agent"].map((displayName) => {
-      return accept(
-        app(agentsMainContract).create({
-          headers,
-          body: { displayName, visibility: "private" },
-        }),
-        [201],
-      );
-    }),
-  );
-  context.mocks.ably.publish.mockClear();
-  context.mocks.ably.channelGet.mockClear();
-
-  const agentIds = agents.map((agent) => {
-    return agent.body.agentId;
-  });
-  const updates = await Promise.all(
-    [randomUUID(), ...agentIds].map((agentId) => {
-      return app(userBuiltinConnectorsContract).update({
-        headers,
-        params: { id: agentId },
-        body: { enabledConnectorSlugs: ["github"], operation: "add" },
-      });
-    }),
-  );
-  expect(
-    updates.map((response) => {
-      return response.status;
-    }),
-  ).toStrictEqual([404, 200, 200]);
-  expect(context.mocks.ably.channelGet.mock.calls).toStrictEqual([
-    [`user:${userId}`],
-    [`user:${userId}`],
-  ]);
-  expect(context.mocks.ably.publish).toHaveBeenCalledTimes(2);
-  for (const agentId of agentIds) {
-    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
-      "composerAgentConnectorsChanged",
-      { agentId },
-    );
-    const access = await accept(
-      app(userBuiltinConnectorsContract).get({
-        headers,
-        params: { id: agentId },
-      }),
-      [200],
-    );
-    expect(access.body.enabledConnectorSlugs).toContain("github");
-  }
-  expect(context.mocks.ably.publish).toHaveBeenCalledTimes(2);
-});
 
 test("a committed account deletion still notifies readers when provider revocation is cancelled", async () => {
   const headers = { authorization: "Bearer clerk-session" };

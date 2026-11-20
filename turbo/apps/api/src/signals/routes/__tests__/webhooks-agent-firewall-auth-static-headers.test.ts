@@ -49,8 +49,6 @@ async function admittedConfiguredMcp(
       body: {
         authMethod: catalog.methodId,
         account: { intent: "add" },
-        agentId: owned.agentId,
-        authorizeAgent: true,
       },
     }),
     [200],

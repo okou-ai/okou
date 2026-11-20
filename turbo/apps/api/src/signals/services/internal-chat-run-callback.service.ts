@@ -40,7 +40,7 @@ import { object, string, type infer as zInfer } from "zod";
 
 import { logger } from "../../lib/log";
 import { safeSqlStateCode } from "../../lib/pg-errors";
-import { now, nowDate } from "../../lib/time";
+import { nowDate } from "../../lib/time";
 import { waitUntil } from "../context/wait-until";
 import { db$, writeDb$ } from "../external/db";
 import {
@@ -48,15 +48,8 @@ import {
   publishChatThreadDetailChangedSafely,
   publishThreadListChangedSafely,
 } from "../external/realtime";
-import { recordSandboxOperations } from "../external/sandbox-op-log";
 import { recordLastEventToComplete$ } from "./internal-chat-run-output-timing.service";
-import {
-  onRejection,
-  settle,
-  settleIncludingAbort,
-  tapError,
-  throwIfAbort,
-} from "../utils";
+import { settle, settleIncludingAbort, tapError, throwIfAbort } from "../utils";
 import {
   agentphoneDeliveryTargetSchema,
   type AgentPhoneDeliveryTarget,
@@ -175,78 +168,6 @@ import {
 import { createTelegramQueuedDelivery } from "./telegram-queued-launch-context.service";
 
 const log = logger("callback:chat");
-type ChatCallbackPreCreateTimingSpanKind = "top_level" | "nested";
-
-type ChatCallbackPreCreateTimingActionType =
-  | "api_dispatch_pre_create_agent_chat_callback_load_terminal"
-  | "api_dispatch_pre_create_agent_chat_callback_prepare_completed"
-  | "api_dispatch_pre_create_agent_chat_callback_prepare_failed"
-  | "api_dispatch_pre_create_agent_chat_callback_load_db_output_state"
-  | "api_dispatch_pre_create_agent_chat_callback_insert_assistant_items"
-  | "api_dispatch_pre_create_agent_chat_callback_insert_lifecycle_marker"
-  | "api_dispatch_pre_create_agent_chat_callback_load_followup_context"
-  | "api_dispatch_pre_create_agent_chat_callback_auto_send_build_input"
-  | "api_dispatch_pre_create_agent_chat_callback_auto_send_queue_age";
-
-interface ChatCallbackPreCreateTimingRecord {
-  readonly actionType: ChatCallbackPreCreateTimingActionType;
-  readonly spanKind: ChatCallbackPreCreateTimingSpanKind;
-  readonly durationMs: number;
-  readonly timestamp: string;
-}
-
-export class ChatCallbackPreCreateTimingCollector {
-  private readonly records: ChatCallbackPreCreateTimingRecord[] = [];
-  private flushed = false;
-
-  recordElapsed(args: {
-    readonly actionType: ChatCallbackPreCreateTimingActionType;
-    readonly spanKind: ChatCallbackPreCreateTimingSpanKind;
-    readonly startedAt: number;
-    readonly finishedAt?: number;
-  }): void {
-    if (this.flushed) {
-      return;
-    }
-    const finishedAt = args.finishedAt ?? now();
-    this.records.push({
-      actionType: args.actionType,
-      spanKind: args.spanKind,
-      durationMs: Math.max(0, finishedAt - args.startedAt),
-      timestamp: new Date(finishedAt).toISOString(),
-    });
-  }
-
-  flush(
-    runId: string,
-    triggerSource: QueuedUserMessageTriggerSource = "web",
-  ): void {
-    if (this.flushed) {
-      return;
-    }
-    this.flushed = true;
-    const records = this.records.splice(0);
-    recordSandboxOperations(
-      records.map((record) => {
-        return {
-          sandboxType: "runner",
-          actionType: record.actionType,
-          durationMs: record.durationMs,
-          success: true,
-          runId,
-          timestamp: record.timestamp,
-          dimensions: {
-            span_kind: record.spanKind,
-            trigger_source: triggerSource,
-            agent_run_origin: "direct",
-            agent_run_pre_create_source: "chat_callback_auto_send",
-          },
-        };
-      }),
-    );
-  }
-}
-
 const chatCallbackPayloadSchema = object({
   threadId: string(),
   agentId: string(),
@@ -572,21 +493,12 @@ const loadCompletedChatOutput$ = command(
     args: {
       readonly runId: string;
       readonly lastEventSequence: number | null;
-      readonly timing: ChatCallbackPreCreateTimingCollector;
     },
     signal: AbortSignal,
   ): Promise<CompletedChatOutputLoad> => {
-    const timing = {
-      actionType:
-        "api_dispatch_pre_create_agent_chat_callback_load_db_output_state" as const,
-      spanKind: "nested" as const,
-      startedAt: now(),
-    };
     const dbOutput = await set(loadCompletedRunOutput$, {
       runId: args.runId,
       lastEventSequence: args.lastEventSequence,
-    }).finally(() => {
-      args.timing.recordElapsed(timing);
     });
     signal.throwIfAborted();
 
@@ -1425,35 +1337,19 @@ async function generateRecommendedFollowupsForCompletedRun(
 const loadRecommendedFollowupContextForCompletedRun$ = command(
   async (
     { set },
-    args: {
-      readonly threadId: string;
-      readonly timing: ChatCallbackPreCreateTimingCollector;
-    },
+    args: { readonly threadId: string },
     signal: AbortSignal,
   ): Promise<readonly ChatCompletionContextMessage[]> => {
-    const startedAt = now();
-    const recordTiming = () => {
-      args.timing.recordElapsed({
-        actionType:
-          "api_dispatch_pre_create_agent_chat_callback_load_followup_context",
-        spanKind: "nested",
-        startedAt,
-      });
-    };
-    const result = await onRejection(
-      tapError(
-        set(loadChatThreadRecommendedFollowupContext$, args, signal),
-        (err) => {
-          log.warn("Recommended follow-up context load failed", {
-            threadId: args.threadId,
-            err,
-          });
-        },
-      ),
-      recordTiming,
+    const result = await tapError(
+      set(loadChatThreadRecommendedFollowupContext$, args, signal),
+      (err) => {
+        log.warn("Recommended follow-up context load failed", {
+          threadId: args.threadId,
+          err,
+        });
+      },
     );
     signal.throwIfAborted();
-    recordTiming();
     return result ?? [];
   },
 );
@@ -1466,60 +1362,36 @@ const materializeCompletedChatResult$ = command(
       readonly chatThread: ChatThreadForRunRow;
       readonly output: CompletedChatOutputLoad;
       readonly preferResultFallback: boolean;
-      readonly timing: ChatCallbackPreCreateTimingCollector;
     },
     signal: AbortSignal,
   ): Promise<string | null> => {
     const { assistantItemsToInsert, latestAssistant, resultFallback } =
       args.output;
     if (assistantItemsToInsert.length > 0) {
-      const timing = args.timing;
-      const startedAt = now();
-      await (async () => {
-        await onRejection(
-          (async () => {
-            const inserted = await set(
-              insertAssistantEvents$,
-              assistantEventInsertInput({
-                runId: args.runId,
-                threadId: args.chatThread.chatThreadId,
-                userId: args.chatThread.userId,
-                orgId: args.chatThread.orgId,
-                items: assistantItemsToInsert,
-              }),
-              signal,
-            );
-            if (inserted > 0) {
-              waitUntil(
-                set(
-                  projectCommittedChatThreadSearch$,
-                  {
-                    userId: args.chatThread.userId,
-                    orgId: args.chatThread.orgId,
-                    threadId: args.chatThread.chatThreadId,
-                  },
-                  signal,
-                ),
-              );
-            }
-            return inserted;
-          })(),
-          () => {
-            timing.recordElapsed({
-              actionType:
-                "api_dispatch_pre_create_agent_chat_callback_insert_assistant_items",
-              spanKind: "nested",
-              startedAt,
-            });
-          },
+      const inserted = await set(
+        insertAssistantEvents$,
+        assistantEventInsertInput({
+          runId: args.runId,
+          threadId: args.chatThread.chatThreadId,
+          userId: args.chatThread.userId,
+          orgId: args.chatThread.orgId,
+          items: assistantItemsToInsert,
+        }),
+        signal,
+      );
+      if (inserted > 0) {
+        waitUntil(
+          set(
+            projectCommittedChatThreadSearch$,
+            {
+              userId: args.chatThread.userId,
+              orgId: args.chatThread.orgId,
+              threadId: args.chatThread.chatThreadId,
+            },
+            signal,
+          ),
         );
-        timing.recordElapsed({
-          actionType:
-            "api_dispatch_pre_create_agent_chat_callback_insert_assistant_items",
-          spanKind: "nested",
-          startedAt,
-        });
-      })();
+      }
       signal.throwIfAborted();
     }
     let lastResultText = latestAssistant?.content ?? null;
@@ -1533,53 +1405,30 @@ const materializeCompletedChatResult$ = command(
             (latestAssistantSequence ?? Number.NEGATIVE_INFINITY) &&
           resultFallback.content !== lastResultText));
     if (shouldInsertResultFallback) {
-      const timing = args.timing;
-      const startedAt = now();
-      await (async () => {
-        await onRejection(
-          (async () => {
-            const inserted = await set(
-              insertAssistantEvents$,
-              assistantEventInsertInput({
-                runId: args.runId,
-                threadId: args.chatThread.chatThreadId,
-                userId: args.chatThread.userId,
-                orgId: args.chatThread.orgId,
-                items: [resultFallback],
-              }),
-              signal,
-            );
-            if (inserted > 0) {
-              waitUntil(
-                set(
-                  projectCommittedChatThreadSearch$,
-                  {
-                    userId: args.chatThread.userId,
-                    orgId: args.chatThread.orgId,
-                    threadId: args.chatThread.chatThreadId,
-                  },
-                  signal,
-                ),
-              );
-            }
-            return inserted;
-          })(),
-          () => {
-            timing.recordElapsed({
-              actionType:
-                "api_dispatch_pre_create_agent_chat_callback_insert_assistant_items",
-              spanKind: "nested",
-              startedAt,
-            });
-          },
+      const inserted = await set(
+        insertAssistantEvents$,
+        assistantEventInsertInput({
+          runId: args.runId,
+          threadId: args.chatThread.chatThreadId,
+          userId: args.chatThread.userId,
+          orgId: args.chatThread.orgId,
+          items: [resultFallback],
+        }),
+        signal,
+      );
+      if (inserted > 0) {
+        waitUntil(
+          set(
+            projectCommittedChatThreadSearch$,
+            {
+              userId: args.chatThread.userId,
+              orgId: args.chatThread.orgId,
+              threadId: args.chatThread.chatThreadId,
+            },
+            signal,
+          ),
         );
-        timing.recordElapsed({
-          actionType:
-            "api_dispatch_pre_create_agent_chat_callback_insert_assistant_items",
-          spanKind: "nested",
-          startedAt,
-        });
-      })();
+      }
       signal.throwIfAborted();
       lastResultText = resultFallback.content;
     }
@@ -1591,7 +1440,6 @@ function completedChatResultInput(
   args: ReturnType<typeof terminalIntegrationDeliveries> & {
     readonly runId: string;
     readonly chatThread: ChatThreadForRunRow;
-    readonly timing: ChatCallbackPreCreateTimingCollector;
   },
   output: CompletedChatOutputLoad,
 ) {
@@ -1607,7 +1455,6 @@ function completedChatResultInput(
       args.telegramDelivery !== undefined ||
       args.emailDelivery !== undefined ||
       args.agentphoneDelivery !== undefined,
-    timing: args.timing,
   };
 }
 
@@ -1633,7 +1480,6 @@ const handleCompletedChatCallback$ = command(
       readonly runId: string;
       readonly run: ChatRunInfo;
       readonly chatThread: ChatThreadForRunRow;
-      readonly timing: ChatCallbackPreCreateTimingCollector;
       readonly slackDelivery?: SlackDeliveryTarget;
       readonly feishuDelivery?: FeishuDeliveryTarget;
       readonly teamsDelivery?: TeamsDeliveryTarget;
@@ -1651,7 +1497,6 @@ const handleCompletedChatCallback$ = command(
       {
         runId: args.runId,
         lastEventSequence: args.run.lastEventSequence,
-        timing: args.timing,
       },
       signal,
     );
@@ -1673,45 +1518,27 @@ const handleCompletedChatCallback$ = command(
       }),
     );
 
-    const lifecycleTiming = args.timing;
-    const lifecycleStartedAt = now();
-    const inserted = await onRejection(
-      set(
-        insertRunLifecycleMarker$,
-        {
-          runId: args.runId,
-          threadId: args.chatThread.chatThreadId,
-          userId: args.chatThread.userId,
-          orgId: args.chatThread.orgId,
-          event: "completed",
-          slackDelivery: args.slackDelivery,
-          feishuDelivery: args.feishuDelivery,
-          teamsDelivery: args.teamsDelivery,
-          discordDelivery: args.discordDelivery,
-          wechatDelivery: args.wechatDelivery,
-          telegramDelivery: args.telegramDelivery,
-          emailDelivery: args.emailDelivery,
-          agentphoneDelivery: args.agentphoneDelivery,
-          sourceCallbackId: args.sourceCallbackId,
-        },
-        signal,
-      ),
-      () => {
-        lifecycleTiming.recordElapsed({
-          actionType:
-            "api_dispatch_pre_create_agent_chat_callback_insert_lifecycle_marker",
-          spanKind: "nested",
-          startedAt: lifecycleStartedAt,
-        });
+    const inserted = await set(
+      insertRunLifecycleMarker$,
+      {
+        runId: args.runId,
+        threadId: args.chatThread.chatThreadId,
+        userId: args.chatThread.userId,
+        orgId: args.chatThread.orgId,
+        event: "completed",
+        slackDelivery: args.slackDelivery,
+        feishuDelivery: args.feishuDelivery,
+        teamsDelivery: args.teamsDelivery,
+        discordDelivery: args.discordDelivery,
+        wechatDelivery: args.wechatDelivery,
+        telegramDelivery: args.telegramDelivery,
+        emailDelivery: args.emailDelivery,
+        agentphoneDelivery: args.agentphoneDelivery,
+        sourceCallbackId: args.sourceCallbackId,
       },
+      signal,
     );
     signal.throwIfAborted();
-    lifecycleTiming.recordElapsed({
-      actionType:
-        "api_dispatch_pre_create_agent_chat_callback_insert_lifecycle_marker",
-      spanKind: "nested",
-      startedAt: lifecycleStartedAt,
-    });
     waitUntil(
       set(
         projectCommittedChatThreadSearch$,
@@ -1729,7 +1556,7 @@ const handleCompletedChatCallback$ = command(
 
     const followupContext = await set(
       loadRecommendedFollowupContextForCompletedRun$,
-      { threadId: args.chatThread.chatThreadId, timing: args.timing },
+      { threadId: args.chatThread.chatThreadId },
       signal,
     );
     signal.throwIfAborted();
@@ -2574,7 +2401,6 @@ export const recordQueuedPromptRunLaunch$ = command(
     { set },
     args: QueuedPromptLaunchContext,
     runId: string,
-    timing: ChatCallbackPreCreateTimingCollector,
     signal: AbortSignal,
   ): void => {
     signal.throwIfAborted();
@@ -2612,7 +2438,6 @@ export const recordQueuedPromptRunLaunch$ = command(
         ),
       );
     }
-    timing.flush(runId, runInput.triggerSource);
   },
 );
 
@@ -2623,7 +2448,6 @@ const prepareCompletedTerminalChatCallbackWork$ = command(
       readonly runId: string;
       readonly run: ChatRunInfo;
       readonly chatThread: ChatThreadForRunRow;
-      readonly timing: ChatCallbackPreCreateTimingCollector;
       readonly slackDelivery?: SlackDeliveryTarget;
       readonly feishuDelivery?: FeishuDeliveryTarget;
       readonly teamsDelivery?: TeamsDeliveryTarget;
@@ -2636,30 +2460,7 @@ const prepareCompletedTerminalChatCallbackWork$ = command(
     },
     signal: AbortSignal,
   ): Promise<TerminalChatCallbackWork> => {
-    const timing = args.timing;
-    const startedAt = now();
-    const completed = await (async () => {
-      const result = await onRejection(
-        (async () => {
-          return await set(handleCompletedChatCallback$, args, signal);
-        })(),
-        () => {
-          timing.recordElapsed({
-            actionType:
-              "api_dispatch_pre_create_agent_chat_callback_prepare_completed",
-            spanKind: "top_level",
-            startedAt,
-          });
-        },
-      );
-      timing.recordElapsed({
-        actionType:
-          "api_dispatch_pre_create_agent_chat_callback_prepare_completed",
-        spanKind: "top_level",
-        startedAt,
-      });
-      return result;
-    })();
+    const completed = await set(handleCompletedChatCallback$, args, signal);
     signal.throwIfAborted();
     if (completed.outcome !== "written" && completed.outcome !== "replayed") {
       return completed;
@@ -2702,7 +2503,6 @@ const prepareFailedTerminalChatCallbackWork$ = command(
       readonly runId: string;
       readonly run: ChatRunInfo;
       readonly chatThread: ChatThreadForRunRow;
-      readonly timing: ChatCallbackPreCreateTimingCollector;
       readonly slackDelivery?: SlackDeliveryTarget;
       readonly feishuDelivery?: FeishuDeliveryTarget;
       readonly teamsDelivery?: TeamsDeliveryTarget;
@@ -2715,46 +2515,22 @@ const prepareFailedTerminalChatCallbackWork$ = command(
     },
     signal: AbortSignal,
   ): Promise<TerminalChatCallbackWork> => {
-    const timing = args.timing;
-    const startedAt = now();
-    const failed = await (async () => {
-      const result = await onRejection(
-        (async () => {
-          return await set(
-            handleFailedChatCallback$,
-            {
-              ...args,
-              lifecycleEvent:
-                args.run.status === "cancelled" ? "cancelled" : "failed",
-              failureReason:
-                args.run.failureReason === "provider_insufficient_credits"
-                  ? (publicProviderBalanceFailureReason(
-                      args.run.modelProvider,
-                    ) ?? null)
-                  : args.run.failureReason,
-              hasCancellationRecoveryState:
-                args.run.cancellationRecoveryCompleted !== null,
-            },
-            signal,
-          );
-        })(),
-        () => {
-          timing.recordElapsed({
-            actionType:
-              "api_dispatch_pre_create_agent_chat_callback_prepare_failed",
-            spanKind: "top_level",
-            startedAt,
-          });
-        },
-      );
-      timing.recordElapsed({
-        actionType:
-          "api_dispatch_pre_create_agent_chat_callback_prepare_failed",
-        spanKind: "top_level",
-        startedAt,
-      });
-      return result;
-    })();
+    const failed = await set(
+      handleFailedChatCallback$,
+      {
+        ...args,
+        lifecycleEvent:
+          args.run.status === "cancelled" ? "cancelled" : "failed",
+        failureReason:
+          args.run.failureReason === "provider_insufficient_credits"
+            ? (publicProviderBalanceFailureReason(args.run.modelProvider) ??
+              null)
+            : args.run.failureReason,
+        hasCancellationRecoveryState:
+          args.run.cancellationRecoveryCompleted !== null,
+      },
+      signal,
+    );
     signal.throwIfAborted();
     if (failed.outcome !== "written" && failed.outcome !== "replayed") {
       return failed;
@@ -3245,46 +3021,26 @@ const processTerminalChatCallback$ = command(
     if (callbackStatus === "progress") {
       return;
     }
-    const timing = new ChatCallbackPreCreateTimingCollector();
 
     let persistedThreadId: string | undefined;
     const prepared = await settle(
       (async () => {
-        const startedAt = now();
-        const loaded = await onRejection(
-          (async () => {
-            const existing = await set(loadTerminalChatCallbackLocator$, runId);
-            signal.throwIfAborted();
-            if (!existing?.threadId || existing.triggerSource === null) {
-              return null;
-            }
-            // Retain only a content-free persisted locator across capture failure.
-            persistedThreadId = existing.threadId;
-            return await set(
-              loadTerminalChatCallback$,
-              {
-                runId,
-                callbackStatus,
-                payloadThreadId: args.payload.threadId,
-              },
-              signal,
-            );
-          })(),
-          () => {
-            timing.recordElapsed({
-              actionType:
-                "api_dispatch_pre_create_agent_chat_callback_load_terminal",
-              spanKind: "top_level",
-              startedAt,
-            });
+        const existing = await set(loadTerminalChatCallbackLocator$, runId);
+        signal.throwIfAborted();
+        if (!existing?.threadId || existing.triggerSource === null) {
+          return null;
+        }
+        // Retain only a content-free persisted locator across capture failure.
+        persistedThreadId = existing.threadId;
+        const loaded = await set(
+          loadTerminalChatCallback$,
+          {
+            runId,
+            callbackStatus,
+            payloadThreadId: args.payload.threadId,
           },
+          signal,
         );
-        timing.recordElapsed({
-          actionType:
-            "api_dispatch_pre_create_agent_chat_callback_load_terminal",
-          spanKind: "top_level",
-          startedAt,
-        });
         if (!loaded) {
           return null;
         }
@@ -3305,31 +3061,12 @@ const processTerminalChatCallback$ = command(
           runId,
           run,
           chatThread,
-          timing,
           ...terminalIntegrationDeliveries(args.payload),
           sourceCallbackId,
         };
         const work = await (run.status === "completed"
           ? set(prepareCompletedTerminalChatCallbackWork$, preparation, signal)
-          : set(
-              prepareFailedTerminalChatCallbackWork$,
-              {
-                runId: preparation.runId,
-                run: preparation.run,
-                chatThread: preparation.chatThread,
-                timing: preparation.timing,
-                slackDelivery: preparation.slackDelivery,
-                feishuDelivery: preparation.feishuDelivery,
-                teamsDelivery: preparation.teamsDelivery,
-                discordDelivery: preparation.discordDelivery,
-                wechatDelivery: preparation.wechatDelivery,
-                telegramDelivery: preparation.telegramDelivery,
-                emailDelivery: preparation.emailDelivery,
-                agentphoneDelivery: preparation.agentphoneDelivery,
-                sourceCallbackId: preparation.sourceCallbackId,
-              },
-              signal,
-            ));
+          : set(prepareFailedTerminalChatCallbackWork$, preparation, signal));
         return { work, chatThread };
       })(),
       signal,

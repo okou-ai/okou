@@ -7,16 +7,6 @@ import type { ClientDescriptor } from "./types";
 export const userBuiltinConnectorsContract: ClientDescriptor<
   typeof OriginalUserBuiltinConnectorsContract
 > = {
-  get: {
-    method: "GET",
-    path: "/api/agents/:id/user-connectors",
-    statuses: {
-      200: true,
-      401: true,
-      403: true,
-      404: true,
-    },
-  },
   update: {
     method: "PUT",
     path: "/api/agents/:id/user-connectors",

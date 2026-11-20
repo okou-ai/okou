@@ -964,7 +964,6 @@ describe("CHAT-02: Okou Mail link delivery", () => {
       code: "gmail-agent-reply-code",
       state: oauthState,
     });
-    await api.enableAgentConnectors(actor, agentId, ["gmail"]);
 
     const run = await sendChatRun(actor, {
       agentId,

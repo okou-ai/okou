@@ -1,4 +1,13 @@
-import { array, object, string, enum as zEnum } from "zod";
+import {
+  array,
+  discriminatedUnion,
+  literal,
+  object,
+  string,
+  enum as zEnum,
+  never as zNever,
+  type infer as zInfer,
+} from "zod";
 
 import { connectorSlugSchema } from "../contracts/connector-identity";
 
@@ -9,6 +18,22 @@ export const userPermissionGrantExpiresInSchema = zEnum([
   "24h",
   "7d",
   "always",
+]);
+
+export const userPermissionGrantActionSchema = zEnum(["allow", "deny"]);
+export const userPermissionGrantApplyModeSchema = zEnum(["patch", "replace"]);
+
+export const applyUserPermissionGrantSchema = discriminatedUnion("action", [
+  object({
+    permission: permissionSchema,
+    action: literal("allow"),
+    expiresIn: userPermissionGrantExpiresInSchema.optional(),
+  }),
+  object({
+    permission: permissionSchema,
+    action: literal("deny"),
+    expiresIn: zNever().optional(),
+  }),
 ]);
 
 export const userPermissionGrantBatchItemSchema = object({
@@ -35,3 +60,20 @@ export const userPermissionGrantBatchItemsSchema = array(
       seen.add(key);
     }
   });
+
+export type UserPermissionGrantBatchItem = zInfer<
+  typeof userPermissionGrantBatchItemSchema
+>;
+
+export type ApplyUserPermissionGrant = zInfer<
+  typeof applyUserPermissionGrantSchema
+>;
+export type UserPermissionGrantAction = zInfer<
+  typeof userPermissionGrantActionSchema
+>;
+export type UserPermissionGrantApplyMode = zInfer<
+  typeof userPermissionGrantApplyModeSchema
+>;
+export type UserPermissionGrantExpiresIn = zInfer<
+  typeof userPermissionGrantExpiresInSchema
+>;

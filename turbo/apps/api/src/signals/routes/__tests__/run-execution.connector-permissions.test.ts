@@ -3,7 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it, test } from "vitest";
 import { connectorPermissionsContract } from "@okouai/api-contracts/contracts/connector-permissions";
-import type { ApplyUserPermissionGrant } from "@okouai/api-contracts/contracts/user-permission-grants";
+import type { ApplyUserPermissionGrant } from "@okouai/api-contracts/validators/user-permission-grants";
 import { cronConnectorCatalogContract } from "@okouai/api-contracts/contracts/cron";
 import {
   CONNECTOR_CATALOG_ACTIVE_KEY,
@@ -80,13 +80,9 @@ test("uses current permission definitions after publication with a warm executio
     })
   )(cronConnectorCatalogContract);
   const { actor, agentId } = await entitledNativeChatActor();
-  await connectors.connectManualGrant(
-    actor,
-    "figma",
-    "api-token",
-    { accessToken: "execution-catalog-figma-token" },
-    agentId,
-  );
+  await connectors.connectManualGrant(actor, "figma", "api-token", {
+    accessToken: "execution-catalog-figma-token",
+  });
 
   const original = connectorCatalogArtifactSchema.parse(
     structuredClone(API_TEST_CONNECTOR_CATALOG_ARTIFACT),
@@ -227,12 +223,7 @@ describe("Execution connector permissions", () => {
           },
         ),
       );
-      const started = await connectors.startOauth(
-        actor,
-        "github",
-        "oauth",
-        agentId,
-      );
+      const started = await connectors.startOauth(actor, "github", "oauth");
       const state = new URL(started.authorizationUrl).searchParams.get("state");
       if (!state) {
         throw new Error("Expected OAuth state from the public start response");
@@ -242,7 +233,6 @@ describe("Execution connector permissions", () => {
         code: randomUUID(),
       });
       expect(completed.body.status).toBe("success");
-      const runs = createRunsApi(context);
       const grant = {
         agentId,
         connectorSlug: "github" as const,
@@ -250,8 +240,6 @@ describe("Execution connector permissions", () => {
         action: "deny" as const,
       };
       if (change === "revoke") {
-        await runs.applyUserPermissionGrant(actor, grant);
-
         await sharedGrants(actor, "github", [
           { permission: grant.permission, action: grant.action },
         ]);
@@ -315,12 +303,7 @@ describe("Execution connector permissions", () => {
       mockNow(startedAt);
       const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
       mockSlackConnectorOAuth();
-      const started = await connectors.startOauth(
-        actor,
-        "slack",
-        "oauth",
-        agentId,
-      );
+      const started = await connectors.startOauth(actor, "slack", "oauth");
       const state = new URL(started.authorizationUrl).searchParams.get("state");
       if (!state) {
         throw new Error("Expected OAuth state from the public start response");
@@ -336,13 +319,6 @@ describe("Execution connector permissions", () => {
         action: "allow" as const,
         expiresIn: "1h" as const,
       };
-      await runs.applyUserPermissionGrant(actor, {
-        agentId,
-        connectorSlug: "slack",
-        ...(!expired
-          ? { permission: grant.permission, action: "deny" as const }
-          : { ...grant, expiresIn: "always" }),
-      });
 
       await sharedGrants(actor, "slack", [{ ...grant, expiresIn: "1h" }]);
 

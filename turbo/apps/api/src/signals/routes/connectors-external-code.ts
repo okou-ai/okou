@@ -36,8 +36,6 @@ const startBuiltinConnectorExternalCodeSessionInner$ = command(
       {
         orgId: auth.orgId,
         userId: auth.userId,
-        agentId: body.data.agentId,
-        authorizeAgent: body.data.authorizeAgent,
         connectorSlug: params.connectorSlug,
         authMethod: body.data.authMethod,
         account: body.data.account,

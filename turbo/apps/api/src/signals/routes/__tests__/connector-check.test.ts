@@ -187,8 +187,6 @@ async function connectReap(
 async function createOwnedRun(
   actor: ApiTestUser,
   options: {
-    readonly builtinConnectorSlugs?: readonly string[];
-    readonly customConnectorIds?: readonly string[];
     readonly onAgentCreated?: (agentId: string) => void;
   } = {},
 ): Promise<{ readonly runId: string; readonly agentId: string }> {
@@ -205,20 +203,6 @@ async function createOwnedRun(
     visibility: "private",
   });
   options.onAgentCreated?.(agent.agentId);
-  if (options.builtinConnectorSlugs) {
-    await runsApi.enableAgentConnectors(
-      actor,
-      agent.agentId,
-      options.builtinConnectorSlugs,
-    );
-  }
-  if (options.customConnectorIds) {
-    await connectorsApi.updateAgentCustomConnectors(
-      actor,
-      agent.agentId,
-      options.customConnectorIds,
-    );
-  }
   const run = await runsApi.createThreadRun(actor, {
     agentId: agent.agentId,
     prompt: "Create a connector check fixture",
@@ -237,21 +221,7 @@ async function createAwsRunWithPermissionGrants(): Promise<string> {
     code: awsVerificationCode(session.authorizationUrl),
   });
   await trackConnectedFixture(Promise.resolve({ actor, connectorSlug: "aws" }));
-  const { runId, agentId } = await createOwnedRun(actor, {
-    builtinConnectorSlugs: ["aws"],
-  });
-  await runsApi.applyUserPermissionGrant(actor, {
-    agentId,
-    connectorSlug: "aws",
-    permission: "sts:get-caller-identity-alias",
-    action: "deny",
-  });
-  await runsApi.applyUserPermissionGrant(actor, {
-    agentId,
-    connectorSlug: "aws",
-    permission: "sts:get-caller-identity",
-    action: "allow",
-  });
+  const { runId } = await createOwnedRun(actor);
   return okouToken(actor, runId, ["connector:read", "agent-run:read"]);
 }
 
@@ -289,9 +259,7 @@ describe("POST /api/connectors/diagnostics/check", () => {
     const actor = bdd.user();
     await seedAdminMembership(actor);
     await connectReap(actor, runBase);
-    const { runId } = await createOwnedRun(actor, {
-      builtinConnectorSlugs: ["reap"],
-    });
+    const { runId } = await createOwnedRun(actor);
     const withoutConnectorRead = await accept(
       client().check({
         headers: {
@@ -1000,7 +968,6 @@ describe("POST /api/connectors/diagnostics/check", () => {
             "reap",
             "api-token",
             { apiKey: changedSecret, apiBaseUrl: changedBase },
-            undefined,
             { intent: "reconnect", connectionId: ownerAccount.id },
           );
           if (reconnected.id !== ownerAccount.id) {
@@ -1101,9 +1068,6 @@ describe("POST /api/connectors/diagnostics/check", () => {
       });
     });
     const connectorId = connected.id;
-    await own(() => {
-      return runsApi.enableAgentConnectors(owner, agentId, ["reap"]);
-    });
     const sent = await fixture.sendChatRun(owner, {
       agentId,
       prompt: "Use the admitted Reap base",
@@ -1150,7 +1114,6 @@ describe("POST /api/connectors/diagnostics/check", () => {
           apiKey: "reap-updated-api-key",
           apiBaseUrl: changedBase,
         },
-        undefined,
         { intent: "reconnect", connectionId: connectorId },
       );
     });
@@ -1291,7 +1254,6 @@ describe("POST /api/connectors/diagnostics/check", () => {
         throw new Error("Expected the Cloudflare OAuth callback to connect");
       }
       const { runId } = await createOwnedRun(owner, {
-        builtinConnectorSlugs: ["cloudflare"],
         onAgentCreated(createdAgentId) {
           owned.agentId = createdAgentId;
         },
@@ -1449,9 +1411,7 @@ describe("POST /api/connectors/diagnostics/check", () => {
     await seedAdminMembership(owner);
     const runBase = "https://prod.api.reap.global/v1";
     await connectReap(owner, runBase);
-    const { runId } = await createOwnedRun(owner, {
-      builtinConnectorSlugs: ["reap"],
-    });
+    const { runId } = await createOwnedRun(owner);
     const intruder = bdd.user({ orgId: requireOrgId(owner) });
     await seedAdminMembership(intruder);
     const wrongOwner = await accept(
@@ -1494,9 +1454,6 @@ describe("POST /api/connectors/diagnostics/check", () => {
         );
         await connectorsApi.setCustomConnectorValues(actor, definition.id, [
           { key: "secret", kind: "secret", value: "analysis-fixture-secret" },
-        ]);
-        await connectorsApi.updateAgentCustomConnectors(actor, agentId, [
-          definition.id,
         ]);
         const sent = await fixture.sendChatRun(actor, {
           agentId,
@@ -1549,11 +1506,7 @@ describe("POST /api/connectors/diagnostics/check", () => {
       if (!first || !second) {
         throw new Error("Expected two independently published definitions");
       }
-      const { runId } = await createOwnedRun(actor, {
-        customConnectorIds: definitions.map((definition) => {
-          return definition.id;
-        }),
-      });
+      const { runId } = await createOwnedRun(actor);
       const token = okouToken(actor, runId, [
         "connector:read",
         "agent-run:read",
@@ -1642,10 +1595,7 @@ describe("POST /api/connectors/diagnostics/check", () => {
         throw new Error("Expected a connected custom connector account");
       }
       const customConnectionId = connectedCustom.connectionId;
-      const { runId, agentId } = await createOwnedRun(actor, {
-        builtinConnectorSlugs: ["reap"],
-        customConnectorIds: [custom.id],
-      });
+      const { runId, agentId } = await createOwnedRun(actor);
       const token = okouToken(actor, runId, [
         "connector:read",
         "agent-run:read",

@@ -326,9 +326,6 @@ describe("chat agent bootstrap prefetch", () => {
       connector.id,
       "synthetic-context-secret",
     );
-    await connectors.updateAgentCustomConnectors(actor, agentId, [
-      connector.id,
-    ]);
     const [account] = await connectors.listCustomConnectorAccounts(
       actor,
       connector.id,
@@ -495,14 +492,12 @@ describe("chat agent bootstrap prefetch", () => {
       "openai",
       "api-token",
       { apiKey: `first-${randomUUID()}` },
-      agentId,
     );
     const second = await connectors.connectManualGrant(
       actor,
       "openai",
       "api-token",
       { apiKey: `second-${randomUUID()}` },
-      agentId,
     );
     await connectors.setDefaultBuiltinConnectorAccount(
       actor,

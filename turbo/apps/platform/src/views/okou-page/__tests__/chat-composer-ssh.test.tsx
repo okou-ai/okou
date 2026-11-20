@@ -329,7 +329,7 @@ test("A new chat leaves host defaults untouched when no choice is changed", asyn
   await userEvent.setup({ delay: null }).keyboard("{Enter}");
   await waitFor(() => {
     expect(fixture.createdThreadRequests).toStrictEqual([
-      { threadId: expect.any(String), connectorSelections: [] },
+      { threadId: expect.any(String) },
     ]);
   });
 });
@@ -428,7 +428,6 @@ test("Apply SSH host choices during thread creation", async () => {
     expect(fixture.createdThreadRequests).toStrictEqual([
       {
         threadId: expect.any(String),
-        connectorSelections: [],
         initialRemoteAccessOverrides: [
           {
             protocol: "ssh",

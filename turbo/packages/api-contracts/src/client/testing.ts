@@ -5,8 +5,6 @@
 
 import type { AppRouter } from "../contracts/trpc-contract";
 import type { ClientRouter } from "./types";
-import { agentCustomConnectorsContract as OriginalAgentCustomConnectorsContract } from "../contracts/agent-custom-connectors";
-import { agentCustomConnectorsContract } from "./agent-custom-connectors";
 import { agentDraftContract as OriginalAgentDraftContract } from "../contracts/agent-draft";
 import { agentDraftContract } from "./agent-draft";
 import { agentSetupPromptsContract as OriginalAgentSetupPromptsContract } from "../contracts/agent-setup-prompts";
@@ -707,8 +705,6 @@ import { userExportContract as OriginalUserExportContract } from "../contracts/u
 import { userExportContract } from "./user-export";
 import { userModelPreferenceContract as OriginalUserModelPreferenceContract } from "../contracts/user-model-preference";
 import { userModelPreferenceContract } from "./user-model-preference";
-import { userPermissionGrantsContract as OriginalUserPermissionGrantsContract } from "../contracts/user-permission-grants";
-import { userPermissionGrantsContract } from "./user-permission-grants";
 import { userPreferencesContract as OriginalUserPreferencesContract } from "../contracts/user-preferences";
 import { userPreferencesContract } from "./user-preferences";
 import { userTemplatesContract as OriginalUserTemplatesContract } from "../contracts/user-templates";
@@ -802,7 +798,6 @@ export const clientDescriptorContracts: readonly (readonly [
   ClientRouter,
   AppRouter,
 ])[] = [
-  [agentCustomConnectorsContract, OriginalAgentCustomConnectorsContract],
   [agentDraftContract, OriginalAgentDraftContract],
   [agentSetupPromptsContract, OriginalAgentSetupPromptsContract],
   [agentInstructionsContract, OriginalAgentInstructionsContract],
@@ -1332,7 +1327,6 @@ export const clientDescriptorContracts: readonly (readonly [
   [userBuiltinConnectorsContract, OriginalUserBuiltinConnectorsContract],
   [userExportContract, OriginalUserExportContract],
   [userModelPreferenceContract, OriginalUserModelPreferenceContract],
-  [userPermissionGrantsContract, OriginalUserPermissionGrantsContract],
   [userPreferencesContract, OriginalUserPreferencesContract],
   [userTemplatesContract, OriginalUserTemplatesContract],
   [vncHostsContract, OriginalVncHostsContract],

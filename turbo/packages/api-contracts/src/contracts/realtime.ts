@@ -1,11 +1,4 @@
-import {
-  literal,
-  number,
-  object,
-  string,
-  uuid,
-  type infer as zInfer,
-} from "zod";
+import { literal, number, object, string, type infer as zInfer } from "zod";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 import { runnerGroupSchema } from "./runner-primitives";
@@ -77,10 +70,6 @@ export type WalletChangedPayload = zInfer<typeof walletChangedPayloadSchema>;
 export type ArtifactChangedPayload = zInfer<
   typeof artifactChangedPayloadSchema
 >;
-
-export const composerAgentConnectorsChangedPayloadSchema = object({
-  agentId: uuid(),
-}).strict();
 
 export type BrowserSessionChangedPayload = zInfer<
   typeof browserSessionChangedPayloadSchema

@@ -90,10 +90,6 @@ import {
   resetMockUserModelPreference,
 } from "./api-user-model-preference.ts";
 import {
-  apiUserPermissionGrantsHandlers,
-  resetMockUserPermissionGrants,
-} from "./api-user-permission-grants.ts";
-import {
   apiUserPreferencesHandlers,
   resetMockUserPreferences,
 } from "./api-user-preferences.ts";
@@ -156,7 +152,6 @@ export const handlers = [
   ...apiGetStartedHandlers,
   ...apiFeatureGuidesHandlers,
   ...apiRealtimeHandlers,
-  ...apiUserPermissionGrantsHandlers,
   ...apiVoiceIoHandlers,
   ...apiWalletHandlers,
   ...apiWebFilesHandlers,
@@ -181,7 +176,6 @@ export function resetAllMockHandlers(): void {
   resetMockBilling();
   resetMockSlackConnect();
   resetAblySubscriptions();
-  resetMockUserPermissionGrants();
   resetMockOrg();
   resetMockOrgLogo();
   resetMockOrgMembers();

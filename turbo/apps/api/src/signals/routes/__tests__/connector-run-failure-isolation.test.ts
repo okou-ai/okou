@@ -59,10 +59,6 @@ describe("connector failure isolation in dispatched Runs", () => {
         await connectors.connectManualGrant(owned.actor, "figma", "api-token", {
           accessToken: "isolated-figma-token",
         });
-        await runs.enableAgentConnectors(owned.actor, owned.agentId, [
-          "lark",
-          "figma",
-        ]);
         server.use(
           http.post(
             "https://open.larksuite.com/open-apis/auth/v3/tenant_access_token/internal",

@@ -1,5 +1,5 @@
 import { command, computed, state } from "ccstate";
-import type { UserPermissionGrantExpiresIn } from "@okouai/api-contracts/contracts/user-permission-grants";
+import type { UserPermissionGrantExpiresIn } from "@okouai/api-contracts/validators/user-permission-grants";
 
 import { now } from "../../lib/time.ts";
 import { i18n } from "../../i18n/index.ts";
@@ -22,27 +22,6 @@ export function parseUserPermissionGrantExpiresIn(
     }
   }
   return null;
-}
-
-export function userPermissionGrantExpiresAt(
-  expiresIn: UserPermissionGrantExpiresIn | undefined,
-  nowMs = now(),
-): string | null {
-  switch (expiresIn) {
-    case "1h": {
-      return new Date(nowMs + HOUR_MS).toISOString();
-    }
-    case "24h": {
-      return new Date(nowMs + DAY_MS).toISOString();
-    }
-    case "7d": {
-      return new Date(nowMs + 7 * DAY_MS).toISOString();
-    }
-    case "always":
-    case undefined: {
-      return null;
-    }
-  }
 }
 
 export function permissionGrantExpiryText(

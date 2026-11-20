@@ -7,7 +7,10 @@ import {
   chatConnectorAccessContract,
   type ChatConnectorAccess,
 } from "@okouai/api-contracts/contracts/chat-connector-access";
-import type { ConnectorAccountSelection } from "@okouai/api-contracts/contracts/connector-accounts";
+import type {
+  ConnectorAccountSelection,
+  ConnectorAccountTarget,
+} from "@okouai/api-contracts/contracts/connector-accounts";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
 import { chatConnectorAccessRoutes } from "../../chat-connector-access";
@@ -21,20 +24,21 @@ export function createChatConnectorAccessApi(context: TestContext) {
   );
   const headers = { authorization: "Bearer clerk-session" };
 
+  const rules = setupApp({ context, routes: connectorPermissionsRoutes })(
+    connectorPermissionsContract,
+  );
+
   return {
+    async readPermissions(actor: ApiTestUser, target: ConnectorAccountTarget) {
+      mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+      return (await accept(rules.get({ headers, query: target }), [200])).body;
+    },
     async applyPermissions(
       actor: ApiTestUser,
       body: ApplyConnectorPermissions,
     ) {
       mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-      return (
-        await accept(
-          setupApp({ context, routes: connectorPermissionsRoutes })(
-            connectorPermissionsContract,
-          ).apply({ headers, body }),
-          [200],
-        )
-      ).body;
+      return (await accept(rules.apply({ headers, body }), [200])).body;
     },
     async setDefault(
       actor: ApiTestUser,

@@ -2,7 +2,10 @@ import {
   connectorPermissionsContract,
   type ApplyConnectorPermissions,
 } from "@okouai/api-contracts/contracts/connector-permissions";
-import { connectorPermissionsResponse } from "../../../__tests__/connector-permissions.ts";
+import {
+  connectorPermissionsResponse,
+  type ConnectorPermissionFixture,
+} from "../../../__tests__/connector-permissions.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   type PublicConnectorCatalogPermissionDetail,
@@ -10,7 +13,6 @@ import {
 } from "@okouai/api-contracts/contracts/connector-catalog";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
-import type { UserPermissionGrantResponse } from "@okouai/api-contracts/contracts/user-permission-grants";
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
@@ -20,7 +22,6 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import {
-  CAPABILITY_AGENT_ID,
   completedConversation,
   type CapturedChatSend,
   readyChat,
@@ -87,15 +88,12 @@ function activeGrant(args: {
   readonly permission: string;
   readonly action: "allow" | "deny";
   readonly expiresAt?: string | null;
-}): UserPermissionGrantResponse {
+}): ConnectorPermissionFixture {
   return {
-    agentId: CAPABILITY_AGENT_ID,
     connectorSlug: args.connectorSlug,
     permission: args.permission,
     action: args.action,
     expiresAt: args.expiresAt ?? null,
-    createdAt: "2026-08-01T08:00:00.000Z",
-    updatedAt: "2026-08-01T09:00:00.000Z",
   };
 }
 
@@ -196,7 +194,7 @@ test("Fail closed on permission load and save errors", async () => {
 
 test("Reflect current connector permission decisions", async () => {
   const connectorSlug = "decision-service";
-  let grants: UserPermissionGrantResponse[] = [
+  let grants: ConnectorPermissionFixture[] = [
     activeGrant({
       connectorSlug,
       permission: "records.read",
@@ -281,7 +279,7 @@ test("Permission cards keep the full operation pending and expose callback failu
   const permission = "reports.read";
   const callbackStarted = context.mocks.deferred<void>();
   const callbackResponse = context.mocks.deferred<void>();
-  let grants: UserPermissionGrantResponse[] = [];
+  let grants: ConnectorPermissionFixture[] = [];
   installPermissionMetadata((slug) => {
     return slug === connectorSlug
       ? permissionMetadata({
@@ -341,7 +339,7 @@ test("Review and confirm connector permissions individually", async () => {
   const sends: CapturedChatSend[] = [];
   const applyRequests: ApplyConnectorPermissions[] = [];
   const followupGate = context.mocks.deferred<void>();
-  let grants: UserPermissionGrantResponse[] = [];
+  let grants: ConnectorPermissionFixture[] = [];
   installPermissionMetadata((slug) => {
     return slug === connectorSlug
       ? permissionMetadata({

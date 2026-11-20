@@ -73,7 +73,6 @@ interface DriveSyncRequest {
 }
 
 interface DriveMockOptions {
-  readonly agentAuthorized?: boolean;
   readonly contentType?: string;
   readonly existingMimeType?: string;
   readonly failingMode?: GoogleDriveUploadMode;
@@ -95,7 +94,6 @@ function installDriveMocks(
   let oauthConnectionId = SELECTED_DRIVE_CONNECTION_ID;
   let connectionState = initialConnectionState;
   let scopeRequired = options.scopeRequired ?? false;
-  let agentAuthorized = options.agentAuthorized ?? false;
   let mimeType = options.existingMimeType;
   let artifactSynced = mimeType !== undefined;
   let originalUploaded = false;
@@ -221,16 +219,10 @@ function installDriveMocks(
       connectors: [googleDriveCatalogItem(connectionState)],
     });
   });
-  context.mocks.api(userBuiltinConnectorsContract.get, ({ respond }) => {
-    return respond(200, {
-      enabledConnectorSlugs: agentAuthorized ? ["google-drive"] : [],
-    });
-  });
   context.mocks.api(
     userBuiltinConnectorsContract.update,
     ({ body, respond }) => {
       authorizationUpdates.push(body);
-      agentAuthorized = true;
       return respond(200, { enabledConnectorSlugs: ["google-drive"] });
     },
   );
@@ -554,7 +546,6 @@ test("Missing Drive scope for a Docs upload recovers only after explicit reconne
   const popup = installAuthorizationPopup();
   const drive = installDriveMocks("connected", {
     selectedAccountReady: true,
-    agentAuthorized: true,
     scopeRequired: true,
     filename: "report.txt",
     contentType: "text/plain",
@@ -609,7 +600,6 @@ test("A scope failure beside an existing Docs import keeps one reconnect action 
     filename: "report.txt",
     contentType: "text/plain",
     selectedAccountReady: true,
-    agentAuthorized: true,
     existingMimeType: GOOGLE_WORKSPACE_MIME_TYPES.document,
   });
   const expectDocsLink = () => {
@@ -657,7 +647,6 @@ test("Dismissing Drive scope recovery never resumes the upload", async () => {
   const popup = installAuthorizationPopup();
   const drive = installDriveMocks("connected", {
     selectedAccountReady: true,
-    agentAuthorized: true,
     scopeRequired: true,
   });
   await openChat();

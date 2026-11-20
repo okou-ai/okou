@@ -3,11 +3,6 @@
 
 export const clientContractImportManifest = [
   {
-    module: "agent-custom-connectors",
-    contracts: ["agentCustomConnectorsContract"],
-    bindings: [],
-  },
-  {
     module: "agent-draft",
     contracts: ["agentDraftContract"],
     bindings: [
@@ -1975,27 +1970,6 @@ export const clientContractImportManifest = [
     module: "user-model-preference",
     contracts: ["userModelPreferenceContract"],
     bindings: [],
-  },
-  {
-    module: "user-permission-grants",
-    contracts: ["userPermissionGrantsContract"],
-    bindings: [
-      {
-        name: "userPermissionGrantBatchItemSchema",
-        source: "validators/user-permission-grants",
-        imported: "userPermissionGrantBatchItemSchema",
-      },
-      {
-        name: "userPermissionGrantBatchItemsSchema",
-        source: "validators/user-permission-grants",
-        imported: "userPermissionGrantBatchItemsSchema",
-      },
-      {
-        name: "userPermissionGrantExpiresInSchema",
-        source: "validators/user-permission-grants",
-        imported: "userPermissionGrantExpiresInSchema",
-      },
-    ],
   },
   {
     module: "user-preferences",
