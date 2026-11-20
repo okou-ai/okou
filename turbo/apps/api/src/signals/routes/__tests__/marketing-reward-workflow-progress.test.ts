@@ -28,9 +28,8 @@ const chat = createChatFilesBddApi(context);
 const mocks = createRouteMocks(context);
 async function invokedWorkflow() {
   const consumer = marketingRewardConsumer();
-  const { actor } = await workflows.setupWorkflowOrg({ tier: "team" });
-  const { agentId } = await workflows.createAgent(actor, {
-    visibility: "public",
+  const { actor, defaultAgentId: agentId } = await workflows.setupWorkflowOrg({
+    tier: "team",
   });
   installWorkflowVolumeS3Fixture(context);
   const workflowId = await workflows.createWorkflow(actor, {
