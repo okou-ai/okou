@@ -2042,7 +2042,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent"
-version = "0.110.14"
+version = "0.110.15"
 dependencies = [
  "aho-corasick",
  "api-contracts",
@@ -2082,7 +2082,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent-tests"
-version = "0.1.234"
+version = "0.1.235"
 dependencies = [
  "api-contracts",
  "base64 0.23.1",
@@ -2151,7 +2151,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-server"
-version = "0.24.139"
+version = "0.24.140"
 dependencies = [
  "bytes",
  "chrono",
@@ -2172,7 +2172,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-tests"
-version = "0.12.212"
+version = "0.12.213"
 dependencies = [
  "cli-test-support",
  "guest-contracts",
@@ -2202,7 +2202,7 @@ dependencies = [
 
 [[package]]
 name = "guest-init"
-version = "0.20.125"
+version = "0.20.126"
 dependencies = [
  "guest-contracts",
  "guest-control-server",
@@ -4159,7 +4159,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.249.75"
+version = "0.249.76"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4233,7 +4233,7 @@ dependencies = [
 
 [[package]]
 name = "runner-executor"
-version = "0.23.4"
+version = "0.23.5"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4281,7 +4281,7 @@ dependencies = [
 
 [[package]]
 name = "runner-host"
-version = "0.12.7"
+version = "0.12.8"
 dependencies = [
  "chrono",
  "cli-test-support",
@@ -4306,7 +4306,7 @@ dependencies = [
 
 [[package]]
 name = "runner-lifecycle"
-version = "0.18.15"
+version = "0.18.16"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4338,7 +4338,7 @@ dependencies = [
 
 [[package]]
 name = "runner-network"
-version = "0.6.34"
+version = "0.6.35"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4370,7 +4370,7 @@ dependencies = [
 
 [[package]]
 name = "runner-provider"
-version = "0.21.2"
+version = "0.21.3"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -4415,7 +4415,7 @@ dependencies = [
 
 [[package]]
 name = "runner-remote"
-version = "0.31.90"
+version = "0.31.91"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -4515,7 +4515,7 @@ dependencies = [
 
 [[package]]
 name = "runner-storage"
-version = "0.12.3"
+version = "0.12.4"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4560,7 +4560,7 @@ dependencies = [
 
 [[package]]
 name = "runner-supervisor"
-version = "0.27.4"
+version = "0.27.5"
 dependencies = [
  "api-contracts",
  "async-trait",

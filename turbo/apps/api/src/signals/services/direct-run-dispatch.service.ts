@@ -18,7 +18,7 @@ import { delay } from "signal-timers";
 import type { output } from "zod";
 import { env } from "../../lib/env";
 import { API_INVOCATION_MAX_DURATION_SECONDS } from "../../lib/invocation-budget";
-import { now, nowDate } from "../../lib/time";
+import { monotonicNow, now, nowDate } from "../../lib/time";
 import { db$ } from "../external/db";
 import { apiStartTime$ } from "../context/hono";
 import { postRunnerDispatch } from "../external/runner-ingress";
@@ -149,12 +149,15 @@ export const prepareDirectRunDispatch$ = command(
   ): Promise<DirectRunDispatchPreparation> => {
     signal.throwIfAborted();
     const prepared = await settleIncludingAbort(async () => {
-      const [publication, candidates] = await joinAll([
+      const [publication, placement] = await joinAll([
         set(prepareDirectRun$, input, signal),
-        set(readDirectRunCandidates$, input, signal),
+        (async () => {
+          const candidates = await set(readDirectRunCandidates$, input, signal);
+          return { candidates, candidatesReadyAt: monotonicNow() };
+        })(),
       ]);
       signal.throwIfAborted();
-      return { input, ...publication, candidates };
+      return { input, ...publication, ...placement };
     });
     signal.throwIfAborted();
     if (!prepared.ok) {
@@ -288,12 +291,14 @@ const offerToProcess$ = command(
       readonly envelope: DispatchEnvelope;
       readonly token: string;
       readonly window: DeliveryWindow;
+      readonly firstCandidateReadyAt: number | undefined;
     },
     signal: AbortSignal,
   ) => {
     signal.throwIfAborted();
     let uncertain = false;
     let retry = 0;
+    let firstCandidateReadyAt = args.firstCandidateReadyAt;
     let offer: DispatchOffer | undefined;
     for (;;) {
       const state = await set(readDirectRunState$, args.runId, signal);
@@ -321,9 +326,12 @@ const offerToProcess$ = command(
           bodyBytes: offer.bodyBytes,
           serviceToken: args.token,
           timeoutMs: Math.min(15_000, remaining),
+          firstRankedTarget: args.firstCandidateReadyAt !== undefined,
+          firstCandidateReadyAt,
         },
         signal,
       );
+      firstCandidateReadyAt = undefined;
       if (observation === "accepted") {
         return "accepted" as const;
       }
@@ -362,6 +370,7 @@ interface PreparedRunDelivery {
   readonly input: AdmittedRunLaunch;
   readonly executionContext: ExecutionContext;
   readonly candidates: DirectRunCandidates;
+  readonly candidatesReadyAt: number;
   readonly contextSnapshot: Omit<
     Parameters<typeof recordRunContextSnapshot>[0],
     "recordedAt"
@@ -429,7 +438,17 @@ export const dispatchPreparedRun$ = command(
         uncertain = true;
         const delivery = await set(
           offerToProcess$,
-          { target, runId: input.run.id, body, envelope, token, window },
+          {
+            target,
+            runId: input.run.id,
+            body,
+            envelope,
+            token,
+            window,
+            firstCandidateReadyAt: firstOwner
+              ? args.candidatesReadyAt
+              : undefined,
+          },
           signal,
         );
         uncertain = delivery === "uncertain";

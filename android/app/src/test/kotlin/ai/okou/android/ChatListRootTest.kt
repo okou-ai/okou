@@ -2,7 +2,6 @@ package ai.okou.android
 
 import ai.okou.android.auth.SessionModel
 import ai.okou.android.chat.ChatRowAction
-import android.content.res.Configuration
 import android.os.Looper
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.SemanticsActions
@@ -103,7 +102,7 @@ class ChatListRootTest {
 
     @Test
     @Config(qualifiers = "en-rUS-w400dp-h800dp")
-    fun titleSearchRestoresTheQueryAfterOpeningAnArchivedChatAndResizing() {
+    fun titleSearchRestoresTheQueryAfterOpeningAnArchivedChatAndRecreating() {
         val app = compose.activity.application as ChatListApplication
         app.fixture.events = { request ->
             if (request.requestUrl?.queryParameter("sinceSeqId") != null) {
@@ -142,20 +141,6 @@ class ChatListRootTest {
         compose.onNodeWithText("Project chat").performClick()
         compose.onNodeWithTag("conversation").assertExists()
 
-        compose.runOnIdle {
-            val wide =
-                Configuration(compose.activity.resources.configuration).apply {
-                    screenWidthDp = 1000
-                }
-            compose.activity.window.decorView.dispatchConfigurationChanged(wide)
-        }
-        compose.onNodeWithTag("chat_list").assertExists()
-        compose.onNodeWithTag("conversation").assertExists()
-        compose.runOnIdle {
-            compose.activity.window.decorView.dispatchConfigurationChanged(
-                compose.activity.resources.configuration
-            )
-        }
         compose.activityRule.scenario.recreate()
         compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
 

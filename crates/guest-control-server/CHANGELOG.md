@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.140](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.139...guest-control-server-v0.24.140) (2026-11-20)
+
+
+### Refactoring
+
+* **guest-control:** name the fixed helper group wait policy ([#49509](https://github.com/okou-ai/okou/issues/49509)) ([9c85f5a](https://github.com/okou-ai/okou/commit/9c85f5a5b7fc264eb3c01350cadc8939dde2f216))
+
 ## [0.24.139](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.138...guest-control-server-v0.24.139) (2026-11-20)
 
 

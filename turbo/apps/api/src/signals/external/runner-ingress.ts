@@ -1,9 +1,13 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
+import { channel } from "node:diagnostics_channel";
 import { runnerDispatchResponseSchema } from "@okouai/api-contracts/contracts/runner-dispatch";
 import { runnerVersionSchema } from "@okouai/api-contracts/contracts/runner-primitives";
 import { number, object } from "zod";
 import { getBuildVersion, normalizeBuildCommitSha } from "../../lib/build-info";
 import { env } from "../../lib/env";
+import { currentRequestRuntime } from "../../lib/request-runtime";
+import { singleton } from "../../lib/singleton";
 import { monotonicNow } from "../../lib/time";
 import { safeJsonParse, safeSync, settleIncludingAbort } from "../utils";
 import type { DirectRunTarget } from "../services/direct-run-ownership.service";
@@ -20,6 +24,64 @@ const runnerDispatchTimingSchema = object({
   envelopeParseMs: runnerElapsedMs,
   contextDecodeMs: runnerElapsedMs,
   acceptanceMs: runnerElapsedMs,
+});
+
+interface DispatchTransportObservation {
+  readonly origin: string;
+  readonly path: string;
+  readonly startedAt: number;
+  sendCount: number;
+  connection?: "first_use" | "reused";
+  sendHeadersMs?: number;
+}
+
+function diagnosticRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object";
+}
+
+const dispatchTransport = singleton(() => {
+  const scope = new AsyncLocalStorage<DispatchTransportObservation>();
+  const requests = new WeakMap<object, DispatchTransportObservation>();
+  const sockets = new WeakMap<object, "first_use" | "reused">();
+
+  channel("undici:request:create").subscribe((event) => {
+    const active = scope.getStore();
+    if (!active || !diagnosticRecord(event)) {
+      return;
+    }
+    const { request } = event;
+    if (
+      diagnosticRecord(request) &&
+      request.method === "POST" &&
+      request.origin === active.origin &&
+      request.path === active.path
+    ) {
+      requests.set(request, active);
+    }
+  });
+  channel("undici:client:connected").subscribe((event) => {
+    if (diagnosticRecord(event) && diagnosticRecord(event.socket)) {
+      sockets.set(event.socket, "first_use");
+    }
+  });
+  channel("undici:client:sendHeaders").subscribe((event) => {
+    if (!diagnosticRecord(event) || !diagnosticRecord(event.socket)) {
+      return;
+    }
+    const connection = sockets.get(event.socket);
+    if (connection !== "reused") {
+      sockets.set(event.socket, "reused");
+    }
+    const active = diagnosticRecord(event.request)
+      ? requests.get(event.request)
+      : undefined;
+    if (active && ++active.sendCount === 1) {
+      active.connection = connection;
+      active.sendHeadersMs = monotonicNow() - active.startedAt;
+    }
+  });
+
+  return scope;
 });
 
 function readRunnerDispatchTiming(response: Response | undefined) {
@@ -59,6 +121,8 @@ export async function postRunnerDispatch(
     readonly bodyBytes: number;
     readonly serviceToken: string;
     readonly timeoutMs: number;
+    readonly firstRankedTarget: boolean;
+    readonly firstCandidateReadyAt: number | undefined;
   },
   signal: AbortSignal,
 ): Promise<DispatchObservation> {
@@ -68,25 +132,36 @@ export async function postRunnerDispatch(
   let responseHeadersMs: number | undefined;
   let observation: DispatchObservation | undefined;
   const startedAt = monotonicNow();
+  const origin = `https://${target.hostname}`;
+  const path = `/runners/${target.runnerId}/control/runs/${runId}/dispatch`;
+  const transport: DispatchTransportObservation = {
+    origin,
+    path,
+    startedAt,
+    sendCount: 0,
+  };
   return await (async () => {
-    const fetched = await settleIncludingAbort(
-      fetch(
-        `https://${target.hostname}/runners/${target.runnerId}/control/runs/${runId}/dispatch`,
-        {
-          method: "POST",
-          redirect: "error",
-          cache: "no-store",
-          headers: {
-            authorization: `Bearer ${serviceToken}`,
-            "content-type": "application/json",
-          },
-          body,
-          signal: AbortSignal.any([
-            signal,
-            AbortSignal.timeout(Math.max(1, Math.ceil(timeoutMs))),
-          ]),
+    const dispatch = () => {
+      return fetch(origin + path, {
+        method: "POST",
+        redirect: "error",
+        cache: "no-store",
+        headers: {
+          authorization: `Bearer ${serviceToken}`,
+          "content-type": "application/json",
         },
-      ),
+        body,
+        signal: AbortSignal.any([
+          signal,
+          AbortSignal.timeout(Math.max(1, Math.ceil(timeoutMs))),
+        ]),
+      });
+    };
+    // Worker-native fetch does not use Node's Undici diagnostic channels.
+    const fetched = await settleIncludingAbort(
+      currentRequestRuntime()
+        ? dispatch()
+        : dispatchTransport().run(transport, dispatch),
     );
     if (fetched.ok) {
       response = fetched.value;
@@ -125,6 +200,17 @@ export async function postRunnerDispatch(
           api_commit_sha:
             normalizeBuildCommitSha(env("GIT_COMMIT_SHA")) ?? undefined,
           body_bytes: bodyBytes,
+          first_ranked_target: args.firstRankedTarget,
+          first_candidate_lead_ms:
+            args.firstCandidateReadyAt === undefined
+              ? undefined
+              : startedAt - args.firstCandidateReadyAt,
+          api_socket_use:
+            transport.sendCount === 1
+              ? (transport.connection ?? "unknown")
+              : "unknown",
+          api_send_headers_ms:
+            transport.sendCount === 1 ? transport.sendHeadersMs : undefined,
           response_headers_ms: responseHeadersMs,
           http_status: response?.status,
           dispatch_outcome:
