@@ -137,6 +137,16 @@ function button(
   }
   return found;
 }
+
+async function undoSuggestionFeedback(): Promise<void> {
+  const undo = button("Undo");
+  click(undo);
+  // Let Sonner finish removing the toast while the test still owns the page.
+  await waitFor(() => {
+    expect(undo).not.toBeInTheDocument();
+  });
+}
+
 function composer(container: ParentNode = document) {
   const node = container.querySelector(
     '[data-slot="chat-composer-card"] [contenteditable="true"]',
@@ -1433,7 +1443,7 @@ test("Not planned advances to the next card and Undo restores the selected card"
   );
   await screen.findByText("Noted — this is not planned");
   await screen.findByRole("article", { name: items[2].content.title });
-  click(button("Undo"));
+  await undoSuggestionFeedback();
   const restored = await screen.findByRole("article", {
     name: items[1].content.title,
   });
@@ -1519,7 +1529,7 @@ test("Feedback on a card that left the pool refreshes the suggestions with a not
     screen.queryByText(/Refresh your suggestions/),
   ).not.toBeInTheDocument();
   // The earlier card is still part of the visit, so Undo restores it.
-  click(button("Undo"));
+  await undoSuggestionFeedback();
   await screen.findByRole("article", { name: items[0].content.title });
 });
 test("Retrying feedback for a card that has since left the pool refreshes the suggestions", async () => {
@@ -1600,7 +1610,7 @@ test("Slow feedback leaves other cards usable and Undo restores the original car
   await screen.findByRole("article", { name: items[2].content.title });
   release.resolve();
   await screen.findByText("Noted — this is already done");
-  click(button("Undo"));
+  await undoSuggestionFeedback();
   await undone.promise;
   await screen.findByRole("article", { name: items[0].content.title });
   const feedback = requests.find((request) => {
@@ -1837,7 +1847,7 @@ test("For you handles cards in order, completes, and restores a dismissed card w
   await screen.findByRole("heading", { name: "All caught up" });
   await screen.findByText("Noted — this is already done");
   expect(pool.consumed).toHaveLength(2);
-  click(button("Undo"));
+  await undoSuggestionFeedback();
   await activeForYouCard("Suggested action 2");
 });
 
@@ -2228,7 +2238,7 @@ test("Don't nudge records the no-repeat direction and Undo targets that feedback
     note: "Do not nudge me about this again.",
     targetId: null,
   });
-  click(button("Undo"));
+  await undoSuggestionFeedback();
   await activeForYouCard(items[0].content.title);
   await waitFor(() => {
     expect(writes[1]).toMatchObject({ kind: "undo", targetId: writes[0].id });
@@ -2274,7 +2284,7 @@ test("Background and card artwork stay fixed through browsing, feedback and Undo
     ).toHaveAttribute("src", illustrations[1]);
   });
   await screen.findByText("Suggestion dismissed");
-  click(button("Undo"));
+  await undoSuggestionFeedback();
   const restored = await activeForYouCard(items[0].content.title);
   await waitFor(() => {
     expect(
