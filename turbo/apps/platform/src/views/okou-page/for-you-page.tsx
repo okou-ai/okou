@@ -295,12 +295,14 @@ function ForYouCover() {
         className="pointer-events-none size-full select-none object-cover"
       />
       <Popover>
+        {/* The control sits in the banner's lower corner only when the page is
+            wide enough for it to clear the card; otherwise it moves to the top. */}
         <PopoverTrigger
           render={
             <Button
               variant="neutral"
               size="sm"
-              className="absolute top-3 right-4 gap-1.5 bg-card/85 opacity-0 shadow-surface backdrop-blur-md transition-opacity group-hover/cover:opacity-100 focus-visible:opacity-100 data-popup-open:opacity-100 sm:top-auto sm:right-6 sm:bottom-14"
+              className="absolute top-3 right-4 gap-1.5 bg-card/85 opacity-0 shadow-surface backdrop-blur-md transition-opacity group-hover/cover:opacity-100 focus-visible:opacity-100 data-popup-open:opacity-100 sm:right-6 @min-[64rem]/for-you:top-auto @min-[64rem]/for-you:bottom-14"
             />
           }
         >
