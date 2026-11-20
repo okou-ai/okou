@@ -63,7 +63,10 @@ import {
   ChatRunFinishedAutomationAlreadyAdmittedError,
   type WorkflowSourceAdmissionPlan,
 } from "./workflow-input-queue.service";
-import { gmailQueueAdmissionSql } from "./workflow-gmail-queue.service";
+import {
+  GmailAutomationAlreadyAdmittedError,
+  gmailQueueAdmissionPlan,
+} from "./workflow-gmail-queue.service";
 import { googleCalendarQueueAdmissionSql } from "./workflow-google-calendar-queue.service";
 import {
   googleFormsQueueReceiptPlan,
@@ -283,14 +286,7 @@ const prepareWorkflowQueueSource$ = command(
         return workflowWebhookReceiptPlan(plan, args.automation.id);
       }
       case "gmail": {
-        return {
-          steps: [
-            {
-              statement: gmailQueueAdmissionSql(plan.source),
-              failure: { kind: "gmail" },
-            },
-          ],
-        };
+        return gmailQueueAdmissionPlan(plan.source);
       }
       case "google-calendar": {
         return {
@@ -607,6 +603,17 @@ const commitWorkflowInput$ = command(
           signal.throwIfAborted();
           if (duplicate !== 0) {
             throw new ChatRunFinishedAutomationAlreadyAdmittedError();
+          }
+        }
+        if (
+          failed.failure.kind === "gmail-receipt" &&
+          source.gmailDuplicateSql
+        ) {
+          const duplicate = (await database.execute(source.gmailDuplicateSql))
+            .rowCount;
+          signal.throwIfAborted();
+          if (duplicate !== 0) {
+            throw new GmailAutomationAlreadyAdmittedError();
           }
         }
         throw workflowSourceAdmissionError(failed.failure);
