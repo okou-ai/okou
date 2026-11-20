@@ -13,7 +13,7 @@ use super::messages::{
     write_turn_completion_notifications, write_turn_notifications, write_turn_start_notifications,
     write_turn_usage_notifications,
 };
-use super::persistence::{InputEventContext, persist_input_events, session_rollout_timestamp};
+use super::persistence::{persist_input_events, session_rollout_timestamp};
 use super::scenario::{Scenario, SteerRejection, TurnFailure, TurnStartRpcError};
 use super::{AppServerState, INVALID_REQUEST, PendingResponse, ServerAction, spawn_stderr_holder};
 use serde_json::{Value, json};
@@ -324,7 +324,7 @@ impl AppServerState {
             write_error(output, id, INVALID_REQUEST, "missing threadId")?;
             return Ok(ServerAction::Continue);
         };
-        let current_thread = match self.current_thread(thread_id) {
+        let current_thread = match Self::current_thread_mut(&mut self.current_thread, thread_id) {
             Ok(current_thread) => current_thread,
             Err(message) => {
                 write_error(output, id, INVALID_REQUEST, message)?;
@@ -332,13 +332,6 @@ impl AppServerState {
             }
         };
         let thread_id = current_thread.protocol_thread_id.clone();
-        let artifact_thread_id = current_thread.artifact_thread_id.clone();
-        let thread_request_has_runtime_workspace_roots =
-            current_thread.thread_request_has_runtime_workspace_roots;
-        let thread_request_excludes_turns = current_thread.thread_request_excludes_turns;
-        let thread_request_model = current_thread.thread_request_model.clone();
-        let thread_request_model_provider = current_thread.thread_request_model_provider.clone();
-        let rollout_timestamp = current_thread.rollout_timestamp;
         let inputs = match text_inputs(params) {
             Ok(inputs) => inputs,
             Err(message) => {
@@ -351,26 +344,11 @@ impl AppServerState {
         if !matches!(
             self.scenario,
             Scenario::NoActiveTurn | Scenario::RuntimeTurnStartedBeforeSteer
-        ) && let Some(current_thread) = &mut self.current_thread
-        {
+        ) {
             current_thread.active_turn_id = Some(turn_id.clone());
         }
         self.initial_inputs.extend(inputs.iter().cloned());
-        persist_input_events(
-            &InputEventContext {
-                artifact_thread_id: &artifact_thread_id,
-                thread_id: &thread_id,
-                turn_id: &turn_id,
-                kind: "initial",
-                thread_request_has_runtime_workspace_roots,
-                thread_request_excludes_turns,
-                thread_request_model: thread_request_model.as_deref(),
-                thread_request_model_provider: thread_request_model_provider.as_deref(),
-                rollout_timestamp: &rollout_timestamp,
-                turn_params: params,
-            },
-            &inputs,
-        )?;
+        persist_input_events(current_thread, &turn_id, "initial", params, &inputs)?;
         if self.scenario == Scenario::RuntimeTurnStartedBeforeSteer {
             std::fs::write(
                 crate::session::codex_home().join(SESSION_HISTORY_READY_FILE),
@@ -435,12 +413,10 @@ impl AppServerState {
             return Ok(ServerAction::Continue);
         }
         if self.scenario.writes_turn_started_before_control() {
-            if let Some(current_thread) = &mut self.current_thread
-                && matches!(
-                    self.scenario,
-                    Scenario::RuntimeTurnStartedBeforeSteer | Scenario::WaitOnTurnSteerResponse
-                )
-            {
+            if matches!(
+                self.scenario,
+                Scenario::RuntimeTurnStartedBeforeSteer | Scenario::WaitOnTurnSteerResponse
+            ) {
                 current_thread.active_turn_id = Some(turn_id.clone());
             }
             write_json_line(output, &turn_started_notification(&thread_id, &turn_id))?;
@@ -506,9 +482,7 @@ impl AppServerState {
                 // this reply. The test then gates client-side arbitration.
                 write_success(output, id, json!({ "turn": turn(&turn_id) }))?;
             }
-            if let Some(current_thread) = &mut self.current_thread {
-                current_thread.active_turn_id = None;
-            }
+            current_thread.active_turn_id = None;
         } else if matches!(turn_output, MockTurnOutput::Checkpoint { .. }) {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -652,7 +626,7 @@ impl AppServerState {
             write_error(output, id, INVALID_REQUEST, "missing turnId")?;
             return Ok(ServerAction::Continue);
         };
-        let current_thread = match self.current_thread(thread_id) {
+        let current_thread = match Self::current_thread_mut(&mut self.current_thread, thread_id) {
             Ok(current_thread) => current_thread,
             Err(message) => {
                 write_error(output, id, INVALID_REQUEST, message)?;
@@ -677,9 +651,7 @@ impl AppServerState {
         }
 
         let thread_id = current_thread.protocol_thread_id.clone();
-        if let Some(current_thread) = &mut self.current_thread {
-            current_thread.active_turn_id = None;
-        }
+        current_thread.active_turn_id = None;
         if self.scenario == Scenario::CompleteBeforeTurnInterrupt {
             write_json_line(output, &turn_completed_notification(&thread_id, turn_id))?;
             write_error(output, id, INVALID_REQUEST, "turn is not active")?;
@@ -720,7 +692,7 @@ impl AppServerState {
             write_error(output, id, INVALID_REQUEST, "missing threadId")?;
             return Ok(ServerAction::Continue);
         };
-        let current_thread = match self.current_thread(thread_id) {
+        let current_thread = match Self::current_thread_mut(&mut self.current_thread, thread_id) {
             Ok(current_thread) => current_thread,
             Err(message) => {
                 write_error(output, id, INVALID_REQUEST, message)?;
@@ -737,19 +709,10 @@ impl AppServerState {
         }
 
         let thread_id = current_thread.protocol_thread_id.clone();
-        let artifact_thread_id = current_thread.artifact_thread_id.clone();
-        let thread_request_has_runtime_workspace_roots =
-            current_thread.thread_request_has_runtime_workspace_roots;
-        let thread_request_excludes_turns = current_thread.thread_request_excludes_turns;
-        let thread_request_model = current_thread.thread_request_model.clone();
-        let thread_request_model_provider = current_thread.thread_request_model_provider.clone();
-        let rollout_timestamp = current_thread.rollout_timestamp;
         if let Scenario::RejectedSteerAfterAck(rejection) = self.scenario
             && !self.steered_inputs.is_empty()
         {
-            if let Some(current_thread) = &mut self.current_thread {
-                current_thread.active_turn_id = None;
-            }
+            current_thread.active_turn_id = None;
             let response_text = mock_response_text(
                 self.initial_inputs
                     .iter()
@@ -805,21 +768,7 @@ impl AppServerState {
             }
         };
         self.steered_inputs.extend(inputs.iter().cloned());
-        persist_input_events(
-            &InputEventContext {
-                artifact_thread_id: &artifact_thread_id,
-                thread_id: &thread_id,
-                turn_id: &active_turn_id,
-                kind: "steered",
-                thread_request_has_runtime_workspace_roots,
-                thread_request_excludes_turns,
-                thread_request_model: thread_request_model.as_deref(),
-                thread_request_model_provider: thread_request_model_provider.as_deref(),
-                rollout_timestamp: &rollout_timestamp,
-                turn_params: params,
-            },
-            &inputs,
-        )?;
+        persist_input_events(current_thread, &active_turn_id, "steered", params, &inputs)?;
         if self.scenario == Scenario::WaitOnTurnSteerResponse {
             let home = std::env::var_os("HOME")
                 .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "HOME is not set"))?;
