@@ -94,7 +94,11 @@ function isToggleDisabled(
   );
 }
 
-export function MorningBriefSettings() {
+export function MorningBriefSettings({
+  inline = false,
+}: {
+  readonly inline?: boolean;
+}) {
   const { t } = useTranslation();
   const preferenceLoadable = useLastLoadable(morningBriefPreference$);
   const [mutationLoadable, updatePreference] = useLoadableSet(
@@ -133,6 +137,7 @@ export function MorningBriefSettings() {
       <PreferenceCardRow
         icon={Sunrise}
         grouped
+        inline={inline}
         iconContainerClassName="h-10 w-10 rounded-xl bg-primary/10 text-brand-text"
         title={t(($) => {
           return $.settings.preferences.morningBrief.title;

@@ -396,7 +396,7 @@ describe("POST /api/welcome-chat-threads", () => {
       expect(content).toContain("Instructions");
       expect(content).toContain("Workflow");
       expect(content).toContain(
-        "https://pr-33252-app.omby.ai/?settings=my-okou",
+        "https://pr-33252-app.omby.ai/?settings=my-okou&focus=instructions)",
       );
       expect(content).toContain(
         "https://pr-33252-app.omby.ai/?settings=people",

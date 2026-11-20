@@ -19,6 +19,8 @@ import {
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { proactiveLearningContract } from "@okouai/api-contracts/contracts/proactive-nightly";
+import { feedContract } from "@okouai/api-contracts/contracts/feed";
+import { feedRoutes } from "../feed";
 import { proactiveSuggestionsContract } from "@okouai/api-contracts/contracts/proactive-suggestions";
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
@@ -196,6 +198,67 @@ async function ordinaryDelegationScenario() {
     return { owned, actor: owned.actor, workflow: detail.body, source };
   });
 }
+
+describe("My Okou proactive settings", () => {
+  it("sets hourly checks and new suggestion delivery together without changing other sources or legacy clients", async () => {
+    const app = setupApp({
+      context,
+      routes: [...proactiveSuggestionsRoutes, ...feedRoutes],
+    });
+    const { actor } = await prepareBriefMember();
+    if (!actor.orgId) {
+      throw new Error("Expected an organization");
+    }
+    const owner = { ...actor, orgId: actor.orgId };
+    const headers = authHeaders(actor);
+    const hourly = app(proactiveSuggestionsContract);
+    const feed = app(feedContract);
+    await updateFeatureSwitchesForUser(context, owner, {
+      [FeatureSwitchKey.AgentSuggestion]: true,
+      [FeatureSwitchKey.MyOkouProactiveSettings]: false,
+    });
+    await accept(
+      hourly.updateWithFeed({ headers, body: { enabled: false } }),
+      [403],
+    );
+    await updateFeatureSwitchesForUser(context, owner, {
+      [FeatureSwitchKey.SingleAgent]: true,
+      [FeatureSwitchKey.AgentSuggestion]: true,
+      [FeatureSwitchKey.MyOkouProactiveSettings]: true,
+    });
+    expect(
+      (await accept(hourly.get({ headers }), [200])).body.enabled,
+    ).toBeFalsy();
+    expect(
+      (await accept(feed.sources({ headers }), [200])).body.suggestions,
+    ).toBeTruthy();
+    await accept(
+      feed.updateSources({ headers, body: { offers: false } }),
+      [200],
+    );
+    for (const enabled of [false, true]) {
+      await accept(
+        hourly.updateWithFeed({ headers, body: { enabled } }),
+        [200],
+      );
+      expect((await accept(hourly.get({ headers }), [200])).body.enabled).toBe(
+        enabled,
+      );
+      expect(
+        (await accept(feed.sources({ headers }), [200])).body,
+      ).toStrictEqual({
+        suggestions: enabled,
+        offers: false,
+        whatsNew: true,
+        systemUpdates: true,
+      });
+    }
+    await accept(hourly.update({ headers, body: { enabled: false } }), [200]);
+    expect(
+      (await accept(feed.sources({ headers }), [200])).body.suggestions,
+    ).toBeTruthy();
+  });
+});
 
 describe("Proactive Learning preference", () => {
   it("preserves the Learning choice independently of Suggestions", async () => {

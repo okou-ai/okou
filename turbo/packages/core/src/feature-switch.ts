@@ -106,6 +106,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.MyOkouProactiveSettings]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "My Okou proactive settings",
+    description:
+      "Manage proactive work and For you sources together in My Okou.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.SingleAgent]: {
     maintainer: "lancy@okou.ai",
     displayName: "My Okou",

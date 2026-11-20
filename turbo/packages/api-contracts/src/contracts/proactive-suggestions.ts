@@ -24,6 +24,14 @@ export const proactiveSuggestionsContract = c.router({
     responses: { 200: preferenceSchema, ...errors },
     summary: "Get your Proactive Suggestions preference",
   },
+  updateWithFeed: {
+    method: "PUT",
+    path: "/api/preferences/proactive-suggestions/with-feed",
+    headers: authHeadersSchema,
+    body: object({ enabled: boolean() }),
+    responses: { 200: preferenceSchema, ...errors },
+    summary: "Set hourly checks and new suggestion card delivery together",
+  },
   update: {
     method: "PUT",
     path: "/api/preferences/proactive-suggestions",
