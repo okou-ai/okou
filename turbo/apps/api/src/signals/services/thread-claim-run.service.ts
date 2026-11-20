@@ -1,4 +1,5 @@
 import type { ContentBundle } from "@okouai/api-contracts/contracts/content-bundle";
+import type { AgentRunCallbackPayload } from "@okouai/db/jsonb-contracts/agent-run-callback";
 import { publishChatThreadMessageCreated$ } from "./chat-event-publication.service";
 import { loadEmailSourceMessageContext$ } from "./email-source-message.service";
 import { STAFF_SINGLE_AGENT_ORG_ID } from "@okouai/core/single-agent-migration";
@@ -100,7 +101,6 @@ import {
 } from "./runner-reuse-preference";
 import type { AgentRunContextSignals } from "./agent-run-context.signals";
 import type {
-  AgentRunPreCreateSource,
   ResolvedModelProviderEnvironment,
   InternalRunCallback,
 } from "./agent-run-contracts";
@@ -109,8 +109,8 @@ import {
   AdmissionAttemptTiming,
 } from "./api-dispatch-admission-timing.service";
 import {
-  prepareModelUsageContext,
   runRoutePricingFromSnapshot,
+  validateModelUsage,
 } from "./built-in-route-pricing";
 import {
   canonicalChatEventInputCtes,
@@ -493,7 +493,6 @@ function promptRunCommand(
     codexServiceTier: input.codexServiceTier,
     reasoningEffort: input.reasoningEffort,
     triggerSource: input.triggerSource,
-    agentRunPreCreateSource: "chat_callback_auto_send",
     agentRunMetadata: { autonomyBudget: input.autonomyBudget },
     ...(input.realAgentInPreview ? { realAgentInPreview: true } : {}),
     ...(input.captureNetworkBodies ? { captureNetworkBodies: true } : {}),
@@ -674,7 +673,7 @@ export interface ThreadRunContext {
     readonly args: ThreadRunPersistenceArgs;
   };
   readonly identity: ThreadLaunchCommitInput["identity"];
-  readonly callbackRows: ThreadLaunchCommitInput["callbackRows"];
+  readonly callbacks: ThreadLaunchCommitInput["callbacks"];
   readonly launch: ThreadLaunchCommitInput["launch"];
   readonly persistence: ReturnType<typeof prepareAtomicLaunchPersistence>;
   readonly head: ChatQueueHeadContext;
@@ -719,7 +718,7 @@ function finalizeClaimRunContext(
       createArgs: context.input.args,
       context: context.input.context,
       identity: context.identity,
-      callbackRows: context.callbackRows,
+      callbacks: context.callbacks,
       launch: context.launch,
       timing,
     }),
@@ -2127,7 +2126,7 @@ export function createThreadClaimRunObjects(
       const { authorization, vars, featureSwitchContext, modelProvider } =
         runtime;
       const catalog = await get(claimCatalog$);
-      const usage = prepareModelUsageContext({
+      const usageError = validateModelUsage({
         catalog,
         modelProvider,
         permissionManifest: runtime.usagePermissions,
@@ -2139,8 +2138,8 @@ export function createThreadClaimRunObjects(
           await get(bootstrap.modelPricing$),
         ),
       });
-      if ("kind" in usage) {
-        return providerUnavailable(usage.message);
+      if (usageError !== null) {
+        return providerUnavailable(usageError);
       }
       const tierError = checkRunServiceTier(
         args.codexServiceTier,
@@ -2431,28 +2430,10 @@ export function createThreadClaimRunObjects(
     }
     return storage.value;
   });
-  /** Captured launch facts before Run-scoped token creation. */
-  const runnerFacts$ = computed(async (get) => {
-    const [input, allowed] = await Promise.all([
-      get(runPlan$),
-      get(resourceAllowed$),
-    ]);
-    if (!allowed) {
-      return null;
-    }
-    if (!input || isRouteError(input)) {
-      return input;
-    }
-    return input.runner;
-  });
   /** The run token makes runner input a command; its result is passed on. */
   const prepareRunnerInput$ = command(
-    async ({ get, set }, signal: AbortSignal) => {
-      const args = await get(runnerFacts$);
+    async ({ get, set }, args: ThreadRunnerFacts, signal: AbortSignal) => {
       signal.throwIfAborted();
-      if (!args || isRouteError(args)) {
-        return args;
-      }
       const officialMountPaths = args.facts.officialWorkflowBundles.map(
         ({ mountPath }) => {
           return mountPath;
@@ -2505,10 +2486,9 @@ export function createThreadClaimRunObjects(
       });
     },
   );
-  const callbackRows$ = computed(async (get) => {
-    const identity = get(runIds$);
+  const preparedCallbacks$ = computed(async (get) => {
     const callbacks = await get(callbackInputs$);
-    return (callbacks ?? []).map((callback): AgentRunCallbackInsert => {
+    return (callbacks ?? []).map((callback): PreparedLaunchCallback => {
       // Normalize payloads to JSON: omit optional fields and serialize Dates.
       const serializedPayload = JSON.stringify(callback.payload);
       const payload =
@@ -2516,22 +2496,19 @@ export function createThreadClaimRunObjects(
           ? null
           : json().parse(JSON.parse(serializedPayload) as unknown);
       return {
-        runId: identity.runId,
-        url: null,
         internalKind: callback.internalKind,
-        encryptedSecret: null,
         payload,
       };
     });
   });
   const prepareRunnerStorage$ = command(
-    async ({ get, set }, signal: AbortSignal) => {
+    async ({ get, set }, args: ThreadRunnerFacts, signal: AbortSignal) => {
       const [input, preparedStorage] = await Promise.all([
-        set(prepareRunnerInput$, signal),
+        set(prepareRunnerInput$, args, signal),
         get(preparedStorage$),
       ]);
       signal.throwIfAborted();
-      if (!input || isRouteError(input)) {
+      if (isRouteError(input)) {
         return input;
       }
       if (!preparedStorage || isRouteError(preparedStorage)) {
@@ -2728,24 +2705,21 @@ export function createThreadClaimRunObjects(
   /** Join Email prompt enrichment and the independent Runner inputs. */
   const prepareRunnerResources$ = command(
     async ({ get, set }, signal: AbortSignal) => {
-      const original = await get(runPlan$);
+      const plan = await get(runPlan$);
       signal.throwIfAborted();
+      if (!plan || isRouteError(plan)) {
+        return { plan, runnerLaunch: null };
+      }
       // Email enrichment can persist refreshed credentials. Keep it owned by
       // this preparation even if the Runner inputs fail first.
-      const [emailPrompt, launch] = await joinAllInOrder(
+      const [emailPrompt, runnerLaunch] = await joinAllInOrder(
         [
-          original && !isRouteError(original)
-            ? set(prepareEmailSystemPrompt$, signal)
-            : null,
-          set(prepareRunnerStorage$, signal),
+          set(prepareEmailSystemPrompt$, signal),
+          set(prepareRunnerStorage$, plan.runner, signal),
         ],
         signal,
       );
-      const plan =
-        original && !isRouteError(original)
-          ? withEmailSystemPrompt(original, emailPrompt)
-          : original;
-      return [plan, launch] as const;
+      return { plan: withEmailSystemPrompt(plan, emailPrompt), runnerLaunch };
     },
   );
   /** Validate the automation source before starting shared launch reads. */
@@ -2760,13 +2734,12 @@ export function createThreadClaimRunObjects(
         await get(automationAssembly$);
         signal.throwIfAborted();
       }
-      const [[input, runnerLaunch], callbackRows, assembly] = await Promise.all(
-        [
+      const [{ plan: input, runnerLaunch }, callbacks, assembly] =
+        await Promise.all([
           set(prepareRunnerResources$, signal),
-          get(callbackRows$),
+          get(preparedCallbacks$),
           get(assembly$),
-        ],
-      );
+        ]);
       signal.throwIfAborted();
       if (assembly.kind !== "assembled") {
         return assembly;
@@ -2790,7 +2763,7 @@ export function createThreadClaimRunObjects(
         kind: "prepared" as const,
         input,
         runnerLaunch,
-        callbackRows,
+        callbacks,
         assembly,
       };
     },
@@ -2832,7 +2805,7 @@ export function createThreadClaimRunObjects(
         );
         return { kind: "passed" };
       }
-      const { input, runnerLaunch, callbackRows, assembly } = resources;
+      const { input, runnerLaunch, callbacks, assembly } = resources;
       const { runId } = get(runIds$);
       await set(recordQueuedInputAdmissionTiming$, head, timing.run, signal);
       signal.throwIfAborted();
@@ -2846,7 +2819,7 @@ export function createThreadClaimRunObjects(
                 kind: "prepared",
                 input: claimCommitInput(input),
                 identity: { runId },
-                callbackRows,
+                callbacks,
                 launch: runnerLaunch,
                 head,
                 producerBinding: assembly.producerBinding,
@@ -2948,12 +2921,12 @@ export function createThreadClaimRunObjects(
       signal: AbortSignal,
     ): Promise<ClaimRunCommit> => {
       signal.throwIfAborted();
-      const { input, identity, callbackRows, launch } = context;
+      const { input, identity, callbacks, launch } = context;
       const commit: ThreadLaunchCommitInput = {
         createArgs: input.args,
         context: input.context,
         identity,
-        callbackRows,
+        callbacks,
         launch,
         timing: timing.run,
       };
@@ -3256,7 +3229,10 @@ interface PreparedRunnerLaunch {
   readonly memoryMounts: readonly AcceptedMemoryMount[];
 }
 
-type AgentRunCallbackInsert = typeof agentRunCallbacks.$inferInsert;
+interface PreparedLaunchCallback {
+  readonly internalKind: InternalRunCallback["internalKind"];
+  readonly payload: AgentRunCallbackPayload;
+}
 
 interface QueueFirstRunClaimLost {
   readonly kind: "queue-first-claim-lost";
@@ -3322,7 +3298,7 @@ interface ThreadLaunchCommitInput {
   readonly createArgs: ThreadRunPersistenceArgs;
   readonly context: ThreadRunPersistenceContext;
   readonly identity: LaunchRunIdentity;
-  readonly callbackRows: readonly AgentRunCallbackInsert[];
+  readonly callbacks: readonly PreparedLaunchCallback[];
   readonly launch: PreparedRunnerLaunch;
   readonly timing: ApiDispatchTimingCollector;
 }
@@ -3337,7 +3313,7 @@ interface LaunchRunRowsArgs {
   readonly modelProvider: ThreadRunPersistenceContext["modelProvider"];
   readonly modelSelection: ModelFirstPin;
   readonly selectedImageModel: ImageModel;
-  readonly callbackRows: readonly AgentRunCallbackInsert[];
+  readonly callbacks: readonly PreparedLaunchCallback[];
   readonly chatThreadId: string;
   readonly agentRunMetadata: AgentRunMetadata;
   readonly apiStartTime: number;
@@ -3468,7 +3444,7 @@ function preparedLaunchRowsArgs(
     modelProvider: commit.context.modelProvider,
     modelSelection: commit.createArgs.modelSelection,
     selectedImageModel: commit.context.selectedImageModel,
-    callbackRows: commit.callbackRows,
+    callbacks: commit.callbacks,
     chatThreadId: commit.createArgs.chatThreadId,
     agentRunMetadata: commit.createArgs.agentRunMetadata,
     apiStartTime: commit.createArgs.apiStartTime,
@@ -3519,7 +3495,7 @@ function returnedCteId(cte: ReturnedIdCte): SQL {
 
 function appendLaunchCallbackCte(args: {
   readonly ctes: WithSubquery[];
-  readonly callbacks: readonly AgentRunCallbackInsert[];
+  readonly callbacks: readonly PreparedLaunchCallback[];
   readonly insertedRun: ReturnedIdCte;
 }): void {
   if (args.callbacks.length === 0) {
@@ -3532,7 +3508,13 @@ function appendLaunchCallbackCte(args: {
         .as(
           pendingLaunchInsertSql(
             agentRunCallbacks,
-            { ...callback, runId: returnedCteId(args.insertedRun) },
+            {
+              runId: returnedCteId(args.insertedRun),
+              url: null,
+              internalKind: callback.internalKind,
+              encryptedSecret: null,
+              payload: callback.payload,
+            },
             ["runId"],
             sql`EXISTS (SELECT 1 FROM ${args.insertedRun})`,
           ),
@@ -3623,7 +3605,7 @@ function buildAtomicLaunchCteContext(args: AtomicLaunchRowsPlanArgs) {
 
   appendLaunchCallbackCte({
     ctes,
-    callbacks: rowsArgs.callbackRows,
+    callbacks: rowsArgs.callbacks,
     insertedRun,
   });
   return {
@@ -3715,7 +3697,6 @@ interface ThreadRunCommand {
   readonly codexServiceTier?: CodexServiceTier;
   readonly reasoningEffort?: ReasoningEffort | null;
   readonly agentRunMetadata?: AgentRunMetadata;
-  readonly agentRunPreCreateSource?: AgentRunPreCreateSource;
 }
 
 // --- Thread-private implementation: launch input ---
@@ -3816,11 +3797,6 @@ function enforceCaptureNetworkBodiesGate(
   return null;
 }
 
-// Emitted as the agent_run_origin observability dimension. The values name what
-// started the run, so the fallback is "direct" (not started by an automation)
-// rather than a restatement that this is an agent run.
-type AgentRunOrigin = "direct" | "workflow_automation";
-
 function agentRunsCreateForbidden(
   message: string,
 ): ApiErrorResponse<403, "FORBIDDEN"> {
@@ -3833,26 +3809,6 @@ function agentRunsCreateForbidden(
       },
     },
   };
-}
-
-function agentRunTimingDimensions(args: {
-  readonly origin: AgentRunOrigin;
-  readonly source?: AgentRunPreCreateSource;
-}): ApiDispatchTimingDimensions {
-  return {
-    agent_run_origin: args.origin,
-    api_start_source: "queue_event",
-    ...(args.source ? { agent_run_pre_create_source: args.source } : {}),
-  };
-}
-
-function agentRunOrigin(args: {
-  readonly command: ThreadRunCommand;
-}): AgentRunOrigin {
-  if (args.command.agentRunMetadata?.workflowAutomationId) {
-    return "workflow_automation";
-  }
-  return "direct";
 }
 
 interface ThreadRunArgsInput {
@@ -3891,6 +3847,9 @@ function buildThreadRunArgs(
   prompt: Pick<PromptAndSkillVolumes, "userPrompt" | "appendedSystemPrompt">,
 ): ThreadRunArgs {
   const command = args.command;
+  const origin = command.agentRunMetadata?.workflowAutomationId
+    ? "workflow_automation"
+    : "direct";
   return {
     orgId: command.owner.orgId,
     userId: command.owner.userId,
@@ -3909,12 +3868,13 @@ function buildThreadRunArgs(
       reasoningEffort: command.reasoningEffort,
     },
     modelSelection: args.modelSelection,
-    timingDimensions: agentRunTimingDimensions({
-      origin: agentRunOrigin({
-        command,
-      }),
-      source: command.agentRunPreCreateSource,
-    }),
+    timingDimensions: {
+      agent_run_origin: origin,
+      api_start_source: "queue_event",
+      ...(origin === "direct"
+        ? { agent_run_pre_create_source: "chat_callback_auto_send" }
+        : {}),
+    },
   };
 }
 

@@ -4,7 +4,10 @@ import {
   workflowWebhookDeliveries,
 } from "@okouai/db/schema/workflow";
 import { and, eq, not, sql, type SQL } from "drizzle-orm";
-import { GmailAutomationSourceChangedError } from "./workflow-gmail-queue.service";
+import {
+  GmailAutomationBindingChangedError,
+  GmailAutomationSourceChangedError,
+} from "./workflow-gmail-queue.service";
 import { GoogleCalendarSourceTransitionChangedError } from "./workflow-google-calendar-queue.service";
 import { GoogleFormsSourceTransitionChangedError } from "./workflow-google-forms-queue.service";
 import { GoogleMeetAutomationSourceChangedError } from "./workflow-google-meet-queue.service";
@@ -31,6 +34,8 @@ export type WorkflowQueueReceipt =
 export type WorkflowSourceFailure =
   | { readonly kind: "chat-run-finished" }
   | { readonly kind: "gmail" }
+  | { readonly kind: "gmail-binding" }
+  | { readonly kind: "gmail-receipt" }
   | { readonly kind: "google-calendar" }
   | { readonly kind: "google-forms" }
   | { readonly kind: "google-meet" }
@@ -44,6 +49,7 @@ export interface WorkflowSourceAdmissionPlan {
     readonly failure?: WorkflowSourceFailure;
   }[];
   readonly callbackDuplicateSql?: SQL;
+  readonly gmailDuplicateSql?: SQL;
 }
 
 export function workflowSourceAdmissionError(
@@ -55,6 +61,12 @@ export function workflowSourceAdmissionError(
     }
     case "gmail": {
       return new GmailAutomationSourceChangedError();
+    }
+    case "gmail-binding": {
+      return new GmailAutomationBindingChangedError();
+    }
+    case "gmail-receipt": {
+      return new Error("Gmail admission did not commit a receipt");
     }
     case "google-calendar": {
       return new GoogleCalendarSourceTransitionChangedError();

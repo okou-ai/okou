@@ -661,14 +661,6 @@ export default [
     },
   },
   {
-    files: ["src/scripts/dev-seed.ts"],
-    rules: {
-      // PostgreSQL's DO statement requires a code literal, so this local-only
-      // seed script uses pg.escapeLiteral before passing the block to sql.raw.
-      "api/no-sql-raw": "off",
-    },
-  },
-  {
     files: ["src/signals/utils.ts"],
     rules: {
       "api/no-new-promise": "off",

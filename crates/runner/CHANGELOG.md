@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.249.68](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.67...runner-rs-v0.249.68) (2026-11-20)
+
+
+### Refactoring
+
+* **runner:** share native ext4 superblock evidence ([#49294](https://github.com/okou-ai/okou/issues/49294)) ([f3295be](https://github.com/okou-ai/okou/commit/f3295be2fb19acb3c1ac4c1ff162f8d2ce802ada))
+
 ## [0.249.67](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.66...runner-rs-v0.249.67) (2026-11-19)
 
 
