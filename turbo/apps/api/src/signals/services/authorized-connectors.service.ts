@@ -14,15 +14,11 @@ import { and, eq, inArray } from "drizzle-orm";
 import { logger } from "../../lib/log";
 import { db$ } from "../external/db";
 import {
-  agentConnectorScopeFromRows,
-  type AgentConnectorScopeSnapshot,
-} from "./agent-connector-scope.service";
-import {
   connectorScopeForRuntimeSnapshot,
   getConnectorRuntimeConnector,
   type ConnectorExecutionRuntimeSelection,
 } from "./connector-catalog-runtime.service";
-import type { AgentConnectorSelection } from "./execution-agent-connectors.service";
+import type { ExecutionConnectorSelection } from "./execution-connector-selection";
 
 interface AuthorizedConnectorSkill {
   readonly skillName: string;
@@ -73,27 +69,14 @@ export type AuthorizedConnectors = readonly AuthorizedConnector[];
 
 /** Build authorized connector skill bundles from member selection and catalog metadata. */
 export function createAuthorizedConnectors(
-  selection$: Computed<
-    Promise<
-      Pick<
-        AgentConnectorSelection,
-        "builtinConnectorSlugs" | "customConnectors"
-      >
-    >
-  >,
+  selection$: Computed<Promise<ExecutionConnectorSelection>>,
   catalog$: Computed<Promise<ConnectorExecutionRuntimeSelection | null>>,
 ): Computed<Promise<AuthorizedConnectors>> {
   return computed(async (get) => {
-    const [selection, catalog] = await Promise.all([
+    const [{ scope, customConnectors }, catalog] = await Promise.all([
       get(selection$),
       get(catalog$),
     ]);
-    const scope = agentConnectorScopeFromRows({
-      connectorRows: selection.builtinConnectorSlugs.map((connectorSlug) => {
-        return { connectorSlug };
-      }),
-      customConnectorRows: selection.customConnectors,
-    });
     if (
       scope.allowedConnectorSlugs.length === 0 &&
       scope.allowedCustomConnectorIds.length === 0
@@ -140,33 +123,23 @@ export function createAuthorizedConnectors(
         return [row.slug, row];
       }),
     );
-    const customBundles = new Map(
-      selection.customConnectors.map((row) => {
-        return [
-          row.customConnectorId,
-          {
-            bundle: row.skillContentBundle,
-            sourceVersionId: row.skillContentBundleSourceVersionId,
-          },
-        ];
-      }),
-    );
     return authorizedConnectorsFromBundles({
-      scope,
+      builtinSlugs,
+      customConnectors,
       catalog,
       builtinBundles,
-      customBundles,
     });
   });
 }
 
 function authorizedConnectorsFromBundles({
-  scope,
+  builtinSlugs,
+  customConnectors,
   catalog,
   builtinBundles,
-  customBundles,
 }: {
-  readonly scope: AgentConnectorScopeSnapshot;
+  readonly builtinSlugs: readonly ConnectorSlug[];
+  readonly customConnectors: ExecutionConnectorSelection["customConnectors"];
   readonly catalog: ConnectorExecutionRuntimeSelection;
   readonly builtinBundles: ReadonlyMap<
     string,
@@ -175,38 +148,32 @@ function authorizedConnectorsFromBundles({
       readonly sourceVersionId: string | null;
     }
   >;
-  readonly customBundles: ReadonlyMap<
-    string,
-    {
-      readonly bundle: ContentBundle | null;
-      readonly sourceVersionId: string | null;
-    }
-  >;
 }): AuthorizedConnectors {
-  const authorized: AuthorizedConnector[] = connectorScopeForRuntimeSnapshot(
-    scope,
-    catalog,
-  ).allowedConnectorSlugs.map((connectorSlug) => {
-    const connector = getConnectorRuntimeConnector(catalog, connectorSlug);
-    if (!connector) {
-      throw new Error("Authorized connector is missing from captured catalog");
-    }
-    return {
-      kind: "builtin",
-      connectorSlug,
-      isMcp: connector.catalogConnector.mcp !== undefined,
-      skill:
-        connector.skill.kind === "none"
-          ? null
-          : availableSkillBundle(
-              connectorSlug,
-              connectorSlug,
-              builtinBundles.get(connectorSlug),
-              connector.skill.versionId,
-            ),
-    };
-  });
-  for (const connector of scope.customConnectorDefinitions) {
+  const authorized: AuthorizedConnector[] = builtinSlugs.map(
+    (connectorSlug) => {
+      const connector = getConnectorRuntimeConnector(catalog, connectorSlug);
+      if (!connector) {
+        throw new Error(
+          "Authorized connector is missing from captured catalog",
+        );
+      }
+      return {
+        kind: "builtin",
+        connectorSlug,
+        isMcp: connector.catalogConnector.mcp !== undefined,
+        skill:
+          connector.skill.kind === "none"
+            ? null
+            : availableSkillBundle(
+                connectorSlug,
+                connectorSlug,
+                builtinBundles.get(connectorSlug),
+                connector.skill.versionId,
+              ),
+      };
+    },
+  );
+  for (const connector of customConnectors) {
     const slug = customConnectorSlugSchema.safeParse(connector.connectorSlug);
     if (slug.success) {
       authorized.push({
@@ -223,7 +190,10 @@ function authorizedConnectorsFromBundles({
                   slug.data,
                   connector.customConnectorId,
                 ),
-                customBundles.get(connector.customConnectorId),
+                {
+                  bundle: connector.skillContentBundle,
+                  sourceVersionId: connector.skillContentBundleSourceVersionId,
+                },
                 connector.skillStorageVersionId,
               ),
       });

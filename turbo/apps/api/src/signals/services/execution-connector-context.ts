@@ -7,7 +7,7 @@ import {
 import { array, object, string, unknown as zUnknown } from "zod";
 import { zodDriverValueDecoder } from "../../lib/db-structured-result";
 import { contextJsonRows, contextProjectionSchema } from "./context-rowset";
-import { agentConnectorSelectionFromRows } from "./execution-agent-connectors.service";
+import { executionConnectorSelectionFromRows } from "./execution-connector-selection";
 import {
   customConnectorExecutionDefinitionSelection,
   customConnectorExecutionOAuthSelection,
@@ -28,7 +28,10 @@ const permissionGrantRow = connectorSlugRow.and(
 );
 
 /** These related selections are included in the first account/environment statement. */
-export function agentSelectionColumns(member: ConnectorMember, at: Date) {
+export function memberConnectorContextColumns(
+  member: ConnectorMember,
+  at: Date,
+) {
   const { builtin, custom, permissions } = memberConnectorSelectionQueries(
     member,
     at,
@@ -44,7 +47,7 @@ export function agentSelectionColumns(member: ConnectorMember, at: Date) {
   };
 }
 
-export function createAgentSelectionContext(
+export function createExecutionConnectorContext(
   raw$: Computed<
     Promise<{
       readonly builtin: unknown;
@@ -66,7 +69,7 @@ export function createAgentSelectionContext(
         oauthConfig: contextProjectionSchema(oauthColumns).nullable(),
       }),
     ).parse(row.custom);
-    return agentConnectorSelectionFromRows(builtin, custom);
+    return executionConnectorSelectionFromRows(builtin, custom);
   });
   const permissionGrants$ = computed(async (get) => {
     return array(permissionGrantRow).parse((await get(raw$)).permissions);
