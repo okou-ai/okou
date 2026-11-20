@@ -26,6 +26,7 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasTestTag
@@ -244,9 +245,16 @@ class PendingWorkspaceRootTest {
     fun preferenceFailureAndRetryKeepTheAuthorizedCachedRowsActionable() {
         compose.runOnIdle { app.organizationResponse.complete(Unit) }
         awaitCachedRow()
+        compose.onNodeWithContentDescription("Search").performClick()
+        compose.onNodeWithText(CACHED_CHAT).assertExists()
         compose.runOnIdle {
             app.preferencesResponse.completeExceptionally(ApiFailure.Http(503, null, null, null))
         }
+        val retry = compose.onNodeWithText("Try again")
+        retry.assertIsDisplayed()
+        compose.onNodeWithText(CACHED_CHAT).assertExists()
+        compose.onNodeWithContentDescription("Back").performClick()
+
         val list = compose.onNodeWithTag("chat_list")
         list.performScrollToNode(hasText("Try again"))
         list.performScrollToNode(hasText(CACHED_CHAT))
@@ -260,19 +268,21 @@ class PendingWorkspaceRootTest {
             )
         )
         compose.onNodeWithContentDescription("Settings").assertDoesNotExist()
-        compose.onNodeWithContentDescription("Search").performClick()
-        compose.onNodeWithText(CACHED_CHAT).assertExists()
-        compose.onNodeWithContentDescription("Back").performClick()
-        list.performScrollToNode(hasText("Try again"))
+        compose.onNodeWithText("New chat").assertIsNotEnabled()
+        row.performClick()
+        compose.onNodeWithTag("conversation").assertExists()
+        retry.assertIsDisplayed()
         compose.runOnIdle {
             app.organizationResponse = CompletableDeferred()
             app.preferencesResponse = CompletableDeferred()
         }
-        compose.onNodeWithText("Try again").performClick()
-        list.performScrollToNode(hasText(CACHED_CHAT))
-        row.assertExists()
-        compose.onNodeWithText("New chat").assertIsNotEnabled()
+        retry.performClick()
+        compose.onNodeWithTag("conversation").assertExists()
+        compose.onNodeWithTag("message_input").assertDoesNotExist()
         compose.runOnIdle { app.preferencesResponse.complete(Unit) }
+        compose.onNodeWithTag("message_input").assertExists()
+        compose.onNodeWithContentDescription("Back").performClick()
+        row.assertExists()
         compose.onNodeWithContentDescription("Settings").assertExists()
     }
 

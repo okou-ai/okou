@@ -496,6 +496,9 @@ internal fun OkouApp(
                 }
             } else {
                 if (chats != null && composer != null) RealtimeNotice(chats.updates)
+                if (!showChatList && startupRecovery != null) {
+                    Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) { startupRecovery() }
+                }
                 Row(Modifier.fillMaxSize()) {
                     if (showList) {
                         Column(
