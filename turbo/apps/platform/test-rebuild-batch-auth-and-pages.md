@@ -114,7 +114,8 @@ The third batch accepted 116 of 224 frozen rows across 14 files:
 `tailscale-parity`, `marketing-handoff-recovery`, `prompt-link` and
 `wallet-action-card`.
 
-The review found three gaps, now closed. No case was added.
+The review found three gaps, now closed, and one weak check, now strengthened.
+No case was added.
 
 | ID                               | Part  | Change                                                                  |
 | -------------------------------- | ----- | ----------------------------------------------------------------------- |
@@ -128,3 +129,25 @@ list to its selected row. Explicit type arguments keep the original unions.
 The other review points are wording or timing limits, recorded as checklist
 notes. The selected `composer-task-chips` cases do not use
 `rail-browser-layout`, and no pending file does, so it is removed.
+
+## Continuation, onboarding and connector pages
+
+The fourth batch accepted 68 of 134 frozen rows across four files:
+`integration-continuation`, `discord-connect-page`, `get-started-entry` and
+`slack-connect-page`. `get-started-entry-022` now asserts that no Gmail
+dialog opens, `get-started-entry-026` asserts the dialog closes before the
+pending refresh is released, and `slack-connect-page-011` asserts the forged
+workspace name is absent. At the reward limit, the `get-started-entry-006`
+row shows the quest name Connect a connector rather than the catalog
+description. The checklist note records this wording difference.
+
+## Deferred files
+
+These files keep their BDD and are not counted as accepted.
+
+| File                   | Evidence                                                                                                                                                                                                                                                           | Next step                                                                                               |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- |
+| `auth-v1-oauth`        | All 15 selected rows pass. The Given of `025`, `027` and `030` says the user is signed out, but each case uses the signed-in default. `030` needs a session for the Clerk continuation it asserts. `025` and `027` check that an active session is not redirected. | Decide whether the scenarios describe a signed-in session or whether the cases should start signed out. |
+| `integrations-discord` | All 24 selected rows pass. For the connected row of `016`, the case requires a Connect action, while the Then says none appears. `023` does not assert that the connected state is absent. `033` opens the menu with a pointer click rather than the keyboard.     | Confirm the connected-row behavior on the current page, then align `016` and close `023` and `033`.     |
+| `chat-run-models`      | One selected parameter list iterates a derived constant, which the restore script cannot prune.                                                                                                                                                                    | Write the selected rows out by hand, as for `color-themes`.                                             |
+| `integrations-feishu`  | Some registrations use template-literal titles, which the restore script cannot match.                                                                                                                                                                             | Map those registrations by hand.                                                                        |

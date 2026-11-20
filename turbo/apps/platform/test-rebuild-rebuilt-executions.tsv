@@ -2445,3 +2445,71 @@ wallet-action-card-015	turbo/apps/platform/src/views/okou-page/__tests__/wallet-
 wallet-action-card-017	turbo/apps/platform/src/views/okou-page/__tests__/wallet-action-card.test.tsx	ordinary provider links and untrusted wallet lookalikes stay ordinary links	310	passed
 wallet-action-card-019	turbo/apps/platform/src/views/okou-page/__tests__/wallet-action-card.test.tsx	purchase approval cards show approval and continuation after notifications and connection gaps	338	passed
 wallet-action-card-020	turbo/apps/platform/src/views/okou-page/__tests__/wallet-action-card.test.tsx	a stopped approval watch shows its terminal status	380	passed
+integration-continuation-001	turbo/apps/platform/src/views/auth-v1/__tests__/integration-continuation.test.tsx	Organization selection preserves the complete supported continuation for Email	26	passed
+integration-continuation-002	turbo/apps/platform/src/views/auth-v1/__tests__/integration-continuation.test.tsx	Organization selection preserves the complete supported continuation for AgentPhone	26	passed
+integration-continuation-003	turbo/apps/platform/src/views/auth-v1/__tests__/integration-continuation.test.tsx	Organization selection preserves the complete supported continuation for Slack OAuth completion	26	passed
+integration-continuation-004	turbo/apps/platform/src/views/auth-v1/__tests__/integration-continuation.test.tsx	Organization selection preserves the complete supported continuation for Teams OAuth completion	26	passed
+integration-continuation-005	turbo/apps/platform/src/views/auth-v1/__tests__/integration-continuation.test.tsx	Organization selection preserves the complete supported continuation for GitHub OAuth continuation	26	passed
+integration-continuation-006	turbo/apps/platform/src/views/auth-v1/__tests__/integration-continuation.test.tsx	Organization selection preserves the complete supported continuation for Slack	26	passed
+integration-continuation-007	turbo/apps/platform/src/views/auth-v1/__tests__/integration-continuation.test.tsx	Organization selection preserves the complete supported continuation for Telegram	26	passed
+integration-continuation-008	turbo/apps/platform/src/views/auth-v1/__tests__/integration-continuation.test.tsx	Organization selection preserves the complete supported continuation for Telegram with case-insensitive and trai…	26	passed
+integration-continuation-010	turbo/apps/platform/src/views/auth-v1/__tests__/integration-continuation.test.tsx	Organization selection preserves the complete supported continuation for Discord	26	passed
+integration-continuation-011	turbo/apps/platform/src/views/auth-v1/__tests__/integration-continuation.test.tsx	Organization selection preserves the complete supported continuation for Discord install	26	passed
+integration-continuation-012	turbo/apps/platform/src/views/auth-v1/__tests__/integration-continuation.test.tsx	Organization selection preserves the complete supported continuation for Teams	26	passed
+integration-continuation-016	turbo/apps/platform/src/views/auth-v1/__tests__/integration-continuation.test.tsx	Sign-in and sign-up retain the complete supported continuation for Email	113	passed
+integration-continuation-017	turbo/apps/platform/src/views/auth-v1/__tests__/integration-continuation.test.tsx	Sign-in and sign-up retain the complete supported continuation for AgentPhone	113	passed
+integration-continuation-018	turbo/apps/platform/src/views/auth-v1/__tests__/integration-continuation.test.tsx	Sign-in and sign-up retain the complete supported continuation for Slack OAuth completion	113	passed
+integration-continuation-023	turbo/apps/platform/src/views/auth-v1/__tests__/integration-continuation.test.tsx	Sign-in and sign-up retain the complete supported continuation for Telegram with case-insensitive and trai…	113	passed
+integration-continuation-031	turbo/apps/platform/src/views/auth-v1/__tests__/integration-continuation.test.tsx	Organization selection does not add a new return flow for /works	163	passed
+integration-continuation-034	turbo/apps/platform/src/views/auth-v1/__tests__/integration-continuation.test.tsx	Discord proof is consumed before auth from /settings/discord?status=pending (signed in: false)	184	passed
+integration-continuation-036	turbo/apps/platform/src/views/auth-v1/__tests__/integration-continuation.test.tsx	Discord proof is consumed before auth from /settings/discord?status=pending (signed in: true)	184	passed
+integration-continuation-038	turbo/apps/platform/src/views/auth-v1/__tests__/integration-continuation.test.tsx	A sanitized Discord return after login or actor change reports interrupted approval	224	passed
+integration-continuation-039	turbo/apps/platform/src/views/auth-v1/__tests__/integration-continuation.test.tsx	An untrusted integration-looking return cannot bypass allowed-origin auth	262	passed
+discord-connect-page-001	turbo/apps/platform/src/views/okou-page/__tests__/discord-connect-page.test.tsx	An install link starts a new installation for an already connected user (approved: true)	40	passed
+discord-connect-page-003	turbo/apps/platform/src/views/okou-page/__tests__/discord-connect-page.test.tsx	The Discord bot link offers install directly and retains the target server	129	passed
+discord-connect-page-005	turbo/apps/platform/src/views/okou-page/__tests__/discord-connect-page.test.tsx	Discord consent finishes in place after the refreshed status is connected	221	passed
+discord-connect-page-010	turbo/apps/platform/src/views/okou-page/__tests__/discord-connect-page.test.tsx	A terminal connected result renders before an in-flight approval response (200) and remains final	309	passed
+discord-connect-page-012	turbo/apps/platform/src/views/okou-page/__tests__/discord-connect-page.test.tsx	A terminal error result renders before an in-flight approval response (200) and remains final	309	passed
+discord-connect-page-014	turbo/apps/platform/src/views/okou-page/__tests__/discord-connect-page.test.tsx	The Discord success URL uses verified connection data (connected: false)	377	passed
+discord-connect-page-015	turbo/apps/platform/src/views/okou-page/__tests__/discord-connect-page.test.tsx	The Discord success URL uses verified connection data (connected: true)	377	passed
+discord-connect-page-016	turbo/apps/platform/src/views/okou-page/__tests__/discord-connect-page.test.tsx	A blocked Discord popup keeps authorization incomplete	403	passed
+discord-connect-page-019	turbo/apps/platform/src/views/okou-page/__tests__/discord-connect-page.test.tsx	Closing consent does not hide a real 403 FORBIDDEN completion failure on the canonical page	419	passed
+discord-connect-page-022	turbo/apps/platform/src/views/okou-page/__tests__/discord-connect-page.test.tsx	A Discord DM link can connect without a server hint	475	passed
+discord-connect-page-023	turbo/apps/platform/src/views/okou-page/__tests__/discord-connect-page.test.tsx	A failed Discord status request exposes the error page and its back link	486	passed
+discord-connect-page-024	turbo/apps/platform/src/views/okou-page/__tests__/discord-connect-page.test.tsx	A server link is independent of the workspace's previous server	508	passed
+discord-connect-page-025	turbo/apps/platform/src/views/okou-page/__tests__/discord-connect-page.test.tsx	A malformed server link cannot start consent	522	passed
+get-started-entry-001	turbo/apps/platform/src/views/okou-page/__tests__/get-started-entry.test.tsx	The gift opens invitations independently of credit quests and copies the invitation link	50	passed
+get-started-entry-002	turbo/apps/platform/src/views/okou-page/__tests__/get-started-entry.test.tsx	History navigation closes a reopened invitation dialog without restoring stale open state	106	passed
+get-started-entry-003	turbo/apps/platform/src/views/okou-page/__tests__/get-started-entry.test.tsx	Referral link failures can be retried in the same dialog	173	passed
+get-started-entry-005	turbo/apps/platform/src/views/okou-page/__tests__/get-started-entry.test.tsx	An admin sees every step and what each one pays	475	passed
+get-started-entry-006	turbo/apps/platform/src/views/okou-page/__tests__/get-started-entry.test.tsx	A connector reward at its limit shows completion and stops offering more credits	513	passed
+get-started-entry-009	turbo/apps/platform/src/views/okou-page/__tests__/get-started-entry.test.tsx	A review notification brings a granted workflow reward into the open panel	534	passed
+get-started-entry-010	turbo/apps/platform/src/views/okou-page/__tests__/get-started-entry.test.tsx	Adding iMessage opens the phone connect dialog with its reward	586	passed
+get-started-entry-011	turbo/apps/platform/src/views/okou-page/__tests__/get-started-entry.test.tsx	Linking the phone closes the Get started dialog and completes the quest	625	passed
+get-started-entry-015	turbo/apps/platform/src/views/okou-page/__tests__/get-started-entry.test.tsx	A failed Slack status read leaves the Slack step actionable on canonical settings	675	passed
+get-started-entry-017	turbo/apps/platform/src/views/okou-page/__tests__/get-started-entry.test.tsx	Daily rewards are claimed by selecting check in	710	passed
+get-started-entry-018	turbo/apps/platform/src/views/okou-page/__tests__/get-started-entry.test.tsx	The connector step says what it costs the user before it hands them off	739	passed
+get-started-entry-022	turbo/apps/platform/src/views/okou-page/__tests__/get-started-entry.test.tsx	Picking a connector in the dialog starts its authorization	774	passed
+get-started-entry-023	turbo/apps/platform/src/views/okou-page/__tests__/get-started-entry.test.tsx	The Slack step starts OAuth directly at click time and retains the chat draft	822	passed
+get-started-entry-024	turbo/apps/platform/src/views/okou-page/__tests__/get-started-entry.test.tsx	The Slack step opens settings when the install URL is … at click time and retains the chat draft	822	passed
+get-started-entry-026	turbo/apps/platform/src/views/okou-page/__tests__/get-started-entry.test.tsx	The Slack action retains its OAuth URL while a status refresh is pending	867	passed
+get-started-entry-027	turbo/apps/platform/src/views/okou-page/__tests__/get-started-entry.test.tsx	A blocked Slack tab without completion leaves the quest retryable	907	passed
+get-started-entry-033	turbo/apps/platform/src/views/okou-page/__tests__/get-started-entry.test.tsx	Reopening Get Started recovers a Slack installation missed by realtime	948	passed
+get-started-entry-036	turbo/apps/platform/src/views/okou-page/__tests__/get-started-entry.test.tsx	An ordinary day's check-in confirms the reward and streak in a dialog	975	passed
+get-started-entry-037	turbo/apps/platform/src/views/okou-page/__tests__/get-started-entry.test.tsx	Check-in waits for refreshed rewards before showing the success dialog	994	passed
+get-started-entry-038	turbo/apps/platform/src/views/okou-page/__tests__/get-started-entry.test.tsx	A saved check-in waits for a financial confirmation before celebrating	1029	passed
+get-started-entry-042	turbo/apps/platform/src/views/okou-page/__tests__/get-started-entry.test.tsx	A connector that needs a choice opens its connect dialog from its own catalog entry	1064	passed
+slack-connect-page-001	turbo/apps/platform/src/views/okou-page/__tests__/slack-connect-page.test.tsx	A bare or returned page reads actual state before offering installation: 	15	passed
+slack-connect-page-005	turbo/apps/platform/src/views/okou-page/__tests__/slack-connect-page.test.tsx	A confirmed connection opens Slack once and retains the manual action: 	40	passed
+slack-connect-page-006	turbo/apps/platform/src/views/okou-page/__tests__/slack-connect-page.test.tsx	A confirmed connection opens Slack once and retains the manual action: ?status=connected	40	passed
+slack-connect-page-007	turbo/apps/platform/src/views/okou-page/__tests__/slack-connect-page.test.tsx	A confirmed connection opens Slack once and retains the manual action: ?updated=1	40	passed
+slack-connect-page-010	turbo/apps/platform/src/views/okou-page/__tests__/slack-connect-page.test.tsx	A connected identity retains the installation action when its bot is missing	68	passed
+slack-connect-page-011	turbo/apps/platform/src/views/okou-page/__tests__/slack-connect-page.test.tsx	An existing connection and failed authorization are reported separately	89	passed
+slack-connect-page-012	turbo/apps/platform/src/views/okou-page/__tests__/slack-connect-page.test.tsx	A retained Slack result reaches the canonical state page: /?tab=works&updated=1	126	passed
+slack-connect-page-015	turbo/apps/platform/src/views/okou-page/__tests__/slack-connect-page.test.tsx	A retained Slack result reaches the canonical state page: /slack/failed?error=access_denied	126	passed
+slack-connect-page-016	turbo/apps/platform/src/views/okou-page/__tests__/slack-connect-page.test.tsx	A success hint cannot bypass the authenticated account mismatch check	151	passed
+slack-connect-page-017	turbo/apps/platform/src/views/okou-page/__tests__/slack-connect-page.test.tsx	A verified provider link opens the conversation and keeps a manual return link	179	passed
+slack-connect-page-019	turbo/apps/platform/src/views/okou-page/__tests__/slack-connect-page.test.tsx	Changing accounts during verification prevents the old account from opening Slack: /settings/slack	210	passed
+slack-connect-page-023	turbo/apps/platform/src/views/okou-page/__tests__/slack-connect-page.test.tsx	A retained Slack result survives login and organization selection (signed in: false): /?tab=works&updated=1	257	passed
+slack-connect-page-024	turbo/apps/platform/src/views/okou-page/__tests__/slack-connect-page.test.tsx	A retained Slack result survives login and organization selection (signed in: true): /?tab=works&updated=1	257	passed
+slack-connect-page-025	turbo/apps/platform/src/views/okou-page/__tests__/slack-connect-page.test.tsx	A retained Slack result survives login and organization selection (signed in: false): /slack/failed?error=access_denied&w=T12…	257	passed
