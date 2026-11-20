@@ -1896,6 +1896,7 @@ async fn fresh_delivery_cancellation_drains_started_publication() {
         slow_headers: 0,
         classification: JoinSet::new(),
         groups: None,
+        unavailable: Vec::new(),
         owned_keys: HashSet::new(),
         apply: Vec::new(),
         fetches: JoinSet::new(),

@@ -92,7 +92,10 @@ async fn workflow_storage_paths_are_cleaned_after_finalization_and_exact_reuse()
             }
             let manifest: guest_contracts::storage_manifest::Manifest =
                 serde_json::from_slice(&call.manifest_json).unwrap();
-            manifest.cleanup_paths.iter().any(|path| path == mount)
+            manifest
+                .removed_package_paths
+                .iter()
+                .any(|path| path == mount)
         }),
         "the retained bundle path must be removed before the next Agent starts"
     );

@@ -12,6 +12,133 @@ async fn split_ready_inputs_preserve_order_and_join_publication_failures() {
     assert_ready_input_lifecycle(true).await;
 }
 
+#[tokio::test]
+async fn optional_prefetch_overlaps_large_decoded_application_and_publishes_its_failure() {
+    let temp = tempfile::tempdir().unwrap();
+    let home = home_at(&temp);
+    let cache = decoded::DecodedCache::new(home.clone());
+    let bytes = tarball_with_contents(b"archive bytes\n");
+    let server = GatedResponse::start(bytes.clone()).await;
+    let name = guest_contracts::storage_manifest::WORKFLOW_STORAGE_NAME;
+    let mut optional = storage_entry_with_archive_size(
+        "/mnt/optional".into(),
+        server.url,
+        name,
+        "v1",
+        Some(bytes.len() as u64),
+    );
+    optional.optional = true;
+    write_cached_archive(&home, "ready", "v1", &bytes);
+    write_storage_lock(&home, "ready", "v1");
+    cache.warm_from_archive("ready", "v1").await.unwrap();
+    let ready = storage_entry(
+        "/mnt/ready".into(),
+        format!(
+            "https://example.test/ready?{}",
+            "p".repeat(guest_contracts::storage_files::MAX_MANIFEST_BYTES)
+        ),
+        "ready",
+        "v1",
+    );
+    write_cached_archive(&home, "compressed", "v1", &bytes);
+    let compressed = storage_entry(
+        "/mnt/compressed".into(),
+        "https://example.test/zip".into(),
+        "compressed",
+        "v1",
+    );
+    let mut plan = plan_from_entries(vec![optional, ready, compressed], Vec::new(), None);
+    let admission = FreshArchiveDeliveryAdmission::new();
+    let mut telemetry = new_telemetry();
+    let delivery = prepare_fresh_archive_delivery(
+        &mut plan,
+        &home,
+        &admission,
+        &CancellationToken::new(),
+        &mut telemetry,
+        Some(&cache),
+    )
+    .await
+    .unwrap();
+
+    // The request must begin before the Guest storage owner starts.
+    tokio::time::timeout(Duration::from_secs(5), server.requested)
+        .await
+        .unwrap()
+        .unwrap();
+    server.headers.send(()).unwrap();
+    let mut prepared = PreparedStorage { plan, delivery };
+    let sandbox = Arc::new(MockSandbox::new("optional-early-application"));
+    let (send, receive) = oneshot::channel();
+    let runtime = temp.path().join("runtime");
+    let application = GuestApplication::new(
+        send,
+        runtime.clone(),
+        "optional-early".into(),
+        Duration::from_secs(300),
+        Arc::new(AtomicBool::new(false)),
+    )
+    .unwrap();
+    let task = tokio::spawn({
+        let sandbox = sandbox.clone();
+        async move {
+            let result = populate_cache_for_guest(
+                &mut prepared,
+                sandbox.as_ref(),
+                &home,
+                &mut telemetry,
+                &cache,
+                application,
+            )
+            .await;
+            cache.shutdown().await;
+            result
+        }
+    });
+    let input = tokio::time::timeout(Duration::from_secs(5), receive)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(input.initial.files.len(), 1, "keep the warm decoded hit");
+    assert!(input.decoded_tail.is_none(), "Guest must see all mounts");
+    let readiness = input.initial.manifest.archive_readiness.unwrap();
+    assert!(
+        !task.is_finished(),
+        "Guest application starts before cold response completes"
+    );
+    let cache_dir = home_at(&temp).storage_cache_dir(name, "v1");
+    fs::create_dir_all(&cache_dir).await.unwrap();
+    fs::write(cache_dir.join("existing"), b"force publication failure")
+        .await
+        .unwrap();
+    server.body.send(()).unwrap();
+    drop(
+        tokio::time::timeout(Duration::from_secs(5), task)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap(),
+    );
+
+    let published = sandbox.private_write_files_calls();
+    assert_eq!(published.len(), 1);
+    assert_eq!(
+        published[0].files[0].path,
+        readiness.unavailable_path(&runtime, 0).to_str().unwrap()
+    );
+    assert_eq!(
+        sandbox.write_files_calls().len(),
+        1,
+        "only the warm archive is staged"
+    );
+    assert!(
+        sandbox.private_write_file_calls().is_empty(),
+        "other mounts can continue"
+    );
+    server.task.finish().await;
+    admission.shutdown().await;
+}
+
 async fn assert_ready_input_lifecycle(split: bool) {
     // Every case reaches the same causal handoff before releasing the HTTP
     // body. Failure cases keep the original accepted population owner.

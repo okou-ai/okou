@@ -24,10 +24,13 @@ pub const MAX_MOUNTS: usize = 1024;
 pub const MAX_TOTAL_FILES: usize = 32 * MAX_MOUNTS;
 /// Prefix identifying binary input to the fixed storage helper.
 pub const INPUT_MAGIC: &[u8; 8] = b"VM0FILE1";
-/// Manifest limit within binary input; generic exec stdin is unchanged.
+/// Preferred manifest size for inputs that can be batched independently.
 pub const MAX_MANIFEST_BYTES: usize = 64 * 1024;
+/// Complete mount lists needed by package cleanup use the remaining space in
+/// the 16 MiB Guest-control frame after the existing files budget and RPC header.
+pub const MAX_COMPLETE_MANIFEST_BYTES: usize = 1024 * 1024 - 8 * 1024;
 /// Maximum complete binary helper input.
-pub const MAX_INPUT_BYTES: usize = 16 + MAX_MANIFEST_BYTES + MAX_PAYLOAD_BYTES;
+pub const MAX_INPUT_BYTES: usize = 16 + MAX_COMPLETE_MANIFEST_BYTES + MAX_PAYLOAD_BYTES;
 /// Fixed Guest helper argument for binary Storage input read from stdin.
 pub const STDIN_ARGUMENT: &str = "--storage-files-stdin";
 /// Fixed Guest helper argument for binary Storage input mapped from sealed stdin.
@@ -58,12 +61,32 @@ impl<'a> PreparedInput<'a> {
     /// Validate owned manifest/descriptors while borrowing immutable file data.
     pub fn new(manifest: Vec<u8>, groups: Vec<(&'a str, &'a [StorageFile])>) -> io::Result<Self> {
         let payload_len = input_payload_len(&manifest, &groups)?;
-        Ok(Self {
+        Ok(Self::with_validated_payload(manifest, groups, payload_len))
+    }
+
+    /// Keep the full mount list together when package cleanup needs it.
+    pub fn new_complete(
+        manifest: Vec<u8>,
+        groups: Vec<(&'a str, &'a [StorageFile])>,
+    ) -> io::Result<Self> {
+        if manifest.len() > MAX_COMPLETE_MANIFEST_BYTES {
+            return Err(invalid());
+        }
+        let payload_len = encoded_payload_len(&groups)?;
+        Ok(Self::with_validated_payload(manifest, groups, payload_len))
+    }
+
+    fn with_validated_payload(
+        manifest: Vec<u8>,
+        groups: Vec<(&'a str, &'a [StorageFile])>,
+        payload_len: usize,
+    ) -> Self {
+        Self {
             // Do not retain serializer growth capacity for every future batch.
             manifest: manifest.into_boxed_slice(),
             groups,
             payload_len,
-        })
+        }
     }
 
     /// Exact canonical manifest byte length.
@@ -107,7 +130,7 @@ pub fn split_input(mut input: &[u8]) -> io::Result<(&[u8], &[u8])> {
     if number::<8>(&mut input)? != *INPUT_MAGIC || input.len() > MAX_INPUT_BYTES - 8 {
         return Err(invalid());
     }
-    let manifest = bytes(&mut input, MAX_MANIFEST_BYTES)?;
+    let manifest = bytes(&mut input, MAX_COMPLETE_MANIFEST_BYTES)?;
     let files = bytes(&mut input, MAX_PAYLOAD_BYTES)?;
     if !input.is_empty() || files.is_empty() {
         return Err(invalid());

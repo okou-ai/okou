@@ -246,14 +246,14 @@ impl CacheTargetGroup {
         self.targets().all(|target| target.optional_mount.is_some())
     }
 
-    fn log_optional_preparation_failure(&self, step: &'static str, error: &io::Error) {
+    fn log_optional_preparation_failure(&self, step: &'static str, error: &impl fmt::Display) {
         for target in self.targets() {
             error!(
                 mount_path = target.optional_mount.as_deref(),
                 version_id = %target.version,
                 step,
                 %error,
-                "optional package cache preparation failed"
+                "optional package preparation failed"
             );
         }
     }
@@ -618,7 +618,10 @@ enum FreshArchiveSizeSource {
 
 enum FreshArchiveFetchTaskResult {
     Downloaded(FreshArchiveDownloaded),
-    Terminal { error: FreshArchiveFetchError },
+    Terminal {
+        group: CacheTargetGroup,
+        error: FreshArchiveFetchError,
+    },
 }
 
 struct FreshArchiveFetchError {
@@ -679,7 +682,7 @@ struct FreshArchivePublished {
 
 struct FreshArchiveResolved {
     group: CacheTargetGroup,
-    archive: FreshArchivePublished,
+    archive: Option<FreshArchivePublished>,
 }
 
 /// In-flight runner ownership for archives selected from one storage plan.
@@ -702,6 +705,7 @@ pub struct FreshArchiveDelivery {
     slow_headers: usize,
     classification: JoinSet<FreshArchiveClassification>,
     groups: Option<Vec<CacheTargetGroup>>,
+    unavailable: Vec<ArchiveHandle>,
     owned_keys: HashSet<(String, String)>,
     apply: Vec<oneshot::Sender<()>>,
     fetches: JoinSet<FreshArchiveFetchTaskResult>,
@@ -710,6 +714,7 @@ pub struct FreshArchiveDelivery {
 
 struct FreshArchiveClassification {
     groups: Vec<CacheTargetGroup>,
+    unavailable: Vec<ArchiveHandle>,
     owned_keys: HashSet<(String, String)>,
     apply: Vec<oneshot::Sender<()>>,
     fetches: JoinSet<FreshArchiveFetchTaskResult>,
@@ -772,6 +777,7 @@ impl FreshArchiveDelivery {
             .summary
             .record(telemetry, classified.result.is_ok());
         self.groups = Some(classified.groups);
+        self.unavailable = classified.unavailable;
         self.owned_keys = classified.owned_keys;
         self.apply = classified.apply;
         self.fetches = classified.fetches;
@@ -871,13 +877,13 @@ impl FreshArchiveDelivery {
         for apply in self.apply.drain(..) {
             let _ = apply.send(());
         }
+        let mut resolved = Vec::new();
         while let Some(task) = self.fetches.join_next().await {
             let task = task.map_err(|error| {
                 RunnerError::Internal(format!("runner-owned archive fetch task: {error}"))
             })?;
-            self.accept_fetched(task, home, telemetry)?;
+            resolved.extend(self.accept_fetched(task, home, telemetry)?);
         }
-        let mut resolved = Vec::new();
         while let Some(task) = self.publications.join_next().await {
             let task = task.map_err(|error| {
                 RunnerError::Internal(format!("runner-owned archive publication task: {error}"))
@@ -892,7 +898,7 @@ impl FreshArchiveDelivery {
         task: FreshArchiveFetchTaskResult,
         home: &HomePaths,
         telemetry: &mut CacheProcessMetrics,
-    ) -> RunnerResult<()> {
+    ) -> RunnerResult<Option<FreshArchiveResolved>> {
         match task {
             FreshArchiveFetchTaskResult::Downloaded(downloaded) => {
                 telemetry.record(
@@ -937,7 +943,7 @@ impl FreshArchiveDelivery {
                     FreshArchivePublicationTaskResult { group, result }
                 });
             }
-            FreshArchiveFetchTaskResult::Terminal { error } => {
+            FreshArchiveFetchTaskResult::Terminal { group, error } => {
                 let reason = error.reason;
                 let action = if reason == "cancelled" {
                     STORAGE_CACHE_FRESH_DELIVERY_CANCELLED
@@ -945,6 +951,13 @@ impl FreshArchiveDelivery {
                     STORAGE_CACHE_FRESH_DELIVERY_FAILED
                 };
                 telemetry.record(action, Duration::ZERO, reason == "cancelled", Some(reason));
+                if reason != "cancelled" && group.optional_only() {
+                    group.log_optional_preparation_failure("archive download", &error);
+                    return Ok(Some(FreshArchiveResolved {
+                        group,
+                        archive: None,
+                    }));
+                }
                 return Err(if reason == "cancelled" {
                     RunnerError::Cancelled
                 } else {
@@ -952,7 +965,7 @@ impl FreshArchiveDelivery {
                 });
             }
         }
-        Ok(())
+        Ok(None)
     }
 
     /// Joining a task is cancellation-safe. Accepted publication remains in
@@ -975,7 +988,9 @@ impl FreshArchiveDelivery {
                     let task = task.map_err(|error| {
                         RunnerError::Internal(format!("runner-owned archive fetch task: {error}"))
                     })?;
-                    self.accept_fetched(task, home, telemetry)?;
+                    if let Some(resolved) = self.accept_fetched(task, home, telemetry)? {
+                        return Ok(Some(resolved));
+                    }
                     None
                 },
                 Some(task) = self.publications.join_next(), if !self.publications.is_empty() => {
@@ -1006,7 +1021,7 @@ impl FreshArchiveDelivery {
                 );
                 Ok(FreshArchiveResolved {
                     group: task.group,
-                    archive,
+                    archive: Some(archive),
                 })
             }
             Err(error) => {
@@ -1016,7 +1031,19 @@ impl FreshArchiveDelivery {
                     false,
                     Some("publication"),
                 );
-                Err(error)
+                if let RunnerError::Io(error) = &error
+                    && error.kind() != io::ErrorKind::Interrupted
+                    && task.group.optional_only()
+                {
+                    task.group
+                        .log_optional_preparation_failure("archive cache publication", error);
+                    Ok(FreshArchiveResolved {
+                        group: task.group,
+                        archive: None,
+                    })
+                } else {
+                    Err(error)
+                }
             }
         }
     }
@@ -1142,7 +1169,8 @@ async fn prepare_decoded_storage(
     }
     // Keep the complete mount list in Guest when optional cleanup can remove
     // a root. A split would hide physical aliases owned by another batch.
-    if plan.requires_complete_mount_list() && !complete_manifest_fits_decoded_input(plan)? {
+    let requires_complete_manifest = plan.requires_complete_mount_list();
+    if requires_complete_manifest && !complete_manifest_fits_decoded_input(plan)? {
         plan.finish_decoded_preparation();
         return Ok(());
     }
@@ -1188,7 +1216,7 @@ async fn prepare_decoded_storage(
                 }
             };
             group.decoded_ready_observed = files.is_some();
-            let decoded_reused = reuse_decoded(plan, group, files)?;
+            let decoded_reused = reuse_decoded(plan, group, files, requires_complete_manifest)?;
             if group.targets().any(|target| {
                 target.handle.is_artifact()
                     && !plan.has_decoded(target.handle)
@@ -1229,13 +1257,14 @@ fn complete_manifest_fits_decoded_input(plan: &StoragePlan) -> RunnerResult<bool
         RunnerError::Internal(format!("complete storage manifest sizing: {error}"))
     })?;
     Ok(json.len().saturating_add(staged_growth)
-        <= guest_contracts::storage_files::MAX_MANIFEST_BYTES)
+        <= guest_contracts::storage_files::MAX_COMPLETE_MANIFEST_BYTES)
 }
 
 fn reuse_decoded(
     plan: &mut StoragePlan,
     group: &CacheTargetGroup,
     files: Option<Arc<decoded::CachedFiles>>,
+    complete_manifest: bool,
 ) -> RunnerResult<bool> {
     let Some(files) = files else {
         return Ok(false);
@@ -1259,7 +1288,7 @@ fn reuse_decoded(
         return Ok(false);
     };
     for target in &eligible {
-        if !plan.decoded_entry_fits(target.handle)? {
+        if !complete_manifest && !plan.decoded_entry_fits(target.handle)? {
             return Ok(false);
         }
     }
@@ -1575,6 +1604,10 @@ async fn stage_fresh_archives(
     let mut outcomes = Vec::with_capacity(resolved.len());
     let mut batch = FreshGuestStageBatch::default();
     for FreshArchiveResolved { group, archive } in resolved {
+        let Some(archive) = archive else {
+            outcomes.push((group, TargetOutcome::Unavailable));
+            continue;
+        };
         let FreshArchivePublished { bytes, permit } = archive;
         let target = &group.representative;
         let write = GuestStageWrite {
@@ -1735,9 +1768,13 @@ async fn populate_cache_inner(
             delivery.cancel_and_drain(telemetry).await;
             return Err(error);
         }
-        delivery.groups.take().ok_or_else(|| {
+        let groups = delivery.groups.take().ok_or_else(|| {
             RunnerError::Internal("prepared archive groups already consumed".into())
-        })?
+        })?;
+        for handle in delivery.unavailable.drain(..) {
+            plan.mark_optional_unavailable(handle)?;
+        }
+        groups
     } else {
         group_targets(collect_targets(plan.cache_candidates()))
     };
@@ -2019,13 +2056,18 @@ pub async fn prepare_fresh_archive_delivery(
     let candidates = groups
         .iter()
         .map(|group| {
-            let optional_only = group.optional_only();
-            let decoded = group_has_decoded(group, plan);
-            // Guest owns optional-only cold downloads. Until ordinary preparation
-            // resolves the source, suffix admission could delay that Guest work.
-            ordinary_required |=
-                optional_only && !decoded && !plan.archive_unavailable(group.representative.handle);
-            !optional_only && !decoded
+            if group_has_decoded(group, plan)
+                || plan.archive_unavailable(group.representative.handle)
+            {
+                return false;
+            }
+            // Guest can stream optional sources whose size is unknown. Taking
+            // these on the Runner could skip a valid archive at its cache bound.
+            let guest_owned = group.optional_only()
+                && (group.archive_size.is_none()
+                    || group.representative.archive_url.starts_with("file://"));
+            ordinary_required |= guest_owned;
+            !guest_owned
         })
         .collect::<Vec<_>>();
     let owner_cancel = cancel.child_token();
@@ -2046,6 +2088,7 @@ pub async fn prepare_fresh_archive_delivery(
         slow_headers: 0,
         classification,
         groups: None,
+        unavailable: Vec::new(),
         owned_keys: HashSet::new(),
         apply: Vec::new(),
         fetches: JoinSet::new(),
@@ -2071,6 +2114,7 @@ async fn classify_fresh_archives(
         FRESH_DELIVERY_SCAN_LIMIT,
     );
     let mut metrics = CacheProcessMetrics::default();
+    let mut unavailable = Vec::new();
     let mut requests = FreshArchiveRequests {
         owned_keys: HashSet::new(),
         apply: Vec::new(),
@@ -2098,23 +2142,18 @@ async fn classify_fresh_archives(
                     .archive_size
                     .is_some_and(|size| size == 0 || size > CACHE_MAX_SIZE)
                 {
-                    return Ok((position, index, false));
+                    return Ok((position, index, Ok(false)));
                 }
                 let target = &group.representative;
                 let path = home
                     .storage_cache_dir(&target.name, &target.version)
                     .join("archive.tar.gz");
                 let warm = match fs::metadata(&path).await {
-                    Ok(metadata) => metadata.len() > 0 && metadata.len() <= CACHE_MAX_SIZE,
-                    Err(error) if error.kind() == io::ErrorKind::NotFound => false,
-                    Err(error) => {
-                        return Err(RunnerError::Internal(format!(
-                            "stat cached {}: {error}",
-                            path.display()
-                        )));
-                    }
+                    Ok(metadata) => Ok(metadata.len() > 0 && metadata.len() <= CACHE_MAX_SIZE),
+                    Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
+                    Err(error) => Err(cache_io_error("stat", &path, error)),
                 };
-                Ok((position, index, warm))
+                Ok::<_, RunnerError>((position, index, warm))
             }
         })
         .buffered(CONCURRENCY);
@@ -2139,6 +2178,9 @@ async fn classify_fresh_archives(
             let group = groups.get(index).ok_or_else(|| {
                 RunnerError::Internal("invalid archive classification group".into())
             })?;
+            let Some(warm) = optional_preflight(group, warm, &mut unavailable)? else {
+                continue;
+            };
             if group
                 .archive_size
                 .is_some_and(|size| size == 0 || size > CACHE_MAX_SIZE)
@@ -2178,7 +2220,7 @@ async fn classify_fresh_archives(
                     );
                     return Ok(());
                 }
-                expanded.push(index);
+                expanded.push(group);
                 continue;
             }
             let permit = match admission.try_reserve(1) {
@@ -2195,8 +2237,9 @@ async fn classify_fresh_archives(
                     continue;
                 }
             };
-            match claim_fresh_archive(group, &home, &mut metrics).await? {
-                FreshArchiveClaim::Cold(writer) => {
+            let claim = claim_fresh_archive(group, &home, &mut metrics).await;
+            match optional_preflight(group, claim, &mut unavailable)? {
+                Some(FreshArchiveClaim::Cold(writer)) => {
                     requests.start(
                         group,
                         writer,
@@ -2206,8 +2249,8 @@ async fn classify_fresh_archives(
                         &mut metrics,
                     )?;
                 }
-                FreshArchiveClaim::Warm => {}
-                FreshArchiveClaim::Busy => ordinary_required = true,
+                Some(FreshArchiveClaim::Busy) => ordinary_required = true,
+                Some(FreshArchiveClaim::Warm) | None => {}
             }
         }
         if ordinary_required || expanded.is_empty() {
@@ -2230,17 +2273,15 @@ async fn classify_fresh_archives(
             }
         };
         let mut claims = Vec::new();
-        for index in expanded {
-            let group = groups.get(index).ok_or_else(|| {
-                RunnerError::Internal("invalid archive classification group".into())
-            })?;
+        for group in expanded {
             let permit = permits.split(1).ok_or_else(|| {
                 RunnerError::Internal("incomplete expanded archive reservation".into())
             })?;
-            match claim_fresh_archive(group, &home, &mut metrics).await? {
-                FreshArchiveClaim::Cold(writer) => claims.push((group, writer, permit)),
-                FreshArchiveClaim::Warm => {} // Drop the unused reservation immediately.
-                FreshArchiveClaim::Busy => return Ok(()),
+            let claim = claim_fresh_archive(group, &home, &mut metrics).await;
+            match optional_preflight(group, claim, &mut unavailable)? {
+                Some(FreshArchiveClaim::Cold(writer)) => claims.push((group, writer, permit)),
+                Some(FreshArchiveClaim::Busy) => return Ok(()),
+                Some(FreshArchiveClaim::Warm) | None => {}
             }
         }
         // No GET has started for these claims. A busy writer above releases all
@@ -2270,12 +2311,31 @@ async fn classify_fresh_archives(
     );
     FreshArchiveClassification {
         groups,
+        unavailable,
         owned_keys: requests.owned_keys,
         apply: requests.apply,
         fetches: requests.fetches,
         metrics,
         summary: scan_summary,
         result,
+    }
+}
+
+fn optional_preflight<T>(
+    group: &CacheTargetGroup,
+    result: RunnerResult<T>,
+    unavailable: &mut Vec<ArchiveHandle>,
+) -> RunnerResult<Option<T>> {
+    match result {
+        Ok(value) => Ok(Some(value)),
+        Err(RunnerError::Io(error))
+            if error.kind() != io::ErrorKind::Interrupted && group.optional_only() =>
+        {
+            group.log_optional_preparation_failure("archive prefetch preparation", &error);
+            unavailable.extend(group.targets().map(|target| target.handle));
+            Ok(None)
+        }
+        Err(error) => Err(error),
     }
 }
 
@@ -2309,7 +2369,12 @@ async fn claim_fresh_archive(
     // Unlocked observations are only hints. Revalidate under the writer before
     // assigning request ownership, preserving corrupt-entry cleanup and errors.
     match fs::metadata(&archive_path).await {
-        Ok(metadata) if metadata.len() == 0 => evict_empty_cache(target, &cache_dir).await?,
+        Ok(metadata) if metadata.len() == 0 => {
+            if group.optional_only() {
+                return Err(empty_cached_archive_error(&archive_path));
+            }
+            evict_empty_cache(target, &cache_dir).await?;
+        }
         Ok(metadata) if metadata.len() <= CACHE_MAX_SIZE => {
             metrics.record(
                 STORAGE_CACHE_FRESH_DELIVERY_WARM,
@@ -2322,10 +2387,7 @@ async fn claim_fresh_archive(
         Ok(metadata) => evict_oversized_cache(target, &cache_dir, metadata.len()).await?,
         Err(error) if error.kind() == io::ErrorKind::NotFound => {}
         Err(error) => {
-            return Err(RunnerError::Internal(format!(
-                "stat cached {}: {error}",
-                archive_path.display()
-            )));
+            return Err(cache_io_error("stat", &archive_path, error));
         }
     }
     Ok(FreshArchiveClaim::Cold(writer))
@@ -2362,11 +2424,11 @@ impl FreshArchiveRequests {
             let fetch = tokio::select! {
                 biased;
                 () = cancel.cancelled() => Err(FreshArchiveFetchError::permanent("cancelled")),
-                result = fetch_fresh_archive(&http, &archive_url, group.archive_size, representative, &phase_records) => result,
+                result = fetch_fresh_archive(&http, &archive_url, group.archive_size, representative, &phase_records, !group.optional_only()) => result,
             };
             let (bytes, size_source) = match fetch {
                 Ok(download) => download,
-                Err(error) => return FreshArchiveFetchTaskResult::Terminal { error },
+                Err(error) => return FreshArchiveFetchTaskResult::Terminal { group, error },
             };
             let phase = FreshArchivePhaseGuard::new(
                 &phase_records,
@@ -2383,6 +2445,7 @@ impl FreshArchiveRequests {
                     group, bytes, size_source, writer, permit,
                 }),
                 Err(reason) => FreshArchiveFetchTaskResult::Terminal {
+                    group,
                     error: FreshArchiveFetchError::permanent(reason),
                 },
             }
@@ -2413,6 +2476,7 @@ async fn fetch_fresh_archive(
     expected_size: Option<u64>,
     representative: ArchiveHandle,
     phase_records: &FreshArchivePhaseRecords,
+    allow_retry: bool,
 ) -> Result<(Bytes, FreshArchiveSizeSource), FreshArchiveFetchError> {
     let mut budget = ObjectDownloadRetryBudget::default();
     let mut first_attempt = true;
@@ -2424,12 +2488,13 @@ async fn fetch_fresh_archive(
                 expected_size,
                 representative,
                 phase_records,
-                first_attempt,
+                first_attempt && allow_retry,
             ))
             .await
             .map_err(|_| FreshArchiveFetchError::permanent("timeout"))?;
         match result {
             Ok(download) => return Ok(download),
+            Err(error) if !allow_retry => return Err(error),
             Err(error) => {
                 let Some(retry) = budget.next_retry(error.retry_after) else {
                     return Err(error);
@@ -2882,11 +2947,7 @@ async fn process_one_hit_or_passthrough(
                 stage_write: None,
             })
         }
-        CachedArchive::Empty if optional => Err(cache_io_error(
-            "read",
-            &archive_path,
-            io::Error::new(io::ErrorKind::InvalidData, "empty archive"),
-        )),
+        CachedArchive::Empty if optional => Err(empty_cached_archive_error(&archive_path)),
         CachedArchive::Empty => Ok(ProcessedTarget {
             outcome: TargetOutcome::MissPassthrough { reason: "empty" },
             stage_write: None,
@@ -3291,6 +3352,14 @@ fn cache_io_error(operation: &str, path: &Path, error: io::Error) -> RunnerError
     .into()
 }
 
+fn empty_cached_archive_error(path: &Path) -> RunnerError {
+    cache_io_error(
+        "read",
+        path,
+        io::Error::new(io::ErrorKind::InvalidData, "empty archive"),
+    )
+}
+
 fn initial_body_capacity(
     primary_size: Option<u64>,
     fallback_size: Option<u64>,
@@ -3355,10 +3424,7 @@ async fn evict_oversized_cache(
     if let Err(e) = fs::remove_dir_all(cache_dir).await
         && e.kind() != io::ErrorKind::NotFound
     {
-        return Err(RunnerError::Internal(format!(
-            "remove oversized cache {}: {e}",
-            cache_dir.display()
-        )));
+        return Err(cache_io_error("remove oversized cache", cache_dir, e));
     }
     Ok(())
 }
@@ -3392,30 +3458,31 @@ async fn write_to_cache(cache_dir: &Path, bytes: &[u8]) -> RunnerResult<()> {
     let _ = fs::remove_dir_all(&staging).await;
     fs::create_dir_all(&staging)
         .await
-        .map_err(|e| RunnerError::Internal(format!("create staging {}: {e}", staging.display())))?;
+        .map_err(|e| cache_io_error("create staging", &staging, e))?;
 
     let publication: RunnerResult<CachePublication> = async {
         let archive_staging = staging.join("archive.tar.gz");
-        fs::write(&archive_staging, bytes).await.map_err(|e| {
-            RunnerError::Internal(format!("write {}: {e}", archive_staging.display()))
-        })?;
+        fs::write(&archive_staging, bytes)
+            .await
+            .map_err(|e| cache_io_error("write", &archive_staging, e))?;
 
         // fsync before publishing so a crash cannot expose a torn archive.
         // Retire the handle before any failed-attempt cleanup.
         {
-            let archive = fs::File::open(&archive_staging).await.map_err(|e| {
-                RunnerError::Internal(format!("open for fsync {}: {e}", archive_staging.display()))
-            })?;
-            archive.sync_all().await.map_err(|e| {
-                RunnerError::Internal(format!("fsync {}: {e}", archive_staging.display()))
-            })?;
+            let archive = fs::File::open(&archive_staging)
+                .await
+                .map_err(|e| cache_io_error("open for fsync", &archive_staging, e))?;
+            archive
+                .sync_all()
+                .await
+                .map_err(|e| cache_io_error("fsync", &archive_staging, e))?;
         }
 
         // Ensure the `<name>/` parent exists so the rename below has a target.
         if let Some(parent) = cache_dir.parent() {
-            fs::create_dir_all(parent).await.map_err(|e| {
-                RunnerError::Internal(format!("create cache parent {}: {e}", parent.display()))
-            })?;
+            fs::create_dir_all(parent)
+                .await
+                .map_err(|e| cache_io_error("create cache parent", parent, e))?;
         }
 
         if let Err(e) = fs::rename(&staging, cache_dir).await {
@@ -3427,11 +3494,7 @@ async fn write_to_cache(cache_dir: &Path, bytes: &[u8]) -> RunnerResult<()> {
             {
                 return Ok(CachePublication::ExistingArchive);
             }
-            return Err(RunnerError::Internal(format!(
-                "rename {} -> {}: {e}",
-                staging.display(),
-                cache_dir.display()
-            )));
+            return Err(cache_io_error("rename archive", cache_dir, e));
         }
         Ok(CachePublication::Renamed)
     }

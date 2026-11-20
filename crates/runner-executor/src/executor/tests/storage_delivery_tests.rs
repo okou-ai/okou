@@ -507,6 +507,42 @@ async fn oversized_artifact_manifest_uses_preencoded_decoded_batches() {
 }
 
 #[tokio::test]
+async fn oversized_optional_manifest_keeps_all_mounts_in_one_decoded_application() {
+    let fixture = DeliveryFixture::new(2, 2, 35_000).await;
+    let sandbox = MockSandbox::new("decoded-large-optional");
+    let (mut manifest, files) = fixture.prepare(&sandbox).await;
+    assert_eq!(files.len(), 2);
+    manifest.storages[0].optional = true;
+    manifest.storages[0].vas_storage_name =
+        Some(guest_contracts::storage_manifest::WORKFLOW_STORAGE_NAME.into());
+    sandbox.push_exec_result(Ok(ExecResult::new(
+        0,
+        br#"{"skippedOptional":[]}"#.to_vec(),
+        Vec::new(),
+    )));
+
+    apply_with_telemetry(&fixture, &sandbox, manifest, &files)
+        .await
+        .unwrap();
+    let calls = sandbox.storage_manifest_calls();
+    assert_eq!(calls.len(), 1);
+    assert!(sandbox.write_file_calls().is_empty());
+    let (json, payload) = storage_files::split_input(&calls[0].manifest_json).unwrap();
+    assert!(json.len() > storage_files::MAX_MANIFEST_BYTES);
+    let manifest: Manifest = serde_json::from_slice(json).unwrap();
+    assert_eq!(manifest.storages.len(), 2);
+    assert!(manifest.storages[0].optional);
+    let groups = storage_files::decode(payload).unwrap();
+    assert_eq!(groups.len(), 2);
+    storage_files::validate_bindings(
+        &manifest,
+        groups.iter().map(|group| group.mount_path.as_str()),
+    )
+    .unwrap();
+    fixture.shutdown().await;
+}
+
+#[tokio::test]
 async fn oversized_mixed_manifest_preserves_decoded_entry_kinds() {
     let fixture = DeliveryFixture::artifacts(2, 2, 35_000).await;
     let sandbox = MockSandbox::new("decoded-large-mixed");

@@ -24,7 +24,7 @@ fn publication_before_and_after_watcher_start_is_observed_and_owner_retires() {
             .unwrap()
             .unwrap();
         let gate = readiness.gate("file:///tmp/pending.tar.gz").unwrap();
-        assert_eq!(gate.load(Ordering::Acquire), publication == 0);
+        assert_eq!(!gate.pending(), publication == 0);
         if publication == 1 {
             runtime_paths::write_private_new(descriptor.ready_path(&runtime, 0), []).unwrap();
         }
@@ -40,7 +40,7 @@ fn publication_before_and_after_watcher_start_is_observed_and_owner_retires() {
         if publication != 0 {
             rx.recv_timeout(Duration::from_secs(2)).unwrap().unwrap();
         }
-        assert!(gate.load(Ordering::Acquire));
+        assert!(!gate.pending());
         watcher.finish().unwrap();
         // Channel disconnection proves the closure's owned worker has retired.
         while rx.try_recv().is_ok() {}
@@ -109,10 +109,10 @@ fn other_operation_markers_do_not_release_a_source() {
         .unwrap()
         .unwrap();
     assert!(
-        !readiness
+        readiness
             .gate("file:///tmp/pending.tar.gz")
             .unwrap()
-            .load(Ordering::Acquire)
+            .pending()
     );
 }
 

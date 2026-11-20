@@ -2,7 +2,7 @@ use crate::LOG_TAG;
 use crate::archive;
 use crate::cleanup::{OptionalMountState, optional_mount_state};
 use crate::error::DownloadError;
-use crate::readiness::Readiness;
+use crate::readiness::{Readiness, SourceGate};
 use crate::source;
 use crate::telemetry::{
     DownloadRunTelemetry, DownloadTaskTelemetry, LocalArchiveTaskMetrics, RemoteArchiveTaskMetrics,
@@ -15,7 +15,6 @@ use std::collections::VecDeque;
 use std::fs;
 use std::panic::AssertUnwindSafe;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -126,7 +125,7 @@ impl<'input> DownloadTask<'input> {
 pub(crate) struct PreparedDownloadTask<'input> {
     task: DownloadTask<'input>,
     effective_mount_path: PathBuf,
-    source_ready: Option<Arc<AtomicBool>>,
+    source_ready: Option<Arc<SourceGate>>,
 }
 
 impl PreparedDownloadTask<'_> {
@@ -291,6 +290,7 @@ impl<'input> DownloadScheduler<'input> {
         &mut self,
         work_tx: &mpsc::SyncSender<StartedDownload<'input>>,
         telemetry: &mut DownloadRunTelemetry,
+        skipped: &mut HashSet<String>,
     ) -> bool {
         while self.active_attempts < self.concurrency {
             let Some((index, _)) = find_startable_download(
@@ -307,6 +307,15 @@ impl<'input> DownloadScheduler<'input> {
                 log_error!(LOG_TAG, "Download scheduler selected a missing task");
                 return false;
             };
+            if download
+                .task
+                .source_ready
+                .as_ref()
+                .is_some_and(|gate| gate.unavailable())
+            {
+                skipped.insert(download.task.task.mount_path);
+                continue;
+            }
             // Front-load one long ready archive, then retain FIFO so subsequent
             // CPU-heavy work does not crowd that task throughout its execution.
             if download.estimated_work > 0 {
@@ -544,8 +553,11 @@ fn download_with_readiness(
         let mut scheduler = DownloadScheduler::new(pending, concurrency);
 
         while scheduler.has_work() {
-            if !scheduler.start_ready_attempts(&work_tx, &mut telemetry) {
+            if !scheduler.start_ready_attempts(&work_tx, &mut telemetry, skipped) {
                 return false;
+            }
+            if !scheduler.has_work() {
+                break;
             }
 
             if !scheduler.can_make_progress() && watcher.is_none() {
@@ -607,7 +619,7 @@ fn find_startable_download(
             .task
             .source_ready
             .as_ref()
-            .is_some_and(|gate| !gate.load(Ordering::Acquire))
+            .is_some_and(|gate| gate.pending())
         {
             continue;
         }

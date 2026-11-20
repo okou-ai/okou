@@ -59,45 +59,51 @@ fn seed_packed_files(
 }
 
 #[tokio::test]
-async fn optional_mounts_keep_full_guest_ownership_when_the_manifest_is_oversized() {
+async fn optional_mounts_keep_decoded_hits_within_the_complete_manifest_budget() {
     let root = tempfile::tempdir().unwrap();
     let home = home_at(&root);
     let cache = decoded::DecodedCache::new(home.clone());
     let name = runner_types::storage_manifest::WORKFLOW_STORAGE_NAME;
     seed_packed_writer(&home, name, 1, 4);
     let sandbox = MockSandbox::new("large-optional-manifest");
-    let mut entry = storage_entry(
-        "/skills/optional".into(),
-        format!(
-            "https://archive.invalid/{}",
-            "x".repeat(guest_contracts::storage_files::MAX_MANIFEST_BYTES)
+    for (limit, expected_decoded) in [
+        (guest_contracts::storage_files::MAX_MANIFEST_BYTES, 1),
+        (
+            guest_contracts::storage_files::MAX_COMPLETE_MANIFEST_BYTES,
+            0,
         ),
-        name,
-        "v1",
-    );
-    entry.optional = true;
-    let mut plan = plan_from_entries(vec![entry], Vec::new(), None);
-    let mut telemetry = new_telemetry();
-    populate_cache_with_fresh_delivery(
-        &mut plan,
-        &sandbox,
-        &home,
-        &mut telemetry,
-        None,
-        Some(&cache),
-    )
-    .await
-    .unwrap();
-    assert_eq!(plan.decoded_mount_count(), 0);
-    let manifest = plan.into_guest_manifest();
-    assert!(manifest.storages[0].optional);
-    assert!(
-        manifest.storages[0]
-            .archive_url
-            .as_deref()
-            .unwrap()
-            .starts_with("file://")
-    );
+    ] {
+        let mut entry = storage_entry(
+            "/skills/optional".into(),
+            format!("https://archive.invalid/{}", "x".repeat(limit)),
+            name,
+            "v1",
+        );
+        entry.optional = true;
+        let mut plan = plan_from_entries(vec![entry], Vec::new(), None);
+        let mut telemetry = new_telemetry();
+        populate_cache_with_fresh_delivery(
+            &mut plan,
+            &sandbox,
+            &home,
+            &mut telemetry,
+            None,
+            Some(&cache),
+        )
+        .await
+        .unwrap();
+        assert_eq!(plan.decoded_mount_count(), expected_decoded);
+        let manifest = plan.into_guest_manifest();
+        assert!(manifest.storages[0].optional);
+        assert_eq!(
+            manifest.storages[0]
+                .archive_url
+                .as_deref()
+                .unwrap()
+                .starts_with("file://"),
+            expected_decoded == 0,
+        );
+    }
     assert_eq!(sandbox.write_file_calls().len(), 1);
     cache.shutdown().await;
 }
@@ -235,7 +241,7 @@ async fn alias_group_retains_archive_delivery_when_decoded_files_do_not_fit() {
             decoded_ready_observed: true,
         };
         assert_eq!(
-            reuse_decoded(&mut plan, &group, Some(Arc::clone(&ready))).unwrap(),
+            reuse_decoded(&mut plan, &group, Some(Arc::clone(&ready)), false).unwrap(),
             count == fitting_groups
         );
         if count == fitting_groups {

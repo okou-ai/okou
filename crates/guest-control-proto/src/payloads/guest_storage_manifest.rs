@@ -8,13 +8,22 @@ use crate::read::{
     expect_consumed, read_slice, read_str, read_u16, read_u32,
 };
 use crate::wire::{MSG_GUEST_STORAGE_MANIFEST, MSG_GUEST_STORAGE_MANIFEST_RESULT};
-use crate::{DecodedExecResult, ExecCapturedOutput, MAX_EXEC_STDIN_BYTES};
+use crate::{DecodedExecResult, ExecCapturedOutput};
+use guest_contracts::storage_files::{MAX_COMPLETE_MANIFEST_BYTES, MAX_INPUT_BYTES};
 
 /// Maximum encoded run-id length accepted by the fixed storage operation.
 pub const GUEST_STORAGE_MANIFEST_MAX_RUN_ID_BYTES: usize = 256;
 
 /// Maximum encoded guest runtime-directory length accepted by the operation.
 pub const GUEST_STORAGE_MANIFEST_MAX_RUNTIME_DIR_BYTES: usize = 4 * 1024;
+
+const _: () = assert!(
+    MAX_INPUT_BYTES
+        + GUEST_STORAGE_MANIFEST_MAX_RUN_ID_BYTES
+        + GUEST_STORAGE_MANIFEST_MAX_RUNTIME_DIR_BYTES
+        + 16
+        <= crate::wire::MAX_PAYLOAD_SIZE
+);
 
 /// Fixed stdout/stderr capture bound for the storage helper.
 pub const GUEST_STORAGE_MANIFEST_OUTPUT_LIMIT_BYTES: usize = 1024 * 1024;
@@ -53,7 +62,7 @@ pub struct DecodedGuestStorageManifestRequest<'a> {
 /// contains a NUL byte, or exceeds [`GUEST_STORAGE_MANIFEST_MAX_RUN_ID_BYTES`]
 /// bytes; if `runtime_dir` is empty, is not absolute, contains a NUL byte, or
 /// exceeds [`GUEST_STORAGE_MANIFEST_MAX_RUNTIME_DIR_BYTES`] bytes; if
-/// JSON exceeds [`MAX_EXEC_STDIN_BYTES`] bytes or a binary storage-files input
+/// JSON exceeds [`MAX_COMPLETE_MANIFEST_BYTES`] bytes or a binary storage-files input
 /// violates its separate bounded framing; if an encoded field
 /// does not fit its wire length field; or if the encoded payload exceeds the
 /// maximum protocol message size. String limits are measured in UTF-8 bytes,
@@ -86,7 +95,7 @@ pub fn encode_guest_storage_manifest_request(
 /// contains a NUL byte, or exceeds [`GUEST_STORAGE_MANIFEST_MAX_RUN_ID_BYTES`]
 /// bytes; if `runtime_dir` is empty, is not absolute, contains a NUL byte, or
 /// exceeds [`GUEST_STORAGE_MANIFEST_MAX_RUNTIME_DIR_BYTES`] bytes; if
-/// JSON exceeds [`MAX_EXEC_STDIN_BYTES`] bytes or a binary storage-files input
+/// JSON exceeds [`MAX_COMPLETE_MANIFEST_BYTES`] bytes or a binary storage-files input
 /// violates its separate bounded framing; if an encoded field
 /// does not fit its wire length field; or if the encoded payload exceeds the
 /// maximum protocol message size. String limits are measured in UTF-8 bytes,
@@ -342,7 +351,7 @@ fn validate_request(
     if manifest_json.starts_with(guest_contracts::storage_files::INPUT_MAGIC) {
         guest_contracts::storage_files::split_input(manifest_json)
             .map_err(|_| ProtocolError::InvalidPayload("invalid storage files input framing"))?;
-    } else if manifest_json.len() > MAX_EXEC_STDIN_BYTES {
+    } else if manifest_json.len() > MAX_COMPLETE_MANIFEST_BYTES {
         return Err(ProtocolError::PayloadTooLarge(
             "manifest_json",
             manifest_json.len(),

@@ -455,14 +455,17 @@ fn storage_inputs(
         .collect::<Vec<_>>();
     storage_files::validate_bindings(&manifest, groups.iter().map(|(mount, _)| *mount))
         .map_err(|e| RunnerError::Internal(format!("storage files bindings: {e}")))?;
+    if manifest.requires_complete_mount_list() {
+        let input = storage_files::PreparedInput::new_complete(manifest_json(&manifest)?, groups)
+            .map(PreparedStorageInput::Files)
+            .map_err(|error| {
+                RunnerError::Internal(format!("complete storage files input: {error}"))
+            })?;
+        return Ok(vec![PreparedStorageBatch::new(&manifest, input)]);
+    }
     if manifest_json_size(&manifest)? <= storage_files::MAX_MANIFEST_BYTES {
         let input = files_input(manifest_json(&manifest)?, groups)?;
         return Ok(vec![PreparedStorageBatch::new(&manifest, input)]);
-    }
-    if manifest.requires_complete_mount_list() {
-        return Err(RunnerError::Internal(
-            "package mount cleanup requires the complete Guest storage manifest".into(),
-        ));
     }
     // A split request alone cannot see conflicts with entries in another batch.
     // Validate the aggregate selected-file and mount budget without copying the

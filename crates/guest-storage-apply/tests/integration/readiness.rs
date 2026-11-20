@@ -60,6 +60,42 @@ fn spawn(manifest: &Manifest, runtime: &Path) -> std::io::Result<CommandExecutio
     CommandExecution::spawn(&mut command, Some(&bytes))
 }
 
+#[test]
+fn unavailable_optional_source_cleans_the_mount_without_reading_an_old_archive() {
+    use guest_contracts::storage_manifest::{
+        StorageApplyReceipt, StorageEntry, WORKFLOW_STORAGE_NAME,
+    };
+
+    let dir = tempfile::tempdir().unwrap();
+    let runtime = dir.path().join("runtime");
+    let (mut manifest, descriptor) = manifest(dir.path()).unwrap();
+    let old = manifest.artifacts.pop().unwrap();
+    fs::create_dir(&old.mount_path).unwrap();
+    fs::write(Path::new(&old.mount_path).join("SKILL.md"), b"stale").unwrap();
+    manifest.storages.push(StorageEntry {
+        optional: true,
+        template_guidance: None,
+        mount_path: old.mount_path,
+        archive_url: old.archive_url,
+        cached: false,
+        vas_storage_name: Some(WORKFLOW_STORAGE_NAME.into()),
+        vas_version_id: Some("v1".into()),
+    });
+    let operation = spawn(&manifest, &runtime).unwrap();
+    wait_for(&dir.path().join("ready/.applied"));
+    runtime_paths::write_private_new(descriptor.unavailable_path(&runtime, 0), []).unwrap();
+    let result = operation.wait().unwrap();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let receipt: StorageApplyReceipt = serde_json::from_slice(&result.stdout).unwrap();
+    assert_eq!(receipt.skipped_optional, [1]);
+    assert!(!dir.path().join("pending").exists());
+    assert_eq!(fs::read(dir.path().join("ready/value")).unwrap(), b"ready");
+}
+
 fn unprivileged_command(dir: &Path, runtime: &Path) -> std::io::Result<Command> {
     use std::os::unix::fs::{MetadataExt, PermissionsExt};
     use std::os::unix::process::CommandExt;

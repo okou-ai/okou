@@ -1,6 +1,60 @@
 use super::*;
 
 #[tokio::test]
+async fn optional_runner_prefetch_reports_a_failed_object_without_retrying() {
+    let temp = tempfile::tempdir().unwrap();
+    let home = home_at(&temp);
+    let server = MockServer::start_async().await;
+    let failure = server
+        .mock_async(|when, then| {
+            when.method(GET).path("/optional");
+            then.status(503);
+        })
+        .await;
+    let mut entry = storage_entry_with_archive_size(
+        "/skills/optional".into(),
+        server.url("/optional"),
+        guest_contracts::storage_manifest::WORKFLOW_STORAGE_NAME,
+        "v1",
+        Some(300),
+    );
+    entry.optional = true;
+    let mut plan = plan_from_entries(vec![entry], Vec::new(), None);
+    let admission = FreshArchiveDeliveryAdmission::new();
+    let mut telemetry = new_telemetry();
+    let mut delivery = prepare_fresh_archive_delivery(
+        &mut plan,
+        &home,
+        &admission,
+        &CancellationToken::new(),
+        &mut telemetry,
+        None,
+    )
+    .await
+    .unwrap();
+    assert!(delivery.has_owned_sources(&mut telemetry).await.unwrap());
+    let sandbox = MockSandbox::new("failed-optional-prefetch");
+    let fills = populate_cache_with_fresh_delivery(
+        &mut plan,
+        &sandbox,
+        &home,
+        &mut telemetry,
+        Some(&mut delivery),
+        None,
+    )
+    .await
+    .unwrap();
+    assert!(fills.is_none());
+    failure.assert_calls_async(1).await;
+    let manifest = plan.into_guest_manifest();
+    assert!(manifest.storages[0].optional);
+    assert!(!manifest.storages[0].cached);
+    assert!(manifest.storages[0].archive_url.is_none());
+    assert!(sandbox.write_files_calls().is_empty());
+    admission.shutdown().await;
+}
+
+#[tokio::test]
 async fn optional_decoded_lookup_error_skips_its_group_unless_shared_with_required_mount() {
     let temp = tempfile::tempdir().unwrap();
     let home = home_at(&temp);
