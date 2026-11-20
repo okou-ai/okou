@@ -55,7 +55,6 @@ import {
 } from "./worker-context.ts";
 import {
   getComputedStoreMessage$,
-  handleSharedDatabaseRealtimeMessage$,
   initializeSharedDatabaseWorker$,
   querySharedDatabaseWorker$,
   refreshWorkerComputed$,
@@ -208,11 +207,8 @@ class DirectSharedDatabaseBridge implements SharedDatabaseBridge {
     scope: SharedDatabaseRealtimeScope,
     message: DirectRealtimeMessage,
   ): void {
-    this.workerStore.set(
-      handleSharedDatabaseRealtimeMessage$,
-      message,
-      this.workerSignal,
-    );
+    // Mock publishes also reach the Worker's credential channel, which owns
+    // database invalidations. Forward only the direct bridge's subscriptions.
     for (const subscription of this.realtimeSubscriptions.values()) {
       if (subscription.scope === scope && subscription.topic === message.name) {
         subscription.listener(message);

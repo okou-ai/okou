@@ -1,5 +1,11 @@
 import { chatThreadEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
-import { act, fireEvent, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 
 import {
@@ -1318,7 +1324,7 @@ test("Preserve the visible message as content grows", async () => {
   });
 });
 
-async function completeRunWhileReadingExpandedWork() {
+test("Keep expanded work history and its duration visible after the run completes", async () => {
   // A live run demands activity summaries, whose contract requires a UUID run ID.
   const activeRunId = "a0000000-0000-4000-a000-000000000937";
   const conversation = mockMutableConversation(
@@ -1352,24 +1358,20 @@ async function completeRunWhileReadingExpandedWork() {
     ],
     [activeRunId],
   );
-  await setupPage({
-    context,
-    path: `/chats/${THREAD_IDS.expandedWork}`,
-    host: "app.okou.ai",
-  });
-  await screen.findByText("Reading the rollout health report");
-  await waitFor(() => {
-    expect(
-      document.querySelector("[data-chat-skeleton]"),
-    ).not.toBeInTheDocument();
-  });
+  const container = await openConversation(
+    THREAD_IDS.expandedWork,
+    "Reading the rollout health report",
+  );
+  const transcript = within(container);
 
   click(buttonByLabel("Expand work history"));
-  await screen.findByText("Checked the first rollout stage");
-  const container = chatScrollContainer();
+  await transcript.findByText("Checked the first rollout stage");
   const geometry = installChatScrollGeometry(container);
   scrollFromUser(container, geometry.bottomScrollTop() - 150);
   await expectHistoryPositionHeld();
+  const readingAnchor = geometry.firstVisibleAnchor();
+  const readingAnchorId = anchorId(readingAnchor);
+  const readingTop = readingAnchor.getBoundingClientRect().top;
 
   act(() => {
     conversation.publish([
@@ -1393,17 +1395,15 @@ async function completeRunWhileReadingExpandedWork() {
     ]);
   });
 
-  await screen.findByText("The rollout is healthy");
-  await screen.findByText("Worked for 1 min");
-}
-
-test("Keep expanded work history and its duration visible after the run completes", async () => {
-  await completeRunWhileReadingExpandedWork();
-  await waitFor(() => {
-    expect(screen.getByText("Checked the first rollout stage")).toBeVisible();
-    expect(buttonByLabel("Collapse work history")).toBeVisible();
-    expect(screen.getByText("Worked for 1 min")).toBeVisible();
-  });
+  await expect(
+    transcript.findByText("The rollout is healthy"),
+  ).resolves.toBeInTheDocument();
+  expect(transcript.getByText("Checked the first rollout stage")).toBeVisible();
+  expect(buttonByLabel("Collapse work history")).toBeVisible();
+  expect(transcript.getByText("Worked for 1 min")).toBeVisible();
+  expect(
+    anchorById(container, readingAnchorId).getBoundingClientRect().top,
+  ).toBe(readingTop);
 });
 
 test("Follow new messages while reading the latest reply", async () => {
