@@ -38,9 +38,7 @@ function isWorkerResponse(value: unknown): value is PdfWorkerResponse {
   }
   return (
     value.ok === false &&
-    (value.failure === undefined ||
-      value.failure === "message_decode" ||
-      value.failure === "render_rejection")
+    (value.failure === "message_decode" || value.failure === "render_rejection")
   );
 }
 
@@ -86,11 +84,7 @@ export async function runDocumentExportWorker(
         stopWorker();
       }
     } else {
-      fail(
-        event.data.failure === "message_decode"
-          ? "message_decode"
-          : "render_rejection",
-      );
+      fail(event.data.failure);
     }
   };
   signal.addEventListener("abort", stopWorker, { once: true });

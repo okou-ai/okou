@@ -14,6 +14,7 @@ interface DocumentExportScope {
     type: "message",
     listener: (event: MessageEvent<unknown>) => Promise<void>,
   ): void;
+  addEventListener(type: "messageerror", listener: () => void): void;
   postMessage(
     message: PdfWorkerResponse | DocumentExportWorkerReadyMessage,
   ): void;
@@ -75,6 +76,10 @@ scope.addEventListener("message", async (event) => {
     // Send only a fixed failure stage; the owning UI localizes the error.
     scope.postMessage({ ok: false, failure: "render_rejection" });
   }
+});
+
+scope.addEventListener("messageerror", () => {
+  scope.postMessage({ ok: false, failure: "message_decode" });
 });
 
 // The owner uses this signal only to distinguish bootstrap from runtime errors.

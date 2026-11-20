@@ -35,7 +35,7 @@ export type PdfWorkerResponse =
   | { readonly ok: true; readonly blob: Blob }
   | {
       readonly ok: false;
-      readonly failure?: "message_decode" | "render_rejection";
+      readonly failure: "message_decode" | "render_rejection";
     };
 
 export interface PdfFormula {

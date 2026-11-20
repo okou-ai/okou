@@ -151,7 +151,7 @@ test("classifies message decoding and controlled rendering failures safely", asy
   const malformedWorker = workers.latest();
   malformedWorker.ready();
   malformedWorker.dispatchEvent(
-    new MessageEvent("message", { data: { unexpected: "private text" } }),
+    new MessageEvent("message", { data: { ok: false } }),
   );
   await expect(malformed).rejects.toMatchObject({ phase: "message_decode" });
   expect(malformedWorker.terminateCount).toBe(1);
