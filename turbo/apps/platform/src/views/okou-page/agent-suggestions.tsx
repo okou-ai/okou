@@ -256,8 +256,9 @@ function SuggestionDirection({
  * The card's own composer opens in place of the direction trigger, as an
  * accordion: the row keeps its fill and becomes a header that names the chat
  * the direction goes to, with the close control in the column the trigger's
- * icon used. The composer grows in beneath it once it is ready, keeping its
- * standard radius; the fill around it adds its 4px inset to that radius.
+ * icon used. The composer grows in beneath it once it is ready and fills the
+ * row's width, so the heading, the quote and the caret share the option text's
+ * left edge and the composer keeps its standard radius.
  */
 function SuggestionDirectionComposer({
   direction,
@@ -281,9 +282,9 @@ function SuggestionDirectionComposer({
   return (
     <section
       aria-labelledby={headingId}
-      className="min-w-0 rounded-[1.75rem] bg-nested-fill p-1"
+      className="min-w-0 rounded-3xl bg-nested-fill"
     >
-      <div className="flex min-h-12 min-w-0 items-center gap-2 pr-1 pl-3">
+      <div className="flex min-h-12 min-w-0 items-center gap-2 pr-2 pl-4">
         <h3
           id={headingId}
           className="min-w-0 flex-1 truncate text-base leading-6 font-normal text-foreground"
