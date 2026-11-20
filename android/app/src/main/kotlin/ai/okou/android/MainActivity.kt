@@ -41,6 +41,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.core.view.ViewCompat
@@ -216,7 +217,10 @@ class MainActivity : AppCompatActivity() {
                             title = {
                                 Text(
                                     stringResource(R.string.updates_allow_install),
-                                    style = MaterialTheme.typography.headlineSmall,
+                                    style =
+                                        MaterialTheme.typography.headlineSmall.copy(
+                                            fontWeight = FontWeight.SemiBold
+                                        ),
                                 )
                             },
                             text = {

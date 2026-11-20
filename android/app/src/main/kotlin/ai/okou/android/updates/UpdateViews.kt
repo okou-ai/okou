@@ -57,7 +57,6 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -248,7 +247,10 @@ private fun UpdateSheet(
                 Text(
                     if (release == null) stringResource(R.string.updates_title)
                     else stringResource(R.string.updates_target, release.version),
-                    style = MaterialTheme.typography.headlineSmall,
+                    style =
+                        MaterialTheme.typography.headlineSmall.copy(
+                            fontWeight = FontWeight.SemiBold
+                        ),
                     modifier = Modifier.semantics { heading() },
                 )
                 if (release != null) {
@@ -385,7 +387,6 @@ private fun RequiredUpdateScreen(
                         install,
                         installEnabled,
                         Modifier.fillMaxWidth(),
-                        labelStyle = MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp),
                     )
                 }
             }
@@ -468,7 +469,6 @@ private fun UpdateAction(
     install: (AndroidUpdatesRelease) -> Unit,
     installEnabled: Boolean,
     modifier: Modifier,
-    labelStyle: TextStyle = MaterialTheme.typography.labelLarge,
 ) {
     val transfer = state.transfer
     val colors = MaterialTheme.colorScheme
@@ -494,7 +494,10 @@ private fun UpdateAction(
                 else stringResource(R.string.updates_check_in_progress),
                 color = colors.onSecondaryContainer,
                 style =
-                    labelStyle.copy(fontFeatureSettings = "tnum", fontWeight = FontWeight.Normal),
+                    MaterialTheme.typography.bodyMedium.copy(
+                        fontSize = if (state.required) 13.sp else 14.sp,
+                        fontFeatureSettings = "tnum",
+                    ),
             )
         }
         return
@@ -524,7 +527,7 @@ private fun UpdateAction(
                 contentColor = colors.inverseOnSurface,
             ),
     ) {
-        Text(stringResource(label), style = labelStyle)
+        Text(stringResource(label), style = updateActionLabelStyle())
     }
 }
 
@@ -535,6 +538,10 @@ private fun ActionText(label: String, action: () -> Unit, modifier: Modifier = M
         modifier = modifier.heightIn(min = 48.dp),
         colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
     ) {
-        Text(label)
+        Text(label, style = updateActionLabelStyle())
     }
 }
+
+@Composable
+private fun updateActionLabelStyle() =
+    MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp, fontWeight = FontWeight(550))
