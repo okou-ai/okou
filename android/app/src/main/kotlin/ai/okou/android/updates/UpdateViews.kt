@@ -5,6 +5,7 @@ import ai.okou.android.R
 import ai.okou.android.SettingsIcon
 import ai.okou.android.SettingsRow
 import ai.okou.android.api.generated.AndroidUpdatesRelease
+import ai.okou.android.currentWindowSizeDp
 import ai.okou.android.state.rememberUpdateDetailsOpen
 import ai.okou.android.state.rememberUpdateWorkspaceState
 import android.text.format.Formatter
@@ -421,9 +422,8 @@ private fun UpdateSheet(
     onInstallFocusRestored: () -> Unit,
     close: () -> Unit,
 ) {
-    val window = LocalConfiguration.current
-    val windowHeight =
-        with(LocalDensity.current) { LocalWindowInfo.current.containerSize.height.toDp() }
+    val window = currentWindowSizeDp()
+    val windowHeight = window.height.dp
     val panel: @Composable () -> Unit = {
         val focused = LocalWindowInfo.current.isWindowFocused
         val installFocus = remember { FocusRequester() }
@@ -508,7 +508,7 @@ private fun UpdateSheet(
         }
     }
     val shape = RoundedCornerShape(24.dp)
-    if (window.screenWidthDp >= 600 && window.screenHeightDp >= 480) {
+    if (window.width >= 600 && window.height >= 480) {
         Dialog(
             onDismissRequest = close,
             properties = DialogProperties(usePlatformDefaultWidth = false),

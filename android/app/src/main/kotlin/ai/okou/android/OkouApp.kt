@@ -77,7 +77,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.platform.LocalAccessibilityManager
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -117,8 +116,8 @@ internal fun OkouApp(
     val settings = navigation.settings.takeIf { composer != null }
     val target = if (composer != null) navigation.target else WorkspaceTarget.List
     // Window configuration changes on resize. IME insets only change the space inside the panes.
-    val window = LocalConfiguration.current
-    val listWidth = workspaceListPaneWidth(window.screenWidthDp, window.screenHeightDp)
+    val window = currentWindowSizeDp()
+    val listWidth = workspaceListPaneWidth(window.width, window.height)
     val searchState = rememberChatSearchState()
     var focusSearch by remember { mutableStateOf(false) }
     val searchActive = chats != null && composer != null && navigation.search == SearchRoute.Open
@@ -375,7 +374,7 @@ internal fun OkouApp(
                     update = updateToolbarAction.takeIf { showList },
                     stackUpdateLabel =
                         with(LocalDensity.current) {
-                            (listWidth ?: window.screenWidthDp).dp <= 16.sp.toDp() * 19
+                            (listWidth ?: window.width).dp <= 16.sp.toDp() * 19
                         },
                     settingsFocus = settingsFocus,
                     openSettings = { restore ->
@@ -396,7 +395,7 @@ internal fun OkouApp(
     val listToolbar =
         @Composable {
             WorkspaceListToolbar(
-                widthDp = window.screenWidthDp,
+                widthDp = window.width,
                 listWidth = listWidth,
                 title = {
                     if (workspaceTitle != null) {
@@ -405,7 +404,7 @@ internal fun OkouApp(
                         Column(Modifier.padding(start = 8.dp)) {
                             Text(
                                 stringResource(R.string.app_name),
-                                style = workspaceListTitleStyle(window.screenWidthDp, listWidth),
+                                style = workspaceListTitleStyle(window.width, listWidth),
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
