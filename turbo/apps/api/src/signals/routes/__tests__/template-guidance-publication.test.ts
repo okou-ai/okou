@@ -19,6 +19,10 @@ import { presentationTemplatesRoutes } from "../presentation-templates";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRouteMocks } from "./helpers/route-test";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
+import {
+  createConnectorBddApi,
+  manualHttpCustomConnectorCreateBody,
+} from "./helpers/api-bdd-connectors";
 import { publicChatActor } from "./helpers/public-chat-actor";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import {
@@ -605,6 +609,100 @@ describe.each(ownerKinds)("%s bundle publication", (kind) => {
             [200],
           );
     expect(ready.body).toHaveLength(1);
+  });
+});
+
+test("delivers a Skill and template with the same immutable bundle at their own mounts", async () => {
+  const owner = await publicChatActor(context);
+  const fixture = await owner.run(() => {
+    return Promise.resolve(installS3Fixture(context));
+  });
+  const published = await owner.run(async () => {
+    const connectors = createConnectorBddApi(context);
+    const connector = await connectors.createCustomConnector(
+      owner.actor,
+      manualHttpCustomConnectorCreateBody({
+        slug: "_bundle-reuse",
+        displayName: "Bundle reuse fixture",
+        prefixTemplates: ["https://bundle-reuse.example.test/"],
+        skillMarkdown: `# Shared guidance ${randomUUID()}`,
+      }),
+    );
+    await connectors.setCustomConnectorValues(owner.actor, connector.id, [
+      { key: "secret", kind: "secret", value: "fixture-credential" },
+    ]);
+    const skillUpload = context.mocks.s3.send.mock.calls.find(([command]) => {
+      return (
+        command instanceof PutObjectCommand &&
+        command.input.Key?.startsWith("bundles/v1/")
+      );
+    })?.[0];
+    if (
+      !(skillUpload instanceof PutObjectCommand) ||
+      !(skillUpload.input.Body instanceof Uint8Array)
+    ) {
+      throw new Error("Expected the published Connector Skill archive");
+    }
+    const sourceFileId = await uploadTemplateFile(
+      context,
+      owner.actor,
+      fixture,
+      {
+        filename: "source.docx",
+        contentType:
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      },
+      Buffer.from("PK source"),
+    );
+    const packageFileId = await uploadTemplateFile(
+      context,
+      owner.actor,
+      fixture,
+      { filename: "package.tar.gz", contentType: "application/gzip" },
+      Buffer.from(skillUpload.input.Body),
+    );
+    return await accept(
+      userClient().publish({
+        headers: authHeaders(),
+        body: {
+          kind: "document",
+          title: "Shared guidance",
+          sourceFileId,
+          packageFileId,
+        },
+      }),
+      [200],
+    );
+  });
+  if (published.status !== 200) {
+    throw new Error("Expected a published template");
+  }
+  const run = await owner.sendChatRun(owner.actor, {
+    agentId: owner.agentId,
+    prompt: "Use the selected template and Connector Skill",
+    userMessage: {
+      version: 1,
+      parts: [
+        { type: "text", text: "Use the selected template and Connector Skill" },
+        {
+          type: "template",
+          titleSnapshot: "Shared guidance",
+          template: selection("user-template", published.body.id),
+        },
+      ],
+    },
+  });
+  const { execution } = await owner.runExecution(run.runId);
+  const template = execution.contentBundles.templates?.[0];
+  expect(template).toMatchObject({
+    ownerKind: "user-template",
+    templateId: published.body.id,
+  });
+  expect(execution.contentBundles.skills).toContainEqual({
+    sha256: template?.sha256,
+    archiveBytes: template?.archiveBytes,
+    downloadUrl: template?.downloadUrl,
+    mountPath: expect.stringMatching(/\/skills\/custom-bundle-reuse-/u),
   });
 });
 

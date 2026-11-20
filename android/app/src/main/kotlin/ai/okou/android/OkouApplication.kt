@@ -15,6 +15,7 @@ import ai.okou.android.preferences.MemberAppearanceCache
 import ai.okou.android.updates.AndroidUpdateClient
 import ai.okou.android.updates.AppUpdates
 import ai.okou.android.updates.FileUpdateStore
+import ai.okou.android.updates.observeUpdateConnectivity
 import android.app.Application
 import android.os.Build
 import androidx.core.app.LocaleManagerCompat
@@ -34,6 +35,7 @@ open class OkouApplication : Application() {
             FileUpdateStore(directory),
             BuildConfig.VERSION_NAME,
             Build.VERSION.SDK_INT,
+            connectivity = observeUpdateConnectivity(),
         )
     }
     val chatCache by lazy { ChatCacheStore(this) }

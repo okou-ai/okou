@@ -9,10 +9,13 @@ fun UserPreferencesLocale.languageTag(): String =
     Locale.forLanguageTag(name.replace('_', '-')).toLanguageTag()
 
 /** Invoked on Main only after the root verifies the presented workspace generation. */
-internal fun applyApplicationLocale(locale: UserPreferencesLocale?) {
-    val requested =
-        locale?.let { LocaleListCompat.forLanguageTags(it.languageTag()) }
-            ?: LocaleListCompat.getEmptyLocaleList()
+internal fun applyApplicationLocale(locale: UserPreferencesLocale) =
+    updateApplicationLocales(LocaleListCompat.forLanguageTags(locale.languageTag()))
+
+internal fun resetApplicationLocale() =
+    updateApplicationLocales(LocaleListCompat.getEmptyLocaleList())
+
+private fun updateApplicationLocales(requested: LocaleListCompat) {
     if (AppCompatDelegate.getApplicationLocales() != requested) {
         AppCompatDelegate.setApplicationLocales(requested)
     }

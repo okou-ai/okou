@@ -18,8 +18,10 @@ import {
   isRetiredProactiveWorkflow,
   proactiveWorkflowKind,
 } from "./proactive-workflow-definitions";
-import type { createThreadAutomationContext } from "./thread-automation-context.service";
-import type { ThreadAutomationTarget } from "./thread-context.signals";
+import type {
+  createThreadAutomationSnapshot,
+  ThreadAutomationTarget,
+} from "./thread-automation-context.service";
 import type { PickedThreadInputEvent } from "./thread-run-prompt/types";
 
 function assertOfficialManualEvent(
@@ -89,8 +91,7 @@ function officialObservationFromTarget(
 export function createThreadWorkflowContext(
   bootstrap: AgentRunContextSignals,
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
-  automationContext$: ReturnType<typeof createThreadAutomationContext>,
-  automationTarget$: Computed<Promise<ThreadAutomationTarget | null>>,
+  automationSnapshot$: ReturnType<typeof createThreadAutomationSnapshot>,
 ) {
   const officialWorkflowObservation$ = computed(
     async (get): Promise<OfficialWorkflowObservation | undefined> => {
@@ -98,13 +99,11 @@ export function createThreadWorkflowContext(
       if (event?.contextType !== "automation") {
         return undefined;
       }
-      const [context, target] = await Promise.all([
-        get(automationContext$),
-        get(automationTarget$),
-      ]);
-      if (!context || !target) {
+      const snapshot = await get(automationSnapshot$);
+      if (!snapshot?.target) {
         return undefined;
       }
+      const { event: context, target } = snapshot;
       const { automation, workflow } = target;
       if (workflow.officialDefinitionName === null) {
         if (automation.officialBlueprintKey !== null) {

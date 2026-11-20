@@ -16,7 +16,6 @@ import {
 import { workflows } from "@okouai/db/schema/workflow";
 import { and, eq, isNull, notInArray, or, sql } from "drizzle-orm";
 import { array, object, string, unknown, uuid, type infer as Infer } from "zod";
-import { zodDriverValueDecoder } from "../../lib/db-structured-result";
 import { logger } from "../../lib/log";
 import {
   memberInstructionsSelectionSql,
@@ -28,7 +27,7 @@ import {
   type SkillVolume,
 } from "./run-prompt-and-skills";
 import { normalizeMountOverlay } from "./storage-mount-overlay";
-import type { ThreadAutomationTarget } from "./thread-context.signals";
+import type { ThreadAutomationTarget } from "./thread-automation-context.service";
 
 const log = logger("api:execution-workflows");
 
@@ -41,10 +40,6 @@ export const executionPackageSourcesSchema = object({
 export type ExecutionPackageSources = Infer<
   typeof executionPackageSourcesSchema
 >;
-
-export const executionPackageSourcesDecoder = zodDriverValueDecoder(
-  executionPackageSourcesSchema,
-);
 
 export interface CapturedExecutionPackages {
   readonly workflows: readonly {
