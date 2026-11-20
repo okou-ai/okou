@@ -7,8 +7,18 @@ import {
   useSet,
 } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
-import { ChevronLeft, ChevronRight } from "lucide-react";
-import { Button, Card, buttonVariants, cn } from "@okouai/ui";
+import { ChevronLeft, ChevronRight, ImageIcon } from "lucide-react";
+import {
+  Button,
+  Card,
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+  Radio,
+  RadioGroup,
+  buttonVariants,
+  cn,
+} from "@okouai/ui";
 import { Skeleton } from "@okouai/ui/components/ui/skeleton";
 import { useTranslation } from "react-i18next";
 import {
@@ -38,15 +48,32 @@ import { SuggestionsComplete } from "./suggestions-complete.tsx";
 import { proactiveSettingsInMyOkou$ } from "../../signals/single-agent.ts";
 import { ForYouSources } from "./for-you-sources.tsx";
 import { PlatformFeedEvent } from "./platform-feed-event.tsx";
-import { forYouBackground$ } from "../../signals/okou-page/for-you-artwork.ts";
+import {
+  forYouCover$,
+  selectForYouCover$,
+} from "../../signals/okou-page/for-you-artwork.ts";
+import {
+  DEFAULT_FOR_YOU_COVER_ID,
+  forYouCovers,
+  forYouCoverTornEdge,
+} from "../../lib/for-you-artwork.ts";
 
 const STACK_LAYERS = [
-  "z-3 translate-y-2 scale-x-[0.98]",
-  "z-2 translate-y-4 scale-x-[0.96]",
+  "z-3 translate-y-2 scale-x-[0.98] shadow-[0_1px_2px_rgb(37_33_33/0.05),0_4px_8px_rgb(37_33_33/0.035)]",
+  "z-2 translate-y-4 scale-x-[0.96] shadow-[0_1px_2px_rgb(37_33_33/0.05),0_4px_8px_rgb(37_33_33/0.035)]",
 ] as const;
 
 const STACK_CARD =
-  "@container/suggestion col-start-1 row-start-1 flex origin-[50%_85%] touch-pan-y flex-col rounded-3xl p-5 shadow-none sm:p-7";
+  "@container/suggestion col-start-1 row-start-1 flex origin-[50%_85%] touch-pan-y flex-col rounded-3xl p-6 shadow-[0_1px_2px_rgb(37_33_33/0.05),0_10px_26px_rgb(37_33_33/0.06)] sm:p-9";
+
+// The torn-paper edge is an alpha strip repeated along the banner's bottom;
+// the solid layer above it overlaps the strip's opaque top rows.
+const COVER_MASK = {
+  maskImage: `linear-gradient(#000, #000), url("${forYouCoverTornEdge}")`,
+  maskSize: "100% calc(100% - 56px), 1200px 60px",
+  maskPosition: "top left, bottom left",
+  maskRepeat: "no-repeat, repeat-x",
+} satisfies CSSProperties;
 
 function SuggestionSendStatus({
   entry,
@@ -81,7 +108,7 @@ function ForYouStack() {
     ...settled,
   ];
   return (
-    <div className="relative mx-auto my-auto w-full max-w-176 py-6">
+    <div className="relative mx-auto -mt-40 w-full max-w-176 pb-6 sm:-mt-56">
       <div
         className="relative isolate mb-6 grid min-h-(--for-you-card-min-height)"
         style={
@@ -255,6 +282,116 @@ function ForYouNavigation() {
   );
 }
 
+function ForYouCover() {
+  const { t } = useTranslation();
+  const cover = useGet(forYouCover$);
+  const select = useSet(selectForYouCover$);
+  return (
+    <div className="group/cover relative -mx-4 h-56 shrink-0 sm:-mx-8 sm:h-80">
+      <img
+        data-slot="for-you-cover"
+        src={cover.src}
+        alt=""
+        draggable={false}
+        style={COVER_MASK}
+        className="pointer-events-none size-full select-none object-cover"
+      />
+      <Popover>
+        {/* The control sits in the banner's lower corner only when the page is
+            wide enough for it to clear the card; otherwise it moves to the top. */}
+        <PopoverTrigger
+          render={
+            <Button
+              variant="neutral"
+              size="sm"
+              className="absolute top-3 right-4 gap-1.5 bg-card/85 opacity-0 shadow-surface backdrop-blur-md transition-opacity group-hover/cover:opacity-100 focus-visible:opacity-100 data-popup-open:opacity-100 sm:right-6 @min-[64rem]/for-you:top-auto @min-[64rem]/for-you:bottom-14"
+            />
+          }
+        >
+          <ImageIcon aria-hidden />
+          {t(($) => {
+            return $.chat.agentSuggestions.forYou.cover.change;
+          })}
+        </PopoverTrigger>
+        <PopoverContent
+          align="end"
+          aria-label={t(($) => {
+            return $.chat.agentSuggestions.forYou.cover.change;
+          })}
+          className="w-[28rem] max-w-[calc(100vw-32px)] p-3"
+        >
+          <div className="flex items-center justify-between px-1 pb-2.5">
+            <p className="text-sm font-medium text-foreground">
+              {t(($) => {
+                return $.chat.agentSuggestions.forYou.cover.gallery;
+              })}
+            </p>
+            <Button
+              variant="quiet"
+              size="sm"
+              disabled={cover.id === DEFAULT_FOR_YOU_COVER_ID}
+              onClick={() => {
+                select(DEFAULT_FOR_YOU_COVER_ID);
+              }}
+            >
+              {t(($) => {
+                return $.chat.agentSuggestions.forYou.cover.reset;
+              })}
+            </Button>
+          </div>
+          <RadioGroup
+            value={cover.id}
+            onValueChange={(value) => {
+              select(String(value));
+            }}
+            aria-label={t(($) => {
+              return $.chat.agentSuggestions.forYou.cover.gallery;
+            })}
+            className="grid max-h-80 grid-cols-3 gap-2 overflow-y-auto p-0.5"
+          >
+            {forYouCovers.map((option, index) => {
+              return (
+                <label
+                  key={option.id}
+                  className={cn(
+                    "relative aspect-[5/2] cursor-default overflow-hidden rounded-lg outline-2 outline-offset-2 outline-transparent transition-[outline-color] has-focus-visible:outline-ring",
+                    option.id === cover.id && "outline-primary",
+                  )}
+                >
+                  <img
+                    src={option.thumbnail}
+                    alt=""
+                    draggable={false}
+                    loading="lazy"
+                    className="size-full object-cover"
+                  />
+                  {option.id === DEFAULT_FOR_YOU_COVER_ID && (
+                    <span className="absolute top-1.5 left-1.5 rounded-md bg-card/90 px-1.5 py-0.5 text-[10px] font-medium text-foreground">
+                      {t(($) => {
+                        return $.chat.agentSuggestions.forYou.cover.default;
+                      })}
+                    </span>
+                  )}
+                  <Radio
+                    value={option.id}
+                    aria-label={t(
+                      ($) => {
+                        return $.chat.agentSuggestions.forYou.cover.option;
+                      },
+                      { index: index + 1 },
+                    )}
+                    className="absolute top-1.5 right-1.5 focus-visible:ring-0"
+                  />
+                </label>
+              );
+            })}
+          </RadioGroup>
+        </PopoverContent>
+      </Popover>
+    </div>
+  );
+}
+
 function ForYouHeader() {
   const proactiveInMyOkou = useLastResolved(proactiveSettingsInMyOkou$);
   const { t } = useTranslation();
@@ -291,7 +428,7 @@ function ForYouHeader() {
           aria-label={t(($) => {
             return $.chat.agentSuggestions.homeCard.navigation;
           })}
-          className="flex min-w-0 flex-1 items-center gap-1.5 sm:gap-2"
+          className="flex min-w-0 flex-1 items-center"
         >
           {steps.map((card, offset) => {
             const index = firstStep + offset;
@@ -327,14 +464,14 @@ function ForYouHeader() {
                     );
                   }
                 }}
-                className="group flex h-11 min-w-0 flex-1 items-center rounded-lg hover:bg-state-hover focus-visible:bg-state-hover"
+                className="group flex h-11 min-w-0 flex-1 items-center rounded-lg px-1.5 hover:bg-state-hover focus-visible:bg-state-hover sm:px-2"
               >
                 <span
                   aria-hidden
                   className={cn(
                     "h-1 w-full rounded-full bg-divider transition-colors",
                     index === position &&
-                      "bg-linear-to-r from-primary/65 via-primary to-primary-hover inset-shadow-[0_1px_0_0] inset-shadow-white/40",
+                      "bg-linear-to-r from-primary/65 via-primary to-primary-hover",
                   )}
                 />
               </Link>
@@ -371,23 +508,16 @@ function ForYouHeader() {
 export function ForYouPage() {
   const { t } = useTranslation();
   const deck = useLastLoadable(forYouDeck$);
-  const background = useGet(forYouBackground$);
   const [reloading, reload] = useLoadableSet(reloadSuggestionSession$);
   const signal = useGet(pageSignal$);
   const cards = deck.state === "hasData" ? deck.data.cards : [];
   const settled = deck.state === "hasData" ? deck.data.settled : [];
   const complete = deck.state === "hasData" && cards.length === 0;
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-      <img
-        data-slot="for-you-background"
-        src={background}
-        alt=""
-        draggable={false}
-        className="pointer-events-none absolute inset-0 size-full select-none object-cover"
-      />
+    <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-brand-off-white dark:bg-background">
       <ForYouHeader />
-      <main className="@container/for-you relative flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden px-4 pb-safe-offset-8 pt-4 sm:px-8 sm:pt-6">
+      <main className="@container/for-you relative flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden px-4 pb-safe-offset-8 sm:px-8">
+        <ForYouCover />
         {deck.state === "hasError" ? (
           <div
             role="alert"

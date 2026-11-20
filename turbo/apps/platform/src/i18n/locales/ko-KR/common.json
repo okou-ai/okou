@@ -1642,6 +1642,13 @@
       "feedbackPrompt": "이 제안은 어떤가요?",
       "feedLabel": "피드",
       "forYou": {
+        "cover": {
+          "change": "커버 변경",
+          "default": "기본",
+          "gallery": "커버",
+          "option": "커버 {{index}}",
+          "reset": "기본값으로 재설정"
+        },
         "loading": "제안 불러오는 중",
         "next": "다음 제안",
         "previous": "이전 제안",

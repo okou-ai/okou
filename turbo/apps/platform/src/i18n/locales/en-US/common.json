@@ -1646,6 +1646,13 @@
       "feedbackPrompt": "How is this suggestion?",
       "feedLabel": "Feed",
       "forYou": {
+        "cover": {
+          "change": "Change cover",
+          "default": "Default",
+          "gallery": "Covers",
+          "option": "Cover {{index}}",
+          "reset": "Reset to default"
+        },
         "loading": "Loading suggestions",
         "next": "Next suggestion",
         "previous": "Previous suggestion",

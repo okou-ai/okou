@@ -1646,6 +1646,13 @@
       "feedbackPrompt": "Wie findest du diesen Vorschlag?",
       "feedLabel": "Feed",
       "forYou": {
+        "cover": {
+          "change": "Titelbild ändern",
+          "default": "Standard",
+          "gallery": "Titelbilder",
+          "option": "Titelbild {{index}}",
+          "reset": "Auf Standard zurücksetzen"
+        },
         "loading": "Vorschläge werden geladen",
         "next": "Nächster Vorschlag",
         "previous": "Vorheriger Vorschlag",
