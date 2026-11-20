@@ -178,23 +178,30 @@ class AppUpdates(
     val state = mutable.asStateFlow()
     val required = state.map { it.required }.stateIn(scope, SharingStarted.Eagerly, false)
     private val initialized = CompletableDeferred<Unit>()
+    private val connectivityReady = CompletableDeferred<Unit>()
     private val persistence = Mutex()
     private var checkedAt = 0L
-    private var attemptedAt = 0L
+    private var attemptedAt: Long? = null
     private var checkJob: Job? = null
     private var transferJob: Job? = null
     @Volatile private var transferTicket = 0L
 
     init {
         scope.launch {
-            connectivity.collectLatest { online ->
-                val reconnected = online && mutable.value.offline
-                mutable.update { it.copy(offline = !online) }
-                if (reconnected) {
-                    initialized.await()
-                    checkJob?.join()
-                    check(manual = mutable.value.needsRequiredRelease)
+            try {
+                connectivity.collectLatest { online ->
+                    val reconnected = online && mutable.value.offline
+                    mutable.update { it.copy(offline = !online) }
+                    connectivityReady.complete(Unit)
+                    if (reconnected) {
+                        initialized.await()
+                        checkJob?.join()
+                        check(manual = mutable.value.needsRequiredRelease)
+                    }
                 }
+            } finally {
+                // An absent connectivity observer completes without a sample.
+                connectivityReady.complete(Unit)
             }
         }
         scope.launch {
@@ -244,18 +251,22 @@ class AppUpdates(
         checkJob =
             scope.launch {
                 initialized.await()
+                connectivityReady.await()
                 val snapshot = mutable.value
                 if (snapshot.offline) return@launch
-                if (
-                    !manual &&
+                val attemptTime = now()
+                val lastAttempt = attemptedAt
+                // Allow the first online check in a new app process even with a fresh cache.
+                if (!manual && lastAttempt != null) {
+                    if (attemptTime - lastAttempt in 0 until 60_000) return@launch
+                    if (
                         !snapshot.needsRequiredRelease &&
-                        checkedAt > 0 &&
-                        now() - checkedAt in 0 until 86_400_000
-                )
-                    return@launch
-                if (!manual && attemptedAt > 0 && now() - attemptedAt in 0 until 60_000)
-                    return@launch
-                attemptedAt = now()
+                            checkedAt > 0 &&
+                            attemptTime - checkedAt in 0 until 86_400_000
+                    )
+                        return@launch
+                }
+                attemptedAt = attemptTime
                 mutable.update { it.copy(check = UpdateCheck.Checking) }
                 val info =
                     try {

@@ -167,9 +167,9 @@ Original test `Preserve the visible message as content grows`. [Registration](ht
 
 Original test `Keep expanded work history and its duration visible after the run completes`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/chat-scroll.test.tsx#L1400).
 
-- **Given** The reader has expanded work history during a run.
+- **Given** The reader has expanded work history during a run and scrolled up to read an earlier message.
 - **When** The run completes.
-- **Then** The work item “Checked the first rollout stage,” the expanded state, and “Worked for 1 min” remain visible.
+- **Then** The work item “Checked the first rollout stage,” the expanded state, and “Worked for 1 min” remain visible. The first previously visible message stays at the same vertical position after completion. [#49605](https://github.com/okou-ai/okou/pull/49605).
 
 ## chat-scroll-022
 

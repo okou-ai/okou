@@ -7,6 +7,7 @@
   public ai.okou.android.auth.Authentication getAuthentication();
   public ai.okou.android.chat.ChatCacheStore getChatCache();
   public ai.okou.android.chat.ComposerJournalStore getComposerJournal();
+  public kotlinx.coroutines.flow.Flow getConnectivity();
   public ai.okou.android.instructions.PersonalInstructionsDraftStore getInstructionsDrafts();
   public ai.okou.android.chat.RunControlJournalStore getRunControlJournal();
   public ai.okou.android.updates.AppUpdates getUpdates();

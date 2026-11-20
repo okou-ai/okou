@@ -27,7 +27,11 @@ import org.robolectric.annotation.Config
 class UpdateRecoveryApplication : TestOkouApplication() {
     internal val selected = updateRelease("99.0.0")
     internal val latest = updateRelease("99.1.0")
-    internal val fixture = ControlledUpdates().apply { heldRecovery = CompletableDeferred() }
+    internal val fixture =
+        ControlledUpdates().apply {
+            heldRecovery = CompletableDeferred()
+            response = AndroidUpdates(null, latest)
+        }
     internal val cachedFile by lazy {
         File(filesDir, "updates/recovered.apk").apply {
             parentFile!!.mkdirs()

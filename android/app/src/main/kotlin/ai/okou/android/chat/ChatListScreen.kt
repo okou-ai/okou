@@ -29,16 +29,13 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.LongState
@@ -50,7 +47,6 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
@@ -69,12 +65,10 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.collapse
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.expand
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
@@ -90,15 +84,14 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.text.NumberFormat
+import kotlinx.coroutines.delay
 
 @Composable
-@OptIn(ExperimentalMaterial3Api::class)
 internal fun ChatListScreen(
     state: ChatListUiState,
-    refresh: () -> Unit,
     retryList: () -> Unit,
     retryMetadata: () -> Unit,
-    refreshIndicators: () -> Unit,
+    retryIndicators: () -> Unit,
     open: (ConfirmedChat) -> Unit,
     performRowAction: (String, ChatRowAction) -> Unit,
     renameThread: (String, String) -> Unit,
@@ -110,7 +103,6 @@ internal fun ChatListScreen(
     selectedChatId: String?,
     wide: Boolean,
     newChatEnabled: Boolean,
-    refreshEnabled: Boolean,
     startupRecovery: @Composable (() -> Unit)?,
     feedback: @Composable () -> Unit,
 ) {
@@ -176,83 +168,104 @@ internal fun ChatListScreen(
             }
         }
     val runningFrame = rememberRunningWaveFrame(listState, runningKeys)
-    val metadataPending =
-        state.agentsPhase == ChatReadPhase.Loading || state.projectsPhase == ChatReadPhase.Loading
-    val metadataFailed =
-        state.agentsPhase == ChatReadPhase.Failed || state.projectsPhase == ChatReadPhase.Failed
+    val metadataUsable = state.agentsSource != null && state.projectsSource != null
+    val metadataMissing =
+        state.agentsSource == null && state.agentsPhase == ChatReadPhase.Failed ||
+            state.projectsSource == null && state.projectsPhase == ChatReadPhase.Failed
     val knownProjects = remember(state.projects) { state.projects.mapTo(hashSetOf()) { it.id } }
     val missingDefault =
         state.agentsPhase == ChatReadPhase.Ready &&
             state.agents.none { it.isDefaultAgent } &&
             state.threads.any { it.hidden != true && it.projectId !in knownProjects }
-    val refreshLabel = stringResource(R.string.chat_refresh)
     val listLabel = stringResource(R.string.chat_list_title)
     val widthDp = currentWindowSizeDp().width
     val largeCompact = widthDp >= 600
     val listInset = if (wide) 12.dp else if (largeCompact) 24.dp else 16.dp
     val outline = MaterialTheme.colorScheme.outline
-    PullToRefreshBox(
-        isRefreshing = state.confirmedAt != null && state.listPhase == ChatReadPhase.Loading,
-        onRefresh = { if (refreshEnabled) refresh() },
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.TopCenter,
-    ) {
+    val status =
+        when {
+            state.offline -> ChatListStatus.Offline
+            state.confirmedAt != null && state.sustainedRefreshFailure ->
+                ChatListStatus.RefreshFailed
+            else -> null
+        }
+    val missingUnread =
+        state.confirmedAt != null &&
+            state.filter == ChatListFilter.Unread &&
+            state.indicators == null &&
+            groups.all { it.threads.isEmpty() }
+    val firstLoadFailure =
+        if (missingUnread)
+            ChatListReadFailure.NeedsRetry.takeIf { state.indicatorsPhase == ChatReadPhase.Failed }
+        else state.listReadFailure
+    val awaitingFirstList =
+        (state.confirmedAt == null || missingUnread) &&
+            !state.offline &&
+            firstLoadFailure == null &&
+            (startupRecovery == null || state.listPhase != ChatReadPhase.Idle)
+    var skeletonVisible by remember(awaitingFirstList) { mutableStateOf(false) }
+    LaunchedEffect(awaitingFirstList) {
+        if (awaitingFirstList) {
+            delay(100)
+            skeletonVisible = true
+        }
+    }
+    // Follow changes to refreshed content without turning Project expansion into a scroll action.
+    val lastContentKey =
+        remember(groups) {
+            groups.asReversed().firstNotNullOfOrNull { group ->
+                group.threads.lastOrNull()?.id ?: group.project?.id?.let(::projectRowKey)
+            }
+        }
+    ChatListViewport(
+        Modifier.fillMaxSize(),
+        listState,
+        lastContentKey = lastContentKey,
+        status = status,
+        newChatEnabled = newChatEnabled,
+        newChat = { newChat(null) },
+        feedback = feedback,
+    ) { bottomSpace, inlineControls ->
         LazyColumn(
             Modifier.widthIn(max = 720.dp).fillMaxSize().testTag("chat_list").semantics {
                 contentDescription = listLabel
-                if (refreshEnabled && state.listPhase != ChatReadPhase.Loading) {
-                    customActions =
-                        listOf(
-                            CustomAccessibilityAction(refreshLabel) {
-                                refresh()
-                                true
-                            }
-                        )
-                }
             },
             contentPadding =
-                PaddingValues(start = listInset, end = listInset, top = 4.dp, bottom = 100.dp),
+                PaddingValues(
+                    start = listInset,
+                    end = listInset,
+                    top = if (inlineControls == null) 4.dp else 0.dp,
+                    bottom = bottomSpace,
+                ),
             state = listState,
         ) {
-            if (startupRecovery != null) item { startupRecovery() }
-            if (state.source == ChatListSource.Cache) item { ChatNotice(R.string.chat_cached) }
-            if (state.listPhase == ChatReadPhase.Loading)
-                item {
-                    ChatNotice(
-                        if (state.confirmedAt == null) R.string.chat_loading
-                        else R.string.chat_refreshing
-                    )
+            if (inlineControls != null) item(key = "list_controls") { inlineControls() }
+            if (startupRecovery != null) item(key = "workspace_recovery") { startupRecovery() }
+            if (state.confirmedAt == null || missingUnread) {
+                when {
+                    state.offline ->
+                        item { ChatListLoadNotice(R.string.chat_list_load_when_online) }
+                    firstLoadFailure != null ->
+                        item {
+                            ChatListLoadNotice(R.string.chat_list_first_load_failed)
+                            if (firstLoadFailure == ChatListReadFailure.NeedsRetry)
+                                ChatAction(
+                                    R.string.retry,
+                                    if (missingUnread) retryIndicators else retryList,
+                                    enabled =
+                                        missingUnread || state.listPhase != ChatReadPhase.Loading,
+                                )
+                        }
+                    skeletonVisible -> item { ChatListSkeleton() }
                 }
-            if (state.listPhase == ChatReadPhase.Failed)
-                item {
-                    ChatNotice(
-                        if (state.confirmedAt == null) R.string.chat_load_failed
-                        else R.string.chat_refresh_failed
-                    )
-                    ChatAction(R.string.retry, retryList)
-                }
+            }
             if (state.cacheUnavailable || state.projectCacheUnavailable)
                 item { ChatNotice(R.string.chat_cache_unavailable) }
-            if (metadataPending) item { ChatNotice(R.string.chat_metadata_loading) }
-            if (
-                state.agentsSource == ChatListSource.Cache ||
-                    state.projectsSource == ChatListSource.Cache
-            )
-                item { ChatNotice(R.string.chat_metadata_cached) }
-            if (metadataFailed || missingDefault)
+            if (!state.offline && (metadataMissing || missingDefault))
                 item {
                     ChatNotice(R.string.chat_metadata_unavailable)
                     ChatAction(R.string.retry, retryMetadata)
                 }
-            when (state.indicatorsPhase) {
-                ChatReadPhase.Loading -> item { ChatNotice(R.string.chat_status_loading) }
-                ChatReadPhase.Failed ->
-                    item {
-                        ChatNotice(R.string.chat_status_unavailable)
-                        ChatAction(R.string.chat_refresh_status, refreshIndicators)
-                    }
-                else -> Unit
-            }
             if (state.confirmedAt != null) {
                 sections.forEach { section ->
                     val group = section.group
@@ -327,12 +340,9 @@ internal fun ChatListScreen(
                 }
                 if (
                     groups.all { it.threads.isEmpty() } &&
-                        !metadataPending &&
-                        !metadataFailed &&
+                        metadataUsable &&
                         !missingDefault &&
-                        state.listPhase == ChatReadPhase.Ready &&
-                        (state.filter != ChatListFilter.Unread ||
-                            state.indicatorsPhase == ChatReadPhase.Ready)
+                        (state.filter != ChatListFilter.Unread || state.indicators != null)
                 ) {
                     item {
                         Column(
@@ -355,24 +365,6 @@ internal fun ChatListScreen(
                     }
                 }
             }
-        }
-        val end =
-            when {
-                wide -> 20.dp
-                largeCompact -> 32.dp
-                widthDp < 360 -> 16.dp
-                else -> 24.dp
-            }
-        Column(
-            Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(bottom = 16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            feedback()
-            NewChatAction(
-                Modifier.align(Alignment.End).padding(end = end),
-                enabled = newChatEnabled,
-                onClick = { newChat(null) },
-            )
         }
     }
 }
@@ -723,38 +715,6 @@ private fun ChatAction(label: Int, action: () -> Unit, enabled: Boolean = true) 
 }
 
 @Composable
-private fun NewChatAction(modifier: Modifier, enabled: Boolean, onClick: () -> Unit) {
-    val colors = MaterialTheme.colorScheme
-    Surface(
-        onClick = onClick,
-        enabled = enabled,
-        modifier = modifier.alpha(if (enabled) 1f else 0.4f).semantics { role = Role.Button },
-        shape = RoundedCornerShape(16.dp),
-        color = colors.inverseSurface,
-        contentColor = colors.inverseOnSurface,
-        shadowElevation = 3.dp,
-    ) {
-        Row(
-            Modifier.heightIn(min = 56.dp).padding(horizontal = 16.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(painterResource(R.drawable.ic_edit_square), null, Modifier.size(22.dp))
-            Text(
-                stringResource(R.string.composer_new),
-                style =
-                    MaterialTheme.typography.labelLarge.copy(
-                        fontSize = 14.sp,
-                        lineHeight = 20.sp,
-                        letterSpacing = 0.sp,
-                    ),
-                fontWeight = FontWeight(550),
-            )
-        }
-    }
-}
-
-@Composable
 private fun ChatListTextAction(
     label: Int,
     @DrawableRes icon: Int,
@@ -776,6 +736,26 @@ private fun ChatListTextAction(
             style =
                 MaterialTheme.typography.labelMedium.copy(
                     fontSize = 13.sp,
+                    lineHeight = 20.sp,
+                    letterSpacing = 0.sp,
+                ),
+        )
+    }
+}
+
+@Composable
+private fun ChatListLoadNotice(message: Int) {
+    Box(
+        Modifier.heightIn(min = 48.dp).padding(horizontal = 12.dp),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        Text(
+            stringResource(message),
+            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style =
+                MaterialTheme.typography.bodyMedium.copy(
+                    fontSize = 14.sp,
                     lineHeight = 20.sp,
                     letterSpacing = 0.sp,
                 ),

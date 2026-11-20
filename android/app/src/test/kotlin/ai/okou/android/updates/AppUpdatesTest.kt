@@ -164,7 +164,7 @@ class AppUpdatesTest {
     }
 
     @Test
-    fun restoredDiscoveryRetainsSuccessWhenAutomaticCheckIsThrottled() = runTest {
+    fun coldStartRefreshesRecentDiscoveryAndWarmChecksKeepTheirCooldown() = runTest {
         val store = MemoryUpdateStore()
         val original =
             ControlledUpdates().apply { response = AndroidUpdates(null, updateRelease("0.12.0")) }
@@ -176,24 +176,75 @@ class AppUpdatesTest {
             assertEquals(UpdateCheck.Checked, owner.state.value.check)
         }
         runCurrent()
-        val service = ControlledUpdates()
+        val service = ControlledUpdates().apply { heldCheck = CompletableDeferred() }
         AppUpdates(service, store, "0.12.0", 35, dispatcher, { now }).use { owner ->
             owner.check(false)
-            advanceUntilIdle()
-            assertEquals(0, service.checks)
-            assertEquals(UpdateCheck.Checked, owner.state.value.check)
-            assertFalse(owner.state.value.available)
-            now += 86_400_000
-            service.heldCheck = CompletableDeferred()
-            service.failCheck = true
-            owner.check(false)
             runCurrent()
-            assertEquals(1, service.checks)
             assertEquals(UpdateCheck.Checking, owner.state.value.check)
+            assertEquals("0.12.0", owner.state.value.displayedRelease?.version)
             service.heldCheck!!.complete(Unit)
             advanceUntilIdle()
+            assertTrue(owner.state.value.announce)
+            assertEquals("0.13.0", owner.state.value.displayedRelease?.version)
+
+            service.response = AndroidUpdates(null, updateRelease("0.14.0"))
+            now += 86_400_000 - 1
+            owner.check(false)
+            advanceUntilIdle()
+            assertEquals("0.13.0", owner.state.value.displayedRelease?.version)
+
+            now += 1
+            service.failCheck = true
+            owner.check(false)
+            advanceUntilIdle()
             assertEquals(UpdateCheck.Failed, owner.state.value.check)
+            assertTrue(owner.state.value.announce)
+            assertEquals("0.13.0", owner.state.value.displayedRelease?.version)
+
+            service.failCheck = false
+            owner.check(false)
+            advanceUntilIdle()
+            assertEquals(UpdateCheck.Failed, owner.state.value.check)
+
+            now += 60_000
+            owner.check(false)
+            advanceUntilIdle()
+            assertEquals("0.14.0", owner.state.value.displayedRelease?.version)
         }
+        runCurrent()
+    }
+
+    @Test
+    fun offlineColdStartRefreshesRecentDiscoveryOnReconnect() = runTest {
+        val store =
+            MemoryUpdateStore(
+                UpdateRecord(
+                    "0.12.0",
+                    AndroidUpdates(null, updateRelease("0.12.0")),
+                    checkedAt = 99_000,
+                )
+            )
+        val connectivity = MutableStateFlow(false)
+        AppUpdates(
+                ControlledUpdates(),
+                store,
+                "0.12.0",
+                35,
+                StandardTestDispatcher(testScheduler),
+                now = { 100_000 },
+                connectivity = connectivity,
+            )
+            .use { owner ->
+                owner.check(false)
+                advanceUntilIdle()
+                assertTrue(owner.state.value.offline)
+                assertFalse(owner.state.value.available)
+
+                connectivity.value = true
+                advanceUntilIdle()
+                assertTrue(owner.state.value.announce)
+                assertEquals("0.13.0", owner.state.value.displayedRelease?.version)
+            }
         runCurrent()
     }
 

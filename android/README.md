@@ -122,6 +122,10 @@ the list keeps the projection until the next successful refresh. Bulk feedback
 counts receipts that cover the captured unread watermarks.
 
 Conversation history shares this cache and its workspace authorization lease.
+The workspace retains the confirmed checkpoint and projected timeline for the
+active conversation and up to three recent inactive conversations. A revisit
+can display that timeline before Room or network work. Catch-up uses its
+canonical cursor and cached display alone never marks the conversation read.
 Room schema v2 adds `history_scopes` (thread, authorization, canonical event format,
 paired cursor and confirmation time) and `history_events` (lossless raw event JSON,
 identity and sequence). Rebuildable v1 databases are recreated; there is no draft
@@ -628,8 +632,9 @@ each numeric component. APK `versionCode` is internal build/installation metadat
 and is absent from both the public response and the R2 manifest.
 Optional announcements follow available versions and the user's per-release
 deferral. Manual and required-update recovery remain available. Automatic checks
-run on foreground without holding the first native frame, at most once per day
-after success.
+run on foreground without holding the first native frame. The first discovery
+request in each app process can run even if the saved result is recent. Later
+automatic checks in that process reuse successful discovery for 24 hours.
 
 Startup revalidates a saved package before offering download or installation
 actions. The last successful discovery and its timestamp are restored together.
