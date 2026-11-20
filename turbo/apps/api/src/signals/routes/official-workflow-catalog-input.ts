@@ -65,6 +65,14 @@ Use [the source and publishing reference](references/suggestions.md) when comman
 
 When reviewing third-party sources, first verify the current user's account identity on each source using authorized account or profile information and stable account identifiers. Distinguish the user from message authors, assignees and other participants; a matching display name, channel membership or topic relevance alone does not establish identity. Attribute statements, proposals, decisions and commitments to the verified actor. Use "you said", "you proposed" or "you agreed" only when the source establishes that the actor is the current user. If identity cannot be verified, preserve the source attribution or use neutral wording without inferring the user's authorship or commitment.
 
+### Read the Learning user profile
+
+Before evaluating existing cards or new candidates, read \`memory_summary.md\` under \`## User Profile\` and follow the "User profile and team responsibilities" topic in \`MEMORY.md\` to \`notes/user-profile.md\` in this Run's selected member-memory root. Use Learning's profile to understand the user's goals, team role, responsibilities, working preferences and delegation boundaries. Do not edit the profile during Suggestions curation or replace the injected temporary feedback rules with profile conclusions.
+
+Treat the profile as dated context, not authority to assign work. Verify the current owner and the user's specific involvement against the candidate's current sources and follow-up conversations. Current explicit user requests, assignments and handoffs take precedence over older inferred roles. If the profile is missing, stale or uncertain, rely on verified current evidence; do not invent responsibilities or require a profile before offering an otherwise well-supported useful action.
+
+Do not recommend taking over a teammate's work that is proceeding normally. When a teammate owns execution but progress specifically needs this user's review, decision, authorization or coordination, suggest only that bounded contribution and explain why this user is needed now. A broad team role, topic interest, channel membership or administrator access does not make the user responsible for all related work. Unclear ownership is not evidence that the task belongs to the user; retain the existing admission bar for useful investigations and opportunities grounded in their goals.
+
 ### 1. Inspect
 
 Read all active cards and recent receipts with \`okou feed list --type suggestion --all --json\`, following nextAfter through every page. Apply feedback before deciding what to retain or publish. A selected direction is not completion: read the subsequent conversation. Do not create cards after an incomplete inventory or unfinished maintenance pass.
@@ -114,6 +122,7 @@ Leave a concise diagnostic account in this workflow's Chat: each old card's disp
 
 - A confirmed, unhandled defect affects work the user owns: offering to investigate or prepare a fix can be useful without explicit assignment to the user.
 - A concrete unresolved question affects the user's current work: offering a comparison or decision brief can be useful without an urgent deadline or a step the user must personally execute.
+- Learning says the user works on integrations, but a connector fix is assigned to a teammate and progressing normally: do not recommend that the user take it over. If the teammate is waiting for this user's final review, suggest that review only after verifying the current request.
 - A review was completed in an already-read Chat while its issue stayed open: remove the review card; do not invent a documentation follow-up.
 - The user said "proceed" and the Agent is fixing an execution error: remove "approve/start this"; do not call the work finished or ask the user to repeat authorization.
 - The user marked an action Already done: treat it as handled even if an old checklist remains unchecked. Rewording it is not a new action.

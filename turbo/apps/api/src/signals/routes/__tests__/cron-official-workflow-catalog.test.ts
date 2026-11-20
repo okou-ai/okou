@@ -268,7 +268,11 @@ async function prepareForeignFeedback(
   definitionName: string,
   failUpload: boolean,
 ) {
-  if (definitionName !== "agent-suggestions" || failUpload) {
+  if (
+    (definitionName !== "agent-suggestions" &&
+      definitionName !== "proactive-learning") ||
+    failUpload
+  ) {
     return;
   }
   const foreign = await publicChatActor(context);
@@ -286,14 +290,46 @@ async function prepareForeignFeedback(
   return peer.actor.orgId;
 }
 
+async function prepareWorkflowFeedback(
+  owned: Awaited<ReturnType<typeof publicChatActor>>,
+  definitionName: string,
+  suggestionsEnabled: boolean,
+) {
+  const learning = definitionName === "proactive-learning";
+  if (definitionName !== "agent-suggestions" && !learning) {
+    return [];
+  }
+  const { expected } = await saveOwnedFeedback(
+    owned,
+    "Review the launch decision",
+    "A teammate owns these reviews",
+    learning ? "option_selected" : "less_like_this",
+  );
+  if (learning && !suggestionsEnabled) {
+    const { actor } = owned;
+    const orgId = actor.orgId;
+    if (!orgId) {
+      throw new Error("Expected the Learning owner's workspace");
+    }
+    await owned.run(() => {
+      return updateFeatureSwitchesForUser(
+        context,
+        { ...actor, orgId },
+        { [FeatureSwitchKey.AgentSuggestion]: false },
+      );
+    });
+  }
+  return [expected];
+}
+
 function expectFeedbackContext(
   prompt: string | null | undefined,
-  curatesSuggestions: boolean,
+  receivesFeedback: boolean,
   expectedFeedback: readonly Awaited<
     ReturnType<typeof saveOwnedFeedback>
   >["expected"][],
 ) {
-  if (curatesSuggestions) {
+  if (receivesFeedback) {
     expect(prompt).toContain("# Suggestions feedback context");
     const json = prompt?.match(/^(\{"asOf":.*\})$/mu)?.[1];
     expect(json).toBeDefined();
@@ -684,6 +720,7 @@ const scenarios = [
   { kind: "suggestions", failUpload: false, suggestionsEnabled: true },
   { kind: "suggestions", failUpload: true, suggestionsEnabled: true },
   { kind: "learning", failUpload: false, suggestionsEnabled: true },
+  { kind: "learning", failUpload: false, suggestionsEnabled: false },
   { kind: "morning-brief", failUpload: false, suggestionsEnabled: true },
   { kind: "morning-brief", failUpload: false, suggestionsEnabled: false },
 ].map((scenario) => {
@@ -748,6 +785,7 @@ test.each(scenarios)(
   async ({
     failUpload,
     learning,
+    suggestionsEnabled,
     curatesMorningBrief,
     needsTimezone,
     curatesSuggestions,
@@ -868,20 +906,11 @@ test.each(scenarios)(
       return accept<Awaited<typeof request>, 200>(request, [200]);
     });
     expect(enabled.body).toMatchObject({ enabled: true, status: "enabled" });
-    const expectedFeedback: Awaited<
-      ReturnType<typeof saveOwnedFeedback>
-    >["expected"][] = [];
-    if (definitionName === "agent-suggestions") {
-      expectedFeedback.push(
-        (
-          await saveOwnedFeedback(
-            owned,
-            "Review the launch decision",
-            "A teammate owns these reviews",
-          )
-        ).expected,
-      );
-    }
+    const expectedFeedback = await prepareWorkflowFeedback(
+      owned,
+      definitionName,
+      suggestionsEnabled,
+    );
     createRouteMocks(context).clerk.session(actor.userId, orgId, actor.orgRole);
     const workflows = await owned.run(() => {
       return accept(
@@ -970,9 +999,22 @@ test.each(scenarios)(
     const { execution, sandboxHeaders } = await owned.runExecution(runId);
     expectFeedbackContext(
       execution.appendSystemPrompt,
-      curatesSuggestions,
+      learning || curatesSuggestions,
       expectedFeedback,
     );
+    if (learning) {
+      await owned.run(() => {
+        return accept(
+          setupApp({ context, routes: feedRoutes })(feedContract).manage({
+            headers: {
+              authorization: `Bearer ${okouTokenFromExecution(execution)}`,
+            },
+            query: { type: "suggestion" },
+          }),
+          [403],
+        );
+      });
+    }
     const bundle = officialWorkflowBundle(execution, definitionName);
     const files = readExecutionContentBundle(s3.objects, bundle);
     expect(files.get("SKILL.md")?.toString()).toContain(heading);

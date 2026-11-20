@@ -2,6 +2,7 @@ import { computed, type Computed } from "ccstate";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { PROACTIVE_SUGGESTIONS_DEFINITION_NAME } from "@okouai/api-contracts/contracts/proactive-suggestions";
+import { PROACTIVE_LEARNING_DEFINITION_NAME } from "@okouai/api-contracts/contracts/proactive-nightly";
 import { isMorningBriefDefinitionName } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { settle } from "../../utils";
 import type { AgentRunContextSignals } from "../agent-run-context.signals";
@@ -24,7 +25,10 @@ export function createSuggestionsPrompt(
       skillVolumes: [],
     };
     const features = await get(bootstrap.featureSwitches$);
-    if (!isFeatureEnabled(FeatureSwitchKey.AgentSuggestion, features)) {
+    if (
+      !isFeatureEnabled(FeatureSwitchKey.AgentSuggestion, features) &&
+      !isFeatureEnabled(FeatureSwitchKey.ProactiveLearning, features)
+    ) {
       return empty;
     }
     const event = await get(pickedEvent$);
@@ -32,7 +36,11 @@ export function createSuggestionsPrompt(
       return empty;
     }
     const workflows = await get(threadContext.officialWorkflowObservation$);
+    const learning = workflows?.definitions.some((item) => {
+      return item.name === PROACTIVE_LEARNING_DEFINITION_NAME;
+    });
     if (
+      !learning &&
       !workflows?.definitions.some((item) => {
         return (
           item.name === PROACTIVE_SUGGESTIONS_DEFINITION_NAME ||
@@ -43,7 +51,12 @@ export function createSuggestionsPrompt(
       return empty;
     }
     const target = await get(threadContext.automationTarget$);
-    if (!target?.proactivePreferences?.suggestionsEnabled) {
+    const enabled = learning
+      ? isFeatureEnabled(FeatureSwitchKey.ProactiveLearning, features) &&
+        target?.proactivePreferences?.learningEnabled
+      : isFeatureEnabled(FeatureSwitchKey.AgentSuggestion, features) &&
+        target?.proactivePreferences?.suggestionsEnabled;
+    if (!enabled) {
       return empty;
     }
     const result = await settle(get(feedback$));
@@ -54,7 +67,7 @@ export function createSuggestionsPrompt(
           SUGGESTION_FEEDBACK_INSTRUCTION,
           result.ok
             ? JSON.stringify(result.value)
-            : "Feedback context is unavailable. Skip Suggestions maintenance in this Run; continue other authorized work.",
+            : "Feedback context is unavailable. Skip Suggestions maintenance and feedback-based profile updates in this Run; continue other authorized work.",
         ].join("\n\n"),
       },
       userPromptVariables: {},
