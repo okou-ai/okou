@@ -13,6 +13,27 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1161.0](https://github.com/okou-ai/okou/compare/app-v0.1160.0...app-v0.1161.0) (2026-11-20)
+
+
+### Features
+
+* enable project thread deletion for all workspaces ([#49617](https://github.com/okou-ai/okou/issues/49617)) ([36f34d9](https://github.com/okou-ai/okou/commit/36f34d9c10a2706aea1577cef9d57ae28197def3))
+
+
+### Bug Fixes
+
+* **app:** simplify the suggestion composer ([#49618](https://github.com/okou-ai/okou/issues/49618)) ([e5077f3](https://github.com/okou-ai/okou/commit/e5077f395853dcb6ba6e9d943dd16f033640f068))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.96.0
+    * @okouai/core bumped to 8.858.0
+    * @okouai/ui bumped to 1.21.76
+
 ## [0.1160.0](https://github.com/okou-ai/okou/compare/app-v0.1159.0...app-v0.1160.0) (2026-11-20)
 
 

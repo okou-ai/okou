@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.32.4](https://github.com/okou-ai/okou/compare/android-v0.32.3...android-v0.32.4) (2026-11-20)
+
+
+### Refactoring
+
+* **android:** remove retired my okou bindings and cache flag ([#49604](https://github.com/okou-ai/okou/issues/49604)) ([0b2fbcd](https://github.com/okou-ai/okou/commit/0b2fbcde7569cad9b28111cb16bc55644fa59166))
+
 ## [0.32.3](https://github.com/okou-ai/okou/compare/android-v0.32.2...android-v0.32.3) (2026-11-20)
 
 
