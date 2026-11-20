@@ -15,7 +15,7 @@ Native behavior scenarios and their fixtures belong to the
 | Image planning, preparation, manifests and readiness             | `runner-image-context.sh`, `runner-image-architecture.sh`, `prepare-runner-image.sh`, `runner-image-manifest.sh`, `wait-runner-image.sh`, `wait-runner-image-groups.sh` |
 | Image execution identity, result recovery and retirement         | `runner-image-operation.py`                                                                                                                                             |
 | Group reconciliation and startup                                 | `reconcile-runner-binary-groups.sh`, `reconcile-and-start-runner-groups.sh`                                                                                             |
-| Lifecycle ownership and cleanup                                  | `with-runner-lifecycle-lock.sh`, `cleanup-metal-runners.py`, `cleanup-metal-resources.py`, `start-stripe-listener.sh`, `prune-runner-idle.sh`                           |
+| Lifecycle ownership and cleanup                                  | `with-runner-lifecycle-lock.sh`, `cleanup-metal-runners.py`, `cleanup-metal-resources.py`, `start-stripe-listener.sh`, `deploy-stripe-listener.py`, `prune-runner-idle.sh` |
 | Native test binary build and artifact transport                  | `runner-native-test-artifact.sh`                                                                                                                                        |
 | Cloudflare SSH setup, probes, guarded operations and diagnostics | `cloudflare-ssh-proxy.sh`, `cloudflare-ssh-preconnect.sh`, `cloudflare-ssh-command.sh`, `cloudflare-ssh-diagnostics.sh`                                                 |
 
@@ -84,6 +84,23 @@ host is reachable and reports an unconfirmed cleanup otherwise.
 Runner host grouping and image preparation share the `uname -m` probe.
 An SSH exit 255 permits one retry on the same host. The caller validates the
 architecture from a successful probe before using it.
+
+## Stripe listener deployment
+
+`start-stripe-listener.sh` reads the current GitHub workflow run's creation
+time and calls `deploy-stripe-listener.py`. CI sends the Python worker and
+verified Stripe installer through stdin to the selected Runner host. A bounded
+transient systemd service holds the same PR lifecycle flock as Runner and
+closed-PR cleanup. It checks the current operation and PR closure cutoff,
+retires the old listener, and waits for the new listener's readiness.
+
+Each deployment records launch intent before submission. The guarded SSH
+caller reads the result with short requests to the same host. A lost reply
+permits observation of that operation, and a ready reply must match the
+installed listener's deployment marker. The host keeps the current receipt in
+`/run/vm0-ci-stripe-deployments/pr-N`. Workers remove their private staging
+after execution, successors retire superseded staging, and closed-PR cleanup
+removes the namespace. A host restart clears operation state.
 
 ## Image operation recovery
 

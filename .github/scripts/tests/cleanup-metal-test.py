@@ -2,6 +2,7 @@
 """Exercise the cleanup CLI with real files/flocks and external command fixtures."""
 
 import contextlib
+import fcntl
 import json
 import os
 import select
@@ -9,6 +10,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -56,7 +58,7 @@ elif any('/actions/runs/' in a for a in args):
  run_id=next(a.rsplit('/',1)[1] for a in args if '/actions/runs/' in a)
  record=data.get('run_details',{}).get(run_id)
  if record is None:sys.exit(1)
- print(json.dumps(record))
+ print(record['created_at'] if '--jq' in args else json.dumps(record))
 elif any('/commits/' in a for a in args):print(json.dumps([[{'number':n} for n in data.get('associated',[])]]))
 else:raise SystemExit('unexpected gh call')
 """
@@ -204,7 +206,7 @@ time.monotonic=monotonic;time.sleep=sleep
 """
 
 SYSTEMCTL = r"""#!/usr/bin/env python3
-import json,os,sys
+import fcntl,json,os,sys
 from pathlib import Path
 root=Path(os.environ['FIXTURE_HOST']);statefile=root/'states.json';states=json.loads(statefile.read_text()) if statefile.exists() else {};args=sys.argv[1:];op=args[0]
 jobsfile=root/'stop-jobs.json';jobs=json.loads(jobsfile.read_text()) if jobsfile.exists() else {}
@@ -257,10 +259,73 @@ elif op=='disable':
  for d in roots:
   for directory in (root/d).glob('*.wants'):
    for name in names:(directory/name).unlink(missing_ok=True)
+elif op=='start':
+ name,=names
+ ref=name.removeprefix('vm0-stripe-listener-').removesuffix('.service')
+ directory=root/'var/lib/vm0-runner/stripe'/ref
+ with (root/'var/lock'/f'vm0-runner-lifecycle-{ref}.lock').open() as lock:
+  try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+  except BlockingIOError:pass
+  else:raise SystemExit('Stripe listener started outside the lifecycle lock')
+ assert (directory/'bin/stripe').is_file()
+ assert not states.get(name,{}).get('Job')
+ states[name]={'ActiveState':'active','MainPID':'123'}
+ statefile.write_text(json.dumps(states))
+ (directory/'stripe-listen.log').write_text('Ready! Your webhook signing secret is fixture\n')
+elif op=='is-active':
+ sys.exit(0 if all(states[name]['ActiveState']=='active' for name in names) else 3)
 elif op=='daemon-reload':
  if os.environ.get('RELOAD_ERROR'):
   print('manager rejected daemon-reload',file=sys.stderr);sys.exit(1)
 else:raise SystemExit('unexpected systemctl call')
+"""
+
+STRIPE_SSH = r"""#!/usr/bin/env python3
+import json,os,shlex,subprocess,sys
+from pathlib import Path
+fixture=Path(os.environ['FIXTURE'])
+assert sys.argv[1:3]==['-T','ubuntu@metal-b']
+args=shlex.split(sys.argv[3])
+assert args[:5]==['sudo','-n','/usr/bin/python3','-I','-c']
+root=fixture/'metal-b'
+submit=len(args)==7
+with (root/'stripe-ssh.log').open('a') as log:
+ log.write(('submit' if submit else 'observe')+'\n')
+result=subprocess.run(
+ [sys.executable,*args[3:6],str(root),*args[7:]],
+ stdout=subprocess.PIPE,text=True,check=False,
+ env={**os.environ,'FIXTURE_HOST':str(root),'PATH':str(fixture/'stripe-bin')+':'+os.environ['PATH']},
+)
+if not result.returncode:
+ if submit and os.environ.get('DROP_STRIPE_REPLIES'):
+  print('{"operation":',end='')
+  sys.exit(255)
+ if not submit and os.environ.get('DROP_STRIPE_REPLIES'):
+  record=json.loads(result.stdout)['record']
+  lost=root/'ready-reply-lost'
+  if record and record['status']=='ready' and not lost.exists():
+   lost.touch()
+   sys.exit(255)
+print(result.stdout,end='')
+sys.exit(result.returncode)
+"""
+
+STRIPE_SYSTEMD_RUN = r"""#!/usr/bin/env python3
+import os,subprocess,sys
+from pathlib import Path
+root=Path(os.environ['FIXTURE_HOST'])
+args=sys.argv[sys.argv.index('/usr/bin/python3'):]
+with (root/'stripe-worker.log').open('a') as log:
+ subprocess.Popen(args,stdin=subprocess.DEVNULL,stdout=log,stderr=log,start_new_session=True)
+"""
+
+STRIPE_INSTALL = r"""#!/usr/bin/env python3
+import os,sys
+from pathlib import Path
+assert len(sys.argv)==2 and Path(sys.argv[1]).name=='ensure-stripe-cli.sh'
+directory=Path(os.environ['STRIPE_CLI_INSTALL_DIR'])
+directory.mkdir()
+(directory/'stripe').touch()
 """
 
 
@@ -489,28 +554,6 @@ class CleanupTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn("image unit ownership unavailable", result.stderr)
         self.assertTrue(resource.exists())
-
-    def test_stripe_retirement_stops_pending_start_and_leaves_files(self):
-        name = "vm0-stripe-listener-pr-42.service"
-        unit = self.resource("etc/systemd/system/" + name)
-        self.state(name, ActiveState="inactive", Job="91")
-        result, payload = self.worker("stop-stripe", 42)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(payload, {"stopped": True})
-        self.assertTrue(unit.is_file())
-        result, payload = self.worker("stop-stripe", 42)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(payload, {"stopped": False})
-
-    def test_stripe_retirement_rejects_failed_stop(self):
-        name = "vm0-stripe-listener-pr-42.service"
-        unit = self.resource("etc/systemd/system/" + name)
-        self.state(name, ActiveState="active", MainPID="123")
-        result, payload = self.worker("stop-stripe", 42, MUTATION_ERROR="1")
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIsNone(payload)
-        self.assertIn("manager rejected stop", result.stderr)
-        self.assertTrue(unit.is_file())
 
     def test_unknown_stop_state_preserves_files_and_fails(self):
         unit = self.resource("etc/systemd/system/vm0-runner-pr-42-api.service")
@@ -1420,53 +1463,164 @@ class CleanupTests(unittest.TestCase):
                     process.kill()
                     process.wait(timeout=5)
 
-    def test_listener_replacement_uses_only_runner_host_under_lock(self):
-        ansible = self.root / "bin/ansible-playbook"
-        ansible.write_text(r"""#!/usr/bin/env python3
-import fcntl,os,sys
-from pathlib import Path
-root=Path(os.environ['FIXTURE'])
-assert sys.argv[sys.argv.index('-i') + 1] == 'metal-b,'
-with (root/'metal-b'/'var/lock'/'vm0-runner-lifecycle-pr-42.lock').open('a') as lock:
- try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
- except BlockingIOError:pass
- else:raise SystemExit('listener lifecycle ran outside namespace exclusion')
-if 'playbooks/cleanup-stripe-listener.yml' in sys.argv:
- if os.environ.get('FAIL_STRIPE_CLEANUP'):
-  sys.exit(37)
- (root/'listener-cleaned').touch()
- sys.exit(0)
-assert (root/'listener-cleaned').exists()
-(root/'listener-started').write_text('started')
-""")
-        ansible.chmod(0o755)
-        args = [
-            "bash",
-            str(TOOLS / "with-runner-lifecycle-lock.sh"),
-            "bash",
-            str(TOOLS / "start-stripe-listener.sh"),
-        ]
-        env = {
+    def stripe_fixture(self):
+        (self.root / "stripe-bin").mkdir()
+        for name, contents in (
+            ("bin/ssh", STRIPE_SSH),
+            ("stripe-bin/systemd-run", STRIPE_SYSTEMD_RUN),
+            ("stripe-bin/bash", STRIPE_INSTALL),
+        ):
+            path = self.root / name
+            path.write_text(contents)
+            path.chmod(0o755)
+        self.github(run_details={"123": {"created_at": "2026-10-01T01:00:00Z"}})
+        self.stripe_host = self.root / "metal-b"
+        self.stripe_state = self.stripe_host / "run/vm0-ci-stripe-deployments/pr-42"
+        self.stripe_unit = self.resource(
+            "etc/systemd/system/vm0-stripe-listener-pr-42.service", host="metal-b"
+        )
+        self.state(
+            self.stripe_unit.name, host="metal-b", ActiveState="inactive", Job="91"
+        )
+        self.stripe_lock = self.resource(
+            "var/lock/vm0-runner-lifecycle-pr-42.lock", host="metal-b", contents=""
+        )
+        self.stripe_env = {
             **self.env,
             "JOB_REF": "pr-42",
             "METAL_HOSTS": "metal-b",
-            "OFFLINE": "metal-a",
+            "GITHUB_RUN_ATTEMPT": "1",
             "API_PREVIEW_URL": "https://preview.example.test",
-            "STRIPE_SECRET_KEY": "fixture",
+            "STRIPE_SECRET_KEY": "sk_test_stripefixture",
+            "VERCEL_AUTOMATION_BYPASS_SECRET": "fixture/bypass+",
         }
-        result = subprocess.run(
-            args,
-            env={**env, "FAIL_STRIPE_CLEANUP": "1"},
-            capture_output=True,
+
+    @contextlib.contextmanager
+    def stripe_controller(self, **options):
+        with subprocess.Popen(
+            ["bash", str(TOOLS / "start-stripe-listener.sh")],
+            env={**self.stripe_env, **options},
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            check=False,
-            timeout=10,
+        ) as process:
+            try:
+                yield process
+            finally:
+                if process.poll() is None:
+                    process.kill()
+                    process.wait(timeout=5)
+
+    def wait_for_stripe_worker(self, process):
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            record_file = self.stripe_state / "current.json"
+            if record_file.is_file():
+                record = json.loads(record_file.read_text())
+                stage = self.stripe_state / record["operation"]
+                if stage.is_dir() and not (stage / "settings.json").exists():
+                    return
+            if process.poll() is not None:
+                self.fail(str(process.communicate()))
+            time.sleep(0.02)
+        self.fail("worker did not consume its inputs before waiting for the lock")
+
+    def stripe_unit_mutations(self):
+        lines = (self.stripe_host / "systemctl.log").read_text().splitlines()
+        return [
+            args[0] for args in map(json.loads, lines) if self.stripe_unit.name in args
+        ]
+
+    def test_stripe_recovers_original_listener_after_both_reply_losses(self):
+        self.stripe_fixture()
+        with self.stripe_lock.open("r+") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            with self.stripe_controller(DROP_STRIPE_REPLIES="1") as process:
+                self.wait_for_stripe_worker(process)
+                self.assertEqual(self.stripe_unit.read_text(), "fixture")
+                self.assertFalse((self.stripe_host / "systemctl.log").exists())
+                fcntl.flock(lock, fcntl.LOCK_UN)
+                output, errors = process.communicate(timeout=20)
+                self.assertEqual(process.returncode, 0, output + errors)
+        self.assertIn("submission response unavailable", output)
+        self.assertIn("observation unavailable", output)
+        self.assertIn("listener is ready on metal-b", output)
+        self.assertEqual(
+            (self.stripe_host / "stripe-ssh.log")
+            .read_text()
+            .splitlines()
+            .count("submit"),
+            1,
         )
-        self.assertEqual(result.returncode, 37, result.stderr)
-        self.assertFalse((self.root / "listener-started").exists())
-        result = subprocess.run(args, env=env, capture_output=True, text=True, timeout=10)
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertTrue((self.root / "listener-started").is_file())
+        mutations = self.stripe_unit_mutations()
+        self.assertLess(mutations.index("stop"), mutations.index("start"))
+        self.assertEqual(mutations.count("start"), 1)
+        self.assertEqual(
+            list(self.stripe_state.iterdir()), [self.stripe_state / "current.json"]
+        )
+        directory = self.stripe_host / "var/lib/vm0-runner/stripe/pr-42"
+        self.assertIn("fixture%2Fbypass%2B", (directory / "env").read_text())
+        self.assertNotIn(
+            "fixture/bypass+", self.stripe_unit.read_text() + output + errors
+        )
+        self.assertNotIn("sk_test_stripefixture", output + errors)
+
+        # A legacy replacement can retire the installed listener even while
+        # the old operation result remains on host tmpfs.
+        (directory / ".deployment").unlink()
+        with self.stripe_controller() as process:
+            output, errors = process.communicate(timeout=10)
+            self.assertNotEqual(process.returncode, 0, output + errors)
+            self.assertIn("receipt no longer matches", errors)
+        self.assertEqual(self.stripe_unit_mutations().count("start"), 1)
+
+    def test_stripe_stop_failure_preserves_the_original_listener_files(self):
+        self.stripe_fixture()
+        with self.stripe_controller(MUTATION_ERROR="1") as process:
+            output, errors = process.communicate(timeout=10)
+            self.assertNotEqual(process.returncode, 0, output + errors)
+        self.assertIn("failed to retire original listener", errors)
+        self.assertEqual(self.stripe_unit.read_text(), "fixture")
+        self.assertNotIn("start", self.stripe_unit_mutations())
+
+    def test_stripe_queued_worker_checks_closure_and_cleanup_retires_receipt(self):
+        self.stripe_fixture()
+        with self.stripe_lock.open("r+") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            with self.stripe_controller() as process:
+                self.wait_for_stripe_worker(process)
+                os.pwrite(lock.fileno(), b"2026-10-02T00:00:00Z\n", 0)
+                fcntl.flock(lock, fcntl.LOCK_UN)
+                output, errors = process.communicate(timeout=10)
+                self.assertNotEqual(process.returncode, 0, output + errors)
+                self.assertIn("failed to check admission", errors)
+        self.assertEqual(self.stripe_unit.read_text(), "fixture")
+        self.assertFalse((self.stripe_host / "systemctl.log").exists())
+        result, payload = self.worker("cleanup", 42, host="metal-b")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(payload["42"]["outcome"], "cleaned")
+        self.assertFalse(self.stripe_state.exists())
+        with self.stripe_controller() as process:
+            _, errors = process.communicate(timeout=10)
+            self.assertNotEqual(process.returncode, 0, errors)
+            self.assertIn("predates PR closure", errors)
+
+    def test_closed_pr_cleanup_preserves_a_newer_staged_stripe_operation(self):
+        path = self.resource(
+            "run/vm0-ci-stripe-deployments/pr-42/current.json",
+            contents=json.dumps(
+                {
+                    "operation": "a" * 64,
+                    "generation": ["2026-10-03T00:00:00Z", 123, 1],
+                    "status": "pending",
+                }
+            ),
+        )
+        path.parent.parent.chmod(0o700)
+        _, payload = self.worker("cleanup", 42)
+        self.assertEqual(payload["42"]["outcome"], "failed")
+        self.assertEqual(payload["42"]["error"], "resources remain after cleanup")
+        self.assertTrue(path.is_file())
 
 
 if __name__ == "__main__":
