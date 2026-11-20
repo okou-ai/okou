@@ -4352,10 +4352,6 @@ function ChatConnectorsPopoverBody({
   );
 }
 
-/**
- * The permission dialog retains its selected brief and loads only the target's
- * permission metadata and agent grants after the resource menu closes.
- */
 // ---------------------------------------------------------------------------
 // Voice input mic button
 // ---------------------------------------------------------------------------

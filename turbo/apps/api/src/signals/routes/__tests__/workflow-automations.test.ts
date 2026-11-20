@@ -2367,7 +2367,7 @@ describe("okou workflow automations", () => {
     expect(created.body.chatThreadId).toBeTruthy();
   });
 
-  it("creates Gmail event automations with a watch and agent connector grant", async () => {
+  it("creates a Gmail event automation with a watch and updates its match criteria", async () => {
     const scenario = await setupFixture();
     await connectGmail(scenario);
     const watchRecorder = configureGmailWatchMock();
