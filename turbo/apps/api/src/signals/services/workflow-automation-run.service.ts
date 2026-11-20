@@ -122,12 +122,12 @@ export const publishEnqueuedWorkflowInput$ = command(
 );
 
 function workflowEnqueueResult(
-  journaled: boolean,
+  claimsScheduleOccurrence: boolean,
   enqueued: boolean,
 ): RunWorkflowAutomationResult {
   return {
     kind: "enqueued",
-    scheduleOccurrence: journaled
+    scheduleOccurrence: claimsScheduleOccurrence
       ? enqueued
         ? "claimed"
         : "superseded"
@@ -163,8 +163,8 @@ async function flushWorkflowAdmission<T>(
 /**
  * Workflow entry for every trigger. Entry-owned state stays here: an automated
  * schedule tick coalesces this automation's older unconsumed ticks, and a
- * journaled Morning Brief occurrence and any trigger-source transition commit
- * with the queue event. This owner commits the prepared context, input and
+ * schedule claim or trigger-source transition commits with the queue event.
+ * This owner commits the prepared context, input and
  * queue row, and the thread is picked in the background: no
  * trigger waits for a launch, and a launch rejection appears in the thread as
  * `input.rejected`.
@@ -280,7 +280,7 @@ const prepareWorkflowQueueSource$ = command(
         return { steps: [] };
       }
       case "chat-run-finished": {
-        return workflowCallbackReceiptPlan(plan, args.automation.id);
+        return workflowCallbackReceiptPlan(plan, args);
       }
       case "webhook": {
         return workflowWebhookReceiptPlan(plan, args.automation.id);
@@ -547,6 +547,9 @@ const commitWorkflowInput$ = command(
       automationId: automation.id,
       currentTime,
       replacePendingTicks: replacePendingTicks !== undefined,
+      recurringScheduleClaim: args.recurringScheduleClaim
+        ? { binding: args, claim: args.recurringScheduleClaim }
+        : undefined,
       scheduleClaim: args.scheduleClaim,
       queueStatement,
       replacement: replacementPlan,
@@ -734,6 +737,9 @@ export const runWorkflowAutomationNow$ = command(
     const timing = workflowAutomationAdmissionTiming(args);
 
     const { scheduleClaim } = args;
+    const claimsUnjournaledSchedule =
+      args.recurringScheduleClaim !== undefined ||
+      usesProactiveWorkflowInput(args);
     const { model, source, plan, replacePendingTicks } = await set(
       prepareWorkflowAdmission$,
       args,
@@ -776,7 +782,7 @@ export const runWorkflowAutomationNow$ = command(
                 }
                 throw attempt.error;
               }
-              if (attempt.value === null && usesProactiveWorkflowInput(args)) {
+              if (attempt.value === null && claimsUnjournaledSchedule) {
                 admissionOutcome = "superseded";
                 return false;
               }
@@ -850,7 +856,7 @@ export const runWorkflowAutomationNow$ = command(
       waitUntil(set(notifyRunningChatRunOfPendingInput$, chatThreadId, signal));
     }
     return workflowEnqueueResult(
-      scheduleClaim !== undefined || usesProactiveWorkflowInput(args),
+      scheduleClaim !== undefined || claimsUnjournaledSchedule,
       enqueued,
     );
   },

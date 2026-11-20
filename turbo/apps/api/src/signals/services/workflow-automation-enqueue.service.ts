@@ -75,6 +75,8 @@ export interface RunWorkflowAutomationNowArgs {
    * event. Only journaled legacy Morning Brief ticks pass one.
    */
   readonly scheduleClaim?: WorkflowScheduleClaimPlan;
+  /** The observed ordinary cron or loop slot to consume with its queue event. */
+  readonly recurringScheduleClaim?: WorkflowRecurringScheduleClaim;
   readonly timing?: ApiDispatchTimingCollector;
 }
 
@@ -118,9 +120,14 @@ export interface WorkflowScheduleClaimPlan {
   readonly automationSnapshot: WorkflowAutomationSnapshot | undefined;
 }
 
+export type WorkflowRecurringScheduleClaim = Pick<
+  WorkflowScheduleClaimPlan,
+  "scheduledAnchorAt" | "claimedAt" | "automationSnapshot"
+>;
+
 export class ScheduleOccurrenceUnavailableError extends Error {
   constructor() {
-    super("Schedule occurrence was consumed by a competing tick");
+    super("Schedule occurrence is no longer available for admission");
     this.name = "ScheduleOccurrenceUnavailableError";
   }
 }
