@@ -1360,6 +1360,7 @@ async fn apply_prepared_storage(
     prepared: &mut crate::storage_cache::PreparedStorage,
     telemetry: &mut JobTelemetry,
     cache_started: Instant,
+    skipped_optional_mounts: &mut HashSet<String>,
 ) -> RunnerResult<AppliedStorage> {
     use std::sync::{
         Arc,
@@ -1464,6 +1465,12 @@ async fn apply_prepared_storage(
         };
         match (population, application) {
             (Err(_), Err(error)) if !host_primary => Err(error),
+            (Err(error), Ok(Some(skipped))) => {
+                // Guest can finish before the last publication is acknowledged.
+                // A replacement still needs the skips in that validated receipt.
+                skipped_optional_mounts.extend(skipped);
+                Err(error)
+            }
             (Err(error), _) | (_, Err(error)) => Err(error),
             (Ok(_), Ok(None)) => Err(RunnerError::Internal(
                 "Guest storage handoff was lost".into(),
@@ -1613,7 +1620,13 @@ async fn prepare_guest_storage(
                 }
                 if owned_sources? {
                     let deferred = apply_prepared_storage(
-                        sandbox, context, config, prepared, telemetry, cache_started,
+                        sandbox,
+                        context,
+                        config,
+                        prepared,
+                        telemetry,
+                        cache_started,
+                        skipped_optional_mounts,
                     )
                     .await?;
                     let _ = prepared_storage.take();

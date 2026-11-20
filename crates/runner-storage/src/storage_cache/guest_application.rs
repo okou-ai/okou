@@ -185,7 +185,7 @@ impl GuestApplication {
         let mut snapshot = plan.clone();
         for (group, outcome) in ordinary {
             for target in group.targets() {
-                if matches!(outcome, TargetOutcome::Unavailable) {
+                if matches!(outcome, TargetOutcome::Unavailable(_)) {
                     snapshot.mark_optional_unavailable(target.handle)?;
                 } else if matches!(outcome, TargetOutcome::Hit) && !plan.has_decoded(target.handle)
                 {
@@ -287,7 +287,7 @@ impl GuestApplication {
                     .iter()
                     .any(|(published, _)| *published == index)
             {
-                let path = if matches!(outcome, TargetOutcome::Unavailable) {
+                let path = if matches!(outcome, TargetOutcome::Unavailable(_)) {
                     readiness.unavailable_path(&self.runtime, index)
                 } else {
                     readiness.ready_path(&self.runtime, index)

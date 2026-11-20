@@ -1,6 +1,95 @@
 use super::*;
 
 #[tokio::test]
+async fn empty_optional_archive_is_skipped_once_and_the_next_run_can_fetch_it() {
+    for prepare_prefetch in [false, true] {
+        let temp = tempfile::tempdir().unwrap();
+        let home = home_at(&temp);
+        let server = MockServer::start_async().await;
+        let bytes = tarball_bytes();
+        let archive = server
+            .mock_async(|when, then| {
+                when.method(GET).path("/optional");
+                then.status(200).body(bytes.clone());
+            })
+            .await;
+        let name = guest_contracts::storage_manifest::WORKFLOW_STORAGE_NAME;
+        let mut entry = storage_entry_with_archive_size(
+            "/skills/optional".into(),
+            server.url("/optional"),
+            name,
+            "v1",
+            Some(bytes.len() as u64),
+        );
+        entry.optional = true;
+        write_cached_archive(&home, name, "v1", &[]);
+
+        let admission = FreshArchiveDeliveryAdmission::new();
+        let cancel = CancellationToken::new();
+        let mut telemetry = new_telemetry();
+        let sandbox = MockSandbox::new("optional-empty-cache");
+        let mut failing = plan_from_entries(vec![entry.clone()], Vec::new(), None);
+        let mut prepared = if prepare_prefetch {
+            Some(
+                prepare_fresh_archive_delivery(
+                    &mut failing,
+                    &home,
+                    &admission,
+                    &cancel,
+                    &mut telemetry,
+                    None,
+                )
+                .await
+                .unwrap(),
+            )
+        } else {
+            None
+        };
+        let deferred = populate_cache_with_fresh_delivery(
+            &mut failing,
+            &sandbox,
+            &home,
+            &mut telemetry,
+            prepared.as_mut(),
+            None,
+        )
+        .await
+        .unwrap();
+        assert!(deferred.is_none());
+        assert_eq!(storage_archive_url(&failing, 0), None);
+        archive.assert_calls_async(0).await;
+        let cached = home.storage_cache_dir(name, "v1").join("archive.tar.gz");
+        assert!(!cached.exists());
+
+        let mut next = plan_from_entries(vec![entry], Vec::new(), None);
+        let mut prepared = prepare_fresh_archive_delivery(
+            &mut next,
+            &home,
+            &admission,
+            &cancel,
+            &mut telemetry,
+            None,
+        )
+        .await
+        .unwrap();
+        assert!(prepared.has_owned_sources(&mut telemetry).await.unwrap());
+        populate_cache_with_fresh_delivery(
+            &mut next,
+            &sandbox,
+            &home,
+            &mut telemetry,
+            Some(&mut prepared),
+            None,
+        )
+        .await
+        .unwrap();
+        archive.assert_calls_async(1).await;
+        assert_eq!(std::fs::read(cached).unwrap(), bytes);
+        admission.shutdown().await;
+    }
+}
+
+#[tokio::test]
 async fn optional_runner_prefetch_reports_a_failed_object_without_retrying() {
     let temp = tempfile::tempdir().unwrap();
     let home = home_at(&temp);

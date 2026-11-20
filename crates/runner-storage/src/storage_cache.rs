@@ -3,7 +3,7 @@
 //! Sits between storage planning and `download_storages` in `run_in_sandbox`.
 //! For each eligible planned archive, checks a host-local
 //! cache keyed by `(vasStorageName, vasVersionId)`. On hit, reads the cached
-//! tarball from disk and pushes it into the guest via vsock. On miss, leaves
+//! tarball from disk and pushes it into the guest via vsock. An unadmitted miss leaves
 //! the original URL for the current guest download and returns a deferred
 //! cache fill for future runs. The executor starts that fill only after the
 //! agent process has spawned. Once guest staging succeeds, the plan's
@@ -14,15 +14,17 @@
 //!
 //! Mixed attempts can hand the complete immutable Guest input to application
 //! after ordinary ready inputs are staged, while the same population owner
-//! finishes admitted fresh sources. Operation-bound readiness publishes only
-//! complete staged archives. Both owners settle before Agent launch; ordinary
-//! all-cache attempts retain the all-prepared application path.
+//! finishes admitted fresh sources. Operation-bound readiness publishes complete
+//! staged archives or an unavailable result for an optional-only source. Both
+//! owners settle before Agent launch. Ordinary all-cache attempts keep the
+//! all-prepared application path.
 //!
 //! Production source preparation first selects admissible extracted-file hits
 //! and pins their owned bytes in the plan. Those identities bypass archive
 //! prefetch and staging entirely.
-//! Each selected mount must fit a bounded Guest request; larger combined
-//! manifests are batched by the executor without increasing payload budgets.
+//! Each selected mount must fit a bounded Guest request. Larger independent
+//! manifests may be batched. A complete mount list stays with its decoded files,
+//! staging the list separately when it exceeds the remaining frame space.
 //!
 //! After successful direct use and Agent spawn,
 //! the same bounded background owner can retire the redundant compressed entry
@@ -33,13 +35,15 @@
 //! identities to a runner owner before independent pre-spawn preparation.
 //! That owner performs a bounded sequence of read-only GET attempts, keeps the
 //! cache writer through atomic publication and the runner-wide permit through
-//! guest application, and stages only complete content. A terminal failure fails
-//! storage preparation after draining; it does not retry the request in the guest.
+//! guest application, and stages only complete content. A required source's
+//! terminal failure fails storage preparation. An admitted optional-only source
+//! makes one request and a failure skips its packages for the current Run.
 //! Keying on both name and version gives same-version entries with different
 //! storage names separate collision-resistant staged filenames in normal
 //! operation, so they do not clobber each other on the guest tmpfs.
-//! Guest owns cold downloads for groups used only by optional packages. Warm
-//! archive and decoded-file hits use the same cache delivery paths.
+//! Guest owns cold downloads that Runner does not admit, including optional
+//! sources with unknown sizes. Warm archive and decoded-file hits use the
+//! same cache delivery paths.
 //!
 //! Entries above `CACHE_MAX_SIZE`, entries without a content key, and
 //! reuse/repair actions pass through untouched.
@@ -256,6 +260,16 @@ impl CacheTargetGroup {
                 "optional package preparation failed"
             );
         }
+    }
+
+    fn record_unavailable(
+        &self,
+        step: &'static str,
+        error: &impl fmt::Display,
+        unavailable: &mut Vec<ArchiveHandle>,
+    ) {
+        self.log_optional_preparation_failure(step, error);
+        unavailable.extend(self.targets().map(|target| target.handle));
     }
 }
 
@@ -884,9 +898,7 @@ impl FreshArchiveDelivery {
         error: &FreshArchiveFetchError,
     ) -> bool {
         if error.reason != "cancelled" && group.optional_only() {
-            group.log_optional_preparation_failure("archive download", error);
-            self.unavailable
-                .extend(group.targets().map(|target| target.handle));
+            group.record_unavailable("archive download", error, &mut self.unavailable);
             true
         } else {
             false
@@ -902,9 +914,7 @@ impl FreshArchiveDelivery {
             && error.kind() != io::ErrorKind::Interrupted
             && group.optional_only()
         {
-            group.log_optional_preparation_failure("archive cache publication", error);
-            self.unavailable
-                .extend(group.targets().map(|target| target.handle));
+            group.record_unavailable("archive cache publication", error, &mut self.unavailable);
             true
         } else {
             false
@@ -1218,7 +1228,7 @@ impl ProcessedGroupTask {
         if self
             .processed
             .as_ref()
-            .is_ok_and(|processed| matches!(processed.outcome, TargetOutcome::Unavailable))
+            .is_ok_and(|processed| matches!(processed.outcome, TargetOutcome::Unavailable(_)))
         {
             unavailable.extend(self.group.targets().map(|target| target.handle));
         }
@@ -1395,9 +1405,14 @@ type ProcessedGroupTaskResult = ProcessedGroupTask;
 enum TargetOutcome {
     Hit,
     Decoded,
-    Unavailable,
+    Unavailable(Option<Box<EmptyCachedArchive>>),
     MissPassthrough { reason: &'static str },
     LockBusyPassthrough,
+}
+
+struct EmptyCachedArchive {
+    path: PathBuf,
+    lock_path: PathBuf,
 }
 
 enum DownloadBody {
@@ -1679,7 +1694,7 @@ async fn stage_fresh_archives(
     let mut batch = FreshGuestStageBatch::default();
     for FreshArchiveResolved { group, archive } in resolved {
         let Some(archive) = archive else {
-            outcomes.push((group, TargetOutcome::Unavailable));
+            outcomes.push((group, TargetOutcome::Unavailable(None)));
             continue;
         };
         let FreshArchivePublished { bytes, permit } = archive;
@@ -1722,9 +1737,23 @@ async fn stage_processed_group(
     stage: &mut GuestStageRecorder<'_>,
 ) -> RunnerResult<()> {
     let ProcessedGroup {
-        outcome,
+        mut outcome,
         stage_write,
     } = processed;
+    if let TargetOutcome::Unavailable(empty) = &mut outcome
+        && let Some(empty) = empty.take()
+    {
+        let EmptyCachedArchive { path, lock_path } = *empty;
+        match lock::try_acquire_existing_or_missing(lock_path).await {
+            Ok(lock::ExistingTryLock::Acquired(writer)) => {
+                retire_optional_empty_archive(path, writer).await;
+            }
+            Ok(lock::ExistingTryLock::Missing | lock::ExistingTryLock::Busy) => {}
+            Err(error) => {
+                error!(cached = %path.display(), %error, "failed to lock empty optional archive for removal");
+            }
+        }
+    }
     if let Some(stage_write) = stage_write {
         push_guest_stage_write(stage_batch, stage_write, stage).await?;
     }
@@ -2299,7 +2328,7 @@ async fn classify_fresh_archives(
                     continue;
                 }
             };
-            let claim = claim_fresh_archive(group, &home, &mut metrics).await;
+            let claim = claim_fresh_archive(group, &home, &mut metrics, &mut unavailable).await;
             match optional_preflight(group, claim, &mut unavailable)? {
                 Some(FreshArchiveClaim::Cold(writer)) => {
                     requests.start(
@@ -2312,7 +2341,7 @@ async fn classify_fresh_archives(
                     )?;
                 }
                 Some(FreshArchiveClaim::Busy) => ordinary_required = true,
-                Some(FreshArchiveClaim::Warm) | None => {}
+                Some(FreshArchiveClaim::Warm | FreshArchiveClaim::Skipped) | None => {}
             }
         }
         if ordinary_required || expanded.is_empty() {
@@ -2339,11 +2368,11 @@ async fn classify_fresh_archives(
             let permit = permits.split(1).ok_or_else(|| {
                 RunnerError::Internal("incomplete expanded archive reservation".into())
             })?;
-            let claim = claim_fresh_archive(group, &home, &mut metrics).await;
+            let claim = claim_fresh_archive(group, &home, &mut metrics, &mut unavailable).await;
             match optional_preflight(group, claim, &mut unavailable)? {
                 Some(FreshArchiveClaim::Cold(writer)) => claims.push((group, writer, permit)),
                 Some(FreshArchiveClaim::Busy) => return Ok(()),
-                Some(FreshArchiveClaim::Warm) | None => {}
+                Some(FreshArchiveClaim::Warm | FreshArchiveClaim::Skipped) | None => {}
             }
         }
         // No GET has started for these claims. A busy writer above releases all
@@ -2393,8 +2422,7 @@ fn optional_preflight<T>(
         Err(RunnerError::Io(error))
             if error.kind() != io::ErrorKind::Interrupted && group.optional_only() =>
         {
-            group.log_optional_preparation_failure("archive prefetch preparation", &error);
-            unavailable.extend(group.targets().map(|target| target.handle));
+            group.record_unavailable("archive prefetch preparation", &error, unavailable);
             Ok(None)
         }
         Err(error) => Err(error),
@@ -2405,12 +2433,14 @@ enum FreshArchiveClaim {
     Cold(nix::fcntl::Flock<std::fs::File>),
     Warm,
     Busy,
+    Skipped,
 }
 
 async fn claim_fresh_archive(
     group: &CacheTargetGroup,
     home: &HomePaths,
     metrics: &mut CacheProcessMetrics,
+    unavailable: &mut Vec<ArchiveHandle>,
 ) -> RunnerResult<FreshArchiveClaim> {
     let target = &group.representative;
     let writer =
@@ -2433,7 +2463,13 @@ async fn claim_fresh_archive(
     match fs::metadata(&archive_path).await {
         Ok(metadata) if metadata.len() == 0 => {
             if group.optional_only() {
-                return Err(empty_cached_archive_error(&archive_path));
+                group.record_unavailable(
+                    "archive prefetch preparation",
+                    &empty_cached_archive_error(&archive_path),
+                    unavailable,
+                );
+                retire_optional_empty_archive(archive_path, writer).await;
+                return Ok(FreshArchiveClaim::Skipped);
             }
             evict_empty_cache(target, &cache_dir).await?;
         }
@@ -2763,16 +2799,24 @@ async fn process_group_hit_or_passthrough(
         Ok(ProcessedTarget {
             outcome,
             stage_write,
-        }) => Ok(ProcessedGroup {
-            outcome,
-            stage_write,
-        }),
+        }) => {
+            if let TargetOutcome::Unavailable(Some(empty)) = &outcome {
+                group.log_optional_preparation_failure(
+                    "archive lookup",
+                    &empty_cached_archive_error(&empty.path),
+                );
+            }
+            Ok(ProcessedGroup {
+                outcome,
+                stage_write,
+            })
+        }
         Err(RunnerError::Io(error))
             if optional_only && error.kind() != io::ErrorKind::Interrupted =>
         {
             group.log_optional_preparation_failure("archive lookup", &error);
             Ok(ProcessedGroup {
-                outcome: TargetOutcome::Unavailable,
+                outcome: TargetOutcome::Unavailable(None),
                 stage_write: None,
             })
         }
@@ -3009,7 +3053,13 @@ async fn process_one_hit_or_passthrough(
                 stage_write: None,
             })
         }
-        CachedArchive::Empty if optional => Err(empty_cached_archive_error(&archive_path)),
+        CachedArchive::Empty if optional => Ok(ProcessedTarget {
+            outcome: TargetOutcome::Unavailable(Some(Box::new(EmptyCachedArchive {
+                path: archive_path,
+                lock_path,
+            }))),
+            stage_write: None,
+        }),
         CachedArchive::Empty => Ok(ProcessedTarget {
             outcome: TargetOutcome::MissPassthrough { reason: "empty" },
             stage_write: None,
@@ -3422,6 +3472,32 @@ fn empty_cached_archive_error(path: &Path) -> RunnerError {
     )
 }
 
+async fn retire_optional_empty_archive(
+    archive_path: PathBuf,
+    writer: nix::fcntl::Flock<std::fs::File>,
+) {
+    // The group already recorded its failure. Reclaim only the empty file
+    // under its writer, including if the Run drops this maintenance future.
+    let task = tokio::task::spawn_blocking(move || {
+        let _writer = writer;
+        let result = match std::fs::symlink_metadata(&archive_path) {
+            Ok(metadata) if metadata.is_file() && metadata.len() == 0 => {
+                std::fs::remove_file(&archive_path)
+            }
+            Ok(_) => Ok(()),
+            Err(error) => Err(error),
+        };
+        if let Err(error) = result
+            && error.kind() != io::ErrorKind::NotFound
+        {
+            error!(cached = %archive_path.display(), %error, "failed to remove empty optional archive");
+        }
+    });
+    if let Err(error) = task.await {
+        error!(%error, "empty optional archive cleanup task failed");
+    }
+}
+
 fn initial_body_capacity(
     primary_size: Option<u64>,
     fallback_size: Option<u64>,
@@ -3599,7 +3675,7 @@ fn apply_group_outcome(
     telemetry: &mut JobTelemetry,
 ) -> RunnerResult<()> {
     for target in group.targets() {
-        if matches!(outcome, TargetOutcome::Unavailable) {
+        if matches!(outcome, TargetOutcome::Unavailable(_)) {
             plan.mark_optional_unavailable(target.handle)?;
         } else if plan.has_decoded(target.handle) {
             apply_outcome(plan, target, &TargetOutcome::Decoded, telemetry);
@@ -3668,7 +3744,7 @@ fn apply_outcome(
                 );
             }
         }
-        TargetOutcome::Unavailable => {}
+        TargetOutcome::Unavailable(_) => {}
     }
 }
 
@@ -3724,7 +3800,7 @@ fn add_passthrough_summary(
         TargetOutcome::Hit | TargetOutcome::Decoded => summary.hit_targets += target_count,
         TargetOutcome::MissPassthrough { .. } => summary.miss_targets += target_count,
         TargetOutcome::LockBusyPassthrough => summary.lock_busy_targets += target_count,
-        TargetOutcome::Unavailable => {}
+        TargetOutcome::Unavailable(_) => {}
     }
 }
 
