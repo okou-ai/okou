@@ -288,12 +288,17 @@ fn decoded_storage_input_with_rpc_context_above_map_limit_uses_pipe() {
         "storageMounts": [
             {"mountPath":"/first","archiveUrl":"file:///tmp/unused-first"},
             {"mountPath":"/second","archiveUrl":"file:///tmp/unused-second"}
-        ]
+        ],
+        "removedPackagePaths": ["/retired"]
     }"#
     .to_vec();
-    manifest.resize(storage_files::MAX_MANIFEST_BYTES, b' ');
-    let input = storage_files::encode_input(&manifest, &[("/first", &first), ("/second", &second)])
-        .unwrap();
+    manifest.resize(storage_files::MAX_COMPLETE_MANIFEST_BYTES, b' ');
+    let input = storage_files::PreparedInput::new_complete(
+        manifest,
+        vec![("/first", &first), ("/second", &second)],
+    )
+    .unwrap()
+    .into_bytes();
     // The RPC context puts the whole received file beyond this helper-input limit.
     assert_eq!(input.len(), storage_files::MAX_INPUT_BYTES);
     assert_storage_input_transport(&input, storage_files::STDIN_ARGUMENT, "-p");
