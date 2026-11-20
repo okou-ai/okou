@@ -8,7 +8,6 @@ import { pathname } from "../../../signals/location.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { installContinuityWorkspace } from "./chat-continuity-test-helpers.ts";
 import {
-  CHAT_LIST_AGENT_ID,
   chatListThread,
   sidebarThreadLinks,
   sidebarThreadTitles,
@@ -46,7 +45,7 @@ async function prepare(main: number | null = 1, side = false) {
   });
   const path =
     main === null
-      ? `/agents/${CHAT_LIST_AGENT_ID}/chat`
+      ? "/"
       : `/chats/${threads[main]!.id}${side ? `?sidebar=${threads[2]!.id}` : ""}`;
   await setupPage({
     context,

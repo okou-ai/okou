@@ -62,9 +62,6 @@ test("Lab remains available while onboarding is required", async () => {
   expect(
     within(featureSwitchGroup("Alpha")).getByText(FeatureSwitchKey.Banking),
   ).toBeInTheDocument();
-  expect((await screen.findAllByText("Pinned Agent")).length).toBeGreaterThan(
-    0,
-  );
 });
 
 test("Lab groups active feature switches", async () => {

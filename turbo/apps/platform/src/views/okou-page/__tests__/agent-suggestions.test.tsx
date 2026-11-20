@@ -1,8 +1,8 @@
+import { proactiveSuggestionsContract } from "@okouai/api-contracts/contracts/proactive-suggestions";
 import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import { suggestionFeedbacks } from "@okouai/api-contracts/contracts/suggestion-context";
 import {
   act,
-  cleanup,
   fireEvent,
   screen,
   waitFor,
@@ -194,6 +194,25 @@ function mockPool(initial: Suggestion[] = [makeSuggestion()]) {
     notifySuggestionsChanged();
     return respond(200, sources);
   });
+  context.mocks.api(proactiveSuggestionsContract.get, ({ respond }) => {
+    return respond(200, {
+      enabled: sources.suggestions,
+      status: sources.suggestions ? "enabled" : "paused",
+      unavailableReason: null,
+    });
+  });
+  context.mocks.api(
+    proactiveSuggestionsContract.updateWithFeed,
+    ({ body, respond }) => {
+      sources = { ...sources, suggestions: body.enabled };
+      notifySuggestionsChanged();
+      return respond(200, {
+        enabled: body.enabled,
+        status: body.enabled ? "enabled" : "paused",
+        unavailableReason: null,
+      });
+    },
+  );
   context.mocks.api(feedContract.summary, ({ respond }) => {
     return respond(200, {
       hasUnread:
@@ -2355,7 +2374,6 @@ test("The member picks a For you cover, keeps it after reload and can return to 
   );
 
   // A fresh page reads the pick back from this browser.
-  cleanup();
   await openForYou();
   await activeForYouCard(items[0].content.title);
   expect(cover()).toBe(forYouCovers[7].src);

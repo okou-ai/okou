@@ -22,7 +22,6 @@ import {
 import {
   builtinConnector,
   connectorAccount,
-  SCOUT_AGENT_ID,
   createComposerConnectorHelpers,
 } from "./chat-composer-connectors-test-helpers.ts";
 import {
@@ -196,7 +195,7 @@ test.each([false, true])(
       url: "https://files.example.test/account-selection-notes.txt",
     });
 
-    const newChatPath = `/agents/${SCOUT_AGENT_ID}/chat`;
+    const newChatPath = "/";
     await setupPage({ context, path: newChatPath, locale: "en-US" });
     await loadComposer();
     await openConnectors();
@@ -310,7 +309,7 @@ test("Resending an unconfirmed creation reuses its chat and event identities", a
     });
   });
 
-  const newChatPath = `/agents/${SCOUT_AGENT_ID}/chat`;
+  const newChatPath = "/";
   await setupPage({ context, path: newChatPath, locale: "en-US" });
   await loadComposer();
   await openConnectors();

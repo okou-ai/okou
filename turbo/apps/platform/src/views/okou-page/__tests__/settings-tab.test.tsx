@@ -1,3 +1,4 @@
+import { instructionsContract } from "@okouai/api-contracts/contracts/instructions";
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
@@ -13,10 +14,7 @@ import {
   workflowsDetailContract,
   type WorkflowSummary,
 } from "@okouai/api-contracts/contracts/workflows";
-import {
-  AVATAR_PRESET_COUNT,
-  DEFAULT_AGENT_AVATAR_URL,
-} from "@okouai/core/agent-avatar";
+import { AVATAR_PRESET_COUNT } from "@okouai/core/agent-avatar";
 
 import {
   click,
@@ -416,83 +414,28 @@ test("Allow an org admin to update another user's public agent avatar", async ()
   expect(update).not.toHaveProperty("visibility");
 });
 
-function prepareDefaultAgentProfile(): void {
-  let defaultAgent: AgentResponse = {
-    agentId: DEFAULT_AGENT_ID,
-    isDefaultAgent: true,
-    ownerId: "test-user-123",
-    description: "The default assistant",
-    displayName: "Okou",
-    sound: "professional",
-    avatarUrl: DEFAULT_AGENT_AVATAR_URL,
-    visibility: "public",
-  };
-  context.mocks.data.agents([defaultAgent]);
-  context.mocks.api(agentsByIdContract.get, ({ respond }) => {
-    return respond(200, defaultAgent);
-  });
-  context.mocks.api(agentsByIdContract.updateMetadata, ({ body, respond }) => {
-    defaultAgent = { ...defaultAgent, ...body };
-    return respond(200, defaultAgent);
-  });
-  let content = "Original team instructions";
-  context.mocks.api(agentInstructionsContract.get, ({ respond }) => {
-    return respond(200, { content, filename: "AGENTS.md" });
-  });
-  context.mocks.api(agentInstructionsContract.update, ({ body, respond }) => {
-    content = body.content;
-    return respond(200, defaultAgent);
-  });
-  context.mocks.data.onboardingStatus({ defaultAgentId: DEFAULT_AGENT_ID });
-}
-
-test("Edit default Okou description and tone through the profile deep link", async () => {
-  prepareDefaultAgentProfile();
-  await setupPage({ context, path: `/agents/${DEFAULT_AGENT_ID}?tab=profile` });
-
-  await expect(screen.findByLabelText("Name")).resolves.toHaveAttribute(
-    "readonly",
-  );
-  expect(tabByText("Profile")).toHaveAttribute("aria-selected", "true");
-  expect(screen.queryByLabelText("Customize avatar")).not.toBeInTheDocument();
-  expect(screen.queryByLabelText("Make public")).not.toBeInTheDocument();
-  expect(screen.queryByText("Delete agent")).not.toBeInTheDocument();
-  await fill(screen.getByLabelText("Description"), "Updated shared role");
-  click(screen.getByText("Friendly"));
-  click(await screen.findByText("Save"));
-  await expect(screen.findByText("Profile saved")).resolves.toBeInTheDocument();
-
-  click(tabByText("Instructions"));
-  await screen.findByLabelText("Instructions editor");
-  click(tabByText("Profile"));
-  await expect(
-    screen.findByDisplayValue("Updated shared role"),
-  ).resolves.toBeInTheDocument();
-  expect(screen.getByText("Warm and approachable")).toBeInTheDocument();
-  expect(screen.getByLabelText("Name")).toHaveValue("Okou");
-});
-
-test("Edit and reopen default Okou instructions through the deep link", async () => {
-  prepareDefaultAgentProfile();
-  await setupPage({
-    context,
-    path: `/agents/${DEFAULT_AGENT_ID}?tab=instructions`,
-  });
-
-  const editor = await screen.findByLabelText("Instructions editor");
-  expect(tabByText("Instructions")).toHaveAttribute("aria-selected", "true");
-  await fill(editor, "Updated shared instructions");
-  click(await screen.findByText("Save"));
-  await expect(
-    screen.findByText("Instructions saved"),
-  ).resolves.toBeInTheDocument();
-
-  click(tabByText("Profile"));
-  await screen.findByLabelText("Name");
-  click(tabByText("Instructions"));
-  const savedEditor = await screen.findByLabelText("Instructions editor");
-  expect(savedEditor).toHaveTextContent("Updated shared instructions");
-});
+test.each(["profile", "instructions"])(
+  "The default Agent's saved %s bookmark opens personal Instructions",
+  async (tab) => {
+    context.mocks.api(instructionsContract.get, ({ respond }) => {
+      return respond(200, {
+        orgId: "test-org-123",
+        userId: "test-user-123",
+        content: "Use concise updates",
+        version: "opaque-v1",
+        updatedAt: "2026-11-13T10:00:00Z",
+      });
+    });
+    await setupPage({
+      context,
+      path: "/agents/" + DEFAULT_AGENT_ID + "?tab=" + tab,
+    });
+    const dialog = await screen.findByRole("dialog", { name: "Settings" });
+    await expect(
+      within(dialog).findByLabelText("Instructions"),
+    ).resolves.toHaveTextContent("Use concise updates");
+  },
+);
 
 test("Edit and save an agent profile", async () => {
   const profile = prepareAgentProfile();
@@ -851,10 +794,16 @@ test("A failed copy preserves the source agent and workflows already copied", as
   expect(screen.getByDisplayValue("Research Agent")).toBeInTheDocument();
   expect(within(dialog).getByText("Delete agent")).toBeDisabled();
   click(within(dialog).getByText("Cancel"));
+  click(screen.getByText("Delete agent"));
+  const source = await screen.findByRole("dialog");
+  await expect(
+    within(source).findByText("Weekly research"),
+  ).resolves.toBeVisible();
+  expect(within(source).getByText("Daily research")).toBeVisible();
+  click(within(source).getByText("Cancel"));
   click(linkTo("/workflows"));
-  await screen.findByText("Weekly research");
-  expect(screen.getAllByText("Daily research")).toHaveLength(2);
-  expect(screen.getAllByText("Weekly research")).toHaveLength(1);
+  await expect(screen.findByText("Daily research")).resolves.toBeVisible();
+  expect(screen.queryByText("Weekly research")).toBeNull();
 });
 
 test("Keep the source agent when its workflow refresh fails after copying", async () => {

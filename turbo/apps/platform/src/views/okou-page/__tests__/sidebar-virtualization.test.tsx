@@ -181,11 +181,7 @@ test("Keep the chat viewport keyboard-focusable only while a conversation is ope
   viewport.focus();
   expect(viewport).toHaveFocus();
 
-  click(
-    within(sidebar).getByLabelText("New chat", {
-      selector: "button[aria-keyshortcuts]",
-    }),
-  );
+  click(within(sidebar).getByRole("link", { name: /^New chat/ }));
   await waitFor(() => {
     expect(viewport).toHaveAttribute("tabindex", "-1");
   });

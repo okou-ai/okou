@@ -5,7 +5,7 @@ import {
   getDocument,
   GlobalWorkerOptions,
 } from "pdfjs-dist/legacy/build/pdf.mjs";
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
@@ -165,15 +165,11 @@ test.each(["app.okou.ai", "pr-1-app.omby.ai"])(
     expect(fireEvent.click(link)).toBeTruthy();
     expect(browser.blobForUrl(url)).toBe(pdf);
 
-    const newChat = within(screen.getByLabelText("Chat threads")).getByRole(
-      "link",
-      { name: /New chat/ },
-    );
-    click(newChat);
+    click(screen.getByRole("link", { name: "Workflows" }));
     await waitFor(() => {
-      expect(location.pathname).not.toBe(`/chats/${THREAD_ID}`);
+      expect(location.pathname).toBe("/workflows");
+      expect(browser.blobForUrl(url)).toBeNull();
     });
-    expect(browser.blobForUrl(url)).toBeNull();
   },
 );
 

@@ -290,14 +290,9 @@ test.each([
 test.each([
   {
     filter: "All",
-    titles: [
-      "Budget planning",
-      "Budget agent",
-      "Budget review",
-      "Budget report",
-    ],
-    hints: ["1", "2", "3", "4"],
-    digit: "4",
+    titles: ["Budget planning", "Budget review", "Budget report"],
+    hints: ["1", "2", "3"],
+    digit: "3",
   },
 ])(
   "Open a resource from numbered search results in $filter",
@@ -312,7 +307,7 @@ test.each([
       caseId: 29,
       threads: [titleMatch],
     });
-    const { agent, workflow, artifact } = installSearchResources();
+    const { workflow, artifact } = installSearchResources();
     await setupPage({
       context,
       path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
@@ -324,11 +319,10 @@ test.each([
     await waitFor(() => {
       expect(searchResultTitles(dialog)).toStrictEqual([
         "Budget planning",
-        "Budget agent",
         "Budget review",
         "Budget report",
       ]);
-      expect(numberedHints(dialog)).toStrictEqual(["1", "2", "3", "4"]);
+      expect(numberedHints(dialog)).toStrictEqual(["1", "2", "3"]);
     });
     const filterButton = queryAllByRoleFast("button", dialog).find((item) => {
       return item.textContent === filter;
@@ -348,11 +342,7 @@ test.each([
       shiftKey: false,
     });
     const expectedPath =
-      filter === "Agents"
-        ? `/agents/${agent.agentId}/chat`
-        : filter === "Workflows"
-          ? `/workflows/${workflow.id}`
-          : "/artifacts";
+      filter === "Workflows" ? `/workflows/${workflow.id}` : "/artifacts";
     const expectedArtifact = filter === "All" ? artifact.id : null;
     const expectedTab = filter === "All" ? "file" : null;
     await waitFor(() => {

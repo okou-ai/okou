@@ -364,7 +364,7 @@ test("Returning to an interrupted chat does not reuse abandoned details", async 
     ).not.toBeInTheDocument();
   });
 
-  const workflowsLink = await findLink("Agents");
+  const workflowsLink = await findLink("Workflows");
   await user.click(workflowsLink);
   const agentsHeading = await screen.findByRole("heading", {
     name: "Workflows",

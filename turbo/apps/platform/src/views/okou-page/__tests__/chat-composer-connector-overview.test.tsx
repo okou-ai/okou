@@ -521,7 +521,13 @@ test("Release the cached subscription on navigation and reload the returning Cha
   await openAfterSetup();
   await findFastControl("button", "Probe 1");
   click(await findFastControl("button", "Connectors"));
-  click(await findFastControl("button", "New chat"));
+  const newChat = screen
+    .getByTestId("chat-list-column")
+    .querySelector<HTMLAnchorElement>('a[href="/"]');
+  if (!newChat) {
+    throw new Error("Expected the new chat link in the chat list");
+  }
+  click(newChat);
   await waitFor(() => {
     expect(window.location.pathname).toBe("/");
   });

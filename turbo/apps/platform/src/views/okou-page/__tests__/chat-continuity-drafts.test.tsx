@@ -128,6 +128,7 @@ test("Restore the first edited draft without leaking the other conversation's dr
 
 test("Protect local edits while a saved draft is loading", async () => {
   const auth = chatListAuth(302);
+  const draftRequested = context.mocks.deferred<void>();
   const delayedDraft = context.mocks.deferred<void>();
   const oldAttachment = continuityAttachment(2, 1, "older-notes.txt");
   let draftResponseCompleted = false;
@@ -136,6 +137,7 @@ test("Protect local edits while a saved draft is loading", async () => {
   installChatListStream(context, { caseId: 2, snapshot: [] });
   installActiveChatBoundaries(context);
   context.mocks.api(agentDraftContract.get, async ({ respond }) => {
+    draftRequested.resolve();
     await delayedDraft.promise;
     draftResponseCompleted = true;
     return respond(
@@ -149,11 +151,12 @@ test("Protect local edits while a saved draft is loading", async () => {
 
   const page = await startPage({
     context,
-    path: "/agents/c7000000-0000-4000-a000-000000000001/chat",
+    path: "/",
     auth,
   });
 
   const composer = await messageComposer();
+  await draftRequested.promise;
   await userEvent.type(composer, "Fresh work typed locally");
   expect(composer).toHaveTextContent("Fresh work typed locally");
   delayedDraft.resolve();

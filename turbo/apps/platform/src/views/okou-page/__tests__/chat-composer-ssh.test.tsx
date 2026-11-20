@@ -507,7 +507,7 @@ test("A new chat has no remote access menu when no hosts are configured", async 
   });
   await setupPage({
     context,
-    path: `/agents/${SCOUT_AGENT_ID}/chat`,
+    path: "/",
   });
   click(await findFastControl("button", "Connectors"));
   await screen.findByText("Cloud browser");
@@ -533,7 +533,7 @@ test("A new chat leaves host defaults untouched when no choice is changed", asyn
   });
   await setupPage({
     context,
-    path: `/agents/${SCOUT_AGENT_ID}/chat`,
+    path: "/",
   });
   click(await findFastControl("button", "Connectors"));
   const remoteAccess = await screen.findByText("Remote access");
@@ -557,7 +557,7 @@ test("Remote access remains visible when host discovery fails", async () => {
   });
   await setupPage({
     context,
-    path: `/agents/${SCOUT_AGENT_ID}/chat`,
+    path: "/",
   });
   click(await findFastControl("button", "Connectors"));
   const remoteAccess = await screen.findByText("Remote access");
@@ -846,7 +846,7 @@ test.each([{ configuredCount: 0 }, { configuredCount: 1 }])(
     context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
       return respond(200, { connections: [] });
     });
-    await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
+    await setupPage({ context, path: "/" });
     click(await findFastControl("button", "Connectors"));
     click(await findFastControl("button", "Add connectors"));
     const search = await screen.findByPlaceholderText("Find connectors...");
@@ -868,7 +868,7 @@ test.each([{ configuredCount: 0 }, { configuredCount: 1 }])(
     }
     await waitFor(() => {
       return expect(window.location.pathname).toBe(
-        showEntry ? "/connectors" : `/agents/${SCOUT_AGENT_ID}/chat`,
+        showEntry ? "/connectors" : "/",
       );
     });
     expect(window.location.search).toBe(
@@ -897,7 +897,7 @@ test("Directory SSH setup follows shelves and categories", async () => {
   context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
     return respond(200, { connections: [] });
   });
-  await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
+  await setupPage({ context, path: "/" });
   click(await findFastControl("button", "Connectors"));
   click(await findFastControl("button", "Add connectors"));
   const dialog = await waitFor(() => {

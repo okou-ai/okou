@@ -6,10 +6,7 @@ import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { pathname } from "../../../signals/location.ts";
 import { installContinuityWorkspace } from "./chat-continuity-test-helpers.ts";
-import {
-  CHAT_LIST_AGENT_ID,
-  chatListThread,
-} from "./chat-list-test-helpers.ts";
+import { chatListThread } from "./chat-list-test-helpers.ts";
 
 const context = testContext();
 const SEARCH_LABEL = "Search workspace...";

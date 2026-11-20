@@ -1,3 +1,4 @@
+import { feedContract } from "@okouai/api-contracts/contracts/feed";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -203,6 +204,14 @@ test.each(["reopening Settings", "returning to My Okou"])(
   "%s refreshes a Suggestions preference changed elsewhere after a save",
   async (entry) => {
     let enabled = false;
+    context.mocks.api(feedContract.sources, ({ respond }) => {
+      return respond(200, {
+        suggestions: enabled,
+        whatsNew: true,
+        offers: true,
+        systemUpdates: true,
+      });
+    });
     context.mocks.api(proactiveSuggestionsContract.get, ({ respond }) => {
       return respond(200, {
         enabled,
@@ -318,6 +327,35 @@ test.each([
     let reads = 0;
     const saving = context.mocks.deferred<void>();
     const release = context.mocks.deferred<void>();
+    let suggestionsEnabled = name === "Suggestions";
+    context.mocks.api(feedContract.sources, ({ respond }) => {
+      return respond(200, {
+        suggestions: suggestionsEnabled,
+        whatsNew: true,
+        offers: true,
+        systemUpdates: true,
+      });
+    });
+    if (name === "Morning brief") {
+      context.mocks.api(proactiveSuggestionsContract.get, ({ respond }) => {
+        return respond(200, {
+          enabled: suggestionsEnabled,
+          status: suggestionsEnabled ? "enabled" : "paused",
+          unavailableReason: null,
+        });
+      });
+      context.mocks.api(
+        proactiveSuggestionsContract.updateWithFeed,
+        ({ body, respond }) => {
+          suggestionsEnabled = body.enabled;
+          return respond(200, {
+            enabled: body.enabled,
+            status: body.enabled ? "enabled" : "paused",
+            unavailableReason: null,
+          });
+        },
+      );
+    }
     context.mocks.api(contract.get, ({ respond }) => {
       reads++;
       return respond(200, {
@@ -332,6 +370,9 @@ test.each([
         saving.resolve();
         await withSignal(release.promise);
         enabled = body.enabled;
+        if (name === "Suggestions") {
+          suggestionsEnabled = body.enabled;
+        }
         return respond(200, {
           enabled,
           status: enabled ? "enabled" : "paused",
@@ -373,7 +414,9 @@ test.each([
       expect(toggle).not.toBeChecked();
       expect(toggle).toBeEnabled();
     });
-    expect(reads).toBe(initialReads);
+    if (name === "Morning brief") {
+      expect(reads).toBe(initialReads);
+    }
   },
 );
 

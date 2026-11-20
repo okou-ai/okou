@@ -525,7 +525,7 @@ test.each([false, true])(
         },
       });
     });
-    await setup(`/agents/${SCOUT_AGENT_ID}/chat`);
+    await setup("/");
     const directory = await openDirectory(user);
     if (custom) {
       await user.click(await findFastControl("radio", "Custom", directory));
@@ -607,7 +607,13 @@ test("Release a pending account save and its cached state when leaving the Chat"
   await user.click(await screen.findByRole("switch", { name: "Work access" }));
   const requestSignal = await started.promise;
   await user.keyboard("{Escape}{Escape}");
-  click(await findFastControl("button", "New chat"));
+  const newChat = screen
+    .getByTestId("chat-list-column")
+    .querySelector<HTMLAnchorElement>('a[href="/"]');
+  if (!newChat) {
+    throw new Error("Expected the new chat link in the chat list");
+  }
+  click(newChat);
   await waitFor(() => {
     expect(window.location.pathname).toBe("/");
     expect(requestSignal.aborted).toBeTruthy();
@@ -844,7 +850,7 @@ test("Preserve the internally resolved account when enabling several accounts be
       createdAt: "2026-11-03T00:00:00Z",
     });
   });
-  await setup(`/agents/${SCOUT_AGENT_ID}/chat`);
+  await setup("/");
   await user.click(await openMenu());
   await chooseAccess(user, "Personal", "On");
   await expect(
@@ -894,7 +900,7 @@ test.each([false, true])(
         createdAt: "2026-11-03T00:00:00Z",
       });
     });
-    const path = `/agents/${SCOUT_AGENT_ID}/chat`;
+    const path = "/";
     await setup(path);
     await user.click(await openMenu());
     await expect(

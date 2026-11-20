@@ -16,14 +16,14 @@
  * the exact numbers that happen to produce it.
  */
 import { avatarComposerUrl } from "@okouai/core/agent-avatar";
-import type { AgentResponse } from "@okouai/api-contracts/contracts/agents";
+import {
+  agentsByIdContract,
+  type AgentResponse,
+} from "@okouai/api-contracts/contracts/agents";
 import { waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 
-import {
-  queryAllByRoleFast,
-  setupPage,
-} from "../../../__tests__/page-helper.ts";
+import { setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
@@ -74,23 +74,11 @@ const TALL_HAIR_AVATAR_URL = avatarComposerUrl({
   sweater: "yellow",
 });
 
-function agentCard(agentId: string): HTMLElement {
-  const card = queryAllByRoleFast("link").find((candidate) => {
-    return candidate.getAttribute("href") === `/agents/${agentId}`;
-  });
-  if (!card) {
-    throw new Error(`${agentId} agent card not found`);
-  }
-  return card;
-}
-
 /** The transform placing the artwork inside the avatar box. */
-function avatarFramingTransform(agentId: string): string {
-  const artwork = agentCard(agentId).querySelector<HTMLElement>(
-    "[data-avatar-artwork]",
-  );
+function avatarFramingTransform(avatar: HTMLElement): string {
+  const artwork = avatar.querySelector<HTMLElement>("[data-avatar-artwork]");
   if (!artwork) {
-    throw new Error(`${agentId} avatar artwork not found`);
+    throw new Error("Avatar artwork not found");
   }
   return artwork.style.transform;
 }
@@ -111,30 +99,36 @@ function centeringOffset(transform: string): number {
   return Number(match[1]);
 }
 
-async function setupAgentsPage(
-  agents: readonly AgentResponse[],
-): Promise<void> {
-  context.mocks.data.agents([...agents]);
-  context.mocks.data.onboardingStatus({
-    defaultAgentId: agents[0]?.agentId ?? null,
+async function readProfileAvatar(target: AgentResponse): Promise<HTMLElement> {
+  context.mocks.data.agents([target]);
+  context.mocks.api(agentsByIdContract.get, ({ respond }) => {
+    return respond(200, target);
   });
   await setupPage({
     context,
-    path: "/agents",
+    path: "/agents/" + target.agentId + "?tab=profile",
   });
-  await waitFor(() => {
-    expect(agentCard(agents[0]!.agentId)).toBeInTheDocument();
+  return await waitFor(() => {
+    const artwork = document.querySelector<HTMLElement>(
+      "[data-avatar-artwork]",
+    );
+    if (!artwork?.parentElement) {
+      throw new Error("Expected the retained Agent's avatar");
+    }
+    return artwork.parentElement;
   });
 }
 
 test("Center each composer avatar and pull the cast toward one size", async () => {
-  await setupAgentsPage([
+  const flatAvatar = await readProfileAvatar(
     agent(FLAT_HAIR_AGENT_ID, FLAT_HAIR_AVATAR_URL),
+  );
+  const tallAvatar = await readProfileAvatar(
     agent(TALL_HAIR_AGENT_ID, TALL_HAIR_AVATAR_URL),
-  ]);
+  );
 
-  const flat = avatarFramingTransform(FLAT_HAIR_AGENT_ID);
-  const tall = avatarFramingTransform(TALL_HAIR_AGENT_ID);
+  const flat = avatarFramingTransform(flatAvatar);
+  const tall = avatarFramingTransform(tallAvatar);
 
   // The flat-haired artwork leaves the whole forehead margin of its canvas
   // empty, so centering moves it a long way up. The one whose bun already
@@ -164,9 +158,11 @@ test("Center each composer avatar and pull the cast toward one size", async () =
 });
 
 test("Keep legacy avatars on the scale they already shipped with", async () => {
-  await setupAgentsPage([agent(LEGACY_AGENT_ID, "svg:r3s2h4c1f5h")]);
+  const legacyAvatar = await readProfileAvatar(
+    agent(LEGACY_AGENT_ID, "svg:r3s2h4c1f5h"),
+  );
 
-  expect(avatarFramingTransform(LEGACY_AGENT_ID)).toBe("scale(1.25)");
+  expect(avatarFramingTransform(legacyAvatar)).toBe("scale(1.25)");
 });
 
 /**
@@ -174,32 +170,33 @@ test("Keep legacy avatars on the scale they already shipped with", async () => {
  * that proves the head is moved rather than resized. Same boundary exception as
  * above: a resized head has no page-observable result under jsdom.
  */
-function headPlacementTransform(agentId: string): string {
-  const head =
-    agentCard(agentId).querySelector<HTMLElement>("[data-avatar-head]");
+function headPlacementTransform(avatar: HTMLElement): string {
+  const head = avatar.querySelector<HTMLElement>("[data-avatar-head]");
   if (!head) {
-    throw new Error(`${agentId} avatar head group not found`);
+    throw new Error("Avatar head group not found");
   }
   return head.style.transform;
 }
 
 test("Move the head to the chin baseline instead of resizing it", async () => {
-  await setupAgentsPage([
+  const flatAvatar = await readProfileAvatar(
     agent(FLAT_HAIR_AGENT_ID, FLAT_HAIR_AVATAR_URL),
+  );
+  const tallAvatar = await readProfileAvatar(
     agent(TALL_HAIR_AGENT_ID, TALL_HAIR_AVATAR_URL),
-  ]);
+  );
 
   // The face assets are all drawn at one width. Resizing a head to reach the
   // shared collar made it up to 1.24x wider than its neighbour while the neck
   // and collar under it stayed fixed, which is what made one body look too big
   // for its head. Neither head carries a scale any more.
-  for (const id of [FLAT_HAIR_AGENT_ID, TALL_HAIR_AGENT_ID]) {
+  for (const id of [flatAvatar, tallAvatar]) {
     expect(headPlacementTransform(id)).toMatch(/^translateY\(-?[\d.]+%\)$/u);
   }
 
   // The two faces have different chins, so they move by different amounts to
   // land on the same collar.
-  expect(headPlacementTransform(FLAT_HAIR_AGENT_ID)).not.toBe(
-    headPlacementTransform(TALL_HAIR_AGENT_ID),
+  expect(headPlacementTransform(flatAvatar)).not.toBe(
+    headPlacementTransform(tallAvatar),
   );
 });

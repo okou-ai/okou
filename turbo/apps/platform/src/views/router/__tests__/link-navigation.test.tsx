@@ -69,7 +69,7 @@ test("An unknown route offers both of its destinations", async () => {
       screen.queryByRole("heading", { name: "That page isn't here." }),
     ).not.toBeInTheDocument();
     expect(
-      within(screen.getByTestId("labeled-nav-rail")).getByText("Agents"),
+      within(screen.getByTestId("labeled-nav-rail")).getByText("Workflows"),
     ).toBeInTheDocument();
   });
 });

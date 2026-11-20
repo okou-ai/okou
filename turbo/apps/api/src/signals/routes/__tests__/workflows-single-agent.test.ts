@@ -308,9 +308,15 @@ test("lists workspace Workflows and restricts member writes to the default execu
     }),
     [200],
   );
-  expect(listed.body.map((workflow) => {return workflow.id})).toContain(source.id);
   expect(
-    listed.body.every((workflow) => {return workflow.agentId === defaultAgentId}),
+    listed.body.map((workflow) => {
+      return workflow.id;
+    }),
+  ).toContain(source.id);
+  expect(
+    listed.body.every((workflow) => {
+      return workflow.agentId === defaultAgentId;
+    }),
   ).toBeTruthy();
   await accept(
     detail().copy({

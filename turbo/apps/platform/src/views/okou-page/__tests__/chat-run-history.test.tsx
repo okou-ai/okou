@@ -88,16 +88,16 @@ function assistantGroupFor(element: Element): HTMLElement {
   return group;
 }
 
-function viewAgentProfileLinks(): HTMLElement[] {
-  return queryAllByRoleFast("link").filter((link) => {
-    return link.getAttribute("aria-label") === "View agent profile";
+function myOkouAvatarButtons(): HTMLElement[] {
+  return queryAllByRoleFast("button").filter((button) => {
+    return button.getAttribute("aria-label") === "My Okou";
   });
 }
 
 function agentNameLines(): HTMLElement[] {
-  return queryAllByRoleFast("link").filter((link) => {
-    return link.dataset.chatAssistantNameLine !== undefined;
-  });
+  return Array.from(
+    document.querySelectorAll<HTMLElement>("[data-chat-assistant-name-line]"),
+  );
 }
 
 async function setupCompletedConversationPhases(): Promise<void> {
@@ -570,10 +570,10 @@ test("Count one output.message once when Markdown renders multiple child blocks"
   await expect(screen.findByTestId("plan-upgrade-card")).resolves.toBeVisible();
   expect(queryWorkHistoryToggles("collapsed")).toHaveLength(0);
   expect(screen.queryAllByText(/^Working(?: for)? /u)).toHaveLength(1);
-  expect(viewAgentProfileLinks()).toHaveLength(1);
+  expect(myOkouAvatarButtons()).toHaveLength(1);
 });
 
-test("With Agent name on replies, a reply opens with its agent's name, linked to the agent's profile", async () => {
+test("A retained conversation links the reply name to its original Agent", async () => {
   installRunChat({
     chatEvents: [
       promptEvent({
@@ -592,6 +592,9 @@ test("With Agent name on replies, a reply opens with its agent's name, linked to
     ],
   });
 
+  context.mocks.data.onboardingStatus({
+    defaultAgentId: "c0000000-0000-4000-a000-000000000001",
+  });
   await setupPage({
     context,
     path: RUN_PATH,
@@ -605,11 +608,11 @@ test("With Agent name on replies, a reply opens with its agent's name, linked to
   });
   const [nameLine] = agentNameLines();
   expect(nameLine).toHaveAccessibleName("Run Agent");
-  expect(nameLine).toHaveAttribute("href", `/agents/${AGENT_ID}`);
+  expect(nameLine).toHaveAttribute("href", "/agents/" + AGENT_ID);
   expect(nameLine?.closest('[data-role="assistant"]')).toHaveTextContent(
     "The launch notes are summarized.",
   );
-  expect(viewAgentProfileLinks()).toHaveLength(0);
+  expect(myOkouAvatarButtons()).toHaveLength(0);
 });
 
 test.each([
@@ -633,6 +636,9 @@ test.each([
       ],
     });
 
+    context.mocks.data.onboardingStatus({
+      defaultAgentId: "c0000000-0000-4000-a000-000000000001",
+    });
     await setupPage({
       context,
       path: RUN_PATH,
@@ -691,6 +697,9 @@ test.each(finalOutputDocuments)(
       ],
     });
 
+    context.mocks.data.onboardingStatus({
+      defaultAgentId: "c0000000-0000-4000-a000-000000000001",
+    });
     await setupPage({
       context,
       path: RUN_PATH,
@@ -699,7 +708,7 @@ test.each(finalOutputDocuments)(
     await readyChat();
     const main = await find();
     expect(main).toBeVisible();
-    expect(viewAgentProfileLinks()).toHaveLength(1);
+    expect(myOkouAvatarButtons()).toHaveLength(1);
     expect(screen.queryByText("Earlier output belongs in history")).toBeNull();
     expect(queryWorkHistoryToggles("collapsed")).toHaveLength(1);
     const thinking = document.querySelector<HTMLElement>(

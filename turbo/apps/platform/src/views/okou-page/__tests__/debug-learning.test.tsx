@@ -98,7 +98,7 @@ async function openDebug(learning = true) {
   context.mocks.data.onboardingStatus({ defaultAgentId: DEFAULT_AGENT_ID });
   await setupPage({
     context,
-    path: "/agents?settings=debug",
+    path: "/?settings=debug",
     featureSwitches: {
       [FeatureSwitchKey.OkouDebug]: true,
       [FeatureSwitchKey.AgentSuggestion]: learning,
@@ -247,11 +247,11 @@ test("dismissal cancels a pending Learning request", async () => {
 test("dismissal also cancels Learning discovery", async () => {
   const requested = context.mocks.deferred<void>();
   const response = context.mocks.deferred<void>();
-  let requestSignal: AbortSignal | undefined;
+  const requestSignals: AbortSignal[] = [];
   context.mocks.api(
     workflowAutomationsContract.listWorkspace,
     async ({ request, respond }) => {
-      requestSignal = request.signal;
+      requestSignals.push(request.signal);
       requested.resolve();
       await response.promise;
       return respond(200, [learningEntry()]);
@@ -263,7 +263,12 @@ test("dismissal also cancels Learning discovery", async () => {
   const user = userEvent.setup({ delay: null });
   await user.keyboard("{Escape}");
   await waitFor(() => {
-    expect(requestSignal?.aborted).toBeTruthy();
+    expect(screen.queryByRole("dialog", { name: "Settings" })).toBeNull();
+    expect(
+      requestSignals.some((signal) => {
+        return signal.aborted;
+      }),
+    ).toBeTruthy();
   });
   response.resolve();
 });

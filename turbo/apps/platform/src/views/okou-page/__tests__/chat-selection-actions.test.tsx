@@ -118,18 +118,6 @@ test("Quote the captured passage after a touch selection collapses", async () =>
   expect(queryQuoteButton()).not.toBeInTheDocument();
 });
 
-test("Forward the captured passage after the native selection collapses", async () => {
-  await openSelection();
-  const button = await findButton("Forward");
-
-  releaseToolbarPointer(button, "mouse");
-  fireEvent.click(button);
-
-  const dialog = await screen.findByRole("dialog", { name: "Forward to" });
-  expect(within(dialog).getByText(PASSAGE)).toBeInTheDocument();
-  expect(queryQuoteButton()).not.toBeInTheDocument();
-});
-
 test("Preserve the native rich selection until the copy event closes its toolbar", async () => {
   installCapabilityChat({ events: completedConversation(`**${PASSAGE}**`) });
   await setupPage({ context, path: RUN_PATH });

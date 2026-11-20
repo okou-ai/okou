@@ -4618,7 +4618,7 @@ describe("okou workflow automations", () => {
     // 2, each agent-created Automation spends exactly one hop, and the third
     // derivation is refused.
     const runnerGroup = await runs.configureRunnerGroup();
-    const { actor, workflowId } = await setupFixture("pro", {
+    const { actor, agentId, workflowId } = await setupFixture("pro", {
       maxAutonomyBudget: 2,
     });
 
@@ -4717,32 +4717,27 @@ describe("okou workflow automations", () => {
       enabled: false,
     });
 
-    const target = await wf.createAgent(actor, {
-      displayName: "Exhausted Copy Target Agent",
-    });
+    const workspaceWorkflows = setupApp({ context, routes: workflowsRoutes })(
+      workflowsCollectionContract,
+    );
+    const beforeCopy = await accept(
+      workspaceWorkflows.list({ headers: authHeaders(), query: {} }),
+      [200],
+    );
     const blockedCopy = await accept(
       detailClient().copy({
         headers: { authorization: exhausted },
         params: { workflowId },
-        body: { toAgentId: target.agentId },
+        body: { toAgentId: agentId },
       }),
       [409],
     );
     expect(blockedCopy.body.error.code).toBe("AUTONOMY_BUDGET_EXHAUSTED");
-    const targetWorkflows = await accept(
-      setupApp({ context, routes: workflowsRoutes })(
-        workflowsCollectionContract,
-      ).list({
-        headers: authHeaders(),
-        query: { agentId: target.agentId },
-      }),
+    const afterCopy = await accept(
+      workspaceWorkflows.list({ headers: authHeaders(), query: {} }),
       [200],
     );
-    expect(
-      targetWorkflows.body.map((workflow) => {
-        return workflow.name;
-      }),
-    ).not.toContain(WORKFLOW_NAME);
+    expect(afterCopy.body).toStrictEqual(beforeCopy.body);
 
     // The exhausted request is accepted; once the shared workflow Automation
     // thread is idle its rejection appears there and no child run is linked.

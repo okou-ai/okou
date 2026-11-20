@@ -46,7 +46,7 @@ async function expectUnifiedSection(
 ): Promise<void> {
   const dialog = await screen.findByRole("dialog", { name: "Settings" });
   expect(within(dialog).getByRole("heading", { name: heading })).toBeVisible();
-  expect(pathname()).toBe("/agents");
+  expect(pathname()).toBe("/");
   const params = new URLSearchParams(search());
   expect(params.get("settings")).toBe(section);
   expect(params.has("tab")).toBeFalsy();
@@ -59,7 +59,7 @@ describe("unified preference settings", () => {
       await setupPage({ context, path });
 
       await expectUnifiedSection("preference", "Preference");
-      expect(pathname()).toBe("/agents");
+      expect(pathname()).toBe("/");
     },
   );
 
@@ -87,7 +87,7 @@ describe("unified preference settings", () => {
       within(dialog).getByRole("heading", { name: "Preference" }),
     ).toBeVisible();
     expect(within(dialog).queryByText("Debug")).not.toBeInTheDocument();
-    expect(pathname()).toBe("/agents");
+    expect(pathname()).toBe("/");
     expect(new URLSearchParams(search()).get("settings")).toBe("debug");
   });
 

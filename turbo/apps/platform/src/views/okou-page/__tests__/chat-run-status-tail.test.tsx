@@ -126,7 +126,7 @@ test.each(["run.failed"] as const)(
     expect(error.closest('[role="status"]')).toBeVisible();
     expect(screen.getByText("This run couldn't finish")).toBeVisible();
     expect(error.closest('[data-role="assistant"]')).toContainElement(
-      screen.getByLabelText("View agent profile"),
+      screen.getByRole("button", { name: "My Okou" }),
     );
     expect(screen.queryByTestId("chat-event-actions")).toBeNull();
     expect(

@@ -333,7 +333,8 @@ async function setupSnapshotMeasurement() {
   const agentId = crypto.randomUUID();
   const snapshotRequested = context.mocks.deferred<void>();
   const releaseSnapshot = context.mocks.deferred<void>();
-  context.mocks.data.agents([{ agentId }]);
+  context.mocks.data.onboardingStatus({ defaultAgentId: agentId });
+  context.mocks.data.agents([{ agentId, isDefaultAgent: true }]);
   context.mocks.api(chatThreadsContract.snapshot, async ({ respond }) => {
     if (!snapshotRequested.settled()) {
       snapshotRequested.resolve();
@@ -370,7 +371,7 @@ async function setupSnapshotMeasurement() {
   });
   const page = await startPage({
     context,
-    path: `/agents/${agentId}/chat`,
+    path: "/",
     featureSwitches: { [FeatureSwitchKey.OkouDebug]: true },
     sharedWorkerTestTransport: "message-port",
   });

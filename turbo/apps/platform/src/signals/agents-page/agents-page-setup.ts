@@ -1,5 +1,5 @@
 import { command } from "ccstate";
-import { detachedNavigateTo$, searchParams$ } from "../route.ts";
+import { detachedNavigateTo$, hash$, searchParams$ } from "../route.ts";
 
 export const setupAgentsPage$ = command(({ get, set }) => {
   const params = new URLSearchParams(get(searchParams$));
@@ -7,5 +7,9 @@ export const setupAgentsPage$ = command(({ get, set }) => {
   if (params.size === 0) {
     params.set("settings", "my-okou");
   }
-  set(detachedNavigateTo$, "/", { searchParams: params, replace: true });
+  set(detachedNavigateTo$, "/", {
+    searchParams: params,
+    hash: get(hash$),
+    replace: true,
+  });
 });
