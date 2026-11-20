@@ -1,4 +1,5 @@
 import { chatThreadMetadataContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { randomUUID } from "node:crypto";
 import { createStore } from "ccstate";
 import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -57,6 +58,25 @@ function client() {
 }
 
 describe("GET /api/chat-threads/:id/metadata", () => {
+  it("hides the thread from the same user's other workspace", async () => {
+    const fixture = await seedChatThread("Workspace notes");
+    const orgId = `org_${randomUUID()}`;
+    await store.set(
+      seedOrgMembership$,
+      { orgId, userId: fixture.userId },
+      context.signal,
+    );
+    const token = await executionToken({ orgId, userId: fixture.userId });
+    const response = await accept(
+      client().get({
+        headers: { authorization: `Bearer ${token}` },
+        params: { id: fixture.threadId },
+      }),
+      [404],
+    );
+    expect(response.body.error.code).toBe("NOT_FOUND");
+  });
+
   it("returns thread metadata with an Okou run token carrying chat-thread:read", async () => {
     const fixture = await seedChatThread("Launch plan");
     const token = await executionToken({

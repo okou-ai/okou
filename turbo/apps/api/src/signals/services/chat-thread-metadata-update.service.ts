@@ -51,7 +51,7 @@ import {
   validateCodexServiceTier,
   type ModelFirstPin,
 } from "./model-selection.service";
-import { agents } from "@okouai/db/schema/agent";
+import { chatThreadOrganizationPredicate } from "./chat-thread-organization.service";
 import { command } from "ccstate";
 import { settle } from "../utils";
 
@@ -163,7 +163,7 @@ function threadCondition(args: ChatThreadMetadataUpdateArgs) {
     eq(chatThreads.id, args.threadId),
     eq(chatThreads.userId, args.principal.userId),
     isNotNull(chatThreads.agentId),
-    sql`EXISTS (SELECT 1 FROM ${agents} WHERE ${agents.id} = ${chatThreads.agentId} AND ${agents.orgId} = ${args.principal.orgId})`,
+    chatThreadOrganizationPredicate(args.principal.orgId),
     args.expectedModelState
       ? and(
           eq(chatThreads.selectedModel, args.expectedModelState.selectedModel),

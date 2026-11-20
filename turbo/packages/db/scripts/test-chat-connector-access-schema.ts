@@ -19,7 +19,7 @@ export async function validateChatConnectorAccessSchema(
       [agentId, owner, owner],
     );
     await client.query(
-      "INSERT INTO chat_threads (id,user_id,agent_id) VALUES ($1,$2,$3)",
+      "INSERT INTO chat_threads (id,user_id,agent_id,org_id) VALUES ($1,$2,$3,$2)",
       [threadId, owner, agentId],
     );
     // Frozen outgoing ORM INSERT/RETURNING: the new field is omitted entirely.

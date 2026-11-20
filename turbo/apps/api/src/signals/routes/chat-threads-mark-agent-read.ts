@@ -62,7 +62,7 @@ const markAgentReadInner$ = command(
 
     const updatedThreadIds = await set(
       advanceChatThreadReadCursors$,
-      { cursors, userId, unmutedOnly: true },
+      { cursors, userId, orgId, unmutedOnly: true },
       signal,
     );
     signal.throwIfAborted();

@@ -986,6 +986,7 @@ async function seedProfile(
 
   await database.insert(chatThreads).values({
     id: threadId,
+    orgId: args.orgId,
     userId: args.userId,
     agentId: args.agentId,
     title: args.profile.title,

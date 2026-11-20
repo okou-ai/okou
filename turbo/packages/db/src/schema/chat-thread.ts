@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { check, foreignKey, index, pgTable, unique } from "drizzle-orm/pg-core";
+import { agents } from "./agent";
 import { projects } from "./project";
 import { chatThreadColumns } from "../columns/chat-thread";
 
@@ -14,6 +15,11 @@ export const chatThreads = pgTable(
   (table) => {
     return [
       unique("uq_chat_threads_id_user").on(table.id, table.userId),
+      foreignKey({
+        columns: [table.agentId, table.orgId],
+        foreignColumns: [agents.id, agents.orgId],
+        name: "chat_threads_agent_org_fk",
+      }),
       foreignKey({
         columns: [table.projectId, table.userId],
         foreignColumns: [projects.id, projects.userId],

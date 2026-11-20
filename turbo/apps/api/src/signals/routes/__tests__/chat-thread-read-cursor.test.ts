@@ -194,69 +194,19 @@ describe("chat thread read cursor", () => {
     );
   });
 
-  it("advances without an organization and uses the Agent organization despite a different active org", async () => {
+  it("requires the thread's organization for read cursor writes", async () => {
     const fixture = await createUnreadCursorFixture();
     const before = await readCursor(fixture);
     const orgless = bdd.user({ userId: fixture.actor.userId, orgId: null });
     const otherOrg = bdd.user({ userId: fixture.actor.userId });
-    context.mocks.ably.channelGet.mockClear();
     context.mocks.ably.publish.mockClear();
 
-    const first = await chat.markThreadRead(orgless, fixture.threadId);
-    expect(first.lastReadAt).not.toBe(before);
-    expect(context.mocks.ably.channelGet.mock.calls).toStrictEqual([
-      [`user-org:${fixture.actor.userId}:${fixture.orgId}`],
-    ]);
-    await expect(readCursor(fixture)).resolves.toBe(first.lastReadAt);
-
-    await chat.markThreadUnread(fixture.actor, fixture.threadId);
-    context.mocks.ably.channelGet.mockClear();
-    context.mocks.ably.publish.mockClear();
-    await expect(
-      chat.markThreadRead(otherOrg, fixture.threadId),
-    ).resolves.toStrictEqual(first);
-    expect(context.mocks.ably.channelGet.mock.calls).toStrictEqual([
-      [`user-org:${fixture.actor.userId}:${fixture.orgId}`],
-    ]);
-    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
-      "chatThreadReadCursorUpdated",
-      {
-        threadId: fixture.threadId,
-        agentId: fixture.agentId,
-        lastReadAt: first.lastReadAt,
-      },
-    );
-  });
-
-  it("keeps user-only authorization and publishes to the Agent organization", async () => {
-    const fixture = await createCursorFixture();
-    const orgless = bdd.user({
-      userId: fixture.actor.userId,
-      orgId: null,
-    });
-    const otherOrg = bdd.user({ userId: fixture.actor.userId });
-
-    context.mocks.ably.channelGet.mockClear();
-    context.mocks.ably.publish.mockClear();
-    await expect(
-      chat.markThreadUnread(orgless, fixture.threadId),
-    ).resolves.toMatchObject({ lastReadAt: null });
-    // No organization is required, and the invalidation still targets the
-    // Agent's actual organization rather than the request's active one.
-    expect(context.mocks.ably.channelGet.mock.calls).toStrictEqual([
-      [`user-org:${fixture.actor.userId}:${fixture.orgId}`],
-    ]);
-    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
-      "chatThreadReadCursorUpdated",
-      {
-        threadId: fixture.threadId,
-        agentId: fixture.agentId,
-        lastReadAt: null,
-      },
-    );
-    await expect(
-      chat.markThreadRead(otherOrg, fixture.threadId),
-    ).resolves.toMatchObject({ lastReadAt: null });
+    await chat.requestMarkThreadRead(orgless, fixture.threadId, [400]);
+    await chat.requestMarkThreadUnread(orgless, fixture.threadId, [400]);
+    await chat.requestMarkThreadRead(otherOrg, fixture.threadId, [404]);
+    await chat.requestMarkThreadUnread(otherOrg, fixture.threadId, [404]);
+    expect(context.mocks.ably.publish).not.toHaveBeenCalled();
+    await expect(readCursor(fixture)).resolves.toBe(before);
   });
 
   it("returns 404 for another user's thread and for a missing thread", async () => {

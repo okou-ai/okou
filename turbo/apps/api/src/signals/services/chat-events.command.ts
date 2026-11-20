@@ -1544,6 +1544,7 @@ const resolveNewThreadSendCollision$ = command(
         and(
           eq(chatThreads.id, thread.threadId),
           eq(chatThreads.userId, args.userId),
+          chatThreadOrganizationCondition(args.orgId),
           eq(chatThreads.agentId, args.body.agentId),
         ),
       )

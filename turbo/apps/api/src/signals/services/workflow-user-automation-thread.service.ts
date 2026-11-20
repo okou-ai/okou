@@ -233,6 +233,7 @@ export function preparedWorkflowThreadValues(
     id: threadId,
     hidden: preparation.hidden,
     userId: args.userId,
+    orgId: args.orgId,
     agentId: args.agentId,
     title: preparation.title,
     selectedModel: pin.selectedModel,
