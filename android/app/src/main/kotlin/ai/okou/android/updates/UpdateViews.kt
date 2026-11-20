@@ -478,13 +478,16 @@ private fun UpdateAction(
     val transfer = state.transfer
     val colors = MaterialTheme.colorScheme
     val shape = RoundedCornerShape(12.dp)
+    val statusColor = if (state.required) colors.onSurfaceVariant else colors.onBackground
     val checking = state.check == UpdateCheck.Checking && !state.canInstall && !state.canDownload
     if (transfer is UpdateTransfer.Downloading || checking) {
         val fraction = (transfer as? UpdateTransfer.Downloading)?.fraction()
+        val progressStyle =
+            if (state.required) updateActionLabelStyle() else MaterialTheme.typography.bodyMedium
         Box(
             modifier
                 .heightIn(min = 48.dp)
-                .background(colors.secondaryContainer, shape)
+                .background(colors.surfaceVariant, shape)
                 .semantics {
                     progressBarRangeInfo =
                         if (fraction == null) ProgressBarRangeInfo.Indeterminate
@@ -497,12 +500,8 @@ private fun UpdateAction(
                 if (transfer is UpdateTransfer.Downloading)
                     stringResource(R.string.updates_downloading, transfer.percent())
                 else stringResource(R.string.updates_check_in_progress),
-                color = colors.onSecondaryContainer,
-                style =
-                    MaterialTheme.typography.bodyMedium.copy(
-                        fontSize = if (state.required) 13.sp else 14.sp,
-                        fontFeatureSettings = "tnum",
-                    ),
+                color = statusColor,
+                style = progressStyle.copy(fontFeatureSettings = "tnum"),
             )
         }
         return
@@ -530,6 +529,8 @@ private fun UpdateAction(
             ButtonDefaults.buttonColors(
                 containerColor = colors.inverseSurface,
                 contentColor = colors.inverseOnSurface,
+                disabledContainerColor = colors.surfaceVariant,
+                disabledContentColor = statusColor,
             ),
     ) {
         Text(stringResource(label), style = updateActionLabelStyle())
