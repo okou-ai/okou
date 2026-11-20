@@ -219,6 +219,46 @@ class ChatListModelTest {
     }
 
     @Test
+    fun earlierUnreadReadbackCannotUndoAReadWithoutAPreviousWatermark() = runTest {
+        val unreadReadback = CompletableDeferred<Indicators>()
+        val readWrite = CompletableDeferred<ReadState>()
+        val read = Indicators(emptyMap(), emptyMap(), emptyMap())
+        val unread =
+            Indicators(
+                emptyMap(),
+                mapOf(CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD),
+                mapOf(CHAT_PERSONAL to CHAT_DATE),
+            )
+        val source =
+            object : Service() {
+                    override suspend fun markUnread(threadId: String) = ReadState(null)
+
+                    override suspend fun markRead(threadId: String) = readWrite.await()
+                }
+                .apply { statusRead = { read } }
+        withCatchUpModel(source) { model ->
+            model.refresh()
+            advanceUntilIdle()
+            source.statusRead = { unreadReadback.await() }
+            model.performRowAction(CHAT_PERSONAL, ChatRowAction.MarkUnread)
+            runCurrent()
+            assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
+
+            model.performRowAction(CHAT_PERSONAL, ChatRowAction.MarkRead)
+            runCurrent()
+            assertFalse(model.uiState.value.isUnread(CHAT_PERSONAL))
+            unreadReadback.complete(unread)
+            runCurrent()
+            assertFalse(model.uiState.value.isUnread(CHAT_PERSONAL))
+
+            source.statusRead = { unread }
+            readWrite.completeExceptionally(ApiFailure.Http(404, null, null, null))
+            advanceUntilIdle()
+            assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
+        }
+    }
+
+    @Test
     fun rejectedUnreadKeepsAnEarlierReadReceiptWhileIndicatorsArePending() = runTest {
         val readback = CompletableDeferred<Indicators>()
         val source =

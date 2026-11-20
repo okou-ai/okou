@@ -112,7 +112,9 @@ projection once that read succeeds.
 
 Mark read, Mark unread, and Mark all as read immediately update chat list
 unread markers, filters, and collapsed Project counts. A pending read hides
-unread activity through its observed server watermark. The existing read
+unread activity through its observed server watermark. A pending read on a
+locally marked unread chat without a server watermark displays as read until
+its own readback. The existing read
 endpoint still chooses the receipt watermark. Definitive write failures remove
 the local intent. A successful indicators read started after the write settles
 the current intent, including when the write response was lost. If both fail,

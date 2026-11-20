@@ -52,9 +52,10 @@ data class ChatMarkAllReadResult(val confirmed: Int, val requested: Int)
 class ChatReadIntent
 internal constructor(internal val action: ChatRowAction, internal val through: String?) {
     // Indicators use the server's fixed-width UTC ISO timestamps.
+    // A locally marked unread row can still lack a server watermark on the next action.
     internal fun isUnread(serverUnreadAt: String?): Boolean =
         action == ChatRowAction.MarkUnread ||
-            (serverUnreadAt != null && (through == null || serverUnreadAt > through))
+            (through != null && serverUnreadAt != null && serverUnreadAt > through)
 }
 
 enum class ChatRowAction(
