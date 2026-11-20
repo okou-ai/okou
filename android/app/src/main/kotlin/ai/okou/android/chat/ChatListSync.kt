@@ -2,6 +2,7 @@ package ai.okou.android.chat
 
 import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.generated.ChatArchive
+import ai.okou.android.api.generated.ChatSnapshot
 import ai.okou.android.api.generated.ChatSnapshotVariant1
 import ai.okou.android.api.generated.ChatSnapshotVariant2
 import kotlinx.coroutines.CoroutineDispatcher
@@ -19,6 +20,7 @@ class ChatListSync(
     data class Result(
         val checkpoint: ChatCheckpoint,
         val changed: Boolean,
+        val shouldRebase: Boolean = false,
         val eventIdsBeforeRebase: Set<String> = emptySet(),
     )
 
@@ -29,39 +31,50 @@ class ChatListSync(
             val useCache = cached != null && cached.cursor.seqId > 0
             val confirmed =
                 tail(if (useCache) checkNotNull(cached) else snapshot(), fromSnapshot = !useCache)
-            val result = Result(confirmed.checkpoint, confirmed.changed)
-            if (
-                confirmed.replacement ||
-                    confirmed.checkpoint.events.size <= CHAT_THREAD_SNAPSHOT_REBASE_THRESHOLD
+            Result(
+                confirmed.checkpoint,
+                confirmed.changed,
+                shouldRebase =
+                    !confirmed.replacement &&
+                        confirmed.checkpoint.events.size > CHAT_THREAD_SNAPSHOT_REBASE_THRESHOLD,
             )
-                return@withContext result
-            // Catch up first. Rebase is optional maintenance, as in Web's metadata event source.
+        }
+
+    /** Optional maintenance after publishing the confirmed tail. */
+    suspend fun rebase(confirmed: ChatCheckpoint): Result? =
+        withContext(dispatcher) {
             val snapshot =
                 try {
-                    snapshot()
+                    val descriptor = service.chatSnapshot()
+                    // Only an advancing snapshot can compact this tail.
+                    if (
+                        descriptor !is ChatSnapshotVariant1 ||
+                            (descriptor.latestSeqId ?: 0) <= confirmed.snapshotCursor.seqId
+                    )
+                        return@withContext null
+                    snapshot(descriptor)
                 } catch (error: ApiFailure.Http) {
-                    if (error.status >= 500) return@withContext result
+                    if (error.status >= 500) return@withContext null
                     throw error
                 } catch (error: ChatSnapshotUnavailable) {
-                    if (error.status >= 500) return@withContext result
+                    if (error.status >= 500) return@withContext null
                     throw error
                 }
             val rebased = tail(snapshot, fromSnapshot = true).checkpoint
             // A lagging snapshot must not roll back a tail already confirmed in this refresh.
-            if (rebased.cursor.seqId < confirmed.checkpoint.cursor.seqId) result
+            if (rebased.cursor.seqId < confirmed.cursor.seqId) null
             else
                 Result(
                     rebased,
                     changed = true,
                     eventIdsBeforeRebase =
-                        confirmed.checkpoint.events.mapNotNullTo(hashSetOf()) {
-                            it.cursor().eventId
-                        },
+                        confirmed.events.mapNotNullTo(hashSetOf()) { it.cursor().eventId },
                 )
         }
 
-    private suspend fun snapshot(): ChatCheckpoint {
-        val descriptor = service.chatSnapshot()
+    private suspend fun snapshot(): ChatCheckpoint = snapshot(service.chatSnapshot())
+
+    private suspend fun snapshot(descriptor: ChatSnapshot): ChatCheckpoint {
         val archive: ChatArchive
         val cursor: ChatCursor
         when (descriptor) {
@@ -125,10 +138,11 @@ class ChatListSync(
             if (incoming.isNotEmpty()) cursorFromSnapshot = false
             hasMore = page.hasMore
         }
-        return SynchronizedChats(
-            state.copy(events = events.toList(), cursor = cursor).also { it.validate() },
-            replacement,
-            changed = replacement || cursor != initial.cursor,
-        )
+        val changed = replacement || cursor != initial.cursor
+        val checkpoint =
+            if (changed)
+                state.copy(events = events.toList(), cursor = cursor).also { it.validate() }
+            else initial
+        return SynchronizedChats(checkpoint, replacement, changed)
     }
 }

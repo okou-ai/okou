@@ -217,7 +217,7 @@ internal constructor(
             events: Map<String, List<HistoryEvent>>,
             confirmedAt: Long,
             selected: () -> String?,
-        ) =
+        ): Unit =
             withContext(dispatcher) {
                 require(confirmedAt > 0)
                 val written = hashSetOf<String>()
@@ -257,7 +257,7 @@ internal constructor(
             threadId: String,
             expected: HistoryCursor?,
             selected: () -> String?,
-        ) =
+        ): Unit =
             withContext(dispatcher) {
                 var removed = false
                 persist(
@@ -279,7 +279,7 @@ internal constructor(
             checkpoint: HistoryCheckpoint,
             confirmedAt: Long,
             accepts: (HistoryScopeRecord?) -> Boolean,
-        ) =
+        ): Unit =
             withContext(dispatcher) {
                 checkpoint.validate()
                 require(confirmedAt > 0)
@@ -323,7 +323,7 @@ internal constructor(
                 }
             }
 
-        suspend fun deleteHistory(threadId: String) =
+        suspend fun deleteHistory(threadId: String): Unit =
             withContext(dispatcher) {
                 persist(
                     clear = { it.deleteHistory(key, threadId) },
@@ -433,11 +433,12 @@ internal constructor(
                 }
             }
 
+        /** Returns false when the transaction preserves a strictly newer chat checkpoint. */
         suspend fun save(
             checkpoint: ChatCheckpoint,
             confirmedAt: Long,
             navigation: CachedChatNavigation = CachedChatNavigation(),
-        ) =
+        ): Boolean =
             withContext(dispatcher) {
                 checkpoint.validate()
                 navigation.validate()
@@ -499,7 +500,7 @@ internal constructor(
                 }
             }
 
-        suspend fun saveProjects(checkpoint: ProjectCheckpoint, confirmedAt: Long) =
+        suspend fun saveProjects(checkpoint: ProjectCheckpoint, confirmedAt: Long): Unit =
             withContext(dispatcher) {
                 checkpoint.validate()
                 require(confirmedAt > 0)
@@ -556,7 +557,7 @@ internal constructor(
             clear: suspend (ChatCacheDao) -> Unit,
             saved: () -> Unit,
             write: suspend (ChatCacheDao) -> Boolean,
-        ) {
+        ): Boolean =
             lock.withLock {
                 checkCurrent()
                 val db = database()
@@ -582,8 +583,8 @@ internal constructor(
                 }
                 currentCoroutineContext().ensureActive()
                 checkCurrent()
+                writing
             }
-        }
 
         override fun close() {
             retired = true

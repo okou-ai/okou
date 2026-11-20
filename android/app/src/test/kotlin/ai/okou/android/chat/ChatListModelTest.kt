@@ -12,8 +12,10 @@ import ai.okou.android.TestRealtimeService
 import ai.okou.android.api.generated.Agents
 import ai.okou.android.api.generated.AgentsItem
 import ai.okou.android.api.generated.AgentsItemVisibility
+import ai.okou.android.api.generated.ChatArchive
 import ai.okou.android.api.generated.ChatEvents
 import ai.okou.android.api.generated.ChatSnapshot
+import ai.okou.android.api.generated.ChatSnapshotVariant1
 import ai.okou.android.api.generated.FeatureSwitches
 import ai.okou.android.api.generated.Indicators
 import ai.okou.android.api.generated.IndicatorsThreadsValue
@@ -748,6 +750,8 @@ class ChatListModelTest {
             assertEquals(ChatReadPhase.Ready, model.uiState.value.listPhase)
             assertFalse(model.uiState.value.cacheUnavailable)
             assertEquals(initial.confirmedAt, model.uiState.value.confirmedAt)
+            assertSame(initial.threads, model.uiState.value.threads)
+            assertSame(initial.threadsByRecency, model.uiState.value.threadsByRecency)
             service.listRead = {
                 json.decodeFromString<ChatEvents>(
                     """{"events":[${chatEventWire(id = "77777777-7777-4777-8777-777777777777", seq = 23, kind = "renamed", title = "Updated")}],"hasMore":false}"""
@@ -755,12 +759,14 @@ class ChatListModelTest {
             }
             model.refreshList()
             advanceUntilIdle()
-            assertEquals("Updated", model.uiState.value.threads.single().title)
-            assertTrue(model.uiState.value.cacheUnavailable)
+            val unsaved = model.uiState.value
+            assertEquals("Updated", unsaved.threads.single().title)
+            assertTrue(unsaved.cacheUnavailable)
             execute(root, "DROP TRIGGER fail_chat_write")
             model.refreshList()
             advanceUntilIdle()
-            assertEquals("Updated", model.uiState.value.threads.single().title)
+            assertSame(unsaved.threads, model.uiState.value.threads)
+            assertEquals(unsaved.confirmedAt, model.uiState.value.confirmedAt)
             assertFalse(model.uiState.value.cacheUnavailable)
             service.agentRead = { Service().agents().map { it.copy(displayName = "Updated Okou") } }
             service.flagsRead = { FeatureSwitches(emptyMap(), mapOf("projects" to true)) }
@@ -778,6 +784,162 @@ class ChatListModelTest {
                     assertTrue(saved.navigation.projectsEnabled)
                 }
         } finally {
+            store.clear()
+            runCurrent()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun cacheRejectionUsesNewerStoredCheckpointBeforePublishing() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val root = temporary.newFolder()
+        val cache = cache(root, dispatcher)
+        val store = ViewModelStore()
+        try {
+            val newer = page(listOf(chatEventWire(seq = 23, title = "Newer on disk"))).events
+            val checkpoint =
+                ChatCheckpoint(ChatArchive(emptyList()), ChatCursor(), newer, newer.last().cursor())
+            cache.open(identity) { true }.use { it.save(checkpoint, 1234) }
+            val model =
+                ViewModelProvider(
+                    store,
+                    viewModelFactory {
+                        initializer {
+                            ChatListModel(Service(), cache, identity, { true }, {}, dispatcher)
+                        }
+                    },
+                )[ChatListModel::class.java]
+
+            model.refreshList()
+            advanceUntilIdle()
+
+            val state = model.uiState.value
+            assertEquals(ChatReadPhase.Ready, state.listPhase)
+            assertEquals(listOf("Newer on disk"), state.threads.map { it.title })
+            assertEquals(1234L, state.confirmedAt)
+            assertFalse(state.cacheUnavailable)
+        } finally {
+            store.clear()
+            runCurrent()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun backgroundRebaseYieldsToNewerReadsAndPreservesPendingMutationConfirmation() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val cache = cache(temporary.newFolder(), dispatcher)
+        val store = ViewModelStore()
+        val superseded = CompletableDeferred<ChatSnapshot>()
+        val current = CompletableDeferred<ChatSnapshot>()
+        val renameEventId = CompletableDeferred<String>()
+        val renameResponse = CompletableDeferred<Unit>()
+        fun eventId(seq: Int) = "${seq.toString().padStart(8, '0')}-0000-4000-8000-000000000000"
+        fun renamed(seq: Int, title: String, id: String = eventId(seq)) =
+            chatEventWire(id = id, seq = seq.toLong(), kind = "renamed", title = title)
+        val tail =
+            page(listOf(chatEventWire(seq = 1)) + (2..101).map { renamed(it, "Cached") }).events
+        val checkpoint =
+            ChatCheckpoint(ChatArchive(emptyList()), ChatCursor(), tail, tail.last().cursor())
+        val row = replayChats(checkpoint).single()
+        val oldSnapshot = ChatSnapshotVariant1("https://fixture.test/old", 60, eventId(103), 103)
+        val newSnapshot = ChatSnapshotVariant1("https://fixture.test/new", 60, eventId(105), 105)
+        var snapshotReads = 0
+        val service =
+            object : TestChatService() {
+                override suspend fun chatSnapshot() =
+                    if (++snapshotReads == 1) withContext(NonCancellable) { superseded.await() }
+                    else current.await()
+
+                override suspend fun chatArchive(url: String) =
+                    ChatArchive(
+                        listOf(
+                            row.copy(
+                                title = if (url == oldSnapshot.url) "Superseded" else "Other device"
+                            )
+                        )
+                    )
+
+                override suspend fun renameThread(
+                    threadId: String,
+                    title: String,
+                    eventId: String,
+                ) {
+                    renameEventId.complete(eventId)
+                    renameResponse.await()
+                }
+
+                override suspend fun chatEvents(since: Long?) =
+                    when (since) {
+                        101L -> page(listOf(renamed(102, "First increment")))
+                        102L -> page(listOf(renamed(103, "Newest")))
+                        103L ->
+                            if (renameEventId.isCompleted)
+                                page(
+                                    listOf(
+                                        renamed(104, "Local rename", renameEventId.await()),
+                                        renamed(105, "Other device"),
+                                    )
+                                )
+                            else page(emptyList())
+                        105L -> page(emptyList())
+                        else -> error("Unexpected cursor $since")
+                    }
+            }
+        try {
+            cache.open(identity) { true }.use { it.save(checkpoint, 1234) }
+            val model =
+                ViewModelProvider(
+                    store,
+                    viewModelFactory {
+                        initializer {
+                            ChatListModel(service, cache, identity, { true }, {}, dispatcher)
+                        }
+                    },
+                )[ChatListModel::class.java]
+            model.refresh()
+            runCurrent()
+            assertEquals(1, snapshotReads)
+            assertEquals(ChatReadPhase.Ready, model.uiState.value.listPhase)
+            assertEquals("First increment", model.uiState.value.threads.single().title)
+
+            model.refreshList()
+            runCurrent()
+            assertEquals(2, snapshotReads)
+            assertEquals(ChatReadPhase.Ready, model.uiState.value.listPhase)
+            assertEquals("Newest", model.uiState.value.threads.single().title)
+            superseded.complete(oldSnapshot)
+            runCurrent()
+            assertEquals("Newest", model.uiState.value.threads.single().title)
+
+            model.renameThread(CHAT_PERSONAL, "Local rename")
+            runCurrent()
+            assertTrue(renameEventId.isCompleted)
+            current.complete(newSnapshot)
+            runCurrent()
+            assertEquals("Local rename", model.uiState.value.threads.single().title)
+
+            renameResponse.complete(Unit)
+            advanceUntilIdle()
+            assertNull(model.uiState.value.failedRowAction)
+            assertEquals("Other device", model.uiState.value.threads.single().title)
+            store.clear()
+            runCurrent()
+            cache
+                .open(identity) { true }
+                .use {
+                    val saved = checkNotNull(it.load()).checkpoint
+                    assertEquals(ChatCursor(eventId(105), 105), saved.snapshotCursor)
+                    assertTrue(saved.events.isEmpty())
+                    assertEquals("Other device", replayChats(saved).single().title)
+                }
+        } finally {
+            superseded.complete(oldSnapshot)
+            current.complete(newSnapshot)
+            renameResponse.complete(Unit)
             store.clear()
             runCurrent()
             Dispatchers.resetMain()
@@ -856,7 +1018,7 @@ class ChatListModelTest {
     }
 
     @Test
-    fun networkListBecomesVisibleOnlyAfterTheDiskWriteAndReadbackComplete() = runTest {
+    fun networkListBecomesVisibleOnlyAfterTheDiskWriteCommits() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(dispatcher)
         val cache = cache(temporary.newFolder())
