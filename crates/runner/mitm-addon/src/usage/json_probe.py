@@ -5,6 +5,14 @@ from dataclasses import dataclass
 from typing import Literal
 
 from .json_limits import validate_positive_int
+from .json_syntax import (
+    JSON_HEX_BYTES,
+    JSON_SIMPLE_ESCAPES,
+    JSON_STRING_CONTROL_LIMIT,
+    JSON_WHITESPACE,
+    contains_surrogate,
+    is_json_value_start,
+)
 
 TopLevelStringFieldProbeStatus = Literal[
     "found",
@@ -14,12 +22,6 @@ TopLevelStringFieldProbeStatus = Literal[
     "non_string",
     "bound_exceeded",
 ]
-
-_JSON_CONTROL_CHAR_MAX = 0x20
-_JSON_HEX_BYTES = frozenset(b"0123456789abcdefABCDEF")
-_JSON_WHITESPACE = b" \t\r\n"
-_UTF8_SURROGATE_MIN = 0xD800
-_UTF8_SURROGATE_MAX = 0xDFFF
 
 
 @dataclass(frozen=True)
@@ -130,7 +132,7 @@ def probe_top_level_string_field(
                 return TopLevelStringFieldProbeResult("incomplete", field_seen=True)
             if body[i] != ord('"'):
                 return TopLevelStringFieldProbeResult(
-                    "non_string" if _is_json_value_start(body[i]) else "invalid",
+                    "non_string" if is_json_value_start(body[i]) else "invalid",
                     field_seen=True,
                 )
             value_result = _read_json_string(body, i, max_bytes=max_string_bytes)
@@ -166,7 +168,7 @@ def probe_top_level_string_field(
 
 
 def _skip_json_whitespace(body: bytes, i: int) -> int:
-    while i < len(body) and body[i] in _JSON_WHITESPACE:
+    while i < len(body) and body[i] in JSON_WHITESPACE:
         i += 1
     return i
 
@@ -206,18 +208,18 @@ def _scan_json_string_end(
             if escape == ord("u"):
                 if i + 4 >= len(body):
                     return _IndexResult("incomplete")
-                if any(hex_byte not in _JSON_HEX_BYTES for hex_byte in body[i + 1 : i + 5]):
+                if any(hex_byte not in JSON_HEX_BYTES for hex_byte in body[i + 1 : i + 5]):
                     return _IndexResult("invalid")
                 raw_bytes += 4
                 if raw_bytes > max_bytes:
                     return _IndexResult("bound_exceeded")
                 i += 5
                 continue
-            if escape not in b'"\\/bfnrt':
+            if escape not in JSON_SIMPLE_ESCAPES:
                 return _IndexResult("invalid")
             i += 1
             continue
-        if b < _JSON_CONTROL_CHAR_MAX:
+        if b < JSON_STRING_CONTROL_LIMIT:
             return _IndexResult("invalid")
         i += 1
     return _IndexResult("incomplete")
@@ -231,7 +233,7 @@ def _read_json_string(body: bytes, i: int, *, max_bytes: int) -> _StringResult:
         value = json.loads(body[i : end_result.index].decode("utf-8"))
     except UnicodeDecodeError, json.JSONDecodeError, ValueError:
         return _StringResult("invalid")
-    if not isinstance(value, str) or _contains_surrogate(value):
+    if not isinstance(value, str) or contains_surrogate(value):
         return _StringResult("invalid")
     return _StringResult("ok", value, end_result.index)
 
@@ -394,11 +396,3 @@ def _skip_json_value(
     if body.startswith(literal, i):
         return _IndexResult("ok", i + len(literal))
     return _IndexResult("invalid")
-
-
-def _is_json_value_start(b: int) -> bool:
-    return b in b'{["tfn-' or ord("0") <= b <= ord("9")
-
-
-def _contains_surrogate(value: str) -> bool:
-    return any(_UTF8_SURROGATE_MIN <= ord(ch) <= _UTF8_SURROGATE_MAX for ch in value)
