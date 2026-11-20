@@ -1664,6 +1664,7 @@
         "title": "為你推薦"
       },
       "homeCard": {
+        "completeDescription": "有值得你花時間的事時，Okou 會把下一件帶到這裡。",
         "completeTitle": "全部處理完了",
         "feedback": "建議操作",
         "navigation": "切換建議",

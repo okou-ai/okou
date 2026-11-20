@@ -1664,6 +1664,7 @@
         "title": "추천"
       },
       "homeCard": {
+        "completeDescription": "시간을 들일 만한 일이 생기면 Okou가 다음 일을 여기로 가져올게요.",
         "completeTitle": "모두 확인했어요",
         "feedback": "제안 작업",
         "navigation": "제안 둘러보기",

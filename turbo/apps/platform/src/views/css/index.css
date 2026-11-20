@@ -241,9 +241,8 @@
   --duration-completion-in: 320ms;
   --animate-completion-in: completion-in var(--duration-completion-in) ease-out
     var(--duration-card-fly-out) backwards;
-  --animate-completion-check-in: completion-check-in
-    var(--duration-completion-in) ease-out var(--duration-card-fly-out)
-    backwards;
+  --duration-firework-rise: 360ms;
+  --duration-firework-burst: 900ms;
   --animate-card-page-next-in: card-page-next-in 220ms ease-out both;
   --animate-card-page-next-out: card-page-next-out 220ms ease-out both;
   --animate-card-page-previous-in: card-page-previous-in 220ms ease-out both;
@@ -282,11 +281,26 @@
 /* Palette previews keep the fixed 135deg/52% sRGB blend in Light and Dark.
    Inline references resolve on each themed element, not the document root. */
 @theme inline {
-  --animate-completion-dot: completion-dot 520ms ease-out
+  /* Clearing the last For you card sets off a few fireworks once the card has
+     flown away. Each burst rises, then opens and drifts down; bursts are
+     staggered through `--firework-delay`, so the delay lives in this inline
+     block where a burst's own value resolves. */
+  --animate-firework-rise: firework-rise var(--duration-firework-rise)
+    cubic-bezier(0.2, 0.7, 0.3, 1)
+    calc(var(--duration-card-fly-out) + var(--firework-delay)) both;
+  --animate-firework-spark: firework-spark var(--duration-firework-burst)
+    cubic-bezier(0.15, 0.8, 0.3, 1)
     calc(
-      var(--duration-card-fly-out) + var(--duration-completion-in) +
-        var(--completion-dot-stagger)
-    );
+      var(--duration-card-fly-out) + var(--firework-delay) +
+        var(--duration-firework-rise)
+    )
+    both;
+  --animate-firework-fall: firework-fall var(--duration-firework-burst) ease-in
+    calc(
+      var(--duration-card-fly-out) + var(--firework-delay) +
+        var(--duration-firework-rise)
+    )
+    both;
 
   /* On the session's first home, the capability rows and the compliance block
      under them settle in after the greeting: an 8px rise on the greeting's
@@ -790,32 +804,50 @@ body {
   }
 }
 
-@keyframes completion-check-in {
+@keyframes firework-rise {
   0% {
-    transform: scale(0.72);
+    opacity: 0;
+    transform: translateY(48px) scaleY(1.6);
   }
-  55% {
-    transform: scale(1.22);
+  20% {
+    opacity: 1;
   }
   100% {
-    transform: scale(1);
+    opacity: 0;
+    transform: translateY(0) scaleY(0.6);
   }
 }
 
-@keyframes completion-dot {
+@keyframes firework-spark {
   0% {
     opacity: 0;
-    transform: translate(
-      calc(var(--completion-dot-x) * 0.62),
-      calc(var(--completion-dot-y) * 0.62)
-    );
+    transform: rotate(var(--firework-spark-angle)) translateY(0) scaleY(0.3);
   }
-  28% {
-    opacity: 0.85;
+  12% {
+    opacity: 1;
+  }
+  65% {
+    opacity: 1;
+    transform: rotate(var(--firework-spark-angle))
+      translateY(
+        calc(var(--firework-reach) * var(--firework-spark-scale) * -0.9)
+      )
+      scaleY(1);
   }
   100% {
     opacity: 0;
-    transform: translate(var(--completion-dot-x), var(--completion-dot-y));
+    transform: rotate(var(--firework-spark-angle))
+      translateY(calc(var(--firework-reach) * var(--firework-spark-scale) * -1))
+      scaleY(0.2);
+  }
+}
+
+@keyframes firework-fall {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(14px);
   }
 }
 
