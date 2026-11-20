@@ -880,7 +880,6 @@ chat-header-loading-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-h
 browser-session-page-002	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Window size settings retain each selected mode when reopened	114	passed
 chat-capability-browser-actions-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-browser-actions.test.tsx	Refresh the browser card after delayed attachment and a continuity gap	783	passed
 chat-capability-browser-actions-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-browser-actions.test.tsx	Follow suspension and resumption in the live browser panel	846	passed
-chat-capability-mail-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-mail.test.tsx	Send, revisit, and delete mail drafts from chat	30	passed
 browser-session-page-003	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	The Okou viewer shows its host blank page only while the blank tab is selected	140	passed
 chat-header-loading-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-header-loading.test.tsx	Keep header actions focusable and busy while the next chat loads	211	passed
 chat-header-loading-007	turbo/apps/platform/src/views/okou-page/__tests__/chat-header-loading.test.tsx	Open the destination's browser from the mobile menu after navigating	90	passed
@@ -1589,3 +1588,34 @@ desktop-shell-authorization-023	turbo/apps/platform/src/views/okou-page/__tests_
 desktop-shell-authorization-024	turbo/apps/platform/src/views/okou-page/__tests__/desktop-shell-authorization.test.tsx	Shell approval resumes only with an explicit callback (false)	396	passed
 desktop-shell-authorization-025	turbo/apps/platform/src/views/okou-page/__tests__/desktop-shell-authorization.test.tsx	Shell approval resumes only with an explicit callback (true)	396	passed
 desktop-shell-authorization-027	turbo/apps/platform/src/views/okou-page/__tests__/desktop-shell-authorization.test.tsx	The standalone Shell page honors the optional callback (false)	430	passed
+capability-home-page-001	turbo/apps/platform/src/views/okou-page/__tests__/capability-home-page.test.tsx	An empty conversation offers capabilities by default without an avatar and sends its first message in the same conversation	79	passed
+capability-home-page-002	turbo/apps/platform/src/views/okou-page/__tests__/capability-home-page.test.tsx	The home lists compliance statuses under the capability cards	120	passed
+capability-home-page-004	turbo/apps/platform/src/views/okou-page/__tests__/capability-home-page.test.tsx	Hiding the compliance block keeps it hidden on this device	161	passed
+capability-home-page-005	turbo/apps/platform/src/views/okou-page/__tests__/capability-home-page.test.tsx	An open tray switches capabilities and types without going back to the cards	205	passed
+capability-home-page-006	turbo/apps/platform/src/views/okou-page/__tests__/capability-home-page.test.tsx	Switching Presentation to Find people sends the manually written prompt as ordinary chat	260	passed
+capability-home-page-008	turbo/apps/platform/src/views/okou-page/__tests__/capability-home-page.test.tsx	Opening the tray from a card and closing it back each swap the home under one view transition	288	passed
+capability-home-page-009	turbo/apps/platform/src/views/okou-page/__tests__/capability-home-page.test.tsx	The capability tabs move with the arrow keys and open on Enter	311	passed
+capability-home-page-010	turbo/apps/platform/src/views/okou-page/__tests__/capability-home-page.test.tsx	The tray names a type once and browses its catalog from the header line	325	passed
+capability-home-page-011	turbo/apps/platform/src/views/okou-page/__tests__/capability-home-page.test.tsx	Capability discovery and templates replace each other while the composer keeps the draft and template	365	passed
+capability-home-page-012	turbo/apps/platform/src/views/okou-page/__tests__/capability-home-page.test.tsx	Workflow suggestions preserve the draft and open the real workflow picker	398	passed
+capability-home-page-016	turbo/apps/platform/src/views/okou-page/__tests__/capability-home-page.test.tsx	News digest prepares a periodic monitoring request without starting it	442	passed
+capability-home-page-018	turbo/apps/platform/src/views/okou-page/__tests__/capability-home-page.test.tsx	Every capability card opens from anywhere on it, as its first choice does	465	passed
+capability-home-page-020	turbo/apps/platform/src/views/okou-page/__tests__/capability-home-page.test.tsx	Closing Find people clears its unchanged injected prompt	504	passed
+capability-home-page-025	turbo/apps/platform/src/views/okou-page/__tests__/capability-home-page.test.tsx	Closing Find people preserves the prompt after the user edits it	531	passed
+capability-home-page-026	turbo/apps/platform/src/views/okou-page/__tests__/capability-home-page.test.tsx	Closing Research preserves the prompt after the user edits it	531	passed
+capability-home-page-030	turbo/apps/platform/src/views/okou-page/__tests__/capability-home-page.test.tsx	Dismissing repeated suggestions restores the original draft without stacked prompts	561	passed
+chat-capability-billing-recovery-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-billing-recovery.test.tsx	Let a workspace admin recover from a free-plan billing limit	146	passed
+chat-capability-billing-recovery-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-billing-recovery.test.tsx	Let a limited-free workspace admin unlock a Pro-only capability	165	passed
+chat-capability-billing-recovery-006	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-billing-recovery.test.tsx	Show that a previously blocked chat can continue after credits return	184	passed
+chat-capability-billing-recovery-007	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-billing-recovery.test.tsx	Show a new credit rejection with the current balance	210	passed
+chat-capability-mail-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-mail.test.tsx	Inline, table, and nested mail links keep their labels and open email details	124	passed
+chat-capability-mail-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-mail.test.tsx	Send, revisit, and delete mail drafts from chat	287	passed
+chat-capability-mail-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-mail.test.tsx	Open a trusted email card with safe, complete details	409	passed
+chat-capability-message-actions-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-message-actions.test.tsx	Keep Copy to the right of an active run's logs before any assistant output	75	passed
+chat-capability-message-actions-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-message-actions.test.tsx	Do not show user run logs before a run ID is assigned	141	passed
+chat-capability-message-actions-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-message-actions.test.tsx	Copy workflow trigger bubbles and inspect their associated runs	170	passed
+chat-capability-message-actions-007	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-message-actions.test.tsx	Copy and paste a structured chat message from the keyboard without flattening it	279	passed
+composer-capability-menus-001	turbo/apps/platform/src/views/okou-page/__tests__/composer-capability-menus.test.tsx	The add menu opens each home capability and restores its own trigger only on dismissal	148	passed
+composer-capability-menus-002	turbo/apps/platform/src/views/okou-page/__tests__/composer-capability-menus.test.tsx	Slash capabilities preserve the draft with SlashActions=false and desktop=true	182	passed
+composer-capability-menus-004	turbo/apps/platform/src/views/okou-page/__tests__/composer-capability-menus.test.tsx	The Templates browser preserves the draft when opening its picker	230	passed
+composer-capability-menus-008	turbo/apps/platform/src/views/okou-page/__tests__/composer-capability-menus.test.tsx	A successful send dismisses menu discovery in an existing conversation	257	passed
