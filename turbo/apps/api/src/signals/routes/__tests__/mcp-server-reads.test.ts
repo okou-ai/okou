@@ -15,7 +15,6 @@ import {
   chatEventsContract,
   chatThreadEventsContract,
   chatThreadsContract,
-  indicatorsSchema,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   mcpGetChatMessagesOutputSchema,
@@ -141,6 +140,8 @@ describe("thin MCP Web adapters", () => {
       );
       const validator = new AjvJsonSchemaValidator();
       for (const tool of tools) {
+        const schemas = JSON.stringify([tool.inputSchema, tool.outputSchema]);
+        expect(schemas).not.toMatch(/"(?:agentId|reassignedAgentId|agents)":/u);
         expect(() => {
           return validator.getValidator(tool.inputSchema as JsonSchemaType);
         }).not.toThrow();
@@ -425,12 +426,11 @@ describe("thin MCP Web adapters", () => {
     expect(deniedSend.status).toBe(403);
   });
 
-  it("returns unmodified Web projects, models and indicator responses", async () => {
+  it("returns unmodified Web project and model lists", async () => {
     const f = await fixture();
     for (const [name, path] of [
       ["list_projects", "/api/projects"],
       ["list_models", "/api/run-models"],
-      ["get_chat_indicators", "/api/indicators"],
     ]) {
       if (!name || !path) {
         throw new Error("Invalid route case");
@@ -506,7 +506,7 @@ describe("thin MCP Web adapters", () => {
     });
     expect(listed.isError).not.toBeTruthy();
     expect(body(listed)).toMatchObject({
-      threads: [{ id: sent.threadId, projectId: id, agentId: f.agentId }],
+      threads: [{ threadId: sent.threadId, projectId: id }],
       nextAfter: null,
     });
     expect(
@@ -519,6 +519,7 @@ describe("thin MCP Web adapters", () => {
       ).code,
     ).toBe("BAD_REQUEST");
 
+    expect(listed.content[0]?.text).not.toContain("agentId");
     const retained = await bdd.createAgent(f.actor, {
       visibility: "private",
       displayName: "Retained Agent",
@@ -552,8 +553,7 @@ describe("thin MCP Web adapters", () => {
 
       const initial = await mcp.call(token(), "get_chat_indicators");
       expect(initial.isError).not.toBeTruthy();
-      expect(indicatorsSchema.parse(body(initial))).toStrictEqual({
-        agents: { [f.agentId]: "active" },
+      expect(body(initial)).toStrictEqual({
         threads: { [run.threadId]: "active" },
         unreadAt: {},
       });
@@ -592,8 +592,7 @@ describe("thin MCP Web adapters", () => {
 
       const unread = await mcp.call(token(), "get_chat_indicators");
       expect(unread.isError).not.toBeTruthy();
-      expect(indicatorsSchema.parse(body(unread))).toStrictEqual({
-        agents: { [f.agentId]: "unread" },
+      expect(body(unread)).toStrictEqual({
         threads: { [run.threadId]: "unread" },
         unreadAt: { [run.threadId]: terminal?.createdAt },
       });
@@ -723,24 +722,31 @@ describe("thin MCP Web adapters", () => {
     ).toBe("BAD_REQUEST");
   });
 
-  it("preserves the native snapshot pointer and projects inline lifecycle entity references", async () => {
+  it("projects lifecycle events without exposing execution identities", async () => {
     const f = await fixture();
     const sent = await send(f, "lifecycle aggregate");
     await flushWaitUntilForTest();
     const page = mcpGetChatThreadOutputSchema.parse(
       body(await mcp.call(f.token(), "get_chat_thread_list")),
     );
-    const snapshot = await mcp.web(f.token(), "/api/chat-threads/snapshot");
     const events = await mcp.web(f.token(), "/api/chat-threads/events");
     const nativeEvents = chatThreadsContract.events.responses[200].parse(
       events.body,
     );
     expect(page).toStrictEqual({
-      snapshot: snapshot.body,
+      snapshot: { chatThreads: [], latestEventId: null, latestSeqId: null },
       ...nativeEvents,
-      events: nativeEvents.events.map(({ id, chatThreadId, ...event }) => {
-        return { ...event, eventId: id, threadId: chatThreadId };
-      }),
+      events: nativeEvents.events.map(
+        ({
+          id,
+          chatThreadId,
+          agentId: _agentId,
+          reassignedAgentId: _reassignedAgentId,
+          ...event
+        }) => {
+          return { ...event, eventId: id, threadId: chatThreadId };
+        },
+      ),
     });
     expect(
       page.events.some((event) => {
@@ -758,6 +764,7 @@ describe("thin MCP Web adapters", () => {
         }),
       ),
     );
+    expect(next.snapshot).toBeNull();
     expect(next.events).toStrictEqual([]);
     expect(next.hasMore).toBeFalsy();
   });

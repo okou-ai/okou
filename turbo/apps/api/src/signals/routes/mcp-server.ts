@@ -1,3 +1,10 @@
+import { promisify } from "node:util";
+import { gunzip } from "node:zlib";
+import { mcpThreadSnapshotContract } from "@okouai/api-contracts/contracts/mcp-chat-snapshots";
+import { env } from "../../lib/env";
+import { downloadS3Buffer } from "../external/s3";
+import { getChatThreadSnapshot } from "../services/chat-thread-event.service";
+import { isOwnedChatThreadSnapshotObjectKey } from "../services/chat-thread-snapshot-object";
 import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
@@ -15,6 +22,7 @@ import {
   chatThreadModelSelectionContract,
   chatThreadRenameContract,
   chatThreadsContract,
+  chatThreadSnapshotArchiveSchema,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { mcpProjectChatSearchContract } from "@okouai/api-contracts/contracts/mcp-chat-search";
 import { mcpServerContract } from "@okouai/api-contracts/contracts/mcp-server";
@@ -97,7 +105,9 @@ const mcpSendChat$ = command(async ({ get, set }, signal: AbortSignal) => {
   signal.throwIfAborted();
   if (!agentId) {
     return notFound(
-      threadId ? "Chat thread not found" : "Default Agent not found",
+      threadId
+        ? "Chat thread not found"
+        : "New Chats are unavailable in this workspace",
     );
   }
   const eventId = randomUUID();
@@ -137,13 +147,54 @@ const mcpRevokeChat$ = command(async ({ get, set }, signal: AbortSignal) => {
   );
 });
 
+const gunzipAsync = promisify(gunzip);
+
+const mcpThreadSnapshot$ = command(async ({ get }, signal: AbortSignal) => {
+  const { userId, orgId } = get(organizationAuthContext$);
+  const snapshot = await get(getChatThreadSnapshot({ userId, orgId }));
+  signal.throwIfAborted();
+  if (!snapshot) {
+    return {
+      status: 200 as const,
+      body: { chatThreads: [], latestEventId: null, latestSeqId: null },
+    };
+  }
+  if (!isOwnedChatThreadSnapshotObjectKey(snapshot.objectKey, userId, orgId)) {
+    throw new Error("Invalid chat thread snapshot object key");
+  }
+  const compressed = await get(
+    downloadS3Buffer(
+      env("R2_USER_STORAGES_BUCKET_NAME"),
+      snapshot.objectKey,
+      signal,
+    ),
+  );
+  signal.throwIfAborted();
+  const archive = chatThreadSnapshotArchiveSchema.parse(
+    JSON.parse((await gunzipAsync(compressed)).toString("utf8")),
+  );
+  signal.throwIfAborted();
+  return {
+    status: 200 as const,
+    body: {
+      chatThreads: archive.chatThreads.map(
+        ({ id, agentId: _agentId, ...thread }) => {
+          return { ...thread, threadId: id };
+        },
+      ),
+      latestEventId: snapshot.latestEventId,
+      latestSeqId: snapshot.latestSeqId,
+    },
+  };
+});
+
 // The project and chat reads reuse canonical routes in the scoped MCP slice.
 const toolContracts: ReadonlySet<AppRoute> = Object.freeze(
   new Set([
     projectsContract.list,
     projectsContract.threads,
     runModelsMainContract.list,
-    chatThreadsContract.snapshot,
+    mcpThreadSnapshotContract.get,
     chatThreadsContract.events,
     chatThreadsContract.indicators,
     chatThreadEventsContract.snapshot,
@@ -162,6 +213,17 @@ const toolRoutes = [
   ...projectRoutes,
   ...runModelsRoutes,
   ...chatThreadRoutes,
+  {
+    route: mcpThreadSnapshotContract.get,
+    handler: authRoute(
+      {
+        requireOrganization: true,
+        requiredCapability: "chat-thread:read",
+        oauthScope: "okou:chat:read",
+      },
+      mcpThreadSnapshot$,
+    ),
+  },
   {
     route: mcpChatCommandContract.send,
     handler: authRoute(

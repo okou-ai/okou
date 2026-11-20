@@ -31,6 +31,8 @@ import {
   mcpUpdateChatThreadModelInputSchema,
 } from "@okouai/api-contracts/contracts/mcp-chat-tools";
 import {
+  mcpChatThreadSchema,
+  mcpThreadSnapshotContract,
   mcpGetChatMessagesInputSchema,
   mcpGetChatMessagesOutputSchema,
   mcpGetChatThreadInputSchema,
@@ -40,6 +42,7 @@ import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-model
 import { runsCancelContract } from "@okouai/api-contracts/contracts/run-routes";
 import type { AppRoute } from "@okouai/api-contracts/contracts/trpc-contract";
 import {
+  array,
   object,
   toJSONSchema,
   ZodNumber,
@@ -437,24 +440,29 @@ async function getThreadSnapshot(
   input: output<typeof mcpGetChatThreadInputSchema>,
   signal: AbortSignal,
 ): Promise<CallToolResult> {
-  const snapshotResponse = await requestWebApi(
-    access,
-    chatThreadsContract.snapshot,
-    {},
-    signal,
-  );
-  if (!snapshotResponse.ok) {
-    return await toolResponse(snapshotResponse);
+  let snapshot: output<
+    (typeof mcpThreadSnapshotContract.get.responses)[200]
+  > | null = null;
+  if (input.sinceSeqId === undefined) {
+    const snapshotResponse = await requestWebApi(
+      access,
+      mcpThreadSnapshotContract.get,
+      {},
+      signal,
+    );
+    if (!snapshotResponse.ok) {
+      return await toolResponse(snapshotResponse);
+    }
+    snapshot = mcpThreadSnapshotContract.get.responses[200].parse(
+      await snapshotResponse.json(),
+    );
   }
-  const snapshot = chatThreadsContract.snapshot.responses[200].parse(
-    await snapshotResponse.json(),
-  );
   const eventsResponse = await requestWebApi(
     access,
     chatThreadsContract.events,
     {
       query: {
-        sinceSeqId: input.sinceSeqId ?? snapshot.latestSeqId ?? undefined,
+        sinceSeqId: input.sinceSeqId ?? snapshot?.latestSeqId ?? undefined,
       },
     },
     signal,
@@ -468,9 +476,17 @@ async function getThreadSnapshot(
   return toolBody({
     snapshot,
     ...page,
-    events: page.events.map(({ id, chatThreadId, ...event }) => {
-      return { ...event, eventId: id, threadId: chatThreadId };
-    }),
+    events: page.events.map(
+      ({
+        id,
+        chatThreadId,
+        agentId: _agentId,
+        reassignedAgentId: _reassignedAgentId,
+        ...event
+      }) => {
+        return { ...event, eventId: id, threadId: chatThreadId };
+      },
+    ),
   });
 }
 
@@ -602,10 +618,12 @@ function registerProjectTools(
           projectId: projectsContract.threads.pathParams.shape.id,
         })
         .strict(),
-      outputSchema: projectsContract.threads.responses[200],
+      outputSchema: projectsContract.threads.responses[200].extend({
+        threads: array(mcpChatThreadSchema),
+      }),
       annotations: readAnnotations,
-      operation: ({ projectId, ...query }, signal) => {
-        return requestWebApi(
+      operation: async ({ projectId, ...query }, signal) => {
+        const response = await requestWebApi(
           access,
           projectsContract.threads,
           {
@@ -614,6 +632,17 @@ function registerProjectTools(
           },
           signal,
         );
+        if (!response.ok) {
+          return await toolResponse(response);
+        }
+        const { threads, nextAfter } =
+          projectsContract.threads.responses[200].parse(await response.json());
+        return toolBody({
+          nextAfter,
+          threads: threads.map(({ id, agentId: _agentId, ...thread }) => {
+            return { ...thread, threadId: id };
+          }),
+        });
       },
     },
     requestSignal,
@@ -650,7 +679,7 @@ function registerReadTools(
       name: "get_chat_thread_list",
       scope: "okou:chat:read",
       description:
-        "Get the current user's chat thread list in the authorized organization as an R2 snapshot pointer and one bounded page of lifecycle events, with canonical eventId and threadId references. Download the snapshot and apply lifecycle events to reconstruct the list; this tool does not return one individual thread or download or reconstruct the snapshot. Omit sinceSeqId initially; when hasMore is true, continue with the last event's seqId until all pages are read. Downloaded snapshots retain their native Web format.",
+        "Read the current user's workspace Chat list. The initial response includes a compacted Chat list snapshot and one bounded page of lifecycle events. Apply events after the snapshot. Continue with the last event's seqId as sinceSeqId when hasMore is true. Continuation pages return snapshot: null. On 410, restart without sinceSeqId.",
       inputSchema: mcpGetChatThreadInputSchema,
       outputSchema: mcpGetChatThreadOutputSchema,
       annotations: readAnnotations,
@@ -706,16 +735,22 @@ function registerReadTools(
       name: "get_chat_indicators",
       scope: "okou:chat:read",
       description:
-        "Show active (pending/running) and unread (completed/failed/cancelled) indicators for visible Agents and threads. This limited, non-atomic list does not prove Run completion. Use get_chat_messages with the known threadId and check terminal events for the matching runId to confirm an outcome. Does not mark threads read.",
+        "Show active (pending/running) and unread (completed/failed/cancelled) indicators for visible Chats. This limited, non-atomic list does not prove Run completion. Use get_chat_messages with the known threadId and check terminal events for the matching runId to confirm an outcome. Does not mark threads read.",
       inputSchema: emptyInput,
       outputSchema: mcpGetChatIndicatorsOutputSchema,
       annotations: readAnnotations,
-      operation: (_input, signal) => {
-        return requestWebApi(
+      operation: async (_input, signal) => {
+        const response = await requestWebApi(
           access,
           chatThreadsContract.indicators,
           {},
           signal,
+        );
+        if (!response.ok) {
+          return await toolResponse(response);
+        }
+        return toolBody(
+          mcpGetChatIndicatorsOutputSchema.parse(await response.json()),
         );
       },
     },
