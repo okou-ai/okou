@@ -2,6 +2,7 @@ package ai.okou.android.chat
 
 import ai.okou.android.LocalActivityStatusColor
 import ai.okou.android.R
+import ai.okou.android.currentWindowSizeDp
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -190,7 +191,7 @@ internal fun ChatListScreen(
             state.threads.any { it.hidden != true && it.projectId !in knownProjects }
     val refreshLabel = stringResource(R.string.chat_refresh)
     val listLabel = stringResource(R.string.chat_list_title)
-    val widthDp = LocalConfiguration.current.screenWidthDp
+    val widthDp = currentWindowSizeDp().width
     val largeCompact = widthDp >= 600
     val listInset = if (wide) 12.dp else if (largeCompact) 24.dp else 16.dp
     val outline = MaterialTheme.colorScheme.outline

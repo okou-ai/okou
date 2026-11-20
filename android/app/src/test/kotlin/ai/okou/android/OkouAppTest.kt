@@ -26,6 +26,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.platform.WindowInfo
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertHeightIsEqualTo
 import androidx.compose.ui.test.assertIsDisplayed
@@ -44,6 +46,7 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
@@ -71,6 +74,7 @@ class OkouAppTest {
     private val owners = ViewModelStore()
     private var background: Color? = null
     private val deviceConfiguration = mutableStateOf<Configuration?>(null)
+    private val windowSize = mutableStateOf<IntSize?>(null)
     private val release = updateRelease("99.0.0")
     private val availableUpdate =
         UpdateUiState(
@@ -186,10 +190,16 @@ class OkouAppTest {
             }
         compose.setContent {
             val state by models.second.uiState.collectAsStateWithLifecycle()
+            val window = LocalWindowInfo.current
             CompositionLocalProvider(
                 LocalConfiguration provides
                     (deviceConfiguration.value ?: LocalConfiguration.current),
                 LocalDensity provides Density(LocalDensity.current.density, fontScale),
+                LocalWindowInfo provides
+                    object : WindowInfo by window {
+                        override val containerSize: IntSize
+                            get() = windowSize.value ?: window.containerSize
+                    },
             ) {
                 val dark = state.theme.resolveDark(isSystemInDarkTheme())
                 OkouTheme(dark) {
@@ -415,9 +425,14 @@ class OkouAppTest {
                     screenHeightDp = 479
                 }
         }
+        compose.onNodeWithTag("workspace_new_chat").assertExists()
+        compose.runOnIdle {
+            val density = compose.activity.resources.displayMetrics.density
+            windowSize.value = IntSize((900 * density).toInt(), (479 * density).toInt())
+        }
         compose.onNodeWithTag("chat_list").assertExists()
         compose.onNodeWithTag("workspace_new_chat").assertDoesNotExist()
-        compose.runOnIdle { deviceConfiguration.value = null }
+        compose.runOnIdle { windowSize.value = null }
         compose.onNodeWithTag("workspace_new_chat").assertExists()
     }
 

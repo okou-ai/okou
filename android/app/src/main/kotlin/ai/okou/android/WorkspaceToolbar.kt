@@ -57,7 +57,6 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.platform.LocalView
@@ -312,7 +311,7 @@ private fun WorkspaceMenu(
     back: () -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
-    val window = LocalConfiguration.current
+    val window = currentWindowSizeDp()
     val density = LocalDensity.current
     val position =
         remember(density) {
@@ -328,8 +327,8 @@ private fun WorkspaceMenu(
         WorkspacePopupBackHandler(back)
         Surface(
             modifier =
-                Modifier.width((window.screenWidthDp - 24).coerceIn(1, 244).dp)
-                    .heightIn(max = (window.screenHeightDp - 80).coerceAtLeast(48).dp)
+                Modifier.width((window.width - 24).coerceIn(1, 244).dp)
+                    .heightIn(max = (window.height - 80).coerceAtLeast(48).dp)
                     .testTag("workspace_popup"),
             shape = RoundedCornerShape(16.dp),
             color = colors.surface,
