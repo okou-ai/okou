@@ -297,8 +297,8 @@ internal fun WorkspaceToolbarActions(
                     containerColor =
                         if (pressed) colors.onSurfaceVariant else colors.inverseSurface,
                     contentColor = colors.inverseOnSurface,
-                    disabledContainerColor = colors.inverseSurface,
-                    disabledContentColor = colors.inverseOnSurface,
+                    disabledContainerColor = colors.surfaceVariant,
+                    disabledContentColor = colors.onSurfaceVariant,
                 ),
         ) {
             Icon(
