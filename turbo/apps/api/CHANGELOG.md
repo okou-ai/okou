@@ -10,6 +10,31 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.98.0](https://github.com/okou-ai/okou/compare/api-v2.97.4...api-v2.98.0) (2026-11-20)
+
+
+### Features
+
+* **cli:** add controls for all proactive settings ([#49491](https://github.com/okou-ai/okou/issues/49491)) ([fa9de5d](https://github.com/okou-ai/okou/commit/fa9de5d35ef2dba39d40940af9290b5ab692450b))
+
+
+### Bug Fixes
+
+* **api:** require the web client with chat Drive exports ([#49528](https://github.com/okou-ai/okou/issues/49528)) ([5cd43a8](https://github.com/okou-ai/okou/commit/5cd43a82df450e3c893c23a3c5d91e7085f4b5a1))
+
+
+### Performance Improvements
+
+* **api:** measure runner dispatch socket reuse ([#49515](https://github.com/okou-ai/okou/issues/49515)) ([a4e32f3](https://github.com/okou-ai/okou/commit/a4e32f300053676447b714cd927dd60ac86135c4))
+* **api:** reuse run launch snapshots and overlap signing ([#49516](https://github.com/okou-ai/okou/issues/49516)) ([942dd91](https://github.com/okou-ai/okou/commit/942dd918f0da2113cf603bdb75b0bd6d7aee02cc))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/db bumped to 2.56.1
+
 ## [2.97.4](https://github.com/okou-ai/okou/compare/api-v2.97.3...api-v2.97.4) (2026-11-20)
 
 

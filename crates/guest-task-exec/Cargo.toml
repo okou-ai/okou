@@ -1,6 +1,6 @@
 [package]
 name = "guest-task-exec"
-version = "0.2.93"
+version = "0.2.94"
 edition.workspace = true
 
 [dependencies]

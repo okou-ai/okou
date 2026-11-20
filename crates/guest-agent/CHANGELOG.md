@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.110.16](https://github.com/okou-ai/okou/compare/guest-agent-v0.110.15...guest-agent-v0.110.16) (2026-11-20)
+
+
+### Bug Fixes
+
+* **runner:** isolate optional package mount failures ([#49375](https://github.com/okou-ai/okou/issues/49375)) ([56468e0](https://github.com/okou-ai/okou/commit/56468e04dfb10c1adce08e41698106db41ec6bf3))
+
 ## [0.110.15](https://github.com/okou-ai/okou/compare/guest-agent-v0.110.14...guest-agent-v0.110.15) (2026-11-20)
 
 ## [0.110.14](https://github.com/okou-ai/okou/compare/guest-agent-v0.110.13...guest-agent-v0.110.14) (2026-11-20)
