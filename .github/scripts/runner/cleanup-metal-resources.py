@@ -2,7 +2,7 @@
 """Observe/reconcile PR resources on one host; GitHub authority stays in the caller.
 
 The session worker owns every selected namespace's lifecycle lock through cleanup.
-The Stripe retirement command runs under the deployment's existing lifecycle lock.
+Stripe listener replacement uses the same host-side retirement checks.
 Input is an explicit PR-number selection, never paths or shell fragments. Output
 is JSON; command errors go to stderr. No mutation is replayed after a timeout.
 --root relocates filesystem access for execution in an isolated host namespace.
@@ -45,11 +45,14 @@ PROPERTIES = (
 )
 UNIT_ROOTS = ("/etc/systemd/system", "/run/systemd/system", "/run/systemd/transient")
 BIN_ROOT = "/var/lib/vm0-runner/bin"
+STRIPE_ROOT = "/var/lib/vm0-runner/stripe"
+STRIPE_OPERATIONS = "/run/vm0-ci-stripe-deployments"
 DATA_ROOTS = (
     BIN_ROOT,
     "/var/lib/vm0-runner/runners",
     "/var/lib/vm0-runner/groups/vm0",
-    "/var/lib/vm0-runner/stripe",
+    STRIPE_ROOT,
+    STRIPE_OPERATIONS,
 )
 # Runner units allow 300s for graceful stop. Leave time for job/cgroup retirement.
 STOP_TIMEOUT = 330
@@ -71,9 +74,9 @@ def lifecycle_descriptor(path):
         os.close(fd)
 
 
-def command(*args, allow_failure=False):
+def command(*args, allow_failure=False, pass_fds=()):
     result = subprocess.run(
-        args, capture_output=True, text=True, timeout=35, check=False
+        args, capture_output=True, text=True, timeout=35, check=False, pass_fds=pass_fds
     )
     if result.returncode and not allow_failure:
         raise RuntimeError(f"{args[0]} {args[1]} failed: {result.stderr.strip()}")
@@ -311,15 +314,32 @@ class Host:
                     time.sleep(0.1)
             yield
 
-    def stop_stripe_listener(self, pr):
+    @contextlib.contextmanager
+    def stripe_submission_lock(self):
+        directory = self.path(STRIPE_OPERATIONS)
+        self.check_resource_ancestors(directory)
+        directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+        info = directory.stat()
+        if info.st_uid != os.geteuid() or info.st_mode & 0o077:
+            raise RuntimeError("Stripe operation directory is not private and owned")
+        # The lifecycle lock, when needed, is always acquired before this lock.
+        with lifecycle_descriptor(directory / "submission.lock") as fd:
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            yield
+
+    def stop_stripe_listener(self, pr, lock_fd):
         unit = f"vm0-stripe-listener-pr-{pr}.service"
         previous = self.states([unit])[unit]
         if not previous["busy"]:
-            return False
-        command("systemctl", "stop", "--no-block", unit)
-        while self.states([unit])[unit]["busy"] or self.populated(previous["ControlGroup"]):
+            return
+        command("systemctl", "stop", "--no-block", unit, pass_fds=(lock_fd,))
+        deadline = time.monotonic() + 120
+        while self.states([unit])[unit]["busy"] or self.populated(
+            previous["ControlGroup"]
+        ):
+            if time.monotonic() >= deadline:
+                raise TimeoutError("Stripe listener did not retire")
             time.sleep(0.5)
-        return True
 
     def revoke_image_admission(self, selected):
         # The session holds these namespace locks. Older image workers check
@@ -345,10 +365,10 @@ class Host:
                 outcomes.setdefault(pr, {"outcome": "failed", "error": str(error)})
         return outcomes
 
-    def cleanup(self, selected):
+    def cleanup(self, cutoffs):
         # Revoke admission even if a later inventory or bulk teardown fails.
-        revocation_failures = self.revoke_image_admission(selected)
-        selected = [pr for pr in selected if pr not in revocation_failures]
+        revocation_failures = self.revoke_image_admission(cutoffs)
+        selected = [pr for pr in cutoffs if pr not in revocation_failures]
         if not selected:
             return revocation_failures
         try:
@@ -412,7 +432,25 @@ class Host:
                         dirty = True
                         self.remove(path)
                 for path in resource["directories"]:
-                    self.remove(path)
+                    if Path(path).parent == self.path(STRIPE_OPERATIONS):
+                        with self.stripe_submission_lock():
+                            try:
+                                operation = json.loads(
+                                    (Path(path) / "current.json").read_text()
+                                )
+                            except FileNotFoundError:
+                                operation = None
+                            # A reopened PR can stage a fresh operation while
+                            # this closed-PR cleanup still holds the flock.
+                            if (
+                                operation
+                                and (operation["generation"][0] + "\n").encode("ascii")
+                                > cutoffs[pr]
+                            ):
+                                continue
+                            self.remove(path)
+                    else:
+                        self.remove(path)
                 outcomes[pr] = {
                     "outcome": "cleaned"
                     if resource["units"] or resource["directories"]
@@ -530,17 +568,20 @@ class Host:
                             "ascii"
                         )
                     # Keep the lock inode stable and record closure before deletion.
+                    cutoffs = {}
                     for number, record in records.items():
                         fd = descriptors[number]
-                        if os.pread(fd, 22, 0) < record:
+                        previous = os.pread(fd, 22, 0)
+                        if previous < record:
                             if os.pwrite(fd, record, 0) != len(record):
                                 raise RuntimeError("incomplete PR closure record")
                             os.ftruncate(fd, len(record))
+                        cutoffs[int(number)] = max(previous, record)
                     # Covers the shared stop budget plus inventory and teardown.
                     # The controller's response/batch deadlines must outlive it.
                     signal.alarm(480)
                     try:
-                        result = self.cleanup([int(number) for number in closed])
+                        result = self.cleanup(cutoffs)
                     finally:
                         signal.alarm(0)
                     print(
@@ -559,7 +600,7 @@ class Host:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=["inventory", "session", "stop-stripe"])
+    parser.add_argument("operation", choices=["inventory", "session"])
     parser.add_argument("numbers", nargs="*", type=int)
     parser.add_argument("--root", default="/")
     args = parser.parse_args()
@@ -568,13 +609,6 @@ def main():
     ):
         parser.error("cleanup requires positive PR numbers")
     host = Host(args.root)
-    if args.operation == "stop-stripe":
-        if len(args.numbers) != 1:
-            parser.error("stop-stripe requires exactly one PR number")
-        # The calling deployment holds the lifecycle lock. Keep the initial
-        # operation alarm armed across the stop request and all observations.
-        print(json.dumps({"stopped": host.stop_stripe_listener(args.numbers[0])}))
-        return
     if args.operation == "session":
         if len(args.numbers) > 8:
             parser.error("session batch exceeds eight namespaces")

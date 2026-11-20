@@ -1983,33 +1983,26 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: 22.23.4
-
-      - name: Install Ansible
-        run: pip3 install ansible-core
-
       - name: Setup SSH via Cloudflare Tunnel
         uses: ./.github/actions/setup-ssh-tunnel
         with:
           ssh-user: ${{ vars.AWS_METAL_RUNNER_USER }}
           ssh-hosts: ${{ needs.select-runner-placement.outputs.host }}
+          operation-timeout-seconds: "20"
           ssh-key: ${{ secrets.AWS_METAL_RUNNER_SSH_KEY }}
           cf-access-client-id: ${{ secrets.CF_ACCESS_CLIENT_ID }}
           cf-access-client-secret: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
 
       - name: Start Stripe CLI listener on the Runner host
         env:
+          GH_TOKEN: ${{ github.token }}
           METAL_USER: ${{ vars.AWS_METAL_RUNNER_USER }}
           METAL_HOSTS: ${{ needs.select-runner-placement.outputs.host }}
           JOB_REF: ${{ needs.prepare.outputs.job-ref }}
           API_PREVIEW_URL: ${{ needs.prepare.outputs.api-preview-url }}
           STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
-        run: |
-          .github/scripts/runner/with-runner-lifecycle-lock.sh \
-            bash .github/scripts/runner/start-stripe-listener.sh
+        run: bash .github/scripts/runner/start-stripe-listener.sh
 
   # Exercise the hosted Clerk UI via agent-browser. This is intentionally
   # separate from Playwright because Playwright signs in through Clerk's
