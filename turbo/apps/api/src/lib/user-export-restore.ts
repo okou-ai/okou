@@ -434,6 +434,8 @@ def main():
     with tempfile.TemporaryDirectory(prefix=".okou-restore-", dir=output.parent) as temporary:
         temporary = Path(temporary)
         with sqlite3.connect(temporary / "index.sqlite") as db:
+            # This scratch index is rebuilt from the ZIP on each invocation.
+            db.execute("PRAGMA synchronous=OFF")
             db.execute("PRAGMA cache_size=-8192")
             db.execute("PRAGMA temp_store=FILE")
             archive = Archive(archive_path, db)
