@@ -109,7 +109,7 @@ internal fun ChatListScreen(
     showInbox: () -> Unit,
     selectedChatId: String?,
     wide: Boolean,
-    actionsEnabled: Boolean,
+    newChatEnabled: Boolean,
     refreshEnabled: Boolean,
     startupRecovery: @Composable (() -> Unit)?,
     feedback: @Composable () -> Unit,
@@ -270,19 +270,19 @@ internal fun ChatListScreen(
                                 runningFrame = runningFrame,
                                 row = section.firstRow,
                                 toggle = { toggleProject(project.id) },
-                                newChat = if (actionsEnabled) ({ newChat(project.id) }) else null,
+                                newChat = if (newChatEnabled) ({ newChat(project.id) }) else null,
                             )
                         }
                         if (foldedStatus == null && group.threads.isEmpty()) {
                             item(key = "project_actions_${project.id}") {
                                 Column(Modifier.projectChildIndent(outline)) {
-                                    if (!actionsEnabled) {
+                                    if (!newChatEnabled) {
                                         ChatNotice(R.string.chat_project_empty)
                                     }
                                     ChatListTextAction(
                                         R.string.composer_new_project,
                                         R.drawable.ic_add,
-                                        enabled = actionsEnabled,
+                                        enabled = newChatEnabled,
                                     ) {
                                         newChat(project.id)
                                     }
@@ -306,10 +306,7 @@ internal fun ChatListScreen(
                                     isSelected = thread.id == selectedChatId,
                                     runningFrame = runningFrame,
                                     row = section.firstChatRow + index,
-                                    actions =
-                                        if (actionsEnabled) state.rowActions(thread, group, index)
-                                        else emptyList(),
-                                    enabled = actionsEnabled,
+                                    actions = state.rowActions(thread, group, index),
                                     pendingAction = state.pendingRowActions[thread.id],
                                     performAction = { action ->
                                         if (action == ChatRowAction.Rename) renamingId = thread.id
@@ -373,7 +370,7 @@ internal fun ChatListScreen(
             feedback()
             NewChatAction(
                 Modifier.align(Alignment.End).padding(end = end),
-                enabled = actionsEnabled,
+                enabled = newChatEnabled,
                 onClick = { newChat(null) },
             )
         }
@@ -570,7 +567,6 @@ private fun ChatRow(
     runningFrame: LongState,
     row: Int,
     actions: List<ChatRowAction>,
-    enabled: Boolean,
     pendingAction: ChatRowAction?,
     performAction: (ChatRowAction) -> Unit,
     open: () -> Unit,
@@ -601,7 +597,6 @@ private fun ChatRow(
                 .then(if (isSelected) Modifier.background(colors.secondaryContainer) else Modifier)
                 .contextMenuInput(openMenu)
                 .combinedClickable(
-                    enabled = enabled,
                     onClick = open,
                     onLongClick = openMenu,
                     onLongClickLabel = stringResource(R.string.chat_actions),

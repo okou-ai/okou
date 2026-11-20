@@ -107,9 +107,11 @@ internal fun ChatListUiState.rowActions(
         add(if (thread.muted == true) ChatRowAction.Unmute else ChatRowAction.Mute)
         add(if (thread.archived) ChatRowAction.Unarchive else ChatRowAction.Archive)
     }
+    // A refresh retains the last synchronized rank scope while it fetches the next one.
     if (
         group != null &&
-            listPhase == ChatReadPhase.Ready &&
+            source == ChatListSource.Network &&
+            listPhase != ChatReadPhase.Failed &&
             projectsSettingsSource != null &&
             (!projectsEnabled || projectsSource != null) &&
             pendingRowActions.values.none { it.changesPinOrder }

@@ -152,7 +152,7 @@ internal fun WorkspaceToolbarActions(
     update: UpdateToolbarAction?,
     stackUpdateLabel: Boolean,
     settingsFocus: FocusRequester,
-    openSettings: (restoreFocus: Boolean) -> Unit,
+    openSettings: ((restoreFocus: Boolean) -> Unit)?,
 ) {
     val hasUpdate = update != null
     var menu by remember(showFilter, hasUpdate) { mutableStateOf<WorkspaceMenuPage?>(null) }
@@ -201,15 +201,17 @@ internal fun WorkspaceToolbarActions(
                                 }
                             )
                         }
-                        add(
-                            WorkspaceMenuItem(
-                                stringResource(R.string.settings),
-                                R.drawable.ic_settings,
-                            ) {
-                                menu = null
-                                openSettings(restoreSettingsAnchor)
-                            }
-                        )
+                        if (openSettings != null) {
+                            add(
+                                WorkspaceMenuItem(
+                                    stringResource(R.string.settings),
+                                    R.drawable.ic_settings,
+                                ) {
+                                    menu = null
+                                    openSettings(restoreSettingsAnchor)
+                                }
+                            )
+                        }
                     } else {
                         add(
                             WorkspaceMenuItem(
@@ -267,8 +269,10 @@ internal fun WorkspaceToolbarActions(
                 Icon(painterResource(R.drawable.ic_search), stringResource(R.string.chat_search))
             }
         }
-        IconButton(modifier = settingsAnchor, onClick = { openSettings(anchorFocused) }) {
-            Icon(painterResource(R.drawable.ic_settings), stringResource(R.string.settings))
+        if (openSettings != null) {
+            IconButton(modifier = settingsAnchor, onClick = { openSettings(anchorFocused) }) {
+                Icon(painterResource(R.drawable.ic_settings), stringResource(R.string.settings))
+            }
         }
     } else {
         UpdateToolbarButton(update, stacked = stackUpdateLabel)
