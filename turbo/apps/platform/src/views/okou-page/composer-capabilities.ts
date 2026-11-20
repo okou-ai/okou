@@ -6,73 +6,18 @@ import type { ComposerSignals } from "../../signals/okou-page/composer-signals.t
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 
-/*
- * Each Create and Workflow choice carries `data-art`; its card shows the
- * matching drawing while that choice is hovered or focused. The visibility
- * classes are spelled out in full because Tailwind's scanner only generates
- * classes that appear literally in the source. Only the drawing a card shows
- * at rest loads with the page; the others are `lazy`, so they load when their
- * choice first shows them.
- */
+/** Create's choices and Workflow's kinds, in the order the home and its tray offer them. */
 export const CREATE_TASKS = [
-  {
-    task: "presentation",
-    art: "presentation",
-    visibility:
-      "group-has-[[data-art]:not([data-art=presentation]):is(:hover,:focus-visible)]/card:hidden",
-    loading: "eager",
-  },
-  {
-    task: "image",
-    art: "image",
-    visibility:
-      "hidden group-has-[[data-art=image]:is(:hover,:focus-visible)]/card:block",
-    loading: "lazy",
-  },
-  {
-    task: "document",
-    art: "document",
-    visibility:
-      "hidden group-has-[[data-art=document]:is(:hover,:focus-visible)]/card:block",
-    loading: "lazy",
-  },
-  {
-    task: "website",
-    art: "website",
-    visibility:
-      "hidden group-has-[[data-art=website]:is(:hover,:focus-visible)]/card:block",
-    loading: "lazy",
-  },
-  {
-    task: "visualization",
-    art: "chart",
-    visibility:
-      "hidden group-has-[[data-art=chart]:is(:hover,:focus-visible)]/card:block",
-    loading: "lazy",
-  },
+  { task: "presentation" },
+  { task: "image" },
+  { task: "document" },
+  { task: "website" },
+  { task: "visualization" },
 ] as const;
 export const WORKFLOW_KINDS = [
-  {
-    kind: "scheduled",
-    art: "scheduled",
-    visibility:
-      "hidden group-has-[[data-art=scheduled]:is(:hover,:focus-visible)]/card:block",
-    loading: "lazy",
-  },
-  {
-    kind: "triggers",
-    art: "triggers",
-    visibility:
-      "hidden group-has-[[data-art=triggers]:is(:hover,:focus-visible)]/card:block",
-    loading: "lazy",
-  },
-  {
-    kind: "advanced",
-    art: "advanced",
-    visibility:
-      "group-has-[[data-art]:not([data-art=advanced]):is(:hover,:focus-visible)]/card:hidden",
-    loading: "eager",
-  },
+  { kind: "scheduled" },
+  { kind: "triggers" },
+  { kind: "advanced" },
 ] as const;
 
 /** The same capabilities, labels and activation used by the home tray. */
