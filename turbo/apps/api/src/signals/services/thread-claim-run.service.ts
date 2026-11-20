@@ -74,7 +74,6 @@ import { recordTemplateUsage } from "../../lib/template-usage-log";
 
 import { monotonicNow, now, nowDate, nowDateSql } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
-import { recordSandboxOperations } from "../external/sandbox-op-log";
 import {
   publishChatIndicatorsChangedSafely,
   publishDesktopShellAuthorizationChangedSafely,
@@ -117,7 +116,6 @@ import {
   queuedThreadInputCondition,
   type QueuedUserMessage,
   type QueuedUserMessageContextType,
-  type QueuedUserMessageTriggerSource,
 } from "./chat-queued-event.service";
 import { finalizeClaimedRunUserMessage$ } from "./chat-run-event.service";
 import { randomUUID } from "node:crypto";
@@ -365,68 +363,6 @@ function queueHeadRejectionSql(args: {
       (SELECT id FROM assistant) AS "assistantEventId"`;
 }
 
-type QueuedPromptTimingSpanKind = "top_level" | "nested";
-
-type QueuedPromptTimingActionType =
-  | "api_dispatch_pre_create_agent_chat_callback_auto_send_build_input"
-  | "api_dispatch_pre_create_agent_chat_callback_auto_send_queue_age";
-
-interface QueuedPromptTimingRecord {
-  readonly actionType: QueuedPromptTimingActionType;
-  readonly spanKind: QueuedPromptTimingSpanKind;
-  readonly durationMs: number;
-  readonly timestamp: string;
-}
-
-class QueuedPromptTimingCollector {
-  private readonly records: QueuedPromptTimingRecord[] = [];
-  private flushed = false;
-
-  recordElapsed(args: {
-    readonly actionType: QueuedPromptTimingActionType;
-    readonly spanKind: QueuedPromptTimingSpanKind;
-    readonly startedAt: number;
-    readonly finishedAt?: number;
-  }): void {
-    if (this.flushed) {
-      return;
-    }
-    const finishedAt = args.finishedAt ?? now();
-    this.records.push({
-      actionType: args.actionType,
-      spanKind: args.spanKind,
-      durationMs: Math.max(0, finishedAt - args.startedAt),
-      timestamp: new Date(finishedAt).toISOString(),
-    });
-  }
-
-  flush(runId: string, triggerSource: QueuedUserMessageTriggerSource): void {
-    if (this.flushed) {
-      return;
-    }
-    this.flushed = true;
-    const records = this.records.splice(0);
-    recordSandboxOperations(
-      records.map((record) => {
-        return {
-          sandboxType: "runner",
-          actionType: record.actionType,
-          durationMs: record.durationMs,
-          success: true,
-          runId,
-          timestamp: record.timestamp,
-          dimensions: {
-            span_kind: record.spanKind,
-            trigger_source: triggerSource,
-            agent_run_origin: "direct",
-            agent_run_pre_create_source: "chat_callback_auto_send",
-          },
-        };
-      }),
-    );
-  }
-}
-
 class QueuedPromptInputInvalidError extends Error {}
 
 function assertQueuedPromptContext(args: {
@@ -573,16 +509,21 @@ function promptRunCommand(
 }
 
 type ChatQueueRunAssembly =
-  | {
+  | ({
       readonly kind: "assembled";
       readonly run: ThreadRunCommand;
-      readonly promptContinuation?: ChatThreadContinuation;
       readonly officialWorkflow: OfficialWorkflowObservation | undefined;
       readonly promptAndSkills: PromptAndSkillVolumes;
       readonly producerBinding: ClaimProducerBinding;
       readonly rejection: ClaimRejectionContext;
       readonly launchRecord: ClaimLaunchRecord;
-    }
+    } & (
+      | {
+          readonly source: "prompt";
+          readonly promptContinuation: ChatThreadContinuation;
+        }
+      | { readonly source: "automation" }
+    ))
   | { readonly kind: "rejected"; readonly rejection: ChatQueueHeadRejection }
   | { readonly kind: "not-ready" };
 
@@ -815,7 +756,6 @@ type ClaimLaunchRecord =
       readonly kind: "prompt";
       readonly context: QueuedPromptLaunchContext;
       readonly templateUsageIdentities: readonly TemplateUsageIdentity[];
-      readonly timing: QueuedPromptTimingCollector;
     }
   | {
       readonly kind: "automation";
@@ -1169,9 +1109,6 @@ export function createThreadClaimRunObjects(
       phase: new ApiDispatchPhaseCollector(get(pickStartedAt$)),
     };
   });
-  const promptTiming$ = computed(() => {
-    return new QueuedPromptTimingCollector();
-  });
   // Runner and guest `api_to_*` rows start at `POST /api/chat/events` receipt,
   // and only for the input that request committed and then picked itself.
   // Any other pick (queued behind a run, cron, slot release, other producers)
@@ -1245,7 +1182,6 @@ export function createThreadClaimRunObjects(
       }
       return {
         id: event.id,
-        createdAt: event.createdAt,
         userMessage: event.userMessage,
         requiredOfficialWorkflowIds: requiredOfficialWorkflowIds ?? undefined,
         selectedModel: event.modelSelection?.selectedModel ?? null,
@@ -1530,31 +1466,6 @@ export function createThreadClaimRunObjects(
       return selected.value?.id === head.id ? null : { kind: "not-ready" };
     },
   );
-  const recordPromptQueueAge$ = command(
-    async (
-      { get },
-      head: ChatQueueHeadContext,
-      signal: AbortSignal,
-    ): Promise<void> => {
-      const early = await get(earlyPromptAssembly$);
-      signal.throwIfAborted();
-      if (early) {
-        return;
-      }
-      const queued = await get(promptMessage$);
-      signal.throwIfAborted();
-      if (!queued) {
-        throw new Error("Prepared prompt has no selected queue input");
-      }
-      get(promptTiming$).recordElapsed({
-        actionType:
-          "api_dispatch_pre_create_agent_chat_callback_auto_send_queue_age",
-        spanKind: "nested",
-        startedAt: queued.createdAt.getTime(),
-        finishedAt: head.apiStartTime,
-      });
-    },
-  );
   const promptAssembly$ = computed(
     async (get): Promise<ChatQueueRunAssembly> => {
       const early = await get(earlyPromptAssembly$);
@@ -1562,20 +1473,7 @@ export function createThreadClaimRunObjects(
         return early;
       }
       const head = await get(head$);
-      const timing = get(promptTiming$);
-      const startedAt = now();
-      const prepared = await settle(
-        (async () => {
-          return await get(promptRunInput$);
-        })().finally(() => {
-          timing.recordElapsed({
-            actionType:
-              "api_dispatch_pre_create_agent_chat_callback_auto_send_build_input",
-            spanKind: "top_level",
-            startedAt,
-          });
-        }),
-      );
+      const prepared = await settle(get(promptRunInput$));
       if (!prepared.ok) {
         return queuedPromptPreparationRejection(prepared.error, head);
       }
@@ -1589,6 +1487,7 @@ export function createThreadClaimRunObjects(
       const { runInput, templateUsageIdentities } = preparedInput;
       return {
         kind: "assembled",
+        source: "prompt",
         run: promptRunCommand(runInput, head.apiStartTime),
         promptContinuation: preparedInput.continuation,
         officialWorkflow: preparedInput.officialWorkflow,
@@ -1600,7 +1499,6 @@ export function createThreadClaimRunObjects(
         },
         launchRecord: {
           kind: "prompt",
-          timing,
           templateUsageIdentities,
           context: {
             userId: head.userId,
@@ -1899,6 +1797,7 @@ export function createThreadClaimRunObjects(
       }
       return {
         kind: "assembled",
+        source: "automation",
         run: {
           owner: { orgId: bootstrap.orgId, userId: bootstrap.userId },
           apiStartTime: launch.apiStartTime,
@@ -1961,10 +1860,13 @@ export function createThreadClaimRunObjects(
         : get(promptIdentity$);
     },
   );
+  const automationModelReady$ = computed(async (get) => {
+    return !("status" in (await get(automationModel$)));
+  });
   const selectionReady$ = computed(async (get) => {
-    return (await get(isAutomation$))
-      ? !("status" in (await get(automationModel$)))
-      : get(promptReady$);
+    return get(
+      (await get(isAutomation$)) ? automationModelReady$ : promptReady$,
+    );
   });
   const callbackInputs$ = computed(
     async (get): Promise<readonly InternalRunCallback[] | undefined> => {
@@ -2000,7 +1902,10 @@ export function createThreadClaimRunObjects(
     if ("status" in model) {
       return model;
     }
-    const resolution = assembly.promptContinuation ?? automationContinuation;
+    const resolution =
+      assembly.source === "prompt"
+        ? assembly.promptContinuation
+        : automationContinuation;
     if (!resolution) {
       throw new Error(
         "Prepared Thread input is missing its captured continuation",
@@ -2453,7 +2358,8 @@ export function createThreadClaimRunObjects(
     // whose delegation admission already rejects it.
     if (await get(isAutomation$)) {
       return (
-        (await get(automationBudget$)).kind === "ok" && get(selectionReady$)
+        (await get(automationBudget$)).kind === "ok" &&
+        get(automationModelReady$)
       );
     }
     const [ready, validSource] = await Promise.all([
@@ -2645,8 +2551,6 @@ export function createThreadClaimRunObjects(
           signal.throwIfAborted();
           return null;
         }
-      } else {
-        await set(recordPromptQueueAge$, head, signal);
       }
       signal.throwIfAborted();
       const { identityInput, authorization } = await get(authorizeIdentity$);
@@ -3119,10 +3023,6 @@ export function createThreadClaimRunObjects(
           launched.context,
           pending.admittedLaunch.run.id,
           signal,
-        );
-        launched.timing.flush(
-          pending.admittedLaunch.run.id,
-          launched.context.runInput.triggerSource,
         );
       } else {
         await set(
@@ -3925,9 +3825,6 @@ function buildThreadRunArgs(
     timingDimensions: {
       agent_run_origin: origin,
       api_start_source: "queue_event",
-      ...(origin === "direct"
-        ? { agent_run_pre_create_source: "chat_callback_auto_send" }
-        : {}),
     },
   };
 }

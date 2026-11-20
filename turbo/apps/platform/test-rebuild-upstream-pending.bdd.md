@@ -175,3 +175,13 @@ Another member's saved task and step survive editing on a shared browser. [Regis
 - **Then** The task field shows the new text, and the other member's saved task and step stay unchanged in browser storage.
 - **Disposition** retain; added by #49384, which retired `onboarding-progress-005`.
 - **Source** written from the main registration at `25d468f6`.
+
+## upstream-ae05e279-chat-message-pdf-370-01
+
+Exported file cards retain their labels and durable links on a download-restricted workspace. [Registration](https://github.com/okou-ai/okou/blob/ae05e279c6158a6e3d014dfdaafcdf539f0e9ffe/turbo/apps/platform/src/views/okou-page/__tests__/chat-message-pdf.test.tsx#L370).
+
+- **Given** A completed chat answer embeds a workbook file card with alt text, a CSV file card without alt text, and a workbook card linked to an external guide, in a workspace where artifact downloads are not allowed.
+- **When** The user exports the answer as PDF.
+- **Then** The PDF text includes the answer, "Budget workbook", "totals.csv", "Read the guide" and "End of answer.", and its links point to the durable artifact URLs of both files and to the guide.
+- **Disposition** retain.
+- **Source** upstream `ae05e279` (#49389), added to the copied test file after it was removed.

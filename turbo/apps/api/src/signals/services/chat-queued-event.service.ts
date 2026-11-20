@@ -41,7 +41,6 @@ export function isWebChatContextType(
 
 export interface QueuedUserMessage {
   readonly id: string;
-  readonly createdAt: Date;
   readonly userMessage: ChatEventUserMessage;
   readonly requiredOfficialWorkflowIds?: readonly string[];
   readonly selectedModel: string | null;
