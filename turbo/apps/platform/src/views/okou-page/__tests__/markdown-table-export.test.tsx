@@ -9,10 +9,6 @@ import {
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import { builtinConnectorOauthStartContract } from "@okouai/api-contracts/contracts/connectors";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
-import {
-  userBuiltinConnectorsContract,
-  type UserBuiltinConnectorUpdate,
-} from "@okouai/api-contracts/contracts/user-connectors";
 import { artifactReferencePath } from "@okouai/api-contracts/validators/artifact-references";
 import {
   GOOGLE_WORKSPACE_MIME_TYPES,
@@ -66,7 +62,7 @@ const TEAM_TABLE = [
   "| Ada | Owner |",
 ].join("\n");
 
-type DriveAccountState = "ready" | "authorize" | "connect" | "reconnect";
+type DriveAccountState = "ready" | "connect" | "reconnect";
 
 interface DriveUploadOutcome {
   readonly status?: 200 | 503;
@@ -140,7 +136,6 @@ function mockTableSaves(
   const driveOutcomes = [...(options.driveOutcomes ?? [])];
   const uploadedArtifacts: string[] = [];
   const syncRequests: DriveSyncRequest[] = [];
-  const authorizationUpdates: UserBuiltinConnectorUpdate[] = [];
   const oauthRequests: ConnectorAccountMutationIntent[] = [];
   const syncCounts = new Map<string, number>();
   const artifactsByReference = new Map<string, string>();
@@ -216,11 +211,9 @@ function mockTableSaves(
       googleDriveSync: {
         status: "disconnected",
         recovery:
-          accountState === "authorize"
-            ? { action: "authorize" }
-            : accountState === "reconnect"
-              ? { action: "reconnect", connectionId }
-              : { action: "connect" },
+          accountState === "reconnect"
+            ? { action: "reconnect", connectionId }
+            : { action: "connect" },
       },
     };
   };
@@ -259,15 +252,6 @@ function mockTableSaves(
           error: { code: "NOT_FOUND", message: "Connector not found" },
         });
   });
-  context.mocks.api(
-    userBuiltinConnectorsContract.update,
-    ({ body, respond }) => {
-      authorizationUpdates.push(body);
-      // Authorizing Drive for the Agent makes the selected account ready.
-      accountState = "ready";
-      return respond(200, { enabledConnectorSlugs: ["google-drive"] });
-    },
-  );
   context.mocks.api(
     builtinConnectorOauthStartContract.start,
     ({ body, respond }) => {
@@ -311,7 +295,7 @@ function mockTableSaves(
     },
   );
   context.mocks.api(
-    artifactGoogleDriveContract.uploadWithMode,
+    artifactGoogleDriveContract.uploadFromChat,
     ({ params, body, respond }) => {
       syncRequests.push({
         artifactId: params.artifactId,
@@ -347,7 +331,6 @@ function mockTableSaves(
   );
 
   return {
-    authorizationUpdates,
     oauthRequests,
     syncRequests,
     uploadedArtifacts,
@@ -575,12 +558,11 @@ function popupBoundary() {
   };
 }
 
+// #49430 retired the Agent authorization step for chat exports, so the
+// former (authorize) row has no current behavior.
 test.each([
   {
     accountState: "ready",
-  },
-  {
-    accountState: "authorize",
   },
 ] as const)(
   "Cloud exports preserve the selected account and upload mode ($accountState)",
@@ -606,11 +588,6 @@ test.each([
       { artifactId, connectionId: SELECTED_CONNECTION_ID, mode: "google" },
     ]);
     expect(saves.uploadedArtifacts).toStrictEqual([artifactId]);
-    expect(saves.authorizationUpdates).toStrictEqual(
-      accountState === "authorize"
-        ? [{ enabledConnectorSlugs: ["google-drive"], operation: "add" }]
-        : [],
-    );
     expect(popup.open.calls).toHaveLength(0);
     expect(saves.oauthRequests).toStrictEqual([]);
     expect(

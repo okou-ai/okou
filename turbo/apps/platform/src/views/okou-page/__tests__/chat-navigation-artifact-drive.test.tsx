@@ -11,10 +11,6 @@ import {
   builtinConnectorOauthStartContract,
   builtinConnectorsMainContract,
 } from "@okouai/api-contracts/contracts/connectors";
-import {
-  userBuiltinConnectorsContract,
-  type UserBuiltinConnectorUpdate,
-} from "@okouai/api-contracts/contracts/user-connectors";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   GOOGLE_WORKSPACE_MIME_TYPES,
@@ -92,16 +88,19 @@ function installDriveMocks(
   const completedAttempts = mockOAuthCompletions(context);
   let oauthAttemptId = crypto.randomUUID();
   let oauthConnectionId = SELECTED_DRIVE_CONNECTION_ID;
+  // The Drive account the chat uses for its artifacts.
+  let chatConnectionId = SELECTED_DRIVE_CONNECTION_ID;
   let connectionState = initialConnectionState;
   let scopeRequired = options.scopeRequired ?? false;
   let mimeType = options.existingMimeType;
   let artifactSynced = mimeType !== undefined;
   let originalUploaded = false;
-  const selectedAccountReady = options.selectedAccountReady ?? false;
+  // A chat's connected Drive account is ready for its artifacts.
+  let selectedAccountReady =
+    options.selectedAccountReady ?? initialConnectionState === "connected";
   const filename = options.filename ?? "drive-report.pdf";
   const contentType = options.contentType ?? "application/pdf";
   const fileUrl = publicArtifactUrl(filename);
-  const authorizationUpdates: UserBuiltinConnectorUpdate[] = [];
   const oauthRequests: {
     readonly account: ConnectorAccountMutationIntent;
   }[] = [];
@@ -131,7 +130,7 @@ function installDriveMocks(
       return {};
     }
     return {
-      googleDriveConnectionId: SELECTED_DRIVE_CONNECTION_ID,
+      googleDriveConnectionId: chatConnectionId,
       googleDriveSync: artifactSynced
         ? {
             status: "synced",
@@ -154,7 +153,7 @@ function installDriveMocks(
                         action: "reconnect",
                         connectionId: SELECTED_DRIVE_CONNECTION_ID,
                       }
-                    : { action: "authorize" },
+                    : { action: "unavailable" },
             },
     };
   };
@@ -220,13 +219,6 @@ function installDriveMocks(
     });
   });
   context.mocks.api(
-    userBuiltinConnectorsContract.update,
-    ({ body, respond }) => {
-      authorizationUpdates.push(body);
-      return respond(200, { enabledConnectorSlugs: ["google-drive"] });
-    },
-  );
-  context.mocks.api(
     builtinConnectorOauthStartContract.start,
     ({ body, respond }) => {
       oauthRequests.push({ account: body.account });
@@ -290,7 +282,7 @@ function installDriveMocks(
     },
   );
   context.mocks.api(
-    artifactGoogleDriveContract.uploadWithMode,
+    artifactGoogleDriveContract.uploadFromChat,
     async ({ params, body, respond, signal }) => {
       syncRequests.push({
         artifactId: params.artifactId,
@@ -342,16 +334,21 @@ function installDriveMocks(
   );
 
   return {
-    authorizationUpdates,
     oauthRequests,
     syncRequests,
     completeAuthorization: () => {
       scopeRequired = false;
       completedAttempts.set(oauthAttemptId, oauthConnectionId);
       connectionState = "connected";
+      selectedAccountReady = true;
+      chatConnectionId = oauthConnectionId;
       context.mocks.ably.trigger("connector:changed", {
         connectorSlug: "google-drive",
       });
+      // The chat's Drive account changed, so the API announces its details.
+      context.mocks.ably.trigger(
+        `chatThreadDetailChanged:${NAVIGATION_ARTIFACT_THREAD_ID}`,
+      );
     },
     requireScopeConsent: () => {
       scopeRequired = true;
@@ -502,14 +499,11 @@ test("An artifact syncs with its selected Drive account during a catalog and inv
     });
   });
   await openChat();
-  await openSidebarMenu("Drive report.pdf", "Connect Google Drive");
+  await openSidebarMenu("Drive report.pdf", "Upload to Google Drive");
 
-  click(roleItemNamed("menuitem", "Connect Google Drive"));
+  click(roleItemNamed("menuitem", "Upload to Google Drive"));
 
   await expectSuccessToast();
-  expect(drive.authorizationUpdates).toStrictEqual([
-    { enabledConnectorSlugs: ["google-drive"], operation: "add" },
-  ]);
   expect(drive.syncRequests).toMatchObject([
     {
       artifactId: DRIVE_ARTIFACT_ID,
@@ -716,7 +710,8 @@ test("A reopened preview stays usable after its pending Drive setup is cancelled
   });
 
   const reopened = await openPreviewDialog("drive-report.pdf");
-  await reopenMenu(reopened.downloadButton, "Connect Google Drive");
+  // The chat's Drive account is connected now, so the menu offers the upload.
+  await reopenMenu(reopened.downloadButton, "Upload to Google Drive");
   expect(reopened.preview).toBeVisible();
   await userEvent.setup().keyboard("{Escape}");
   // The client abandoned the pending upload request, so its late response

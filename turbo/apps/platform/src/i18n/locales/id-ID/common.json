@@ -524,7 +524,6 @@
       "video": "VID"
     },
     "googleDrive": {
-      "agentLoading": "Agen masih memuat",
       "connect": "Hubungkan Google Drive",
       "conversionUnconfirmed": "Konversi Google tidak dapat dikonfirmasi. Periksa Drive sebelum mencoba lagi.",
       "openDocs": "Buka di Google Docs",
@@ -1642,6 +1641,13 @@
       "feedbackPrompt": "Bagaimana saran ini?",
       "feedLabel": "Feed",
       "forYou": {
+        "cover": {
+          "change": "Ganti sampul",
+          "default": "Default",
+          "gallery": "Sampul",
+          "option": "Sampul {{index}}",
+          "reset": "Kembalikan ke default"
+        },
         "loading": "Memuat saran",
         "next": "Saran berikutnya",
         "previous": "Saran sebelumnya",

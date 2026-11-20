@@ -1,4 +1,5 @@
 import { command, type Command, type Computed } from "ccstate";
+import type { ChatThreadArtifactGoogleDriveRecovery } from "@okouai/api-contracts/contracts/chat-threads";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 
 import { captureSourceOnboardingConnected$ } from "../../bootstrap/source-onboarding-telemetry.ts";
@@ -90,12 +91,13 @@ export type ConnectorConnectOrigin =
     } & ArtifactDriveReconnectTarget);
 
 interface ArtifactDriveReconnectTarget {
-  readonly agentId: string;
+  readonly threadId: string;
   readonly artifactId: string;
 }
 
 interface ArtifactDriveSyncTarget {
-  readonly agentId: string;
+  readonly threadId: string;
+  readonly recoveryAtStart?: ChatThreadArtifactGoogleDriveRecovery | undefined;
   readonly artifactId: string;
   readonly filename?: string;
   readonly mode: GoogleDriveUploadMode;
@@ -301,12 +303,12 @@ const continueConnectorConnectPlan$ = command(
         await set(
           syncArtifactAndRefresh$,
           {
-            agentId: plan.agentId,
+            threadId: plan.threadId,
+            recoveryAtStart: plan.recoveryAtStart,
             artifactId: plan.artifactId,
             connectionId,
             filename: plan.filename,
             mode: plan.mode,
-            authorize: true,
           },
           signal,
         );

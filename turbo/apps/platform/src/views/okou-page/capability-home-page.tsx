@@ -22,11 +22,7 @@ import { ChatComposer } from "./composer.tsx";
 import { CapabilityHomeCompliance } from "./chat-home-compliance.tsx";
 import { GrowthEntryHeader } from "./growth-entry.tsx";
 import { SuggestionSaveErrors } from "./agent-suggestions.tsx";
-import {
-  CapabilityGround,
-  CapabilityObjects,
-  CapabilityStage,
-} from "./capability-illustrations.tsx";
+import { CapabilityArt } from "./capability-illustrations.tsx";
 import { CREATE_TASKS, WORKFLOW_KINDS } from "./composer-capabilities.ts";
 import {
   CapabilityTray,
@@ -34,10 +30,10 @@ import {
 } from "./composer-capability-tray.tsx";
 
 /**
- * Every capability card shares one anatomy: copy at the top left, its objects
- * on a faint ground of the card's hue at the right, and its actions along the
- * bottom. The cards are flat tone with no stroke or shadow; the composer stays
- * the one outlined surface on the page.
+ * Every capability card shares one anatomy: copy at the top left, its drawing
+ * in the card's one hue at the right, and its actions along the bottom. The
+ * cards are flat tone with no stroke or shadow; the composer stays the one
+ * outlined surface on the page.
  */
 const CAPABILITY_CARD =
   "group/card relative isolate flex min-w-0 flex-col items-start overflow-hidden rounded-surface bg-muted px-6 py-5 text-left";
@@ -49,7 +45,7 @@ function CapabilityCopy({
 }: {
   readonly title: string;
   readonly description: string;
-  /** The copy column's width, which stops short of the card's objects. */
+  /** The copy column's width, which stops short of the card's drawing. */
   readonly className: string;
 }) {
   return (
@@ -68,7 +64,7 @@ function CapabilityCopy({
 
 /**
  * Every card opens from anywhere on it, not only from its buttons: this
- * button covers the whole card, above its copy and objects and below its row
+ * button covers the whole card, above its copy and drawing and below its row
  * of choices, which keep their own actions. A click elsewhere on the card
  * does what the card's first choice does. Those choices stay the card's
  * keyboard and assistive-technology controls, so the cover repeats one of
@@ -118,7 +114,7 @@ const GREETING_ROW = "flex min-h-14 [view-transition-name:capability-greeting]";
 /**
  * Find people and Research open their Explore tray from anywhere on the card;
  * the Explore button along the bottom gives them the same anatomy as Create
- * and Workflow. It takes only the left column, so the objects keep the right
+ * and Workflow. It takes only the left column, so the drawing keeps the right
  * column's full height.
  */
 function ExploreCapabilityCard({
@@ -146,13 +142,7 @@ function ExploreCapabilityCard({
       aria-label={title}
     >
       <CapabilityCardCover onClick={explore} />
-      <CapabilityGround card={art} />
-      <CapabilityStage
-        card={art}
-        className="motion-safe:animate-capability-art-in"
-      >
-        <CapabilityObjects art={art} />
-      </CapabilityStage>
+      <CapabilityArt card={art} />
       <CapabilityCopy
         title={title}
         description={description}
@@ -219,19 +209,7 @@ function WorkflowCapabilityCard({
           swap({ kind: "workflow", workflow: WORKFLOW_KINDS[0].kind });
         }}
       />
-      <CapabilityGround card="workflow" />
-      <CapabilityStage card="workflow">
-        {WORKFLOW_KINDS.map(({ art, visibility, loading }) => {
-          return (
-            <CapabilityObjects
-              key={art}
-              art={art}
-              className={visibility}
-              loading={loading}
-            />
-          );
-        })}
-      </CapabilityStage>
+      <CapabilityArt card="workflow" />
       <CapabilityCopy
         title={title}
         description={t(($) => {
@@ -240,13 +218,12 @@ function WorkflowCapabilityCard({
         className="max-w-33"
       />
       <div className={cn(CHOICE_ROW, "flex-wrap gap-1.5")}>
-        {WORKFLOW_KINDS.map(({ kind, art }) => {
+        {WORKFLOW_KINDS.map(({ kind }) => {
           return (
             <Button
               key={kind}
               variant="neutral"
               size="sm"
-              data-art={art}
               aria-label={t(($) => {
                 return $.chat.capabilityHome.workflow[kind].title;
               })}
@@ -310,19 +287,7 @@ function CapabilityCards({
             swap({ kind: "task", task: CREATE_TASKS[0].task });
           }}
         />
-        <CapabilityGround card="create" />
-        <CapabilityStage card="create">
-          {CREATE_TASKS.map(({ art, visibility, loading }) => {
-            return (
-              <CapabilityObjects
-                key={art}
-                art={art}
-                className={visibility}
-                loading={loading}
-              />
-            );
-          })}
-        </CapabilityStage>
+        <CapabilityArt card="create" />
         <CapabilityCopy
           title={createTitle}
           description={t(($) => {
@@ -331,13 +296,12 @@ function CapabilityCards({
           className="max-w-70"
         />
         <div className={cn(CHOICE_ROW, "flex-wrap gap-1.5")}>
-          {CREATE_TASKS.map(({ task, art }) => {
+          {CREATE_TASKS.map(({ task }) => {
             const button = (
               <Button
                 key={task}
                 variant="neutral"
                 size="sm"
-                data-art={art}
                 onClick={() => {
                   swap({ kind: "task", task });
                 }}

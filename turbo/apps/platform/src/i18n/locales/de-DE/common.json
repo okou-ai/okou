@@ -525,7 +525,6 @@
       "video": "VID"
     },
     "googleDrive": {
-      "agentLoading": "Der Agent wird noch geladen",
       "connect": "Verbinden Sie Google Drive",
       "conversionUnconfirmed": "Die Google-Konvertierung konnte nicht bestätigt werden. Prüfe Drive vor einem erneuten Versuch.",
       "openDocs": "In Google Docs öffnen",
@@ -1646,6 +1645,13 @@
       "feedbackPrompt": "Wie findest du diesen Vorschlag?",
       "feedLabel": "Feed",
       "forYou": {
+        "cover": {
+          "change": "Titelbild ändern",
+          "default": "Standard",
+          "gallery": "Titelbilder",
+          "option": "Titelbild {{index}}",
+          "reset": "Auf Standard zurücksetzen"
+        },
         "loading": "Vorschläge werden geladen",
         "next": "Nächster Vorschlag",
         "previous": "Vorheriger Vorschlag",

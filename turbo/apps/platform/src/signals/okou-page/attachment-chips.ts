@@ -28,6 +28,7 @@ import { createArtifactDiagramPreviewSignals } from "../artifact-diagram-preview
 import { rootSignal$ } from "../root-signal.ts";
 import type { ChatThreadArtifactGoogleDriveRecovery } from "@okouai/api-contracts/contracts/chat-threads";
 import { createZoomableImageCanvasSignals } from "../zoomable-image-canvas.ts";
+import { createCrossChatArtifactPreview } from "../chat-page/chat-artifact-preview.ts";
 
 // ---------------------------------------------------------------------------
 // Lightbox state — tracks which attachment is open in the global preview UI
@@ -38,7 +39,6 @@ export type AttachmentArtifactMetadata = {
   readonly title?: string;
   readonly googleDriveConnectionId?: string;
   readonly googleDriveAccountReady: boolean;
-  readonly agentId?: string | null;
   /** Public address of a hosted site; absent while the site is private. */
   readonly aliasUrl?: string;
   readonly artifactKind?: "hosted-site" | "presentation-html";
@@ -235,6 +235,15 @@ export const lightboxUrl$ = computed((get) => {
   return get(internalLightboxState$);
 });
 
+export const crossChatLightboxArtifact = createCrossChatArtifactPreview(
+  computed((get) => {
+    const preview = get(internalLightboxState$);
+    return preview?.threadId && !preview.artifact
+      ? { threadId: preview.threadId, url: preview.url }
+      : undefined;
+  }),
+);
+
 export const lightboxDialogVisible$ = computed((get) => {
   return get(internalLightboxDialogVisible$);
 });
@@ -331,17 +340,14 @@ const routeToOpenArtifactSidebar$ = command(
     ];
     signal.throwIfAborted();
     const ref = attachmentSidebarRef(value);
+    const threadId = value.threadId ?? value.artifact?.threadId;
     if (sidebar) {
-      return set(
-        openArtifactSidebar$,
-        ref,
-        value.threadId ?? value.artifact?.threadId,
-      );
+      return set(openArtifactSidebar$, ref, threadId);
     }
     if (target === "lightbox") {
       return false;
     }
-    return set(openArtifactInOpenSidebar$, ref);
+    return set(openArtifactInOpenSidebar$, ref, threadId);
   },
 );
 
@@ -468,6 +474,7 @@ export const openDocumentLightbox$ = command(
           markdownTree$: createMarkdownPreviewTree(
             text$,
             attachmentDiagramPreview.open$,
+            value.threadId ?? value.artifact?.threadId,
           ),
         });
         return;

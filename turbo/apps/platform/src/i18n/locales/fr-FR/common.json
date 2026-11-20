@@ -540,7 +540,6 @@
       "video": "VID"
     },
     "googleDrive": {
-      "agentLoading": "L'agent est encore en cours de chargement",
       "connect": "Connecter Google Drive",
       "conversionUnconfirmed": "La conversion Google n’a pas pu être confirmée. Vérifiez Drive avant de réessayer.",
       "openDocs": "Ouvrir dans Google Docs",
@@ -1671,6 +1670,13 @@
       "feedbackPrompt": "Que pensez-vous de cette suggestion ?",
       "feedLabel": "Fil",
       "forYou": {
+        "cover": {
+          "change": "Changer la couverture",
+          "default": "Par défaut",
+          "gallery": "Couvertures",
+          "option": "Couverture {{index}}",
+          "reset": "Rétablir par défaut"
+        },
         "loading": "Chargement des suggestions",
         "next": "Suggestion suivante",
         "previous": "Suggestion précédente",

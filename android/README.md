@@ -537,6 +537,21 @@ or conflicting mappings block update discovery. The job then uploads
 publication only after the APK upload completes. Store processing is not part
 of this distribution path.
 
+### Crash reporting
+
+Provision the Android project `android` in the `okou` Sentry organization and
+set the repository variable `SENTRY_DSN_ANDROID` to its public DSN. The production
+`SENTRY_AUTH_TOKEN` must have mapping upload access to that project. The signed
+APK carries the Sentry mapping UUID. The release job uploads the verified R8 map
+under that UUID before publishing the R2 update.
+
+Local Release builds can use the same public DSN through `SENTRY_DSN_ANDROID`.
+An unset DSN disables reporting on local builds. Debug and instrumentation test
+hosts skip initialization. For one-time acceptance, use a local minified Release
+build and upload its matching map with `scripts/upload-sentry-mapping.py`. Trigger
+a controlled uncaught exception in the local build, then verify its restored
+frames and the version and build in Sentry.
+
 ### Release Signing
 
 Configure exactly these three entries in **Settings → Environments → production**:

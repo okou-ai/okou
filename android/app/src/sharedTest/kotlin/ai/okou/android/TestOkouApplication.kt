@@ -35,6 +35,8 @@ import kotlinx.serialization.json.Json
 
 /** Compiled only into host/device tests. Production has no authentication bypass switch. */
 open class TestOkouApplication : OkouApplication() {
+    override fun startCrashReporting() = Unit
+
     var updateService: UpdateService? = null
     var updateOwner: AppUpdates? = null
     override val updates

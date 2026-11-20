@@ -570,7 +570,10 @@ jobs:
           echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
           bash android/scripts/setup-sdk.sh --accept-licenses
       - name: Build unsigned Android APK
+        env:
+          SENTRY_DSN_ANDROID: ${{ vars.SENTRY_DSN_ANDROID }}
         run: |
+          : "${SENTRY_DSN_ANDROID:?Set the public Android Sentry DSN}"
           test "$(git rev-parse HEAD)" = "$ANDROID_RELEASE_SOURCE_SHA"
           bash .github/scripts/artifacts/build-okou-android-apk.sh "$ANDROID_VERSION" "$RUNNER_TEMP/android-release"
       - name: Sign and verify Android APK
@@ -602,6 +605,23 @@ jobs:
         run: |
           python3 .github/scripts/release/archive-android-mapping.py "$ANDROID_TAG" \
             "$RUNNER_TEMP/android-release/okou-android-$ANDROID_VERSION-mapping.txt.gz"
+      - name: Install verified Android Sentry CLI
+        run: |
+          bash .github/scripts/download-verified.sh \
+            https://github.com/getsentry/sentry-cli/releases/download/2.58.5/sentry-cli-Linux-x86_64 \
+            48eb3b98cbe1cc2331b6d04591c22fa9c0d948d0b3da33164bb76f038f290750 \
+            "$RUNNER_TEMP/sentry-cli"
+          chmod +x "$RUNNER_TEMP/sentry-cli"
+      - name: Upload Android R8 mapping to Sentry
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ vars.SENTRY_ORG }}
+          SENTRY_PROJECT: android
+        run: |
+          python3 android/scripts/upload-sentry-mapping.py \
+            "$RUNNER_TEMP/android-release/okou-android-$ANDROID_VERSION.apk" \
+            "$RUNNER_TEMP/android-release/okou-android-$ANDROID_VERSION-mapping.txt.gz" \
+            --cli "$RUNNER_TEMP/sentry-cli"
       - name: Publish verified Android update
         env:
           GH_TOKEN: ${{ github.token }}

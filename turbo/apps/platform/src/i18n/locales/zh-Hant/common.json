@@ -524,7 +524,6 @@
       "video": "影片"
     },
     "googleDrive": {
-      "agentLoading": "智能體還在載入",
       "connect": "連線 Google Drive",
       "conversionUnconfirmed": "無法確認 Google 轉換結果，請檢查雲端硬碟後再重試。",
       "openDocs": "在 Google 文件中開啟",
@@ -1642,6 +1641,13 @@
       "feedbackPrompt": "這則建議怎麼樣？",
       "feedLabel": "動態",
       "forYou": {
+        "cover": {
+          "change": "更換封面",
+          "default": "預設",
+          "gallery": "封面",
+          "option": "封面 {{index}}",
+          "reset": "恢復預設"
+        },
         "loading": "正在載入建議",
         "next": "下一則建議",
         "previous": "上一則建議",

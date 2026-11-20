@@ -25,6 +25,8 @@ ksp = "2.3.13"
 sqlite = "2.6.2"
 commonmark = "0.24.0"
 ably = "2.0.0"
+sentry-android = "8.65.0"
+sentry-gradle = "6.27.0"
 
 [libraries]
 appcompat = { module = "androidx.appcompat:appcompat", version.ref = "appcompat" }
@@ -63,6 +65,7 @@ sqlite-bundled = { module = "androidx.sqlite:sqlite-bundled", version.ref = "sql
 sqlite-host = { module = "androidx.sqlite:sqlite-bundled-jvm", version.ref = "sqlite" }
 commonmark = { module = "org.commonmark:commonmark", version.ref = "commonmark" }
 ably-device = { module = "io.ably.pubsub:device", version.ref = "ably" }
+sentry-android-core = { module = "io.sentry:sentry-android-core", version.ref = "sentry-android" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
@@ -71,3 +74,4 @@ kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", versi
 spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 room = { id = "androidx.room", version.ref = "room" }
+sentry-android = { id = "io.sentry.android.gradle", version.ref = "sentry-gradle" }

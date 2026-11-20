@@ -524,7 +524,6 @@
       "video": "视频"
     },
     "googleDrive": {
-      "agentLoading": "智能体还在加载",
       "connect": "连接 Google Drive",
       "conversionUnconfirmed": "无法确认 Google 转换结果，请检查云端硬盘后再重试。",
       "openDocs": "在 Google 文档中打开",
@@ -1642,6 +1641,13 @@
       "feedbackPrompt": "这条建议怎么样？",
       "feedLabel": "动态",
       "forYou": {
+        "cover": {
+          "change": "更换封面",
+          "default": "默认",
+          "gallery": "封面",
+          "option": "封面 {{index}}",
+          "reset": "恢复默认"
+        },
         "loading": "正在加载建议",
         "next": "下一条建议",
         "previous": "上一条建议",

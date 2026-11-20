@@ -34,6 +34,8 @@ declare module "hast" {
     colorPreview?: string;
     /** Set by `rehypeMermaid`: the diagram a placeholder stands for. */
     mermaid?: { code: string };
+    /** The viewing Chat for a table's cloud export. */
+    tableExportThreadId?: string;
   }
 }
 
@@ -71,6 +73,7 @@ interface MarkdownParseOptions {
    * link destinations reach hast.
    */
   readonly cards?: ReadonlyMap<string, MarkdownCard>;
+  readonly tableExportThreadId?: string | undefined;
 }
 
 /** `mdast-util-to-hast` runs destinations through `normalizeUri`. */
@@ -447,7 +450,10 @@ function rehypePlugins(options: MarkdownParseOptions): PluggableList {
  * The url-transform step is deliberately absent: `@uiw/react-markdown-preview`
  * passed an identity transform, so reproducing it would be a no-op.
  */
-function postProcess(tree: Root): Root {
+function postProcess(
+  tree: Root,
+  tableExportThreadId: string | undefined,
+): Root {
   visit(tree, (node, index, parent) => {
     // Authored link/image titles and raw HTML must not reintroduce browser hints.
     // Iframe titles identify embedded documents to assistive technology.
@@ -455,6 +461,9 @@ function postProcess(tree: Root): Root {
       delete node.properties.title;
     }
     if (node.type === "element") {
+      if (node.tagName === "table" && tableExportThreadId !== undefined) {
+        node.data = { ...node.data, tableExportThreadId };
+      }
       // Raw HTML and attribute comments cannot impersonate transcript wrappers.
       for (const property of Object.keys(node.properties)) {
         const normalized = property.replaceAll("-", "").toLowerCase();
@@ -507,5 +516,5 @@ export function parseMarkdownTree(
   const processor = unified().use(rehypeRaw).use(rehypePlugins(options));
   const parsed = processor.runSync(tree, source);
   math?.embed(parsed);
-  return postProcess(parsed);
+  return postProcess(parsed, options.tableExportThreadId);
 }

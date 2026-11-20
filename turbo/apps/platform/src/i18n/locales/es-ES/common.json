@@ -540,7 +540,6 @@
       "video": "VID"
     },
     "googleDrive": {
-      "agentLoading": "El agente sigue cargando",
       "connect": "Conectar Google Drive",
       "conversionUnconfirmed": "No se pudo confirmar la conversión de Google. Revisa Drive antes de reintentar.",
       "openDocs": "Abrir en Google Docs",
@@ -1671,6 +1670,13 @@
       "feedbackPrompt": "¿Qué te parece esta sugerencia?",
       "feedLabel": "Actividad",
       "forYou": {
+        "cover": {
+          "change": "Cambiar portada",
+          "default": "Predeterminada",
+          "gallery": "Portadas",
+          "option": "Portada {{index}}",
+          "reset": "Restablecer predeterminada"
+        },
         "loading": "Cargando sugerencias",
         "next": "Siguiente sugerencia",
         "previous": "Sugerencia anterior",

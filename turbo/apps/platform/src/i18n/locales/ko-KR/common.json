@@ -524,7 +524,6 @@
       "video": "VID"
     },
     "googleDrive": {
-      "agentLoading": "에이전트가 아직 로딩 중입니다",
       "connect": "Google Drive 연결",
       "conversionUnconfirmed": "Google 변환 결과를 확인할 수 없습니다. 다시 시도하기 전에 Drive를 확인하세요.",
       "openDocs": "Google Docs에서 열기",
@@ -1642,6 +1641,13 @@
       "feedbackPrompt": "이 제안은 어떤가요?",
       "feedLabel": "피드",
       "forYou": {
+        "cover": {
+          "change": "커버 변경",
+          "default": "기본",
+          "gallery": "커버",
+          "option": "커버 {{index}}",
+          "reset": "기본값으로 재설정"
+        },
         "loading": "제안 불러오는 중",
         "next": "다음 제안",
         "previous": "이전 제안",

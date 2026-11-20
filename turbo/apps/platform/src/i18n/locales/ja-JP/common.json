@@ -524,7 +524,6 @@
       "video": "ビデオ"
     },
     "googleDrive": {
-      "agentLoading": "エージェントを読み込み中",
       "connect": "Google Drive を接続します",
       "conversionUnconfirmed": "Google での変換結果を確認できませんでした。再試行する前にドライブを確認してください。",
       "openDocs": "Google ドキュメントで開く",
@@ -1642,6 +1641,13 @@
       "feedbackPrompt": "この提案はいかがですか？",
       "feedLabel": "フィード",
       "forYou": {
+        "cover": {
+          "change": "カバーを変更",
+          "default": "デフォルト",
+          "gallery": "カバー",
+          "option": "カバー {{index}}",
+          "reset": "デフォルトに戻す"
+        },
         "loading": "提案を読み込み中",
         "next": "次の提案",
         "previous": "前の提案",

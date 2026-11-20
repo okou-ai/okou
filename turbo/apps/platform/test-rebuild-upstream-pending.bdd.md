@@ -428,3 +428,153 @@ Download a Word export with document title styles without changing Markdown head
 - **Then** The preview keeps each Markdown heading level, and the downloaded `summary.docx` uses the Word Title style for top-level headings, keeping their bold text, and Heading 1 to Heading 5 for the next levels, keeps heading links working and leaves the fenced heading as code.
 - **Disposition** review.
 - **Source** upstream `81238fbf` (#49446), which replaces `upstream-eaae30ac-chat-run-artifact-carryover-197-01` (resolved as not selected) in the copied test file after it was removed.
+
+## upstream-818414b2-agent-suggestions-2327-01
+
+The member picks a For you cover, keeps it after reload and can reset it. [Registration](https://github.com/okou-ai/okou/blob/818414b23d/turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx#L2327).
+
+- **Given** For you shows suggestion cards under the default cover.
+- **When** The member opens Change cover, picks another cover, reloads the page, then resets the cover and moves the selection with an arrow key.
+- **Then** The picker marks the current cover and disables Reset while the default is selected; the picked cover replaces the banner and survives a reload in this browser; Reset restores the default; arrow keys move the selection in the radio gallery.
+- **Disposition** retain.
+- **Source** upstream `818414b2` (#49453), added to the rebuilt test file.
+
+## upstream-efa10f0b-chat-navigation-artifact-drive-542-01
+
+Upload another Chat's artifact from the dialog using the viewing Chat's Drive account. [Registration](https://github.com/okou-ai/okou/blob/efa10f0bb9/turbo/apps/platform/src/views/okou-page/__tests__/chat-navigation-artifact-drive.test.tsx#L542).
+
+- **Given** Two chats are open side by side; an artifact produced in the source chat has its own Drive account, and the viewing chat uses a different connected Drive account.
+- **When** The member opens the source chat's artifact from the viewing chat's dialog and uploads it to Google Drive.
+- **Then** The upload uses the viewing chat's Drive account and reports success there, without switching to the source chat's account.
+- **Disposition** retain.
+- **Source** upstream `efa10f0b` (#49430), added to the rebuilt test file.
+
+## upstream-efa10f0b-chat-navigation-artifact-drive-542-02
+
+Upload another Chat's artifact from the sidebar using the viewing Chat's Drive account. [Registration](https://github.com/okou-ai/okou/blob/efa10f0bb9/turbo/apps/platform/src/views/okou-page/__tests__/chat-navigation-artifact-drive.test.tsx#L542).
+
+- **Given** Two chats are open side by side; an artifact produced in the source chat has its own Drive account, and the viewing chat uses a different connected Drive account.
+- **When** The member opens the source chat's artifact from the viewing chat's sidebar and uploads it to Google Drive.
+- **Then** The upload uses the viewing chat's Drive account and reports success there, without switching to the source chat's account.
+- **Disposition** retain.
+- **Source** upstream `efa10f0b` (#49430), added to the rebuilt test file.
+
+## upstream-efa10f0b-chat-navigation-artifact-drive-542-03
+
+Upload another Chat's artifact from the dialog moved to sidebar using the viewing Chat's Drive account. [Registration](https://github.com/okou-ai/okou/blob/efa10f0bb9/turbo/apps/platform/src/views/okou-page/__tests__/chat-navigation-artifact-drive.test.tsx#L542).
+
+- **Given** Two chats are open side by side; an artifact produced in the source chat has its own Drive account, and the viewing chat uses a different connected Drive account.
+- **When** The member opens the source chat's artifact from the viewing chat's dialog moved to sidebar and uploads it to Google Drive.
+- **Then** The upload uses the viewing chat's Drive account and reports success there, without switching to the source chat's account.
+- **Disposition** retain.
+- **Source** upstream `efa10f0b` (#49430), added to the rebuilt test file.
+
+## upstream-efa10f0b-chat-navigation-artifact-drive-542-04
+
+Upload another Chat's artifact from the existing sidebar using the viewing Chat's Drive account. [Registration](https://github.com/okou-ai/okou/blob/efa10f0bb9/turbo/apps/platform/src/views/okou-page/__tests__/chat-navigation-artifact-drive.test.tsx#L542).
+
+- **Given** Two chats are open side by side; an artifact produced in the source chat has its own Drive account, and the viewing chat uses a different connected Drive account.
+- **When** The member opens the source chat's artifact from the viewing chat's existing sidebar and uploads it to Google Drive.
+- **Then** The upload uses the viewing chat's Drive account and reports success there, without switching to the source chat's account.
+- **Disposition** retain.
+- **Source** upstream `efa10f0b` (#49430), added to the rebuilt test file.
+
+## upstream-efa10f0b-chat-navigation-artifact-drive-542-05
+
+Upload another Chat's artifact from the card using the viewing Chat's Drive account. [Registration](https://github.com/okou-ai/okou/blob/efa10f0bb9/turbo/apps/platform/src/views/okou-page/__tests__/chat-navigation-artifact-drive.test.tsx#L542).
+
+- **Given** Two chats are open side by side; an artifact produced in the source chat has its own Drive account, and the viewing chat uses a different connected Drive account.
+- **When** The member opens the source chat's artifact from the viewing chat's card and uploads it to Google Drive.
+- **Then** The upload uses the viewing chat's Drive account and reports success there, without switching to the source chat's account.
+- **Disposition** retain.
+- **Source** upstream `efa10f0b` (#49430), added to the rebuilt test file.
+
+## upstream-efa10f0b-chat-navigation-artifact-drive-1066-01
+
+Keep an artifact's Google editor link after uploading another artifact. [Registration](https://github.com/okou-ai/okou/blob/efa10f0bb9/turbo/apps/platform/src/views/okou-page/__tests__/chat-navigation-artifact-drive.test.tsx#L1066).
+
+- **Given** Two artifacts in a chat can be uploaded to Google Docs.
+- **When** The member uploads one artifact, then uploads the other while the artifact list is still waiting for its Drive status refresh.
+- **Then** Each artifact keeps the Google editor link from its own upload response, and the first link is not lost when the second upload completes.
+- **Disposition** retain.
+- **Source** upstream `efa10f0b` (#49430), added to the rebuilt test file.
+
+## upstream-efa10f0b-chat-navigation-artifact-drive-1164-01
+
+Keep the selected Drive account's editor link when an earlier account finishes uploading. [Registration](https://github.com/okou-ai/okou/blob/efa10f0bb9/turbo/apps/platform/src/views/okou-page/__tests__/chat-navigation-artifact-drive.test.tsx#L1164).
+
+- **Given** An upload with an earlier Drive account is still in flight when the chat switches to another Drive account.
+- **When** The member uploads with the newly selected account, then the earlier upload finishes.
+- **Then** The preview keeps the editor link for the currently selected account and does not show the earlier account's file.
+- **Disposition** retain.
+- **Source** upstream `efa10f0b` (#49430), added to the rebuilt test file.
+
+## upstream-efa10f0b-chat-navigation-artifact-drive-1275-01
+
+Keep the scope reconnect action when a previously started file upload completes. [Registration](https://github.com/okou-ai/okou/blob/efa10f0bb9/turbo/apps/platform/src/views/okou-page/__tests__/chat-navigation-artifact-drive.test.tsx#L1275).
+
+- **Given** A Google Docs upload is accepted before Drive scope consent is withdrawn, and a later upload reports that Drive scope is required.
+- **When** The member starts the second upload, then the earlier upload completes.
+- **Then** The scope reconnect action stays available, while the completed upload's View it link and Open in Google Docs entry appear for its file.
+- **Disposition** retain.
+- **Source** upstream `efa10f0b` (#49430), added to the rebuilt test file.
+
+## upstream-efa10f0b-chat-navigation-artifact-drive-1537-01
+
+Reconnect the same Drive account when refreshed status requires it. [Registration](https://github.com/okou-ai/okou/blob/efa10f0bb9/turbo/apps/platform/src/views/okou-page/__tests__/chat-navigation-artifact-drive.test.tsx#L1537).
+
+- **Given** A chat's connected Drive account later reports that it needs reconnection.
+- **When** The member opens the artifact menu after the refreshed status arrives and chooses Connect Google Drive.
+- **Then** The connect flow reconnects the same account instead of adding a new one, and the earlier upload is not repeated.
+- **Disposition** retain.
+- **Source** upstream `efa10f0b` (#49430), added to the rebuilt test file.
+
+## upstream-efa10f0b-markdown-table-export-691-01
+
+Offer Drive reconnection after closing the document preview that started the save. [Registration](https://github.com/okou-ai/okou/blob/efa10f0bb9/turbo/apps/platform/src/views/okou-page/__tests__/markdown-table-export.test.tsx#L691).
+
+- **Given** A Markdown document preview contains a table, and saving it to Google Drive will report that Drive needs reconnection.
+- **When** The member starts a table save from the preview and closes the preview before the save finishes.
+- **Then** The chat still offers Drive reconnection for the save after the preview has closed.
+- **Disposition** retain.
+- **Source** upstream `efa10f0b` (#49430), added to the rebuilt test file.
+
+## upstream-efa10f0b-markdown-table-export-799-01
+
+Export a table from the right Chat's transcript to its Drive account. [Registration](https://github.com/okou-ai/okou/blob/efa10f0bb9/turbo/apps/platform/src/views/okou-page/__tests__/markdown-table-export.test.tsx#L799).
+
+- **Given** Two chats are open side by side, and the right chat has its own Drive account and a table in its transcript.
+- **When** The member saves that table to Google Drive from the right chat's transcript.
+- **Then** The save uses the right chat's Drive account and links the saved file there.
+- **Disposition** retain.
+- **Source** upstream `efa10f0b` (#49430), added to the rebuilt test file.
+
+## upstream-efa10f0b-markdown-table-export-799-02
+
+Export a table from the right Chat's artifact sidebar to its Drive account. [Registration](https://github.com/okou-ai/okou/blob/efa10f0bb9/turbo/apps/platform/src/views/okou-page/__tests__/markdown-table-export.test.tsx#L799).
+
+- **Given** Two chats are open side by side, and the right chat has its own Drive account and a table in its artifact sidebar.
+- **When** The member saves that table to Google Drive from the right chat's artifact sidebar.
+- **Then** The save uses the right chat's Drive account and links the saved file there.
+- **Disposition** retain.
+- **Source** upstream `efa10f0b` (#49430), added to the rebuilt test file.
+
+## upstream-efa10f0b-markdown-table-export-799-03
+
+Export a table from the right Chat's artifact dialog to its Drive account. [Registration](https://github.com/okou-ai/okou/blob/efa10f0bb9/turbo/apps/platform/src/views/okou-page/__tests__/markdown-table-export.test.tsx#L799).
+
+- **Given** Two chats are open side by side, and the right chat has its own Drive account and a table in its artifact dialog.
+- **When** The member saves that table to Google Drive from the right chat's artifact dialog.
+- **Then** The save uses the right chat's Drive account and links the saved file there.
+- **Disposition** retain.
+- **Source** upstream `efa10f0b` (#49430), added to the rebuilt test file.
+
+## upstream-efa10f0b-markdown-table-export-799-04
+
+Export a table from the right Chat's artifact card to its Drive account. [Registration](https://github.com/okou-ai/okou/blob/efa10f0bb9/turbo/apps/platform/src/views/okou-page/__tests__/markdown-table-export.test.tsx#L799).
+
+- **Given** Two chats are open side by side, and the right chat has its own Drive account and a table in its artifact card.
+- **When** The member saves that table to Google Drive from the right chat's artifact card.
+- **Then** The save uses the right chat's Drive account and links the saved file there.
+- **Disposition** retain.
+- **Source** upstream `efa10f0b` (#49430), added to the rebuilt test file.

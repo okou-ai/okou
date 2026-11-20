@@ -525,7 +525,6 @@
       "video": "VID"
     },
     "googleDrive": {
-      "agentLoading": "एजेंट अभी भी लोड हो रहा है",
       "connect": "Google Drive कनेक्ट करें",
       "conversionUnconfirmed": "Google रूपांतरण की पुष्टि नहीं हो सकी। दोबारा कोशिश करने से पहले Drive देखें।",
       "openDocs": "Google Docs में खोलें",
@@ -1646,6 +1645,13 @@
       "feedbackPrompt": "यह सुझाव कैसा लगा?",
       "feedLabel": "फ़ीड",
       "forYou": {
+        "cover": {
+          "change": "कवर बदलें",
+          "default": "डिफ़ॉल्ट",
+          "gallery": "कवर",
+          "option": "कवर {{index}}",
+          "reset": "डिफ़ॉल्ट पर रीसेट करें"
+        },
         "loading": "सुझाव लोड हो रहे हैं",
         "next": "अगला सुझाव",
         "previous": "पिछला सुझाव",

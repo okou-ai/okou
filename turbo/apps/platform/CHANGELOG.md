@@ -13,6 +13,23 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1156.1](https://github.com/okou-ai/okou/compare/app-v0.1156.0...app-v0.1156.1) (2026-11-20)
+
+
+### Bug Fixes
+
+* **platform:** clarify markdown document preview hierarchy ([#49461](https://github.com/okou-ai/okou/issues/49461)) ([4411c56](https://github.com/okou-ai/okou/commit/4411c561192e7c85a6c8ecf89b9578c05f9c7f66))
+* **platform:** map markdown titles to word title styles ([#49446](https://github.com/okou-ai/okou/issues/49446)) ([81238fb](https://github.com/okou-ai/okou/commit/81238fbf702ef4d41198ed807ab1139e3a0e14e4))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.95.0
+    * @okouai/core bumped to 8.857.3
+    * @okouai/ui bumped to 1.21.72
+
 ## [0.1156.0](https://github.com/okou-ai/okou/compare/app-v0.1155.1...app-v0.1156.0) (2026-11-20)
 
 

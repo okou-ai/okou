@@ -16,6 +16,7 @@ export type MarkdownPreviewTreeComputed = Computed<Promise<Root>>;
 export function createMarkdownPreviewTree(
   text$: TextPreviewComputed,
   openDiagram$: MermaidDiagramPreviewCommand,
+  threadId?: string,
 ): MarkdownPreviewTreeComputed {
   return computed(async (get): Promise<Root> => {
     const { text: source } = await get(text$);
@@ -25,6 +26,7 @@ export function createMarkdownPreviewTree(
     }
     const tree = parseMarkdownTree(source, {
       mermaid: true,
+      tableExportThreadId: threadId,
     });
     const diagrams = createMermaidDiagramRegistry(openDiagram$);
     embedMermaidSignals(tree, diagrams.register);

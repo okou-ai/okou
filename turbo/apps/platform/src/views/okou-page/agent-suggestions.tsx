@@ -40,7 +40,7 @@ import { ChatComposer } from "./composer.tsx";
 // Option rows and the direction trigger share one surface. Hover lays the state
 // overlay over the nested fill, so the row darkens instead of losing its fill.
 const SUGGESTION_ROW =
-  "h-auto min-h-14 w-full justify-between gap-3 whitespace-normal rounded-3xl bg-nested-fill px-4 py-3 text-left text-base font-normal hover:bg-nested-fill [&:hover]:bg-state-hover-overlay";
+  "h-auto min-h-13 w-full justify-between gap-3 whitespace-normal rounded-3xl bg-nested-fill px-5 py-3 text-left text-sm font-normal hover:bg-nested-fill [&:hover]:bg-state-hover-overlay";
 
 function SuggestionOptionContent({
   option,
@@ -51,7 +51,7 @@ function SuggestionOptionContent({
     <span className="flex min-w-0 flex-1 flex-col gap-0.5 wrap-break-word">
       <span className="leading-6">{option.label}</span>
       {option.description && (
-        <span className="text-sm leading-5 text-muted-foreground">
+        <span className="text-[13px] leading-5 text-muted-foreground">
           {option.description}
         </span>
       )}
@@ -396,7 +396,7 @@ export function AgentSuggestionCard({
             <Link
               pathname={ROUTES.chat}
               options={{ pathParams: { threadId: sourceThreadId } }}
-              className="inline-block max-w-full truncate rounded-md text-sm text-muted-foreground underline decoration-border underline-offset-4 hover:bg-state-hover hover:text-foreground"
+              className="-mx-1.5 -my-0.5 inline-block max-w-full truncate rounded-md px-1.5 py-0.5 text-[13px] text-muted-foreground underline decoration-border underline-offset-4 hover:bg-state-hover hover:text-foreground"
               aria-label={t(($) => {
                 return $.chat.agentSuggestions.viewSource;
               })}
@@ -410,7 +410,7 @@ export function AgentSuggestionCard({
           ) : null
         }
       />
-      <div className="mb-6 mt-6 flex flex-col gap-2">
+      <div className="mb-7 mt-7 flex flex-col gap-2.5">
         {item.content.options.map((option) => {
           return (
             <Button
@@ -460,7 +460,7 @@ export function AgentSuggestionCard({
         aria-label={t(($) => {
           return $.chat.agentSuggestions.dismiss;
         })}
-        className="absolute top-3 right-3"
+        className="absolute top-4.5 right-4 sm:top-7.5 sm:right-7"
         onClick={() => {
           detach(
             submitFeedback(item.id, "dismissed", signal),
@@ -527,7 +527,7 @@ function SuggestionFeedback({
             key={kind}
             type="button"
             variant="neutral"
-            className="h-auto min-h-10 gap-1.5 rounded-3xl px-3 py-2 text-sm font-normal whitespace-normal [&_svg]:text-muted-foreground"
+            className="h-auto min-h-9 gap-1.5 rounded-3xl border-divider px-3 py-1.5 text-[13px] font-normal whitespace-normal [&_svg]:text-muted-foreground"
             onClick={() => {
               detach(submitFeedback(item.id, kind, signal), Reason.DomCallback);
             }}

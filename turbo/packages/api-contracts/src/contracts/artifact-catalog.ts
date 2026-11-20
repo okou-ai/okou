@@ -167,12 +167,14 @@ export interface ArtifactCatalogGetQuery {
   readonly sourceKind?: "shared-thread";
   /** Current-view thread account context; does not change artifact ownership. */
   readonly chatThreadId?: string;
+  readonly driveAccountModel?: "chat";
 }
 
 export interface ArtifactCatalogGetClientQuery {
   readonly sourceKind?: "shared-thread";
   /** Current-view thread account context; does not change artifact ownership. */
   readonly chatThreadId?: string;
+  readonly driveAccountModel?: "chat";
 }
 
 export interface ArtifactIdPathParams {
@@ -314,6 +316,7 @@ const artifactCatalogListQuerySchema = object({
 const artifactCatalogGetQuerySchema = object({
   sourceKind: literal("shared-thread").optional(),
   chatThreadId: uuid().optional(),
+  driveAccountModel: literal("chat").optional(),
 });
 
 const artifactCatalogListResponseSchema = object({
