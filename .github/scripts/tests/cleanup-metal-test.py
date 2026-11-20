@@ -1398,21 +1398,23 @@ class CleanupTests(unittest.TestCase):
                     process.kill()
                     process.wait(timeout=5)
 
-    def test_listener_cleanup_failure_prevents_replacement_under_lock(
-        self,
-    ):
+    def test_listener_replacement_uses_only_runner_host_under_lock(self):
         ansible = self.root / "bin/ansible-playbook"
         ansible.write_text(r"""#!/usr/bin/env python3
 import fcntl,os,sys
 from pathlib import Path
 root=Path(os.environ['FIXTURE'])
-for host in ('metal-a','metal-b'):
- with (root/host/'var/lock'/'vm0-runner-lifecycle-pr-42.lock').open('a') as lock:
-  try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
-  except BlockingIOError:pass
-  else:raise SystemExit('listener lifecycle ran outside namespace exclusion')
+assert sys.argv[sys.argv.index('-i') + 1] == 'metal-b,'
+with (root/'metal-b'/'var/lock'/'vm0-runner-lifecycle-pr-42.lock').open('a') as lock:
+ try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+ except BlockingIOError:pass
+ else:raise SystemExit('listener lifecycle ran outside namespace exclusion')
 if 'playbooks/cleanup-stripe-listener.yml' in sys.argv:
- sys.exit(37)
+ if os.environ.get('FAIL_STRIPE_CLEANUP'):
+  sys.exit(37)
+ (root/'listener-cleaned').touch()
+ sys.exit(0)
+assert (root/'listener-cleaned').exists()
 (root/'listener-started').write_text('started')
 """)
         ansible.chmod(0o755)
@@ -1425,12 +1427,14 @@ if 'playbooks/cleanup-stripe-listener.yml' in sys.argv:
         env = {
             **self.env,
             "JOB_REF": "pr-42",
+            "METAL_HOSTS": "metal-b",
+            "OFFLINE": "metal-a",
             "API_PREVIEW_URL": "https://preview.example.test",
             "STRIPE_SECRET_KEY": "fixture",
         }
         result = subprocess.run(
             args,
-            env=env,
+            env={**env, "FAIL_STRIPE_CLEANUP": "1"},
             capture_output=True,
             text=True,
             check=False,
@@ -1438,6 +1442,9 @@ if 'playbooks/cleanup-stripe-listener.yml' in sys.argv:
         )
         self.assertEqual(result.returncode, 37, result.stderr)
         self.assertFalse((self.root / "listener-started").exists())
+        result = subprocess.run(args, env=env, capture_output=True, text=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue((self.root / "listener-started").is_file())
 
 
 if __name__ == "__main__":

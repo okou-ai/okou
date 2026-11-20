@@ -73,9 +73,19 @@ raise "scheduled sweeps must serialize without cancelling cleanup" unless
   stale.fetch("concurrency").fetch("cancel-in-progress") == false
 
 turbo = YAML.load_file(ARGV.fetch(2)).fetch("jobs")
-stripe = turbo.fetch("deploy-stripe-listener").fetch("steps").find { |step| step.fetch("run", "").include?("start-stripe-listener.sh") }
+stripe_job = turbo.fetch("deploy-stripe-listener")
+stripe_steps = stripe_job.fetch("steps")
+stripe = stripe_steps.find { |step| step.fetch("run", "").include?("start-stripe-listener.sh") }
 raise "Stripe replacement must share the cleanup namespace lock" unless
   stripe && stripe.fetch("run").include?("with-runner-lifecycle-lock.sh") && !stripe.key?("continue-on-error")
+stripe_ssh = stripe_steps.find { |step| step["uses"] == "./.github/actions/setup-ssh-tunnel" }
+runner_host = "${{ fromJSON(needs.deploy-runner-start.outputs.runner-receipt).host }}"
+unless stripe_job.fetch("needs").include?("deploy-runner-start") &&
+    stripe_job.fetch("if").include?("needs.deploy-runner-start.result == 'success'") &&
+    stripe_ssh&.dig("with", "ssh-hosts") == runner_host &&
+    stripe.dig("env", "METAL_HOSTS") == runner_host
+  raise "Stripe SSH setup and replacement must use the successful Runner deployment host"
+end
 
 prepare = turbo.fetch("deploy-runner-prepare")
 start = turbo.fetch("deploy-runner-start")
