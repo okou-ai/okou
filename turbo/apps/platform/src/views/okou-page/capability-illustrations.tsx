@@ -125,13 +125,13 @@ function PeopleCollage() {
         )}
       >
         <Shape
-          className="top-[98px] left-[72px] h-[110px] w-[150px] rounded-t-full [box-shadow:0_-3px_0_0_color-mix(in_oklab,var(--capability-paper)_26%,var(--color-muted)),-3px_0_0_0_color-mix(in_oklab,var(--capability-paper)_26%,var(--color-muted)),3px_0_0_0_color-mix(in_oklab,var(--capability-paper)_26%,var(--color-muted))]"
+          className="top-[98px] left-[72px] h-[110px] w-[150px] rounded-t-full [box-shadow:0_-3px_0_0_color-mix(in_oklab,var(--capability-paper)_18%,var(--color-muted)),-3px_0_0_0_color-mix(in_oklab,var(--capability-paper)_18%,var(--color-muted)),3px_0_0_0_color-mix(in_oklab,var(--capability-paper)_18%,var(--color-muted))]"
           fill={PAPER_DEEP}
           stroke={BRUSH_DEEP}
           brush={cn(DASH, "[mask-size:290px_auto] [mask-position:50%_30%]")}
         />
         <Shape
-          className="top-[30px] left-[117px] size-[60px] rounded-full [box-shadow:0_0_0_3px_color-mix(in_oklab,var(--capability-paper)_26%,var(--color-muted))]"
+          className="top-[30px] left-[117px] size-[60px] rounded-full [box-shadow:0_0_0_3px_color-mix(in_oklab,var(--capability-paper)_18%,var(--color-muted))]"
           fill={PAPER_DEEP}
           stroke={BRUSH_DEEP}
           brush={cn(DASH, "[mask-size:190px_auto] [mask-position:45%_55%]")}
@@ -218,7 +218,7 @@ function ResearchCollage() {
 
 const LOOP = "[mask-image:var(--okou-capability-brush-loop)]";
 const SHEET =
-  "h-[96px] w-[128px] rounded-[12px] [box-shadow:0_0_0_3px_color-mix(in_oklab,var(--capability-paper)_21%,var(--color-muted))]";
+  "h-[96px] w-[128px] rounded-[12px] [box-shadow:0_0_0_3px_color-mix(in_oklab,var(--capability-paper)_13%,var(--color-muted))]";
 const PEAK = "[clip-path:polygon(50%_0,100%_100%,0_100%)]";
 
 /**
@@ -276,7 +276,7 @@ function CreateCollage() {
 
 const STRIPE = "[mask-image:var(--okou-capability-brush-stripe)]";
 const STEP =
-  "[box-shadow:0_0_0_3px_color-mix(in_oklab,var(--capability-paper)_26%,var(--color-muted))]";
+  "[box-shadow:0_0_0_3px_color-mix(in_oklab,var(--capability-paper)_18%,var(--color-muted))]";
 
 /** The two links between the steps; each ends in an arrowhead at the step it feeds. */
 const FLOW = [
@@ -360,22 +360,22 @@ const ART = {
   people: {
     Collage: PeopleCollage,
     ground:
-      "[--capability-paper:var(--okou-capability-people-paper)] [--capability-ink:var(--okou-capability-people-ink)] bg-[radial-gradient(62%_120%_at_78%_86%,color-mix(in_oklab,var(--capability-paper)_48%,var(--color-muted)),transparent_72%)]",
+      "[--capability-paper:var(--okou-capability-people-paper)] [--capability-ink:var(--okou-capability-people-ink)] bg-[radial-gradient(62%_120%_at_78%_86%,color-mix(in_oklab,var(--capability-paper)_30%,var(--color-muted)),transparent_72%)]",
   },
   research: {
     Collage: ResearchCollage,
     ground:
-      "[--capability-paper:var(--okou-capability-research-paper)] [--capability-ink:var(--okou-capability-research-ink)] bg-[radial-gradient(62%_120%_at_80%_70%,color-mix(in_oklab,var(--capability-paper)_48%,var(--color-muted)),transparent_72%)]",
+      "[--capability-paper:var(--okou-capability-research-paper)] [--capability-ink:var(--okou-capability-research-ink)] bg-[radial-gradient(62%_120%_at_80%_70%,color-mix(in_oklab,var(--capability-paper)_30%,var(--color-muted)),transparent_72%)]",
   },
   create: {
     Collage: CreateCollage,
     ground:
-      "[--capability-paper:var(--okou-capability-create-paper)] [--capability-ink:var(--okou-capability-create-ink)] bg-[radial-gradient(56%_120%_at_82%_44%,color-mix(in_oklab,var(--capability-paper)_38%,var(--color-muted)),transparent_72%)]",
+      "[--capability-paper:var(--okou-capability-create-paper)] [--capability-ink:var(--okou-capability-create-ink)] bg-[radial-gradient(56%_120%_at_82%_44%,color-mix(in_oklab,var(--capability-paper)_18%,var(--color-muted)),transparent_72%)]",
   },
   workflow: {
     Collage: WorkflowCollage,
     ground:
-      "[--capability-paper:var(--okou-capability-workflow-paper)] [--capability-ink:var(--okou-capability-workflow-ink)] bg-[radial-gradient(58%_120%_at_80%_40%,color-mix(in_oklab,var(--capability-paper)_48%,var(--color-muted)),transparent_72%)]",
+      "[--capability-paper:var(--okou-capability-workflow-paper)] [--capability-ink:var(--okou-capability-workflow-ink)] bg-[radial-gradient(58%_120%_at_80%_40%,color-mix(in_oklab,var(--capability-paper)_30%,var(--color-muted)),transparent_72%)]",
   },
 } as const satisfies Record<
   CapabilityCard,

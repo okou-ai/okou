@@ -1197,42 +1197,42 @@ body {
 :root {
   --okou-capability-people-paper: color-mix(
     in oklab,
-    #ffc6e2 48%,
+    #ffc6e2 56%,
     hsl(var(--muted))
   );
   --okou-capability-people-ink: color-mix(
     in oklab,
-    #ffaed6 87%,
+    #ffaed6 96%,
     hsl(var(--muted))
   );
   --okou-capability-research-paper: color-mix(
     in oklab,
-    #b4def5 48%,
+    #b4def5 56%,
     hsl(var(--muted))
   );
   --okou-capability-research-ink: color-mix(
     in oklab,
-    #82cffb 80%,
+    #82cffb 90%,
     hsl(var(--muted))
   );
   --okou-capability-create-paper: color-mix(
     in oklab,
-    #f9e840 38%,
+    #f9e840 62%,
     hsl(var(--muted))
   );
   --okou-capability-create-ink: color-mix(
     in oklab,
-    #ffb70a 73%,
+    #ffb70a 88%,
     hsl(var(--muted))
   );
   --okou-capability-workflow-paper: color-mix(
     in oklab,
-    #b7de77 29%,
+    #b7de77 41%,
     hsl(var(--muted))
   );
   --okou-capability-workflow-ink: color-mix(
     in oklab,
-    #97d82d 62%,
+    #97d82d 82%,
     hsl(var(--muted))
   );
   /* The four brand brushes, as alpha masks no wider than 360px: a mask over
