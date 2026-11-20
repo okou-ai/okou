@@ -341,12 +341,14 @@ function createShareCommand({
     const refreshed =
       (await get(featureSwitches$))[FeatureSwitchKey.ChatShareRefresh] === true;
     signal.throwIfAborted();
-    const session = get(visibility$);
-    if (refreshed && session) {
+    if (refreshed) {
       // Copy through the link's own Copy link action, so the confirmation is
       // that button reading "Copied" rather than a toast over the header. A
       // failed copy still toasts.
-      await set(session.copy$, signal);
+      const session = get(visibility$);
+      if (session) {
+        await set(session.copy$, signal);
+      }
       return;
     }
     const copied = await writeToClipboard(

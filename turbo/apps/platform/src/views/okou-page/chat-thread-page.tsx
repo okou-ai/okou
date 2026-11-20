@@ -100,7 +100,6 @@ import {
   getShortcutLabel,
   getShortcutParts,
   Button,
-  Card,
   CopyButton,
   Checkbox,
   Input,
@@ -131,6 +130,7 @@ import {
   ThinkingMessages,
   useMediaQuery,
   buttonVariants,
+  surfaceVariants,
 } from "@okouai/ui";
 import { RUN_ERROR_GUIDANCE } from "@okouai/api-contracts/contracts/errors";
 import {
@@ -3627,20 +3627,19 @@ function SharedThreadCopyLinkButton({
   );
 }
 
-/** Sharing takes the composer's place, so it takes the composer's surface.
- * Its radius is concentric with the controls it holds: their 8px plus the
- * card's 12px padding gives the 20px surface radius. */
+/** Sharing sits where the composer was, on the shared page surface. Its
+ * standard 20px radius is concentric with the controls it holds: their 8px
+ * plus the card's 12px padding. */
 function ChatShareCard({ children }: { readonly children: ReactNode }) {
   return (
     <ChatComposerFooter>
       <div className="@container/composer">
-        <Card
-          surface="composer"
+        <div
           data-slot="chat-share-card"
-          className="rounded-surface p-3 composer-wide:pl-4"
+          className={surfaceVariants({ className: "p-3 composer-wide:pl-4" })}
         >
           {children}
-        </Card>
+        </div>
       </div>
     </ChatComposerFooter>
   );
@@ -6264,7 +6263,7 @@ function RefreshedSelectablePagedGroupRow({
         <ShareGroupSelectionColumn role={group.role} {...selection} />
         <div
           className={cn(
-            "min-w-0 transition-opacity",
+            "min-w-0",
             !nameLine && "@[900px]:pl-[46px]",
             // Once anything is chosen, what is left out steps back, and
             // pointing at its checkbox brings it forward again.
