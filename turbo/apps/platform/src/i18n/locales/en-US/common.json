@@ -6963,7 +6963,6 @@
       "refineWith": "Refine with {{agent}}",
       "sectionNavigation": "Workflow details section",
       "visibility": {
-        "adminRequired": "Publishing a workflow under an agent you do not own requires org admin permissions.",
         "automationWarning": "Automations will stop",
         "confirmDescription": "This is a dangerous operation. While this workflow is private, automations other members built on it stop running.",
         "confirmTitle": "Make this workflow private?",

@@ -7046,7 +7046,6 @@
       "refineWith": "Affiner avec {{agent}}",
       "sectionNavigation": "Rubrique des détails du workflow",
       "visibility": {
-        "adminRequired": "Publier un workflow sous un agent que vous ne possédez pas nécessite des permissions d'administrateur d'organisation.",
         "automationWarning": "Les automatisations s'arrêteront",
         "confirmDescription": "C'est une opération dangereuse. Tant que ce workflow est privé, les automatisations que d'autres membres ont construites dessus cessent de fonctionner.",
         "confirmTitle": "Rendre ce workflow privé ?",

@@ -6965,7 +6965,6 @@
       "refineWith": "Verfeinern mit {{agent}}",
       "sectionNavigation": "Bereich der Workflow-Details",
       "visibility": {
-        "adminRequired": "Für die Veröffentlichung eines Workflows unter einem Agenten, der Ihnen nicht gehört, sind Organisationsadministratorberechtigungen erforderlich.",
         "automationWarning": "Automatisierungen werden gestoppt",
         "confirmDescription": "Dies ist eine gefährliche Operation. Während dieser Workflow privat ist, werden darauf basierende Automatisierungen anderer Mitglieder nicht mehr ausgeführt.",
         "confirmTitle": "Diesen Workflow privat machen?",

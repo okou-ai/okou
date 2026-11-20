@@ -6937,7 +6937,6 @@
       "refineWith": "{{agent}}와 함께 다듬기",
       "sectionNavigation": "워크플로 상세 섹션",
       "visibility": {
-        "adminRequired": "소유하지 않은 에이전트 아래에 워크플로를 게시하려면 조직 관리자 권한이 필요합니다.",
         "automationWarning": "자동화가 중지됩니다",
         "confirmDescription": "이 작업은 위험합니다. 이 워크플로가 비공개인 동안 다른 멤버가 만든 자동화가 중지됩니다.",
         "confirmTitle": "이 워크플로를 비공개로 전환하시겠습니까?",

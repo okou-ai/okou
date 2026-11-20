@@ -198,13 +198,9 @@ function VisibilityIcon({ workflow }: { readonly workflow: WorkflowSummary }) {
         },
         { workspace: org?.name ?? "" },
       )
-    : isPublic
-      ? i18n.t(($) => {
-          return $.workflows.common.public;
-        })
-      : i18n.t(($) => {
-          return $.workflows.common.private;
-        });
+    : i18n.t(($) => {
+        return $.workflows.common.private;
+      });
   return (
     <TooltipProvider delay={200}>
       <Tooltip>

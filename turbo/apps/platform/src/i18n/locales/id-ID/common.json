@@ -6937,7 +6937,6 @@
       "refineWith": "Perhalus dengan {{agent}}",
       "sectionNavigation": "Bagian detail alur kerja",
       "visibility": {
-        "adminRequired": "Menerbitkan alur kerja di bawah agen yang tidak Anda miliki memerlukan izin admin org.",
         "automationWarning": "Otomatisasi akan berhenti",
         "confirmDescription": "Ini adalah operasi berbahaya. Saat alur kerja ini bersifat pribadi, otomatisasi yang dibuat anggota lain di atasnya berhenti berjalan.",
         "confirmTitle": "Jadikan alur kerja ini privat?",

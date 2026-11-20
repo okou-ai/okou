@@ -7046,7 +7046,6 @@
       "refineWith": "Perfeziona con {{agent}}",
       "sectionNavigation": "Sezione dei dettagli del flusso di lavoro",
       "visibility": {
-        "adminRequired": "La pubblicazione di un flusso di lavoro con un agente non di tua proprietà richiede le autorizzazioni di amministratore dell'organizzazione.",
         "automationWarning": "Le automazioni si fermeranno",
         "confirmDescription": "Questa è un'operazione pericolosa. Quando il flusso di lavoro diventa privato, le automazioni create da altri membri smettono di essere eseguite.",
         "confirmTitle": "Rendere privato questo flusso di lavoro?",

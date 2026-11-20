@@ -7046,7 +7046,6 @@
       "refineWith": "Refinar con {{agent}}",
       "sectionNavigation": "Sección de detalles del flujo de trabajo",
       "visibility": {
-        "adminRequired": "Publicar un flujo de trabajo para un agente que no es de tu propiedad requiere permisos de administrador de la organización.",
         "automationWarning": "Las automatizaciones se detendrán",
         "confirmDescription": "Esta es una operación peligrosa. Aunque este flujo de trabajo es privado, las automatizaciones que otros miembros construyeron sobre él dejan de funcionar.",
         "confirmTitle": "¿Hacer privado este flujo de trabajo?",

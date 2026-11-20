@@ -295,8 +295,6 @@ export const setWorkflowDemoteConfirmOpen$ = command(
 const FILTER_PARAM = "filter";
 const SORT_MODE_PARAM = "sort";
 
-/** The sentinel agent-filter value that clears the agent scope. */
-
 function readSearchParam<T extends string>(
   params: URLSearchParams,
   key: string,

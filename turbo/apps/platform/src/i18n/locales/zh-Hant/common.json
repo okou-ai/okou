@@ -6937,7 +6937,6 @@
       "refineWith": "用{{agent}}最佳化",
       "sectionNavigation": "工作流詳情欄目",
       "visibility": {
-        "adminRequired": "在不屬於你的智能體下發布工作流，需要組織管理員權限。",
         "automationWarning": "自動化將停止",
         "confirmDescription": "這是危險操作。工作流設為私有後，其他成員基於它建立的自動化會停止執行。",
         "confirmTitle": "把這個工作流設為私有？",

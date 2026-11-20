@@ -6937,7 +6937,6 @@
       "refineWith": "{{agent}} で絞り込む",
       "sectionNavigation": "ワークフロー詳細セクション",
       "visibility": {
-        "adminRequired": "所有していないエージェントの下でワークフローを公開するには、組織管理者権限が必要です。",
         "automationWarning": "オートメーションは停止します",
         "confirmDescription": "これは危険な操作です。このワークフローは非公開ですが、その上に構築された他のメンバーのオートメーションは実行を停止します。",
         "confirmTitle": "このワークフローを非公開にしますか？",

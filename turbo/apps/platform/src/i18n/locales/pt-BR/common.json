@@ -7046,7 +7046,6 @@
       "refineWith": "Refinar com {{agent}}",
       "sectionNavigation": "Seção de detalhes do fluxo de trabalho",
       "visibility": {
-        "adminRequired": "Publicar um fluxo de trabalho em um agente que não pertence a você exige permissões de administrador da organização.",
         "automationWarning": "As automações serão interrompidas",
         "confirmDescription": "Esta é uma operação perigosa. Enquanto este fluxo de trabalho estiver privado, as automações criadas por outros membros deixarão de ser executadas.",
         "confirmTitle": "Tornar este fluxo de trabalho privado?",

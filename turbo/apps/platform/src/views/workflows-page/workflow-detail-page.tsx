@@ -385,9 +385,6 @@ function workflowMetadataCopy() {
 
 function workflowVisibilityCopy() {
   return {
-    adminRequired: i18n.t(($) => {
-      return $.workflows.detail.visibility.adminRequired;
-    }),
     automationWarning: i18n.t(($) => {
       return $.workflows.detail.visibility.automationWarning;
     }),
@@ -405,9 +402,6 @@ function workflowVisibilityCopy() {
     }),
     private: i18n.t(($) => {
       return $.workflows.common.private;
-    }),
-    public: i18n.t(($) => {
-      return $.workflows.common.public;
     }),
     publishAria: i18n.t(($) => {
       return $.workflows.detail.visibility.publishAria;
@@ -1834,9 +1828,7 @@ function WorkflowPublicToggle({
         },
         { workspace: org?.name ?? "" },
       )
-    : isPublic
-      ? copy.public
-      : copy.private;
+    : copy.private;
   const publishBlocked =
     detail.visibility === "private" && detail.canManage && !detail.canPublish;
   const toggleAction: Parameters<typeof changeVisibility>[0]["action"] | null =

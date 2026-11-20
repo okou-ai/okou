@@ -7,7 +7,6 @@ import {
   LayoutGrid,
   Package,
   Route,
-  Users,
   MessageCircle,
   PanelLeftClose,
   Plug,
@@ -63,7 +62,7 @@ type NavIcon = (props: { size?: number; className?: string }) => ReactNode;
 
 const slackIcon = settingsIconAssetUrl("slack");
 
-type ManageNavId = "agents" | "artifacts" | "connectors" | "workflows";
+type ManageNavId = "artifacts" | "connectors" | "workflows";
 type SidebarNavId = ManageNavId | "chat" | "works";
 
 interface ManageNavItem {
@@ -74,12 +73,6 @@ interface ManageNavItem {
 }
 
 const MANAGE_NAV: readonly ManageNavItem[] = [
-  {
-    id: "agents",
-    activeKeys: ["agents", "agentDetail", "agentPermissions"],
-    pathname: "/agents",
-    icon: Users as NavIcon,
-  },
   {
     id: "workflows",
     activeKeys: [
@@ -132,11 +125,6 @@ function useManageNavItems() {
 
   const manageLabel = (id: ManageNavId): string => {
     switch (id) {
-      case "agents": {
-        return t(($) => {
-          return $.appShell.sidebar.navigation.agents;
-        });
-      }
       case "artifacts": {
         return t(($) => {
           return $.appShell.sidebar.navigation.artifacts;
@@ -154,9 +142,7 @@ function useManageNavItems() {
       }
     }
   };
-  return MANAGE_NAV.filter((item) => {
-    return item.id !== "agents";
-  }).map((item) => {
+  return MANAGE_NAV.map((item) => {
     return { ...item, label: manageLabel(item.id) };
   });
 }
@@ -204,7 +190,6 @@ const RAIL_FRAME =
 function LabeledRailLink({
   id,
   navPath,
-  navOptions,
   label,
   icon: Icon,
   iconImg,
@@ -214,7 +199,6 @@ function LabeledRailLink({
 }: {
   id: SidebarNavId;
   navPath: string;
-  navOptions?: Parameters<typeof Link>[0]["options"];
   label: string;
   icon: NavIcon;
   iconImg?: string | undefined;
@@ -243,7 +227,6 @@ function LabeledRailLink({
   return (
     <Link
       pathname={navPath as Parameters<typeof Link>[0]["pathname"]}
-      options={navOptions}
       onClick={(event) => {
         // Only a click that navigates here, not one opening a new tab.
         if (onNavigate && shouldHandleLinkClick(event)) {
@@ -336,16 +319,11 @@ function LabeledChatRailLink() {
   const okouEntry = useLastResolved(okouRailEntryEnabled$) ?? false;
   const assistantName = useGet(assistantName$);
   const showInbox = useSet(showChatThreadInbox$);
-  // My Okou's chat page is `/` itself.
-  const agentChatId = null;
   const { t } = useTranslation();
   return (
     <LabeledRailLink
       id="chat"
-      navPath={agentChatId ? ROUTES.agentChat : ROUTES.home}
-      navOptions={
-        agentChatId ? { pathParams: { agentId: agentChatId } } : undefined
-      }
+      navPath={ROUTES.home}
       label={
         okouEntry
           ? assistantName
