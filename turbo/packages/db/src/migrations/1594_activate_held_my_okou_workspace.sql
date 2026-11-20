@@ -510,7 +510,7 @@ BEGIN
     'UTF8')),'hex');
 
   INSERT INTO feature_guide_revisions (edition_id,content,content_hash,starts_at,expires_at,created_by)
-  VALUES (edition.id,content_json::jsonb,revision_hash,revision.starts_at,revision.expires_at,'migration:1593')
+  VALUES (edition.id,content_json::jsonb,revision_hash,revision.starts_at,revision.expires_at,'migration:1594')
   ON CONFLICT (edition_id,content_hash) DO NOTHING;
 
   SELECT id INTO updated_revision FROM feature_guide_revisions
