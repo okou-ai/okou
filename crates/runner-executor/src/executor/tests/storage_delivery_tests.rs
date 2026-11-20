@@ -592,8 +592,12 @@ async fn complete_application_stages_only_the_manifest_when_the_frame_is_full() 
     };
     assert_eq!(
         Path::new(&write.path),
-        staged_storage_manifest_file(&call.runtime_dir)
+        staged_storage_manifest_file(&call.runtime_dir).unwrap()
     );
+    let staging_dir = Path::new(&write.path).parent().unwrap();
+    let runtime_dir = Path::new(&call.runtime_dir);
+    assert_eq!(staging_dir.parent(), runtime_dir.parent());
+    assert_ne!(staging_dir, runtime_dir);
     let manifest: Manifest = serde_json::from_slice(&write.content).unwrap();
     let (inline, payload) = storage_files::split_input(&call.manifest_json).unwrap();
     assert!(inline.is_empty());
@@ -617,11 +621,7 @@ async fn complete_application_stages_only_the_manifest_when_the_frame_is_full() 
             .contains("staging failed")
     );
     assert!(failed.storage_manifest_calls().is_empty());
-    let attempted = failed.private_write_file_calls();
-    assert_eq!(
-        failed.exec_calls()[0].cmd,
-        format!("rm -f -- {}", attempted[0].path)
-    );
+    assert!(failed.exec_calls().is_empty());
     fixture.shutdown().await;
 }
 

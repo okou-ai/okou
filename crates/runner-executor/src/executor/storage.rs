@@ -17,7 +17,7 @@ use crate::helper_exec::{format_helper_exec_failure, helper_exec_succeeded};
 use crate::storage_cache::decoded::CachedFiles;
 use crate::telemetry::{JobTelemetry, StorageBatchDimensions};
 use guest_contracts::guest_binary::STORAGE_APPLY_PATH;
-use guest_contracts::runtime_paths::STORAGE_MANIFEST_PATH;
+use guest_contracts::runtime_paths::{STORAGE_MANIFEST_PATH, staged_storage_manifest_file};
 use runner_types::types::ExecutionContext;
 
 const STORAGE_MANIFEST_CLEANUP_TIMEOUT: Duration = Duration::from_secs(5);
@@ -597,15 +597,6 @@ async fn apply_storage_input(
     host_timing: &mut StorageManifestTiming,
 ) -> RunnerResult<HashSet<String>> {
     let staged_manifest = input.take_staged_manifest();
-    let staged_path = staged_manifest
-        .as_ref()
-        .map(|_| {
-            super::guest_runtime_path(
-                context.run_id,
-                guest_contracts::runtime_paths::staged_storage_manifest_file,
-            )
-        })
-        .transpose()?;
     let manifest_json = match &*input {
         StorageInput::Json(bytes) => bytes,
         StorageInput::Files { bytes, .. } => bytes,
@@ -631,8 +622,13 @@ async fn apply_storage_input(
     }
     let result = async {
         let result = if use_dedicated {
-            if let Some((path, manifest)) = staged_path.as_deref().zip(staged_manifest) {
-                sandbox.write_private_file(path, &manifest).await?;
+            if let Some(manifest) = staged_manifest {
+                let path = staged_storage_manifest_file(&runtime_dir).map_err(|error| {
+                    RunnerError::Internal(format!("Guest staged manifest path: {error}"))
+                })?;
+                sandbox
+                    .write_private_file(&path.to_string_lossy(), &manifest)
+                    .await?;
             }
             sandbox
                 .apply_storage_manifest_with_timing(
@@ -677,24 +673,18 @@ async fn apply_storage_input(
         read_storage_receipt(&result, optional_mounts)
     }
     .await;
-    if result.is_err() {
-        let cleanup = if let Some(path) = &staged_path {
-            // The path is derived from the fixed runtime layout and a Run UUID.
-            Some(format!("rm -f -- {path}"))
-        } else if !use_dedicated {
-            Some(guest_storage_manifest_cleanup_command())
-        } else {
-            None
-        };
-        if let Some(command) = cleanup
-            && let Err(error) = remove_storage_manifest(sandbox, &command).await
-        {
-            warn!(
-                run_id = %context.run_id,
-                %error,
-                "failed to remove storage manifest after delivery failure"
-            );
-        }
+    // Interrupted private staging belongs to the Run runtime's reuse cleanup.
+    // The ordinary large-JSON file uses a fixed path outside that directory.
+    if !use_dedicated
+        && result.is_err()
+        && let Err(error) =
+            remove_storage_manifest(sandbox, &guest_storage_manifest_cleanup_command()).await
+    {
+        warn!(
+            run_id = %context.run_id,
+            %error,
+            "failed to remove storage manifest after delivery failure"
+        );
     }
     result
 }

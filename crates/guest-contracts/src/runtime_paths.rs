@@ -40,9 +40,19 @@ const PRIVATE_DIR_MODE: libc::mode_t = 0o700;
 const PRIVATE_FILE_MODE: libc::mode_t = 0o600;
 
 /// Complete manifest paired with decoded files in a dedicated storage operation.
-#[must_use]
-pub fn staged_storage_manifest_file(run_dir: impl AsRef<Path>) -> PathBuf {
-    run_dir.as_ref().join("storage-manifest.input.json")
+/// The staging directory is a sibling of the protected Run runtime, so reuse
+/// and Home publication reclaim it if the operation does not consume it.
+pub fn staged_storage_manifest_file(run_dir: impl AsRef<Path>) -> io::Result<PathBuf> {
+    let run_dir = run_dir.as_ref();
+    let mut staging = run_dir
+        .file_name()
+        .filter(|_| run_dir.is_absolute())
+        .ok_or_else(|| {
+            io::Error::new(io::ErrorKind::InvalidInput, "invalid Run runtime directory")
+        })?
+        .to_os_string();
+    staging.push(".storage-input");
+    Ok(run_dir.with_file_name(staging).join("manifest.json"))
 }
 
 /// Error returned when resolving a guest runtime path contract.
@@ -864,7 +874,10 @@ fn validate_existing_private_file(file: &File, path: &Path, max_bytes: u64) -> i
 }
 
 #[cfg(unix)]
-fn open_existing_private_file(path: &Path, max_bytes: u64) -> io::Result<Option<File>> {
+fn open_existing_private_file(
+    path: &Path,
+    max_bytes: u64,
+) -> io::Result<Option<(File, OwnedFd, CString)>> {
     let name = file_name(path)?;
     let name_c = component_cstring(name, path)?;
     let parent = open_or_create_private_dir(parent_dir(path)?)?;
@@ -896,7 +909,7 @@ fn open_existing_private_file(path: &Path, max_bytes: u64) -> io::Result<Option<
     };
     let file = File::from(fd);
     validate_existing_private_file(&file, path, max_bytes)?;
-    Ok(Some(file))
+    Ok(Some((file, parent, name_c)))
 }
 
 /// Read a bounded runtime-private file without following symlinks.
@@ -918,19 +931,40 @@ pub fn read_private_bounded(
     path: impl AsRef<Path>,
     max_bytes: usize,
 ) -> io::Result<Option<Vec<u8>>> {
-    let path = path.as_ref();
+    read_private_bounded_impl(path.as_ref(), max_bytes, false)
+}
+
+/// Read and consume a private file under the same bounds as
+/// [`read_private_bounded`]. Remove it only after a successful read. On Unix,
+/// removal uses the destination's verified parent directory descriptor.
+pub fn take_private_bounded(
+    path: impl AsRef<Path>,
+    max_bytes: usize,
+) -> io::Result<Option<Vec<u8>>> {
+    read_private_bounded_impl(path.as_ref(), max_bytes, true)
+}
+
+fn read_private_bounded_impl(
+    path: &Path,
+    max_bytes: usize,
+    consume: bool,
+) -> io::Result<Option<Vec<u8>>> {
     #[cfg(unix)]
-    let file = open_existing_private_file(path, u64::try_from(max_bytes).unwrap_or(u64::MAX))?;
+    let (file, removal_target) = {
+        let Some((file, parent, name)) =
+            open_existing_private_file(path, u64::try_from(max_bytes).unwrap_or(u64::MAX))?
+        else {
+            return Ok(None);
+        };
+        (file, consume.then_some((parent, name)))
+    };
     #[cfg(not(unix))]
     let file = match File::open(path) {
-        Ok(file) => Some(file),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => None,
+        Ok(file) => file,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
         Err(error) => return Err(error),
     };
 
-    let Some(file) = file else {
-        return Ok(None);
-    };
     let read_limit = u64::try_from(max_bytes)
         .unwrap_or(u64::MAX)
         .saturating_add(1);
@@ -944,6 +978,24 @@ pub fn read_private_bounded(
                 path.display()
             ),
         ));
+    }
+    #[cfg(unix)]
+    if let Some((parent, name)) = removal_target {
+        nix::unistd::unlinkat(
+            &parent,
+            name.as_c_str(),
+            nix::unistd::UnlinkatFlags::NoRemoveDir,
+        )
+        .map_err(|error| {
+            wrap_io_error(
+                error.into(),
+                format!("remove consumed runtime file {}", path.display()),
+            )
+        })?;
+    }
+    #[cfg(not(unix))]
+    if consume {
+        fs::remove_file(path)?;
     }
     Ok(Some(bytes))
 }

@@ -139,7 +139,7 @@ fn decoded_input_consumes_the_complete_manifest_from_the_current_runtime() {
     use guest_contracts::runtime_paths::{staged_storage_manifest_file, write_private_new};
 
     let fixture = BinaryLoggingFixture::new("staged-storage-manifest").unwrap();
-    let path = staged_storage_manifest_file(&fixture.logs.runtime_dir);
+    let path = staged_storage_manifest_file(&fixture.logs.runtime_dir).unwrap();
     let input = input_with_files(&fixture, b"").unwrap();
     let target = fixture.dir.path().join("mount/private-filename");
     let retired = fixture.dir.path().join("retired-package");

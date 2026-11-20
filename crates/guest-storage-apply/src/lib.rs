@@ -232,12 +232,9 @@ fn read_staged_storage_manifest(runtime_dir: Option<&Path>) -> io::Result<Vec<u8
     use guest_contracts::{runtime_paths, storage_files};
 
     let runtime = runtime_dir.ok_or_else(|| io::Error::other("missing Run runtime"))?;
-    let path = runtime_paths::staged_storage_manifest_file(runtime);
-    let manifest =
-        runtime_paths::read_private_bounded(&path, storage_files::MAX_COMPLETE_MANIFEST_BYTES)?
-            .ok_or_else(|| io::Error::other("missing staged storage manifest"))?;
-    std::fs::remove_file(path)?;
-    Ok(manifest)
+    let path = runtime_paths::staged_storage_manifest_file(runtime)?;
+    runtime_paths::take_private_bounded(path, storage_files::MAX_COMPLETE_MANIFEST_BYTES)?
+        .ok_or_else(|| io::Error::other("missing staged storage manifest"))
 }
 
 fn run_manifest_with_files_in_runtime(
