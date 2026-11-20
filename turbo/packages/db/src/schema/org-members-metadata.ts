@@ -1,18 +1,11 @@
 import { sql } from "drizzle-orm";
-import { jsonb, check, pgTable, primaryKey } from "drizzle-orm/pg-core";
+import { check, pgTable, primaryKey } from "drizzle-orm/pg-core";
 import { orgMembersMetadataColumns } from "../columns/org-members-metadata";
-import type { OrgMembersPinnedAgentIds } from "@okouai/db/jsonb-contracts/org-members-metadata";
 
 /** Per-member preferences and their database constraints. */
 export const orgMembersMetadata = pgTable(
   "org_members_metadata",
-  {
-    ...orgMembersMetadataColumns(),
-    // Retained for API instances deployed before pinned preferences retired.
-    pinnedAgentIds: jsonb("pinned_agent_ids")
-      .$type<OrgMembersPinnedAgentIds>()
-      .default([]),
-  },
+  orgMembersMetadataColumns(),
   (table) => {
     return [
       primaryKey({ columns: [table.orgId, table.userId] }),

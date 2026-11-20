@@ -1,5 +1,5 @@
 {
-  "id": "15f0da85-c768-43b0-899d-cc52965e1926",
+  "id": "3e3d6fd0-3e1b-460b-bdfd-4f56eff80496",
   "prevId": "243b5123-4c68-40e6-946b-8d2b1b50c57a",
   "version": "7",
   "dialect": "postgresql",
@@ -16753,12 +16753,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "default_agent_id": {
-          "name": "default_agent_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
@@ -16794,21 +16788,7 @@
           "with": {}
         }
       },
-      "foreignKeys": {
-        "github_installations_default_agent_id_agents_id_fk": {
-          "name": "github_installations_default_agent_id_agents_id_fk",
-          "tableFrom": "github_installations",
-          "tableTo": "agents",
-          "columnsFrom": [
-            "default_agent_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
+      "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
@@ -24574,13 +24554,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "pinned_agent_ids": {
-          "name": "pinned_agent_ids",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false,
-          "default": "'[]'::jsonb"
         }
       },
       "indexes": {},

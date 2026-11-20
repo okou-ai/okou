@@ -4,7 +4,7 @@ import type {
   GithubInstallationResponse,
 } from "@okouai/api-contracts/contracts/integrations-github";
 import { connectors } from "@okouai/db/schema/connector";
-import { githubInstallations } from "@okouai/db/runtime/github-installation";
+import { githubInstallations } from "@okouai/db/schema/github-installation";
 import { githubUserLinks } from "@okouai/db/schema/github-user-link";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { and, eq } from "drizzle-orm";

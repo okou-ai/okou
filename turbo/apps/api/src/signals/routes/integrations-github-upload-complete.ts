@@ -1,5 +1,5 @@
 import { command } from "ccstate";
-import { githubInstallations } from "@okouai/db/runtime/github-installation";
+import { githubInstallations } from "@okouai/db/schema/github-installation";
 import { and, eq } from "drizzle-orm";
 import { env } from "../../lib/env";
 import {

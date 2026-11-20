@@ -5,7 +5,7 @@ import {
   workflowAutomationSnapshotColumns,
 } from "./workflow-automation-snapshot";
 import { revokeDeletedWorkflowAutomationInputs$ } from "./workflow-automation-queue-revocation.service";
-import { githubInstallations } from "@okouai/db/runtime/github-installation";
+import { githubInstallations } from "@okouai/db/schema/github-installation";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { object, string } from "zod";
 import { randomUUID } from "node:crypto";
