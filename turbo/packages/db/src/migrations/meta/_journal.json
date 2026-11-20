@@ -3578,6 +3578,13 @@
       "when": 1795098339218,
       "tag": "1589_validate_expanded_autonomy_budget",
       "breakpoints": true
+    },
+    {
+      "idx": 1590,
+      "version": "7",
+      "when": 1795133029099,
+      "tag": "1590_activate_remaining_my_okou_workspaces",
+      "breakpoints": true
     }
   ]
 }
