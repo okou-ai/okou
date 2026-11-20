@@ -1,8 +1,7 @@
 # Pending upstream scenarios
 
 These retained upstream scenarios lost their test file when copied test bodies
-were removed. Each section is restored verbatim from the BDD or checklist that
-recorded it; the source commit is noted. Rebuild them from these scenarios.
+were removed. Sections preserve their original stable IDs and cite the BDD, checklist or registration that records the behavior. Rebuild them from these scenarios.
 
 ## upstream-471ba7ee-sidebar-chat-history-1267-01
 
@@ -589,3 +588,93 @@ Reject a managed reconnect receipt whose account differs from the connector. [Re
 - **Then** The connection dialog stays open with a connector account identity mismatch error, and the only account change requested was the reconnect of the original connection.
 - **Disposition** retain.
 - **Source** upstream `8343cc9e` (#49530), added to the copied test file after it was removed.
+
+## upstream-eaae30ac-agent-suggestions-2042-01
+
+Don't nudge records the no-repeat direction and Undo targets that feedback. [Withdrawn registration](https://github.com/okou-ai/okou/blob/b666cd0503/turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions-deck.test.tsx#L483).
+
+- **Given** Two suggestions are available in For you.
+- **When** Choose Don’t nudge me on the first, then Undo its feedback confirmation.
+- **Then** The next card appears. Undo restores the first card and targets its no-repeat feedback.
+- **Upstream source** [Registration on main](https://github.com/okou-ai/okou/blob/579c32b870/turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx#L2273).
+- **Disposition** Retained upstream ID in the execution ledger at `4855592c`. Rebuild pending after the kept-group withdrawal.
+
+## upstream-a678cec8-agent-suggestions-1244-01
+
+A custom direction continues the chat its card names without touching its saved draft. [Withdrawn registration](https://github.com/okou-ai/okou/blob/b666cd0503/turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx#L1049).
+
+- **Given** A For you suggestion names a chat that already has a saved draft as its custom-direction target (customOption.threadId).
+- **When** The member opens the card direction editor, which names the chat in its header, writes a direction and sends.
+- **Then** One message goes to that chat with the suggestion and the direction. The saved draft is neither loaded into the card composer nor overwritten. For you advances after the send.
+- **Upstream source** [Registration on main](https://github.com/okou-ai/okou/blob/579c32b870/turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx#L1292).
+- **Disposition** Retained upstream ID in the execution ledger at `4855592c`. Rebuild pending after the kept-group withdrawal.
+
+## upstream-a678cec8-agent-suggestions-1032-01
+
+Sending after removing the quote leaves the suggestion available. [Withdrawn registration](https://github.com/okou-ai/okou/blob/b666cd0503/turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx#L1111).
+
+- **Given** A For you card opens a new-chat direction composer prefilled with the suggestion quote.
+- **When** The member writes a message, removes the quote, and sends.
+- **Then** The standalone text is sent. The same suggestion stays available on For you.
+- **Upstream source** [Registration on main](https://github.com/okou-ai/okou/blob/579c32b870/turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx#L1067).
+- **Disposition** Retained upstream ID in the execution ledger at `4855592c`. Rebuild pending after the kept-group withdrawal.
+
+## upstream-8ee03b20-agent-suggestions-1311-01
+
+A custom direction continues a named chat missing from the chat list. [Withdrawn registration](https://github.com/okou-ai/okou/blob/b666cd0503/turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx#L1145).
+
+- **Given** Empty chat snapshot and named target metadata returns 200.
+- **When** Write a direction in the card and send.
+- **Then** Send the typed direction to the named chat without creating a new chat.
+- **Upstream source** [Registration on main](https://github.com/okou-ai/okou/blob/579c32b870/turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx#L1347).
+- **Disposition** Retained upstream ID in the execution ledger at `4855592c`. Rebuild pending after the kept-group withdrawal.
+
+## upstream-8ee03b20-agent-suggestions-1401-01
+
+A custom direction starts a new chat when its named chat is gone. [Withdrawn registration](https://github.com/okou-ai/okou/blob/b666cd0503/turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx#L1184).
+
+- **Given** Card names a missing target.
+- **When** Write a direction in the card and send.
+- **Then** Start a new chat and send the typed direction there.
+- **Upstream source** [Registration on main](https://github.com/okou-ai/okou/blob/579c32b870/turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx#L1437).
+- **Disposition** Retained upstream ID in the execution ledger at `4855592c`. Rebuild pending after the kept-group withdrawal.
+
+## upstream-eaae30ac-chat-run-history-769-01
+
+Show working dots on scroll-to-bottom while the thread works. [Withdrawn registration](https://github.com/okou-ai/okou/blob/b666cd0503/turbo/apps/platform/src/views/okou-page/__tests__/chat-run-history.test.tsx#L609).
+
+- **Given** A thread is producing output while the reader is above the end.
+- **When** Open the thread while the run is active and view the scroll-to-bottom control.
+- **Then** The scroll-to-bottom control indicates ongoing activity.
+- **Upstream source** [Registration on main](https://github.com/okou-ai/okou/blob/579c32b870/turbo/apps/platform/src/views/okou-page/__tests__/chat-run-history.test.tsx#L772).
+- **Disposition** Retained upstream ID in the execution ledger at `4855592c`. Rebuild pending after the kept-group withdrawal.
+
+## upstream-eaae30ac-platform-feed-events-440-01
+
+Enable keeps the update available after rejection and clears it after enabling the linked automation. [Withdrawn registration](https://github.com/okou-ai/okou/blob/b666cd0503/turbo/apps/platform/src/views/okou-page/__tests__/platform-feed-events.test.tsx#L452).
+
+- **Given** A pause update links to a disabled automation and a sibling automation is already enabled.
+- **When** The member enables the linked automation, receives a rejection, and retries.
+- **Then** The first failure keeps the update actionable. During retry the card shows busy state and disables dismissal. Success clears the card after the exact linked automation is enabled and leaves the sibling enabled.
+- **Upstream source** [Registration on main](https://github.com/okou-ai/okou/blob/579c32b870/turbo/apps/platform/src/views/okou-page/__tests__/platform-feed-events.test.tsx#L440).
+- **Disposition** Retained upstream ID in the execution ledger at `4855592c`. Rebuild pending after the kept-group withdrawal.
+
+## upstream-eaae30ac-works-channel-status-15-01
+
+Works distinguishes Feishu and Lark connection states on the same page. [Withdrawn registration](https://github.com/okou-ai/okou/blob/b666cd0503/turbo/apps/platform/src/views/okou-page/__tests__/works-channel-status.test.tsx#L24).
+
+- **Given** Works channel cards are on, Feishu is connected and Lark is disconnected.
+- **When** Open Works and inspect both channel cards.
+- **Then** Feishu shows Connected and links to Manage at /settings/feishu. Lark offers Connect at /settings/lark.
+- **Upstream source** [Registration on main](https://github.com/okou-ai/okou/blob/579c32b870/turbo/apps/platform/src/views/okou-page/__tests__/works-channel-status.test.tsx#L15).
+- **Disposition** Retained upstream ID in the execution ledger at `4855592c`. Rebuild pending after the kept-group withdrawal.
+
+## upstream-eaae30ac-works-channel-status-41-01
+
+Works recognizes an official Lark connection without a custom bot. [Withdrawn registration](https://github.com/okou-ai/okou/blob/b666cd0503/turbo/apps/platform/src/views/okou-page/__tests__/works-channel-status.test.tsx#L74).
+
+- **Given** Official Lark is connected and a custom bot is unavailable.
+- **When** Open Works with channel cards enabled.
+- **Then** Lark shows Connected and Manage links to /settings/lark.
+- **Upstream source** [Registration on main](https://github.com/okou-ai/okou/blob/579c32b870/turbo/apps/platform/src/views/okou-page/__tests__/works-channel-status.test.tsx#L41).
+- **Disposition** Retained upstream ID in the execution ledger at `4855592c`. Rebuild pending after the kept-group withdrawal.
