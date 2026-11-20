@@ -226,9 +226,12 @@ public struct ChatConnectorService: Sendable {
   }
 
   private func defaultAccount(target: ChatConnectorTarget) async throws -> ChatConnectorAccount? {
+    var query = target.query + [URLQueryItem(name: "limit", value: "1")]
+    if target.connectorSlug != nil {
+      query.append(URLQueryItem(name: "includeScopeMismatch", value: "true"))
+    }
     let response: ChatConnectorAccounts = try await client.request(
-      "/api/connector-accounts/connections",
-      query: target.query + [URLQueryItem(name: "limit", value: "1")])
+      "/api/connector-accounts/connections", query: query)
     guard
       response.connections.allSatisfy({
         $0.target == target && UUID(uuidString: $0.id) != nil

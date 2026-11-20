@@ -133,6 +133,7 @@ final class ChatConnectorTests: XCTestCase {
             connectorQuery(custom ? "customConnectorId" : "connectorSlug", in: request),
             custom ? FixtureData.customID : "slack")
           XCTAssertEqual(connectorQuery("limit", in: request), "1")
+          XCTAssertEqual(connectorQuery("includeScopeMismatch", in: request), custom ? nil : "true")
           return ChatHTTPResponse(
             body: """
               {"connections":[\(FixtureData.account(id: FixtureData.siblingID, custom: custom, isDefault: false))],"nextCursor":"next-page","defaultConnection":\(FixtureData.account(custom: custom))}

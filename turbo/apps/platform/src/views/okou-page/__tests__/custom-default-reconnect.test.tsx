@@ -241,10 +241,12 @@ function installOAuthFlow(state: PreflightState, complete = false) {
   const requested = context.mocks.deferred<void>();
   const release = context.mocks.deferred<void>();
   let preflight = false;
+  let lastAccountPageLimit: number | undefined;
   context.mocks.api(
     connectorAccountsContract.connections,
     async ({ query, respond }) => {
       expect(query).toMatchObject(account.target);
+      lastAccountPageLimit = query.limit;
       if (preflight && !requested.settled()) {
         requested.resolve();
       }
@@ -286,6 +288,7 @@ function installOAuthFlow(state: PreflightState, complete = false) {
   context.mocks.api(
     customConnectorOAuth2Contract.start,
     ({ body, respond }) => {
+      expect(lastAccountPageLimit).toBe(1);
       mutations.push(body.account);
       if (complete || state === "expired") {
         completed.set(attemptId, account.id);
