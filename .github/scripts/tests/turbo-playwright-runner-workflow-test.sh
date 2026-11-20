@@ -417,8 +417,9 @@ unless Array(account_cleanup["needs"]).include?("cli-e2e-02-playwright") &&
   raise "idle cleanup must wait for every shared Runner consumer"
 end
 shared_runner_consumers = jobs.select do |id, job|
+  # Stripe uses the Runner's placement receipt and does not submit sandbox runs.
   Array(job["needs"]).include?("deploy-runner-start") &&
-    !["cli-e2e-03-runner-cleanup", "ci-gate-turbo"].include?(id)
+    !["cli-e2e-03-runner-cleanup", "ci-gate-turbo", "deploy-stripe-listener"].include?(id)
 end.keys
 unless (shared_runner_consumers - Array(account_cleanup["needs"])).empty?
   raise "every preview Runner consumer must finish before idle cleanup: #{shared_runner_consumers}"
