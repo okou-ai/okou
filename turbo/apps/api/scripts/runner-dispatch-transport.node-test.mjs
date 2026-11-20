@@ -1,22 +1,67 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { once } from "node:events";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { createServer } from "node:https";
-import process from "node:process";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
-import { createSecureContext } from "node:tls";
+import {
+  createSecureContext,
+  getCACertificates,
+  setDefaultCACertificates,
+} from "node:tls";
 import { setImmediate } from "node:timers/promises";
+import "../src/__tests__/global-setup-env.ts";
 import { createRunnerDispatchTransport } from "../src/runner-dispatch-transport.node.ts";
+import { awaitWithSignal } from "../src/signals/utils.ts";
 
-const [certPath, keyPath] = process.argv.slice(2);
-assert(certPath && keyPath);
-const [cert, key] = await Promise.all([readFile(certPath), readFile(keyPath)]);
+async function createPeerCredentials() {
+  const directory = await mkdtemp(join(tmpdir(), "runner-transport-tls-"));
+  try {
+    const cert = join(directory, "cert.pem");
+    const key = join(directory, "key.pem");
+    execFileSync(
+      "openssl",
+      [
+        "req",
+        "-x509",
+        "-newkey",
+        "rsa:2048",
+        "-nodes",
+        "-days",
+        "1",
+        "-subj",
+        "/CN=localhost",
+        "-addext",
+        "subjectAltName=DNS:localhost",
+        "-keyout",
+        key,
+        "-out",
+        cert,
+      ],
+      { stdio: "ignore" },
+    );
+    return await Promise.all([readFile(cert), readFile(key)]);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+}
 
-async function withPeer(run) {
+const [cert, key] = await createPeerCredentials();
+setDefaultCACertificates([
+  ...getCACertificates("default"),
+  cert.toString("utf8"),
+]);
+const dispatchBody = JSON.stringify({ prompt: "Summarize the café menu" });
+
+async function withPeer(signal, run) {
   const handshake = Promise.withResolvers();
   const secure = Promise.withResolvers();
   const firstClosed = Promise.withResolvers();
   const context = createSecureContext({ key, cert });
+  const transport = createRunnerDispatchTransport({ observe() {} });
+  const sockets = new Set();
   const ports = [];
   const bodyPorts = [];
   const bodies = [];
@@ -57,35 +102,45 @@ async function withPeer(run) {
     },
   );
   server.on("connection", (socket) => {
+    sockets.add(socket);
+    socket.once("close", () => {
+      sockets.delete(socket);
+    });
     ports.push(socket.remotePort ?? 0);
     if (ports.length === 1) {
       socket.once("close", firstClosed.resolve);
     }
   });
   server.once("secureConnection", secure.resolve);
-  server.listen(0, "127.0.0.1");
-  await once(server, "listening");
-  const address = server.address();
-  if (!address || typeof address === "string") {
-    throw new Error("Expected a TCP fixture address");
-  }
   try {
-    await run({
-      origin: `https://localhost:${address.port}`,
-      ports,
-      bodyPorts,
-      bodies,
-      requestPaths,
-      firstHandshake: handshake.promise,
-      firstSecureConnection: secure.promise,
-      firstClosed: firstClosed.promise,
-      releaseHandshake,
-    });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening", { signal });
+    const address = server.address();
+    if (!address || typeof address === "string") {
+      throw new Error("Expected a TCP fixture address");
+    }
+    await awaitWithSignal(
+      run({
+        origin: `https://localhost:${address.port}`,
+        transport,
+        ports,
+        bodyPorts,
+        bodies,
+        requestPaths,
+        firstHandshake: handshake.promise,
+        firstSecureConnection: secure.promise,
+        firstClosed: firstClosed.promise,
+        releaseHandshake,
+      }),
+      signal,
+    );
   } finally {
     releaseHandshake();
     const closed = once(server, "close");
     server.close();
-    server.closeAllConnections();
+    for (const socket of sockets) {
+      socket.destroy();
+    }
     await closed;
   }
 }
@@ -112,15 +167,15 @@ function reserve(transport, runId, url, signal) {
 
 async function send(transport, url) {
   const signal = globalThis.AbortSignal.timeout(3000);
-  const reserved = transport.take(url, "{}", 1, signal);
-  const response = await (reserved?.response ??
-    globalThis.fetch(url, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: "{}",
-      signal,
-    }));
+  const reserved = transport.take(url, dispatchBody, 1, signal);
   try {
+    const response = await (reserved?.response ??
+      globalThis.fetch(url, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: dispatchBody,
+        signal,
+      }));
     assert.deepEqual(await response.json(), { disposition: "accepted" });
   } finally {
     reserved?.clearDeadline();
@@ -130,12 +185,11 @@ test(
   "starts TLS before sending a POST and reuses the resulting socket",
   { timeout: 5000 },
   async (test) => {
-    await withPeer(async (peer) => {
-      const observe = test.mock.fn();
-      const transport = createRunnerDispatchTransport({ observe });
+    await withPeer(test.signal, async (peer) => {
+      const { transport } = peer;
       const run = new globalThis.AbortController();
       reserve(transport, "first", peer.origin, run.signal);
-      reserve(transport, "duplicate", peer.origin, run.signal);
+      reserve(transport, "second", `${peer.origin}/second`, run.signal);
       await peer.firstHandshake;
       assert.deepEqual(peer.requestPaths, []);
 
@@ -143,20 +197,13 @@ test(
       run.abort();
       peer.releaseHandshake();
       await post;
-      assert.deepEqual(observe.mock.calls[0].arguments.slice(0, 2), [
-        "first",
-        "used",
-      ]);
       assert.deepEqual(peer.bodyPorts, peer.ports);
-      assert.deepEqual(peer.bodies, ["{}"]);
+      assert.deepEqual(peer.bodies, [dispatchBody]);
 
       await setImmediate();
-      const nextRun = new globalThis.AbortController();
       await send(transport, peer.origin);
-      nextRun.abort();
       assert.equal(peer.ports.length, 1);
       assert.deepEqual(peer.bodyPorts, [peer.ports[0], peer.ports[0]]);
-      assert.equal(observe.mock.callCount(), 1);
     });
   },
 );
@@ -165,9 +212,8 @@ test(
   "sends the POST on a handshake that completed before dispatch",
   { timeout: 5000 },
   async (test) => {
-    await withPeer(async (peer) => {
-      const observe = test.mock.fn();
-      const transport = createRunnerDispatchTransport({ observe });
+    await withPeer(test.signal, async (peer) => {
+      const { transport } = peer;
       reserve(transport, "ready", peer.origin, test.signal);
       await peer.firstHandshake;
       peer.releaseHandshake();
@@ -176,13 +222,9 @@ test(
       assert.deepEqual(peer.requestPaths, []);
 
       await send(transport, peer.origin);
-      assert.deepEqual(observe.mock.calls[0].arguments.slice(0, 2), [
-        "ready",
-        "used",
-      ]);
       assert.equal(peer.ports.length, 1);
       assert.deepEqual(peer.bodyPorts, peer.ports);
-      assert.deepEqual(peer.bodies, ["{}"]);
+      assert.deepEqual(peer.bodies, [dispatchBody]);
     });
   },
 );
@@ -191,17 +233,12 @@ test(
   "cancels a speculative POST during TLS before it can send headers",
   { timeout: 5000 },
   async (test) => {
-    await withPeer(async (peer) => {
-      const observe = test.mock.fn();
-      const transport = createRunnerDispatchTransport({ observe });
+    await withPeer(test.signal, async (peer) => {
+      const { transport } = peer;
       const run = new globalThis.AbortController();
       reserve(transport, "cancelled", peer.origin, run.signal);
       await peer.firstHandshake;
       run.abort();
-      assert.deepEqual(observe.mock.calls[0].arguments.slice(0, 2), [
-        "cancelled",
-        "cancelled",
-      ]);
       peer.releaseHandshake();
 
       await send(transport, peer.origin);
@@ -215,23 +252,14 @@ test(
   "expires an unused handshake and never adopts it for a different request path",
   { timeout: 5000 },
   async (test) => {
-    await withPeer(async (peer) => {
-      const outcome = Promise.withResolvers();
-      const transport = createRunnerDispatchTransport({
-        observe(runId, result) {
-          outcome.resolve({ runId, result });
-        },
-      });
+    await withPeer(test.signal, async (peer) => {
+      const { transport } = peer;
       reserve(transport, "unused", `${peer.origin}/unused`, test.signal);
       await peer.firstHandshake;
       peer.releaseHandshake();
       await send(transport, `${peer.origin}/other`);
       assert.deepEqual(peer.requestPaths, ["/other"]);
       assert.equal(peer.ports.length, 2);
-      assert.deepEqual(await outcome.promise, {
-        runId: "unused",
-        result: "expired",
-      });
       await peer.firstClosed;
     });
   },

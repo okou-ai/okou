@@ -3,6 +3,7 @@ import type {
   RunnerDispatchTransport,
   TakenRunnerDispatch,
 } from "./signals/external/runner-dispatch-transport";
+import { detach, Mechanism, settleIncludingAbort } from "./signals/utils";
 
 const MAX_PRECONNECTIONS = 4;
 const PRECONNECTION_LIFETIME_MS = 1000;
@@ -115,10 +116,14 @@ export function createRunnerDispatchTransport({
       expiry.addEventListener("abort", onExpiry, { once: true });
       // A failed speculative request can fall back before release. After
       // release the normal dispatch path owns its outcome and retries.
-      void (async () => {
-        await Promise.allSettled([attempt.response]);
-        finish("failed");
-      })();
+      detach(
+        (async () => {
+          await settleIncludingAbort(attempt.response);
+          finish("failed");
+        })(),
+        Mechanism.BestEffortCleanup,
+        "Runner dispatch preconnection cleanup",
+      );
     },
     take(url, body, startedAt, signal) {
       return reservations.get(url)?.(body, startedAt, signal);
