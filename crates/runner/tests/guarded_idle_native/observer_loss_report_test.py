@@ -13,6 +13,7 @@ import uuid
 import observer_loss_report as loss
 import report
 import report_test
+from progress_report_fixture import foreground_heartbeat
 
 
 class ObserverLossReportTests(unittest.TestCase):
@@ -53,11 +54,6 @@ class ObserverLossReportTests(unittest.TestCase):
             first = copy.deepcopy(covered)
             first["accounting"]["closed"] = False
             runner = str(uuid.uuid4())
-            def heartbeat(sequence, received, finished, allocated):
-                return {"receipt": {"received_ns": at(received), "acknowledgement_status": 204,
-                    "state": {"runnerId": runner, "snapshotGeneration": 1, "snapshotSequence": sequence,
-                        "group": "native-foreground", "mode": "running", "allocatedVcpu": allocated[0],
-                        "allocatedMemoryMb": allocated[1]}}, "send_joined": True, "completed_ns": at(finished)}
             values = (
                 {"mode": "panic" if "Panic" in case else "drop", "policy": self.policy, "coverage": first},
                 {"mode": "panic" if "Panic" in case else "drop", "panic_confirmed": "Panic" in case,
@@ -69,11 +65,11 @@ class ObserverLossReportTests(unittest.TestCase):
                         "completed_ns": at(11), "available_bytes": 32*gib, "age_ns": 2,
                         "read_duration_ns": 1, "joined": True}, "coverage": covered},
                 {"pool_released_ns": at(13), "status_held_ns": at(9),
-                    "heartbeat": heartbeat(1,14,15,(2,4096)), "tracker_shutdown_pending": True,
-                    "accounting_shutdown_pending": True, "coverage": covered},
+                    "heartbeat": foreground_heartbeat(runner, 1, at(14), at(15), (2, 4096)),
+                    "tracker_shutdown_pending": True, "accounting_shutdown_pending": True, "coverage": covered},
                 {"io_released_ns": at(17), "status_held_ns": at(9), "status_wait_polled_ns": at(21),
                     "status_waits_before": 0, "status_waits_after": 1, "tracker_shutdown_pending": True,
-                    "accounting_joined": True, "heartbeat": heartbeat(2,23,24,(0,0)),
+                    "accounting_joined": True, "heartbeat": foreground_heartbeat(runner, 2, at(23), at(24), (0, 0)),
                     "accounting": accounts, "allocated": [0,0,0]},
                 {"tracker_joined": True, "accounting_joined": True, "observer_joined": True,
                     "heartbeat_joined": True, "provider_joined": True, "peer_joined": True,
