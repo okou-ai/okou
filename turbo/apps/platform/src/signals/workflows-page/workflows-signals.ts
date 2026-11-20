@@ -744,10 +744,7 @@ export const allVisibleWorkflows$ = computed(
     if (!agentId) {
       throw new Error("Workspace default executor is unavailable");
     }
-    const result = await accept(
-      client.list({ query: agentId ? { agentId } : {} }),
-      [200],
-    );
+    const result = await accept(client.list({ query: { agentId } }), [200]);
     return result.body
       .filter((workflow) => {
         return !isOfficialWorkflow(workflow);
