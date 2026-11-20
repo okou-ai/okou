@@ -10,6 +10,7 @@ Original test `Preserve the feishu managed default connection lifecycle`. [Regis
 - **Given** A connected Feishu managed default OAuth connection is shown, while ordinary account-list requests fail with 403 and direct account lookup returns 404.
 - **When** I choose Reconnect and continue through the connection dialog.
 - **Then** The reconnect intent uses the existing connection ID, the authentication window closes, and Managed workspace remains connected. The ordinary-account errors are not shown.
+- **Upstream change** `8343cc9e` (#49530): completing a managed reconnect now also checks that the managed connector status names the reconnected account; the lifecycle in this scenario is unchanged when it does.
 
 ## custom-managed-default-reconnect-002
 
@@ -18,3 +19,4 @@ Original test `Preserve the lark managed default connection lifecycle`. [Registr
 - **Given** A connected Lark managed default OAuth connection is shown, while ordinary account-list requests fail with 403 and direct account lookup returns 404.
 - **When** I choose Reconnect and continue through the connection dialog.
 - **Then** The reconnect intent uses the existing connection ID, the authentication window closes, and Managed workspace remains connected. The ordinary-account errors are not shown.
+- **Upstream change** `8343cc9e` (#49530): completing a managed reconnect now also checks that the managed connector status names the reconnected account; the lifecycle in this scenario is unchanged when it does.

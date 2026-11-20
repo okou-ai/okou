@@ -121,6 +121,9 @@ public struct APIClient: Sendable {
     else { throw APIClientError.invalidURL }
     components.path = path
     components.queryItems = query.isEmpty ? nil : query
+    // URLSearchParams on the API interprets a literal "+" as a space.
+    components.percentEncodedQuery = components.percentEncodedQuery?.replacingOccurrences(
+      of: "+", with: "%2B")
     guard let url = components.url else { throw APIClientError.invalidURL }
     let token = try await bearerToken()
     try Task.checkCancellation()

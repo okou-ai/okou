@@ -28,7 +28,6 @@ final class ConnectorAuthorizationFlow: Identifiable {
     methodID =
       status.account?.authMethod ?? status.builtin?.authMethods.first { $0.grantKind != "managed" }?
       .id ?? ""
-    for option in method?.startOptions ?? [] { options[option.id] = option.defaultValue }
   }
   var method: ChatConnectorMethod? { status.builtin?.authMethods.first { $0.id == methodID } }
   var waiting: Bool { session != nil }
@@ -44,16 +43,13 @@ final class ConnectorAuthorizationFlow: Identifiable {
     if operatedID != nil { return !busy }
     guard !busy, !waiting else {
       return isExternalCode && !busy
-        && !code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        && !code.trimmingCharacters(in: .ecmaScriptWhitespace).isEmpty
     }
     if !needsConnection { return true }
     if let method {
-      return method.manualFields.allSatisfy { !$0.required || values[$0.id]?.isEmpty == false }
-        && method.startOptions.allSatisfy { !$0.required || options[$0.id]?.isEmpty == false }
+      return method.hasRequiredInputs(values: values, options: options)
     }
-    if status.custom?.usesBrowserAuthorization == true { return true }
-    return status.custom?.fields.allSatisfy { !$0.required || values[$0.key]?.isEmpty == false }
-      ?? false
+    return status.custom?.canSubmit(values: values, account: status.account) == true
   }
 }
 
@@ -139,7 +135,10 @@ final class ConnectorActionStore {
           try await accept(id, flow: flow)
           return
         }
-        guard current.account?.id == flow.status.account?.id else {
+        guard
+          current.mutationConnectionID?.lowercased()
+            == flow.status.mutationConnectionID?.lowercased()
+        else {
           throw APIClientError.http(
             status: 409, message: "The connector account changed. Close this card and refresh.")
         }
@@ -166,7 +165,7 @@ final class ConnectorActionStore {
           }
           let result = try await service.completeSession(
             slug: slug, receipt: receipt,
-            code: flow.code.trimmingCharacters(in: .whitespacesAndNewlines))
+            code: flow.code.trimmingCharacters(in: .ecmaScriptWhitespace))
           flow.code = ""
           try check(flow)
           try await accept(result.operatedID, flow: flow)
@@ -284,17 +283,19 @@ final class ConnectorActionStore {
   }
   private func accept(_ id: String?, flow: ConnectorAuthorizationFlow) async throws {
     guard let id else { throw APIClientError.incompatibleData }
-    if let expected = flow.status.account?.id, id.lowercased() != expected.lowercased() {
+    if let expected = flow.status.mutationConnectionID, id.lowercased() != expected.lowercased() {
       throw APIClientError.invalidResponse
     }
     flow.operatedID = id
     flow.session = nil
     flow.browserURL = nil
-    let account = try await service.account(id: id, target: flow.status.target)
-    try check(flow)
-    guard account.ready else {
-      throw APIClientError.http(
-        status: 409, message: "Connector setup is incomplete. Refresh and try again.")
+    if flow.status.custom?.managed != true {
+      let account = try await service.account(id: id, target: flow.status.target)
+      try check(flow)
+      guard account.ready else {
+        throw APIClientError.http(
+          status: 409, message: "Connector setup is incomplete. Refresh and try again.")
+      }
     }
     try await finish(flow)
   }
@@ -311,13 +312,13 @@ final class ConnectorActionStore {
       guard verified.connected else { throw APIClientError.invalidResponse }
     }
     try check(flow)
-    if case .connect = flow.action.kind, let id = flow.operatedID, verified.custom?.managed != true,
-      verified.account?.id.lowercased() != id.lowercased()
+    if case .connect = flow.action.kind, let id = flow.operatedID,
+      verified.mutationConnectionID?.lowercased() != id.lowercased()
     {
       throw APIClientError.http(
         status: 409, message: "The default account changed. Refresh the card before continuing.")
     }
-    if let id = flow.operatedID {
+    if let id = flow.operatedID, verified.custom?.managed != true {
       let account = try await service.account(id: id, target: verified.target)
       guard account.ready else { throw APIClientError.invalidResponse }
     }

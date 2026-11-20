@@ -321,9 +321,6 @@ struct ConnectorAuthorizationSheet: View {
       .onChange(of: flow.methodID) { _, _ in
         flow.values = [:]
         flow.options = [:]
-        for option in flow.method?.startOptions ?? [] {
-          flow.options[option.id] = option.defaultValue
-        }
       }
       .sheet(
         isPresented: Binding(

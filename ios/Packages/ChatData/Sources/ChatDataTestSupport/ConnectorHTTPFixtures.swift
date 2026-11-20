@@ -12,7 +12,8 @@ public enum ConnectorHTTPFixtures {
     """
   public static func account(
     id: String = accountID, custom: Bool = false, connected: Bool = true,
-    reconnectReason: String? = nil, isDefault: Bool = true, label: String = "Work account"
+    reconnectReason: String? = nil, isDefault: Bool = true, label: String = "Work account",
+    missingRequiredFieldsJSON: String = "[]"
   ) -> String {
     let target =
       custom
@@ -20,17 +21,20 @@ public enum ConnectorHTTPFixtures {
       : "{\"kind\":\"builtin\",\"connectorSlug\":\"slack\"}"
     let reason = reconnectReason.map { "\"\($0)\"" } ?? "null"
     return """
-      {"id":"\(id)","target":\(target),"authMethod":"oauth","displayName":"\(label)","isDefault":\(isDefault),"externalEmail":"work@example.invalid","externalUsername":null,"externalId":null,"oauthScopes":null,"connectionStatus":"\(connected ? "connected" : "reconnect-required")","reconnectReason":\(reason),"tokenExpiresAt":null,"missingRequiredFields":[],"configuredFieldKeys":[],"createdAt":"2026-10-21T00:00:00Z","updatedAt":"2026-10-21T00:00:00Z"}
+      {"id":"\(id)","target":\(target),"authMethod":"oauth","displayName":"\(label)","isDefault":\(isDefault),"externalEmail":"work@example.invalid","externalUsername":null,"externalId":null,"oauthScopes":null,"connectionStatus":"\(connected ? "connected" : "reconnect-required")","reconnectReason":\(reason),"tokenExpiresAt":null,"missingRequiredFields":\(missingRequiredFieldsJSON),"configuredFieldKeys":[],"createdAt":"2026-10-21T00:00:00Z","updatedAt":"2026-10-21T00:00:00Z"}
       """
   }
-  public static func catalog(grantKind: String = "none") -> String {
+  public static func catalog(
+    grantKind: String = "none", slug: String = "slack", manualFieldsJSON: String = "[]",
+    startOptionsJSON: String = "[]"
+  ) -> String {
     """
-    {"connector":{"slug":"slack","label":"Slack","description":"Read messages","connectNotice":null,"authMethods":[{"id":"oauth","label":"Sign in","description":null,"grantKind":"\(grantKind)","manualFields":[],"startOptions":[]}]}}
+    {"connector":{"slug":"\(slug)","label":"Slack","description":"Read messages","connectNotice":null,"authMethods":[{"id":"oauth","label":"Sign in","description":null,"grantKind":"\(grantKind)","manualFields":\(manualFieldsJSON),"startOptions":\(startOptionsJSON)}]}}
     """
   }
-  public static func custom(mode: String = "none") -> String {
+  public static func custom(mode: String = "none", fieldsJSON: String = "[]") -> String {
     """
-    {"id":"\(customID)","slug":"_internal","displayName":"Internal service","authMode":"\(mode)","permissionBundleRef":null,"fields":[]}
+    {"id":"\(customID)","slug":"_internal","displayName":"Internal service","authMode":"\(mode)","permissionBundleRef":null,"fields":\(fieldsJSON)}
     """
   }
   public static func response(

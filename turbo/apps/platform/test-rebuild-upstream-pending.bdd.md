@@ -579,3 +579,13 @@ Export a table from the right Chat's artifact card to its Drive account. [Regist
 - **Then** The save uses the right chat's Drive account and links the saved file there.
 - **Disposition** retain.
 - **Source** upstream `efa10f0b` (#49430), added to the rebuilt test file.
+
+## upstream-8343cc9e-custom-managed-default-reconnect-124-01
+
+Reject a managed reconnect receipt whose account differs from the connector. [Registration](https://github.com/okou-ai/okou/blob/8343cc9e65/turbo/apps/platform/src/views/okou-page/__tests__/custom-managed-default-reconnect.test.tsx#L124).
+
+- **Given** A Feishu managed connector is being reconnected, and the connector status reported after authorization names a different connected account than the reconnect receipt.
+- **When** The member completes the reconnect authorization.
+- **Then** The connection dialog stays open with a connector account identity mismatch error, and the only account change requested was the reconnect of the original connection.
+- **Disposition** retain.
+- **Source** upstream `8343cc9e` (#49530), added to the copied test file after it was removed.

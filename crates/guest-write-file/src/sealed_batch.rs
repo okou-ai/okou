@@ -1,12 +1,12 @@
 use std::io::{self, Write};
 use std::os::fd::{AsFd, BorrowedFd};
 
-use super::{MAX_BATCH_PAYLOAD_BYTES, write_batch};
+use super::{MAX_BATCH_PAYLOAD_BYTES, OutputMode, write_batch};
 use guest_contracts::sealed_input::SealedInput;
 
 fn write_sealed_batch(input: BorrowedFd<'_>) -> io::Result<()> {
     let mapping = SealedInput::map(input, MAX_BATCH_PAYLOAD_BYTES)?;
-    write_batch(mapping.as_bytes(), false)
+    write_batch(mapping.as_bytes(), OutputMode::CreateParents)
 }
 
 /// Write an ordinary batch from an immutable stdin descriptor supplied by guest control.

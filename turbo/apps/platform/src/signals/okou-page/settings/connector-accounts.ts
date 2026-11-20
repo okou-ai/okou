@@ -35,7 +35,8 @@ export async function readConnectorAccountPage(
     createClient(connectorAccountsContract).connections({
       query: {
         ...target,
-        limit: options.limit ?? 50,
+        // The API returns the default separately. One row also detects saved accounts without a default.
+        limit: options.limit ?? 1,
         ...(target.kind === "builtin" && options.includeBuiltinScopeMismatch
           ? { includeScopeMismatch: "true" as const }
           : {}),
