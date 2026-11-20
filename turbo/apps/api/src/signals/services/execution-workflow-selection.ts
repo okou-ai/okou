@@ -45,6 +45,7 @@ export interface CapturedExecutionPackages {
   readonly workflows: readonly {
     readonly name: string;
     readonly contentBundle: ContentBundle;
+    readonly optional: true | undefined;
   }[];
   readonly instructionsBundle: ContentBundle;
 }
@@ -156,12 +157,13 @@ export function selectExecutionPackages(
     selectedWorkflows.push({
       name: workflow.name,
       contentBundle: contentBundle.data,
+      optional: workflow.name === requiredWorkflow ? undefined : true,
     });
   }
   if (
     input.ordinaryAutomation &&
-    !selectedWorkflows.some(({ name }) => {
-      return name === requiredWorkflow;
+    !selectedWorkflows.some(({ optional }) => {
+      return !optional;
     })
   ) {
     return { error: "The Automation's Workflow package is unavailable" };

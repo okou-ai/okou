@@ -804,6 +804,7 @@ function officialWorkflowBundle(
   if (!bundle) {
     throw new Error("Expected an Official Workflow bundle in execution input");
   }
+  expect(bundle).not.toHaveProperty("optional");
   expect(execution.piSessionId).toBe(
     execution.cliAgentType === "pi" ? execution.runId : undefined,
   );

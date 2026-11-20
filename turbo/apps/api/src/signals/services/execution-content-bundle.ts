@@ -22,22 +22,30 @@ export function selectExecutionContentBundles(
     "officialWorkflowBundles" | "seedSkillBundles" | "templateGuidanceBundles"
   > & { readonly skillRoot: string },
 ) {
-  const workflows = packages.workflows.map(({ name, contentBundle }) => {
-    return { ...contentBundle, mountPath: `${context.skillRoot}/${name}` };
-  });
+  const workflows = packages.workflows.map(
+    ({ name, contentBundle, optional }) => {
+      return {
+        ...contentBundle,
+        mountPath: `${context.skillRoot}/${name}`,
+        optional,
+      };
+    },
+  );
   const workflowMountPaths = new Set(
     workflows.map(({ mountPath }) => {
       return mountPath;
     }),
   );
   const instructions = packages.instructionsBundle;
-  const skills = [
-    ...workflows,
-    ...context.officialWorkflowBundles,
-    ...context.seedSkillBundles.filter(({ mountPath }) => {
-      return !workflowMountPaths.has(mountPath);
-    }),
-  ];
+  const skills: Omit<
+    ExecutionContext["contentBundles"]["skills"][number],
+    "downloadUrl"
+  >[] = [...workflows, ...context.officialWorkflowBundles];
+  for (const skill of context.seedSkillBundles) {
+    if (!workflowMountPaths.has(skill.mountPath)) {
+      skills.push({ ...skill, optional: true });
+    }
+  }
   const templates = context.templateGuidanceBundles;
   const hashes = [
     ...new Set(

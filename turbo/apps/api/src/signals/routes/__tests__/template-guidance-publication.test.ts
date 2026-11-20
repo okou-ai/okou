@@ -698,11 +698,13 @@ test("delivers a Skill and template with the same immutable bundle at their own 
     ownerKind: "user-template",
     templateId: published.body.id,
   });
+  expect(template).not.toHaveProperty("optional");
   expect(execution.contentBundles.skills).toContainEqual({
     sha256: template?.sha256,
     archiveBytes: template?.archiveBytes,
     downloadUrl: template?.downloadUrl,
     mountPath: expect.stringMatching(/\/skills\/custom-bundle-reuse-/u),
+    optional: true,
   });
 });
 

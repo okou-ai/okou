@@ -263,7 +263,7 @@ describe("system storage presigned URL cache", () => {
     );
     const expectedMounts = fixtures
       .map(({ mountPath, sha256, archiveBytes }) => {
-        return { mountPath, sha256, archiveBytes };
+        return { mountPath, sha256, archiveBytes, optional: true };
       })
       .sort((left, right) => {
         return left.mountPath.localeCompare(right.mountPath);

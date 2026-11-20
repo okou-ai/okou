@@ -49,6 +49,8 @@ export const executionContentBundlesSchema = object({
         mountPath: string().regex(
           /^\/home\/user\/\.(?:claude|codex|pi\/agent)\/skills\/[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/u,
         ),
+        // Omission keeps the mount required.
+        optional: literal(true).optional(),
       })
       .strict(),
   ),

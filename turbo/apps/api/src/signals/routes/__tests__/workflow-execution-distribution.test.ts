@@ -169,8 +169,10 @@ test.each([
       "archiveBytes",
       "downloadUrl",
       "mountPath",
+      "optional",
       "sha256",
     ]);
+    expect(skill).toMatchObject({ optional: true });
     const selected = readExecutionContentBundle(s3.objects, skill);
     expect(selected.get("SKILL.md")?.toString()).toContain(
       "execution-selected body",
@@ -271,10 +273,14 @@ test("re-evaluates private/public precedence without exposing another member's p
   await runs.heartbeatRunner(group);
   const execution = await runs.executionInput(run.runId);
   expect(
-    execution.contentBundles.skills.map((entry) => {
-      return entry.mountPath.split("/").at(-1);
+    execution.contentBundles.skills.map(({ mountPath, optional }) => {
+      return { name: mountPath.split("/").at(-1), optional };
     }),
-  ).toStrictEqual([privateWorkflow.name, ...BUILT_IN_SKILLS]);
+  ).toStrictEqual(
+    [privateWorkflow.name, ...BUILT_IN_SKILLS].map((name) => {
+      return { name, optional: true };
+    }),
+  );
   expect(
     readExecutionContentBundle(s3.objects, execution.contentBundles.skills[0]!)
       .get("SKILL.md")
@@ -509,11 +515,12 @@ test("an ordinary Automation invokes the name of its bound Workflow package", as
       }),
     );
 
+    const incidentalName = `${shadow.name}-private`;
     await accept(
       detailClient().update({
         headers: await headers(actor),
         params: { workflowId: shadow.id },
-        body: { name: `${shadow.name}-private` },
+        body: { name: incidentalName },
       }),
       [200],
     );
@@ -526,6 +533,13 @@ test("an ordinary Automation invokes the name of its bound Workflow package", as
     if (!mounted) {
       throw new Error("Expected the Automation's selected Workflow mount");
     }
+    expect(mounted).not.toHaveProperty("optional");
+    expect(execution.contentBundles.skills).toContainEqual(
+      expect.objectContaining({
+        mountPath: `/home/user/.claude/skills/${incidentalName}`,
+        optional: true,
+      }),
+    );
     expect(
       readExecutionContentBundle(s3.objects, mounted)
         .get("SKILL.md")
@@ -558,6 +572,7 @@ test("an ordinary Automation invokes the name of its bound Workflow package", as
     if (!renamedPackage) {
       throw new Error("Expected the renamed Workflow mount");
     }
+    expect(renamedPackage).not.toHaveProperty("optional");
     expect(
       readExecutionContentBundle(s3.objects, renamedPackage)
         .get("SKILL.md")
