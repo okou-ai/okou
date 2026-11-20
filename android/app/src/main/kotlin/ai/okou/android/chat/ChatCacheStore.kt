@@ -85,6 +85,16 @@ internal constructor(
         return replacement
     }
 
+    /** Initialize the existing database without reading any workspace data. */
+    internal suspend fun warmConnection() =
+        withContext(dispatcher) {
+            lock.withLock {
+                if (database == null && file.exists()) {
+                    database().useReaderConnection {}
+                }
+            }
+        }
+
     /** Close the application resource after its consumers stop (also used by test teardown). */
     suspend fun close() =
         withContext(Dispatchers.IO) {

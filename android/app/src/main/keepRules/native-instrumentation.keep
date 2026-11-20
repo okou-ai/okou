@@ -216,14 +216,19 @@
 -keep,allowobfuscation class ai.okou.android.auth.AuthenticationState {
   public <init>(boolean, ai.okou.android.auth.NativeSession, boolean, boolean, java.util.List, int, kotlin.jvm.internal.DefaultConstructorMarker);
   public static ai.okou.android.auth.AuthenticationState copy$default(ai.okou.android.auth.AuthenticationState, boolean, ai.okou.android.auth.NativeSession, boolean, boolean, java.util.List, int, java.lang.Object);
+  public java.util.List getMembershipAccess();
 }
 -keep,allowobfuscation class ai.okou.android.auth.CanonicalWorkspaceSession {
   public <init>(ai.okou.android.auth.WorkspaceIdentity, ai.okou.android.api.WorkspaceTokenProvider, ai.okou.android.api.generated.InitializePreferencesRequestLocale, java.lang.String, kotlin.jvm.functions.Function1, int, kotlin.jvm.internal.DefaultConstructorMarker);
   public void close();
 }
+-keep,allowobfuscation class ai.okou.android.auth.MembershipAccess {
+  public java.lang.String getWorkspaceId();
+}
 -keep,allowobfuscation class ai.okou.android.auth.NativeSession {
   public <init>(java.lang.String, java.lang.String, java.lang.String, boolean, boolean, int, kotlin.jvm.internal.DefaultConstructorMarker);
   public static ai.okou.android.auth.NativeSession copy$default(ai.okou.android.auth.NativeSession, java.lang.String, java.lang.String, java.lang.String, boolean, boolean, int, java.lang.Object);
+  public java.lang.String getWorkspaceId();
 }
 -keep,allowobfuscation class ai.okou.android.auth.ReadyWorkspace {
   public ai.okou.android.chat.ChatListModel getChats();

@@ -330,6 +330,50 @@ class SessionModelTest {
     }
 
     @Test
+    fun selectedWorkspaceBecomesReadyWhileFullMembershipListIsPending() {
+        val auth =
+            TestAuthentication(
+                testAuthenticationState()
+                    .copy(
+                        membershipAccess =
+                            listOf(MembershipAccess("org-a", "org:member", emptyList()))
+                    )
+            )
+        val memberships = CompletableDeferred<List<WorkspaceMembership>>()
+        auth.membershipsAction = { memberships.await() }
+        check(auth) { model, _ ->
+            runCurrent()
+            assertEquals(SessionStage.Ready, model.uiState.value.stage)
+            assertEquals(listOf("org-a"), model.uiState.value.memberships.map { it.id })
+            memberships.complete(auth.available)
+            runCurrent()
+            assertEquals(listOf("org-a", "org-b"), model.uiState.value.memberships.map { it.id })
+        }
+    }
+
+    @Test
+    fun fallbackScopesCacheToRefreshedPermissionsWhenObservationLags() {
+        val auth =
+            TestAuthentication(
+                testAuthenticationState()
+                    .copy(
+                        membershipAccess =
+                            listOf(MembershipAccess("org-a", "org:member", listOf("old")))
+                    )
+            )
+        auth.refreshedMembership = { MembershipAccess("org-a", "org:member", emptyList()) }
+        check(auth) { model, resources ->
+            runCurrent()
+            assertEquals(SessionStage.Ready, model.uiState.value.stage)
+            assertEquals(
+                ai.okou.android.chat.chatScopeHash(listOf("org:member", "org:member", "known")),
+                resources.single().identity.authorizationScope,
+            )
+            assertEquals(auth.available, model.uiState.value.memberships)
+        }
+    }
+
+    @Test
     fun membershipRevocationWithoutAnIdentityChangeRechecksAndClosesAccess() {
         val auth =
             TestAuthentication(
