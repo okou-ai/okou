@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.31.0](https://github.com/okou-ai/okou/compare/android-v0.30.1...android-v0.31.0) (2026-11-20)
+
+
+### Features
+
+* **android:** align inbox filters and mark all chats as read ([#49116](https://github.com/okou-ai/okou/issues/49116)) ([c608545](https://github.com/okou-ai/okou/commit/c60854550138bb109e01586abcebc5a08f64c4c6))
+
+
+### Refactoring
+
+* **api:** retire agent connector execution grants ([#49268](https://github.com/okou-ai/okou/issues/49268)) ([596e8ca](https://github.com/okou-ai/okou/commit/596e8ca5d65c2ba7d7b447816042a9bc48fa8b44))
+
 ## [0.30.1](https://github.com/okou-ai/okou/compare/android-v0.30.0...android-v0.30.1) (2026-11-20)
 
 

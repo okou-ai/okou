@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.0](https://github.com/okou-ai/okou/compare/runner-storage-v0.11.11...runner-storage-v0.12.0) (2026-11-20)
+
+
+### Features
+
+* **runner:** accept optionality on execution Skill bundles ([#49266](https://github.com/okou-ai/okou/issues/49266)) ([64bd508](https://github.com/okou-ai/okou/commit/64bd508da7156eac1672d135fdca8fe9437501ec))
+
 ## [0.11.11](https://github.com/okou-ai/okou/compare/runner-storage-v0.11.10...runner-storage-v0.11.11) (2026-11-19)
 
 ## [0.11.10](https://github.com/okou-ai/okou/compare/runner-storage-v0.11.9...runner-storage-v0.11.10) (2026-11-19)
