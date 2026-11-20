@@ -3669,6 +3669,13 @@
       "when": 1795211330416,
       "tag": "1602_member_run_provenance",
       "breakpoints": true
+    },
+    {
+      "idx": 1603,
+      "version": "7",
+      "when": 1795213062931,
+      "tag": "1603_browser_user_action_member",
+      "breakpoints": true
     }
   ]
 }

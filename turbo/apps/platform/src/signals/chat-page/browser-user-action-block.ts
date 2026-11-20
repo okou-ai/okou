@@ -54,7 +54,6 @@ type BrowserUserAction = BrowserInputAction;
 
 export interface BrowserUserActionDescriptor {
   readonly requestToken: string;
-  readonly agentId: string;
   readonly threadId: string;
   readonly callbackPrompt: string;
   readonly originalUrl: string;
@@ -208,7 +207,7 @@ type BrowserUserActionCardSignalsRegistry = CardSignalsRegistry<
 >;
 
 function hasExactQuery(url: URL): boolean {
-  const expected = ["agentId", "threadId", "callbackPrompt"] as const;
+  const expected = ["threadId", "callbackPrompt"] as const;
   return (
     [...url.searchParams.keys()].every((key) => {
       return expected.includes(key as (typeof expected)[number]);
@@ -220,28 +219,18 @@ function hasExactQuery(url: URL): boolean {
 }
 
 function hasValidBrowserUserActionClaims(
-  agentId: string,
   threadId: string,
   context: ChatActionContext | undefined,
 ): boolean {
-  if (
-    !chatActionIdMatches(agentId, agentId) ||
-    !chatActionIdMatches(threadId, threadId)
-  ) {
-    return false;
-  }
   return (
-    !context ||
-    (context.agentId !== undefined &&
-      chatActionIdMatches(agentId, context.agentId) &&
-      chatActionIdMatches(threadId, context.threadId))
+    chatActionIdMatches(threadId, threadId) &&
+    (!context || chatActionIdMatches(threadId, context.threadId))
   );
 }
 
 function hasValidBrowserUserActionParts(args: {
   readonly requestToken: string;
   readonly callbackPrompt: string;
-  readonly agentId: string;
   readonly threadId: string;
   readonly url: URL;
   readonly context: ChatActionContext | undefined;
@@ -249,11 +238,7 @@ function hasValidBrowserUserActionParts(args: {
   return (
     REQUEST_TOKEN_PATTERN.test(args.requestToken) &&
     hasExactQuery(args.url) &&
-    hasValidBrowserUserActionClaims(
-      args.agentId,
-      args.threadId,
-      args.context,
-    ) &&
+    hasValidBrowserUserActionClaims(args.threadId, args.context) &&
     args.callbackPrompt.trim() !== "" &&
     args.callbackPrompt.length <= BROWSER_USER_ACTION_MAX_CALLBACK_PROMPT_LENGTH
   );
@@ -275,7 +260,6 @@ export function parseBrowserUserActionUrl(
   }
 
   const requestToken = match[1] ?? "";
-  const agentId = url.searchParams.get("agentId") ?? "";
   const threadId = url.searchParams.get("threadId") ?? "";
   const callbackPrompt = url.searchParams.get("callbackPrompt") ?? "";
   if (
@@ -283,7 +267,6 @@ export function parseBrowserUserActionUrl(
     !hasValidBrowserUserActionParts({
       requestToken,
       callbackPrompt,
-      agentId,
       threadId,
       url,
       context,
@@ -296,7 +279,6 @@ export function parseBrowserUserActionUrl(
     status: "valid",
     descriptor: {
       requestToken,
-      agentId: context?.agentId ?? agentId,
       threadId: context?.threadId ?? threadId,
       callbackPrompt,
       originalUrl: value,
@@ -309,7 +291,6 @@ export function browserUserActionResourceKey(
 ): string {
   return JSON.stringify([
     descriptor.requestToken,
-    descriptor.agentId.toLowerCase(),
     descriptor.threadId.toLowerCase(),
     descriptor.callbackPrompt,
   ]);
@@ -321,7 +302,6 @@ function actionMatches(
 ): action is BrowserUserAction {
   return (
     action.requestToken === descriptor.requestToken &&
-    chatActionIdMatches(action.agentId, descriptor.agentId) &&
     chatActionIdMatches(action.threadId, descriptor.threadId)
   );
 }
@@ -725,7 +705,6 @@ function callbackArgs(
 ) {
   return {
     threadId: descriptor.threadId,
-    agentId: descriptor.agentId,
     callbackPrompt,
     callbackIds,
   };

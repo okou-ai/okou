@@ -26,9 +26,8 @@ vi.mock("node:child_process", () => {
 
 const CDP_URL = "wss://capture.browser-use.com/?token=secret-cdp-token";
 const ACTION_URL =
-  "https://app.okou.ai/browser/actions/opaque-action-token?agentId=10000000-0000-4000-a000-000000000001&threadId=20000000-0000-4000-a000-000000000002";
+  "https://app.okou.ai/browser/actions/opaque-action-token?threadId=20000000-0000-4000-a000-000000000002";
 const THREAD_ID = "20000000-0000-4000-a000-000000000002";
-const AGENT_ID = "10000000-0000-4000-a000-000000000001";
 const cdp = ws.link(CDP_URL);
 
 interface CdpCommand {
@@ -225,7 +224,6 @@ function actionResponse() {
     requestToken: "opaque-action-token",
     state: "pending" as const,
     completedAt: null,
-    agentId: AGENT_ID,
     threadId: THREAD_ID,
     callbackIds: {
       success: {

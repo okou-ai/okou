@@ -93,7 +93,6 @@ function browserInputAction(
     state,
     callbackDelivered: context.store.get(callbackSent$),
     completedAt: state === "pending" ? null : "2026-09-22T04:00:00.000Z",
-    agentId: CAPABILITY_AGENT_ID,
     threadId: RUN_THREAD_ID,
     siteOrigin: "https://accounts.example.test",
     fields: [
@@ -135,7 +134,6 @@ function browserInputAction(
 
 function browserInputUrl(
   args: {
-    readonly agentId?: string;
     readonly threadId?: string;
   } = {},
 ): string {
@@ -143,7 +141,6 @@ function browserInputUrl(
     `/browser/actions/${BROWSER_INPUT_TOKEN}`,
     "https://app.okou.ai",
   );
-  url.searchParams.set("agentId", args.agentId ?? CAPABILITY_AGENT_ID);
   url.searchParams.set("threadId", args.threadId ?? RUN_THREAD_ID);
   url.searchParams.set("callbackPrompt", BROWSER_INPUT_CALLBACK);
   return url.href;

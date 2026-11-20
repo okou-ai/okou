@@ -1,0 +1,1 @@
+ALTER TABLE "browser_user_action_requests" DROP COLUMN "agent_id";
