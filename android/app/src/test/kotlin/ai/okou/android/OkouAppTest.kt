@@ -1,6 +1,7 @@
 package ai.okou.android
 
 import ai.okou.android.api.WorkspaceTokenProvider
+import ai.okou.android.api.generated.AndroidUpdates
 import ai.okou.android.api.generated.UpdatePreferencesRequest
 import ai.okou.android.api.generated.UserPreferences
 import ai.okou.android.auth.WorkspaceIdentity
@@ -10,7 +11,10 @@ import ai.okou.android.chat.ChatListModel
 import ai.okou.android.chat.RunControlsModel
 import ai.okou.android.preferences.MemberPreferencesModel
 import ai.okou.android.preferences.MemberPreferencesSettings
-import ai.okou.android.updates.UpdateToolbarAction
+import ai.okou.android.updates.UpdateTransfer
+import ai.okou.android.updates.UpdateUiState
+import ai.okou.android.updates.updateRelease
+import ai.okou.android.updates.updateToolbarAction
 import android.content.res.Configuration
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -47,6 +51,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import java.io.IOException
+import java.text.NumberFormat
+import java.util.Locale
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -65,10 +71,18 @@ class OkouAppTest {
     private val owners = ViewModelStore()
     private var background: Color? = null
     private val deviceConfiguration = mutableStateOf<Configuration?>(null)
+    private val release = updateRelease("99.0.0")
+    private val availableUpdate =
+        UpdateUiState(
+            installedVersion = "0.31.0",
+            info = AndroidUpdates(null, release),
+            transfer = UpdateTransfer.Idle,
+            sdk = 35,
+        )
 
     private fun render(
         fontScale: Float = 1f,
-        openUpdate: (() -> Unit)? = null,
+        updateState: () -> UpdateUiState? = { null },
         failPreferenceSave: () -> Boolean = { false },
     ) {
         val models =
@@ -190,7 +204,16 @@ class OkouAppTest {
                                 workspacePreferences = { MemberPreferencesSettings(models.second) }
                             )
                         },
-                        updateToolbarAction = openUpdate?.let { UpdateToolbarAction("Update", it) },
+                        updateToolbarAction =
+                            updateState()?.let {
+                                updateToolbarAction(
+                                    it,
+                                    download = {},
+                                    install = {},
+                                    installProgress = null,
+                                    openDetails = {},
+                                )
+                            },
                     )
                 }
             }
@@ -205,15 +228,51 @@ class OkouAppTest {
     @Test
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun updateToolbarKeepsTheLabelReadableWithLargerText() {
-        render(fontScale = 1.3f, openUpdate = {})
+        render(fontScale = 1.3f, updateState = { availableUpdate })
         val layouts = mutableListOf<TextLayoutResult>()
-        compose.onNodeWithText("Update").assertWidthIsEqualTo(104.dp).assertHeightIsEqualTo(48.dp)
+        val action = compose.onNodeWithText("Update").assertWidthIsEqualTo(104.dp)
+        val bounds = action.getUnclippedBoundsInRoot()
+        assertTrue(bounds.bottom - bounds.top >= 48.dp)
         compose.onNodeWithText("Update", useUnmergedTree = true).performSemanticsAction(
             SemanticsActions.GetTextLayoutResult
         ) {
             it(layouts)
         }
-        assertFalse("Update action label was truncated", layouts.single().isLineEllipsized(0))
+        val layout = layouts.single()
+        assertEquals(1, layout.lineCount)
+        assertEquals("Update".length, layout.getLineEnd(0, visibleEnd = true))
+        assertFalse(layout.didOverflowHeight || layout.isLineEllipsized(0))
+        assertTrue(
+            "Update glyphs at ${layout.getLineLeft(0)}..${layout.getLineRight(0)} exceed ${layout.size.width}px",
+            layout.getLineLeft(0) >= -1f && layout.getLineRight(0) <= layout.size.width + 1f,
+        )
+    }
+
+    @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    @Config(qualifiers = "de-rDE-w320dp-h640dp")
+    fun updateToolbarKeepsItsBoundsAcrossLocalizedActionsWithLargeText() {
+        val update = mutableStateOf(availableUpdate.copy(transfer = UpdateTransfer.Failed))
+        render(fontScale = 2f, updateState = { update.value })
+        val retry = compose.onNodeWithText("Erneut versuchen").assertIsDisplayed()
+        val actionBounds = retry.getUnclippedBoundsInRoot()
+        val listBounds = compose.onNodeWithTag("chat_list").getUnclippedBoundsInRoot()
+        val percent = NumberFormat.getPercentInstance(Locale.GERMANY).format(0.5)
+        listOf(
+                UpdateTransfer.Idle to "Update",
+                UpdateTransfer.Downloading(release) to "Vorbereitung…",
+                UpdateTransfer.Downloading(release, release.size / 2) to percent,
+                UpdateTransfer.Ready(release) to "Installieren",
+            )
+            .forEach { (transfer, label) ->
+                compose.runOnIdle { update.value = availableUpdate.copy(transfer = transfer) }
+                val action = compose.onNodeWithText(label).assertIsDisplayed()
+                assertEquals(actionBounds, action.getUnclippedBoundsInRoot())
+                assertEquals(
+                    listBounds,
+                    compose.onNodeWithTag("chat_list").getUnclippedBoundsInRoot(),
+                )
+            }
     }
 
     @Test
@@ -266,7 +325,7 @@ class OkouAppTest {
     @Test
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun updateOverflowOpensTheSameFilterMenu() {
-        render(openUpdate = {})
+        render(updateState = { availableUpdate })
         compose.onNodeWithContentDescription("More actions").performClick()
         compose
             .onNodeWithTag("workspace_popup")

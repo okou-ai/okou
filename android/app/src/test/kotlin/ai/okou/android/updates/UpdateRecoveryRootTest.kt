@@ -8,9 +8,9 @@ import ai.okou.android.api.generated.AndroidUpdates
 import ai.okou.android.auth.Authentication
 import ai.okou.android.auth.AuthenticationState
 import android.os.Build
+import androidx.compose.ui.test.assertHasNoClickAction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
-import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -73,12 +73,12 @@ class UpdateRecoveryRootTest {
 
     @Test
     fun recoveryKeepsPackageIdentityAndControlsUnavailableAcrossRecreation() {
-        compose.onNodeWithText("Preparing update…").assertIsDisplayed().assertIsNotEnabled()
+        compose.onNodeWithText("Preparing…").assertIsDisplayed().assertHasNoClickAction()
         compose.onNodeWithText("New version: 99.0.0").assertExists()
         compose.onNodeWithText("Update").assertDoesNotExist()
         compose.onNodeWithText("Allow update installation").assertDoesNotExist()
         compose.activityRule.scenario.recreate()
-        compose.onNodeWithText("Preparing update…").assertIsDisplayed().assertIsNotEnabled()
+        compose.onNodeWithText("Preparing…").assertIsDisplayed().assertHasNoClickAction()
         app.fixture.heldRecovery!!.complete(Unit)
         compose.waitUntil(10_000) { app.updates.state.value.canInstall }
         compose.onNodeWithText("New version: 99.0.0").assertExists()
@@ -90,7 +90,7 @@ class UpdateRecoveryRootTest {
 
     @Test
     fun missingRecoveredPackageOffersTheLatestDownloadAfterPreparation() {
-        compose.onNodeWithText("Preparing update…").assertIsDisplayed().assertIsNotEnabled()
+        compose.onNodeWithText("Preparing…").assertIsDisplayed().assertHasNoClickAction()
         app.cachedFile.delete()
         app.fixture.downloaded = null
         app.fixture.heldRecovery!!.complete(Unit)
@@ -99,7 +99,7 @@ class UpdateRecoveryRootTest {
         compose.onNodeWithText("Try again").assertIsDisplayed().assertIsEnabled().performClick()
         compose.waitUntil(10_000) { app.fixture.downloadedReleases.isNotEmpty() }
         assertEquals(listOf(app.latest), app.fixture.downloadedReleases)
-        compose.onNodeWithText("Updating · 0%").assertIsDisplayed()
+        compose.onNodeWithText("Preparing…").assertIsDisplayed().assertHasNoClickAction()
         assertTrue(app.updates.state.value.required)
     }
 }

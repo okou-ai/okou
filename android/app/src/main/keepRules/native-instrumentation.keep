@@ -57,7 +57,7 @@
   int settings;
   int updates_allow_install;
   int updates_check;
-  int updates_checking;
+  int updates_check_in_progress;
   int updates_close;
   int updates_current;
   int updates_downloading;
@@ -66,6 +66,7 @@
   int updates_later;
   int updates_new_version;
   int updates_open_settings;
+  int updates_preparing;
   int updates_ready;
   int updates_required;
   int updates_target;
@@ -512,7 +513,7 @@
   public ai.okou.android.instructions.InstructionsPhase getPhase();
 }
 -keep,allowobfuscation class ai.okou.android.updates.AppUpdates {
-  public <init>(ai.okou.android.updates.UpdateService, ai.okou.android.updates.UpdateStore, java.lang.String, int, kotlinx.coroutines.CoroutineDispatcher, kotlin.jvm.functions.Function0, int, kotlin.jvm.internal.DefaultConstructorMarker);
+  public <init>(ai.okou.android.updates.UpdateService, ai.okou.android.updates.UpdateStore, java.lang.String, int, kotlinx.coroutines.CoroutineDispatcher, kotlin.jvm.functions.Function0, kotlinx.coroutines.flow.Flow, int, kotlin.jvm.internal.DefaultConstructorMarker);
   public void close();
   public kotlinx.coroutines.flow.StateFlow getState();
   public void requireUpdate(ai.okou.android.api.RequiredUpdate);
@@ -1100,6 +1101,8 @@
 }
 -keep,allowobfuscation interface kotlinx.coroutines.channels.SendChannel {
   public java.lang.Object trySend-JP2dKIU(java.lang.Object);
+}
+-keep,allowobfuscation interface kotlinx.coroutines.flow.Flow {
 }
 -keep,allowobfuscation interface kotlinx.coroutines.flow.FlowCollector {
   public java.lang.Object emit(java.lang.Object, kotlin.coroutines.Continuation);

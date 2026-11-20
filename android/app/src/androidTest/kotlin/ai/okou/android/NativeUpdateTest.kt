@@ -41,6 +41,7 @@ class NativeUpdateTest {
         val app = instrumentation.targetContext.applicationContext as TestOkouApplication
         val device = UiDevice.getInstance(instrumentation)
         val gate = CompletableDeferred<Unit>()
+        val firstProgress = CompletableDeferred<Unit>()
         val download = AtomicReference(CompletableDeferred<File>())
         val release =
             AndroidUpdatesRelease(
@@ -73,6 +74,7 @@ class NativeUpdateTest {
                         release: AndroidUpdatesRelease,
                         progress: (Long) -> Unit,
                     ): File {
+                        firstProgress.await()
                         progress(release.size / 2)
                         return download.get().await()
                     }
@@ -123,7 +125,7 @@ class NativeUpdateTest {
                 )
                 .click()
             click(R.string.updates_title)
-            exists(R.string.updates_checking)
+            exists(R.string.updates_check_in_progress)
             captureState("details-checking")
             gate.complete(Unit)
             exists(R.string.updates_error_check)
@@ -210,8 +212,21 @@ class NativeUpdateTest {
             closeDetails()
             backToChatList()
             requireNotNull(text(updateAction)).click()
+            val preparing = app.getString(R.string.updates_preparing)
+            val preparation = button(By.pkg(app.packageName).desc(preparing))
+            assertEquals(updateBounds, preparation.visibleBounds)
+            preparation.click()
+            assertNotNull(text(updateTarget))
+            assertNotNull(text(preparing))
+            captureState("details-preparing")
+            firstProgress.complete(Unit)
             val percent = "50%"
             val progressLabel = app.getString(R.string.updates_downloading, percent)
+            assertNotNull(text(progressLabel))
+            captureState("details-progress")
+            click(R.string.updates_close)
+            assertTrue(owner.state.value.transfer is UpdateTransfer.Downloading)
+
             val progress = button(By.pkg(app.packageName).desc(progressLabel))
             assertEquals(updateBounds, progress.visibleBounds)
             assertNotNull(text(percent))
@@ -219,10 +234,7 @@ class NativeUpdateTest {
             captureState("toolbar-progress")
             progress.click()
             assertNotNull(text(updateTarget))
-            assertNotNull(text(progressLabel))
-            captureState("details-progress")
             click(R.string.updates_close)
-            assertTrue(owner.state.value.transfer is UpdateTransfer.Downloading)
 
             openOverflow()
             click(R.string.settings)
@@ -271,13 +283,16 @@ class NativeUpdateTest {
             exists(R.string.updates_required)
             exists(R.string.updates_toolbar)
             captureState("update-required")
-            assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
-            exists(R.string.updates_required)
             scenario.recreate()
             exists(R.string.updates_required)
             assertEquals(activeLocale, app.resources.configuration.locales.toLanguageTags())
             assertTrue(owner.state.value.required)
             takeScreenshot().writeToTestStorage("android-update-required-restored")
+            assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
+            assertTrue(device.wait(Until.gone(By.pkg(app.packageName)), 10_000))
+            scenario.close()
+            scenario = ActivityScenario.launch(MainActivity::class.java)
+            exists(R.string.updates_required)
             click(R.string.updates_toolbar)
             assertNotNull(text(progressLabel))
             captureState("required-progress")
@@ -290,6 +305,7 @@ class NativeUpdateTest {
             }
         } finally {
             gate.complete(Unit)
+            firstProgress.complete(Unit)
             for (cleanup in
                 listOf<() -> Unit>(
                     { scenario?.close() },

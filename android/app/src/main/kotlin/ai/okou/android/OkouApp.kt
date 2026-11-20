@@ -361,7 +361,11 @@ internal fun OkouApp(
                     selectFilter = chats::selectFilter,
                     markAllRead = chats::markAllRead,
                     openSearch = if (showList) ::openSearch else null,
-                    update = updateToolbarAction,
+                    update = updateToolbarAction.takeIf { showList },
+                    stackUpdateLabel =
+                        with(LocalDensity.current) {
+                            (listWidth ?: window.screenWidthDp).dp <= 16.sp.toDp() * 19
+                        },
                     settingsFocus = settingsFocus,
                     openSettings = { restore ->
                         restoreSettingsFocus = restore

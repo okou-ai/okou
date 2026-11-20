@@ -16,9 +16,12 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -40,7 +43,7 @@ sealed interface UpdateTransfer {
 
     data object Idle : UpdateTransfer
 
-    data class Downloading(val release: AndroidUpdatesRelease, val downloadedBytes: Long = 0) :
+    data class Downloading(val release: AndroidUpdatesRelease, val downloadedBytes: Long? = null) :
         UpdateTransfer
 
     data class Ready(val release: AndroidUpdatesRelease) : UpdateTransfer
@@ -72,6 +75,7 @@ data class UpdateUiState(
     val transfer: UpdateTransfer = UpdateTransfer.Recovering(null),
     val problem: UpdateProblem? = null,
     val sdk: Int,
+    val offline: Boolean = false,
 ) {
     val candidate
         get() = info?.release
@@ -129,6 +133,9 @@ data class UpdateUiState(
                     transfer is UpdateTransfer.Ready)
 }
 
+private val UpdateUiState.needsRequiredRelease: Boolean
+    get() = required && displayedRelease?.let(::isEligible) != true
+
 @Serializable
 data class UpdateRecord(
     val installedVersion: String,
@@ -164,6 +171,7 @@ class AppUpdates(
     sdk: Int,
     dispatcher: CoroutineDispatcher = Dispatchers.Main.immediate,
     private val now: () -> Long = System::currentTimeMillis,
+    connectivity: Flow<Boolean> = emptyFlow(),
 ) : Closeable {
     private val scope = CoroutineScope(SupervisorJob() + dispatcher)
     private val mutable = MutableStateFlow(UpdateUiState(version, sdk = sdk))
@@ -178,6 +186,17 @@ class AppUpdates(
     @Volatile private var transferTicket = 0L
 
     init {
+        scope.launch {
+            connectivity.collectLatest { online ->
+                val reconnected = online && mutable.value.offline
+                mutable.update { it.copy(offline = !online) }
+                if (reconnected) {
+                    initialized.await()
+                    checkJob?.join()
+                    check(manual = mutable.value.needsRequiredRelease)
+                }
+            }
+        }
         scope.launch {
             try {
                 val saved = store.load()?.takeIf { it.installedVersion == version }
@@ -225,35 +244,47 @@ class AppUpdates(
         checkJob =
             scope.launch {
                 initialized.await()
-                if (!manual && checkedAt > 0 && now() - checkedAt in 0 until 86_400_000)
+                val snapshot = mutable.value
+                if (snapshot.offline) return@launch
+                if (
+                    !manual &&
+                        !snapshot.needsRequiredRelease &&
+                        checkedAt > 0 &&
+                        now() - checkedAt in 0 until 86_400_000
+                )
                     return@launch
                 if (!manual && attemptedAt > 0 && now() - attemptedAt in 0 until 60_000)
                     return@launch
                 attemptedAt = now()
                 mutable.update { it.copy(check = UpdateCheck.Checking) }
-                try {
-                    val info = service.check()
-                    val floor = higherMinimum(mutable.value.minimum, info.minimumSupportedVersion)
-                    val blocked =
-                        mutable.value.required ||
-                            floor?.let { checkNotNull(compareAndroidVersions(it, version)) > 0 } ==
-                                true
-                    checkedAt = now()
-                    mutable.update {
-                        it.copy(
-                            info = info,
-                            minimum = floor,
-                            required = blocked,
-                            check = UpdateCheck.Checked,
-                            problem = if (it.problem == UpdateProblem.Check) null else it.problem,
-                        )
+                val info =
+                    try {
+                        service.check()
+                    } catch (error: Exception) {
+                        currentCoroutineContext().ensureActive()
+                        classify(error, UpdateProblem.Check)
+                        // A discovery failure leaves the selected package and its outcome intact.
+                        mutable.update { it.copy(check = UpdateCheck.Failed) }
+                        return@launch
                     }
-                    retireUnsuitableTransfer()
+                val floor = higherMinimum(mutable.value.minimum, info.minimumSupportedVersion)
+                val blocked =
+                    mutable.value.required ||
+                        floor?.let { checkNotNull(compareAndroidVersions(it, version)) > 0 } == true
+                checkedAt = now()
+                mutable.update {
+                    it.copy(
+                        info = info,
+                        minimum = floor,
+                        required = blocked,
+                        check = UpdateCheck.Checked,
+                    )
+                }
+                retireUnsuitableTransfer()
+                try {
                     persist()
                 } catch (error: Exception) {
-                    currentCoroutineContext().ensureActive()
-                    val failure = classify(error, UpdateProblem.Check)
-                    mutable.update { it.copy(check = UpdateCheck.Failed, problem = failure) }
+                    reportStorageFailure(error)
                 }
             }
     }
@@ -271,9 +302,9 @@ class AppUpdates(
             try {
                 persist()
             } catch (error: Exception) {
-                report(error, UpdateProblem.Storage)
+                reportStorageFailure(error)
             }
-            check(manual = true)
+            if (mutable.value.needsRequiredRelease) check()
         }
     }
 
@@ -285,19 +316,20 @@ class AppUpdates(
             try {
                 persist()
             } catch (error: Exception) {
-                report(error, UpdateProblem.Storage)
+                reportStorageFailure(error)
             }
         }
     }
 
     fun download(release: AndroidUpdatesRelease): Boolean {
         val offered = mutable.value
-        if (!offered.canDownload || offered.candidate != release) return false
+        if (offered.offline || !offered.canDownload || offered.candidate != release) return false
         if (transferJob?.isActive == true) return false
         transferJob =
             scope.launch {
                 val snapshot = mutable.value
-                if (!snapshot.canDownload || snapshot.candidate != release) return@launch
+                if (snapshot.offline || !snapshot.canDownload || snapshot.candidate != release)
+                    return@launch
                 val ticket = ++transferTicket
                 mutable.update {
                     it.copy(transfer = UpdateTransfer.Downloading(release), problem = null)
@@ -337,7 +369,7 @@ class AppUpdates(
             try {
                 persist()
             } catch (error: Exception) {
-                report(error, UpdateProblem.Storage)
+                reportStorageFailure(error)
             }
         }
     }
@@ -370,6 +402,14 @@ class AppUpdates(
         }
     }
 
+    fun clearInstallFailure(release: AndroidUpdatesRelease) {
+        mutable.update {
+            if (it.problem == UpdateProblem.Install && it.selectedRelease == release)
+                it.copy(problem = null)
+            else it
+        }
+    }
+
     private fun retireUnsuitableTransfer() {
         val snapshot = mutable.value
         val selected = snapshot.selectedRelease ?: return
@@ -392,9 +432,9 @@ class AppUpdates(
             )
         }
 
-    private fun report(error: Exception, fallback: UpdateProblem) {
-        val problem = classify(error, fallback)
-        mutable.update { it.copy(problem = problem) }
+    private fun reportStorageFailure(error: Exception) {
+        val problem = classify(error, UpdateProblem.Storage)
+        mutable.update { it.copy(problem = it.problem ?: problem) }
     }
 
     private fun classify(error: Exception, fallback: UpdateProblem): UpdateProblem =

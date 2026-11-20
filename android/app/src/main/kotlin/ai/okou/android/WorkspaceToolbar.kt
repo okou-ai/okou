@@ -5,7 +5,7 @@ import ai.okou.android.chat.ChatListUiState
 import ai.okou.android.chat.label
 import ai.okou.android.chat.markAllReadTargets
 import ai.okou.android.updates.UpdateToolbarAction
-import ai.okou.android.updates.updateFocusOutline
+import ai.okou.android.updates.UpdateToolbarButton
 import android.os.Build
 import android.window.OnBackInvokedCallback
 import android.window.OnBackInvokedDispatcher
@@ -13,14 +13,10 @@ import androidx.annotation.DrawableRes
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -31,14 +27,12 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -71,7 +65,6 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.TextStyle
@@ -158,6 +151,7 @@ internal fun WorkspaceToolbarActions(
     markAllRead: () -> Unit,
     openSearch: (() -> Unit)? = null,
     update: UpdateToolbarAction?,
+    stackUpdateLabel: Boolean,
     settingsFocus: FocusRequester,
     openSettings: (restoreFocus: Boolean) -> Unit,
 ) {
@@ -278,41 +272,7 @@ internal fun WorkspaceToolbarActions(
             Icon(painterResource(R.drawable.ic_settings), stringResource(R.string.settings))
         }
     } else {
-        val interactions = remember { MutableInteractionSource() }
-        val pressed by interactions.collectIsPressedAsState()
-        val shape = RoundedCornerShape(12.dp)
-        TextButton(
-            onClick = { update.activate?.invoke() },
-            enabled = update.activate != null,
-            modifier =
-                Modifier.width(104.dp)
-                    .heightIn(min = 48.dp)
-                    .updateFocusOutline(shape, colors.inverseOnSurface)
-                    .semantics { update.accessibilityLabel?.let { contentDescription = it } },
-            shape = shape,
-            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
-            interactionSource = interactions,
-            colors =
-                ButtonDefaults.textButtonColors(
-                    containerColor =
-                        if (pressed) colors.onSurfaceVariant else colors.inverseSurface,
-                    contentColor = colors.inverseOnSurface,
-                    disabledContainerColor = colors.surfaceVariant,
-                    disabledContentColor = colors.onSurfaceVariant,
-                ),
-        ) {
-            Icon(
-                painterResource(update.icon),
-                contentDescription = null,
-                modifier = Modifier.size(18.dp),
-            )
-            Spacer(Modifier.width(8.dp))
-            Text(
-                update.label,
-                style = filterLabelStyle().copy(fontFeatureSettings = "tnum"),
-                fontWeight = FontWeight(550),
-            )
-        }
+        UpdateToolbarButton(update, stacked = stackUpdateLabel)
         Box {
             IconButton(
                 modifier = settingsAnchor,

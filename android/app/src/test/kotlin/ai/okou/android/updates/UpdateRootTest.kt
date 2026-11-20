@@ -1,5 +1,6 @@
 package ai.okou.android.updates
 
+import ai.okou.android.BuildConfig
 import ai.okou.android.MainActivity
 import ai.okou.android.R
 import ai.okou.android.TestAuthentication
@@ -12,12 +13,14 @@ import android.app.Activity
 import android.app.LocaleManager
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.LocaleList
 import android.provider.Settings
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assertHasNoClickAction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotDisplayed
@@ -32,6 +35,8 @@ import androidx.core.content.FileProvider
 import androidx.lifecycle.Lifecycle
 import java.io.File
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.flow.MutableStateFlow
+import org.junit.After
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -49,8 +54,16 @@ class UpdateRootApplication : TestOkouApplication() {
             heldCheck = CompletableDeferred()
         }
 
-    init {
-        updateService = fixture
+    internal val online = MutableStateFlow(true)
+
+    override val updates by lazy {
+        AppUpdates(
+            fixture,
+            MemoryUpdateStore(),
+            BuildConfig.VERSION_NAME,
+            Build.VERSION.SDK_INT,
+            connectivity = online,
+        )
     }
 
     override fun createAuthentication(): Authentication = TestAuthentication(AuthenticationState())
@@ -62,6 +75,11 @@ class UpdateRootTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
     private val app
         get() = compose.activity.application as UpdateRootApplication
+
+    @After
+    fun closeUpdateOwner() {
+        app.updates.close()
+    }
 
     @Test
     fun heldDiscoveryDoesNotBlockNativeRootAndLaterSurvivesRecreation() {
@@ -94,7 +112,6 @@ class UpdateRootTest {
         compose.onNodeWithText("Update Okou to continue").assertExists()
         compose.onNodeWithText("Updating · 50%").assertExists()
         compose.onNodeWithText("Welcome to Okou").assertDoesNotExist()
-        compose.activityRule.scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
         compose.activityRule.scenario.recreate()
         compose.onNodeWithText("Update Okou to continue").assertExists()
         compose.onNodeWithText("Updating · 50%").assertExists()
@@ -154,7 +171,35 @@ class UpdateRootTest {
         val update = compose.onNodeWithText("Update")
         update.assertIsNotDisplayed().performScrollTo().assertIsDisplayed().performClick()
         compose.waitUntil(10_000) { app.updates.state.value.transfer is UpdateTransfer.Downloading }
-        compose.onNodeWithText("Updating · 0%").assertIsDisplayed()
+        compose.onNodeWithText("Preparing…").assertIsDisplayed().assertHasNoClickAction()
+    }
+
+    @Test
+    fun offlineRequiredPageShowsTheInstalledVersionDuringDiscovery() {
+        val discovery = checkNotNull(app.fixture.heldCheck)
+        try {
+            app.online.value = false
+            app.updates.requireUpdate(RequiredUpdate("99.0.0"))
+            compose.waitUntil(10_000) {
+                app.updates.state.value.required && app.updates.state.value.offline
+            }
+            compose.onNodeWithText("Update Okou to continue").assertIsDisplayed()
+            compose
+                .onNodeWithText("Current version: ${BuildConfig.VERSION_NAME}")
+                .assertIsDisplayed()
+            compose
+                .onNodeWithText("Connect to the internet to check for updates.")
+                .assertIsDisplayed()
+            compose.onNodeWithText("Check for updates").assertIsNotEnabled()
+            compose.onNodeWithText("You are up to date").assertDoesNotExist()
+
+            app.online.value = true
+            discovery.complete(Unit)
+            compose.waitUntil(10_000) { app.updates.state.value.canDownload }
+            compose.onNodeWithText("Update").assertIsEnabled()
+        } finally {
+            discovery.complete(Unit)
+        }
     }
 
     @Test
@@ -214,7 +259,13 @@ class UpdateRootTest {
         assertEquals("${app.packageName}.updates", intent.data!!.authority)
         assertEquals("content", intent.data!!.scheme)
         assertEquals(Intent.FLAG_GRANT_READ_URI_PERMISSION, intent.flags)
-        returnFrom(install.requestCode)
+        assertTrue(intent.getBooleanExtra(Intent.EXTRA_RETURN_RESULT, false))
+        returnFrom(install.requestCode, Activity.RESULT_FIRST_USER)
+        compose.onNodeWithText("Android could not install the update.").assertIsDisplayed()
+        compose.onNodeWithText("Retry installation").assertIsEnabled().performClick()
+        val retry = nextLaunch()
+        assertEquals(intent.data, retry.intent.data)
+        returnFrom(retry.requestCode)
         compose.onNodeWithText("Continue installation").assertIsDisplayed()
         assertNoPlatformLaunch()
         assertTrue(app.updates.state.value.required)
@@ -239,10 +290,12 @@ class UpdateRootTest {
         app.fixture.heldRecovery = verification
         try {
             val install = compose.onNodeWithText("Continue installation")
-            install.performClick().assertIsNotEnabled()
+            install.performClick()
+            val preparing = compose.onNodeWithText("Preparing…")
+            preparing.assertIsDisplayed().assertHasNoClickAction()
             assertNoPlatformLaunch()
             compose.activityRule.scenario.recreate()
-            install.assertIsNotEnabled()
+            preparing.assertIsDisplayed().assertHasNoClickAction()
             assertNoPlatformLaunch()
 
             // Multi-window can leave an Activity resumed without window focus.
@@ -260,6 +313,34 @@ class UpdateRootTest {
         } finally {
             verification.complete(Unit)
         }
+    }
+
+    @Test
+    fun optionalDetailsReturnAfterInstallerCancellationAcrossActivityRecreation() {
+        allowInstallAndDiscoverUpdate()
+        val openDetails = compose.onNodeWithText("View update")
+        val title = compose.onNodeWithText("Update to 99.0.0")
+        val install = compose.onNodeWithText("Continue installation")
+        openDetails.performClick()
+        compose.onNodeWithText("Update").performSemanticsAction(SemanticsActions.OnClick)
+        compose.onNodeWithText("Close").performSemanticsAction(SemanticsActions.OnClick)
+        compose.activityRule.scenario.onActivity { it.onWindowFocusChanged(true) }
+        finishDownload()
+        returnFrom(nextLaunch().requestCode)
+        assertNoPlatformLaunch()
+
+        openDetails.performClick()
+        title.assertIsDisplayed()
+        install.performSemanticsAction(SemanticsActions.OnClick)
+        val pending = nextLaunch()
+        title.assertDoesNotExist()
+        compose.activityRule.scenario.recreate()
+        title.assertDoesNotExist()
+        returnFrom(pending.requestCode)
+        title.assertIsDisplayed()
+        install.assertIsDisplayed().assertIsEnabled()
+        assertEquals(1, app.fixture.downloadedReleases.size)
+        assertNoPlatformLaunch()
     }
 
     @Test
@@ -311,15 +392,9 @@ class UpdateRootTest {
         return checkNotNull(shadow.nextStartedActivityForResult)
     }
 
-    private fun returnFrom(requestCode: Int) {
+    private fun returnFrom(requestCode: Int, resultCode: Int = Activity.RESULT_CANCELED) {
         compose.activityRule.scenario.onActivity {
-            assertTrue(
-                it.activityResultRegistry.dispatchResult(
-                    requestCode,
-                    Activity.RESULT_CANCELED,
-                    null,
-                )
-            )
+            assertTrue(it.activityResultRegistry.dispatchResult(requestCode, resultCode, null))
         }
     }
 

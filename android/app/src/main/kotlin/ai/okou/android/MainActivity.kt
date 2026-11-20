@@ -14,22 +14,26 @@ import ai.okou.android.updates.AppUpdates
 import ai.okou.android.updates.UpdateHost
 import ai.okou.android.updates.updateFocusOutline
 import ai.okou.android.updates.updateToolbarAction
+import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.view.ActionMode
 import android.widget.Toast
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.annotation.StringRes
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -66,6 +70,7 @@ class MainActivity : AppCompatActivity() {
 
     private var editing by mutableStateOf(false)
     private var windowFocused by mutableStateOf(false)
+    private var contextualAction by mutableStateOf<ActionMode?>(null)
     private val updateInstall by
         viewModels<UpdateInstallModel> {
             viewModelFactory { initializer { UpdateInstallModel(updates) } }
@@ -75,8 +80,8 @@ class MainActivity : AppCompatActivity() {
             updateInstall.authorizationReturned(canInstallPackages())
         }
     private val packageInstaller =
-        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-            updateInstall.installerReturned()
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            updateInstall.installerReturned(result.resultCode == Activity.RESULT_FIRST_USER)
         }
     private val session: SessionModel by viewModels {
         viewModelFactory {
@@ -153,8 +158,9 @@ class MainActivity : AppCompatActivity() {
                     ?: cachedAppearance?.colorTheme
                     ?: UserPreferencesColorTheme.DEFAULT,
             ) {
-                val installEnabled = updateInstall.attempt == UpdateInstallAttempt.Idle
+                val installProgress = updateInstall.progressLabel
                 val keyboardVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+                val interactionActive = editing || contextualAction != null || keyboardVisible
                 val verified = updateInstall.attempt as? UpdateInstallAttempt.Verified
                 LaunchedEffect(
                     verified,
@@ -162,20 +168,18 @@ class MainActivity : AppCompatActivity() {
                     updateState.canInstall,
                     lifecycleState,
                     windowFocused,
-                    editing,
-                    keyboardVisible,
+                    interactionActive,
                 ) {
                     if (verified != null) launchInstaller(verified)
                 }
                 val pending = updateInstall.automaticRelease
                 val automaticInstall =
                     pending?.takeIf {
-                        installEnabled &&
+                        installProgress == null &&
                             updateState.canInstall &&
                             updateState.selectedRelease == it &&
                             lifecycleState == Lifecycle.State.RESUMED &&
-                            !editing &&
-                            !keyboardVisible
+                            !interactionActive
                     }
                 LaunchedEffect(pending, updateState.selectedRelease) {
                     updateInstall.discardObsoleteDownload()
@@ -186,10 +190,14 @@ class MainActivity : AppCompatActivity() {
                     updateInstall::download,
                     updates::defer,
                     ::installUpdate,
-                    installEnabled,
+                    installProgress,
                     automaticInstall,
                     windowFocused,
-                    startAutomaticInstall = { installUpdate(it, automatic = true) },
+                    startAutomaticInstall = { release, fromDetails ->
+                        if ((fromDetails || windowFocused) && canAutomaticallyPrepare()) {
+                            updateInstall.install(release, automatic = true, canInstallPackages())
+                        }
+                    },
                     showAnnouncement =
                         sessionState.stage != SessionStage.Ready || sessionState.ready == null,
                 ) { openUpdates ->
@@ -212,13 +220,15 @@ class MainActivity : AppCompatActivity() {
                                     .show()
                             }
                         },
-                        appUpdates = { AppUpdateSettings(updateState, openUpdates) },
+                        appUpdates = {
+                            AppUpdateSettings(updateState, installProgress, openUpdates)
+                        },
                         updateToolbarAction =
                             updateToolbarAction(
                                 updateState,
                                 updateInstall::download,
                                 ::installUpdate,
-                                installEnabled,
+                                installProgress,
                                 openUpdates,
                             ),
                         onUpdateEditingChanged = { editing = it },
@@ -231,6 +241,7 @@ class MainActivity : AppCompatActivity() {
                     ) {
                         AlertDialog(
                             onDismissRequest = { updateInstall.dismissExplanation(explanation) },
+                            modifier = Modifier.widthIn(max = 360.dp),
                             shape = RoundedCornerShape(28.dp),
                             containerColor = MaterialTheme.colorScheme.surface,
                             title = {
@@ -314,15 +325,26 @@ class MainActivity : AppCompatActivity() {
         windowFocused = hasFocus
     }
 
+    override fun onActionModeStarted(mode: ActionMode) {
+        super.onActionModeStarted(mode)
+        contextualAction = mode
+    }
+
+    override fun onActionModeFinished(mode: ActionMode) {
+        super.onActionModeFinished(mode)
+        if (contextualAction === mode) contextualAction = null
+    }
+
     private fun canInstallPackages() =
         Build.VERSION.SDK_INT < 26 || packageManager.canRequestPackageInstalls()
 
     private fun canHandOffUpdate() =
         lifecycle.currentState == Lifecycle.State.RESUMED && windowFocused
 
-    private fun canAutomaticallyInstall() =
-        canHandOffUpdate() &&
+    private fun canAutomaticallyPrepare() =
+        lifecycle.currentState == Lifecycle.State.RESUMED &&
             !editing &&
+            contextualAction == null &&
             ViewCompat.getRootWindowInsets(window.decorView)
                 ?.isVisible(WindowInsetsCompat.Type.ime()) != true
 
@@ -342,17 +364,13 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun installUpdate(release: AndroidUpdatesRelease) =
-        installUpdate(release, automatic = false)
-
-    private fun installUpdate(release: AndroidUpdatesRelease, automatic: Boolean) {
-        if (automatic && !canAutomaticallyInstall()) return
-        updateInstall.install(release, automatic, canInstallPackages())
+    private fun installUpdate(release: AndroidUpdatesRelease) {
+        updateInstall.install(release, automatic = false, canInstallPackages())
     }
 
     private fun launchInstaller(verified: UpdateInstallAttempt.Verified) {
         val foregroundReady =
-            if (verified.automatic) canAutomaticallyInstall() else canHandOffUpdate()
+            canHandOffUpdate() && (!verified.automatic || canAutomaticallyPrepare())
         val file =
             updateInstall.takeVerifiedFile(verified, foregroundReady, canInstallPackages())
                 ?: return
@@ -361,6 +379,7 @@ class MainActivity : AppCompatActivity() {
             packageInstaller.launch(
                 Intent(Intent.ACTION_VIEW)
                     .setDataAndType(uri, "application/vnd.android.package-archive")
+                    .putExtra(Intent.EXTRA_RETURN_RESULT, true)
                     .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             )
         } catch (_: ActivityNotFoundException) {
@@ -378,6 +397,15 @@ private class UpdateInstallModel(private val updates: AppUpdates) : ViewModel() 
     var automaticRelease by mutableStateOf<AndroidUpdatesRelease?>(null)
         private set
 
+    @get:StringRes
+    val progressLabel: Int?
+        get() =
+            when (attempt) {
+                UpdateInstallAttempt.Idle -> null
+                is UpdateInstallAttempt.Installer -> R.string.updates_installing
+                else -> R.string.updates_preparing
+            }
+
     fun download(release: AndroidUpdatesRelease) {
         if (updates.download(release)) automaticRelease = release
     }
@@ -389,6 +417,7 @@ private class UpdateInstallModel(private val updates: AppUpdates) : ViewModel() 
     fun install(release: AndroidUpdatesRelease, automatic: Boolean, authorized: Boolean) {
         if (attempt != UpdateInstallAttempt.Idle || !canInstall(release)) return
         if (automatic && automaticRelease != release) return
+        updates.clearInstallFailure(release)
         if (authorized) verify(release, automatic)
         else {
             automaticRelease = null
@@ -453,12 +482,14 @@ private class UpdateInstallModel(private val updates: AppUpdates) : ViewModel() 
             attempt = UpdateInstallAttempt.Explain(release)
             return null
         }
-        attempt = UpdateInstallAttempt.Installer
+        attempt = UpdateInstallAttempt.Installer(release)
         return verified.file
     }
 
-    fun installerReturned() {
-        if (attempt == UpdateInstallAttempt.Installer) attempt = UpdateInstallAttempt.Idle
+    fun installerReturned(failed: Boolean) {
+        val installer = attempt as? UpdateInstallAttempt.Installer ?: return
+        if (failed) updates.installFailed(installer.release)
+        attempt = UpdateInstallAttempt.Idle
     }
 
     fun launchFailed(release: AndroidUpdatesRelease) {
@@ -487,5 +518,5 @@ private sealed interface UpdateInstallAttempt {
         val automatic: Boolean,
     ) : UpdateInstallAttempt
 
-    data object Installer : UpdateInstallAttempt
+    data class Installer(val release: AndroidUpdatesRelease) : UpdateInstallAttempt
 }

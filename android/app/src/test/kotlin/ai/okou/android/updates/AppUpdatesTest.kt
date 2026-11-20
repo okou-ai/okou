@@ -8,6 +8,7 @@ import java.io.IOException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
@@ -418,6 +419,47 @@ class AppUpdatesTest {
     }
 
     @Test
+    fun offlineRequiredUpdateChecksOnReconnectAndLeavesDownloadsToTheUser() = runTest {
+        val service = ControlledUpdates()
+        val connectivity = MutableStateFlow(false)
+        val owner =
+            AppUpdates(
+                service,
+                MemoryUpdateStore(),
+                "0.12.0",
+                35,
+                StandardTestDispatcher(testScheduler),
+                connectivity = connectivity,
+            )
+        try {
+            owner.requireUpdate(RequiredUpdate("0.13.0"))
+            advanceUntilIdle()
+            assertTrue(owner.state.value.required && owner.state.value.offline)
+            assertNull(owner.state.value.displayedRelease)
+            assertEquals(0, service.checks)
+
+            connectivity.value = true
+            advanceUntilIdle()
+            assertEquals(1, service.checks)
+            assertTrue(owner.state.value.canDownload)
+
+            connectivity.value = false
+            runCurrent()
+            assertFalse(owner.download(updateRelease()))
+            connectivity.value = true
+            advanceUntilIdle()
+            assertEquals(1, service.checks)
+            assertTrue(service.downloadedReleases.isEmpty())
+            assertTrue(owner.download(updateRelease()))
+            runCurrent()
+            assertEquals(listOf(updateRelease()), service.downloadedReleases)
+        } finally {
+            owner.close()
+            runCurrent()
+        }
+    }
+
+    @Test
     fun incompatibleOrUnavailablePackageNeverOffersInstallation() = runTest {
         val service =
             ControlledUpdates().apply { response = AndroidUpdates("0.14.0", updateRelease()) }
@@ -474,6 +516,10 @@ class AppUpdatesTest {
             assertTrue(owner.state.value.transfer is UpdateTransfer.Ready)
             assertEquals(File("verified.apk"), owner.installationFile(newer))
             owner.installFailed(newer)
+            service.failCheck = true
+            owner.check()
+            advanceUntilIdle()
+            assertEquals(UpdateCheck.Failed, owner.state.value.check)
             assertTrue(owner.state.value.transfer is UpdateTransfer.Ready)
             assertEquals(UpdateProblem.Install, owner.state.value.problem)
             service.downloaded = null
@@ -586,7 +632,8 @@ class AppUpdatesTest {
             owner.requireUpdate(RequiredUpdate(null))
             advanceUntilIdle()
             assertTrue(owner.state.value.required)
-            assertEquals(UpdateCheck.Failed, owner.state.value.check)
+            assertEquals(UpdateCheck.Checked, owner.state.value.check)
+            assertEquals(UpdateProblem.Storage, owner.state.value.problem)
         } finally {
             owner.close()
             runCurrent()
