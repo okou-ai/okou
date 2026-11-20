@@ -1,5 +1,6 @@
 import { cleanup, screen, waitFor } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
+import { mockOnboardingDraft } from "../../../__tests__/mock-onboarding-draft.ts";
 import {
   click,
   fill,
@@ -201,6 +202,7 @@ test("the selected format reserves space within the saved prompt limit", async (
 });
 
 test("a reload preserves the task and separate format selection without duplicating instructions", async () => {
+  const savedDraft = mockOnboardingDraft(context);
   let sentPrompt: string | undefined;
   mockChatLifecycle(context, {
     onRunCreate: (body) => {
@@ -215,6 +217,9 @@ test("a reload preserves the task and separate format selection without duplicat
   await waitFor(() => {
     expect(input).toHaveValue(TASK);
     expect(button("Presentation")).toHaveAttribute("aria-pressed", "true");
+    expect(savedDraft()?.answers.startingPromptOutput?.format).toBe(
+      "presentation",
+    );
   });
   context.store.set(resetFirstPage);
   cleanup();
