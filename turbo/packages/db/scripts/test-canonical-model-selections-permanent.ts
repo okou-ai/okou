@@ -13,8 +13,8 @@ export async function validateCanonicalModelSelections(databaseUrl: string) {
   const run = randomUUID();
   try {
     const defaults = await db.query(
-      `INSERT INTO chat_threads (id, user_id) VALUES ($1,$2) RETURNING selected_model`,
-      [thread, user],
+      `INSERT INTO chat_threads (id, user_id, org_id) VALUES ($1,$2,$3) RETURNING selected_model`,
+      [thread, user, org],
     );
     assert.deepEqual(defaults.rows, [{ selected_model: "auto" }]);
     const member = await db.query(

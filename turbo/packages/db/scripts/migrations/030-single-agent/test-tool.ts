@@ -256,12 +256,12 @@ try {
   await sql`INSERT INTO projects (id, org_id, user_id, name)
     VALUES (${priorProject}, ${org}, ${owner}, 'Prior Project'),
       (${randomUUID()}, ${otherOrg}, 'foreign-user', 'Foreign Project')`;
-  await sql`INSERT INTO chat_threads (user_id, agent_id, project_id, title)
-    VALUES (${owner}, ${oldAgent}, ${priorProject}, ${canary}),
-      (${owner}, ${oldAgent}, null, ${canary}),
-      (${administrator}, ${oldAgent}, null, ${canary}),
-      (${administrator}, ${defaultAgent}, null, ${canary}),
-      ('foreign-user', ${otherAgent}, null, ${canary})`;
+  await sql`INSERT INTO chat_threads (user_id, org_id,agent_id, project_id, title)
+    VALUES (${owner}, ${org}, ${oldAgent}, ${priorProject}, ${canary}),
+      (${owner}, ${org}, ${oldAgent}, null, ${canary}),
+      (${administrator}, ${org}, ${oldAgent}, null, ${canary}),
+      (${administrator}, ${org}, ${defaultAgent}, null, ${canary}),
+      ('foreign-user', ${otherOrg}, ${otherAgent}, null, ${canary})`;
   const [executionChat] = object({ id: string() })
     .array()
     .parse(

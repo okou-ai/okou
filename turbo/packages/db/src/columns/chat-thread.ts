@@ -16,7 +16,7 @@ export function chatThreadColumns() {
   return {
     id: uuid("id").defaultRandom().primaryKey(),
     userId: text("user_id").notNull(),
-    orgId: text("org_id"),
+    orgId: text("org_id").notNull(),
     agentId: uuid("agent_id").references(
       () => {
         return agents.id;

@@ -147,8 +147,8 @@ export async function validatePermanentDiscordFoundation(
     for (const [i, connection] of connections.entries()) {
       const userId = i === 1 ? userB : userA;
       await client.query(
-        `INSERT INTO chat_threads (id, user_id) VALUES ($1, $2)`,
-        [threads[i], userId],
+        `INSERT INTO chat_threads (id, user_id, org_id) VALUES ($1, $2, $3)`,
+        [threads[i], userId, i < 2 ? orgA : orgB],
       );
       await client.query(
         `INSERT INTO discord_chat_thread_routes (id, connection_id, channel_id, session_key, user_id, chat_thread_id)

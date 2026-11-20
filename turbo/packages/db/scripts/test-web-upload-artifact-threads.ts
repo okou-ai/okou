@@ -142,7 +142,7 @@ try {
   }
   const before = await sql`SELECT id, source_url, entity_id, projection_file_id,
     title, created_at, updated_at FROM artifacts ORDER BY id`;
-  await applyPendingMigrations(sql);
+  await applyPendingMigrations(sql, { beforeMillis: entry.when + 1 });
   for (const { id, expectedThreadId } of expected) {
     const [artifact] =
       await sql`SELECT chat_thread_id FROM artifacts WHERE id = ${id}`;
