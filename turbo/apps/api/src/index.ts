@@ -32,7 +32,7 @@ const runnerDispatchExperiment = singleton(() => {
   const environment = env("ENV");
   const samplePercent =
     environment === "production"
-      ? 5
+      ? 100
       : environment === "preview" &&
           /^pr-\d+$/.test(optionalEnv("OKOU_PREVIEW_JOB_REF") ?? "")
         ? 50

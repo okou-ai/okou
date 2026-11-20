@@ -12,15 +12,22 @@ import { setImmediate } from "node:timers/promises";
 import { createRunnerDispatchExperiment } from "../src/runner-dispatch-experiment.node.ts";
 import { runnerDispatchCohort } from "../src/signals/external/runner-dispatch-experiment.ts";
 
-test("assigns separate production cohorts and excludes the other 90 buckets", () => {
-  const cohorts = Array.from({ length: 100 }, (_, bucket) => {
+test("enrolls all production runs and splits preview runs evenly", () => {
+  const runIds = Array.from({ length: 100 }, (_, bucket) => {
     const runId =
       bucket.toString(16).padStart(8, "0") + "-0000-4000-8000-000000000000";
-    return runnerDispatchCohort(runId, 5);
+    return runId;
   });
-  assert.deepEqual(cohorts.slice(0, 5), Array(5).fill("preconnect"));
-  assert.deepEqual(cohorts.slice(5, 10), Array(5).fill("control"));
-  assert.deepEqual(cohorts.slice(10), Array(90).fill(undefined));
+  assert.ok(
+    runIds.every((runId) => {
+      return runnerDispatchCohort(runId, 100) === "preconnect";
+    }),
+  );
+  const preview = runIds.map((runId) => {
+    return runnerDispatchCohort(runId, 50);
+  });
+  assert.deepEqual(preview.slice(0, 50), new Array(50).fill("preconnect"));
+  assert.deepEqual(preview.slice(50), new Array(50).fill("control"));
 });
 
 let directory;
