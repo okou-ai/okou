@@ -138,8 +138,9 @@ def validate(directory):
         if not valid:
             raise ValueError("actual native pressure condition is absent")
         seen = witnesses[case]
-        if tuple(w["phase"] for w in seen) != phases:
-            raise ValueError("missing, duplicate or unordered native pressure witnesses")
+        report.validate_witness_phases(
+            seen, phases, "missing, duplicate or unordered native pressure witnesses",
+        )
         previous = events[2]["monotonic_ns"]
         identity = (result["cases"][case]["sandbox_id"], result["cases"][case]["backing_generation"])
         for witness in seen:
