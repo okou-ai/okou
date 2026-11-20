@@ -15,6 +15,7 @@ import cleanup_report as cleanup
 import fixed_restore_report as fixed
 import report
 import report_test
+from progress_report_fixture import foreground_heartbeat
 
 
 class FixedRestoreReportTests(unittest.TestCase):
@@ -68,11 +69,8 @@ class FixedRestoreReportTests(unittest.TestCase):
         self.request=wire(0x1a,struct.pack(">IQIBH",300000,10,5500000,2,3)+b"UTC"+bytes(range(256)))
         self.response=wire(0x1b,bytes(5)+struct.pack(">I",3)+b"\x01\0"+bytes(4)+b"\x01\0"+bytes(4)+bytes(2))
         physical={"path":self.session_path,"bytes":len(self.original),"sha256":hashlib.sha256(self.original).hexdigest(),"raw_hex":self.original.hex()}
-        heartbeat={"receipt":{"received_ns":at(16),"acknowledgement_status":204,
-            "state":{"runnerId":self.runner,"snapshotGeneration":1,"snapshotSequence":1,
-                "group":"native-foreground","mode":"running","allocatedVcpu":2,
-                "allocatedMemoryMb":4096,"heldSandboxStates":[]}},
-            "send_joined":True,"completed_ns":at(17)}
+        heartbeat = foreground_heartbeat(self.runner, 1, at(16), at(17), (2, 4096))
+        heartbeat["receipt"]["state"]["heldSandboxStates"] = []
         self.values=[
             {"history_run_id":self.history,"thread_id":self.thread,"history_hex":self.original.hex(),
              "history_sha256":hashlib.sha256(self.original).hexdigest(),"history_bytes":len(self.original),
