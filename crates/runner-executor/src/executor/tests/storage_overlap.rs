@@ -300,7 +300,7 @@ async fn assert_early_storage_lifecycle(split: bool) {
                         "decoded",
                         &format!("/mnt/decoded-{index}"),
                         "v1",
-                        &format!("https://example.test/decoded?{}", "q".repeat(35_000)),
+                        &format!("https://example.test/decoded?{}", "q".repeat(70_000)),
                     )
                 }));
         }

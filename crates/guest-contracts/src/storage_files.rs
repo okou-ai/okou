@@ -25,7 +25,7 @@ pub const MAX_TOTAL_FILES: usize = 32 * MAX_MOUNTS;
 /// Prefix identifying binary input to the fixed storage helper.
 pub const INPUT_MAGIC: &[u8; 8] = b"VM0FILE1";
 /// Preferred manifest size for inputs that can be batched independently.
-pub const MAX_MANIFEST_BYTES: usize = 64 * 1024;
+pub const MAX_MANIFEST_BYTES: usize = 128 * 1024;
 const INPUT_HEADER_BYTES: usize = 16;
 /// Maximum inline binary input within the 16 MiB Guest-control frame.
 pub const MAX_INPUT_BYTES: usize = INPUT_HEADER_BYTES + 16 * 1024 * 1024 - 8 * 1024;

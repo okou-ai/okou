@@ -396,7 +396,7 @@ async fn assert_ready_input_lifecycle(split: bool) {
             storages.extend((0..3).map(|index| {
                 storage_entry(
                     format!("/mnt/decoded-{index}"),
-                    format!("https://example.test/decoded?{}", "q".repeat(35_000)),
+                    format!("https://example.test/decoded?{}", "q".repeat(70_000)),
                     "decoded",
                     "v1",
                 )

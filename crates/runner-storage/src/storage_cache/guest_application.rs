@@ -4,6 +4,9 @@ use super::*;
 use guest_contracts::storage_manifest::{ArchiveReadiness, Manifest};
 use std::sync::atomic::{AtomicBool, Ordering};
 
+// Keep early JSON-only applications on the dedicated path used for small manifests.
+const MAX_EARLY_JSON_MANIFEST_BYTES: usize = 64 * 1024;
+
 /// One transport phase. StoragePlan remains the only semantic planner.
 pub struct GuestStorageBatch {
     pub manifest: Manifest,
@@ -39,11 +42,11 @@ impl GuestStorageInput {
             .map_err(|error| RunnerError::Internal(error.into()))?;
         self.initial.manifest.archive_readiness = Some(readiness.clone());
         let query = serialize_manifest(&self.initial.manifest)?;
+        if self.initial.files.is_empty() {
+            return Ok((query.len() <= MAX_EARLY_JSON_MANIFEST_BYTES).then_some((self, query)));
+        }
         if query.len() <= guest_contracts::storage_files::MAX_MANIFEST_BYTES {
             return Ok(Some((self, query)));
-        }
-        if self.initial.files.is_empty() {
-            return Ok(None);
         }
         if self.initial.manifest.requires_complete_mount_list() {
             return Ok((query.len()
@@ -99,7 +102,7 @@ impl GuestStorageInput {
             .validate(&self.initial.manifest)
             .map_err(|error| RunnerError::Internal(error.into()))?;
         let query = serialize_manifest(&self.initial.manifest)?;
-        if query.len() > guest_contracts::storage_files::MAX_MANIFEST_BYTES {
+        if query.len() > MAX_EARLY_JSON_MANIFEST_BYTES {
             return Ok(None);
         }
         Ok(Some((self, query)))

@@ -192,7 +192,10 @@ fn decoded_artifact_admission_requires_complete_fresh_identity() {
     assert!(plan.cache_candidates().is_empty());
 
     let mut oversized = artifact("/artifact", "artifact", "v1", false);
-    oversized.archive_url = Some(format!("https://example.com/{}", "x".repeat(70_000)));
+    oversized.archive_url = Some(format!(
+        "https://example.com/{}",
+        "x".repeat(guest_contracts::storage_files::MAX_MANIFEST_BYTES)
+    ));
     let plan = build_storage_plan(&manifest(Vec::new(), vec![oversized]), None).unwrap();
     let candidate = plan.cache_candidates().pop().unwrap();
     assert!(!plan.decoded_entry_fits(candidate.handle).unwrap());

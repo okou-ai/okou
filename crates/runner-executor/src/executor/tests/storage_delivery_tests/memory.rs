@@ -126,7 +126,7 @@ async fn encoded_payloads_follow_the_current_guest_operation() {
     let content = (0..storage_files::MAX_FILE_BYTES)
         .map(|index| index as u8)
         .collect::<Vec<_>>();
-    let fixture = DeliveryFixture::with_archive(3, 3, 35_000, archive_with_content(&content)).await;
+    let fixture = DeliveryFixture::with_archive(3, 3, 70_000, archive_with_content(&content)).await;
     let overrides = Arc::new(MockSandboxOverrides::new());
     let gate = MockLifecycleGate::new();
     overrides.set_storage_manifest_lifecycle_gate(gate.clone());
