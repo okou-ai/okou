@@ -72,7 +72,7 @@ enum class CreateThreadRequestReasoningEffort {
 @Serializable
 data class CreateThreadRequest(
     val `projectId`: String? = null,
-    val `agentId`: String,
+    val `agentId`: String? = null,
     val `clientThreadId`: String? = null,
     val `eventId`: String? = null,
     val `initialRemoteAccessOverrides`: List<CreateThreadRequestInitialRemoteAccessOverridesItem>? =

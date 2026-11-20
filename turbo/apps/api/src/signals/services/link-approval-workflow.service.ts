@@ -20,13 +20,8 @@ import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/schema/chat-thread";
 import { now, nowDate } from "../../lib/time";
 import { logger } from "../../lib/log";
-import { setAuthContext$ } from "../auth/auth-context";
-import { db$ } from "../external/db";
 import { publishUserSignal } from "../external/realtime";
 import { settle, tapError } from "../utils";
-import { getMemberRoleAndUpdateCache$ } from "./auth.service";
-import { sendNormalEvent$ } from "./chat-events.command";
-import { getWalletSpend$ } from "./link-wallet.service";
 import { LinkWalletError } from "./link-wallet-provider.service";
 import {
   isLinkApprovalConfigured,
@@ -66,10 +61,9 @@ const approvalToObserve$ = command(
           eq(agentRuns.triggerSource, "web"),
           eq(agentRuns.orgId, row.orgId),
           eq(agentRuns.userId, row.userId),
-          eq(agentRuns.agentId, row.agentId),
           eq(chatThreads.id, row.approvalThreadId),
           eq(chatThreads.userId, row.userId),
-          eq(chatThreads.agentId, row.agentId),
+          eq(chatThreads.orgId, row.orgId),
         ),
       )
       .limit(1);

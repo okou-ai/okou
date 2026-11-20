@@ -89,9 +89,9 @@ struct MessageRenderPlan: Sendable {
     } else {
       resources = []
     }
-    if let action = context.action {
+    if let action = context.action, let agentID = action.agentID {
       let units = MessageActionBody.blocks(
-        content, webURL: context.webURL, agentID: action.agentID, threadID: action.threadID,
+        content, webURL: context.webURL, agentID: agentID, threadID: action.threadID,
         permissionsEnabled: context.permissionsEnabled
       ).compactMap { block -> Unit? in
         switch block {

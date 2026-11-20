@@ -9,15 +9,7 @@ import type { ModelSettings } from "@okouai/api-contracts/contracts/model-reason
 import { replayChatThreadEvents } from "@okouai/core/chat-thread-event-replay";
 import { accept } from "../../lib/accept.ts";
 import { nowDate } from "../../lib/time.ts";
-import {
-  captureChatThreadMetadataShortcut$,
-  type ChatThreadMetadataShortcutOutcome,
-} from "../../lib/posthog.ts";
-import { activeRoute$ } from "../active-route.ts";
-import { apiClient$ } from "../api-client.ts";
-import { updateDocumentTitle$ } from "../document-title.ts";
-import { rootSignal$ } from "../root-signal.ts";
-import { pathParams$ } from "../route.ts";
+import { type ChatThreadMetadataShortcutOutcome } from "../../lib/posthog.ts";
 import {
   resetSignal,
   createDeferredPromise,
@@ -29,7 +21,6 @@ import type {
   ChatThreadEventDataKey,
   ChatThreadEventQueryResult,
 } from "../../shared-database/data-key.ts";
-import { queryChatThreadEventSharedDatabase$ } from "../shared-database.ts";
 import type {
   ChatThreadEventView,
   OptimisticChatThreadEvent,
@@ -56,7 +47,7 @@ interface ChatThreadEventState {
 
 export interface ThreadMeta {
   readonly id: string;
-  readonly agentId: string;
+  readonly agentId?: string;
   readonly title: string | null;
   readonly pinnedAt: string | null;
   readonly archived: boolean;

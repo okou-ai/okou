@@ -1,8 +1,7 @@
 import { command } from "ccstate";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { and, eq, isNotNull, type SQL } from "drizzle-orm";
+import { and, eq, type SQL } from "drizzle-orm";
 
-import { writeDb$ } from "../external/db";
 import { chatThreadEventInsertSql } from "./chat-thread-event.service";
 import { chatThreadOrganizationCondition } from "./chat-thread-organization.service";
 
@@ -35,18 +34,16 @@ export const updateOwnedChatThreadWithEvent$ = command(
           eq(chatThreads.id, args.threadId),
           eq(chatThreads.userId, args.userId),
           chatThreadOrganizationCondition(args.orgId),
-          isNotNull(chatThreads.agentId),
           args.where,
         ),
       )
       .returning({
         id: chatThreads.id,
-        agentId: chatThreads.agentId,
         cloudBrowserEnabled: chatThreads.cloudBrowserEnabled,
         lastMessageAt: chatThreads.lastMessageAt,
       });
     signal.throwIfAborted();
-    if (!thread?.agentId) {
+    if (!thread) {
       return false;
     }
     await database.execute(
@@ -63,7 +60,6 @@ export const updateOwnedChatThreadWithEvent$ = command(
         userId: args.userId,
         orgId: args.orgId,
         chatThreadId: thread.id,
-        agentId: thread.agentId,
       }),
     );
     signal.throwIfAborted();

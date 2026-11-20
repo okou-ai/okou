@@ -321,8 +321,8 @@ final class ComposerConnectorStore {
     if let threadID { query.append(URLQueryItem(name: "returnThread", value: threadID)) }
     openWeb(path: "connectors", query: query)
   }
-  func consumeNewChatOptions(agentID: String) {
-    guard threadID == nil else { return }
+  func consumeNewChatOptions(agentID: String?) {
+    guard let agentID, threadID == nil else { return }
     pendingByAgent[agentID] = nil
     if self.agentID == agentID { pendingOptions = ChatComposerOptions() }
   }

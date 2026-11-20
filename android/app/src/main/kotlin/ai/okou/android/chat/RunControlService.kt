@@ -22,7 +22,7 @@ enum class RunControlKind {
 data class RunControlIntent(
     val id: String,
     val threadId: String,
-    val agentId: String,
+    val agentId: String?,
     val kind: RunControlKind,
     val targetId: String,
 ) {
@@ -44,7 +44,6 @@ data class RunControlJournal(
             pending.all {
                 it.id.isNotEmpty() &&
                     it.threadId.isNotEmpty() &&
-                    it.agentId.isNotEmpty() &&
                     it.targetId.isNotEmpty()
             }
         )

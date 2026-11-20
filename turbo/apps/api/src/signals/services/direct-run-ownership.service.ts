@@ -5,7 +5,6 @@ import { command } from "ccstate";
 import { and, eq, exists, isNull, sql } from "drizzle-orm";
 import { pgIntegerDecoder } from "../../lib/db-structured-result";
 import { nowDate } from "../../lib/time";
-import { db$, writeDb$ } from "../external/db";
 import type { UnacceptedRunOwner } from "./agent-run-terminal-transition.service";
 
 export interface DirectRunTarget extends UnacceptedRunOwner {
@@ -75,7 +74,6 @@ export const selectDirectRunOwner$ = command(
           id: agentRuns.id,
           userId: agentRuns.userId,
           orgId: agentRuns.orgId,
-          agentId: agentRuns.agentId,
           chatThreadId: agentRuns.chatThreadId,
         }),
     );
@@ -107,7 +105,7 @@ export const selectDirectRunOwner$ = command(
             sql`${args.previous === null}`,
             eq(chatThreads.id, changed.chatThreadId),
             eq(chatThreads.userId, changed.userId),
-            eq(chatThreads.agentId, changed.agentId),
+            eq(chatThreads.orgId, changed.orgId),
             exists(db.select({ runId: slot.runId }).from(slot)),
           ),
         )

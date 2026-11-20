@@ -1,10 +1,8 @@
 import { waitUntil } from "../context/wait-until";
-import { projectCommittedChatThreadSearch$ } from "./chat-event-publication.service";
 import {
   workflowAutomationSnapshot,
   workflowAutomationSnapshotColumns,
 } from "./workflow-automation-snapshot";
-import { revokeDeletedWorkflowAutomationInputs$ } from "./workflow-automation-queue-revocation.service";
 import { githubInstallations } from "@okouai/db/schema/github-installation";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { object, string } from "zod";
@@ -102,7 +100,6 @@ import {
 } from "../../lib/db-structured-result";
 import { isForeignKeyViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
-import { db$, rawSqlReadDb$, writeDb$ } from "../external/db";
 import { publishChatThreadAutomationsChangedSafely } from "../external/realtime";
 import {
   bestEffort,
@@ -111,54 +108,13 @@ import {
   safeSync,
   settle,
 } from "../utils";
-import { reconcileAutomationEventWatches$ } from "./automation-event-watch-lifecycle.service";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import { parseGithubWebhookAutomationConfig } from "./github-webhook-automation-config";
-import {
-  readGmailAutomationConnectorId$,
-  gmailSelectedAccountCondition,
-} from "./gmail-automation-account.service";
-import {
-  hasEnabledGmailConsumer$,
-  resolveGmailLabelForUser$,
-  ensureGmailWatchForUser$,
-} from "./gmail-automation-watch.service";
-import { readGoogleCalendarAutomationConnectorId$ } from "./google-calendar-automation-account.service";
-import {
-  normalizeGoogleCalendarId,
-  normalizeGoogleCalendarIdForConnector$,
-  reconcileGoogleCalendarWatchTarget$,
-  releaseStagedGoogleCalendarWatchTarget$,
-  ensureGoogleCalendarWatchForUser$,
-  hasEnabledGoogleCalendarConsumer$,
-  stageGoogleCalendarWatchTargetForReconfiguration$,
-  type StagedGoogleCalendarWatchTarget,
-} from "./google-calendar-automation-watch.service";
-import {
-  readGoogleFormsActivationAccount$,
-  prepareGoogleFormsResponseEventConfigForPersist$,
-  ensureGoogleFormsWatchForUser$,
-  reprojectGoogleFormsAutomationOwnership$,
-  hasEnabledGoogleFormsConsumer$,
-} from "./google-forms-automation-watch.service";
-import {
-  ensureGoogleMeetTranscriptGeneratedSubscriptionForUser$,
-  hasEnabledGoogleMeetConsumer$,
-} from "./google-meet-automation-watch.service";
-import { persistMorningBriefAutomationToggle$ } from "./morning-brief-automation-toggle.service";
+import { gmailSelectedAccountCondition } from "./gmail-automation-account.service";
+import { normalizeGoogleCalendarId, type StagedGoogleCalendarWatchTarget } from "./google-calendar-automation-watch.service";
 import { officialAutomationLifecycleCondition } from "./workflow-automation-write-condition";
 import { notionConfigWithConnectorId } from "./notion-automation-account.service";
-import {
-  prepareNotionChildPageEventConfigForPersist$,
-  prepareNotionDatabaseItemEventConfigForPersist$,
-  prepareNotionPageContentUpdatedEventConfigForPersist$,
-  validateNotionEventConfigForConnector$,
-} from "./notion-automation-preparation.service";
-import {
-  readWorkflowAutomationConnectorAccount$,
-  workflowAutomationConnectorSelectionSql,
-} from "./workflow-automation-account.service";
-import { readAcceptedOfficialWorkflowCatalog$ } from "./official-workflow-catalog-read.service";
+import { workflowAutomationConnectorSelectionSql } from "./workflow-automation-account.service";
 import {
   OFFICIAL_WORKFLOW_AUTOMATION_READ_ONLY_MESSAGE,
   OFFICIAL_WORKFLOW_RECONFIGURATION_IN_PROGRESS_MESSAGE,
@@ -180,24 +136,8 @@ import {
   workflowSummary,
   type WorkflowMember,
 } from "./workflow-data.service";
-import {
-  prepareWorkflowUserAutomationThread$,
-  type WorkflowThreadPreparation,
-  workflowUserAutomationThreadOwnerCondition,
-  preparedWorkflowThreadValues,
-  workflowThreadInsertFromBindingSql,
-} from "./workflow-user-automation-thread.service";
-import {
-  buildWorkflowWebhookSummaryFields$,
-  workflowWebhookSummaryFields,
-  defaultWebhookReceivedEventConfig,
-  encryptWorkflowWebhookSecret,
-  encryptWorkflowWebhookToken,
-  hashWorkflowWebhookToken,
-  mintWorkflowWebhookSecret,
-  mintWorkflowWebhookToken,
-  revealWorkflowWebhookSecretFields$,
-} from "./workflow-webhook-automation-config.service";
+import { type WorkflowThreadPreparation, workflowUserAutomationThreadOwnerCondition, preparedWorkflowThreadValues, workflowThreadInsertFromBindingSql } from "./workflow-user-automation-thread.service";
+import { workflowWebhookSummaryFields, defaultWebhookReceivedEventConfig, encryptWorkflowWebhookSecret, encryptWorkflowWebhookToken, hashWorkflowWebhookToken, mintWorkflowWebhookSecret, mintWorkflowWebhookToken } from "./workflow-webhook-automation-config.service";
 
 type AutomationRow = typeof workflowAutomations.$inferSelect;
 type WorkflowRow = typeof workflows.$inferSelect;
@@ -2491,10 +2431,7 @@ function webhookThreadPublicationValues(args: WebhookAutomationCreateArgs) {
     selectedModel: automationThreadInsertPlan(args).values.selectedModel,
   };
   // The prepared preferences are ordinary inputs. Validate before any write.
-  createdChatThreadFromRow(
-    { ...thread, computerUseHostId: null },
-    args.agentId,
-  );
+  createdChatThreadFromRow({ ...thread, computerUseHostId: null });
   return thread;
 }
 

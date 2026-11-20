@@ -35,7 +35,7 @@ struct ThreadSnapshotArchive: Codable, Sendable {
 
 struct ThreadProjection: Codable, Sendable {
   let id: String
-  let agentId: String
+  let agentId: String?
   let projectId: String?
   let title: String?
   let selectedModel: String?
@@ -76,7 +76,7 @@ struct ThreadEvent: Codable, Sendable {
   let seqId: Int
   let kind: ChatThreadChange.Kind
   let chatThreadId: String
-  let agentId: String
+  let agentId: String?
   let reassignedAgentId: String?
   let projectId: String?
   let title: String?
@@ -106,7 +106,7 @@ struct ThreadEvent: Codable, Sendable {
 
 struct ThreadMetadata: Decodable, Sendable {
   let id: String
-  let agentId: String
+  let agentId: String?
   let title: String?
   let selectedModel: String?
   let computerUseHostId: String?

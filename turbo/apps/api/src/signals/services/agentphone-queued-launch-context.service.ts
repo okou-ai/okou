@@ -1,4 +1,3 @@
-import { agents } from "@okouai/db/schema/agent";
 import { whatsappUserLinks } from "@okouai/db/schema/whatsapp";
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
 import { chatAgentphoneContext } from "@okouai/db/schema/chat-agentphone-context";
@@ -7,7 +6,6 @@ import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { and, eq, exists, ne, or } from "drizzle-orm";
 
 import { optionalEnv } from "../../lib/env";
-import { db$ } from "../external/db";
 import { command, computed } from "ccstate";
 import {
   agentphoneDeliveryTargetSchema,
@@ -41,9 +39,7 @@ type AgentPhoneLaunchContextRow = Pick<
   | "toNumber"
   | "userLinkId"
   | "agentphoneAgentId"
-> & {
-  readonly agentId: string;
-};
+> & {};
 
 function requiredAgentPhoneLaunchContext(
   row: AgentPhoneLaunchContextRow | undefined,
@@ -110,7 +106,6 @@ export function createAgentPhoneLaunchContext(args: AgentPhoneLaunchSource) {
         toNumber: chatAgentphoneContext.toNumber,
         userLinkId: chatAgentphoneContext.userLinkId,
         agentphoneAgentId: chatAgentphoneContext.agentphoneAgentId,
-        agentId: agents.id,
       })
       .from(chatEvents)
       .innerJoin(
@@ -125,9 +120,9 @@ export function createAgentPhoneLaunchContext(args: AgentPhoneLaunchSource) {
         and(
           eq(chatThreads.id, chatEvents.chatThreadId),
           eq(chatThreads.userId, args.userId),
+          eq(chatThreads.orgId, args.orgId),
         ),
       )
-      .innerJoin(agents, eq(agents.id, chatThreads.agentId))
       .where(
         and(
           eq(chatEvents.id, args.eventId),
@@ -195,7 +190,6 @@ function agentphoneDeliveryFromContext(
     fromNumber: context.fromNumber,
     toNumber: context.toNumber,
     userLinkId: context.userLinkId,
-    agentId: context.agentId,
     agentphoneAgentId: context.agentphoneAgentId,
   });
 }

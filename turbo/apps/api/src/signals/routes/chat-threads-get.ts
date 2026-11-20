@@ -1,15 +1,13 @@
 import { chatThreadOrganizationPredicate } from "../services/chat-thread-organization.service";
 import { iosChatUltrafastTransforms } from "@okouai/api-contracts/client-transforms/chat-ultrafast";
 import { command } from "ccstate";
-import { and, eq, isNotNull } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { chatThreadMetadataContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { modelSettingsSchema } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 
-import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { pathParamsOf } from "../context/request";
-import { db$ } from "../external/db";
 import { notFound } from "../../lib/error";
 import { chatThreadServiceTierFromCodex } from "../services/chat-thread-event.service";
 import type { RouteEntry } from "../route-entry";
@@ -23,7 +21,6 @@ const getInner$ = command(async ({ get }, signal: AbortSignal) => {
   const [thread] = await db
     .select({
       id: chatThreads.id,
-      agentId: chatThreads.agentId,
       title: chatThreads.title,
       selectedModel: chatThreads.selectedModel,
       modelSettings: chatThreads.modelSettings,
@@ -40,14 +37,13 @@ const getInner$ = command(async ({ get }, signal: AbortSignal) => {
       and(
         eq(chatThreads.id, params.id),
         eq(chatThreads.userId, auth.userId),
-        isNotNull(chatThreads.agentId),
         chatThreadOrganizationPredicate(auth.orgId),
       ),
     )
     .limit(1);
   signal.throwIfAborted();
 
-  if (!thread?.agentId) {
+  if (!thread) {
     return notFound("Chat thread not found");
   }
 
@@ -55,7 +51,6 @@ const getInner$ = command(async ({ get }, signal: AbortSignal) => {
     status: 200 as const,
     body: {
       id: thread.id,
-      agentId: thread.agentId,
       title: thread.title,
       selectedModel: thread.selectedModel,
       modelSettings: modelSettingsSchema.parse(thread.modelSettings),

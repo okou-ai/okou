@@ -5,24 +5,14 @@ import {
   type ModelSettings,
   type ModelSettingsPatch,
 } from "@okouai/api-contracts/contracts/model-reasoning-effort";
-import {
-  and,
-  asc,
-  eq,
-  exists,
-  gt,
-  notExists,
-  or,
-  sql,
-  type SQL,
-} from "drizzle-orm";
+import { and, asc, eq, gt, notExists, or, sql, type SQL } from "drizzle-orm";
 import { alias, unionAll } from "drizzle-orm/pg-core";
 import type {
   ChatThreadEvent,
   ChatThreadServiceTier,
   CodexServiceTier,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { agents } from "@okouai/db/schema/agent";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import {
   chatThreadEventSequences,
   chatThreadEvents,
@@ -31,7 +21,6 @@ import {
 import { chatThreadSnapshots } from "@okouai/db/schema/chat-thread-snapshot";
 
 import { computed } from "ccstate";
-import { db$ } from "../external/db";
 
 const CHAT_THREAD_EVENTS_PAGE_SIZE = 1000;
 const cursorChatThreadEvent = alias(
@@ -46,7 +35,7 @@ interface ChatThreadEventAppend {
   readonly userId: string;
   readonly orgId?: string | null;
   readonly chatThreadId: string;
-  readonly agentId: string;
+  readonly agentId?: string;
   readonly reassignedAgentId?: string;
   readonly eventId?: string;
   readonly title?: string | null;
@@ -105,7 +94,7 @@ export function chatThreadEventInsertPlan(
   },
   source?: {
     readonly gate: SQL;
-    readonly agentId: SQL;
+    readonly agentId?: SQL;
     readonly reservationSource?: SQL;
   },
 ) {
@@ -118,21 +107,11 @@ export function chatThreadEventInsertPlan(
   const reservationSource =
     source?.reservationSource ?? sql.identifier("reserved");
   const chatThreadId: SQL = chatThreadIdentitySql(args.chatThreadId);
-  let agentId: SQL;
-  if (source) {
-    agentId = source.agentId;
-  } else {
-    if (args.agentId === undefined) {
-      throw new Error("Chat thread event requires an agent identity");
-    }
-    agentId = sql`${args.agentId}`;
-  }
-  // The scalar lookup executes as part of the owning statement, not in a
-  // handle-taking helper. A missing authority fails the non-null org insert.
   const orgId =
     typeof args.orgId === "string"
       ? sql`${args.orgId}`
-      : sql`(SELECT ${agents.orgId} FROM ${agents} WHERE ${agents.id} = ${agentId}::uuid)`;
+      : sql`(SELECT ${chatThreads.orgId} FROM ${chatThreads}
+          WHERE ${chatThreads.id} = ${chatThreadId}::uuid AND ${chatThreads.userId} = ${args.userId})`;
   const reservationInput = source
     ? sql`SELECT ${args.userId}, ${orgId}, ${eventCount} WHERE ${source.gate}`
     : sql`VALUES (${args.userId}, ${orgId}, ${eventCount})`;
@@ -142,15 +121,15 @@ export function chatThreadEventInsertPlan(
       SET last_seq_id = ${chatThreadEventSequences.lastSeqId} + ${eventCount}
       RETURNING last_seq_id`;
   const insertion = sql`INSERT INTO ${chatThreadEvents} (
-      id, user_id, org_id, seq_id, chat_thread_id, kind, agent_id, project_id,
-      reassigned_agent_id, title,
+      id, user_id, org_id, seq_id, chat_thread_id, kind, project_id,
+      title,
       pin_order, muted, hidden, selected_model, model_settings, model_settings_patch,
       service_tier, computer_use_host_id, cloud_browser_enabled, created_at
     ) SELECT
       ${event.id},
       ${args.userId}, ${orgId}, ${event.sequence},
       ${chatThreadId}::uuid, ${event.kind},
-      ${agentId}::uuid, ${args.projectId ?? null}::uuid, ${args.reassignedAgentId ?? null}::uuid,
+      ${args.projectId ?? null}::uuid,
       ${args.title ?? null}, ${args.pinOrder ?? null}, ${args.muted ?? null}, ${args.hidden ?? null},
       ${args.selectedModel ?? null},
       ${args.modelSettings === undefined ? null : JSON.stringify(args.modelSettings)}::jsonb,
@@ -170,7 +149,7 @@ export function chatThreadEventInsertSql(
   source?: {
     readonly cte: SQL;
     readonly gate: SQL;
-    readonly agentId: SQL;
+    readonly agentId?: SQL;
     readonly result?: SQL;
   },
 ) {
@@ -315,23 +294,11 @@ export function chatThreadServiceTierFromCodex(
   return codexServiceTier === "fast" ? "priority" : (codexServiceTier ?? null);
 }
 
-function hasCanonicalAgentReference(
-  row: ChatThreadEventRow,
-): row is ChatThreadEventRow & { readonly agentId: string } {
-  return row.agentId !== null;
-}
-
-function toApiChatThreadEvent(
-  row: ChatThreadEventRow & { readonly agentId: string },
-): ChatThreadEvent {
+function toApiChatThreadEvent(row: ChatThreadEventRow): ChatThreadEvent {
   const event: Omit<ChatThreadEvent, "kind" | "projectId"> = {
     id: row.id,
     seqId: row.seqId,
     chatThreadId: row.chatThreadId,
-    agentId: row.agentId,
-    ...(row.reassignedAgentId === null
-      ? {}
-      : { reassignedAgentId: row.reassignedAgentId }),
     title: row.title,
     pinOrder: row.pinOrder,
     ...(row.muted === null ? {} : { muted: row.muted }),
@@ -424,17 +391,6 @@ function chatThreadEventRowsAfterCursor(args: {
             eq(pageChatThreadEvent.userId, args.userId),
             eq(pageChatThreadEvent.orgId, args.orgId),
             gt(pageChatThreadEvent.seqId, validCursor.seqId),
-            // Tombstones for Agent deletion outlive the Agent itself. Other
-            // events still require a canonical Agent to be returned.
-            or(
-              eq(pageChatThreadEvent.kind, "deleted"),
-              exists(
-                db
-                  .select({ id: agents.id })
-                  .from(agents)
-                  .where(eq(agents.id, pageChatThreadEvent.agentId)),
-              ),
-            ),
           ),
         )
         .orderBy(asc(pageChatThreadEvent.seqId))
@@ -489,28 +445,18 @@ export function getChatThreadEventsSince(args: {
             and(
               eq(chatThreadEvents.userId, args.userId),
               eq(chatThreadEvents.orgId, args.orgId),
-              or(
-                eq(chatThreadEvents.kind, "deleted"),
-                exists(
-                  db
-                    .select({ id: agents.id })
-                    .from(agents)
-                    .where(eq(agents.id, chatThreadEvents.agentId)),
-                ),
-              ),
             ),
           )
           .orderBy(asc(chatThreadEvents.seqId))
           .limit(CHAT_THREAD_EVENTS_PAGE_SIZE + 1);
       }
 
-      const visibleRows = rows.filter(hasCanonicalAgentReference);
       return {
         kind: "ok",
-        events: visibleRows
+        events: rows
           .slice(0, CHAT_THREAD_EVENTS_PAGE_SIZE)
           .map(toApiChatThreadEvent),
-        hasMore: visibleRows.length > CHAT_THREAD_EVENTS_PAGE_SIZE,
+        hasMore: rows.length > CHAT_THREAD_EVENTS_PAGE_SIZE,
       };
     },
   );

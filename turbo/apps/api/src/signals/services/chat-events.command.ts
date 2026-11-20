@@ -1,9 +1,4 @@
 import {
-  publishChatThreadMessageCreated$,
-  projectCommittedChatThreadSearch$,
-} from "./chat-event-publication.service";
-import { deliverMarketingRewardEvents$ } from "./marketing-reward-event-delivery.service";
-import {
   AUTO_SELECTED_MODEL,
   isAutoSelectedModel,
 } from "@okouai/core/auto-run-model";
@@ -73,11 +68,8 @@ import { normalizeWebUploadContentType } from "../../lib/uploads-constants";
 import { buildGenerationTemplatePrompt } from "../../lib/generation-template-prompt";
 import { now, nowDate } from "../../lib/time";
 import type { AuthContext } from "../../types/auth";
-import { organizationAuthContext$ } from "../auth/auth-context";
-import { apiStartTime$, route$ } from "../context/hono";
 import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-event-send";
 import { waitUntil } from "../context/wait-until";
-import { db$, writeDb$ } from "../external/db";
 import {
   publishDesktopShellAuthorizationChangedSafely,
   publishThreadListChangedSafely,
@@ -90,16 +82,8 @@ import {
   settle,
   settleIncludingAbort,
 } from "../utils";
-import {
-  createAgentRunContextSignals,
-  preloadAgentRunContext$,
-  type AgentRunContextSignals,
-} from "./agent-run-context.signals";
-import {
-  resolveDefaultModelFirstPin$,
-  resolveRunSelectionModel,
-  type ModelSelectionBootstrap,
-} from "./model-selection.service";
+import { createAgentRunContextSignals, type AgentRunContextSignals } from "./agent-run-context.signals";
+import { resolveRunSelectionModel, type ModelSelectionBootstrap } from "./model-selection.service";
 import {
   queuedChatThreadPublicationPlan,
   type PublishedChatThreadLease,
@@ -110,7 +94,6 @@ import {
   ChatEnqueueTimingCollector,
 } from "./chat-enqueue-timing.service";
 
-import { cancelRun$ } from "./agent-run-cancellation.service";
 import type { CancelRunResult } from "./agent-run-terminal-transition.service";
 import {
   canonicalPrivateWebInputPlan,
@@ -126,8 +109,6 @@ import {
   pendingChatQueueEventFromRow,
   pendingChatQueueEventReadPlan,
 } from "./chat-event-queue.service";
-import { notifyBrowserUserActionCallback$ } from "./browser-user-action-callback.service";
-import { touchSentChatThreadSort$ } from "./chat-event-shared.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
 import { reportChatEventSideEffect } from "./chat-event-write-side-effects.service";
 import {
@@ -142,10 +123,7 @@ import {
   type NewChatEvent,
 } from "./chat-event.service";
 import type { ChatInputEnqueueCommit } from "./chat-input-enqueue-observation";
-import {
-  capturedModelReplacement,
-  resolveChatInputModelSelection$,
-} from "./chat-input-model.service";
+import { capturedModelReplacement } from "./chat-input-model.service";
 import { resolveChatReasoningEffort } from "./chat-reasoning-effort.service";
 import { prepareChatThreadInsert } from "./chat-thread-create.service";
 import {
@@ -153,18 +131,10 @@ import {
   chatThreadEventInsertPlan,
   chatThreadServiceTierFromCodex,
 } from "./chat-thread-event.service";
-import {
-  isOfficialWorkflowThread$,
-  officialWorkflowThreadCondition,
-  OFFICIAL_WORKFLOW_THREAD_READ_ONLY_MESSAGE,
-} from "./official-workflow-policy.service";
+import { officialWorkflowThreadCondition, OFFICIAL_WORKFLOW_THREAD_READ_ONLY_MESSAGE } from "./official-workflow-policy.service";
 import { isForeignKeyViolation } from "../../lib/pg-errors";
 import { chatThreadOrganizationCondition } from "./chat-thread-organization.service";
 import { pgBooleanDecoder } from "../../lib/db-structured-result";
-import {
-  notifyRunningChatRunOfPendingInput$,
-  pickEnqueuedChatThread$,
-} from "./chat-thread-queue-drain.service";
 import {
   agentRunSourceTitleSnapshot,
   hasAgentRunSourceAnnotation,
@@ -184,14 +154,8 @@ import { isCatalogCodexServiceTierSupported } from "./model-route-capabilities.s
 import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 import { selectedUserPresentationTemplateIds } from "./presentation-template-data.service";
 import { selectedUserTemplateIds } from "./user-template-data.service";
-import {
-  dispatchCancelSideEffects$,
-  shouldDispatchCancelSideEffects,
-} from "./run-cancel.service";
-import {
-  createPublicArtifactObjectReads,
-  resolvedArtifactObject$,
-} from "./artifact-storage.service";
+import { shouldDispatchCancelSideEffects } from "./run-cancel.service";
+import { createPublicArtifactObjectReads } from "./artifact-storage.service";
 import {
   completedPrivateAttachmentSize,
   privateArtifactFromRow,
@@ -264,7 +228,7 @@ interface NormalSendRequest {
    */
   readonly requestReceivedAt?: number;
 }
-type NormalSendArgs = NormalSendRequest & { readonly agentId: string };
+type NormalSendArgs = NormalSendRequest;
 type NormalSendFailure =
   | ReturnType<typeof notFound>
   | ReturnType<typeof forbidden>
@@ -1019,7 +983,6 @@ const requestedThreadComputerAccess$ = command(
 interface ExistingSendThread {
   readonly kind: "existing";
   readonly threadId: string;
-  readonly agentId: string;
   readonly runSettings: ThreadRunSettings;
   readonly computerAccess: ThreadComputerAccess;
   readonly current: ThreadRunSettings & ThreadComputerAccess;
@@ -1067,7 +1030,6 @@ const resolveSendThread$ = command(
       readonly catalog: ModelCatalog;
       readonly existing?: {
         readonly thread: ExistingSendThreadRow;
-        readonly agentId: string;
       };
       readonly orgPlanCapabilities: OrgPlanCapabilities | null | undefined;
       readonly modelBootstrap: ModelSelectionBootstrap;
@@ -1103,7 +1065,6 @@ const resolveSendThread$ = command(
       return {
         kind: "existing",
         threadId: args.existing.thread.id,
-        agentId: args.existing.agentId,
         runSettings,
         computerAccess,
         current,
@@ -1240,7 +1201,6 @@ function existingSendThreadUpdatePlan(
     userId: args.userId,
     orgId: args.orgId,
     chatThreadId: thread.threadId,
-    agentId: thread.agentId,
     createdAt: updatedAt,
   };
   const modelEvents: Parameters<typeof chatThreadEventInsertSql>[0][] = [];
@@ -1534,7 +1494,6 @@ function newSendThreadInsertPlan(args: NormalSendArgs, thread: NewSendThread) {
     orgId: args.orgId,
     id: thread.threadId,
     userId: args.userId,
-    agentId: args.agentId,
     title: null,
     projectId: args.projectId,
     selectedModel: thread.runSettings.selectedModel,
@@ -1721,7 +1680,6 @@ function normalSendCreatedListEvent(
     userId: args.userId,
     orgId: args.orgId,
     chatThreadId: thread.threadId,
-    agentId: args.agentId,
     eventId: args.body.chatThreadEventId,
     projectId: args.projectId,
     title: null,
@@ -2195,7 +2153,6 @@ const normalSendThreadTouch$ = command(
           userId: args.userId,
           orgId: args.orgId,
           threadId: thread.threadId,
-          agentId: thread.agentId,
           touchedAt,
           eventId: args.body.chatThreadSortEventId,
         },
@@ -2509,10 +2466,7 @@ const prepareNormalSendContext$ = command(
       request.orgId,
       requestInputs,
     );
-    const agentId =
-      existing?.agentId ?? (await get(context.orgMetadata$))?.defaultAgentId;
-    if (!agentId) return notFound("Thread binding not found");
-    const args: NormalSendArgs = { ...request, agentId };
+    const args = request;
     // A forwarded or agent-token send also awaits its source Run. The read is
     // scoped to the caller's user and organization, and its outcome is used
     // only after authorization.
@@ -2670,9 +2624,7 @@ export const sendNormalEvent$ = command(
             catalog,
             modelBootstrap,
             context,
-            existing: existing
-              ? { thread: existing, agentId: args.agentId }
-              : undefined,
+            existing: existing ? { thread: existing } : undefined,
           },
           signal,
         );

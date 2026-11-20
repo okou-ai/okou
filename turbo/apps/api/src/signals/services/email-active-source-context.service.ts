@@ -8,13 +8,10 @@ import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agen
 import { connectors } from "@okouai/db/schema/connector";
 import { connectorPermissionGrants } from "@okouai/db/schema/connector-permission-grant";
 import { nowDate } from "../../lib/time";
-import { db$ } from "../external/db";
 import {
   chatConnectorExecutionFromRows,
   chatConnectorExecutionReadPlan,
 } from "./chat-connector-execution";
-import { readConnectorRuntimeAuthSelection$ } from "./connector-catalog-slug-source.service";
-import { loadEmailSourceMessageContext$ } from "./email-source-message.service";
 import {
   buildEmailPrompt,
   type EmailMailboxConnection,
@@ -25,7 +22,6 @@ import {
   activeMemberConnectorPermissionCondition,
   memberConnectorPermissionColumns,
 } from "./member-connector-selection";
-import { readActiveNetworkPolicyRefreshes$ } from "./connector-network-policy-refresh.service";
 
 interface ActiveEmailScope {
   readonly runId: string;
@@ -41,7 +37,6 @@ const readActiveEmailMailboxes$ = command(
     const db = get(db$);
     const [run] = await db
       .select({
-        agentId: agentRuns.agentId,
         payload: agentRunConnectorDiagnosticRegistrations.payload,
       })
       .from(agentRuns)
@@ -60,7 +55,7 @@ const readActiveEmailMailboxes$ = command(
       )
       .limit(1);
     signal.throwIfAborted();
-    if (!run?.agentId) {
+    if (!run) {
       return null;
     }
     const targets = agentRunConnectorDiagnosticRegistrationPayloadSchema
@@ -137,7 +132,6 @@ const readActiveEmailMailboxes$ = command(
       .where(activeMemberConnectorPermissionCondition(args, nowDate()));
     signal.throwIfAborted();
     return {
-      agentId: run.agentId,
       memberRules,
       mailboxes: rows.flatMap((row) => {
         const binding = bindings.get(row.connectionId);

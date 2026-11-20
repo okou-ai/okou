@@ -1,13 +1,11 @@
 import { command, computed } from "ccstate";
 import { OFFICIAL_TELEGRAM_BOT_ID } from "@okouai/api-contracts/contracts/integrations-telegram";
-import { agents } from "@okouai/db/schema/agent";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatTelegramContext } from "@okouai/db/schema/chat-telegram-context";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { telegramOfficialUserLinks } from "@okouai/db/schema/telegram-official-user-link";
 import { and, eq } from "drizzle-orm";
 
-import { db$ } from "../external/db";
 import { getOfficialTelegramBotConfig } from "../external/telegram-official";
 import {
   telegramDeliveryTargetSchema,
@@ -46,7 +44,6 @@ type TelegramLaunchContextRow = Pick<
   | "senderUsername"
   | "senderLanguage"
 > & {
-  readonly agentId: string;
   readonly officialUserLinkId: string | null;
 };
 
@@ -109,7 +106,6 @@ export function createTelegramLaunchContext(args: TelegramLaunchSource) {
         senderDisplayName: chatTelegramContext.senderDisplayName,
         senderUsername: chatTelegramContext.senderUsername,
         senderLanguage: chatTelegramContext.senderLanguage,
-        agentId: agents.id,
         officialUserLinkId: telegramOfficialUserLinks.id,
       })
       .from(chatEvents)
@@ -125,9 +121,9 @@ export function createTelegramLaunchContext(args: TelegramLaunchSource) {
         and(
           eq(chatThreads.id, chatEvents.chatThreadId),
           eq(chatThreads.userId, args.userId),
+          eq(chatThreads.orgId, args.orgId),
         ),
       )
-      .innerJoin(agents, eq(agents.id, chatThreads.agentId))
       .leftJoin(
         telegramOfficialUserLinks,
         and(
@@ -181,7 +177,6 @@ function telegramDeliveryFromContext(
     rootMessageId: context.rootMessageId,
     userLinkId: context.userLinkId,
     userLinkKind: context.userLinkKind,
-    agentId: context.agentId,
     isDM: context.chatType === "private",
     ...(context.messageThreadId !== null
       ? { messageThreadId: context.messageThreadId }

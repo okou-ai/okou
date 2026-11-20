@@ -43,7 +43,7 @@ struct ChatListContents {
     // A name read can fail independently of membership synchronization. Keep
     // those authorized chats reachable while the Project read reports its error.
     let outside = threads.filter {
-      $0.agentID == agentID && !knownIDs.contains($0.projectId ?? "")
+      !knownIDs.contains($0.projectId ?? "")
     }
     self.threads = outside.filter(matches)
     hasHiddenArchivedThreads = inbox && outside.contains(where: \.isArchived)

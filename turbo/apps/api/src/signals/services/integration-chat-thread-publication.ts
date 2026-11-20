@@ -29,7 +29,6 @@ export function integrationChatThreadValues(
     id,
     userId: args.userId,
     orgId: args.orgId,
-    agentId: args.agentId,
     selectedModel: args.initialModel.selectedModel,
     codexServiceTier:
       args.initialModel.serviceTier === "priority" ? ("fast" as const) : null,
@@ -54,7 +53,6 @@ export function integrationThreadCreatedEventSql(
       orgId,
       userId: thread.userId,
       chatThreadId: thread.id,
-      agentId: thread.agentId,
       title: thread.title,
       selectedModel: thread.selectedModel,
       modelSettings: thread.modelSettings,

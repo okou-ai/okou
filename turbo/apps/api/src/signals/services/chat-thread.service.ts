@@ -63,17 +63,10 @@ import {
 import { chatThreadInitializationCtes } from "./chat-thread-initialization-plan";
 import { now, nowDate, nowDateSql } from "../../lib/time";
 import { safeSqlStateCode } from "../../lib/pg-errors";
-import { db$, writeDb$ } from "../external/db";
 import { inferMimetype } from "./chat-event-shared.service";
-import {
-  deleteChatThreadDraft$,
-  persistChatThreadDraft$,
-} from "./chat-thread-draft-write.service";
 import { chatThreadOrganizationPredicate } from "./chat-thread-organization.service";
-import { cancelRun$ } from "./agent-run-cancellation.service";
 import type { CancelRunResult } from "./agent-run-terminal-transition.service";
 import { cancellationRecoveryPendingForThread } from "./chat-active-run.service";
-import { reconcileAutomationEventWatches$ } from "./automation-event-watch-lifecycle.service";
 import {
   prepareChatThreadInsert,
   createdChatThreadFromRow,
@@ -83,7 +76,7 @@ import { initialRemoteAccessOwnershipPredicate } from "./chat-remote-access.serv
 type ChatThreadRow = {
   readonly id: string;
   readonly title: string | null;
-  readonly agentId: string;
+  readonly agentId?: string;
   readonly codexServiceTier: CodexServiceTier | null;
   readonly computerUseHostId: string | null;
   readonly cloudBrowserEnabled: boolean;
@@ -188,11 +181,10 @@ function ownedChatThread(
       .select({
         id: chatThreads.id,
         title: chatThreads.title,
-        agentId: agents.id,
         computerUseHostId: chatThreads.computerUseHostId,
         cloudBrowserEnabled: chatThreads.cloudBrowserEnabled,
         codexServiceTier: chatThreads.codexServiceTier,
-        orgId: agents.orgId,
+        orgId: chatThreads.orgId,
         lastReadAt: chatThreads.lastReadAt,
         lastMessageAt: chatThreads.lastMessageAt,
         pinnedAt: chatThreads.pinnedAt,
@@ -201,7 +193,6 @@ function ownedChatThread(
         updatedAt: chatThreads.updatedAt,
       })
       .from(chatThreads)
-      .innerJoin(agents, eq(agents.id, chatThreads.agentId))
       .where(
         and(
           eq(chatThreads.id, threadId),
@@ -211,14 +202,13 @@ function ownedChatThread(
       )
       .limit(1);
 
-    if (!thread?.agentId) {
+    if (!thread) {
       return null;
     }
 
     return {
       id: thread.id,
       title: thread.title,
-      agentId: thread.agentId,
       computerUseHostId: thread.computerUseHostId,
       cloudBrowserEnabled: thread.cloudBrowserEnabled,
       codexServiceTier: thread.codexServiceTier ?? null,
@@ -340,25 +330,6 @@ type UnreadIndicatorRow = IndicatorThreadRow & {
   readonly archived: boolean;
 };
 
-function indicatorAgentIds(args: IndicatorOwner) {
-  return computed(async (get): Promise<readonly string[]> => {
-    const rows = await get(db$)
-      .select({ id: agents.id })
-      .from(agents)
-      .where(
-        and(
-          eq(agents.orgId, args.orgId),
-          or(eq(agents.visibility, "public"), eq(agents.owner, args.userId)),
-        ),
-      )
-      .orderBy(desc(agents.updatedAt), desc(agents.id))
-      .limit(INDICATOR_AGENT_LIMIT);
-    return rows.map((row) => {
-      return row.id;
-    });
-  });
-}
-
 function newestUnreadIndicators(rows: UnreadIndicatorRow[]) {
   rows.sort((left, right) => {
     const byTime = right.unreadAt.getTime() - left.unreadAt.getTime();
@@ -371,13 +342,8 @@ function newestUnreadIndicators(rows: UnreadIndicatorRow[]) {
 }
 
 function createIndicatorRows(args: IndicatorOwner) {
-  const agentIds$ = indicatorAgentIds(args);
   const activeRows$ = computed(
     async (get): Promise<readonly IndicatorThreadRow[]> => {
-      const agentIds = await get(agentIds$);
-      if (agentIds.length === 0) {
-        return [];
-      }
       return await get(db$)
         .select({ threadId: chatThreads.id, agentId: chatThreads.agentId })
         .from(agentRuns)
@@ -390,7 +356,7 @@ function createIndicatorRows(args: IndicatorOwner) {
             isNotNull(agentRuns.triggerSource),
             eq(chatThreads.userId, args.userId),
             eq(chatThreads.hidden, false),
-            inArray(chatThreads.agentId, agentIds),
+            eq(chatThreads.orgId, args.orgId),
           ),
         )
         .groupBy(chatThreads.id, chatThreads.agentId)
@@ -400,10 +366,6 @@ function createIndicatorRows(args: IndicatorOwner) {
   );
   const unreadRows$ = computed(
     async (get): Promise<readonly UnreadIndicatorRow[]> => {
-      const agentIds = await get(agentIds$);
-      if (agentIds.length === 0) {
-        return [];
-      }
       const db = get(db$);
       const unreadCutoff = new Date(now() - INDICATOR_UNREAD_LOOKBACK_MS);
       // The newest threads with messages after their read watermark are the only
@@ -419,7 +381,7 @@ function createIndicatorRows(args: IndicatorOwner) {
         .where(
           and(
             eq(chatThreads.userId, args.userId),
-            inArray(chatThreads.agentId, agentIds),
+            eq(chatThreads.orgId, args.orgId),
             eq(chatThreads.muted, false),
             eq(chatThreads.hidden, false),
             gte(chatThreads.lastMessageAt, unreadCutoff),
@@ -829,7 +791,7 @@ const existingClientThreadSelection = Object.freeze({
 function existingClientThreadCondition(args: {
   readonly clientThreadId: string | undefined;
   readonly userId: string;
-  readonly agentId: string;
+  readonly agentId?: string;
   readonly orgId: string;
 }) {
   if (args.clientThreadId === undefined) {
@@ -838,7 +800,6 @@ function existingClientThreadCondition(args: {
   return and(
     eq(chatThreads.id, args.clientThreadId),
     eq(chatThreads.userId, args.userId),
-    eq(chatThreads.agentId, args.agentId),
     chatThreadOrganizationPredicate(args.orgId),
   );
 }
@@ -849,7 +810,7 @@ interface CreateChatThreadArgs {
   readonly sourceRunId?: string;
   readonly userId: string;
   readonly orgId: string;
-  readonly agentId: string;
+  readonly agentId?: string;
   readonly title: string | undefined;
   readonly clientThreadId: string | undefined;
   readonly eventId: string | undefined;
@@ -873,7 +834,6 @@ function ordinaryChatThreadInsertPlan(args: CreateChatThreadArgs) {
     orgId: args.orgId,
     ...(args.clientThreadId !== undefined ? { id: args.clientThreadId } : {}),
     userId: args.userId,
-    agentId: args.agentId,
     title: args.title ?? null,
     projectId: args.projectId,
     // Positive classification belongs to the INSERT itself. A conflicting
@@ -918,21 +878,18 @@ function preparedOrdinaryThread(
     readonly cloudBrowserEnabled: boolean;
   },
 ) {
-  const thread = createdChatThreadFromRow(
-    {
-      id: args.clientThreadId ?? read.id,
-      projectId: args.projectId,
-      userId: args.userId,
-      title: args.title ?? null,
-      selectedModel: plan.values.selectedModel,
-      modelSettings: read.modelSettings,
-      codexServiceTier: args.codexServiceTier,
-      computerUseHostId: null,
-      cloudBrowserEnabled: read.cloudBrowserEnabled,
-      createdAt: read.at,
-    },
-    args.agentId,
-  );
+  const thread = createdChatThreadFromRow({
+    id: args.clientThreadId ?? read.id,
+    projectId: args.projectId,
+    userId: args.userId,
+    title: args.title ?? null,
+    selectedModel: plan.values.selectedModel,
+    modelSettings: read.modelSettings,
+    codexServiceTier: args.codexServiceTier,
+    computerUseHostId: null,
+    cloudBrowserEnabled: read.cloudBrowserEnabled,
+    createdAt: read.at,
+  });
   return {
     thread,
     values: {

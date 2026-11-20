@@ -508,9 +508,6 @@ internal class ChatComposerOwner(
 
     fun send(connection: Connection, target: ComposerTarget) {
         if (!mutable.value.canSend(target) || !connection.current()) return
-        val agent =
-            (if (target.threadId == null) mutable.value.defaultAgentId else target.agentId)
-                ?: return
         val op = begin(connection, target.key) ?: return
         val entry = mutable.value.entry(target)
         val threadId = target.threadId ?: UUID.randomUUID().toString()
@@ -521,7 +518,6 @@ internal class ChatComposerOwner(
                 threadId,
                 if (target.threadId == null)
                     CreateThreadRequest(
-                        agentId = agent,
                         projectId = target.projectId,
                         clientThreadId = threadId,
                         eventId = UUID.randomUUID().toString(),
@@ -908,8 +904,8 @@ internal class ChatComposerOwner(
         if (pending.create != null)
             entries = entries + (op.key to ComposerEntry(createdThreadId = pending.threadId))
         var drafts = journal.drafts
-        if (pending.create != null) {
-            val source = "agent:${pending.send.agentId}"
+        if (pending.create != null && journal.defaultAgentId != null) {
+            val source = "agent:${journal.defaultAgentId}"
             val draft = drafts[source]
             if (draft != null && draft.source == op.key && draft.text.isNotEmpty()) {
                 drafts =
@@ -931,7 +927,7 @@ internal class ChatComposerOwner(
                 else receiptMessages + (pending.eventId to pending.preview(disposition)),
         )
         if (pending.create != null) {
-            synchronize(op.connection, ServerDraftTarget(pending.send.agentId, false))
+            journal.defaultAgentId?.let { synchronize(op.connection, ServerDraftTarget(it, false)) }
             synchronize(op.connection, ServerDraftTarget(pending.threadId, true))
         }
         op.connection.accepted(pending.threadId)

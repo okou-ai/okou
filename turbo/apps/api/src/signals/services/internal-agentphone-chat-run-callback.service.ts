@@ -1,7 +1,6 @@
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import type { RunFailureReasonToken } from "@okouai/api-contracts/contracts/run-failure-reasons";
-import { agents } from "@okouai/db/schema/agent";
 import { agentphoneChatThreadRoutes } from "@okouai/db/schema/agentphone-chat-thread-route";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
@@ -9,34 +8,16 @@ import { command } from "ccstate";
 import { and, eq, isNotNull } from "drizzle-orm";
 import { logger } from "../../lib/log";
 import { sendAgentPhoneMessage } from "../external/agentphone-client";
-import {
-  loadWhatsappCompletedTask$,
-  sendWhatsappTextWithTaskFallback,
-  type WhatsappCompletedTask,
-} from "./whatsapp-task-notification.service";
-import { db$, writeDb$ } from "../external/db";
+import { sendWhatsappTextWithTaskFallback, type WhatsappCompletedTask } from "./whatsapp-task-notification.service";
 import { recordSandboxOperation } from "../external/sandbox-op-log";
 import { now, nowDate } from "../../lib/time";
-import { clerk$, isClerkResourceNotFound } from "../external/clerk";
+import { isClerkResourceNotFound } from "../external/clerk";
 import { settle, settleIncludingAbort, tapError } from "../utils";
-import { formatIntegrationChatMessage$ } from "./integration-run-errors.service";
-import { sendPendingAgentPhoneContactCard$ } from "./agentphone-contact-card.service";
 import {
   agentphoneChatCallbackPayloadSchema,
   type AgentPhoneDeliveryTarget,
 } from "./agentphone-chat-callback-payload";
-import {
-  agentPhoneReplyDestination,
-  agentPhoneRouteLinkColumn,
-  agentPhoneReplyChunks,
-  recordAgentPhoneGroupReplyRoute$,
-  agentPhoneUserLinksForChannel,
-  markdownToImessagePlain,
-  resolveAgentPhoneConversationVisibilityRecipients$,
-  resolveAgentPhoneReplyFooterText$,
-  storeOutboundAgentPhoneMessage$,
-  type AgentPhoneMessageVisibilityRecipient,
-} from "./agentphone-shared.service";
+import { agentPhoneReplyDestination, agentPhoneRouteLinkColumn, agentPhoneReplyChunks, agentPhoneUserLinksForChannel, markdownToImessagePlain, type AgentPhoneMessageVisibilityRecipient } from "./agentphone-shared.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
 import {
   canonicalChatEventContent,
@@ -111,7 +92,6 @@ interface AgentPhoneChatRunContext {
   readonly userId: string;
   readonly orgId: string;
   readonly chatThreadId: string;
-  readonly agentId: string;
 }
 
 const markDelivered$ = command(
@@ -227,11 +207,16 @@ const loadAgentPhoneChatDeliveryContext$ = command(
         userId: agentRuns.userId,
         orgId: agentRuns.orgId,
         chatThreadId: agentRuns.chatThreadId,
-        agentId: agents.id,
       })
       .from(agentRuns)
-      .innerJoin(chatThreads, eq(chatThreads.id, agentRuns.chatThreadId))
-      .innerJoin(agents, eq(agents.id, chatThreads.agentId))
+      .innerJoin(
+        chatThreads,
+        and(
+          eq(chatThreads.id, agentRuns.chatThreadId),
+          eq(chatThreads.orgId, agentRuns.orgId),
+          eq(chatThreads.userId, agentRuns.userId),
+        ),
+      )
       .where(
         and(
           eq(agentRuns.id, args.callback.runId),
@@ -247,7 +232,6 @@ const loadAgentPhoneChatDeliveryContext$ = command(
       userId: run.userId,
       orgId: run.orgId,
       chatThreadId: run.chatThreadId,
-      agentId: run.agentId,
     };
 
     const [event] = await get(db$)
@@ -297,17 +281,6 @@ const loadAgentPhoneChatDeliveryContext$ = command(
     };
   },
 );
-
-function buildAgentPhoneResponseText(args: {
-  readonly mainText: string;
-  readonly footerText: string | undefined;
-}): string {
-  return [args.mainText, args.footerText]
-    .filter((part): part is string => {
-      return Boolean(part);
-    })
-    .join("\n\n");
-}
 
 interface AgentPhoneChatSendResult {
   readonly messages: readonly {
@@ -482,15 +455,7 @@ const deliverClaimedAgentPhoneChatCallback$ = command(
       signal,
     );
     signal.throwIfAborted();
-    const footerText = await set(resolveAgentPhoneReplyFooterText$, {
-      orgId: run.orgId,
-      composeId: run.agentId,
-    });
-    signal.throwIfAborted();
-    const body = buildAgentPhoneResponseText({
-      mainText,
-      footerText,
-    });
+    const body = mainText;
     const completedTask =
       payload.channel === "whatsapp" &&
       !payload.isGroup &&
@@ -644,7 +609,6 @@ interface AgentPhoneChatAdmissionFailureArgs {
   readonly chatThreadId: string;
   readonly userId: string;
   readonly orgId: string;
-  readonly agentId: string;
   readonly target: AgentPhoneDeliveryTarget;
   readonly chatEventId: string;
 }
@@ -683,7 +647,6 @@ export const deliverAgentPhoneChatAdmissionFailure$ = command(
           userId: args.userId,
           orgId: args.orgId,
           chatThreadId: args.chatThreadId,
-          agentId: args.agentId,
         },
       },
       signal,

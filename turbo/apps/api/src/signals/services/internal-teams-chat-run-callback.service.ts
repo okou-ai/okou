@@ -1,21 +1,15 @@
-import { formatIntegrationChatMessage$ } from "./integration-run-errors.service";
-import { integrationModelRecoveryForDelivery$ } from "./integration-model-recovery.service";
 import { teamsModelRecoveryCard } from "./teams-model-recovery-card";
-import { teamsDeliveryAccess$ } from "./teams-delivery-access.service";
 import { teamsAccountOwnerCondition } from "./teams-workspace-identity.service";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { teamsChatThreadRoutes } from "@okouai/db/schema/teams-chat-thread-route";
 import { teamsOrgConnections } from "@okouai/db/runtime/teams-org-connection";
 import { teamsOrgInstallations } from "@okouai/db/schema/teams-org-installation";
-import { agents } from "@okouai/db/schema/agent";
 import { and, countDistinct, eq, isNotNull } from "drizzle-orm";
 import { logger } from "../../lib/log";
 import { command } from "ccstate";
-import { db$, writeDb$ } from "../external/db";
 import { recordSandboxOperation } from "../external/sandbox-op-log";
 import {
   deleteTeamsReaction,
@@ -74,11 +68,16 @@ const loadTeamsChatDeliveryContext$ = command(
         orgId: agentRuns.orgId,
         userId: agentRuns.userId,
         chatThreadId: agentRuns.chatThreadId,
-        agentId: agents.id,
       })
       .from(agentRuns)
-      .innerJoin(chatThreads, eq(chatThreads.id, agentRuns.chatThreadId))
-      .innerJoin(agents, eq(agents.id, chatThreads.agentId))
+      .innerJoin(
+        chatThreads,
+        and(
+          eq(chatThreads.id, agentRuns.chatThreadId),
+          eq(chatThreads.orgId, agentRuns.orgId),
+          eq(chatThreads.userId, agentRuns.userId),
+        ),
+      )
       .where(
         and(
           eq(agentRuns.id, args.callback.runId),
@@ -220,33 +219,13 @@ const readTeamsResponsePresentation$ = command(
     args: {
       readonly orgId: string;
       readonly runId: string;
-      readonly agentId: string;
       readonly replyToMention?: string;
     },
     signal: AbortSignal,
   ) => {
-    const db = get(db$);
-    const agentLabel = await (async () => {
-      const [org] = await db
-        .select({ defaultAgentId: orgMetadata.defaultAgentId })
-        .from(orgMetadata)
-        .where(eq(orgMetadata.orgId, args.orgId))
-        .limit(1);
-      signal.throwIfAborted();
-      if (args.agentId === org?.defaultAgentId) {
-        return undefined;
-      }
-      const [agent] = await db
-        .select({ displayName: agents.displayName, name: agents.name })
-        .from(agents)
-        .where(eq(agents.id, args.agentId))
-        .limit(1);
-      signal.throwIfAborted();
-      return agent?.displayName ?? agent?.name;
-    })();
     signal.throwIfAborted();
     return integrationAgentResponsePresentation({
-      agentLabel,
+      agentLabel: undefined,
       replyToMention: args.replyToMention,
     });
   },
@@ -303,7 +282,6 @@ const deliverClaimedTeamsChatCallback$ = command(
       {
         orgId: run.orgId,
         runId: args.callback.runId,
-        agentId: run.agentId,
         replyToMention:
           payload.conversationType !== "personal" && mentionerCount > 1
             ? replyTo
@@ -493,7 +471,6 @@ interface TeamsChatAdmissionFailureArgs {
   readonly chatThreadId: string;
   readonly userId: string;
   readonly orgId: string;
-  readonly agentId: string;
   readonly target: TeamsDeliveryTarget;
   readonly chatEventId: string;
 }
@@ -583,7 +560,7 @@ const resolveTeamsAdmissionFailurePresentation$ = command(
     signal: AbortSignal,
   ): Promise<TeamsAdmissionFailurePresentation> => {
     const db = get(db$);
-    const [mentionerCount, orgRows, agentRows] = await Promise.all([
+    const [mentionerCount] = await Promise.all([
       (async () => {
         const tenantId = args.target.tenantId;
         const conversationId = args.target.conversationId;
@@ -604,24 +581,11 @@ const resolveTeamsAdmissionFailurePresentation$ = command(
           );
         return row?.count ?? 0;
       })(),
-      db
-        .select({ defaultAgentId: orgMetadata.defaultAgentId })
-        .from(orgMetadata)
-        .where(eq(orgMetadata.orgId, args.orgId))
-        .limit(1),
-      db
-        .select({ displayName: agents.displayName, name: agents.name })
-        .from(agents)
-        .where(eq(agents.id, args.agentId))
-        .limit(1),
     ]);
     signal.throwIfAborted();
 
     const footerParts: string[] = [];
-    const agentLabel = agentRows[0]?.displayName ?? agentRows[0]?.name;
-    if (agentLabel && args.agentId !== orgRows[0]?.defaultAgentId) {
-      footerParts.push(`Sent via ${agentLabel}`);
-    }
+
     if (args.target.conversationType !== "personal" && mentionerCount > 1) {
       footerParts.push(
         `Reply to ${

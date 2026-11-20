@@ -3655,6 +3655,13 @@
       "when": 1795208704447,
       "tag": "1600_chat_thread_org_ownership",
       "breakpoints": true
+    },
+    {
+      "idx": 1601,
+      "version": "7",
+      "when": 1795210655967,
+      "tag": "1601_member_wallet_spend_intent",
+      "breakpoints": true
     }
   ]
 }

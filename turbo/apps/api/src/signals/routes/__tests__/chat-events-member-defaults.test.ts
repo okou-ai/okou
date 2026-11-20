@@ -1,3 +1,9 @@
+import { and, eq } from "drizzle-orm";
+import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
+import { chatThreadEvents } from "@okouai/db/schema/chat-thread-event";
+import { orgMetadata } from "@okouai/db/schema/org-metadata";
+import { db } from "../../../lib/db";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -28,6 +34,47 @@ function preferencesClient() {
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
 describe("new chat event member defaults", () => {
+  it("dispatches a member run without an organization default agent", async () => {
+    const { actor } = await entitledNativeChatActor();
+    const database = db();
+    await database
+      .update(orgMetadata)
+      .set({ defaultAgentId: null })
+      .where(eq(orgMetadata.orgId, actor.orgId));
+    const run = await sendChatRun(actor, {
+      prompt: "start a member-owned thread",
+    });
+    const [thread] = await database
+      .select({
+        agentId: chatThreads.agentId,
+        orgId: chatThreads.orgId,
+        userId: chatThreads.userId,
+      })
+      .from(chatThreads)
+      .where(eq(chatThreads.id, run.threadId));
+    expect(thread).toEqual({
+      agentId: null,
+      orgId: actor.orgId,
+      userId: actor.userId,
+    });
+    const [stored] = await database
+      .select({ agentId: agentRuns.agentId, status: agentRuns.status })
+      .from(agentRuns)
+      .where(eq(agentRuns.id, run.runId));
+    expect(stored).toEqual({ agentId: null, status: "running" });
+    const created = await database
+      .select({ agentId: chatThreadEvents.agentId })
+      .from(chatThreadEvents)
+      .where(
+        and(
+          eq(chatThreadEvents.chatThreadId, run.threadId),
+          eq(chatThreadEvents.kind, "created"),
+        ),
+      );
+    expect(created).toEqual([{ agentId: null }]);
+    await cancelChatRun(actor, run.runId);
+  });
+
   it("uses empty model settings and enables cloud browser without a saved member preference", async () => {
     const owner = await entitledNativeChatActor();
     const actor = bdd.user({ orgId: owner.actor.orgId, orgRole: "org:member" });
@@ -63,7 +110,6 @@ describe("new chat event member defaults", () => {
     await expect(
       chat.readThreadMetadata(actor, run.threadId),
     ).resolves.toMatchObject({
-      agentId: owner.defaultAgentId,
       modelSettings: {},
       cloudBrowserEnabled: true,
     });
@@ -73,8 +119,7 @@ describe("new chat event member defaults", () => {
   it.each([true, false])(
     "captures saved model settings and cloud browser (%s), retaining them on continuation",
     async (enabled) => {
-      const { actor, agentId, defaultAgentId } =
-        await entitledNativeChatActor();
+      const { actor, agentId } = await entitledNativeChatActor();
       await misc.updatePreferences(
         actor,
         { cloudBrowserEnabledByDefault: enabled },
@@ -98,7 +143,6 @@ describe("new chat event member defaults", () => {
       await expect(
         chat.readThreadMetadata(actor, first.threadId),
       ).resolves.toMatchObject({
-        agentId: defaultAgentId,
         modelSettings: { "claude-fable-5-1": { effort: "high" } },
         cloudBrowserEnabled: enabled,
       });

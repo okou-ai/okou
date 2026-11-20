@@ -3762,7 +3762,7 @@ enum class CreateThreadRequestReasoningEffort {
 @Serializable
 data class CreateThreadRequest(
     val `projectId`: String? = null,
-    val `agentId`: String,
+    val `agentId`: String? = null,
     val `clientThreadId`: String? = null,
     val `eventId`: String? = null,
     val `initialRemoteAccessOverrides`: List<CreateThreadRequestInitialRemoteAccessOverridesItem>? =
@@ -6076,7 +6076,7 @@ data class ChatEventsEventsItemVariant1(
     val `kind`: ChatEventsEventsItemVariant1Kind,
     val `chatThreadId`: String,
     val `projectId`: String? = null,
-    val `agentId`: String,
+    val `agentId`: String? = null,
     val `reassignedAgentId`: String? = null,
     val `title`: String?,
     val `pinOrder`: String? = null,
@@ -6157,7 +6157,7 @@ data class ChatEventsEventsItemVariant2(
     val `kind`: ChatEventsEventsItemVariant2Kind,
     val `chatThreadId`: String,
     val `projectId`: String?,
-    val `agentId`: String,
+    val `agentId`: String? = null,
     val `reassignedAgentId`: String? = null,
     val `title`: String?,
     val `pinOrder`: String? = null,
@@ -6586,7 +6586,7 @@ enum class ChatArchiveChatThreadsItemServiceTier {
 data class ChatArchiveChatThreadsItem(
     val `id`: String,
     val `projectId`: String? = null,
-    val `agentId`: String,
+    val `agentId`: String? = null,
     val `title`: String?,
     val `sortAt`: String,
     val `createdAt`: String,

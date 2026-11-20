@@ -142,8 +142,7 @@ data class ComposerState(
             target.threadId?.let(::pendingNewChat) == null &&
             entry(target).createdThreadId == null &&
             !entry(target).text.isBlankWebDraft() &&
-            (if (target.threadId != null) target.agentId != null
-            else context == ComposerContext.Ready)
+            (target.threadId != null || context == ComposerContext.Ready)
 }
 
 internal fun PendingText.preview(disposition: TextDisposition? = null, sending: Boolean = false) =

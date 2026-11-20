@@ -1,6 +1,4 @@
 import type { AgentRunCallbackPayload } from "@okouai/db/jsonb-contracts/agent-run-callback";
-import { publishChatThreadMessageCreated$ } from "./chat-event-publication.service";
-import { loadEmailSourceMessageContext$ } from "./email-source-message.service";
 import { STAFF_SINGLE_AGENT_ORG_ID } from "@okouai/core/single-agent-migration";
 import { buildEmailPrompt } from "./email-prompt";
 import { resolveIntegrationNotePrompt } from "./integration-note-prompt.service";
@@ -20,11 +18,7 @@ import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
 import { createThreadContext } from "./thread-context.signals";
 import type { AdmittedExecutionFacts } from "./admitted-execution-facts";
-import { revokeDeletedWorkflowAutomationInputs$ } from "./workflow-automation-queue-revocation.service";
-import {
-  createOkouTokenInputSignals,
-  prepareOkouToken$,
-} from "./thread-okou-token.signals";
+import { createOkouTokenInputSignals } from "./thread-okou-token.signals";
 import { createConnectorAdmissionSignals } from "./thread-connector-environment.signals";
 import { modelProviderPermissionManifest } from "./permission-manifest.service";
 import { FirewallBaseUrlResolutionError } from "@okouai/connectors/firewall-types";
@@ -71,7 +65,6 @@ import type { TemplateUsageIdentity } from "../../lib/template-usage-identity";
 import { recordTemplateUsage } from "../../lib/template-usage-log";
 
 import { monotonicNow, now, nowDate, nowDateSql } from "../../lib/time";
-import { writeDb$ } from "../external/db";
 import {
   publishChatIndicatorsChangedSafely,
   publishDesktopShellAuthorizationChangedSafely,
@@ -98,7 +91,6 @@ import {
   prepareRunPackageMounts,
   selectExecutionPackages,
 } from "./execution-workflow-selection";
-import { dispatchCompleteSideEffects$ } from "./agent-run-lifecycle.service";
 import type {
   AgentRunContextSignals,
   BootstrapFeatureSwitchContext,
@@ -120,25 +112,13 @@ import {
   type QueuedUserMessage,
   type QueuedUserMessageContextType,
 } from "./chat-queued-event.service";
-import { finalizeClaimedRunUserMessage$ } from "./chat-run-event.service";
 import { randomUUID } from "node:crypto";
 import {
   chatThreadEventSequences,
   chatThreadEvents,
 } from "@okouai/db/schema/chat-thread-event";
-import {
-  deliverQueuedPromptRejection$,
-  deliverUnexpectedQueuedPromptRejection$,
-  type QueuedChatPromptData,
-  queuedChatRunCallbackInputs,
-  type QueuedLaunchMaterial,
-  type QueuedPromptLaunchContext,
-  queuedPromptRejectionContext,
-  recordQueuedPromptRunLaunch$,
-  type RunLaunchCallbackRecord,
-} from "./internal-chat-run-callback.service";
+import { type QueuedChatPromptData, queuedChatRunCallbackInputs, type QueuedLaunchMaterial, type QueuedPromptLaunchContext, queuedPromptRejectionContext, type RunLaunchCallbackRecord } from "./internal-chat-run-callback.service";
 import { FEISHU_RUN_FILE_INDEX_KIND } from "./feishu-run-file-index";
-import { morningBriefScheduleClaimBound$ } from "./morning-brief-schedule-claim.service";
 import {
   OfficialWorkflowRunAdmissionError,
   type OfficialWorkflowObservation,
@@ -158,7 +138,6 @@ import {
   ApiDispatchTimingCollector,
   type ApiDispatchTimingDimensions,
 } from "./api-dispatch-timing.service";
-import { maxAutonomyBudget$ } from "../autonomy-budget-limit";
 import { childAutonomyBudget } from "./autonomy-budget.service";
 import { parseCanonicalChatEventRequiredOfficialWorkflowIds } from "./canonical-chat-event-read.service";
 import {
@@ -167,7 +146,6 @@ import {
   type LoadedChatEventReplacementTarget,
 } from "./chat-event.service";
 import { withRunModelAnnotation } from "./chat-user-message.service";
-import { chatInputEnqueueCommits$ } from "./chat-input-enqueue-observation";
 import type {
   ChatQueueHeadContext,
   ChatQueueHeadRejection,
@@ -178,7 +156,6 @@ import { DiscordQueuedLaunchUnavailableError } from "./discord-queued-launch-con
 import { WechatLaunchUnavailableError } from "./wechat-context.service";
 
 import { workflowRewardRunEventInsert } from "./workflow-reward-source-publication";
-import { formatIntegrationRunError$ } from "./integration-run-errors.service";
 
 import type { CodexServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
 import { OFFICIAL_TELEGRAM_BOT_ID } from "@okouai/api-contracts/contracts/integrations-telegram";
@@ -265,12 +242,10 @@ import type { AutomationRow } from "./workflow-automation-enqueue.service";
 import { workflowAutomationTriggerSource } from "./workflow-automation-trigger-source";
 import { recordWorkflowAdmissionDuration } from "./workflow-queue-admission-timing.service";
 import { createMemberMemoryHead } from "./member-memory-head.service";
-import { initializeMemberMemory$ } from "./member-memory-initialization.service";
 import {
   buildMemberMemoryMount,
   type AcceptedMemoryMount,
 } from "./execution-storage.service";
-import { settleRejectedAutomationInput$ } from "./workflow-schedule-failure.service";
 
 export interface ThreadClaim {
   readonly orgId: string;
@@ -313,10 +288,10 @@ function queueRejectionSortCtes(eventId: string): SQL {
     RETURNING user_id, org_id, last_seq_id
   ), sort_inserted AS (
     INSERT INTO ${chatThreadEvents}
-      (id, user_id, org_id, seq_id, chat_thread_id, kind, agent_id,
+      (id, user_id, org_id, seq_id, chat_thread_id, kind,
        cloud_browser_enabled, created_at)
     SELECT ${eventId}::uuid, thread_reserved.user_id, thread_reserved.org_id,
-      thread_reserved.last_seq_id, touched.id, 'sort_touched', touched.agent_id,
+      thread_reserved.last_seq_id, touched.id, 'sort_touched',
       false, date_trunc('milliseconds', touched.last_message_at)
     FROM touched CROSS JOIN thread_reserved
     ON CONFLICT (id) DO NOTHING RETURNING id
@@ -351,9 +326,9 @@ function queueHeadRejectionSql(args: {
       UPDATE ${chatThreads}
       SET last_message_at = GREATEST(${chatThreads.lastMessageAt}, assistant.created_at)
       FROM assistant
-      WHERE ${and(eq(chatThreads.id, args.threadId), isNotNull(chatThreads.agentId))}
+      WHERE ${eq(chatThreads.id, args.threadId)}
       RETURNING ${chatThreads.id} AS id, ${chatThreads.userId} AS user_id,
-        ${chatThreads.orgId} AS org_id, ${chatThreads.agentId} AS agent_id,
+        ${chatThreads.orgId} AS org_id,
         ${chatThreads.lastMessageAt} AS last_message_at
     ), ${queueRejectionSortCtes(randomUUID())}
     SELECT ${exists(sql`(SELECT 1 FROM rejected)`)} AS rejected,
@@ -415,7 +390,6 @@ function queuedTelegramDelivery(context: NonNullable<TelegramThreadContext>) {
     rootMessageId: context.rootMessageId,
     userLinkId: context.userLinkId,
     userLinkKind: context.userLinkKind,
-    agentId: context.agentId,
     isDM: context.chatType === "private",
     ...(context.messageThreadId !== null
       ? { messageThreadId: context.messageThreadId }
@@ -809,8 +783,6 @@ interface RejectedQueueHead {
   readonly chatThreadId: string;
   readonly orgId: string;
   readonly userId: string;
-  /** Null once the thread's agent is deleted; the source reply needs it. */
-  readonly agentId: string | null;
   readonly contextType: string | null;
   readonly contextId: string | null;
 }
@@ -1004,8 +976,6 @@ export function createThreadClaimRunObjects(
     if (!event) {
       throw new Error("Claim has no picked event");
     }
-    if (!event.thread.agentId)
-      throw new Error("Thread delivery binding is missing");
     return {
       id: event.id,
       chatThreadId: event.chatThreadId,
@@ -1014,7 +984,6 @@ export function createThreadClaimRunObjects(
       contextType: event.contextType,
       contextId: event.contextId,
       userId: bootstrap.userId,
-      agentId: event.thread.agentId,
       captureNetworkBodies: event.preparation.captureNetworkBodies,
     };
   });
@@ -1081,7 +1050,7 @@ export function createThreadClaimRunObjects(
     return {
       threadId: head.chatThreadId,
       userId: bootstrap.userId,
-      agent: { id: head.agentId, orgId: bootstrap.orgId },
+      orgId: bootstrap.orgId,
       queuedMessage,
     };
   });
@@ -1211,7 +1180,6 @@ export function createThreadClaimRunObjects(
                 fromNumber: context.fromNumber,
                 toNumber: context.toNumber,
                 userLinkId: context.userLinkId,
-                agentId: context.agentId,
                 agentphoneAgentId: context.agentphoneAgentId,
               }),
             },
@@ -1293,7 +1261,7 @@ export function createThreadClaimRunObjects(
         kind: "assembled",
         source: "prompt",
         run: {
-          owner: { userId: args.userId, orgId: args.agent.orgId },
+          owner: { userId: args.userId, orgId: args.orgId },
           // Dispatch timing starts at admission; queue waiting is recorded separately.
           apiStartTime: head.apiStartTime,
           chatThreadId: args.threadId,
@@ -1315,7 +1283,7 @@ export function createThreadClaimRunObjects(
           templateUsageIdentities: templates.templateUsageIdentities,
           context: {
             userId: head.userId,
-            orgId: args.agent.orgId,
+            orgId: args.orgId,
             threadId: args.threadId,
             prompt: runPrompt.userPrompt,
             triggerSource,
@@ -1376,7 +1344,7 @@ export function createThreadClaimRunObjects(
     }
     const args = await get(promptArgs$);
     return {
-      owner: { userId: args.userId, orgId: args.agent.orgId },
+      owner: { userId: args.userId, orgId: args.orgId },
     };
   });
   const promptReady$ = computed(async (get) => {
@@ -1895,9 +1863,6 @@ export function createThreadClaimRunObjects(
           selectedImageModel,
           launchSnapshot,
           officialWorkflowProvenance: officialWorkflowRun?.provenance,
-          resolved: {
-            agentId: (await get(head$)).agentId,
-          },
           modelProvider: persistedModelProvider(modelProvider),
         },
         runner: {
@@ -2072,7 +2037,6 @@ export function createThreadClaimRunObjects(
         );
       }
       await set(publishChatQueueHeadConsumed$, head, signal);
-      const agentId = head.agentId;
       const delivery = rejection.delivery
         ? set(
             deliverQueuedPromptRejection$,
@@ -2080,11 +2044,11 @@ export function createThreadClaimRunObjects(
             assistantEventId,
             signal,
           )
-        : error.code === "INTERNAL_ERROR" && agentId !== null
+        : error.code === "INTERNAL_ERROR"
           ? set(
               deliverUnexpectedQueuedPromptRejection$,
               {
-                head: { ...head, agentId },
+                head,
                 assistantEventId,
               },
               signal,
@@ -2846,7 +2810,6 @@ export function createThreadClaimRunObjects(
               chatThreadId: claim.chatThreadId,
               orgId: claim.orgId,
               userId: event.userId,
-              agentId: event.agentId,
               contextType: event.contextType,
               contextId: event.contextId,
             },
@@ -2983,9 +2946,6 @@ interface ThreadRunPersistenceContext {
   readonly launchSnapshot: AgentRunFullLaunchSnapshot;
   readonly officialWorkflowProvenance:
     OfficialWorkflowObservation["provenance"] | undefined;
-  readonly resolved: {
-    readonly agentId: string;
-  };
   readonly modelProvider: Pick<
     ResolvedModelProviderEnvironment,
     | "accountIdentity"
@@ -3009,7 +2969,6 @@ interface LaunchRunRowsArgs {
   readonly userId: string;
   readonly orgId: string;
   readonly identity: LaunchRunIdentity;
-  readonly resolved: ThreadRunPersistenceContext["resolved"];
   readonly content: ThreadRunContent;
   readonly memoryMount: PersistedStorageMount;
   readonly modelProvider: ThreadRunPersistenceContext["modelProvider"];
@@ -3035,7 +2994,6 @@ function launchRunValues(
     userId: args.userId,
     orgId: args.orgId,
     status: "pending",
-    agentId: args.resolved.agentId,
     modelProviderAccountIdentity: args.modelProvider.accountIdentity,
     prompt: args.content.prompt,
     storageMounts: [args.memoryMount],
@@ -3140,7 +3098,6 @@ function preparedLaunchRowsArgs(
     userId: commit.createArgs.userId,
     orgId: commit.createArgs.orgId,
     identity: commit.identity,
-    resolved: commit.context.resolved,
     content: commit.context.content,
     memoryMount: commit.launch.memoryMount.mount,
     modelProvider: commit.context.modelProvider,
@@ -3663,7 +3620,6 @@ function admittedRunLaunch(
       isFirstRun: persisted.isFirstRun,
       userId: rows.userId,
       orgId: rows.orgId,
-      agentId: rows.resolved.agentId,
       chatThreadId: rows.chatThreadId,
       framework: rows.launchSnapshot.framework,
       prompt: rows.content.prompt,

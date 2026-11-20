@@ -32,7 +32,6 @@ public actor ChatCommands {
     projectID: String? = nil,
     clientThreadID: String = UUID().uuidString
   ) async throws -> ChatThread {
-    async let agentsRequest: [AgentRecord] = client.request("/api/agents")
     let selection: ThreadModelSelection
     if let modelSelection {
       selection = ThreadModelSelection(
@@ -45,10 +44,8 @@ public actor ChatCommands {
       selection = try await resolveThreadModelSelection(
         preference: preference, availableModels: models, catalog: catalog)
     }
-    let agents = try await agentsRequest
-    guard let agent = agents.first(where: \.isDefaultAgent) else { throw ChatError.noDefaultAgent }
     let body = CreateThreadBody(
-      agentId: agent.agentId, clientThreadId: clientThreadID,
+      clientThreadId: clientThreadID,
       eventId: UUID().uuidString, model: selection.model,
       serviceTier: selection.serviceTier,
       reasoningEffort: selection.reasoningEffort, composerOptions: composerOptions,
@@ -68,7 +65,7 @@ public actor ChatCommands {
       }
     }
     return ChatThread(
-      id: created.id, agentID: agent.agentId, title: created.title ?? "", projectId: projectID,
+      id: created.id, agentID: nil, title: created.title ?? "", projectId: projectID,
       selectedModel: created.selectedModel, createdAt: created.createdAt,
       updatedAt: created.createdAt, sortAt: created.createdAt,
       pinnedAt: nil, pinOrder: nil,
@@ -135,9 +132,6 @@ public actor ChatCommands {
 
     let metadata = try await loadThreadSettings(
       threadID: thread.id, expectedAgentID: expectedAgentID)
-    if let expectedAgentID, metadata.agentId.lowercased() != expectedAgentID.lowercased() {
-      throw ChatError.agentUnavailable
-    }
     let body = SendBody(
       threadId: thread.id,
       prompt: prompt.isEmpty
@@ -318,14 +312,10 @@ public actor ChatCommands {
   {
     let metadata: ThreadMetadata = try await client.request(
       "/api/chat-threads/\(threadID)/metadata")
-    if let expectedAgentID, metadata.agentId.lowercased() != expectedAgentID.lowercased() {
-      throw ChatError.agentUnavailable
-    }
     return metadata
   }
 
   private struct CreateThreadBody: Encodable {
-    let agentId: String
     let clientThreadId: String
     let eventId: String
     /// Nil is Auto and is sent as an explicit JSON null.

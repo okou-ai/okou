@@ -9,7 +9,6 @@ import {
   nullableDriverValueDecoder,
   pgTextDecoder,
 } from "../../lib/db-structured-result";
-import { db$ } from "../external/db";
 
 /** Larger pages reduce round trips when rebuilding a scope's full sidebar. */
 const PROJECTION_SCAN_PAGE_SIZE = 1000;
@@ -40,7 +39,6 @@ export const loadChatThreadSnapshotProjection$ = command(
         .select({
           id: chatThreads.id,
           projectId: chatThreads.projectId,
-          agentId: chatThreads.agentId,
           title: chatThreads.title,
           lastMessageAt: chatThreads.lastMessageAt,
           sortAt: jsonTimestamp(chatThreads.lastMessageAt),
@@ -77,14 +75,10 @@ export const loadChatThreadSnapshotProjection$ = command(
         )
         .limit(PROJECTION_SCAN_PAGE_SIZE);
       for (const thread of page) {
-        if (thread.agentId === null) {
-          continue;
-        }
         threads.push(
           chatThreadSnapshotProjectionSchema.parse({
             id: thread.id,
             projectId: thread.projectId,
-            agentId: thread.agentId,
             title: thread.title,
             sortAt: thread.sortAt,
             createdAt: thread.createdAt,

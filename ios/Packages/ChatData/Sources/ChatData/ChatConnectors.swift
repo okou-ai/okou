@@ -126,8 +126,8 @@ public struct ChatConnectorService: Sendable {
     struct Metadata: Decodable, Sendable { let agentId: String }
     do {
       if let threadID = action.threadID {
-        let metadata: Metadata = try await client.request("/api/chat-threads/\(threadID)/metadata")
-        guard metadata.agentId.lowercased() == action.agentID.lowercased() else { return nil }
+        let metadata: ThreadMetadata = try await client.request("/api/chat-threads/\(threadID)/metadata")
+        guard metadata.id.lowercased() == threadID.lowercased() else { return nil }
       } else {
         let agent: Metadata = try await client.request("/api/agents/\(action.agentID)")
         guard agent.agentId.lowercased() == action.agentID.lowercased() else { return nil }

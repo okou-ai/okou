@@ -44,9 +44,9 @@ extension ChatComposerAccess {
     if let threadID {
       let metadata: ThreadMetadata = try await client.request(
         "/api/chat-threads/\(threadID)/metadata")
-      guard metadata.agentId.lowercased() == agentID.lowercased() else {
+      guard metadata.id.lowercased() == threadID.lowercased() else {
         throw APIClientError.http(
-          status: 409, message: "This chat's Agent changed. Close and reopen Connectors.")
+          status: 409, message: "This chat is unavailable.")
       }
     } else {
       struct Agent: Decodable, Sendable { let agentId: String }
