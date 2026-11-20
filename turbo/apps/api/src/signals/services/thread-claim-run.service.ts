@@ -149,7 +149,7 @@ import { pendingLaunchBillingAttributionSql } from "./pending-launch-billing-pla
 import {
   type PendingLaunchClaim,
   pendingLaunchClaimFenceSql,
-  pendingLaunchClaimProducerStatements,
+  pendingLaunchMorningBriefBindingSql,
 } from "./pending-launch-claim-plan";
 import { pendingLaunchInsertSql } from "./pending-launch-sql";
 
@@ -514,7 +514,6 @@ type ChatQueueRunAssembly =
       readonly run: ThreadRunCommand;
       readonly officialWorkflow: OfficialWorkflowObservation | undefined;
       readonly promptAndSkills: PromptAndSkillVolumes;
-      readonly producerBinding: ClaimProducerBinding;
       readonly rejection: ClaimRejectionContext;
       readonly launchRecord: ClaimLaunchRecord;
     } & (
@@ -623,7 +622,6 @@ type QueuedAutomationLaunch =
       readonly kind: "launch";
       readonly automation: AutomationRow;
       readonly chatThreadId: string;
-      readonly queueEventId: string;
       readonly apiStartTime: number;
       readonly triggerBrief: string | undefined;
       readonly callbacks: readonly InternalRunCallback[];
@@ -696,7 +694,6 @@ export interface ThreadRunContext {
   readonly launch: ThreadLaunchCommitInput["launch"];
   readonly persistence: ReturnType<typeof prepareAtomicLaunchPersistence>;
   readonly head: ChatQueueHeadContext;
-  readonly producerBinding: ClaimProducerBinding;
   readonly rejection: ClaimRejectionContext;
   readonly launchRecord: ClaimLaunchRecord;
 }
@@ -738,11 +735,6 @@ function finalizeClaimRunContext(
     }),
   };
 }
-
-type ClaimProducerBinding = {
-  readonly kind: "automation";
-  readonly queueEventId: string;
-} | null;
 
 type ClaimRejectionContext =
   | {
@@ -1492,7 +1484,6 @@ export function createThreadClaimRunObjects(
         promptContinuation: preparedInput.continuation,
         officialWorkflow: preparedInput.officialWorkflow,
         promptAndSkills: preparedInput.promptAndSkills,
-        producerBinding: null,
         rejection: {
           kind: "prompt",
           runInput: queuedPromptRejectionInput(runInput),
@@ -1559,14 +1550,14 @@ export function createThreadClaimRunObjects(
   });
   const promptCallbacks$ = computed(async (get) => {
     if (await get(earlyPromptAssembly$)) {
-      return undefined;
+      return [];
     }
     const [args, material] = await Promise.all([
       get(promptArgs$),
       get(availablePromptMaterial$),
     ]);
     if (!material) {
-      return undefined;
+      return [];
     }
     if (!material.ok) {
       throw material.error;
@@ -1757,7 +1748,6 @@ export function createThreadClaimRunObjects(
         kind: "launch",
         automation: target.automation,
         chatThreadId: event.chatThreadId,
-        queueEventId: event.id,
         apiStartTime: head.apiStartTime,
         triggerBrief: event.triggerBrief ?? undefined,
         callbacks: material.callbacks,
@@ -1813,10 +1803,6 @@ export function createThreadClaimRunObjects(
         },
         officialWorkflow,
         promptAndSkills,
-        producerBinding: {
-          kind: "automation",
-          queueEventId: launch.queueEventId,
-        },
         rejection: { kind: "automation", userId: automation.ownerUserId },
         launchRecord: {
           kind: "automation",
@@ -1833,7 +1819,7 @@ export function createThreadClaimRunObjects(
   );
   const automationCallbacks$ = computed(async (get) => {
     const launch = await get(automationLaunch$);
-    return launch.kind === "launch" ? launch.callbacks : undefined;
+    return launch.kind === "launch" ? launch.callbacks : [];
   });
   const isAutomation$ = computed(async (get) => {
     return (await get(head$)).contextType === "automation";
@@ -1869,7 +1855,7 @@ export function createThreadClaimRunObjects(
     );
   });
   const callbackInputs$ = computed(
-    async (get): Promise<readonly InternalRunCallback[] | undefined> => {
+    async (get): Promise<readonly InternalRunCallback[]> => {
       return (await get(isAutomation$))
         ? get(automationCallbacks$)
         : get(promptCallbacks$);
@@ -2445,7 +2431,7 @@ export function createThreadClaimRunObjects(
   );
   const preparedCallbacks$ = computed(async (get) => {
     const callbacks = await get(callbackInputs$);
-    return (callbacks ?? []).map((callback): PreparedLaunchCallback => {
+    return callbacks.map((callback): PreparedLaunchCallback => {
       // Normalize payloads to JSON: omit optional fields and serialize Dates.
       const serializedPayload = JSON.stringify(callback.payload);
       const payload =
@@ -2777,7 +2763,6 @@ export function createThreadClaimRunObjects(
                 callbacks,
                 launch: runnerLaunch,
                 head,
-                producerBinding: assembly.producerBinding,
                 rejection: assembly.rejection,
                 launchRecord: claimLaunchRecord(
                   assembly.launchRecord,
@@ -2912,7 +2897,10 @@ export function createThreadClaimRunObjects(
                 orgId: claim.orgId,
                 chatThreadId: claim.chatThreadId,
                 claimId: claim.claimId,
-                producer: context.producerBinding,
+                automationQueueEventId:
+                  context.head.contextType === "automation"
+                    ? context.head.id
+                    : null,
               },
               signal,
             );
@@ -4090,28 +4078,28 @@ function pendingAtomicLaunchPlan(
     return cte._.alias;
   });
   names.push("launch_claim_relations");
-  const beforeProducer = pendingLaunchBarrier(names);
-  const producer = pendingLaunchClaimProducerStatements(
-    args.claim.producer,
-    context.rowsArgs.identity.runId,
-    sql`EXISTS (SELECT 1 FROM ${context.insertedRun}) AND ${beforeProducer} >= 0`,
-  );
-  const producerCtes = producer.map((statement, index) => {
-    const name = `launch_producer_${String(index)}`;
-    names.push(name);
-    return sql`${sql.identifier(name)} AS (${statement})`;
+  const planned = ctes.map((cte) => {
+    return sql`${sql.identifier(cte._.alias)} AS ${cte === context.updatedThread ? sql`MATERIALIZED` : sql.empty()} (${cte._.sql})`;
   });
+  if (args.claim.automationQueueEventId !== null) {
+    const beforeBinding = pendingLaunchBarrier(names);
+    const binding = pendingLaunchMorningBriefBindingSql(
+      args.claim.automationQueueEventId,
+      context.rowsArgs.identity.runId,
+      sql`EXISTS (SELECT 1 FROM ${context.insertedRun}) AND ${beforeBinding} >= 0`,
+    );
+    const name = "launch_morning_brief_binding";
+    names.push(name);
+    planned.push(sql`${sql.identifier(name)} AS (${binding})`);
+  }
   const active = pendingLaunchActivePublication(
     args,
     context,
     attribution,
     pendingLaunchBarrier(names),
   );
-  const planned = ctes.map((cte) => {
-    return sql`${sql.identifier(cte._.alias)} AS ${cte === context.updatedThread ? sql`MATERIALIZED` : sql.empty()} (${cte._.sql})`;
-  });
   return sql`WITH ${pendingLaunchPublicationCtes(args)},
-    ${sql.join([...planned, ...producerCtes], sql`, `)},
+    ${sql.join(planned, sql`, `)},
     launch_active AS (${active})
     SELECT CASE
       WHEN EXISTS (SELECT 1 FROM ${context.insertedRun}) THEN 'pending'
