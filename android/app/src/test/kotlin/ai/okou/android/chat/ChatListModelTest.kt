@@ -41,10 +41,12 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
@@ -137,6 +139,7 @@ class ChatListModelTest {
     private suspend fun TestScope.withCatchUpModel(
         service: ChatListService,
         realtime: TestRealtimeService? = null,
+        connectivity: MutableStateFlow<Boolean> = MutableStateFlow(true),
         exercise: suspend (ChatListModel) -> Unit,
     ) {
         val dispatcher = StandardTestDispatcher(testScheduler)
@@ -156,6 +159,8 @@ class ChatListModelTest {
                                 {},
                                 dispatcher,
                                 realtime,
+                                monotonicMillis = { testScheduler.currentTime },
+                                connectivity = connectivity,
                             )
                         }
                     },
@@ -411,6 +416,67 @@ class ChatListModelTest {
     }
 
     @Test
+    fun listRefreshNoticeUsesCompletedFailuresAndReconnectResetsTheAttemptWindow() = runTest {
+        val connected = MutableStateFlow(true)
+        var failing = false
+        var attempts = 0
+        val service =
+            Service().apply {
+                listRead = {
+                    attempts++
+                    if (failing) throw ApiFailure.Http(503, null, null, null)
+                    page()
+                }
+            }
+        withCatchUpModel(service, connectivity = connected) { model ->
+            model.refresh()
+            runCurrent()
+            val cachedRows = model.uiState.value.threads
+            assertTrue(cachedRows.isNotEmpty())
+            failing = true
+            val first = attempts
+            model.refreshList()
+            runCurrent()
+            assertEquals(first + 1, attempts)
+            assertFalse(model.uiState.value.sustainedRefreshFailure)
+            advanceTimeBy(5_000)
+            runCurrent()
+            assertEquals(first + 2, attempts)
+            assertFalse(model.uiState.value.sustainedRefreshFailure)
+            advanceTimeBy(10_000)
+            runCurrent()
+            assertEquals(first + 3, attempts)
+            assertFalse(model.uiState.value.sustainedRefreshFailure)
+            advanceTimeBy(20_000)
+            runCurrent()
+            assertEquals(first + 4, attempts)
+            assertTrue(model.uiState.value.sustainedRefreshFailure)
+            assertEquals(cachedRows, model.uiState.value.threads)
+
+            connected.value = false
+            runCurrent()
+            assertTrue(model.uiState.value.offline)
+            assertFalse(model.uiState.value.sustainedRefreshFailure)
+            model.refresh()
+            advanceTimeBy(40_000)
+            runCurrent()
+            assertEquals(first + 4, attempts)
+
+            connected.value = true
+            runCurrent()
+            assertFalse(model.uiState.value.offline)
+            assertEquals(first + 5, attempts)
+            assertFalse(model.uiState.value.sustainedRefreshFailure)
+            failing = false
+            advanceTimeBy(5_000)
+            runCurrent()
+            assertEquals(first + 6, attempts)
+            assertEquals(ChatReadPhase.Ready, model.uiState.value.listPhase)
+            assertFalse(model.uiState.value.listReadFailed)
+        }
+    }
+
+    @Test
     fun realtimeReadStartedBeforeWriteResponseCanConfirmWithoutAnotherListRead() = runTest {
         val realtime = TestRealtimeService()
         val events = mutableListOf(chatEventWire())
@@ -515,7 +581,7 @@ class ChatListModelTest {
             model.refreshList()
             runCurrent()
             model.renameThread(CHAT_PERSONAL, "Local edit")
-            model.refresh(userInitiated = true)
+            model.reloadAfterRowActionFailure()
             runCurrent()
             assertEquals(initialReads + 1, reads)
             assertEquals(ChatRowAction.Rename, model.uiState.value.pendingRowActions[CHAT_PERSONAL])

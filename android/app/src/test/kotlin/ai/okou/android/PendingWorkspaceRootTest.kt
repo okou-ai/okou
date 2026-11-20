@@ -11,17 +11,20 @@ import ai.okou.android.api.generated.Organization
 import ai.okou.android.api.generated.ReadState
 import ai.okou.android.api.generated.ThreadDetail
 import ai.okou.android.api.generated.UserPreferences
+import ai.okou.android.auth.OpeningWorkspace
+import ai.okou.android.auth.SessionModel
 import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.auth.WorkspaceSession
 import ai.okou.android.chat.CachedChatNavigation
 import ai.okou.android.chat.ChatCheckpoint
 import ai.okou.android.chat.ChatCursor
+import ai.okou.android.chat.ChatListSource
+import ai.okou.android.chat.ChatReadPhase
 import ai.okou.android.chat.HistoryCursor
 import ai.okou.android.chat.HistoryEvent
 import ai.okou.android.chat.HistoryPage
 import ai.okou.android.chat.chatScopeHash
 import ai.okou.android.chat.cursor
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
@@ -36,13 +39,11 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextReplacement
-import androidx.compose.ui.test.performTouchInput
-import androidx.compose.ui.test.swipe
+import androidx.lifecycle.ViewModelProvider
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
@@ -206,7 +207,8 @@ class PendingWorkspaceRootTest {
     @Test
     fun authorizedCacheOpensChatAndSearchWhilePreferencesAndLiveChatsWait() {
         compose.onNodeWithTag("chat_list").assertExists()
-        compose.onNodeWithText("Loading chats…").assertExists()
+        compose.mainClock.advanceTimeBy(120)
+        compose.onNodeWithContentDescription("Loading chats…").assertExists()
         compose.onNodeWithText(CACHED_CHAT).assertDoesNotExist()
         compose.onNodeWithContentDescription("Search").assertDoesNotExist()
         compose.runOnIdle { app.organizationResponse.complete(Unit) }
@@ -291,15 +293,14 @@ class PendingWorkspaceRootTest {
         compose.runOnIdle { app.organizationResponse.complete(Unit) }
         awaitCachedRow()
         compose.runOnIdle { app.listResponse.complete(Unit) }
-        compose.waitUntil(10_000) {
-            compose.onAllNodesWithText("Showing saved chats.").fetchSemanticsNodes().isEmpty()
-        }
+        compose.waitUntil(10_000) { listState()?.source == ChatListSource.Network }
 
         compose.runOnIdle { app.listResponse = CompletableDeferred() }
-        compose.onRoot().performTouchInput {
-            swipe(Offset(centerX, height * 0.6f), Offset(centerX, height * 0.9f))
-        }
-        compose.onNodeWithText("Refreshing chats…").assertExists()
+        compose.runOnIdle { app.connectivity.value = false }
+        compose.waitUntil(10_000) { listState()?.offline == true }
+        compose.runOnIdle { app.connectivity.value = true }
+        compose.waitUntil(10_000) { listState()?.listPhase == ChatReadPhase.Loading }
+        compose.onNodeWithText("Refreshing chats…").assertDoesNotExist()
         val row = hasTestTag("chat_$CHAT_PERSONAL")
         compose.onNode(row).performSemanticsAction(SemanticsActions.OnLongClick)
         compose.onNodeWithText("Pin chat").performClick()
@@ -312,7 +313,7 @@ class PendingWorkspaceRootTest {
         compose.waitUntil(10_000) {
             compose.onAllNodes(row.and(pendingPin)).fetchSemanticsNodes().isNotEmpty()
         }
-        compose.onNodeWithText("Refreshing chats…").assertExists()
+        compose.onNodeWithText("Refreshing chats…").assertDoesNotExist()
         compose.runOnIdle { app.listResponse.complete(Unit) }
         val confirmedPin =
             SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Pinned")
@@ -324,12 +325,19 @@ class PendingWorkspaceRootTest {
 
     private fun awaitCachedRow() {
         val list = compose.onNodeWithTag("chat_list")
-        compose.waitUntil(10_000) {
-            compose.onAllNodesWithText("Showing saved chats.").fetchSemanticsNodes().isNotEmpty()
-        }
+        compose.waitUntil(10_000) { listState()?.source == ChatListSource.Cache }
         list.performScrollToNode(hasText(CACHED_CHAT))
         compose.onNodeWithText(CACHED_CHAT).assertExists()
     }
+
+    private fun listState() =
+        compose.runOnIdle {
+            val session =
+                ViewModelProvider(compose.activity)[SessionModel::class.java].uiState.value
+            (session.ready?.chats ?: (session.opening as? OpeningWorkspace.Authorized)?.chats)
+                ?.uiState
+                ?.value
+        }
 }
 
 private const val CACHED_CHAT = "Saved startup chat"
