@@ -529,7 +529,7 @@ async fn sftp_files_preserve_bytes_through_bounded_origin_reads() {
         let _resolve = h.resolve(credential(&h, password, true)).await;
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("bounded origin file");
-        let bytes: Vec<u8> = (0..256 * 1024 + 17).map(|n| (n % 251) as u8).collect();
+        let bytes = super::files::repeated_file_bytes::<251>(256 * 1024 + 17);
         let upload = super::files::upload(&h, &path, &bytes, false).await;
         assert_eq!(upload["type"], "completed", "{upload}");
         assert_eq!(upload["sha256"], hex::encode(Sha256::digest(&bytes)));
@@ -558,7 +558,7 @@ async fn sftp_files_roundtrip_over_access_with_real_bytes_and_hashes() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("file with spaces");
     for size in [0, 1024 * 1024 + 17] {
-        let bytes: Vec<u8> = (0..size).map(|n| (n % 256) as u8).collect();
+        let bytes = super::files::repeated_file_bytes::<256>(size);
         let upload = super::files::upload(&h, &path, &bytes, size != 0).await;
         assert_eq!(upload["type"], "completed", "{upload}");
         assert_eq!(upload["sha256"], hex::encode(Sha256::digest(&bytes)));
