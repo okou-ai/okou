@@ -1,6 +1,9 @@
 import {
   CANONICAL_CLAUDE_CONFIG_DIR,
+  CANONICAL_CLAUDE_MEMORY_MOUNT_PATH,
   CANONICAL_CODEX_HOME_DIR,
+  CANONICAL_CODEX_MEMORY_MOUNT_PATH,
+  CANONICAL_PI_MEMORY_MOUNT_PATH,
   PI_SKILLS_ROOT,
   type PreparedExecutionContext,
 } from "@okouai/api-contracts/contracts/runners";
@@ -177,29 +180,38 @@ export function selectExecutionPackages(
   };
 }
 
-/** Resolve package destinations for this Run's accepted launch framework. */
+// Workflow packages mount under the skills root. Each framework reserves a
+// separate Memory destination and applies it after the package mounts.
+const frameworkMountPaths = {
+  "claude-code": {
+    skillRoot: `${CANONICAL_CLAUDE_CONFIG_DIR}/skills`,
+    memoryMountPath: CANONICAL_CLAUDE_MEMORY_MOUNT_PATH,
+  },
+  codex: {
+    skillRoot: `${CANONICAL_CODEX_HOME_DIR}/skills`,
+    memoryMountPath: CANONICAL_CODEX_MEMORY_MOUNT_PATH,
+  },
+  pi: {
+    skillRoot: PI_SKILLS_ROOT,
+    memoryMountPath: CANONICAL_PI_MEMORY_MOUNT_PATH,
+  },
+} as const;
+
 export function prepareRunPackageMounts(args: {
-  readonly framework: PreparedExecutionContext["cliAgentType"];
-  readonly memoryMountPath: string;
+  readonly framework: keyof typeof frameworkMountPaths;
   readonly skillVolumes: readonly SkillVolume[];
   readonly officialWorkflow: OfficialWorkflowObservation | undefined;
 }) {
-  const skillRoot =
-    args.framework === "pi"
-      ? PI_SKILLS_ROOT
-      : args.framework === "codex"
-        ? `${CANONICAL_CODEX_HOME_DIR}/skills`
-        : `${CANONICAL_CLAUDE_CONFIG_DIR}/skills`;
-  const skillMounts = normalizeMountOverlay(
+  const { skillRoot, memoryMountPath } = frameworkMountPaths[args.framework];
+  const packageMounts = normalizeMountOverlay(
     resolveRunSkillVolumes(args.skillVolumes, skillRoot),
-  );
-  // Memory is applied last. Its destination is known before its HEAD is ready.
-  const packageMounts = skillMounts.filter(({ mountPath }) => {
-    return mountPath !== args.memoryMountPath;
+  ).filter(({ mountPath }) => {
+    return mountPath !== memoryMountPath;
   });
   return {
     skillRoot,
-    protectedMountPaths: skillMounts.flatMap((mount) => {
+    memoryMountPath,
+    protectedMountPaths: packageMounts.flatMap((mount) => {
       return "templateGuidanceBundle" in mount ? [mount.mountPath] : [];
     }),
     mounts: {
@@ -222,7 +234,7 @@ export function prepareRunPackageMounts(args: {
         return [
           {
             ...mount.templateGuidanceBundle,
-            beforeMountPaths: [...laterPaths, args.memoryMountPath],
+            beforeMountPaths: [...laterPaths, memoryMountPath],
           },
         ];
       }),

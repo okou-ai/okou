@@ -140,7 +140,6 @@ import {
 import { FEISHU_RUN_FILE_INDEX_KIND } from "./feishu-run-file-index";
 import { morningBriefScheduleClaimBound$ } from "./morning-brief-schedule-claim.service";
 import {
-  OFFICIAL_WORKFLOW_RUN_ADMISSION_MESSAGE,
   OfficialWorkflowRunAdmissionError,
   type OfficialWorkflowObservation,
 } from "./official-workflow-run.service";
@@ -275,7 +274,6 @@ import { createMemberMemoryHead } from "./member-memory-head.service";
 import { initializeMemberMemory$ } from "./member-memory-initialization.service";
 import {
   buildMemberMemoryMount,
-  memberMemoryMountPath,
   type AcceptedMemoryMount,
 } from "./execution-storage.service";
 import { settleRejectedAutomationInput$ } from "./workflow-schedule-failure.service";
@@ -1939,10 +1937,8 @@ export function createThreadClaimRunObjects(
         modelProvider.piModelConfig === undefined
           ? modelProviderFramework(modelProvider)
           : ("pi" as const);
-      const memoryMountPath = memberMemoryMountPath(launchFramework);
       const packageMounts = prepareRunPackageMounts({
         framework: launchFramework,
-        memoryMountPath,
         skillVolumes: promptAndSkills.skillVolumes,
         officialWorkflow: officialWorkflowRun,
       });
@@ -1979,7 +1975,6 @@ export function createThreadClaimRunObjects(
         },
         runner: {
           workflowAutomationId: args.agentRunMetadata.workflowAutomationId,
-          memoryMountPath,
           agentInstructions: authorization.agentInstructions,
           packageMounts,
           nativeContinuation:
@@ -2254,9 +2249,6 @@ export function createThreadClaimRunObjects(
     if ("error" in selected) {
       return conflict(selected.error);
     }
-    if (officialMountPaths.includes(runner.memoryMountPath)) {
-      return conflict(OFFICIAL_WORKFLOW_RUN_ADMISSION_MESSAGE);
-    }
     return {
       mounts,
       bundles: selectExecutionContentBundles(selected, {
@@ -2338,7 +2330,7 @@ export function createThreadClaimRunObjects(
         memoryMount: buildMemberMemoryMount(
           memoryOwner,
           head,
-          args.memoryMountPath,
+          args.packageMounts.memoryMountPath,
         ),
       };
     },
@@ -3514,7 +3506,6 @@ interface ThreadRunCommand {
 /** The Thread facts needed to prepare one Runner launch. */
 interface ThreadRunnerFacts {
   readonly workflowAutomationId: string | undefined;
-  readonly memoryMountPath: ReturnType<typeof memberMemoryMountPath>;
   readonly agentInstructions: ContentBundle | null;
   readonly packageMounts: ReturnType<typeof prepareRunPackageMounts>;
   readonly facts: Pick<
