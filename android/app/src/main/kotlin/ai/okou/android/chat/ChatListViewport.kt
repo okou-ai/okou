@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -110,10 +111,8 @@ internal fun ChatListViewport(
             } else null
         val rows =
             subcompose(ListLayer.Rows) {
-                    // Lazy item keys preserve the visible row. When already scrolled to the end,
-                    // keep
-                    // the final row at the end instead of preserving the previous first visible
-                    // row.
+                    // Lazy item keys preserve the visible row. Keep the final row in view
+                    // when the reader is already at the end.
                     val followEnd =
                         remember(listState, reserve, short) {
                             listState.canScrollBackward && !listState.canScrollForward
@@ -248,8 +247,8 @@ internal fun ChatListSkeleton() {
             ) {
                 Box(
                     Modifier.fillMaxWidth(width)
-                        .heightIn(min = 12.dp)
-                        .background(fill, RoundedCornerShape(6.dp))
+                        .height(14.dp)
+                        .background(fill, RoundedCornerShape(8.dp))
                 )
             }
         }

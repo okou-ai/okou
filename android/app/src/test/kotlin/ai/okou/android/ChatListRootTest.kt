@@ -1311,6 +1311,34 @@ class ChatListRootTest {
     }
 
     @Test
+    @Config(qualifiers = "en-rUS-w400dp-h800dp")
+    fun unreadWithoutIndicatorsOffersRecoveryWhileInboxKeepsItsRows() {
+        val app = compose.activity.application as ChatListApplication
+        val failing = AtomicBoolean(true)
+        val indicators = app.fixture.indicators
+        app.fixture.indicators = {
+            if (failing.get()) MockResponse().setResponseCode(503) else indicators()
+        }
+        app.responseGate.countDown()
+        awaitListAndNames()
+        val loadFailure = "Temporarily unable to load"
+        compose.onNodeWithText("Personal chat").assertIsDisplayed()
+        compose.onNodeWithText(loadFailure).assertDoesNotExist()
+
+        compose.onNodeWithContentDescription("Filter").performClick()
+        compose.onNodeWithText("Unread").performClick()
+        awaitListAndNames()
+        compose.onNodeWithText(loadFailure).assertIsDisplayed()
+        compose.onNodeWithText("No chats in this view.").assertDoesNotExist()
+
+        failing.set(false)
+        compose.onNodeWithText("Retry").performClick()
+        awaitListAndNames()
+        compose.onNodeWithText(loadFailure).assertDoesNotExist()
+        compose.onNodeWithText("Project chat").assertIsDisplayed()
+    }
+
+    @Test
     @Config(qualifiers = "en-rUS-w320dp-h270dp")
     fun aShortPaneScrollsNewChatAndOfflineStatusWithTheRows() {
         val app = compose.activity.application as ChatListApplication

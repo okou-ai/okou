@@ -449,6 +449,11 @@ class ChatListModelTest {
             assertTrue(model.uiState.value.sustainedRefreshFailure)
             assertEquals(cachedRows, model.uiState.value.threads)
 
+            model.selectFilter(ChatListFilter.Inbox)
+            assertTrue(model.uiState.value.sustainedRefreshFailure)
+            model.selectFilter(ChatListFilter.Unread)
+            assertFalse(model.uiState.value.sustainedRefreshFailure)
+
             connected.value = false
             runCurrent()
             assertTrue(model.uiState.value.offline)
@@ -469,6 +474,41 @@ class ChatListModelTest {
             assertEquals(first + 6, attempts)
             assertEquals(ChatReadPhase.Ready, model.uiState.value.listPhase)
             assertFalse(model.uiState.value.listReadFailed)
+        }
+    }
+
+    @Test
+    fun listRetryKeepsTheServerDeadlineAfterHidingTheList() = runTest {
+        var attempts = 0
+        val service =
+            Service().apply {
+                listRead = {
+                    attempts++
+                    if (attempts == 1) throw ApiFailure.Http(429, null, null, 20)
+                    page()
+                }
+            }
+        withCatchUpModel(service) { model ->
+            model.refresh()
+            runCurrent()
+            assertEquals(1, attempts)
+            assertTrue(model.uiState.value.listReadFailed)
+
+            model.listVisibilityChanged(false)
+            advanceTimeBy(15_000)
+            runCurrent()
+            assertEquals(1, attempts)
+
+            model.listVisibilityChanged(true)
+            model.refreshList()
+            advanceTimeBy(4_999)
+            runCurrent()
+            assertEquals(1, attempts)
+
+            advanceTimeBy(1)
+            runCurrent()
+            assertEquals(2, attempts)
+            assertEquals(ChatReadPhase.Ready, model.uiState.value.listPhase)
         }
     }
 

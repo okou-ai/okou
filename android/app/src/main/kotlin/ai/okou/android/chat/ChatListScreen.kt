@@ -90,6 +90,7 @@ import kotlinx.coroutines.delay
 internal fun ChatListScreen(
     state: ChatListUiState,
     retryMetadata: () -> Unit,
+    retryIndicators: () -> Unit,
     open: (ConfirmedChat) -> Unit,
     performRowAction: (String, ChatRowAction) -> Unit,
     renameThread: (String, String) -> Unit,
@@ -187,7 +188,15 @@ internal fun ChatListScreen(
                 ChatListStatus.RefreshFailed
             else -> null
         }
-    val awaitingFirstList = state.confirmedAt == null && !state.offline && !state.listReadFailed
+    val missingUnread =
+        state.confirmedAt != null &&
+            state.filter == ChatListFilter.Unread &&
+            state.indicators == null &&
+            groups.all { it.threads.isEmpty() }
+    val firstLoadFailed =
+        if (missingUnread) state.indicatorsPhase == ChatReadPhase.Failed else state.listReadFailed
+    val awaitingFirstList =
+        (state.confirmedAt == null || missingUnread) && !state.offline && !firstLoadFailed
     var skeletonVisible by remember(awaitingFirstList) { mutableStateOf(false) }
     LaunchedEffect(awaitingFirstList) {
         if (awaitingFirstList) {
@@ -218,11 +227,15 @@ internal fun ChatListScreen(
         ) {
             if (inlineControls != null) item(key = "list_controls") { inlineControls() }
             if (startupRecovery != null) item(key = "workspace_recovery") { startupRecovery() }
-            if (state.confirmedAt == null) {
+            if (state.confirmedAt == null || missingUnread) {
                 when {
-                    state.offline -> item { ChatNotice(R.string.chat_list_load_when_online) }
-                    state.listReadFailed ->
-                        item { ChatNotice(R.string.chat_list_first_load_failed) }
+                    state.offline ->
+                        item { ChatListLoadNotice(R.string.chat_list_load_when_online) }
+                    firstLoadFailed ->
+                        item {
+                            ChatListLoadNotice(R.string.chat_list_first_load_failed)
+                            if (missingUnread) ChatAction(R.string.retry, retryIndicators)
+                        }
                     skeletonVisible -> item { ChatListSkeleton() }
                 }
             }
@@ -703,6 +716,26 @@ private fun ChatListTextAction(
             style =
                 MaterialTheme.typography.labelMedium.copy(
                     fontSize = 13.sp,
+                    lineHeight = 20.sp,
+                    letterSpacing = 0.sp,
+                ),
+        )
+    }
+}
+
+@Composable
+private fun ChatListLoadNotice(message: Int) {
+    Box(
+        Modifier.heightIn(min = 48.dp).padding(horizontal = 12.dp),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        Text(
+            stringResource(message),
+            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style =
+                MaterialTheme.typography.bodyMedium.copy(
+                    fontSize = 14.sp,
                     lineHeight = 20.sp,
                     letterSpacing = 0.sp,
                 ),
