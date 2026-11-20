@@ -3,8 +3,8 @@ import { Agent, buildConnector, fetch } from "undici";
 import { monotonicNow } from "./lib/time";
 import type {
   PreconnectedSocketUse,
-  RunnerDispatchExperiment,
-} from "./signals/external/runner-dispatch-experiment";
+  RunnerDispatchTransport,
+} from "./signals/external/runner-dispatch-transport";
 
 const MAX_PRECONNECTIONS = 4;
 const PRECONNECTION_LIFETIME_MS = 1000;
@@ -17,7 +17,7 @@ type Adoption = (
 type PreconnectionOutcome =
   PreconnectedSocketUse | "failed" | "expired" | "cancelled" | "instance_cap";
 
-interface PreviewOptions {
+interface TransportOptions {
   readonly ca?: ConnectionOptions["ca"];
   readonly observe: (
     runId: string,
@@ -26,11 +26,10 @@ interface PreviewOptions {
   ) => void;
 }
 
-export function createRunnerDispatchExperiment({
+export function createRunnerDispatchTransport({
   ca,
   observe,
-}: PreviewOptions): RunnerDispatchExperiment {
-  const control = new Agent({ connect: { ca } });
+}: TransportOptions): RunnerDispatchTransport {
   const reservations = new Map<string, Adoption>();
   const socketUses = new WeakMap<object, PreconnectedSocketUse>();
   const open = buildConnector({ ca });
@@ -134,10 +133,10 @@ export function createRunnerDispatchExperiment({
 
   return {
     reserve,
-    fetch(cohort, url, options) {
+    fetch(url, options) {
       return fetch(url, {
         ...options,
-        dispatcher: cohort === "preconnect" ? preconnect : control,
+        dispatcher: preconnect,
       });
     },
     takeSocketUse(socket) {

@@ -8,7 +8,7 @@
     "build:worker": "node scripts/build-worker.mjs",
     "test:worker-build": "node --test scripts/build-worker.node-test.mjs scripts/worker-contract-boundaries.node-test.mjs",
     "test:s3-client": "node --test scripts/s3-client.node-test.mjs",
-    "test:runner-dispatch-experiment": "node --import tsx --test scripts/runner-dispatch-experiment.node-test.mjs",
+    "test:runner-dispatch-transport": "node --import tsx --test scripts/runner-dispatch-transport.node-test.mjs",
     "check-types:worker": "bash scripts/check-types.sh worker",
     "dev": "bash scripts/dev.sh",
     "env:validate": "tsx src/scripts/validate-env.ts",

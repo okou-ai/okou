@@ -1,9 +1,9 @@
 import "./instrument";
-import { env, optionalEnv } from "./lib/env";
+import { env } from "./lib/env";
 import { normalizeBuildCommitSha } from "./lib/build-info";
 import { singleton } from "./lib/singleton";
-import { createRunnerDispatchExperiment } from "./runner-dispatch-experiment.node";
-import { withRunnerDispatchExperiment } from "./signals/external/runner-dispatch-experiment";
+import { createRunnerDispatchTransport } from "./runner-dispatch-transport.node";
+import { withRunnerDispatchTransport } from "./signals/external/runner-dispatch-transport";
 import { recordSandboxOperation } from "./signals/external/sandbox-op-log";
 import { safeSync } from "./signals/utils";
 import { createProductionApp } from "./production-bootstrap";
@@ -28,51 +28,31 @@ const app = (() => {
   return createProductionApp(instanceAbortController.signal);
 })();
 
-const runnerDispatchExperiment = singleton(() => {
-  const environment = env("ENV");
-  const samplePercent =
-    environment === "production"
-      ? 100
-      : environment === "preview" &&
-          /^pr-\d+$/.test(optionalEnv("OKOU_PREVIEW_JOB_REF") ?? "")
-        ? 50
-        : 0;
-  if (
-    samplePercent === 0 ||
-    optionalEnv("RUNNER_DISPATCH_PRECONNECT_DISABLED") === "1"
-  ) {
-    return undefined;
-  }
-  return {
-    samplePercent,
-    ...createRunnerDispatchExperiment({
-      observe(runId, outcome, durationMs) {
-        safeSync(() => {
-          recordSandboxOperation({
-            sandboxType: "runner",
-            actionType: "api_dispatch_runner_preconnect",
-            runId,
-            durationMs,
-            success: outcome === "ready" || outcome === "pending",
-            dimensions: {
-              preconnect_outcome: outcome,
-              api_commit_sha:
-                normalizeBuildCommitSha(env("GIT_COMMIT_SHA")) ?? undefined,
-            },
-          });
+const runnerDispatchTransport = singleton(() => {
+  return createRunnerDispatchTransport({
+    observe(runId, outcome, durationMs) {
+      safeSync(() => {
+        recordSandboxOperation({
+          sandboxType: "runner",
+          actionType: "api_dispatch_runner_preconnect",
+          runId,
+          durationMs,
+          success: outcome === "ready" || outcome === "pending",
+          dimensions: {
+            preconnect_outcome: outcome,
+            api_commit_sha:
+              normalizeBuildCommitSha(env("GIT_COMMIT_SHA")) ?? undefined,
+          },
         });
-      },
-    }),
-  };
+      });
+    },
+  });
 });
 
 const fetch: typeof app.fetch = (...args) => {
-  const experiment = runnerDispatchExperiment();
-  return experiment
-    ? withRunnerDispatchExperiment(experiment, () => {
-        return app.fetch(...args);
-      })
-    : app.fetch(...args);
+  return withRunnerDispatchTransport(runnerDispatchTransport(), () => {
+    return app.fetch(...args);
+  });
 };
 
 export default { fetch };

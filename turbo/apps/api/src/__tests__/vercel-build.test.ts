@@ -89,14 +89,14 @@ try {
 `;
 
 describe("Vercel build", () => {
-  it("preserves dispatch socket ownership through the native Preview transport", async () => {
+  it("preserves dispatch socket ownership through the native Runner transport", async () => {
     const transportTests = spawn(
       process.execPath,
       [
         "--import",
         "tsx",
         "--test",
-        "scripts/runner-dispatch-experiment.node-test.mjs",
+        "scripts/runner-dispatch-transport.node-test.mjs",
       ],
       { cwd: apiRoot, signal: context.signal, stdio: "inherit" },
     );

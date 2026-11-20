@@ -15,10 +15,7 @@ import { API_INVOCATION_MAX_DURATION_SECONDS } from "../../lib/invocation-budget
 import { monotonicNow, now, nowDate } from "../../lib/time";
 import { apiStartTime$ } from "../context/hono";
 import { postRunnerDispatch } from "../external/runner-ingress";
-import {
-  currentRunnerDispatchExperiment,
-  runnerDispatchCohort,
-} from "../external/runner-dispatch-experiment";
+import { currentRunnerDispatchTransport } from "../external/runner-dispatch-transport";
 import { failUnacceptedRun$ } from "./agent-run-terminal-transition.service";
 import {
   prepareDirectRun$,
@@ -74,16 +71,11 @@ export const prepareDirectRunDispatch$ = command(
         (async () => {
           const candidates = await set(readDirectRunCandidates$, input, signal);
           const candidatesReadyAt = monotonicNow();
-          const experiment = currentRunnerDispatchExperiment();
+          const dispatchTransport = currentRunnerDispatchTransport();
           const target = candidates[0];
-          if (
-            experiment &&
-            target &&
-            runnerDispatchCohort(input.run.id, experiment.samplePercent) ===
-              "preconnect"
-          ) {
+          if (dispatchTransport && target) {
             safeSync(() => {
-              experiment.reserve(
+              dispatchTransport.reserve(
                 input.run.id,
                 `https://${target.hostname}`,
                 signal,

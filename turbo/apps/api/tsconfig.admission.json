@@ -222,7 +222,7 @@
     "src/signals/services/email-prompt.ts",
     "src/lib/event-consumer/hmac.ts",
     "src/lib/thread-generation-template.ts",
-    "src/signals/external/runner-dispatch-experiment.ts",
+    "src/signals/external/runner-dispatch-transport.ts",
     "src/signals/external/runner-ingress.ts",
     "src/signals/services/active-input-delivery.service.ts",
     "src/signals/services/active-input-prompt.service.ts",
