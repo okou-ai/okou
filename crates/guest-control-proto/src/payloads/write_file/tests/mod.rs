@@ -108,8 +108,12 @@ fn write_files_frame_matches_payload_plus_frame() {
             content: b"alpha",
         },
         WriteFileBatchEntry {
-            path: "/tmp/b.txt",
-            content: b"beta",
+            path: "/tmp/空.txt",
+            content: b"",
+        },
+        WriteFileBatchEntry {
+            path: "/tmp/c.bin",
+            content: b"\x00\xff",
         },
     ];
     let payload = encode_write_files(&files).unwrap();
@@ -119,6 +123,9 @@ fn write_files_frame_matches_payload_plus_frame() {
     encode_write_files_frame_into(&mut frame, 44, &files).unwrap();
 
     assert_eq!(frame, expected);
+    let parts = encode_write_files_frame_parts(44, &files).unwrap();
+    let bytes: Vec<_> = parts.slices().flatten().copied().collect();
+    assert_eq!(bytes, expected);
 }
 
 #[test]
