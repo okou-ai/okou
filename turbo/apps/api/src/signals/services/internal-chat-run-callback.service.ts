@@ -1779,15 +1779,8 @@ export type QueuedRunAdmissionFailureInput = Pick<
   | "threadId"
   | "queuedMessage"
   | "triggerSource"
-  | "slackDelivery"
-  | "feishuDelivery"
-  | "teamsDelivery"
-  | "discordDelivery"
-  | "wechatDelivery"
-  | "telegramDelivery"
-  | "emailDelivery"
-  | "agentphoneDelivery"
->;
+> &
+  QueuedIntegrationDeliveries;
 
 /** A queued message whose run creation was rejected for a reason other than capacity. */
 export function rejectedQueuedRunAdmissionFailure(
@@ -1812,17 +1805,7 @@ function channelQueuedMessageAdmissionFailure(
   common: Omit<WebQueuedMessageAdmissionFailure, "kind"> & {
     readonly agentId: string;
   },
-  delivery: Pick<
-    CreateQueuedChatRunInput,
-    | "slackDelivery"
-    | "feishuDelivery"
-    | "teamsDelivery"
-    | "discordDelivery"
-    | "wechatDelivery"
-    | "telegramDelivery"
-    | "emailDelivery"
-    | "agentphoneDelivery"
-  >,
+  delivery: QueuedIntegrationDeliveries,
 ): QueuedMessageAdmissionFailure {
   const contextType = common.queuedMessage.contextType;
   switch (contextType) {
