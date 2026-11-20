@@ -288,7 +288,9 @@ and prevents bulk removal. Expiry timers keep their separate
 
 Turbo selects the Runner and Stripe host in a shared placement job before
 deployment. Stripe opens SSH, takes the lifecycle lock, and runs both Ansible
-playbooks on that host. Runner readiness still publishes the deployment receipt
+playbooks on that host. The playbooks verify that the old listener's manager
+job, main PID, and cgroup have drained before deleting or replacing its files.
+Runner readiness still publishes the deployment receipt
 for idle-sandbox cleanup. The closed-PR sweep discovers and retires Stripe
 resources across configured hosts, including resources from earlier placements.
 

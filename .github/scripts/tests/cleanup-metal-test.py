@@ -490,6 +490,28 @@ class CleanupTests(unittest.TestCase):
         self.assertIn("image unit ownership unavailable", result.stderr)
         self.assertTrue(resource.exists())
 
+    def test_stripe_retirement_stops_pending_start_and_leaves_files(self):
+        name = "vm0-stripe-listener-pr-42.service"
+        unit = self.resource("etc/systemd/system/" + name)
+        self.state(name, ActiveState="inactive", Job="91")
+        result, payload = self.worker("stop-stripe", 42)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(payload, {"stopped": True})
+        self.assertTrue(unit.is_file())
+        result, payload = self.worker("stop-stripe", 42)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(payload, {"stopped": False})
+
+    def test_stripe_retirement_rejects_failed_stop(self):
+        name = "vm0-stripe-listener-pr-42.service"
+        unit = self.resource("etc/systemd/system/" + name)
+        self.state(name, ActiveState="active", MainPID="123")
+        result, payload = self.worker("stop-stripe", 42, MUTATION_ERROR="1")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIsNone(payload)
+        self.assertIn("manager rejected stop", result.stderr)
+        self.assertTrue(unit.is_file())
+
     def test_unknown_stop_state_preserves_files_and_fails(self):
         unit = self.resource("etc/systemd/system/vm0-runner-pr-42-api.service")
         config = self.resource("var/lib/vm0-runner/runners/pr-42-api/config")
