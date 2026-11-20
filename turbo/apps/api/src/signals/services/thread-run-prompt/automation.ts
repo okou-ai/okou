@@ -1,7 +1,6 @@
 import { computed, type Computed } from "ccstate";
 import type { createThreadAutomationContext } from "../thread-automation-context.service";
 import {
-  restoredWorkflowAutomationEventPayload,
   storedWorkflowAutomationContext,
   workflowAutomationAgentPrompt,
   workflowAutomationEventTypeSchema,
@@ -14,6 +13,7 @@ import { STAFF_SINGLE_AGENT_ORG_ID } from "@okouai/core/single-agent-migration";
 export function createAutomationThreadPrompt(
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
   context$: ReturnType<typeof createThreadAutomationContext>,
+  payload$: ThreadContext["automationPayload$"],
   target$: ThreadContext["automationTarget$"],
   singleAgent$: Computed<Promise<boolean>>,
 ): Computed<Promise<RunPromptAndSkills | null>> {
@@ -37,9 +37,7 @@ export function createAutomationThreadPrompt(
     const eventType = workflowAutomationEventTypeSchema.parse(
       context.eventType,
     );
-    const eventPayload = restoredWorkflowAutomationEventPayload(
-      context.eventPayload,
-    );
+    const eventPayload = await get(payload$);
     if (!eventPayload) {
       return null;
     }

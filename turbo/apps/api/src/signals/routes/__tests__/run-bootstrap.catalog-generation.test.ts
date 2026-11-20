@@ -155,20 +155,18 @@ describe("Run connector selection through normal user changes", () => {
 
   it("uses current native connector selections during preparation and keeps the delivered Run configuration", async () => {
     const fixture = await connectorActor();
-    const { actor, agentId, connectors } = fixture;
+    const { actor, connectors } = fixture;
     const connection = await connectors.connectManualGrant(
       actor,
       "openai",
       "api-token",
       { apiKey: `bootstrap-owned-${randomUUID()}` },
-      agentId,
     );
     const runtime = await connectors.connectManualGrant(
       actor,
       "runtime",
       "api-token",
       { apiKey: `runtime-owned-${randomUUID()}` },
-      agentId,
     );
     const access = createChatConnectorAccessApi(context);
     const selection = {

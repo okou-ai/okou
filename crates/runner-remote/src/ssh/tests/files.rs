@@ -228,6 +228,13 @@ async fn download_with_data(h: &Harness, path: &Path, on_data: impl FnMut(Vec<u8
     .await
 }
 
+pub(super) fn repeated_file_bytes<const PERIOD: usize>(size: usize) -> Vec<u8> {
+    let period: [u8; PERIOD] = std::array::from_fn(|index| index as u8);
+    let mut bytes = period.repeat(size.div_ceil(period.len()));
+    bytes.truncate(size);
+    bytes
+}
+
 fn assert_file_bytes(path: &Path, expected: &[u8]) {
     use std::io::Read;
 
@@ -253,11 +260,12 @@ async fn roundtrip(mode: &'static str) {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("literal $(touch nope); ☃ file");
     for size in [0, 258, 4 * 1024 * 1024 + 19] {
-        let bytes: Vec<u8> = (0..size).map(|i| (i % 256) as u8).collect();
+        let bytes = repeated_file_bytes::<256>(size);
         let outcome = upload(&h, &path, &bytes, size != 0).await;
         assert_eq!(outcome["type"], "completed", "{outcome}");
         assert_eq!(outcome["effects"], "completed");
-        assert_eq!(outcome["sha256"], hex::encode(Sha256::digest(&bytes)));
+        let expected_sha256 = hex::encode(Sha256::digest(&bytes));
+        assert_eq!(outcome["sha256"], expected_sha256);
         assert!(outcome["residue"].is_null());
         assert_file_bytes(&path, &bytes);
         assert_eq!(
@@ -276,7 +284,7 @@ async fn roundtrip(mode: &'static str) {
         })
         .await;
         assert_eq!(outcome["type"], "completed", "{outcome}");
-        assert_eq!(outcome["sha256"], hex::encode(Sha256::digest(&bytes)));
+        assert_eq!(outcome["sha256"], expected_sha256);
         assert_eq!(
             received,
             bytes.len(),
@@ -300,20 +308,21 @@ async fn sftp_upload_and_download_progress_with_withheld_out_of_order_replies() 
     let _resolve = h.resolve(h.credential(true)).await;
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("pipelined");
-    let bytes: Vec<u8> = (0..4 * 32768).map(|i| (i % 251) as u8).collect();
+    let bytes = repeated_file_bytes::<251>(4 * 32768);
 
     let outcome = tokio::time::timeout(Duration::from_secs(5), upload(&h, &path, &bytes, false))
         .await
         .expect("two writes must be sent before the first reply");
     assert_eq!(outcome["type"], "completed", "{outcome}");
-    assert_eq!(outcome["sha256"], hex::encode(Sha256::digest(&bytes)));
+    let expected_sha256 = hex::encode(Sha256::digest(&bytes));
+    assert_eq!(outcome["sha256"], expected_sha256);
     assert_eq!(std::fs::read(&path).unwrap(), bytes);
 
     let (outcome, received) = tokio::time::timeout(Duration::from_secs(5), download(&h, &path))
         .await
         .expect("two reads must be sent before the first reply");
     assert_eq!(outcome["type"], "completed", "{outcome}");
-    assert_eq!(outcome["sha256"], hex::encode(Sha256::digest(&bytes)));
+    assert_eq!(outcome["sha256"], expected_sha256);
     assert_eq!(received, bytes);
     h.shutdown().await;
 }
@@ -324,7 +333,7 @@ async fn sftp_short_reads_fill_missing_tails_without_reordering_output() {
     let _resolve = h.resolve(h.credential(true)).await;
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("short-read");
-    let bytes: Vec<u8> = (0..2 * 32768 + 13).map(|i| (i % 251) as u8).collect();
+    let bytes = repeated_file_bytes::<251>(2 * 32768 + 13);
     std::fs::write(&path, &bytes).unwrap();
 
     let (outcome, received) = download(&h, &path).await;

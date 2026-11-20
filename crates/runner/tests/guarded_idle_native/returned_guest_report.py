@@ -5,9 +5,9 @@ import argparse
 import hashlib
 import json
 import pathlib
-import re
 
 import create_cancellation_report as create
+import ext4_superblock
 import progress_report as foreground
 import pressure_report as pressure
 import observation_report as reads
@@ -27,16 +27,16 @@ def home(value, sandbox_id, filesystem_uuid=None):
     path = pathlib.PurePosixPath(value.get("path", ""))
     block_hex = value.get("superblock_hex")
     if (not path.is_absolute() or ".." in path.parts or path.name != "home.ext4"
-            or path.parent.name != sandbox_id or not isinstance(block_hex, str)
-            or not re.fullmatch(r"[0-9a-f]{2048}", block_hex)):
+            or path.parent.name != sandbox_id):
         raise ValueError("actual returned home path/bytes changed")
-    block = bytes.fromhex(block_hex)
-    if block[56:58] != b"\x53\xef":
+    block = ext4_superblock.decode_hex(block_hex, "actual returned home path/bytes changed")
+    if not ext4_superblock.has_magic(block):
         raise ValueError("actual returned home is not ext4")
-    actual_uuid = block[104:120].hex()
+    actual_uuid = ext4_superblock.filesystem_uuid(block)
     if filesystem_uuid is not None and actual_uuid != filesystem_uuid:
         raise ValueError("actual returned home generation changed")
-    report.exact(value, {"path": str(path), "bytes": report.NATIVE_HOME_BYTES, "ext4_magic": "53ef",
+    report.exact(value, {"path": str(path), "bytes": report.NATIVE_HOME_BYTES,
+        "ext4_magic": ext4_superblock.MAGIC_HEX,
         "filesystem_uuid": actual_uuid, "superblock_hex": block_hex,
         "superblock_sha256": hashlib.sha256(block).hexdigest()}, "actual returned home bytes/hash changed")
     return path, actual_uuid

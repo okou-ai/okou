@@ -9,6 +9,7 @@ import { unionAll } from "drizzle-orm/pg-core";
 import { now } from "../../lib/time";
 import { db$ } from "../external/db";
 import type { AgentRunContextSignals } from "./agent-run-context.signals";
+import { createMemberMemoryContext } from "./agent-storage-context.service";
 import { storageVersionCacheKeySql } from "./execution-storage-cache-read.service";
 import type { AcceptedMemoryMount } from "./execution-storage.service";
 import {
@@ -33,6 +34,10 @@ import {
 import type { ThreadContext } from "./thread-context.signals";
 import type { PickedThreadInputEvent } from "./thread-run-prompt/types";
 
+type RunMemoryObservation =
+  | { readonly kind: "ready"; readonly mounts: readonly AcceptedMemoryMount[] }
+  | { readonly kind: "missing" };
+
 /**
  * The Run's memory storage from its current Agent and model: resolved
  * versions, mount paths and writeback targets.
@@ -48,8 +53,27 @@ export function createStorageSignals(
     threadContext,
   );
   const index = createStorageIndexSignals(bootstrap, storageInput$);
-  const plan = createStoragePlanSignals(index);
-  return createStorageMetadataSignal(plan);
+  const storagePlan = createStoragePlanSignals(index);
+  const storage$ = computed(async (get): Promise<RunMemoryObservation> => {
+    const plan = await get(storagePlan.plan$);
+    if (plan.missingArtifacts.length > 0) {
+      return { kind: "missing" };
+    }
+    return {
+      kind: "ready",
+      mounts: await finalizeMemoryMounts(plan.requested),
+    };
+  });
+  const owner = { orgId: bootstrap.orgId, userId: bootstrap.userId };
+  const initializedMemory$ = createMemberMemoryContext(owner);
+  const initializedMemoryMounts$ = computed(async (get) => {
+    const { requested } = await get(storagePlan.plan$);
+    const { index: storageIndex } = await get(initializedMemory$);
+    return await finalizeMemoryMounts(
+      await resolveStorageEntries({ ...requested.input, storageIndex }),
+    );
+  });
+  return { storage$, initializedMemoryMounts$ };
 }
 
 function createStorageInputSignal(
@@ -300,23 +324,4 @@ function createStoragePlanSignals(
     });
   });
   return { plan$ };
-}
-
-function createStorageMetadataSignal(
-  plan: ReturnType<typeof createStoragePlanSignals>,
-) {
-  const { plan$ } = plan;
-  return computed(async (get): Promise<readonly AcceptedMemoryMount[]> => {
-    const plan = await get(plan$);
-    if (plan.missingArtifacts.length > 0) {
-      throw new Error(
-        `Run storage must be initialized before execution: ${plan.missingArtifacts
-          .map((artifact) => {
-            return artifact.name;
-          })
-          .join(", ")}`,
-      );
-    }
-    return await finalizeMemoryMounts(plan.requested);
-  });
 }

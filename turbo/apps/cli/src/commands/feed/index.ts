@@ -184,7 +184,7 @@ export function createFeedCommand() {
     .option("--rationale <text>", "Why this action is useful")
     .option(
       "--thread-id <uuid>",
-      "Existing conversation; omitted means a new Okou conversation",
+      "Existing conversation for the action and the user's own direction; omitted means a new Okou conversation",
     )
     .option("--priority <integer>", "Larger values appear first")
     .option("--json", "Output JSON")
@@ -225,7 +225,7 @@ export function createFeedCommand() {
                 rationale: options.rationale ?? "",
                 customOption: {
                   id: "custom",
-                  threadId: null,
+                  threadId: options.threadId ?? null,
                   draft: {
                     draftUserMessage: {
                       version: 1,

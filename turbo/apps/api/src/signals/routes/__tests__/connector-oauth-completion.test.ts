@@ -121,7 +121,6 @@ test("does not complete a denied reconnect after rename or default-account chang
     actor,
     "github",
     "oauth",
-    undefined,
     account,
   );
   await accept(
@@ -145,13 +144,7 @@ test("does not complete a denied reconnect after rename or default-account chang
   expect(denied.body.status).toBe("error");
   expect((await receipt(actor, cancelled.oauthAttemptId)).status).toBe(404);
 
-  const retry = await connectors.startOauth(
-    actor,
-    "github",
-    "oauth",
-    undefined,
-    account,
-  );
+  const retry = await connectors.startOauth(actor, "github", "oauth", account);
   await connectors.completeOauthCallbackResult("github", {
     code: "retry",
     state: state(retry),
@@ -306,7 +299,6 @@ test.each(["http", "mcp"] as const)(
       actor,
       connector.id,
       [200],
-      undefined,
       { intent: "reconnect", connectionId },
     );
     if (cancelled.status !== 200 || cancelled.body.result !== "authorization") {
@@ -341,90 +333,5 @@ test.each(["http", "mcp"] as const)(
       error: { code: "NOT_FOUND", message: "OAuth completion not found" },
     });
     expect(deleted.headers.get("cache-control")).toBe("no-store");
-
-    const removedAgent = await bdd.createAgent(actor);
-    onTestFinished(async () => {
-      await bdd.requestDeleteAgent(actor, removedAgent.agentId, [204, 404]);
-    });
-    const rejected = await connectors.requestStartCustomConnectorOAuth2(
-      actor,
-      connector.id,
-      [200],
-      removedAgent.agentId,
-    );
-    if (rejected.status !== 200 || rejected.body.result !== "authorization") {
-      throw new Error("Expected custom OAuth with agent authorization");
-    }
-    await bdd.deleteAgent(actor, removedAgent.agentId);
-    const rejectedCallback =
-      await connectors.completeCustomConnectorOAuth2CallbackResult({
-        code: "removed-agent",
-        state: state(rejected.body),
-      });
-    expect(rejectedCallback.body).toStrictEqual({
-      status: "error",
-      message: "OAuth connected, but the requested agent was not found",
-    });
-    const rejectedReceipt = await receipt(
-      actor,
-      rejected.body.oauthAttemptId,
-      target,
-    );
-    expect(rejectedReceipt.status).toBe(404);
-    expect(rejectedReceipt.body).toStrictEqual(deleted.body);
-    expect(rejectedReceipt.headers.get("cache-control")).toBe("no-store");
-    const accounts = await connectors.listCustomConnectorAccounts(
-      actor,
-      connector.id,
-    );
-    expect(accounts).toHaveLength(1);
-    const [persistedAccount] = accounts;
-    if (!persistedAccount) {
-      throw new Error("Expected the account connected before agent rejection");
-    }
-
-    const survivingAgent = await bdd.createAgent(actor);
-    onTestFinished(async () => {
-      await bdd.deleteAgent(actor, survivingAgent.agentId);
-    });
-    const retry = await connectors.requestStartCustomConnectorOAuth2(
-      actor,
-      connector.id,
-      [200],
-      survivingAgent.agentId,
-      { intent: "reconnect", connectionId: persistedAccount.id },
-    );
-    if (retry.status !== 200 || retry.body.result !== "authorization") {
-      throw new Error("Expected custom OAuth retry with agent authorization");
-    }
-    const retriedCallback =
-      await connectors.completeCustomConnectorOAuth2CallbackResult({
-        code: "surviving-agent",
-        state: state(retry.body),
-      });
-    expect(retriedCallback.body).toStrictEqual({
-      status: "success",
-      username: null,
-    });
-    const retriedReceipt = await receipt(
-      actor,
-      retry.body.oauthAttemptId,
-      target,
-    );
-    expect(retriedReceipt.status).toBe(200);
-    expect(retriedReceipt.body).toStrictEqual({
-      connectionId: persistedAccount.id,
-    });
-    expect(retriedReceipt.headers.get("cache-control")).toBe("no-store");
-    await expect(
-      connectors.readAgentCustomConnectors(actor, survivingAgent.agentId),
-    ).resolves.toStrictEqual([connector.id]);
-    const afterRetry = await receipt(
-      actor,
-      rejected.body.oauthAttemptId,
-      target,
-    );
-    expect(afterRetry.status).toBe(404);
-    expect(afterRetry.body).toStrictEqual(rejectedReceipt.body);
   },
 );

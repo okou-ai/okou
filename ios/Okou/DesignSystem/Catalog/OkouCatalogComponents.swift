@@ -32,22 +32,25 @@
         }
         OkouCatalogSection("Swipe actions") {
           HStack(spacing: OkouSpace.sm) {
-            ForEach(
-              Array([OkouSwipeTint.readState, OkouSwipeTint.neutral].enumerated()), id: \.offset
-            ) { index, tint in
-              Label(
-                index == 0 ? "Mark as unread" : "Archive",
-                okouSymbol: index == 0 ? "mail" : "archive"
-              )
-              .font(.okou(.subheadline).weight(.medium))
-              .foregroundStyle(OkouColor.onFilled)
-              .padding(.horizontal, OkouSpace.lg)
-              .frame(height: OkouControl.minimumTarget)
-              .background(tint, in: Capsule())
-            }
+            swipeAction(
+              "Mark as unread", okouSymbol: "message-square-dot", tint: OkouSwipeTint.readState)
+            swipeAction("Archive", okouSymbol: "archive", tint: OkouSwipeTint.neutral)
+            swipeAction("Delete chat", okouSymbol: "trash-2", tint: OkouSwipeTint.destructive)
           }
         }
       }
+    }
+
+    /// Swipe actions show only their icon; the title stays the accessible name.
+    private func swipeAction(
+      _ title: LocalizedStringKey, okouSymbol: String, tint: Color
+    ) -> some View {
+      Label(title, okouSymbol: okouSymbol)
+        .labelStyle(.iconOnly)
+        .foregroundStyle(OkouColor.onFilled)
+        .padding(.horizontal, OkouSpace.lg)
+        .frame(height: OkouControl.minimumTarget)
+        .background(tint, in: Capsule())
     }
   }
 

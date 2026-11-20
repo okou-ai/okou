@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if command -v stripe >/dev/null 2>&1; then
+# CI host deployment supplies a private installation directory for the pinned
+# executable, even on hosts where a different stripe binary is on PATH.
+if [[ -z "${STRIPE_CLI_INSTALL_DIR:-}" ]] && command -v stripe >/dev/null 2>&1; then
   stripe --version
   exit 0
 fi

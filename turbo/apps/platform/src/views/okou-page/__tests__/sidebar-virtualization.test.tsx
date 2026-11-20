@@ -262,7 +262,9 @@ test("Collapse and expand a Project inside a scrolled virtual window", async () 
   );
   expect(toggle).toHaveAttribute("aria-expanded", "false");
   expect(within(viewport).queryByText("Project 01")).not.toBeInTheDocument();
-  click(toggle);
+  await act(() => {
+    click(toggle);
+  });
   await within(viewport).findByText("History 1");
   expect(within(viewport).getByText("History 2")).toBeInTheDocument();
   expect(within(viewport).getByText("History 3")).toBeInTheDocument();
@@ -475,7 +477,9 @@ test.each([false, true])(
     });
     const animation = holdFoldAnimation();
     const expandFrame = holdFoldFrame();
-    click(toggle());
+    await act(() => {
+      click(toggle());
+    });
     expect(toggle()).toHaveAttribute("aria-expanded", "true");
     expect(children()).toHaveAttribute("data-project-fold-state", "prepared");
     expect(list.style.getPropertyValue("--okou-project-fold-height")).toBe(
@@ -498,7 +502,9 @@ test.each([false, true])(
     });
 
     const collapseFrame = holdFoldFrame();
-    click(toggle());
+    await act(() => {
+      click(toggle());
+    });
     expect(toggle()).toHaveAttribute("aria-expanded", "false");
     expect(children()).toHaveAttribute("inert");
     expect(children()).toHaveAttribute("aria-hidden", "true");
@@ -526,15 +532,21 @@ test.each([false, true])(
   "A pointer reversal before the fold frame keeps children usable (mobile: %s)",
   async (mobile) => {
     const { toggle, children, viewport } = await openFoldList({ mobile });
-    click(toggle());
+    await act(() => {
+      click(toggle());
+    });
     await waitFor(() => {
       return expect(children()).not.toHaveAttribute("data-project-fold-state");
     });
     const reverseFrame = holdFoldFrame();
-    click(toggle());
+    await act(() => {
+      click(toggle());
+    });
     expect(toggle()).toHaveAttribute("aria-expanded", "false");
     expect(children()).toHaveAttribute("inert");
-    click(toggle());
+    await act(() => {
+      click(toggle());
+    });
     expect(toggle()).toHaveAttribute("aria-expanded", "true");
     expect(children()).toHaveAttribute("data-project-fold-state", "prepared");
     expect(
@@ -558,21 +570,27 @@ test.each([false, true])(
     const { toggle, children, list, rowHeight } = await openFoldList({
       mobile,
     });
-    click(toggle());
+    await act(() => {
+      click(toggle());
+    });
     await waitFor(() => {
       expect(list.style.height).toBe(`${27 * rowHeight}px`);
     });
     const block = children();
     const animation = holdFoldAnimation();
     const frame = holdFoldFrame();
-    click(toggle());
+    await act(() => {
+      click(toggle());
+    });
     await frame();
     expect(block).toHaveAttribute("data-project-fold-state", "running");
     const displayedHeight = rowHeight + 0.25;
     vi.spyOn(block, "getBoundingClientRect").mockReturnValue(
       new DOMRect(0, 0, 300, displayedHeight),
     );
-    click(toggle());
+    await act(() => {
+      click(toggle());
+    });
     expect(toggle()).toHaveAttribute("aria-expanded", "true");
     expect(children()).toHaveAttribute("data-project-fold-state", "prepared");
     expect(list.style.getPropertyValue("--okou-project-fold-height")).toBe(
@@ -607,7 +625,9 @@ test.each([
       mobile,
     });
     const frame = holdFoldFrame();
-    click(toggle());
+    await act(() => {
+      click(toggle());
+    });
     expect(children()).toHaveAttribute("data-project-fold-state", "prepared");
     if (event === "scroll") {
       fireEvent.scroll(viewport, { target: { scrollTop: rowHeight } });
@@ -634,12 +654,16 @@ test.each([false, true])(
       mobile,
       reducedMotion: true,
     });
-    click(toggle());
+    await act(() => {
+      click(toggle());
+    });
     expect(toggle()).toHaveAttribute("aria-expanded", "true");
     expect(children()).not.toHaveAttribute("data-project-fold-state");
     expect(within(viewport).getByText("History 1")).toBeInTheDocument();
     expect(list.style.height).toBe(`${27 * rowHeight}px`);
-    click(toggle());
+    await act(() => {
+      click(toggle());
+    });
     expect(toggle()).toHaveAttribute("aria-expanded", "false");
     expect(within(viewport).queryByText("History 1")).not.toBeInTheDocument();
     expect(list.style.height).toBe(`${25 * rowHeight}px`);
@@ -662,7 +686,9 @@ test.each([false, true])(
     );
     const animation = holdFoldAnimation();
     const frame = holdFoldFrame();
-    click(toggle());
+    await act(() => {
+      click(toggle());
+    });
     expect(toggle()).toHaveAttribute("aria-expanded", "true");
     await frame();
     expect(within(viewport).getByText("History 1")).toBeInTheDocument();
@@ -675,7 +701,9 @@ test.each([false, true])(
       expect(list.style.height).toBe(`${43 * rowHeight}px`);
     });
     expect(viewport.scrollTop).toBe(scrollTop);
-    click(toggle());
+    await act(() => {
+      click(toggle());
+    });
     expect(toggle()).toHaveAttribute("aria-expanded", "false");
     await frame();
     await waitFor(() => {
@@ -696,7 +724,9 @@ test("A 10,000-chat Project stays bounded while opening and cancelling its revea
     members: 10_000,
   });
   const frame = holdFoldFrame();
-  click(toggle());
+  await act(() => {
+    click(toggle());
+  });
   expect(toggle()).toHaveAttribute("aria-expanded", "true");
   expect(children()).toHaveAttribute("data-project-fold-state", "prepared");
   expect(
@@ -720,7 +750,9 @@ test("A 10,000-chat Project stays bounded while opening and cancelling its revea
   await within(viewport).findByLabelText(
     "Show or hide chats in Motion project",
   );
-  click(toggle());
+  await act(() => {
+    click(toggle());
+  });
   expect(toggle()).toHaveAttribute("aria-expanded", "false");
   expect(children()).toHaveAttribute("inert");
   expect(
@@ -735,7 +767,9 @@ test("A 10,000-chat Project stays bounded while opening and cancelling its revea
 test("Navigating away from a mobile reveal cancels its viewport lifetime", async () => {
   const { toggle, viewport, children } = await openFoldList({ mobile: true });
   const frame = holdFoldFrame();
-  click(toggle());
+  await act(() => {
+    click(toggle());
+  });
   expect(children()).toHaveAttribute("data-project-fold-state", "prepared");
   click(within(viewport).getByText("History 3"));
   await screen.findByRole("textbox", { name: "Message" });
@@ -763,7 +797,9 @@ test("A filtered desktop list excludes its external footer from the reveal heigh
   const footer = within(viewport).getByText("Show all chats");
   expect(list).not.toContainElement(footer);
   const frame = holdFoldFrame();
-  click(toggle());
+  await act(() => {
+    click(toggle());
+  });
   expect(toggle()).toHaveAttribute("aria-expanded", "true");
   expect(children()).toHaveAttribute("data-project-fold-state", "prepared");
   expect(list.style.height).toBe(
@@ -775,7 +811,9 @@ test("A filtered desktop list excludes its external footer from the reveal heigh
   });
   expect(list.style.height).toBe(`${5 * rowHeight}px`);
   expect(footer).toBeInTheDocument();
-  click(toggle());
+  await act(() => {
+    click(toggle());
+  });
   expect(toggle()).toHaveAttribute("aria-expanded", "false");
   expect(children()).toHaveAttribute("inert");
   expect(list.style.height).toBe(
@@ -798,7 +836,9 @@ test("Expanding an already-visible current conversation does not cancel its reve
   });
   await screen.findByRole("textbox", { name: "Message" });
   if (toggle().getAttribute("aria-expanded") === "true") {
-    click(toggle());
+    await act(() => {
+      click(toggle());
+    });
     fireEvent.wheel(viewport);
   }
   await waitFor(() => {
@@ -806,7 +846,9 @@ test("Expanding an already-visible current conversation does not cancel its reve
   });
   fireEvent.scroll(viewport, { target: { scrollTop: 0 } });
   const frame = holdFoldFrame();
-  click(toggle());
+  await act(() => {
+    click(toggle());
+  });
   expect(toggle()).toHaveAttribute("aria-expanded", "true");
   expect(children()).toHaveAttribute("data-project-fold-state", "prepared");
   const current = within(children()).getByText("History 1").closest("a");
@@ -828,7 +870,9 @@ test("The mobile unread footer shares the Project reveal's list height", async (
   });
   expect(list.style.height).toBe(`${4 * rowHeight}px`);
   const frame = holdFoldFrame();
-  click(toggle());
+  await act(() => {
+    click(toggle());
+  });
   expect(toggle()).toHaveAttribute("aria-expanded", "true");
   expect(children()).toHaveAttribute("data-project-fold-state", "prepared");
   expect(list.style.height).toBe(
@@ -841,7 +885,9 @@ test("The mobile unread footer shares the Project reveal's list height", async (
   });
   expect(list.style.height).toBe(`${6 * rowHeight}px`);
   await frame();
-  click(toggle());
+  await act(() => {
+    click(toggle());
+  });
   expect(toggle()).toHaveAttribute("aria-expanded", "false");
   fireEvent.touchMove(viewport);
   await waitFor(() => {
@@ -866,11 +912,15 @@ test("A bottom-clamping Project collapse commits its smaller list immediately", 
   await within(viewport).findByLabelText(
     "Show or hide chats in Motion project",
   );
-  click(toggle());
+  await act(() => {
+    click(toggle());
+  });
   await within(viewport).findByText("History 1");
   fireEvent.scroll(viewport, { target: { scrollTop: 16 * ROW_HEIGHT } });
   await within(viewport).findByText("History 4");
-  click(toggle());
+  await act(() => {
+    click(toggle());
+  });
   expect(toggle()).toHaveAttribute("aria-expanded", "false");
   expect(within(viewport).queryByText("History 1")).not.toBeInTheDocument();
   expect(list.style.height).toBe(`${19 * ROW_HEIGHT}px`);

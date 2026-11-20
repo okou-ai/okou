@@ -1,10 +1,4 @@
-import {
-  agentCustomConnectorsContract,
-  type AgentCustomConnectorGrant,
-} from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
-import { agentConnectorAccessContract } from "@okouai/api-contracts/contracts/agent-connector-access";
-import { connectorAgentAccessContract } from "@okouai/api-contracts/contracts/connector-agent-access";
 import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import { chatRelationsContract } from "@okouai/api-contracts/contracts/chat-relations";
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
@@ -29,7 +23,6 @@ import {
   chatThreadArtifactsContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { mockApi } from "../msw-contract.ts";
-import { triggerAblyEvent } from "../ably.ts";
 
 const DEFAULT_AGENTS: AgentResponse[] = [
   {
@@ -68,25 +61,14 @@ export function setMockAgents(agents: MockAgentResponse[]): void {
   });
 }
 
-export function mockAgentIds(): string[] {
-  return mockAgents.map((agent) => {
-    return agent.agentId;
-  });
-}
-
 export function resetMockAgents(): void {
   mockAgents = [...DEFAULT_AGENTS];
 }
 
 const mockEnabledConnectorSlugsByAgent = new Map<string, string[]>();
-const mockCustomConnectorGrantsByAgent = new Map<
-  string,
-  AgentCustomConnectorGrant[]
->();
 
 export function resetMockUserConnectors(): void {
   mockEnabledConnectorSlugsByAgent.clear();
-  mockCustomConnectorGrantsByAgent.clear();
 }
 
 function mockConnectorUpdateResponse(
@@ -105,98 +87,10 @@ function mockConnectorUpdateResponse(
   return [...requested];
 }
 
-function mockCustomConnectorGrantUpdateResponse(
-  current: readonly AgentCustomConnectorGrant[],
-  requested: readonly AgentCustomConnectorGrant[],
-  operation: "replace" | "add" | "remove" | undefined,
-): AgentCustomConnectorGrant[] {
-  if (operation === "add") {
-    const byConnectorId = new Map(
-      current.map((grant) => {
-        return [grant.customConnectorId, grant] as const;
-      }),
-    );
-    for (const grant of requested) {
-      byConnectorId.set(grant.customConnectorId, grant);
-    }
-    return [...byConnectorId.values()];
-  }
-  if (operation === "remove") {
-    const removedIds = new Set(
-      requested.map((grant) => {
-        return grant.customConnectorId;
-      }),
-    );
-    return current.filter((grant) => {
-      return !removedIds.has(grant.customConnectorId);
-    });
-  }
-  return [...requested];
-}
-
 export const apiAgentsHandlers = [
-  mockApi(agentConnectorAccessContract.agent, ({ params, respond }) => {
-    return respond(200, {
-      enabledConnectorSlugs:
-        mockEnabledConnectorSlugsByAgent.get(params.id) ?? [],
-      customConnectorIds: (
-        mockCustomConnectorGrantsByAgent.get(params.id) ?? []
-      ).map((grant) => {
-        return grant.customConnectorId;
-      }),
-    });
-  }),
   // GET /api/agents
   mockApi(agentsMainContract.list, ({ respond }) => {
     return respond(200, mockAgents);
-  }),
-
-  // GET /api/connectors/agent-access
-  mockApi(connectorAgentAccessContract.get, ({ query, respond }) => {
-    const visibleAgentIds = mockAgentIds();
-    return respond(200, {
-      visibleAgentIds,
-      builtin: visibleAgentIds.flatMap((agentId) => {
-        return (mockEnabledConnectorSlugsByAgent.get(agentId) ?? [])
-          .filter((connectorSlug) => {
-            return !query.builtinSlug || connectorSlug === query.builtinSlug;
-          })
-          .map((connectorSlug) => {
-            return { connectorSlug, agentId };
-          });
-      }),
-      custom: visibleAgentIds.flatMap((agentId) => {
-        return (mockCustomConnectorGrantsByAgent.get(agentId) ?? [])
-          .filter((grant) => {
-            return (
-              !query.customConnectorId ||
-              grant.customConnectorId === query.customConnectorId
-            );
-          })
-          .map((grant) => {
-            return {
-              connectorId: grant.customConnectorId,
-              agentId,
-              permissionNames: grant.permissionNames,
-            };
-          });
-      }),
-    });
-  }),
-
-  // GET /api/agents/:id/user-connectors
-  mockApi(userBuiltinConnectorsContract.get, ({ params, respond }) => {
-    const enabledConnectorSlugs =
-      mockEnabledConnectorSlugsByAgent.get(params.id) ?? [];
-    return respond(200, {
-      enabledConnectorSlugs,
-    });
-  }),
-
-  // GET /api/agents/:id/custom-connectors
-  mockApi(agentCustomConnectorsContract.get, ({ params, respond }) => {
-    const grants = mockCustomConnectorGrantsByAgent.get(params.id) ?? [];
-    return respond(200, { grants });
   }),
 
   // PUT /api/agents/:id/user-connectors
@@ -207,23 +101,9 @@ export const apiAgentsHandlers = [
       body.operation,
     );
     mockEnabledConnectorSlugsByAgent.set(params.id, enabledConnectorSlugs);
-    triggerAblyEvent("composerAgentConnectorsChanged", { agentId: params.id });
     return respond(200, {
       enabledConnectorSlugs,
     });
-  }),
-
-  // PUT /api/agents/:id/custom-connectors
-  mockApi(agentCustomConnectorsContract.update, ({ body, params, respond }) => {
-    const current = mockCustomConnectorGrantsByAgent.get(params.id) ?? [];
-    const grants = mockCustomConnectorGrantUpdateResponse(
-      current,
-      body.grants,
-      body.operation,
-    );
-    mockCustomConnectorGrantsByAgent.set(params.id, grants);
-    triggerAblyEvent("composerAgentConnectorsChanged", { agentId: params.id });
-    return respond(200, { grants });
   }),
 
   // GET /api/agents/:id

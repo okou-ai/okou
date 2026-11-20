@@ -89,9 +89,7 @@ describe("run connector account inspection", () => {
     vi.stubEnv("OKOU_TOKEN", "test-token");
     vi.stubEnv("OKOU_AGENT_ID", AGENT_ID);
     vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", contextPath);
-    listCommand.setOptionValue("agent", undefined);
     listCommand.setOptionValue("json", false);
-    statusCommand.setOptionValue("agent", undefined);
     statusCommand.setOptionValue("json", false);
   });
 
@@ -177,11 +175,9 @@ describe("run connector account inspection", () => {
   });
 
   it.each([
-    { selector: "omitted", args: [], setup: {} },
-    { selector: "matching", args: ["--agent", AGENT_ID], setup: {} },
+    { state: "connected", setup: {} },
     {
-      selector: "incomplete manual setup",
-      args: [],
+      state: "incomplete manual setup",
       setup: {
         connectionStatus: "reconnect-required",
         reconnectReason: "configuration_incomplete",
@@ -190,8 +186,8 @@ describe("run connector account inspection", () => {
       },
     },
   ])(
-    "shows the exact run account in list, status, and JSON with $selector --agent",
-    async ({ args, setup }) => {
+    "shows the exact run account in list, status, and JSON for $state",
+    async ({ setup }) => {
       const inspectedBodies: unknown[] = [];
       writeContext([
         {
@@ -232,7 +228,7 @@ describe("run connector account inspection", () => {
         ),
       );
 
-      await listCommand.parseAsync(["node", "cli", ...args]);
+      await listCommand.parseAsync(["node", "cli"]);
       let output = mockConsoleLog.mock.calls.flat().join("\n");
       expect(output).toContain("ACCOUNT USED BY THIS RUN");
       expect(output).toContain("Thread-selected work account");
@@ -240,7 +236,7 @@ describe("run connector account inspection", () => {
       expect(output).not.toContain("CONNECTED AS");
 
       mockConsoleLog.mockClear();
-      await statusCommand.parseAsync(["node", "cli", "openai", ...args]);
+      await statusCommand.parseAsync(["node", "cli", "openai"]);
       output = mockConsoleLog.mock.calls.flat().join("\n");
       expect(output).toContain("Account Used:");
       expect(output).toContain("Thread-selected work account");
@@ -255,13 +251,7 @@ describe("run connector account inspection", () => {
       }
 
       mockConsoleLog.mockClear();
-      await statusCommand.parseAsync([
-        "node",
-        "cli",
-        "openai",
-        "--json",
-        ...args,
-      ]);
+      await statusCommand.parseAsync(["node", "cli", "openai", "--json"]);
       const json: unknown = JSON.parse(
         String(mockConsoleLog.mock.calls[0]?.[0]),
       );

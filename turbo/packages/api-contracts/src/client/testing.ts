@@ -5,10 +5,6 @@
 
 import type { AppRouter } from "../contracts/trpc-contract";
 import type { ClientRouter } from "./types";
-import { agentConnectorAccessContract as OriginalAgentConnectorAccessContract } from "../contracts/agent-connector-access";
-import { agentConnectorAccessContract } from "./agent-connector-access";
-import { agentCustomConnectorsContract as OriginalAgentCustomConnectorsContract } from "../contracts/agent-custom-connectors";
-import { agentCustomConnectorsContract } from "./agent-custom-connectors";
 import { agentDraftContract as OriginalAgentDraftContract } from "../contracts/agent-draft";
 import { agentDraftContract } from "./agent-draft";
 import { agentSetupPromptsContract as OriginalAgentSetupPromptsContract } from "../contracts/agent-setup-prompts";
@@ -199,8 +195,6 @@ import { connectedConnectorsContract as OriginalConnectedConnectorsContract } fr
 import { connectedConnectorsContract } from "./connected-connectors";
 import { connectorAccountsContract as OriginalConnectorAccountsContract } from "../contracts/connector-accounts";
 import { connectorAccountsContract } from "./connector-accounts";
-import { connectorAgentAccessContract as OriginalConnectorAgentAccessContract } from "../contracts/connector-agent-access";
-import { connectorAgentAccessContract } from "./connector-agent-access";
 import { connectorCatalogContract as OriginalConnectorCatalogContract } from "../contracts/connector-catalog";
 import { connectorCatalogContract } from "./connector-catalog";
 import { connectorCheckContract as OriginalConnectorCheckContract } from "../contracts/connector-check";
@@ -711,8 +705,6 @@ import { userExportContract as OriginalUserExportContract } from "../contracts/u
 import { userExportContract } from "./user-export";
 import { userModelPreferenceContract as OriginalUserModelPreferenceContract } from "../contracts/user-model-preference";
 import { userModelPreferenceContract } from "./user-model-preference";
-import { userPermissionGrantsContract as OriginalUserPermissionGrantsContract } from "../contracts/user-permission-grants";
-import { userPermissionGrantsContract } from "./user-permission-grants";
 import { userPreferencesContract as OriginalUserPreferencesContract } from "../contracts/user-preferences";
 import { userPreferencesContract } from "./user-preferences";
 import { userTemplatesContract as OriginalUserTemplatesContract } from "../contracts/user-templates";
@@ -806,8 +798,6 @@ export const clientDescriptorContracts: readonly (readonly [
   ClientRouter,
   AppRouter,
 ])[] = [
-  [agentConnectorAccessContract, OriginalAgentConnectorAccessContract],
-  [agentCustomConnectorsContract, OriginalAgentCustomConnectorsContract],
   [agentDraftContract, OriginalAgentDraftContract],
   [agentSetupPromptsContract, OriginalAgentSetupPromptsContract],
   [agentInstructionsContract, OriginalAgentInstructionsContract],
@@ -916,7 +906,6 @@ export const clientDescriptorContracts: readonly (readonly [
   [computerUseWriteCommandContract, OriginalComputerUseWriteCommandContract],
   [connectedConnectorsContract, OriginalConnectedConnectorsContract],
   [connectorAccountsContract, OriginalConnectorAccountsContract],
-  [connectorAgentAccessContract, OriginalConnectorAgentAccessContract],
   [connectorCatalogContract, OriginalConnectorCatalogContract],
   [connectorCheckContract, OriginalConnectorCheckContract],
   [connectorPermissionsContract, OriginalConnectorPermissionsContract],
@@ -1338,7 +1327,6 @@ export const clientDescriptorContracts: readonly (readonly [
   [userBuiltinConnectorsContract, OriginalUserBuiltinConnectorsContract],
   [userExportContract, OriginalUserExportContract],
   [userModelPreferenceContract, OriginalUserModelPreferenceContract],
-  [userPermissionGrantsContract, OriginalUserPermissionGrantsContract],
   [userPreferencesContract, OriginalUserPreferencesContract],
   [userTemplatesContract, OriginalUserTemplatesContract],
   [vncHostsContract, OriginalVncHostsContract],

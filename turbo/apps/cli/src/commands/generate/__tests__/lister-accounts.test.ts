@@ -70,7 +70,7 @@ describe("generation current-member directory", () => {
       "Saved accounts may need setup, reconnect, or permission updates.",
     );
     expect(output()).toContain(
-      "directory membership does not establish runtime availability or agent authorization",
+      "directory membership does not establish availability in a Run",
     );
     expect(output()).not.toMatch(/^ {2}openai\s/mu);
     expect(error).not.toHaveBeenCalled();

@@ -1,4 +1,3 @@
-import { modeHelp } from "../../../lib/command/single-agent";
 import { Command, Option } from "commander";
 import { withErrorHandler } from "../../../lib/command/with-error-handler";
 import {
@@ -126,29 +125,14 @@ export const disconnectConnectorAccountCommand = accountCommand(
   .alias("delete")
   .addHelpText(
     "after",
-    modeHelp(
-      `
-Disconnect removes this saved account for the user across all Agents, not just
-this Agent's access. Use account impact to inspect affected references first.
-Reconnecting after disconnect may require the user to sign in to the target
-website again or provide the API token again. If the user has forgotten their
-password, cannot sign in, or has lost the API token, they may be unable to
-reconnect. To remove only this Agent's access while keeping the saved account,
-use connector unauthorize.
+    `
+Disconnect removes one exact saved account throughout the workspace. Use an
+ID from connector account list. Use connector account impact to inspect
+affected references. Reconnecting can require signing in or supplying the API
+token again.
 
-Examples:
-  okou connector account disconnect github --connection-id <uuid>
-  okou connector account disconnect custom:<uuid> --connection-id <uuid> --json`,
-      `
-Disconnect removes this exact saved account for you throughout the workspace.
-Use --connection-id <uuid> from connector account list; use account impact first
-to inspect affected references. This applies directly without an approval step.
-It is broader than removing only Okou access: reconnecting can require sign-in
-again, and affected Automations/account selections can need reconfiguration.
-Use connector unauthorize to narrow Okou access while retaining the saved account
-where supported. Account consent, permission expiry and revocation remain intact.
+To limit access for one Chat, use its connector account controls.
 `,
-    ),
   )
   .action(
     withErrorHandler(async (selector: string, options: Options) => {

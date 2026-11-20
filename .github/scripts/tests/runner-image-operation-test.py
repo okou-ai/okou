@@ -266,6 +266,52 @@ class ImageOperationTest(unittest.TestCase):
         self.assertEqual(self.records("executions"), [])
         self.assertFalse(self.result.exists())
 
+    def test_failed_teardown_revokes_admission_for_detached_older_worker(self):
+        self.invoke("claim")
+        binary_root = self.root / "var/lib/vm0-runner/bin"
+        directory = binary_root / "pr-123-image-1234"
+        marker = next(directory.glob(".image-owner-*"))
+        sibling = binary_root / "pr-1234-image-1234"
+        sibling.mkdir()
+        sibling_marker = sibling / (".image-owner-" + "a" * 64)
+        sibling_marker.touch()
+
+        # Inventory can see this unit, but teardown cannot delete it through
+        # the symlinked ancestor. The image runner directory stays in place.
+        etc = self.root / "alternate-etc"
+        systemd = etc / "systemd/system"
+        systemd.mkdir(parents=True)
+        (systemd / "vm0-runner-pr-123.service").touch()
+        (self.root / "etc").symlink_to(etc, target_is_directory=True)
+
+        with self.image_call(
+            "run",
+            "build",
+            str(self.result),
+            environment=dict(
+                self.environment,
+                IMAGE_FAULT="pending-launch",
+                IMAGE_PRE_CLOSURE_WORKER="1",
+            ),
+        ) as launch:
+            try:
+                self.wait_for(lambda: bool(self.records("detached-servers")))
+                launch.kill()
+                self.assertEqual(launch.wait(timeout=5), -signal.SIGKILL)
+                with self.cleanup_session() as cleanup:
+                    self.assertEqual(self.cleanup_reply(cleanup), {"ready": [123]})
+                    result = self.clean_namespace(cleanup)
+                    self.assertEqual(result["outcome"], "failed")
+                    self.assertIn("resource ancestor is a symlink", result["error"])
+                self.assertTrue(directory.is_dir())
+            finally:
+                (self.root / "release-launch").touch()
+
+        self.wait_for(lambda: bool(self.records("legacy-image-admission")))
+        self.assertEqual(self.records("legacy-image-admission"), [False])
+        self.assertFalse(marker.exists())
+        self.assertTrue(sibling_marker.is_file())
+
     def test_missing_owner_creation_time_blocks_reclaim_and_worker(self):
         with self.cleanup_session() as cleanup:
             self.assertEqual(self.cleanup_reply(cleanup), {"ready": [123]})
@@ -418,9 +464,29 @@ class ImageOperationTest(unittest.TestCase):
         ]
         self.assertEqual(len(marker_installs), 1)
 
+    def test_claim_retries_a_timed_out_unit_observation(self):
+        prior = self.start_blocked("wait-for-retirement")
+        claim_request = {"action": "claim", "phase": None}
+        claim_count = self.records("requests").count(claim_request)
+
+        self.environment.update(GITHUB_RUN_ID="1235", IMAGE_FAULT="claim-observation-timeout")
+        self.invoke("claim")
+
+        self.assertTrue((self.root / "fault-used").exists())
+        self.assertEqual(self.records("requests").count(claim_request), claim_count + 1)
+        self.assertTrue(self.records("stops"))
+        output, error = prior.communicate(timeout=15)
+        self.assertNotEqual(prior.returncode, 0, output + error)
+        self.assert_one_build()
+        successor = self.root / "var/lib/vm0-runner/bin/pr-123-image-1235"
+        self.assertTrue(successor.is_dir())
+
     def test_claim_budget_includes_prior_worker_retirement(self):
         self.invoke("claim")
         self.invoke("run", "warm", str(self.result))
+        owner_path = next(self.root.glob("vm0-runner-image-*/*/owner.json"))
+        previous_owner = owner_path.read_bytes()
+        intent_path = next(owner_path.parent.glob("*/intent.json"))
         self.environment.update(GITHUB_RUN_ID="1235", IMAGE_FAULT="slow-claim-retirement")
         with self.image_call("claim") as claim:
             output, error = claim.communicate(timeout=5)
@@ -429,6 +495,8 @@ class ImageOperationTest(unittest.TestCase):
         binary_root = self.root / "var/lib/vm0-runner/bin"
         self.assertTrue((binary_root / "pr-123-image-1234").is_dir())
         self.assertFalse((binary_root / "pr-123-image-1235").exists())
+        self.assertEqual(owner_path.read_bytes(), previous_owner)
+        self.assertTrue(intent_path.is_file())
 
     def test_waiting_claim_retires_a_late_prior_worker(self):
         self.invoke("claim")
@@ -537,6 +605,44 @@ class ImageOperationTest(unittest.TestCase):
     def assert_one_build(self):
         self.assertEqual([r["phase"] for r in self.records("executions")], ["build"])
 
+    def test_launch_timeout_observes_the_original_accepted_service(self):
+        self.invoke("claim")
+        self.environment["IMAGE_FAULT"] = "launch-timeout-after-acceptance"
+        self.invoke("run", "build", str(self.result))
+        result = json.loads(self.result.read_text())
+        self.assertEqual(result["status"], 0)
+        self.assertEqual(result["rootfsHash"], "1" * 64)
+        self.assertEqual(result["snapshotHash"], "2" * 64)
+        self.assert_one_build()
+        self.assertEqual(
+            sum("--service-type=exec" in entry for entry in self.records("systemd")),
+            1,
+        )
+
+    def test_launch_timeout_without_a_service_keeps_outcome_unknown(self):
+        self.invoke("claim")
+        self.environment["IMAGE_FAULT"] = "launch-timeout-without-unit"
+        result = self.invoke("run", "build", str(self.result), check=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("execution outcome unknown", result.stderr)
+        self.assertFalse(self.result.exists())
+        self.assertFalse(self.records("executions"))
+        self.assertEqual(
+            sum("--service-type=exec" in entry for entry in self.records("systemd")),
+            1,
+        )
+
+    def test_expiration_submission_failure_blocks_worker_launch(self):
+        self.invoke("claim")
+        self.environment["IMAGE_FAULT"] = "expiration-submission-failed"
+        outcome = self.invoke("run", "build", str(self.result), check=False)
+        self.assertNotEqual(outcome.returncode, 0)
+        self.assertIn("image service command failed: systemd-run", outcome.stderr)
+        self.assertEqual(self.records("expiration-credentials-present"), [False])
+        self.assertFalse(self.records("executions"))
+        self.assertFalse(self.result.exists())
+        self.assertEqual(len(self.records("systemd")), 1)
+
     def test_truncated_result_reattaches_to_verified_build(self):
         self.environment["IMAGE_FAULT"] = "partial-result"
         self.invoke("claim")
@@ -552,7 +658,6 @@ class ImageOperationTest(unittest.TestCase):
         calls = json.dumps(self.records("privileged"))
         self.assertNotIn(self.environment["R2_SECRET_ACCESS_KEY"], calls)
         self.assertIn("--property=RuntimeMaxSec=570", calls)
-        self.assertIn("--on-active=1h", calls)
         for path in self.root.glob("vm0-runner-image-*/*/*/*"):
             if path.is_file():
                 self.assertNotIn(
@@ -789,9 +894,18 @@ class ImageOperationTest(unittest.TestCase):
 
     def test_expired_result_cannot_permit_execution_again(self):
         self.invoke("claim")
+        before = time.monotonic_ns()
         self.invoke("run", "build", str(self.result))
+        after = time.monotonic_ns()
         operation = next(self.root.glob("vm0-runner-image-*/*/*/intent.json")).parent
-        timer = next(args for args in self.records("systemd") if "--on-active=1h" in args)
+        unit = f"--unit=vm0-ci-image-{operation.name}-expire"
+        timer = next(args for args in self.records("systemd") if unit in args)
+        schedule = next(arg for arg in timer if arg.startswith("--on-boot="))
+        self.assertRegex(schedule, r"^--on-boot=[0-9]+ms$")
+        expiration_ms = int(schedule.removeprefix("--on-boot=").removesuffix("ms"))
+        submitted_at = (expiration_ms - 3_600_000) * 1_000_000
+        self.assertLessEqual(before, submitted_at)
+        self.assertLess(submitted_at, after + 1_000_000)
         self.assertIn(f"--uid={os.getuid()}", timer)
         self.assertIn(f"--gid={os.getgid()}", timer)
         expiration = subprocess.run(

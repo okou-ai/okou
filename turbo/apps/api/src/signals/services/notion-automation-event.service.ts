@@ -1871,11 +1871,9 @@ const startNotionWorkflowRun$ = command(
       set(
         runWorkflowAutomationNow$,
         {
-          due: {
-            automation: args.row.automation,
-            agentId: args.row.agentId,
-            chatThreadId: args.chatThreadId,
-          },
+          automation: args.row.automation,
+          agentId: args.row.agentId,
+          chatThreadId: args.chatThreadId,
           automationContext: args.context,
           connectorSourceId: args.connectorSourceId,
           apiStartTime: now(),

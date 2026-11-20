@@ -110,3 +110,57 @@ fn malformed_write_private_files_payload_returns_error_and_keeps_connection_open
 
     finish_guest_connection(handle, host_stream);
 }
+
+#[cfg(target_os = "linux")]
+#[test]
+fn malformed_streamed_batch_is_rejected_without_losing_the_following_frame() {
+    use std::io::Write;
+
+    let (handle, mut stream) = start_guest_connection();
+    let path = unique_tmp_path("invalid-streamed-write", ".txt");
+    let content = vec![b'x'; 2 * 1024 * 1024];
+    let mut payload = guest_control_proto::encode_write_files(&[WriteFileBatchEntry {
+        path: path.as_str(),
+        content: &content,
+    }])
+    .unwrap();
+    payload.push(b'x');
+    let mut frames = guest_control_proto::encode(MSG_WRITE_FILES, 61, &payload).unwrap();
+    frames.extend_from_slice(
+        &guest_control_proto::encode(guest_control_proto::MSG_PING, 62, &[]).unwrap(),
+    );
+    stream.write_all(&frames).unwrap();
+
+    assert_eq!(
+        read_error_response(&mut stream, 61),
+        "invalid payload: write_files trailing bytes"
+    );
+    let pong = super::support::read_message(&mut stream);
+    assert_eq!(
+        (pong.msg_type, pong.seq),
+        (guest_control_proto::MSG_PONG, 62)
+    );
+    assert!(!Path::new(path.as_str()).exists());
+    finish_guest_connection(handle, stream);
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn disconnected_streamed_batch_retires_without_applying_its_prefix() {
+    use std::io::Write;
+
+    let (handle, mut stream) = start_guest_connection();
+    let path = unique_tmp_path("partial-streamed-write", ".txt");
+    let content = vec![b'x'; 2 * 1024 * 1024];
+    let payload = guest_control_proto::encode_write_files(&[WriteFileBatchEntry {
+        path: path.as_str(),
+        content: &content,
+    }])
+    .unwrap();
+    let frame = guest_control_proto::encode(MSG_WRITE_FILES, 71, &payload).unwrap();
+    stream.write_all(&frame[..128 * 1024]).unwrap();
+    drop(stream);
+
+    super::support::join_guest_connection(handle);
+    assert!(!Path::new(path.as_str()).exists());
+}

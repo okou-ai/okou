@@ -429,7 +429,6 @@ async function connectGoogleMeet(
     actor,
     "google-meet",
     "oauth",
-    agentId,
     account,
   );
   const state = new URL(started.authorizationUrl).searchParams.get("state");

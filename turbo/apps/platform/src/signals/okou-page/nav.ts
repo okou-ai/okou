@@ -5,14 +5,12 @@ import { activeRoute$ } from "../active-route.ts";
 import { ROUTES, type RouteKey } from "../route-paths.ts";
 import { setupGlobalShortcut } from "../../lib/setup-global-shortcut.ts";
 import { GLOBAL_KEYBOARD_SHORTCUTS } from "../../lib/global-keyboard-shortcuts.ts";
-import { setupKeyboardShortcutHints$ } from "../keyboard-shortcut-hints.ts";
 import { currentChatAgentId$, newChatAgentId$ } from "../agent-chat.ts";
 import { setChatShortcutHelpOpen$ } from "../chat-page/chat-shortcut-help.ts";
 import { openThreeColumnSearchDialog$ } from "./sidebar-state.ts";
 import { displayedPinnedAgents$ } from "./pinned-agents.ts";
 import { writeToClipboard } from "./clipboard.ts";
 import { isStandaloneMode } from "./settings/connectors.ts";
-import { setupThreadNumberShortcuts$ } from "./thread-number-shortcuts.ts";
 import {
   setChatThreadUnreadFilter$,
   toggleChatThreadUnreadFilter$,
@@ -142,10 +140,8 @@ export function shouldHandleShortcutPress(event: KeyboardEvent): boolean {
 }
 
 export const setupGlobalKeyboardShortcuts$ = command(
-  ({ set }, isSingleAgent: () => boolean, signal: AbortSignal) => {
-    set(setupThreadNumberShortcuts$, signal);
-    set(setupKeyboardShortcutHints$, signal);
-    setupGlobalShortcut(
+  ({ set }, singleAgent: boolean | undefined, signal: AbortSignal) => {
+    return setupGlobalShortcut(
       {
         [GLOBAL_KEYBOARD_SHORTCUTS.toggleChatList.binding]: {
           allowInEditableTarget: true,
@@ -178,7 +174,7 @@ export const setupGlobalKeyboardShortcuts$ = command(
         "ctrl+shift+[": {
           allowInEditableTarget: true,
           shouldHandle: () => {
-            return !isSingleAgent();
+            return singleAgent === false;
           },
           run: async () => {
             await set(navigateAdjacentPinnedAgent$, "prev", signal);
@@ -187,7 +183,7 @@ export const setupGlobalKeyboardShortcuts$ = command(
         "ctrl+shift+]": {
           allowInEditableTarget: true,
           shouldHandle: () => {
-            return !isSingleAgent();
+            return singleAgent === false;
           },
           run: async () => {
             await set(navigateAdjacentPinnedAgent$, "next", signal);

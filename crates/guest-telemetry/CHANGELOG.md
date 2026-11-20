@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.3.224](https://github.com/okou-ai/okou/compare/guest-telemetry-v0.3.223...guest-telemetry-v0.3.224) (2026-11-20)
+
+## [0.3.223](https://github.com/okou-ai/okou/compare/guest-telemetry-v0.3.222...guest-telemetry-v0.3.223) (2026-11-19)
+
+
+### Refactoring
+
+* **rust:** share vectored log writes ([#49127](https://github.com/okou-ai/okou/issues/49127)) ([4592830](https://github.com/okou-ai/okou/commit/45928304aad5dc912cf2aafe9c6b241c03f1c063))
+
+## [0.3.222](https://github.com/okou-ai/okou/compare/guest-telemetry-v0.3.221...guest-telemetry-v0.3.222) (2026-11-19)
+
 ## [0.3.221](https://github.com/okou-ai/okou/compare/guest-telemetry-v0.3.220...guest-telemetry-v0.3.221) (2026-11-19)
 
 ## [0.3.220](https://github.com/okou-ai/okou/compare/guest-telemetry-v0.3.219...guest-telemetry-v0.3.220) (2026-11-18)

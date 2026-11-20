@@ -30,10 +30,6 @@ type DisplayMessageRenderer = (
 ) => string;
 
 const EVENT_PAYLOAD_OBJECT_KEY_ORDER = "__vm0EventPayloadObjectKeyOrderV1";
-// Queued rows admitted during the rollout may still contain this reserved
-// field. Keep stripping it until those persisted payloads have drained.
-const LEGACY_AUTOMATION_MESSAGE_VARIANT_FIELD =
-  "__vm0UserFriendlyAutomationMessageV1";
 const eventPayloadObjectKeyOrderSchema = array(
   object({
     path: array(union([string(), number()])),
@@ -95,11 +91,7 @@ function restoreEventPayloadObjectKeyOrder(
     return value;
   }
   const persistedKeys = Object.keys(value).filter((key) => {
-    return (
-      path.length > 0 ||
-      (key !== EVENT_PAYLOAD_OBJECT_KEY_ORDER &&
-        key !== LEGACY_AUTOMATION_MESSAGE_VARIANT_FIELD)
-    );
+    return path.length > 0 || key !== EVENT_PAYLOAD_OBJECT_KEY_ORDER;
   });
   const persistedKeySet = new Set(persistedKeys);
   const orderedKeys = keyOrder.get(eventPayloadPathKey(path))?.filter((key) => {
@@ -129,10 +121,7 @@ function restoreEventPayloadObjectKeyOrder(
 export function persistedWorkflowAutomationEventPayload(
   payload: WorkflowAutomationEventPayload,
 ): WorkflowAutomationEventPayload {
-  if (
-    EVENT_PAYLOAD_OBJECT_KEY_ORDER in payload ||
-    LEGACY_AUTOMATION_MESSAGE_VARIANT_FIELD in payload
-  ) {
+  if (EVENT_PAYLOAD_OBJECT_KEY_ORDER in payload) {
     throw new Error("Workflow automation event payload uses a reserved field");
   }
   const objectKeyOrder: EventPayloadObjectKeyOrder[] = [];
@@ -143,7 +132,7 @@ export function persistedWorkflowAutomationEventPayload(
   };
 }
 
-/** Rows admitted before key-order metadata was written must use the blob. */
+/** Reject a queued payload without the metadata needed to restore its order. */
 export function restoredWorkflowAutomationEventPayload(
   payload: WorkflowAutomationEventPayload,
 ): WorkflowAutomationEventPayload | null {

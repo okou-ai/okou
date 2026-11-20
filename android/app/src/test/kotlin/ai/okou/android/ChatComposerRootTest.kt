@@ -149,7 +149,7 @@ class ChatComposerRootTest {
         compose.onNodeWithTag("message_input").assertIsNotEnabled()
         compose.onNodeWithText("Send").assertIsNotEnabled()
         compose.onNodeWithContentDescription("Back").performClick()
-        compose.onNodeWithText("Chats").assertExists()
+        compose.onNodeWithContentDescription("Chats").assertExists()
         assertEquals("{}", file.readText())
         assertEquals(0, app.fixture.requests.count { it.method == "POST" })
     }
@@ -196,7 +196,7 @@ class ChatComposerRootTest {
         compose.onNodeWithText("Send").assertIsNotEnabled()
         captureOwners()
         compose.onNodeWithContentDescription("Back").performClick()
-        compose.onNodeWithText("Chats").assertExists()
+        compose.onNodeWithContentDescription("Chats").assertExists()
         compose.onNodeWithText("New chat").performClick()
         compose.onNodeWithTag("message_input").assertTextContains("Original **message** 👋")
         app.contextGate.countDown()

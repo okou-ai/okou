@@ -1,6 +1,6 @@
 import { command, computed, state } from "ccstate";
 
-import type { UserPermissionGrantExpiresIn } from "@okouai/api-contracts/contracts/user-permission-grants";
+import type { UserPermissionGrantExpiresIn } from "@okouai/api-contracts/validators/user-permission-grants";
 import { chatThreadMetadataContract } from "@okouai/api-contracts/client/chat-threads";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept } from "../../lib/accept.ts";

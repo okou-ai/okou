@@ -1,12 +1,8 @@
 import type { SecretConnectorMetadata } from "@okouai/api-contracts/contracts/runners";
-import {
-  FirewallBaseUrlResolutionError,
-  type FirewallPolicies,
-} from "@okouai/connectors/firewall-types";
+import type { FirewallPolicies } from "@okouai/connectors/firewall-types";
 import { expandVariablesInString } from "@okouai/core/variable-expander";
 import { computed, type Computed } from "ccstate";
 import { badRequestMessage } from "../../lib/error";
-import { settle } from "../utils";
 import type { AgentRunContextSignals } from "./agent-run-context.signals";
 import type { PermissionManifest } from "./agent-run-contracts";
 import type { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
@@ -64,9 +60,6 @@ export function createConnectorAdmissionSignals(
         return await buildPreparedPermissionManifest(input);
       },
     );
-    if (isConnectorRuntimeError(permissions)) {
-      return permissions;
-    }
     const environment = connectorEnvironmentFromSnapshot(input, permissions);
     const builtinTargets = environment.runtimeTargets.some((target) => {
       return target.kind === "builtin";
@@ -131,8 +124,30 @@ function connectorEnvironmentFromSnapshot(
   input: RunPreparedConnectorInputs,
   manifest: PermissionManifest | undefined,
 ): Environment {
+  const admittedSlugs = new Set(
+    manifest?.builtinRuntimeTargets?.map((target) => {
+      return target.connectorSlug;
+    }),
+  );
+  const catalog =
+    input.connectorCatalogSelection.kind === "scoped"
+      ? input.connectorCatalogSelection.selection
+      : null;
+  const snapshot = input.storedConnectorSnapshot;
   const builtin = storedConnectorEnvironmentFromSnapshot(
-    input.storedConnectorSnapshot,
+    snapshot
+      ? {
+          ...snapshot,
+          bindingSets: snapshot.bindingSets.filter((bindingSet) => {
+            // Valid identity/environment-only Connectors need no firewall target.
+            return (
+              admittedSlugs.has(bindingSet.connectorSlug) ||
+              (catalog !== null &&
+                !catalog.serverFirewalls.has(bindingSet.connectorSlug))
+            );
+          }),
+        }
+      : null,
     manifest?.environmentSecretPlaceholders,
   );
   const custom = input.customConnectorContext;
@@ -359,34 +374,25 @@ async function buildPreparedPermissionManifest(args: {
   readonly storedConnectorMetadataContext: BuiltinConnectorRuntimeContext;
   readonly customConnectorContext: CustomConnectorRuntimeContext;
   readonly timing: ApiDispatchTimingCollector;
-}): Promise<PermissionManifest | undefined | ConnectorRuntimeError> {
-  const result = await settle(
-    buildPermissionManifest({
-      connectorCatalogSelection: args.connectorCatalogSelection,
-      modelProvider: null,
-      permissionPolicies: args.permissionPolicies,
-      vars: args.vars,
-      connectorVars: args.storedConnectorMetadataContext.vars,
-      connectorSlugs: args.storedConnectorMetadataContext.connectorSlugs,
-      connectorSourceIdBySlug:
-        args.storedConnectorMetadataContext.connectorSourceIdBySlug,
-      customConnectorFirewalls: args.customConnectorContext.firewalls,
-      customConnectorPermissionPolicies:
-        args.customConnectorContext.permissionPolicies,
-      customConnectorIdByFirewallName:
-        args.customConnectorContext.customConnectorIdByFirewallName,
-      customConnectorSourceIdByFirewallName:
-        args.customConnectorContext.customConnectorSourceIdByFirewallName,
-      timing: args.timing,
-    }),
-  );
-  if (result.ok) {
-    return result.value;
-  }
-  if (result.error instanceof FirewallBaseUrlResolutionError) {
-    return badRequestMessage(result.error.message);
-  }
-  throw result.error;
+}): Promise<PermissionManifest | undefined> {
+  return await buildPermissionManifest({
+    connectorCatalogSelection: args.connectorCatalogSelection,
+    modelProvider: null,
+    permissionPolicies: args.permissionPolicies,
+    vars: args.vars,
+    connectorVars: args.storedConnectorMetadataContext.vars,
+    connectorSlugs: args.storedConnectorMetadataContext.connectorSlugs,
+    connectorSourceIdBySlug:
+      args.storedConnectorMetadataContext.connectorSourceIdBySlug,
+    customConnectorFirewalls: args.customConnectorContext.firewalls,
+    customConnectorPermissionPolicies:
+      args.customConnectorContext.permissionPolicies,
+    customConnectorIdByFirewallName:
+      args.customConnectorContext.customConnectorIdByFirewallName,
+    customConnectorSourceIdByFirewallName:
+      args.customConnectorContext.customConnectorSourceIdByFirewallName,
+    timing: args.timing,
+  });
 }
 
 function expandStoredConnectorEnvironment(args: {

@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.23.2](https://github.com/okou-ai/okou/compare/runner-executor-v0.23.1...runner-executor-v0.23.2) (2026-11-20)
+
+## [0.23.1](https://github.com/okou-ai/okou/compare/runner-executor-v0.23.0...runner-executor-v0.23.1) (2026-11-20)
+
+## [0.23.0](https://github.com/okou-ai/okou/compare/runner-executor-v0.22.13...runner-executor-v0.23.0) (2026-11-20)
+
+
+### Features
+
+* **runner:** accept optionality on execution Skill bundles ([#49266](https://github.com/okou-ai/okou/issues/49266)) ([64bd508](https://github.com/okou-ai/okou/commit/64bd508da7156eac1672d135fdca8fe9437501ec))
+
+## [0.22.13](https://github.com/okou-ai/okou/compare/runner-executor-v0.22.12...runner-executor-v0.22.13) (2026-11-20)
+
+## [0.22.12](https://github.com/okou-ai/okou/compare/runner-executor-v0.22.11...runner-executor-v0.22.12) (2026-11-19)
+
+## [0.22.11](https://github.com/okou-ai/okou/compare/runner-executor-v0.22.10...runner-executor-v0.22.11) (2026-11-19)
+
+
+### Refactoring
+
+* **runner:** unify home image preparation ([#49131](https://github.com/okou-ai/okou/issues/49131)) ([e831cb1](https://github.com/okou-ai/okou/commit/e831cb18e971db5b85ed819460d282d632c62c21))
+
+## [0.22.10](https://github.com/okou-ai/okou/compare/runner-executor-v0.22.9...runner-executor-v0.22.10) (2026-11-19)
+
 ## [0.22.9](https://github.com/okou-ai/okou/compare/runner-executor-v0.22.8...runner-executor-v0.22.9) (2026-11-19)
 
 ## [0.22.8](https://github.com/okou-ai/okou/compare/runner-executor-v0.22.7...runner-executor-v0.22.8) (2026-11-19)

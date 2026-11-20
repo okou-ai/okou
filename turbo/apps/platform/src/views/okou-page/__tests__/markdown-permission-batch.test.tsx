@@ -1,11 +1,12 @@
 import { connectorPermissionsContract } from "@okouai/api-contracts/contracts/connector-permissions";
-import { connectorPermissionsResponse } from "../../../__tests__/connector-permissions.ts";
+import {
+  connectorPermissionsResponse,
+  type ConnectorPermissionFixture,
+} from "../../../__tests__/connector-permissions.ts";
 import { agentsByIdContract } from "@okouai/api-contracts/contracts/agents";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
-import type {
-  UserPermissionGrantBatchItem,
-  UserPermissionGrantResponse,
-} from "@okouai/api-contracts/contracts/user-permission-grants";
+import type { UserPermissionGrantBatchItem } from "@okouai/api-contracts/validators/user-permission-grants";
+
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -308,7 +309,7 @@ test("A batch card reports saving and then allowed after the user confirms", asy
   const save = context.mocks.deferred<void>();
   const items = defaultItems.slice(0, 2);
   installMetadata(items);
-  const grants: UserPermissionGrantResponse[] = [];
+  const grants: ConnectorPermissionFixture[] = [];
   context.mocks.api(connectorPermissionsContract.get, ({ query, respond }) => {
     return respond(200, connectorPermissionsResponse(query, grants));
   });
@@ -323,7 +324,6 @@ test("A batch card reports saving and then allowed after the user confirms", asy
       grants.push(
         ...body.grants.map((grant) => {
           return {
-            agentId: AGENT_ID,
             connectorSlug,
             permission: grant.permission,
             action: "allow" as const,

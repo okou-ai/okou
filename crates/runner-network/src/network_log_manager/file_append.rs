@@ -25,25 +25,11 @@ fn write_lines_vectored<'a>(
         .filter(|bytes| !bytes.is_empty())
         .map(IoSlice::new)
         .collect();
-    let mut bufs = &mut bufs[..];
-
-    while !bufs.is_empty() {
-        let written = match writer.write_vectored(bufs) {
-            Ok(written) => written,
-            Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
-            Err(error) => return Err(error),
-        };
-        if written == 0 {
-            return Err(io::Error::new(
-                io::ErrorKind::WriteZero,
-                "failed to write network log batch",
-            ));
-        }
-
-        IoSlice::advance_slices(&mut bufs, written);
-    }
-
-    Ok(())
+    guest_contracts::log_append::write_all_vectored(
+        writer,
+        &mut bufs,
+        "failed to write network log batch",
+    )
 }
 
 #[cfg(test)]

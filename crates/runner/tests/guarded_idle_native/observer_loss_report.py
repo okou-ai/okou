@@ -7,8 +7,8 @@ import pathlib
 
 import progress_report as foreground
 from cleanup_report import COUNTS, accounting, coverage, supplied_policy
-import status_failure_report as failure
 import report
+import status_evidence
 from report import exact
 
 PREFIX = "NATIVE_OBSERVER_LOSS_WITNESS "
@@ -78,7 +78,7 @@ def validate(directory):
         if (not all(report.positive_integer(t) for t in (io_released, status_polled))
                 or not events[3]["monotonic_ns"] < io_released < terminal[4]["monotonic_ns"]
                 < status_polled < events[4]["monotonic_ns"]
-                or not failure.status_wait_advanced(before, after)):
+                or not status_evidence.status_wait_advanced(before, after)):
             raise ValueError("final status was not Pending after complete required IO")
         second = foreground.heartbeat(status.get("heartbeat"), 2, status_polled, events[4]["monotonic_ns"], (0, 0))
         if first != second or first in runners:

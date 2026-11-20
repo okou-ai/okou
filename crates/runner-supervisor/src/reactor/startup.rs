@@ -5,9 +5,10 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use tokio::sync::Semaphore;
+use tokio::sync::{Semaphore, mpsc};
 use tracing::warn;
 
+use super::acceptance_tasks::MAX_IN_FLIGHT_ACCEPTANCES;
 use super::error::{ReactorError as RunnerError, ReactorResult as RunnerResult};
 use super::factory_lifecycle::{shutdown_factory_instances, start_factories};
 use super::home_cache_observation::{
@@ -22,6 +23,7 @@ use crate::SharedFactory;
 use crate::executor::ExecutorConfig;
 use crate::heartbeat::{HeartbeatContext, HeartbeatController, HeartbeatProfile};
 use crate::idle_prune_control::PruneIdleListener;
+use crate::ingress::dispatch::{self, DispatchIntake, DispatchWork, PreferredHomeProbe};
 use crate::ingress::{IngressConfig, IngressRuntime};
 use crate::lifecycle::RunnerMode;
 use runner_lifecycle::home_image_cache::snapshot::HomeCacheStateSnapshot;
@@ -45,6 +47,7 @@ pub(super) struct StartupContext<'a> {
     pub shared: &'a RunnerSharedState,
     pub provider: &'a ProviderState,
     pub exec_config: &'a ExecutorConfig,
+    pub device_rate_limits: &'a Option<sandbox::DeviceRateLimits>,
 }
 
 pub(super) struct StartupInventory<'a> {
@@ -66,6 +69,8 @@ pub(super) struct StartedRunner {
     pub startup_mode: RunnerMode,
     pub home_cache_observation: HomeCacheObservation,
     pub heartbeat: HeartbeatController,
+    pub acceptance_slots: Arc<Semaphore>,
+    pub dispatch_rx: mpsc::Receiver<DispatchWork>,
 }
 
 struct StartupOwner {
@@ -76,12 +81,14 @@ struct StartupOwner {
     home_cache_observation: Option<HomeCacheObservation>,
     heartbeat: Option<HeartbeatController>,
     signal: SignalController,
+    dispatch_rx: mpsc::Receiver<DispatchWork>,
     resources: StartupResources,
 }
 
 impl StartupOwner {
     /// Consume startup custody only after its dependent work has been joined.
     async fn rollback(mut self, ctx: &StartupContext<'_>, context: &'static str) {
+        dispatch::reject_queued(self.dispatch_rx).await;
         if let Some(task) = self.initial_inventory.take() {
             task.abort();
             match task.await {
@@ -174,9 +181,29 @@ pub(super) async fn start(
         #[cfg(test)]
         SignalSource::Override(controller) => controller,
     };
+    let acceptance_slots = Arc::new(Semaphore::new(MAX_IN_FLIGHT_ACCEPTANCES));
+    let dispatch_home_cache = ingress.as_ref().and(ctx.exec_config.home_cache.as_ref());
+    let preferred_home_probe = dispatch_home_cache.map(|cache| {
+        PreferredHomeProbe::new(
+            cache.clone(),
+            inventory.snapshot.clone(),
+            ctx.runner
+                .profiles
+                .iter()
+                .map(|(name, profile)| (name.clone(), profile.home_disk_mb))
+                .collect(),
+            ctx.shared.active_runs.clone(),
+            Arc::clone(&ctx.shared.idle_pool),
+            ctx.device_rate_limits.clone(),
+            signal.mode_rx.clone(),
+        )
+    });
+    let (dispatch_intake, dispatch_rx) =
+        DispatchIntake::new(Arc::clone(&acceptance_slots), preferred_home_probe);
     let mut startup = StartupOwner {
         resources,
         signal,
+        dispatch_rx,
         factories: BTreeMap::new(),
         initial_inventory: None,
         home_cache_observation: None,
@@ -300,13 +327,7 @@ pub(super) async fn start(
         }
     }
     let readiness = {
-        let cache_readiness = finish_initial_inventory(
-            &mut startup.initial_inventory,
-            &mut startup.home_cache_observation,
-            &mut startup.heartbeat,
-            &startup.signal.lifecycle,
-            &inventory,
-        );
+        let cache_readiness = finish_initial_inventory(&mut startup, &inventory, dispatch_intake);
         let cache_readiness =
             tokio::time::timeout(INITIAL_HOME_CACHE_READINESS_TIMEOUT, cache_readiness);
         tokio::pin!(cache_readiness);
@@ -348,6 +369,7 @@ pub(super) async fn start(
             initial_inventory: None,
             home_cache_observation: Some(home_cache_observation),
             heartbeat: Some(heartbeat),
+            dispatch_rx,
         } => Ok(Some(StartedRunner {
             resources,
             signal,
@@ -357,6 +379,8 @@ pub(super) async fn start(
             startup_mode,
             home_cache_observation,
             heartbeat,
+            acceptance_slots,
+            dispatch_rx,
         })),
         startup => {
             startup
@@ -370,28 +394,27 @@ pub(super) async fn start(
 }
 
 async fn finish_initial_inventory(
-    task: &mut Option<InitialHomeCacheTask>,
-    observation: &mut Option<HomeCacheObservation>,
-    heartbeat: &mut Option<HeartbeatController>,
-    lifecycle: &crate::lifecycle::LifecycleController,
+    startup: &mut StartupOwner,
     inventory: &StartupInventory<'_>,
+    dispatch_intake: DispatchIntake,
 ) -> RunnerResult<()> {
-    let initialized = task
+    let initialized = startup
+        .initial_inventory
         .as_mut()
         .ok_or_else(|| RunnerError::Internal("initial home-cache inventory task missing".into()))?
         .await;
     // Retire even a failed completed handle before rollback can join it again.
-    *task = None;
+    startup.initial_inventory = None;
     let (initialized, initial) = initialized.map_err(|error| {
         RunnerError::Internal(format!("initial home-cache inventory task failed: {error}"))
     })?;
-    *observation = Some(initialized);
+    startup.home_cache_observation = Some(initialized);
     if !inventory.snapshot.home_cache_loaded() {
         return Err(RunnerError::Internal(
             "initial home-cache inventory scan incomplete".into(),
         ));
     }
-    let mode = match lifecycle.current_mode() {
+    let mode = match startup.signal.lifecycle.current_mode() {
         RunnerMode::Starting => RunnerMode::Running,
         mode => mode,
     };
@@ -399,7 +422,20 @@ async fn finish_initial_inventory(
         InitialHomeCacheObservation::Change(change) => Some(change),
         InitialHomeCacheObservation::LoadedSnapshot | InitialHomeCacheObservation::Empty => None,
     };
-    let controller = heartbeat.insert(HeartbeatController::new(inventory.heartbeat.clone()));
+    // The API can route offers before acknowledging the initial Running
+    // heartbeat. Queue them here, then let the reactor take custody after startup.
+    if let Some(ingress) = &startup.resources.ingress {
+        #[cfg(test)]
+        let dispatch_intake = {
+            let mut intake = dispatch_intake;
+            intake.work_queued = inventory.test_hooks.dispatch_work_queued.clone();
+            intake
+        };
+        ingress.enable_dispatch(dispatch_intake);
+    }
+    let controller = startup
+        .heartbeat
+        .insert(HeartbeatController::new(inventory.heartbeat.clone()));
     controller.report_initial_home_cache(mode, change).await?;
     Ok(())
 }

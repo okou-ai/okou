@@ -99,7 +99,6 @@ import {
   type AgentRunContextSignals,
 } from "./agent-run-context.signals";
 import type { BootstrapAgent } from "./agent-data.service";
-import type { AgentRunPreCreateSource } from "./agent-run-contracts";
 import {
   resolveDefaultModelFirstPin$,
   resolveRunSelectionModel,
@@ -259,7 +258,7 @@ interface NormalSendArgs {
   readonly auth: OrganizationAuthContext;
   readonly userId: string;
   readonly orgId: string;
-  readonly agentRunPreCreateSource?: AgentRunPreCreateSource;
+  readonly skipThreadSortTouch?: boolean;
   readonly requiredOfficialWorkflowIds?: readonly string[];
   readonly getStartedWorkflowId?: string;
   /**
@@ -496,16 +495,6 @@ function invalidGenerationTemplateSelection(
     }
   }
   return undefined;
-}
-function shouldTouchThreadSortFromNormalSend(
-  source: AgentRunPreCreateSource | undefined,
-  isNewThread: boolean,
-): boolean {
-  return (
-    !isNewThread &&
-    source !== "chat_callback_auto_send" &&
-    source !== "workflow_slash_command"
-  );
 }
 const resolveClientEventId$ = command(
   async (
@@ -2288,10 +2277,7 @@ const normalSendThreadTouch$ = command(
     touchedAt: Date,
     signal: AbortSignal,
   ): Promise<void> => {
-    if (
-      thread.kind === "new" ||
-      !shouldTouchThreadSortFromNormalSend(args.agentRunPreCreateSource, false)
-    ) {
+    if (thread.kind === "new" || args.skipThreadSortTouch) {
       return;
     }
     const startedAt = performance.now();

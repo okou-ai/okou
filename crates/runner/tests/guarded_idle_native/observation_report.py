@@ -2,16 +2,67 @@
 
 import pressure_report as pressure
 
+_READ_FIELDS = {
+    "started_ns",
+    "finished_ns",
+    "read_start_offset_ns",
+    "available_bytes",
+    "age_ns",
+    "read_duration_ns",
+}
+
+
+def _valid_read_window(value, begin, end, *, require_available):
+    return (
+        isinstance(value, dict)
+        and set(value) == _READ_FIELDS
+        and all(
+            pressure.integer(value[key])
+            for key in value
+            if require_available or key != "available_bytes"
+        )
+        and begin < value["started_ns"] < value["finished_ns"] < end
+    )
+
+
+def _duration_fits_window(value):
+    return (
+        value["read_duration_ns"]
+        <= value["age_ns"]
+        <= value["finished_ns"] - value["started_ns"]
+    )
+
 
 def sample(value, begin, end, policy):
-    if (not isinstance(value, dict) or set(value) != {"started_ns", "finished_ns", "read_start_offset_ns",
-            "available_bytes", "age_ns", "read_duration_ns"}
-            or any(not pressure.integer(value[k]) for k in value if k != "available_bytes")
-            or not begin < value["started_ns"] < value["finished_ns"] < end
-            or not value["read_duration_ns"] <= value["age_ns"] <= value["finished_ns"]-value["started_ns"]
-            or value["available_bytes"] is not None and (
-                not pressure.integer(value["available_bytes"]) or value["available_bytes"] > policy["host_total_bytes"])):
+    if (
+        not _valid_read_window(value, begin, end, require_available=False)
+        or not _duration_fits_window(value)
+        or (
+            value["available_bytes"] is not None
+            and (
+                not pressure.integer(value["available_bytes"])
+                or value["available_bytes"] > policy["host_total_bytes"]
+            )
+        )
+    ):
         raise ValueError("logical actual observation timing or availability changed")
+
+
+def paired_fresh_reads(values, policy, begin, end):
+    """Require positive, fresh reads in successive nonoverlapping windows."""
+    if not isinstance(values, list) or len(values) < 2:
+        raise ValueError("batch ABA lacks original paired fresh reads")
+    for value in values:
+        if (
+            not _valid_read_window(value, begin, end, require_available=True)
+            or not 0 < value["available_bytes"] <= policy["host_total_bytes"]
+            or not _duration_fits_window(value)
+            or value["age_ns"] > policy["max_sample_age_millis"] * 1_000_000
+        ):
+            raise ValueError(
+                "batch ABA observation was fabricated stale or outside resumed admission"
+            )
+        begin = value["finished_ns"]
 
 
 def samples(values, begin, end, policy):

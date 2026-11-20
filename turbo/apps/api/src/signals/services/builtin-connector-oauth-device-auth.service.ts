@@ -71,11 +71,6 @@ import {
 } from "./connector-data.service";
 import { resolveOAuthRequestedScopeSnapshot } from "./connector-oauth-scope-snapshot.service";
 import { normalizeDeviceAuthStartOptionsWithMethod } from "./connector-catalog-form-fields.service";
-import {
-  authorizeConnectedConnector$,
-  connectorAgentAuthorizationRequested,
-  validateConnectorAuthorizationTarget$,
-} from "./connected-connector-authorization.service";
 import { storedConnectorAccountMutationSelection } from "./connector-account-mutation.service";
 
 const createdDeviceAuthSessionSchema = object({ id: uuid() });
@@ -95,9 +90,6 @@ const deviceAuthSessionSelection = Object.freeze({
   id: builtinConnectorOauthDeviceAuthorizationSessions.id,
   orgId: builtinConnectorOauthDeviceAuthorizationSessions.orgId,
   userId: builtinConnectorOauthDeviceAuthorizationSessions.userId,
-  agentId: builtinConnectorOauthDeviceAuthorizationSessions.agentId,
-  authorizeAgent:
-    builtinConnectorOauthDeviceAuthorizationSessions.authorizeAgent,
   connectorSlug: builtinConnectorOauthDeviceAuthorizationSessions.connectorSlug,
   authMethod: builtinConnectorOauthDeviceAuthorizationSessions.authMethod,
   status: builtinConnectorOauthDeviceAuthorizationSessions.status,
@@ -847,36 +839,6 @@ const completeClaimedSession$ = command(
   },
 );
 
-const authorizeDeviceSessionConnector$ = command(
-  async (
-    { set },
-    args: {
-      readonly orgId: string;
-      readonly userId: string;
-      readonly session: BuiltinConnectorDeviceAuthSessionRow;
-      readonly connectorSlug: ConnectorSlug;
-    },
-    signal: AbortSignal,
-  ) => {
-    if (!args.session.authorizeAgent) {
-      return null;
-    }
-    const authorization = await set(
-      authorizeConnectedConnector$,
-      {
-        orgId: args.orgId,
-        userId: args.userId,
-        agentId: args.session.agentId,
-        connectorSlug: args.connectorSlug,
-      },
-      signal,
-    );
-    return authorization.status === "agentNotFound"
-      ? badRequestMessage(authorization.message)
-      : null;
-  },
-);
-
 const completedDeviceSessionResponse$ = command(
   async (
     { set },
@@ -907,13 +869,7 @@ const completedDeviceSessionResponse$ = command(
     if (!connector) {
       throw new Error("Completed OAuth connector not found");
     }
-    const response = completedDeviceAuthResponse(connector);
-    const error = await set(
-      authorizeDeviceSessionConnector$,
-      { ...args, connectorSlug: args.method.connectorSlug },
-      signal,
-    );
-    return error ?? response;
+    return completedDeviceAuthResponse(connector);
   },
 );
 
@@ -1036,8 +992,6 @@ const createDeviceAuthSession$ = command(
     args: {
       readonly orgId: string;
       readonly userId: string;
-      readonly agentId: string | undefined;
-      readonly authorizeAgent: true | undefined;
       readonly connectorSlug: ConnectorSlug;
       readonly authMethod: ConnectorAuthMethodId;
       readonly account: ConnectorAccountMutationIntent;
@@ -1080,8 +1034,6 @@ const createDeviceAuthSession$ = command(
       .values({
         orgId: args.orgId,
         userId: args.userId,
-        agentId: args.agentId,
-        authorizeAgent: connectorAgentAuthorizationRequested(args),
         connectorSlug: args.connectorSlug,
         authMethod: args.authMethod,
         status: "awaiting_user_authorization",
@@ -1144,8 +1096,6 @@ export const startBuiltinConnectorOauthDeviceAuthSession$ = command(
     args: {
       readonly orgId: string;
       readonly userId: string;
-      readonly agentId: string | undefined;
-      readonly authorizeAgent: true | undefined;
       readonly connectorSlug: ConnectorSlug;
       readonly authMethod: ConnectorAuthMethodId;
       readonly options?: Readonly<Record<string, string>>;
@@ -1153,15 +1103,6 @@ export const startBuiltinConnectorOauthDeviceAuthSession$ = command(
     },
     signal: AbortSignal,
   ) => {
-    const agentTarget = await set(
-      validateConnectorAuthorizationTarget$,
-      args,
-      signal,
-    );
-    if (!agentTarget.ok) {
-      return badRequestMessage(agentTarget.message);
-    }
-
     const resolver = await set(readConnectorResolver$, [args.connectorSlug]);
     signal.throwIfAborted();
     const resolvedMethod = await resolveRequestedDeviceAuthMethod({
@@ -1224,8 +1165,6 @@ export const startBuiltinConnectorOauthDeviceAuthSession$ = command(
         userId: args.userId,
         connectorSlug: resolvedMethod.connectorSlug,
         authMethod: resolvedMethod.authMethodId,
-        agentId: args.agentId,
-        authorizeAgent: args.authorizeAgent,
         account: args.account,
         sessionToken,
         encryptedProviderState,
@@ -1402,17 +1341,6 @@ export const pollBuiltinConnectorOauthDeviceAuthSession$ = command(
       },
       signal,
     );
-    if (response.body.status !== "complete") {
-      return response;
-    }
-    const authorizationError = await set(
-      authorizeDeviceSessionConnector$,
-      { ...args, session, connectorSlug: resolvedMethod.connectorSlug },
-      signal,
-    );
-    return {
-      ...(authorizationError ?? response),
-      marketingRewardEventId: response.marketingRewardEventId,
-    };
+    return response;
   },
 );

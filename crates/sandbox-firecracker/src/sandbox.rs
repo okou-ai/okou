@@ -8,8 +8,8 @@ use std::time::{Duration, Instant};
 use async_trait::async_trait;
 use guest_contracts::home_mount::HOME_DRIVE_MOUNT_REQUEST_DEADLINE;
 use guest_control_client::{
-    ConnectionClosedAtAdmission, ExecOwnedCapturedOutput, FencedExecError, FrameWriteObserver,
-    GuestControlClient, GuestStateRestoreResult, GuestStorageManifestResult, HomeDriveMountResult,
+    ConnectionClosedAtAdmission, FencedExecError, FrameWriteObserver, GuestControlClient,
+    GuestStateRestoreResult, GuestStorageManifestResult, HomeDriveMountResult,
     NormalOperationFence, NormalOperationFenceRejection, SupervisedExecControl,
     SupervisedExecRequest, SupervisedExecStartTiming,
 };
@@ -2149,13 +2149,6 @@ fn process_stream_queue_capacity(output: ProcessOutputMode) -> Option<usize> {
     }
 }
 
-fn captured_output_bytes(output: ExecOwnedCapturedOutput) -> (Vec<u8>, bool) {
-    match output {
-        ExecOwnedCapturedOutput::Discarded => (Vec::new(), false),
-        ExecOwnedCapturedOutput::Captured { bytes, truncated } => (bytes, truncated),
-    }
-}
-
 fn exec_result_from_operation_result(
     result: guest_control_client::ExecOperationResult,
 ) -> io::Result<ExecResult> {
@@ -2176,8 +2169,8 @@ fn supervised_exec_result_to_process_exit(
     guest_pid: u32,
     result: guest_control_client::ExecOperationResult,
 ) -> ProcessExit {
-    let (stdout, stdout_truncated) = captured_output_bytes(result.stdout);
-    let (stderr, stderr_truncated) = captured_output_bytes(result.stderr);
+    let (stdout, stdout_truncated) = result.stdout.into_captured().unwrap_or_default();
+    let (stderr, stderr_truncated) = result.stderr.into_captured().unwrap_or_default();
 
     ProcessExit {
         guest_pid,

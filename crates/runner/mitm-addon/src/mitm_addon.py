@@ -13,7 +13,7 @@ This addon runs on the runner HOST (not inside sandboxes) and:
 
 import asyncio
 import tempfile
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Literal, NoReturn
 
@@ -1943,52 +1943,80 @@ async def responseinspection(flow: http.HTTPFlow) -> None:
 
 
 def response(flow: http.HTTPFlow) -> Awaitable[None] | None:
+    return _run_http_terminal_hook(flow, response_hook=True)
+
+
+def _run_http_terminal_hook(
+    flow: http.HTTPFlow,
+    *,
+    response_hook: bool,
+) -> Awaitable[None] | None:
+    handle = _handle_response if response_hook else _handle_error
     try:
         if response_streaming.has_pending_response_inspection(flow):
-            return _complete_response(flow, _handle_response_after_inspection(flow))
-        continuation = _handle_response(flow)
+            return _complete_http_terminal_hook(
+                flow,
+                _handle_http_terminal_after_inspection(flow, handle),
+                response_hook=response_hook,
+            )
+        continuation = handle(flow)
     except BaseException:
-        _release_terminal_flow_state(
+        _finish_http_terminal_hook(
             flow,
-            release_tracking=True,
-            release_aws_sigv4_body_admission=flow.websocket is None,
+            response_hook=response_hook,
+            handler_completed=False,
         )
         raise
     if continuation is not None:
-        return _complete_response(flow, continuation)
+        return _complete_http_terminal_hook(flow, continuation, response_hook=response_hook)
 
-    release_tracking = True
-    try:
-        release_tracking = not _should_retain_model_websocket_tracking(flow)
-    finally:
-        _release_terminal_flow_state(
-            flow,
-            release_tracking=release_tracking,
-            release_aws_sigv4_body_admission=flow.websocket is None,
-        )
+    _finish_http_terminal_hook(flow, response_hook=response_hook, handler_completed=True)
     return None
 
 
-async def _handle_response_after_inspection(flow: http.HTTPFlow) -> None:
+async def _handle_http_terminal_after_inspection(
+    flow: http.HTTPFlow,
+    handle: Callable[[http.HTTPFlow], Awaitable[None] | None],
+) -> None:
     await responseinspection(flow)
-    continuation = _handle_response(flow)
+    continuation = handle(flow)
     if continuation is not None:
         await continuation
 
 
-async def _complete_response(
+async def _complete_http_terminal_hook(
     flow: http.HTTPFlow,
     continuation: Awaitable[None],
+    *,
+    response_hook: bool,
+) -> None:
+    handler_completed = False
+    try:
+        await continuation
+        handler_completed = True
+    finally:
+        _finish_http_terminal_hook(
+            flow,
+            response_hook=response_hook,
+            handler_completed=handler_completed,
+        )
+
+
+def _finish_http_terminal_hook(
+    flow: http.HTTPFlow,
+    *,
+    response_hook: bool,
+    handler_completed: bool,
 ) -> None:
     release_tracking = True
     try:
-        await continuation
-        release_tracking = not _should_retain_model_websocket_tracking(flow)
+        if response_hook and handler_completed:
+            release_tracking = not _should_retain_model_websocket_tracking(flow)
     finally:
         _release_terminal_flow_state(
             flow,
             release_tracking=release_tracking,
-            release_aws_sigv4_body_admission=flow.websocket is None,
+            release_aws_sigv4_body_admission=not response_hook or flow.websocket is None,
         )
 
 
@@ -2117,31 +2145,7 @@ def _finish_response_handling(
 
 def error(flow: http.HTTPFlow) -> Awaitable[None] | None:
     websocket_inspection.release(flow)
-    try:
-        if response_streaming.has_pending_response_inspection(flow):
-            return _complete_error(flow, _handle_error_after_inspection(flow))
-        continuation = _handle_error(flow)
-    except BaseException:
-        _release_terminal_flow_state(flow, release_tracking=True)
-        raise
-    if continuation is not None:
-        return _complete_error(flow, continuation)
-    _release_terminal_flow_state(flow, release_tracking=True)
-    return None
-
-
-async def _handle_error_after_inspection(flow: http.HTTPFlow) -> None:
-    await responseinspection(flow)
-    continuation = _handle_error(flow)
-    if continuation is not None:
-        await continuation
-
-
-async def _complete_error(flow: http.HTTPFlow, continuation: Awaitable[None]) -> None:
-    try:
-        await continuation
-    finally:
-        _release_terminal_flow_state(flow, release_tracking=True)
+    return _run_http_terminal_hook(flow, response_hook=False)
 
 
 def _handle_error(flow: http.HTTPFlow) -> Awaitable[None] | None:

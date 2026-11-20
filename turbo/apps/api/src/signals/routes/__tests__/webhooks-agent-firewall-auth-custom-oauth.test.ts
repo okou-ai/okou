@@ -149,7 +149,6 @@ async function setupCustomOAuthFirewall(
     const url = await connectors.startCustomConnectorOAuth2(
       actor,
       connector.id,
-      agent.agentId,
       mutation,
     );
     const state = new URL(url).searchParams.get("state");

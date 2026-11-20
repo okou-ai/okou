@@ -27,9 +27,6 @@ const saveProposalInner$ = command(
         isAdmin: auth.orgRole === "admin",
         proposal: bodyResult.data.proposal,
         values: bodyResult.data.values,
-        ...(bodyResult.data.agentId
-          ? { agentId: bodyResult.data.agentId }
-          : {}),
       },
       signal,
     );

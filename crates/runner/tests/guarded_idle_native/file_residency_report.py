@@ -4,11 +4,12 @@ import argparse
 import hashlib
 import json
 import os
-from pathlib import Path
 import re
 import stat
 import sys
 import uuid
+from contextlib import contextmanager
+from pathlib import Path
 
 SOURCES = ("file_residency.py", "file_residency_probe.py", "file_residency_report.py")
 CLAIMS = (
@@ -61,47 +62,54 @@ def decode(raw):
     )
 
 
-def read_regular(root, name, limit):
-    fd = os.open(
-        root / name, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NONBLOCK
-    )
+@contextmanager
+def open_original_evidence(path):
+    """Own the replay descriptor until all evidence checks have completed."""
+    fd = os.open(path, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NONBLOCK)
     try:
+        yield fd
+    finally:
+        os.close(fd)
+
+
+def original_evidence_chunks(fd, limit, chunk_size):
+    """Read through one extra byte so a growing file exceeds the bound."""
+    remaining = limit + 1
+    while remaining:
+        chunk = os.read(fd, min(remaining, chunk_size))
+        if not chunk:
+            break
+        yield chunk
+        remaining -= len(chunk)
+
+
+def original_evidence_unchanged(before, after):
+    def identity(info):
+        return (
+            info.st_dev,
+            info.st_ino,
+            info.st_size,
+            info.st_mtime_ns,
+            info.st_ctime_ns,
+        )
+
+    return identity(before) == identity(after)
+
+
+def read_regular(root, name, limit):
+    with open_original_evidence(root / name) as fd:
         before = os.fstat(fd)
         require(
             stat.S_ISREG(before.st_mode) and 0 <= before.st_size <= limit,
             "invalid original file",
         )
-        chunks = []
-        remaining = limit + 1
-        while remaining:
-            chunk = os.read(fd, min(remaining, 65536))
-            if not chunk:
-                break
-            chunks.append(chunk)
-            remaining -= len(chunk)
-        raw = b"".join(chunks)
+        raw = b"".join(original_evidence_chunks(fd, limit, 65536))
         after = os.fstat(fd)
         require(
-            len(raw) <= limit
-            and (
-                before.st_dev,
-                before.st_ino,
-                before.st_size,
-                before.st_mtime_ns,
-                before.st_ctime_ns,
-            )
-            == (
-                after.st_dev,
-                after.st_ino,
-                after.st_size,
-                after.st_mtime_ns,
-                after.st_ctime_ns,
-            ),
+            len(raw) <= limit and original_evidence_unchanged(before, after),
             "original file changed during replay",
         )
         return raw
-    finally:
-        os.close(fd)
 
 
 def sha256(raw):

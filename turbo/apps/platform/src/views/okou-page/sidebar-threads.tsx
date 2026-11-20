@@ -94,6 +94,7 @@ import {
   type SidebarChatThreadListSignals,
   type SidebarChatThreadRow,
   type SidebarChatThreadScrollSignals,
+  getSidebarChatThreadWindow,
   type SidebarChatThreadWindow,
 } from "../../signals/chat-page/sidebar-chat-thread-scroll.ts";
 import type { SidebarChatThreadItemSignals } from "../../signals/chat-page/sidebar-chat-thread-item.ts";
@@ -133,7 +134,6 @@ import { Link } from "../router/link.tsx";
 import { OverlayScrollArea } from "./sidebar-scroll.tsx";
 import { ThreadPinMoveMenuItems } from "./sidebar-thread-reorder.tsx";
 import { ChatThreadMenuShortcut } from "./chat-thread-menu-shortcut.tsx";
-import { equalArrays } from "../../lib/equality.ts";
 import { GLOBAL_KEYBOARD_SHORTCUTS } from "../../lib/global-keyboard-shortcuts.ts";
 
 // The row glyphs draw at 17px, which the shared button base (`[&_svg]:size-4`)
@@ -1079,9 +1079,8 @@ function InboxEmptyState({
   listSignals: SidebarChatThreadListSignals;
 }) {
   const { t } = useTranslation();
-  const hasHiddenArchivedThreads = useGet(
-    listSignals.hasHiddenArchivedThreads$,
-  );
+  const hasHiddenArchivedThreads =
+    useLastResolved(listSignals.hasHiddenArchivedThreads$) ?? false;
 
   if (hasHiddenArchivedThreads) {
     return (
@@ -1114,8 +1113,6 @@ function VirtualizedChatThreads({
 }) {
   const setShortcutRoot = useSet(setThreadListNumberShortcutRoot$);
   const searchOpen = useGet(threeColumnSearchOpen$);
-  const rowCount = useGet(listSignals.rowCount$);
-  const count = useGet(listSignals.count$);
 
   // Only list rows have a fixed height. Keep the filter action in normal flow
   // so its divider and spacing remain reachable at the end of a long list.
@@ -1127,9 +1124,8 @@ function VirtualizedChatThreads({
         touch={false}
         layout="sidebar"
         shortcuts={!searchOpen}
-        height={count * CHAT_THREAD_VIRTUAL_ROW_HEIGHT}
       />
-      {rowCount > count ? <ShowAllChatsRow /> : null}
+      {listSignals.showAllChatsRow ? <ShowAllChatsRow /> : null}
     </div>
   );
 }
@@ -1142,7 +1138,10 @@ function ChatThreads({
   const { t } = useTranslation();
   const archivedOnly = useGet(chatThreadOnlyArchived$);
   const mutedOnly = useGet(chatThreadOnlyMuted$);
-  const rowCount = useGet(listSignals.count$);
+  const rowCount = useLastResolved(listSignals.count$);
+  if (rowCount === undefined) {
+    return null;
+  }
 
   if (rowCount === 0) {
     const showAllChats = {
@@ -1620,7 +1619,9 @@ function CurrentChatThreadScrollMarker({
   scrollSignals: SidebarChatThreadScrollSignals;
 }) {
   const currentMainThreadId = useGet(currentChatThreadId$);
-  const currentMainThreadListed = useGet(listSignals.currentThreadListed$);
+  const currentMainThreadListed = useLastResolved(
+    listSignals.currentThreadListed$,
+  );
   const scrollCurrentChatThreadOnRef = useSet(
     scrollSignals.scrollCurrentChatThreadOnRef$,
   );
@@ -1765,48 +1766,6 @@ export function ChatThreadsSection({
         stylesheetLoaded={mainStylesheetLoaded === true}
       />
     </div>
-  );
-}
-
-function equalRows(
-  left: SidebarChatThreadRow,
-  right: SidebarChatThreadRow,
-): boolean {
-  if (left === right) {
-    return true;
-  }
-  if (left.kind === "thread" && right.kind === "thread") {
-    return (
-      left.signals === right.signals &&
-      left.projectId === right.projectId &&
-      left.listIndex === right.listIndex &&
-      left.projectEnd === right.projectEnd
-    );
-  }
-  if (left.kind === "project" && right.kind === "project") {
-    return (
-      left.project === right.project &&
-      left.expanded === right.expanded &&
-      left.projectEnd === right.projectEnd
-    );
-  }
-  return (
-    left.kind === right.kind &&
-    left.key === right.key &&
-    left.projectEnd === right.projectEnd
-  );
-}
-
-function equalChatThreadListWindows(
-  previous: SidebarChatThreadWindow,
-  next: SidebarChatThreadWindow,
-): boolean {
-  return (
-    previous.startIndex === next.startIndex &&
-    previous.showAllChatsRow === next.showAllChatsRow &&
-    previous.motion === next.motion &&
-    previous.indexes === next.indexes &&
-    equalArrays(previous.rows, next.rows, equalRows)
   );
 }
 
@@ -2109,20 +2068,28 @@ function ChatThreadListRowsView({
 export function ChatThreadListRows({
   listSignals,
   rowHeight,
-  height,
   children,
   ...options
 }: ChatThreadListRowsOptions & {
   listSignals: SidebarChatThreadListSignals;
   rowHeight: number;
-  height: number;
   /** Trailing visible rows that stack inside the same virtual window. */
-  children?: ReactNode;
+  children?: ReactNode | ((showAllChatsRow: boolean) => ReactNode);
 }) {
-  const window = useGet(listSignals.window$, {
-    equalityFn: equalChatThreadListWindows,
-  });
+  const rows = useLastResolved(listSignals.rows$);
+  const metrics = useGet(listSignals.scrollMetrics$);
+  const motion = useGet(listSignals.motion$);
   const motionHostRef = useSet(listSignals.motionHostRef$);
+  if (!rows) {
+    return null;
+  }
+  const window = getSidebarChatThreadWindow(
+    rows,
+    metrics,
+    motion,
+    listSignals.showAllChatsRow,
+    rowHeight,
+  );
   return (
     <ChatThreadListRowsView
       {...options}
@@ -2132,9 +2099,14 @@ export function ChatThreadListRows({
       motion={window.motion}
       motionHostRef={motionHostRef}
       rowHeight={rowHeight}
-      height={height}
+      height={
+        (rows.length + (options.touch && listSignals.showAllChatsRow ? 1 : 0)) *
+        rowHeight
+      }
     >
-      {children}
+      {typeof children === "function"
+        ? children(window.showAllChatsRow)
+        : children}
     </ChatThreadListRowsView>
   );
 }

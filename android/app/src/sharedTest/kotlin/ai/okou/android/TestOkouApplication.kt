@@ -14,7 +14,6 @@ import ai.okou.android.api.generated.UserPreferencesTheme
 import ai.okou.android.auth.Authentication
 import ai.okou.android.auth.AuthenticationState
 import ai.okou.android.auth.NativeSession
-import ai.okou.android.auth.WorkspaceBootstrap
 import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.auth.WorkspaceMembership
 import ai.okou.android.auth.WorkspaceSession
@@ -121,7 +120,7 @@ open class TestOkouApplication : OkouApplication() {
         tokens: WorkspaceTokenProvider,
     ): WorkspaceSession {
         val key = Triple(identity.apiOrigin, identity.userId, identity.workspaceId)
-        fun stored() = preferences.getOrPut(key) { testBootstrap(identity.workspaceId).preferences }
+        fun stored() = preferences.getOrPut(key) { testPreferences() }
         return object :
             WorkspaceSession,
             ai.okou.android.chat.AssistantRecoveryService by recoveryService,
@@ -142,8 +141,7 @@ open class TestOkouApplication : OkouApplication() {
             override suspend fun updatePersonalInstructions(content: String, ifVersion: String) =
                 checkNotNull(instructionsService).updatePersonalInstructions(content, ifVersion)
 
-            override suspend fun bootstrap() =
-                testBootstrap(identity.workspaceId).copy(preferences = stored())
+            override suspend fun organization() = testOrganization(identity.workspaceId)
 
             override suspend fun preferences() = stored()
 
@@ -223,15 +221,14 @@ fun testAuthenticationState(
         complete = true,
     )
 
-fun testBootstrap(workspace: String = "org-a") =
-    WorkspaceBootstrap(
-        Organization(
-            workspace,
-            "Workspace ${workspace.last().uppercaseChar()}",
-            role = OrganizationRole.MEMBER,
-        ),
-        Json.decodeFromString<UserPreferences>(TEST_PREFERENCES),
+fun testOrganization(workspace: String = "org-a") =
+    Organization(
+        workspace,
+        "Workspace ${workspace.last().uppercaseChar()}",
+        role = OrganizationRole.MEMBER,
     )
+
+fun testPreferences() = Json.decodeFromString<UserPreferences>(TEST_PREFERENCES)
 
 const val TEST_PREFERENCES =
     """{"timezone":"UTC","locale":"en-US","supportedLocales":["en-US","pt-BR","ja-JP","ko-KR","id-ID","de-DE","es-ES","it-IT","fr-FR","hi-IN","zh-Hans","zh-Hant"],"pinnedAgentIds":[],"sendMode":"enter","cloudBrowserEnabledByDefault":false,"chatResourcesEnabledByDefault":false,"theme":"system","colorTheme":"default","captureNetworkBodiesRemaining":0,"memoryInitialized":true}"""

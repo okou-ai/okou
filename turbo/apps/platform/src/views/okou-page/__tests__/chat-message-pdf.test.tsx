@@ -20,6 +20,10 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
+import {
+  TABLE_WORKBOOK_CONTENT_TYPE,
+  writeTableWorkbook,
+} from "../../../lib/markdown-table-workbook.ts";
 import { renderMessagePdf } from "../../../lib/message-pdf/render.ts";
 import {
   platformMessagePdfFontUrls,
@@ -229,7 +233,7 @@ test("A generation error is visible and the PDF action can be retried", async ()
   await waitFor(() => {
     expect(button("Generating PDF…")).toHaveAttribute("aria-disabled", "true");
   });
-  first.resolve({ ok: false });
+  first.resolve({ ok: false, failure: "render_rejection" });
   await expect(screen.findByRole("alert")).resolves.toHaveTextContent(
     "Could not generate PDF.",
   );
@@ -362,6 +366,83 @@ async function exportRenderedPdf(markdown: string) {
   });
   return { pdf: await task.promise, task };
 }
+
+test("Exported file cards retain their labels and durable links on a download-restricted workspace", async () => {
+  const workbook = "/artifacts/1111111111.xlsx";
+  const csv = "/artifacts/2222222222.csv";
+  const guide = "https://example.test/guide";
+  const workbookPreview = "https://storage.example.test/private-workbook";
+  const csvPreview = "https://storage.example.test/private-csv";
+  context.mocks.http.get(workbookPreview, () => {
+    return new HttpResponse(writeTableWorkbook([["Total"], ["42"]]), {
+      headers: { "Content-Type": TABLE_WORKBOOK_CONTENT_TYPE },
+    });
+  });
+  context.mocks.http.get(csvPreview, () => {
+    return new HttpResponse("Total\n42\n", {
+      headers: { "Content-Type": "text/csv; charset=utf-8" },
+    });
+  });
+  context.mocks.api(
+    artifactReferencesContract.resolve,
+    ({ params, respond }) => {
+      const isWorkbook = params.reference === "1111111111.xlsx";
+      return respond(200, {
+        filename: isWorkbook ? "budget.xlsx" : "totals.csv",
+        contentType: isWorkbook
+          ? TABLE_WORKBOOK_CONTENT_TYPE
+          : "text/csv; charset=utf-8",
+        url: isWorkbook ? workbookPreview : csvPreview,
+        downloadUrl: "https://api.example.test/guarded-download",
+        downloadAllowed: false,
+        expiresAt: "2099-01-01T00:00:00Z",
+        target: {
+          kind: "file",
+          id: isWorkbook
+            ? "b0000000-0000-4000-a000-000000000955"
+            : "b0000000-0000-4000-a000-000000000956",
+        },
+      });
+    },
+  );
+  const { pdf, task } = await exportRenderedPdf(
+    `![Budget workbook](${workbook})\n\n![](${csv})\n\n[![Read the guide](${workbook})](${guide})\n\nEnd of answer.`,
+  );
+  try {
+    const page = await pdf.getPage(1);
+    const content = await page.getTextContent();
+    const text = content.items
+      .map((item) => {
+        return "str" in item ? item.str : "";
+      })
+      .join("");
+    for (const label of [
+      ANSWER,
+      "Budget workbook",
+      "totals.csv",
+      "Read the guide",
+      "End of answer.",
+    ]) {
+      expect(text).toContain(label);
+    }
+    const annotations = await page.getAnnotations();
+    expect(
+      new Set(
+        annotations.map((annotation: { url?: string }) => {
+          return annotation.url;
+        }),
+      ),
+    ).toStrictEqual(
+      new Set([
+        new URL(workbook, location.href).href,
+        new URL(csv, location.href).href,
+        guide,
+      ]),
+    );
+  } finally {
+    await task.destroy();
+  }
+});
 
 test("PDF text and typography render CJK emphasis", async () => {
   const { pdf, task } = await exportRenderedPdf(

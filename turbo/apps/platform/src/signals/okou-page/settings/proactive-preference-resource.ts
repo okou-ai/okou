@@ -17,16 +17,16 @@ type Confirmation<Value> =
     }
   | { readonly kind: "reload" };
 
-export function createProactivePreference<Value>(
-  readiness$: Computed<Promise<unknown>>,
-  read: (client: ApiClientFactory) => Promise<Value>,
+export function createProactivePreference<Value, Readiness>(
+  readiness$: Computed<Promise<Readiness>>,
+  read: (client: ApiClientFactory, readiness: Readiness) => Promise<Value>,
   write: (
     client: ApiClientFactory,
     enabled: boolean,
     signal: AbortSignal,
   ) => Promise<{ readonly saved: boolean; readonly value: Value }>,
 ) {
-  const scope$ = computed((get): PreferenceScope => {
+  const scope$ = computed((get) => {
     get(searchParams$);
     return {
       client: get(apiClient$),
@@ -43,8 +43,7 @@ export function createProactivePreference<Value>(
     if (confirmation?.kind === "saved" && confirmation.scope === scope) {
       return confirmation.value;
     }
-    await scope.readiness;
-    return await read(scope.client);
+    return await read(scope.client, await scope.readiness);
   });
 
   const update$ = command(

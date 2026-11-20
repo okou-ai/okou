@@ -54,7 +54,7 @@ import {
   createRunsApi,
   expectCanonicalStorageManifest,
 } from "./helpers/api-bdd-runs";
-import { createUserConfigBddApi } from "./helpers/api-bdd-user-config";
+import { createChatConnectorAccessApi } from "./helpers/chat-connector-access";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import {
   createPublicBillingScenario,
@@ -367,9 +367,7 @@ function oauthStateFromAuthorizationUrl(authorizationUrl: string): string {
   return state;
 }
 
-function customManualConnectorBodyForTeardown(
-  scope: "org" | "user",
-): CreateCustomConnectorBody {
+function customManualConnectorBodyForTeardown(scope: "org" | "user") {
   const slug = `_${scope}-teardown-${randomUUID().replaceAll("-", "").slice(0, 12)}`;
   return manualHttpCustomConnectorCreateBody({
     slug,
@@ -5000,23 +4998,15 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
       customManual.id,
       "org-teardown-custom-secret",
     );
-    await connectors.updateAgentCustomConnectors(actor, agent.agentId, [
-      customManual.id,
-    ]);
     const customOauth = await connectors.createCustomConnector(
       actor,
       customOauthConnectorBodyForTeardown("org", customOAuthProvider),
     );
     const builtinOauthState = oauthStateFromAuthorizationUrl(
-      (await connectors.startOauth(actor, "slack", "oauth", agent.agentId))
-        .authorizationUrl,
+      (await connectors.startOauth(actor, "slack", "oauth")).authorizationUrl,
     );
     const customOauthState = oauthStateFromAuthorizationUrl(
-      await connectors.startCustomConnectorOAuth2(
-        actor,
-        customOauth.id,
-        agent.agentId,
-      ),
+      await connectors.startCustomConnectorOAuth2(actor, customOauth.id),
     );
     const run = await runs.createThreadRun(actor, {
       agentId: agent.agentId,
@@ -5031,15 +5021,6 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
         githubUserId: newGithubUserId(),
       },
     });
-    await runs.applyUserPermissionGrant(actor, {
-      agentId: agent.agentId,
-      connectorSlug: "slack",
-      permission: "conversations:read",
-      action: "allow",
-    });
-    await expect(
-      runs.listUserPermissionGrants(actor, agent.agentId),
-    ).resolves.toHaveLength(1);
 
     // Billing actions remain independent of historical data retention.
     context.mocks.stripe.subscriptions.list
@@ -5430,7 +5411,7 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
       });
       restoreSetupWebhook = undefined;
       const peer = bdd.user({ orgId: doomed.orgId, orgRole: "org:member" });
-      const sharedAgent = await own(() => {
+      await own(() => {
         return bdd.createAgent(peer, {
           displayName: "BDD Shared Grant Agent",
           visibility: "public",
@@ -5443,7 +5424,6 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
         });
       });
       const connectors = createConnectorBddApi(context);
-      const userConfig = createUserConfigBddApi(context);
       const chat = createChatFilesBddApi(context);
       await own(() => {
         return connectors.connectManualGrant(doomed, "openai", "api-token", {
@@ -5457,24 +5437,15 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
         });
       });
       await own(() => {
-        return runs.enableAgentConnectors(doomed, sharedAgent.agentId, [
-          "openai",
-        ]);
-      });
-      await own(() => {
-        return connectors.connectManualGrant(
-          peer,
-          "openai",
-          "api-token",
-          { apiKey: "peer-teardown-connector-token" },
-          sharedAgent.agentId,
-        );
+        return connectors.connectManualGrant(peer, "openai", "api-token", {
+          apiKey: "peer-teardown-connector-token",
+        });
       });
       const customManual = await own(() => {
-        return connectors.createCustomConnector(
-          doomed,
-          customManualConnectorBodyForTeardown("user"),
-        );
+        return connectors.createCustomConnector(doomed, {
+          ...customManualConnectorBodyForTeardown("user"),
+          permissionBundleRef: "builtin:slack@1",
+        });
       });
       await own(() => {
         return connectors.setCustomConnectorSecret(
@@ -5498,27 +5469,6 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
         );
       });
       await own(() => {
-        return connectors.updateAgentCustomConnectors(
-          doomed,
-          sharedAgent.agentId,
-          [customManual.id],
-        );
-      });
-      await own(() => {
-        return connectors.updateAgentCustomConnectors(
-          peer,
-          sharedAgent.agentId,
-          [customManual.id],
-        );
-      });
-      await own(() => {
-        return connectors.updateAgentCustomConnectors(
-          doomed,
-          doomedAgent.agentId,
-          [customManual.id],
-        );
-      });
-      await own(() => {
         createRouteMocks(context).clerk.session(
           doomed.userId,
           doomed.orgId,
@@ -5538,20 +5488,23 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
           [200],
         );
       });
+      const rules = createChatConnectorAccessApi(context);
+      const customTarget = {
+        kind: "custom",
+        customConnectorId: customManual.id,
+      } as const;
       await own(() => {
-        return runs.applyUserPermissionGrant(doomed, {
-          agentId: sharedAgent.agentId,
-          connectorSlug: "slack",
-          permission: "conversations:read",
-          action: "allow",
+        return rules.applyPermissions(doomed, {
+          target: customTarget,
+          mode: "patch",
+          grants: [{ permission: "conversations:read", action: "allow" }],
         });
       });
       await own(() => {
-        return runs.applyUserPermissionGrant(peer, {
-          agentId: sharedAgent.agentId,
-          connectorSlug: "slack",
-          permission: "chat:write",
-          action: "deny",
+        return rules.applyPermissions(peer, {
+          target: customTarget,
+          mode: "patch",
+          grants: [{ permission: "chat:write", action: "deny" }],
         });
       });
 
@@ -5588,26 +5541,13 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
       expect(deletion.body).toBe("OK");
       await own(flushWaitUntilForTest);
       const peerGrants = await own(() => {
-        return runs.listUserPermissionGrants(peer, sharedAgent.agentId);
+        return rules.readPermissions(peer, customTarget);
       });
-      expect(peerGrants).toHaveLength(1);
-      expect(peerGrants[0]).toMatchObject({
+      expect(peerGrants.grants).toHaveLength(1);
+      expect(peerGrants.grants[0]).toMatchObject({
         permission: "chat:write",
         action: "deny",
       });
-      await expect(
-        own(() => {
-          return userConfig.readUserConnectors(peer, sharedAgent.agentId);
-        }),
-      ).resolves.toMatchObject({ enabledConnectorSlugs: ["openai"] });
-      await expect(
-        own(() => {
-          return connectors.readAgentCustomConnectors(
-            peer,
-            sharedAgent.agentId,
-          );
-        }),
-      ).resolves.toStrictEqual([customManual.id]);
       await expect(
         own(() => {
           return connectors.listCustomConnectorAccounts(peer, customManual.id);
@@ -5635,7 +5575,7 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
 
     it("keeps the peer's pending builtin and custom OAuth states usable during user deletion", async () => {
       const fixture = await prepareUserDeletion();
-      const { doomed, peer, sharedAgent } = fixture;
+      const { doomed, peer } = fixture;
       const connectors = createConnectorBddApi(context);
       mockSlackConnectorOAuth();
       const customOAuthProvider = mockCustomConnectorOAuth2Provider(context);
@@ -5644,21 +5584,10 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
         customOauthConnectorBodyForTeardown("user", customOAuthProvider),
       );
       const peerBuiltinOauthState = oauthStateFromAuthorizationUrl(
-        (
-          await connectors.startOauth(
-            peer,
-            "slack",
-            "oauth",
-            sharedAgent.agentId,
-          )
-        ).authorizationUrl,
+        (await connectors.startOauth(peer, "slack", "oauth")).authorizationUrl,
       );
       const peerCustomOauthState = oauthStateFromAuthorizationUrl(
-        await connectors.startCustomConnectorOAuth2(
-          peer,
-          customOauth.id,
-          sharedAgent.agentId,
-        ),
+        await connectors.startCustomConnectorOAuth2(peer, customOauth.id),
       );
 
       await startUserDeletion(fixture);

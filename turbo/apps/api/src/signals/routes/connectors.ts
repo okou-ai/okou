@@ -27,11 +27,6 @@ import { optionalEnv } from "../../lib/env";
 import { db$, writeDb$ } from "../external/db";
 import { logger } from "../../lib/log";
 import {
-  authorizeConnectedConnector$,
-  connectorAgentAuthorizationRequested,
-  validateConnectorAuthorizationTarget$,
-} from "../services/connected-connector-authorization.service";
-import {
   connectManualGrantBuiltinConnector$,
   connectNoAuthBuiltinConnector$,
   builtinConnectorList,
@@ -222,19 +217,6 @@ const connectManualGrantBuiltinConnectorInner$ = command(
     if (!bodyResult.ok) {
       return bodyResult.response;
     }
-    const agentTarget = await set(
-      validateConnectorAuthorizationTarget$,
-      {
-        orgId: auth.orgId,
-        userId: auth.userId,
-        agentId: bodyResult.data.agentId,
-      },
-      signal,
-    );
-    if (!agentTarget.ok) {
-      return notFound(agentTarget.message);
-    }
-
     const resolver = await set(readConnectorResolver$, [params.connectorSlug]);
     signal.throwIfAborted();
     const resolved = await resolver.resolveNewActionMethod({
@@ -273,22 +255,6 @@ const connectManualGrantBuiltinConnectorInner$ = command(
       return connectorAccountMutationFailureResponse(result.status);
     }
 
-    if (connectorAgentAuthorizationRequested(bodyResult.data)) {
-      const authorization = await set(
-        authorizeConnectedConnector$,
-        {
-          orgId: auth.orgId,
-          userId: auth.userId,
-          agentId: bodyResult.data.agentId ?? null,
-          connectorSlug: resolved.connectorSlug,
-        },
-        signal,
-      );
-      if (authorization.status === "agentNotFound") {
-        return notFound(authorization.message);
-      }
-    }
-
     return {
       status: 200 as const,
       body: { connectionId: result.connector.id },
@@ -309,19 +275,6 @@ const connectNoAuthBuiltinConnectorInner$ = command(
     if (!bodyResult.ok) {
       return bodyResult.response;
     }
-    const agentTarget = await set(
-      validateConnectorAuthorizationTarget$,
-      {
-        orgId: auth.orgId,
-        userId: auth.userId,
-        agentId: bodyResult.data.agentId,
-      },
-      signal,
-    );
-    if (!agentTarget.ok) {
-      return notFound(agentTarget.message);
-    }
-
     const resolver = await set(readConnectorResolver$, [params.connectorSlug]);
     signal.throwIfAborted();
     const resolved = await resolver.resolveNewActionMethod({
@@ -354,22 +307,6 @@ const connectNoAuthBuiltinConnectorInner$ = command(
 
     if (result.status !== "connected") {
       return connectorAccountMutationFailureResponse(result.status);
-    }
-
-    if (connectorAgentAuthorizationRequested(bodyResult.data)) {
-      const authorization = await set(
-        authorizeConnectedConnector$,
-        {
-          orgId: auth.orgId,
-          userId: auth.userId,
-          agentId: bodyResult.data.agentId ?? null,
-          connectorSlug: resolved.connectorSlug,
-        },
-        signal,
-      );
-      if (authorization.status === "agentNotFound") {
-        return notFound(authorization.message);
-      }
     }
 
     return {
@@ -452,19 +389,6 @@ const startBuiltinConnectorOauthInner$ = command(
       );
     }
 
-    const agentTarget = await set(
-      validateConnectorAuthorizationTarget$,
-      {
-        orgId: auth.orgId,
-        userId: auth.userId,
-        agentId: bodyResult.data.agentId,
-      },
-      signal,
-    );
-    if (!agentTarget.ok) {
-      return badRequestMessage(agentTarget.message);
-    }
-
     const resolver = await set(readConnectorResolver$, [connectorSlug]);
     signal.throwIfAborted();
     const resolved = await resolver.resolveNewActionMethod({
@@ -543,8 +467,6 @@ const startBuiltinConnectorOauthInner$ = command(
         authMethod: resolved.authMethodId,
         userId: auth.userId,
         orgId: auth.orgId,
-        agentId: bodyResult.data.agentId,
-        authorizeAgent: connectorAgentAuthorizationRequested(bodyResult.data),
         redirectUri: prepared.redirectUri,
         authorizationUrl: authResult.url,
         oauthRequestedScopes: requestedScopeSnapshot(resolved.method.grant),
@@ -643,19 +565,6 @@ const startBuiltinConnectorOpenIdInner$ = command(
       );
     }
 
-    const agentTarget = await set(
-      validateConnectorAuthorizationTarget$,
-      {
-        orgId: auth.orgId,
-        userId: auth.userId,
-        agentId: bodyResult.data.agentId,
-      },
-      signal,
-    );
-    if (!agentTarget.ok) {
-      return badRequestMessage(agentTarget.message);
-    }
-
     const resolver = await set(readConnectorResolver$, [connectorSlug]);
     signal.throwIfAborted();
     const resolved = await resolver.resolveNewActionMethod({
@@ -727,8 +636,6 @@ const startBuiltinConnectorOpenIdInner$ = command(
         authMethod: resolved.authMethodId,
         userId: auth.userId,
         orgId: auth.orgId,
-        agentId: bodyResult.data.agentId,
-        authorizeAgent: connectorAgentAuthorizationRequested(bodyResult.data),
         redirectUri: prepared.expectedReturnTo,
         oauthRequestedScopes: requestedScopeSnapshot(resolved.method.grant),
         codeVerifier: authResult.codeVerifier,

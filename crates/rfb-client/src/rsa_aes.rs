@@ -255,12 +255,7 @@ pub(crate) async fn authenticate<S>(
 where
     S: AsyncRead + AsyncWrite + Unpin + 'static,
 {
-    phase(
-        AuthenticationStage::RfbVersion,
-        deadline,
-        exchange_version(&mut stream, ServerVersion::Rfb38),
-    )
-    .await?;
+    exchange_version(&mut stream, ServerVersion::Rfb38, deadline).await?;
     phase(
         AuthenticationStage::SecurityNegotiation,
         deadline,

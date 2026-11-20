@@ -15,7 +15,7 @@ Native behavior scenarios and their fixtures belong to the
 | Image planning, preparation, manifests and readiness             | `runner-image-context.sh`, `runner-image-architecture.sh`, `prepare-runner-image.sh`, `runner-image-manifest.sh`, `wait-runner-image.sh`, `wait-runner-image-groups.sh` |
 | Image execution identity, result recovery and retirement         | `runner-image-operation.py`                                                                                                                                             |
 | Group reconciliation and startup                                 | `reconcile-runner-binary-groups.sh`, `reconcile-and-start-runner-groups.sh`                                                                                             |
-| Lifecycle ownership and cleanup                                  | `with-runner-lifecycle-lock.sh`, `cleanup-metal-runners.py`, `cleanup-metal-resources.py`, `start-stripe-listener.sh`, `prune-runner-idle.sh`                           |
+| Lifecycle ownership and cleanup                                  | `with-runner-lifecycle-lock.sh`, `cleanup-metal-runners.py`, `cleanup-metal-resources.py`, `start-stripe-listener.sh`, `deploy-stripe-listener.py`, `prune-runner-idle.sh` |
 | Native test binary build and artifact transport                  | `runner-native-test-artifact.sh`                                                                                                                                        |
 | Cloudflare SSH setup, probes, guarded operations and diagnostics | `cloudflare-ssh-proxy.sh`, `cloudflare-ssh-preconnect.sh`, `cloudflare-ssh-command.sh`, `cloudflare-ssh-diagnostics.sh`                                                 |
 
@@ -85,6 +85,29 @@ Runner host grouping and image preparation share the `uname -m` probe.
 An SSH exit 255 permits one retry on the same host. The caller validates the
 architecture from a successful probe before using it.
 
+## Stripe listener deployment
+
+`start-stripe-listener.sh` reads the current GitHub workflow run's creation
+time and calls `deploy-stripe-listener.py`. CI sends the Python worker and
+verified Stripe installer through stdin to the selected Runner host. A bounded
+transient systemd service holds the same PR lifecycle flock as Runner and
+closed-PR cleanup. It checks the current operation and PR closure cutoff,
+retires the old listener, and waits for the new listener's readiness.
+
+Each deployment records launch intent before submission. The guarded SSH
+caller reads the result with short requests to the same host. A lost reply
+permits observation of that operation, and a ready reply must match the
+installed listener's deployment marker. The host keeps the current receipt in
+`/run/vm0-ci-stripe-deployments/pr-N`. Workers remove their private staging
+after execution, successors retire superseded staging, and closed-PR cleanup
+removes the namespace. A host restart clears operation state.
+
+Stripe unit publication and fleet cleanup mark their unit-file changes under
+the shared host reload lock. An acknowledged reload clears the pending marker
+and covers every change already published under that lock. A failed reload or
+interrupted publisher leaves work pending. Before startup, the Stripe worker
+checks that the manager loaded the expected fragment and reports it current.
+
 ## Image operation recovery
 
 `python3 runner-image-operation.py claim|cancel HOST`,
@@ -129,6 +152,8 @@ lock and retries admission in the original lock order. PR claim uses a
 180-second end-to-end budget covering both lock waits and admission, including
 the default 150-second deployment lease. The owner and closure cutoff are
 checked again under both locks.
+During claim retirement, a timed-out unit status read can retry once within
+the same claim deadline. Admission still requires verified retirement.
 The healthy path uses one SSH request. Run and guard retain their 600-second
 budgets.
 A claim places an exact-owner admission marker in the managed binary directory;
@@ -159,7 +184,9 @@ at or below the cutoff is rejected.
 Warm/build run once in transient services. Identity covers the exact source,
 binary inputs/bytes, target, profile, host, adapter source and workflow run/attempt.
 Launch intent precedes submission; intent without a result or live unit fails
-unknown only after the launch gate is free and that absence is rechecked. A
+unknown only after the launch gate is free and that absence is rechecked.
+If execution service submission times out, the caller observes the original
+operation within its existing deadline. A
 reconnection waits for an in-flight submission without blocking on the worker's
 mutation gate or submitting the command again, including when intent appears
 after the reconnection has started waiting for that gate. Only 124/141/255 can
@@ -185,12 +212,13 @@ contain no values. Retained logs are redacted and capped at 1 MiB while the work
 continues draining output and collecting hashes. Private operation state lives
 on remote `/dev/shm`; an unavailable state root fails without falling back to
 disk. One-shot systemd timers schedule expiration services under the operation's
-SSH user and group. After one hour the service verifies retirement before
-removing files. Unconfirmed retirement retains evidence, and reboot removes
-tmpfs state even if a transient timer was lost. The
-small namespace ownership ledger and stable gate remain until reboot or explicit
-namespace retirement. At most 32 operation tombstones per owner prevent an older
-workflow reclaiming ownership or an expired result permitting execution again.
+SSH user and group. At submission, the CI host's monotonic clock defines a fixed
+one-hour deadline that survives systemd reloads. At expiry the service verifies
+retirement before removing files. Unconfirmed retirement retains evidence, and
+reboot removes tmpfs state. The small namespace ownership ledger and stable gate
+remain until reboot or explicit namespace retirement. At most 32 operation
+tombstones per owner prevent an older workflow reclaiming ownership or an expired
+result permitting execution again.
 
 Cancellation stops and verifies owned services; failed or unreachable retirement
 is reported as unconfirmed and retains files. Remote hard deadlines remain in
@@ -239,15 +267,22 @@ association or stabilization failures remain unverified and retain resources.
 An unverified or failed result exits 1 because cleanup was not established;
 proven live-owner deferrals and reopened PR skips exit 0.
 
-The host executor reobserves runner and Stripe units/directories under the locks,
-verifies stopped execution before removing files, and verifies final state.
+Under the existing namespace locks, the host executor records the closure
+cutoff and revokes image admission before inventory and bulk teardown. Older
+image workers check that admission marker after taking the same lock, so a
+later teardown failure can leave the runner directory without admitting work.
+An unverified revocation fails that namespace. The executor then reobserves
+runner and Stripe resources, verifies stopped execution before bulk removal,
+and verifies final state. If this inventory fails, the executor reports the
+remaining selected namespaces as unverified and leaves their services untouched.
 It submits all selected stops before polling with one shared 330s stop budget
 (Runner units allow 300s). Inactive/failed state, no main PID, no queued/running
-job and an unpopulated cgroup are all required before deletion. A stop deadline
-retains that namespace's files and reports failure; stopped siblings can still
-be cleaned. The host operation has a 480s hard limit, inside the controller's
-510s response and 720s batch limits. Heartbeats continue during the wait, and
-cancellation still interrupts the worker before releasing its namespace locks.
+job and an unpopulated cgroup are all required before bulk removal. A stop
+deadline retains the remaining namespace files and reports failure. Stopped
+siblings can still be cleaned. The host operation has a 480s hard limit, inside
+the controller's 510s response and 720s batch limits. Heartbeats continue during
+the wait, and cancellation interrupts the worker before releasing its namespace
+locks.
 Absent resources are counted separately from actual cleanup. Persistent and
 transient files, directory-only and Stripe-only leftovers participate in discovery;
 inactive manager records with no execution, queued job or files do not repeatedly
@@ -270,12 +305,17 @@ retire.
 Cleanup controllers already running from an earlier revision still share the
 lifecycle lock and remove the admission marker. Per-unit retirement of a
 worker with the new name requires the updated controller.
-A running legacy unit without PR attribution makes current
-cleanup inventory unverified and preserves resources. Expiry timers keep their
-separate `vm0-ci-image-DIGEST-expire` names and remain image-owned.
+A running legacy unit without PR attribution leaves cleanup inventory unverified
+and prevents bulk removal. Expiry timers keep their separate
+`vm0-ci-image-DIGEST-expire` names and remain image-owned.
 
-Stripe replacement uses the same lifecycle exclusion. Its Ansible playbooks
-remain deployment adapters; closed-PR teardown does not start Ansible per PR.
+Turbo selects the Runner and Stripe host in a shared placement job before
+deployment. Stripe opens SSH, takes the lifecycle lock, and runs both Ansible
+playbooks on that host. The playbooks verify that the old listener's manager
+job, main PID, and cgroup have drained before deleting or replacing its files.
+Runner readiness still publishes the deployment receipt
+for idle-sandbox cleanup. The closed-PR sweep discovers and retires Stripe
+resources across configured hosts, including resources from earlier placements.
 
 Preview startup runs the selected Runner's health checks as part of
 `runner service wait-running --check-health`. The command emits numeric

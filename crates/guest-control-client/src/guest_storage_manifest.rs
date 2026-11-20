@@ -13,6 +13,7 @@ use guest_control_proto::{
 };
 
 use crate::helper_output::owned_capture;
+use crate::protocol_error;
 use crate::{
     FrameWriteObserver, GuestControlClient, normal_request_on_shared_with_timing_frame_builder,
     validate_fixed_helper_response,
@@ -88,14 +89,14 @@ impl GuestControlClient {
                     request.metadata,
                 )
                 .map(|()| &[][..])
-                .map_err(protocol_invalid_input)
+                .map_err(protocol_error::invalid_input)
             },
             None,
         )
         .await?;
         if response.msg_type == MSG_ERROR {
             let message = guest_control_proto::decode_error(&response.payload)
-                .map_err(protocol_invalid_data)?;
+                .map_err(protocol_error::invalid_data)?;
             return Err(io::Error::other(message.to_owned()));
         }
         if response.msg_type != MSG_GUEST_AGENT_INSTRUCTIONS_RESULT {
@@ -105,7 +106,7 @@ impl GuestControlClient {
             ));
         }
         let decoded = decode_guest_agent_instructions_result(&response.payload)
-            .map_err(protocol_invalid_data)?;
+            .map_err(protocol_error::invalid_data)?;
         let (stdout, stdout_truncated) =
             owned_capture(decoded.stdout, "guest storage manifest", "stdout")?;
         let (stderr, stderr_truncated) =
@@ -200,7 +201,7 @@ impl GuestControlClient {
                         runtime_dir,
                         manifest_json,
                     )
-                    .map_err(protocol_invalid_input);
+                    .map_err(protocol_error::invalid_input);
                 }
                 encode_guest_storage_manifest_request_frame_into(
                     frame,
@@ -211,7 +212,7 @@ impl GuestControlClient {
                     manifest_json,
                 )
                 .map(|()| &[][..])
-                .map_err(protocol_invalid_input)
+                .map_err(protocol_error::invalid_input)
             },
             timing.as_deref_mut().map(|timing| &mut timing.host),
         )
@@ -237,8 +238,8 @@ fn decode_storage_manifest_response(
         "guest storage manifest",
     )?;
 
-    let decoded =
-        decode_guest_storage_manifest_result(&response.payload).map_err(protocol_invalid_data)?;
+    let decoded = decode_guest_storage_manifest_result(&response.payload)
+        .map_err(protocol_error::invalid_data)?;
     let resource_absent =
         serde_json::from_slice::<StorageResourceAvailability>(decoded.resource_summary)
             .ok()
@@ -305,12 +306,4 @@ fn decode_storage_manifest_response(
         stderr_truncated,
         diagnostic: decoded.diagnostic.to_owned(),
     })
-}
-
-fn protocol_invalid_input(error: impl ToString) -> io::Error {
-    io::Error::new(io::ErrorKind::InvalidInput, error.to_string())
-}
-
-fn protocol_invalid_data(error: impl ToString) -> io::Error {
-    io::Error::new(io::ErrorKind::InvalidData, error.to_string())
 }

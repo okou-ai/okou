@@ -39,8 +39,7 @@ use super::{
 use crate::dns::{DnsReadinessLogObservation, inspect_readiness_log_segment};
 use crate::duration::duration_ms;
 use crate::home_image_cache::{
-    HomeCacheCheckoutResult, HomeImageLease, HomeImageLeaseIdentity, HomeImagePreparePolicy,
-    HomeImagePrepareRequest,
+    HomeCacheCheckoutResult, HomeImageLease, HomeImageLeaseIdentity, HomeImagePrepareRequest,
 };
 use crate::home_mount::ensure_home_drive_mounted;
 use crate::network_log_manager::NetworkLogSession;
@@ -1026,20 +1025,13 @@ pub(super) async fn prepare_home_image(
         },
         home_drive_required: true,
     };
-    let lease = if let Some(source) = params.required_home_source_run_id {
-        cache
-            .prepare_from_source(request, source, params.home_image_prepare_policy)
-            .await
-    } else {
-        match params.home_image_prepare_policy {
-            HomeImagePreparePolicy::TryCacheWithLockWait => cache.prepare(request).await,
-            HomeImagePreparePolicy::TryCacheWithoutLockWait | HomeImagePreparePolicy::SkipCache => {
-                cache
-                    .prepare_with_policy(request, params.home_image_prepare_policy)
-                    .await
-            }
-        }
-    };
+    let lease = cache
+        .prepare_with_policy(
+            request,
+            params.home_image_prepare_policy,
+            params.required_home_source_run_id,
+        )
+        .await;
     let prepare_error = home_image_prepare_error(lease.result());
     telemetry.record(
         RUNNER_FRESH_HOME_IMAGE_PREPARE,

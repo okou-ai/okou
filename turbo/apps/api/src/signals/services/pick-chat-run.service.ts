@@ -527,7 +527,7 @@ function createPickObjects() {
         );
       }
       await set(claimed.finishPendingRun$, pending, dispatched, signal);
-      return { kind: "launched", runId: pending.runId };
+      return { kind: "launched", runId: pending.admittedLaunch.run.id };
     },
   );
 

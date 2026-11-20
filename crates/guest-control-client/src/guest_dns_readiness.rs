@@ -6,6 +6,7 @@ use guest_control_proto::{
     decode_guest_dns_readiness_result, encode_guest_dns_readiness_request_frame_into,
 };
 
+use crate::protocol_error;
 use crate::{
     FrameWriteObserver, GuestControlClient,
     normal_request_on_shared_with_write_observer_frame_builder, validate_fixed_helper_response,
@@ -64,7 +65,7 @@ impl GuestControlClient {
                     process_timeout_ms,
                     hostname,
                 )
-                .map_err(protocol_invalid_input)
+                .map_err(protocol_error::invalid_input)
             },
         )
         .await?;
@@ -75,8 +76,8 @@ impl GuestControlClient {
             "guest DNS readiness",
         )?;
 
-        let decoded =
-            decode_guest_dns_readiness_result(&response.payload).map_err(protocol_invalid_data)?;
+        let decoded = decode_guest_dns_readiness_result(&response.payload)
+            .map_err(protocol_error::invalid_data)?;
         Ok(GuestDnsReadinessResult {
             termination: decoded.termination,
             duration_ms: decoded.duration_ms,
@@ -85,12 +86,4 @@ impl GuestControlClient {
             diagnostic: decoded.diagnostic.to_owned(),
         })
     }
-}
-
-fn protocol_invalid_input(error: impl ToString) -> io::Error {
-    io::Error::new(io::ErrorKind::InvalidInput, error.to_string())
-}
-
-fn protocol_invalid_data(error: impl ToString) -> io::Error {
-    io::Error::new(io::ErrorKind::InvalidData, error.to_string())
 }

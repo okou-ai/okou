@@ -10,6 +10,205 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.97.1](https://github.com/okou-ai/okou/compare/api-v2.97.0...api-v2.97.1) (2026-11-20)
+
+
+### Bug Fixes
+
+* **platform:** use the suggestions switch for my okou proactive settings ([#49439](https://github.com/okou-ai/okou/issues/49439)) ([1d42e69](https://github.com/okou-ai/okou/commit/1d42e6994ad6d82a6678d34b955335765fc560b5))
+
+
+### Refactoring
+
+* remove feature guides feature switch ([#49441](https://github.com/okou-ai/okou/issues/49441)) ([e5642ea](https://github.com/okou-ai/okou/commit/e5642ea2ef0ea2ba7a6cd451d395c8329a855c88))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.94.1
+    * @okouai/core bumped to 8.857.1
+    * @okouai/db bumped to 2.54.3
+    * @okouai/pi-agent-runtime bumped to 1.52.13
+
+## [2.97.0](https://github.com/okou-ai/okou/compare/api-v2.96.0...api-v2.97.0) (2026-11-20)
+
+
+### Features
+
+* **platform:** consolidate proactive settings in my okou ([#49401](https://github.com/okou-ai/okou/issues/49401)) ([9d20531](https://github.com/okou-ai/okou/commit/9d20531a9ad041abf15a8e5c1697b06475b563df))
+
+
+### Refactoring
+
+* **api:** capture queued prompt delivery once ([#49420](https://github.com/okou-ai/okou/issues/49420)) ([3a14110](https://github.com/okou-ai/okou/commit/3a14110a3b066522c42361a57ceccb329aef907a))
+* **api:** make queued continuation explicit ([#49429](https://github.com/okou-ai/okou/issues/49429)) ([97d31fb](https://github.com/okou-ai/okou/commit/97d31fb66579a567eda930952acba611c23e75f0))
+* **api:** share run connector scope across account and skill resolution ([#49414](https://github.com/okou-ai/okou/issues/49414)) ([ae86233](https://github.com/okou-ai/okou/commit/ae86233b41a72b49c967fe580ea185bdf8c2ab9a))
+* **api:** simplify queued launch binding and callbacks ([#49432](https://github.com/okou-ai/okou/issues/49432)) ([3e70d86](https://github.com/okou-ai/okou/commit/3e70d865438fe987ea77468340793cafe8c26c30))
+* **api:** simplify queued prompt launch handoffs ([#49409](https://github.com/okou-ai/okou/issues/49409)) ([69c9055](https://github.com/okou-ai/okou/commit/69c905577283656d83a027e291a4b8a4a2601e22))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.94.0
+    * @okouai/core bumped to 8.857.0
+    * @okouai/db bumped to 2.54.2
+    * @okouai/pi-agent-runtime bumped to 1.52.12
+
+## [2.96.0](https://github.com/okou-ai/okou/compare/api-v2.95.7...api-v2.96.0) (2026-11-20)
+
+
+### Features
+
+* **api:** force app.vm0.ai clients to upgrade to v0.1154.2 ([#49404](https://github.com/okou-ai/okou/issues/49404)) ([e8a2091](https://github.com/okou-ai/okou/commit/e8a20918cc75930cce2f3512e764fad9ea6eb4f3))
+
+## [2.95.7](https://github.com/okou-ai/okou/compare/api-v2.95.6...api-v2.95.7) (2026-11-20)
+
+
+### Bug Fixes
+
+* **db:** drop retired agent connector access storage ([#49382](https://github.com/okou-ai/okou/issues/49382)) ([1705898](https://github.com/okou-ai/okou/commit/1705898f6c9c9bf65db78be502dc3ccf5a17a6ab))
+
+
+### Refactoring
+
+* **api:** simplify queued prompt timing and routing ([#49391](https://github.com/okou-ai/okou/issues/49391)) ([e647058](https://github.com/okou-ai/okou/commit/e647058478c46b17bb46e55860054d48590ec706))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/db bumped to 2.54.1
+
+## [2.95.6](https://github.com/okou-ai/okou/compare/api-v2.95.5...api-v2.95.6) (2026-11-20)
+
+
+### Refactoring
+
+* **api:** simplify terminal chat delivery receipts ([#49371](https://github.com/okou-ai/okou/issues/49371)) ([0069eac](https://github.com/okou-ai/okou/commit/0069eac69858cbfa960332b9c2607be583f3e4d2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/db bumped to 2.54.0
+
+## [2.95.5](https://github.com/okou-ai/okou/compare/api-v2.95.4...api-v2.95.5) (2026-11-20)
+
+
+### Bug Fixes
+
+* **api:** retry gmail events after workflow rebinding ([#49295](https://github.com/okou-ai/okou/issues/49295)) ([dad3f2b](https://github.com/okou-ai/okou/commit/dad3f2b0fc6e9a2e3767f3ba4187d46a06db7ac3))
+
+
+### Refactoring
+
+* **api:** carry checked queued launch facts into planning ([#49305](https://github.com/okou-ai/okou/issues/49305)) ([062650e](https://github.com/okou-ai/okou/commit/062650e5cea55d69082220865f0b6c5ceaab3ea9))
+* **api:** retire agent connector execution grants ([#49268](https://github.com/okou-ai/okou/issues/49268)) ([596e8ca](https://github.com/okou-ai/okou/commit/596e8ca5d65c2ba7d7b447816042a9bc48fa8b44))
+* **api:** simplify queued launch handoff ([#49267](https://github.com/okou-ai/okou/issues/49267)) ([3e6a8a9](https://github.com/okou-ai/okou/commit/3e6a8a9d5049f746c1e490899ba7f1e624f77713))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.93.2
+    * @okouai/core bumped to 8.856.2
+    * @okouai/db bumped to 2.53.3
+    * @okouai/pi-agent-runtime bumped to 1.52.11
+
+## [2.95.4](https://github.com/okou-ai/okou/compare/api-v2.95.3...api-v2.95.4) (2026-11-19)
+
+
+### Bug Fixes
+
+* let each suggestion decide where its custom direction goes ([#49274](https://github.com/okou-ai/okou/issues/49274)) ([8ee03b2](https://github.com/okou-ai/okou/commit/8ee03b20a05e80b4cd1059f8dd55b72ff85df347))
+
+
+### Refactoring
+
+* remove expired deployment compatibility ([#49278](https://github.com/okou-ai/okou/issues/49278)) ([4338aee](https://github.com/okou-ai/okou/commit/4338aeeabfdb74ebee71a8e3c3c3862610b1262b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.93.1
+    * @okouai/core bumped to 8.856.1
+    * @okouai/db bumped to 2.53.2
+    * @okouai/pi-agent-runtime bumped to 1.52.10
+
+## [2.95.3](https://github.com/okou-ai/okou/compare/api-v2.95.2...api-v2.95.3) (2026-11-19)
+
+
+### Bug Fixes
+
+* **api:** isolate optional run packages and provision missing memory ([#49199](https://github.com/okou-ai/okou/issues/49199)) ([72c3c69](https://github.com/okou-ai/okou/commit/72c3c690b21f4934b87706d55dbd8f6c4cefa4ff))
+* **api:** state run limits and saved data responses as facts ([#49270](https://github.com/okou-ai/okou/issues/49270)) ([6c2ec0a](https://github.com/okou-ai/okou/commit/6c2ec0a09b22dd1bed15ccaa32c4b05886f5d217))
+
+
+### Refactoring
+
+* **api:** classify runner dispatch custody exhaustively ([#49202](https://github.com/okou-ai/okou/issues/49202)) ([ed9c0ee](https://github.com/okou-ai/okou/commit/ed9c0eecfa42a0ec5e4b3fda0136ba112fdf1df8))
+* **api:** enforce queued launch readiness at preparation ([#49204](https://github.com/okou-ai/okou/issues/49204)) ([60283b4](https://github.com/okou-ai/okou/commit/60283b4a3dbc984be44d9c4eabfe83c9c712f01b))
+
+## [2.95.2](https://github.com/okou-ai/okou/compare/api-v2.95.1...api-v2.95.2) (2026-11-19)
+
+
+### Bug Fixes
+
+* **api:** isolate invalid connector configuration during run admission ([#49122](https://github.com/okou-ai/okou/issues/49122)) ([dcc6776](https://github.com/okou-ai/okou/commit/dcc6776d57ff2286294c4566c2dd59217f303f55))
+* raise the automatic run limit to 128 hops ([#49055](https://github.com/okou-ai/okou/issues/49055)) ([dd33709](https://github.com/okou-ai/okou/commit/dd3370985e018240a46347ec0be5780ee23d7fec))
+
+
+### Refactoring
+
+* **api:** consolidate queued automation preflight ([#49132](https://github.com/okou-ai/okou/issues/49132)) ([97077ee](https://github.com/okou-ai/okou/commit/97077ee58e164b9fb998c0fe39a0f12278888d8e))
+* **api:** resolve mail drafts through chat connector accounts ([#49080](https://github.com/okou-ai/okou/issues/49080)) ([cfb5cb9](https://github.com/okou-ai/okou/commit/cfb5cb9f06ac07a0db130b07c6dc6bb74ce2f92a))
+* **api:** simplify automation assembly and launch results ([#49061](https://github.com/okou-ai/okou/issues/49061)) ([8c96a1e](https://github.com/okou-ai/okou/commit/8c96a1e0cedeb5d7d3c736b47b89ce22a939a1db))
+* **api:** unify runner dispatch offer policy ([#49115](https://github.com/okou-ai/okou/issues/49115)) ([0eb6d55](https://github.com/okou-ai/okou/commit/0eb6d5575c679c18fa5d33fd00b1a674079477e3))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.93.0
+    * @okouai/core bumped to 8.856.0
+    * @okouai/db bumped to 2.53.1
+    * @okouai/pi-agent-runtime bumped to 1.52.9
+
+## [2.95.1](https://github.com/okou-ai/okou/compare/api-v2.95.0...api-v2.95.1) (2026-11-19)
+
+
+### Refactoring
+
+* **api:** remove queued run startup remnants ([#49046](https://github.com/okou-ai/okou/issues/49046)) ([66d7775](https://github.com/okou-ai/okou/commit/66d7775eb7dce25b22529760728854c071bd53e4))
+* **api:** resolve custom runtime from selected chat accounts ([#49025](https://github.com/okou-ai/okou/issues/49025)) ([3d3351f](https://github.com/okou-ai/okou/commit/3d3351f281c530b7d81bba93fd59cd87c02ba57c))
+* **api:** retire chat connector client compatibility ([#49047](https://github.com/okou-ai/okou/issues/49047)) ([3202044](https://github.com/okou-ai/okou/commit/3202044add225011588e98a5724cec7470c78cde))
+* **api:** simplify queued run planning and launch receipts ([#49019](https://github.com/okou-ai/okou/issues/49019)) ([f838858](https://github.com/okou-ai/okou/commit/f838858251a73c1fba7a7cb21b9ce314ed665549))
+
+
+### Performance Improvements
+
+* **api:** send bounded predecessor home checkout hints ([#49035](https://github.com/okou-ai/okou/issues/49035)) ([4fbea89](https://github.com/okou-ai/okou/commit/4fbea89804e16caa8372afcb9626b5716bb8f8e0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.92.1
+    * @okouai/core bumped to 8.855.1
+    * @okouai/db bumped to 2.53.0
+    * @okouai/pi-agent-runtime bumped to 1.52.8
+
 ## [2.95.0](https://github.com/okou-ai/okou/compare/api-v2.94.4...api-v2.95.0) (2026-11-19)
 
 

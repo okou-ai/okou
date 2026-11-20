@@ -354,10 +354,7 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
         ? await seedWithInstallation()
         : { ...(await seedBaseContext()), slackWorkspaceId: "" };
       const actor = actorFor(base);
-      const { agentId, runnerGroup } = await scenario.prepareActor(actor);
-      await scenario.run(() => {
-        return runsApi.heartbeatRunner(runnerGroup);
-      });
+      const { agentId } = await scenario.prepareActor(actor);
       const sent = await scenario.run(() => {
         return chatApi.sendAndLaunch(actor, {
           agentId,
@@ -2512,10 +2509,9 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
           });
         });
         await fixture.run(() => {
-          return runsApi.enableAgentConnectors(
+          return runsApi.setDriveExportAuthorization(
             actorFor({ orgId, userId }),
             agentId,
-            ["google-drive"],
           );
         });
 
@@ -2832,9 +2828,7 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
           });
         });
         await fixture.run(() => {
-          return runsApi.enableAgentConnectors(actor, otherAgent.agentId, [
-            "google-drive",
-          ]);
+          return runsApi.setDriveExportAuthorization(actor, otherAgent.agentId);
         });
         await fixture.run(() => {
           return accept(

@@ -50,7 +50,6 @@ describe("chat-thread connector account ownership", () => {
       "openai",
       "api-token",
       { apiKey: "ownership-openai-key" },
-      agent.agentId,
     );
     const definition = await connectors.createCustomConnector(
       owner,
@@ -68,9 +67,6 @@ describe("chat-thread connector account ownership", () => {
     if (!custom.connectionId) {
       throw new Error("Expected the API-created custom connector account");
     }
-    await connectors.updateAgentCustomConnectors(owner, agent.agentId, [
-      definition.id,
-    ]);
     const sameOrg = await connectors.connectManualGrant(
       bdd.user({ orgId: owner.orgId }),
       "openai",
@@ -100,7 +96,6 @@ describe("chat-thread connector account ownership", () => {
     const createBody = {
       agentId: agent.agentId,
       model: "claude-fable-5-1",
-      connectorSelections: requested,
     };
     const created = await accept(
       threads.create({ headers, body: createBody }),
@@ -108,6 +103,17 @@ describe("chat-thread connector account ownership", () => {
     );
     const params = { id: created.body.id };
     const threadParams = { threadId: created.body.id };
+    for (const selection of requested) {
+      const updated = await accept(
+        access.setThreadCurrent({
+          headers,
+          params: threadParams,
+          body: selection,
+        }),
+        [200],
+      );
+      expect(updated.body.currentConnectionId).toBe(selection.connectionId);
+    }
     const initial = await accept(selections.get({ headers, params }), [200]);
     expect(initial.body.selections).toHaveLength(2);
     expect(initial.body.selections).toStrictEqual(
@@ -127,17 +133,6 @@ describe("chat-thread connector account ownership", () => {
       }),
     );
     expect(initial.body.selectedConnections).toStrictEqual(accountResponses);
-    for (const selection of requested) {
-      const updated = await accept(
-        access.setThreadCurrent({
-          headers,
-          params: threadParams,
-          body: selection,
-        }),
-        [200],
-      );
-      expect(updated.body.currentConnectionId).toBe(selection.connectionId);
-    }
 
     const rejected = [
       { connectionId: sameOrg.id, target: builtinTarget },
@@ -145,21 +140,7 @@ describe("chat-thread connector account ownership", () => {
       { connectionId: builtin.id, target: customTarget },
       { connectionId: custom.connectionId, target: builtinTarget },
     ];
-    const mismatch = {
-      error: {
-        code: "BAD_REQUEST",
-        message: "Connector account does not match the requested target",
-      },
-    };
     for (const selection of rejected) {
-      const deniedCreate = await accept(
-        threads.create({
-          headers,
-          body: { ...createBody, connectorSelections: [selection] },
-        }),
-        [400],
-      );
-      expect(deniedCreate.body).toStrictEqual(mismatch);
       const deniedUpdate = await accept(
         access.setThreadCurrent({
           headers,

@@ -120,16 +120,10 @@ test("rejects a reconnect start for an account under another builtin target", as
 test("starts and completes a reconnect for the exact owned account", async () => {
   const actor = bdd.user();
   const account = await createAccount(actor);
-  const start = await connectors.startOauth(
-    actor,
-    "github",
-    "oauth",
-    undefined,
-    {
-      intent: "reconnect",
-      connectionId: account.id,
-    },
-  );
+  const start = await connectors.startOauth(actor, "github", "oauth", {
+    intent: "reconnect",
+    connectionId: account.id,
+  });
   expect(start.connectionId).toBeUndefined();
   expect(start.oauthAttemptId).toMatch(/^[0-9a-f-]{36}$/u);
   await expect(
@@ -150,16 +144,10 @@ test("starts and completes a reconnect for the exact owned account", async () =>
 test("rejects reconnect completion after the account is deleted during consent", async () => {
   const actor = bdd.user();
   const account = await createAccount(actor);
-  const start = await connectors.startOauth(
-    actor,
-    "github",
-    "oauth",
-    undefined,
-    {
-      intent: "reconnect",
-      connectionId: account.id,
-    },
-  );
+  const start = await connectors.startOauth(actor, "github", "oauth", {
+    intent: "reconnect",
+    connectionId: account.id,
+  });
   await connectors.deleteBuiltinConnectorAccount(actor, "github", account.id);
   const completed = await connectors.completeOauthCallbackResult("github", {
     code: "deleted-account",

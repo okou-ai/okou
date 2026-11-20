@@ -12,9 +12,16 @@
     <string name="chat_status_unavailable">स्थिति रीफ़्रेश नहीं हो सकी। पुराने संकेतक पुराने पड़ सकते हैं।</string>
     <string name="chat_status_loading">सक्रिय और अपठित स्थिति जाँची जा रही है…</string>
     <string name="chat_refresh_status">स्थिति रीफ़्रेश करें</string>
-    <string name="chat_all">सभी</string>
+    <string name="chat_inbox">इनबॉक्स</string>
+    <string name="chat_mark_all_read">सभी को पढ़ा हुआ चिह्नित करें</string>
+    <string name="chat_mark_all_read_unconfirmed">कुछ चैट अब भी अपठित हो सकती हैं।</string>
+    <plurals name="chat_mark_all_read_success">
+        <item quantity="one">%1$d चैट को पढ़ा हुआ चिह्नित किया गया।</item>
+        <item quantity="other">%1$d चैट को पढ़ा हुआ चिह्नित किया गया।</item>
+    </plurals>
     <string name="chat_filter">फ़िल्टर</string>
-    <string name="chat_clear_filter">फ़िल्टर हटाएँ</string>
+    <string name="chat_filter_subtitle">फ़िल्टर · %1$s</string>
+    <string name="chat_back_to_inbox">इनबॉक्स पर वापस जाएँ</string>
     <string name="chat_more_actions">और कार्रवाइयाँ</string>
     <string name="chat_unread">अपठित</string>
     <string name="chat_archived">संग्रहीत</string>

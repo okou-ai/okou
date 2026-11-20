@@ -5,7 +5,6 @@ import {
   literal,
   object,
   string,
-  union,
   uuid,
   enum as zEnum,
   type infer as zInfer,
@@ -159,7 +158,7 @@ export const onboardingDraftContract = c.router({
     responses: {
       200: object({ draft: onboardingDraftSnapshotSchema.nullable() }),
       401: apiErrorSchema,
-      404: union([apiErrorSchema, object({ error: literal("Not found") })]),
+      404: apiErrorSchema,
     },
     summary: "Get the signed-in member's in-progress onboarding draft",
   },

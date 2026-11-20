@@ -364,7 +364,6 @@ async function addGoogleCalendarAccount(
     scenario.actor,
     "google-calendar",
     "oauth",
-    scenario.agentId,
     { intent: "add", displayName: args.email },
   );
   const state = new URL(start.authorizationUrl).searchParams.get("state");
@@ -1126,7 +1125,6 @@ describe("POST /api/webhooks/google-calendar", () => {
       scenario.actor,
       "google-calendar",
       "oauth",
-      scenario.agentId,
       { intent: "reconnect", connectionId: initialConnection.id },
     );
     const reconnectState = new URL(reconnect.authorizationUrl).searchParams.get(

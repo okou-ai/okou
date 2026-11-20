@@ -25,8 +25,8 @@ struct ChatThreadMenu {
   let moveToProject: (ChatThread) -> Void
   /// The sidebar's neighbouring pins; nil where this chat's pin cannot be reordered.
   var pinNeighbors: ChatSidebarPresentation.PinNeighbors?
-  /// A sidebar may finish the row's exit before invoking the workspace-owned mutation.
-  var archive: ((ChatThread) -> Void)?
+  /// The sidebar archives in place; elsewhere archiving the open chat leaves it.
+  var archive: (@MainActor (ChatThread) async -> Void)?
 
   private var thread: ChatThread? {
     workspace.list.threads.first { $0.id == threadID }
@@ -80,8 +80,8 @@ struct ChatThreadMenu {
     if !thread.isMuted {
       items.append(
         Item(
-          action: .markUnread, title: String(localized: "Mark as unread"), icon: "mail",
-          enabled: enabled && !list.markingAgentRead))
+          action: .markUnread, title: String(localized: "Mark as unread"),
+          icon: "message-square-dot", enabled: enabled && !list.markingAgentRead))
     }
     items.append(
       Item(
@@ -136,7 +136,7 @@ struct ChatThreadMenu {
     case .markUnread: await workspace.setRead(thread, read: false)
     case .archive:
       if let archive {
-        archive(thread)
+        await archive(thread)
       } else {
         await workspace.setArchived(threadID, archived: !thread.isArchived, leaveDetail: true)
       }

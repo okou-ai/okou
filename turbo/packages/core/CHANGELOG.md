@@ -1,5 +1,90 @@
 # Changelog
 
+## [8.857.1](https://github.com/okou-ai/okou/compare/core-v8.857.0...core-v8.857.1) (2026-11-20)
+
+
+### Bug Fixes
+
+* **platform:** use the suggestions switch for my okou proactive settings ([#49439](https://github.com/okou-ai/okou/issues/49439)) ([1d42e69](https://github.com/okou-ai/okou/commit/1d42e6994ad6d82a6678d34b955335765fc560b5))
+
+
+### Refactoring
+
+* remove feature guides feature switch ([#49441](https://github.com/okou-ai/okou/issues/49441)) ([e5642ea](https://github.com/okou-ai/okou/commit/e5642ea2ef0ea2ba7a6cd451d395c8329a855c88))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.94.1
+
+## [8.857.0](https://github.com/okou-ai/okou/compare/core-v8.856.2...core-v8.857.0) (2026-11-20)
+
+
+### Features
+
+* **platform:** consolidate proactive settings in my okou ([#49401](https://github.com/okou-ai/okou/issues/49401)) ([9d20531](https://github.com/okou-ai/okou/commit/9d20531a9ad041abf15a8e5c1697b06475b563df))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.94.0
+
+## [8.856.2](https://github.com/okou-ai/okou/compare/core-v8.856.1...core-v8.856.2) (2026-11-20)
+
+
+### Refactoring
+
+* **api:** retire agent connector execution grants ([#49268](https://github.com/okou-ai/okou/issues/49268)) ([596e8ca](https://github.com/okou-ai/okou/commit/596e8ca5d65c2ba7d7b447816042a9bc48fa8b44))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.93.2
+
+## [8.856.1](https://github.com/okou-ai/okou/compare/core-v8.856.0...core-v8.856.1) (2026-11-19)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.93.1
+
+## [8.856.0](https://github.com/okou-ai/okou/compare/core-v8.855.1...core-v8.856.0) (2026-11-19)
+
+
+### Features
+
+* **app:** gate an okou rail entry behind a staff switch ([#49130](https://github.com/okou-ai/okou/issues/49130)) ([3ce54fd](https://github.com/okou-ai/okou/commit/3ce54fd46e6166a3b4cf828052e20a375f4ade08))
+* **platform:** confirm deletion of project threads ([#49121](https://github.com/okou-ai/okou/issues/49121)) ([89d08cc](https://github.com/okou-ai/okou/commit/89d08ccd4ff5399208552bff0e1f3dbbf08414fb))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.93.0
+
+## [8.855.1](https://github.com/okou-ai/okou/compare/core-v8.855.0...core-v8.855.1) (2026-11-19)
+
+
+### Bug Fixes
+
+* **app:** compact works channels into a responsive grid ([#49001](https://github.com/okou-ai/okou/issues/49001)) ([978a7fb](https://github.com/okou-ai/okou/commit/978a7fb1b057df9ec03eca609a78c6b0dae34e66))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.92.1
+
 ## [8.855.0](https://github.com/okou-ai/okou/compare/core-v8.854.6...core-v8.855.0) (2026-11-19)
 
 

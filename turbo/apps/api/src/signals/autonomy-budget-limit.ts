@@ -4,10 +4,10 @@ import { testOverride } from "../lib/singleton";
 
 /**
  * Fixed schema ceiling for any stored autonomy budget. It matches the
- * `0..32` CHECK constraints on runs and Automations, so catalog validation
+ * `0..128` CHECK constraints on runs and Automations, so catalog validation
  * and system defaults stay on it regardless of the delegation limit.
  */
-export const AUTONOMY_BUDGET_CEILING = 32;
+export const AUTONOMY_BUDGET_CEILING = 128;
 
 const maxAutonomyBudget = testOverride<number>(() => {
   return AUTONOMY_BUDGET_CEILING;
@@ -25,7 +25,7 @@ export const maxAutonomyBudget$ = computed(() => {
 
 /**
  * Ethan-approved test control (#37440): lets API tests drive the real
- * delegation chain with a tiny limit instead of 32 hops. `undefined` restores
+ * delegation chain with a tiny limit instead of 128 hops. `undefined` restores
  * the production default; test context does so after every case.
  */
 export const updateMaxAutonomyBudgetForTest$ = command(

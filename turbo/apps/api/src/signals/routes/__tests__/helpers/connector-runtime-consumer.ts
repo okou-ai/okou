@@ -39,7 +39,6 @@ async function resolveExecutionAuth(
 export async function withConnectorRuntime(
   context: TestContext,
   actor: ApiTestUser,
-  connectorSlug: string,
   consume: (args: {
     readonly execution: RunnerExecutionInput;
     readonly resolveAuth: (
@@ -77,9 +76,6 @@ export async function withConnectorRuntime(
   }
   onTestFinished(cleanup);
 
-  await expect(
-    runs.enableAgentConnectors(actor, agent.agentId, [connectorSlug]),
-  ).resolves.toContain(connectorSlug);
   const run = await runs.createThreadRun(actor, {
     agentId: agent.agentId,
     prompt: "Use the connected account",

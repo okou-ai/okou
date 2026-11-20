@@ -19,6 +19,7 @@ from datetime import datetime
 from pathlib import Path
 
 WORK_SECONDS = 570  # Reserve reconciliation/termination inside the existing 600s call.
+RESULT_RETENTION_MS = 60 * 60 * 1_000
 # Cover the deployment holder's default 150s lease, with 30s for admission
 # and its reply inside the existing image job budget.
 PR_CLAIM_SECONDS = 180
@@ -169,19 +170,33 @@ def claim_resource(namespace, owner, deadline):
 
 
 def unit_state(unit, *, deadline=None):
-    result = subprocess.run(
-        [
-            "sudo",
-            "systemctl",
-            "show",
-            unit,
-            "--property=LoadState,ActiveState,MainPID,ControlGroup,Job",
-        ],
-        capture_output=True,
-        text=True,
-        timeout=command_timeout(10, deadline),
-        check=False,
-    )
+    command = [
+        "sudo",
+        "systemctl",
+        "show",
+        unit,
+        "--property=LoadState,ActiveState,MainPID,ControlGroup,Job",
+    ]
+    for attempt in range(2):
+        try:
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=command_timeout(10, deadline),
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            # Only claim retirement supplies a deadline for unit observations.
+            if attempt or deadline is None or time.monotonic() >= deadline:
+                raise
+            print(
+                f"Image claim unit observation timed out for {unit}. Retrying.",
+                file=sys.stderr,
+                flush=True,
+            )
+        else:
+            break
     values = dict(line.split("=", 1) for line in result.stdout.splitlines() if "=" in line)
     if values.get("LoadState") == "not-found":
         return values
@@ -558,13 +573,16 @@ def remote(request):
             unit = unit_for(operation)
             service_owner = (f"--uid={os.getuid()}", f"--gid={os.getgid()}")
             # Establish expiration before materializing credentials or starting work.
+            # OnBootSec uses the monotonic epoch on the native CI host. Align to systemd's
+            # millisecond serialization so the deadline survives reloads.
+            expiration_ms = (time.monotonic_ns() + 999_999) // 1_000_000 + RESULT_RETENTION_MS
             system(
                 "systemd-run",
                 "--quiet",
                 "--collect",
                 "--unit=vm0-ci-image-" + identity + "-expire",
                 *service_owner,
-                "--on-active=1h",
+                f"--on-boot={expiration_ms}ms",
                 "--timer-property=AccuracySec=1s",
                 "--property=RuntimeMaxSec=60",
                 "--property=TimeoutStopSec=10",
@@ -576,23 +594,30 @@ def remote(request):
             )
             if phase != "guard":
                 atomic_json(operation / "credentials.json", request["credentials"])
-            system(
-                "systemd-run",
-                "--quiet",
-                "--collect",
-                "--service-type=exec",
-                "--unit=" + unit,
-                "--description=Runner image " + inputs["jobRef"] + " " + identity,
-                *service_owner,
-                "--property=RuntimeMaxSec=" + str(WORK_SECONDS),
-                "--property=TimeoutStopSec=10",
-                "--property=KillMode=control-group",
-                "--property=SendSIGKILL=yes",
-                "/usr/bin/python3",
-                str(operation / "worker.py"),
-                "worker",
-                str(operation),
-            )
+            try:
+                system(
+                    "systemd-run",
+                    "--quiet",
+                    "--collect",
+                    "--service-type=exec",
+                    "--unit=" + unit,
+                    "--description=Runner image " + inputs["jobRef"] + " " + identity,
+                    *service_owner,
+                    "--property=RuntimeMaxSec=" + str(WORK_SECONDS),
+                    "--property=TimeoutStopSec=10",
+                    "--property=KillMode=control-group",
+                    "--property=SendSIGKILL=yes",
+                    "/usr/bin/python3",
+                    str(operation / "worker.py"),
+                    "worker",
+                    str(operation),
+                )
+            except subprocess.TimeoutExpired:
+                print(
+                    "Image service submission timed out. Observing the original operation.",
+                    file=sys.stderr,
+                    flush=True,
+                )
     observe(request, operation)
 
 

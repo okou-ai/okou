@@ -45,7 +45,6 @@ import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import {
   createConnectorBddApi,
   mockGoogleDriveArtifactUpload,
-  mockGoogleDriveArtifactUploadRejection,
   mockGoogleDriveConnectorOAuth,
   mockGoogleDriveFilesList,
   mockGoogleSlidesReadback,
@@ -439,7 +438,6 @@ async function sendNoCreditMessage(
  */
 async function completeChatRunInThread(
   actor: ApiTestUser,
-  runnerGroup: string,
   args: {
     readonly agentId: string;
     readonly threadId?: string;
@@ -451,7 +449,8 @@ async function completeChatRunInThread(
     ...(args.threadId === undefined ? {} : { threadId: args.threadId }),
     prompt: args.prompt,
   });
-  const { sandboxHeaders } = await runExecution(runnerGroup, run.runId);
+  const { sandboxToken } = await api.executionInput(run.runId);
+  const sandboxHeaders = { authorization: `Bearer ${sandboxToken}` };
   chatCallbacks.mockChatOutputEvents([]);
   await completeChatRunOk(run.runId, sandboxHeaders);
   await flushWaitUntilForTest();
@@ -1257,7 +1256,7 @@ describe("CHAT-01 chat thread read state", () => {
       displayName: "Unread peer agent",
       visibility: "private",
     });
-    const peerRun = await completeChatRunInThread(peer, runnerGroup, {
+    const peerRun = await completeChatRunInThread(peer, {
       agentId: peerAgent.agentId,
       prompt: "peer unread thread stays isolated",
     });
@@ -1270,14 +1269,10 @@ describe("CHAT-01 chat thread read state", () => {
       displayName: "Unread other org agent",
       visibility: "private",
     });
-    const otherOrgRun = await completeChatRunInThread(
-      sameUserOtherOrg,
-      runnerGroup,
-      {
-        agentId: otherOrgAgent.agentId,
-        prompt: "other org unread thread stays isolated",
-      },
-    );
+    const otherOrgRun = await completeChatRunInThread(sameUserOtherOrg, {
+      agentId: otherOrgAgent.agentId,
+      prompt: "other org unread thread stays isolated",
+    });
 
     await expect(chat.listUnreadAgents(owner)).resolves.toStrictEqual([]);
     await expect(chat.listUnreadChatThreadIds(owner)).resolves.toStrictEqual(
@@ -1339,11 +1334,11 @@ describe("CHAT-01 chat thread read state", () => {
       [],
     );
 
-    const runA = await completeChatRunInThread(owner, runnerGroup, {
+    const runA = await completeChatRunInThread(owner, {
       agentId: agentA,
       prompt: "unread aggregate A",
     });
-    const runB = await completeChatRunInThread(owner, runnerGroup, {
+    const runB = await completeChatRunInThread(owner, {
       agentId: agentB,
       prompt: "unread aggregate B",
     });
@@ -1368,13 +1363,12 @@ describe("CHAT-01 chat thread read state", () => {
   }, 120_000);
 
   it("does not let a muted thread hide another unread thread under the same agent", async () => {
-    const { actor, agentId, runnerGroup } =
-      await entitledChatActor("Mixed mute states");
-    const muted = await completeChatRunInThread(actor, runnerGroup, {
+    const { actor, agentId } = await entitledChatActor("Mixed mute states");
+    const muted = await completeChatRunInThread(actor, {
       agentId,
       prompt: "Muted unread task",
     });
-    const other = await completeChatRunInThread(actor, runnerGroup, {
+    const other = await completeChatRunInThread(actor, {
       agentId,
       prompt: "Unmuted unread task",
     });
@@ -1423,7 +1417,7 @@ describe("CHAT-01 chat thread read state", () => {
 
     // A completed run's thread must not appear in the active list. Run it
     // first so the pro-tier concurrency slots stay free for the runs below.
-    const completedRun = await completeChatRunInThread(owner, runnerGroup, {
+    const completedRun = await completeChatRunInThread(owner, {
       agentId: ownerAgent,
       prompt: "terminal completed thread",
     });
@@ -1493,20 +1487,20 @@ describe("CHAT-01 chat thread read state", () => {
   }, 120_000);
 
   it("limits unified unread indicators to seven days without limiting active threads", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor(
+    const { actor, agentId } = await entitledChatActor(
       "Bounded indicator window agent",
     );
     const currentTime = now();
 
     await withMockNowForTest(currentTime, async () => {
       mockNow(currentTime - 7 * DAY_MS - 1);
-      await completeChatRunInThread(actor, runnerGroup, {
+      await completeChatRunInThread(actor, {
         agentId,
         prompt: "expired unread indicator",
       });
 
       mockNow(currentTime);
-      const recentRun = await completeChatRunInThread(actor, runnerGroup, {
+      const recentRun = await completeChatRunInThread(actor, {
         agentId,
         prompt: "recent unread indicator",
       });
@@ -1530,11 +1524,9 @@ describe("CHAT-01 chat thread read state", () => {
   }, 120_000);
 
   it("returns the 50 newest unread indicators across the organization", async () => {
-    const {
-      actor,
-      agentId: agentA,
-      runnerGroup,
-    } = await entitledChatActor("Bounded indicator agent A");
+    const { actor, agentId: agentA } = await entitledChatActor(
+      "Bounded indicator agent A",
+    );
     const agentB = (
       await bdd.createAgent(actor, {
         displayName: "Bounded indicator agent B",
@@ -1548,7 +1540,7 @@ describe("CHAT-01 chat thread read state", () => {
       for (let index = 0; index < 51; index += 1) {
         mockNow(firstCompletedAt + index * 1000);
         runs.push(
-          await completeChatRunInThread(actor, runnerGroup, {
+          await completeChatRunInThread(actor, {
             agentId: index % 2 === 0 ? agentA : agentB,
             prompt: `bounded unread indicator ${index}`,
           }),
@@ -1576,11 +1568,8 @@ describe("CHAT-01 chat thread read state", () => {
   }, 240_000);
 
   it("marks all unread chat threads for one agent", async () => {
-    const {
-      actor: owner,
-      agentId: agentA,
-      runnerGroup,
-    } = await entitledChatActor("Mark-read agent A");
+    const { actor: owner, agentId: agentA } =
+      await entitledChatActor("Mark-read agent A");
     const agentB = (
       await bdd.createAgent(owner, {
         displayName: "Mark-read agent B",
@@ -1588,15 +1577,15 @@ describe("CHAT-01 chat thread read state", () => {
       })
     ).agentId;
 
-    const firstRunA = await completeChatRunInThread(owner, runnerGroup, {
+    const firstRunA = await completeChatRunInThread(owner, {
       agentId: agentA,
       prompt: "mark all read A one",
     });
-    const secondRunA = await completeChatRunInThread(owner, runnerGroup, {
+    const secondRunA = await completeChatRunInThread(owner, {
       agentId: agentA,
       prompt: "mark all read A two",
     });
-    const runB = await completeChatRunInThread(owner, runnerGroup, {
+    const runB = await completeChatRunInThread(owner, {
       agentId: agentB,
       prompt: "mark all read B",
     });
@@ -1898,7 +1887,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
         code: "drive-ok",
         state: stateFromAuthorizationUrl(start.authorizationUrl),
       });
-      await api.enableAgentConnectors(actor, agentId, ["google-drive"]);
+      await api.setDriveExportAuthorization(actor, agentId);
       const upload = mockGoogleDriveArtifactUpload({
         id: "private-drive-file",
         name: "private-report.zip",
@@ -1994,7 +1983,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       code: "drive-ok",
       state: stateFromAuthorizationUrl(start.authorizationUrl),
     });
-    await api.enableAgentConnectors(actor, agentId, ["google-drive"]);
+    await api.setDriveExportAuthorization(actor, agentId);
     const upload = mockGoogleDriveArtifactUpload({
       id: "public-deck-drive-file",
       name: "deck.zip",
@@ -2065,7 +2054,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       code: "drive-ok",
       state: stateFromAuthorizationUrl(start.authorizationUrl),
     });
-    await api.enableAgentConnectors(actor, agentId, ["google-drive"]);
+    await api.setDriveExportAuthorization(actor, agentId);
     const upload = mockGoogleDriveArtifactUpload({
       id: "single-page-drive-file",
       name: "report.html",
@@ -2211,7 +2200,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     expectApiError(unknownArtifact.body);
     expect(unknownArtifact.body.error.message).toBe("Artifact file not found");
 
-    await api.enableAgentConnectors(actor, agentId, ["google-drive"]);
+    await api.setDriveExportAuthorization(actor, agentId);
 
     const uploadRecorder = mockGoogleDriveArtifactUpload({
       id: "drive-uploaded-file",
@@ -2442,7 +2431,6 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       actor,
       "google-drive",
       "oauth",
-      undefined,
       { intent: "reconnect", connectionId: connected.id },
     );
     await connectorsApi.completeOauthCallback("google-drive", {
@@ -2523,7 +2511,6 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       actor,
       "google-drive",
       "oauth",
-      undefined,
       { intent: "reconnect", connectionId: connected.id },
     );
     await connectorsApi.completeOauthCallback("google-drive", {
@@ -2593,7 +2580,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       code: "drive-ok",
       state: stateFromAuthorizationUrl(start.authorizationUrl),
     });
-    await api.enableAgentConnectors(actor, agentId, ["google-drive"]);
+    await api.setDriveExportAuthorization(actor, agentId);
 
     return { actor, agentId, deckId, run, sandboxHeaders };
   }
@@ -3215,7 +3202,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       });
     });
     await owned.run(() => {
-      return api.enableAgentConnectors(actor, agentId, ["google-drive"]);
+      return api.setDriveExportAuthorization(actor, agentId);
     });
     const client = setupApp({
       context,
@@ -4367,13 +4354,13 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     10_000,
   );
 
-  it("retains bounded folder lookup failure diagnostics without private provider content", async () => {
+  it("retains bounded Google Drive failure diagnostics without private provider content", async () => {
     const fixture = await publicOfficeConversionSource(
       docsImportFixture(),
       "docx",
     );
-    const secret = "private-folder-credential-and-provider-content";
-    // The single redaction check exercises the shared reason allowlist through the upload route.
+    const secret = "private-drive-provider-content";
+    // Redaction is the only logging assertion. The other assertions cover the route contract.
     const output = context.mocks.console.log;
     onTestFinished(context.mocks.console.capture());
     const scenarios = [
@@ -4404,41 +4391,28 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
             ],
           },
         }),
-        reasons: [
-          "insufficientPermissions",
-          "domainPolicy",
-          "dailyLimitExceeded",
-          "rateLimitExceeded",
-          "userRateLimitExceeded",
-          "unrecognized",
-          "unavailable",
-          "ACCESS_TOKEN_SCOPE_INSUFFICIENT",
-        ],
+        scopeRequired: true,
       },
-      { name: "empty body", status: 403, body: "", reasons: ["unavailable"] },
+      { name: "empty body", status: 403, body: "" },
       {
         name: "invalid JSON",
         status: 403,
         body: `<html>${secret}</html>`,
-        reasons: ["unavailable"],
       },
       {
         name: "missing reasons",
         status: 403,
         body: JSON.stringify({ error: { message: secret } }),
-        reasons: ["unavailable"],
       },
       {
         name: "invalid reason type",
         status: 403,
         body: JSON.stringify({ error: { details: [{ reason: { secret } }] } }),
-        reasons: ["unrecognized"],
       },
       {
         name: "invalid envelope",
         status: 503,
         body: JSON.stringify({ error: { errors: secret } }),
-        reasons: ["unavailable"],
       },
       {
         name: "oversized body",
@@ -4449,7 +4423,6 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
             errors: [{ reason: "rateLimitExceeded" }],
           },
         }),
-        reasons: ["unavailable"],
       },
       {
         name: "rejected refreshed token",
@@ -4457,7 +4430,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
         body: JSON.stringify({
           error: { details: [{ reason: "ACCESS_TOKEN_SCOPE_INSUFFICIENT" }] },
         }),
-        reasons: ["ACCESS_TOKEN_SCOPE_INSUFFICIENT"],
+        scopeRequired: true,
         afterRefresh: true,
       },
     ] as const;
@@ -4480,16 +4453,8 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
         }
         return { status: scenario.status, body: scenario.body };
       });
-      const before = output.mock.calls.length;
       const response = await fixture.upload("original", [400, 403]);
-      const scopeRequired =
-        scenario.status === 403 &&
-        scenario.reasons.some((reason) => {
-          return (
-            reason === "insufficientPermissions" ||
-            reason === "ACCESS_TOKEN_SCOPE_INSUFFICIENT"
-          );
-        });
+      const scopeRequired = "scopeRequired" in scenario;
       expect(response.status, scenario.name).toBe(scopeRequired ? 403 : 400);
       expect(response.body, scenario.name).toStrictEqual(
         scopeRequired
@@ -4511,39 +4476,64 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
               },
             },
       );
-      const calls = output.mock.calls.slice(before);
-      const records = calls.filter(([message]) => {
-        return (
-          typeof message === "string" &&
-          message.endsWith("Google Drive folder lookup failed")
-        );
-      });
-      expect(records, scenario.name).toStrictEqual([
-        [
-          expect.stringContaining("[WARN]"),
-          {
-            phase: "folder_lookup",
-            providerStatus: scenario.status,
-            providerReasons: scenario.reasons,
-            attempt: afterRefresh ? "after_refresh" : "initial",
-          },
-        ],
-      ]);
-      const serialized = JSON.stringify(calls);
-      for (const privateValue of [
-        secret,
-        "bilingual.docx",
-        "drive-access-drive-picture-crop",
-        "drive-folder-refreshed",
-      ]) {
-        expect(serialized, scenario.name).not.toContain(privateValue);
-      }
       expect(oauth.refreshBodies, scenario.name).toHaveLength(
         afterRefresh ? 1 : 0,
       );
       expect(lookup.queries, scenario.name).toHaveLength(afterRefresh ? 2 : 1);
       expect(upload.metadata, scenario.name).toHaveLength(0);
       expect(upload.bodies, scenario.name).toHaveLength(0);
+    }
+
+    const rejectUpload = () => {
+      return HttpResponse.json(
+        {
+          error: {
+            message: secret,
+            errors: [{ reason: "insufficientPermissions", location: secret }],
+            details: [
+              {
+                reason: "ACCESS_TOKEN_SCOPE_INSUFFICIENT",
+                metadata: {
+                  url: `https://drive.google.com/${secret}?token=${secret}`,
+                },
+              },
+            ],
+          },
+        },
+        { status: 403 },
+      );
+    };
+    for (const phase of ["upload_session", "upload_content"] as const) {
+      const oauth = mockGoogleDriveConnectorOAuth();
+      const upload = mockGoogleDriveArtifactUpload(
+        { id: "unexpected", name: "report" },
+        phase === "upload_session"
+          ? { sessionResponse: rejectUpload }
+          : { contentResponse: rejectUpload },
+      );
+      const response = await fixture.upload("original", [400]);
+      expect(response.status, phase).toBe(400);
+      expect(response.body, phase).toStrictEqual({
+        error: {
+          code: "BAD_REQUEST",
+          message: "Google Drive upload failed with HTTP 403",
+        },
+      });
+      expect(oauth.refreshBodies, phase).toHaveLength(0);
+      expect(upload.metadata, phase).toHaveLength(1);
+      expect(upload.bodies, phase).toHaveLength(
+        phase === "upload_content" ? 1 : 0,
+      );
+    }
+
+    const serialized = JSON.stringify(output.mock.calls);
+    for (const privateValue of [
+      secret,
+      "bilingual.docx",
+      "drive-access-drive-picture-crop",
+      "drive-folder-refreshed",
+    ]) {
+      expect(serialized).not.toContain(privateValue);
     }
   }, 120_000);
 
@@ -4870,32 +4860,77 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     120_000,
   );
 
-  it("reports a presentation google slides cannot read", async () => {
-    const { actor, agentId, deckId, run, sandboxHeaders } =
-      await setupSlidesConversionSync({
-        agentLabel: "Artifacts slides unreadable agent",
-        conversionEnabled: true,
-      });
+  it.each([
+    {
+      envelope: "standard provider rejection",
+      providerError: {
+        message: "Conversion of the uploaded content is not supported.",
+        errors: [
+          { reason: "conversionUnsupportedConversionPath", domain: "global" },
+        ],
+      },
+      expected: "Google Slides could not read this presentation",
+    },
+    {
+      envelope: "large canonical provider rejection",
+      providerError: {
+        message:
+          "Conversion of the uploaded content is not supported." +
+          " ".repeat(17 * 1024),
+        errors: [
+          { reason: "conversionUnsupportedConversionPath", domain: "global" },
+        ],
+      },
+      expected: "Google Slides could not read this presentation",
+    },
+    {
+      envelope: "provider details without the canonical reason",
+      providerError: {
+        details: [
+          {
+            "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+            reason: "conversionUnsupportedConversionPath",
+          },
+        ],
+      },
+      expected: "Google Drive upload failed with HTTP 400",
+    },
+  ])(
+    "preserves Slides conversion failure messages for $envelope",
+    async ({ providerError, expected }) => {
+      const { actor, agentId, deckId, run, sandboxHeaders } =
+        await setupSlidesConversionSync({
+          agentLabel: "Artifacts slides unreadable agent",
+          conversionEnabled: true,
+        });
 
-    mockGoogleDriveArtifactUploadRejection(
-      "conversionUnsupportedConversionPath",
-    );
+      mockGoogleDriveArtifactUpload(
+        { id: "unexpected", name: "deck.pptx" },
+        {
+          sessionResponse: () => {
+            return HttpResponse.json(
+              { error: { code: 400, ...providerError } },
+              { status: 400 },
+            );
+          },
+        },
+      );
 
-    const rejected = await chat.requestUploadArtifactToGoogleDrive(
-      actor,
-      await chat.resolveCatalogArtifactId(actor, run.threadId, deckId),
-      { agentId },
-      [400],
-    );
+      const rejected = await chat.requestUploadArtifactToGoogleDrive(
+        actor,
+        await chat.resolveCatalogArtifactId(actor, run.threadId, deckId),
+        { agentId },
+        [400],
+      );
 
-    expectApiError(rejected.body);
-    expect(rejected.body.error.message).toBe(
-      "Google Slides could not read this presentation",
-    );
+      expectApiError(rejected.body);
+      expect(rejected.body.error.message).toBe(expected);
 
-    chatCallbacks.mockChatOutputEvents([]);
-    await completeChatRunOk(run.runId, sandboxHeaders);
-  }, 120_000);
+      chatCallbacks.mockChatOutputEvents([]);
+      await completeChatRunOk(run.runId, sandboxHeaders);
+    },
+    120_000,
+  );
 
   it("uses the selected google drive account for artifact status and sync", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor(
@@ -4934,7 +4969,6 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       actor,
       "google-drive",
       "oauth",
-      undefined,
       { intent: "add", displayName: "Default Drive" },
     );
     await connectorsApi.completeOauthCallback("google-drive", {
@@ -4953,7 +4987,6 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       actor,
       "google-drive",
       "oauth",
-      undefined,
       { intent: "add", displayName: "Selected Drive" },
     );
     await connectorsApi.completeOauthCallback("google-drive", {
@@ -4983,7 +5016,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       isDefault: false,
       connectionStatus: "connected",
     });
-    await api.enableAgentConnectors(actor, agentId, ["google-drive"]);
+    await api.setDriveExportAuthorization(actor, agentId);
 
     const defaultRefresh = mockGoogleDriveConnectorOAuth();
     const defaultStatusRecorder = mockGoogleDriveFilesList(() => {
@@ -5015,7 +5048,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     );
     expect(selected.body.connectionId).toBe(selectedAccount.id);
 
-    await api.enableAgentConnectors(actor, agentId, []);
+    await api.setDriveExportAuthorization(actor, agentId, false);
     artifacts = await chat.listThreadArtifacts(actor, run.threadId);
     expectDriveStatuses(artifacts, {
       status: "disconnected",
@@ -5023,7 +5056,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     });
     expect(defaultStatusRecorder.authorizationHeaders).toHaveLength(1);
 
-    await api.enableAgentConnectors(actor, agentId, ["google-drive"]);
+    await api.setDriveExportAuthorization(actor, agentId);
     const selectedStatusRecorder = mockGoogleDriveFilesList(() => {
       return { status: 200, files: [] };
     });
@@ -5094,7 +5127,6 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       actor,
       "google-drive",
       "oauth",
-      undefined,
       { intent: "reconnect", connectionId: defaultAccount.id },
     );
     await connectorsApi.completeOauthCallback("google-drive", {
@@ -5294,7 +5326,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       code: "drive-no-refresh",
       state: stateFromAuthorizationUrl(start.authorizationUrl),
     });
-    await api.enableAgentConnectors(actor, agentId, ["google-drive"]);
+    await api.setDriveExportAuthorization(actor, agentId);
     mockGoogleDriveFilesList(() => {
       return { status: 401 };
     });

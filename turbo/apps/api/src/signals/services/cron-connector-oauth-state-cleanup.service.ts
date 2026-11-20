@@ -1,8 +1,8 @@
 import { command } from "ccstate";
 import { discordOauthStates } from "@okouai/db/schema/discord-oauth-state";
 import {
-  connectorOauthStates,
   connectorOauthCompletions,
+  connectorOauthStates,
 } from "@okouai/db/schema/connector-oauth-state";
 import { and, asc, inArray, isNotNull, isNull, lte } from "drizzle-orm";
 import { discordOrgGrants } from "@okouai/db/schema/discord-org-grant";

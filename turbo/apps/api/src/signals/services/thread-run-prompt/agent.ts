@@ -15,8 +15,9 @@ function buildExecutionTimeLimitPrompt(): string {
   return [
     "# Execution Time Limit",
     "",
-    `A single agent run has a maximum execution time of ${executionHours} ${executionHourUnit}.`,
-    "Plan and prioritize the work so you can complete the most important in-scope tasks and provide a final response before the run ends.",
+    `A single agent run has a maximum execution time of ${executionHours} ${executionHourUnit}. When it is reached, the runner stops the run; the user keeps the messages and files delivered before then.`,
+    "The user receives results through your messages and the files or links you deliver.",
+    "Each model request resends the conversation so far, so requests take longer and cost more as the conversation grows. Files saved in the workspace remain available for the rest of the run, including after context compaction.",
   ].join("\n");
 }
 

@@ -65,6 +65,8 @@ pub(crate) struct DispatchIntake {
     slots: Arc<Semaphore>,
     latest_time_ms: AtomicU64,
     preferred_home_probe: Option<PreferredHomeProbe>,
+    #[cfg(test)]
+    pub(crate) work_queued: Option<Arc<tokio::sync::Notify>>,
 }
 
 pub(crate) struct DispatchWork {
@@ -95,6 +97,13 @@ impl Drop for DispatchWork {
     }
 }
 
+pub(crate) async fn reject_queued(mut receiver: mpsc::Receiver<DispatchWork>) {
+    receiver.close();
+    while let Some(work) = receiver.recv().await {
+        work.settle(Disposition::Rejected);
+    }
+}
+
 pub(crate) fn now_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -104,7 +113,10 @@ pub(crate) fn now_ms() -> u64 {
 }
 
 impl DispatchIntake {
-    pub fn new(slots: Arc<Semaphore>) -> (Self, mpsc::Receiver<DispatchWork>) {
+    pub fn new(
+        slots: Arc<Semaphore>,
+        preferred_home_probe: Option<PreferredHomeProbe>,
+    ) -> (Self, mpsc::Receiver<DispatchWork>) {
         // Constructed before intake is enabled, with the fresh shared transaction slots.
         let (sender, receiver) = mpsc::channel(slots.available_permits());
         (
@@ -113,15 +125,12 @@ impl DispatchIntake {
                 sender,
                 slots,
                 latest_time_ms: AtomicU64::new(0),
-                preferred_home_probe: None,
+                preferred_home_probe,
+                #[cfg(test)]
+                work_queued: None,
             },
             receiver,
         )
-    }
-
-    pub fn with_preferred_home_probe(mut self, probe: Option<PreferredHomeProbe>) -> Self {
-        self.preferred_home_probe = probe;
-        self
     }
 
     pub(super) fn try_reserve(&self) -> Option<OwnedSemaphorePermit> {
@@ -279,10 +288,17 @@ impl DispatchIntake {
         // its unused context/slot before observing the original admission.
         drop((context, permit));
         // Queueing and failed-send payload destruction do not hold the custody lock.
-        if let Some(work) = to_submit
-            && let Err(error) = self.sender.try_send(work)
-        {
-            error.into_inner().settle(Disposition::Rejected);
+        if let Some(work) = to_submit {
+            match self.sender.try_send(work) {
+                Ok(()) =>
+                {
+                    #[cfg(test)]
+                    if let Some(queued) = &self.work_queued {
+                        queued.notify_one();
+                    }
+                }
+                Err(error) => error.into_inner().settle(Disposition::Rejected),
+            }
         }
         observe(receiver).await
     }

@@ -36,7 +36,6 @@ import {
   getConnectorOAuthStateStatus$,
   type StoredBuiltinOAuthState,
 } from "../services/connector-oauth-state.service";
-import { authorizeConnectedConnector$ } from "../services/connected-connector-authorization.service";
 import { recordConnectorOAuthCompletion$ } from "../services/connector-oauth-completion.service";
 import { publishBuiltinConnectorInvalidationAfterCommit } from "../services/connector-client-invalidation.service";
 import {
@@ -86,7 +85,6 @@ type OAuthCallbackDiagnostics = {
   stage:
     | "exchange_and_profile"
     | "persist_connection"
-    | "authorize_agent"
     | "link_github_integration"
     | "record_completion"
     | "publish_invalidation"
@@ -105,8 +103,6 @@ type CompleteOAuthCallbackInput = {
   readonly codeVerifier: string | undefined;
   readonly oauthContext: string | undefined;
   readonly identity: CallbackIdentity;
-  readonly agentId: string | null;
-  readonly authorizeAgent: boolean;
   readonly origin: string;
   readonly connectorSlug: ConnectorSlug;
   readonly account: ConnectorAccountMutationIntent;
@@ -121,8 +117,6 @@ type CompleteOpenIdCallbackInput = {
   readonly expectedReturnTo: string;
   readonly expectedRealm: string;
   readonly identity: CallbackIdentity;
-  readonly agentId: string | null;
-  readonly authorizeAgent: boolean;
   readonly origin: string;
   readonly connectorSlug: ConnectorSlug;
   readonly account: ConnectorAccountMutationIntent;
@@ -147,8 +141,6 @@ type ResolvedCallbackState =
   | {
       readonly ok: true;
       readonly identity: CallbackIdentity;
-      readonly agentId: string | null;
-      readonly authorizeAgent: boolean;
       readonly codeVerifier: string | undefined;
       readonly oauthContext: string | undefined;
       readonly authorizationUrl: string | null;
@@ -167,8 +159,6 @@ type ResolvedOpenIdCallbackState =
   | {
       readonly ok: true;
       readonly identity: CallbackIdentity;
-      readonly agentId: string | null;
-      readonly authorizeAgent: boolean;
       readonly expectedReturnTo: string;
       readonly expectedRealm: string;
       readonly oauthRequestedScopes: readonly string[];
@@ -650,28 +640,6 @@ const completeOAuthCallback$ = command(
         ),
       );
     }
-    if (args.authorizeAgent) {
-      args.diagnostics.stage = "authorize_agent";
-      const authorization = await set(
-        authorizeConnectedConnector$,
-        {
-          orgId: args.identity.orgId,
-          userId: args.identity.userId,
-          agentId: args.agentId,
-          connectorSlug: args.resolvedMethod.connectorSlug,
-        },
-        signal,
-      );
-      if (authorization.status === "agentNotFound") {
-        return redirectWithError(
-          args.origin,
-          args.connectorSlug,
-          authorization.message,
-          true,
-        );
-      }
-    }
-
     args.diagnostics.stage = "link_github_integration";
     await set(
       linkGithubIntegrationAfterConnectorConnect$,
@@ -768,27 +736,6 @@ const completeOpenIdCallback$ = command(
         ),
       );
     }
-    if (args.authorizeAgent) {
-      const authorization = await set(
-        authorizeConnectedConnector$,
-        {
-          orgId: args.identity.orgId,
-          userId: args.identity.userId,
-          agentId: args.agentId,
-          connectorSlug: args.resolvedMethod.connectorSlug,
-        },
-        signal,
-      );
-      if (authorization.status === "agentNotFound") {
-        return redirectWithError(
-          args.origin,
-          args.connectorSlug,
-          authorization.message,
-          true,
-        );
-      }
-    }
-
     await set(
       recordConnectorOAuthCompletion$,
       {
@@ -837,8 +784,6 @@ async function resolveCallbackState(
       userId: args.storedState.userId,
       orgId: args.storedState.orgId,
     },
-    agentId: args.storedState.agentId,
-    authorizeAgent: args.storedState.authorizeAgent,
     resolvedMethod: authMethodResult.resolvedMethod,
     codeVerifier: args.storedState.codeVerifier ?? undefined,
     oauthContext: args.storedState.oauthContext ?? undefined,
@@ -896,8 +841,6 @@ async function resolveOpenIdCallbackState(
       userId: args.storedState.userId,
       orgId: args.storedState.orgId,
     },
-    agentId: args.storedState.agentId,
-    authorizeAgent: args.storedState.authorizeAgent,
     resolvedMethod: authMethodResult.resolvedMethod,
     expectedReturnTo: args.storedState.redirectUri,
     expectedRealm: storedOpenIdRealm(
@@ -1002,8 +945,6 @@ const handleOpenIdConnectorCallback$ = command(
           expectedReturnTo: resolvedState.expectedReturnTo,
           expectedRealm: resolvedState.expectedRealm,
           identity: resolvedState.identity,
-          agentId: resolvedState.agentId,
-          authorizeAgent: resolvedState.authorizeAgent,
           account: resolvedState.account,
           insertConnectionId: resolvedState.insertConnectionId,
           origin: callbackOrigin,
@@ -1265,8 +1206,6 @@ const handleAuthCodeConnectorCallback$ = command(
             domain: args.query.domain,
           }),
           identity: resolvedState.identity,
-          agentId: resolvedState.agentId,
-          authorizeAgent: resolvedState.authorizeAgent,
           account: resolvedState.account,
           insertConnectionId: resolvedState.insertConnectionId,
           origin: callbackOrigin,

@@ -11,6 +11,7 @@ use tokio::sync::Notify;
 use tokio::time::{self, Instant};
 
 use crate::operation_tracker::NormalOperationTracker;
+use crate::protocol_error;
 use crate::{GuestControlClient, exec_operation, file};
 
 use super::request::deadline_after;
@@ -230,7 +231,7 @@ impl GuestControlClient {
         // Send ping with a fixed seq. Shared.seq starts at 2 to avoid collision.
         let ping_seq: u32 = 1;
         let ping = guest_control_proto::encode(MSG_PING, ping_seq, &[])
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e.to_string()))?;
+            .map_err(protocol_error::invalid_input)?;
         stream.write_all(&ping).await?;
         if let Some(timing) = timing.as_deref_mut() {
             timing.ping_written = Some(std::time::Instant::now());
@@ -269,7 +270,7 @@ impl GuestControlClient {
             }
             let messages = decoder
                 .decode(buf.get(..n).unwrap_or_default())
-                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
+                .map_err(protocol_error::invalid_data)?;
             for msg in messages {
                 if predicate(&msg) {
                     return Ok(msg);

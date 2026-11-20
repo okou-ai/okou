@@ -10,6 +10,40 @@ use cli_test_support::child::KillAndWaitChild as ChildGuard;
 use httpmock::prelude::*;
 use tokio::sync::oneshot;
 
+tokio::task_local! {
+    static RECHECK_DELAYS: Cell<usize>;
+}
+
+pub(in crate::cmd) async fn with_advanced_recheck_delays<T>(
+    check: impl Future<Output = T>,
+) -> (T, usize) {
+    RECHECK_DELAYS
+        .scope(Cell::new(0), async {
+            let result = check.await;
+            (result, RECHECK_DELAYS.with(Cell::get))
+        })
+        .await
+}
+
+pub(super) async fn wait_for_recheck_delay(delay: tokio::time::Sleep) {
+    let deadline = delay.deadline();
+    tokio::pin!(delay);
+    if RECHECK_DELAYS
+        .try_with(|count| count.set(count.get() + 1))
+        .is_ok()
+    {
+        // Register the timer before advancing only this wait on the current-thread runtime.
+        if futures_util::poll!(delay.as_mut()).is_ready() {
+            return;
+        }
+        raw_http_test_support::clock::advance_timer_phase(
+            deadline.saturating_duration_since(tokio::time::Instant::now()),
+        )
+        .await;
+    }
+    delay.await;
+}
+
 const SERVICE_DISCOVERY_SCENARIO_ENV: &str = "OKOU_RUN_DOCTOR_DISCOVERY_SCENARIO";
 const SERVICE_DISCOVERY_SYSTEM_DIR_ENV: &str = "OKOU_RUN_DOCTOR_DISCOVERY_SYSTEM_DIR";
 const SERVICE_DISCOVERY_STATE_DIR_ENV: &str = "OKOU_RUN_DOCTOR_DISCOVERY_STATE_DIR";

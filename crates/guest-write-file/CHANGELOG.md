@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.1.314](https://github.com/okou-ai/okou/compare/guest-write-file-v0.1.313...guest-write-file-v0.1.314) (2026-11-20)
+
+
+### Performance Improvements
+
+* **guest-storage:** pass large decoded inputs in sealed descriptors ([#49206](https://github.com/okou-ai/okou/issues/49206)) ([b48b19f](https://github.com/okou-ai/okou/commit/b48b19f606fe851dc9faa04995c2d1fdaef7203a))
+
+## [0.1.313](https://github.com/okou-ai/okou/compare/guest-write-file-v0.1.312...guest-write-file-v0.1.313) (2026-11-19)
+
+## [0.1.312](https://github.com/okou-ai/okou/compare/guest-write-file-v0.1.311...guest-write-file-v0.1.312) (2026-11-19)
+
+
+### Performance Improvements
+
+* **guest-control:** stream large file writes into sealed inputs ([#49029](https://github.com/okou-ai/okou/issues/49029)) ([4c926a5](https://github.com/okou-ai/okou/commit/4c926a5a96d2fd68883a5be1b34247f62389f2d2))
+
 ## [0.1.311](https://github.com/okou-ai/okou/compare/guest-write-file-v0.1.310...guest-write-file-v0.1.311) (2026-11-19)
 
 ## [0.1.310](https://github.com/okou-ai/okou/compare/guest-write-file-v0.1.309...guest-write-file-v0.1.310) (2026-11-18)

@@ -4,7 +4,7 @@ import {
   userPermissionGrantBatchItemSchema,
   userPermissionGrantBatchItemsSchema,
   type UserPermissionGrantBatchItem,
-} from "@okouai/api-contracts/contracts/user-permission-grants";
+} from "@okouai/api-contracts/validators/user-permission-grants";
 import { getPlatformOrigin } from "../../lib/platform-url";
 import { finalizeActionUrl } from "./action-url";
 import { diagnosePermissionRequest } from "./permission-request-diagnostic";

@@ -9,7 +9,18 @@ import {
 } from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command } from "ccstate";
-import { and, eq, gte, isNull, lt, lte, ne, or, sql } from "drizzle-orm";
+import {
+  and,
+  eq,
+  gte,
+  isNotNull,
+  isNull,
+  lt,
+  lte,
+  ne,
+  or,
+  sql,
+} from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { logger } from "../../lib/log";
 import { now, nowDate } from "../../lib/time";
@@ -20,8 +31,8 @@ import { isCanonicalMorningBriefAutomation$ } from "./morning-brief-schedule-cla
 import {
   scheduleTriggerContext,
   type AutomationRow,
-  type DueWorkflowAutomation,
   type RunWorkflowAutomationResult,
+  type WorkflowRecurringScheduleClaim,
   type WorkflowScheduleClaimPlan,
 } from "./workflow-automation-enqueue.service";
 import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
@@ -67,22 +78,28 @@ const startDueWorkflowAutomation$ = command(
   async (
     { set },
     args: {
-      readonly due: DueWorkflowAutomation;
+      readonly automation: AutomationRow;
+      readonly chatThreadId: string;
       readonly row: DueWorkflowAutomationRow;
       readonly currentTime: Date;
       readonly scheduleContext: ReturnType<typeof scheduleTriggerContext>;
       readonly scheduleClaim: WorkflowScheduleClaimPlan | undefined;
+      readonly recurringScheduleClaim:
+        WorkflowRecurringScheduleClaim | undefined;
     },
     signal: AbortSignal,
   ): Promise<RunWorkflowAutomationResult> => {
-    const { automation } = args.due;
+    const { automation } = args;
     return await set(
       runWorkflowAutomationNow$,
       {
-        due: args.due,
+        automation,
+        agentId: args.row.agentId,
+        chatThreadId: args.chatThreadId,
         automationContext: args.scheduleContext,
         apiStartTime: now(),
         ...(args.scheduleClaim ? { scheduleClaim: args.scheduleClaim } : {}),
+        recurringScheduleClaim: args.recurringScheduleClaim,
         triggerBrief:
           buildWorkflowScheduleAutomationBrief({
             createdAt: args.currentTime,
@@ -102,8 +119,7 @@ const startDueWorkflowAutomation$ = command(
 /**
  * Claim a due workflow automation via an optimistic lock on `next_run_at`: clear
  * the next run and stamp `last_run_at`. A one-time automation stays readable
- * until its queued event claims a run, so a draining previous API version does
- * not discard the event during rollout. Recurrence advance happens in the
+ * until its queued event claims a run. Recurrence advance happens in the
  * completion callback. Returns the claimed row, or null when another tick won
  * the race.
  */
@@ -132,6 +148,12 @@ const claimAutomation$ = command(
           // A stale preflight must not claim a disabled row or turn a newly
           // classified Morning Brief into an unjournaled legacy Run.
           eq(workflowAutomations.enabled, true),
+          eq(workflowAutomations.kind, "schedule"),
+          // Ordinary recurring schedules are claimed by queue admission.
+          or(
+            isNotNull(workflowAutomations.officialBlueprintKey),
+            eq(workflowAutomations.scheduleType, "once"),
+          ),
           automation.officialBlueprintKey ===
             MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY
             ? eq(
@@ -401,6 +423,8 @@ const launchClaimedDueRow$ = command(
       readonly claimed: AutomationRow;
       readonly scheduledAnchorAt: Date | null;
       readonly journaled: boolean;
+      readonly recurringScheduleClaim:
+        WorkflowRecurringScheduleClaim | undefined;
       readonly currentTime: Date;
       readonly counters: PollCounters;
     },
@@ -443,9 +467,10 @@ const launchClaimedDueRow$ = command(
           {
             automation: claimed,
             failure: preRunFailureFromError(error),
-            stillDueAt: args.journaled
-              ? (args.scheduledAnchorAt ?? undefined)
-              : undefined,
+            stillDueAt:
+              args.recurringScheduleClaim?.scheduledAnchorAt ??
+              scheduleClaim?.scheduledAnchorAt,
+            recurringScheduleClaim: args.recurringScheduleClaim,
           },
           signal,
         );
@@ -473,11 +498,6 @@ const launchClaimedDueRow$ = command(
     if (!chatThreadId) {
       return;
     }
-    const due: DueWorkflowAutomation = {
-      automation: claimed,
-      agentId: row.agentId,
-      chatThreadId,
-    };
     const scheduleContext = scheduleTriggerContext({
       automation: claimed,
       workflowName: row.workflowName,
@@ -487,11 +507,13 @@ const launchClaimedDueRow$ = command(
       set(
         startDueWorkflowAutomation$,
         {
-          due,
+          automation: claimed,
+          chatThreadId,
           row,
           currentTime,
           scheduleContext,
           scheduleClaim,
+          recurringScheduleClaim: args.recurringScheduleClaim,
         },
         signal,
       ),
@@ -602,6 +624,17 @@ export const executeDueWorkflowAutomations$ = command(
       // inside the queue admission transaction, so its preparation runs before
       // anything touches the schedule.
       const scheduledAnchorAt = row.automation.nextRunAt;
+      const recurringScheduleClaim =
+        scheduledAnchorAt !== null &&
+        row.automation.officialBlueprintKey === null &&
+        (row.automation.scheduleType === "cron" ||
+          row.automation.scheduleType === "loop")
+          ? {
+              scheduledAnchorAt,
+              claimedAt: currentTime,
+              automationSnapshot: workflowAutomationSnapshot(row.automation),
+            }
+          : undefined;
       const journaled =
         scheduledAnchorAt !== null &&
         (await set(isCanonicalMorningBriefAutomation$, row.automation, signal));
@@ -624,7 +657,7 @@ export const executeDueWorkflowAutomations$ = command(
       }
 
       const claimed =
-        journaled || proactiveKind === "learning"
+        journaled || recurringScheduleClaim || proactiveKind === "learning"
           ? row.automation
           : await set(claimAutomation$, row.automation, currentTime, signal);
       signal.throwIfAborted();
@@ -642,6 +675,7 @@ export const executeDueWorkflowAutomations$ = command(
           claimed,
           scheduledAnchorAt,
           journaled,
+          recurringScheduleClaim,
           currentTime,
           counters,
         },

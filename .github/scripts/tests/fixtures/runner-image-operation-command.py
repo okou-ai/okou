@@ -2,6 +2,7 @@
 """External SSH/systemd/privileged-runner fixture; internal image code stays real."""
 
 import contextlib
+import fcntl
 import fnmatch
 import hashlib
 import json
@@ -162,17 +163,31 @@ def ssh(arguments):
 
 def systemd_run(arguments):
     record("systemd", arguments)
-    if any(argument.startswith("--on-active=") for argument in arguments):
+    unit = next(
+        argument.split("=", 1)[1] for argument in arguments if argument.startswith("--unit=")
+    )
+    if unit.endswith("-expire"):
+        if MODE == "expiration-submission-failed":
+            operation = Path(arguments[-1])
+            record("expiration-credentials-present", (operation / "credentials.json").exists())
+            return 1
         if MODE in ("pending-launch", "late-prior-launch"):
             (ROOT / "launch-pending").touch()
             wait_for(lambda: (ROOT / "release-launch").exists())
         return 0  # Record the real retention contract without waiting one hour.
-    unit = next(
-        argument.split("=", 1)[1] for argument in arguments if argument.startswith("--unit=")
-    )
     command = arguments[arguments.index("/usr/bin/python3") :]
+    if os.environ.get("IMAGE_PRE_CLOSURE_WORKER") == "1":
+        command = [
+            sys.executable,
+            str(Path(__file__).resolve()),
+            "legacy-image-worker",
+            command[-1],
+        ]
     if MODE == "absent-launch":
         return 1
+    if MODE == "launch-timeout-without-unit":
+        # The submission client hangs before systemd accepts the request.
+        signal.pause()
     with open(os.devnull, "wb") as sink:
         process = subprocess.Popen(
             command,
@@ -188,6 +203,9 @@ def systemd_run(arguments):
     )
     temporary.write_text(json.dumps({"pid": process.pid, "description": description}))
     temporary.replace(path)
+    if MODE == "launch-timeout-after-acceptance":
+        # The service survives the unresponsive submission client.
+        signal.pause()
     return 0
 
 
@@ -200,8 +218,9 @@ def systemctl(arguments):
                 print(name + " loaded active running Image fixture")
         return 0
     if arguments[0] == "show":
-        if MODE == "slow-claim-retirement" and once():
-            time.sleep(8)
+        if MODE in ("slow-claim-retirement", "claim-observation-timeout") and once():
+            # Outlast the real unit observation timeout.
+            time.sleep(12)
         for unit in (a for a in arguments[1:] if a.endswith(".service")):
             path = ROOT / "units" / (unit + ".json")
             info = json.loads(path.read_text()) if path.exists() else {}
@@ -265,7 +284,10 @@ def runner(arguments):
     print("rootfs_hash=" + "1" * 64, flush=True)
     if MODE != "missing-hash":
         print("snapshot_hash=" + "2" * 64, flush=True)
-    if (ROOT / "block").exists():
+    if MODE == "wait-for-retirement":
+        # Fixture cleanup kills the unit process group.
+        signal.pause()
+    elif (ROOT / "block").exists():
         wait_for(lambda: (ROOT / "release").exists())
     return int(os.environ.get("IMAGE_BUILD_STATUS", "0"))
 
@@ -273,6 +295,16 @@ def runner(arguments):
 def main():
     name = Path(sys.argv[0]).name
     arguments = sys.argv[1:]
+    if name == "runner-image-operation-command.py" and arguments[:1] == ["legacy-image-worker"]:
+        # The pre-cutoff worker uses the persisted marker as its admission gate.
+        namespace = Path(arguments[1]).parent
+        owner = json.loads((namespace / "owner.json").read_text())
+        marker = Path(owner["resourceRoot"]) / (".image-owner-" + owner["identity"])
+        with Path(owner["lifecycleLock"]).open("rb") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            admitted = not marker.is_symlink() and marker.is_file()
+            record("legacy-image-admission", admitted)
+        return 0 if admitted else 1
     if name == "ssh":
         return ssh(arguments)
     if name == "systemctl":

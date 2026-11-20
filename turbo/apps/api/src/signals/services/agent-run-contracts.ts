@@ -19,9 +19,6 @@ export interface InternalRunCallback {
   readonly payload: unknown;
 }
 
-export type AgentRunPreCreateSource =
-  "chat_callback_auto_send" | "workflow_slash_command";
-
 export interface ResolvedModelProviderEnvironment {
   readonly credentialOwner: "builtin" | "member";
   /** Canonical account identity from the same source snapshot as the environment. */

@@ -47,7 +47,26 @@ assert 'publish-android' in jobs['update-rollback-dashboard']['needs']
 
 # Execute the shared release action and Android's aggregate gate as Actions does.
 android = json.loads(subprocess.check_output(
-    ['yq', '-o=json', '.', str(root / '.github/workflows/android.yml')], text=True))['jobs']
+    ['yq', '-o=json', 'explode(.)', str(root / '.github/workflows/android.yml')], text=True))['jobs']
+screenshots = json.loads(subprocess.check_output(
+    ['yq', '-o=json', '.', str(root / '.github/workflows/android-screenshots.yml')], text=True))['jobs']['capture']
+
+# A path or pin mismatch changes the Actions cache version even when the key matches.
+restores = []
+for consumer in (android['build-test'], android['instrumentation'], screenshots, job):
+    setup, = (step for step in consumer['steps'] if step.get('uses', '').startswith('gradle/actions/setup-gradle@'))
+    assert setup['with']['cache-provider'] == 'external'
+    restore, = (step for step in consumer['steps'] if step.get('uses', '').startswith('actions/cache/restore@'))
+    restores.append((restore['uses'], restore['with']))
+    saves = [step for step in consumer['steps'] if step.get('uses', '').startswith('actions/cache/save@')]
+    if consumer is android['instrumentation']:
+        save, = saves
+        assert save['with']['path'] == restore['with']['path']
+        assert save['with']['key'] == '${{ steps.' + restore['id'] + '.outputs.cache-primary-key }}'
+        assert "github.event_name == 'push' && github.ref == 'refs/heads/main'" in save['if']
+    else:
+        assert not saves
+assert all(spec == restores[0] for spec in restores)
 action = json.loads(subprocess.check_output(
     ['yq', '-o=json', '.', str(root / '.github/actions/detect-release/action.yml')], text=True))
 classify = action['runs']['steps'][0]['run']

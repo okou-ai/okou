@@ -5,10 +5,7 @@ import {
   type GmailLabelAppliedEventConfig,
   type GmailNewMessageEventConfig,
 } from "@okouai/api-contracts/contracts/workflows";
-import {
-  gmailProcessedEvents,
-  gmailWatchStates,
-} from "@okouai/db/schema/gmail-event";
+import { gmailWatchStates } from "@okouai/db/schema/gmail-event";
 import {
   workflows,
   workflowUserAutomationThreads,
@@ -31,7 +28,6 @@ import {
 
 import { optionalEnv } from "../../lib/env";
 import { logger } from "../../lib/log";
-import { isForeignKeyViolation } from "../../lib/pg-errors";
 import { testOverride } from "../../lib/singleton";
 import { now, nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
@@ -44,7 +40,11 @@ import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import type { AutomationRow } from "./workflow-automation-enqueue.service";
 import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
 import { classifyGmailHistoryReadError } from "./gmail-error";
-import { GmailAutomationSourceChangedError } from "./workflow-gmail-queue.service";
+import {
+  GmailAutomationAlreadyAdmittedError,
+  GmailAutomationBindingChangedError,
+  GmailAutomationSourceChangedError,
+} from "./workflow-gmail-queue.service";
 import { workflowAutomationCanFire$ } from "./workflow-automation-access.service";
 import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
 import { ensureWorkflowUserAutomationThread$ } from "./workflow-user-automation-thread.service";
@@ -594,26 +594,6 @@ type GmailLabelEventAutomationRow = GmailEventAutomationRow & {
   readonly config: GmailLabelAppliedEventConfig;
 };
 
-interface GmailWorkflowRunStartTestInput {
-  readonly automationId: string;
-  readonly workflowName: string;
-  readonly emailAddress: string;
-  readonly messageId: string;
-  readonly threadId: string | null;
-  readonly subject: string | null;
-  readonly triggerBrief: string;
-}
-
-type GmailRunStarterTestOverride = (
-  args: GmailWorkflowRunStartTestInput,
-) => Promise<"ok" | "error">;
-
-const gmailRunStarterOverride = testOverride<
-  GmailRunStarterTestOverride | undefined
->(() => {
-  return undefined;
-});
-
 type GmailDispatchStateResult =
   | {
       readonly kind: "ok";
@@ -779,69 +759,6 @@ async function cachedGmailMessageContext(
   return message;
 }
 
-const insertGmailProcessedEvent$ = command(
-  async (
-    { set },
-    args: {
-      readonly state: GmailWatchStateRow;
-      readonly automation: GmailEventAutomationRow;
-      readonly decoded: DecodedGmailPubSubPush;
-      readonly event: GmailHistoryMessageEvent;
-      readonly message: GmailMessageContext;
-    },
-    signal: AbortSignal,
-  ): Promise<
-    | { readonly kind: "inserted"; readonly id: string }
-    | { readonly kind: "duplicate" }
-    | { readonly kind: "stale_source" }
-  > => {
-    const db = set(writeDb$);
-    // No row lock: the receipt's FK checks on the watch state and automation
-    // are the implicit protection. A source removed concurrently surfaces as
-    // a FK violation and maps to the same deterministic stale_source result.
-    const [currentState] = await db
-      .select({ id: gmailWatchStates.id })
-      .from(gmailWatchStates)
-      .where(
-        and(
-          eq(gmailWatchStates.id, args.state.id),
-          eq(gmailWatchStates.connectorId, args.state.connectorId),
-        ),
-      )
-      .limit(1);
-    signal.throwIfAborted();
-    if (!currentState) {
-      return { kind: "stale_source" };
-    }
-    const inserted = await settle(
-      db
-        .insert(gmailProcessedEvents)
-        .values({
-          watchStateId: args.state.id,
-          automationId: args.automation.automation.id,
-          pubsubMessageId: args.decoded.messageId,
-          historyId: args.event.historyId,
-          messageId: args.event.messageId,
-          threadId: args.message.threadId,
-          createdAt: nowDate(),
-        })
-        .onConflictDoNothing()
-        .returning({ id: gmailProcessedEvents.id }),
-      signal,
-    );
-    if (!inserted.ok) {
-      if (isForeignKeyViolation(inserted.error)) {
-        return { kind: "stale_source" };
-      }
-      throw inserted.error;
-    }
-    const [processed] = inserted.value;
-    return processed
-      ? { kind: "inserted", id: processed.id }
-      : { kind: "duplicate" };
-  },
-);
-
 function gmailTriggerContext(args: {
   readonly workflowName: string;
   readonly automationId: string;
@@ -918,28 +835,6 @@ const dispatchGmailAutomationEvent$ = command(
   ): Promise<
     "dispatched" | "duplicate" | "skipped" | { readonly kind: "run_error" }
   > => {
-    const db = set(writeDb$);
-    const processed = await (async () => {
-      const startedAt = performance.now();
-      return await (async () => {
-        return await set(insertGmailProcessedEvent$, args, signal);
-      })().finally(() => {
-        args.timing.recordDuration(
-          "api_dispatch_pre_create_agent_automation_event_record_processed_event",
-          performance.now() - startedAt,
-          now(),
-        );
-      });
-    })();
-    signal.throwIfAborted();
-    if (processed.kind === "stale_source") {
-      return "skipped";
-    }
-    if (processed.kind === "duplicate") {
-      return "duplicate";
-    }
-    const processedId = processed.id;
-
     const result = await set(
       startGmailWorkflowRun$,
       {
@@ -947,6 +842,7 @@ const dispatchGmailAutomationEvent$ = command(
         connectorSourceId: args.state.connectorId,
         watchStateId: args.state.id,
         decoded: args.decoded,
+        event: args.event,
         message: args.message,
         timing: args.timing,
         apiStartTime: args.apiStartTime,
@@ -954,22 +850,7 @@ const dispatchGmailAutomationEvent$ = command(
       signal,
     );
     signal.throwIfAborted();
-    if (result === "superseded") {
-      await db
-        .delete(gmailProcessedEvents)
-        .where(eq(gmailProcessedEvents.id, processedId));
-      signal.throwIfAborted();
-      return "skipped";
-    }
-    if (result !== "ok") {
-      await db
-        .delete(gmailProcessedEvents)
-        .where(eq(gmailProcessedEvents.id, processedId));
-      signal.throwIfAborted();
-      return { kind: "run_error" };
-    }
-
-    return "dispatched";
+    return result;
   },
 );
 
@@ -1500,27 +1381,15 @@ const startGmailWorkflowRun$ = command(
       readonly connectorSourceId: string;
       readonly watchStateId: string;
       readonly decoded: DecodedGmailPubSubPush;
+      readonly event: GmailHistoryMessageAdded;
       readonly message: GmailMessageContext;
       readonly timing: AutomationEventRunTiming;
       readonly apiStartTime: number;
     },
     signal: AbortSignal,
-  ): Promise<"ok" | "error" | "superseded"> => {
-    const runStarterOverride = gmailRunStarterOverride.get();
-    if (runStarterOverride) {
-      return await runStarterOverride({
-        automationId: args.automation.automation.id,
-        workflowName: args.automation.workflowName,
-        emailAddress: args.decoded.emailAddress,
-        messageId: args.message.messageId,
-        threadId: args.message.threadId,
-        subject: args.message.subject,
-        triggerBrief: buildGmailWorkflowAutomationBrief({
-          automationConfig: args.automation.config,
-          message: args.message,
-        }),
-      });
-    }
+  ): Promise<
+    "dispatched" | "duplicate" | "skipped" | { readonly kind: "run_error" }
+  > => {
     const runInput = await args.timing.measure(
       "api_dispatch_pre_create_agent_automation_event_build_run_input",
       () => {
@@ -1545,11 +1414,9 @@ const startGmailWorkflowRun$ = command(
       set(
         runWorkflowAutomationNow$,
         {
-          due: {
-            automation: args.automation.automation,
-            agentId: args.automation.agentId,
-            chatThreadId: args.automation.chatThreadId,
-          },
+          automation: args.automation.automation,
+          agentId: args.automation.agentId,
+          chatThreadId: args.automation.chatThreadId,
           automationContext: runInput.context,
           connectorSourceId: args.connectorSourceId,
           apiStartTime: args.apiStartTime,
@@ -1563,6 +1430,11 @@ const startGmailWorkflowRun$ = command(
               userId: args.automation.automation.ownerUserId,
               connectorId: args.connectorSourceId,
               watchStateId: args.watchStateId,
+              workflowId: args.automation.automation.workflowId,
+              historyId: args.event.historyId,
+              messageId: args.event.messageId,
+              pubsubMessageId: args.decoded.messageId,
+              threadId: args.message.threadId,
               emailAddress: args.decoded.emailAddress,
               eventConfig: args.automation.automation.eventConfig,
             },
@@ -1575,11 +1447,18 @@ const startGmailWorkflowRun$ = command(
     );
     if (!started.ok) {
       if (started.error instanceof GmailAutomationSourceChangedError) {
-        return "superseded";
+        return "skipped";
+      }
+      if (started.error instanceof GmailAutomationAlreadyAdmittedError) {
+        return "duplicate";
+      }
+      if (started.error instanceof GmailAutomationBindingChangedError) {
+        // Pub/Sub retries from the unchanged watch history cursor.
+        return { kind: "run_error" };
       }
       throw started.error;
     }
-    return "ok";
+    return "dispatched";
   },
 );
 

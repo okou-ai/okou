@@ -111,7 +111,6 @@ async function addAccount(actor: ApiTestUser, name: string) {
     "manual-mcp",
     "api-token",
     { apiKey: `key-${name}` },
-    undefined,
     { intent: "add", displayName: name },
   );
 }
@@ -147,7 +146,6 @@ describe("Chat connector execution", () => {
       "runtime",
       "api-token",
       { apiKey: "selected-native-key" },
-      undefined,
       { intent: "add", displayName: "Selected native account" },
     );
     const registered = await addAccount(value.actor, "Registered MCP");
@@ -198,7 +196,7 @@ describe("Chat connector execution", () => {
     });
   });
 
-  it("starts without Agent grants, switches HTTP identity and persists the Chat current account for the next Run", async () => {
+  it("switches HTTP identity and persists the Chat's current account for the next Run", async () => {
     const value = await owner();
     const a = await addAccount(value.actor, "A");
     const b = await addAccount(value.actor, "B");
@@ -472,7 +470,7 @@ describe("Chat connector execution", () => {
   });
 
   it.each(["http", "mcp"] as const)(
-    "rebinds custom %s accounts without Agent grants and retains shared permission expiry",
+    "rebinds custom %s accounts and retains shared permission expiry",
     async (kind) => {
       const value = await owner();
       const definition = await connectors.createCustomConnector(

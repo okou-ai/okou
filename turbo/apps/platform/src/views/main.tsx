@@ -1,6 +1,6 @@
 import { StrictMode } from "react";
 import type { Store } from "ccstate";
-import { StoreProvider, useGet, useSet } from "ccstate-react";
+import { StoreProvider, useGet, useLastResolved, useSet } from "ccstate-react";
 import { Toaster } from "@okouai/ui/components/ui/sonner";
 import { ErrorBoundary } from "./error-boundary.tsx";
 import { Router } from "./router.tsx";
@@ -24,7 +24,42 @@ import {
 import { InstatusStatusNotice } from "./components/instatus-status-notice.tsx";
 import { setupViewportPinchPrevention } from "../lib/viewport-pinch.ts";
 import { IN_VITEST } from "../env.ts";
+import { singleAgentEnabled$ } from "../signals/single-agent.ts";
+import { projects$ } from "../signals/projects/projects.ts";
+import { projectReorderEnabled$ } from "../signals/projects/project-order.ts";
+import { setupGlobalKeyboardShortcuts$ } from "../signals/okou-page/nav.ts";
+import { setupProjectFoldShortcuts$ } from "../signals/projects/project-fold-shortcuts.ts";
+import { setupProjectOrderShortcuts$ } from "../signals/projects/project-order-shortcuts.ts";
 import "./css/index.css";
+
+function GlobalKeyboardShortcuts() {
+  const signal = useGet(rootSignal$);
+  const singleAgent = useLastResolved(singleAgentEnabled$);
+  const projects = useLastResolved(projects$);
+  const reorderEnabled = useLastResolved(projectReorderEnabled$);
+  const setupGlobal = useSet(setupGlobalKeyboardShortcuts$);
+  const setupFold = useSet(setupProjectFoldShortcuts$);
+  const setupOrder = useSet(setupProjectOrderShortcuts$);
+
+  const shortcutRef = (element: HTMLSpanElement | null) => {
+    if (!element) {
+      return;
+    }
+    const ids =
+      projects?.map((project) => {
+        return project.id;
+      }) ?? [];
+    const stopGlobal = setupGlobal(singleAgent, signal);
+    const stopFold = setupFold(ids, signal);
+    const stopOrder = setupOrder(ids, reorderEnabled === true, signal);
+    return () => {
+      stopGlobal();
+      stopFold();
+      stopOrder();
+    };
+  };
+  return <span hidden ref={shortcutRef} />;
+}
 
 function AppToaster() {
   const signal = useGet(rootSignal$);
@@ -87,6 +122,7 @@ export const setupRouter = (
           <ClerkOptionsProvider>
             <Router />
           </ClerkOptionsProvider>
+          <GlobalKeyboardShortcuts />
           <InspectLogFileInput />
           <ForceUpgradeDialog />
           <FeatureGuideDialog />

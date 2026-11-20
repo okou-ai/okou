@@ -2,6 +2,8 @@ import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 import userEvent from "@testing-library/user-event";
 import { instructionsContract } from "@okouai/api-contracts/contracts/instructions";
+import { feedContract } from "@okouai/api-contracts/contracts/feed";
+import { proactiveSuggestionsContract } from "@okouai/api-contracts/contracts/proactive-suggestions";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   click,
@@ -41,7 +43,10 @@ async function setupPersonal(content = "Use concise updates") {
   await setupPage({
     context,
     path: "/?settings=my-okou",
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
+    featureSwitches: {
+      [FeatureSwitchKey.SingleAgent]: true,
+      [FeatureSwitchKey.AgentSuggestion]: false,
+    },
   });
   return await screen.findByLabelText("Instructions");
 }
@@ -322,22 +327,31 @@ test("Workspace switching isolates drafts and restores the original workspace dr
   });
 });
 
-test.each(["profile", "instructions"])(
-  "Default configuration %s opens personal Instructions",
-  async (tab) => {
+test.each([
+  { tab: "profile", suggestions: false },
+  { tab: "instructions", suggestions: false },
+  { tab: "profile", suggestions: true },
+  { tab: "instructions", suggestions: true },
+])(
+  "Default configuration $tab opens personal Instructions with Suggestions set to $suggestions",
+  async ({ tab, suggestions }) => {
     context.mocks.api(instructionsContract.get, ({ respond }) => {
       return respond(200, response("Personal value"));
     });
     await setupPage({
       context,
       path: `/agents/c0000000-0000-4000-a000-000000000001?tab=${tab}`,
-      featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
+      featureSwitches: {
+        [FeatureSwitchKey.SingleAgent]: true,
+        [FeatureSwitchKey.AgentSuggestion]: suggestions,
+      },
     });
-    await waitFor(() => {
-      expect(location.pathname).toBe("/");
-      expect(location.search).toBe("?settings=my-okou");
-    });
-    await screen.findByLabelText("Instructions");
+    const editor = await screen.findByRole("textbox", { name: "Instructions" });
+    expect(editor).toHaveTextContent("Personal value");
+    expect(location.pathname).toBe("/");
+    expect(new URLSearchParams(location.search).get("settings")).toBe(
+      "my-okou",
+    );
   },
 );
 
@@ -357,7 +371,10 @@ test("My Okou settings are unavailable when SingleAgent is disabled", async () =
   await setupPage({
     context,
     path: "/?settings=my-okou",
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: false },
+    featureSwitches: {
+      [FeatureSwitchKey.SingleAgent]: false,
+      [FeatureSwitchKey.AgentSuggestion]: true,
+    },
   });
   const dialog = await screen.findByRole("dialog", { name: "Settings" });
   expect(
@@ -374,4 +391,194 @@ test("My Okou settings are unavailable when SingleAgent is disabled", async () =
       "preference",
     );
   });
+});
+
+const proactiveFeatures = {
+  [FeatureSwitchKey.SingleAgent]: true,
+  [FeatureSwitchKey.AgentSuggestion]: true,
+  [FeatureSwitchKey.ProactiveLearning]: true,
+} as const;
+
+test("An Instructions link opens its editor and a later ordinary visit starts on Proactive", async () => {
+  context.mocks.api(instructionsContract.get, ({ respond }) => {
+    return respond(200, response("Instructions from the welcome link"));
+  });
+  await setupPage({
+    context,
+    path: "/?settings=my-okou&focus=instructions",
+    featureSwitches: proactiveFeatures,
+  });
+  const instructions = await screen.findByRole("tabpanel", {
+    name: "Instructions",
+  });
+  const editor = await within(instructions).findByRole("textbox", {
+    name: "Instructions",
+  });
+  expect(editor).toHaveTextContent("Instructions from the welcome link");
+  click(button("Chat"));
+  await screen.findByRole("heading", { name: "Chat" });
+  click(button("My Okou"));
+  await screen.findByRole("tabpanel", { name: "Proactive" });
+  click(within(screen.getByRole("tablist")).getByText("Instructions"));
+  await screen.findByRole("tabpanel", { name: "Instructions" });
+  expect(new URLSearchParams(location.search).get("focus")).toBe(
+    "instructions",
+  );
+  const dialog = screen.getByRole("dialog", { name: "Settings" });
+  click(within(dialog).getByLabelText("Close"));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+  expect(new URLSearchParams(location.search).get("focus")).toBeNull();
+});
+
+test("My Okou opens Proactive first, unifies legacy Suggestions choices, and retains an Instructions draft across tabs", async () => {
+  context.mocks.api(instructionsContract.get, ({ respond }) => {
+    return respond(200, response("A saved instruction"));
+  });
+  await setupPage({
+    context,
+    path: "/?settings=my-okou",
+    featureSwitches: proactiveFeatures,
+  });
+  const panel = within(
+    await screen.findByRole("tabpanel", { name: "Proactive" }),
+  );
+  const learn = await panel.findByRole("switch", { name: "Learning" });
+  const offers = await panel.findByRole("switch", { name: "Offers" });
+  const mixed = await panel.findByRole("combobox", { name: "Suggestions" });
+  expect(mixed).toHaveAccessibleDescription(
+    "New cards are on. Hourly checks are off. Choose one setting for both.",
+  );
+  click(mixed);
+  click(await screen.findByRole("option", { name: "Turn both off" }));
+  const suggestions = await panel.findByRole("switch", { name: "Suggestions" });
+  await waitFor(() => {
+    expect(suggestions).not.toHaveAttribute("aria-disabled", "true");
+  });
+  expect(suggestions).not.toBeChecked();
+  click(suggestions);
+  await waitFor(() => {
+    expect(panel.getByRole("switch", { name: "Suggestions" })).toBeChecked();
+  });
+  expect(learn).not.toBeChecked();
+  click(offers);
+  await waitFor(() => {
+    expect(offers).not.toBeChecked();
+  });
+  expect(panel.getByRole("switch", { name: "System updates" })).toBeChecked();
+  expect(
+    panel.getAllByRole("switch").map((control) => {
+      return control.getAttribute("aria-label");
+    }),
+  ).toStrictEqual([
+    "Morning brief",
+    "Suggestions",
+    "Learning",
+    "What’s new",
+    "Offers",
+    "System updates",
+  ]);
+  const [proactiveTab, editorTab] = queryAllByRoleFast(
+    "tab",
+    screen.getByRole("tablist"),
+  );
+  expect(proactiveTab).toHaveTextContent("Proactive");
+  expect(editorTab).toHaveTextContent("Instructions");
+  click(editorTab);
+  const editor = await screen.findByRole("textbox", { name: "Instructions" });
+  await fill(editor, "Keep this draft");
+  click(proactiveTab);
+  const restored = await screen.findByRole("switch", { name: "Suggestions" });
+  await waitFor(() => {
+    expect(restored).toBeChecked();
+  });
+  click(editorTab);
+  const retained = await screen.findByRole("textbox", { name: "Instructions" });
+  expect(retained).toHaveTextContent("Keep this draft");
+});
+
+test("a member with only hourly checks can opt into new cards without showing a stale mixed state during refresh", async () => {
+  const refresh = context.mocks.deferred<void>();
+  let initial = true;
+  context.mocks.api(feedContract.sources, async ({ respond }) => {
+    const suggestions = !initial;
+    initial = false;
+    if (suggestions) {
+      await refresh.promise;
+    }
+    return respond(200, {
+      suggestions,
+      whatsNew: true,
+      offers: true,
+      systemUpdates: true,
+    });
+  });
+  context.mocks.api(proactiveSuggestionsContract.get, ({ respond }) => {
+    return respond(200, {
+      enabled: true,
+      status: "enabled",
+      unavailableReason: null,
+    });
+  });
+  await setupPage({
+    context,
+    path: "/?settings=my-okou",
+    featureSwitches: proactiveFeatures,
+  });
+  const panel = within(
+    await screen.findByRole("tabpanel", { name: "Proactive" }),
+  );
+  const choice = await panel.findByRole("combobox", { name: "Suggestions" });
+  expect(choice).toHaveAccessibleDescription(
+    "Hourly checks are on. New cards are off. Choose one setting for both.",
+  );
+  click(choice);
+  click(await screen.findByRole("option", { name: "Turn both on" }));
+  try {
+    const pending = await panel.findByRole("switch", { name: "Suggestions" });
+    expect(pending).toBeChecked();
+    expect(pending).toHaveAttribute("aria-disabled", "true");
+  } finally {
+    refresh.resolve();
+  }
+  await waitFor(() => {
+    expect(
+      panel.getByRole("switch", { name: "Suggestions" }),
+    ).not.toHaveAttribute("aria-disabled", "true");
+  });
+});
+
+test("existing morning brief links open the Proactive tab in My Okou", async () => {
+  await setupPage({
+    context,
+    path: "/agents?settings=preference&focus=morning-brief",
+    featureSwitches: proactiveFeatures,
+  });
+  const panel = await screen.findByRole("tabpanel", { name: "Proactive" });
+  const brief = await within(panel).findByRole("switch", {
+    name: "Morning brief",
+  });
+  expect(brief).toBeEnabled();
+  click(button("Preference"));
+  await screen.findByRole("heading", { name: "Appearance" });
+  expect(screen.queryByRole("switch", { name: "Morning brief" })).toBeNull();
+  expect(new URLSearchParams(location.search).get("focus")).toBeNull();
+});
+
+test("the morning brief link opens Preference when the Suggestions feature switch is off", async () => {
+  await setupPage({
+    context,
+    path: "/agents?settings=preference&focus=morning-brief",
+    featureSwitches: {
+      [FeatureSwitchKey.SingleAgent]: true,
+      [FeatureSwitchKey.AgentSuggestion]: false,
+    },
+  });
+  const dialog = await screen.findByRole("dialog", { name: "Settings" });
+  await within(dialog).findByRole("heading", { name: "Preference" });
+  const brief = await within(dialog).findByRole("switch", {
+    name: "Morning brief",
+  });
+  expect(brief).toBeEnabled();
 });

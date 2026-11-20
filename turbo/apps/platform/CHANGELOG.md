@@ -13,6 +13,154 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1155.1](https://github.com/okou-ai/okou/compare/app-v0.1155.0...app-v0.1155.1) (2026-11-20)
+
+
+### Bug Fixes
+
+* **platform:** retain safe document export failure phases ([#49388](https://github.com/okou-ai/okou/issues/49388)) ([18c9913](https://github.com/okou-ai/okou/commit/18c9913d10396c7e27679fecbb96aba52a7f80de))
+* **platform:** use the suggestions switch for my okou proactive settings ([#49439](https://github.com/okou-ai/okou/issues/49439)) ([1d42e69](https://github.com/okou-ai/okou/commit/1d42e6994ad6d82a6678d34b955335765fc560b5))
+
+
+### Refactoring
+
+* remove feature guides feature switch ([#49441](https://github.com/okou-ai/okou/issues/49441)) ([e5642ea](https://github.com/okou-ai/okou/commit/e5642ea2ef0ea2ba7a6cd451d395c8329a855c88))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.94.1
+    * @okouai/core bumped to 8.857.1
+    * @okouai/ui bumped to 1.21.70
+
+## [0.1155.0](https://github.com/okou-ai/okou/compare/app-v0.1154.2...app-v0.1155.0) (2026-11-20)
+
+
+### Features
+
+* **platform:** consolidate proactive settings in my okou ([#49401](https://github.com/okou-ai/okou/issues/49401)) ([9d20531](https://github.com/okou-ai/okou/commit/9d20531a9ad041abf15a8e5c1697b06475b563df))
+* **platform:** polish for you suggestion card layout ([#49397](https://github.com/okou-ai/okou/issues/49397)) ([a33c4ea](https://github.com/okou-ai/okou/commit/a33c4eace1e4ddc482559ee2bc6c2d28884689db))
+
+
+### Bug Fixes
+
+* **app:** preserve artifact file cards in message pdf exports ([#49389](https://github.com/okou-ai/okou/issues/49389)) ([ae05e27](https://github.com/okou-ai/okou/commit/ae05e279c6158a6e3d014dfdaafcdf539f0e9ffe))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.94.0
+    * @okouai/core bumped to 8.857.0
+    * @okouai/ui bumped to 1.21.69
+
+## [0.1154.2](https://github.com/okou-ai/okou/compare/app-v0.1154.1...app-v0.1154.2) (2026-11-20)
+
+
+### Refactoring
+
+* **app:** stop writing onboarding drafts to browser storage ([#49384](https://github.com/okou-ai/okou/issues/49384)) ([25d468f](https://github.com/okou-ai/okou/commit/25d468f63e71aef164ac83bf0b412e871256fc02))
+
+## [0.1154.1](https://github.com/okou-ai/okou/compare/app-v0.1154.0...app-v0.1154.1) (2026-11-20)
+
+
+### Refactoring
+
+* **api:** retire agent connector execution grants ([#49268](https://github.com/okou-ai/okou/issues/49268)) ([596e8ca](https://github.com/okou-ai/okou/commit/596e8ca5d65c2ba7d7b447816042a9bc48fa8b44))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.93.2
+    * @okouai/core bumped to 8.856.2
+    * @okouai/ui bumped to 1.21.68
+
+## [0.1154.0](https://github.com/okou-ai/okou/compare/app-v0.1153.2...app-v0.1154.0) (2026-11-20)
+
+
+### Features
+
+* **platform:** grow the for you custom direction into its composer ([#49279](https://github.com/okou-ai/okou/issues/49279)) ([1e7094d](https://github.com/okou-ai/okou/commit/1e7094d1fecfbaa2f711462f1200d089f0000ab1))
+
+## [0.1153.2](https://github.com/okou-ai/okou/compare/app-v0.1153.1...app-v0.1153.2) (2026-11-19)
+
+
+### Bug Fixes
+
+* let each suggestion decide where its custom direction goes ([#49274](https://github.com/okou-ai/okou/issues/49274)) ([8ee03b2](https://github.com/okou-ai/okou/commit/8ee03b20a05e80b4cd1059f8dd55b72ff85df347))
+* **platform:** redesign the browser input dialog ([#49272](https://github.com/okou-ai/okou/issues/49272)) ([9e40c6e](https://github.com/okou-ai/okou/commit/9e40c6e38102e657879bbfb5960dd8f68e980ab9))
+
+
+### Refactoring
+
+* remove expired deployment compatibility ([#49278](https://github.com/okou-ai/okou/issues/49278)) ([4338aee](https://github.com/okou-ai/okou/commit/4338aeeabfdb74ebee71a8e3c3c3862610b1262b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.93.1
+    * @okouai/core bumped to 8.856.1
+    * @okouai/ui bumped to 1.21.67
+
+## [0.1153.1](https://github.com/okou-ai/okou/compare/app-v0.1153.0...app-v0.1153.1) (2026-11-19)
+
+
+### Bug Fixes
+
+* **platform:** expand the full composer inside for you cards ([#49200](https://github.com/okou-ai/okou/issues/49200)) ([a678cec](https://github.com/okou-ai/okou/commit/a678cec8667bc2fc6a9a5f8cf9f1bb9a334d465b))
+
+## [0.1153.0](https://github.com/okou-ai/okou/compare/app-v0.1152.0...app-v0.1153.0) (2026-11-19)
+
+
+### Features
+
+* **app:** gate an okou rail entry behind a staff switch ([#49130](https://github.com/okou-ai/okou/issues/49130)) ([3ce54fd](https://github.com/okou-ai/okou/commit/3ce54fd46e6166a3b4cf828052e20a375f4ade08))
+* **platform:** confirm deletion of project threads ([#49121](https://github.com/okou-ai/okou/issues/49121)) ([89d08cc](https://github.com/okou-ai/okou/commit/89d08ccd4ff5399208552bff0e1f3dbbf08414fb))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.93.0
+    * @okouai/core bumped to 8.856.0
+    * @okouai/ui bumped to 1.21.66
+
+## [0.1152.0](https://github.com/okou-ai/okou/compare/app-v0.1151.0...app-v0.1152.0) (2026-11-19)
+
+
+### Features
+
+* **platform:** refresh the for you illustrated card deck ([#49016](https://github.com/okou-ai/okou/issues/49016)) ([4bf10b8](https://github.com/okou-ai/okou/commit/4bf10b89e09adce4c9253418d2ad8de1937e3e9e))
+
+
+### Bug Fixes
+
+* **app:** compact works channels into a responsive grid ([#49001](https://github.com/okou-ai/okou/issues/49001)) ([978a7fb](https://github.com/okou-ai/okou/commit/978a7fb1b057df9ec03eca609a78c6b0dae34e66))
+
+
+### Refactoring
+
+* **api:** retire chat connector client compatibility ([#49047](https://github.com/okou-ai/okou/issues/49047)) ([3202044](https://github.com/okou-ai/okou/commit/3202044add225011588e98a5724cec7470c78cde))
+* **app:** propagate async project switch dependencies ([#48925](https://github.com/okou-ai/okou/issues/48925)) ([71af7ce](https://github.com/okou-ai/okou/commit/71af7ce1e753cc71ce955f58f46c0a389cfa781d))
+* **app:** remove redundant projects switch default ([#49058](https://github.com/okou-ai/okou/issues/49058)) ([b86b730](https://github.com/okou-ai/okou/commit/b86b730f2e3f6b6f01f751435cfdafd22f5c9ac5))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.92.1
+    * @okouai/core bumped to 8.855.1
+    * @okouai/ui bumped to 1.21.65
+
 ## [0.1151.0](https://github.com/okou-ai/okou/compare/app-v0.1150.0...app-v0.1151.0) (2026-11-19)
 
 

@@ -69,7 +69,7 @@ internal fun DrawScope.drawRunningWave(color: Color, frameNanos: Long, row: Int)
     val stroke = Stroke(1.dp.toPx())
     if (frameNanos == STATIC_RUNNING_FRAME) {
         drawCircle(color, radius = 3.dp.toPx())
-        drawCircle(color, radius = 6.dp.toPx(), style = stroke)
+        drawCircle(color, radius = 6.dp.toPx(), alpha = 0.75f, style = stroke)
         return
     }
     val phase = runningWavePhase(frameNanos, row)

@@ -26,8 +26,9 @@ pub use result::{
 };
 pub use start::{
     DecodedExecStart, ExecControlPolicy, ExecLifecyclePolicy, ExecOutputPolicy, ExecProcessRole,
-    ExecStartEncodeRequest, ExecTimeoutPolicy, MAX_EXEC_STDIN_BYTES, decode_exec_start,
-    encode_exec_start, encode_exec_start_with_expected_exit_codes, validate_exec_process_contract,
+    ExecStartEncodeRequest, ExecStreamLimits, ExecTimeoutPolicy, MAX_EXEC_STDIN_BYTES,
+    decode_exec_start, encode_exec_start, encode_exec_start_with_expected_exit_codes,
+    validate_exec_process_contract,
 };
 pub use started_cancel::{
     DecodedExecStarted, decode_exec_cancel, decode_exec_started, encode_exec_cancel,

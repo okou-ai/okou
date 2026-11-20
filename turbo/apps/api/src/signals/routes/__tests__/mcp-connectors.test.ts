@@ -320,7 +320,7 @@ describe("GET /api/mcp-connectors", () => {
     });
   });
 
-  it("removes a no-auth MCP from the Run inventory when its only account is deleted", async () => {
+  it("removes a no-auth MCP from the running Run when its only account is deleted", async () => {
     const owned = await publicChatActor(context);
     await owned.run(async () => {
       const { actor } = owned;
@@ -342,15 +342,33 @@ describe("GET /api/mcp-connectors", () => {
       );
       const run = await createRunForAgent(owned);
       const token = run.token;
+      const target = {
+        kind: "custom",
+        customConnectorId: connector.id,
+      } as const;
+      const registration = {
+        ...target,
+        sourceId: connectionId,
+        baseUrlVars: {},
+      };
       const initial = await accept(
         client().list({ headers: headers(token) }),
         [200],
       );
       expect(initial.body.connectors).toStrictEqual([
         expect.objectContaining({
-          target: { kind: "custom", customConnectorId: connector.id },
+          target,
           connectionId,
           runtimeAvailable: true,
+        }),
+      ]);
+      await expect(
+        runs.syncConnectorRuntime(run.runId, { targets: [registration] }),
+      ).resolves.toStrictEqual([
+        expect.objectContaining({
+          target,
+          state: "available",
+          accountBinding: { connectionId, baseUrlVars: {} },
         }),
       ]);
       await connectors.deleteCustomConnectorAccount(
@@ -363,6 +381,11 @@ describe("GET /api/mcp-connectors", () => {
         [200],
       );
       expect(response.body.connectors).toStrictEqual([]);
+      await expect(
+        runs.syncConnectorRuntime(run.runId, { targets: [registration] }),
+      ).resolves.toStrictEqual([
+        { target, state: "absent", reason: "connector-unavailable" },
+      ]);
     });
   });
 
@@ -587,7 +610,6 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
       const firstAuthorization = await connectors.startCustomConnectorOAuth2(
         actor,
         connector.id,
-        undefined,
         { intent: "add", displayName: "Pinned account" },
       );
       const firstState = stateFromAuthorizationUrl(firstAuthorization);
@@ -607,7 +629,6 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
       const secondAuthorization = await connectors.startCustomConnectorOAuth2(
         actor,
         connector.id,
-        undefined,
         { intent: "add", displayName: "Sibling account" },
       );
       await connectors.completeCustomConnectorOAuth2Callback({
@@ -628,9 +649,6 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
       if (!pinnedAccount || !siblingAccount) {
         throw new Error("Expected default and sibling MCP accounts");
       }
-      await connectors.updateAgentCustomConnectors(actor, agent.agentId, [
-        connector.id,
-      ]);
       const run = await runs.createThreadRun(actor, {
         agentId: agent.agentId,
         prompt: "Use the MCP connector with incremental scope",
@@ -787,7 +805,6 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
         changedAuthorizationUrl = await connectors.startCustomConnectorOAuth2(
           actor,
           connector.id,
-          undefined,
           { intent: "reconnect", connectionId: pinnedAccount.id },
         );
         expect(replacementProvider.registrationBodies).toHaveLength(1);
@@ -874,14 +891,10 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
       actor,
       connector.id,
       [200],
-      agent.agentId,
     );
     if ("error" in connected.body || connected.body.result !== "connected") {
       throw new Error("Expected Automatic MCP no-auth connection");
     }
-    await connectors.updateAgentCustomConnectors(actor, agent.agentId, [
-      connector.id,
-    ]);
     const run = await runs.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "Use the no-auth MCP connector",

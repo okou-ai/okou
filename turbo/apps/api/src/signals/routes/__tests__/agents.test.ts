@@ -2,72 +2,16 @@ import { randomUUID } from "node:crypto";
 
 import { agentsMainContract } from "@okouai/api-contracts/contracts/agents";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import {
-  deleteFeatureSwitchesForUser,
-  updateFeatureSwitchesForUser,
-} from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
 import { agentsRoutes } from "../agents";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
 
-describe("GET /api/agents/:id/user-connectors", () => {
-  it("keeps connector grants when their discovery feature switch is disabled", async () => {
-    const userId = `user_${randomUUID()}`;
-    const orgId = `org_${randomUUID()}`;
-    const actor = { userId, orgId };
-    mocks.clerk.session(userId, orgId);
-    context.mocks.s3.send.mockResolvedValue({});
-
-    const created = await accept(
-      setupApp({ context, routes: agentsRoutes })(agentsMainContract).create({
-        headers: { authorization: "Bearer clerk-session" },
-        body: {},
-      }),
-      [201],
-    );
-    const agentId = created.body.agentId;
-
-    const client = setupApp({ context, routes: agentsRoutes })(
-      userBuiltinConnectorsContract,
-    );
-
-    await updateFeatureSwitchesForUser(context, actor, {
-      [FeatureSwitchKey.TestOauthConnector]: true,
-    });
-    await accept(
-      client.update({
-        params: { id: agentId },
-        body: { enabledConnectorSlugs: ["test-oauth", "github"] },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-
-    // Connector feature switches only govern discovery. A connector already
-    // granted to an agent remains usable when its discovery switch is disabled.
-    await updateFeatureSwitchesForUser(context, actor, {
-      [FeatureSwitchKey.TestOauthConnector]: false,
-    });
-    const response = await accept(
-      client.get({
-        params: { id: agentId },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-
-    expect(new Set(response.body.enabledConnectorSlugs)).toStrictEqual(
-      new Set(["github", "test-oauth"]),
-    );
-    await deleteFeatureSwitchesForUser(context, actor);
-  });
-
+describe("PUT /api/agents/:id/user-connectors", () => {
   it("updates canonical connector slugs", async () => {
     const userId = `user_${randomUUID()}`;
     const orgId = `org_${randomUUID()}`;
@@ -113,5 +57,48 @@ describe("GET /api/agents/:id/user-connectors", () => {
     expect(new Set(added.body.enabledConnectorSlugs)).toStrictEqual(
       new Set(["github", "slack"]),
     );
+  });
+
+  it("applies independent Drive grants when another agent is missing", async () => {
+    const headers = { authorization: "Bearer clerk-session" };
+    mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
+    context.mocks.s3.send.mockResolvedValue({});
+    const app = setupApp({ context, routes: agentsRoutes });
+    const agents = await Promise.all(
+      ["First agent", "Second agent"].map((displayName) => {
+        return accept(
+          app(agentsMainContract).create({
+            headers,
+            body: { displayName, visibility: "private" },
+          }),
+          [201],
+        );
+      }),
+    );
+    const agentIds = agents.map(({ body }) => {
+      return body.agentId;
+    });
+    const updates = await Promise.all(
+      [randomUUID(), ...agentIds].map((id) => {
+        return app(userBuiltinConnectorsContract).update({
+          headers,
+          params: { id },
+          body: { enabledConnectorSlugs: ["google-drive"], operation: "add" },
+        });
+      }),
+    );
+    expect(
+      updates.map(({ status }) => {
+        return status;
+      }),
+    ).toStrictEqual([404, 200, 200]);
+    expect(
+      updates.slice(1).map(({ body }) => {
+        return body;
+      }),
+    ).toStrictEqual([
+      { enabledConnectorSlugs: ["google-drive"] },
+      { enabledConnectorSlugs: ["google-drive"] },
+    ]);
   });
 });

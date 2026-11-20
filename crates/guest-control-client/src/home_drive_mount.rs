@@ -7,6 +7,7 @@ use guest_control_proto::{
 };
 
 use crate::helper_output::owned_capture;
+use crate::protocol_error;
 use crate::{
     FrameWriteObserver, GuestControlClient,
     normal_request_on_shared_with_write_observer_frame_builder, validate_fixed_helper_response,
@@ -57,7 +58,7 @@ impl GuestControlClient {
             FrameWriteObserver::noop(),
             |seq, frame| {
                 encode_home_drive_mount_request_frame_into(frame, seq)
-                    .map_err(protocol_invalid_input)
+                    .map_err(protocol_error::invalid_input)
             },
         )
         .await?;
@@ -92,7 +93,7 @@ impl GuestControlClient {
                     guest_control_proto::encode_home_drive_operation_frame_into(
                         frame, seq, operation,
                     )
-                    .map_err(protocol_invalid_input)
+                    .map_err(protocol_error::invalid_input)
                 },
             )
             .await?;
@@ -105,7 +106,7 @@ fn decode_result(response: guest_control_proto::RawMessage) -> io::Result<HomeDr
     validate_fixed_helper_response(&response, MSG_HOME_DRIVE_MOUNT_RESULT, "home drive mount")?;
 
     let decoded =
-        decode_home_drive_mount_result(&response.payload).map_err(protocol_invalid_data)?;
+        decode_home_drive_mount_result(&response.payload).map_err(protocol_error::invalid_data)?;
     let (stdout, stdout_truncated) = owned_capture(decoded.stdout, "home drive mount", "stdout")?;
     let (stderr, stderr_truncated) = owned_capture(decoded.stderr, "home drive mount", "stderr")?;
     Ok(HomeDriveMountResult {
@@ -117,12 +118,4 @@ fn decode_result(response: guest_control_proto::RawMessage) -> io::Result<HomeDr
         stderr_truncated,
         diagnostic: decoded.diagnostic.to_owned(),
     })
-}
-
-fn protocol_invalid_input(error: impl ToString) -> io::Error {
-    io::Error::new(io::ErrorKind::InvalidInput, error.to_string())
-}
-
-fn protocol_invalid_data(error: impl ToString) -> io::Error {
-    io::Error::new(io::ErrorKind::InvalidData, error.to_string())
 }

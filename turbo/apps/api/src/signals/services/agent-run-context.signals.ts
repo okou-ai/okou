@@ -28,10 +28,9 @@ import { waitUntil } from "../context/wait-until";
 import { safeSync, settle } from "../utils";
 import type { BootstrapAgent } from "./agent-data.service";
 import {
-  captureMemberMemoryContext,
+  createMemberMemoryContext,
   type MemberMemoryContext,
 } from "./agent-storage-context.service";
-import { memberMemoryReadPlan } from "./member-memory";
 import {
   connectorSourceSnapshotsFromRows,
   type ConnectorSourceIdentity,
@@ -51,20 +50,12 @@ import {
   createModelPricing,
 } from "./model-source-context.service";
 import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
-import {
-  storageBaseIndexFromRows,
-  storageBaseIndexReadPlan,
-} from "./storage-index.service";
 import { variables } from "@okouai/db/schema/variable";
 import { and, eq, isNull, isNotNull, or, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { db$ } from "../external/db";
 
 import { createConnectorRuntimeSelection } from "./connector-catalog-entries.service";
-import {
-  agentConnectorScopeFromRows,
-  type AgentConnectorScopeSnapshot,
-} from "./agent-connector-scope.service";
 import { expandConnectorServerFirewallPolicies } from "./connector-server-firewall-catalog.service";
 import { buildAgentRunVariables } from "./agent-run-variables";
 import type { PaidToolId } from "@okouai/api-contracts/contracts/paid-tools";
@@ -75,12 +66,12 @@ import {
 import type { ConnectorExecutionRuntimeSelection } from "./connector-catalog-runtime.service";
 import type { CustomConnectorExecutionDefinition } from "./custom-connector-definition-selection";
 import { customConnectorPermissionBundleDependencySlug } from "./custom-connector-permission-bundle.service";
-import type { AgentConnectorSelection } from "./execution-agent-connectors.service";
+import type { ExecutionConnectorSelection } from "./execution-connector-selection";
 import type { ConnectorMember } from "./member-connector-selection";
 import {
-  agentSelectionColumns,
-  createAgentSelectionContext,
-} from "./execution-agent-selection-context.service";
+  memberConnectorContextColumns,
+  createExecutionConnectorContext,
+} from "./execution-connector-context";
 import type { ConnectorPermissionGrant } from "./execution-connector-permissions.service";
 import {
   contextJsonProjection,
@@ -161,9 +152,9 @@ export interface AgentRunContextSignals {
   /** Request candidate rows are consumed only by this exact picked input. */
   readonly requestTemplateInputId$: Computed<Promise<string | undefined>>;
   readonly requestTemplateSources$: ReturnType<typeof createRunTemplateSources>;
-  readonly connectorSelection$: Computed<Promise<AgentConnectorSelection>>;
-  /** The member's saved connector scope before applying Chat access. */
-  readonly connectorScope$: Computed<Promise<AgentConnectorScopeSnapshot>>;
+  readonly memberConnectorSelection$: Computed<
+    Promise<ExecutionConnectorSelection>
+  >;
   /** The member's connector permission grants, expanded into firewall policies. */
   readonly permissionPolicies$: Computed<Promise<FirewallPolicies | null>>;
   readonly runVariables$: Computed<Promise<Record<string, string>>>;
@@ -249,7 +240,7 @@ export interface BootstrapConnectorData {
   readonly connectorSources: readonly ConnectorSourceResult[];
 }
 
-function catalogMetadataSlugs(selection: AgentConnectorSelection) {
+function catalogMetadataSlugs(selection: ExecutionConnectorSelection) {
   return selection.customConnectors.flatMap((connector) => {
     const ref = connector.permissionBundleRef;
     const dependency =
@@ -590,27 +581,7 @@ function createIdentityContext(
           return capturedFeatureSwitchContext(scope, member, overrides, agent);
         });
   const connectorContext = createConnectorContextGroups(userId, orgId, agentId);
-  const memory$ = computed(async (get): Promise<MemberMemoryContext> => {
-    const requests = memberMemoryReadPlan(scope);
-    const db = get(db$);
-    return captureMemberMemoryContext(
-      requests,
-      await (async () => {
-        const readPlan = storageBaseIndexReadPlan(requests);
-        if (readPlan === null) {
-          return new Map();
-        }
-        const rows = await db
-          .select(readPlan.columns)
-          .from(readPlan.from)
-          .innerJoin(readPlan.requested, readPlan.requestedCondition)
-          .leftJoin(readPlan.head, readPlan.headCondition)
-          .leftJoin(readPlan.exact, readPlan.exactCondition)
-          .leftJoin(readPlan.cache, readPlan.cacheCondition);
-        return storageBaseIndexFromRows(rows);
-      })(),
-    );
-  });
+  const memory$ = createMemberMemoryContext(scope);
   const disabledPaidTools$ =
     sharedMember?.disabledPaidTools$ ?? memberContext.disabledPaidTools$;
   const environment$ = computed(async (get) => {
@@ -673,7 +644,7 @@ export const preloadAgentRunContext$ = command(
       signals.memberRoutes$,
       signals.memberMetadata$,
       signals.selectedImageModel$,
-      signals.connectorSelection$,
+      signals.memberConnectorSelection$,
       signals.permissionGrants$,
       signals.featureSwitches$,
       signals.disabledPaidTools$,
@@ -892,7 +863,7 @@ function createAgentEnvironment(member: ConnectorMember) {
         accountRows: contextJsonRows(accountRows).mapWith(
           bootstrapAccountRowsDecoder,
         ),
-        ...agentSelectionColumns(member, nowDate()),
+        ...memberConnectorContextColumns(member, nowDate()),
       })
       .from(variableSnapshot);
     const acquisitionCapture: PgPoolAcquisitionCapture = { acquisitions: [] };
@@ -1067,7 +1038,7 @@ function createConnectorContextGroups(
 function createConnectorSources(member: ConnectorMember) {
   const environmentSnapshot$ = createAgentEnvironment(member);
   const { connectorSelection$, permissionGrants$ } =
-    createAgentSelectionContext(environmentSnapshot$);
+    createExecutionConnectorContext(environmentSnapshot$);
   const customConnectorDefinitions$ = computed(async (get) => {
     return (await get(connectorSelection$)).customConnectorDefinitions;
   });
@@ -1079,20 +1050,9 @@ function createConnectorSources(member: ConnectorMember) {
     ]);
     return bootstrapConnectorSnapshot(userId, orgId, snapshot, definitions);
   });
-  const connectorScope$ = computed(async (get) => {
-    const selection = await get(connectorSelection$);
-    return agentConnectorScopeFromRows({
-      connectorRows: selection.builtinConnectorSlugs.map((connectorSlug) => {
-        return { connectorSlug };
-      }),
-      customConnectorRows: selection.customConnectors,
-    });
-  });
   const requested$ = computed(async (get) => {
-    const [selection, scope] = await Promise.all([
-      get(connectorSelection$),
-      get(connectorScope$),
-    ]);
+    const selection = await get(connectorSelection$);
+    const { scope } = selection;
     if (
       scope.allowedConnectorSlugs.length === 0 &&
       scope.allowedCustomConnectorIds.length === 0
@@ -1118,9 +1078,9 @@ function createConnectorSources(member: ConnectorMember) {
     };
   });
   const permissionPolicies$ = computed(async (get) => {
-    const [grants, scope, catalog] = await Promise.all([
+    const [grants, { scope }, catalog] = await Promise.all([
       get(permissionGrants$),
-      get(connectorScope$),
+      get(connectorSelection$),
       get(catalog$),
     ]);
     const stored = permissionGrantsToFirewallPolicies(
@@ -1146,8 +1106,7 @@ function createConnectorSources(member: ConnectorMember) {
   return {
     environmentSnapshot$,
     signals: {
-      connectorSelection$,
-      connectorScope$,
+      memberConnectorSelection$: connectorSelection$,
       authorizedConnectors$,
       permissionGrants$,
       customConnectorDefinitions$,

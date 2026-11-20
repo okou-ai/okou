@@ -22,8 +22,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.assertHeightIsEqualTo
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertWidthIsEqualTo
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isSelectable
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -35,6 +38,7 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -113,7 +117,7 @@ class OkouAppTest {
                                             WorkspaceTokenProvider { "test-token" },
                                         )
                                 MemberPreferencesModel(
-                                    testBootstrap().preferences,
+                                    testPreferences(),
                                     object : WorkspaceSession by service {
                                         override suspend fun updatePreferences(
                                             update: UpdatePreferencesRequest
@@ -200,7 +204,8 @@ class OkouAppTest {
     fun updateToolbarKeepsTheLabelReadableWithLargerText() {
         render(fontScale = 1.3f, openUpdate = {})
         val layouts = mutableListOf<TextLayoutResult>()
-        compose.onNodeWithText("View update", useUnmergedTree = true).performSemanticsAction(
+        compose.onNodeWithText("Update").assertWidthIsEqualTo(104.dp).assertHeightIsEqualTo(48.dp)
+        compose.onNodeWithText("Update", useUnmergedTree = true).performSemanticsAction(
             SemanticsActions.GetTextLayoutResult
         ) {
             it(layouts)
@@ -217,19 +222,49 @@ class OkouAppTest {
     }
 
     @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun chatFilterSurvivesSettingsAndBack() {
         render()
-        compose.onNodeWithText("Chats").assertExists()
+        compose.onNodeWithContentDescription("Chats").assertExists()
         compose.onNodeWithContentDescription("More actions").assertDoesNotExist()
         compose.onNodeWithContentDescription("Filter").performClick()
-        compose.onNodeWithText("All").assertIsSelected()
+        compose.onNodeWithText("Inbox").assertIsSelected().assertHeightIsEqualTo(48.dp)
+        compose
+            .onNodeWithTag("workspace_popup")
+            .assertWidthIsEqualTo(244.dp)
+            .assertHeightIsEqualTo(265.dp)
+        compose.onNodeWithText("Mark all as read").assertIsNotEnabled()
         compose.onNodeWithText("Archived").performClick()
         compose.onNodeWithContentDescription("Settings").performClick()
         compose.onNodeWithText("Appearance").assertExists()
         compose.onNodeWithContentDescription("Back").performClick()
+        compose.onNodeWithText("Filter · Archived").assertIsDisplayed()
+        compose.onNodeWithText("New chat").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Filter").performClick()
         compose.onNodeWithText("Archived").assertIsSelected()
-        compose.onNodeWithText("Archived").performClick()
-        compose.onNodeWithText("Archived").assertDoesNotExist()
+        compose.onNodeWithText("Inbox").performClick()
+        compose.onNodeWithText("Filter · Archived").assertDoesNotExist()
+    }
+
+    @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun updateOverflowOpensTheSameFilterMenu() {
+        render(openUpdate = {})
+        compose.onNodeWithContentDescription("More actions").performClick()
+        compose
+            .onNodeWithTag("workspace_popup")
+            .assertWidthIsEqualTo(244.dp)
+            .assertHeightIsEqualTo(158.dp)
+        compose.onNodeWithText("Filter").performClick()
+        compose.onNodeWithText("Inbox").assertIsSelected()
+        compose.onNodeWithText("Mark all as read").assertIsNotEnabled()
+        compose.onNodeWithText("Muted").performClick()
+        compose.onNodeWithText("Filter · Muted").assertIsDisplayed()
+        compose.onNodeWithContentDescription("More actions").performClick()
+        compose.onNodeWithText("Filter").performClick()
+        compose.onNodeWithText("Muted").assertIsSelected()
+        compose.onNodeWithText("Inbox").performClick()
+        compose.onNodeWithText("Filter · Muted").assertDoesNotExist()
     }
 
     @Test
@@ -328,7 +363,7 @@ class OkouAppTest {
         compose.onNodeWithText("Dunkel").assertIsDisplayed()
         compose.onNodeWithText("Arbeitsbereichseinstellungen").performScrollTo().assertIsDisplayed()
         compose.onNodeWithContentDescription("Zurück").assertIsDisplayed().performClick()
-        compose.onNodeWithText("Chats").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Chats").assertIsDisplayed()
         val refresh =
             compose
                 .onNodeWithTag("chat_list")
@@ -338,6 +373,6 @@ class OkouAppTest {
         compose.runOnIdle { assertEquals(true, refresh.action()) }
         compose.onNodeWithContentDescription("Filter").assertIsDisplayed().performClick()
         compose.onNodeWithText("Archiviert").assertIsDisplayed().performClick()
-        compose.onNodeWithText("Archiviert").assertIsSelected()
+        compose.onNodeWithText("Filter · Archiviert").assertExists()
     }
 }

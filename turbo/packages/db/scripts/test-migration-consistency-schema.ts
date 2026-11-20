@@ -57,7 +57,6 @@ import { validateOfficialWorkflowStorageRetirement } from "./test-official-workf
 import { validateWorkflowPublicationContraction } from "./test-workflow-publication-contraction";
 import { validateStaffWorkflowAttachmentDeletion } from "./test-staff-workflow-attachment-deletion";
 import { validateInactiveWorkflowAttachmentDeletion } from "./test-inactive-workflow-attachment-deletion";
-import { validateSeedSkillBundleSchema } from "./test-seed-skill-bundle-schema";
 import { validateConnectorSkillBundleSchema } from "./test-connector-skill-bundle-schema";
 import { validateChatConnectorAccessSchema } from "./test-chat-connector-access-schema";
 import { validatePermanentArtifactThreadCatalog } from "./test-artifact-thread-catalog-permanent";
@@ -77,6 +76,7 @@ import { validateModelCatalogSeed } from "./test-model-catalog-seed";
 import { validateOfficialAutomationBindingSchema } from "./test-official-automation-binding-schema";
 import { validatePermanentOrgPlanEntitlementState } from "./test-org-plan-entitlement-permanent";
 import { validatePermanentPlatformGenerationReceipts } from "./test-platform-generation-receipts-permanent";
+import { validatePermanentRegistryArchives } from "./test-registry-archives-permanent";
 import { validatePermanentRunnerStateStorage } from "./test-runner-state-storage-permanent";
 import { validatePermanentBrowserOwnerStorage } from "./test-browser-owner-storage-permanent";
 import { validateBrowserOwnerDdlReplay } from "./test-browser-owner-ddl-replay";
@@ -1810,7 +1810,7 @@ async function validatePermanentAgentRunMetadataState(
     );
     await client.query(
       `UPDATE "agent_runs"
-       SET "trigger_source" = 'chat', "autonomy_budget" = 32
+       SET "trigger_source" = 'chat', "autonomy_budget" = 128
        WHERE "id" = $1`,
       [fixture.productRunId],
     );
@@ -1836,7 +1836,7 @@ async function validatePermanentAgentRunMetadataState(
       query: `INSERT INTO "agent_runs" (
         "id", "user_id", "status", "prompt", "org_id",
         "trigger_source", "autonomy_budget"
-      ) VALUES ($1, $2, 'failed', 'invalid budget', $3, 'chat', 33)`,
+      ) VALUES ($1, $2, 'failed', 'invalid budget', $3, 'chat', 129)`,
       values: [fixture.outOfRangeRunId, fixture.userId, fixture.orgId],
     });
 
@@ -1890,7 +1890,7 @@ async function validatePermanentAgentRunMetadataState(
     );
     assert.deepEqual(validStates.rows, [
       {
-        autonomyBudget: 32,
+        autonomyBudget: 128,
         id: fixture.productRunId,
         summary: null,
         triggerSource: "chat",
@@ -3045,12 +3045,6 @@ async function main(): Promise<void> {
   let migrationsBackedUp = false;
 
   try {
-    console.log(
-      execCommand("tsx scripts/test-migration-cli-stderr.ts", {
-        cwd: PACKAGE_DIR,
-      }),
-    );
-
     // Step 0: Validate snapshot files
     await validateSnapshotFiles();
 
@@ -3077,52 +3071,14 @@ async function main(): Promise<void> {
     await runMigrations(dbUrl1);
     console.log("   ✅ Consecutive database resets completed successfully\n");
 
-    console.log("=== Workflow Storage retirement CLI ===");
-    console.log(
-      execCommand(
-        "node --import tsx scripts/migrations/026-retire-workflow-storage/test-cleanup.ts",
-        { cwd: PACKAGE_DIR, env: { DATABASE_URL: dbUrl1 } },
-      ),
-    );
+    await validatePermanentRegistryArchives(dbUrl1);
 
-    console.log("=== Registry resource inventory CLI ===");
-    console.log(
-      execCommand(
-        "node --import tsx scripts/migrations/028-registry-resource-bundles/test-inventory.ts",
-        { cwd: PACKAGE_DIR, env: { DATABASE_URL: dbUrl1 } },
-      ),
-    );
-
-    console.log("=== Registry resource dual publication CLI ===");
+    console.log("=== Registry resource publication CLI ===");
     console.log(
       execCommand("node scripts/test-registry-publication.mjs", {
         cwd: PACKAGE_DIR,
         env: { DATABASE_URL: dbUrl1 },
       }),
-    );
-
-    console.log("=== Registry resource backfill CLI ===");
-    console.log(
-      execCommand(
-        "node --import tsx scripts/migrations/028-registry-resource-bundles/test-backfill.ts",
-        { cwd: PACKAGE_DIR, env: { DATABASE_URL: dbUrl1 } },
-      ),
-    );
-
-    console.log("=== Frozen template guidance backfill CLI ===");
-    console.log(
-      execCommand(
-        "node --import tsx scripts/migrations/029-template-guidance-bundles/test-backfill.ts",
-        { cwd: PACKAGE_DIR, env: { DATABASE_URL: dbUrl1 } },
-      ),
-    );
-
-    console.log("=== Presentation template copy CLI ===");
-    console.log(
-      execCommand(
-        "node --import tsx scripts/migrations/025-presentation-template-copy/test-copy.ts",
-        { cwd: PACKAGE_DIR, env: { DATABASE_URL: dbUrl1 } },
-      ),
     );
 
     await validateCanonicalIntegrationIdentitySchema(dbUrl1);
@@ -3171,7 +3127,6 @@ async function main(): Promise<void> {
     await validateWorkflowPublicationContraction(dbUrl1);
     await validateStaffWorkflowAttachmentDeletion(dbUrl1);
     await validateInactiveWorkflowAttachmentDeletion(dbUrl1);
-    await validateSeedSkillBundleSchema(dbUrl1);
     await validateConnectorSkillBundleSchema(dbUrl1);
     await validateChatConnectorAccessSchema(dbUrl1);
     await validatePermanentWorkflowNameScopes(dbUrl1);
@@ -3227,7 +3182,6 @@ async function main(): Promise<void> {
     await validateXResourceUsageSchema(dbUrl2);
     await validateAgentRunLaunchSnapshotSchema(dbUrl2);
     await validateAgentRunOfficialWorkflowProvenanceSchema(dbUrl2);
-    await validateSeedSkillBundleSchema(dbUrl2);
     await validateConnectorSkillBundleSchema(dbUrl2);
     await validateChatConnectorAccessSchema(dbUrl2);
     await validatePermanentWorkflowNameScopes(dbUrl2);

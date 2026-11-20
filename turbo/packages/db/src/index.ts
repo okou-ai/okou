@@ -113,12 +113,10 @@ import * as exportJobSchema from "./schema/export-job";
 import * as backgroundJobSchema from "./schema/background-job";
 import * as userExportEntrySchema from "./schema/user-export-entry";
 import * as emailSuppressionSchema from "./schema/email-suppression";
-import * as skillSchema from "./schema/skill";
 import * as builtInSkillSchema from "./schema/built-in-skill";
 import * as usagePricingSchema from "./runtime/usage-pricing";
 import * as agentDraftSchema from "./schema/agent-draft";
 import * as chatThreadDraftSchema from "./schema/chat-thread-draft";
-import * as userPermissionGrantSchema from "./schema/user-permission-grant";
 import * as storageVersionLineageSchema from "./schema/storage-version-lineage";
 import * as runUploadedFileSchema from "./schema/run-uploaded-file";
 import * as builtInModelKeySchema from "./schema/built-in-model-key";
@@ -299,12 +297,10 @@ export const schema = {
   ...backgroundJobSchema,
   ...userExportEntrySchema,
   ...emailSuppressionSchema,
-  ...skillSchema,
   ...builtInSkillSchema,
   ...usagePricingSchema,
   ...agentDraftSchema,
   ...chatThreadDraftSchema,
-  ...userPermissionGrantSchema,
   ...storageVersionLineageSchema,
   ...runUploadedFileSchema,
   ...builtInModelKeySchema,

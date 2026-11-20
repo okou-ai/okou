@@ -982,7 +982,7 @@ if ! git merge-base --is-ancestor "$seed_skill_bundle_only_api_commit" "$TARGET_
   fail "Rollback target predates the Seed Skill bundle-only publisher: ${seed_skill_bundle_only_api_commit}."
 fi
 
-# The preparation API follows the activated catalog even when its old mirror is stale.
+# The rollback API must publish to the independent catalog without the legacy skills mirror.
 if ! built_in_skill_catalog_api_commit=$(git show "origin/main:${BUILT_IN_SKILL_CATALOG_API_PATH}"); then
   fail "Cannot read the built-in Skill catalog API rollback floor from main."
 fi
@@ -993,7 +993,7 @@ if ! git merge-base --is-ancestor "$built_in_skill_catalog_api_commit" origin/ma
   fail "Built-in Skill catalog API rollback floor is not on main."
 fi
 if ! git merge-base --is-ancestor "$built_in_skill_catalog_api_commit" "$TARGET_COMMIT"; then
-  fail "Rollback target predates the built-in Skill catalog reader: ${built_in_skill_catalog_api_commit}."
+  fail "Rollback target predates the independent built-in Skill publisher: ${built_in_skill_catalog_api_commit}."
 fi
 
 # Captured Connector bundles must retain Workflow precedence, even after the
@@ -1230,6 +1230,21 @@ if ! git merge-base --is-ancestor "$widget_push_columns_floor" origin/main; then
 fi
 if ! git merge-base --is-ancestor "$widget_push_columns_floor" "$TARGET_COMMIT"; then
   fail "Rollback target predates the iOS widget push columns retirement: ${widget_push_columns_floor}."
+fi
+
+# Only artifacts with Agent connector SQL retirement support the contracted schema.
+agent_connector_schema_floor_path=.github/rollback-floors/agent-connector-schema-independent-api
+if ! agent_connector_schema_floor=$(git show "origin/main:${agent_connector_schema_floor_path}"); then
+  fail "Cannot read the Agent connector schema rollback floor from main."
+fi
+if [[ ! "$agent_connector_schema_floor" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Missing or invalid Agent connector schema rollback floor."
+fi
+if ! git merge-base --is-ancestor "$agent_connector_schema_floor" origin/main; then
+  fail "Agent connector schema rollback floor is not on main."
+fi
+if ! git merge-base --is-ancestor "$agent_connector_schema_floor" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the Agent connector schema retirement: ${agent_connector_schema_floor}."
 fi
 
 deployments=$(curl -fsS --get "https://api.vercel.com/v6/deployments" \

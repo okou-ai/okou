@@ -40,24 +40,15 @@ export type WorkflowQueueSourcePlan =
 
 export type AutomationRow = typeof workflowAutomations.$inferSelect;
 
-export interface DueWorkflowAutomation {
-  readonly automation: AutomationRow;
-  // The owning agent is derived from the workflow row (hard 1:N); automations no
-  // longer carry an agentId column, so callers resolve it and pass it here.
-  readonly agentId: string;
-  readonly chatThreadId: string;
-  // One-time schedule automations are disabled as part of the optimistic claim.
-  // That claimed row can still proceed through the run-start readability gate.
-  readonly allowClaimedOnceScheduleAutomation?: boolean;
-}
-
 export type RunWorkflowAutomationResult = {
   readonly kind: "enqueued";
   readonly scheduleOccurrence?: "claimed" | "superseded";
 };
 
 export interface RunWorkflowAutomationNowArgs {
-  readonly due: DueWorkflowAutomation;
+  readonly automation: AutomationRow;
+  readonly agentId: string;
+  readonly chatThreadId: string;
   readonly automationContext: WorkflowAutomationContext;
   /** Stable ingress identity when a source callback may retry the same event. */
   readonly queueEventId?: string;
@@ -84,6 +75,8 @@ export interface RunWorkflowAutomationNowArgs {
    * event. Only journaled legacy Morning Brief ticks pass one.
    */
   readonly scheduleClaim?: WorkflowScheduleClaimPlan;
+  /** The observed ordinary cron or loop slot to consume with its queue event. */
+  readonly recurringScheduleClaim?: WorkflowRecurringScheduleClaim;
   readonly timing?: ApiDispatchTimingCollector;
 }
 
@@ -127,9 +120,14 @@ export interface WorkflowScheduleClaimPlan {
   readonly automationSnapshot: WorkflowAutomationSnapshot | undefined;
 }
 
+export type WorkflowRecurringScheduleClaim = Pick<
+  WorkflowScheduleClaimPlan,
+  "scheduledAnchorAt" | "claimedAt" | "automationSnapshot"
+>;
+
 export class ScheduleOccurrenceUnavailableError extends Error {
   constructor() {
-    super("Schedule occurrence was consumed by a competing tick");
+    super("Schedule occurrence is no longer available for admission");
     this.name = "ScheduleOccurrenceUnavailableError";
   }
 }

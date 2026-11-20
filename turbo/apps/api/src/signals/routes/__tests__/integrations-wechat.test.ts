@@ -2694,6 +2694,7 @@ describe("WeChat input failure isolation", () => {
             : new HttpResponse(null, { status: 503 });
         }),
       );
+      mockNow(now());
       await receive();
       expect(downloads).toBe(1);
       const messages = setupApp({

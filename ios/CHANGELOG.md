@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.51.2](https://github.com/okou-ai/okou/compare/ios-v0.51.1...ios-v0.51.2) (2026-11-20)
+
+
+### Refactoring
+
+* **api:** retire agent connector execution grants ([#49268](https://github.com/okou-ai/okou/issues/49268)) ([596e8ca](https://github.com/okou-ai/okou/commit/596e8ca5d65c2ba7d7b447816042a9bc48fa8b44))
+
+## [0.51.1](https://github.com/okou-ai/okou/compare/ios-v0.51.0...ios-v0.51.1) (2026-11-20)
+
+
+### Bug Fixes
+
+* **mobile:** use chat bubble icons for mark read and unread ([#49277](https://github.com/okou-ai/okou/issues/49277)) ([745cfcf](https://github.com/okou-ai/okou/commit/745cfcfc47b9c05ba40031ab4af73765385a3c5d))
+
+## [0.51.0](https://github.com/okou-ai/okou/compare/ios-v0.50.0...ios-v0.51.0) (2026-11-19)
+
+
+### Features
+
+* **ios:** use native icon-only chat swipe actions with confirmed delete ([#49057](https://github.com/okou-ai/okou/issues/49057)) ([4cd8d4a](https://github.com/okou-ai/okou/commit/4cd8d4a79fad1014a190aa880e3bf0f459dd1568))
+
 ## [0.50.0](https://github.com/okou-ai/okou/compare/ios-v0.49.1...ios-v0.50.0) (2026-11-19)
 
 

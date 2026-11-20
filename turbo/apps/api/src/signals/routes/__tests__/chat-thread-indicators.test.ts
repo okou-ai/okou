@@ -42,7 +42,6 @@ function createIndicatorCredentials() {
     if (!owner) {
       throw new Error("Expected an owned indicator Run");
     }
-    await api.heartbeatRunner();
     const execution = await owner.executionInput(runId);
     const token = execution.platformEnvironment?.OKOU_TOKEN;
     if (!token) {
@@ -102,7 +101,6 @@ async function createEntitledAgent(
   displayName: string,
 ): Promise<string> {
   await api.grantProEntitlement(actor);
-  await api.ensurePersonalSubscriptionModel(actor);
   await api.ensurePersonalSubscriptionModel(actor, {
     model: "claude-fable-5-1",
   });

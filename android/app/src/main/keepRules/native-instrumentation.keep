@@ -21,9 +21,12 @@
   int chat_archived;
   int chat_empty;
   int chat_filter;
+  int chat_filter_subtitle;
+  int chat_inbox;
   int chat_list_title;
   int chat_loading;
   int chat_more_actions;
+  int chat_muted;
   int composer_accepted;
   int composer_new;
   int composer_saving;
@@ -55,7 +58,7 @@
   int updates_required;
   int updates_target;
   int updates_title;
-  int updates_view;
+  int updates_toolbar;
 }
 -keep,allowobfuscation class ai.okou.android.R {
 }
@@ -218,11 +221,6 @@
 -keep,allowobfuscation class ai.okou.android.auth.SessionUiState {
   public ai.okou.android.auth.ReadyWorkspace getReady();
 }
--keep,allowobfuscation class ai.okou.android.auth.WorkspaceBootstrap {
-  public <init>(ai.okou.android.api.generated.Organization, ai.okou.android.api.generated.UserPreferences);
-  public static ai.okou.android.auth.WorkspaceBootstrap copy$default(ai.okou.android.auth.WorkspaceBootstrap, ai.okou.android.api.generated.Organization, ai.okou.android.api.generated.UserPreferences, int, java.lang.Object);
-  public ai.okou.android.api.generated.UserPreferences getPreferences();
-}
 -keep,allowobfuscation class ai.okou.android.auth.WorkspaceIdentity {
   public <init>(java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.String);
   public <init>(java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.String, int, kotlin.jvm.internal.DefaultConstructorMarker);
@@ -235,7 +233,6 @@
 }
 -keep,allowobfuscation interface ai.okou.android.auth.WorkspaceSession {
   public java.lang.Object agents(kotlin.coroutines.Continuation);
-  public java.lang.Object bootstrap(kotlin.coroutines.Continuation);
   public java.lang.Object chatArchive(java.lang.String, kotlin.coroutines.Continuation);
   public java.lang.Object chatEvents(java.lang.Long, kotlin.coroutines.Continuation);
   public java.lang.Object chatSnapshot(kotlin.coroutines.Continuation);
@@ -252,6 +249,7 @@
   public java.lang.Object newChatAgent(kotlin.coroutines.Continuation);
   public java.lang.Object observeInput(java.lang.String, java.lang.String, kotlin.coroutines.Continuation);
   public java.lang.Object observeRealtime(kotlinx.coroutines.flow.StateFlow, kotlin.jvm.functions.Function3, kotlin.jvm.functions.Function2, kotlin.coroutines.Continuation);
+  public java.lang.Object organization(kotlin.coroutines.Continuation);
   public java.lang.Object personalInstructions(kotlin.coroutines.Continuation);
   public java.lang.Object personalInstructionsEnabled(kotlin.coroutines.Continuation);
   public java.lang.Object preferences(kotlin.coroutines.Continuation);

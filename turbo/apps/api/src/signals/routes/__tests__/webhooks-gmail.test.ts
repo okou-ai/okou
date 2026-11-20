@@ -233,6 +233,7 @@ function gmailBodyData(text: string): string {
 function configureGmailMessageMocks(
   gmailEmail: string,
   accessToken = "gmail-access-token",
+  beforeMessageRead?: () => Promise<void>,
 ): void {
   server.use(
     http.get(
@@ -265,7 +266,8 @@ function configureGmailMessageMocks(
     ),
     http.get(
       "https://gmail.googleapis.com/gmail/v1/users/me/messages/:messageId",
-      () => {
+      async () => {
+        await beforeMessageRead?.();
         return HttpResponse.json({
           id: "msg-1",
           threadId: "gmail-thread-1",
@@ -478,7 +480,6 @@ async function connectGmail(
   gmailEmail: string,
   subject = "bdd-gmail-user-id",
   account?: ConnectorAccountMutationIntent,
-  agentId?: string,
 ): Promise<string> {
   mockGmailConnectorOAuth({
     accessToken: "gmail-access-token",
@@ -489,7 +490,6 @@ async function connectGmail(
     actor,
     "gmail",
     "oauth",
-    agentId,
     account,
   );
   const state = new URL(start.authorizationUrl).searchParams.get("state");
@@ -534,13 +534,10 @@ async function addGmailAccount(
     email: args.gmailEmail,
     subject: args.subject,
   });
-  const start = await connectorsApi.startOauth(
-    actor,
-    "gmail",
-    "oauth",
-    args.agentId,
-    { intent: "add", displayName: args.displayName },
-  );
+  const start = await connectorsApi.startOauth(actor, "gmail", "oauth", {
+    intent: "add",
+    displayName: args.displayName,
+  });
   const state = new URL(start.authorizationUrl).searchParams.get("state");
   if (!state) {
     throw new Error("Expected Gmail OAuth start URL to include state");
@@ -629,8 +626,6 @@ async function setupMultiAccountGmailFixture(): Promise<MultiAccountGmailTestFix
     fixture.actor,
     firstEmail,
     "gmail-first-account",
-    undefined,
-    fixture.agentId,
   );
   const secondConnectorId = await addGmailAccount(fixture.actor, {
     gmailEmail: secondEmail,
@@ -1442,7 +1437,24 @@ describe("POST /api/webhooks/gmail", () => {
     const { actor, workflowId, firstEmail, secondEmail, secondConnectorId } =
       await setupMultiAccountGmailFixture();
 
-    configureGmailMessageMocks(secondEmail, "gmail-second-access-token");
+    const bothMessageReads = createDeferredPromise<void>(context.signal);
+    onTestFinished(() => {
+      if (!bothMessageReads.settled()) {
+        bothMessageReads.resolve();
+      }
+    });
+    let messageReads = 0;
+    configureGmailMessageMocks(
+      secondEmail,
+      "gmail-second-access-token",
+      async () => {
+        messageReads += 1;
+        if (messageReads === 2) {
+          bothMessageReads.resolve();
+        }
+        await bothMessageReads.promise;
+      },
+    );
     await configureWorkspaceModelProvider(actor);
     const created = await accept(
       automationsClient().create({
@@ -1511,15 +1523,23 @@ describe("POST /api/webhooks/gmail", () => {
       historyId: 101,
       messageId: "pubsub-1",
     });
-    const first = await postGmailWebhook(body);
-
-    expectResponseStatus(first, 200);
-    expect(first.body).toStrictEqual({
-      success: true,
-      watchStates: 1,
-      dispatched: 1,
-      duplicates: 0,
-    });
+    const concurrent = await Promise.all([
+      postGmailWebhook(body),
+      postGmailWebhook(body),
+    ]);
+    for (const response of concurrent) {
+      expectResponseStatus(response, 200);
+    }
+    expect(
+      concurrent.map((response) => {
+        return response.body;
+      }),
+    ).toStrictEqual(
+      expect.arrayContaining([
+        { success: true, watchStates: 1, dispatched: 1, duplicates: 0 },
+        { success: true, watchStates: 1, dispatched: 0, duplicates: 1 },
+      ]),
+    );
     await flushWaitUntilForTest();
     const expectedDisplayMessage =
       'A new email arrived from Customer Example <customer@example.com> with subject "Invoice needs a reply".';
@@ -1862,8 +1882,6 @@ describe("POST /api/webhooks/gmail", () => {
       actor,
       uniqueGmailEmail(),
       "gmail-first-account",
-      undefined,
-      agentId,
     );
     await accept(
       automationsClient().create({
@@ -1927,8 +1945,6 @@ describe("POST /api/webhooks/gmail", () => {
       actor,
       uniqueGmailEmail(),
       "gmail-initial-account",
-      undefined,
-      agentId,
     );
     const created = await accept(
       automationsClient().create({

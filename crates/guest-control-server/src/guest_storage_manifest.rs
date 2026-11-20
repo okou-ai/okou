@@ -1,4 +1,6 @@
+use bytes::Bytes;
 use guest_contracts::agent_instructions::InstructionOperation;
+use guest_contracts::storage_files;
 use guest_contracts::storage_resources::StorageResourceUsage;
 use serde::{Serialize, Serializer};
 use std::io;
@@ -36,6 +38,11 @@ const THREAD_WORKER: &str = "gctl-store";
 const THREAD_STDIN: &str = "gctl-store-in";
 const THREAD_STDOUT: &str = "gctl-store-out";
 const THREAD_STDERR: &str = "gctl-store-err";
+#[cfg(target_os = "linux")]
+const SEALED_STORAGE_MIN_BYTES: usize = 1024 * 1024;
+// Bound the copy from owned bytes into the helper's sealed stdin.
+#[cfg(target_os = "linux")]
+const SEALED_STORAGE_MAX_BYTES: usize = 8 * 1024 * 1024;
 
 #[derive(Clone)]
 pub(crate) enum GuestStorageManifestProgram {
@@ -119,13 +126,19 @@ impl GuestStorageManifestProgram {
     }
 }
 
+pub(crate) enum StorageInput {
+    Bytes(Bytes),
+    #[cfg(target_os = "linux")]
+    Sealed(std::fs::File),
+}
+
 struct GuestStorageManifestRequest {
     instruction_operation: Option<InstructionOperation>,
     seq: u32,
     timeout_ms: u32,
     run_id: String,
     runtime_dir: String,
-    manifest_json: Vec<u8>,
+    input: StorageInput,
     request_ownership_us: Option<u64>,
     enqueue_ready: Instant,
     operation_guard: OperationGuard,
@@ -174,6 +187,7 @@ impl GuestStorageManifestWorker {
     pub(crate) fn submit(
         &self,
         submission: GuestStorageManifestSubmission<'_>,
+        retain_manifest: impl FnOnce(&[u8]) -> StorageInput,
         operation_guard: OperationGuard,
         admission: SingleActivePermit,
     ) -> Result<(), GuestStorageManifestSubmitError> {
@@ -185,7 +199,7 @@ impl GuestStorageManifestWorker {
                 timeout_ms: submission.timeout_ms,
                 run_id: submission.run_id.to_owned(),
                 runtime_dir: submission.runtime_dir.to_owned(),
-                manifest_json: submission.manifest_json.to_vec(),
+                input: retain_manifest(submission.manifest_json),
                 operation_guard,
                 admission,
                 request_ownership_us: None,
@@ -242,7 +256,7 @@ fn handle_request(
         timeout_ms,
         run_id,
         runtime_dir,
-        manifest_json,
+        input,
         operation_guard,
         admission,
         request_ownership_us,
@@ -256,7 +270,7 @@ fn handle_request(
         timeout_ms,
         run_id: &run_id,
         runtime_dir: &runtime_dir,
-        manifest_json,
+        input,
         connection_cancel,
         process_containment_mode,
         drain_deadline,
@@ -307,8 +321,7 @@ fn handle_request(
 
     writer
         .write_frame_after_lock_unless_cancelled(&frame, connection_cancel, || {
-            operation_guard.release();
-            drop(admission);
+            admission.finish_operation(&operation_guard);
         })
         .map(|_| ())
 }
@@ -353,10 +366,59 @@ struct RunManifestInput<'a> {
     timeout_ms: u32,
     run_id: &'a str,
     runtime_dir: &'a str,
-    manifest_json: Vec<u8>,
+    input: StorageInput,
     connection_cancel: &'a AtomicBool,
     process_containment_mode: ProcessContainmentMode,
     drain_deadline: Duration,
+}
+
+fn configure_helper_stdin(
+    command: &mut Command,
+    instruction_operation: Option<InstructionOperation>,
+    input: StorageInput,
+) -> Option<Bytes> {
+    let input = match input {
+        StorageInput::Bytes(bytes) => bytes,
+        #[cfg(target_os = "linux")]
+        StorageInput::Sealed(file) => {
+            command
+                .arg(storage_files::SEALED_STDIN_ARGUMENT)
+                .stdin(CommandStdio::Owned(file.into()));
+            return None;
+        }
+    };
+    let argument = match instruction_operation {
+        Some(operation) => operation.helper_argument(),
+        None if input.starts_with(storage_files::INPUT_MAGIC) => storage_files::STDIN_ARGUMENT,
+        None => "--manifest-stdin",
+    };
+    #[cfg(target_os = "linux")]
+    if argument == storage_files::STDIN_ARGUMENT
+        && (SEALED_STORAGE_MIN_BYTES..=SEALED_STORAGE_MAX_BYTES).contains(&input.len())
+    {
+        use std::os::unix::fs::FileExt;
+
+        let file = crate::sealed_input::create(c"guest-storage-files").and_then(|file| {
+            // Keep the inherited stdin offset at zero.
+            file.write_all_at(&input, 0)?;
+            crate::sealed_input::seal(&file)?;
+            Ok(file)
+        });
+        match file {
+            Ok(file) => {
+                command
+                    .arg(storage_files::SEALED_STDIN_ARGUMENT)
+                    .stdin(CommandStdio::Owned(file.into()));
+                return None;
+            }
+            Err(error) => log(
+                "WARN",
+                &format!("Failed to prepare sealed Storage input: {error}"),
+            ),
+        }
+    }
+    command.arg(argument).stdin(CommandStdio::Piped);
+    Some(input)
 }
 
 fn run_manifest(input: RunManifestInput<'_>) -> CapturedHelperOutput {
@@ -367,7 +429,7 @@ fn run_manifest(input: RunManifestInput<'_>) -> CapturedHelperOutput {
         timeout_ms,
         run_id,
         runtime_dir,
-        manifest_json,
+        input,
         connection_cancel,
         process_containment_mode,
         drain_deadline,
@@ -400,26 +462,18 @@ fn run_manifest(input: RunManifestInput<'_>) -> CapturedHelperOutput {
         }
     };
     let mut command = Command::new(program.path());
-    let argument = match instruction_operation {
-        Some(operation) => operation.helper_argument(),
-        None if manifest_json.starts_with(guest_contracts::storage_files::INPUT_MAGIC) => {
-            "--storage-files-stdin"
-        }
-        None => "--manifest-stdin",
-    };
+    let stdin_payload = configure_helper_stdin(&mut command, instruction_operation, input);
     let output_limit = if instruction_operation.is_some() {
         guest_control_proto::GUEST_AGENT_INSTRUCTIONS_OUTPUT_LIMIT_BYTES
     } else {
         GUEST_STORAGE_MANIFEST_OUTPUT_LIMIT_BYTES
     };
     command
-        .arg(argument)
         .env(guest_contracts::env::RUN_ID_ENV, run_id)
         .env(
             guest_contracts::runtime_paths::CANONICAL_GUEST_RUNTIME_DIR_ENV,
             runtime_dir,
         )
-        .stdin(CommandStdio::Piped)
         .stdout(CommandStdio::Piped)
         .stderr(CommandStdio::Piped);
     let mut child = match command.spawn(false, &process_containment) {
@@ -435,14 +489,18 @@ fn run_manifest(input: RunManifestInput<'_>) -> CapturedHelperOutput {
         }
     };
 
-    let Some(stdin) = child.stdin.take() else {
-        return abort_spawned(
-            child,
-            process_containment,
-            resources,
-            started,
-            "storage helper stdin pipe missing",
-        );
+    let stdin = match (stdin_payload, child.stdin.take()) {
+        (Some(input), Some(stdin)) => Some((stdin, input)),
+        (None, None) => None,
+        _ => {
+            return abort_spawned(
+                child,
+                process_containment,
+                resources,
+                started,
+                "unexpected storage helper stdin pipe",
+            );
+        }
     };
     let Some(stdout) = child.stdout.take() else {
         drop(stdin);
@@ -517,7 +575,9 @@ fn run_manifest(input: RunManifestInput<'_>) -> CapturedHelperOutput {
             );
         }
     };
-    let stdin_writer = match FixedInputWriter::spawn(stdin, manifest_json, THREAD_STDIN) {
+    let stdin_writer =
+        stdin.map(|(stdin, input)| FixedInputWriter::spawn(stdin, input, THREAD_STDIN));
+    let stdin_writer = match stdin_writer.transpose() {
         Ok(writer) => writer,
         Err(error) => {
             drain_cancel.cancel();
@@ -553,7 +613,7 @@ fn run_manifest(input: RunManifestInput<'_>) -> CapturedHelperOutput {
         ProcessContainmentCleanupMode::for_wait_outcome(&outcome, cancellation_observed);
     let containment_result =
         process_containment.cleanup_with_storage_resources(cleanup_mode, resources);
-    let stdin_result = stdin_writer.join();
+    let stdin_result = stdin_writer.map_or(Ok(()), FixedInputWriter::join);
     if !matches!(outcome, WaitOutcome::Exited(_))
         || cancellation_observed
         || containment_result.is_err()

@@ -9,7 +9,6 @@ import {
   connectorPermissionsContract,
   type ApplyConnectorPermissions,
 } from "@okouai/api-contracts/contracts/connector-permissions";
-import { userPermissionGrantsContract } from "@okouai/api-contracts/contracts/user-permission-grants";
 import { UNKNOWN_PERMISSION_GRANT } from "@okouai/connectors/firewall-types";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -18,7 +17,6 @@ import { mockNow } from "../../../lib/time";
 import { chatConnectorAccessRoutes } from "../chat-connector-access";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { connectorPermissionsRoutes } from "../connector-permissions";
-import { userPermissionGrantsRoutes } from "../user-permission-grants";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import {
@@ -54,11 +52,6 @@ function accounts() {
     connectorAccountsContract,
   );
 }
-function legacy() {
-  return setupApp({ context, routes: userPermissionGrantsRoutes })(
-    userPermissionGrantsContract,
-  );
-}
 function session(actor: ReturnType<typeof bdd.user>) {
   mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
 }
@@ -92,12 +85,7 @@ describe("Member connector permissions", () => {
       agentId: second.agentId,
     });
     mockSlackConnectorOAuth();
-    const start = await connectors.startOauth(
-      actor,
-      "slack",
-      "oauth",
-      first.agentId,
-    );
+    const start = await connectors.startOauth(actor, "slack", "oauth");
     const state = new URL(start.authorizationUrl).searchParams.get("state");
     if (!state) {
       throw new Error("Expected OAuth state");
@@ -112,23 +100,6 @@ describe("Member connector permissions", () => {
     }
     session(actor);
     mockNow(new Date("2026-11-02T12:00:00Z"));
-    for (const [agentId, action] of [
-      [first.agentId, "allow"],
-      [second.agentId, "deny"],
-    ] as const) {
-      await accept(
-        legacy().apply({
-          headers,
-          body: {
-            agentId,
-            connectorSlug: "slack",
-            mode: "replace",
-            grants: [{ permission: "conversations:read", action }],
-          },
-        }),
-        [200],
-      );
-    }
     await expect(read(slack)).resolves.toStrictEqual({
       target: slack,
       grants: [],
@@ -191,20 +162,6 @@ describe("Member connector permissions", () => {
       ).body.available,
     ).toBeTruthy();
     await expect(read(slack)).resolves.toStrictEqual(initial);
-    await accept(
-      legacy().apply({
-        headers,
-        body: {
-          agentId: first.agentId,
-          connectorSlug: "slack",
-          mode: "replace",
-          grants: [
-            { permission: "chat:write", action: "allow", expiresIn: "24h" },
-          ],
-        },
-      }),
-      [200],
-    );
     await expect(read(slack)).resolves.toStrictEqual(initial);
     mockNow(new Date("2026-11-02T12:15:00Z"));
     const edited = await save({
@@ -272,12 +229,6 @@ describe("Member connector permissions", () => {
       definition.id,
       [{ key: "secret", kind: "secret", value: "custom-B" }],
       { intent: "add" },
-    );
-    await connectors.requestUpdateAgentCustomConnectorGrants(
-      actor,
-      agent.agentId,
-      [{ customConnectorId: definition.id, permissionNames: ["chat:write"] }],
-      [200],
     );
     session(actor);
     await expect(read(target)).resolves.toStrictEqual({ target, grants: [] });

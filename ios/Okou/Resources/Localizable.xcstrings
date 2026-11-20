@@ -26392,6 +26392,191 @@
           "stringUnit": { "state": "translated", "value": "顯示已歸檔的聊天" }
         }
       }
+    },
+    "Delete chat": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Chat löschen" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Eliminar chat" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Supprimer la discussion" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "चैट हटाएं" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Hapus chat" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Elimina la chat" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "チャットを削除" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "채팅 삭제" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Excluir conversa" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "删除聊天" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "刪除聊天" }
+        }
+      }
+    },
+    "Delete chat?": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Chat löschen?" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "¿Eliminar el chat?" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Supprimer la discussion ?" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "चैट हटाएं?" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Hapus chat?" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Eliminare la chat?" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "チャットを削除しますか?" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "채팅을 삭제하시겠습니까?" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Excluir conversa?" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "删除聊天？" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "刪除聊天？" }
+        }
+      }
+    },
+    "This will permanently delete this chat. Any task currently running in this chat will be stopped immediately. Any linked automations will be paused. This action cannot be undone.": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Dadurch wird dieser Chat dauerhaft gelöscht. Jede derzeit in diesem Chat ausgeführte Aufgabe wird sofort gestoppt. Alle verknüpften Automatisierungen werden pausiert. Diese Aktion kann nicht rückgängig gemacht werden." }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Esto eliminará permanentemente este chat. Cualquier tarea que se esté ejecutando en este chat se detendrá inmediatamente. Todas las automatizaciones vinculadas se pausarán. Esta acción no puede deshacerse." }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Cela supprimera définitivement cette discussion. Toute tâche en cours dans cette discussion sera arrêtée immédiatement. Toutes les automatisations liées seront mises en pause. Cette action est irréversible." }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "इससे यह चैट स्थायी रूप से हट जाएगी। इस चैट में वर्तमान में चल रहा कोई भी कार्य तुरंत बंद कर दिया जाएगा। इससे जुड़ी सभी ऑटोमेशन रोक दी जाएंगी। इस एक्शन को वापस नहीं किया जा सकता।" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Ini akan menghapus chat ini secara permanen. Setiap tugas yang sedang berjalan di chat ini akan dihentikan segera. Semua automasi yang ditautkan akan dijeda. Tindakan ini tidak dapat dibatalkan." }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Ciò eliminerà definitivamente questa chat. Qualsiasi attività attualmente in esecuzione in questa chat verrà interrotta immediatamente. Tutte le automazioni collegate verranno messe in pausa. Questa azione non può essere annullata." }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "これにより、このチャットは完全に削除されます。このチャットで現在実行中のタスクはすぐに停止されます。リンクされている自動化は一時停止されます。この操作は元に戻すことができません。" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "이 채팅을 영구 삭제합니다. 현재 실행 중인 작업은 즉시 중단됩니다. 연결된 자동화는 일시 중지됩니다. 이 작업은 되돌릴 수 없습니다." }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Esta conversa será excluída permanentemente. Qualquer tarefa em execução nesta conversa será interrompida imediatamente. Todas as automações vinculadas serão pausadas. Esta ação não pode ser desfeita." }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "这将永久删除该聊天。聊天中正在运行的任务会立即停止，关联的自动化会被暂停。此操作无法撤销。" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "這將永久刪除該聊天。聊天中正在執行的任務會立即停止，關聯的自動化會被暫停。此操作無法撤銷。" }
+        }
+      }
+    },
+    "Delete": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Löschen" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Eliminar" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Supprimer" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "हटाएँ" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Hapus" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Elimina" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "削除" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "삭제" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Excluir" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "删除" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "刪除" }
+        }
+      }
+    },
+    "The chat deletion was not confirmed.": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Das Löschen des Chats wurde nicht bestätigt." }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "No se confirmó la eliminación del chat." }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "La suppression de la discussion n’a pas été confirmée." }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "चैट हटाने की पुष्टि नहीं हुई।" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Penghapusan chat tidak dikonfirmasi." }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "L’eliminazione della chat non è stata confermata." }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "チャットの削除は確認されませんでした。" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "채팅 삭제가 확인되지 않았습니다." }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "A exclusão da conversa não foi confirmada." }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "删除聊天未确认。" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "刪除聊天未確認。" }
+        }
+      }
     }
   },
   "version": "1.0"

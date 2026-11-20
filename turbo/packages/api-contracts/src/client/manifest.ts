@@ -3,14 +3,6 @@
 
 export const clientDescriptorManifest = [
   {
-    module: "agent-connector-access",
-    contracts: ["agentConnectorAccessContract"],
-  },
-  {
-    module: "agent-custom-connectors",
-    contracts: ["agentCustomConnectorsContract"],
-  },
-  {
     module: "agent-draft",
     contracts: ["agentDraftContract"],
   },
@@ -200,10 +192,6 @@ export const clientDescriptorManifest = [
   {
     module: "connector-accounts",
     contracts: ["connectorAccountsContract"],
-  },
-  {
-    module: "connector-agent-access",
-    contracts: ["connectorAgentAccessContract"],
   },
   {
     module: "connector-catalog",
@@ -793,10 +781,6 @@ export const clientDescriptorManifest = [
   {
     module: "user-model-preference",
     contracts: ["userModelPreferenceContract"],
-  },
-  {
-    module: "user-permission-grants",
-    contracts: ["userPermissionGrantsContract"],
   },
   {
     module: "user-preferences",

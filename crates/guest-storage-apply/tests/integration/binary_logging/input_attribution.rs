@@ -12,6 +12,52 @@ fn run_decoded(
         .wait()
 }
 
+#[cfg(target_os = "linux")]
+#[test]
+fn sealed_input_requires_immutable_stdin_before_materialization() {
+    use nix::fcntl::{FcntlArg, SealFlag, fcntl};
+    use nix::sys::memfd::{MFdFlags, memfd_create};
+    use std::fs::File;
+    use std::io::{Seek, SeekFrom, Write};
+    use std::os::unix::fs::MetadataExt;
+    use std::process::Stdio;
+    use std::time::Duration;
+
+    let fixture = BinaryLoggingFixture::new("sealed-input").unwrap();
+    let input = input_with_files(&fixture, &valid_manifest(&fixture).unwrap()).unwrap();
+    let mut file =
+        File::from(memfd_create(c"storage-input-test", MFdFlags::MFD_ALLOW_SEALING).unwrap());
+    let prefix = b"guest control context";
+    file.write_all(prefix).unwrap();
+    file.write_all(&input).unwrap();
+    file.seek(SeekFrom::Start(prefix.len() as u64)).unwrap();
+    let output = fixture.dir.path().join("mount/private-filename");
+    let apply = || {
+        process::ChildExecution::spawn(
+            fixture
+                .command()
+                .arg(storage_files::SEALED_STDIN_ARGUMENT)
+                .stdin(Stdio::from(file.try_clone().unwrap()))
+                .stdout(Stdio::null())
+                .stderr(Stdio::null()),
+        )
+        .unwrap()
+        .wait_with_timeout(Duration::from_secs(10))
+        .unwrap()
+    };
+
+    assert!(!apply().success());
+    assert!(!output.exists());
+
+    let seals = SealFlag::F_SEAL_WRITE | SealFlag::F_SEAL_SHRINK | SealFlag::F_SEAL_GROW;
+    fcntl(&file, FcntlArg::F_ADD_SEALS(seals)).unwrap();
+    assert!(apply().success());
+    let metadata = output.metadata().unwrap();
+    assert_eq!(metadata.mode() & 0o777, 0o644);
+    assert_eq!(metadata.mtime(), 123);
+    assert_eq!(std::fs::read(output).unwrap(), b"private-content");
+}
+
 fn input_actions(ops: &[Value]) -> Vec<(&str, bool)> {
     ops.iter()
         .filter_map(|entry| {

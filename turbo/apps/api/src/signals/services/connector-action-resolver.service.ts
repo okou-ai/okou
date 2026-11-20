@@ -15,7 +15,6 @@ import type { ConnectorAuthMethodRuntimeConfig } from "@okouai/connectors/connec
 
 import { logger } from "../../lib/log";
 import { db$ } from "../external/db";
-import { createImmutableConnectorRuntimeSelection } from "./connector-catalog-entries.service";
 import {
   getConnectorRuntimeConnector,
   getConnectorRuntimeMethod,
@@ -335,39 +334,6 @@ export const readConnectorResolver$ = command(
     return createConnectorActionResolver(snapshot);
   },
 );
-
-/**
- * Filters the given slugs to connectors that exist in the catalog and have an
- * executable auth method, matching `resolveSlug` with `requireExecutable`.
- * Loads only these connectors from immutable entries, so callers that
- * check a handful of slugs avoid materializing the full catalog snapshot.
- */
-export function createExecutableConnectorSlugs(
-  connectorSlugs$: Computed<Promise<readonly ConnectorSlug[]>>,
-): Computed<Promise<readonly ConnectorSlug[]>> {
-  const input$ = computed(async (get) => {
-    const requestedConnectorSlugs = await get(connectorSlugs$);
-    return { requestedConnectorSlugs };
-  });
-  const selection$ = createImmutableConnectorRuntimeSelection(input$);
-  return computed(async (get): Promise<readonly ConnectorSlug[]> => {
-    const connectorSlugs = await get(connectorSlugs$);
-    if (connectorSlugs.length === 0) {
-      return [];
-    }
-    const selection = await get(selection$);
-    return connectorSlugs.filter((connectorSlug) => {
-      const runtimeConnector = getConnectorRuntimeConnector(
-        selection,
-        connectorSlug,
-      );
-      return (
-        runtimeConnector !== undefined &&
-        !lacksExecutableCapability({ connectorSlug, runtimeConnector })
-      );
-    });
-  });
-}
 
 export function connectorActionResolverForSnapshot(
   snapshot: ConnectorRuntimeSelection,

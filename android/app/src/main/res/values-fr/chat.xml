@@ -12,9 +12,16 @@
     <string name="chat_status_unavailable">Actualisation des états impossible. Les anciens indicateurs peuvent être obsolètes.</string>
     <string name="chat_status_loading">Vérification des états actif et non lu…</string>
     <string name="chat_refresh_status">Actualiser les états</string>
-    <string name="chat_all">Toutes</string>
+    <string name="chat_inbox">Boîte de réception</string>
+    <string name="chat_mark_all_read">Tout marquer comme lu</string>
+    <string name="chat_mark_all_read_unconfirmed">Certaines discussions sont peut-être encore non lues.</string>
+    <plurals name="chat_mark_all_read_success">
+        <item quantity="one">%1$d discussion marquée comme lue.</item>
+        <item quantity="other">%1$d discussions marquées comme lues.</item>
+    </plurals>
     <string name="chat_filter">Filtrer</string>
-    <string name="chat_clear_filter">Effacer le filtre</string>
+    <string name="chat_filter_subtitle">Filtre · %1$s</string>
+    <string name="chat_back_to_inbox">Retour à la boîte de réception</string>
     <string name="chat_more_actions">Plus d’actions</string>
     <string name="chat_unread">Non lues</string>
     <string name="chat_archived">Archivées</string>

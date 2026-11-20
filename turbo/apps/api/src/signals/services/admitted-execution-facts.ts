@@ -12,7 +12,7 @@ import type { ResolvedSkillVolume } from "./run-prompt-and-skills";
 
 import type { Environment } from "./run-environment";
 import type { ConnectorServerFirewallMetadataCatalog } from "./connector-server-firewall-catalog.service";
-import type { ResolvedPermissionGrant } from "./user-permission-grants.service";
+import type { ResolvedPermissionGrant } from "./connector-network-policy-refresh.service";
 import type { CapturedExecutionPackages } from "./execution-workflow-selection";
 
 /** Captured policy sources; actual artifact expiry is evaluated at publication. */

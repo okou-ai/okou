@@ -43,7 +43,7 @@ export interface CompletedRunOutput {
   } | null;
 }
 
-/** The callback observes cancellation after timing this complete read batch. */
+/** The callback observes cancellation after this complete read batch. */
 export const loadCompletedRunOutput$ = command(
   async (
     { get },

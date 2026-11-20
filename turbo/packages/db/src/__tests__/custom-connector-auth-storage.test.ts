@@ -6,7 +6,6 @@ import { connectors } from "../schema/connector";
 import { orgCustomConnectorOauthConfigs } from "../schema/org-custom-connector-oauth-config";
 import { orgCustomConnectors } from "../schema/org-custom-connector";
 import { secrets } from "../schema/secret";
-import { userCustomConnectors } from "../schema/user-custom-connector";
 
 function names(items: readonly { readonly name?: string }[]): string[] {
   return items.flatMap((item) => {
@@ -111,7 +110,7 @@ describe("custom connector auth storage schema", () => {
     );
   });
 
-  it("owns OAuth tokens by connection and stores agent grants", () => {
+  it("owns OAuth tokens by connection", () => {
     const secretConfig = getTableConfig(secrets);
 
     expect(
@@ -125,7 +124,5 @@ describe("custom connector auth storage schema", () => {
       ]),
     );
     expect(secretConfig.foreignKeys[0]?.onDelete).toBe("cascade");
-
-    expect(userCustomConnectors.permissionNames.notNull).toBe(true);
   });
 });

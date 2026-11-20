@@ -118,6 +118,7 @@
     <string name="updates_preparing">Menyiapkan pembaruan…</string>
     <string name="updates_check">Periksa pembaruan</string>
     <string name="updates_view">Lihat pembaruan</string>
+    <string name="updates_toolbar">Perbarui</string>
     <string name="updates_later">Nanti</string>
     <string name="updates_download">Unduh pembaruan</string>
     <string name="updates_install">Instal pembaruan</string>

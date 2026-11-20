@@ -628,7 +628,6 @@ describe("connector catalog valid lifecycle", () => {
     await withConnectorRuntime(
       context,
       actor,
-      "gitlab",
       async ({ execution: receivedExecution, resolveAuth }) => {
         expect(receivedExecution.environment).not.toHaveProperty("GITLAB_HOST");
         const resolved = await resolveAuth({
@@ -850,7 +849,6 @@ describe("connector catalog valid lifecycle", () => {
     await withConnectorRuntime(
       context,
       actor,
-      "steam",
       ({ execution: receivedExecution }) => {
         expect(receivedExecution.environment?.STEAM_ID).toBe(STEAM_TEST_ID);
       },
@@ -877,7 +875,6 @@ describe("connector catalog valid lifecycle", () => {
     await withConnectorRuntime(
       context,
       actor,
-      "aws",
       async ({ resolveAuth }) => {
         const resolved = await resolveAuth({
           authHeaders: {},
@@ -994,7 +991,7 @@ describe("connector catalog valid lifecycle", () => {
       connectionStatus: "connected",
     });
     const secondStart = await own(() => {
-      return connectorsApi.startOauth(actor, "slack", "oauth", undefined, {
+      return connectorsApi.startOauth(actor, "slack", "oauth", {
         intent: "reconnect",
         connectionId: firstAccount.id,
       });
@@ -1101,7 +1098,6 @@ describe("connector catalog valid lifecycle", () => {
     await withConnectorRuntime(
       context,
       actor,
-      "agora",
       ({ execution: receivedExecution }) => {
         const bundle = receivedExecution.contentBundles.skills.find((entry) => {
           return entry.mountPath.endsWith("/agora");

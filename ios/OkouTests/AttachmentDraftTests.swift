@@ -587,7 +587,7 @@ final class NewChatAttachmentTests: XCTestCase {
   func testFailedChatAccountWriteKeepsDraftAndAttachmentUntilTheChoiceIsCorrected() async throws {
     let accountID = ConnectorHTTPFixtures.accountID
     let rejected = Mutex(0)
-    let message = "The account selected for this chat is unavailable."
+    let message = "Chat or connector account not found"
     let fixture = AttachmentFlowFixture(connectorSettings: { request in
       switch request.url?.path {
       case "/api/connectors/connected":
@@ -609,9 +609,9 @@ final class NewChatAttachmentTests: XCTestCase {
         XCTAssertEqual(body?["enabled"] as? Bool, false)
         rejected.withLock { $0 += 1 }
         return ChatHTTPResponse(
-          status: 400,
+          status: 404,
           body: """
-            {"error":{"code":"CONNECTOR_ACCOUNT_UNAVAILABLE","message":"\(message)"}}
+            {"error":{"code":"NOT_FOUND","message":"\(message)"}}
             """)
       case "/api/chat-threads/\(AttachmentFlowFixture.threadID)/connector-current":
         let choice = try JSONDecoder().decode(

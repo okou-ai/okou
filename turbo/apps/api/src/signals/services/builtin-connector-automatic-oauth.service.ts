@@ -375,8 +375,6 @@ interface StartBuiltinAutomaticArgs {
   readonly userId: string;
   readonly resolved: ResolvedConnectorActionMethod;
   readonly account: ConnectorAccountMutationIntent;
-  readonly agentId: string | null;
-  readonly authorizeAgent: boolean;
   readonly redirectUri: string;
   readonly cimdClientId: string;
   readonly dcrClientMetadata: OAuthClientMetadata;
@@ -500,8 +498,6 @@ export const startBuiltinConnectorAutomatic$ = command(
         storageVersion: null,
         userId: args.userId,
         orgId: args.orgId,
-        agentId: args.agentId,
-        authorizeAgent: args.authorizeAgent,
         redirectUri: args.redirectUri,
         authorizationUrl: authorization.authorizationUrl,
         codeVerifier: authorization.codeVerifier,
@@ -664,8 +660,6 @@ const finishAutomaticOAuth$ = command(
       connectionId: published.connectionId,
       orgId: stored.orgId,
       userId: stored.userId,
-      agentId: stored.agentId,
-      authorizeAgent: stored.authorizeAgent,
       oauthAttemptId: stored.id,
     } as const;
   },
@@ -679,8 +673,6 @@ type CompletedBuiltinAutomaticOAuth =
       readonly connectionId: string;
       readonly orgId: string;
       readonly userId: string;
-      readonly agentId: string | null;
-      readonly authorizeAgent: boolean;
       readonly oauthAttemptId: string;
     };
 

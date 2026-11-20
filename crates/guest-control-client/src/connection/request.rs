@@ -16,6 +16,7 @@ use crate::operation_tracker::{
     NormalOperationRejection, NormalOperationToken, NormalOperationTransitionError,
     NormalOperationTransitionHandle,
 };
+use crate::protocol_error;
 use crate::request_progress::RequestWriteProgress;
 use crate::{FrameWriteObserver, GuestControlClient, RequestTimeoutError, RequestTimeoutStage};
 
@@ -216,8 +217,7 @@ async fn write_request_frame_with_builder_and_progress<'a>(
 }
 
 fn encode_request_frame(msg_type: u8, seq: u32, payload: &[u8]) -> io::Result<Vec<u8>> {
-    guest_control_proto::encode(msg_type, seq, payload)
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e.to_string()))
+    guest_control_proto::encode(msg_type, seq, payload).map_err(protocol_error::invalid_input)
 }
 
 fn register_pending_response(
@@ -559,14 +559,10 @@ pub(crate) fn normal_operation_transition_error(
     )
 }
 
-fn protocol_invalid_data(error: impl ToString) -> io::Error {
-    io::Error::new(io::ErrorKind::InvalidData, error.to_string())
-}
-
 fn guest_error_from_response(response: &RawMessage) -> io::Error {
     match guest_control_proto::decode_error(&response.payload) {
         Ok(message) => io::Error::other(message.to_owned()),
-        Err(error) => protocol_invalid_data(error),
+        Err(error) => protocol_error::invalid_data(error),
     }
 }
 
@@ -580,10 +576,13 @@ pub(crate) fn validate_fixed_helper_response(
         return Err(guest_error_from_response(response));
     }
     if response.msg_type != expected_response_type {
-        return Err(protocol_invalid_data(format!(
-            "unexpected {operation} response type: 0x{:02X}",
-            response.msg_type,
-        )));
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!(
+                "unexpected {operation} response type: 0x{:02X}",
+                response.msg_type,
+            ),
+        ));
     }
     Ok(())
 }
@@ -593,7 +592,7 @@ fn validate_empty_lifecycle_response(
     payload_name: &'static str,
 ) -> io::Result<()> {
     guest_control_proto::decode_empty_payload(payload_name, &response.payload)
-        .map_err(protocol_invalid_data)
+        .map_err(protocol_error::invalid_data)
 }
 
 pub(super) fn deadline_after(
@@ -628,10 +627,13 @@ impl GuestControlClient {
             return Err(guest_error_from_response(&response));
         }
         if response.msg_type != expected_response_type {
-            return Err(protocol_invalid_data(format!(
-                "unexpected lifecycle response type: expected 0x{expected_response_type:02X}, got 0x{:02X}",
-                response.msg_type,
-            )));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "unexpected lifecycle response type: expected 0x{expected_response_type:02X}, got 0x{:02X}",
+                    response.msg_type,
+                ),
+            ));
         }
         validate_empty_lifecycle_response(&response, response_payload_name)
     }
@@ -685,13 +687,16 @@ impl GuestControlClient {
             return Err(guest_error_from_response(&response));
         }
         if response.msg_type != MSG_MEMORY_SNAPSHOT_RESULT {
-            return Err(protocol_invalid_data(format!(
-                "unexpected lifecycle response type: expected 0x{MSG_MEMORY_SNAPSHOT_RESULT:02X}, got 0x{:02X}",
-                response.msg_type,
-            )));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "unexpected lifecycle response type: expected 0x{MSG_MEMORY_SNAPSHOT_RESULT:02X}, got 0x{:02X}",
+                    response.msg_type,
+                ),
+            ));
         }
         guest_control_proto::decode_memory_snapshot(&response.payload)
-            .map_err(protocol_invalid_data)
+            .map_err(protocol_error::invalid_data)
     }
 
     /// Resume guest operations after a failed or aborted quiesce attempt.

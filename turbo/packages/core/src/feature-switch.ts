@@ -121,6 +121,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: true,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.ProjectThreadDeletion]: {
+    maintainer: "ethan@okou.ai",
+    displayName: "Delete Project threads",
+    description:
+      "Offer permanent deletion of a Project and its threads after a second confirmation.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.ProjectTitleReveal]: {
     maintainer: "ming@okou.ai",
     displayName: "Project title reveal",
@@ -145,12 +153,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
     restrictOverridesToAudience: true,
-  },
-  [FeatureSwitchKey.FeatureGuides]: {
-    maintainer: "yuma@okou.ai",
-    displayName: "Feature guides",
-    description: "Show published product updates once per user and edition.",
-    enabled: true,
   },
   [FeatureSwitchKey.BatchConnectorPermissions]: {
     maintainer: "ethan@okou.ai",
@@ -211,6 +213,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Describe each Who can access option in the share menu with one line, and anchor Copy link as a full-width footer under a divider.",
     enabled: true,
   },
+  [FeatureSwitchKey.WorksChannelCards]: {
+    maintainer: "ming@okou.ai",
+    displayName: "Works channel cards",
+    description:
+      "Show Works channels in a compact grid with usage examples and icon actions for connecting and managing accounts.",
+    enabled: false,
+  },
   [FeatureSwitchKey.HostedSiteShareRows]: {
     maintainer: "ming@okou.ai",
     displayName: "Website share rows",
@@ -224,6 +233,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Reserve artifact downloads, Customize URL, and hiding the website banner for paid plans; free-plan workspaces see an upgrade prompt instead.",
     enabled: true,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.OkouRailEntry]: {
+    maintainer: "ethan@okou.ai",
+    displayName: "Okou rail entry",
+    description:
+      "Show the Okou logo and name on the rail's chat entry, and a compose icon on New chat.",
+    enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.BillingSurvey]: {

@@ -1,5 +1,3 @@
-import { agentConnectorAccessContract } from "../contracts/agent-connector-access";
-import { agentCustomConnectorsContract } from "../contracts/agent-custom-connectors";
 import { agentDraftContract } from "../contracts/agent-draft";
 import { agentsByIdContract, agentsMainContract } from "../contracts/agents";
 import { artifactCatalogContract } from "../contracts/artifact-catalog";
@@ -76,9 +74,7 @@ import { runModelsMainContract } from "../contracts/run-models";
 import { runConnectorAccountsContract } from "../contracts/run-connector-accounts";
 import { thirdPartySubscriptionsMainContract } from "../contracts/third-party-subscriptions";
 import { uploadsContract } from "../contracts/uploads";
-import { userBuiltinConnectorsContract } from "../contracts/user-connectors";
 import { userModelPreferenceContract } from "../contracts/user-model-preference";
-import { userPermissionGrantsContract } from "../contracts/user-permission-grants";
 import { userPreferencesContract } from "../contracts/user-preferences";
 import { vncConnectionsContract } from "../contracts/vnc-connections";
 import { webFilesContract } from "../contracts/web-files";
@@ -104,18 +100,6 @@ const iosContracts: readonly {
 }[] = [
   { id: "ios.instructionsContract.get", route: instructionsContract.get },
   { id: "ios.instructionsContract.update", route: instructionsContract.update },
-  {
-    id: "ios.agentConnectorAccessContract.agent",
-    route: agentConnectorAccessContract.agent,
-  },
-  {
-    id: "ios.agentCustomConnectorsContract.get",
-    route: agentCustomConnectorsContract.get,
-  },
-  {
-    id: "ios.agentCustomConnectorsContract.update",
-    route: agentCustomConnectorsContract.update,
-  },
   { id: "ios.agentDraftContract.get", route: agentDraftContract.get },
   { id: "ios.agentDraftContract.patch", route: agentDraftContract.patch },
   { id: "ios.agentsByIdContract.get", route: agentsByIdContract.get },
@@ -202,6 +186,10 @@ const iosContracts: readonly {
   {
     id: "ios.chatThreadByIdContract.patch",
     route: chatThreadByIdContract.patch,
+  },
+  {
+    id: "ios.chatThreadByIdContract.delete",
+    route: chatThreadByIdContract.delete,
   },
   {
     id: "ios.chatThreadComputerUseHostContract.update",
@@ -469,32 +457,12 @@ const iosContracts: readonly {
   },
   { id: "ios.uploadsContract.prepare", route: uploadsContract.prepare },
   {
-    id: "ios.userBuiltinConnectorsContract.get",
-    route: userBuiltinConnectorsContract.get,
-  },
-  {
-    id: "ios.userBuiltinConnectorsContract.update",
-    route: userBuiltinConnectorsContract.update,
-  },
-  {
     id: "ios.userModelPreferenceContract.get",
     route: userModelPreferenceContract.get,
   },
   {
     id: "ios.userModelPreferenceContract.update",
     route: userModelPreferenceContract.update,
-  },
-  {
-    id: "ios.userPermissionGrantsContract.apply",
-    route: userPermissionGrantsContract.apply,
-  },
-  {
-    id: "ios.userPermissionGrantsContract.applyBatch",
-    route: userPermissionGrantsContract.applyBatch,
-  },
-  {
-    id: "ios.userPermissionGrantsContract.list",
-    route: userPermissionGrantsContract.list,
   },
   { id: "ios.userPreferencesContract.get", route: userPreferencesContract.get },
   { id: "ios.vncConnectionsContract.list", route: vncConnectionsContract.list },

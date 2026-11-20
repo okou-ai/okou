@@ -64,7 +64,6 @@ async function connect(
   const authorization = await connectors.startCustomConnectorOAuth2(
     actor,
     connectorId,
-    undefined,
     mutation,
   );
   await completeAuthorization(authorization, issuer);
@@ -147,7 +146,6 @@ describe("Custom Automatic OAuth DCR retirement", () => {
     const authorization = await connectors.startCustomConnectorOAuth2(
       owner,
       connector.id,
-      undefined,
       {
         intent: "reconnect",
         connectionId: first.id,

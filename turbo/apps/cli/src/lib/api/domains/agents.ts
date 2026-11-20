@@ -7,20 +7,7 @@ import {
   type AgentRequest,
   type AgentInstructionsResponse,
 } from "@okouai/api-contracts/contracts/agents";
-import {
-  userPermissionGrantsContract,
-  type UserPermissionGrantResponse,
-} from "@okouai/api-contracts/contracts/user-permission-grants";
-import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
-import {
-  agentCustomConnectorsContract,
-  agentCustomConnectorGrantsSchema,
-  type AgentCustomConnectorGrant,
-} from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import { getClientConfig, handleError } from "../core/client-factory";
-
-export type UserPermissionGrant = UserPermissionGrantResponse;
 
 export async function createAgent(body: AgentRequest): Promise<AgentResponse> {
   const config = await getClientConfig();
@@ -73,83 +60,6 @@ export async function getAgentInstructions(
   const result = await client.get({ params: { id } });
   if (result.status === 200) return result.body;
   handleError(result, `Failed to get instructions for agent "${id}"`);
-}
-
-export async function getAgentUserBuiltinConnectors(
-  id: string,
-): Promise<ConnectorSlug[]> {
-  const config = await getClientConfig();
-  const client = initClient(userBuiltinConnectorsContract, config);
-  const result = await client.get({ params: { id } });
-  if (result.status === 200) {
-    return result.body.enabledConnectorSlugs;
-  }
-  handleError(result, `Failed to get connector permissions for agent "${id}"`);
-}
-
-export async function removeAgentUserBuiltinConnector(
-  id: string,
-  connectorSlug: ConnectorSlug,
-): Promise<ConnectorSlug[]> {
-  const config = await getClientConfig();
-  const client = initClient(userBuiltinConnectorsContract, config);
-  const result = await client.update({
-    params: { id },
-    body: { enabledConnectorSlugs: [connectorSlug], operation: "remove" },
-  });
-  if (result.status === 200) {
-    return result.body.enabledConnectorSlugs;
-  }
-  handleError(result, `Failed to remove connector access for agent "${id}"`);
-}
-
-export async function removeAgentCustomConnectorGrant(
-  id: string,
-  customConnectorId: string,
-): Promise<AgentCustomConnectorGrant[]> {
-  const config = await getClientConfig();
-  const client = initClient(agentCustomConnectorsContract, config);
-  const result = await client.update({
-    params: { id },
-    body: {
-      grants: [{ customConnectorId, permissionNames: [] }],
-      operation: "remove",
-    },
-  });
-  if (result.status === 200) {
-    return agentCustomConnectorGrantsSchema.parse(result.body).grants;
-  }
-  handleError(
-    result,
-    `Failed to remove custom connector access for agent "${id}"`,
-  );
-}
-
-export async function getAgentCustomConnectorGrants(
-  id: string,
-): Promise<AgentCustomConnectorGrant[]> {
-  const config = await getClientConfig();
-  const client = initClient(agentCustomConnectorsContract, config);
-  const result = await client.get({ params: { id } });
-  if (result.status === 200) {
-    return agentCustomConnectorGrantsSchema.parse(result.body).grants;
-  }
-  handleError(
-    result,
-    `Failed to get custom connector permissions for agent "${id}"`,
-  );
-}
-
-export async function listUserPermissionGrants(
-  agentId: string,
-): Promise<UserPermissionGrant[]> {
-  const config = await getClientConfig();
-  const client = initClient(userPermissionGrantsContract, config);
-  const result = await client.list({ query: { agentId } });
-  if (result.status === 200) {
-    return result.body;
-  }
-  handleError(result, `Failed to get permission grants for agent "${agentId}"`);
 }
 
 export async function updateAgentInstructions(

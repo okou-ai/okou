@@ -2,16 +2,17 @@ import {
   connectorPermissionsContract,
   type ApplyConnectorPermissions,
 } from "@okouai/api-contracts/contracts/connector-permissions";
-import { connectorPermissionsResponse } from "../../../__tests__/connector-permissions.ts";
+import {
+  connectorPermissionsResponse,
+  type ConnectorPermissionFixture,
+} from "../../../__tests__/connector-permissions.ts";
 import {
   type PublicConnectorCatalogPermissionDetail,
   connectorCatalogContract,
 } from "@okouai/api-contracts/contracts/connector-catalog";
 
-import type {
-  ApplyUserPermissionGrant,
-  UserPermissionGrantResponse,
-} from "@okouai/api-contracts/contracts/user-permission-grants";
+import type { ApplyUserPermissionGrant } from "@okouai/api-contracts/validators/user-permission-grants";
+
 import { UNKNOWN_PERMISSION_GRANT } from "@okouai/connectors/firewall-contracts";
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
@@ -33,10 +34,8 @@ import {
 } from "../../okou-page/__tests__/connector-page-test-helpers.ts";
 
 const context = testContext();
-const AGENT_ID = "10000000-0000-4000-a000-000000000011";
 const NOW_MS = 1_893_456_000_000;
 const SEVEN_DAYS_LATER = "2030-01-08T00:00:00.000Z";
-const CREATED_AT = "2029-12-01T00:00:00.000Z";
 
 const READ_PERMISSIONS = [
   {
@@ -57,7 +56,7 @@ interface PermissionEditorOptions {
   readonly grouped?: boolean;
   readonly permissionDefault?: "allow" | "deny" | "ask";
   readonly unknownPolicy?: "allow" | "deny" | "ask";
-  readonly grants?: readonly UserPermissionGrantResponse[];
+  readonly grants?: readonly ConnectorPermissionFixture[];
   readonly appliedRequests?: ApplyConnectorPermissions[];
 }
 
@@ -103,15 +102,12 @@ function permissionGrant({
   readonly permission: string;
   readonly action?: "allow" | "deny";
   readonly expiresAt: string | null;
-}): UserPermissionGrantResponse {
+}): ConnectorPermissionFixture {
   return {
-    agentId: AGENT_ID,
     connectorSlug: "slack",
     permission,
     action,
     expiresAt,
-    createdAt: CREATED_AT,
-    updatedAt: CREATED_AT,
   };
 }
 

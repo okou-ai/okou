@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.23.117](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.116...guest-control-client-v0.23.117) (2026-11-20)
+
+
+### Refactoring
+
+* **guest-control:** centralize owned exec capture extraction ([#49374](https://github.com/okou-ai/okou/issues/49374)) ([e6a35e4](https://github.com/okou-ai/okou/commit/e6a35e4e18c8270cc3e9a3f07515f4db8bb8cf5d))
+
+## [0.23.116](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.115...guest-control-client-v0.23.116) (2026-11-20)
+
+## [0.23.115](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.114...guest-control-client-v0.23.115) (2026-11-19)
+
+
+### Refactoring
+
+* **guest-control:** centralize client codec error conversion ([#49210](https://github.com/okou-ai/okou/issues/49210)) ([edb4d61](https://github.com/okou-ai/okou/commit/edb4d6151a1ffa2be03aa1edc93cf32f9e3f70a9))
+
+## [0.23.114](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.113...guest-control-client-v0.23.114) (2026-11-19)
+
+## [0.23.113](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.112...guest-control-client-v0.23.113) (2026-11-19)
+
+
+### Refactoring
+
+* **guest-control:** centralize exec output policy limits ([#49027](https://github.com/okou-ai/okou/issues/49027)) ([eaae30a](https://github.com/okou-ai/okou/commit/eaae30ac5e7ed88de0dbb946fd552489d633b560))
+
 ## [0.23.112](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.111...guest-control-client-v0.23.112) (2026-11-19)
 
 ## [0.23.111](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.110...guest-control-client-v0.23.111) (2026-11-18)

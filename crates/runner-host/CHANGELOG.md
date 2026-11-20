@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.12.7](https://github.com/okou-ai/okou/compare/runner-host-v0.12.6...runner-host-v0.12.7) (2026-11-20)
+
+## [0.12.6](https://github.com/okou-ai/okou/compare/runner-host-v0.12.5...runner-host-v0.12.6) (2026-11-19)
+
+## [0.12.5](https://github.com/okou-ai/okou/compare/runner-host-v0.12.4...runner-host-v0.12.5) (2026-11-19)
+
+
+### Bug Fixes
+
+* **ci:** reuse preview runner readiness for health verification ([#49002](https://github.com/okou-ai/okou/issues/49002)) ([93573a8](https://github.com/okou-ai/okou/commit/93573a86b24a85e432192cbc8de4a26204202857))
+
 ## [0.12.4](https://github.com/okou-ai/okou/compare/runner-host-v0.12.3...runner-host-v0.12.4) (2026-11-19)
 
 ## [0.12.3](https://github.com/okou-ai/okou/compare/runner-host-v0.12.2...runner-host-v0.12.3) (2026-11-18)

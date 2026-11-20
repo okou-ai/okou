@@ -1205,7 +1205,7 @@ describe("okou mcp command", () => {
 
     expect(seen).toHaveLength(0);
     expect(outputText(consoleError)).toContain(
-      'MCP connector "_not-admitted" is not authorized for this Agent',
+      'MCP connector "_not-admitted" has no available account in this Chat',
     );
   });
 
@@ -1226,7 +1226,7 @@ describe("okou mcp command", () => {
 
     expect(seen).toHaveLength(0);
     expect(outputText(consoleError)).toContain(
-      `MCP connector "${selector}" is not authorized for this Agent`,
+      `MCP connector "${selector}" has no available account in this Chat`,
     );
   });
 

@@ -71,7 +71,7 @@ import {
   customRuntimeSnapshotSectionsFromRows,
 } from "./custom-runtime-snapshot-query";
 
-import { readActiveNetworkPolicyRefreshes$ } from "./user-permission-grants.service";
+import { readActiveNetworkPolicyRefreshes$ } from "./connector-network-policy-refresh.service";
 
 const L = logger("connector-runtime-sync");
 
@@ -391,22 +391,8 @@ const loadCustomSnapshot$ = command(
   },
 );
 
-function customTargetIsAccountless(
-  sourceId: string | undefined,
-  row: CustomConnectorRuntimeDataRows[number],
-) {
-  return (
-    sourceId === undefined &&
-    row.connector.authMode === "none" &&
-    row.credentialAccess.kind === "absent"
-  );
-}
-
 async function resolveCustomTarget(args: {
-  readonly registration: Extract<
-    ConnectorRuntimeTargetRegistration,
-    { readonly kind: "custom" }
-  >;
+  readonly customConnectorId: string;
   readonly snapshot: {
     readonly connectorCatalogSelection: ReturnType<
       typeof connectorCatalogSlugRuntimeFromRows
@@ -426,20 +412,13 @@ async function resolveCustomTarget(args: {
 }): Promise<ConnectorRuntimeCustomSyncResult> {
   const target = {
     kind: "custom" as const,
-    customConnectorId: args.registration.customConnectorId,
+    customConnectorId: args.customConnectorId,
   };
   const accountResolution = args.snapshot.accountResolutions.get(
     connectorAccountTargetKey(target),
   );
   const custom = args.snapshot.customTargets.get(target.customConnectorId);
-  if (!custom) {
-    return customAbsentResult(target, "connector-unavailable");
-  }
-  const accountless = customTargetIsAccountless(
-    args.registration.sourceId,
-    custom,
-  );
-  if (accountResolution?.kind !== "resolved" && !accountless) {
+  if (!custom || accountResolution?.kind !== "resolved") {
     return customAbsentResult(target, "connector-unavailable");
   }
   if (custom.credentialAccess.kind === "incompatible") {
@@ -456,22 +435,23 @@ async function resolveCustomTarget(args: {
     });
     return customAbsentResult(target, "connector-unavailable");
   }
-  if (custom.credentialAccess.kind === "absent" && !accountless) {
+  if (custom.credentialAccess.kind === "absent") {
     return customAbsentResult(target, "connector-unavailable");
   }
-  const row = custom;
   const permissionBundle = await loadEffectiveCustomConnectorPermissionBundle({
-    row,
+    row: custom,
     snapshot: args.snapshot.connectorCatalogSelection,
   });
   if (permissionBundle === undefined) {
     return customUnresolvedResult(target, "permission-bundle-unavailable");
   }
 
-  const context = await buildCustomConnectorRuntimeContext({
-    rows: [row],
+  const context = buildCustomConnectorRuntimeContext({
+    rows: [custom],
     featureSwitchContext: args.snapshot.featureSwitchContext,
-    connectorCatalogSnapshot: args.snapshot.connectorCatalogSelection,
+    permissionBundlesByConnectorId: new Map([
+      [target.customConnectorId, permissionBundle],
+    ]),
     memberPermissionPolicies: permissionGrantsToFirewallPolicies(
       args.snapshot.memberRules,
     ),
@@ -494,20 +474,14 @@ async function resolveCustomTarget(args: {
     state: "available" as const,
     firewall: {
       ...state.firewall,
-      ...(accountResolution?.kind === "resolved"
-        ? { sourceId: accountResolution.account.connectorId }
-        : {}),
+      sourceId: accountResolution.account.connectorId,
     },
     networkPolicy: state.networkPolicy,
     baseUrlVars: { ...resolvedTarget.baseUrlVars },
-    ...(accountResolution?.kind === "resolved"
-      ? {
-          accountBinding: {
-            connectionId: accountResolution.account.connectorId,
-            baseUrlVars: { ...resolvedTarget.baseUrlVars },
-          },
-        }
-      : {}),
+    accountBinding: {
+      connectionId: accountResolution.account.connectorId,
+      baseUrlVars: { ...resolvedTarget.baseUrlVars },
+    },
     ...nextMemberPermissionSync(
       args.snapshot.memberRules,
       customConnectorInternalName(target.customConnectorId),
@@ -925,7 +899,7 @@ const resolveConnectorRuntimeTargetStates$ = command(
         resolvedTargets.push({
           kind: "custom",
           result: await resolveCustomTarget({
-            registration,
+            customConnectorId: registration.customConnectorId,
             snapshot: customSnapshot,
           }),
           customSnapshot: customSnapshot.customTargets.get(

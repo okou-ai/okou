@@ -33,7 +33,7 @@ import {
   type FirewallPolicies,
   type FirewallPolicyValue,
 } from "@okouai/connectors/firewall-contracts";
-import type { UserPermissionGrantExpiresIn } from "@okouai/api-contracts/contracts/user-permission-grants";
+import type { UserPermissionGrantExpiresIn } from "@okouai/api-contracts/validators/user-permission-grants";
 import type {
   PlatformConnectorPermissionMetadata,
   PlatformUserPermissionGrant,

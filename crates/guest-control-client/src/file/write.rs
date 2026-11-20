@@ -14,6 +14,7 @@ use guest_control_proto::{
 use sandbox::FileWriteRequestTiming;
 use shell_quote::quote_shell_arg;
 
+use crate::protocol_error;
 use crate::{
     CompositeNormalOperation, ExecCaptureRequest, ExecOperationResult, ExecOwnedCapturedOutput,
     FrameWriteObserver, GuestControlClient, RequestTimeoutError, RequestTimeoutStage, Shared,
@@ -131,10 +132,6 @@ impl std::error::Error for WriteFileGuestError {}
 
 fn write_file_guest_error(message: impl Into<String>) -> io::Error {
     io::Error::other(WriteFileGuestError(message.into()))
-}
-
-fn protocol_invalid_input(error: impl ToString) -> io::Error {
-    io::Error::new(io::ErrorKind::InvalidInput, error.to_string())
 }
 
 fn error_is_write_file_guest_error(error: &io::Error) -> bool {
@@ -265,13 +262,12 @@ fn write_helper_exec_captured_output(
     name: &str,
     output: ExecOwnedCapturedOutput,
 ) -> io::Result<(Vec<u8>, bool)> {
-    match output {
-        ExecOwnedCapturedOutput::Captured { bytes, truncated } => Ok((bytes, truncated)),
-        ExecOwnedCapturedOutput::Discarded => Err(io::Error::new(
+    output.into_captured().ok_or_else(|| {
+        io::Error::new(
             io::ErrorKind::InvalidData,
             format!("{context} exec result discarded {name} for capture request"),
-        )),
-    }
+        )
+    })
 }
 
 fn validate_cleanup_result(result: ExecOperationResult) -> io::Result<()> {
@@ -785,7 +781,7 @@ impl GuestControlClient {
         validation_started: Option<Instant>,
     ) -> io::Result<()> {
         let validation = guest_control_proto::validate_write_files(&proto_entries)
-            .map_err(protocol_invalid_input);
+            .map_err(protocol_error::invalid_input);
         if let (Some(timing), Some(started)) = (timing.as_deref_mut(), validation_started) {
             timing.validation = Some(started.elapsed());
         }
@@ -816,7 +812,7 @@ impl GuestControlClient {
                 write_sequence.store(seq, Ordering::Relaxed);
                 mode.encode_frame(frame, seq, &proto_entries)
                     .map(|()| &[][..])
-                    .map_err(protocol_invalid_input)
+                    .map_err(protocol_error::invalid_input)
             },
             timing.as_deref_mut().map(|timing| &mut timing.host),
         )
@@ -833,7 +829,7 @@ impl GuestControlClient {
         let result = (|| {
             if resp.msg_type == MSG_ERROR {
                 let msg = guest_control_proto::decode_error(&resp.payload)
-                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
+                    .map_err(protocol_error::invalid_data)?;
                 return Err(write_file_guest_error(msg));
             }
 
@@ -845,7 +841,7 @@ impl GuestControlClient {
             }
 
             let (success, error) = guest_control_proto::decode_write_files_result(&resp.payload)
-                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
+                .map_err(protocol_error::invalid_data)?;
             if !success {
                 return Err(write_file_guest_error(error));
             }
@@ -902,7 +898,7 @@ impl GuestControlClient {
 
         if resp.msg_type == MSG_ERROR {
             let msg = guest_control_proto::decode_error(&resp.payload)
-                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
+                .map_err(protocol_error::invalid_data)?;
             return Err(write_file_guest_error(msg));
         }
 
@@ -914,7 +910,7 @@ impl GuestControlClient {
         }
 
         let (success, error) = guest_control_proto::decode_write_file_result(&resp.payload)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
+            .map_err(protocol_error::invalid_data)?;
 
         if !success {
             return Err(write_file_guest_error(error));
@@ -960,7 +956,7 @@ fn validate_write_files<'a>(
     for file in files {
         validate_guest_file_path(file.path)?;
         guest_control_proto::validate_write_file(file.path, &[], false, false)
-            .map_err(protocol_invalid_input)?;
+            .map_err(protocol_error::invalid_input)?;
         total_content_len = total_content_len
             .checked_add(file.content.len())
             .ok_or_else(|| {
@@ -996,7 +992,7 @@ fn validate_write_file_chunk_request(request: WriteFileChunkRequest<'_>) -> io::
             request.append,
         )
     }
-    .map_err(protocol_invalid_input)
+    .map_err(protocol_error::invalid_input)
 }
 
 fn encode_write_file_chunk_frame(
@@ -1022,5 +1018,5 @@ fn encode_write_file_chunk_frame(
             request.append,
         )
     }
-    .map_err(protocol_invalid_input)
+    .map_err(protocol_error::invalid_input)
 }

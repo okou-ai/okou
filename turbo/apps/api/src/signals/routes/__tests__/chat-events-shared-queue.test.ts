@@ -6,9 +6,11 @@ import type {
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { ILLUSTRATION_TEMPLATE_ITEMS } from "@okouai/core";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { createStore } from "ccstate";
 import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { now, withMockNowForTest } from "../../../lib/time";
+import { updateMaxAutonomyBudgetForTest$ } from "../../autonomy-budget-limit";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { chatEventDisplayText } from "./helpers/chat-event";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
@@ -62,45 +64,6 @@ async function readPickedInputRun(
     throw new Error("Expected the queued input to launch a run");
   }
   return runId;
-}
-
-/** Construct delegation depth through public sends and Runner completion. */
-async function callerAtDelegationDepth(
-  actor: Parameters<typeof sendChatRun>[0],
-  agentId: string,
-  runnerGroup: string,
-  depth: number,
-) {
-  let run = await sendChatRun(actor, {
-    agentId,
-    prompt: "root of bounded delegation",
-  });
-  let execution = await runExecution(run.runId);
-  for (let level = 1; level <= depth; level += 1) {
-    const eventId = randomUUID();
-    const thread = await chat.createThread(actor, { agentId });
-    const sent = await requestSendEventWithBearer(
-      okouTokenFromExecution(execution.execution),
-      {
-        agentId,
-        threadId: thread.id,
-        clientEventId: eventId,
-        prompt: `delegation depth ${level}`,
-      },
-      [201],
-    );
-    if (sent.status !== 201) {
-      throw new Error("Expected a delegation within the public depth limit");
-    }
-    await flushWaitUntilForTest();
-    const childId = await readPickedInputRun(actor, thread.id, eventId);
-    const childExecution = await runExecution(childId);
-    await completeChatRunOk(run.runId, execution.sandboxHeaders);
-    await flushWaitUntilForTest();
-    run = { runId: childId, threadId: thread.id };
-    execution = childExecution;
-  }
-  return { run, execution };
 }
 
 describe("CHAT-02: shared user message queue", () => {
@@ -376,20 +339,39 @@ describe("CHAT-02: shared user message queue", () => {
   }, 90_000);
 
   it("persists user-forwarded run provenance across chat threads", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    createStore().set(updateMaxAutonomyBudgetForTest$, 1);
+    const { actor, agentId } = await entitledChatActor();
     if (!actor.orgId) {
       throw new Error("Expected an organization-scoped chat actor");
     }
     await bdd.readMe(actor);
 
-    // Thirty-two public delegation hops exhaust the source. Human forwarding is
-    // still an ordinary user request, not another agent delegation.
-    const { run: source } = await callerAtDelegationDepth(
-      actor,
+    // One public delegation exhausts the test budget. Human forwarding can
+    // still start a run from the exhausted source.
+    const root = await sendChatRun(actor, {
       agentId,
-      runnerGroup,
-      32,
+      prompt: "root of bounded delegation",
+    });
+    const rootExecution = await runExecution(root.runId);
+    const sourceThread = await chat.createThread(actor, { agentId });
+    const sourceEventId = randomUUID();
+    await requestSendEventWithBearer(
+      okouTokenFromExecution(rootExecution.execution),
+      {
+        agentId,
+        threadId: sourceThread.id,
+        clientEventId: sourceEventId,
+        prompt: "last allowed delegation",
+      },
+      [201],
     );
+    await flushWaitUntilForTest();
+    const source = {
+      threadId: sourceThread.id,
+      runId: await readPickedInputRun(actor, sourceThread.id, sourceEventId),
+    };
+    await completeChatRunOk(root.runId, rootExecution.sandboxHeaders);
+    await flushWaitUntilForTest();
     const targetThread = await chat.createThread(actor, { agentId });
     const forwardedEventId = randomUUID();
     const forwarded = await chat.requestSendEvent(
@@ -899,13 +881,15 @@ describe("CHAT-02: shared user message queue", () => {
   }, 90_000);
 
   it("blocks cross-thread delegation from a zero-budget run", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    createStore().set(updateMaxAutonomyBudgetForTest$, 1);
+    const { actor, agentId } = await entitledChatActor();
     const target = await chat.createThread(actor, { agentId });
     const blockedTarget = await chat.createThread(actor, { agentId });
-    // The thirty-two-hop limit is reached through thirty-one ordinary hops,
-    // then the last allowed delegation below. No budget row is injected.
-    const { run: root, execution: rootExecution } =
-      await callerAtDelegationDepth(actor, agentId, runnerGroup, 31);
+    const root = await sendChatRun(actor, {
+      agentId,
+      prompt: "root of bounded delegation",
+    });
+    const rootExecution = await runExecution(root.runId);
 
     const delegatedEventId = randomUUID();
     const delegated = await requestSendEventWithBearer(

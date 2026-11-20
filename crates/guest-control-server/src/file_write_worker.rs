@@ -53,10 +53,21 @@ pub(crate) enum FileWriteSubmitError {
     Disconnected,
 }
 
+pub(crate) enum FileWritePayload {
+    Buffered {
+        kind: FileWriteKind,
+        bytes: Vec<u8>,
+    },
+    #[cfg(target_os = "linux")]
+    Sealed {
+        input: std::fs::File,
+        stats: crate::handlers::WriteFilesStats,
+    },
+}
+
 struct FileWriteRequest {
-    kind: FileWriteKind,
     seq: u32,
-    payload: Vec<u8>,
+    payload: FileWritePayload,
     operation_guard: OperationGuard,
     admission: SingleActivePermit,
     progress: FileWriteRequestProgress,
@@ -112,16 +123,14 @@ impl FileWriteWorker {
 
     pub(crate) fn submit(
         &self,
-        kind: FileWriteKind,
         seq: u32,
-        payload: &[u8],
+        payload: FileWritePayload,
         operation_guard: OperationGuard,
         admission: SingleActivePermit,
     ) -> Result<(), FileWriteSubmitError> {
         let request = FileWriteRequest {
-            kind,
             seq,
-            payload: payload.to_vec(),
+            payload,
             operation_guard,
             admission,
             progress: self.progress.start(seq),
@@ -156,7 +165,6 @@ fn handle_request(
     connection_cancel: &AtomicBool,
 ) -> io::Result<()> {
     let FileWriteRequest {
-        kind,
         seq,
         payload,
         operation_guard,
@@ -164,40 +172,46 @@ fn handle_request(
         progress,
     } = request;
 
-    let response = match kind {
-        FileWriteKind::File => decode_write_file_message(&payload)
-            .map_err(protocol_error)
-            .and_then(|decoded| {
-                handle_decoded_write_file_message(seq, decoded, connection_cancel, &progress)
-            }),
-        FileWriteKind::Files => decode_write_files_message(&payload)
-            .map_err(protocol_error)
-            .and_then(|decoded| {
-                handle_decoded_write_files_message(
-                    seq,
-                    decoded,
-                    false,
-                    connection_cancel,
-                    &progress,
-                )
-            }),
-        FileWriteKind::PrivateFiles => decode_write_files_message(&payload)
-            .map_err(protocol_error)
-            .and_then(|decoded| {
-                handle_decoded_write_files_message(seq, decoded, true, connection_cancel, &progress)
-            }),
+    // Finish with the input before releasing admission at the response writer.
+    let response = match payload {
+        FileWritePayload::Buffered { kind, bytes } => match kind {
+            FileWriteKind::File => decode_write_file_message(&bytes)
+                .map_err(protocol_error)
+                .and_then(|decoded| {
+                    handle_decoded_write_file_message(seq, decoded, connection_cancel, &progress)
+                }),
+            FileWriteKind::Files | FileWriteKind::PrivateFiles => {
+                decode_write_files_message(&bytes)
+                    .map_err(protocol_error)
+                    .and_then(|decoded| {
+                        handle_decoded_write_files_message(
+                            seq,
+                            decoded,
+                            matches!(kind, FileWriteKind::PrivateFiles),
+                            connection_cancel,
+                            &progress,
+                        )
+                    })
+            }
+        },
+        #[cfg(target_os = "linux")]
+        FileWritePayload::Sealed { input, stats } => {
+            crate::handlers::handle_sealed_write_files_message(
+                seq,
+                input,
+                stats,
+                connection_cancel,
+                &progress,
+            )
+        }
     };
-    // Admission may be released at the writer boundary, but do not retain the
-    // completed request's large payload while the result frame is being sent.
-    drop(payload);
     progress.mark(FileWriteStage::WaitingForWriter);
 
     match response {
         Ok(response) => writer
             .write_frame_after_lock_unless_cancelled(&response, connection_cancel, || {
                 progress.mark(FileWriteStage::WritingResponse);
-                operation_guard.release();
-                drop(admission);
+                admission.finish_operation(&operation_guard);
             })
             .map(|sent| {
                 if sent {
@@ -206,8 +220,7 @@ fn handle_request(
             }),
         Err(error) => {
             writer.shutdown_after_lock(|| {
-                operation_guard.release();
-                drop(admission);
+                admission.finish_operation(&operation_guard);
             });
             Err(error)
         }

@@ -26,7 +26,11 @@ import {
 } from "./for-you-sources.ts";
 
 type FeedbackKind =
-  "already_done" | "not_planned" | "less_like_this" | "dismissed";
+  | "already_done"
+  | "not_planned"
+  | "dont_nudge"
+  | "less_like_this"
+  | "dismissed";
 type SuggestionMutation =
   | { readonly type: "feedback"; readonly request: SuggestionFeedbackRequest }
   | { readonly type: "consume"; readonly optionId: string };
@@ -544,7 +548,13 @@ const submitAgentSuggestionFeedback$ = command(
       entry.enqueue$,
       {
         type: "feedback",
-        request: { id, kind, targetId: null, note: "" },
+        request: {
+          id,
+          kind: kind === "dont_nudge" ? "not_planned" : kind,
+          targetId: null,
+          note:
+            kind === "dont_nudge" ? "Do not nudge me about this again." : "",
+        },
       },
       get(rootSignal$),
     );
@@ -614,6 +624,7 @@ export const submitSuggestionFeedbackWithUndo$ = command(
       dismissed: messages.dismissRecorded,
       already_done: messages.doneRecorded,
       not_planned: messages.notPlannedRecorded,
+      dont_nudge: messages.dontNudgeRecorded,
       less_like_this: messages.lessRecorded,
     }[kind];
     toast.success(message, {

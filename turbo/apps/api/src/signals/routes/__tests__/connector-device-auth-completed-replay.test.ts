@@ -1,28 +1,20 @@
-import { builtinConnectorOauthDeviceAuthSessionContract } from "@okouai/api-contracts/contracts/connectors";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 
-import { accept, testContext } from "../../../__tests__/test-context";
-import { setupApp } from "../../../__tests__/test-helpers";
+import { testContext } from "../../../__tests__/test-context";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import { builtinConnectorsOauthDeviceAuthRoutes } from "../connectors-oauth-device-auth";
-import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
-import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
+import type { ApiTestUser } from "./helpers/api-bdd";
 import {
   createConnectorBddApi,
   mockTestOAuthDeviceConnectorProvider,
 } from "./helpers/api-bdd-connectors";
 import { createPublicConnectorActor } from "./helpers/public-connector-actor";
-import { createRouteMocks } from "./helpers/route-test";
 import { mockSecretKmsHttp } from "./helpers/secret-kms-http";
 
 const context = testContext();
 const connectors = createConnectorBddApi(context);
-const agents = createAuthOrgAgentsBddApi(context);
-const bdd = createBddApi(context);
-const mocks = createRouteMocks(context);
 const tokenUrl = "http://localhost:3000/api/test/oauth-provider/token";
 
 function replayOwner() {
@@ -95,8 +87,7 @@ async function expectAccounts(
   ).resolves.toMatchObject({ id: defaultId });
 }
 
-// Completed sessions remain exact-account replay handles, not remembered
-// connector snapshots or authority to substitute another account or Agent.
+// Completed sessions reload the exact account's current state.
 describe("Builtin device-auth completed replay", () => {
   it("reloads the exact non-default account after reconnect and the completed session lifetime", async () => {
     mockSecretKmsHttp();
@@ -196,86 +187,6 @@ describe("Builtin device-auth completed replay", () => {
         [{ id: defaultAccount.connectionId, isDefault: true }],
         defaultAccount.connectionId,
       );
-    });
-  });
-
-  it("rechecks the completed session's explicit Agent and does not substitute a surviving default Agent", async () => {
-    mockSecretKmsHttp();
-    const owned = replayOwner();
-    await owned.run(async () => {
-      const actor = owned.actor;
-      owned.ownsFeatureSwitches();
-      await enableDeviceAuth(actor);
-      mockNow(now());
-      bdd.acceptAgentStorageWrites();
-      const { body: defaultAgent } =
-        await agents.bootstrapLimitedFreeOnboarding(actor, {
-          displayName: "Surviving Completed Replay Default",
-        });
-      const target = await agents.createAgent(actor, {
-        displayName: "Deleted Completed Replay Target",
-      });
-      expect(target.agentId).not.toBe(defaultAgent.agentId);
-      const defaultGrants = await agents.readEnabledConnectorSlugs(
-        actor,
-        defaultAgent.agentId,
-      );
-      const targetGrants = await agents.readEnabledConnectorSlugs(
-        actor,
-        target.agentId,
-      );
-      mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-      const client = setupApp({
-        context,
-        routes: builtinConnectorsOauthDeviceAuthRoutes,
-      })(builtinConnectorOauthDeviceAuthSessionContract);
-      const started = await accept(
-        client.create({
-          params: { connectorSlug: "test-oauth-device" },
-          headers: { authorization: "Bearer clerk-session" },
-          body: {
-            authMethod: "oauth",
-            agentId: target.agentId,
-            authorizeAgent: true,
-            account: { intent: "add" },
-          },
-        }),
-        [200],
-      );
-      const completed = await completeSession(actor, started.body);
-      const authorized = await agents.readEnabledConnectorSlugs(
-        actor,
-        target.agentId,
-      );
-      expect([...authorized].sort()).toStrictEqual(
-        [...new Set([...targetGrants, "test-oauth-device"])].sort(),
-      );
-      await expect(
-        agents.readEnabledConnectorSlugs(actor, defaultAgent.agentId),
-      ).resolves.toStrictEqual(defaultGrants);
-      await bdd.deleteAgent(actor, target.agentId);
-      const replayed = await connectors.requestDeviceAuthPoll(
-        actor,
-        "test-oauth-device",
-        started.body.sessionId,
-        started.body.sessionToken,
-        [400],
-      );
-      expect(replayed.body).toStrictEqual({
-        error: {
-          code: "BAD_REQUEST",
-          message: `Agent not found: ${target.agentId}`,
-        },
-      });
-      expectNoSecrets(replayed.body, started.body.sessionToken);
-      await expectAccounts(
-        actor,
-        [{ id: completed.connectionId, isDefault: true }],
-        completed.connectionId,
-      );
-      await expect(
-        agents.readEnabledConnectorSlugs(actor, defaultAgent.agentId),
-      ).resolves.toStrictEqual(defaultGrants);
     });
   });
 });

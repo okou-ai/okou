@@ -17,6 +17,7 @@ import { workflows } from "@okouai/db/schema/workflow";
 import { and, eq, isNull, notInArray, or, sql } from "drizzle-orm";
 import { array, object, string, unknown, uuid, type infer as Infer } from "zod";
 import { zodDriverValueDecoder } from "../../lib/db-structured-result";
+import { logger } from "../../lib/log";
 import {
   memberInstructionsSelectionSql,
   type ExecutionPackageScope,
@@ -28,6 +29,8 @@ import {
 } from "./run-prompt-and-skills";
 import { normalizeMountOverlay } from "./storage-mount-overlay";
 import type { ThreadAutomationTarget } from "./thread-context.signals";
+
+const log = logger("api:execution-workflows");
 
 export const executionPackageSourcesSchema = object({
   memberInstructions: unknown(),
@@ -127,25 +130,20 @@ export function selectExecutionPackages(
       "ordinaryWorkflowName"
     > | null;
   },
-): CapturedExecutionPackages | null {
+): CapturedExecutionPackages | { readonly error: string } {
   if (!sources) {
-    return null;
+    return { error: "Run package source authorization is unavailable" };
   }
   const protectedPaths = new Set(input.protectedMountPaths);
   const isProtected = (name: string) => {
     return protectedPaths.has(`${input.skillRoot}/${name}`);
   };
-  if (input.ordinaryAutomation) {
-    const name = input.ordinaryAutomation.ordinaryWorkflowName;
-    if (name === null || isProtected(name)) {
-      return null;
-    }
-  }
+  const requiredWorkflow = input.ordinaryAutomation?.ordinaryWorkflowName;
   const instructionsBundle = contentBundleSchema.safeParse(
     input.singleAgent ? sources.memberInstructions : input.agentInstructions,
   );
   if (!instructionsBundle.success) {
-    return null;
+    return { error: "Run Instructions package is unavailable" };
   }
   const selectedWorkflows: CapturedExecutionPackages["workflows"][number][] =
     [];
@@ -155,12 +153,23 @@ export function selectExecutionPackages(
     }
     const contentBundle = contentBundleSchema.safeParse(workflow.contentBundle);
     if (!contentBundle.success) {
-      return null;
+      log.warn("Workflow Skill bundle is unavailable", {
+        workflowId: workflow.id,
+      });
+      continue;
     }
     selectedWorkflows.push({
       name: workflow.name,
       contentBundle: contentBundle.data,
     });
+  }
+  if (
+    input.ordinaryAutomation &&
+    !selectedWorkflows.some(({ name }) => {
+      return name === requiredWorkflow;
+    })
+  ) {
+    return { error: "The Automation's Workflow package is unavailable" };
   }
   return {
     instructionsBundle: instructionsBundle.data,

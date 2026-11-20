@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.22.93](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.22.92...guest-control-proto-v0.22.93) (2026-11-20)
+
+## [0.22.92](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.22.91...guest-control-proto-v0.22.92) (2026-11-19)
+
+
+### Performance Improvements
+
+* **guest-control:** receive large storage inputs into owned buffers ([#49059](https://github.com/okou-ai/okou/issues/49059)) ([d928b49](https://github.com/okou-ai/okou/commit/d928b49f7e1d59d8edf6e62fbdaa500a47302ced))
+
+## [0.22.91](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.22.90...guest-control-proto-v0.22.91) (2026-11-19)
+
+
+### Refactoring
+
+* **guest-control:** centralize exec output policy limits ([#49027](https://github.com/okou-ai/okou/issues/49027)) ([eaae30a](https://github.com/okou-ai/okou/commit/eaae30ac5e7ed88de0dbb946fd552489d633b560))
+
+
+### Performance Improvements
+
+* **guest-control:** stream large file writes into sealed inputs ([#49029](https://github.com/okou-ai/okou/issues/49029)) ([4c926a5](https://github.com/okou-ai/okou/commit/4c926a5a96d2fd68883a5be1b34247f62389f2d2))
+
 ## [0.22.90](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.22.89...guest-control-proto-v0.22.90) (2026-11-19)
 
 ## [0.22.89](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.22.88...guest-control-proto-v0.22.89) (2026-11-18)

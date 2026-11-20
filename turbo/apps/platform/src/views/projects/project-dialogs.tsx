@@ -1,7 +1,8 @@
 import type { ReactNode } from "react";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
-import { useLastResolved, useGet, useSet } from "ccstate-react";
+import { useLastResolved, useGet, useSet, useLoadable } from "ccstate-react";
 import { Button, Input, Popover, PopoverContent } from "@okouai/ui";
 import {
   Drawer,
@@ -39,10 +40,21 @@ import {
   type ProjectDialog,
 } from "../../signals/projects/project-ui.ts";
 import { eventDrivenChatThreads$ } from "../../signals/chat-page/chat-thread-event-sourcing.ts";
+import { featureSwitches$ } from "../../signals/external/feature-switch.ts";
+import {
+  projectDeletionThreads$,
+  initializeProjectDeletion$,
+  projectDeletionConfirmation$,
+  projectDeletionChanged$,
+  refreshProjectDeletion$,
+  confirmProjectThreadDeletion$,
+  backFromProjectThreadDeletion$,
+  deleteProjectAndThreads$,
+} from "../../signals/projects/project-deletion.ts";
 import { mobileChatViewport$ } from "../../signals/okou-page/pwa-navigation.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { rootSignal$ } from "../../signals/root-signal.ts";
-import { detach, Reason } from "../../signals/utils.ts";
+import { detach, Reason, waitForBrowserPaint } from "../../signals/utils.ts";
 // A rename keeps its Project menu; deleting a Project returns to the list's
 // create control. Creating from a chat returns to that chat's surviving row,
 // and creating from a new chat's composer returns to the message.
@@ -111,20 +123,24 @@ function ProjectEditor({ dialog }: { dialog: EditorDialog }) {
   const error = creation.state === "hasError" || renaming.state === "hasError";
   async function submit() {
     // A newly visible Project can be used while its creation is still in flight.
-    const completion = dialog.projectId
-      ? rename(dialog.projectId, name, signal)
-      : create(
-          {
-            name,
-            ...(dialog.fromThreadId
-              ? { fromThreadId: dialog.fromThreadId }
-              : {}),
-            open: dialog.fromComposer === true,
-          },
-          creationSignal,
-        );
-    close(dialog);
-    await completion;
+    if (dialog.projectId) {
+      const completion = rename(dialog.projectId, name, signal);
+      close(dialog);
+      await completion;
+      return;
+    }
+    await create(
+      {
+        name,
+        ...(dialog.fromThreadId ? { fromThreadId: dialog.fromThreadId } : {}),
+        open: dialog.fromComposer === true,
+        onOptimisticCommit: async () => {
+          await waitForBrowserPaint(creationSignal);
+          close(dialog);
+        },
+      },
+      creationSignal,
+    );
   }
   return (
     <Dialog
@@ -337,10 +353,12 @@ function ProjectMembershipPicker({
       .toLocaleLowerCase()
       .includes(search.trim().toLocaleLowerCase());
   });
-  async function select(id: string | null) {
-    const completion = move(dialog.threadId, id, signal);
+  async function closeAfterPaint() {
+    await waitForBrowserPaint(signal);
     close(dialog);
-    await completion;
+  }
+  async function select(id: string | null) {
+    await Promise.all([move(dialog.threadId, id, signal), closeAfterPaint()]);
   }
   function onOpenChange(open: boolean) {
     if (!open) {
@@ -438,6 +456,172 @@ function ProjectMembershipPicker({
     </MembershipSurface>
   );
 }
+function ProjectDeleteChoices({
+  pending,
+  onDeleteProject,
+}: {
+  readonly pending: boolean;
+  readonly onDeleteProject: () => void;
+}) {
+  const { t } = useTranslation();
+  const threads = useLoadable(projectDeletionThreads$);
+  const confirmThreads = useSet(confirmProjectThreadDeletion$);
+  const refresh = useSet(refreshProjectDeletion$);
+  const features = useLastResolved(featureSwitches$);
+  const enabled = features?.[FeatureSwitchKey.ProjectThreadDeletion] ?? false;
+  const signal = useGet(pageSignal$);
+  return (
+    <>
+      <div className="flex flex-col gap-2">
+        <Button disabled={pending} onClick={onDeleteProject}>
+          {t(($) => {
+            return $.projects.deleteProjectOnly;
+          })}
+        </Button>
+        {enabled &&
+          (threads.state !== "hasData" || threads.data.length > 0) && (
+            <Button
+              data-project-delete-all
+              variant="outline"
+              disabled={pending || threads.state !== "hasData"}
+              onClick={() => {
+                detach(confirmThreads(signal), Reason.DomCallback);
+              }}
+            >
+              {threads.state === "hasData"
+                ? t(
+                    ($) => {
+                      return $.projects.deleteProjectAndThreads;
+                    },
+                    { count: threads.data.length },
+                  )
+                : t(($) => {
+                    return $.projects.loadingThreads;
+                  })}
+            </Button>
+          )}
+      </div>
+      {enabled && threads.state === "hasError" && (
+        <div
+          role="alert"
+          className="flex flex-col gap-2 text-sm text-destructive"
+        >
+          {t(($) => {
+            return $.projects.loadThreadsError;
+          })}
+          <Button
+            variant="outline"
+            disabled={pending}
+            onClick={() => {
+              detach(refresh(signal), Reason.DomCallback);
+            }}
+          >
+            {t(($) => {
+              return $.projects.retryThreads;
+            })}
+          </Button>
+        </div>
+      )}
+    </>
+  );
+}
+
+function ProjectDeleteConfirmation({
+  pending,
+  hasError,
+  onDelete,
+}: {
+  readonly pending: boolean;
+  readonly hasError: boolean;
+  readonly onDelete: () => void;
+}) {
+  const { t } = useTranslation();
+  const confirmation = useGet(projectDeletionConfirmation$);
+  const changed = useGet(projectDeletionChanged$);
+  const back = useSet(backFromProjectThreadDeletion$);
+  return (
+    <DialogContent
+      initialFocus={() => {
+        return document.querySelector<HTMLButtonElement>(
+          "[data-project-delete-back]",
+        );
+      }}
+      finalFocus={() => {
+        return document.querySelector<HTMLButtonElement>(
+          "[data-project-delete-all]",
+        );
+      }}
+      showCloseButton={!pending}
+      closeLabel={t(($) => {
+        return $.projects.close;
+      })}
+    >
+      <DialogHeader>
+        <DialogTitle>
+          {t(($) => {
+            return $.projects.deleteThreadsTitle;
+          })}
+        </DialogTitle>
+        <DialogDescription>
+          {t(
+            ($) => {
+              return $.projects.deleteThreadsDescription;
+            },
+            { count: confirmation?.length ?? 0 },
+          )}
+        </DialogDescription>
+      </DialogHeader>
+      <ul className="max-h-48 overflow-y-auto text-sm">
+        {confirmation?.map((thread) => {
+          return (
+            <li key={thread.id} className="truncate py-1">
+              {thread.title ??
+                t(($) => {
+                  return $.projects.untitledThread;
+                })}
+            </li>
+          );
+        })}
+      </ul>
+      {changed && (
+        <p role="alert" className="text-sm text-muted-foreground">
+          {t(($) => {
+            return $.projects.threadsChanged;
+          })}
+        </p>
+      )}
+      {hasError && (
+        <p role="alert" className="text-sm text-destructive">
+          {t(($) => {
+            return $.projects.deleteThreadsError;
+          })}
+        </p>
+      )}
+      <DialogFooter>
+        <Button
+          data-project-delete-back
+          variant="outline"
+          disabled={pending}
+          onClick={back}
+        >
+          {t(($) => {
+            return $.projects.back;
+          })}
+        </Button>
+        <Button variant="destructive" disabled={pending} onClick={onDelete}>
+          {pending
+            ? t(($) => {
+                return $.projects.deletingThreads;
+              })
+            : t(($) => {
+                return $.projects.confirmDeleteThreads;
+              })}
+        </Button>
+      </DialogFooter>
+    </DialogContent>
+  );
+}
+
 function DeleteProjectDialog({
   dialog,
 }: {
@@ -447,26 +631,37 @@ function DeleteProjectDialog({
   const close = useSet(closeProjectDialog$);
   const hasSuccessor = useSet(projectDialogHasSuccessor$);
   const [deletion, remove] = useLoadableSet(deleteProject$);
+  const [threadDeletion, removeThreads] = useLoadableSet(
+    deleteProjectAndThreads$,
+  );
+  const confirmation = useGet(projectDeletionConfirmation$);
+  const initialize = useSet(initializeProjectDeletion$);
+  const back = useSet(backFromProjectThreadDeletion$);
+  const features = useLastResolved(featureSwitches$);
+  const enabled = features?.[FeatureSwitchKey.ProjectThreadDeletion] ?? false;
   const signal = useGet(pageSignal$);
-  async function submit() {
-    await remove(
-      dialog.projectId,
-      () => {
-        close(dialog);
-      },
-      signal,
-    );
+  const pending =
+    deletion.state === "loading" || threadDeletion.state === "loading";
+  async function onDeleted() {
+    await waitForBrowserPaint(signal);
+    close(dialog);
   }
   return (
     <Dialog
       open
       onOpenChange={(open) => {
-        if (!open) {
+        if (!open && !pending) {
           close(dialog);
         }
       }}
     >
       <DialogContent
+        ref={initialize}
+        hideWhenNestedOpen
+        showCloseButton={!pending}
+        closeLabel={t(($) => {
+          return $.projects.close;
+        })}
         finalFocus={() => {
           return hasSuccessor(dialog)
             ? false
@@ -480,28 +675,47 @@ function DeleteProjectDialog({
             })}
           </DialogTitle>
           <DialogDescription>
-            {t(($) => {
-              return $.projects.deleteDescription;
-            })}
+            {enabled
+              ? t(($) => {
+                  return $.projects.deleteChoiceDescription;
+                })
+              : t(($) => {
+                  return $.projects.deleteDescription;
+                })}
           </DialogDescription>
         </DialogHeader>
-        <Button
-          disabled={deletion.state === "loading"}
-          onClick={() => {
-            detach(submit(), Reason.DomCallback);
+        <ProjectDeleteChoices
+          pending={pending}
+          onDeleteProject={() => {
+            detach(
+              remove(dialog.projectId, onDeleted, signal),
+              Reason.DomCallback,
+            );
           }}
-        >
-          {t(($) => {
-            return $.projects.deleteProject;
-          })}
-        </Button>
+        />
         {deletion.state === "hasError" && (
-          <p role="alert">
+          <p role="alert" className="text-sm text-destructive">
             {t(($) => {
               return $.projects.deleteError;
             })}
           </p>
         )}
+        <Dialog
+          open={confirmation !== null}
+          onOpenChange={(open) => {
+            if (!open && !pending) {
+              back();
+            }
+          }}
+        >
+          <ProjectDeleteConfirmation
+            pending={pending}
+            hasError={threadDeletion.state === "hasError"}
+            onDelete={() => {
+              detach(removeThreads(onDeleted, signal), Reason.DomCallback);
+            }}
+          />
+        </Dialog>
       </DialogContent>
     </Dialog>
   );

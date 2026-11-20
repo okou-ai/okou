@@ -24,7 +24,7 @@ teardown() {
     values=$(jq -nc \
         --arg url "https://discord.com/api/webhooks/1234567890/e2e-${TEST_ID}" \
         '{url: $url}')
-    run runner_e2e_connect_manual_connector discord-webhook api-token "$AGENT_ID" "$values"
+    run runner_e2e_connect_manual_connector discord-webhook api-token "$values"
     echo "$output"
     assert_success
     CONNECTOR_ACCOUNT_ID=$(jq -er \

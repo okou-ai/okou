@@ -1,4 +1,7 @@
-import { connectorPermissionsResponse } from "../../../__tests__/connector-permissions.ts";
+import {
+  connectorPermissionsResponse,
+  type ConnectorPermissionFixture,
+} from "../../../__tests__/connector-permissions.ts";
 import { agentsByIdContract } from "@okouai/api-contracts/contracts/agents";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import {
@@ -6,7 +9,7 @@ import {
   chatThreadMetadataContract,
   type ChatEventSendBody,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import type { UserPermissionGrantResponse } from "@okouai/api-contracts/contracts/user-permission-grants";
+
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   connectorPermissionsContract,
@@ -44,7 +47,7 @@ function installResources({
   permissionDefault = "ask",
   failMetadata = false,
 }: { permissionDefault?: "ask" | "allow"; failMetadata?: boolean } = {}) {
-  const grants: UserPermissionGrantResponse[] = [];
+  const grants: ConnectorPermissionFixture[] = [];
   context.mocks.api(agentsByIdContract.get, ({ respond }) => {
     return respond(200, {
       isDefaultAgent: false,
@@ -264,7 +267,6 @@ test.each(["dismissed", "continued"] as const)(
         grants.push(
           ...body.grants.map((grant) => {
             return {
-              agentId: AGENT_ID,
               connectorSlug,
               permission: grant.permission,
               action: "allow" as const,

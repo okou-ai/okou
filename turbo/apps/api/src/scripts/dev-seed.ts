@@ -3,11 +3,9 @@
 import { pathToFileURL } from "node:url";
 import { readFile } from "node:fs/promises";
 
-import { count, gte, sql, type SQL } from "drizzle-orm";
-import { escapeLiteral } from "pg";
+import { count, gte, sql } from "drizzle-orm";
 import { AUTO_RUN_KEY_VENDOR } from "@okouai/core/auto-run-model";
 import { resolveSkillRef } from "@okouai/core/github-url";
-import { SYSTEM_ORG_ID, VOLUME_ORG_USER_ID } from "@okouai/core/storage-names";
 import { BUILT_IN_SKILLS } from "@okouai/core/built-in-skills";
 import {
   contentBundleKey,
@@ -30,7 +28,6 @@ import { seedPreviewConnectorCatalog$ } from "../signals/services/preview-connec
 import { publishDefaultPersonalInstructions$ } from "../signals/services/personal-instructions.service";
 import { onRejection } from "../signals/utils";
 import { DEV_SEED_SENTINEL_MANAGED_MODEL_KEY } from "./dev-seed-managed-model-key";
-import rawDevSeedSkillVolumes from "./dev-seed-skill-volumes.json";
 import devSeedSkillBundles from "./dev-seed-skill-bundles.json";
 
 function writeLine(message: string): void {
@@ -59,47 +56,6 @@ type UsagePricingRow = readonly [
   unitPrice: number,
   unitSize: number,
 ];
-
-interface DevSeedSkillVolume {
-  readonly url: string;
-  readonly name: string;
-  readonly s3Key: string;
-  readonly message: string;
-  readonly fullPath: string;
-  readonly s3Prefix: string;
-  readonly commitSha: string;
-  readonly skillSize: number;
-  readonly storageId: string;
-  readonly frontmatter: Record<string, unknown>;
-  readonly storageName: string;
-  readonly storageSize: number;
-  readonly versionHash: string;
-  readonly versionSize: number;
-  readonly skillFileCount: number;
-  readonly storageFileCount: number;
-  readonly versionFileCount: number;
-}
-
-const DEV_SEED_SKILL_VOLUMES: readonly DevSeedSkillVolume[] =
-  rawDevSeedSkillVolumes;
-
-const PREVIEW_E2E_VOLUME_SKILL_NAMES: readonly string[] = [
-  "github",
-  "slack",
-  "discord-webhook",
-  "serpapi",
-  "replicate",
-];
-
-function getDevSeedSkillVolumes(): readonly DevSeedSkillVolume[] {
-  if (optionalEnv("ENV") !== "preview") {
-    return DEV_SEED_SKILL_VOLUMES;
-  }
-  const previewSkillNames = new Set(PREVIEW_E2E_VOLUME_SKILL_NAMES);
-  return DEV_SEED_SKILL_VOLUMES.filter((volume) => {
-    return previewSkillNames.has(volume.name);
-  });
-}
 
 function usageGroup(
   kind: string,
@@ -217,171 +173,6 @@ function buildSeedSkillValues(
       commitSha: published.commitSha,
     };
   });
-}
-
-function buildStorageSeedSql(
-  systemOrgId: string,
-  volumeOrgUserId: string,
-): string {
-  // This fixture captured the legacy system-skill writer's encoded archive
-  // length as versionSize. Preserve the historical size value while also
-  // populating the final archive-size metadata for the same shared object.
-  return `
-  INSERT INTO storages (
-    id, org_id, user_id, name, s3_prefix, size, file_count, updated_at
-  )
-  SELECT
-    "storageId", ${systemOrgId}, ${volumeOrgUserId}, "storageName", "s3Prefix",
-    "storageSize", "storageFileCount", seeded_at
-  FROM dev_seed_skill_volumes
-  ON CONFLICT (org_id, user_id, name) DO UPDATE SET
-    s3_prefix = excluded.s3_prefix,
-    size = excluded.size,
-    file_count = excluded.file_count,
-    updated_at = seeded_at
-  WHERE (storages.s3_prefix, storages.size, storages.file_count)
-    IS DISTINCT FROM
-    (excluded.s3_prefix, excluded.size, excluded.file_count);
-
-  INSERT INTO storage_versions (
-    id, storage_id, s3_key, size, archive_size, file_count, message, created_by
-  )
-  SELECT
-    volume."versionHash", storage.id, volume."s3Key", volume."versionSize",
-    volume."versionSize", volume."versionFileCount", volume.message, 'system'
-  FROM dev_seed_skill_volumes AS volume
-  JOIN storages AS storage
-    ON storage.org_id = ${systemOrgId}
-    AND storage.user_id = ${volumeOrgUserId}
-    AND storage.name = volume."storageName"
-  ON CONFLICT (id) DO UPDATE SET
-    storage_id = excluded.storage_id,
-    s3_key = excluded.s3_key,
-    size = excluded.size,
-    archive_size = excluded.archive_size,
-    file_count = excluded.file_count,
-    message = excluded.message,
-    created_by = excluded.created_by
-  WHERE (
-    storage_versions.storage_id,
-    storage_versions.s3_key,
-    storage_versions.size,
-    storage_versions.archive_size,
-    storage_versions.file_count,
-    storage_versions.message,
-    storage_versions.created_by
-  ) IS DISTINCT FROM (
-    excluded.storage_id,
-    excluded.s3_key,
-    excluded.size,
-    excluded.archive_size,
-    excluded.file_count,
-    excluded.message,
-    excluded.created_by
-  );
-
-  UPDATE storages AS storage SET
-    head_version_id = volume."versionHash",
-    updated_at = seeded_at
-  FROM dev_seed_skill_volumes AS volume
-  WHERE storage.org_id = ${systemOrgId}
-    AND storage.user_id = ${volumeOrgUserId}
-    AND storage.name = volume."storageName"
-    AND storage.head_version_id IS DISTINCT FROM volume."versionHash";
-`;
-}
-
-function buildSkillSeedSql(
-  systemOrgId: string,
-  volumeOrgUserId: string,
-): string {
-  return `
-  INSERT INTO skills (
-    url, name, full_path, storage_id, version_hash, commit_sha, frontmatter,
-    s3_key, size, file_count, synced_at, updated_at
-  )
-  SELECT
-    volume.url, volume.name, volume."fullPath", storage.id,
-    volume."versionHash", volume."commitSha", volume.frontmatter,
-    volume."s3Key", volume."skillSize", volume."skillFileCount", seeded_at,
-    seeded_at
-  FROM dev_seed_skill_volumes AS volume
-  JOIN storages AS storage
-    ON storage.org_id = ${systemOrgId}
-    AND storage.user_id = ${volumeOrgUserId}
-    AND storage.name = volume."storageName"
-  ON CONFLICT (url) DO UPDATE SET
-    name = excluded.name,
-    full_path = excluded.full_path,
-    storage_id = excluded.storage_id,
-    version_hash = excluded.version_hash,
-    commit_sha = excluded.commit_sha,
-    frontmatter = excluded.frontmatter,
-    s3_key = excluded.s3_key,
-    size = excluded.size,
-    file_count = excluded.file_count,
-    synced_at = excluded.synced_at,
-    updated_at = seeded_at
-  WHERE (
-    skills.name,
-    skills.full_path,
-    skills.storage_id,
-    skills.version_hash,
-    skills.commit_sha,
-    skills.frontmatter,
-    skills.s3_key,
-    skills.size,
-    skills.file_count
-  ) IS DISTINCT FROM (
-    excluded.name,
-    excluded.full_path,
-    excluded.storage_id,
-    excluded.version_hash,
-    excluded.commit_sha,
-    excluded.frontmatter,
-    excluded.s3_key,
-    excluded.size,
-    excluded.file_count
-  );
-`;
-}
-
-function buildOfficialSkillVolumesSeedSql(
-  seedSkillVolumes: readonly DevSeedSkillVolume[],
-): SQL {
-  const seedVolumes = escapeLiteral(JSON.stringify(seedSkillVolumes));
-  const systemOrgId = escapeLiteral(SYSTEM_ORG_ID);
-  const volumeOrgUserId = escapeLiteral(VOLUME_ORG_USER_ID);
-  const body = `
-DECLARE
-  seeded_at timestamp := CURRENT_TIMESTAMP;
-  seed_volumes jsonb := ${seedVolumes}::jsonb;
-BEGIN
-  CREATE TEMP TABLE dev_seed_skill_volumes ON COMMIT DROP AS
-  SELECT *
-  FROM jsonb_to_recordset(seed_volumes) AS volume(
-    url text,
-    name text,
-    "s3Key" text,
-    message text,
-    "fullPath" text,
-    "s3Prefix" text,
-    "commitSha" varchar(40),
-    "skillSize" bigint,
-    "storageId" uuid,
-    frontmatter jsonb,
-    "storageName" varchar(256),
-    "storageSize" bigint,
-    "versionHash" varchar(64),
-    "versionSize" bigint,
-    "skillFileCount" integer,
-    "storageFileCount" integer,
-    "versionFileCount" integer
-  );
-${buildStorageSeedSql(systemOrgId, volumeOrgUserId)}
-${buildSkillSeedSql(systemOrgId, volumeOrgUserId)}
-END`;
-  return sql.raw(`DO ${escapeLiteral(body)}`);
 }
 
 export const USAGE_PRICING: readonly (typeof usagePricing.$inferInsert)[] = [
@@ -824,12 +615,6 @@ async function devSeed() {
     writeLine(`Seeded built-in model key entry: ${k.vendor}`);
   }
   writeLine(`Seeded ${apiKeys.length} built-in model key entries`);
-
-  // --- skills (legacy volumes + verified current Seed bundle references) ---
-  const seedSkillVolumes = getDevSeedSkillVolumes();
-  writeLine("Seeding official skill volumes");
-  await database.execute(buildOfficialSkillVolumesSeedSql(seedSkillVolumes));
-  writeLine(`Seeded ${seedSkillVolumes.length} official skill volume entries`);
 
   const store = createStore();
   const signal = new AbortController().signal;

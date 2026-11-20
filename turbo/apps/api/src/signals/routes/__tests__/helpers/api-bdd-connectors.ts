@@ -26,10 +26,6 @@ import {
   type GithubInstallationResponse,
 } from "@okouai/api-contracts/contracts/integrations-github";
 import {
-  agentCustomConnectorsContract,
-  type AgentCustomConnectorGrant,
-} from "@okouai/api-contracts/contracts/agent-custom-connectors";
-import {
   customConnectorByIdContract,
   customConnectorOAuth2Contract,
   customConnectorProposalContract,
@@ -78,7 +74,6 @@ import { createGithubBddApi } from "./api-bdd-github";
 import { createRouteMocks } from "./route-test";
 import { builtinConnectorsSlugCallbackRoutes } from "../../connectors-slug-callback";
 import { integrationsGithubRoutes } from "../../integrations-github";
-import { agentsRoutes } from "../../agents";
 import { connectorAccountRoutes } from "../../connector-accounts";
 import { builtinConnectorsRoutes } from "../../connectors";
 import { builtinConnectorsExternalCodeRoutes } from "../../connectors-external-code";
@@ -101,7 +96,6 @@ const customConnectorByIdTestRoutes = Object.freeze([
 const TEST_APP_ROUTES = Object.freeze([
   ...builtinConnectorsSlugCallbackRoutes,
   ...integrationsGithubRoutes,
-  ...agentsRoutes,
   ...connectorAccountRoutes,
   ...builtinConnectorsExternalCodeRoutes,
   ...builtinConnectorsOauthDeviceAuthRoutes,
@@ -1520,32 +1514,6 @@ export function mockGoogleSlidesReadback(
   return recorded;
 }
 
-/** Drive folder lookup plus an upload the provider refuses to convert. */
-export function mockGoogleDriveArtifactUploadRejection(reason: string): void {
-  server.use(
-    http.get(GOOGLE_DRIVE_FILES_URL, () => {
-      return HttpResponse.json({
-        files: [
-          { id: "drive-artifact-thread-folder", name: "thread-artifacts" },
-        ],
-      });
-    }),
-    http.post(GOOGLE_DRIVE_UPLOAD_URL, () => {
-      return HttpResponse.json(
-        {
-          error: {
-            code: 400,
-            message:
-              "Conversion of the uploaded content to the requested output type is not supported.",
-            errors: [{ reason, domain: "global" }],
-          },
-        },
-        { status: 400 },
-      );
-    }),
-  );
-}
-
 /**
  * Drives the connector OAuth callback route with a raw absolute-URL request
  * so origin-dependent behavior (canonical API-host redirects, trusted
@@ -2377,8 +2345,6 @@ export function createConnectorBddApi(context: TestContext) {
       values: Readonly<Record<string, string>>,
       options: {
         readonly statuses: readonly (200 | 400 | 401 | 403 | 404 | 500)[];
-        readonly agentId?: string;
-        readonly authorizeAgent?: true;
         readonly account?: ConnectorAccountMutationIntent;
       },
     ) {
@@ -2392,8 +2358,6 @@ export function createConnectorBddApi(context: TestContext) {
           body: {
             authMethod,
             values,
-            ...(options.agentId ? { agentId: options.agentId } : {}),
-            ...(options.authorizeAgent ? { authorizeAgent: true } : {}),
             account: options.account ?? { intent: "add" },
           },
         }),
@@ -2406,18 +2370,14 @@ export function createConnectorBddApi(context: TestContext) {
       connectorSlug: ConnectorSlug,
       authMethod: ConnectorAuthMethodId,
       values: Readonly<Record<string, string>>,
-      ...options: readonly [
-        agentId?: string,
-        account?: ConnectorAccountMutationIntent,
-      ]
+      account: ConnectorAccountMutationIntent = { intent: "add" },
     ): Promise<ConnectorAccountConnection> {
-      const [agentId, account = { intent: "add" }] = options;
       const response = await api.requestManualGrant(
         actor,
         connectorSlug,
         authMethod,
         values,
-        { statuses: [200], agentId, authorizeAgent: true, account },
+        { statuses: [200], account },
       );
       expectStatus(response, 200);
       const accountMetadata = await api.readBuiltinConnectorAccount(
@@ -2434,8 +2394,6 @@ export function createConnectorBddApi(context: TestContext) {
       authMethod: ConnectorAuthMethodId,
       options: {
         readonly statuses: readonly (200 | 400 | 401 | 403 | 404 | 409 | 500)[];
-        readonly agentId?: string;
-        readonly authorizeAgent?: true;
         readonly callbackTarget?: "app";
         readonly account?: ConnectorAccountMutationIntent;
       },
@@ -2449,8 +2407,6 @@ export function createConnectorBddApi(context: TestContext) {
           headers: authenticate(actor),
           body: {
             authMethod,
-            ...(options.agentId ? { agentId: options.agentId } : {}),
-            ...(options.authorizeAgent ? { authorizeAgent: true } : {}),
             ...(options.callbackTarget
               ? { callbackTarget: options.callbackTarget }
               : {}),
@@ -2465,7 +2421,6 @@ export function createConnectorBddApi(context: TestContext) {
       actor: ApiTestUser,
       connectorSlug: ConnectorSlug,
       authMethod: ConnectorAuthMethodId,
-      agentId?: string,
       account?: ConnectorAccountMutationIntent,
     ): Promise<BuiltinConnectorOauthStartResponse> {
       const response = await api.requestOauthStart(
@@ -2474,8 +2429,6 @@ export function createConnectorBddApi(context: TestContext) {
         authMethod,
         {
           statuses: [200],
-          agentId,
-          authorizeAgent: true,
           account,
         },
       );
@@ -3080,7 +3033,6 @@ export function createConnectorBddApi(context: TestContext) {
       actor: ApiTestUser | null,
       connectorId: string,
       statuses: readonly (200 | 400 | 401 | 403 | 404 | 409 | 500 | 502)[],
-      agentId?: string,
       account: ConnectorAccountMutationIntent = { intent: "add" },
     ) {
       const client = setupApp({
@@ -3091,7 +3043,7 @@ export function createConnectorBddApi(context: TestContext) {
         client.start({
           params: { id: connectorId },
           headers: authenticate(actor),
-          body: { ...(agentId ? { agentId } : {}), account },
+          body: { account },
         }),
         statuses,
       );
@@ -3100,14 +3052,12 @@ export function createConnectorBddApi(context: TestContext) {
     async startCustomConnectorOAuth2(
       actor: ApiTestUser,
       connectorId: string,
-      agentId?: string,
       account?: ConnectorAccountMutationIntent,
     ): Promise<string> {
       const response = await api.requestStartCustomConnectorOAuth2(
         actor,
         connectorId,
         [200],
-        agentId,
         account,
       );
       expectStatus(response, 200);
@@ -3169,124 +3119,6 @@ export function createConnectorBddApi(context: TestContext) {
       );
       expectStatus(response, 200);
       return response;
-    },
-
-    async requestAgentCustomConnectors(
-      actor: ApiTestUser | null,
-      agentId: string,
-      statuses: readonly (200 | 401 | 403 | 404)[],
-    ) {
-      const client = setupApp({ context, routes: agentsRoutes })(
-        agentCustomConnectorsContract,
-      );
-      return await accept(
-        client.get({ params: { id: agentId }, headers: authenticate(actor) }),
-        statuses,
-      );
-    },
-
-    async readAgentCustomConnectors(
-      actor: ApiTestUser,
-      agentId: string,
-    ): Promise<readonly string[]> {
-      const response = await api.requestAgentCustomConnectors(
-        actor,
-        agentId,
-        [200],
-      );
-      expectStatus(response, 200);
-      return response.body.grants.map((grant) => {
-        return grant.customConnectorId;
-      });
-    },
-
-    async readAgentCustomConnectorGrants(
-      actor: ApiTestUser,
-      agentId: string,
-    ): Promise<readonly AgentCustomConnectorGrant[]> {
-      const response = await api.requestAgentCustomConnectors(
-        actor,
-        agentId,
-        [200],
-      );
-      expectStatus(response, 200);
-      return response.body.grants;
-    },
-
-    async requestUpdateAgentCustomConnectors(
-      actor: ApiTestUser | null,
-      agentId: string,
-      connectorIds: readonly string[],
-      statuses: readonly (200 | 400 | 401 | 403 | 404)[],
-      operation?: "replace" | "add" | "remove",
-    ) {
-      const client = setupApp({ context, routes: agentsRoutes })(
-        agentCustomConnectorsContract,
-      );
-      const body =
-        operation === undefined
-          ? {
-              grants: connectorIds.map((customConnectorId) => {
-                return { customConnectorId, permissionNames: [] };
-              }),
-            }
-          : {
-              grants: connectorIds.map((customConnectorId) => {
-                return { customConnectorId, permissionNames: [] };
-              }),
-              operation,
-            };
-      return await accept(
-        client.update({
-          params: { id: agentId },
-          headers: authenticate(actor),
-          body,
-        }),
-        statuses,
-      );
-    },
-
-    async updateAgentCustomConnectors(
-      actor: ApiTestUser,
-      agentId: string,
-      connectorIds: readonly string[],
-      operation?: "replace" | "add" | "remove",
-    ): Promise<readonly string[]> {
-      const response = await api.requestUpdateAgentCustomConnectors(
-        actor,
-        agentId,
-        connectorIds,
-        [200],
-        operation,
-      );
-      expectStatus(response, 200);
-      return response.body.grants.map((grant) => {
-        return grant.customConnectorId;
-      });
-    },
-
-    async requestUpdateAgentCustomConnectorGrants(
-      actor: ApiTestUser | null,
-      agentId: string,
-      grants: readonly AgentCustomConnectorGrant[],
-      statuses: readonly (200 | 400 | 401 | 403 | 404)[],
-      operation?: "replace" | "add" | "remove",
-    ) {
-      const client = setupApp({ context, routes: agentsRoutes })(
-        agentCustomConnectorsContract,
-      );
-      const body =
-        operation === undefined
-          ? { grants: [...grants] }
-          : { grants: [...grants], operation };
-      return await accept(
-        client.update({
-          params: { id: agentId },
-          headers: authenticate(actor),
-          body,
-        }),
-        statuses,
-      );
     },
   };
 

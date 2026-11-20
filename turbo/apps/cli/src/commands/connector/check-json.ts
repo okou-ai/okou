@@ -3,20 +3,13 @@ import {
   connectorAccountTargetKey,
   type ConnectorAccountTarget,
 } from "@okouai/api-contracts/contracts/connector-accounts";
-import {
-  chatConnectorAccountsEnabled,
-  listRunConnectorAccounts,
-} from "../../lib/api/domains/run-connector-accounts";
+import { getAllowedChatConnectorTargetKeys } from "../../lib/api/domains/run-connector-accounts";
 import {
   customConnectorManagedStatusSchema,
   isIntegrationManagedCustomConnector,
 } from "@okouai/api-contracts/contracts/custom-connectors";
 import { readMemberAccountFacts } from "./member-status";
 
-import {
-  getAgentCustomConnectorGrants,
-  getAgentUserBuiltinConnectors,
-} from "../../lib/api/domains/agents";
 import {
   getCustomConnector,
   type ConnectorDiagnosticRequest,
@@ -180,34 +173,13 @@ function environmentPermissionName(
 async function loadCheckEvidence(
   target: ConnectorAccountTarget,
   runBound: boolean,
-  agentId: string | undefined,
 ) {
-  const [definition, accounts, authorized, origin] = await Promise.all([
+  const [definition, accounts, allowedTargets, origin] = await Promise.all([
     target.kind === "custom"
       ? getCustomConnector(target.customConnectorId)
       : null,
     runBound ? resolveRunConnectorAccountLookups([target]) : null,
-    agentId === undefined
-      ? null
-      : chatConnectorAccountsEnabled()
-        ? listRunConnectorAccounts().then((inventory) => {
-            return inventory.accounts.some((account) => {
-              return (
-                account.enabled &&
-                connectorAccountTargetKey(account.target) ===
-                  connectorAccountTargetKey(target)
-              );
-            });
-          })
-        : target.kind === "builtin"
-          ? getAgentUserBuiltinConnectors(agentId).then((slugs) => {
-              return slugs.includes(target.connectorSlug);
-            })
-          : getAgentCustomConnectorGrants(agentId).then((grants) => {
-              return grants.some((grant) => {
-                return grant.customConnectorId === target.customConnectorId;
-              });
-            }),
+    runBound ? getAllowedChatConnectorTargetKeys() : null,
     getPlatformOrigin(),
   ]);
   const account = accounts === null ? null : accounts[0];
@@ -222,7 +194,8 @@ async function loadCheckEvidence(
   return {
     definition,
     account,
-    authorized,
+    allowedInChat:
+      allowedTargets?.has(connectorAccountTargetKey(target)) ?? null,
     origin,
     accountSummary: memberFacts?.accountSummary ?? null,
     memberStatus: memberFacts?.memberStatus ?? null,
@@ -234,7 +207,7 @@ function checkConnectionActions(
   label: string,
   evidence: Awaited<ReturnType<typeof loadCheckEvidence>>,
 ): ConnectorSearchAction[] {
-  const { definition, account, authorized, memberStatus } = evidence;
+  const { definition, account, allowedInChat, memberStatus } = evidence;
   const connectionActions: ConnectorSearchAction[] = [];
   if (account !== null) {
     const action = runConnectorSearchAction(
@@ -276,33 +249,17 @@ function checkConnectionActions(
         !definition.connected
   ) {
     connectionActions.push({
-      label: `Review ${label} accounts and agent access`,
+      label: `Review ${label} accounts`,
       path: "/connectors",
       supportsCallback: false,
     });
   }
-  if (authorized === false) {
-    if (chatConnectorAccountsEnabled()) {
-      connectionActions.push({
-        label: `Review ${label} Chat account access`,
-        path: "/connectors",
-        supportsCallback: false,
-      });
-      return connectionActions;
-    }
-    connectionActions.push(
-      target.kind === "builtin"
-        ? {
-            label: `Authorize ${label}`,
-            path: `/connectors/${target.connectorSlug}/authorize`,
-            supportsCallback: true,
-          }
-        : {
-            label: `Review ${label} agent access`,
-            path: "/connectors",
-            supportsCallback: false,
-          },
-    );
+  if (allowedInChat === false) {
+    connectionActions.push({
+      label: `Review ${label} Chat account access`,
+      path: "/connectors",
+      supportsCallback: false,
+    });
   }
   return connectionActions;
 }
@@ -345,8 +302,8 @@ export async function printConnectorCheckJson(
     awsContextIncomplete &&
     diagnostic.mode === "url" &&
     diagnostic.permission.kind === "unknown-endpoint";
-  const evidence = await loadCheckEvidence(target, runBound, agentId);
-  const { definition, account, authorized, origin } = evidence;
+  const evidence = await loadCheckEvidence(target, runBound);
+  const { definition, account, allowedInChat, origin } = evidence;
   const label =
     target.kind === "builtin"
       ? diagnostic.connector.label
@@ -373,7 +330,7 @@ export async function printConnectorCheckJson(
     actions.push({
       kind: "guidance",
       message:
-        "Review the connector's agent access and selected account, then start a new run.",
+        "Review this Chat's allowed accounts, then retry with an available account.",
     });
   }
   actions.push(retry);
@@ -408,7 +365,7 @@ export async function printConnectorCheckJson(
           isIntegrationManagedCustomConnector(definition)
             ? customConnectorManagedStatusSchema.parse(definition)
             : null,
-        authorization: agentId === undefined ? null : { agentId, authorized },
+        allowedInChat,
         guidance: [
           "Routing and permission diagnostics describe current intended state; they do not confirm that the runner has applied the latest update.",
           ...customUnknownEndpointGuidance(diagnostic),
@@ -416,7 +373,7 @@ export async function printConnectorCheckJson(
           ...(incompleteUnknown ? [AWS_INCOMPLETE_CONTEXT_GUIDANCE] : []),
           ...(runBound
             ? [
-                "Connector changes apply to future runs. Reconnect or change the thread selection, then start a new run.",
+                "Inspect connector account list for Chat allowance. Use connector account switch for an enabled account, or switch-request for owner approval.",
               ]
             : []),
         ],

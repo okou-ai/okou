@@ -300,8 +300,12 @@ const COMPOSER_CONTROL_FOCUS_CLASS =
 // Props
 // ---------------------------------------------------------------------------
 
-/** `home` keeps the start page's two-line field wherever the composer sits. */
-export type ComposerLayout = "default" | "home";
+/**
+ * `home` keeps the start page's two-line field wherever the composer sits.
+ * `card` embeds the composer in a card row: the caret starts on the quote's left
+ * edge, and a quote reserves one line for its note instead of a 96px field.
+ */
+export type ComposerLayout = "default" | "home" | "card";
 
 interface ChatComposerProps {
   readonly signals: ComposerSignals;
@@ -5964,6 +5968,8 @@ function ComposerCard({
       className={cn(
         "z-10",
         "[@media(display-mode:standalone)]:[[data-chat-composer]_&]:scroll-mb-4",
+        layout === "card" &&
+          "[&_.ProseMirror_p]:pl-0 [&_[data-feedback-item]]:min-h-0",
         dragOver && "outline outline-2 outline-blue-400/60",
       )}
       onDrop={(event) => {

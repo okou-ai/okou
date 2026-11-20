@@ -9,7 +9,7 @@ import batch_aba_report as batch
 import later_parking_report as later
 import report
 import speculative_fault_report as saving
-import status_failure_report as failure
+import status_evidence
 from cleanup_report import supplied_policy
 from native_transition_report import wait_progress, wire
 from report import exact
@@ -49,11 +49,11 @@ def validate(directory):
         initial, captured, accepted, lost, progress, joined = [event["evidence"] for event in events[:6]]
         mode = case.rsplit("-", 1)[0]
         path = initial.get("status_path")
-        if not failure.valid_status_path(path) or path in paths:
+        if not status_evidence.valid_status_path(path) or path in paths:
             raise ValueError("invalid or replayed native unpark status path")
         paths.add(path)
         baseline = initial.get("published_status")
-        failure.status(baseline, sandbox=identity[0])
+        status_evidence.original_status(baseline, sandbox=identity[0])
         exact(initial, {"policy":policy,"status_path":path,"published_status":baseline,"regular_file":True},
               "native unpark changed original inputs")
         history, operation = later.history_operation(

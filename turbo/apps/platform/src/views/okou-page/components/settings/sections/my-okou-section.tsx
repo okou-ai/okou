@@ -1,19 +1,79 @@
-import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
+import {
+  useGet,
+  useLastLoadable,
+  useLastResolved,
+  useLoadable,
+  useSet,
+} from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
-import { Button, Skeleton, surfaceVariants } from "@okouai/ui";
+import {
+  Tabs,
+  TabsList,
+  TabsTrigger,
+  TabsContent,
+  Button,
+  Skeleton,
+  surfaceVariants,
+} from "@okouai/ui";
 import {
   myOkouSignals$,
   myOkouSectionRef$,
   type MyOkouSignals,
 } from "../../../../../signals/my-okou.ts";
-import { settingsActionSignal$ } from "../../../../../signals/okou-page/settings/settings-dialog.ts";
+import {
+  myOkouTab$,
+  setMyOkouTab$,
+  settingsActionSignal$,
+} from "../../../../../signals/okou-page/settings/settings-dialog.ts";
 import { detach, Reason } from "../../../../../signals/utils.ts";
 import { TiptapInstructionsEditor } from "../../../tiptap-instructions-editor.tsx";
 import { UnsavedBar } from "../../../unsaved-bar.tsx";
 import { InstructionsConflict } from "../../../instructions-conflict.tsx";
 
+import { proactiveSettingsInMyOkou$ } from "../../../../../signals/single-agent.ts";
+import { ProactiveSection } from "./proactive-section.tsx";
+
 export function MyOkouSection() {
+  const { t } = useTranslation();
+  const proactive = useLastResolved(proactiveSettingsInMyOkou$);
+  const tab = useGet(myOkouTab$);
+  const setTab = useSet(setMyOkouTab$);
+  if (proactive === undefined) {
+    return <LoadingInstructions />;
+  }
+  if (!proactive) {
+    return <InstructionsSection />;
+  }
+  return (
+    <Tabs value={tab} onValueChange={setTab}>
+      <TabsList
+        aria-label={t(($) => {
+          return $.myOkou.title;
+        })}
+      >
+        <TabsTrigger value="proactive">
+          {t(($) => {
+            return $.settings.dialog.sections.proactiveLearning.title;
+          })}
+        </TabsTrigger>
+        <TabsTrigger value="instructions">
+          {t(($) => {
+            return $.myOkou.instructions;
+          })}
+        </TabsTrigger>
+      </TabsList>
+      <TabsContent value="proactive" className="mt-4">
+        <ProactiveSection inMyOkou />
+      </TabsContent>
+      <TabsContent value="instructions" className="mt-4">
+        <InstructionsSection />
+      </TabsContent>
+    </Tabs>
+  );
+}
+
+function InstructionsSection() {
   const signals = useLoadable(myOkouSignals$);
   const sectionRef = useSet(myOkouSectionRef$);
   return (

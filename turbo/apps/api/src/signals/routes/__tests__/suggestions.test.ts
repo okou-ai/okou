@@ -1297,6 +1297,70 @@ describe("Agent suggestions", () => {
     expect(retained.body.items).toHaveLength(1);
     expect(retained.body.items[0]?.id).toBe(suggestion.id);
   });
+  it("lets a custom direction continue only its owner's thread", async () => {
+    const owner = await primaryRun();
+    const threads = setupApp({ context, routes: chatThreadCreateRoutes })(
+      chatThreadsContract,
+    );
+    const thread = await accept(
+      threads.create({
+        headers: humanHeaders,
+        body: { agentId: owner.agentId },
+      }),
+      [201],
+    );
+    const continuing = input();
+    const customOption = {
+      ...continuing.content.customOption,
+      threadId: thread.body.id,
+    };
+    await accept(
+      client().create({
+        headers: owner.headers,
+        body: {
+          ...continuing,
+          content: { ...continuing.content, customOption },
+        },
+      }),
+      [200],
+    );
+    const pool = await accept(client().list({ headers: humanHeaders }), [200]);
+    expect(
+      pool.body.items.filter((item) => {
+        return item.type === "suggestion";
+      })[0]?.content.customOption.threadId,
+    ).toBe(thread.body.id);
+    const other = await primaryRun();
+    const foreign = input();
+    await accept(
+      client().create({
+        headers: other.headers,
+        body: { ...foreign, content: { ...foreign.content, customOption } },
+      }),
+      [404],
+    );
+    await accept(
+      client().create({ headers: other.headers, body: foreign }),
+      [200],
+    );
+    await accept(
+      client().update({
+        headers: other.headers,
+        params: { id: foreign.id },
+        body: { content: { customOption } },
+      }),
+      [404],
+    );
+    const unchanged = await accept(
+      client().list({ headers: humanHeaders }),
+      [200],
+    );
+    expect(
+      unchanged.body.items.filter((item) => {
+        return item.type === "suggestion";
+      })[0]?.content.customOption,
+    ).toStrictEqual(foreign.content.customOption);
+  });
   it("returns the original target and canonical draft when its thread was deleted after publication", async () => {
     const fixture = await primaryRun();
     const secondary = await createBddApi(context).createAgent(fixture.actor, {

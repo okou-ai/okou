@@ -118,6 +118,7 @@
     <string name="updates_preparing">更新を準備中…</string>
     <string name="updates_check">更新を確認</string>
     <string name="updates_view">更新を見る</string>
+    <string name="updates_toolbar">更新</string>
     <string name="updates_later">後で</string>
     <string name="updates_download">更新をダウンロード</string>
     <string name="updates_install">更新をインストール</string>

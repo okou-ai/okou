@@ -7,10 +7,10 @@ import { server } from "../../../../mocks/server";
 import {
   customConnector,
   customMcpConnector,
-  stubAgentCustomConnectors,
   stubCustomConnectors,
 } from "../../../__tests__/helpers/custom-connectors";
 import { customConnectorCommand } from "../index";
+import { stubRunConnectorAccountInventory } from "../../../__tests__/helpers/run-connector-accounts";
 import {
   connectorAccount,
   stubConnectorAccounts,
@@ -29,7 +29,6 @@ describe("okou connector custom readers", () => {
     vi.stubEnv("OKOU_TOKEN", "test-token");
     server.use(stubConnectorAccounts([]), stubConnectedConnectors());
     for (const command of customConnectorCommand.commands) {
-      command.setOptionValue("agent", undefined);
       command.setOptionValue("json", false);
     }
   });
@@ -40,26 +39,33 @@ describe("okou connector custom readers", () => {
     process.exitCode = undefined;
   });
 
-  it("emits current org JSON with protocol and grants even from inside a run", async () => {
+  it("reports saved-account membership and Chat allowance inside a Run", async () => {
     const connector = customConnector({});
     const mcp = customMcpConnector();
     vi.stubEnv("OKOU_AGENT_ID", AGENT_ID);
     server.use(
-      stubConnectedConnectors([], [connector]),
+      stubConnectedConnectors([], [connector, mcp]),
       stubCustomConnectors([connector, mcp]),
-      http.get(`http://localhost:3000/api/agents/${AGENT_ID}`, () => {
-        return HttpResponse.json({
-          agentId: AGENT_ID,
-          ownerId: "owner-1",
-          description: null,
-          displayName: "Maya",
-          sound: null,
-          avatarUrl: null,
-        });
+      stubRunConnectorAccountInventory({
+        accounts: [
+          {
+            target: { kind: "custom", customConnectorId: connector.id },
+            connectionId: "55555555-5555-4555-8555-555555555555",
+            displayName: "Allowed custom account",
+            enabled: true,
+            isCurrent: true,
+            isDefault: true,
+          },
+          {
+            target: { kind: "custom", customConnectorId: mcp.id },
+            connectionId: "66666666-6666-4666-8666-666666666666",
+            displayName: "Saved MCP account",
+            enabled: false,
+            isCurrent: false,
+            isDefault: true,
+          },
+        ],
       }),
-      stubAgentCustomConnectors([
-        { customConnectorId: connector.id, permissionNames: [] },
-      ]),
     );
     chalk.level = 3;
     await customConnectorCommand.parseAsync(["node", "okou", "list", "--json"]);
@@ -67,20 +73,20 @@ describe("okou connector custom readers", () => {
     const json: unknown = JSON.parse(output);
     expect(json).toMatchObject({
       context: "current",
-      agent: { agentId: AGENT_ID },
       connectors: [
         {
           kind: "http",
           connectorType: "custom-http",
           target: { kind: "custom", customConnectorId: connector.id },
           hasSavedAccounts: true,
-          authorized: true,
+          allowedInChat: true,
         },
         {
           kind: "mcp",
           connectorType: "custom-mcp",
           target: { kind: "custom", customConnectorId: mcp.id },
-          authorized: false,
+          hasSavedAccounts: true,
+          allowedInChat: false,
         },
       ],
     });
@@ -94,7 +100,6 @@ describe("okou connector custom readers", () => {
     const json: unknown = JSON.parse(consoleLog.mock.calls.flat().join("\n"));
     expect(json).toMatchObject({
       context: "current",
-      agent: null,
       connectors: [],
     });
   });
@@ -187,7 +192,7 @@ describe("okou connector custom readers", () => {
           displayName: connector.displayName,
           authMode: connector.authMode,
           connectorType: `custom-${connector.kind}`,
-          authorized: null,
+          allowedInChat: null,
         },
       });
     },
@@ -242,76 +247,6 @@ describe("okou connector custom readers", () => {
     expect(output).toContain("Acme Search");
     expect(output).toContain("http");
   });
-
-  it.each([
-    { context: "non-run", runAgent: undefined, args: ["--agent", AGENT_ID] },
-    { context: "run with omitted selector", runAgent: AGENT_ID, args: [] },
-    {
-      context: "run with matching selector",
-      runAgent: AGENT_ID,
-      args: ["--agent", AGENT_ID],
-    },
-  ])(
-    "renders custom grants in list and status for $context",
-    async ({ runAgent, args }) => {
-      vi.stubEnv("OKOU_AGENT_ID", runAgent);
-      const connector = customConnector();
-      server.use(
-        stubCustomConnectors([connector]),
-        http.get(
-          `http://localhost:3000/api/custom-connectors/${CONNECTOR_ID}`,
-          () => {
-            return HttpResponse.json(connector);
-          },
-        ),
-        http.get(`http://localhost:3000/api/agents/${AGENT_ID}`, () => {
-          return HttpResponse.json({
-            agentId: AGENT_ID,
-            ownerId: "owner-1",
-            description: null,
-            displayName: "Maya",
-            sound: null,
-            avatarUrl: null,
-          });
-        }),
-        stubAgentCustomConnectors([
-          {
-            customConnectorId: connector.id,
-            permissionNames: ["chat:write"],
-          },
-        ]),
-      );
-
-      await customConnectorCommand.parseAsync([
-        "node",
-        "okou",
-        "list",
-        ...args,
-      ]);
-
-      const output = consoleLog.mock.calls.flat().join("\n");
-      expect(output).toContain("AUTHORIZED FOR Maya");
-      const connectorRow = (consoleLog.mock.calls.flat() as string[]).find(
-        (line) => {
-          return line.startsWith(connector.id);
-        },
-      );
-      expect(connectorRow).toMatch(/✓$/u);
-
-      consoleLog.mockClear();
-      await customConnectorCommand.parseAsync([
-        "node",
-        "okou",
-        "status",
-        CONNECTOR_ID,
-        ...args,
-      ]);
-
-      const status = consoleLog.mock.calls.flat().join("\n");
-      expect(status).toContain("Custom connector: Acme Search");
-      expect(status).toMatch(/Authorized:\s+yes/u);
-    },
-  );
 
   it.each([
     CONNECTOR_ID,

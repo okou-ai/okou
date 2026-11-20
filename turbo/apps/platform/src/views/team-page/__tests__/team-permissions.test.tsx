@@ -2,7 +2,10 @@ import {
   connectorPermissionsContract,
   type ApplyConnectorPermissions,
 } from "@okouai/api-contracts/contracts/connector-permissions";
-import { connectorPermissionsResponse } from "../../../__tests__/connector-permissions.ts";
+import {
+  connectorPermissionsResponse,
+  type ConnectorPermissionFixture,
+} from "../../../__tests__/connector-permissions.ts";
 import { screen, waitFor } from "@testing-library/react";
 import {
   type PublicConnectorCatalogPermissionDetail,
@@ -12,7 +15,7 @@ import {
 import { customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connectors";
 
 import { UNKNOWN_PERMISSION_GRANT } from "@okouai/connectors/firewall-contracts";
-import type { UserPermissionGrantResponse } from "@okouai/api-contracts/contracts/user-permission-grants";
+
 import { expect, test } from "vitest";
 
 import {
@@ -44,7 +47,7 @@ const FIXED_NOW_ISO = "2026-08-18T12:00:00.000Z";
 interface PermissionSurfaceOptions {
   readonly connector: PublicConnectorCatalogStatusItem;
   readonly metadata: PublicConnectorCatalogPermissionDetail;
-  readonly initialGrants?: readonly UserPermissionGrantResponse[];
+  readonly initialGrants?: readonly ConnectorPermissionFixture[];
   readonly onApply?: (request: ApplyConnectorPermissions) => void;
 }
 

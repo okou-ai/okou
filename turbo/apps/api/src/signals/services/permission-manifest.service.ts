@@ -28,6 +28,7 @@ import {
 import { getModelProviderFirewall } from "@okouai/api-contracts/contracts/model-providers";
 import {
   canonicalizeFirewallBaseUrlVarsForExecution,
+  FirewallBaseUrlResolutionError,
   type ExecutionFirewallEntry,
   type ExecutionFirewalls,
   type ExpandedFirewallConfig,
@@ -38,6 +39,10 @@ import {
   type NetworkPolicies,
 } from "@okouai/connectors/firewall-types";
 import { defaultFirewallPolicyForPermissionIndex } from "./firewall-network-policy.service";
+import { logger } from "../../lib/log";
+import { safeSync } from "../utils";
+
+const log = logger("api:permission-manifest");
 
 const DEFAULT_FIREWALL_SECRET_PLACEHOLDER =
   "c0ffee5afe10ca1c0ffee5afe10ca1c0ffee5afe";
@@ -283,9 +288,21 @@ function applyBuiltinConnectorMetadataPolicies(
     if (sourceId === undefined) {
       throw new Error("Missing built-in connector source identity");
     }
-    firewalls.push(
-      builtinFirewallEntryForMetadata(source.metadata, vars, sourceId),
-    );
+    const entry = safeSync(() => {
+      return builtinFirewallEntryForMetadata(source.metadata, vars, sourceId);
+    });
+    if ("error" in entry) {
+      if (!(entry.error instanceof FirewallBaseUrlResolutionError)) {
+        throw entry.error;
+      }
+      log.warn("Connector excluded from Run admission", {
+        connectorSlug: name,
+        sourceId,
+        reason: "invalid_base_url_configuration",
+      });
+      continue;
+    }
+    firewalls.push(entry.ok);
     if (!source.isMcp) {
       Object.assign(
         environmentSecretPlaceholders,

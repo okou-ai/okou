@@ -24,6 +24,7 @@ const LARGE_REMOTE_BATCH: usize = 64;
 const LARGE_REMOTE_CONCURRENT: usize = 24;
 const VERY_LARGE_REMOTE_BATCH: usize = 96;
 const VERY_LARGE_REMOTE_CONCURRENT: usize = 32;
+const VERY_LARGE_REMOTE_MAX_CONCURRENT: usize = 40;
 type AttemptRunner = fn(&mut StartedDownload<'_>) -> Result<(), DownloadError>;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -365,7 +366,13 @@ fn download_all_parallel_with_runner(
 
 fn download_concurrency(remote_count: usize, task_count: usize) -> usize {
     let limit = match remote_count {
-        VERY_LARGE_REMOTE_BATCH.. => VERY_LARGE_REMOTE_CONCURRENT,
+        VERY_LARGE_REMOTE_BATCH.. => {
+            // Fit up to 160 independent remote requests into four windows.
+            remote_count.div_ceil(4).clamp(
+                VERY_LARGE_REMOTE_CONCURRENT,
+                VERY_LARGE_REMOTE_MAX_CONCURRENT,
+            )
+        }
         LARGE_REMOTE_BATCH.. => LARGE_REMOTE_CONCURRENT,
         _ => MAX_CONCURRENT,
     };

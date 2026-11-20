@@ -1,5 +1,60 @@
 # Changelog
 
+## [0.24.137](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.136...guest-control-server-v0.24.137) (2026-11-20)
+
+
+### Performance Improvements
+
+* **guest-control:** stream medium ordinary file batches ([#49437](https://github.com/okou-ai/okou/issues/49437)) ([e85ae29](https://github.com/okou-ai/okou/commit/e85ae298c9b6caf90c75f096095a7dbc5c52f46d))
+
+## [0.24.136](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.135...guest-control-server-v0.24.136) (2026-11-20)
+
+
+### Refactoring
+
+* **guest-control:** centralize worker completion release ([#49419](https://github.com/okou-ai/okou/issues/49419)) ([83e3ed4](https://github.com/okou-ai/okou/commit/83e3ed43d7fb6b78ae40d44d25017beb726db66d))
+
+## [0.24.135](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.134...guest-control-server-v0.24.135) (2026-11-20)
+
+
+### Performance Improvements
+
+* **guest-control:** stream decoded storage up to the helper input limit ([#49387](https://github.com/okou-ai/okou/issues/49387)) ([f7dec25](https://github.com/okou-ai/okou/commit/f7dec25340899b5803db413e07c8002b0ff6c433))
+
+## [0.24.134](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.133...guest-control-server-v0.24.134) (2026-11-20)
+
+
+### Performance Improvements
+
+* **guest-control:** stream large decoded storage into sealed stdin ([#49350](https://github.com/okou-ai/okou/issues/49350)) ([841df64](https://github.com/okou-ai/okou/commit/841df6479f1171967fa0d8a5c4109de01a1fe067))
+
+## [0.24.133](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.132...guest-control-server-v0.24.133) (2026-11-20)
+
+
+### Performance Improvements
+
+* **guest-storage:** pass large decoded inputs in sealed descriptors ([#49206](https://github.com/okou-ai/okou/issues/49206)) ([b48b19f](https://github.com/okou-ai/okou/commit/b48b19f606fe851dc9faa04995c2d1fdaef7203a))
+
+## [0.24.132](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.131...guest-control-server-v0.24.132) (2026-11-19)
+
+
+### Performance Improvements
+
+* **guest-control:** receive large storage inputs into owned buffers ([#49059](https://github.com/okou-ai/okou/issues/49059)) ([d928b49](https://github.com/okou-ai/okou/commit/d928b49f7e1d59d8edf6e62fbdaa500a47302ced))
+* **guest-control:** stream all sealed file batches ([#49136](https://github.com/okou-ai/okou/issues/49136)) ([471ba7e](https://github.com/okou-ai/okou/commit/471ba7eec9c058281609232a6058b35177ac7e29))
+
+## [0.24.131](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.130...guest-control-server-v0.24.131) (2026-11-19)
+
+
+### Refactoring
+
+* **guest-control:** centralize exec output policy limits ([#49027](https://github.com/okou-ai/okou/issues/49027)) ([eaae30a](https://github.com/okou-ai/okou/commit/eaae30ac5e7ed88de0dbb946fd552489d633b560))
+
+
+### Performance Improvements
+
+* **guest-control:** stream large file writes into sealed inputs ([#49029](https://github.com/okou-ai/okou/issues/49029)) ([4c926a5](https://github.com/okou-ai/okou/commit/4c926a5a96d2fd68883a5be1b34247f62389f2d2))
+
 ## [0.24.130](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.129...guest-control-server-v0.24.130) (2026-11-19)
 
 

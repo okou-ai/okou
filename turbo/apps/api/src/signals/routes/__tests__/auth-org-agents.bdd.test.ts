@@ -927,7 +927,7 @@ describe("AGENT-01 and AGENT-02", () => {
     expect(privateAfterBlockedVisibility.visibility).toBe("private");
   });
 
-  it("covers agent isolation, default-agent permissions, and org custom connector enablement", async () => {
+  it("covers agent visibility and workspace custom connector connection", async () => {
     const admin = api.user();
     const member = api.user({
       orgId: admin.orgId,
@@ -1001,42 +1001,6 @@ describe("AGENT-01 and AGENT-02", () => {
     expect(JSON.stringify(builtinConnectorList)).not.toContain(
       "custom-connector-secret",
     );
-
-    const enabled = await api.updateAgentCustomConnectors(
-      admin,
-      publicAgent.agentId,
-      [connector.id],
-    );
-    expect(enabled.grants).toStrictEqual([
-      { customConnectorId: connector.id, permissionNames: [] },
-    ]);
-    const readEnabled = await api.readAgentCustomConnectors(
-      admin,
-      publicAgent.agentId,
-    );
-    expect(readEnabled.grants).toStrictEqual([
-      { customConnectorId: connector.id, permissionNames: [] },
-    ]);
-
-    const otherAgent = await api.createAgent(otherAdmin, {
-      displayName: "Other Org Agent",
-      visibility: "private",
-    });
-    const crossOrgConnector = await api.requestUpdateAgentCustomConnectors(
-      otherAdmin,
-      otherAgent.agentId,
-      [connector.id],
-      [400],
-    );
-    expectApiError(crossOrgConnector.body);
-    expect(crossOrgConnector.body.error.code).toBe("VALIDATION_ERROR");
-
-    const cleared = await api.updateAgentCustomConnectors(
-      admin,
-      publicAgent.agentId,
-      [],
-    );
-    expect(cleared.grants).toStrictEqual([]);
 
     await api.deleteDefaultCustomConnectorAccount(admin, connector.id);
     const afterDisconnect = await api.listCustomConnectors(admin);

@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.27.2](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.27.1...runner-supervisor-v0.27.2) (2026-11-20)
+
+## [0.27.1](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.27.0...runner-supervisor-v0.27.1) (2026-11-20)
+
+## [0.27.0](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.26.13...runner-supervisor-v0.27.0) (2026-11-20)
+
+
+### Features
+
+* **runner:** accept optionality on execution Skill bundles ([#49266](https://github.com/okou-ai/okou/issues/49266)) ([64bd508](https://github.com/okou-ai/okou/commit/64bd508da7156eac1672d135fdca8fe9437501ec))
+
+## [0.26.13](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.26.12...runner-supervisor-v0.26.13) (2026-11-20)
+
+## [0.26.12](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.26.11...runner-supervisor-v0.26.12) (2026-11-19)
+
+## [0.26.11](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.26.10...runner-supervisor-v0.26.11) (2026-11-19)
+
+
+### Refactoring
+
+* **runner:** construct dispatch intake with its home probe ([#49123](https://github.com/okou-ai/okou/issues/49123)) ([3770610](https://github.com/okou-ai/okou/commit/3770610074d3e432ef0fe658109be10420c5fde6))
+
+## [0.26.10](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.26.9...runner-supervisor-v0.26.10) (2026-11-19)
+
+
+### Bug Fixes
+
+* **runner:** enable direct dispatch before startup readiness ([#48996](https://github.com/okou-ai/okou/issues/48996)) ([ff43cc4](https://github.com/okou-ai/okou/commit/ff43cc42defc24c5c02511ec822a31f50ec8ae05))
+
 ## [0.26.9](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.26.8...runner-supervisor-v0.26.9) (2026-11-19)
 
 

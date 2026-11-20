@@ -3,16 +3,6 @@
 
 export const clientContractImportManifest = [
   {
-    module: "agent-connector-access",
-    contracts: ["agentConnectorAccessContract"],
-    bindings: [],
-  },
-  {
-    module: "agent-custom-connectors",
-    contracts: ["agentCustomConnectorsContract"],
-    bindings: [],
-  },
-  {
     module: "agent-draft",
     contracts: ["agentDraftContract"],
     bindings: [
@@ -589,11 +579,6 @@ export const clientContractImportManifest = [
         imported: "connectorAccountTargetSchema",
       },
     ],
-  },
-  {
-    module: "connector-agent-access",
-    contracts: ["connectorAgentAccessContract"],
-    bindings: [],
   },
   {
     module: "connector-catalog",
@@ -1985,27 +1970,6 @@ export const clientContractImportManifest = [
     module: "user-model-preference",
     contracts: ["userModelPreferenceContract"],
     bindings: [],
-  },
-  {
-    module: "user-permission-grants",
-    contracts: ["userPermissionGrantsContract"],
-    bindings: [
-      {
-        name: "userPermissionGrantBatchItemSchema",
-        source: "validators/user-permission-grants",
-        imported: "userPermissionGrantBatchItemSchema",
-      },
-      {
-        name: "userPermissionGrantBatchItemsSchema",
-        source: "validators/user-permission-grants",
-        imported: "userPermissionGrantBatchItemsSchema",
-      },
-      {
-        name: "userPermissionGrantExpiresInSchema",
-        source: "validators/user-permission-grants",
-        imported: "userPermissionGrantExpiresInSchema",
-      },
-    ],
   },
   {
     module: "user-preferences",

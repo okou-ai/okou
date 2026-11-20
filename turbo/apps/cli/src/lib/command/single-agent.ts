@@ -61,12 +61,6 @@ export function configureCommandMode(command: Command, enabled: boolean): void {
         ? "Show your user, workspace, Run and capabilities"
         : "Show agent identity, run ID, and capabilities",
     );
-  if (command.name() === "mcp")
-    command.description(
-      enabled
-        ? "Use MCP connectors authorized for this Run"
-        : "Use MCP connectors authorized for this Agent",
-    );
   // Workflow-specific argument handling belongs to the Workflow command owner.
   if (["chat", "search", "connector"].includes(command.name())) {
     const visit = (node: Command) => {
@@ -108,31 +102,3 @@ export function modeHelp(legacy: string, personal: string) {
     return personalCommandMode(command) ? personal : legacy;
   };
 }
-
-export const PERSONAL_CONNECTOR_HELP = `
-Your own accounts and Okou access in the current workspace are selected automatically.
-A connected account alone does not grant access. Inspect connector status --json,
-connector account list --json and okou whoami --permissions before acting.
-Preserve fine-grained allow/deny rules, original expiry and revocation. Switching
-accounts does not reset permissions. Account consent is not purchase approval.
-Chat-specific account allowances and selections apply only when that capability
-is enabled; this command does not enable it. Unavailable admitted accounts never
-fall back to another account. Disconnect removes the saved account; unauthorize
-only narrows your Okou access while retaining the account where supported.
-
-Use connector check --url <failed-url> --method <method> before requesting access.
-Use only the exact permission-request command from a deny/ask diagnosis, not provider
-OAuth scopes. Custom connector permissions are managed in Connectors settings.
-A batch file contains diagnosed { connector, permission, url, method } entries;
-AWS selectors must match the diagnosis. Already allowed permissions are skipped.
-
-Use --callback-prompt only for one access action in the current web chat, including
-one batch approval. Keep it concise and free of secrets. Return every action URL
-verbatim and end the turn for approval. For multiple access actions, return all
-ordinary links and wait for completion. A callback requires this Chat's execution
-context; it does not grant another member's access.
-
-Inspect exact connectionIds with connector account list; do not invent them.
-Changes retain the command's documented account/Chat scope and effective grants.
-Use each subcommand's options for supported selectors, file and JSON formats.
-`;

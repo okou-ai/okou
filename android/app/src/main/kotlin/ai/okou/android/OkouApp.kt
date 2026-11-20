@@ -7,15 +7,19 @@ import ai.okou.android.chat.ChatComposerModel
 import ai.okou.android.chat.ChatListFilter
 import ai.okou.android.chat.ChatListModel
 import ai.okou.android.chat.ChatListScreen
+import ai.okou.android.chat.ChatListUiState
 import ai.okou.android.chat.ChatReadPhase
+import ai.okou.android.chat.ChatTitleSearch
 import ai.okou.android.chat.ComposerTarget
 import ai.okou.android.chat.ConfirmedChat
 import ai.okou.android.chat.ConversationRoute
 import ai.okou.android.chat.RealtimeNotice
 import ai.okou.android.chat.RunControlsModel
 import ai.okou.android.chat.RunControlsPanel
+import ai.okou.android.state.SearchRoute
 import ai.okou.android.state.SettingsDestination
 import ai.okou.android.state.WorkspaceTarget
+import ai.okou.android.state.rememberChatSearchState
 import ai.okou.android.state.rememberCollapsedProjects
 import ai.okou.android.state.rememberConversationUiState
 import ai.okou.android.state.rememberWorkspaceNavigation
@@ -29,22 +33,28 @@ import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -54,6 +64,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -62,38 +73,56 @@ import androidx.compose.runtime.structuralEqualityPolicy
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.platform.LocalAccessibilityManager
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun OkouApp(
-    chats: ChatListModel,
-    composer: ChatComposerModel,
-    controls: RunControlsModel,
+    chats: ChatListModel?,
+    composer: ChatComposerModel?,
+    controls: RunControlsModel?,
     settingsContent: @Composable (SettingsDestination, openInstructions: () -> Unit) -> Unit,
     recovery: AssistantRecoveryModel? = null,
-    workspaceTitle: @Composable (() -> Unit)? = null,
+    workspaceTitle: @Composable ((ChatListFilter) -> Unit)? = null,
     openUpdate: (() -> Unit)? = null,
+    startupRecovery: @Composable (() -> Unit)? = null,
 ) {
-    val list by chats.uiState.collectAsStateWithLifecycle()
+    val list =
+        chats?.uiState?.collectAsStateWithLifecycle()?.value
+            ?: ChatListUiState(
+                listPhase =
+                    if (startupRecovery == null) ChatReadPhase.Loading else ChatReadPhase.Idle
+            )
     var navigation by rememberWorkspaceNavigation()
-    val settings = navigation.settings
-    val target = navigation.target
+    // Keep saved navigation available for Ready without entering a protected destination early.
+    val settings = navigation.settings.takeIf { composer != null }
+    val target = if (composer != null) navigation.target else WorkspaceTarget.List
     // Window configuration changes on resize. IME insets only change the space inside the panes.
     val window = LocalConfiguration.current
     val listWidth = workspaceListPaneWidth(window.screenWidthDp, window.screenHeightDp)
-    val showList = listWidth != null || target == WorkspaceTarget.List
-    val showWorkspaceBack = listWidth == null && target != WorkspaceTarget.List
-    val listPosition = rememberLazyListState()
+    val searchState = rememberChatSearchState()
+    var focusSearch by remember { mutableStateOf(false) }
+    val searchActive = chats != null && composer != null && navigation.search == SearchRoute.Open
+    val showList = listWidth != null || searchActive || target == WorkspaceTarget.List
+    val showChatList = settings == null && showList && !searchActive
+    val showWorkspaceBack = listWidth == null && !searchActive && target != WorkspaceTarget.List
+    val listPositions =
+        ChatListFilter.entries.map { filter -> key(filter) { rememberLazyListState() } }
     val settingsPosition = rememberScrollState()
     val collapsed = rememberCollapsedProjects()
     val conversations = rememberConversationUiState()
@@ -104,6 +133,39 @@ internal fun OkouApp(
     val keyboard = LocalSoftwareKeyboardController.current
     val settingsFocus = remember { FocusRequester() }
     var restoreSettingsFocus by remember { mutableStateOf(false) }
+
+    fun releaseSearchFocus() {
+        focus.clearFocus()
+        keyboard?.hide()
+        focusSearch = false
+    }
+
+    fun closeSearch() {
+        releaseSearchFocus()
+        searchState.reset()
+        navigation = navigation.copy(search = SearchRoute.Closed)
+    }
+
+    fun openSearch() {
+        searchState.reset()
+        focusSearch = true
+        navigation = navigation.copy(search = SearchRoute.Open)
+    }
+
+    fun returnToList() {
+        val search =
+            when (navigation.search) {
+                SearchRoute.Open -> SearchRoute.Open
+                SearchRoute.ReturnOnBack ->
+                    if (listWidth == null) SearchRoute.Open else SearchRoute.Closed
+                SearchRoute.Closed -> SearchRoute.Closed
+            }
+        if (search == SearchRoute.Closed) {
+            searchState.reset()
+        }
+        navigation = navigation.copy(target = WorkspaceTarget.List, search = search)
+    }
+
     val thread =
         (target as? WorkspaceTarget.Chat)?.let { chat ->
             list.threads.firstOrNull { it.id == chat.id && it.hidden != true }
@@ -115,38 +177,75 @@ internal fun OkouApp(
                 if (action.updatesChat) R.string.chat_row_action_failed
                 else R.string.chat_read_action_failed
             )
-        LaunchedEffect(action, message) {
-            snackbar.showSnackbar(message)
-            chats.dismissRowActionFailure(action)
+        LaunchedEffect(chats, action, message, showChatList) {
+            if (showChatList) snackbar.showSnackbar(message, duration = SnackbarDuration.Indefinite)
+            chats?.dismissRowActionFailure(action)
+        }
+    }
+    list.markAllReadResult?.let { result ->
+        val message =
+            if (result.confirmed == result.requested) {
+                pluralStringResource(
+                    R.plurals.chat_mark_all_read_success,
+                    result.confirmed,
+                    result.confirmed,
+                )
+            } else {
+                stringResource(R.string.chat_mark_all_read_unconfirmed)
+            }
+        LaunchedEffect(chats, result, message, showChatList) {
+            if (showChatList) snackbar.showSnackbar(message, duration = SnackbarDuration.Indefinite)
+            chats?.dismissMarkAllReadResult(result)
         }
     }
 
-    fun openChat(chat: ConfirmedChat) {
+    fun openChat(chat: ConfirmedChat, fromSearch: Boolean = false) {
+        val activeComposer = composer ?: return
+        val activeChats = chats ?: return
+        val search =
+            when {
+                fromSearch && listWidth == null -> SearchRoute.ReturnOnBack
+                !fromSearch && navigation.search == SearchRoute.Open -> SearchRoute.Open
+                else -> SearchRoute.Closed
+            }
+        if (fromSearch) releaseSearchFocus()
+        when (search) {
+            SearchRoute.Closed -> searchState.reset()
+            SearchRoute.ReturnOnBack -> searchState.edit(searchState.query.copy(composition = null))
+            SearchRoute.Open -> Unit
+        }
         conversations.open(chat.id)
-        navigation = navigation.copy(target = WorkspaceTarget.Chat(chat.id))
-        composer.acknowledge(chat.id)
-        chats.history.open(chat)
+        navigation = navigation.copy(target = WorkspaceTarget.Chat(chat.id), search = search)
+        activeComposer.acknowledge(chat.id)
+        activeChats.history.open(chat)
     }
 
     fun startNewChat(projectId: String?) {
-        composer.beginNew(projectId)
+        val activeComposer = composer ?: return
+        activeComposer.beginNew(projectId)
         conversations.open(ComposerTarget(projectId = projectId).key)
-        navigation = navigation.copy(target = WorkspaceTarget.NewChat(projectId))
+        val search =
+            if (navigation.search == SearchRoute.Open) SearchRoute.Open else SearchRoute.Closed
+        if (search == SearchRoute.Closed) searchState.reset()
+        navigation = navigation.copy(target = WorkspaceTarget.NewChat(projectId), search = search)
     }
 
-    LaunchedEffect(target, thread, list.listPhase) {
+    LaunchedEffect(target, thread, list.listPhase, listWidth) {
         if (target is WorkspaceTarget.Chat) {
-            if (thread != null) chats.history.open(thread)
+            if (thread != null) chats?.history?.open(thread)
             else if (list.listPhase == ChatReadPhase.Ready && navigation.target == target) {
-                navigation = navigation.copy(target = WorkspaceTarget.List)
-                scope.launch { snackbar.showSnackbar(missingChat) }
+                returnToList()
+                scope.launch {
+                    snackbar.showSnackbar(missingChat, duration = SnackbarDuration.Indefinite)
+                }
             }
         }
     }
     val newChat = target as? WorkspaceTarget.NewChat
     val newTarget = newChat?.let { ComposerTarget(projectId = it.projectId) }
     val createdId =
-        newTarget?.let { draft ->
+        if (newTarget != null && composer != null) {
+            val draft = newTarget
             val input = composer.uiState.collectAsStateWithLifecycle()
             val created by
                 remember(input, draft) {
@@ -155,7 +254,7 @@ internal fun OkouApp(
                     }
                 }
             created
-        }
+        } else null
     val createdChat =
         createdId?.let { id -> list.threads.firstOrNull { it.id == id && it.hidden != true } }
     LaunchedEffect(newChat, createdChat) {
@@ -165,16 +264,15 @@ internal fun OkouApp(
     }
 
     fun back() {
-        navigation =
-            when (navigation.settings) {
-                SettingsDestination.Instructions ->
-                    navigation.copy(settings = SettingsDestination.Overview)
-                SettingsDestination.Overview -> navigation.copy(settings = null)
-                null -> navigation.copy(target = WorkspaceTarget.List)
-            }
+        when (navigation.settings) {
+            SettingsDestination.Instructions ->
+                navigation = navigation.copy(settings = SettingsDestination.Overview)
+            SettingsDestination.Overview -> navigation = navigation.copy(settings = null)
+            null -> if (navigation.search == SearchRoute.Open) closeSearch() else returnToList()
+        }
     }
 
-    BackHandler(settings != null || showWorkspaceBack, onBack = ::back)
+    BackHandler(settings != null || showWorkspaceBack || searchActive, onBack = ::back)
 
     val title =
         when (settings) {
@@ -186,73 +284,163 @@ internal fun OkouApp(
                     is WorkspaceTarget.Chat ->
                         thread?.title?.takeIf { it.isNotBlank() }
                             ?: stringResource(R.string.chat_untitled)
-                    is WorkspaceTarget.NewChat ->
-                        list.projects.firstOrNull { it.id == target.projectId }?.name
-                            ?: stringResource(R.string.composer_new)
+                    is WorkspaceTarget.NewChat -> stringResource(R.string.composer_new)
                 }
+        }
+    val projectId = newChat?.projectId ?: thread?.projectId
+    val projectSubtitle = projectId?.let { id -> list.projects.firstOrNull { it.id == id }?.name }
+    val detailTitleStyle =
+        MaterialTheme.typography.titleMedium.copy(
+            fontSize = 18.sp,
+            lineHeight = 24.sp,
+            letterSpacing = 0.sp,
+            fontWeight = FontWeight(550),
+        )
+    val projectSubtitleStyle =
+        MaterialTheme.typography.bodySmall.copy(
+            fontSize = 12.sp,
+            lineHeight = 16.sp,
+            letterSpacing = 0.sp,
+        )
+    val settingsTitleStyle =
+        MaterialTheme.typography.titleLarge.copy(
+            fontSize = 20.sp,
+            lineHeight = 28.sp,
+            letterSpacing = 0.sp,
+            fontWeight = FontWeight.SemiBold,
+        )
+    val detailTitle =
+        @Composable {
+            Column {
+                Text(
+                    title,
+                    style = detailTitleStyle,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (projectSubtitle != null) {
+                    Text(
+                        projectSubtitle,
+                        style = projectSubtitleStyle,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+    val appBarHeight =
+        with(LocalDensity.current) {
+            val textHeight =
+                if (settings != null) settingsTitleStyle.lineHeight.toDp()
+                else
+                    detailTitleStyle.lineHeight.toDp() +
+                        if (projectSubtitle != null) projectSubtitleStyle.lineHeight.toDp()
+                        else 0.dp
+            maxOf(64.dp, textHeight + 16.dp)
+        }
+
+    val toolbarActions =
+        @Composable {
+            if (settings == null && !searchActive && chats != null && composer != null) {
+                WorkspaceToolbarActions(
+                    showFilter = showList,
+                    list = list,
+                    selectFilter = chats::selectFilter,
+                    markAllRead = chats::markAllRead,
+                    openSearch = if (showList) ::openSearch else null,
+                    openUpdate = openUpdate,
+                    settingsFocus = settingsFocus,
+                    openSettings = { restore ->
+                        restoreSettingsFocus = restore
+                        focus.clearFocus()
+                        keyboard?.hide()
+                        navigation = navigation.copy(settings = SettingsDestination.Overview)
+                    },
+                )
+                LaunchedEffect(Unit) {
+                    if (restoreSettingsFocus) {
+                        restoreSettingsFocus = false
+                        settingsFocus.requestFocus()
+                    }
+                }
+            }
+        }
+    val listToolbar =
+        @Composable {
+            WorkspaceListToolbar(
+                widthDp = window.screenWidthDp,
+                listWidth = listWidth,
+                title = {
+                    if (workspaceTitle != null) {
+                        workspaceTitle(list.filter)
+                    } else {
+                        Column(Modifier.padding(start = 8.dp)) {
+                            Text(
+                                stringResource(R.string.app_name),
+                                style = workspaceListTitleStyle(window.screenWidthDp, listWidth),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            WorkspaceFilterSubtitle(list.filter)
+                        }
+                    }
+                },
+                actions = toolbarActions,
+            )
         }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets.safeDrawing,
-        snackbarHost = { SnackbarHost(snackbar) },
+        snackbarHost = {
+            if (!showChatList) {
+                WorkspaceFeedbackHost(
+                    snackbar,
+                    Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
+                )
+            }
+        },
         topBar = {
-            TopAppBar(
-                title = {
-                    if (
-                        settings == null && target == WorkspaceTarget.List && workspaceTitle != null
-                    ) {
-                        workspaceTitle()
-                    } else {
-                        Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                },
-                colors =
-                    TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.background
-                    ),
-                navigationIcon = {
-                    if (settings != null || showWorkspaceBack) {
-                        IconButton(
-                            onClick = {
-                                focus.clearFocus()
-                                keyboard?.hide()
-                                back()
-                            }
-                        ) {
-                            Icon(
-                                painterResource(R.drawable.ic_arrow_back),
-                                stringResource(R.string.back),
+            if (settings == null && listWidth == null && showList && !searchActive) {
+                Box(Modifier.windowInsetsPadding(TopAppBarDefaults.windowInsets)) { listToolbar() }
+            } else if (settings != null || listWidth == null && !searchActive) {
+                TopAppBar(
+                    title = {
+                        if (settings != null) {
+                            Text(
+                                title,
+                                style = settingsTitleStyle,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
                             )
-                        }
-                    }
-                },
-                actions = {
-                    if (settings == null) {
-                        WorkspaceToolbarActions(
-                            showFilter = showList,
-                            filter = list.filter,
-                            selectFilter = chats::selectFilter,
-                            openUpdate = openUpdate,
-                            settingsFocus = settingsFocus,
-                            openSettings = { restore ->
-                                restoreSettingsFocus = restore
-                                focus.clearFocus()
-                                keyboard?.hide()
-                                navigation =
-                                    navigation.copy(settings = SettingsDestination.Overview)
-                            },
-                        )
-                        LaunchedEffect(Unit) {
-                            if (restoreSettingsFocus) {
-                                restoreSettingsFocus = false
-                                settingsFocus.requestFocus()
+                        } else detailTitle()
+                    },
+                    expandedHeight = appBarHeight,
+                    colors =
+                        TopAppBarDefaults.topAppBarColors(
+                            containerColor = MaterialTheme.colorScheme.background
+                        ),
+                    navigationIcon = {
+                        if (settings != null || showWorkspaceBack) {
+                            IconButton(
+                                onClick = {
+                                    focus.clearFocus()
+                                    keyboard?.hide()
+                                    back()
+                                }
+                            ) {
+                                Icon(
+                                    painterResource(R.drawable.ic_arrow_back),
+                                    stringResource(R.string.back),
+                                )
                             }
                         }
-                    }
-                },
-            )
+                    },
+                    actions = { toolbarActions() },
+                )
+            }
         },
     ) { insets ->
         Column(Modifier.fillMaxSize().padding(insets).consumeWindowInsets(insets)) {
@@ -266,43 +454,89 @@ internal fun OkouApp(
                     }
                 }
             } else {
-                RealtimeNotice(chats.updates)
+                if (chats != null && composer != null) RealtimeNotice(chats.updates)
                 Row(Modifier.fillMaxSize()) {
                     if (showList) {
                         Column(
                             if (listWidth == null) Modifier.weight(1f).fillMaxHeight()
-                            else Modifier.width(listWidth.dp).fillMaxHeight(),
+                            else Modifier.width((listWidth - 1).dp).fillMaxHeight(),
                             horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
-                            if (list.filter != ChatListFilter.Recent) {
-                                AppliedChatFilter(list.filter) {
-                                    chats.selectFilter(ChatListFilter.Recent)
-                                }
+                            if (searchActive) {
+                                ChatTitleSearch(
+                                    state = list,
+                                    search = searchState,
+                                    focusOnEntry = focusSearch,
+                                    onFocused = { focusSearch = false },
+                                    onClose = ::closeSearch,
+                                    retry = chats::refreshList,
+                                    onOpen = { openChat(it, fromSearch = true) },
+                                )
+                            } else {
+                                if (listWidth != null) listToolbar()
+                                ChatListScreen(
+                                    list,
+                                    { chats?.refresh() },
+                                    { chats?.refreshList() },
+                                    { chats?.refreshMetadata() },
+                                    { chats?.refreshIndicators() },
+                                    ::openChat,
+                                    { id, action ->
+                                        if (composer != null) chats?.performRowAction(id, action)
+                                    },
+                                    { id, title ->
+                                        if (composer != null) chats?.renameThread(id, title)
+                                    },
+                                    collapsed.values,
+                                    collapsed::toggle,
+                                    listPositions[list.filter.ordinal],
+                                    ::startNewChat,
+                                    showInbox = { chats?.selectFilter(ChatListFilter.Inbox) },
+                                    selectedChatId = if (listWidth != null) thread?.id else null,
+                                    wide = listWidth != null,
+                                    actionsEnabled = composer != null,
+                                    refreshEnabled = chats != null,
+                                    startupRecovery = startupRecovery,
+                                    feedback = {
+                                        WorkspaceFeedbackHost(
+                                            snackbar,
+                                            Modifier.padding(
+                                                    start = 16.dp,
+                                                    end = 16.dp,
+                                                    bottom = 8.dp,
+                                                )
+                                                .testTag("chat_list_feedback"),
+                                        )
+                                    },
+                                )
                             }
-                            ChatListScreen(
-                                list,
-                                chats::refresh,
-                                chats::refreshList,
-                                chats::refreshMetadata,
-                                chats::refreshIndicators,
-                                ::openChat,
-                                chats::performRowAction,
-                                chats::renameThread,
-                                collapsed.values,
-                                collapsed::toggle,
-                                listPosition,
-                                ::startNewChat,
-                                selectedChatId = if (listWidth != null) thread?.id else null,
-                            )
                         }
                     }
                     if (listWidth != null) VerticalDivider()
-                    if (listWidth != null || target != WorkspaceTarget.List) {
-                        Box(
+                    if (
+                        chats != null &&
+                            composer != null &&
+                            controls != null &&
+                            (listWidth != null || (!searchActive && target != WorkspaceTarget.List))
+                    ) {
+                        Column(
                             Modifier.weight(1f).fillMaxHeight(),
-                            contentAlignment = Alignment.TopCenter,
+                            horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
-                            Column(Modifier.widthIn(max = 768.dp).fillMaxWidth().fillMaxHeight()) {
+                            if (listWidth != null && target != WorkspaceTarget.List) {
+                                Box(
+                                    Modifier.fillMaxWidth()
+                                        .heightIn(min = 63.dp)
+                                        .padding(
+                                            horizontal = if (listWidth == 344) 40.dp else 32.dp
+                                        ),
+                                    contentAlignment = Alignment.CenterStart,
+                                ) {
+                                    detailTitle()
+                                }
+                                HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+                            }
+                            Column(Modifier.widthIn(max = 768.dp).fillMaxWidth().weight(1f)) {
                                 when (target) {
                                     WorkspaceTarget.List ->
                                         Box(
@@ -364,6 +598,45 @@ internal fun OkouApp(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun WorkspaceFeedbackHost(state: SnackbarHostState, modifier: Modifier) {
+    val accessibility = LocalAccessibilityManager.current
+    val current = state.currentSnackbarData
+    LaunchedEffect(current, accessibility) {
+        if (current != null) {
+            val duration =
+                accessibility?.calculateRecommendedTimeoutMillis(5_000L, containsText = true)
+                    ?: 5_000L
+            delay(duration)
+            current.dismiss()
+        }
+    }
+    SnackbarHost(state) { data ->
+        Surface(
+            modifier = modifier.widthIn(max = 480.dp).fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            color = MaterialTheme.colorScheme.inverseSurface,
+            contentColor = MaterialTheme.colorScheme.inverseOnSurface,
+            shadowElevation = 4.dp,
+        ) {
+            Box(
+                Modifier.heightIn(min = 48.dp).padding(horizontal = 14.dp, vertical = 10.dp),
+                contentAlignment = Alignment.CenterStart,
+            ) {
+                Text(
+                    data.visuals.message,
+                    style =
+                        MaterialTheme.typography.bodyMedium.copy(
+                            fontSize = 14.sp,
+                            lineHeight = 20.sp,
+                            letterSpacing = 0.sp,
+                        ),
+                )
             }
         }
     }

@@ -86,6 +86,6 @@ export async function printConnectorGuidance(
   );
   console.log("");
   console.log(
-    `Run "okou connector status ${guidance.connectorSlug}" to verify the connector is connected and authorized for the current agent.`,
+    `Run "okou connector status ${guidance.connectorSlug}" to inspect the account used by this Run.`,
   );
 }

@@ -99,6 +99,7 @@ const linkDraftInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       orgId: auth.orgId,
       userId: auth.userId,
       ...bodyResult.data,
+      ...(auth.tokenType === "agent" ? { runId: auth.runId } : {}),
     },
     signal,
   );

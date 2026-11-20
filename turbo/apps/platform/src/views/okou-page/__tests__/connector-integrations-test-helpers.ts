@@ -145,6 +145,7 @@ export function mockFeishu(
 export function setupIntegrationsPage(
   context: TestContext,
   options: {
+    readonly compact?: boolean;
     readonly feishu?: boolean;
     readonly lark?: boolean;
   } = {},
@@ -153,6 +154,7 @@ export function setupIntegrationsPage(
     context,
     path: "/works",
     featureSwitches: {
+      [FeatureSwitchKey.WorksChannelCards]: options.compact ?? false,
       [FeatureSwitchKey.FeishuIntegration]: options.feishu ?? false,
       [FeatureSwitchKey.LarkIntegration]: options.lark ?? false,
     },

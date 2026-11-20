@@ -305,7 +305,7 @@ export const workflowAutomations = pgTable(
       ),
       check(
         "workflow_automations_autonomy_budget_check",
-        sql`${table.autonomyBudget} BETWEEN 0 AND 32`,
+        sql`${table.autonomyBudget} BETWEEN 0 AND 128`,
       ),
       uniqueIndex("idx_workflow_automations_official_blueprint_unique")
         .on(table.workflowId, table.officialBlueprintKey)

@@ -39,7 +39,7 @@ import { CustomConnectorIcon } from "./components/settings/custom-connector-icon
 import { ArtifactThumbnailImage } from "./artifact-thumbnail.tsx";
 import { AttachmentPreview } from "./attachment-preview.tsx";
 import { publicAttachmentUrl } from "./attachment-url";
-import type { UserPermissionGrantExpiresIn } from "@okouai/api-contracts/contracts/user-permission-grants";
+import type { UserPermissionGrantExpiresIn } from "@okouai/api-contracts/validators/user-permission-grants";
 import {
   UNKNOWN_PERMISSION_GRANT,
   type FirewallPolicyValue,

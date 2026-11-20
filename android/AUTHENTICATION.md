@@ -66,12 +66,18 @@ authorization, the current API resource and its workspace presentation store.
 Identity includes API origin, user, Clerk session and workspace. An additional
 in-memory generation fences replaced work; it is not persisted as identity.
 
-Each candidate workspace refreshes the authoritative Clerk client and memberships.
-Only a confirmed membership may be selected. Its origin-bound API client then
-confirms `/api/org` and loads canonical preferences. A 409 or incomplete
-timezone/locale/member memory invokes the existing idempotent preferences
-initialization endpoint. Ready state requires a matching organization and complete
-preferences/memory. It does not depend on catalog lists or realtime attachment.
+A locally restored active SDK session with a selected workspace opens the native
+chat list immediately in its loading state. The workspace owner refreshes Clerk
+and its memberships and confirms the organization with the origin-bound API client.
+Only a confirmed membership may be selected. Once the organization matches, the
+list restores the identity- and authorization-scoped Room cache and starts
+synchronization while canonical preferences are loaded.
+
+A 409 or incomplete timezone, locale or member memory invokes the existing
+idempotent preferences initialization endpoint. Complete preferences enable the
+workspace's protected actions, settings and realtime attachment. Ordinary preference
+failures leave the authorized list visible and retry initialization in the same
+workspace. A change of identity, access loss or required update retires the owner.
 
 There is no backend schema or migration. Existing server initialization can fill
 missing preference/default-executor metadata and create missing member memory and
@@ -107,7 +113,8 @@ owner; it does not force a new token mint for every API request.
 ## Verification
 
 Run `bash android/scripts/check.sh`, instrumentation assembly and release assembly.
-Host tests cover pending initialization, canonical bootstrap/write conditions,
+Host tests cover list first display and cached rows with held startup responses,
+canonical initialization/write conditions,
 membership/access changes, replacement, failed/retried bootstrap, late token/API
 completion, native first display and Activity recreation. Test authentication and
 the test Application/runner live only in test source sets; production has no bypass.

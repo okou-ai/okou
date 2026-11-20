@@ -1,5 +1,5 @@
 use super::*;
-use crate::network::{NetnsPool, NetnsPoolHandle};
+use crate::network::NetnsPool;
 
 #[tokio::test]
 async fn sandbox_drop_hands_off_confirmed_process_exit() {
@@ -128,7 +128,7 @@ async fn cancelled_kill_keeps_exit_completion_for_sandbox_drop() {
 async fn sandbox_with_cleanup_resources() -> (
     tempfile::TempDir,
     FirecrackerSandbox,
-    NetnsPoolHandle,
+    NetnsPool,
     tokio::sync::mpsc::UnboundedReceiver<LeakedResources>,
 ) {
     let tmp = tempfile::tempdir().unwrap();
@@ -145,7 +145,6 @@ async fn sandbox_with_cleanup_resources() -> (
     let network = pool.lease_for_test("test-cleanup-netns");
     pool.track_lease_for_test(&network);
     sandbox.network = SandboxNetwork::from_lease(network);
-    let pool = NetnsPoolHandle::new_for_test(pool);
     let (leak_tx, leak_rx) = tokio::sync::mpsc::unbounded_channel();
     sandbox.leak_tx = Some(leak_tx);
     sandbox.destroyed = false;
@@ -154,7 +153,7 @@ async fn sandbox_with_cleanup_resources() -> (
 
 #[tokio::test]
 async fn normal_destroy_preserves_resources_after_unconfirmed_process_exit() {
-    let (tmp, mut sandbox, pool, mut leak_rx) = sandbox_with_cleanup_resources().await;
+    let (tmp, mut sandbox, mut pool, mut leak_rx) = sandbox_with_cleanup_resources().await;
     let (exit_tx, exit) = ProcessExitCompletion::channel();
     let (kill_tx, mut kill_rx) = mpsc::channel(1);
     sandbox.runtime.set_process(ProcessMonitorHandle {
@@ -167,7 +166,7 @@ async fn normal_destroy_preserves_resources_after_unconfirmed_process_exit() {
     });
 
     let retained = sandbox.backing_process().unwrap();
-    crate::factory::destroy_firecracker_sandbox(sandbox, pool.clone()).await;
+    crate::factory::destroy_firecracker_sandbox(sandbox, pool.handle()).await;
 
     assert!(!retained.exit_confirmed().await);
     assert!(pool.acquire().await.is_err());
@@ -181,7 +180,7 @@ async fn normal_destroy_preserves_resources_after_unconfirmed_process_exit() {
 
 #[tokio::test]
 async fn normal_destroy_terminates_process_after_cancelled_stop() {
-    let (tmp, mut sandbox, pool, mut leak_rx) = sandbox_with_cleanup_resources().await;
+    let (tmp, mut sandbox, mut pool, mut leak_rx) = sandbox_with_cleanup_resources().await;
     let mut guest = attach_mock_shutdown_guest(&sandbox).await;
     let mut child = tokio::process::Command::new("cat")
         .process_group(0)
@@ -214,7 +213,7 @@ async fn normal_destroy_terminates_process_after_cancelled_stop() {
 
     tokio::time::timeout(
         Duration::from_secs(5),
-        crate::factory::destroy_firecracker_sandbox(sandbox, pool.clone()),
+        crate::factory::destroy_firecracker_sandbox(sandbox, pool.handle()),
     )
     .await
     .unwrap();
@@ -225,6 +224,6 @@ async fn normal_destroy_terminates_process_after_cancelled_stop() {
     assert!(!tmp.path().join("sock").exists());
     assert!(!tmp.path().join("workspace").exists());
     assert!(leak_rx.try_recv().is_err());
-    assert!(pool.release(&mut network).await.invalid_message().is_none());
+    pool.release(&mut network).await.unwrap();
     pool.cleanup().await.unwrap();
 }
