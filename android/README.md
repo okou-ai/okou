@@ -122,6 +122,10 @@ the list keeps the projection until the next successful refresh. Bulk feedback
 counts receipts that cover the captured unread watermarks.
 
 Conversation history shares this cache and its workspace authorization lease.
+The workspace retains the confirmed checkpoint and projected timeline for the
+active conversation and up to three recent inactive conversations. A revisit
+can display that timeline before Room or network work. Catch-up uses its
+canonical cursor and cached display alone never marks the conversation read.
 Room schema v2 adds `history_scopes` (thread, authorization, canonical event format,
 paired cursor and confirmation time) and `history_events` (lossless raw event JSON,
 identity and sequence). Rebuildable v1 databases are recreated; there is no draft

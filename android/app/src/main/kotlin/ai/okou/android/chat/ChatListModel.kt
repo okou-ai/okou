@@ -261,6 +261,7 @@ class ChatListModel(
             onFailure,
             dispatcher,
             monotonicMillis,
+            onUnavailable = history::forgetWarmedHistory,
         )
     val updates =
         ChatUpdatesModel(

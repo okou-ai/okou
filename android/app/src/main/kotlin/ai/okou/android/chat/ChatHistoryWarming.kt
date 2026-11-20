@@ -37,6 +37,7 @@ class ChatHistoryWarming(
     private val onFailure: (Exception) -> Unit,
     private val dispatcher: CoroutineDispatcher,
     private val monotonicMillis: () -> Long,
+    private val onUnavailable: (String) -> Unit,
 ) {
     private val mutable = MutableStateFlow(HistoryWarmingState())
     val state = mutable.asStateFlow()
@@ -141,6 +142,7 @@ class ChatHistoryWarming(
                             requireCurrent(ticket)
                             when {
                                 error is ApiFailure.Http && error.status in setOf(403, 404) -> {
+                                    onUnavailable(id)
                                     cache.clearWarmedHistory(id, cached[id], selected)
                                     null
                                 }
