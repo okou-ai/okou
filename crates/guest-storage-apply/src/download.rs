@@ -106,13 +106,17 @@ impl<'input> DownloadTask<'input> {
         }
     }
 
-    fn prepare(&self) -> Result<PathBuf, String> {
+    fn create_mount_directory(&self) -> Result<(), String> {
         fs::create_dir_all(&self.mount_path).map_err(|e| {
             format!(
                 "{} target preparation failed: failed to create directory {}: {e}",
                 self.label, self.mount_path
             )
-        })?;
+        })
+    }
+
+    fn prepare(&self) -> Result<PathBuf, String> {
+        self.create_mount_directory()?;
         Path::new(&self.mount_path).canonicalize().map_err(|e| {
             format!(
                 "{} target preparation failed: failed to resolve directory {}: {e}",
@@ -370,15 +374,21 @@ pub(crate) fn prepare_download_tasks<'input>(
 ) -> Result<Vec<PreparedDownloadTask<'input>>, String> {
     let mut prepared = Vec::with_capacity(tasks.len());
     for task in tasks {
-        let target = if task.optional
-            && optional_mount_state(Path::new(task.mount_path()))
+        let target = if task.optional {
+            match optional_mount_state(Path::new(task.mount_path()))
                 .map_err(|error| format!("{} unsafe package target: {error}", task.label))?
-                == OptionalMountState::Obstructed
-        {
-            Err(format!(
-                "{} target preparation failed: package root is not a directory",
-                task.label
-            ))
+            {
+                // No archive worker can mutate the path during preparation,
+                // and the no-symlink lookup already resolved its identity.
+                OptionalMountState::Directory => Ok(task.normalized_mount_path.clone()),
+                OptionalMountState::Missing => task
+                    .create_mount_directory()
+                    .map(|()| task.normalized_mount_path.clone()),
+                OptionalMountState::Obstructed => Err(format!(
+                    "{} target preparation failed: package root is not a directory",
+                    task.label
+                )),
+            }
         } else {
             task.prepare()
         };
@@ -687,13 +697,19 @@ fn panic_message(payload: &(dyn Any + Send)) -> String {
 fn run_download_attempt(download: &mut StartedDownload<'_>) -> Result<(), DownloadError> {
     // An overlapping ancestor archive can change target state after plan
     // preparation. Recheck before writing through the retained identity.
-    if download.task.task.optional
-        && optional_mount_state(download.task.logical_mount_path())
+    let create_directory = if download.task.task.optional {
+        match optional_mount_state(download.task.logical_mount_path())
             .map_err(|error| DownloadError::new(format!("Unsafe package target: {error}")))?
-            == OptionalMountState::Obstructed
-    {
-        return Err(DownloadError::new("Package root is not a directory"));
-    }
+        {
+            OptionalMountState::Directory => false,
+            OptionalMountState::Missing => true,
+            OptionalMountState::Obstructed => {
+                return Err(DownloadError::new("Package root is not a directory"));
+            }
+        }
+    } else {
+        true
+    };
     if let Some(files) = &download.task.task.files {
         if download.task.task.template_guidance.is_some() {
             return Err(DownloadError::new(
@@ -707,9 +723,18 @@ fn run_download_attempt(download: &mut StartedDownload<'_>) -> Result<(), Downlo
         )
         .map_err(|error| DownloadError::new(format!("Decoded storage write failed: {error}")));
     }
+    let target_path = download.task.effective_mount_path();
+    if create_directory {
+        fs::create_dir_all(target_path).map_err(|error| {
+            DownloadError::new(format!(
+                "Failed to create directory {}: {error}",
+                target_path.display()
+            ))
+        })?;
+    }
     download_and_extract(
         &download.task.task.url,
-        download.task.effective_mount_path(),
+        target_path,
         &mut download.opened_file_compressed_bytes,
         download.remote_metrics.as_mut(),
         download.local_metrics.as_mut(),
@@ -727,13 +752,6 @@ fn download_and_extract(
     concurrency: usize,
     template_guidance: Option<&guest_contracts::storage_manifest::TemplateGuidanceReference>,
 ) -> Result<(), DownloadError> {
-    fs::create_dir_all(target_path).map_err(|e| {
-        DownloadError::new(format!(
-            "Failed to create directory {}: {e}",
-            target_path.display()
-        ))
-    })?;
-
     let attempt_metrics = remote_metrics
         .is_some()
         .then(source::RemoteArchiveAttemptMetrics::default);

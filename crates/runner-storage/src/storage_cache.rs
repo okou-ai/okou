@@ -1254,10 +1254,7 @@ async fn prepare_decoded_storage(
     // Keep the complete mount list in Guest when optional cleanup can remove
     // a root. A split would hide physical aliases owned by another batch.
     let requires_complete_manifest = plan.requires_complete_mount_list();
-    if requires_complete_manifest && !complete_manifest_fits_decoded_input(plan)? {
-        plan.finish_decoded_preparation();
-        return Ok(());
-    }
+    let mut checked_complete_manifest = false;
     for batch in groups.chunks_mut(decoded::LOOKUP_BATCH_SIZE) {
         let keys = batch
             .iter()
@@ -1284,6 +1281,22 @@ async fn prepare_decoded_storage(
             }),
             None,
         );
+        // A batch of misses never needs a complete manifest. Check the bound
+        // before handling the first hit or observing any decode error.
+        if requires_complete_manifest
+            && !checked_complete_manifest
+            && !result.as_ref().is_ok_and(|lookups| {
+                lookups
+                    .iter()
+                    .all(|lookup| matches!(lookup, decoded::DecodedLookup::Miss))
+            })
+        {
+            if !complete_manifest_fits_decoded_input(plan)? {
+                plan.finish_decoded_preparation();
+                return Ok(());
+            }
+            checked_complete_manifest = true;
+        }
         let ready = result.map_err(|error| {
             RunnerError::Internal(format!("lookup extracted storage cache: {error}"))
         })?;

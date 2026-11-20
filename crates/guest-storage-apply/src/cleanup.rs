@@ -352,6 +352,26 @@ pub(crate) enum OptionalMountState {
 }
 
 pub(crate) fn optional_mount_state(path: &Path) -> io::Result<OptionalMountState> {
+    #[cfg(target_os = "linux")]
+    {
+        use rustix::fs::{CWD, Mode, OFlags, ResolveFlags, openat2};
+        use rustix::io::Errno;
+
+        match openat2(
+            CWD,
+            path,
+            OFlags::PATH | OFlags::DIRECTORY | OFlags::CLOEXEC,
+            Mode::empty(),
+            ResolveFlags::NO_SYMLINKS,
+        ) {
+            Ok(_) => return Ok(OptionalMountState::Directory),
+            Err(Errno::NOENT) => return Ok(OptionalMountState::Missing),
+            // Classify an obstruction using the pinned parent. Older local
+            // kernels may lack openat2 and use the same component checks.
+            Err(Errno::NOTDIR | Errno::LOOP | Errno::NOSYS) => {}
+            Err(error) => return Err(error.into()),
+        }
+    }
     Ok(match optional_root(path)? {
         None => OptionalMountState::Missing,
         Some(root) if root.metadata.is_dir() => OptionalMountState::Directory,

@@ -27,17 +27,10 @@ pub(crate) fn apply_all(entries: &[StorageEntry], skipped: &mut HashSet<String>)
                 skipped.insert(entry.mount_path.clone());
                 continue;
             }
-            match optional_mount_state(Path::new(&entry.mount_path)) {
-                Ok(OptionalMountState::Directory) => {}
-                Ok(OptionalMountState::Missing | OptionalMountState::Obstructed) => {
-                    record_optional_failure(
-                        entry,
-                        "package root is missing or not a directory",
-                        skipped,
-                    );
-                    continue;
-                }
-                Err(error) => {
+        }
+        if let Err(error) = apply(entry) {
+            if entry.optional {
+                if let Err(error) = optional_mount_state(Path::new(&entry.mount_path)) {
                     guest_telemetry::log_error!(
                         crate::LOG_TAG,
                         "Unsafe optional package target {}: {error}",
@@ -45,10 +38,6 @@ pub(crate) fn apply_all(entries: &[StorageEntry], skipped: &mut HashSet<String>)
                     );
                     return false;
                 }
-            }
-        }
-        if let Err(error) = apply(entry) {
-            if entry.optional {
                 record_optional_failure(entry, &error, skipped);
             } else {
                 guest_telemetry::log_error!(
@@ -87,7 +76,7 @@ fn apply(entry: &StorageEntry) -> io::Result<()> {
         .ok_or_else(|| io::Error::other("Workflow mount has no name"))?;
     if !name.contains("--wf-") && !name.ends_with("--instruction") {
         if entry.optional {
-            open_document(&root.join("SKILL.md"))?;
+            open_document(&root.join("SKILL.md"), true)?;
         }
         return Ok(());
     }
@@ -102,12 +91,15 @@ fn apply(entry: &StorageEntry) -> io::Result<()> {
         return Err(io::Error::other("Invalid Workflow document name"));
     }
     let skill = root.join("SKILL.md");
-    let (source, instruction_package) = match read_document(&skill) {
+    let (source, instruction_package) = match read_document(&skill, entry.optional) {
         Ok(source) => (source, false),
         Err(error)
             if error.kind() == io::ErrorKind::NotFound && name.ends_with("--instruction") =>
         {
-            (read_document(&root.join("instructions.md"))?, true)
+            (
+                read_document(&root.join("instructions.md"), entry.optional)?,
+                true,
+            )
         }
         Err(error) => return Err(error),
     };
@@ -126,20 +118,60 @@ fn apply(entry: &StorageEntry) -> io::Result<()> {
     )
 }
 
-fn open_document(path: &Path) -> io::Result<File> {
-    let file = OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
-        .open(path)?;
+fn open_document(path: &Path, optional: bool) -> io::Result<File> {
+    let file = if optional {
+        open_optional_document(path)?
+    } else {
+        open_regular_document(path)?
+    };
     if !file.metadata()?.is_file() {
         return Err(io::Error::other("Workflow document is not a regular file"));
     }
     Ok(file)
 }
 
-fn read_document(path: &Path) -> io::Result<String> {
+fn open_optional_document(path: &Path) -> io::Result<File> {
+    #[cfg(target_os = "linux")]
+    {
+        use rustix::fs::{CWD, Mode, OFlags, ResolveFlags, openat2};
+        use rustix::io::Errno;
+
+        match openat2(
+            CWD,
+            path,
+            OFlags::RDONLY | OFlags::NONBLOCK | OFlags::CLOEXEC,
+            Mode::empty(),
+            ResolveFlags::NO_SYMLINKS,
+        ) {
+            Ok(file) => return Ok(File::from(file)),
+            Err(Errno::NOSYS) => {}
+            Err(error) => return Err(error.into()),
+        }
+    }
+
+    let root = path.parent().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "Workflow document has no package root",
+        )
+    })?;
+    match optional_mount_state(root)? {
+        OptionalMountState::Directory => open_regular_document(path),
+        OptionalMountState::Missing => Err(io::ErrorKind::NotFound.into()),
+        OptionalMountState::Obstructed => Err(io::ErrorKind::NotADirectory.into()),
+    }
+}
+
+fn open_regular_document(path: &Path) -> io::Result<File> {
+    OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(path)
+}
+
+fn read_document(path: &Path, optional: bool) -> io::Result<String> {
     let mut source = String::new();
-    open_document(path)?
+    open_document(path, optional)?
         .take(MAX_DOCUMENT_BYTES + 1)
         .read_to_string(&mut source)?;
     if source.len() as u64 > MAX_DOCUMENT_BYTES {
