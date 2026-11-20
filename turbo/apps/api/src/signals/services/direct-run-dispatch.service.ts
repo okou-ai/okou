@@ -183,8 +183,12 @@ interface DeliveryWindow {
 }
 type DispatchEnvelope = output<typeof runnerDispatchEnvelopeSchema>;
 
-interface DispatchOffer {
+interface SerializedDispatch {
   readonly body: string;
+  readonly bodyBytes: number;
+}
+
+interface DispatchOffer extends SerializedDispatch {
   readonly busyRetry?: {
     readonly until: number;
     readonly retryAtExpiry: boolean;
@@ -204,18 +208,23 @@ function remainingDelivery(window: DeliveryWindow): number {
   );
 }
 
+function serializeDispatch(envelope: DispatchEnvelope): SerializedDispatch {
+  const body = JSON.stringify(envelope);
+  return { body, bodyBytes: Buffer.byteLength(body, "utf8") };
+}
+
 function createDispatchOffer(
   envelope: DispatchEnvelope,
-  ordinaryBody: string,
+  ordinaryBody: SerializedDispatch,
   preference: PlacementPreference | undefined,
   window: DeliveryWindow,
 ): DispatchOffer {
   if (!preference) {
-    return { body: ordinaryBody };
+    return ordinaryBody;
   }
   const expiresAt = Date.parse(preference.expiresAt);
   const ordinaryOffer = {
-    body: ordinaryBody,
+    ...ordinaryBody,
     busyRetry: { until: expiresAt, retryAtExpiry: false },
   };
   if (
@@ -236,15 +245,15 @@ function createDispatchOffer(
   if (waitUntil <= sentAt) {
     return ordinaryOffer;
   }
-  const body = JSON.stringify({
+  const preferredBody = serializeDispatch({
     ...envelope,
     preferredHomeCheckout: {
       predecessorRunId: preference.predecessorRunId,
       waitUntil,
     },
   });
-  return Buffer.byteLength(body, "utf8") <= RUNNER_DISPATCH_MAX_BODY_BYTES
-    ? { body, busyRetry: { until: waitUntil, retryAtExpiry: true } }
+  return preferredBody.bodyBytes <= RUNNER_DISPATCH_MAX_BODY_BYTES
+    ? { ...preferredBody, busyRetry: { until: waitUntil, retryAtExpiry: true } }
     : ordinaryOffer;
 }
 
@@ -275,7 +284,7 @@ const offerToProcess$ = command(
     args: {
       readonly target: DirectRunCandidates[number];
       readonly runId: string;
-      readonly body: string;
+      readonly body: SerializedDispatch;
       readonly envelope: DispatchEnvelope;
       readonly token: string;
       readonly window: DeliveryWindow;
@@ -309,6 +318,7 @@ const offerToProcess$ = command(
           target: args.target,
           runId: args.runId,
           body: offer.body,
+          bodyBytes: offer.bodyBytes,
           serviceToken: args.token,
           timeoutMs: Math.min(15_000, remaining),
         },
@@ -389,8 +399,8 @@ export const dispatchPreparedRun$ = command(
           notAfter,
           executionContext,
         };
-        const body = JSON.stringify(envelope);
-        if (Buffer.byteLength(body, "utf8") > RUNNER_DISPATCH_MAX_BODY_BYTES) {
+        const body = serializeDispatch(envelope);
+        if (body.bodyBytes > RUNNER_DISPATCH_MAX_BODY_BYTES) {
           break;
         }
         const selected = await set(

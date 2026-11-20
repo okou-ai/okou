@@ -240,6 +240,7 @@ pub(super) async fn start(
             ctx.runner.identity,
             config.hostname,
             &config.token,
+            ctx.runner.release,
         )
         .await
         {

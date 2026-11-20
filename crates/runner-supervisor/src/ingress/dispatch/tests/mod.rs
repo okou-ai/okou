@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::home_image_cache::HomeImageCache;
+use crate::ingress::test_support::RUNNER_VERSION;
 use runner_host::paths::RunnerPaths;
 use runner_lifecycle::{
     active_runs::ActiveRuns, home_image_cache::snapshot::HomeCacheStateSnapshot,
@@ -30,7 +31,14 @@ fn submit(
     tokio::spawn(async move {
         let permit = intake.try_reserve().unwrap();
         intake
-            .submit(identity, run_id, bytes.as_bytes(), permit, now)
+            .submit(
+                identity,
+                run_id,
+                bytes.as_bytes(),
+                permit,
+                now,
+                &mut DispatchTiming::start(RUNNER_VERSION),
+            )
             .await
     })
 }
@@ -85,12 +93,14 @@ fn ordinary_dispatch_can_take_the_only_admission_slot_during_a_home_probe() {
         let identity = RunnerProcessIdentity::new(uuid::Uuid::new_v4(), 1).unwrap();
         let preferred_id = RunId::new_v4();
         let preferred = preferred_body(identity, preferred_id, RunId::new_v4());
+        let mut preferred_timing = DispatchTiming::start(RUNNER_VERSION);
         let mut pending = Box::pin(intake.submit(
             identity,
             preferred_id,
             preferred.as_bytes(),
             intake.try_reserve().unwrap(),
             1_000,
+            &mut preferred_timing,
         ));
         assert!(futures_util::poll!(pending.as_mut()).is_pending());
         assert!(receiver.try_recv().is_err(), "probing must precede custody");
@@ -98,12 +108,14 @@ fn ordinary_dispatch_can_take_the_only_admission_slot_during_a_home_probe() {
         let ordinary_id = RunId::new_v4();
         let ordinary = body(identity, ordinary_id, 2_000);
         let ordinary_permit = intake.try_reserve().expect("probe released the slot");
+        let mut ordinary_timing = DispatchTiming::start(RUNNER_VERSION);
         let ordinary = intake.submit(
             identity,
             ordinary_id,
             ordinary.as_bytes(),
             ordinary_permit,
             1_000,
+            &mut ordinary_timing,
         );
         tokio::pin!(ordinary);
         assert!(futures_util::poll!(ordinary.as_mut()).is_pending());
@@ -111,9 +123,10 @@ fn ordinary_dispatch_can_take_the_only_admission_slot_during_a_home_probe() {
             .try_recv()
             .expect("ordinary work entered admission");
         assert_eq!(work.context.as_ref().unwrap().run_id, ordinary_id);
-        work.settle(Disposition::Accepted);
+        let accepted = Disposition::Accepted(Instant::now());
+        work.settle(accepted);
         drop(work);
-        assert_eq!(ordinary.await, Disposition::Accepted);
+        assert_eq!(ordinary.await, accepted);
 
         release.send(()).unwrap();
         worker.await.unwrap();
@@ -122,8 +135,9 @@ fn ordinary_dispatch_can_take_the_only_admission_slot_during_a_home_probe() {
             result = &mut pending => panic!("preferred dispatch finished before admission: {result:?}"),
         };
         assert_eq!(work.context.as_ref().unwrap().run_id, preferred_id);
-        work.settle(Disposition::Accepted);
-        assert_eq!(pending.await, Disposition::Accepted);
+        let accepted = Disposition::Accepted(Instant::now());
+        work.settle(accepted);
+        assert_eq!(pending.await, accepted);
     });
 }
 
@@ -173,8 +187,9 @@ async fn same_bytes_are_admitted_at_preference_expiry_while_home_is_still_locked
     };
     assert_eq!(work.context.as_ref().unwrap().run_id, run_id);
     assert_eq!(work.preferred_home_source, Some(source));
-    work.settle(Disposition::Accepted);
-    assert_eq!(retry.await.unwrap(), Disposition::Accepted);
+    let accepted = Disposition::Accepted(Instant::now());
+    work.settle(accepted);
+    assert_eq!(retry.await.unwrap(), accepted);
     drop(lease);
 }
 
@@ -187,9 +202,15 @@ async fn idle_listener_releases_expired_history_on_its_own_tick() {
 
     let (_root, directory) = namespace();
     let identity = RunnerProcessIdentity::new(uuid::Uuid::new_v4(), 1).unwrap();
-    let runtime = IngressRuntime::start(directory.clone(), identity, HOST.into(), TOKEN)
-        .await
-        .unwrap();
+    let runtime = IngressRuntime::start(
+        directory.clone(),
+        identity,
+        HOST.into(),
+        TOKEN,
+        RUNNER_VERSION,
+    )
+    .await
+    .unwrap();
     let (intake, mut receiver) = DispatchIntake::new(Arc::new(Semaphore::new(4)), None);
     runtime.enable_dispatch(intake);
     let socket = directory.join(format!("{}.sock", identity.runner_id()));
@@ -202,7 +223,7 @@ async fn idle_listener_releases_expired_history_on_its_own_tick() {
         .await
         .unwrap()
         .unwrap();
-    work.settle(Disposition::Accepted);
+    work.settle(Disposition::Accepted(Instant::now()));
     drop(work);
     let response = sending.await.unwrap();
     assert_eq!(response.0, 200);
@@ -238,11 +259,16 @@ async fn original_window_replays_then_reclaims_settled_history_without_closing_n
     let (intake, mut receiver) = DispatchIntake::new(Arc::new(Semaphore::new(4)), None);
     let intake = Arc::new(intake);
     let mut originals = Vec::new();
-    for verdict in [Disposition::Accepted, Disposition::Rejected] {
+    for accepted in [true, false] {
         let run_id = RunId::new_v4();
         let bytes = body(identity, run_id, 2_000);
         let submitted = submit(&intake, identity, run_id, bytes.clone(), 1_000);
         let work = receiver.recv().await.unwrap();
+        let verdict = if accepted {
+            Disposition::Accepted(Instant::now())
+        } else {
+            Disposition::Rejected
+        };
         work.settle(verdict);
         drop(work);
         assert_eq!(submitted.await.unwrap(), verdict);
@@ -302,9 +328,10 @@ async fn original_window_replays_then_reclaims_settled_history_without_closing_n
         2_000,
     );
     let work = receiver.recv().await.unwrap();
-    work.settle(Disposition::Accepted);
+    let accepted = Disposition::Accepted(Instant::now());
+    work.settle(accepted);
     drop(work);
-    assert_eq!(submitted.await.unwrap(), Disposition::Accepted);
+    assert_eq!(submitted.await.unwrap(), accepted);
 }
 
 #[tokio::test]
@@ -344,7 +371,15 @@ async fn history_expiry_does_not_drop_owned_admission_or_its_existing_observers(
     let original = submit(&intake, identity, run_id, bytes.clone(), 1_000);
     let work = receiver.recv().await.unwrap();
     let permit = intake.try_reserve().unwrap();
-    let observer = intake.submit(identity, run_id, bytes.as_bytes(), permit, 1_001);
+    let mut timing = DispatchTiming::start(RUNNER_VERSION);
+    let observer = intake.submit(
+        identity,
+        run_id,
+        bytes.as_bytes(),
+        permit,
+        1_001,
+        &mut timing,
+    );
     tokio::pin!(observer);
     assert!(futures_util::poll!(observer.as_mut()).is_pending());
     intake.expire(2_000);
