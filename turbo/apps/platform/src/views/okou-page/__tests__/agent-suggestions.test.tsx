@@ -2,6 +2,7 @@ import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft"
 import { suggestionFeedbacks } from "@okouai/api-contracts/contracts/suggestion-context";
 import {
   act,
+  cleanup,
   fireEvent,
   screen,
   waitFor,
@@ -2352,6 +2353,8 @@ test("The member picks a For you cover, keeps it after reload and can reset it",
     "true",
   );
 
+  // A fresh page reads the pick back from this browser.
+  cleanup();
   await openForYou();
   await activeForYouCard(items[0].content.title);
   expect(cover()).toBe(forYouCovers[7].src);
