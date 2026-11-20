@@ -1,5 +1,68 @@
 # Changelog
 
+## [8.857.4](https://github.com/okou-ai/okou/compare/core-v8.857.3...core-v8.857.4) (2026-11-20)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.95.1
+
+## [8.857.3](https://github.com/okou-ai/okou/compare/core-v8.857.2...core-v8.857.3) (2026-11-20)
+
+
+### Bug Fixes
+
+* **platform:** clarify markdown document preview hierarchy ([#49461](https://github.com/okou-ai/okou/issues/49461)) ([4411c56](https://github.com/okou-ai/okou/commit/4411c561192e7c85a6c8ecf89b9578c05f9c7f66))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.95.0
+
+## [8.857.2](https://github.com/okou-ai/okou/compare/core-v8.857.1...core-v8.857.2) (2026-11-20)
+
+
+### Bug Fixes
+
+* **platform:** improve chat sharing selection controls ([#49038](https://github.com/okou-ai/okou/issues/49038)) ([ad72ee8](https://github.com/okou-ai/okou/commit/ad72ee8660d9450fa57e8df86389fe30c1e9abae))
+
+## [8.857.1](https://github.com/okou-ai/okou/compare/core-v8.857.0...core-v8.857.1) (2026-11-20)
+
+
+### Bug Fixes
+
+* **platform:** use the suggestions switch for my okou proactive settings ([#49439](https://github.com/okou-ai/okou/issues/49439)) ([1d42e69](https://github.com/okou-ai/okou/commit/1d42e6994ad6d82a6678d34b955335765fc560b5))
+
+
+### Refactoring
+
+* remove feature guides feature switch ([#49441](https://github.com/okou-ai/okou/issues/49441)) ([e5642ea](https://github.com/okou-ai/okou/commit/e5642ea2ef0ea2ba7a6cd451d395c8329a855c88))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.94.1
+
+## [8.857.0](https://github.com/okou-ai/okou/compare/core-v8.856.2...core-v8.857.0) (2026-11-20)
+
+
+### Features
+
+* **platform:** consolidate proactive settings in my okou ([#49401](https://github.com/okou-ai/okou/issues/49401)) ([9d20531](https://github.com/okou-ai/okou/commit/9d20531a9ad041abf15a8e5c1697b06475b563df))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.94.0
+
 ## [8.856.2](https://github.com/okou-ai/okou/compare/core-v8.856.1...core-v8.856.2) (2026-11-20)
 
 

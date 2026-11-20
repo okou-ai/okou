@@ -23,7 +23,6 @@ import {
 } from "./wechat-delivery.service";
 import { chatEventCommandResultSchema } from "./chat-event-append.service";
 import { parseRawRows } from "../../lib/db-raw-rows";
-import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { v5 as uuidv5 } from "uuid";
 
 import type { ChatRecommendedFollowup } from "@okouai/api-contracts/contracts/chat-threads";
@@ -91,10 +90,8 @@ import {
   integrationCompletionFallbackReadPlan,
   loadTerminalChatCallback$,
   loadTerminalChatCallbackLocator$,
-  requiredSourceChatCallback,
   requireSourceChatCallback$,
   runLifecycleMarkerReadPlan,
-  sourceChatCallbackReadPlan,
   type ChatRunInfo,
   type ChatThreadForRunRow,
 } from "./chat-run-state-read.service";
@@ -121,6 +118,10 @@ import {
   feishuDeliveryFromContext,
 } from "./feishu-queued-launch-context.service";
 import {
+  FEISHU_RUN_FILE_INDEX_KIND,
+  type FeishuRunFileIndex,
+} from "./feishu-run-file-index";
+import {
   deliverAgentPhoneChatAdmissionFailure$,
   dispatchAgentPhoneChatDeliveryOnce$,
 } from "./internal-agentphone-chat-run-callback.service";
@@ -133,7 +134,10 @@ import {
   deliverFeishuChatAdmissionFailure$,
   dispatchFeishuChatDeliveryOnce$,
 } from "./internal-feishu-chat-run-callback.service";
-import type { InternalRunCallbackEnvelope } from "./internal-run-callback";
+import type {
+  InternalRunCallbackEnvelope,
+  TerminalRunCallbackKind,
+} from "./internal-run-callback";
 import {
   deliverSlackChatAdmissionFailure$,
   dispatchSlackChatDeliveryOnce$,
@@ -186,156 +190,6 @@ const chatCallbackPayloadSchema = object({
 
 type ChatCallbackPayload = zInfer<typeof chatCallbackPayloadSchema>;
 
-export interface CreateQueuedChatRunInput {
-  readonly orgId: string;
-  readonly userId: string;
-  readonly agentId: string;
-  readonly prompt: string;
-  readonly threadId: string;
-  readonly queuedMessage: QueuedUserMessage;
-  readonly codexServiceTier: "fast" | "ultrafast" | undefined;
-  readonly reasoningEffort?: ReasoningEffort | null;
-  readonly triggerSource: QueuedUserMessageTriggerSource;
-  readonly realAgentInPreview?: boolean;
-  /** The send asked this input's run to capture network bodies. */
-  readonly captureNetworkBodies: boolean;
-  readonly slackDelivery?: {
-    readonly workspaceId?: string;
-    readonly channelId: string;
-    readonly threadTs: string;
-    readonly routeThreadTs?: string;
-  };
-  readonly feishuDelivery?: FeishuDeliveryTarget;
-  readonly teamsDelivery?: TeamsDeliveryTarget;
-  readonly discordDelivery?: DiscordDeliveryTarget;
-  readonly wechatDelivery?: WechatDeliveryTarget;
-  readonly telegramDelivery?: TelegramDeliveryTarget;
-  readonly emailDelivery?: EmailDeliveryTarget;
-  readonly agentphoneDelivery?: AgentPhoneDeliveryTarget;
-  readonly autonomyBudget: number;
-}
-
-interface SlackQueuedMessageAdmissionFailure {
-  readonly kind: "slack_admission_failure";
-  readonly orgId: string;
-  readonly userId: string;
-  readonly agentId: string;
-  readonly threadId: string;
-  readonly queuedMessage: QueuedUserMessage;
-  readonly triggerSource: QueuedUserMessageTriggerSource;
-  readonly slackDelivery: {
-    readonly workspaceId?: string;
-    readonly channelId: string;
-    readonly threadTs: string;
-    readonly routeThreadTs?: string;
-  };
-  readonly error: QueuedMessageModelRouteError;
-}
-
-interface WebQueuedMessageAdmissionFailure {
-  readonly kind: "web_admission_failure";
-  readonly orgId: string;
-  readonly userId: string;
-  readonly threadId: string;
-  readonly queuedMessage: QueuedUserMessage;
-  readonly triggerSource: QueuedUserMessageTriggerSource;
-  readonly error: QueuedMessageModelRouteError;
-}
-
-interface FeishuQueuedMessageAdmissionFailure {
-  readonly kind: "feishu_admission_failure";
-  readonly orgId: string;
-  readonly userId: string;
-  readonly threadId: string;
-  readonly queuedMessage: QueuedUserMessage;
-  readonly triggerSource: QueuedUserMessageTriggerSource;
-  readonly feishuDelivery: FeishuDeliveryTarget;
-  readonly error: QueuedMessageModelRouteError;
-}
-
-interface TeamsQueuedMessageAdmissionFailure {
-  readonly kind: "teams_admission_failure";
-  readonly orgId: string;
-  readonly userId: string;
-  readonly agentId: string;
-  readonly threadId: string;
-  readonly queuedMessage: QueuedUserMessage;
-  readonly triggerSource: QueuedUserMessageTriggerSource;
-  readonly teamsDelivery: TeamsDeliveryTarget;
-  readonly error: QueuedMessageModelRouteError;
-}
-
-interface DiscordQueuedMessageAdmissionFailure {
-  readonly kind: "discord_admission_failure";
-  readonly orgId: string;
-  readonly userId: string;
-  readonly agentId: string;
-  readonly threadId: string;
-  readonly queuedMessage: QueuedUserMessage;
-  readonly triggerSource: QueuedUserMessageTriggerSource;
-  readonly discordDelivery: DiscordDeliveryTarget;
-  readonly error: QueuedMessageModelRouteError;
-}
-
-interface WechatQueuedMessageAdmissionFailure {
-  readonly kind: "wechat_admission_failure";
-  readonly orgId: string;
-  readonly userId: string;
-  readonly agentId: string;
-  readonly threadId: string;
-  readonly queuedMessage: QueuedUserMessage;
-  readonly triggerSource: QueuedUserMessageTriggerSource;
-  readonly wechatDelivery: WechatDeliveryTarget;
-  readonly error: QueuedMessageModelRouteError;
-}
-
-interface TelegramQueuedMessageAdmissionFailure {
-  readonly kind: "telegram_admission_failure";
-  readonly orgId: string;
-  readonly userId: string;
-  readonly agentId: string;
-  readonly threadId: string;
-  readonly queuedMessage: QueuedUserMessage;
-  readonly triggerSource: QueuedUserMessageTriggerSource;
-  readonly telegramDelivery: TelegramDeliveryTarget;
-  readonly error: QueuedMessageModelRouteError;
-}
-
-interface EmailQueuedMessageAdmissionFailure {
-  readonly kind: "email_admission_failure";
-  readonly orgId: string;
-  readonly userId: string;
-  readonly agentId: string;
-  readonly threadId: string;
-  readonly queuedMessage: QueuedUserMessage;
-  readonly triggerSource: QueuedUserMessageTriggerSource;
-  readonly emailDelivery: EmailDeliveryTarget;
-  readonly error: QueuedMessageModelRouteError;
-}
-
-interface AgentPhoneQueuedMessageAdmissionFailure {
-  readonly kind: "agentphone_admission_failure";
-  readonly orgId: string;
-  readonly userId: string;
-  readonly agentId: string;
-  readonly threadId: string;
-  readonly queuedMessage: QueuedUserMessage;
-  readonly triggerSource: QueuedUserMessageTriggerSource;
-  readonly agentphoneDelivery: AgentPhoneDeliveryTarget;
-  readonly error: QueuedMessageModelRouteError;
-}
-
-export type QueuedMessageAdmissionFailure =
-  | WebQueuedMessageAdmissionFailure
-  | SlackQueuedMessageAdmissionFailure
-  | FeishuQueuedMessageAdmissionFailure
-  | TeamsQueuedMessageAdmissionFailure
-  | DiscordQueuedMessageAdmissionFailure
-  | WechatQueuedMessageAdmissionFailure
-  | TelegramQueuedMessageAdmissionFailure
-  | EmailQueuedMessageAdmissionFailure
-  | AgentPhoneQueuedMessageAdmissionFailure;
-
 type CompletedChatCallbackResult =
   | {
       readonly outcome: "written" | "replayed";
@@ -373,59 +227,47 @@ type TerminalChatCallbackWork =
           };
     };
 
-export function queuedChatRunCallbackInputs(
-  input: Pick<
-    CreateQueuedChatRunInput,
-    | "threadId"
-    | "agentId"
-    | "queuedMessage"
-    | "slackDelivery"
-    | "feishuDelivery"
-    | "teamsDelivery"
-    | "discordDelivery"
-    | "wechatDelivery"
-    | "telegramDelivery"
-    | "emailDelivery"
-    | "agentphoneDelivery"
-  >,
-) {
-  return [
+export type RunLaunchCallbackRecord =
+  | {
+      readonly internalKind: TerminalRunCallbackKind;
+      readonly payload: unknown;
+    }
+  | {
+      readonly internalKind: typeof FEISHU_RUN_FILE_INDEX_KIND;
+      readonly payload: FeishuRunFileIndex;
+    };
+
+export function queuedChatRunCallbackInputs(input: {
+  readonly threadId: string;
+  readonly agentId: string;
+  readonly queuedMessageId: string;
+  readonly delivery: QueuedIntegrationDeliveries;
+}): RunLaunchCallbackRecord[] {
+  const callbacks: RunLaunchCallbackRecord[] = [
     {
-      internalKind: "chat" as const,
+      internalKind: "chat",
       payload: {
         threadId: input.threadId,
         agentId: input.agentId,
-        queuedMessageId: input.queuedMessage.id,
-        slackDelivery: input.slackDelivery,
-        feishuDelivery: input.feishuDelivery,
-        teamsDelivery: input.teamsDelivery,
-        discordDelivery: input.discordDelivery,
-        wechatDelivery: input.wechatDelivery,
-        telegramDelivery: input.telegramDelivery,
-        emailDelivery: input.emailDelivery,
-        agentphoneDelivery: input.agentphoneDelivery,
+        queuedMessageId: input.queuedMessageId,
+        ...input.delivery,
       },
     },
-    ...(input.feishuDelivery
-      ? [
-          {
-            internalKind: "feishu:org" as const,
-            payload: {
-              installationId: input.feishuDelivery.installationId,
-              chatId: input.feishuDelivery.chatId,
-              messageId: input.feishuDelivery.messageId,
-              connectionId: input.feishuDelivery.connectionId,
-              sessionKey: input.feishuDelivery.threadId,
-              agentId: input.agentId,
-              reactionId: input.feishuDelivery.reactionId,
-              replyInThread: input.feishuDelivery.replyInThread,
-              files: input.feishuDelivery.files,
-              canonicalChatDelivery: true,
-            },
-          },
-        ]
-      : []),
   ];
+  const feishu = input.delivery.feishuDelivery;
+  if (feishu?.files?.length) {
+    callbacks.push({
+      internalKind: FEISHU_RUN_FILE_INDEX_KIND,
+      payload: {
+        installationId: feishu.installationId,
+        chatId: feishu.chatId,
+        messageId: feishu.messageId,
+        connectionId: feishu.connectionId,
+        files: feishu.files,
+      },
+    });
+  }
+  return callbacks;
 }
 
 const CHAT_DELIVERY_CALLBACK_NAMESPACE = "3c3c6fe0-1041-4d9b-8fbc-403eec20e47b";
@@ -453,22 +295,8 @@ const insertChatDeliveryCallback$ = command(
     },
   ): Promise<string> => {
     const database = set(writeDb$);
-    const source = await (async () => {
-      const plan = sourceChatCallbackReadPlan({
-        runId: args.runId,
-        sourceCallbackId: args.sourceCallbackId,
-      });
-      const [source] = await database
-        .select(plan.columns)
-        .from(agentRunCallbacks)
-        .where(plan.condition)
-        .orderBy(plan.order)
-        .limit(plan.limit);
-      return requiredSourceChatCallback(source);
-    })();
-
     const id = uuidv5(
-      `${source.id}:${args.internalKind}:${args.chatEventId}`,
+      `${args.sourceCallbackId}:${args.internalKind}:${args.chatEventId}`,
       CHAT_DELIVERY_CALLBACK_NAMESPACE,
     );
     await database
@@ -477,7 +305,6 @@ const insertChatDeliveryCallback$ = command(
         id,
         runId: args.runId,
         internalKind: args.internalKind,
-        encryptedSecret: source.encryptedSecret,
         payload: args.payload,
       })
       .onConflictDoNothing({ target: agentRunCallbacks.id });
@@ -1705,11 +1532,6 @@ async function runTerminalChatCallbackSideEffects(args: {
   });
 }
 
-export interface QueuedMessageModelRouteError {
-  readonly code: string;
-  readonly message: string;
-}
-
 export interface QueuedChatPromptData {
   readonly threadId: string;
   readonly userId: string;
@@ -1721,7 +1543,7 @@ export interface QueuedChatPromptData {
 }
 
 type QueuedIntegrationDeliveries = Pick<
-  CreateQueuedChatRunInput,
+  ChatCallbackPayload,
   | "slackDelivery"
   | "feishuDelivery"
   | "teamsDelivery"
@@ -1751,152 +1573,15 @@ function requiredQueuedDelivery<Delivery>(
   return delivery;
 }
 
-export function queuedMessageAdmissionFailure(
-  args: QueuedChatPromptData,
-  launchMaterial: QueuedLaunchMaterial,
-  error: QueuedMessageModelRouteError,
-): QueuedMessageAdmissionFailure {
-  return channelQueuedMessageAdmissionFailure(
-    {
-      orgId: args.agent.orgId,
-      userId: args.userId,
-      agentId: args.agent.id,
-      threadId: args.threadId,
-      queuedMessage: args.queuedMessage,
-      triggerSource: launchMaterial.triggerSource,
-      error,
-    },
-    launchMaterial.delivery,
-  );
-}
-
-/** Captured identity and delivery data needed to report a commit rejection. */
-export type QueuedRunAdmissionFailureInput = Pick<
-  CreateQueuedChatRunInput,
-  | "orgId"
-  | "userId"
-  | "agentId"
-  | "threadId"
-  | "queuedMessage"
-  | "triggerSource"
-> &
-  QueuedIntegrationDeliveries;
-
-/** A queued message whose run creation was rejected for a reason other than capacity. */
-export function rejectedQueuedRunAdmissionFailure(
-  input: QueuedRunAdmissionFailureInput,
-  error: QueuedMessageModelRouteError,
-): QueuedMessageAdmissionFailure {
-  return channelQueuedMessageAdmissionFailure(
-    {
-      orgId: input.orgId,
-      userId: input.userId,
-      agentId: input.agentId,
-      threadId: input.threadId,
-      queuedMessage: input.queuedMessage,
-      triggerSource: input.triggerSource,
-      error,
-    },
-    input,
-  );
-}
-
-function channelQueuedMessageAdmissionFailure(
-  common: Omit<WebQueuedMessageAdmissionFailure, "kind"> & {
-    readonly agentId: string;
-  },
+export function queuedPromptRejectionContext(
+  input: QueuedChatPromptData,
   delivery: QueuedIntegrationDeliveries,
-): QueuedMessageAdmissionFailure {
-  const contextType = common.queuedMessage.contextType;
-  switch (contextType) {
-    case "web":
-    case "agent_run": {
-      return { kind: "web_admission_failure", ...common };
-    }
-    case "slack": {
-      return {
-        kind: "slack_admission_failure",
-        ...common,
-        slackDelivery: requiredQueuedDelivery(
-          delivery.slackDelivery,
-          contextType,
-        ),
-      };
-    }
-    case "feishu": {
-      return {
-        kind: "feishu_admission_failure",
-        ...common,
-        feishuDelivery: requiredQueuedDelivery(
-          delivery.feishuDelivery,
-          contextType,
-        ),
-      };
-    }
-    case "teams": {
-      return {
-        kind: "teams_admission_failure",
-        ...common,
-        teamsDelivery: requiredQueuedDelivery(
-          delivery.teamsDelivery,
-          contextType,
-        ),
-      };
-    }
-    case "discord": {
-      return {
-        kind: "discord_admission_failure",
-        ...common,
-        discordDelivery: requiredQueuedDelivery(
-          delivery.discordDelivery,
-          contextType,
-        ),
-      };
-    }
-    case "wechat": {
-      return {
-        kind: "wechat_admission_failure",
-        ...common,
-        wechatDelivery: requiredQueuedDelivery(
-          delivery.wechatDelivery,
-          contextType,
-        ),
-      };
-    }
-    case "telegram": {
-      return {
-        kind: "telegram_admission_failure",
-        ...common,
-        telegramDelivery: requiredQueuedDelivery(
-          delivery.telegramDelivery,
-          contextType,
-        ),
-      };
-    }
-    case "email": {
-      return {
-        kind: "email_admission_failure",
-        ...common,
-        emailDelivery: requiredQueuedDelivery(
-          delivery.emailDelivery,
-          contextType,
-        ),
-      };
-    }
-    case "agentphone": {
-      return {
-        kind: "agentphone_admission_failure",
-        ...common,
-        agentphoneDelivery: requiredQueuedDelivery(
-          delivery.agentphoneDelivery,
-          contextType,
-        ),
-      };
-    }
-    default: {
-      return unreachableQueuedContextType(contextType);
-    }
-  }
+): Omit<ChatQueueHeadRejection, "error"> {
+  const channel = queuedPromptRejectionChannel(input, delivery);
+  return {
+    userId: input.userId,
+    ...(channel ? { delivery: { kind: "channel", channel } } : {}),
+  };
 }
 
 interface QueuedAdmissionFailureDelivery {
@@ -1938,69 +1623,88 @@ type QueuedAdmissionFailureChannel = QueuedAdmissionFailureDelivery &
   );
 
 /** Web admissions have no integration delivery. */
-function queuedAdmissionFailureChannel(
-  failure: QueuedMessageAdmissionFailure,
+function queuedPromptRejectionChannel(
+  input: QueuedChatPromptData,
+  delivery: QueuedIntegrationDeliveries,
 ): QueuedAdmissionFailureChannel | undefined {
   const base = {
-    chatThreadId: failure.threadId,
-    userId: failure.userId,
-    orgId: failure.orgId,
+    chatThreadId: input.threadId,
+    userId: input.userId,
+    orgId: input.agent.orgId,
   };
-  switch (failure.kind) {
-    case "web_admission_failure": {
+  const agentId = input.agent.id;
+  const contextType = input.queuedMessage.contextType;
+  switch (contextType) {
+    case "web":
+    case "agent_run": {
       return undefined;
     }
-    case "slack_admission_failure": {
+    case "slack": {
       return {
         ...base,
         kind: "Slack",
-        agentId: failure.agentId,
-        target: failure.slackDelivery,
+        agentId,
+        target: requiredQueuedDelivery(delivery.slackDelivery, contextType),
       };
     }
-    case "feishu_admission_failure": {
-      return { ...base, kind: "Feishu", target: failure.feishuDelivery };
+    case "feishu": {
+      return {
+        ...base,
+        kind: "Feishu",
+        target: requiredQueuedDelivery(delivery.feishuDelivery, contextType),
+      };
     }
-    case "teams_admission_failure": {
+    case "teams": {
       return {
         ...base,
         kind: "Teams",
-        agentId: failure.agentId,
-        target: failure.teamsDelivery,
+        agentId,
+        target: requiredQueuedDelivery(delivery.teamsDelivery, contextType),
       };
     }
-    case "discord_admission_failure": {
-      return { ...base, kind: "Discord", target: failure.discordDelivery };
+    case "discord": {
+      return {
+        ...base,
+        kind: "Discord",
+        target: requiredQueuedDelivery(delivery.discordDelivery, contextType),
+      };
     }
-    case "wechat_admission_failure": {
-      return { ...base, kind: "Wechat", target: failure.wechatDelivery };
+    case "wechat": {
+      return {
+        ...base,
+        kind: "Wechat",
+        target: requiredQueuedDelivery(delivery.wechatDelivery, contextType),
+      };
     }
-    case "telegram_admission_failure": {
+    case "telegram": {
       return {
         ...base,
         kind: "Telegram",
-        agentId: failure.agentId,
-        target: failure.telegramDelivery,
+        agentId,
+        target: requiredQueuedDelivery(delivery.telegramDelivery, contextType),
       };
     }
-    case "email_admission_failure": {
+    case "email": {
       return {
         ...base,
         kind: "Email",
-        agentId: failure.agentId,
-        target: failure.emailDelivery,
+        agentId,
+        target: requiredQueuedDelivery(delivery.emailDelivery, contextType),
       };
     }
-    case "agentphone_admission_failure": {
+    case "agentphone": {
       return {
         ...base,
         kind: "AgentPhone",
-        agentId: failure.agentId,
-        target: failure.agentphoneDelivery,
+        agentId,
+        target: requiredQueuedDelivery(
+          delivery.agentphoneDelivery,
+          contextType,
+        ),
       };
     }
     default: {
-      return unreachableQueuedAdmissionFailure(failure);
+      return unreachableQueuedContextType(contextType);
     }
   }
 }
@@ -2182,27 +1886,18 @@ const deliverQueuedAdmissionFailureToChannel$ = command(
   },
 );
 
-function unreachableQueuedAdmissionFailure(failure: never): never {
-  throw new Error(`Unsupported queued admission failure: ${String(failure)}`);
-}
-
 /** The committed run's title and typing observations need no read plan. */
-export type QueuedPromptLaunchInput = Pick<
-  CreateQueuedChatRunInput,
-  | "orgId"
-  | "threadId"
-  | "prompt"
-  | "discordDelivery"
-  | "wechatDelivery"
-  | "triggerSource"
->;
-
 export interface QueuedPromptLaunchContext {
   readonly userId: string;
+  readonly orgId: string;
+  readonly threadId: string;
+  readonly prompt: string;
+  readonly triggerSource: QueuedUserMessageTriggerSource;
+  readonly discordDelivery?: DiscordDeliveryTarget;
+  readonly wechatDelivery?: WechatDeliveryTarget;
   readonly integrationContext?: string;
   /** The claimed thread snapshot already had a title or rename. */
   readonly titled: boolean;
-  readonly runInput: QueuedPromptLaunchInput;
 }
 
 export const recordQueuedPromptRunLaunch$ = command(
@@ -2214,16 +1909,15 @@ export const recordQueuedPromptRunLaunch$ = command(
   ): void => {
     signal.throwIfAborted();
     set(writeDb$);
-    const { userId, runInput } = args;
-    const threadId = runInput.threadId;
+    const { threadId, userId } = args;
     waitUntil(
       set(
         generateAndPersistChatThreadTitle$,
         {
           threadId,
           userId,
-          orgId: runInput.orgId,
-          prompt: runInput.prompt,
+          orgId: args.orgId,
+          prompt: args.prompt,
           integrationContext: args.integrationContext,
           includePriorRounds: true,
           titled: args.titled,
@@ -2231,18 +1925,18 @@ export const recordQueuedPromptRunLaunch$ = command(
         signal,
       ),
     );
-    if (runInput.discordDelivery) {
+    if (args.discordDelivery) {
       set(scheduleDiscordRunTyping$, {
         runId,
         chatThreadId: threadId,
-        target: runInput.discordDelivery,
+        target: args.discordDelivery,
       });
     }
-    if (runInput.wechatDelivery) {
+    if (args.wechatDelivery) {
       waitUntil(
         set(
           reconcileWechatThreadTyping$,
-          { chatThreadId: threadId, target: runInput.wechatDelivery },
+          { chatThreadId: threadId, target: args.wechatDelivery },
           new AbortController().signal,
         ),
       );
@@ -2832,17 +2526,10 @@ const processTerminalChatCallback$ = command(
           return null;
         }
         const { run, chatThread } = loaded;
-        // Queue launch failure callbacks carry the run identity before they have
-        // an envelope callback ID. Resolve their existing persisted owner exactly
-        // as delivery registration does; terminal work must never lose its receipt.
-        const sourceCallbackId = await (async () => {
-          return (
-            await set(requireSourceChatCallback$, {
-              runId: args.callback.runId,
-              sourceCallbackId: args.callback.callbackId,
-            })
-          ).id;
-        })();
+        const sourceCallbackId = await set(requireSourceChatCallback$, {
+          runId,
+          sourceCallbackId: args.callback.callbackId,
+        });
         signal.throwIfAborted();
         const preparation = {
           runId,
@@ -2969,17 +2656,6 @@ const processChatInternalCallback$ = command(
     return { success: true };
   },
 );
-
-export function queuedMessageRejection(
-  failure: QueuedMessageAdmissionFailure,
-): ChatQueueHeadRejection {
-  const channel = queuedAdmissionFailureChannel(failure);
-  return {
-    error: failure.error,
-    userId: failure.userId,
-    ...(channel ? { delivery: { kind: "channel" as const, channel } } : {}),
-  };
-}
 
 type QueuedRejectionHead = Pick<
   ChatQueueHeadContext,

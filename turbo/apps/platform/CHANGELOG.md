@@ -13,6 +13,115 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1157.0](https://github.com/okou-ai/okou/compare/app-v0.1156.1...app-v0.1157.0) (2026-11-20)
+
+
+### Features
+
+* **platform:** redraw home capability cards as cut-paper collages ([#49494](https://github.com/okou-ai/okou/issues/49494)) ([a77891b](https://github.com/okou-ai/okou/commit/a77891b5bd4ca834962750ccc270e26730141c30))
+
+
+### Bug Fixes
+
+* **platform:** use hand-heart icon for the for-you sidebar entry ([#49510](https://github.com/okou-ai/okou/issues/49510)) ([457c2ef](https://github.com/okou-ai/okou/commit/457c2ef882312be0abdabc66bfae678f6095837a))
+
+
+### Refactoring
+
+* **drive:** authorize artifact and table exports with chat accounts ([#49430](https://github.com/okou-ai/okou/issues/49430)) ([efa10f0](https://github.com/okou-ai/okou/commit/efa10f0bb95b3f3c9c5d09aa3e1049c3c49163e7))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.95.1
+    * @okouai/core bumped to 8.857.4
+    * @okouai/ui bumped to 1.21.73
+
+## [0.1156.1](https://github.com/okou-ai/okou/compare/app-v0.1156.0...app-v0.1156.1) (2026-11-20)
+
+
+### Bug Fixes
+
+* **platform:** clarify markdown document preview hierarchy ([#49461](https://github.com/okou-ai/okou/issues/49461)) ([4411c56](https://github.com/okou-ai/okou/commit/4411c561192e7c85a6c8ecf89b9578c05f9c7f66))
+* **platform:** map markdown titles to word title styles ([#49446](https://github.com/okou-ai/okou/issues/49446)) ([81238fb](https://github.com/okou-ai/okou/commit/81238fbf702ef4d41198ed807ab1139e3a0e14e4))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.95.0
+    * @okouai/core bumped to 8.857.3
+    * @okouai/ui bumped to 1.21.72
+
+## [0.1156.0](https://github.com/okou-ai/okou/compare/app-v0.1155.1...app-v0.1156.0) (2026-11-20)
+
+
+### Features
+
+* **platform:** use a colored email mark on the Email channel card ([#49475](https://github.com/okou-ai/okou/issues/49475)) ([c37e991](https://github.com/okou-ai/okou/commit/c37e9910acd2f376cd82e177bd549dba5a1d3cd4))
+
+
+### Bug Fixes
+
+* **app:** avoid duplicate startup project and thread reads ([#49440](https://github.com/okou-ai/okou/issues/49440)) ([23cd576](https://github.com/okou-ai/okou/commit/23cd576df69210cb535f8f819e27906c36d57dc6))
+* **app:** keep check-in feedback in the rewards menu ([#49459](https://github.com/okou-ai/okou/issues/49459)) ([44fa0d5](https://github.com/okou-ai/okou/commit/44fa0d5b0f0081dbdbac2b89553831df76749907))
+* **platform:** improve chat sharing selection controls ([#49038](https://github.com/okou-ai/okou/issues/49038)) ([ad72ee8](https://github.com/okou-ai/okou/commit/ad72ee8660d9450fa57e8df86389fe30c1e9abae))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.857.2
+    * @okouai/ui bumped to 1.21.71
+
+## [0.1155.1](https://github.com/okou-ai/okou/compare/app-v0.1155.0...app-v0.1155.1) (2026-11-20)
+
+
+### Bug Fixes
+
+* **platform:** retain safe document export failure phases ([#49388](https://github.com/okou-ai/okou/issues/49388)) ([18c9913](https://github.com/okou-ai/okou/commit/18c9913d10396c7e27679fecbb96aba52a7f80de))
+* **platform:** use the suggestions switch for my okou proactive settings ([#49439](https://github.com/okou-ai/okou/issues/49439)) ([1d42e69](https://github.com/okou-ai/okou/commit/1d42e6994ad6d82a6678d34b955335765fc560b5))
+
+
+### Refactoring
+
+* remove feature guides feature switch ([#49441](https://github.com/okou-ai/okou/issues/49441)) ([e5642ea](https://github.com/okou-ai/okou/commit/e5642ea2ef0ea2ba7a6cd451d395c8329a855c88))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.94.1
+    * @okouai/core bumped to 8.857.1
+    * @okouai/ui bumped to 1.21.70
+
+## [0.1155.0](https://github.com/okou-ai/okou/compare/app-v0.1154.2...app-v0.1155.0) (2026-11-20)
+
+
+### Features
+
+* **platform:** consolidate proactive settings in my okou ([#49401](https://github.com/okou-ai/okou/issues/49401)) ([9d20531](https://github.com/okou-ai/okou/commit/9d20531a9ad041abf15a8e5c1697b06475b563df))
+* **platform:** polish for you suggestion card layout ([#49397](https://github.com/okou-ai/okou/issues/49397)) ([a33c4ea](https://github.com/okou-ai/okou/commit/a33c4eace1e4ddc482559ee2bc6c2d28884689db))
+
+
+### Bug Fixes
+
+* **app:** preserve artifact file cards in message pdf exports ([#49389](https://github.com/okou-ai/okou/issues/49389)) ([ae05e27](https://github.com/okou-ai/okou/commit/ae05e279c6158a6e3d014dfdaafcdf539f0e9ffe))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.94.0
+    * @okouai/core bumped to 8.857.0
+    * @okouai/ui bumped to 1.21.69
+
 ## [0.1154.2](https://github.com/okou-ai/okou/compare/app-v0.1154.1...app-v0.1154.2) (2026-11-20)
 
 

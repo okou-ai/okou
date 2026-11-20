@@ -8,6 +8,7 @@ import { validatePermanentProjectStorage } from "./test-project-storage-permanen
 
 import { validatePiMemoryStage1Cost } from "./test-pi-memory-stage1-cost";
 import { validatePiMemoryRetirement } from "./test-pi-memory-retirement";
+import { validatePiResourceIndexRetirement } from "./test-pi-resource-index-retirement";
 import { validateRunOutputMemoryCitationRetirement } from "./test-run-output-memory-citation-retirement";
 import { validateStripeInvoicePaidRetirement } from "./test-stripe-invoice-paid-retirement";
 import { validateManagedDataRetirement } from "./test-managed-data-retirement";
@@ -57,7 +58,6 @@ import { validateOfficialWorkflowStorageRetirement } from "./test-official-workf
 import { validateWorkflowPublicationContraction } from "./test-workflow-publication-contraction";
 import { validateStaffWorkflowAttachmentDeletion } from "./test-staff-workflow-attachment-deletion";
 import { validateInactiveWorkflowAttachmentDeletion } from "./test-inactive-workflow-attachment-deletion";
-import { validateSeedSkillBundleSchema } from "./test-seed-skill-bundle-schema";
 import { validateConnectorSkillBundleSchema } from "./test-connector-skill-bundle-schema";
 import { validateChatConnectorAccessSchema } from "./test-chat-connector-access-schema";
 import { validatePermanentArtifactThreadCatalog } from "./test-artifact-thread-catalog-permanent";
@@ -170,10 +170,7 @@ async function runMigrations(dbUrl: string): Promise<void> {
   });
 }
 
-/** Replay 1477's unchanged transition under the schema it actually precedes. */
-async function validateHistoricalRunCleanupBeforeGuard(
-  dbUrl: string,
-): Promise<void> {
+async function migrationTimestamp(tag: string): Promise<number> {
   const journal = object({
     entries: array(object({ tag: string(), when: number() })),
   }).parse(
@@ -184,13 +181,23 @@ async function validateHistoricalRunCleanupBeforeGuard(
       ),
     ),
   );
-  const guard = journal.entries.find((entry) => {
-    return entry.tag === "1484_threadless_run_restrictive_references";
+  const migration = journal.entries.find((entry) => {
+    return entry.tag === tag;
   });
-  assert.ok(guard, "Missing restrictive Run reference migration");
+  assert.ok(migration, `Missing migration ${tag}`);
+  return migration.when;
+}
+
+/** Replay 1477's unchanged transition under the schema it actually precedes. */
+async function validateHistoricalRunCleanupBeforeGuard(
+  dbUrl: string,
+): Promise<void> {
+  const beforeMillis = await migrationTimestamp(
+    "1484_threadless_run_restrictive_references",
+  );
   const client = postgres(dbUrl, { max: 1 });
   try {
-    await applyPendingMigrations(client, { beforeMillis: guard.when });
+    await applyPendingMigrations(client, { beforeMillis });
     await validateHistoricalRunCleanup(dbUrl);
   } finally {
     await client.end();
@@ -3063,6 +3070,10 @@ async function main(): Promise<void> {
     await createDatabase(TEST_DB_1);
     const dbUrl1 = createTestDbUrl(TEST_DB_1);
     await validateHistoricalRunCleanupBeforeGuard(dbUrl1);
+    await validatePiResourceIndexRetirement(
+      dbUrl1,
+      await migrationTimestamp("1595_drop_legacy_pi_resource_version_indexes"),
+    );
     await runMigrations(dbUrl1);
     console.log("   ✅ Migrations applied successfully\n");
 
@@ -3128,7 +3139,6 @@ async function main(): Promise<void> {
     await validateWorkflowPublicationContraction(dbUrl1);
     await validateStaffWorkflowAttachmentDeletion(dbUrl1);
     await validateInactiveWorkflowAttachmentDeletion(dbUrl1);
-    await validateSeedSkillBundleSchema(dbUrl1);
     await validateConnectorSkillBundleSchema(dbUrl1);
     await validateChatConnectorAccessSchema(dbUrl1);
     await validatePermanentWorkflowNameScopes(dbUrl1);
@@ -3184,7 +3194,6 @@ async function main(): Promise<void> {
     await validateXResourceUsageSchema(dbUrl2);
     await validateAgentRunLaunchSnapshotSchema(dbUrl2);
     await validateAgentRunOfficialWorkflowProvenanceSchema(dbUrl2);
-    await validateSeedSkillBundleSchema(dbUrl2);
     await validateConnectorSkillBundleSchema(dbUrl2);
     await validateChatConnectorAccessSchema(dbUrl2);
     await validatePermanentWorkflowNameScopes(dbUrl2);

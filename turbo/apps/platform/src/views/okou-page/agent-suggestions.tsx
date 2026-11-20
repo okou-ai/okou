@@ -1,4 +1,3 @@
-import type { ReactNode } from "react";
 import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import {
@@ -38,6 +37,11 @@ import { Link } from "../router/link.tsx";
 import { ForYouCardHeading } from "./for-you-card-heading.tsx";
 import { ChatComposer } from "./composer.tsx";
 
+// Option rows and the direction trigger share one surface. Hover lays the state
+// overlay over the nested fill, so the row darkens instead of losing its fill.
+const SUGGESTION_ROW =
+  "h-auto min-h-13 w-full justify-between gap-3 whitespace-normal rounded-3xl bg-nested-fill px-5 py-3 text-left text-sm font-normal hover:bg-nested-fill [&:hover]:bg-state-hover-overlay";
+
 function SuggestionOptionContent({
   option,
 }: {
@@ -45,9 +49,9 @@ function SuggestionOptionContent({
 }) {
   return (
     <span className="flex min-w-0 flex-1 flex-col gap-0.5 wrap-break-word">
-      <span className="leading-5">{option.label}</span>
+      <span className="leading-6">{option.label}</span>
       {option.description && (
-        <span className="text-xs leading-5 text-muted-foreground">
+        <span className="text-[13px] leading-5 text-muted-foreground">
           {option.description}
         </span>
       )}
@@ -217,7 +221,7 @@ function SuggestionDirectionEntry({
       data-suggestion-direction-trigger={entry.item.id}
       type="button"
       variant="quiet"
-      className="h-auto min-h-14 w-full justify-between gap-3 whitespace-normal rounded-3xl bg-nested-fill px-4 py-3 text-left text-sm font-normal text-muted-foreground"
+      className={cn(SUGGESTION_ROW, "text-muted-foreground")}
       aria-description={t(($) => {
         return $.chat.agentSuggestions.customDirectionDescription;
       })}
@@ -225,7 +229,7 @@ function SuggestionDirectionEntry({
         detach(open(entry, signal), Reason.DomCallback);
       }}
     >
-      <span className="min-w-0 flex-1 leading-5">
+      <span className="min-w-0 flex-1 leading-6">
         {t(($) => {
           return $.chat.agentSuggestions.customPlaceholder;
         })}
@@ -249,14 +253,12 @@ function SuggestionDirection({
 }
 
 /**
- * The card's own composer. A direction that continues a chat names that chat
- * in its header; a new chat keeps only the close control.
- *
- * It opens as the trigger's pill, holding the trigger's height while the
- * composer loads. Once the composer is ready the pill grows to the composer's
- * height, so the card and the stack centred around it follow every frame, and
- * the composer fades in as the pill's fill fades out. The pill stays whole
- * throughout; the composer is never shown cut off mid-growth.
+ * The card's own composer opens in place of the direction trigger, as an
+ * accordion: the row keeps its fill and becomes a header that names the chat
+ * the direction goes to, with the close control in the column the trigger's
+ * icon used. The composer grows in beneath it once it is ready and fills the
+ * row's width, so the heading, the quote and the caret share the option text's
+ * left edge and the composer keeps its standard radius.
  */
 function SuggestionDirectionComposer({
   direction,
@@ -277,69 +279,58 @@ function SuggestionDirectionComposer({
   const composer =
     prepared.state === "hasData" && prepared.data ? prepared.data : null;
   const ready = composer !== null || prepared.state === "hasError";
-  // A continued chat names itself above the composer once it is shown; until
-  // then, and for a new chat, the close control floats on the pill's corner.
-  const titled = target.kind === "thread" && ready;
-  const heading = (
-    <h3
-      id={headingId}
-      className={
-        titled ? "min-w-0 flex-1 truncate text-sm font-medium" : "sr-only"
-      }
-    >
-      {target.kind === "thread" ? (target.title ?? newChatTitle) : newChatTitle}
-    </h3>
-  );
-  const closeButton = (
-    <Button
-      type="button"
-      variant="quiet"
-      size="icon-xs"
-      className={
-        titled ? undefined : "rounded-full border border-border bg-card"
-      }
-      showTooltip
-      aria-label={t(($) => {
-        return $.workflows.common.close;
-      })}
-      onClick={() => {
-        close();
-      }}
-    >
-      <X />
-    </Button>
-  );
   return (
-    <section aria-labelledby={headingId} className="relative min-w-0">
-      {/* The floating close control sits outside the clipped pill. */}
-      {!titled && (
-        <div className="absolute -top-2 right-2 z-20">
-          {heading}
-          {closeButton}
-        </div>
-      )}
+    <section
+      aria-labelledby={headingId}
+      className="min-w-0 rounded-3xl bg-nested-fill"
+    >
+      <div className="flex min-h-12 min-w-0 items-center gap-2 pr-2 pl-4">
+        <h3
+          id={headingId}
+          className="min-w-0 flex-1 truncate text-base leading-6 font-normal text-foreground"
+        >
+          {target.kind === "thread"
+            ? (target.title ?? newChatTitle)
+            : newChatTitle}
+        </h3>
+        {!ready && (
+          <Loader2
+            size={16}
+            className="shrink-0 animate-spin text-muted-foreground"
+            aria-hidden
+          />
+        )}
+        <Button
+          type="button"
+          variant="quiet"
+          size="icon-sm"
+          showTooltip
+          aria-label={t(($) => {
+            return $.workflows.common.close;
+          })}
+          onClick={() => {
+            close();
+          }}
+        >
+          <X />
+        </Button>
+      </div>
       <div
         className={cn(
-          "grid min-w-0 rounded-3xl",
+          "grid min-w-0",
           ready
             ? "grid-rows-[1fr] motion-safe:animate-suggestion-direction-expand"
-            : "grid-rows-[0fr] overflow-clip bg-nested-fill",
+            : "grid-rows-[0fr] overflow-clip",
         )}
       >
         <div
           className={cn(
-            "flex min-h-14 min-w-0 flex-col gap-3",
+            "min-h-0 min-w-0",
             ready && "motion-safe:animate-suggestion-direction-content-in",
           )}
         >
-          {titled && (
-            <div className="flex min-w-0 items-center gap-2">
-              {heading}
-              {closeButton}
-            </div>
-          )}
           {prepared.state === "hasError" ? (
-            <p role="alert" className="text-sm text-muted-foreground">
+            <p role="alert" className="px-3 pb-3 text-sm text-muted-foreground">
               {prepared.error instanceof Error
                 ? prepared.error.message
                 : t(($) => {
@@ -348,13 +339,13 @@ function SuggestionDirectionComposer({
             </p>
           ) : composer ? (
             <div className="w-full min-w-0" data-chat-composer>
-              <ChatComposer signals={composer} showPendingItems={false} />
+              <ChatComposer
+                signals={composer}
+                showPendingItems={false}
+                layout="card"
+              />
             </div>
-          ) : (
-            <div className="flex min-h-14 items-center justify-center text-muted-foreground">
-              <Loader2 size={16} className="animate-spin" aria-hidden />
-            </div>
-          )}
+          ) : null}
         </div>
       </div>
     </section>
@@ -364,11 +355,9 @@ function SuggestionDirectionComposer({
 export function AgentSuggestionCard({
   entry,
   active,
-  navigation,
 }: {
   readonly entry: AgentSuggestionEntry;
   readonly active: boolean;
-  readonly navigation: ReactNode;
 }) {
   const { t } = useTranslation();
   const { item } = entry;
@@ -407,7 +396,7 @@ export function AgentSuggestionCard({
             <Link
               pathname={ROUTES.chat}
               options={{ pathParams: { threadId: sourceThreadId } }}
-              className="inline-block max-w-full truncate rounded-md text-xs text-muted-foreground underline decoration-border underline-offset-4 hover:bg-state-hover hover:text-foreground"
+              className="-mx-1.5 -my-0.5 inline-block max-w-full truncate rounded-md px-1.5 py-0.5 text-[13px] text-muted-foreground underline decoration-border underline-offset-4 hover:bg-state-hover hover:text-foreground"
               aria-label={t(($) => {
                 return $.chat.agentSuggestions.viewSource;
               })}
@@ -421,14 +410,14 @@ export function AgentSuggestionCard({
           ) : null
         }
       />
-      <div className="mb-6 mt-6 flex flex-col gap-2">
+      <div className="mb-7 mt-7 flex flex-col gap-2.5">
         {item.content.options.map((option) => {
           return (
             <Button
               key={option.id}
               type="button"
               variant="quiet"
-              className="h-auto min-h-14 w-full justify-between gap-3 whitespace-normal rounded-3xl bg-nested-fill px-4 py-3 text-left text-sm font-normal text-foreground"
+              className={cn(SUGGESTION_ROW, "text-foreground")}
               aria-label={option.label}
               aria-description={[
                 option.description,
@@ -461,25 +450,26 @@ export function AgentSuggestionCard({
         {active && <SuggestionDirection entry={entry} />}
       </div>
       <SuggestionFeedback entry={entry} />
-      <footer className="mt-3 flex items-center justify-between gap-3">
-        <Button
-          type="button"
-          variant="quiet"
-          size="sm"
-          className="px-2 text-xs font-normal"
-          onClick={() => {
-            detach(
-              submitFeedback(item.id, "dismissed", signal),
-              Reason.DomCallback,
-            );
-          }}
-        >
-          {t(($) => {
-            return $.chat.agentSuggestions.dismiss;
-          })}
-        </Button>
-        {navigation}
-      </footer>
+      {/* Dismissing closes the whole card, so it sits on the card's corner.
+          It comes last so ordinary paint order keeps it above the artwork. */}
+      <Button
+        type="button"
+        variant="quiet"
+        size="icon-sm"
+        showTooltip
+        aria-label={t(($) => {
+          return $.chat.agentSuggestions.dismiss;
+        })}
+        className="absolute top-4.5 right-4 sm:top-7.5 sm:right-7"
+        onClick={() => {
+          detach(
+            submitFeedback(item.id, "dismissed", signal),
+            Reason.DomCallback,
+          );
+        }}
+      >
+        <X />
+      </Button>
     </article>
   );
 }
@@ -524,40 +514,29 @@ function SuggestionFeedback({
     },
   ];
   return (
-    <div className="mt-auto border-t border-border pt-4">
-      <p
-        id={`feedback-label-${item.id}`}
-        className="mb-2 text-xs text-muted-foreground"
-      >
-        {t(($) => {
-          return $.chat.agentSuggestions.feedbackPrompt;
-        })}
-      </p>
-      <div
-        role="group"
-        aria-labelledby={`feedback-label-${item.id}`}
-        className="flex flex-wrap gap-1.5 sm:gap-2"
-      >
-        {feedbackActions.map(({ kind, label, Icon }) => {
-          return (
-            <Button
-              key={kind}
-              type="button"
-              variant="outline"
-              className="min-h-11 gap-1 rounded-full bg-card px-2 text-[11px] font-normal text-muted-foreground sm:min-h-9 sm:gap-1.5 sm:px-3 sm:text-xs"
-              onClick={() => {
-                detach(
-                  submitFeedback(item.id, kind, signal),
-                  Reason.DomCallback,
-                );
-              }}
-            >
-              <Icon aria-hidden className="size-3.5" />
-              {label}
-            </Button>
-          );
-        })}
-      </div>
+    <div
+      role="group"
+      aria-label={t(($) => {
+        return $.chat.agentSuggestions.feedbackPrompt;
+      })}
+      className="mt-auto grid grid-cols-2 gap-2 sm:grid-cols-4"
+    >
+      {feedbackActions.map(({ kind, label, Icon }) => {
+        return (
+          <Button
+            key={kind}
+            type="button"
+            variant="neutral"
+            className="h-auto min-h-9 gap-1.5 rounded-3xl border-divider px-3 py-1.5 text-[13px] font-normal whitespace-normal [&_svg]:text-muted-foreground"
+            onClick={() => {
+              detach(submitFeedback(item.id, kind, signal), Reason.DomCallback);
+            }}
+          >
+            <Icon aria-hidden />
+            {label}
+          </Button>
+        );
+      })}
     </div>
   );
 }

@@ -19,9 +19,7 @@ use crate::helper_program::TestHelperProgram;
 use crate::process::{extract_exit_code, kill_and_reap_child, spawn_in_own_process_group};
 use crate::quiesce::OperationGuard;
 use crate::user::apply_command_identity;
-use crate::wait::{
-    WaitOutcome, collect_bounded_output, wait_with_kill_timeout_or_connection_cancelled,
-};
+use crate::wait::{WaitOutcome, collect_bounded_output, wait_for_helper_with_group_cleanup};
 pub(crate) use crate::worker_ownership::LazyConnectionWorkerSubmitError as GuestDnsReadinessSubmitError;
 use crate::worker_ownership::{LazyConnectionWorker, SingleActivePermit};
 use crate::writer::GuestWriter;
@@ -262,14 +260,7 @@ fn run_probe(
     drop(drain_done_tx);
 
     program.await_test_timeout_gate(child.id());
-    let outcome = wait_with_kill_timeout_or_connection_cancelled(
-        child,
-        timeout_ms,
-        connection_cancel,
-        // Reap the group before the exited leader can release its process-group
-        // identity, so an NSS helper cannot outlive the readiness operation.
-        || true,
-    );
+    let outcome = wait_for_helper_with_group_cleanup(child, timeout_ms, connection_cancel);
     if !matches!(outcome, WaitOutcome::Exited(_)) {
         drain_cancel.cancel();
     }

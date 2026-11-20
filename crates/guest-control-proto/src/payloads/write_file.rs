@@ -1,6 +1,6 @@
 use super::truncate_utf8_to_u16_bytes;
 use crate::error::ProtocolError;
-use crate::frame::encode_into;
+use crate::frame::{encode_into, encode_with_borrowed_payload_into};
 use crate::read::{
     checked_payload_len_add, ensure_payload_fits_message, ensure_u16_count, ensure_u16_len,
     ensure_u32_len, expect_consumed, read_slice, read_str, read_u8, read_u16, read_u32,
@@ -20,9 +20,9 @@ struct EncodedWriteFilePayload<'a> {
 }
 
 struct EncodedWriteFilesEntry<'a> {
-    path_len: u16,
+    path_len: [u8; 2],
     path_bytes: &'a [u8],
-    content_len: u32,
+    content_len: [u8; 4],
     content: &'a [u8],
 }
 
@@ -39,6 +39,31 @@ pub struct WriteFileBatchEntry<'a> {
     pub path: &'a str,
     /// Bytes to write to the guest path.
     pub content: &'a [u8],
+}
+
+/// A complete ordinary file batch frame with borrowed file contents.
+pub struct WriteFilesFrame<'a> {
+    header: Vec<u8>,
+    entries: Vec<EncodedWriteFilesEntry<'a>>,
+}
+
+impl WriteFilesFrame<'_> {
+    /// Iterate over the slices in wire order. Send all slices as one frame.
+    pub fn slices(&self) -> impl Iterator<Item = &[u8]> {
+        std::iter::once(self.header.as_slice())
+            .chain(self.entries.iter().flat_map(EncodedWriteFilesEntry::slices))
+    }
+}
+
+impl EncodedWriteFilesEntry<'_> {
+    fn slices(&self) -> [&[u8]; 4] {
+        [
+            &self.path_len,
+            self.path_bytes,
+            &self.content_len,
+            self.content,
+        ]
+    }
 }
 
 /// Encode write_file payload: `[2B path_len][path][1B flags][4B content_len][content]`.
@@ -188,6 +213,32 @@ pub fn encode_write_files_frame_into(
     })
 }
 
+/// Encode ordinary file batch metadata and borrow each entry's content.
+///
+/// # Errors
+///
+/// Uses the input constraints documented by [`encode_write_files`].
+pub fn encode_write_files_frame_parts<'a>(
+    seq: u32,
+    files: &[WriteFileBatchEntry<'a>],
+) -> Result<WriteFilesFrame<'a>, ProtocolError> {
+    let encoded = validate_write_files_payload(files)?;
+    let file_count = encoded.file_count.to_be_bytes();
+    let mut header = Vec::new();
+    encode_with_borrowed_payload_into(
+        &mut header,
+        MSG_WRITE_FILES,
+        seq,
+        file_count.len(),
+        encoded.payload_len - file_count.len(),
+        |header| header.extend_from_slice(&file_count),
+    )?;
+    Ok(WriteFilesFrame {
+        header,
+        entries: encoded.entries,
+    })
+}
+
 /// Encode a full private write_files frame into `frame`.
 ///
 /// The payload bytes and validation rules match
@@ -234,9 +285,9 @@ fn validate_write_files_payload<'a>(
         payload_len = checked_payload_len_add(payload_len, 4)?;
         payload_len = checked_payload_len_add(payload_len, file.content.len())?;
         encoded_entries.push(EncodedWriteFilesEntry {
-            path_len,
+            path_len: path_len.to_be_bytes(),
             path_bytes,
-            content_len,
+            content_len: content_len.to_be_bytes(),
             content: file.content,
         });
     }
@@ -250,11 +301,12 @@ fn validate_write_files_payload<'a>(
 
 fn append_write_files_payload(p: &mut Vec<u8>, encoded: &EncodedWriteFilesPayload<'_>) {
     p.extend_from_slice(&encoded.file_count.to_be_bytes());
-    for entry in &encoded.entries {
-        p.extend_from_slice(&entry.path_len.to_be_bytes());
-        p.extend_from_slice(entry.path_bytes);
-        p.extend_from_slice(&entry.content_len.to_be_bytes());
-        p.extend_from_slice(entry.content);
+    for slice in encoded
+        .entries
+        .iter()
+        .flat_map(EncodedWriteFilesEntry::slices)
+    {
+        p.extend_from_slice(slice);
     }
 }
 

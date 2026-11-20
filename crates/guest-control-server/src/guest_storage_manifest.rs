@@ -27,9 +27,7 @@ use crate::process_containment::{
     ProcessContainmentMode,
 };
 use crate::quiesce::OperationGuard;
-use crate::wait::{
-    WaitOutcome, collect_bounded_output, wait_with_kill_timeout_or_connection_cancelled,
-};
+use crate::wait::{WaitOutcome, collect_bounded_output, wait_for_helper_with_group_cleanup};
 pub(crate) use crate::worker_ownership::LazyConnectionWorkerSubmitError as GuestStorageManifestSubmitError;
 use crate::worker_ownership::{LazyConnectionWorker, SingleActivePermit};
 use crate::writer::GuestWriter;
@@ -600,14 +598,7 @@ fn run_manifest(input: RunManifestInput<'_>) -> CapturedHelperOutput {
     drop(drain_done_tx);
 
     program.await_test_timeout_gate(child.id());
-    let outcome = wait_with_kill_timeout_or_connection_cancelled(
-        child,
-        timeout_ms,
-        connection_cancel,
-        // Reap the group before the exited leader can release its process-group
-        // identity, so helper descendants cannot outlive this fixed operation.
-        || true,
-    );
+    let outcome = wait_for_helper_with_group_cleanup(child, timeout_ms, connection_cancel);
     let cancellation_observed = connection_cancel.load(Ordering::Acquire);
     let cleanup_mode =
         ProcessContainmentCleanupMode::for_wait_outcome(&outcome, cancellation_observed);

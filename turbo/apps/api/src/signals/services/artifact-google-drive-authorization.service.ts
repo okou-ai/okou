@@ -8,6 +8,56 @@ import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";
 import { and, eq, isNull, isNotNull, or } from "drizzle-orm";
 import { command } from "ccstate";
 import { db$, writeDb$ } from "../external/db";
+import {
+  chatConnectorExecutionFromRows,
+  chatConnectorExecutionReadPlan,
+} from "./chat-connector-execution";
+
+export type DriveConnectorAccountResolution =
+  | { readonly type: "resolved"; readonly connectorId: string }
+  | { readonly type: "connect" }
+  | { readonly type: "unavailable" };
+
+export const chatGoogleDriveAccount$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly threadId: string;
+      readonly connectionId?: string;
+      readonly runId?: string;
+    },
+    signal: AbortSignal,
+  ): Promise<DriveConnectorAccountResolution> => {
+    const { orgId, userId, threadId, runId } = args;
+    const rows = await set(writeDb$)
+      .select()
+      .from(
+        chatConnectorExecutionReadPlan(
+          runId
+            ? { kind: "run", runId, orgId, userId }
+            : { kind: "chat", chatThreadId: threadId, orgId, userId },
+          "google-drive",
+        ).as("drive_chat_accounts"),
+      );
+    signal.throwIfAborted();
+    if (!rows.length) {
+      return !runId && (await set(ownedGoogleDriveThreadContext$, args, signal))
+        ? { type: "connect" }
+        : { type: "unavailable" };
+    }
+    const [current] = chatConnectorExecutionFromRows(rows).selections;
+    if (
+      rows[0]?.chatThreadId !== threadId ||
+      !current ||
+      (args.connectionId && args.connectionId !== current.connectionId)
+    ) {
+      return { type: "unavailable" };
+    }
+    return { type: "resolved", connectorId: current.connectionId };
+  },
+);
 
 /** Validate the current view before using its account or agent context. */
 export const ownedGoogleDriveThreadContext$ = command(

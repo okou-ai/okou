@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.32.36](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.35...guest-storage-apply-v0.32.36) (2026-11-20)
+
+
+### Performance Improvements
+
+* **guest-storage-apply:** reuse the archive file copy buffer ([#49487](https://github.com/okou-ai/okou/issues/49487)) ([5528f7c](https://github.com/okou-ai/okou/commit/5528f7c3c38f88de478d62c6163230f45299a7ef))
+
+## [0.32.35](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.34...guest-storage-apply-v0.32.35) (2026-11-20)
+
+
+### Performance Improvements
+
+* **guest-storage-apply:** shorten very wide remote archive batches ([#49407](https://github.com/okou-ai/okou/issues/49407)) ([59c2b83](https://github.com/okou-ai/okou/commit/59c2b835504051d40e559b03ccf51dbc9bc1596c))
+
 ## [0.32.34](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.33...guest-storage-apply-v0.32.34) (2026-11-20)
 
 

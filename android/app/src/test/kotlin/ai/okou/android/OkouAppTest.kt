@@ -1,15 +1,22 @@
 package ai.okou.android
 
 import ai.okou.android.api.WorkspaceTokenProvider
+import ai.okou.android.api.generated.AndroidUpdates
+import ai.okou.android.api.generated.ChatEvents
 import ai.okou.android.api.generated.UpdatePreferencesRequest
 import ai.okou.android.api.generated.UserPreferences
 import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.auth.WorkspaceSession
 import ai.okou.android.chat.ChatComposerModel
 import ai.okou.android.chat.ChatListModel
+import ai.okou.android.chat.ChatListService
 import ai.okou.android.chat.RunControlsModel
 import ai.okou.android.preferences.MemberPreferencesModel
 import ai.okou.android.preferences.MemberPreferencesSettings
+import ai.okou.android.updates.UpdateTransfer
+import ai.okou.android.updates.UpdateUiState
+import ai.okou.android.updates.updateRelease
+import ai.okou.android.updates.updateToolbarAction
 import android.content.res.Configuration
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -21,12 +28,17 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.platform.WindowInfo
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertHeightIsEqualTo
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertWidthIsEqualTo
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isSelectable
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -38,6 +50,7 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
@@ -45,9 +58,13 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import java.io.IOException
+import java.text.NumberFormat
+import java.util.Locale
+import kotlinx.coroutines.CompletableDeferred
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -62,11 +79,21 @@ class OkouAppTest {
     private val owners = ViewModelStore()
     private var background: Color? = null
     private val deviceConfiguration = mutableStateOf<Configuration?>(null)
+    private val windowSize = mutableStateOf<IntSize?>(null)
+    private val release = updateRelease("99.0.0")
+    private val availableUpdate =
+        UpdateUiState(
+            installedVersion = "0.31.0",
+            info = AndroidUpdates(null, release),
+            transfer = UpdateTransfer.Idle,
+            sdk = 35,
+        )
 
     private fun render(
         fontScale: Float = 1f,
-        openUpdate: (() -> Unit)? = null,
+        updateState: () -> UpdateUiState? = { null },
         failPreferenceSave: () -> Boolean = { false },
+        chatService: ChatListService = TestChatService(),
     ) {
         val models =
             compose.runOnIdle {
@@ -76,7 +103,7 @@ class OkouAppTest {
                         viewModelFactory {
                             initializer {
                                 ChatListModel(
-                                    TestChatService(),
+                                    chatService,
                                     (compose.activity.application as TestOkouApplication).chatCache,
                                     WorkspaceIdentity(
                                         "https://api.okou.ai",
@@ -169,10 +196,16 @@ class OkouAppTest {
             }
         compose.setContent {
             val state by models.second.uiState.collectAsStateWithLifecycle()
+            val window = LocalWindowInfo.current
             CompositionLocalProvider(
                 LocalConfiguration provides
                     (deviceConfiguration.value ?: LocalConfiguration.current),
                 LocalDensity provides Density(LocalDensity.current.density, fontScale),
+                LocalWindowInfo provides
+                    object : WindowInfo by window {
+                        override val containerSize: IntSize
+                            get() = windowSize.value ?: window.containerSize
+                    },
             ) {
                 val dark = state.theme.resolveDark(isSystemInDarkTheme())
                 OkouTheme(dark) {
@@ -187,7 +220,16 @@ class OkouAppTest {
                                 workspacePreferences = { MemberPreferencesSettings(models.second) }
                             )
                         },
-                        openUpdate = openUpdate,
+                        updateToolbarAction =
+                            updateState()?.let {
+                                updateToolbarAction(
+                                    it,
+                                    download = {},
+                                    install = {},
+                                    installProgress = null,
+                                    openDetails = {},
+                                )
+                            },
                     )
                 }
             }
@@ -202,15 +244,51 @@ class OkouAppTest {
     @Test
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun updateToolbarKeepsTheLabelReadableWithLargerText() {
-        render(fontScale = 1.3f, openUpdate = {})
+        render(fontScale = 1.3f, updateState = { availableUpdate })
         val layouts = mutableListOf<TextLayoutResult>()
-        compose.onNodeWithText("Update").assertWidthIsEqualTo(104.dp).assertHeightIsEqualTo(48.dp)
+        val action = compose.onNodeWithText("Update").assertWidthIsEqualTo(104.dp)
+        val bounds = action.getUnclippedBoundsInRoot()
+        assertTrue(bounds.bottom - bounds.top >= 48.dp)
         compose.onNodeWithText("Update", useUnmergedTree = true).performSemanticsAction(
             SemanticsActions.GetTextLayoutResult
         ) {
             it(layouts)
         }
-        assertFalse("Update action label was truncated", layouts.single().isLineEllipsized(0))
+        val layout = layouts.single()
+        assertEquals(1, layout.lineCount)
+        assertEquals("Update".length, layout.getLineEnd(0, visibleEnd = true))
+        assertFalse(layout.didOverflowHeight || layout.isLineEllipsized(0))
+        assertTrue(
+            "Update glyphs at ${layout.getLineLeft(0)}..${layout.getLineRight(0)} exceed ${layout.size.width}px",
+            layout.getLineLeft(0) >= -1f && layout.getLineRight(0) <= layout.size.width + 1f,
+        )
+    }
+
+    @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    @Config(qualifiers = "de-rDE-w320dp-h640dp-420dpi")
+    fun updateToolbarKeepsItsBoundsAcrossLocalizedActionsWithLargeText() {
+        val update = mutableStateOf(availableUpdate.copy(transfer = UpdateTransfer.Failed))
+        render(fontScale = 2f, updateState = { update.value })
+        val retry = compose.onNodeWithText("Erneut versuchen").assertIsDisplayed()
+        val actionBounds = retry.getUnclippedBoundsInRoot()
+        val listBounds = compose.onNodeWithTag("chat_list").getUnclippedBoundsInRoot()
+        val percent = NumberFormat.getPercentInstance(Locale.GERMANY).format(0.5)
+        listOf(
+                UpdateTransfer.Idle to "Update",
+                UpdateTransfer.Downloading(release) to "Vorbereitung…",
+                UpdateTransfer.Downloading(release, release.size / 2) to percent,
+                UpdateTransfer.Ready(release) to "Installieren",
+            )
+            .forEach { (transfer, label) ->
+                compose.runOnIdle { update.value = availableUpdate.copy(transfer = transfer) }
+                val action = compose.onNodeWithText(label).assertIsDisplayed()
+                assertEquals(actionBounds, action.getUnclippedBoundsInRoot())
+                assertEquals(
+                    listBounds,
+                    compose.onNodeWithTag("chat_list").getUnclippedBoundsInRoot(),
+                )
+            }
     }
 
     @Test
@@ -219,6 +297,20 @@ class OkouAppTest {
         compose.onNodeWithContentDescription("Settings").performClick()
         compose.onNodeWithText("Language").performScrollTo().performClick()
         compose.onNodeWithText("繁體中文").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w240dp-h450dp")
+    fun compactSettingsShowTheValueBelowTheTitle() {
+        render()
+        compose.onNodeWithContentDescription("Settings").performClick()
+        compose.onNodeWithText("Appearance").performScrollTo().assertIsDisplayed()
+        val title = compose.onNodeWithText("Appearance", useUnmergedTree = true)
+        val value = compose.onNodeWithText("Follow system", useUnmergedTree = true)
+        assertTrue(
+            value.assertIsDisplayed().getUnclippedBoundsInRoot().top >=
+                title.getUnclippedBoundsInRoot().bottom
+        )
     }
 
     @Test
@@ -249,7 +341,7 @@ class OkouAppTest {
     @Test
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun updateOverflowOpensTheSameFilterMenu() {
-        render(openUpdate = {})
+        render(updateState = { availableUpdate })
         compose.onNodeWithContentDescription("More actions").performClick()
         compose
             .onNodeWithTag("workspace_popup")
@@ -339,9 +431,14 @@ class OkouAppTest {
                     screenHeightDp = 479
                 }
         }
+        compose.onNodeWithTag("workspace_new_chat").assertExists()
+        compose.runOnIdle {
+            val density = compose.activity.resources.displayMetrics.density
+            windowSize.value = IntSize((900 * density).toInt(), (479 * density).toInt())
+        }
         compose.onNodeWithTag("chat_list").assertExists()
         compose.onNodeWithTag("workspace_new_chat").assertDoesNotExist()
-        compose.runOnIdle { deviceConfiguration.value = null }
+        compose.runOnIdle { windowSize.value = null }
         compose.onNodeWithTag("workspace_new_chat").assertExists()
     }
 
@@ -357,16 +454,33 @@ class OkouAppTest {
     @Test
     @Config(qualifiers = "de-rDE-w400dp-h800dp")
     fun longLocalizedLabelsRemainOperableAtLargeFontScale() {
-        render(fontScale = 2f)
+        val initialListResponse = CompletableDeferred<Unit>()
+        val chatService =
+            object : TestChatService() {
+                override suspend fun chatEvents(since: Long?): ChatEvents {
+                    initialListResponse.await()
+                    return super.chatEvents(since)
+                }
+            }
+        render(fontScale = 2f, chatService = chatService)
         compose.onNodeWithContentDescription("Einstellungen").assertIsDisplayed().performClick()
         selectAppearance("Dunkel", row = "Erscheinungsbild")
         compose.onNodeWithText("Dunkel").assertIsDisplayed()
         compose.onNodeWithText("Arbeitsbereichseinstellungen").performScrollTo().assertIsDisplayed()
         compose.onNodeWithContentDescription("Zurück").assertIsDisplayed().performClick()
         compose.onNodeWithContentDescription("Chats").assertIsDisplayed()
+        compose.onNodeWithText("Chats werden geladen…").assertIsDisplayed()
+        initialListResponse.complete(Unit)
+
+        val refreshableList =
+            hasTestTag("chat_list") and
+                SemanticsMatcher.keyIsDefined(SemanticsActions.CustomActions)
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(refreshableList).fetchSemanticsNodes().isNotEmpty()
+        }
         val refresh =
             compose
-                .onNodeWithTag("chat_list")
+                .onNode(refreshableList)
                 .fetchSemanticsNode()
                 .config[SemanticsActions.CustomActions]
                 .single { it.label == "Chats aktualisieren" }

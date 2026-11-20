@@ -17,6 +17,16 @@ export const proactiveSuggestionsContract: ClientDescriptor<
       403: true,
     },
   },
+  updateWithFeed: {
+    method: "PUT",
+    path: "/api/preferences/proactive-suggestions/with-feed",
+    statuses: {
+      200: true,
+      400: true,
+      401: true,
+      403: true,
+    },
+  },
   update: {
     method: "PUT",
     path: "/api/preferences/proactive-suggestions",

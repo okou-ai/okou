@@ -17,7 +17,7 @@ export const debugLearningEnabled$ = computed(async (get) => {
   const features = await get(featureSwitches$);
   return (
     features[FeatureSwitchKey.OkouDebug] &&
-    features[FeatureSwitchKey.ProactiveLearning]
+    features[FeatureSwitchKey.AgentSuggestion]
   );
 });
 

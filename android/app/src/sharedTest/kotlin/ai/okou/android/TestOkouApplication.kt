@@ -13,6 +13,7 @@ import ai.okou.android.api.generated.UserPreferencesLocale
 import ai.okou.android.api.generated.UserPreferencesTheme
 import ai.okou.android.auth.Authentication
 import ai.okou.android.auth.AuthenticationState
+import ai.okou.android.auth.MembershipAccess
 import ai.okou.android.auth.NativeSession
 import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.auth.WorkspaceMembership
@@ -35,6 +36,8 @@ import kotlinx.serialization.json.Json
 
 /** Compiled only into host/device tests. Production has no authentication bypass switch. */
 open class TestOkouApplication : OkouApplication() {
+    override fun startCrashReporting() = Unit
+
     var updateService: UpdateService? = null
     var updateOwner: AppUpdates? = null
     override val updates
@@ -184,6 +187,10 @@ class TestAuthentication(initial: AuthenticationState = testAuthenticationState(
             WorkspaceMembership("org-b", "Workspace B", "org:member"),
         )
     var refreshAction: suspend (NativeSession) -> Unit = {}
+    var refreshedMembership: (NativeSession) -> MembershipAccess? = { expected ->
+        state.value.membershipAccess?.firstOrNull { it.workspaceId == expected.workspaceId }
+    }
+    var membershipsAction: suspend () -> List<WorkspaceMembership> = { available }
     var tokenAction: suspend (NativeSession) -> String? = { "test-token" }
     var selectAction: suspend (NativeSession, String) -> Unit = { session, id ->
         state.value =
@@ -198,9 +205,12 @@ class TestAuthentication(initial: AuthenticationState = testAuthenticationState(
 
     override fun initialize() = Unit
 
-    override suspend fun refresh(expected: NativeSession) = refreshAction(expected)
+    override suspend fun refresh(expected: NativeSession): MembershipAccess? {
+        refreshAction(expected)
+        return refreshedMembership(expected)
+    }
 
-    override suspend fun memberships(expected: NativeSession) = available
+    override suspend fun memberships(expected: NativeSession) = membershipsAction()
 
     override suspend fun token(expected: NativeSession) = tokenAction(expected)
 

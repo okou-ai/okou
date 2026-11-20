@@ -2,10 +2,13 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { screen, waitFor, within } from "@testing-library/react";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
+import { unzipSync } from "fflate";
 import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
 
 import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
+import { renderMarkdownDocx } from "../../../lib/markdown-docx/render.ts";
+import type { DocumentExportRequest } from "../../../lib/message-pdf/types.ts";
 import { setupPage } from "./chat-lifecycle-test-helpers.ts";
 import {
   artifactSummary,
@@ -178,7 +181,7 @@ test("Show format download items and report conversion failures in a toast", asy
   if (!pdf) {
     throw new Error("Expected Markdown PDF download");
   }
-  expect(within(pdf).getByText("PDF")).toBeInTheDocument();
+  expect(pdf).toHaveTextContent("Download as PDF");
   click(pdf);
   const error = await screen.findByText(
     "Export failed. Select an export option to try again.",
@@ -194,14 +197,39 @@ test("Show format download items and report conversion failures in a toast", asy
   });
 });
 
-test("Download a Word export after selecting it in the Markdown artifact preview", async () => {
+test("Download a Word export with document title styles without changing Markdown headings", async () => {
   const markdownUrl = artifactUrl("generated-preview", "summary.md");
+  const headings = [
+    ["Summary report", 1, "Title"],
+    ["Chapter", 2, "Heading1"],
+    ["Section", 3, "Heading2"],
+    ["Subsection", 4, "Heading3"],
+    ["Detail", 5, "Heading4"],
+    ["Note", 6, "Heading5"],
+    ["Appendix", 1, "Title"],
+  ] as const;
+  const source = [
+    "# Summary **report**",
+    "## Chapter",
+    "### Section",
+    "#### Subsection",
+    "##### Detail",
+    "###### Note",
+    "# Appendix",
+    "[Back to summary](#summary-report)",
+    "[Back to chapter](#chapter)",
+    "```markdown\n# Literal heading\n```",
+  ].join("\n\n");
   const browser = context.mocks.browser.blobDownload();
-  context.mocks.browser.dedicatedWorker(() => {
-    return Promise.resolve({ ok: true, blob: new Blob(["word"]) });
+  context.mocks.browser.dedicatedWorker(async (message) => {
+    const request = message as DocumentExportRequest;
+    if (!("kind" in request) || request.kind !== "docx") {
+      throw new Error("Expected a DOCX export request");
+    }
+    return { ok: true, blob: await renderMarkdownDocx(request.input) };
   });
   context.mocks.http.get(markdownUrl, () => {
-    return HttpResponse.text("# Summary");
+    return HttpResponse.text(source);
   });
   await setupArtifactRun(
     [
@@ -225,6 +253,16 @@ test("Download a Word export after selecting it in the Markdown artifact preview
   const dialog = await openRelatedArtifacts();
   click(relatedArtifactRow(dialog, markdownUrl));
   const preview = await screen.findByTestId("attachment-lightbox");
+  const title = await within(preview).findByRole("heading", {
+    level: 1,
+    name: "Summary report",
+  });
+  expect(title.querySelector("strong")).toHaveTextContent("report");
+  for (const [name, level] of headings) {
+    expect(
+      within(preview).getByRole("heading", { level, name }),
+    ).toBeInTheDocument();
+  }
   const exportButton = queryAllByRoleFast("button", preview).find((button) => {
     return button.getAttribute("aria-label") === "Download options";
   });
@@ -240,14 +278,61 @@ test("Download a Word export after selecting it in the Markdown artifact preview
   if (!docx) {
     throw new Error("Expected Markdown DOCX download");
   }
-  expect(within(docx).getByText("DOCX")).toBeInTheDocument();
+  expect(docx).toHaveTextContent("Download as DOCX");
   click(docx);
   await waitFor(() => {
     expect(browser.downloads).toHaveLength(1);
   });
   const [download] = browser.downloads;
   expect(download?.filename).toBe("summary.docx");
-  await expect(download?.blob?.text()).resolves.toBe("word");
+  const blob = download?.blob;
+  if (!blob) {
+    throw new Error("Expected a downloaded Word document");
+  }
+  const archive = unzipSync(new Uint8Array(await blob.arrayBuffer()));
+  const parser = new DOMParser();
+  const documentXml = parser.parseFromString(
+    new TextDecoder().decode(archive["word/document.xml"]),
+    "application/xml",
+  );
+  const paragraphs = Array.from(documentXml.getElementsByTagName("w:p"));
+  for (const [name, level, style] of headings) {
+    const paragraph = paragraphs.find((candidate) => {
+      return candidate.textContent === name;
+    });
+    expect(
+      paragraph?.getElementsByTagName("w:pStyle")[0]?.getAttribute("w:val"),
+    ).toBe(style);
+    expect(
+      within(preview).getByRole("heading", { level, name }),
+    ).toBeInTheDocument();
+  }
+  const wordTitle = paragraphs.find((paragraph) => {
+    return paragraph.textContent === "Summary report";
+  });
+  expect(wordTitle?.getElementsByTagName("w:b")).toHaveLength(1);
+  const code = paragraphs.find((paragraph) => {
+    return paragraph.textContent === "# Literal heading";
+  });
+  expect(code?.getElementsByTagName("w:pStyle")[0]?.getAttribute("w:val")).toBe(
+    "SourceCode",
+  );
+  const bookmarks = Array.from(
+    documentXml.getElementsByTagName("w:bookmarkStart"),
+    (bookmark) => {
+      return bookmark.getAttribute("w:name");
+    },
+  );
+  const anchors = Array.from(
+    documentXml.getElementsByTagName("w:hyperlink"),
+    (link) => {
+      return link.getAttribute("w:anchor");
+    },
+  );
+  expect(bookmarks).toStrictEqual(
+    expect.arrayContaining(["summary-report", "chapter"]),
+  );
+  expect(anchors).toStrictEqual(["summary-report", "chapter"]);
 });
 
 test("Expose an artifact referenced only by history from the main result actions", async () => {

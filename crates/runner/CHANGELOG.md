@@ -1,5 +1,50 @@
 # Changelog
 
+## [0.249.76](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.75...runner-rs-v0.249.76) (2026-11-20)
+
+
+### Refactoring
+
+* **runner:** share native witness identity validation ([#49501](https://github.com/okou-ai/okou/issues/49501)) ([2c52ff5](https://github.com/okou-ai/okou/commit/2c52ff5d690ff10a5d46b2d8574fe8a293533816))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.249.75](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.74...runner-rs-v0.249.75) (2026-11-20)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.249.74](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.73...runner-rs-v0.249.74) (2026-11-20)
+
+
+### Refactoring
+
+* **runner:** share strict native witness phase validation ([#49465](https://github.com/okou-ai/okou/issues/49465)) ([b3b5bbd](https://github.com/okou-ai/okou/commit/b3b5bbda02dc3c200b1ad8c4ab468ac59b68ef1e))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.249.73](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.72...runner-rs-v0.249.73) (2026-11-20)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.249.72](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.71...runner-rs-v0.249.72) (2026-11-20)
+
+
+### Refactoring
+
+* **runner:** share file residency replay evidence reads ([#49417](https://github.com/okou-ai/okou/issues/49417)) ([0cc571e](https://github.com/okou-ai/okou/commit/0cc571ee83e2e7298785b65429fb782793a673b9))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.249.71](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.70...runner-rs-v0.249.71) (2026-11-20)
 
 ## [0.249.70](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.69...runner-rs-v0.249.70) (2026-11-20)

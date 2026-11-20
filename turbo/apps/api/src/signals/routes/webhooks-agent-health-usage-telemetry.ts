@@ -508,7 +508,6 @@ const typingRefreshIntervalSecondsForRun$ = command(
       const refresh = await (async () => {
         const callbacks = await db
           .select({
-            url: agentRunCallbacks.url,
             internalKind: agentRunCallbacks.internalKind,
             payload: agentRunCallbacks.payload,
           })

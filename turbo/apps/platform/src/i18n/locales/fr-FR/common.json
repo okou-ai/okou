@@ -540,10 +540,7 @@
       "video": "VID"
     },
     "googleDrive": {
-      "agentLoading": "L'agent est encore en cours de chargement",
       "connect": "Connecter Google Drive",
-      "connectTooltip": "Connecter Google Drive pour télécharger des artéfacts",
-      "conversionNotice": "Crée une copie modifiable ; la mise en forme peut varier.",
       "conversionUnconfirmed": "La conversion Google n’a pas pu être confirmée. Vérifiez Drive avant de réessayer.",
       "openDocs": "Ouvrir dans Google Docs",
       "openSheets": "Ouvrir dans Google Sheets",
@@ -1553,7 +1550,6 @@
           "action": "Valider ma présence",
           "description": "Validez votre présence une fois par jour. Réinitialisation à 00:00 UTC.",
           "name": "Se connecter chaque jour",
-          "pendingDescription": "Votre pointage quotidien a été enregistré. Les crédits seront mis à jour après confirmation.",
           "unit": "par jour"
         },
         "connector": {
@@ -1570,12 +1566,6 @@
         },
         "inReview": "En cours d'examen",
         "intro": {
-          "checkin": {
-            "amount": "+{{amount}} crédits",
-            "confirm": "Retour au travail",
-            "description": "Les crédits paient le travail lui-même : chaque exécution, chaque artefact, chaque workflow qui tourne à l'heure dite.",
-            "title": "C'est fait pour aujourd'hui"
-          },
           "connector": {
             "confirm": "Voir tous les connecteurs",
             "connected": "Connecté",
@@ -1680,6 +1670,13 @@
       "feedbackPrompt": "Que pensez-vous de cette suggestion ?",
       "feedLabel": "Fil",
       "forYou": {
+        "cover": {
+          "change": "Changer la couverture",
+          "default": "Par défaut",
+          "gallery": "Couvertures",
+          "option": "Couverture {{index}}",
+          "reset": "Rétablir par défaut"
+        },
         "loading": "Chargement des suggestions",
         "next": "Suggestion suivante",
         "previous": "Suggestion précédente",
@@ -2544,20 +2541,32 @@
       "workingFor": "En cours depuis {{duration}}"
     },
     "sharing": {
+      "accessNote": "Vous seul pouvez modifier l’accès.",
       "cancel": "Annuler",
       "close": "Fermer",
       "copyFailed": "Impossible de copier le lien",
       "create": "Partager",
       "createFailed": "Impossible de créer la conversation partagée.",
+      "createLink": "Créer un lien",
+      "deselectAll": "Tout désélectionner",
       "deselectGroup": "Désélectionner le groupe de messages",
+      "done": "Terminé",
       "everyone": "Tout le monde",
       "linkCopied": "Lien copié",
+      "linkCreated_one": "Lien créé pour {{count}} message",
+      "linkCreated_many": "Lien créé pour {{count}} messages",
+      "linkCreated_other": "Lien créé pour {{count}} messages",
       "messageShareFailed": "Impossible de créer le lien de partage.",
       "organizationDescription": "Uniquement les membres de votre organisation",
+      "selectAll": "Tout sélectionner",
       "selectedCount_one": "{{count}} sélectionné",
       "selectedCount_many": "{{count}} sélectionnés",
       "selectedCount_other": "{{count}} sélectionnés",
+      "selectedOfTotal_one": "{{count}} sur {{total}} sélectionné",
+      "selectedOfTotal_many": "{{count}} sur {{total}} sélectionnés",
+      "selectedOfTotal_other": "{{count}} sur {{total}} sélectionnés",
       "selectGroup": "Sélectionner le groupe de messages",
+      "selectPrompt": "Sélectionnez les messages à partager",
       "shareLink": "Lien de la conversation partagée",
       "start": "Partager des messages",
       "tooLarge": "Sélectionnez moins de messages à partager",
@@ -4127,6 +4136,19 @@
     "loadError": "Impossible de charger vos instructions. Réessayez.",
     "markdown": "Écrivez en texte brut ou en Markdown",
     "placeholder": "Indiquez à Okou comment vous aimez travailler…",
+    "proactiveSettings": {
+      "cardsOnly": "Les nouvelles cartes sont activées. Les vérifications horaires et les mises à jour quotidiennes du profil sont désactivées. Choisissez un réglage commun.",
+      "choose": "Choisir…",
+      "description": "Personnalisez la façon dont Okou travaille dans cet espace.",
+      "hourlyOnly": "Les vérifications horaires et les mises à jour quotidiennes du profil sont activées. Les nouvelles cartes sont désactivées. Choisissez un réglage commun.",
+      "offers": "Recevez des offres dans « Pour vous ».",
+      "sourcesHint": "Désactiver une source interrompt l’arrivée de ses nouvelles cartes et les alertes de cartes non lues. Les cartes existantes restent dans Pour vous.",
+      "suggestions": "Consultez vos sources connectées chaque heure, mettez à jour votre profil chaque jour et recevez des suggestions utiles pour la suite.",
+      "systemUpdates": "Recevez les annonces du système dans « Pour vous ».",
+      "turnOff": "Désactiver les deux",
+      "turnOn": "Activer les deux",
+      "whatsNew": "Découvrez les nouvelles fonctionnalités d’Okou dans « Pour vous »."
+    },
     "reload": "Recharger les instructions enregistrées",
     "retry": "Réessayer",
     "save": "Enregistrer",
@@ -5781,17 +5803,8 @@
         "preparing": "Préparation de votre premier briefing matinal. Vous pouvez le désactiver à tout moment.",
         "title": "Résumé du matin"
       },
-      "proactiveLearning": {
-        "description": "Passe en revue votre activité la nuit et améliore la mémoire personnelle.",
-        "errorMessage": "Impossible de charger ou modifier ce réglage.",
-        "missingDefaultAgent": "Okou n’est pas disponible dans cet espace de travail. Contactez un administrateur.",
-        "missingTimezone": "Définissez votre fuseau horaire dans les préférences.",
-        "preparationFailed": "Ce workflow est temporairement indisponible.",
-        "preparing": "Préparation de ce workflow.",
-        "title": "Apprentissage"
-      },
       "proactiveSuggestions": {
-        "description": "Okou consulte vos sources connectées chaque heure et propose des actions utiles sur votre page d’accueil.",
+        "description": "Consultez vos sources connectées chaque heure, mettez à jour votre profil chaque jour et recevez des suggestions utiles pour la suite.",
         "errorMessage": "Impossible de charger ou de modifier ces paramètres.",
         "missingDefaultAgent": "Okou n’est pas disponible dans cet espace de travail. Contactez un administrateur.",
         "missingTimezone": "Définissez votre fuseau horaire dans les préférences.",

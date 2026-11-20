@@ -92,8 +92,9 @@ async function setupFixture(): Promise<{
   if (!actor.orgId) {
     throw new Error("Expected an org-scoped workflow actor");
   }
-  await runsApi.ensurePersonalSubscriptionModel(actor);
-  await runsApi.updateUserModelPreference(actor, "claude-fable-5-1");
+  await runsApi.ensurePersonalSubscriptionModel(actor, {
+    model: "claude-fable-5-1",
+  });
   const agent = await wf.createAgent(actor, {
     displayName: "GitHub Webhook Agent",
   });
@@ -616,7 +617,6 @@ describe("POST /api/webhooks/github for workflow automations", () => {
         testCase.expectedDisplayMessage,
       );
 
-      await runsApi.heartbeatRunner();
       const listedRuns = await listActiveRuns(actor, 20);
       const runId = listedRuns.runs[0]?.id;
       if (!runId || listedRuns.runs.length !== 1) {
@@ -745,7 +745,6 @@ describe("POST /api/webhooks/github for workflow automations", () => {
         return event.eventType === "input.automation";
       }),
     ).toHaveLength(1);
-    await runsApi.heartbeatRunner();
     const listedRuns = await listActiveRuns(actor, 20);
     expect(listedRuns.runs).toHaveLength(1);
   });
@@ -914,7 +913,6 @@ describe("POST /api/webhooks/github for workflow automations", () => {
     // closed-without-merge delivery never matched. Under the per-thread
     // workflow queue, the first matched event creates the only admitted run
     // and the remaining five wait as pending workflow queue events.
-    await runsApi.heartbeatRunner();
     const listedRuns = await listActiveRuns(actor, 20);
     const admittedRunId = listedRuns.runs[0]?.id;
     if (!admittedRunId || listedRuns.runs.length !== 1) {
@@ -1003,7 +1001,6 @@ describe("POST /api/webhooks/github for workflow automations", () => {
     expect(sequentialDuplicate).toStrictEqual({ status: 200, text: "OK" });
     await flushWaitUntilForTest();
 
-    await runsApi.heartbeatRunner();
     const listedRuns = await listActiveRuns(actor, 20);
     const runId = listedRuns.runs[0]?.id;
     if (!runId || listedRuns.runs.length !== 1) {
@@ -1111,7 +1108,6 @@ describe("POST /api/webhooks/github for workflow automations", () => {
       'GitHub Actions workflow ".github/workflows/turbo.yml" completed with conclusion "startup_failure".',
     );
 
-    await runsApi.heartbeatRunner();
     const listedRuns = await listActiveRuns(actor, 20);
     const runId = listedRuns.runs[0]?.id;
     if (!runId || listedRuns.runs.length !== 1) {

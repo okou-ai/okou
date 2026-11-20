@@ -1,7 +1,7 @@
-import { eq, lte, sql } from "drizzle-orm";
+import { lte, sql } from "drizzle-orm";
 import { runOutputMaterializations } from "@okouai/db/schema/run-output-materialization";
 
-import { db$, writeDb$ } from "../external/db";
+import { writeDb$ } from "../external/db";
 import { command } from "ccstate";
 import { nowDate } from "../../lib/time";
 
@@ -57,24 +57,5 @@ export const upsertRunOutputMaterialization$ = command(
           },
         });
     }
-  },
-);
-
-export const getRunOutputText$ = command(
-  async (
-    { get },
-    runId: string,
-    signal: AbortSignal,
-  ): Promise<string | undefined> => {
-    const db = get(db$);
-    const [output] = await db
-      .select({
-        text: runOutputMaterializations.latestOutputText,
-      })
-      .from(runOutputMaterializations)
-      .where(eq(runOutputMaterializations.runId, runId))
-      .limit(1);
-    signal.throwIfAborted();
-    return output?.text ?? undefined;
   },
 );

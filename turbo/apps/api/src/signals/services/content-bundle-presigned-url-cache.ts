@@ -4,7 +4,7 @@ import { systemStoragePresignedUrlCache } from "@okouai/db/runtime/system-storag
 import { computed } from "ccstate";
 import { and, eq, gte, sql, type SQL } from "drizzle-orm";
 import { createHash } from "node:crypto";
-import { number, object, string } from "zod";
+import { number, object, string, type output } from "zod";
 import { env } from "../../lib/env";
 import { nowDateSql } from "../../lib/time";
 import { STORAGE_MANIFEST_PRESIGNED_URL_MIN_REMAINING_MS } from "./system-storage-presigned-url-cache.service";
@@ -21,6 +21,11 @@ export const cachedContentBundleUrlSchema = object({
   url: string(),
   expiresAtMs: number(),
 });
+
+export interface ContentBundleUrlCacheSnapshot {
+  readonly context: ContentBundleUrlCacheContext;
+  readonly rows: readonly output<typeof cachedContentBundleUrlSchema>[];
+}
 
 export const contentBundleUrlCacheContext$ = computed(
   (): ContentBundleUrlCacheContext => {

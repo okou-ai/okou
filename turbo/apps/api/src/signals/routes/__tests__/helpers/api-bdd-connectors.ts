@@ -1514,32 +1514,6 @@ export function mockGoogleSlidesReadback(
   return recorded;
 }
 
-/** Drive folder lookup plus an upload the provider refuses to convert. */
-export function mockGoogleDriveArtifactUploadRejection(reason: string): void {
-  server.use(
-    http.get(GOOGLE_DRIVE_FILES_URL, () => {
-      return HttpResponse.json({
-        files: [
-          { id: "drive-artifact-thread-folder", name: "thread-artifacts" },
-        ],
-      });
-    }),
-    http.post(GOOGLE_DRIVE_UPLOAD_URL, () => {
-      return HttpResponse.json(
-        {
-          error: {
-            code: 400,
-            message:
-              "Conversion of the uploaded content to the requested output type is not supported.",
-            errors: [{ reason, domain: "global" }],
-          },
-        },
-        { status: 400 },
-      );
-    }),
-  );
-}
-
 /**
  * Drives the connector OAuth callback route with a raw absolute-URL request
  * so origin-dependent behavior (canonical API-host redirects, trusted

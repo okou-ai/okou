@@ -52,10 +52,11 @@ def validate(directory, cases=CASES, policy_key="native_batch_replacement_policy
     zero = dict.fromkeys(COUNTS, 0) | {"closed": False}
     for case, events in witnesses.items():
         terminal = terminals[case]
-        if tuple(e["phase"] for e in events) != PHASES:
-            raise ValueError("missing duplicate or unordered replacement phases")
-        identity = terminal[1]["sandbox_id"], terminal[1]["backing_generation"]
-        if any((e["sandbox_id"], e["backing_generation"]) != identity for e in events):
+        report.validate_witness_phases(
+            events, PHASES, "missing duplicate or unordered replacement phases",
+        )
+        identity = report.witness_identity(terminal[1])
+        if report.witness_identity_changed(events, identity):
             raise ValueError("replacement changed the original physical owner")
         ordered = [terminal[1],events[0],terminal[2],terminal[3],*events[1:4],terminal[4],*events[4:],terminal[5]]
         report.validate_witness_clock_order(

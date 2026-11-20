@@ -54,7 +54,7 @@ import {
   hasValidSuggestionConsumeToken,
   withSuggestionConsumeToken,
 } from "./agent-suggestion-consumption-token";
-import { PROACTIVE_LEARNING_DEFINITION_NAME } from "@okouai/api-contracts/contracts/proactive-nightly";
+import { PROACTIVE_LEARNING_DEFINITION_NAME } from "@okouai/api-contracts/contracts/proactive";
 import { readFeedSources$ } from "./feed-sources.service";
 
 interface Owner {
@@ -221,7 +221,7 @@ export const createSuggestion$ = command(
     signal.throwIfAborted();
     if (!sources.suggestions) {
       return resourceUnavailable(
-        "Suggestions are turned off in For you sources. Existing cards remain available.",
+        "New suggestion cards are turned off. Existing cards remain available.",
       );
     }
     for (const { threadId } of [

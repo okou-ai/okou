@@ -524,10 +524,7 @@
       "video": "VID"
     },
     "googleDrive": {
-      "agentLoading": "Agen masih memuat",
       "connect": "Hubungkan Google Drive",
-      "connectTooltip": "Hubungkan Google Drive untuk mengunggah artefak",
-      "conversionNotice": "Membuat salinan yang dapat diedit; format dapat berubah.",
       "conversionUnconfirmed": "Konversi Google tidak dapat dikonfirmasi. Periksa Drive sebelum mencoba lagi.",
       "openDocs": "Buka di Google Docs",
       "openSheets": "Buka di Google Sheets",
@@ -1524,7 +1521,6 @@
           "action": "Check in",
           "description": "Check in sekali sehari. Direset pukul 00:00 UTC.",
           "name": "Check in setiap hari",
-          "pendingDescription": "Check-in Anda telah disimpan. Kredit akan diperbarui setelah dikonfirmasi.",
           "unit": "per hari"
         },
         "connector": {
@@ -1541,12 +1537,6 @@
         },
         "inReview": "Sedang ditinjau",
         "intro": {
-          "checkin": {
-            "amount": "+{{amount}} kredit",
-            "confirm": "Kembali bekerja",
-            "description": "Kredit membayar pekerjaannya sendiri: setiap jalannya, setiap hasil, setiap alur kerja yang berjalan sesuai jadwal.",
-            "title": "Bagian hari ini selesai"
-          },
           "connector": {
             "confirm": "Lihat semua konektor",
             "connected": "Terhubung",
@@ -1651,6 +1641,13 @@
       "feedbackPrompt": "Bagaimana saran ini?",
       "feedLabel": "Feed",
       "forYou": {
+        "cover": {
+          "change": "Ganti sampul",
+          "default": "Default",
+          "gallery": "Sampul",
+          "option": "Sampul {{index}}",
+          "reset": "Kembalikan ke default"
+        },
         "loading": "Memuat saran",
         "next": "Saran berikutnya",
         "previous": "Saran sebelumnya",
@@ -2489,18 +2486,26 @@
       "workingFor": "Bekerja selama {{duration}}"
     },
     "sharing": {
+      "accessNote": "Hanya Anda yang dapat mengubah akses.",
       "cancel": "Batal",
       "close": "Tutup",
       "copyFailed": "Tautan tidak dapat disalin",
       "create": "Bagikan",
       "createFailed": "Percakapan yang dibagikan tidak dapat dibuat.",
+      "createLink": "Buat tautan",
+      "deselectAll": "Batalkan semua pilihan",
       "deselectGroup": "Batalkan pilihan grup pesan",
+      "done": "Selesai",
       "everyone": "Semua orang",
       "linkCopied": "Tautan disalin",
+      "linkCreated_other": "Tautan dibuat untuk {{count}} pesan",
       "messageShareFailed": "Tautan berbagi tidak dapat dibuat.",
       "organizationDescription": "Hanya orang di organisasi Anda",
+      "selectAll": "Pilih semua",
       "selectedCount_other": "{{count}} dipilih",
+      "selectedOfTotal_other": "{{count}} dari {{total}} dipilih",
       "selectGroup": "Pilih grup pesan",
+      "selectPrompt": "Pilih pesan yang ingin dibagikan",
       "shareLink": "Tautan percakapan yang dibagikan",
       "start": "Bagikan pesan",
       "tooLarge": "Pilih lebih sedikit pesan untuk dibagikan",
@@ -4051,6 +4056,19 @@
     "loadError": "Instruksi tidak dapat dimuat. Coba lagi.",
     "markdown": "Tulis dengan teks biasa atau Markdown",
     "placeholder": "Beri tahu Okou cara kerja yang Anda sukai…",
+    "proactiveSettings": {
+      "cardsOnly": "Kartu baru aktif. Pemeriksaan setiap jam dan pembaruan profil harian nonaktif. Pilih satu pengaturan untuk semuanya.",
+      "choose": "Pilih…",
+      "description": "Sesuaikan cara Okou bekerja di ruang kerja ini.",
+      "hourlyOnly": "Pemeriksaan setiap jam dan pembaruan profil harian aktif. Kartu baru nonaktif. Pilih satu pengaturan untuk semuanya.",
+      "offers": "Terima kartu penawaran di Untuk Anda.",
+      "sourcesHint": "Menonaktifkan sumber kartu menghentikan kartu baru dan notifikasi kartu yang belum dibaca dari sumber tersebut. Kartu yang sudah ada tetap tersedia di Untuk Anda.",
+      "suggestions": "Periksa sumber terhubung setiap jam, perbarui profil Anda setiap hari, dan dapatkan saran langkah berikutnya.",
+      "systemUpdates": "Terima pengumuman sistem di Untuk Anda.",
+      "turnOff": "Nonaktifkan keduanya",
+      "turnOn": "Aktifkan keduanya",
+      "whatsNew": "Lihat info fitur baru Okou di Untuk Anda."
+    },
     "reload": "Muat ulang instruksi tersimpan",
     "retry": "Coba lagi",
     "save": "Simpan",
@@ -5690,17 +5708,8 @@
         "preparing": "Menyiapkan ringkasan pagi pertama Anda. Anda dapat menonaktifkannya kapan saja.",
         "title": "Brief Pagi"
       },
-      "proactiveLearning": {
-        "description": "Tinjau aktivitas pada malam hari dan perbarui memori pribadi.",
-        "errorMessage": "Pengaturan ini tidak dapat dimuat atau diperbarui.",
-        "missingDefaultAgent": "Okou tidak tersedia di ruang kerja ini. Hubungi administrator ruang kerja.",
-        "missingTimezone": "Atur zona waktu Anda di Preferensi.",
-        "preparationFailed": "Alur kerja ini sementara tidak tersedia.",
-        "preparing": "Menyiapkan alur kerja ini.",
-        "title": "Pembelajaran"
-      },
       "proactiveSuggestions": {
-        "description": "Okou memeriksa sumber terhubung setiap jam dan menyarankan langkah berikutnya yang berguna di beranda.",
+        "description": "Periksa sumber terhubung setiap jam, perbarui profil Anda setiap hari, dan dapatkan saran langkah berikutnya.",
         "errorMessage": "Pengaturan tidak dapat dimuat atau diperbarui.",
         "missingDefaultAgent": "Okou tidak tersedia di ruang kerja ini. Hubungi administrator ruang kerja.",
         "missingTimezone": "Atur zona waktu Anda di Preferensi.",

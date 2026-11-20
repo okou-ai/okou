@@ -110,7 +110,6 @@ async function primaryRun(enabled = true, secondary = false) {
     { ...actor, orgId: actor.orgId },
     {
       [FeatureSwitchKey.AgentSuggestion]: enabled,
-      [FeatureSwitchKey.ProactiveLearning]: false,
     },
   );
   bdd.acceptAgentStorageWrites();
@@ -731,9 +730,6 @@ describe("Agent suggestions", () => {
   it("requires an enabled primary Agent capability and denies human publication", async () => {
     const fixture = await primaryRun(false);
     expect(fixture.prompt).not.toContain("# Suggestions feedback context");
-    await updateFeatureSwitchesForUser(context, fixture.actor, {
-      [FeatureSwitchKey.ProactiveLearning]: true,
-    });
     await accept(
       client().create({ headers: fixture.headers, body: input() }),
       [403],
@@ -920,7 +916,6 @@ describe("Agent suggestions", () => {
     );
     await updateFeatureSwitchesForUser(context, fixture.actor, {
       [FeatureSwitchKey.AgentSuggestion]: false,
-      [FeatureSwitchKey.ProactiveLearning]: true,
     });
     await accept(client().list({ headers: fixture.headers }), [403]);
     await accept(

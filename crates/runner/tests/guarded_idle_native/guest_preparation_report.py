@@ -134,7 +134,7 @@ def validate(directory, contract):
     for event in ordered:
         if not report.valid_witness_envelope(event, lambda value: value == case):
             raise ValueError("malformed fixed original event")
-    if any(tuple(e[k] for k in ("sandbox_id", "backing_generation")) != identity for e in ordered[1:]):
+    if report.witness_identity_changed(ordered[1:], identity):
         raise ValueError("fixed original identity or clocks changed")
     report.validate_witness_clock_order(ordered, "fixed original identity or clocks changed")
     exact(terminals[0]["evidence"], {"artifacts": artifacts}, "fixed source/artifact binding changed")

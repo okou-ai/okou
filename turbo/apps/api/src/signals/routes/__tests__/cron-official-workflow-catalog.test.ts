@@ -13,7 +13,6 @@ import { now, withMockNowForTest } from "../../../lib/time";
 import { cronExecuteWorkflowAutomationsRoutes } from "../cron-execute-workflow-automations";
 import { expect, test } from "vitest";
 import { proactiveSuggestionsContract } from "@okouai/api-contracts/contracts/proactive-suggestions";
-import { proactiveLearningContract } from "@okouai/api-contracts/contracts/proactive-nightly";
 import { morningBriefPreferenceContract } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { morningBriefPreferenceRoutes } from "../morning-brief-preference";
 import {
@@ -22,6 +21,7 @@ import {
   workflowsDetailContract,
   type WorkflowFileEntry,
   type WorkflowAutomationSummary,
+  type WorkflowSummary,
 } from "@okouai/api-contracts/contracts/workflows";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
@@ -30,10 +30,7 @@ import {
   PI_SKILLS_ROOT,
   type ExecutionContext,
 } from "@okouai/api-contracts/contracts/runners";
-import {
-  proactiveSuggestionsRoutes,
-  proactiveLearningRoutes,
-} from "../proactive-preferences";
+import { proactiveSuggestionsRoutes } from "../proactive-preferences";
 import { workflowAutomationsRoutes } from "../workflow-automations";
 import { workflowsRoutes } from "../workflows";
 import { flushWaitUntilForTest } from "../../context/wait-until";
@@ -268,7 +265,11 @@ async function prepareForeignFeedback(
   definitionName: string,
   failUpload: boolean,
 ) {
-  if (definitionName !== "agent-suggestions" || failUpload) {
+  if (
+    (definitionName !== "agent-suggestions" &&
+      definitionName !== "proactive-learning") ||
+    failUpload
+  ) {
     return;
   }
   const foreign = await publicChatActor(context);
@@ -286,14 +287,31 @@ async function prepareForeignFeedback(
   return peer.actor.orgId;
 }
 
+async function prepareWorkflowFeedback(
+  owned: Awaited<ReturnType<typeof publicChatActor>>,
+  definitionName: string,
+) {
+  const learning = definitionName === "proactive-learning";
+  if (definitionName !== "agent-suggestions" && !learning) {
+    return [];
+  }
+  const { expected } = await saveOwnedFeedback(
+    owned,
+    "Review the launch decision",
+    "A teammate owns these reviews",
+    learning ? "option_selected" : "less_like_this",
+  );
+  return [expected];
+}
+
 function expectFeedbackContext(
   prompt: string | null | undefined,
-  curatesSuggestions: boolean,
+  receivesFeedback: boolean,
   expectedFeedback: readonly Awaited<
     ReturnType<typeof saveOwnedFeedback>
   >["expected"][],
 ) {
-  if (curatesSuggestions) {
+  if (receivesFeedback) {
     expect(prompt).toContain("# Suggestions feedback context");
     const json = prompt?.match(/^(\{"asOf":.*\})$/mu)?.[1];
     expect(json).toBeDefined();
@@ -680,6 +698,61 @@ test("requires authentication to publish the Official Workflow catalog", async (
   expect(unauthorized.status).toBe(401);
 });
 
+function isProactiveProfileWorkflow(workflow: WorkflowSummary) {
+  return (
+    workflow.official?.definitionName === "agent-suggestions" ||
+    workflow.official?.definitionName === "proactive-learning"
+  );
+}
+
+async function expectSharedProactiveSchedules(
+  owned: Awaited<ReturnType<typeof publicChatActor>>,
+  workflows: readonly WorkflowSummary[],
+  enabled: boolean,
+) {
+  const proactive = workflows.filter(isProactiveProfileWorkflow);
+  if (proactive.length === 0) {
+    return;
+  }
+  expect(
+    proactive
+      .map((workflow) => {
+        return workflow.official?.definitionName;
+      })
+      .sort(),
+  ).toStrictEqual(["agent-suggestions", "proactive-learning"]);
+  const app = setupApp({
+    context,
+    routes: [...proactiveSuggestionsRoutes, ...workflowAutomationsRoutes],
+  });
+  const headers = { authorization: "Bearer clerk-session" };
+  if (!enabled) {
+    await owned.run(() => {
+      return accept(
+        app(proactiveSuggestionsContract).update({
+          headers,
+          body: { enabled: false },
+        }),
+        [200],
+      );
+    });
+  }
+  for (const workflow of proactive) {
+    const schedules = await owned.run(() => {
+      return accept(
+        app(workflowAutomationsContract).list({
+          headers,
+          params: { workflowId: workflow.id },
+        }),
+        [200],
+      );
+    });
+    expect(schedules.body).toMatchObject([
+      { enabled, official: { intendedEnabled: enabled } },
+    ]);
+  }
+}
+
 const scenarios = [
   { kind: "suggestions", failUpload: false, suggestionsEnabled: true },
   { kind: "suggestions", failUpload: true, suggestionsEnabled: true },
@@ -693,7 +766,6 @@ const scenarios = [
     ...scenario,
     learning,
     morningBrief,
-    needsTimezone: learning || morningBrief,
     curatesSuggestions: !learning && scenario.suggestionsEnabled,
     curatesMorningBrief: morningBrief && scenario.suggestionsEnabled,
     definitionName: learning
@@ -708,11 +780,9 @@ const scenarios = [
       : morningBrief
         ? "# Morning Brief"
         : "# Proactive Suggestions",
-    preferenceContract: learning
-      ? proactiveLearningContract
-      : morningBrief
-        ? morningBriefPreferenceContract
-        : proactiveSuggestionsContract,
+    preferenceContract: morningBrief
+      ? morningBriefPreferenceContract
+      : proactiveSuggestionsContract,
   };
 });
 
@@ -749,7 +819,6 @@ test.each(scenarios)(
     failUpload,
     learning,
     curatesMorningBrief,
-    needsTimezone,
     curatesSuggestions,
     definitionName,
     heading,
@@ -763,7 +832,6 @@ test.each(scenarios)(
         ...cronOfficialWorkflowCatalogRoutes,
         ...cronExecuteWorkflowAutomationsRoutes,
         ...proactiveSuggestionsRoutes,
-        ...proactiveLearningRoutes,
         ...morningBriefPreferenceRoutes,
         ...workflowAutomationsRoutes,
         ...workflowsRoutes,
@@ -832,17 +900,14 @@ test.each(scenarios)(
         { ...actor, orgId },
         {
           [FeatureSwitchKey.AgentSuggestion]: true,
-          [FeatureSwitchKey.ProactiveLearning]: learning,
         },
       );
     });
-    if (needsTimezone) {
-      await owned.run(() => {
-        return fixture.bdd.completeOnboarding(actor, {
-          timezone: "Asia/Shanghai",
-        });
+    await owned.run(() => {
+      return fixture.bdd.completeOnboarding(actor, {
+        timezone: "Asia/Shanghai",
       });
-    }
+    });
     createRouteMocks(context).clerk.session(
       actor.userId,
       actor.orgId,
@@ -868,20 +933,10 @@ test.each(scenarios)(
       return accept<Awaited<typeof request>, 200>(request, [200]);
     });
     expect(enabled.body).toMatchObject({ enabled: true, status: "enabled" });
-    const expectedFeedback: Awaited<
-      ReturnType<typeof saveOwnedFeedback>
-    >["expected"][] = [];
-    if (definitionName === "agent-suggestions") {
-      expectedFeedback.push(
-        (
-          await saveOwnedFeedback(
-            owned,
-            "Review the launch decision",
-            "A teammate owns these reviews",
-          )
-        ).expected,
-      );
-    }
+    const expectedFeedback = await prepareWorkflowFeedback(
+      owned,
+      definitionName,
+    );
     createRouteMocks(context).clerk.session(actor.userId, orgId, actor.orgRole);
     const workflows = await owned.run(() => {
       return accept(
@@ -889,12 +944,14 @@ test.each(scenarios)(
         [200],
       );
     });
+    await expectSharedProactiveSchedules(owned, workflows.body, true);
     const workflow = workflows.body.find((item) => {
       return item.official?.definitionName === definitionName;
     });
     if (!workflow) {
       throw new Error("Expected the Official workflow installation");
     }
+    const selectedWorkflowId = workflow.id;
     const detail = await owned.run(() => {
       return accept(
         app(workflowsDetailContract).get({
@@ -970,9 +1027,22 @@ test.each(scenarios)(
     const { execution, sandboxHeaders } = await owned.runExecution(runId);
     expectFeedbackContext(
       execution.appendSystemPrompt,
-      curatesSuggestions,
+      learning || curatesSuggestions,
       expectedFeedback,
     );
+    if (learning) {
+      await owned.run(() => {
+        return accept(
+          setupApp({ context, routes: feedRoutes })(feedContract).manage({
+            headers: {
+              authorization: `Bearer ${okouTokenFromExecution(execution)}`,
+            },
+            query: { type: "suggestion" },
+          }),
+          [403],
+        );
+      });
+    }
     const bundle = officialWorkflowBundle(execution, definitionName);
     const files = readExecutionContentBundle(s3.objects, bundle);
     expect(files.get("SKILL.md")?.toString()).toContain(heading);
@@ -1005,49 +1075,56 @@ test.each(scenarios)(
         workflow.id,
       );
     }
-    async function finishConcurrentSuggestions() {
-      const suggestions = workflows.body.find((item) => {
-        return item.official?.definitionName === "agent-suggestions";
-      });
-      if (!suggestions) {
-        throw new Error("Expected the Suggestions installation");
-      }
-      const schedules = await owned.run(() => {
-        return accept(
-          app(workflowAutomationsContract).list({
-            headers,
-            params: { workflowId: suggestions.id },
-          }),
-          [200],
+    async function finishConcurrentProactiveWorkflows() {
+      const concurrent = workflows.body.filter((item) => {
+        return (
+          item.id !== selectedWorkflowId && isProactiveProfileWorkflow(item)
         );
       });
-      const threadId = schedules.body[0]?.chatThreadId;
-      if (threadId) {
+      for (const item of concurrent) {
+        const schedules = await owned.run(() => {
+          return accept(
+            app(workflowAutomationsContract).list({
+              headers,
+              params: { workflowId: item.id },
+            }),
+            [200],
+          );
+        });
+        const threadId = schedules.body[0]?.chatThreadId;
+        if (!threadId) {
+          continue;
+        }
         const events = await owned.run(() => {
           return createChatFilesBddApi(context).listThreadEventRows(
             actor,
             threadId,
           );
         });
-        const runId = events.find((event) => {
-          return event.eventType === "input.prompt" && event.runId;
-        })?.runId;
-        if (!runId) {
-          throw new Error("Expected the concurrent Suggestions Run");
+        for (const event of events) {
+          if (event.eventType !== "input.prompt" || !event.runId) {
+            continue;
+          }
+          const runId = event.runId;
+          const run = await owned.run(() => {
+            return createRunsApi(context).readRun(actor, runId);
+          });
+          if (run.status !== "pending" && run.status !== "running") {
+            continue;
+          }
+          const { sandboxHeaders } = await owned.runExecution(runId);
+          await owned.run(() => {
+            return fixture.failChatRun(
+              runId,
+              sandboxHeaders,
+              "Concurrent proactive Run inspected",
+            );
+          });
+          await owned.run(flushWaitUntilForTest);
         }
-        const { sandboxHeaders } = await owned.runExecution(runId);
-        await owned.run(() => {
-          return fixture.failChatRun(
-            runId,
-            sandboxHeaders,
-            "Concurrent Suggestions inspected",
-          );
-        });
-        await owned.run(flushWaitUntilForTest);
       }
     }
-    if (curatesMorningBrief) {
-      await finishConcurrentSuggestions();
-    }
+    await finishConcurrentProactiveWorkflows();
+    await expectSharedProactiveSchedules(owned, workflows.body, false);
   },
 );

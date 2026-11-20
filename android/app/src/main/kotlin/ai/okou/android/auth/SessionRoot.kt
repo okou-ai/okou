@@ -11,9 +11,11 @@ import ai.okou.android.WorkspaceFilterSubtitle
 import ai.okou.android.api.generated.Organization
 import ai.okou.android.chat.ChatListFilter
 import ai.okou.android.chat.WorkspaceRealtimeLifecycle
+import ai.okou.android.currentWindowSizeDp
 import ai.okou.android.instructions.PersonalInstructionsSettings
 import ai.okou.android.preferences.MemberPreferencesSettings
 import ai.okou.android.state.SettingsDestination
+import ai.okou.android.updates.UpdateToolbarAction
 import ai.okou.android.workspaceListPaneWidth
 import ai.okou.android.workspaceListTitleStyle
 import androidx.compose.foundation.Image
@@ -51,7 +53,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -66,14 +67,15 @@ import com.clerk.api.ui.ClerkTypography
 import com.clerk.ui.auth.AuthView
 
 @Composable
-fun SessionRoot(
+internal fun SessionRoot(
     state: SessionUiState,
     retry: () -> Unit,
     chooseWorkspace: (String) -> Unit,
     signOut: () -> Unit,
     openWorkspaceSetup: () -> Unit,
     appUpdates: @Composable (() -> Unit)? = null,
-    openUpdate: (() -> Unit)? = null,
+    updateToolbarAction: UpdateToolbarAction? = null,
+    onUpdateEditingChanged: (Boolean) -> Unit = {},
 ) {
     val textButtonColors =
         ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurface)
@@ -117,7 +119,8 @@ fun SessionRoot(
                         organization?.let { workspace ->
                             { filter -> WorkspaceTitle(workspace, state, filter, chooseWorkspace) }
                         },
-                    openUpdate = openUpdate,
+                    updateToolbarAction = updateToolbarAction,
+                    onUpdateEditingChanged = onUpdateEditingChanged,
                     startupRecovery =
                         if (state.stage == SessionStage.Unavailable) {
                             {
@@ -326,8 +329,8 @@ private fun WorkspaceTitle(
     chooseWorkspace: (String) -> Unit,
 ) {
     val canSwitch = state.ready != null && state.memberships.size > 1
-    val window = LocalConfiguration.current
-    val pane = workspaceListPaneWidth(window.screenWidthDp, window.screenHeightDp)
+    val window = currentWindowSizeDp()
+    val pane = workspaceListPaneWidth(window.width, window.height)
     val logoSize = if (pane == null) 28.dp else 26.dp
     val spacing = if (pane == null) 8.dp else 6.dp
     var choosing by remember { mutableStateOf(false) }
@@ -343,7 +346,7 @@ private fun WorkspaceTitle(
                 Text(
                     workspace.name,
                     Modifier.weight(1f, fill = false),
-                    style = workspaceListTitleStyle(window.screenWidthDp, pane),
+                    style = workspaceListTitleStyle(window.width, pane),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -369,7 +372,7 @@ private fun WorkspaceTitle(
                 PaddingValues(
                     start = spacing,
                     top = spacing,
-                    end = if (pane == 320 || window.screenWidthDp < 360) 0.dp else spacing,
+                    end = if (pane == 320 || window.width < 360) 0.dp else spacing,
                     bottom = spacing,
                 ),
             content = identity,

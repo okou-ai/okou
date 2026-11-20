@@ -62,11 +62,12 @@ def validate(directory):
     original_ids = {v["sandbox_id"] for v in result["cases"].values()}
     for case, events in witnesses.items():
         terminal = terminals[case]
-        if tuple(e["phase"] for e in events) != PHASES:
-            raise ValueError("missing, duplicate or unordered continuation witnesses")
-        identity = (terminal[1]["sandbox_id"], terminal[1]["backing_generation"])
+        report.validate_witness_phases(
+            events, PHASES, "missing, duplicate or unordered continuation witnesses",
+        )
+        identity = report.witness_identity(terminal[1])
         times = [e["monotonic_ns"] for e in events]
-        if (any((e["sandbox_id"], e["backing_generation"]) != identity for e in events)
+        if (report.witness_identity_changed(events, identity)
                 or not terminal[0]["monotonic_ns"] < times[0] < times[1] < terminal[1]["monotonic_ns"]
                 or not terminal[-2]["monotonic_ns"] < times[2] < times[3] < terminal[-1]["monotonic_ns"]):
             raise ValueError("continuation crossed original generation or work boundaries")

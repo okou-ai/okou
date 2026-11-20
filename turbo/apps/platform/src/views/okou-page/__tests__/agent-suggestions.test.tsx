@@ -2,6 +2,7 @@ import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft"
 import { suggestionFeedbacks } from "@okouai/api-contracts/contracts/suggestion-context";
 import {
   act,
+  cleanup,
   fireEvent,
   screen,
   waitFor,
@@ -44,6 +45,7 @@ import {
   mockPrivateUrlSequence,
 } from "./chat-attachment-test-helpers.ts";
 import { nowDate } from "../../../lib/time.ts";
+import { forYouCovers } from "../../../lib/for-you-artwork.ts";
 const context = testContext();
 const agentId = "c0000000-0000-4000-a000-000000000001";
 const threadId = "b0000000-0000-4000-a000-000000000811";
@@ -291,7 +293,6 @@ function mockPool(initial: Suggestion[] = [makeSuggestion()]) {
 }
 const features = {
   [FeatureSwitchKey.AgentSuggestion]: true,
-  [FeatureSwitchKey.ProactiveLearning]: false,
 } as const;
 // Suggestions live independently of the default Agent's new-chat draft.
 const suggestionPath = "/for-you";
@@ -1731,6 +1732,31 @@ test("For you moves suggestions out of the homepage into its own chat-list entry
   expect(link("/for-you")).toHaveAttribute("aria-current", "page");
 });
 
+test("For you keeps deck navigation and moves source settings into My Okou", async () => {
+  const items = numberedSuggestions(2);
+  mockPool(items);
+  await setupPage({
+    context,
+    path: suggestionPath,
+    featureSwitches: {
+      ...features,
+      [FeatureSwitchKey.SingleAgent]: true,
+    },
+  });
+  await activeForYouCard("Suggested action 1");
+  expect(
+    queryAllByRoleFast("button").some((control) => {
+      return control.getAttribute("aria-label") === "For you sources";
+    }),
+  ).toBeFalsy();
+  click(link(`/for-you?suggestion=${items[1].id}`));
+  await activeForYouCard("Suggested action 2");
+  expect(link(`/for-you?suggestion=${items[1].id}`)).toHaveAttribute(
+    "aria-current",
+    "step",
+  );
+});
+
 test("For you browses without consuming and restores a card from its URL", async () => {
   const items = numberedSuggestions(3);
   const pool = mockPool(items);
@@ -2245,14 +2271,15 @@ test("Don't nudge records the no-repeat direction and Undo targets that feedback
   });
 });
 
-test("Background and card artwork stay fixed through browsing, feedback and Undo", async () => {
+test("Cover and card artwork stay fixed through browsing, feedback and Undo", async () => {
   const items = numberedSuggestions(10);
   mockPool(items);
   await openForYou();
   await activeForYouCard(items[0].content.title);
-  const background = document
-    .querySelector('[data-slot="for-you-background"]')
+  const cover = document
+    .querySelector('[data-slot="for-you-cover"]')
     ?.getAttribute("src");
+  expect(cover).toBe(forYouCovers[0].src);
   const illustrations: string[] = [];
   for (const item of items) {
     click(link(`/for-you?suggestion=${item.id}`));
@@ -2270,8 +2297,8 @@ test("Background and card artwork stay fixed through browsing, feedback and Undo
     }
     illustrations.push(src);
     expect(
-      document.querySelector('[data-slot="for-you-background"]'),
-    ).toHaveAttribute("src", background);
+      document.querySelector('[data-slot="for-you-cover"]'),
+    ).toHaveAttribute("src", cover);
   }
   expect(new Set(illustrations).size).toBe(items.length);
   click(link(`/for-you?suggestion=${items[0].id}`));
@@ -2291,9 +2318,64 @@ test("Background and card artwork stay fixed through browsing, feedback and Undo
       restored.querySelector('[data-slot="for-you-illustration"]'),
     ).toHaveAttribute("src", illustrations[0]);
   });
-  expect(
-    document.querySelector('[data-slot="for-you-background"]'),
-  ).toHaveAttribute("src", background);
+  expect(document.querySelector('[data-slot="for-you-cover"]')).toHaveAttribute(
+    "src",
+    cover,
+  );
+});
+
+test("The member picks a For you cover, keeps it after reload and can reset it", async () => {
+  const items = numberedSuggestions(2);
+  mockPool(items);
+  await openForYou();
+  await activeForYouCard(items[0].content.title);
+  const cover = () => {
+    return document
+      .querySelector('[data-slot="for-you-cover"]')
+      ?.getAttribute("src");
+  };
+  expect(cover()).toBe(forYouCovers[0].src);
+
+  click(button("Change cover"));
+  const picker = await screen.findByRole("dialog", { name: "Change cover" });
+  expect(button("Cover 1", "radio", picker)).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+  expect(button("Reset to default", "button", picker)).toBeDisabled();
+  click(button("Cover 8", "radio", picker));
+  await waitFor(() => {
+    expect(cover()).toBe(forYouCovers[7].src);
+  });
+  expect(button("Cover 8", "radio", picker)).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+
+  // A fresh page reads the pick back from this browser.
+  cleanup();
+  await openForYou();
+  await activeForYouCard(items[0].content.title);
+  expect(cover()).toBe(forYouCovers[7].src);
+
+  click(button("Change cover"));
+  const reopened = await screen.findByRole("dialog", { name: "Change cover" });
+  click(button("Reset to default", "button", reopened));
+  await waitFor(() => {
+    expect(cover()).toBe(forYouCovers[0].src);
+  });
+
+  // The gallery is a radio group: arrow keys move the selection.
+  const user = userEvent.setup();
+  button("Cover 1", "radio", reopened).focus();
+  await user.keyboard("{ArrowRight}");
+  await waitFor(() => {
+    expect(cover()).toBe(forYouCovers[1].src);
+  });
+  expect(button("Cover 2", "radio", reopened)).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
 });
 
 test("Horizontal swipes browse without consuming while vertical and control gestures stay local", async () => {

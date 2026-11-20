@@ -9,7 +9,6 @@ import { featureSwitches$ } from "../../signals/external/feature-switch.ts";
 import { isShareableArtifactReference } from "../../signals/artifact-sharing.ts";
 import type { AttachmentPreviewSignals } from "../../signals/attachment-resource-url.ts";
 import { ArtifactShareMenu } from "./artifact-share-menu.tsx";
-import { FilePreviewIcon } from "./file-preview-icon.tsx";
 import { HostedSiteShareMenu } from "./hosted-site-share-menu.tsx";
 import {
   currentHostedSiteUrl,
@@ -67,7 +66,7 @@ import { lightboxUrl$ } from "../../signals/okou-page/attachment-chips.ts";
 import { detach, isAbortError, Reason } from "../../signals/utils.ts";
 import {
   syncArtifactAndRefresh$,
-  googleDriveSyncAccount$,
+  googleDriveArtifactOperation$,
 } from "../../signals/chat-page/artifact-google-drive-sync.ts";
 import { getOnlyAvailableCatalogBrowserAuthMethodDetail } from "../../signals/okou-page/settings/connectors.ts";
 import { connectBuiltinConnectorOAuthAuthCodeAndContinue$ } from "../../signals/okou-page/settings/connector-connect-continuation.ts";
@@ -109,7 +108,7 @@ function artifactDownloadFilename(
 
 export type ArtifactDownloadSyncTarget = {
   readonly accountReady: boolean;
-  readonly agentId: string | null | undefined;
+  readonly threadId: string;
   readonly disconnected: boolean;
   readonly artifactId: string;
   readonly connectionId: string | undefined;
@@ -235,22 +234,12 @@ export function ArtifactShareButton({
   );
 }
 
-function useGoogleDriveCompletedOperation(
-  syncTarget: ArtifactDownloadSyncTarget | undefined,
-) {
-  const operation = useGet(googleDriveSyncAccount$);
-  return operation &&
-    operation.artifactId === syncTarget?.artifactId &&
-    operation.agentId === syncTarget.agentId
-    ? operation
-    : undefined;
-}
-
 function useGoogleDriveAvailability(
   syncTarget: ArtifactDownloadSyncTarget | undefined,
   enabled: boolean,
 ) {
-  const completedOperation = useGoogleDriveCompletedOperation(syncTarget);
+  const operationFor = useGet(googleDriveArtifactOperation$);
+  const completedOperation = syncTarget ? operationFor(syncTarget) : undefined;
   const recovery = completedOperation?.recovery ?? syncTarget?.recovery;
   const accountReady = completedOperation?.recovery
     ? false
@@ -369,7 +358,6 @@ function GoogleDriveDisabledMenuItem({
 }
 
 type GoogleDrivePendingAction =
-  | { readonly kind: "authorize" }
   | {
       readonly kind: "connect";
       readonly account: PlatformConnectorAccountMutationIntent;
@@ -381,9 +369,6 @@ function resolveGoogleDrivePendingAction(
 ): GoogleDrivePendingAction {
   if (recovery) {
     switch (recovery.action) {
-      case "authorize": {
-        return { kind: "authorize" };
-      }
       case "connect": {
         return {
           kind: "connect",
@@ -399,6 +384,7 @@ function resolveGoogleDrivePendingAction(
           },
         };
       }
+      case "authorize":
       case "unavailable": {
         return { kind: "unavailable" };
       }
@@ -427,29 +413,19 @@ function useGoogleDriveMenuAction(
     if (!syncTarget || !actionSignal) {
       return;
     }
-    const run = (
-      connectedAccountId: string | undefined,
-      authorize: boolean,
-      signal: AbortSignal,
-    ) => {
-      if (!syncTarget.agentId) {
-        return Promise.resolve();
-      }
-      return syncArtifact(
-        {
-          agentId: syncTarget.agentId,
-          artifactId: syncTarget.artifactId,
-          ...(connectedAccountId ? { connectionId: connectedAccountId } : {}),
-          filename: syncTarget.filename,
-          mode,
-          authorize,
-        },
-        signal,
-      );
-    };
     if (availability.googleDriveReady) {
       detach(
-        run(availability.googleDriveConnectionId, false, actionSignal),
+        syncArtifact(
+          {
+            threadId: syncTarget.threadId,
+            artifactId: syncTarget.artifactId,
+            connectionId: availability.googleDriveConnectionId,
+            recoveryAtStart: syncTarget.recovery,
+            filename: syncTarget.filename,
+            mode,
+          },
+          actionSignal,
+        ),
         Reason.DomCallback,
         "artifact google drive sync",
       );
@@ -457,23 +433,6 @@ function useGoogleDriveMenuAction(
     }
     const action = availability.pendingAction;
     if (action.kind === "unavailable") {
-      return;
-    }
-    if (!syncTarget.agentId) {
-      toast.error(
-        i18n.t(($) => {
-          return $.artifacts.googleDrive.agentLoading;
-        }),
-      );
-      return;
-    }
-    const agentId = syncTarget.agentId;
-    if (action.kind === "authorize") {
-      detach(
-        run(syncTarget.connectionId, true, actionSignal),
-        Reason.DomCallback,
-        "artifact google drive authorize sync",
-      );
       return;
     }
     if (
@@ -490,14 +449,15 @@ function useGoogleDriveMenuAction(
           origin: availability.scopeRequired
             ? {
                 kind: "artifact-drive-reconnect",
-                agentId,
+                threadId: syncTarget.threadId,
                 artifactId: syncTarget.artifactId,
               }
             : {
                 kind: "artifact-drive-sync",
-                agentId,
+                threadId: syncTarget.threadId,
                 artifactId: syncTarget.artifactId,
                 filename: syncTarget.filename,
+                recoveryAtStart: syncTarget.recovery,
                 mode,
               },
           options: {
@@ -610,37 +570,24 @@ function GoogleDriveConnectMenuItem({
   const { googleDriveAuthMethod, googleDriveConnector, pendingAction } =
     availability;
   return (
-    <TooltipProvider delay={200}>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <DropdownMenuItem
-              disabled={
-                pendingAction.kind === "unavailable" ||
-                (pendingAction.kind === "connect" &&
-                  (!googleDriveConnector || !googleDriveAuthMethod))
-              }
-              onClick={onClick}
-            >
-              <GoogleDriveMenuIcon target={target} />
-              {availability.scopeRequired
-                ? t(($) => {
-                    return $.artifacts.googleDrive.reconnect;
-                  })
-                : (uploadLabel ??
-                  t(($) => {
-                    return $.artifacts.googleDrive.connect;
-                  }))}
-            </DropdownMenuItem>
-          }
-        />
-        <TooltipContent side="left">
-          {t(($) => {
-            return $.artifacts.googleDrive.connectTooltip;
-          })}
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
+    <DropdownMenuItem
+      disabled={
+        pendingAction.kind === "unavailable" ||
+        (pendingAction.kind === "connect" &&
+          (!googleDriveConnector || !googleDriveAuthMethod))
+      }
+      onClick={onClick}
+    >
+      <GoogleDriveMenuIcon target={target} />
+      {availability.scopeRequired
+        ? t(($) => {
+            return $.artifacts.googleDrive.reconnect;
+          })
+        : (uploadLabel ??
+          t(($) => {
+            return $.artifacts.googleDrive.connect;
+          }))}
+    </DropdownMenuItem>
   );
 }
 
@@ -718,25 +665,10 @@ function GoogleDriveMenuItem({
 
   if (googleDriveReady) {
     return (
-      <TooltipProvider delay={200}>
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <DropdownMenuItem onClick={syncOrConnect}>
-                <GoogleDriveMenuIcon target={target} />
-                {labels.upload}
-              </DropdownMenuItem>
-            }
-          />
-          <TooltipContent side="left">
-            {target
-              ? t(($) => {
-                  return $.artifacts.googleDrive.conversionNotice;
-                })
-              : labels.upload}
-          </TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
+      <DropdownMenuItem onClick={syncOrConnect}>
+        <GoogleDriveMenuIcon target={target} />
+        {labels.upload}
+      </DropdownMenuItem>
     );
   }
 
@@ -843,11 +775,7 @@ function MarkdownArtifactExportItem({
       {pending ? (
         <Loader2 size={20} className="animate-spin" />
       ) : (
-        <FilePreviewIcon
-          filename={`file.${format}`}
-          size="sm"
-          className="shrink-0"
-        />
+        <Download size={14} />
       )}
       {label}
     </DropdownMenuItem>

@@ -229,6 +229,7 @@ impl DecodedCache {
                 let mut result = Vec::with_capacity(keys.len());
                 let mut ready_bytes = 0;
                 let mut ready_files = 0;
+                let mut reader = disk::BatchReader::new(&inner.home, &inner.cancel);
                 for key in keys {
                     let Some((name, version, optional)) = key else {
                         result.push(DecodedLookup::Miss);
@@ -249,13 +250,11 @@ impl DecodedCache {
                         result.push(DecodedLookup::Miss);
                         continue;
                     };
-                    let files = match disk::read_with_budget(
-                        &inner.home,
+                    let files = match reader.read(
                         &name,
                         &version,
                         READ_AHEAD_BYTES - ready_bytes,
                         READ_AHEAD_FILES - ready_files,
-                        &inner.cancel,
                     ) {
                         Ok(files) => files,
                         Err(error) if optional && error.kind() != io::ErrorKind::Interrupted => {

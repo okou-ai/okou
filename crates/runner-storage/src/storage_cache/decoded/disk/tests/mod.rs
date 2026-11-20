@@ -434,7 +434,8 @@ fn entry_kind_cannot_be_swapped_between_positive_and_rejected_keys() {
     );
     // Invalid kind metadata remains an error even when no bodies could fit.
     assert_eq!(
-        read_with_budget(&home, "other", "v1", 0, 0, &cancel)
+        BatchReader::new(&home, &cancel)
+            .read("other", "v1", 0, 0)
             .unwrap_err()
             .kind(),
         io::ErrorKind::InvalidData
@@ -444,9 +445,29 @@ fn entry_kind_cannot_be_swapped_between_positive_and_rejected_keys() {
 #[test]
 fn orphaned_lock_collection_does_not_make_persistent_files_unreachable() {
     let (_root, home, _, lock_path) = setup();
+    let cancel = CancellationToken::new();
+    let mut reader = BatchReader::new(&home, &cancel);
+    assert!(
+        reader
+            .read(
+                "name",
+                "v1",
+                storage_files::MAX_STORAGE_BYTES,
+                storage_files::MAX_FILES
+            )
+            .unwrap()
+            .is_some()
+    );
+
     fs::remove_file(&lock_path).unwrap();
     assert_eq!(
-        read(&home, "name", "v1", &CancellationToken::new())
+        reader
+            .read(
+                "name",
+                "v1",
+                storage_files::MAX_STORAGE_BYTES,
+                storage_files::MAX_FILES
+            )
             .unwrap()
             .unwrap(),
         files()

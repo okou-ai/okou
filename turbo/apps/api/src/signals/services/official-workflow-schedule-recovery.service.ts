@@ -98,7 +98,6 @@ const recoverOfficialSchedule$ = command(
             ? proactiveWorkflowOwnerEnabledSql(
                 { orgId: automation.orgId, userId: automation.ownerUserId },
                 agentId,
-                proactiveKind,
               )
             : undefined,
         ),

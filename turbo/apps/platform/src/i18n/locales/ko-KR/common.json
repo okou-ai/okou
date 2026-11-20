@@ -524,10 +524,7 @@
       "video": "VID"
     },
     "googleDrive": {
-      "agentLoading": "에이전트가 아직 로딩 중입니다",
       "connect": "Google Drive 연결",
-      "connectTooltip": "아티팩트 업로드를 위해 Google Drive를 연결하세요",
-      "conversionNotice": "편집 가능한 사본을 만듭니다. 서식이 달라질 수 있습니다.",
       "conversionUnconfirmed": "Google 변환 결과를 확인할 수 없습니다. 다시 시도하기 전에 Drive를 확인하세요.",
       "openDocs": "Google Docs에서 열기",
       "openSheets": "Google Sheets에서 열기",
@@ -1524,7 +1521,6 @@
           "action": "출석하기",
           "description": "하루에 한 번 출석하세요. UTC 00:00에 초기화됩니다.",
           "name": "매일 출석하기",
-          "pendingDescription": "체크인이 저장되었습니다. 확인 후 크레딧이 반영됩니다.",
           "unit": "하루당"
         },
         "connector": {
@@ -1541,12 +1537,6 @@
         },
         "inReview": "검토 중",
         "intro": {
-          "checkin": {
-            "amount": "+{{amount}} 크레딧",
-            "confirm": "일하러 가기",
-            "description": "크레딧은 일 자체에 쓰입니다. 실행 한 번, 결과물 하나, 일정에 따라 도는 워크플로 모두에요.",
-            "title": "오늘 몫은 끝났습니다"
-          },
           "connector": {
             "confirm": "모든 커넥터 보기",
             "connected": "연결됨",
@@ -1651,6 +1641,13 @@
       "feedbackPrompt": "이 제안은 어떤가요?",
       "feedLabel": "피드",
       "forYou": {
+        "cover": {
+          "change": "커버 변경",
+          "default": "기본",
+          "gallery": "커버",
+          "option": "커버 {{index}}",
+          "reset": "기본값으로 재설정"
+        },
         "loading": "제안 불러오는 중",
         "next": "다음 제안",
         "previous": "이전 제안",
@@ -2489,18 +2486,26 @@
       "workingFor": "{{duration}} 동안 작업 중"
     },
     "sharing": {
+      "accessNote": "액세스 권한은 본인만 변경할 수 있습니다.",
       "cancel": "취소",
       "close": "닫기",
       "copyFailed": "링크를 복사하지 못했습니다",
       "create": "공유",
       "createFailed": "공유된 대화를 만들지 못했습니다.",
+      "createLink": "링크 만들기",
+      "deselectAll": "모두 선택 해제",
       "deselectGroup": "메시지 그룹 선택 해제",
+      "done": "완료",
       "everyone": "모든 사용자",
       "linkCopied": "링크가 복사되었습니다",
+      "linkCreated_other": "메시지 {{count}}개의 링크를 만들었습니다",
       "messageShareFailed": "공유 링크를 만들지 못했습니다.",
       "organizationDescription": "조직 내 구성원만",
+      "selectAll": "모두 선택",
       "selectedCount_other": "{{count}}개 선택됨",
+      "selectedOfTotal_other": "{{total}}개 중 {{count}}개 선택됨",
       "selectGroup": "메시지 그룹 선택",
+      "selectPrompt": "공유할 메시지를 선택하세요",
       "shareLink": "공유된 대화 링크",
       "start": "메시지 공유",
       "tooLarge": "공유할 메시지를 더 적게 선택하세요",
@@ -4051,6 +4056,19 @@
     "loadError": "지침을 불러오지 못했습니다. 다시 시도하세요.",
     "markdown": "일반 텍스트 또는 Markdown으로 작성",
     "placeholder": "선호하는 업무 방식을 Okou에게 알려주세요…",
+    "proactiveSettings": {
+      "cardsOnly": "새 카드는 켜져 있습니다. 매시간 확인과 매일 프로필 업데이트는 꺼져 있습니다. 모두에 적용할 설정을 선택하세요.",
+      "choose": "선택…",
+      "description": "이 워크스페이스에서 Okou가 일하는 방식을 설정하세요.",
+      "hourlyOnly": "매시간 확인과 매일 프로필 업데이트는 켜져 있습니다. 새 카드는 꺼져 있습니다. 모두에 적용할 설정을 선택하세요.",
+      "offers": "추천에서 혜택 카드를 받습니다.",
+      "sourcesHint": "카드 출처를 끄면 해당 출처의 새 카드와 읽지 않은 카드 알림을 받지 않습니다. 기존 카드는 추천에 남습니다.",
+      "suggestions": "연결된 소스를 매시간 확인하고, 사용자 프로필을 매일 업데이트하며, 유용한 다음 단계를 제안합니다.",
+      "systemUpdates": "추천에서 시스템 공지를 받습니다.",
+      "turnOff": "모두 끄기",
+      "turnOn": "모두 켜기",
+      "whatsNew": "추천에서 Okou의 새 기능 소식을 받습니다."
+    },
     "reload": "저장된 지침 다시 불러오기",
     "retry": "다시 시도",
     "save": "저장",
@@ -5690,17 +5708,8 @@
         "preparing": "첫 모닝 브리프를 준비하고 있습니다. 언제든지 끌 수 있습니다.",
         "title": "모닝 브리프"
       },
-      "proactiveLearning": {
-        "description": "밤에 활동을 검토하고 개인 기억과 이해를 갱신합니다.",
-        "errorMessage": "이 설정을 불러오거나 업데이트하지 못했습니다.",
-        "missingDefaultAgent": "이 워크스페이스에서 Okou를 사용할 수 없습니다. 관리자에게 문의하세요.",
-        "missingTimezone": "환경설정에서 시간대를 설정하세요.",
-        "preparationFailed": "이 워크플로는 일시적으로 사용할 수 없습니다.",
-        "preparing": "워크플로를 준비하고 있습니다.",
-        "title": "학습"
-      },
       "proactiveSuggestions": {
-        "description": "Okou가 매시간 연결된 소스를 확인하고 홈에서 유용한 다음 행동을 제안합니다.",
+        "description": "연결된 소스를 매시간 확인하고, 사용자 프로필을 매일 업데이트하며, 유용한 다음 단계를 제안합니다.",
         "errorMessage": "제안 설정을 불러오거나 업데이트하지 못했습니다.",
         "missingDefaultAgent": "이 워크스페이스에서 Okou를 사용할 수 없습니다. 관리자에게 문의하세요.",
         "missingTimezone": "환경설정에서 시간대를 설정하세요.",

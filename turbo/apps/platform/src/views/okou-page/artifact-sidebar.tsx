@@ -43,14 +43,16 @@ import {
 import { useTranslation } from "react-i18next";
 import type { ArtifactRef } from "../../signals/chat-page/thread-sidebar.ts";
 import {
+  findChatArtifactForUrl,
+  type ChatArtifactPreviewItem,
+} from "../../signals/chat-page/chat-artifact-preview.ts";
+import {
   CsvPreviewTable,
   parseCsvPreviewRows,
   TextPreviewLoader,
+  useCrossChatArtifact,
 } from "./attachment-chips.tsx";
-import {
-  artifactPreviewUrlsMatch,
-  publicAttachmentUrl,
-} from "./attachment-url.ts";
+import { publicAttachmentUrl } from "./attachment-url.ts";
 import { ArtifactImageNavigationRegion } from "./artifact-image-navigation-region.tsx";
 import { ArtifactMarkdownDocument } from "../components/artifact-markdown-document.tsx";
 import type { TextPreviewComputed } from "../../signals/text-preview.ts";
@@ -105,21 +107,15 @@ type ArtifactSidebarProps = {
   readonly thread: ChatPanelSignals;
 };
 
-type ArtifactSidebarItem = {
-  runId: string;
-  file: ChatThreadArtifactFile;
-};
-
 type ArtifactSidebarContentProps = {
   actionsPending?: boolean;
   artifactId?: string;
-  agentId?: string | null;
   artifactKind?: ChatThreadArtifactFile["artifactKind"];
   artifactRef: ArtifactRef;
   fullscreenState: ArtifactSidebarFullscreenState;
   imageCanvasSignals: ZoomableImageCanvasSignals;
   imageNavigation?: ArtifactImageNavigationActions;
-  item?: ArtifactSidebarItem;
+  item?: ChatArtifactPreviewItem;
   markdownTree$?: MarkdownPreviewTreeComputed;
   onBack?: () => void;
   onClose: () => void;
@@ -141,17 +137,21 @@ export function ArtifactSidebar({
   thread,
 }: ArtifactSidebarProps) {
   const loadable = useLastLoadable(thread.artifacts$);
-  const agentId = thread.agentId;
   const imageNavigation = thread.imageNavigation.sidebar;
   const hasPreviousImage = useGet(imageNavigation.hasPrevious$);
   const hasNextImage = useGet(imageNavigation.hasNext$);
   const resolveImageNavigationTarget = useSet(imageNavigation.target$);
   const text$ = providedText$ ?? artifactRef.text$;
   const markdownTree$ = providedMarkdownTree$ ?? artifactRef.markdownTree$;
+  const crossChatArtifact = useCrossChatArtifact(
+    thread.sidebar.crossChatArtifact,
+    thread.threadId,
+    artifactRef.url,
+  );
   const item =
-    loadable.state === "hasData"
-      ? findArtifactItemForUrl(loadable.data, artifactRef.url)
-      : undefined;
+    (loadable.state === "hasData"
+      ? findChatArtifactForUrl(loadable.data, artifactRef.url)
+      : undefined) ?? crossChatArtifact.item;
   const imageNavigationAction = (
     direction: EventImageNavigationDirection,
     available: boolean,
@@ -171,8 +171,9 @@ export function ArtifactSidebar({
   return (
     <>
       <ArtifactSidebarContent
-        actionsPending={loadable.state === "loading"}
-        agentId={agentId}
+        actionsPending={
+          !item && (loadable.state === "loading" || crossChatArtifact.loading)
+        }
         artifactRef={artifactRef}
         fullscreenState={fullscreenState}
         imageCanvasSignals={thread.sidebar.imageCanvas}
@@ -194,16 +195,15 @@ export function ArtifactSidebar({
 }
 
 function artifactSidebarSyncTargetForItem({
-  agentId,
   item,
+  threadId,
 }: {
-  agentId?: string | null;
-  item?: ArtifactSidebarItem;
+  item?: ChatArtifactPreviewItem;
   threadId?: string;
 }): ArtifactDownloadSyncTarget | undefined {
   return item
     ? artifactSidebarSyncTarget({
-        agentId,
+        threadId,
         file: item.file,
       })
     : undefined;
@@ -212,7 +212,6 @@ function artifactSidebarSyncTargetForItem({
 export function ArtifactSidebarContent({
   actionsPending = false,
   artifactId,
-  agentId,
   artifactKind,
   artifactRef,
   fullscreenState,
@@ -250,7 +249,6 @@ export function ArtifactSidebarContent({
   const syncTarget =
     providedSyncTarget ??
     artifactSidebarSyncTargetForItem({
-      agentId,
       item,
       threadId,
     });
@@ -414,27 +412,8 @@ type ArtifactKindForBody =
   | "audio"
   | "file";
 
-function findArtifactItemForUrl(
-  runs: { runId: string; files: ChatThreadArtifactFile[] }[],
-  url: string,
-): ArtifactSidebarItem | undefined {
-  for (const run of runs) {
-    const file = run.files.find((candidate) => {
-      return (
-        artifactPreviewUrlsMatch(candidate.url, url) ||
-        (candidate.aliasUrl !== undefined &&
-          artifactPreviewUrlsMatch(candidate.aliasUrl, url))
-      );
-    });
-    if (file) {
-      return { runId: run.runId, file };
-    }
-  }
-  return undefined;
-}
-
 export function artifactSidebarSyncTarget(params: {
-  agentId: string | null | undefined;
+  threadId?: string | undefined;
   file: Pick<
     ChatThreadArtifactFile,
     "artifactId" | "filename" | "googleDriveConnectionId" | "googleDriveSync"
@@ -442,14 +421,14 @@ export function artifactSidebarSyncTarget(params: {
 }): ArtifactDownloadSyncTarget | undefined {
   const { file } = params;
   const artifactId = file.artifactId;
-  if (!artifactId) {
+  if (!artifactId || !params.threadId) {
     return undefined;
   }
   return {
     accountReady:
       file.googleDriveSync?.status !== "disconnected" &&
       file.googleDriveSync?.accountReady === true,
-    agentId: params.agentId,
+    threadId: params.threadId,
     disconnected: file.googleDriveSync?.status === "disconnected",
     recovery:
       file.googleDriveSync?.status === "disconnected"
@@ -476,7 +455,7 @@ export function artifactSidebarSyncTarget(params: {
 
 function resolveArtifactDisplay(
   ref: ArtifactRef,
-  item?: ArtifactSidebarItem,
+  item?: ChatArtifactPreviewItem,
 ): ArtifactDisplay {
   if (item) {
     return {

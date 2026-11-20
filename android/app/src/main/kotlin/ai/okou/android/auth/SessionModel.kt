@@ -100,6 +100,8 @@ class SessionModel(
     val uiState = mutable.asStateFlow()
     private var observed: AuthenticationState? = null
     private var operation: Job? = null
+    private var membershipLoad: Job? = null
+    private var membershipsComplete = false
     private var workspace: WorkspaceSession? = null
     private var presentation: ViewModelStore? = null
     private var requiredUpdate = false
@@ -108,11 +110,7 @@ class SessionModel(
         viewModelScope.launch { authentication.state.collect { reconcile(it) } }
         viewModelScope.launch {
             updatesRequired.collect { required ->
-                if (required && !requiredUpdate) {
-                    requiredUpdate = true
-                    retire()
-                    mutable.value = SessionUiState(generation, SessionStage.UpdateRequired)
-                }
+                if (required && !requiredUpdate) enterRequiredUpdate()
             }
         }
     }
@@ -121,10 +119,24 @@ class SessionModel(
         generation++
         operation?.cancel()
         operation = null
+        membershipLoad?.cancel()
+        membershipLoad = null
+        membershipsComplete = false
         workspace?.close()
         workspace = null
         presentation?.clear()
         presentation = null
+    }
+
+    private fun enterRequiredUpdate() {
+        val state = mutable.value
+        val appearance =
+            state.ready?.preferences?.uiState?.value?.confirmed?.appearance
+                ?: state.cachedAppearance
+        requiredUpdate = true
+        retire()
+        mutable.value =
+            SessionUiState(generation, SessionStage.UpdateRequired, cachedAppearance = appearance)
     }
 
     private fun reconcile(snapshot: AuthenticationState, force: Boolean = false) {
@@ -170,16 +182,37 @@ class SessionModel(
                             }
                         }
                     }
+                val cacheWarm =
+                    initialIdentity?.let {
+                        launch {
+                            try {
+                                chatCache.warmConnection()
+                            } catch (cancelled: CancellationException) {
+                                throw cancelled
+                            } catch (_: Exception) {
+                                // Scoped restore handles storage errors after authorization.
+                            }
+                        }
+                    }
                 try {
-                    authentication.refresh(session)
+                    val refreshedAccess = authentication.refresh(session)
                     requireCurrent(ticket, snapshot)
-                    val memberships = authentication.memberships(session)
+                    val access =
+                        snapshot.membershipAccess?.firstOrNull {
+                            it.workspaceId == initialIdentity?.workspaceId
+                        }
+                    val fastAccess =
+                        access?.takeIf { it.permissions != null && it == refreshedAccess }
+                    val memberships =
+                        if (fastAccess == null) authentication.memberships(session) else emptyList()
                     requireCurrent(ticket, snapshot)
+                    membershipsComplete = fastAccess == null
                     val membership =
                         initialIdentity?.let { identity ->
                             memberships.firstOrNull { it.id == identity.workspaceId }
                         }
-                    if (initialIdentity == null || membership == null) {
+                    val role = fastAccess?.role ?: membership?.role
+                    if (initialIdentity == null || role == null) {
                         mutable.value =
                             SessionUiState(generation, SessionStage.ChooseWorkspace, memberships)
                         return@launch
@@ -188,11 +221,8 @@ class SessionModel(
                         initialIdentity.copy(
                             authorizationScope =
                                 chatScopeHash(
-                                    listOf(membership.role) +
-                                        snapshot.membershipAccess
-                                            ?.firstOrNull {
-                                                it.workspaceId == initialIdentity.workspaceId
-                                            }
+                                    listOf(role) +
+                                        refreshedAccess
                                             ?.let {
                                                 listOf(
                                                     it.role,
@@ -233,8 +263,16 @@ class SessionModel(
                             )
                         }
                     val opened = OpeningWorkspace.Authorized(identity, organization, chats)
-                    mutable.value = mutable.value.copy(memberships = memberships, opening = opened)
+                    val knownMemberships =
+                        if (fastAccess == null) memberships
+                        else
+                            listOf(
+                                WorkspaceMembership(identity.workspaceId, organization.name, role)
+                            )
+                    mutable.value =
+                        mutable.value.copy(memberships = knownMemberships, opening = opened)
                     chats.refresh()
+                    loadRemainingMemberships(ticket, snapshot)
                     finishPreparation(ticket, snapshot, opened)
                 } catch (cancelled: CancellationException) {
                     throw cancelled
@@ -253,6 +291,33 @@ class SessionModel(
                     }
                 } finally {
                     appearanceRead?.cancel()
+                    cacheWarm?.cancel()
+                }
+            }
+    }
+
+    private fun loadRemainingMemberships(ticket: Long, snapshot: AuthenticationState) {
+        if (membershipsComplete || membershipLoad?.isActive == true) return
+        val session = checkNotNull(snapshot.session)
+        membershipLoad =
+            viewModelScope.launch {
+                val memberships =
+                    try {
+                        authentication.memberships(session)
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (error: Exception) {
+                        workspaceFailure(ticket, snapshot, error)
+                        return@launch
+                    }
+                requireCurrent(ticket, snapshot)
+                membershipsComplete = true
+                if (memberships.none { it.id == session.workspaceId }) {
+                    retire()
+                    mutable.value =
+                        SessionUiState(generation, SessionStage.ChooseWorkspace, memberships)
+                } else {
+                    mutable.value = mutable.value.copy(memberships = memberships)
                 }
             }
     }
@@ -380,6 +445,7 @@ class SessionModel(
         val state = mutable.value
         state.ready?.preferences?.refreshFromForeground()
         (state.ready?.chats ?: (state.opening as? OpeningWorkspace.Authorized)?.chats)?.refresh()
+        if (state.ready != null) observed?.let { loadRemainingMemberships(state.generation, it) }
     }
 
     private fun workspaceFailure(
@@ -388,15 +454,17 @@ class SessionModel(
         error: Exception,
     ): Boolean {
         if (!current(ticket, snapshot)) return false
+        if (error is ApiFailure.UpdateRequired) {
+            enterRequiredUpdate()
+            return true
+        }
         val stage =
             when {
-                error is ApiFailure.UpdateRequired -> SessionStage.UpdateRequired
                 error is ApiFailure.Unauthenticated ||
                     error is ApiFailure.Http && error.status in setOf(401, 403, 404) ->
                     SessionStage.AccessRemoved
                 else -> return false
             }
-        if (stage == SessionStage.UpdateRequired) requiredUpdate = true
         retire()
         mutable.value = SessionUiState(generation, stage)
         return true

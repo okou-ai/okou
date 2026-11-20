@@ -3599,6 +3599,34 @@
       "when": 1795147356083,
       "tag": "1592_restore_my_okou_for_uninitialized_workspaces",
       "breakpoints": true
+    },
+    {
+      "idx": 1593,
+      "version": "7",
+      "when": 1795159373060,
+      "tag": "1593_drop_legacy_skills",
+      "breakpoints": true
+    },
+    {
+      "idx": 1594,
+      "version": "7",
+      "when": 1795161273116,
+      "tag": "1594_activate_held_my_okou_workspace",
+      "breakpoints": true
+    },
+    {
+      "idx": 1595,
+      "version": "7",
+      "when": 1795164449391,
+      "tag": "1595_drop_legacy_pi_resource_version_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 1596,
+      "version": "7",
+      "when": 1795172051644,
+      "tag": "1596_activate_final_my_okou_workspaces",
+      "breakpoints": true
     }
   ]
 }

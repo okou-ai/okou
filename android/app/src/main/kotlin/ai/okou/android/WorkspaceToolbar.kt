@@ -4,6 +4,8 @@ import ai.okou.android.chat.ChatListFilter
 import ai.okou.android.chat.ChatListUiState
 import ai.okou.android.chat.label
 import ai.okou.android.chat.markAllReadTargets
+import ai.okou.android.updates.UpdateToolbarAction
+import ai.okou.android.updates.UpdateToolbarButton
 import android.os.Build
 import android.window.OnBackInvokedCallback
 import android.window.OnBackInvokedDispatcher
@@ -14,9 +16,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -27,14 +27,12 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -59,7 +57,6 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.platform.LocalView
@@ -152,11 +149,12 @@ internal fun WorkspaceToolbarActions(
     selectFilter: (ChatListFilter) -> Unit,
     markAllRead: () -> Unit,
     openSearch: (() -> Unit)? = null,
-    openUpdate: (() -> Unit)?,
+    update: UpdateToolbarAction?,
+    stackUpdateLabel: Boolean,
     settingsFocus: FocusRequester,
     openSettings: (restoreFocus: Boolean) -> Unit,
 ) {
-    val hasUpdate = openUpdate != null
+    val hasUpdate = update != null
     var menu by remember(showFilter, hasUpdate) { mutableStateOf<WorkspaceMenuPage?>(null) }
     val filterFocus = remember { FocusRequester() }
     var restoreMenuFocus by remember(showFilter, hasUpdate) { mutableStateOf(false) }
@@ -245,7 +243,7 @@ internal fun WorkspaceToolbarActions(
                 }
             }
         }
-    if (openUpdate == null) {
+    if (update == null) {
         if (showFilter) {
             Box {
                 val currentFilter = stringResource(list.filter.label())
@@ -273,29 +271,7 @@ internal fun WorkspaceToolbarActions(
             Icon(painterResource(R.drawable.ic_settings), stringResource(R.string.settings))
         }
     } else {
-        TextButton(
-            onClick = openUpdate,
-            modifier = Modifier.width(104.dp).heightIn(min = 48.dp),
-            shape = RoundedCornerShape(14.dp),
-            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-            colors =
-                ButtonDefaults.textButtonColors(
-                    containerColor = colors.inverseSurface,
-                    contentColor = colors.inverseOnSurface,
-                ),
-        ) {
-            Icon(
-                painterResource(R.drawable.ic_download),
-                contentDescription = null,
-                modifier = Modifier.size(18.dp),
-            )
-            Spacer(Modifier.width(4.dp))
-            Text(
-                stringResource(R.string.updates_toolbar),
-                style = filterLabelStyle(),
-                fontWeight = FontWeight(550),
-            )
-        }
+        UpdateToolbarButton(update, stacked = stackUpdateLabel)
         Box {
             IconButton(
                 modifier = settingsAnchor,
@@ -335,7 +311,7 @@ private fun WorkspaceMenu(
     back: () -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
-    val window = LocalConfiguration.current
+    val window = currentWindowSizeDp()
     val density = LocalDensity.current
     val position =
         remember(density) {
@@ -351,8 +327,8 @@ private fun WorkspaceMenu(
         WorkspacePopupBackHandler(back)
         Surface(
             modifier =
-                Modifier.width((window.screenWidthDp - 24).coerceIn(1, 244).dp)
-                    .heightIn(max = (window.screenHeightDp - 80).coerceAtLeast(48).dp)
+                Modifier.width((window.width - 24).coerceIn(1, 244).dp)
+                    .heightIn(max = (window.height - 80).coerceAtLeast(48).dp)
                     .testTag("workspace_popup"),
             shape = RoundedCornerShape(16.dp),
             color = colors.surface,

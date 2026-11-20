@@ -23,6 +23,7 @@ import ai.okou.android.state.rememberChatSearchState
 import ai.okou.android.state.rememberCollapsedProjects
 import ai.okou.android.state.rememberConversationUiState
 import ai.okou.android.state.rememberWorkspaceNavigation
+import ai.okou.android.updates.UpdateToolbarAction
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -54,6 +55,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -61,6 +63,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -74,7 +77,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.platform.LocalAccessibilityManager
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -99,7 +101,8 @@ internal fun OkouApp(
     settingsContent: @Composable (SettingsDestination, openInstructions: () -> Unit) -> Unit,
     recovery: AssistantRecoveryModel? = null,
     workspaceTitle: @Composable ((ChatListFilter) -> Unit)? = null,
-    openUpdate: (() -> Unit)? = null,
+    updateToolbarAction: UpdateToolbarAction? = null,
+    onUpdateEditingChanged: (Boolean) -> Unit = {},
     startupRecovery: @Composable (() -> Unit)? = null,
 ) {
     val list =
@@ -113,11 +116,20 @@ internal fun OkouApp(
     val settings = navigation.settings.takeIf { composer != null }
     val target = if (composer != null) navigation.target else WorkspaceTarget.List
     // Window configuration changes on resize. IME insets only change the space inside the panes.
-    val window = LocalConfiguration.current
-    val listWidth = workspaceListPaneWidth(window.screenWidthDp, window.screenHeightDp)
+    val window = currentWindowSizeDp()
+    val listWidth = workspaceListPaneWidth(window.width, window.height)
     val searchState = rememberChatSearchState()
     var focusSearch by remember { mutableStateOf(false) }
     val searchActive = chats != null && composer != null && navigation.search == SearchRoute.Open
+    var composerFocused by remember(target, settings, searchActive) { mutableStateOf(false) }
+    val editing =
+        searchActive ||
+            settings == SettingsDestination.Instructions ||
+            (settings == null && (target is WorkspaceTarget.NewChat || composerFocused))
+    DisposableEffect(editing) {
+        onUpdateEditingChanged(editing)
+        onDispose { onUpdateEditingChanged(false) }
+    }
     val showList = listWidth != null || searchActive || target == WorkspaceTarget.List
     val showChatList = settings == null && showList && !searchActive
     val showWorkspaceBack = listWidth == null && !searchActive && target != WorkspaceTarget.List
@@ -177,8 +189,18 @@ internal fun OkouApp(
                 if (action.updatesChat) R.string.chat_row_action_failed
                 else R.string.chat_read_action_failed
             )
+        val refreshLabel = stringResource(R.string.chat_refresh)
         LaunchedEffect(chats, action, message, showChatList) {
-            if (showChatList) snackbar.showSnackbar(message, duration = SnackbarDuration.Indefinite)
+            if (
+                showChatList &&
+                    snackbar.showSnackbar(
+                        message,
+                        actionLabel = refreshLabel.takeIf { action.updatesChat },
+                        duration = SnackbarDuration.Indefinite,
+                    ) == SnackbarResult.ActionPerformed
+            ) {
+                chats?.reloadAfterRowActionFailure()
+            }
             chats?.dismissRowActionFailure(action)
         }
     }
@@ -349,7 +371,11 @@ internal fun OkouApp(
                     selectFilter = chats::selectFilter,
                     markAllRead = chats::markAllRead,
                     openSearch = if (showList) ::openSearch else null,
-                    openUpdate = openUpdate,
+                    update = updateToolbarAction.takeIf { showList },
+                    stackUpdateLabel =
+                        with(LocalDensity.current) {
+                            (listWidth ?: window.width).dp <= 16.sp.toDp() * 19
+                        },
                     settingsFocus = settingsFocus,
                     openSettings = { restore ->
                         restoreSettingsFocus = restore
@@ -369,7 +395,7 @@ internal fun OkouApp(
     val listToolbar =
         @Composable {
             WorkspaceListToolbar(
-                widthDp = window.screenWidthDp,
+                widthDp = window.width,
                 listWidth = listWidth,
                 title = {
                     if (workspaceTitle != null) {
@@ -378,7 +404,7 @@ internal fun OkouApp(
                         Column(Modifier.padding(start = 8.dp)) {
                             Text(
                                 stringResource(R.string.app_name),
-                                style = workspaceListTitleStyle(window.screenWidthDp, listWidth),
+                                style = workspaceListTitleStyle(window.width, listWidth),
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
@@ -476,8 +502,8 @@ internal fun OkouApp(
                                 if (listWidth != null) listToolbar()
                                 ChatListScreen(
                                     list,
-                                    { chats?.refresh() },
-                                    { chats?.refreshList() },
+                                    { chats?.refresh(userInitiated = true) },
+                                    { chats?.reloadAfterRowActionFailure() },
                                     { chats?.refreshMetadata() },
                                     { chats?.refreshIndicators() },
                                     ::openChat,
@@ -577,7 +603,11 @@ internal fun OkouApp(
                                                         composerTarget,
                                                     )
                                                 }
-                                                ChatComposerField(composer, composerTarget)
+                                                ChatComposerField(
+                                                    composer,
+                                                    composerTarget,
+                                                    onInputFocusChanged = { composerFocused = it },
+                                                )
                                             }
                                         }
                                     is WorkspaceTarget.NewChat ->
@@ -610,8 +640,11 @@ private fun WorkspaceFeedbackHost(state: SnackbarHostState, modifier: Modifier) 
     LaunchedEffect(current, accessibility) {
         if (current != null) {
             val duration =
-                accessibility?.calculateRecommendedTimeoutMillis(5_000L, containsText = true)
-                    ?: 5_000L
+                accessibility?.calculateRecommendedTimeoutMillis(
+                    5_000L,
+                    containsText = true,
+                    containsControls = current.visuals.actionLabel != null,
+                ) ?: 5_000L
             delay(duration)
             current.dismiss()
         }
@@ -624,12 +657,14 @@ private fun WorkspaceFeedbackHost(state: SnackbarHostState, modifier: Modifier) 
             contentColor = MaterialTheme.colorScheme.inverseOnSurface,
             shadowElevation = 4.dp,
         ) {
-            Box(
+            Row(
                 Modifier.heightIn(min = 48.dp).padding(horizontal = 14.dp, vertical = 10.dp),
-                contentAlignment = Alignment.CenterStart,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
+                val action = data.visuals.actionLabel
                 Text(
                     data.visuals.message,
+                    modifier = if (action == null) Modifier else Modifier.weight(1f),
                     style =
                         MaterialTheme.typography.bodyMedium.copy(
                             fontSize = 14.sp,
@@ -637,6 +672,17 @@ private fun WorkspaceFeedbackHost(state: SnackbarHostState, modifier: Modifier) 
                             letterSpacing = 0.sp,
                         ),
                 )
+                if (action != null) {
+                    TextButton(
+                        onClick = data::performAction,
+                        colors =
+                            ButtonDefaults.textButtonColors(
+                                contentColor = MaterialTheme.colorScheme.inversePrimary
+                            ),
+                    ) {
+                        Text(action)
+                    }
+                }
             }
         }
     }

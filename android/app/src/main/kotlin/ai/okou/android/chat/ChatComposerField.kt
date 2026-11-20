@@ -23,6 +23,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
@@ -39,6 +40,7 @@ fun ChatComposerField(
     model: ChatComposerModel,
     target: ComposerTarget,
     modifier: Modifier = Modifier,
+    onInputFocusChanged: (Boolean) -> Unit = {},
 ) {
     val state by model.uiState.collectAsStateWithLifecycle()
     val focus = LocalFocusManager.current
@@ -144,7 +146,10 @@ fun ChatComposerField(
                 input.edit(it)
                 model.edit(target, it.text)
             },
-            modifier = Modifier.fillMaxWidth().testTag("message_input"),
+            modifier =
+                Modifier.fillMaxWidth()
+                    .onFocusChanged { onInputFocusChanged(it.isFocused) }
+                    .testTag("message_input"),
             enabled = state.journal != null,
             label = { Text(stringResource(R.string.composer_message)) },
             maxLines = 6,

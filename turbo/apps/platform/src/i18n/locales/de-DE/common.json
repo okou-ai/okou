@@ -525,10 +525,7 @@
       "video": "VID"
     },
     "googleDrive": {
-      "agentLoading": "Der Agent wird noch geladen",
       "connect": "Verbinden Sie Google Drive",
-      "connectTooltip": "Verbinden Sie Google Drive, um Artefakte hochzuladen",
-      "conversionNotice": "Erstellt eine bearbeitbare Kopie; die Formatierung kann abweichen.",
       "conversionUnconfirmed": "Die Google-Konvertierung konnte nicht bestätigt werden. Prüfe Drive vor einem erneuten Versuch.",
       "openDocs": "In Google Docs öffnen",
       "openSheets": "In Google Sheets öffnen",
@@ -1528,7 +1525,6 @@
           "action": "Einchecken",
           "description": "Einmal täglich einchecken. Neuer Tag um 00:00 UTC.",
           "name": "Täglich einchecken",
-          "pendingDescription": "Dein Check-in wurde gespeichert. Die Credits werden nach der Bestätigung aktualisiert.",
           "unit": "pro Tag"
         },
         "connector": {
@@ -1545,12 +1541,6 @@
         },
         "inReview": "In Prüfung",
         "intro": {
-          "checkin": {
-            "amount": "+{{amount}} Credits",
-            "confirm": "Zurück an die Arbeit",
-            "description": "Credits bezahlen die Arbeit selbst: jeden Durchlauf, jedes Artefakt, jeden Workflow, der nach Zeitplan läuft.",
-            "title": "Für heute erledigt"
-          },
           "connector": {
             "confirm": "Alle Konnektoren ansehen",
             "connected": "Verbunden",
@@ -1655,6 +1645,13 @@
       "feedbackPrompt": "Wie findest du diesen Vorschlag?",
       "feedLabel": "Feed",
       "forYou": {
+        "cover": {
+          "change": "Titelbild ändern",
+          "default": "Standard",
+          "gallery": "Titelbilder",
+          "option": "Titelbild {{index}}",
+          "reset": "Auf Standard zurücksetzen"
+        },
         "loading": "Vorschläge werden geladen",
         "next": "Nächster Vorschlag",
         "previous": "Vorheriger Vorschlag",
@@ -2499,19 +2496,29 @@
       "workingFor": "Seit {{duration}} in Arbeit"
     },
     "sharing": {
+      "accessNote": "Nur du kannst den Zugriff ändern.",
       "cancel": "Abbrechen",
       "close": "Schließen",
       "copyFailed": "Der Link konnte nicht kopiert werden",
       "create": "Teilen",
       "createFailed": "Die geteilte Unterhaltung konnte nicht erstellt werden.",
+      "createLink": "Link erstellen",
+      "deselectAll": "Auswahl aufheben",
       "deselectGroup": "Nachrichtengruppe abwählen",
+      "done": "Fertig",
       "everyone": "Alle",
       "linkCopied": "Link kopiert",
+      "linkCreated_one": "Link für {{count}} Nachricht erstellt",
+      "linkCreated_other": "Link für {{count}} Nachrichten erstellt",
       "messageShareFailed": "Der geteilte Link konnte nicht erstellt werden.",
       "organizationDescription": "Nur Personen in deiner Organisation",
+      "selectAll": "Alle auswählen",
       "selectedCount_one": "{{count}} ausgewählt",
       "selectedCount_other": "{{count}} ausgewählt",
+      "selectedOfTotal_one": "{{count}} von {{total}} ausgewählt",
+      "selectedOfTotal_other": "{{count}} von {{total}} ausgewählt",
       "selectGroup": "Nachrichtengruppe auswählen",
+      "selectPrompt": "Wähle die Nachrichten aus, die du teilen möchtest",
       "shareLink": "Link zur geteilten Unterhaltung",
       "start": "Nachrichten teilen",
       "tooLarge": "Wähle weniger Nachrichten zum Teilen aus",
@@ -4069,6 +4076,19 @@
     "loadError": "Deine Anweisungen konnten nicht geladen werden. Versuche es erneut.",
     "markdown": "Schreibe in Klartext oder Markdown",
     "placeholder": "Sag Okou, wie du gerne arbeitest…",
+    "proactiveSettings": {
+      "cardsOnly": "Neue Karten sind aktiv, stündliche Prüfungen und tägliche Profilaktualisierungen sind aus. Wähle eine gemeinsame Einstellung.",
+      "choose": "Auswählen…",
+      "description": "Passe an, wie Okou in diesem Arbeitsbereich arbeitet.",
+      "hourlyOnly": "Stündliche Prüfungen und tägliche Profilaktualisierungen sind aktiv, neue Karten sind aus. Wähle eine gemeinsame Einstellung.",
+      "offers": "Erhalte Angebotskarten unter „Für dich“.",
+      "sourcesHint": "Wenn du eine Kartenquelle deaktivierst, erhältst du von ihr keine neuen Karten oder Hinweise auf ungelesene Karten mehr. Vorhandene Karten bleiben in „Für dich“.",
+      "suggestions": "Verbundene Quellen stündlich prüfen, dein Nutzerprofil täglich aktualisieren und hilfreiche nächste Schritte vorschlagen.",
+      "systemUpdates": "Erhalte Systemmeldungen unter „Für dich“.",
+      "turnOff": "Beides deaktivieren",
+      "turnOn": "Beides aktivieren",
+      "whatsNew": "Erfahre unter „Für dich“ von neuen Okou-Funktionen."
+    },
     "reload": "Gespeicherte Anweisungen neu laden",
     "retry": "Erneut versuchen",
     "save": "Speichern",
@@ -5712,17 +5732,8 @@
         "preparing": "Ihr erster Morgenbericht wird vorbereitet. Sie können ihn jederzeit deaktivieren.",
         "title": "Morgenbrief"
       },
-      "proactiveLearning": {
-        "description": "Aktivitäten nachts überprüfen und persönliche Erinnerungen verbessern.",
-        "errorMessage": "Diese Einstellung konnte nicht geladen oder aktualisiert werden.",
-        "missingDefaultAgent": "Okou ist in diesem Arbeitsbereich nicht verfügbar. Wende dich an einen Administrator.",
-        "missingTimezone": "Legen Sie Ihre Zeitzone in den Einstellungen fest.",
-        "preparationFailed": "Dieser Workflow ist vorübergehend nicht verfügbar.",
-        "preparing": "Dieser Workflow wird vorbereitet.",
-        "title": "Lernen"
-      },
       "proactiveSuggestions": {
-        "description": "Okou prüft stündlich deine verbundenen Quellen und schlägt auf der Startseite sinnvolle nächste Schritte vor.",
+        "description": "Verbundene Quellen stündlich prüfen, dein Nutzerprofil täglich aktualisieren und hilfreiche nächste Schritte vorschlagen.",
         "errorMessage": "Die Einstellungen konnten nicht geladen oder aktualisiert werden.",
         "missingDefaultAgent": "Okou ist in diesem Arbeitsbereich nicht verfügbar. Wende dich an einen Administrator.",
         "missingTimezone": "Legen Sie Ihre Zeitzone in den Einstellungen fest.",

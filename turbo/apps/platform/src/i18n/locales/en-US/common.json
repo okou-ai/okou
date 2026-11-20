@@ -525,10 +525,7 @@
       "video": "VID"
     },
     "googleDrive": {
-      "agentLoading": "Agent is still loading",
       "connect": "Connect Google Drive",
-      "connectTooltip": "Connect Google Drive to upload artifacts",
-      "conversionNotice": "Creates an editable copy. Some formatting may change.",
       "conversionUnconfirmed": "Google conversion could not be confirmed. Check Drive before retrying.",
       "openDocs": "Open in Google Docs",
       "openSheets": "Open in Google Sheets",
@@ -1528,7 +1525,6 @@
           "action": "Check in",
           "description": "Check in once a day. Resets at 00:00 UTC.",
           "name": "Check in daily",
-          "pendingDescription": "Your check-in was saved. Credits will update after confirmation.",
           "unit": "a day"
         },
         "connector": {
@@ -1545,12 +1541,6 @@
         },
         "inReview": "In review",
         "intro": {
-          "checkin": {
-            "amount": "+{{amount}} credits",
-            "confirm": "Back to work",
-            "description": "Credits pay for the work itself: every run, every artifact, every workflow that runs on a schedule.",
-            "title": "Checked in for today"
-          },
           "connector": {
             "confirm": "Browse all connectors",
             "connected": "Connected",
@@ -1655,6 +1645,13 @@
       "feedbackPrompt": "How is this suggestion?",
       "feedLabel": "Feed",
       "forYou": {
+        "cover": {
+          "change": "Change cover",
+          "default": "Default",
+          "gallery": "Covers",
+          "option": "Cover {{index}}",
+          "reset": "Reset to default"
+        },
         "loading": "Loading suggestions",
         "next": "Next suggestion",
         "previous": "Previous suggestion",
@@ -2499,19 +2496,29 @@
       "workingFor": "Working for {{duration}}"
     },
     "sharing": {
+      "accessNote": "Only you can change access.",
       "cancel": "Cancel",
       "close": "Close",
       "copyFailed": "Could not copy the link",
       "create": "Share",
       "createFailed": "Could not create the shared chat.",
+      "createLink": "Create link",
+      "deselectAll": "Deselect all",
       "deselectGroup": "Deselect message group",
+      "done": "Done",
       "everyone": "Everyone",
       "linkCopied": "Link copied",
+      "linkCreated_one": "Link created for {{count}} message",
+      "linkCreated_other": "Link created for {{count}} messages",
       "messageShareFailed": "The shared link could not be created.",
       "organizationDescription": "Only people in your organization",
+      "selectAll": "Select all",
       "selectedCount_one": "{{count}} selected",
       "selectedCount_other": "{{count}} selected",
+      "selectedOfTotal_one": "{{count}} of {{total}} selected",
+      "selectedOfTotal_other": "{{count}} of {{total}} selected",
       "selectGroup": "Select message group",
+      "selectPrompt": "Select the messages to share",
       "shareLink": "Shared chat link",
       "start": "Share messages",
       "tooLarge": "Select fewer messages to share",
@@ -4067,6 +4074,19 @@
     "loadError": "Couldn’t load your instructions. Try again.",
     "markdown": "Write in plain text or use Markdown",
     "placeholder": "Tell Okou how you like to work…",
+    "proactiveSettings": {
+      "cardsOnly": "New cards are on. Hourly checks and daily profile updates are off. Choose one setting for both.",
+      "choose": "Choose…",
+      "description": "Personalize how Okou works in this workspace.",
+      "hourlyOnly": "Hourly checks and daily profile updates are on. New cards are off. Choose one setting for both.",
+      "offers": "Receive offer cards in For you.",
+      "sourcesHint": "Turning off a card source stops new cards and unread alerts from that source. Existing cards stay in For you.",
+      "suggestions": "Check connected sources hourly, update your user profile daily, and suggest useful next steps.",
+      "systemUpdates": "Receive system announcements in For you.",
+      "turnOff": "Turn both off",
+      "turnOn": "Turn both on",
+      "whatsNew": "Get updates about new Okou features in For you."
+    },
     "reload": "Reload saved instructions",
     "retry": "Retry",
     "save": "Save",
@@ -5710,17 +5730,8 @@
         "preparing": "Preparing your first Morning Brief. You can turn it off at any time.",
         "title": "Morning brief"
       },
-      "proactiveLearning": {
-        "description": "Review your activity overnight and improve personal memory.",
-        "errorMessage": "Could not load or update this setting.",
-        "missingDefaultAgent": "Okou is unavailable in this workspace. Contact a workspace administrator.",
-        "missingTimezone": "Set your time zone in Preferences.",
-        "preparationFailed": "This workflow is temporarily unavailable.",
-        "preparing": "Preparing this workflow.",
-        "title": "Learning"
-      },
       "proactiveSuggestions": {
-        "description": "Let Okou check your connected sources every hour and suggest useful next steps on your home page.",
+        "description": "Check connected sources hourly, update your user profile daily, and suggest useful next steps.",
         "errorMessage": "Proactive Suggestions settings could not be loaded or updated.",
         "missingDefaultAgent": "Okou is unavailable in this workspace. Contact a workspace administrator.",
         "missingTimezone": "Set your time zone in Preferences.",

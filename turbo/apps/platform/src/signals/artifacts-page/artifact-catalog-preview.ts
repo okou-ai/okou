@@ -27,6 +27,7 @@ interface ArtifactDetailPreview {
 export function createCatalogArtifactPreviewSignals(
   artifactCatalog: ArtifactCatalogViewSignals,
   openDiagram$: MermaidDiagramPreviewCommand,
+  threadId?: string,
 ) {
   const resourceUrl$ = computed(async (get) => {
     const preview = get(artifactCatalog.selectedArtifactPreview$);
@@ -60,7 +61,7 @@ export function createCatalogArtifactPreviewSignals(
     imageUrl$,
     shareUrl$,
     text$,
-    markdownTree$: createMarkdownPreviewTree(text$, openDiagram$),
+    markdownTree$: createMarkdownPreviewTree(text$, openDiagram$, threadId),
   };
 }
 

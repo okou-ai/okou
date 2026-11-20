@@ -524,10 +524,7 @@
       "video": "视频"
     },
     "googleDrive": {
-      "agentLoading": "智能体还在加载",
       "connect": "连接 Google Drive",
-      "connectTooltip": "连接 Google Drive 后即可上传成果",
-      "conversionNotice": "创建可编辑副本，格式可能有所变化。",
       "conversionUnconfirmed": "无法确认 Google 转换结果，请检查云端硬盘后再重试。",
       "openDocs": "在 Google 文档中打开",
       "openSheets": "在 Google 表格中打开",
@@ -1524,7 +1521,6 @@
           "action": "签到",
           "description": "每天签到一次，UTC 00:00 重置。",
           "name": "每日签到",
-          "pendingDescription": "签到已保存，确认后积分会自动更新。",
           "unit": "每天"
         },
         "connector": {
@@ -1541,12 +1537,6 @@
         },
         "inReview": "审核中",
         "intro": {
-          "checkin": {
-            "amount": "+{{amount}} 积分",
-            "confirm": "回去干活",
-            "description": "积分用来支付真正的工作：每一次运行、每一份成果、每一个按时间运行的工作流。",
-            "title": "今天这一步完成了"
-          },
           "connector": {
             "confirm": "浏览全部连接器",
             "connected": "已连接",
@@ -1651,6 +1641,13 @@
       "feedbackPrompt": "这条建议怎么样？",
       "feedLabel": "动态",
       "forYou": {
+        "cover": {
+          "change": "更换封面",
+          "default": "默认",
+          "gallery": "封面",
+          "option": "封面 {{index}}",
+          "reset": "恢复默认"
+        },
         "loading": "正在加载建议",
         "next": "下一条建议",
         "previous": "上一条建议",
@@ -2489,18 +2486,26 @@
       "workingFor": "已工作 {{duration}}"
     },
     "sharing": {
+      "accessNote": "只有你能修改权限。",
       "cancel": "取消",
       "close": "关闭",
       "copyFailed": "无法复制链接",
       "create": "分享",
       "createFailed": "无法创建分享对话。",
+      "createLink": "创建链接",
+      "deselectAll": "取消全选",
       "deselectGroup": "取消选择该组消息",
+      "done": "完成",
       "everyone": "所有人",
       "linkCopied": "链接已复制",
+      "linkCreated_other": "已为 {{count}} 条消息创建链接",
       "messageShareFailed": "分享链接创建失败。",
       "organizationDescription": "仅限组织内成员",
+      "selectAll": "全选",
       "selectedCount_other": "已选 {{count}} 条",
+      "selectedOfTotal_other": "已选 {{count}}/{{total}} 条",
       "selectGroup": "选择该组消息",
+      "selectPrompt": "选择要分享的消息",
       "shareLink": "分享对话链接",
       "start": "分享消息",
       "tooLarge": "选择的消息过多，请减少后再分享",
@@ -4051,6 +4056,19 @@
     "loadError": "无法加载指令，请重试。",
     "markdown": "支持纯文本和 Markdown",
     "placeholder": "告诉 Okou 你喜欢怎样工作…",
+    "proactiveSettings": {
+      "cardsOnly": "目前仅接收新卡片，每小时检查和每日画像更新已关闭。请选择统一开启或关闭。",
+      "choose": "请选择…",
+      "description": "自定义 Okou 在此工作区中的工作方式。",
+      "hourlyOnly": "目前已开启每小时检查和每日画像更新，新卡片已关闭。请选择统一开启或关闭。",
+      "offers": "在「为你推荐」中接收优惠卡片。",
+      "sourcesHint": "关闭卡片来源后，将停止接收该来源的新卡片和未读提醒。已有卡片会保留在「为你推荐」中。",
+      "suggestions": "每小时检查已连接的信息来源，每天更新用户画像，并推荐有用的下一步行动。",
+      "systemUpdates": "在「为你推荐」中接收系统公告。",
+      "turnOff": "同时关闭",
+      "turnOn": "同时开启",
+      "whatsNew": "在「为你推荐」中了解 Okou 的新功能。"
+    },
     "reload": "重新加载已保存的指令",
     "retry": "重试",
     "save": "保存",
@@ -5690,17 +5708,8 @@
         "preparing": "正在准备你的第一份晨报，你可以随时关闭。",
         "title": "晨报"
       },
-      "proactiveLearning": {
-        "description": "夜间回顾你的信息和工作，整理个人记忆、更新理解。",
-        "errorMessage": "无法加载或更新此设置。",
-        "missingDefaultAgent": "当前工作区的 Okou 暂不可用，请联系工作区管理员。",
-        "missingTimezone": "请在偏好设置中设置时区。",
-        "preparationFailed": "此工作流暂不可用。",
-        "preparing": "正在准备此工作流。",
-        "title": "主动学习"
-      },
       "proactiveSuggestions": {
-        "description": "让 Okou 每小时检查已连接的信息来源，并在主页推荐有用的下一步行动。",
+        "description": "每小时检查已连接的信息来源，每天更新用户画像，并推荐有用的下一步行动。",
         "errorMessage": "无法加载或更新主动建议设置。",
         "missingDefaultAgent": "当前工作区的 Okou 暂不可用，请联系工作区管理员。",
         "missingTimezone": "请在偏好设置中设置时区。",

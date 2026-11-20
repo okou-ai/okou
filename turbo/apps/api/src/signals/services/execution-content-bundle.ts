@@ -1,61 +1,107 @@
+import type {
+  ExecutionContext,
+  PreparedExecutionContext,
+} from "@okouai/api-contracts/contracts/runners";
 import { command } from "ccstate";
-import type { TemplateGuidanceBundle } from "@okouai/api-contracts/contracts/template-guidance-bundle";
 import type { ContentBundle } from "@okouai/api-contracts/contracts/content-bundle";
 import { presignedGetUrlSignerForBucket } from "../external/s3";
 import {
   contentBundleUrlCacheRequest,
-  type ContentBundleUrlCacheContext,
+  type ContentBundleUrlCacheSnapshot,
 } from "./content-bundle-presigned-url-cache";
 import {
   signStoragePresignedUrls,
   type StoragePresignedUrlCacheWrite,
 } from "./system-storage-presigned-url-cache.service";
+import type { CapturedExecutionPackages } from "./execution-workflow-selection";
 
-export interface ExecutionContentBundleSignature {
-  readonly bundle: (ContentBundle | TemplateGuidanceBundle) & {
-    readonly downloadUrl: string;
-  };
-  readonly cacheWrite: StoragePresignedUrlCacheWrite | undefined;
+export function selectExecutionContentBundles(
+  packages: CapturedExecutionPackages,
+  context: Pick<
+    PreparedExecutionContext,
+    "officialWorkflowBundles" | "seedSkillBundles" | "templateGuidanceBundles"
+  > & { readonly skillRoot: string },
+) {
+  const workflows = packages.workflows.map(({ name, contentBundle }) => {
+    return { ...contentBundle, mountPath: `${context.skillRoot}/${name}` };
+  });
+  const workflowMountPaths = new Set(
+    workflows.map(({ mountPath }) => {
+      return mountPath;
+    }),
+  );
+  const instructions = packages.instructionsBundle;
+  const skills = [
+    ...workflows,
+    ...context.officialWorkflowBundles,
+    ...context.seedSkillBundles.filter(({ mountPath }) => {
+      return !workflowMountPaths.has(mountPath);
+    }),
+  ];
+  const templates = context.templateGuidanceBundles;
+  const hashes = [
+    ...new Set(
+      [instructions, ...skills, ...templates].map(({ sha256 }) => {
+        return sha256;
+      }),
+    ),
+  ];
+  return { instructions, skills, templates, hashes };
 }
 
-/** Reuse the selected URL snapshot and sign cache misses without R2 I/O. */
-export const signExecutionContentBundle$ = command(
+/** Share URLs for identical bytes while retaining each reference's mount metadata. */
+export const signExecutionContentBundles$ = command(
   async (
     { get },
-    args: {
-      readonly reference: ContentBundle | TemplateGuidanceBundle;
-      readonly cache: ContentBundleUrlCacheContext;
-      readonly cached:
-        { readonly url: string; readonly expiresAtMs: number } | undefined;
-    },
+    bundles: ReturnType<typeof selectExecutionContentBundles>,
+    cache: ContentBundleUrlCacheSnapshot,
     signal: AbortSignal,
-  ): Promise<ExecutionContentBundleSignature> => {
+  ): Promise<{
+    readonly contentBundles: ExecutionContext["contentBundles"];
+    readonly cacheWrites: readonly StoragePresignedUrlCacheWrite[];
+  }> => {
     signal.throwIfAborted();
-    const request = contentBundleUrlCacheRequest(
-      args.cache,
-      args.reference.sha256,
+    const requests = new Map(
+      bundles.hashes.map((sha256) => {
+        return [sha256, contentBundleUrlCacheRequest(cache.context, sha256)];
+      }),
     );
-    const signed = await signStoragePresignedUrls({
-      requests: [request],
-      rows: args.cached
+    const rows = cache.rows.flatMap(({ sha256, url, expiresAtMs }) => {
+      const request = requests.get(sha256);
+      return request
         ? [
             {
               cacheKey: request.cacheKey,
-              presignedUrl: args.cached.url,
-              expiresAt: new Date(args.cached.expiresAtMs),
+              presignedUrl: url,
+              expiresAt: new Date(expiresAtMs),
             },
           ]
-        : [],
-      sign: get(presignedGetUrlSignerForBucket(args.cache.bucket, false)),
+        : [];
+    });
+    const signed = await signStoragePresignedUrls({
+      requests: [...requests.values()],
+      rows,
+      sign: get(presignedGetUrlSignerForBucket(cache.context.bucket)),
     });
     signal.throwIfAborted();
-    const result = signed.results.get(request.cacheKey);
-    if (!result) {
-      throw new Error("Execution Content Bundle URL is missing");
-    }
+    const withDownloadUrl = <T extends ContentBundle>(reference: T) => {
+      const request = requests.get(reference.sha256);
+      const url = request && signed.results.get(request.cacheKey)?.url;
+      if (!url) {
+        throw new Error("Execution Content Bundle URL is missing");
+      }
+      return { ...reference, downloadUrl: url };
+    };
     return {
-      bundle: { ...args.reference, downloadUrl: result.url },
-      cacheWrite: signed.freshValues[0],
+      contentBundles: {
+        format: "tar-gzip-v1",
+        instructions: withDownloadUrl(bundles.instructions),
+        skills: bundles.skills.map(withDownloadUrl),
+        ...(bundles.templates.length > 0
+          ? { templates: bundles.templates.map(withDownloadUrl) }
+          : {}),
+      },
+      cacheWrites: signed.freshValues,
     };
   },
 );

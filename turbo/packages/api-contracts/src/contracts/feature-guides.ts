@@ -178,7 +178,7 @@ export type FeatureGuideEdition = zInfer<typeof featureGuideEditionSchema>;
 export const importFeatureGuideSchema = object({
   editionId: editionIdSchema,
   content: featureGuideContentSchema,
-  // Omission preserves delivery to everyone with FeatureGuides enabled.
+  // Omission leaves delivery unrestricted by organization or user.
   audience: featureGuideAudienceSchema.optional(),
   startsAt: iso.datetime(),
   expiresAt: iso.datetime().nullable(),

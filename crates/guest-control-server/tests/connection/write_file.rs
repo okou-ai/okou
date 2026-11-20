@@ -118,7 +118,7 @@ fn malformed_streamed_batch_is_rejected_without_losing_the_following_frame() {
 
     let (handle, mut stream) = start_guest_connection();
     let path = unique_tmp_path("invalid-streamed-write", ".txt");
-    let content = vec![b'x'; 5 * 1024 * 1024];
+    let content = vec![b'x'; 2 * 1024 * 1024];
     let mut payload = guest_control_proto::encode_write_files(&[WriteFileBatchEntry {
         path: path.as_str(),
         content: &content,
@@ -151,7 +151,7 @@ fn disconnected_streamed_batch_retires_without_applying_its_prefix() {
 
     let (handle, mut stream) = start_guest_connection();
     let path = unique_tmp_path("partial-streamed-write", ".txt");
-    let content = vec![b'x'; 5 * 1024 * 1024];
+    let content = vec![b'x'; 2 * 1024 * 1024];
     let payload = guest_control_proto::encode_write_files(&[WriteFileBatchEntry {
         path: path.as_str(),
         content: &content,

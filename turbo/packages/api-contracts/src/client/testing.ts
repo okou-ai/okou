@@ -579,8 +579,6 @@ import { phoneUseContract as OriginalPhoneUseContract } from "../contracts/phone
 import { phoneUseContract } from "./phone-use";
 import { presentationTemplatesContract as OriginalPresentationTemplatesContract } from "../contracts/presentation-templates";
 import { presentationTemplatesContract } from "./presentation-templates";
-import { proactiveLearningContract as OriginalProactiveLearningContract } from "../contracts/proactive-nightly";
-import { proactiveLearningContract } from "./proactive-nightly";
 import { proactiveSuggestionsContract as OriginalProactiveSuggestionsContract } from "../contracts/proactive-suggestions";
 import { proactiveSuggestionsContract } from "./proactive-suggestions";
 import { projectChatContract as OriginalProjectChatContract } from "../contracts/project-chat";
@@ -1263,7 +1261,6 @@ export const clientDescriptorContracts: readonly (readonly [
   [personalSubscriptionsContract, OriginalPersonalSubscriptionsContract],
   [phoneUseContract, OriginalPhoneUseContract],
   [presentationTemplatesContract, OriginalPresentationTemplatesContract],
-  [proactiveLearningContract, OriginalProactiveLearningContract],
   [proactiveSuggestionsContract, OriginalProactiveSuggestionsContract],
   [projectChatContract, OriginalProjectChatContract],
   [projectsContract, OriginalProjectsContract],

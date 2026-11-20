@@ -9,17 +9,19 @@ use std::convert::Infallible;
 use std::io;
 use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use bytes::Bytes;
 use http_body_util::{BodyExt, Full};
 use hyper::body::Incoming;
+use hyper::header::HeaderValue;
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper::{Method, Request, Response, StatusCode};
 use hyper_util::rt::{TokioIo, TokioTimer};
 use runner_host::runner_ingress_socket::RunnerIngressSocket;
 use runner_host::runner_process_identity::RunnerProcessIdentity;
+use runner_types::ids::RunId;
 use subtle::ConstantTimeEq;
 use tokio::task::{JoinHandle, JoinSet};
 use tokio_util::sync::CancellationToken;
@@ -27,6 +29,7 @@ use tokio_util::sync::CancellationToken;
 const MAX_CONNECTIONS: usize = 32;
 const HEALTH_TIMEOUT: Duration = Duration::from_secs(10);
 const MAX_HEALTH_RESPONSE_BYTES: usize = 2;
+const DISPATCH_TIMING_HEADER: &str = "x-okou-runner-dispatch-timing";
 
 /// Required only for official, non-local Runner startup.
 pub struct IngressConfig {
@@ -39,15 +42,22 @@ struct IngressHandler {
     identity: RunnerProcessIdentity,
     hostname: String,
     token: String,
+    runner_version: &'static str,
     dispatch: OnceLock<dispatch::DispatchIntake>,
 }
 
 impl IngressHandler {
-    fn new(identity: RunnerProcessIdentity, hostname: String, token: &str) -> Self {
+    fn new(
+        identity: RunnerProcessIdentity,
+        hostname: String,
+        token: &str,
+        runner_version: &'static str,
+    ) -> Self {
         Self {
             identity,
             hostname,
             token: token.to_owned(),
+            runner_version,
             dispatch: OnceLock::new(),
         }
     }
@@ -99,7 +109,7 @@ impl IngressHandler {
         Ok(())
     }
 
-    async fn handle(&self, mut request: Request<Incoming>) -> Response<Full<Bytes>> {
+    async fn handle(&self, request: Request<Incoming>) -> Response<Full<Bytes>> {
         let path = format!("/runners/{}/control/health", self.identity.runner_id());
         let dispatch_run = request
             .uri()
@@ -109,11 +119,7 @@ impl IngressHandler {
                 self.identity.runner_id()
             ))
             .and_then(|path| path.strip_suffix("/dispatch"))
-            .and_then(|run| {
-                run.parse::<runner_types::ids::RunId>()
-                    .ok()
-                    .filter(|id| id.to_string() == run)
-            });
+            .and_then(|run| run.parse::<RunId>().ok().filter(|id| id.to_string() == run));
         // Hyper keeps the raw URI: no decoding/rewriting may turn a reserved
         // sandbox path, traversal or encoded separator into a control request.
         if (request.uri().path() != path && dispatch_run.is_none())
@@ -142,57 +148,14 @@ impl IngressHandler {
             return response(StatusCode::UNAUTHORIZED, "");
         }
         if let Some(run_id) = dispatch_run {
-            if request.method() != Method::POST {
-                return response(StatusCode::METHOD_NOT_ALLOWED, "");
-            }
-            if request.headers().contains_key("upgrade")
-                || request.headers().contains_key("content-encoding")
-                || request
-                    .headers()
-                    .get("content-type")
-                    .is_none_or(|v| v != "application/json")
+            let mut timing = dispatch::DispatchTiming::start(self.runner_version);
+            let mut reply = self.handle_dispatch(request, run_id, &mut timing).await;
+            if let Ok(encoded) = serde_json::to_string(&timing)
+                && let Ok(header) = HeaderValue::try_from(encoded)
             {
-                return response(StatusCode::BAD_REQUEST, "");
+                reply.headers_mut().insert(DISPATCH_TIMING_HEADER, header);
             }
-            if request
-                .headers()
-                .get("content-length")
-                .and_then(|v| v.to_str().ok())
-                .and_then(|v| v.parse::<u64>().ok())
-                .is_some_and(|length| length > dispatch::MAX_BODY as u64)
-            {
-                return response(StatusCode::PAYLOAD_TOO_LARGE, "");
-            }
-            let Some(intake) = self.dispatch.get() else {
-                return self.dispatch_response(run_id, dispatch::Disposition::Unknown);
-            };
-            let Some(permit) = intake.try_reserve() else {
-                return self.dispatch_response(run_id, dispatch::Disposition::Busy);
-            };
-            let read = async {
-                let mut bytes = Vec::new();
-                while let Some(frame) = request.body_mut().frame().await {
-                    let frame = frame.map_err(|_| StatusCode::BAD_REQUEST)?;
-                    if let Ok(data) = frame.into_data() {
-                        if bytes.len().saturating_add(data.len()) > dispatch::MAX_BODY {
-                            return Err(StatusCode::PAYLOAD_TOO_LARGE);
-                        }
-                        bytes.extend_from_slice(&data);
-                    } else {
-                        return Err(StatusCode::BAD_REQUEST);
-                    }
-                }
-                Ok(bytes)
-            };
-            let bytes = match tokio::time::timeout(Duration::from_secs(5), read).await {
-                Ok(Ok(bytes)) => bytes,
-                Ok(Err(status)) => return response(status, ""),
-                Err(_) => return response(StatusCode::REQUEST_TIMEOUT, ""),
-            };
-            let verdict = intake
-                .submit(self.identity, run_id, &bytes, permit, dispatch::now_ms())
-                .await;
-            return self.dispatch_response(run_id, verdict);
+            return reply;
         }
         if request.method() != Method::GET {
             return response(StatusCode::METHOD_NOT_ALLOWED, "");
@@ -209,16 +172,85 @@ impl IngressHandler {
         response(StatusCode::OK, "ok")
     }
 
+    async fn handle_dispatch(
+        &self,
+        mut request: Request<Incoming>,
+        run_id: RunId,
+        timing: &mut dispatch::DispatchTiming,
+    ) -> Response<Full<Bytes>> {
+        if request.method() != Method::POST {
+            return response(StatusCode::METHOD_NOT_ALLOWED, "");
+        }
+        if request.headers().contains_key("upgrade")
+            || request.headers().contains_key("content-encoding")
+            || request
+                .headers()
+                .get("content-type")
+                .is_none_or(|v| v != "application/json")
+        {
+            return response(StatusCode::BAD_REQUEST, "");
+        }
+        if request
+            .headers()
+            .get("content-length")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.parse::<u64>().ok())
+            .is_some_and(|length| length > dispatch::MAX_BODY as u64)
+        {
+            return response(StatusCode::PAYLOAD_TOO_LARGE, "");
+        }
+        let Some(intake) = self.dispatch.get() else {
+            return self.dispatch_response(run_id, dispatch::Disposition::Unknown);
+        };
+        let Some(permit) = intake.try_reserve() else {
+            return self.dispatch_response(run_id, dispatch::Disposition::Busy);
+        };
+        let read_started = Instant::now();
+        let read = async {
+            let mut bytes = Vec::new();
+            while let Some(frame) = request.body_mut().frame().await {
+                let frame = frame.map_err(|_| StatusCode::BAD_REQUEST)?;
+                if let Ok(data) = frame.into_data() {
+                    if bytes.len().saturating_add(data.len()) > dispatch::MAX_BODY {
+                        return Err(StatusCode::PAYLOAD_TOO_LARGE);
+                    }
+                    bytes.extend_from_slice(&data);
+                } else {
+                    return Err(StatusCode::BAD_REQUEST);
+                }
+            }
+            Ok(bytes)
+        };
+        let read = tokio::time::timeout(Duration::from_secs(5), read).await;
+        timing.body_read_ms = Some(read_started.elapsed().as_secs_f64() * 1000.0);
+        let bytes = match read {
+            Ok(Ok(bytes)) => bytes,
+            Ok(Err(status)) => return response(status, ""),
+            Err(_) => return response(StatusCode::REQUEST_TIMEOUT, ""),
+        };
+        let verdict = intake
+            .submit(
+                self.identity,
+                run_id,
+                &bytes,
+                permit,
+                dispatch::now_ms(),
+                timing,
+            )
+            .await;
+        self.dispatch_response(run_id, verdict)
+    }
+
     fn dispatch_response(
         &self,
-        run_id: runner_types::ids::RunId,
+        run_id: RunId,
         disposition: dispatch::Disposition,
     ) -> Response<Full<Bytes>> {
         let body = serde_json::json!({
             "runnerId": self.identity.runner_id(),
             "heartbeatGeneration": self.identity.heartbeat_generation(),
             "runId": run_id,
-            "disposition": disposition,
+            "disposition": disposition.as_str(),
         })
         .to_string();
         let status = if disposition == dispatch::Disposition::Busy {
@@ -266,6 +298,7 @@ impl IngressRuntime {
         identity: RunnerProcessIdentity,
         hostname: String,
         token: &str,
+        runner_version: &'static str,
     ) -> io::Result<Self> {
         if !canonical_hostname(&hostname) || token.is_empty() {
             return Err(io::Error::new(
@@ -273,7 +306,12 @@ impl IngressRuntime {
                 "Runner ingress requires a canonical public hostname and service credential",
             ));
         }
-        let handler = Arc::new(IngressHandler::new(identity, hostname, token));
+        let handler = Arc::new(IngressHandler::new(
+            identity,
+            hostname,
+            token,
+            runner_version,
+        ));
         let socket = tokio::task::spawn_blocking(move || {
             RunnerIngressSocket::bind(&directory, identity.runner_id())
         })

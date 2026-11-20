@@ -3,6 +3,7 @@ import { command } from "ccstate";
 import type { Root } from "hast";
 import { visit } from "unist-util-visit";
 
+import { artifactDownloadType } from "../../lib/artifact-download-type.ts";
 import { accept } from "../../lib/accept.ts";
 import { generateMessagePdfBlob } from "../../lib/message-pdf/index.ts";
 import { apiClient$ } from "../api-client.ts";
@@ -86,6 +87,7 @@ const generatePdfContent$ = command(
       });
     }
     const imageUrls = new Map<string, string>();
+    const fileCards = new Map<string, string>();
     for (const source of imageSources) {
       // Resolve under this click's access and cancellation, not a preview's
       // cached presigned URL, which may already have expired.
@@ -95,12 +97,23 @@ const generatePdfContent$ = command(
         "app",
         signal,
       );
+      if (resource.artifact) {
+        const kind = artifactDownloadType(resource.artifact);
+        if (kind !== "image" && kind !== "other") {
+          fileCards.set(source, resource.artifact.filename);
+          continue;
+        }
+      }
       imageUrls.set(source, resource.resourceUrl);
     }
     const sources = input.contents.map((content) => {
       return eventBodyPlan(content).treeSource;
     });
-    return await generateMessagePdfBlob(sources, imageUrls, signal);
+    return await generateMessagePdfBlob(
+      sources,
+      { imageUrls, fileCards },
+      signal,
+    );
   },
 );
 

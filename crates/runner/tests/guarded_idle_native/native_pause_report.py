@@ -38,10 +38,11 @@ def validate(directory):
     paths, runners = set(), set()
     for case, events in witnesses.items():
         terminal = terminals[case]
-        if tuple(event["phase"] for event in events) != PHASES:
-            raise ValueError("missing duplicate or reordered native physical pause phases")
-        identity = terminal[1]["sandbox_id"], terminal[1]["backing_generation"]
-        if any((event["sandbox_id"], event["backing_generation"]) != identity for event in events):
+        report.validate_witness_phases(
+            events, PHASES, "missing duplicate or reordered native physical pause phases",
+        )
+        identity = report.witness_identity(terminal[1])
+        if report.witness_identity_changed(events, identity):
             raise ValueError("native physical pause changed original physical owner")
         ordered = [terminal[1], *events[:7], terminal[2], terminal[3], *events[7:10],
                    terminal[4], *events[10:], terminal[5]]

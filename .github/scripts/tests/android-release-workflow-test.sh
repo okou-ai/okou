@@ -3,6 +3,7 @@ set -euo pipefail
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 python3 - "$root" <<'PY'
 import gzip
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -10,6 +11,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import zipfile
 
 root = Path(sys.argv[1])
 workflow = json.loads(subprocess.check_output(
@@ -152,7 +154,6 @@ with tempfile.TemporaryDirectory() as temp:
     work = Path(temp)
     binary = work / 'gh'
     binary.write_text('''#!/usr/bin/env python3
-import gzip
 import hashlib
 import json
 import os
@@ -174,7 +175,8 @@ elif args[:2] == ['release', 'upload']:
     assert args[2] == 'android-v0.2.0'
     assert '--clobber' not in args
     if args[3].endswith('-mapping.txt.gz'):
-        assert gzip.decompress(Path(args[3]).read_bytes()) == b'fixture-r8-mapping'
+        assert Path(args[3]).read_bytes() == (
+            root / 'android-release' / 'okou-android-0.2.0-mapping.txt.gz').read_bytes()
         if os.environ.get('FAIL_MAPPING_UPLOAD') == 'true':
             sys.exit(29)
         with (root / 'archived-map').open('xb') as output:
@@ -182,7 +184,8 @@ elif args[:2] == ['release', 'upload']:
         if os.environ.get('UNKNOWN_MAPPING_UPLOAD') == 'true':
             sys.exit(31)  # Commit happened before the caller lost the receipt.
         sys.exit(0)
-    assert Path(args[3]).read_bytes() == b'fixture-apk'
+    assert Path(args[3]).read_bytes() == (
+        root / 'android-release' / 'okou-android-0.2.0.apk').read_bytes()
     if os.environ.get('FAIL_UPLOAD') == 'true':
         sys.exit(23)
     with (root / 'uploaded').open('x') as output:
@@ -196,13 +199,32 @@ else:
     binary.chmod(0o755)
     apk_dir = work / 'android-release'
     apk_dir.mkdir()
-    (apk_dir / 'okou-android-0.2.0.apk').write_bytes(b'fixture-apk')
-    (apk_dir / 'okou-android-0.2.0-mapping.txt.gz').write_bytes(
-        gzip.compress(b'fixture-r8-mapping', mtime=0))
+    apk_path = apk_dir / 'okou-android-0.2.0.apk'
+    map_uuid = 'e1ae3b30-0b1d-3184-a915-040836dd85bd'
+    with zipfile.ZipFile(apk_path, 'w') as apk:
+        apk.writestr('classes.dex', '~~R8{"version":"fixture","pg-map-id":"fixture-map"}')
+        apk.writestr('assets/sentry-debug-meta.properties', f'io.sentry.ProguardUuids={map_uuid}\n')
+    map_body = b'fixture-r8-mapping'
+    mapping = (f'# compiler_version: fixture\n# pg_map_id: fixture-map\n'
+               f'# pg_map_hash: SHA-256 {hashlib.sha256(map_body).hexdigest()}\n').encode() + map_body
+    (apk_dir / 'okou-android-0.2.0-mapping.txt.gz').write_bytes(gzip.compress(mapping, mtime=0))
+    cli = work / 'sentry-cli'
+    cli.write_text('''#!/usr/bin/env python3
+import gzip
+import os
+from pathlib import Path
+import sys
+archived = Path(os.environ['RUNNER_TEMP']) / 'archived-map'
+assert sys.argv[1:5] == ['upload-proguard', '--require-one', '--uuid', os.environ['FIXTURE_MAP_UUID']]
+assert Path(sys.argv[5]).read_bytes() == gzip.decompress(archived.read_bytes())
+sys.exit(37 if os.environ.get('FAIL_SENTRY_UPLOAD') == 'true' else 0)
+''')
+    cli.chmod(0o755)
     env = dict(os.environ, PATH=str(work) + os.pathsep + os.environ['PATH'],
                RUNNER_TEMP=str(work), GITHUB_REPOSITORY='okou-ai/okou',
                ANDROID_VERSION='0.2.0', ANDROID_TAG='android-v0.2.0',
-               ANDROID_RELEASE_SOURCE_SHA='a' * 40)
+               ANDROID_RELEASE_SOURCE_SHA='a' * 40, FIXTURE_MAP_UUID=map_uuid,
+               SENTRY_AUTH_TOKEN='fixture', SENTRY_ORG='okou', SENTRY_PROJECT='android')
     def run(**overrides):
         for step in [verify, publish]:
             result = subprocess.run(['bash', '-e', '-c', step['run']], env=env | overrides,
@@ -271,6 +293,8 @@ else:
     source = work / 'source'
     for relative in ['.github/scripts/release/publish-android-update.py',
                      '.github/scripts/release/archive-android-mapping.py',
+                     'android/scripts/release_mapping.py',
+                     'android/scripts/upload-sentry-mapping.py',
                      'android/scripts/version-code.sh']:
         target = source / relative
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -302,6 +326,7 @@ else:
     steps = [step for step in job['steps'] if step.get('name') in {
         'Verify Android release tag', 'Publish verified Android update',
         'Publish APK on the Android Release', 'Archive Android release mapping',
+        'Upload Android R8 mapping to Sentry',
     }]
     def run_publication(**overrides):
         for step in steps:
@@ -319,7 +344,7 @@ else:
     data = json.loads(manifest.read_text())
     assert data['release']['version'] == '0.2.0'
     assert data['release']['minimumSdk'] == 24
-    assert (work / 'r2' / data['release']['url'].removeprefix('https://static.okou.io/')).read_bytes() == b'fixture-apk'
+    assert (work / 'r2' / data['release']['url'].removeprefix('https://static.okou.io/')).read_bytes() == apk_path.read_bytes()
     assert (work / 'uploaded').read_text() == 'android-v0.2.0'
     assert (work / 'archived-map').read_bytes() == (apk_dir / 'okou-android-0.2.0-mapping.txt.gz').read_bytes()
 
@@ -328,6 +353,10 @@ else:
     result = run_publication(TAG_SOURCE='b' * 40)
     assert result.returncode != 0
     assert not (work / 'r2').exists(), 'Wrong release source reached R2'
+    assert not (work / 'uploaded').exists()
+    result = run_publication(FAIL_SENTRY_UPLOAD='true')
+    assert result.returncode != 0
+    assert not manifest.exists(), 'Failed Sentry upload allowed update discovery'
     assert not (work / 'uploaded').exists()
     result = run_publication(FAIL_R2='true')
     assert result.returncode != 0

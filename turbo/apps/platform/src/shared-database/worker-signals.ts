@@ -30,6 +30,8 @@ import {
 } from "../signals/root-signal.ts";
 import { logger } from "../signals/log.ts";
 import {
+  createDeferredPromise,
+  type DeferredPromise,
   detach,
   Reason,
   settle,
@@ -67,6 +69,14 @@ const L = logger("SharedDatabaseWorker");
 
 const workerRuntimeState$ = state<SharedDatabaseWorkerRuntime | null>(null);
 const workerDaemonsStartedState$ = state(false);
+const projectRealtimeReadyState$ = state<DeferredPromise<void> | null>(null);
+const projectRealtimeReady$ = computed((get) => {
+  const ready = get(projectRealtimeReadyState$);
+  if (!ready) {
+    throw new Error("Shared database realtime is not initialized");
+  }
+  return ready;
+});
 const pendingChatThreadIndicatorsRefresh$ = state<Promise<boolean> | null>(
   null,
 );
@@ -198,6 +208,10 @@ export const initializeSharedDatabaseWorker$ = command(
     signal.throwIfAborted();
     set(initializeAppVersion$, options.appVersion);
     set(setRootSignal$, signal);
+    set(
+      projectRealtimeReadyState$,
+      createDeferredPromise<void>({ rejection: "owner" }, signal),
+    );
     set(pendingChatThreadIndicatorsRefresh$, null);
     set(setApiClientRuntime$, {
       getToken: options.getToken,
@@ -426,10 +440,14 @@ const setupWorkerForegroundPresence$ = command(
 );
 
 const runSharedDatabaseWorkerDaemons$ = command(
-  async ({ set }, signal: AbortSignal): Promise<void> => {
+  async ({ get, set }, signal: AbortSignal): Promise<void> => {
+    const projectRealtimeReady = get(projectRealtimeReady$);
     // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
     const setup = await settle(set(setupRealtime$, signal), signal);
     if (!setup.ok) {
+      if (!projectRealtimeReady.settled()) {
+        projectRealtimeReady.reject(setup.error);
+      }
       L.warn("shared database realtime setup failed", setup.error);
       return;
     }
@@ -446,7 +464,17 @@ const runSharedDatabaseWorkerDaemons$ = command(
         loopCommand$: handleSharedDatabaseRealtimeMessage$,
         includeMessage: true,
         options: {
-          onError,
+          onSubscribed: () => {
+            if (!projectRealtimeReady.settled()) {
+              projectRealtimeReady.resolve();
+            }
+          },
+          onError: (error: unknown) => {
+            if (!projectRealtimeReady.settled()) {
+              projectRealtimeReady.reject(error);
+            }
+            onError(error);
+          },
           onResync: () => {
             // Tabs need to catch up even when they have no topic subscription
             // on this Worker-owned channel to forward a per-subscription resync.
@@ -542,6 +570,15 @@ export const querySharedDatabaseWorker$ = command(
     signal: AbortSignal,
   ): Promise<SharedDatabaseQueryResult<SharedDatabaseDataKey>> => {
     set(requireConnectionSignal$, connectionId, signal);
+    if (
+      query.dataKey.kind === "project-event" &&
+      query.consistency === "catch-up"
+    ) {
+      // The only baseline must follow the subscription that carries its
+      // invalidations, including when realtime connects after the page.
+      await get(projectRealtimeReady$).promise;
+      signal.throwIfAborted();
+    }
     return await requireRuntime(get(workerRuntimeState$)).query(query, signal);
   },
 );

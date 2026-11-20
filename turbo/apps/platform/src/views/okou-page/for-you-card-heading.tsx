@@ -21,17 +21,17 @@ export function ForYouCardHeading({
   return (
     <header className="grid grid-cols-[minmax(0,1fr)_7rem] items-start gap-4 max-[360px]:grid-cols-[minmax(0,1fr)_5.75rem] max-[360px]:gap-2.5 sm:grid-cols-[minmax(0,1fr)_11rem] sm:gap-6">
       <div className="min-w-0">
-        {source && <div className="mb-2 flex min-w-0">{source}</div>}
+        {source && <div className="mb-2.5 flex min-w-0">{source}</div>}
         <h3
           id={`suggestion-title-${id}`}
           ref={active ? focusTitle : undefined}
           tabIndex={-1}
-          className="text-xl font-semibold leading-8 text-foreground wrap-break-word focus:outline-none sm:text-2xl"
+          className="text-lg font-semibold leading-7 text-foreground wrap-break-word focus:outline-none sm:text-xl sm:leading-8"
         >
           {title}
         </h3>
         {description && (
-          <p className="mt-2 text-xs leading-5 text-muted-foreground wrap-break-word sm:text-sm sm:leading-6">
+          <p className="mt-2 text-sm leading-6 text-muted-foreground wrap-break-word">
             {description}
           </p>
         )}

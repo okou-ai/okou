@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use crate::ProtocolError;
-use crate::frame::{encode_into, encode_prefix_into};
+use crate::frame::{encode_into, encode_with_borrowed_payload_into};
 use crate::payloads::exec_operation::encode_exec_result_frame_into_with_prefix;
 use crate::read::{
     checked_payload_len_add, ensure_payload_fits_message, ensure_u16_len, ensure_u32_len,
@@ -150,14 +150,15 @@ pub fn encode_guest_storage_manifest_request_frame_prefix_into<'a>(
     manifest_json: &'a [u8],
 ) -> Result<&'a [u8], ProtocolError> {
     let lengths = validate_request(timeout_ms, run_id, runtime_dir, manifest_json)?;
-    encode_prefix_into(
+    encode_with_borrowed_payload_into(
         prefix,
         MSG_GUEST_STORAGE_MANIFEST,
         seq,
         request_context_len(run_id, runtime_dir)?,
-        manifest_json,
+        manifest_json.len(),
         |prefix| append_request_context(prefix, timeout_ms, run_id, runtime_dir, lengths),
-    )
+    )?;
+    Ok(manifest_json)
 }
 
 /// Decode a fixed guest storage-manifest request payload.

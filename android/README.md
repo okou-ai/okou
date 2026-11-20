@@ -98,6 +98,12 @@ network freshness. Signed archive URLs, credentials and transient indicators are
 not persisted in the chat cache. Personal Instructions drafts use the separate
 intent store described above.
 
+Pin, pin reorder, rename, mute and archive actions project their visible result
+from memory before the request completes. Canonical event IDs settle these
+changes, including events observed before a snapshot rebase. If an outcome
+cannot be confirmed, Refresh chats reads back the list and clears the unresolved
+projection once that read succeeds.
+
 Conversation history shares this cache and its workspace authorization lease.
 Room schema v2 adds `history_scopes` (thread, authorization, canonical event format,
 paired cursor and confirmation time) and `history_events` (lossless raw event JSON,
@@ -530,6 +536,21 @@ or conflicting mappings block update discovery. The job then uploads
 `okou-android-X.Y.Z.apk` to that release. The compatibility gate recognizes
 publication only after the APK upload completes. Store processing is not part
 of this distribution path.
+
+### Crash reporting
+
+Provision the Android project `android` in the `okou` Sentry organization and
+set the repository variable `SENTRY_DSN_ANDROID` to its public DSN. The production
+`SENTRY_AUTH_TOKEN` must have mapping upload access to that project. The signed
+APK carries the Sentry mapping UUID. The release job uploads the verified R8 map
+under that UUID before publishing the R2 update.
+
+Local Release builds can use the same public DSN through `SENTRY_DSN_ANDROID`.
+An unset DSN disables reporting on local builds. Debug and instrumentation test
+hosts skip initialization. For one-time acceptance, use a local minified Release
+build and upload its matching map with `scripts/upload-sentry-mapping.py`. Trigger
+a controlled uncaught exception in the local build, then verify its restored
+frames and the version and build in Sentry.
 
 ### Release Signing
 

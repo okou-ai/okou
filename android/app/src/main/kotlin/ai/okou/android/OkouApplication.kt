@@ -15,6 +15,7 @@ import ai.okou.android.preferences.MemberAppearanceCache
 import ai.okou.android.updates.AndroidUpdateClient
 import ai.okou.android.updates.AppUpdates
 import ai.okou.android.updates.FileUpdateStore
+import ai.okou.android.updates.observeUpdateConnectivity
 import android.app.Application
 import android.os.Build
 import androidx.core.app.LocaleManagerCompat
@@ -34,6 +35,7 @@ open class OkouApplication : Application() {
             FileUpdateStore(directory),
             BuildConfig.VERSION_NAME,
             Build.VERSION.SDK_INT,
+            connectivity = observeUpdateConnectivity(),
         )
     }
     val chatCache by lazy { ChatCacheStore(this) }
@@ -46,6 +48,8 @@ open class OkouApplication : Application() {
     val authentication by lazy { createAuthentication() }
 
     open fun createAuthentication(): Authentication = ClerkAuthentication(this)
+
+    protected open fun startCrashReporting() = CrashReporting.start(this)
 
     open fun createWorkspaceSession(
         identity: WorkspaceIdentity,
@@ -62,6 +66,7 @@ open class OkouApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        startCrashReporting()
         authentication.initialize()
     }
 }

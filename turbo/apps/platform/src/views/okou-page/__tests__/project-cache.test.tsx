@@ -2,9 +2,11 @@ import { cleanup, screen, within } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { projectsContract } from "@okouai/api-contracts/contracts/projects";
+import { platformRealtimeTokenContract } from "@okouai/api-contracts/contracts/realtime";
 import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import {
   chatThreadDraftContract,
+  chatThreadEventsContract,
   chatThreadsContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { setupPage, startPage } from "../../../__tests__/page-helper.ts";
@@ -15,6 +17,7 @@ import {
 } from "../../../signals/__tests__/test-helpers.ts";
 import {
   continuityThread,
+  continuityEventRow,
   installContinuityWorkspace,
 } from "./chat-continuity-test-helpers.ts";
 
@@ -82,6 +85,71 @@ function disposeFirstPage() {
   vi.mocked(window.history.replaceState).mockRestore();
   vi.mocked(window.history.back).mockRestore();
 }
+
+test("Projects catch changes made while a cached page waits for realtime", async () => {
+  const options = installWorkspace();
+  installMetadata();
+  const row = continuityEventRow(
+    121,
+    1,
+    continuityThread(121, 1, "Planning conversation").id,
+    "output.message",
+    { payload: { content: "Cached conversation" } },
+  );
+  context.mocks.api(chatThreadEventsContract.rows, ({ query, respond }) => {
+    return respond(200, {
+      rows: query.sinceSeqId < 1 ? [row] : [],
+      cursor: { lastEventId: row.id, lastSeqId: 1 },
+      hasMore: false,
+    });
+  });
+  await setupPage({ context: firstPage, ...options });
+  disposeFirstPage();
+
+  const connecting = context.mocks.deferred<void>();
+  const connection = context.mocks.deferred<void>();
+  let renamedWhileConnecting = false;
+  context.mocks.api(projectsContract.events, ({ respond }) => {
+    return respond(200, {
+      events: renamedWhileConnecting ? [renamed(2, "Launch ready")] : [],
+      hasMore: false,
+    });
+  });
+  context.mocks.api(
+    platformRealtimeTokenContract.create,
+    async ({ respond }) => {
+      if (!connecting.settled()) {
+        connecting.resolve();
+      }
+      await connection.promise;
+      return respond(200, {
+        keyName: "mock-ably-key",
+        clientId: "chat-list-user-321",
+        timestamp: 1,
+        capability: '{"*":["*"]}',
+        nonce: "startup-connection",
+        mac: "mock-signature",
+      });
+    },
+  );
+  const page = await startPage({ context: nextPage, ...options });
+  try {
+    await page.content;
+    await connecting.promise;
+    expect(screen.getByText("Launch")).toBeInTheDocument();
+    renamedWhileConnecting = true;
+    connection.resolve();
+    await page.ready;
+    await expect(
+      screen.findByText("Launch ready"),
+    ).resolves.toBeInTheDocument();
+  } finally {
+    if (!connection.settled()) {
+      connection.resolve();
+    }
+    await page.ready;
+  }
+});
 
 test("Projects load and catch up on a browser without Symbol.dispose", async () => {
   const options = installWorkspace();

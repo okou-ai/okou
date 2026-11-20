@@ -24,6 +24,10 @@ import { detach, Reason, resetSignal } from "../utils.ts";
 import { pageSignal$ } from "../page-signal.ts";
 import { refreshWorkspaceLayout$ } from "./workspace-layout.ts";
 import {
+  createCrossChatArtifactPreview,
+  type CrossChatArtifactPreviewSignals,
+} from "./chat-artifact-preview.ts";
+import {
   prepareNarrowSidebarScroll$,
   restoreNarrowSidebarScroll$,
 } from "./chat-layout.ts";
@@ -126,9 +130,14 @@ function artifactRefFromUrl(url: string): ArtifactRef {
   };
 }
 
+interface ThreadArtifactPreviewContext {
+  readonly openDiagram$: MermaidDiagramPreviewCommand;
+  readonly threadId: string;
+}
+
 function withTextPreview(
   ref: ArtifactRef,
-  openDiagram$: MermaidDiagramPreviewCommand,
+  { openDiagram$, threadId }: ThreadArtifactPreviewContext,
 ): ArtifactRef {
   if (!isTextPreviewKind(ref.kind)) {
     return ref;
@@ -140,7 +149,11 @@ function withTextPreview(
     text$,
     ...(ref.kind === "markdown"
       ? {
-          markdownTree$: createMarkdownPreviewTree(text$, openDiagram$),
+          markdownTree$: createMarkdownPreviewTree(
+            text$,
+            openDiagram$,
+            threadId,
+          ),
         }
       : {}),
   };
@@ -148,11 +161,11 @@ function withTextPreview(
 
 function materializeArtifactRef(
   input: ArtifactRefInput,
-  openDiagram$: MermaidDiagramPreviewCommand,
+  previewContext: ThreadArtifactPreviewContext,
   signal: AbortSignal,
 ): ArtifactRef {
   if (typeof input === "string") {
-    return withTextPreview(artifactRefFromUrl(input), openDiagram$);
+    return withTextPreview(artifactRefFromUrl(input), previewContext);
   }
   if (!("file" in input)) {
     return withTextPreview(
@@ -171,7 +184,7 @@ function materializeArtifactRef(
           ? {}
           : { shareAvailable: input.shareAvailable }),
       },
-      openDiagram$,
+      previewContext,
     );
   }
   const resource = createObjectUrlResource(input.file, signal);
@@ -190,7 +203,7 @@ function materializeArtifactRef(
         ? {}
         : { shareAvailable: input.shareAvailable }),
     },
-    openDiagram$,
+    previewContext,
   );
 }
 
@@ -224,6 +237,7 @@ interface ThreadAutomationEditor {
 }
 
 export interface ThreadSidebarSignals {
+  readonly crossChatArtifact: CrossChatArtifactPreviewSignals;
   readonly target$: Computed<ThreadSidebarTarget | null>;
   readonly open$: Command<void, [ThreadSidebarOpenTarget, AbortSignal]>;
   readonly openCatalogArtifact$: Command<Promise<void>, [string, AbortSignal]>;
@@ -296,12 +310,12 @@ function createThreadSidebarSessionSignals(dispose$: Command<void, []>) {
   return { resetSidebarSessionSignal$, startSession$ };
 }
 
-function createThreadSidebarTarget(
+function createThreadSidebarTargetSignals(
   threadId: string,
   mailRegistry: MailDraftCardSignalsRegistry,
   internalTarget$: State<NonMailThreadSidebarTarget | null>,
 ) {
-  return computed((get): ThreadSidebarTarget | null => {
+  const target$ = computed((get): ThreadSidebarTarget | null => {
     const location = get(threadMailLocation$);
     if (location?.threadId === threadId && location.view === "detail") {
       const signals = get(mailRegistry.values$).find((candidate) => {
@@ -317,6 +331,15 @@ function createThreadSidebarTarget(
     }
     return get(internalTarget$);
   });
+  const crossChatArtifact = createCrossChatArtifactPreview(
+    computed((get) => {
+      const target = get(target$);
+      return target?.type === "artifact" && target.source.kind === "attachment"
+        ? { threadId, url: target.source.ref.url }
+        : undefined;
+    }),
+  );
+  return { target$, crossChatArtifact };
 }
 
 function createThreadAutomationEditorSignals() {
@@ -343,6 +366,26 @@ function createThreadAutomationEditorSignals() {
   };
 }
 
+function createThreadSidebarPreviewSignals(
+  threadId: string,
+  artifactCatalog: ArtifactCatalogViewSignals,
+) {
+  const diagram = createArtifactDiagramPreviewSignals();
+  const preview = createCatalogArtifactPreviewSignals(
+    artifactCatalog,
+    diagram.open$,
+    threadId,
+  );
+  return {
+    diagram,
+    selectedArtifactText$: preview.text$,
+    selectedArtifactMarkdownTree$: preview.markdownTree$,
+    selectedArtifactResourceUrl$: preview.resourceUrl$,
+    selectedArtifactImageUrl$: preview.imageUrl$,
+    selectedArtifactShareUrl$: preview.shareUrl$,
+  };
+}
+
 export function createThreadSidebarSignals(
   threadId: string,
   mailRegistry: MailDraftCardSignalsRegistry,
@@ -354,13 +397,10 @@ export function createThreadSidebarSignals(
   const internalFullscreen$ = state(false);
   const automationEditor = createThreadAutomationEditorSignals();
   const imageCanvas = createZoomableImageCanvasSignals();
-  const diagram = createArtifactDiagramPreviewSignals();
+  const preview = createThreadSidebarPreviewSignals(threadId, artifactCatalog);
+  const previewContext = { openDiagram$: preview.diagram.open$, threadId };
   const { resetSidebarSessionSignal$, startSession$ } =
-    createThreadSidebarSessionSignals(diagram.dispose$);
-  const preview = createCatalogArtifactPreviewSignals(
-    artifactCatalog,
-    diagram.open$,
-  );
+    createThreadSidebarSessionSignals(preview.diagram.dispose$);
 
   const publishTarget$ = command(
     ({ get, set }, target: NonMailThreadSidebarTarget): void => {
@@ -416,7 +456,7 @@ export function createThreadSidebarSignals(
         type: "artifact",
         source: {
           kind: "attachment",
-          ref: materializeArtifactRef(input, diagram.open$, sessionSignal),
+          ref: materializeArtifactRef(input, previewContext, sessionSignal),
         },
       });
     },
@@ -433,7 +473,11 @@ export function createThreadSidebarSignals(
   });
 
   return {
-    target$: createThreadSidebarTarget(threadId, mailRegistry, internalTarget$),
+    ...createThreadSidebarTargetSignals(
+      threadId,
+      mailRegistry,
+      internalTarget$,
+    ),
     open$,
     openCatalogArtifact$,
     openAttachment$,
@@ -466,12 +510,7 @@ export function createThreadSidebarSignals(
       );
     }),
     imageCanvas,
-    diagram,
     artifactCatalog,
-    selectedArtifactText$: preview.text$,
-    selectedArtifactMarkdownTree$: preview.markdownTree$,
-    selectedArtifactResourceUrl$: preview.resourceUrl$,
-    selectedArtifactImageUrl$: preview.imageUrl$,
-    selectedArtifactShareUrl$: preview.shareUrl$,
+    ...preview,
   };
 }

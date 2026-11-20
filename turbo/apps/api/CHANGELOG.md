@@ -10,6 +10,104 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.97.4](https://github.com/okou-ai/okou/compare/api-v2.97.3...api-v2.97.4) (2026-11-20)
+
+
+### Refactoring
+
+* **drive:** authorize artifact and table exports with chat accounts ([#49430](https://github.com/okou-ai/okou/issues/49430)) ([efa10f0](https://github.com/okou-ai/okou/commit/efa10f0bb95b3f3c9c5d09aa3e1049c3c49163e7))
+
+
+### Performance Improvements
+
+* **api:** capture and overlap remaining run launch inputs ([#49489](https://github.com/okou-ai/okou/issues/49489)) ([1b6f8c8](https://github.com/okou-ai/okou/commit/1b6f8c886493476eafcc18cbd729fb81941bd334))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.95.1
+    * @okouai/core bumped to 8.857.4
+    * @okouai/db bumped to 2.56.0
+    * @okouai/pi-agent-runtime bumped to 1.52.16
+
+## [2.97.3](https://github.com/okou-ai/okou/compare/api-v2.97.2...api-v2.97.3) (2026-11-20)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.95.0
+    * @okouai/core bumped to 8.857.3
+    * @okouai/db bumped to 2.55.1
+    * @okouai/pi-agent-runtime bumped to 1.52.15
+
+## [2.97.2](https://github.com/okou-ai/okou/compare/api-v2.97.1...api-v2.97.2) (2026-11-20)
+
+
+### Refactoring
+
+* **api:** retire legacy run callbacks and simplify queued prompts ([#49448](https://github.com/okou-ai/okou/issues/49448)) ([e704f76](https://github.com/okou-ai/okou/commit/e704f76b00fe4bd450a293de15e6a594c2637261))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.857.2
+    * @okouai/db bumped to 2.55.0
+    * @okouai/pi-agent-runtime bumped to 1.52.14
+
+## [2.97.1](https://github.com/okou-ai/okou/compare/api-v2.97.0...api-v2.97.1) (2026-11-20)
+
+
+### Bug Fixes
+
+* **platform:** use the suggestions switch for my okou proactive settings ([#49439](https://github.com/okou-ai/okou/issues/49439)) ([1d42e69](https://github.com/okou-ai/okou/commit/1d42e6994ad6d82a6678d34b955335765fc560b5))
+
+
+### Refactoring
+
+* remove feature guides feature switch ([#49441](https://github.com/okou-ai/okou/issues/49441)) ([e5642ea](https://github.com/okou-ai/okou/commit/e5642ea2ef0ea2ba7a6cd451d395c8329a855c88))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.94.1
+    * @okouai/core bumped to 8.857.1
+    * @okouai/db bumped to 2.54.3
+    * @okouai/pi-agent-runtime bumped to 1.52.13
+
+## [2.97.0](https://github.com/okou-ai/okou/compare/api-v2.96.0...api-v2.97.0) (2026-11-20)
+
+
+### Features
+
+* **platform:** consolidate proactive settings in my okou ([#49401](https://github.com/okou-ai/okou/issues/49401)) ([9d20531](https://github.com/okou-ai/okou/commit/9d20531a9ad041abf15a8e5c1697b06475b563df))
+
+
+### Refactoring
+
+* **api:** capture queued prompt delivery once ([#49420](https://github.com/okou-ai/okou/issues/49420)) ([3a14110](https://github.com/okou-ai/okou/commit/3a14110a3b066522c42361a57ceccb329aef907a))
+* **api:** make queued continuation explicit ([#49429](https://github.com/okou-ai/okou/issues/49429)) ([97d31fb](https://github.com/okou-ai/okou/commit/97d31fb66579a567eda930952acba611c23e75f0))
+* **api:** share run connector scope across account and skill resolution ([#49414](https://github.com/okou-ai/okou/issues/49414)) ([ae86233](https://github.com/okou-ai/okou/commit/ae86233b41a72b49c967fe580ea185bdf8c2ab9a))
+* **api:** simplify queued launch binding and callbacks ([#49432](https://github.com/okou-ai/okou/issues/49432)) ([3e70d86](https://github.com/okou-ai/okou/commit/3e70d865438fe987ea77468340793cafe8c26c30))
+* **api:** simplify queued prompt launch handoffs ([#49409](https://github.com/okou-ai/okou/issues/49409)) ([69c9055](https://github.com/okou-ai/okou/commit/69c905577283656d83a027e291a4b8a4a2601e22))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.94.0
+    * @okouai/core bumped to 8.857.0
+    * @okouai/db bumped to 2.54.2
+    * @okouai/pi-agent-runtime bumped to 1.52.12
+
 ## [2.96.0](https://github.com/okou-ai/okou/compare/api-v2.95.7...api-v2.96.0) (2026-11-20)
 
 

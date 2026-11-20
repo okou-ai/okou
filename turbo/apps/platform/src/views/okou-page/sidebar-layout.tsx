@@ -1,3 +1,7 @@
+import {
+  ChatShareHeaderControls,
+  useChatShareRefresh,
+} from "./chat-share-selection-controls.tsx";
 import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
 import { ProjectDialogs } from "../projects/project-dialogs.tsx";
 import { PersonalSubscriptionDialogs } from "./subscription-linking.tsx";
@@ -58,6 +62,7 @@ import { SubscriptionPurchaseConfirmDialog } from "./components/org-manage/subsc
 import { CheckoutAbandonedSurveyDialog } from "./components/billing-survey.tsx";
 import { lightboxUrl$ } from "../../signals/okou-page/attachment-chips.ts";
 import { AttachmentLightbox } from "./attachment-chips.tsx";
+import { MarkdownTableConnectionDialog } from "../components/markdown-table.tsx";
 import { skillImportDialogOpen$ } from "../../signals/skill-import/skill-import-dialog.ts";
 import { SkillImportDialog } from "../skill-import/skill-import-dialog.tsx";
 import { CreateAgentDialogContainer } from "../agents-page/create-agent-dialog.tsx";
@@ -230,39 +235,14 @@ function MobileShareButtonLeaf() {
 }
 
 function MobileSharingOverlayInner({ thread }: { thread: ChatPanelSignals }) {
-  const { t } = useTranslation();
   const phase = useGet(thread.sharing.phase$);
-  const selectedCount = useGet(thread.sharing.selectedCount$);
-  const close = useSet(thread.sharing.close$);
-  const pageSignal = useGet(pageSignal$);
+  const refreshed = useChatShareRefresh();
   if (phase === "idle") {
     return null;
   }
   return (
-    <div className="absolute inset-0 z-20 flex items-center justify-between bg-background px-4">
-      <span className="text-sm font-medium text-foreground">
-        {t(
-          ($) => {
-            return $.chat.sharing.selectedCount;
-          },
-          { count: selectedCount },
-        )}
-      </span>
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={() => {
-          detach(
-            close(pageSignal),
-            Reason.DomCallback,
-            "close shared thread selection",
-          );
-        }}
-      >
-        {t(($) => {
-          return $.chat.sharing.cancel;
-        })}
-      </Button>
+    <div className="absolute inset-0 z-20 flex items-center justify-between gap-2 bg-background px-4">
+      <ChatShareHeaderControls sharing={thread.sharing} refreshed={refreshed} />
     </div>
   );
 }
@@ -562,6 +542,7 @@ function SidebarLayoutInner({ children }: { children: ReactNode }) {
       <SubscriptionPurchaseConfirmDialog />
       <CheckoutAbandonedSurveyDialog />
       <AttachmentLightboxMount />
+      <MarkdownTableConnectionDialog />
       <SkillImportDialogMount />
       <CreateAgentDialogContainer />
       <QueueDrawer />

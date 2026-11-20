@@ -54,4 +54,14 @@ export const artifactGoogleDriveContract = c.router({
     summary:
       "Upload an original artifact or convert it to a Google editor format",
   },
+  uploadFromChat: {
+    ...uploadRoute,
+    path: "/api/artifacts/:artifactId/google-drive/chat-uploads",
+    body: object({
+      chatThreadId: uuid(),
+      connectionId: uuid().optional(),
+      mode: zEnum(["original", "google"]),
+    }),
+    summary: "Upload an owned artifact to the current Drive account in a Chat",
+  },
 });

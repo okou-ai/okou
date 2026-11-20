@@ -1,4 +1,3 @@
-import type { ReactNode } from "react";
 import { useGet, useLastResolved } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
@@ -27,11 +26,9 @@ function formatPauseTime(disabledAt: string, timeZone: string | undefined) {
 export function PlatformFeedEvent({
   entry,
   active,
-  navigation,
 }: {
   readonly entry: ReturnType<typeof createPlatformEventEntry>;
   readonly active: boolean;
-  readonly navigation: ReactNode;
 }) {
   const { t } = useTranslation();
   const signal = useGet(pageSignal$);
@@ -64,7 +61,7 @@ export function PlatformFeedEvent({
             }}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-block max-w-full truncate rounded-md text-xs text-muted-foreground underline decoration-border underline-offset-4 hover:bg-state-hover hover:text-foreground"
+            className="inline-block max-w-full truncate rounded-md text-sm text-muted-foreground underline decoration-border underline-offset-4 hover:bg-state-hover hover:text-foreground"
             aria-label={t(($) => {
               return $.feedEvents.automationDisabled.viewAutomation;
             })}
@@ -74,12 +71,12 @@ export function PlatformFeedEvent({
         }
       />
       <div className="mb-6 mt-6 space-y-3 rounded-3xl bg-nested-fill p-4">
-        <p className="text-xs text-muted-foreground">
+        <p className="text-sm text-muted-foreground">
           {t(($) => {
             return $.feedEvents.automationDisabled.systemSource;
           })}
         </p>
-        <p className="text-sm leading-6 text-foreground">
+        <p className="text-base leading-6 text-foreground">
           {t(
             ($) => {
               return $.feedEvents.automationDisabled.reason;
@@ -96,7 +93,7 @@ export function PlatformFeedEvent({
         )}
         <time
           dateTime={content.disabledAt}
-          className="block text-xs text-muted-foreground"
+          className="block text-sm text-muted-foreground"
         >
           {t(
             ($) => {
@@ -135,7 +132,6 @@ export function PlatformFeedEvent({
             })}
           </Button>
         </div>
-        {navigation}
       </footer>
       {!busy &&
         (activation.state === "hasError" || dismissal.state === "hasError") && (

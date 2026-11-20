@@ -4,6 +4,7 @@ use super::*;
 use nix::fcntl::{OFlag, openat};
 use nix::sys::stat::Mode;
 use nix::unistd::{UnlinkatFlags, unlinkat};
+use runner_host::error::HostResult;
 use runner_host::host_file::{self, DirMode};
 use runner_host::lock::{self, ExistingTryLock, TryLock};
 use runner_host::paths::{HomePaths, short_digest, touch_mtime};
@@ -212,34 +213,51 @@ pub(super) fn read(
     version: &str,
     cancel: &CancellationToken,
 ) -> io::Result<Option<Vec<StorageFile>>> {
-    read_with_budget(
-        home,
-        name,
-        version,
-        storage_files::MAX_STORAGE_BYTES,
-        storage_files::MAX_FILES,
-        cancel,
-    )
-}
-
-pub(super) fn read_with_budget(
-    home: &HomePaths,
-    name: &str,
-    version: &str,
-    content_budget: usize,
-    file_budget: usize,
-    cancel: &CancellationToken,
-) -> io::Result<Option<Vec<StorageFile>>> {
     read_entry(
         home,
         name,
         version,
         EntryKind::Positive,
-        content_budget,
-        file_budget,
+        (storage_files::MAX_STORAGE_BYTES, storage_files::MAX_FILES),
         cancel,
+        lock::try_acquire_existing_shared_or_missing_blocking,
     )?
     .into_ready_files()
+}
+
+pub(super) struct BatchReader<'a> {
+    home: &'a HomePaths,
+    cancel: &'a CancellationToken,
+    locks: lock::ExistingSharedLockBatch,
+}
+
+impl<'a> BatchReader<'a> {
+    pub(super) fn new(home: &'a HomePaths, cancel: &'a CancellationToken) -> Self {
+        Self {
+            home,
+            cancel,
+            locks: lock::ExistingSharedLockBatch::default(),
+        }
+    }
+
+    pub(super) fn read(
+        &mut self,
+        name: &str,
+        version: &str,
+        content_budget: usize,
+        file_budget: usize,
+    ) -> io::Result<Option<Vec<StorageFile>>> {
+        read_entry(
+            self.home,
+            name,
+            version,
+            EntryKind::Positive,
+            (content_budget, file_budget),
+            self.cancel,
+            |path| self.locks.try_acquire_or_missing(path),
+        )?
+        .into_ready_files()
+    }
 }
 
 enum LookupOutcome {
@@ -264,7 +282,15 @@ pub(super) fn is_rejected(
     version: &str,
     cancel: &CancellationToken,
 ) -> io::Result<bool> {
-    match read_entry(home, name, version, EntryKind::Rejection, 0, 0, cancel)? {
+    match read_entry(
+        home,
+        name,
+        version,
+        EntryKind::Rejection,
+        (0, 0),
+        cancel,
+        lock::try_acquire_existing_shared_or_missing_blocking,
+    )? {
         LookupOutcome::Miss => Ok(false),
         LookupOutcome::Rejected => Ok(true),
         LookupOutcome::Ready(_) => Err(invalid("decoded cache identity or admission mismatch")),
@@ -318,9 +344,9 @@ fn read_entry(
     name: &str,
     version: &str,
     kind: EntryKind,
-    content_budget: usize,
-    file_budget: usize,
+    budget: (usize, usize),
     cancel: &CancellationToken,
+    acquire_lock: impl FnOnce(&Path) -> HostResult<ExistingTryLock>,
 ) -> io::Result<LookupOutcome> {
     check_cancel(cancel)?;
     let key = EntryKey::new(name, version, kind);
@@ -335,9 +361,7 @@ fn read_entry(
         Err(error) => return Err(error),
     }
     let lock_path = key.lock(home);
-    let _lock = match lock::try_acquire_existing_shared_or_missing_blocking(&lock_path)
-        .map_err(io::Error::other)?
-    {
+    let _lock = match acquire_lock(&lock_path).map_err(io::Error::other)? {
         ExistingTryLock::Acquired(lock) => lock,
         ExistingTryLock::Busy => return Ok(LookupOutcome::Miss),
         ExistingTryLock::Missing => {
@@ -350,6 +374,7 @@ fn read_entry(
             }
         }
     };
+    let (content_budget, file_budget) = budget;
     read_locked_entry(
         home,
         name,

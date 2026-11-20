@@ -199,7 +199,7 @@ const synchronizeProactiveSchedule$ = command(
           eq(workflowAutomations.workflowId, args.workflowId),
           eq(workflowAutomations.officialBlueprintKey, args.blueprintKey),
           eq(workflowAutomations.officialIntendedEnabled, false),
-          proactiveWorkflowOwnerEnabledSql(args.owner, args.agentId, args.kind),
+          proactiveWorkflowOwnerEnabledSql(args.owner, args.agentId),
         ),
       );
     signal.throwIfAborted();
@@ -220,11 +220,7 @@ const synchronizeProactiveSchedule$ = command(
               sql`${workflowAutomations.timezone} IS DISTINCT FROM ${args.timezone}`,
               sql`${workflowAutomations.cronExpression} IS DISTINCT FROM ${args.cron}`,
             ),
-            proactiveWorkflowOwnerEnabledSql(
-              args.owner,
-              args.agentId,
-              args.kind,
-            ),
+            proactiveWorkflowOwnerEnabledSql(args.owner, args.agentId),
           ),
         );
       signal.throwIfAborted();
@@ -288,7 +284,7 @@ export const ensureProactiveWorkflows$ = command(
           official_definition_name, official_installation_state, created_by, updated_by, created_at, updated_at)
         SELECT ${owner.orgId}, ${eligibility.agentId}::uuid, ${owner.userId}, ${definition.name}, 'private', NULL, NULL, NULL,
           ${definition.name}, 'installed', ${owner.userId}, ${owner.userId}, ${at}, ${at}
-        WHERE ${proactiveWorkflowOwnerEnabledSql(owner, eligibility.agentId, kind)}
+        WHERE ${proactiveWorkflowOwnerEnabledSql(owner, eligibility.agentId)}
           AND EXISTS (SELECT 1 FROM official_workflow_catalog_state WHERE accepted_release_id = ${catalog.releaseId})
         ON CONFLICT (org_id, agent_id, owner_user_id, official_definition_name) WHERE official_definition_name IS NOT NULL
         DO UPDATE SET updated_at = EXCLUDED.updated_at
@@ -349,7 +345,6 @@ export const reconcileProactiveWorkflows$ = command(
           and(
             or(
               eq(orgMembersMetadata.proactiveSuggestionsEnabled, true),
-              eq(orgMembersMetadata.proactiveLearningEnabled, true),
               exists(
                 get(db$)
                   .select({ id: installedWorkflows.id })

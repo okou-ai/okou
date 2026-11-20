@@ -13,6 +13,7 @@ import { createContext, runInContext, runInNewContext } from "node:vm";
 import { build, loadConfigFromFile } from "vite";
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
 import type {
+  DocumentExportWorkerReadyMessage,
   PdfWorkerRequest,
   PdfWorkerResponse,
 } from "../src/lib/message-pdf/types.ts";
@@ -173,7 +174,18 @@ async function assertPdfLinkAnnotation(
   }
 }
 
-await test("built PDF worker exports grapheme text and links with missing or native APIs", async () => {
+type WorkerListener = (event: MessageEvent<unknown>) => void | Promise<void>;
+
+async function dispatchWorkerEvent(
+  listeners: ReadonlyMap<string, WorkerListener>,
+  event: MessageEvent<unknown>,
+): Promise<void> {
+  const listener = listeners.get(event.type);
+  assert.ok(listener, `The built worker must listen for ${event.type}`);
+  await listener(event);
+}
+
+await test("built PDF worker renders and reports decode failures with missing or native APIs", async () => {
   const result = await build({
     configFile: false,
     logLevel: "silent",
@@ -242,9 +254,9 @@ await test("built PDF worker exports grapheme text and links with missing or nat
       writable: true,
       value: native ? URL.canParse : undefined,
     });
+    const listeners = new Map<string, WorkerListener>();
     const delivery: {
-      listener?: (event: { data: PdfWorkerRequest }) => Promise<void>;
-      response?: PdfWorkerResponse;
+      response?: PdfWorkerResponse | DocumentExportWorkerReadyMessage;
     } = {};
     const workerScope = createContext({
       Intl: workerIntl,
@@ -261,24 +273,33 @@ await test("built PDF worker exports grapheme text and links with missing or nat
       queueMicrotask,
       atob,
       btoa,
-      addEventListener(_type: string, listener: typeof delivery.listener) {
-        delivery.listener = listener;
+      addEventListener(type: string, listener: WorkerListener) {
+        listeners.set(type, listener);
       },
-      postMessage(response: PdfWorkerResponse) {
+      postMessage(
+        response: PdfWorkerResponse | DocumentExportWorkerReadyMessage,
+      ) {
         delivery.response = response;
       },
     });
     runInContext("globalThis.self = globalThis", workerScope);
     runInContext(entry.code, workerScope);
-    assert.ok(delivery.listener);
-    await delivery.listener({ data: request });
+    await dispatchWorkerEvent(
+      listeners,
+      new MessageEvent("message", { data: request }),
+    );
     const response = delivery.response;
-    assert.ok(response?.ok);
+    assert.ok(response && "ok" in response && response.ok);
     assert.equal(response.blob.type, "application/pdf");
     await assertPdfLinkAnnotation(
       response.blob,
       "https://example.com/reference",
     );
+    await dispatchWorkerEvent(listeners, new MessageEvent("messageerror"));
+    assert.deepEqual(structuredClone(delivery.response), {
+      ok: false,
+      failure: "message_decode",
+    });
     assert.deepEqual(
       Array.from(new workerIntl.Segmenter().segment("e\u0301👩‍💻"), (part) => {
         return part.segment;

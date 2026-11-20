@@ -129,7 +129,7 @@ if [ "$native_needed" = true ]; then
     decision=$(cd "$RELEASE_WORKTREE" && python3 "$PROMOTION" release-pr-tests --base "$PR_BASE")
     if [ "$(jq -er '.reuse | if type == "boolean" then tostring else error("missing reuse decision") end' <<<"$decision")" = true ]; then
       evidence_url=$(jq -er .runUrl <<<"$decision")
-      create_gate_check ci-gate-ios success "Release metadata verified against main tests" "Native test inputs match successful main validation: ${evidence_url}. The merge queue still verifies its actual toolchain and version-specific archive."
+      create_gate_check ci-gate-ios success "Release metadata verified against main tests" "Native test inputs match successful main validation: ${evidence_url}. The merge queue still verifies its actual toolchain and the published archive."
     else
       current_pr=$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json headRefOid)
       if [ "$(jq -er .headRefOid <<<"$current_pr")" != "$PR_HEAD" ]; then

@@ -73,6 +73,11 @@ describe("Runner first-start Thread binding", () => {
       await api.requestCancelRun(owned.actor, pending.runId, [200]);
       signing.release();
       await flushWaitUntilForTest();
+      expect(api.receivedDispatches(owned.runnerGroup)).not.toContainEqual(
+        expect.objectContaining({
+          executionContext: expect.objectContaining({ runId: pending.runId }),
+        }),
+      );
       const cancelled = await api.readRun(owned.actor, pending.runId);
       expect(cancelled.status).toBe("cancelled");
       expect(cancelled.startedAt).toBeUndefined();

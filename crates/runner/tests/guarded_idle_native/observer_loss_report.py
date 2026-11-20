@@ -30,12 +30,13 @@ def validate(directory):
     runners = set()
     for case, events in witnesses.items():
         terminal = terminals[case]
-        if tuple(e["phase"] for e in events) != PHASES:
-            raise ValueError("missing duplicate or unordered observer-loss phases")
-        identity = terminal[1]["sandbox_id"], terminal[1]["backing_generation"]
+        report.validate_witness_phases(
+            events, PHASES, "missing duplicate or unordered observer-loss phases",
+        )
+        identity = report.witness_identity(terminal[1])
         clocks = [terminal[3]["monotonic_ns"], *(e["monotonic_ns"] for e in events), terminal[-1]["monotonic_ns"]]
         if (any(a >= b for a, b in zip(clocks, clocks[1:]))
-                or any((e["sandbox_id"], e["backing_generation"]) != identity for e in events)):
+                or report.witness_identity_changed(events, identity)):
             raise ValueError("observer loss changed original identity or physical-tail ordering")
         blocked, lost, pool, tail, status, joined = [e["evidence"] for e in events]
         mode = "panic" if case.startswith("ObserverPanic-") else "drop"

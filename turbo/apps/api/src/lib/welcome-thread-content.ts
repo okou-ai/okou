@@ -95,7 +95,7 @@ export function welcomeThreadContent(args: {
     assistantName: BRAND_PRESENTATION.assistantName,
     origin,
     worksUrl: `${origin}/works`,
-    myOkouUrl: `${origin}/?settings=my-okou`,
+    myOkouUrl: `${origin}/?settings=my-okou&focus=instructions`,
     inviteUrl: `${origin}/?settings=people`,
     wwwUrl,
     webServicesUrl: `${wwwUrl}/en/web-services`,

@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.24.140](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.139...guest-control-server-v0.24.140) (2026-11-20)
+
+
+### Refactoring
+
+* **guest-control:** name the fixed helper group wait policy ([#49509](https://github.com/okou-ai/okou/issues/49509)) ([9c85f5a](https://github.com/okou-ai/okou/commit/9c85f5a5b7fc264eb3c01350cadc8939dde2f216))
+
+## [0.24.139](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.138...guest-control-server-v0.24.139) (2026-11-20)
+
+
+### Refactoring
+
+* **ipc:** centralize tool placement handshakes ([#49484](https://github.com/okou-ai/okou/issues/49484)) ([b5ae173](https://github.com/okou-ai/okou/commit/b5ae173de042e6624f944973354c9828f1811a50))
+
+## [0.24.138](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.137...guest-control-server-v0.24.138) (2026-11-20)
+
+## [0.24.137](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.136...guest-control-server-v0.24.137) (2026-11-20)
+
+
+### Performance Improvements
+
+* **guest-control:** stream medium ordinary file batches ([#49437](https://github.com/okou-ai/okou/issues/49437)) ([e85ae29](https://github.com/okou-ai/okou/commit/e85ae298c9b6caf90c75f096095a7dbc5c52f46d))
+
+## [0.24.136](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.135...guest-control-server-v0.24.136) (2026-11-20)
+
+
+### Refactoring
+
+* **guest-control:** centralize worker completion release ([#49419](https://github.com/okou-ai/okou/issues/49419)) ([83e3ed4](https://github.com/okou-ai/okou/commit/83e3ed43d7fb6b78ae40d44d25017beb726db66d))
+
 ## [0.24.135](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.134...guest-control-server-v0.24.135) (2026-11-20)
 
 

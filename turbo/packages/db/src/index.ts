@@ -113,7 +113,6 @@ import * as exportJobSchema from "./schema/export-job";
 import * as backgroundJobSchema from "./schema/background-job";
 import * as userExportEntrySchema from "./schema/user-export-entry";
 import * as emailSuppressionSchema from "./schema/email-suppression";
-import * as skillSchema from "./schema/skill";
 import * as builtInSkillSchema from "./schema/built-in-skill";
 import * as usagePricingSchema from "./runtime/usage-pricing";
 import * as agentDraftSchema from "./schema/agent-draft";
@@ -174,7 +173,6 @@ import * as browserOwnerSchema from "./schema/browser-owner";
 import * as browserChatSessionSchema from "./schema/browser-chat-session";
 import * as presentationTemplateSchema from "./schema/presentation-template";
 import * as userTemplateSchema from "./schema/user-template";
-import * as piResourceVersionIndexSchema from "./schema/pi-resource-version-index";
 import * as sshConnectionSchema from "./runtime/ssh-connection";
 import * as sshCredentialSchema from "./schema/ssh-credential";
 import * as vncCredentialSchema from "./schema/vnc-credential";
@@ -298,7 +296,6 @@ export const schema = {
   ...backgroundJobSchema,
   ...userExportEntrySchema,
   ...emailSuppressionSchema,
-  ...skillSchema,
   ...builtInSkillSchema,
   ...usagePricingSchema,
   ...agentDraftSchema,
@@ -358,7 +355,6 @@ export const schema = {
   ...browserChatSessionSchema,
   ...presentationTemplateSchema,
   ...userTemplateSchema,
-  ...piResourceVersionIndexSchema,
   ...sshConnectionSchema,
   ...sshCredentialSchema,
   ...vncCredentialSchema,

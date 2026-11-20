@@ -4,7 +4,7 @@ use std::env;
 use std::ffi::OsString;
 use std::fs::File;
 use std::io::{self, Write};
-use std::os::fd::{AsFd, AsRawFd, FromRawFd, OwnedFd, RawFd};
+use std::os::fd::{AsRawFd, FromRawFd, RawFd};
 use std::os::unix::net::UnixStream;
 use std::os::unix::process::CommandExt;
 use std::process::{Command, ExitCode};
@@ -180,27 +180,24 @@ fn place(report: File) -> io::Result<()> {
     if task.pid != std::process::id() {
         return Err(invalid("task launcher identity mismatch"));
     }
-    let placement: OwnedFd = process_control_ipc::receive_tool_placement(&stream)?;
-    process_control_ipc::write_self_to_cgroup(placement.as_fd())?;
-    drop(placement);
-    let membership = std::fs::read_to_string("/proc/self/cgroup")?;
-    let path = membership
-        .lines()
-        .find_map(|line| line.strip_prefix("0::"))
-        .ok_or_else(|| invalid("unified cgroup membership missing"))?;
-    if !is_task_runtime_path(path)
-        || !path.ends_with(&format!("/task-{}/runtime", task.handle.as_str()))
-    {
-        return Err(io::Error::new(
-            io::ErrorKind::PermissionDenied,
-            "task placement did not enter the assigned runtime",
-        ));
-    }
-    // Task runtimes are tool-owned work. Apply the same priority as shell tools,
-    // including tasks launched directly from the main runtime; children inherit it.
-    std::fs::write("/proc/self/oom_score_adj", "1000")?;
-    process_control_ipc::write_tool_placement_confirmation(&stream)?;
-    process_control_ipc::read_tool_placement_ack(&stream)?;
+    process_control_ipc::apply_tool_placement(&stream, || {
+        let membership = std::fs::read_to_string("/proc/self/cgroup")?;
+        let path = membership
+            .lines()
+            .find_map(|line| line.strip_prefix("0::"))
+            .ok_or_else(|| invalid("unified cgroup membership missing"))?;
+        if !is_task_runtime_path(path)
+            || !path.ends_with(&format!("/task-{}/runtime", task.handle.as_str()))
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "task placement did not enter the assigned runtime",
+            ));
+        }
+        // Task runtimes are tool-owned work. Children inherit the same OOM
+        // priority as shell tools, including tasks launched from the main runtime.
+        std::fs::write("/proc/self/oom_score_adj", "1000")
+    })?;
     drop(stream);
     write_report(report, &task)
 }

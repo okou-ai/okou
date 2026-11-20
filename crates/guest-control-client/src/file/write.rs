@@ -14,6 +14,7 @@ use guest_control_proto::{
 use sandbox::FileWriteRequestTiming;
 use shell_quote::quote_shell_arg;
 
+use crate::connection::OutboundFrame;
 use crate::protocol_error;
 use crate::{
     CompositeNormalOperation, ExecCaptureRequest, ExecOperationResult, ExecOwnedCapturedOutput,
@@ -99,16 +100,18 @@ impl WriteFilesMode {
         }
     }
 
-    fn encode_frame(
+    fn encode_frame<'a>(
         self,
-        frame: &mut Vec<u8>,
         seq: u32,
-        files: &[guest_control_proto::WriteFileBatchEntry<'_>],
-    ) -> Result<(), guest_control_proto::ProtocolError> {
+        files: &[guest_control_proto::WriteFileBatchEntry<'a>],
+    ) -> Result<OutboundFrame<'a>, guest_control_proto::ProtocolError> {
         match self {
-            Self::Ordinary => guest_control_proto::encode_write_files_frame_into(frame, seq, files),
+            Self::Ordinary => guest_control_proto::encode_write_files_frame_parts(seq, files)
+                .map(OutboundFrame::WriteFiles),
             Self::Private => {
-                guest_control_proto::encode_private_write_files_frame_into(frame, seq, files)
+                let mut frame = Vec::new();
+                guest_control_proto::encode_private_write_files_frame_into(&mut frame, seq, files)?;
+                Ok(OutboundFrame::bytes(frame, &[]))
             }
         }
     }
@@ -808,10 +811,9 @@ impl GuestControlClient {
             WRITE_FILES_TERMINAL_MSG_TYPES,
             timeout,
             write_observer,
-            move |seq, frame| {
+            move |seq| {
                 write_sequence.store(seq, Ordering::Relaxed);
-                mode.encode_frame(frame, seq, &proto_entries)
-                    .map(|()| &[][..])
+                mode.encode_frame(seq, &proto_entries)
                     .map_err(protocol_error::invalid_input)
             },
             timing.as_deref_mut().map(|timing| &mut timing.host),

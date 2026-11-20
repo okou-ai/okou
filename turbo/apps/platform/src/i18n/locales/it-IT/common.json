@@ -540,10 +540,7 @@
       "video": "VID"
     },
     "googleDrive": {
-      "agentLoading": "L'agente è ancora in fase di caricamento",
       "connect": "Connetti Google Drive",
-      "connectTooltip": "Connetti Google Drive per caricare gli artefatti",
-      "conversionNotice": "Crea una copia modificabile; la formattazione potrebbe variare.",
       "conversionUnconfirmed": "Impossibile confermare la conversione Google. Controlla Drive prima di riprovare.",
       "openDocs": "Apri in Google Docs",
       "openSheets": "Apri in Google Sheets",
@@ -1553,7 +1550,6 @@
           "action": "Fai check-in",
           "description": "Fai check-in una volta al giorno. Si reimposta alle 00:00 UTC.",
           "name": "Accedi ogni giorno",
-          "pendingDescription": "Il tuo check-in è stato salvato. I crediti verranno aggiornati dopo la conferma.",
           "unit": "al giorno"
         },
         "connector": {
@@ -1570,12 +1566,6 @@
         },
         "inReview": "In revisione",
         "intro": {
-          "checkin": {
-            "amount": "+{{amount}} crediti",
-            "confirm": "Torna al lavoro",
-            "description": "I crediti pagano il lavoro vero e proprio: ogni esecuzione, ogni artefatto, ogni workflow che parte da solo.",
-            "title": "Per oggi è fatta"
-          },
           "connector": {
             "confirm": "Vedi tutti i connettori",
             "connected": "Connesso",
@@ -1680,6 +1670,13 @@
       "feedbackPrompt": "Cosa pensi di questo suggerimento?",
       "feedLabel": "Feed",
       "forYou": {
+        "cover": {
+          "change": "Cambia copertina",
+          "default": "Predefinita",
+          "gallery": "Copertine",
+          "option": "Copertina {{index}}",
+          "reset": "Ripristina predefinita"
+        },
         "loading": "Caricamento dei suggerimenti",
         "next": "Suggerimento successivo",
         "previous": "Suggerimento precedente",
@@ -2544,20 +2541,32 @@
       "workingFor": "In lavorazione da {{duration}}"
     },
     "sharing": {
+      "accessNote": "Solo tu puoi modificare l’accesso.",
       "cancel": "Annulla",
       "close": "Chiudi",
       "copyFailed": "Impossibile copiare il link",
       "create": "Condividi",
       "createFailed": "Impossibile creare la conversazione condivisa.",
+      "createLink": "Crea link",
+      "deselectAll": "Deseleziona tutto",
       "deselectGroup": "Deseleziona il gruppo di messaggi",
+      "done": "Fatto",
       "everyone": "Tutti",
       "linkCopied": "Link copiato",
+      "linkCreated_one": "Link creato per {{count}} messaggio",
+      "linkCreated_many": "Link creato per {{count}} messaggi",
+      "linkCreated_other": "Link creato per {{count}} messaggi",
       "messageShareFailed": "Impossibile creare il link condiviso.",
       "organizationDescription": "Solo persone della tua organizzazione",
+      "selectAll": "Seleziona tutto",
       "selectedCount_one": "{{count}} selezionato",
       "selectedCount_many": "{{count}} selezionati",
       "selectedCount_other": "{{count}} selezionati",
+      "selectedOfTotal_one": "{{count}} di {{total}} selezionato",
+      "selectedOfTotal_many": "{{count}} di {{total}} selezionati",
+      "selectedOfTotal_other": "{{count}} di {{total}} selezionati",
       "selectGroup": "Seleziona il gruppo di messaggi",
+      "selectPrompt": "Seleziona i messaggi da condividere",
       "shareLink": "Link alla conversazione condivisa",
       "start": "Condividi messaggi",
       "tooLarge": "Seleziona meno messaggi da condividere",
@@ -4127,6 +4136,19 @@
     "loadError": "Impossibile caricare le istruzioni. Riprova.",
     "markdown": "Scrivi in testo semplice o Markdown",
     "placeholder": "Spiega a Okou come preferisci lavorare…",
+    "proactiveSettings": {
+      "cardsOnly": "Le nuove schede sono attive. I controlli orari e gli aggiornamenti quotidiani del profilo sono disattivati. Scegli una sola impostazione per tutti.",
+      "choose": "Scegli…",
+      "description": "Personalizza il modo in cui Okou lavora in questo spazio di lavoro.",
+      "hourlyOnly": "I controlli orari e gli aggiornamenti quotidiani del profilo sono attivi. Le nuove schede sono disattivate. Scegli una sola impostazione per tutti.",
+      "offers": "Ricevi schede con offerte in «Per te».",
+      "sourcesHint": "Disattivando una fonte, non riceverai più le sue nuove schede né gli avvisi per quelle da leggere. Le schede esistenti rimangono in Per te.",
+      "suggestions": "Controlla le fonti collegate ogni ora, aggiorna il tuo profilo ogni giorno e ricevi suggerimenti utili sui prossimi passi.",
+      "systemUpdates": "Ricevi gli avvisi di sistema in «Per te».",
+      "turnOff": "Disattiva entrambi",
+      "turnOn": "Attiva entrambi",
+      "whatsNew": "Scopri le nuove funzionalità di Okou in «Per te»."
+    },
     "reload": "Ricarica le istruzioni salvate",
     "retry": "Riprova",
     "save": "Salva",
@@ -5781,17 +5803,8 @@
         "preparing": "Preparazione del primo riepilogo mattutino. Puoi disattivarlo in qualsiasi momento.",
         "title": "Riepilogo mattutino"
       },
-      "proactiveLearning": {
-        "description": "Rivedi le attività durante la notte e migliora la memoria personale.",
-        "errorMessage": "Impossibile caricare o aggiornare questa impostazione.",
-        "missingDefaultAgent": "Okou non è disponibile in quest’area di lavoro. Contatta un amministratore.",
-        "missingTimezone": "Imposta il fuso orario nelle preferenze.",
-        "preparationFailed": "Questo flusso è temporaneamente non disponibile.",
-        "preparing": "Preparazione del flusso di lavoro.",
-        "title": "Apprendimento"
-      },
       "proactiveSuggestions": {
-        "description": "Okou controlla ogni ora le fonti collegate e propone azioni utili nella pagina iniziale.",
+        "description": "Controlla le fonti collegate ogni ora, aggiorna il tuo profilo ogni giorno e ricevi suggerimenti utili sui prossimi passi.",
         "errorMessage": "Impossibile caricare o aggiornare le impostazioni.",
         "missingDefaultAgent": "Okou non è disponibile in quest’area di lavoro. Contatta un amministratore.",
         "missingTimezone": "Imposta il fuso orario nelle preferenze.",
