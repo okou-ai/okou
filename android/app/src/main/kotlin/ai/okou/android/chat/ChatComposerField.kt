@@ -127,13 +127,10 @@ fun ChatComposerField(
             )
             .testTag("chat_composer")
     ) {
+        val textSpace = maxHeight - cardVerticalPadding * 2
         val availableTextHeight =
-            minOf(maximumTextHeight, maxHeight - cardVerticalPadding * 2)
-                .coerceAtLeast(minimumTextHeight)
-        ComposerScroll(
-            keepEditorAnchored =
-                inputFocused && maxHeight >= minimumTextHeight + cardVerticalPadding * 2
-        ) {
+            minOf(maximumTextHeight, textSpace).coerceAtLeast(minimumTextHeight)
+        ComposerScroll(keepEditorAnchored = { inputFocused && textSpace >= minimumTextHeight }) {
             ComposerFeedback(model, target, state, entry)
             Row(
                 Modifier.fillMaxWidth()
@@ -226,7 +223,7 @@ fun ChatComposerField(
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ComposerScroll(keepEditorAnchored: Boolean, content: @Composable () -> Unit) {
+private fun ComposerScroll(keepEditorAnchored: () -> Boolean, content: @Composable () -> Unit) {
     val scroll = rememberScrollState()
     val anchor = rememberUpdatedState(keepEditorAnchored)
     val defaultSpec = LocalBringIntoViewSpec.current
@@ -238,8 +235,9 @@ private fun ComposerScroll(keepEditorAnchored: Boolean, content: @Composable () 
                     size: Float,
                     containerSize: Float,
                 ): Float {
-                    // A fitted editor is already visible at the bottom as the IME resizes the pane.
-                    if (anchor.value && scroll.value == 0) return 0f
+                    // A fitted editor is already visible at the bottom. Read its current focus
+                    // because another control may request scrolling before recomposition.
+                    if (scroll.value == 0 && anchor.value()) return 0f
                     return defaultSpec.calculateScrollDistance(offset, size, containerSize)
                 }
             }

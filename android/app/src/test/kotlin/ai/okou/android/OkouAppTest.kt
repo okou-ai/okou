@@ -29,8 +29,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.InputMode
+import androidx.compose.ui.input.InputModeManager
+import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.WindowInfo
 import androidx.compose.ui.semantics.SemanticsActions
@@ -52,10 +56,12 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInputSelection
 import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.unit.Density
@@ -106,6 +112,7 @@ class OkouAppTest {
         updateState: () -> UpdateUiState? = { null },
         failPreferenceSave: () -> Boolean = { false },
         chatService: ChatListService = TestChatService(),
+        inputModeManager: InputModeManager? = null,
     ) {
         val models =
             compose.runOnIdle {
@@ -213,6 +220,7 @@ class OkouAppTest {
                 LocalConfiguration provides
                     (deviceConfiguration.value ?: LocalConfiguration.current),
                 LocalDensity provides Density(LocalDensity.current.density, fontScale),
+                LocalInputModeManager provides (inputModeManager ?: LocalInputModeManager.current),
                 LocalWindowInfo provides
                     object : WindowInfo by window {
                         override val containerSize: IntSize
@@ -525,7 +533,15 @@ class OkouAppTest {
         compose.runOnIdle {
             windowSize.value = IntSize((400 * density).toInt(), (520 * density).toInt())
         }
-        render()
+        render(
+            inputModeManager =
+                object : InputModeManager {
+                    override val inputMode = InputMode.Keyboard
+
+                    override fun requestInputMode(inputMode: InputMode) =
+                        this.inputMode == inputMode
+                }
+        )
         compose.onNodeWithText("New chat").performClick()
         val input = compose.onNodeWithTag("message_input").assertIsEnabled()
         val draft = (1..20).joinToString("\n") { "Draft line $it" }
@@ -547,8 +563,18 @@ class OkouAppTest {
         val visible = send.fetchSemanticsNode().boundsInRoot
         assertEquals(48 * density, visible.height, 0.5f)
 
-        val retry = compose.onNodeWithText("Try again").performScrollTo().assertIsEnabled()
-        val recovery = retry.assertIsDisplayed().fetchSemanticsNode()
+        val retry = compose.onNodeWithText("Try again").assertIsEnabled()
+        val beforeFocus = retry.fetchSemanticsNode()
+        assertTrue(beforeFocus.boundsInRoot.height < beforeFocus.size.height)
+        input.performKeyInput {
+            keyDown(Key.ShiftLeft)
+            pressKey(Key.Tab)
+            keyUp(Key.ShiftLeft)
+        }
+        val afterFocus = retry.assertIsFocused().assertIsDisplayed().fetchSemanticsNode()
+        assertEquals(afterFocus.size.height.toFloat(), afterFocus.boundsInRoot.height, 0.5f)
+        input.performSemanticsAction(SemanticsActions.RequestFocus)
+        val recovery = retry.performScrollTo().assertIsDisplayed().fetchSemanticsNode()
         assertEquals(recovery.size.height.toFloat(), recovery.boundsInRoot.height, 0.5f)
         send.performScrollTo().assertIsDisplayed()
         assertEquals(48 * density, send.fetchSemanticsNode().boundsInRoot.height, 0.5f)
