@@ -114,6 +114,7 @@ fn canonical_manifest_preserves_wire_shape() {
             missing_root_policy: Some("preserveParentVersion".into()),
         }],
         cleanup_paths: vec!["/data".into()],
+        removed_package_paths: Vec::new(),
         instruction_cleanups: vec![InstructionCleanupEntry {
             mount_path: "/home/user/.codex".into(),
             target_filename: Some("AGENTS.md".into()),

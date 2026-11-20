@@ -565,6 +565,7 @@ async fn mixed_decoded_batch_uses_exact_per_array_comma_accounting() {
         storages: vec![storage],
         artifacts: manifest.artifacts.clone(),
         cleanup_paths: Vec::new(),
+        removed_package_paths: Vec::new(),
         instruction_cleanups: Vec::new(),
     };
     let base_len = serde_json::to_vec(&decoded_manifest(storage.clone()))

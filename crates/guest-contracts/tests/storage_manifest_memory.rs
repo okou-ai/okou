@@ -99,6 +99,7 @@ fn storage_manifest_preserves_complete_wire_without_input_sized_projection()
             storages: vec![],
             artifacts: vec![],
             cleanup_paths: vec![],
+            removed_package_paths: Vec::new(),
             instruction_cleanups: vec![],
         },
         r#"{"storageMounts":[],"cleanupPaths":[]}"#,
@@ -138,6 +139,7 @@ fn storage_manifest_preserves_complete_wire_without_input_sized_projection()
                 },
             ],
             cleanup_paths: vec!["/stale\n路径".into()],
+            removed_package_paths: Vec::new(),
             instruction_cleanups: vec![
                 InstructionCleanupEntry {
                     mount_path: "/data".into(),
@@ -184,6 +186,7 @@ fn storage_manifest_preserves_complete_wire_without_input_sized_projection()
         }],
         artifacts: vec![],
         cleanup_paths: vec![],
+        removed_package_paths: Vec::new(),
         instruction_cleanups: vec![],
     };
     let actual = File::create(&actual_path)?;

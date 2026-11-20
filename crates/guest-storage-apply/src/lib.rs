@@ -314,7 +314,7 @@ fn run_manifest_with_files_in_runtime(
         .map(|entry| entry.mount_path.clone())
         .collect::<Vec<_>>();
     let stale_cleanup = telemetry::CleanupPhase::StalePaths.measure(
-        cleanup_paths.len() + optional_replacements.len(),
+        cleanup_paths.len() + optional_replacements.len() + manifest.removed_package_paths.len(),
         || {
             let cleaned = match quarantine.as_ref() {
                 Some(quarantine) => cleanup::cleanup_stale_paths_with_quarantine(
@@ -328,9 +328,13 @@ fn run_manifest_with_files_in_runtime(
                 }
             };
             cleaned
-                && clean_optional_mounts(
+                && clean_package_mounts(
                     &manifest,
-                    optional_replacements.iter(),
+                    manifest
+                        .removed_package_paths
+                        .iter()
+                        .chain(&optional_replacements)
+                        .map(String::as_str),
                     quarantine.as_ref(),
                 )
         },
@@ -399,7 +403,11 @@ fn run_manifest_with_files_in_runtime(
     // names/layout. Normalize only the materialized Workflow, never the cache.
     // Retire after copied Workflows have canonical packages and old readers drain.
     let applied = success && workflow_document::apply_all(&manifest.storages, &mut skipped);
-    let cleaned = clean_optional_mounts(&manifest, skipped.iter(), quarantine.as_ref());
+    let cleaned = clean_package_mounts(
+        &manifest,
+        skipped.iter().map(String::as_str),
+        quarantine.as_ref(),
+    );
     if !applied || !cleaned {
         return false;
     }
@@ -417,9 +425,9 @@ fn run_manifest_with_files_in_runtime(
     write_result(output, &receipt)
 }
 
-fn clean_optional_mounts<'a>(
+fn clean_package_mounts<'a>(
     manifest: &Manifest,
-    paths: impl Iterator<Item = &'a String>,
+    paths: impl Iterator<Item = &'a str>,
     quarantine: Option<&quarantine::Quarantine>,
 ) -> bool {
     let mounts = manifest
@@ -432,7 +440,7 @@ fn clean_optional_mounts<'a>(
                 .iter()
                 .map(|entry| (entry.mount_path.as_str(), false)),
         );
-    cleanup::cleanup_optional_mounts(paths.map(String::as_str), mounts, quarantine)
+    cleanup::cleanup_package_mounts(paths, mounts, quarantine)
 }
 
 fn write_result(output: &mut dyn Write, result: &impl serde::Serialize) -> bool {

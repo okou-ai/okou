@@ -134,6 +134,7 @@ impl Readiness {
                     .map(|entry| PathBuf::from(&entry.mount_path)),
             )
             .chain(manifest.cleanup_paths.iter().map(PathBuf::from))
+            .chain(manifest.removed_package_paths.iter().map(PathBuf::from))
             // Conservatively cover each cleanup directory without interpreting
             // managed filenames, preservation, repair or deletion semantics.
             .chain(

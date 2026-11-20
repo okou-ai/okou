@@ -1142,7 +1142,7 @@ async fn prepare_decoded_storage(
     }
     // Keep the complete mount list in Guest when optional cleanup can remove
     // a root. A split would hide physical aliases owned by another batch.
-    if plan.has_optional_mounts() && !optional_manifest_fits_decoded_input(plan)? {
+    if plan.requires_complete_mount_list() && !complete_manifest_fits_decoded_input(plan)? {
         plan.finish_decoded_preparation();
         return Ok(());
     }
@@ -1208,7 +1208,7 @@ async fn prepare_decoded_storage(
     Ok(())
 }
 
-fn optional_manifest_fits_decoded_input(plan: &StoragePlan) -> RunnerResult<bool> {
+fn complete_manifest_fits_decoded_input(plan: &StoragePlan) -> RunnerResult<bool> {
     let manifest = plan.clone().into_guest_manifest();
     let staged_url_len = "file://".len() + guest_archive_path("", "").len();
     // Cache hits may replace a short source URL with the fixed staging URL.
@@ -1226,7 +1226,7 @@ fn optional_manifest_fits_decoded_input(plan: &StoragePlan) -> RunnerResult<bool
         .map(|url| staged_url_len.saturating_sub(url.len()))
         .sum();
     let json = serde_json::to_vec(&manifest).map_err(|error| {
-        RunnerError::Internal(format!("optional storage manifest sizing: {error}"))
+        RunnerError::Internal(format!("complete storage manifest sizing: {error}"))
     })?;
     Ok(json.len().saturating_add(staged_growth)
         <= guest_contracts::storage_files::MAX_MANIFEST_BYTES)

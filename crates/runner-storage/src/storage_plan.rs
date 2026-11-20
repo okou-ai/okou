@@ -47,7 +47,7 @@ use guest_contracts::storage_paths::normalize_path;
 use crate::error::{StorageError as RunnerError, StorageResult as RunnerResult};
 use crate::storage_fingerprints::{StorageFingerprint, StorageFingerprints};
 
-use runner_types::storage_manifest::StorageManifest;
+use runner_types::storage_manifest::{StorageManifest, validate_workflow_mount};
 
 /// The semantic actions required to apply one canonical storage manifest.
 ///
@@ -59,6 +59,7 @@ pub struct StoragePlan {
     storages: Vec<StoragePlanEntry>,
     artifacts: Vec<ArtifactPlanEntry>,
     cleanup_paths: Vec<String>,
+    removed_package_paths: Vec<String>,
     instruction_cleanups: Vec<InstructionCleanup>,
     reused_entries: usize,
     decoded_prepared: bool,
@@ -257,6 +258,7 @@ pub fn build_storage_plan(
     previous: Option<&StorageFingerprints>,
 ) -> RunnerResult<StoragePlan> {
     let mut cleanup_paths = Vec::new();
+    let mut removed_package_paths = Vec::new();
     let mut instruction_cleanups = Vec::new();
     let mut reused_entries = 0;
     let storages = manifest
@@ -348,22 +350,12 @@ pub fn build_storage_plan(
         .collect::<RunnerResult<Vec<_>>>()?;
 
     if let Some(previous) = previous {
-        record_removed_storages(
+        record_removed_mounts(
             previous,
-            manifest
-                .storages
-                .iter()
-                .map(|entry| entry.mount_path.as_str()),
+            manifest,
             &mut cleanup_paths,
+            &mut removed_package_paths,
             &mut instruction_cleanups,
-        );
-        record_removed_artifacts(
-            previous,
-            manifest
-                .artifacts
-                .iter()
-                .map(|entry| entry.mount_path.as_str()),
-            &mut cleanup_paths,
         );
     }
 
@@ -371,6 +363,7 @@ pub fn build_storage_plan(
         storages,
         artifacts,
         cleanup_paths,
+        removed_package_paths,
         instruction_cleanups,
         reused_entries,
         decoded_prepared: false,
@@ -454,9 +447,13 @@ impl StoragePlan {
                 .iter()
                 .any(|mount| entry.starts_with(mount) || mount.starts_with(&entry))
         }) || self
-            .instruction_cleanups
+            .removed_package_paths
             .iter()
-            .any(|cleanup| contains(&cleanup.mount_path))
+            .any(|mount| contains(mount))
+            || self
+                .instruction_cleanups
+                .iter()
+                .any(|cleanup| contains(&cleanup.mount_path))
             || self.storages.iter().any(|entry| {
                 contains(&entry.mount_path)
                     && matches!(&entry.action, StorageAction::Download { .. })
@@ -508,6 +505,7 @@ impl StoragePlan {
                     storages: vec![entry.clone().into_guest_entry()],
                     artifacts: Vec::new(),
                     cleanup_paths: Vec::new(),
+                    removed_package_paths: Vec::new(),
                     instruction_cleanups: Vec::new(),
                 }
             }
@@ -523,6 +521,7 @@ impl StoragePlan {
                     storages: Vec::new(),
                     artifacts: vec![entry.clone().into_guest_entry()],
                     cleanup_paths: Vec::new(),
+                    removed_package_paths: Vec::new(),
                     instruction_cleanups: Vec::new(),
                 }
             }
@@ -658,6 +657,7 @@ impl StoragePlan {
     /// Guest confirmation even when their fingerprints match.
     pub fn requires_guest_work(&self) -> bool {
         !self.cleanup_paths.is_empty()
+            || !self.removed_package_paths.is_empty()
             || !self.instruction_cleanups.is_empty()
             || self.storages.iter().any(|entry| {
                 entry.optional || !matches!(entry.action, StorageAction::ReuseExisting)
@@ -669,8 +669,8 @@ impl StoragePlan {
         self.reused_entries
     }
 
-    pub(crate) fn has_optional_mounts(&self) -> bool {
-        self.storages.iter().any(|entry| entry.optional)
+    pub(crate) fn requires_complete_mount_list(&self) -> bool {
+        !self.removed_package_paths.is_empty() || self.storages.iter().any(|entry| entry.optional)
     }
 
     pub fn entry_count(&self) -> usize {
@@ -678,7 +678,7 @@ impl StoragePlan {
     }
 
     pub fn cleanup_path_count(&self) -> usize {
-        self.cleanup_paths.len()
+        self.cleanup_paths.len() + self.removed_package_paths.len()
     }
 
     pub fn instruction_cleanup_count(&self) -> usize {
@@ -819,6 +819,7 @@ impl StoragePlan {
                 .map(ArtifactPlanEntry::into_guest_entry)
                 .collect(),
             cleanup_paths: self.cleanup_paths,
+            removed_package_paths: self.removed_package_paths,
             instruction_cleanups: self
                 .instruction_cleanups
                 .into_iter()
@@ -855,13 +856,23 @@ impl StoragePlan {
     }
 }
 
-fn record_removed_storages<'a>(
+fn record_removed_mounts(
     previous: &StorageFingerprints,
-    current_paths: impl IntoIterator<Item = &'a str>,
+    manifest: &StorageManifest,
     cleanup_paths: &mut Vec<String>,
+    removed_package_paths: &mut Vec<String>,
     instruction_cleanups: &mut Vec<InstructionCleanup>,
 ) {
-    let current_paths = current_paths.into_iter().collect::<HashSet<_>>();
+    let current_paths = manifest
+        .storages
+        .iter()
+        .map(|entry| entry.mount_path.as_str())
+        .collect::<HashSet<_>>();
+    let mut artifact_paths = manifest
+        .artifacts
+        .iter()
+        .map(|entry| entry.mount_path.as_str())
+        .collect::<HashSet<_>>();
     for (path, fingerprint) in &previous.storages {
         if current_paths.contains(path.as_str()) {
             continue;
@@ -871,23 +882,28 @@ fn record_removed_storages<'a>(
                 mount_path: path.clone(),
                 target_filename: None,
             });
+        } else if !artifact_paths.contains(path.as_str())
+            && validate_workflow_mount(path).is_ok()
+            && (fingerprint.is_tainted()
+                || fingerprint.vas_storage_name() == Some(wire::WORKFLOW_STORAGE_NAME))
+        {
+            // Tainted fingerprints still identify a previously managed path.
+            // The canonical package root identifies its cleanup scope after a partial apply.
+            removed_package_paths.push(path.clone());
         } else {
             cleanup_paths.push(path.clone());
         }
     }
-}
-
-fn record_removed_artifacts<'a>(
-    previous: &StorageFingerprints,
-    current_paths: impl IntoIterator<Item = &'a str>,
-    cleanup_paths: &mut Vec<String>,
-) {
-    let current_paths = current_paths.into_iter().collect::<HashSet<_>>();
-    for path in previous.artifacts.keys() {
-        if !current_paths.contains(path.as_str()) {
-            cleanup_paths.push(path.clone());
-        }
-    }
+    // A cancelled generation can carry the same path in both partitions.
+    // Keep the package cleanup as the sole owner of a removed package root.
+    artifact_paths.extend(removed_package_paths.iter().map(String::as_str));
+    cleanup_paths.extend(
+        previous
+            .artifacts
+            .keys()
+            .filter(|path| !artifact_paths.contains(path.as_str()))
+            .cloned(),
+    );
 }
 
 fn is_framework_home_path(path: &str) -> bool {

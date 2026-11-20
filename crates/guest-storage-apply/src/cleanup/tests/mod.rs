@@ -174,7 +174,7 @@ fn optional_cleanup_preserves_symlinks_used_by_a_mount_that_has_not_been_created
 
     let optional = optional.to_str().unwrap();
     let required = required.to_str().unwrap();
-    assert!(!cleanup_optional_mounts(
+    assert!(!cleanup_package_mounts(
         std::iter::once(optional),
         [(optional, true), (required, false)].into_iter(),
         None,

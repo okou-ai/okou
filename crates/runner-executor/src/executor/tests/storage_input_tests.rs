@@ -137,7 +137,11 @@ fn guest_storage_results(
                 }
             }
         }
-        for path in &mut manifest.cleanup_paths {
+        for path in manifest
+            .cleanup_paths
+            .iter_mut()
+            .chain(&mut manifest.removed_package_paths)
+        {
             *path = guest_path(root, path).to_str().unwrap().into();
         }
         for cleanup in &mut manifest.instruction_cleanups {

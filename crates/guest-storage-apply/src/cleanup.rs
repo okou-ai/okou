@@ -360,7 +360,7 @@ pub(crate) fn optional_mount_state(path: &Path) -> io::Result<OptionalMountState
 }
 
 /// Clear package roots while preserving every other declared mount.
-pub(crate) fn cleanup_optional_mounts<'path, 'mount>(
+pub(crate) fn cleanup_package_mounts<'path, 'mount>(
     paths: impl Iterator<Item = &'path str>,
     mounts: impl Iterator<Item = (&'mount str, bool)>,
     quarantine: Option<&crate::quarantine::Quarantine>,
@@ -424,10 +424,7 @@ fn cleanup_optional_mounts_with_detector<'path, 'mount>(
             }
         })();
         if let Err(error) = result {
-            log_error!(
-                LOG_TAG,
-                "Failed to safely clean optional package {mount}: {error}"
-            );
+            log_error!(LOG_TAG, "Failed to safely clean package {mount}: {error}");
             return false;
         }
     }

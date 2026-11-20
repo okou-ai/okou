@@ -47,6 +47,7 @@ fn manifest(storages: Vec<StorageEntry>, artifacts: Vec<ArtifactEntry>) -> Manif
         storages,
         artifacts,
         cleanup_paths: Vec::new(),
+        removed_package_paths: Vec::new(),
         instruction_cleanups: Vec::new(),
     }
 }

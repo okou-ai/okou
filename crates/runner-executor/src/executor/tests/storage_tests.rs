@@ -16,6 +16,7 @@ fn empty_manifest() -> Manifest {
         storages: Vec::new(),
         artifacts: Vec::new(),
         cleanup_paths: Vec::new(),
+        removed_package_paths: Vec::new(),
         instruction_cleanups: Vec::new(),
     }
 }
@@ -38,6 +39,7 @@ fn storage_manifest() -> Manifest {
 fn manifest_with_serialized_len(len: usize) -> Manifest {
     let mut manifest = Manifest {
         cleanup_paths: vec![String::new()],
+        removed_package_paths: Vec::new(),
         ..empty_manifest()
     };
     let empty_len = serde_json::to_vec(&manifest).unwrap().len();

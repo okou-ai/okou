@@ -42,7 +42,7 @@ impl GuestStorageInput {
         if query.len() <= guest_contracts::storage_files::MAX_MANIFEST_BYTES {
             return Ok(Some((self, query)));
         }
-        if self.initial.files.is_empty() || self.initial.manifest.has_optional_mounts() {
+        if self.initial.files.is_empty() || self.initial.manifest.requires_complete_mount_list() {
             return Ok(None);
         }
 
@@ -82,6 +82,7 @@ impl GuestStorageInput {
                 storages: decoded_storages,
                 artifacts: decoded_artifacts,
                 cleanup_paths: Vec::new(),
+                removed_package_paths: Vec::new(),
                 instruction_cleanups: Vec::new(),
                 archive_readiness: None,
             },

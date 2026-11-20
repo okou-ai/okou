@@ -437,6 +437,7 @@ fn empty_storage_manifest() -> Manifest {
         storages: Vec::new(),
         artifacts: Vec::new(),
         cleanup_paths: Vec::new(),
+        removed_package_paths: Vec::new(),
         instruction_cleanups: Vec::new(),
     }
 }
@@ -458,9 +459,9 @@ fn storage_inputs(
         let input = files_input(manifest_json(&manifest)?, groups)?;
         return Ok(vec![PreparedStorageBatch::new(&manifest, input)]);
     }
-    if manifest.has_optional_mounts() {
+    if manifest.requires_complete_mount_list() {
         return Err(RunnerError::Internal(
-            "optional mount cleanup requires the complete Guest storage manifest".into(),
+            "package mount cleanup requires the complete Guest storage manifest".into(),
         ));
     }
     // A split request alone cannot see conflicts with entries in another batch.
