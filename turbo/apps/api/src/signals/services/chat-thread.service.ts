@@ -178,6 +178,7 @@ function canonicalAssetMaterialization(
 }
 
 function ownedChatThread(
+  orgId: string,
   threadId: string,
   userId: string,
 ): Computed<Promise<ChatThreadRow | null>> {
@@ -201,7 +202,13 @@ function ownedChatThread(
       })
       .from(chatThreads)
       .innerJoin(agents, eq(agents.id, chatThreads.agentId))
-      .where(and(eq(chatThreads.id, threadId), eq(chatThreads.userId, userId)))
+      .where(
+        and(
+          eq(chatThreads.id, threadId),
+          eq(chatThreads.userId, userId),
+          chatThreadOrganizationPredicate(orgId),
+        ),
+      )
       .limit(1);
 
     if (!thread?.agentId) {
@@ -226,13 +233,8 @@ function ownedChatThread(
   });
 }
 
-/**
- * The caller's saved draft for one thread, read from `chat_thread_drafts` alone
- * by thread id and owner. A thread the caller does not own, a missing thread
- * and a thread without a draft all read as the empty draft; clients already
- * treat that the same as the former 404.
- */
 export function chatThreadDraft(args: {
+  readonly orgId: string;
   readonly threadId: string;
   readonly userId: string;
 }): Computed<Promise<ChatThreadDraft>> {
@@ -244,9 +246,11 @@ export function chatThreadDraft(args: {
         draftAttachments: chatThreadDrafts.draftAttachments,
       })
       .from(chatThreadDrafts)
+      .innerJoin(chatThreads, eq(chatThreads.id, chatThreadDrafts.chatThreadId))
       .where(
         and(
           eq(chatThreadDrafts.chatThreadId, args.threadId),
+          chatThreadOrganizationPredicate(args.orgId),
           eq(chatThreadDrafts.userId, args.userId),
         ),
       )
@@ -274,6 +278,7 @@ export const INDICATOR_UNREAD_CANDIDATE_LIMIT = 128;
 export const INDICATOR_UNREAD_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000;
 
 function ownedChatThreadDetail(
+  orgId: string,
   threadId: string,
   userId: string,
 ): Computed<Promise<ChatThreadDetailRow | null>> {
@@ -283,7 +288,13 @@ function ownedChatThreadDetail(
         lastReadAt: chatThreads.lastReadAt,
       })
       .from(chatThreads)
-      .where(and(eq(chatThreads.id, threadId), eq(chatThreads.userId, userId)))
+      .where(
+        and(
+          eq(chatThreads.id, threadId),
+          eq(chatThreads.userId, userId),
+          chatThreadOrganizationPredicate(orgId),
+        ),
+      )
       .limit(1);
 
     if (!thread) {
@@ -297,10 +308,11 @@ function ownedChatThreadDetail(
 }
 
 export function chatThreadDetail(args: {
+  readonly orgId: string;
   readonly threadId: string;
   readonly userId: string;
 }): Computed<Promise<ChatThreadDetail | null>> {
-  const thread$ = ownedChatThreadDetail(args.threadId, args.userId);
+  const thread$ = ownedChatThreadDetail(args.orgId, args.threadId, args.userId);
   const recoveryPending$ = cancellationRecoveryPendingForThread(args);
   return computed(async (get): Promise<ChatThreadDetail | null> => {
     const thread = await get(thread$);
@@ -550,6 +562,7 @@ export function chatIndicators(args: {
  * (a canonical user message with optional `draftAttachments`).
  */
 export function chatThreadDraftIds(args: {
+  readonly orgId: string;
   readonly userId: string;
 }): Computed<Promise<readonly string[]>> {
   return computed(async (get): Promise<readonly string[]> => {
@@ -557,7 +570,13 @@ export function chatThreadDraftIds(args: {
     const rows = await db
       .select({ id: chatThreadDrafts.chatThreadId })
       .from(chatThreadDrafts)
-      .where(eq(chatThreadDrafts.userId, args.userId));
+      .innerJoin(chatThreads, eq(chatThreads.id, chatThreadDrafts.chatThreadId))
+      .where(
+        and(
+          eq(chatThreadDrafts.userId, args.userId),
+          chatThreadOrganizationPredicate(args.orgId),
+        ),
+      );
     return rows.map((row) => {
       return row.id;
     });
@@ -689,10 +708,11 @@ function publicHostedArtifactSites(
 }
 
 export function chatThreadArtifacts(args: {
+  readonly orgId: string;
   readonly threadId: string;
   readonly userId: string;
 }): Computed<Promise<readonly ChatThreadArtifactRun[] | null>> {
-  const thread$ = ownedChatThread(args.threadId, args.userId);
+  const thread$ = ownedChatThread(args.orgId, args.threadId, args.userId);
   const rows$ = chatThreadArtifactRows(args);
   const publicSites$ = publicHostedArtifactSites(args.userId, thread$, rows$);
   return computed(
@@ -1175,21 +1195,13 @@ export const deleteChatThread$ = command(
   },
 );
 
-/**
- * Save or clear the caller's composer draft for one thread.
- *
- * One statement on `chat_thread_drafts`, keyed by the thread and the caller.
- * Nothing reads or locks `chat_threads`: a write for a thread the caller does
- * not own, or for a missing thread, lands in a row keyed to the caller that no
- * reader ever serves for anyone else. Draft changes do not publish
- * `threadListChanged`; other clients pick the dot up from the drafts endpoint.
- */
 export const updateChatThreadDraft$ = command(
   async (
     { set },
     args: {
       readonly threadId: string;
       readonly userId: string;
+      readonly orgId: string;
       readonly draftUserMessage: UserMessageInputDocument | null;
       readonly draftAttachments: readonly PersistedAttachment[] | null;
     },
@@ -1199,6 +1211,7 @@ export const updateChatThreadDraft$ = command(
       persistChatThreadDraft$,
       {
         chatThreadId: args.threadId,
+        orgId: args.orgId,
         userId: args.userId,
         draftUserMessage: args.draftUserMessage,
         draftAttachments: args.draftAttachments

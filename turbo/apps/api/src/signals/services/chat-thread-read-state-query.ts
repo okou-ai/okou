@@ -19,6 +19,7 @@ import {
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { agents } from "@okouai/db/schema/agent";
 
+import { chatThreadOrganizationPredicate } from "./chat-thread-organization.service";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
 import {
@@ -33,8 +34,8 @@ function terminalWatermarkCondition(threadIds: readonly string[]) {
   );
 }
 
-/** User-only Thread authorization; the Agent supplies publication ownership. */
 export function createChatThreadReadPreparation(args: {
+  readonly orgId: string;
   readonly threadId: string;
   readonly userId: string;
 }) {
@@ -48,23 +49,12 @@ export function createChatThreadReadPreparation(args: {
       .where(
         and(
           eq(chatThreads.id, args.threadId),
+          chatThreadOrganizationPredicate(args.orgId),
           eq(chatThreads.userId, args.userId),
         ),
       )
       .limit(1);
     return thread;
-  });
-  const agent$ = computed(async (get) => {
-    const thread = await get(thread$);
-    if (!thread?.agentId) {
-      return null;
-    }
-    const [agent] = await get(db$)
-      .select({ orgId: agents.orgId })
-      .from(agents)
-      .where(eq(agents.id, thread.agentId))
-      .limit(1);
-    return agent ?? null;
   });
   const watermark$ = computed(async (get) => {
     const rows = await get(db$)
@@ -87,16 +77,12 @@ export function createChatThreadReadPreparation(args: {
     if (!thread?.agentId) {
       return null;
     }
-    const agent = await get(agent$);
-    if (!agent) {
-      return null;
-    }
     const watermark = await get(watermark$);
     return {
       threadId: args.threadId,
       userId: args.userId,
       agentId: thread.agentId,
-      orgId: agent.orgId,
+      orgId: args.orgId,
       lastReadAt: thread.lastReadAt,
       watermark,
     };

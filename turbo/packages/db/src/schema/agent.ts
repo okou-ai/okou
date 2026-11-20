@@ -46,6 +46,7 @@ export const agents = pgTable(
         table.name,
       ),
       orgIdx: index("idx_agents_org").on(table.orgId),
+      orgReference: unique("uq_agents_id_org").on(table.id, table.orgId),
       ownerReference: unique("idx_agents_id_org_owner").on(
         table.id,
         table.orgId,

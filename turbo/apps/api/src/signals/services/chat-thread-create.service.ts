@@ -77,7 +77,6 @@ export function prepareChatThreadInsert(args: NewChatThreadArgs) {
       )
       .limit(1),
   );
-  const { orgId: _orgId, ...values } = args;
   const computerUseHostId =
     args.cloudBrowserEnabled === true ? null : (args.computerUseHostId ?? null);
   return {
@@ -88,7 +87,7 @@ export function prepareChatThreadInsert(args: NewChatThreadArgs) {
         ? []
         : [defaults],
     values: {
-      ...values,
+      ...args,
       hidden: args.hidden ?? false,
       selectedModel:
         args.selectedModel === null || isAutoSelectedModel(args.selectedModel)

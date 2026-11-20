@@ -201,6 +201,31 @@ describe("thread drafts", () => {
     });
   });
 
+  it("isolates drafts between the same user's workspaces", async () => {
+    const fixture = await createDraftFixture();
+    const other = bdd.user({ userId: fixture.actor.userId });
+    await chat.patchThread(fixture.actor, fixture.threadId, draftBody("owned"));
+    await chat.patchThread(
+      other,
+      fixture.threadId,
+      draftBody("wrong workspace"),
+    );
+    await chat.patchThread(other, fixture.threadId, {
+      draftUserMessage: null,
+      draftAttachments: null,
+    });
+    await expect(chat.listThreadDrafts(other)).resolves.not.toContain(
+      fixture.threadId,
+    );
+    await expect(
+      chat.readThreadDraft(other, fixture.threadId),
+    ).resolves.toStrictEqual({
+      draftUserMessage: null,
+      draftAttachments: null,
+    });
+    await expect(servedDraftText(fixture)).resolves.toBe("owned");
+  });
+
   it("keeps a write to another user's thread out of the owner's draft", async () => {
     const fixture = await createDraftFixture();
     await chat.patchThread(fixture.actor, fixture.threadId, draftBody("owned"));

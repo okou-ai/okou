@@ -3,7 +3,7 @@ import { waitUntil } from "../context/wait-until";
 import { command, computed } from "ccstate";
 import { chatThreadMarkReadContract } from "@okouai/api-contracts/contracts/chat-threads";
 
-import { authContext$ } from "../auth/auth-context";
+import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { pathParamsOf } from "../context/request";
 import { publishChatThreadReadCursorUpdatedSafely } from "../external/realtime";
@@ -15,12 +15,13 @@ import {
 import type { RouteEntry } from "../route-entry";
 
 const markReadPreparation$ = computed((get) => {
-  const auth = get(authContext$);
+  const auth = get(organizationAuthContext$);
   const params = get(pathParamsOf(chatThreadMarkReadContract.markRead));
   return get(
     createChatThreadReadPreparation({
       threadId: params.id,
       userId: auth.userId,
+      orgId: auth.orgId,
     }),
   );
 });
@@ -29,11 +30,7 @@ const markReadInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   signal.throwIfAborted();
   const prepared = await get(markReadPreparation$);
   signal.throwIfAborted();
-  const auth = get(authContext$);
-  if (
-    !prepared ||
-    (auth.tokenType === "oauth" && prepared.orgId !== auth.orgId)
-  ) {
+  if (!prepared) {
     return notFound("Chat thread not found");
   }
 
@@ -76,6 +73,9 @@ const markReadInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 export const chatThreadMarkReadRoutes: readonly RouteEntry[] = [
   {
     route: chatThreadMarkReadContract.markRead,
-    handler: authRoute({ oauthScope: "okou:chat:read" }, markReadInner$),
+    handler: authRoute(
+      { requireOrganization: true, oauthScope: "okou:chat:read" },
+      markReadInner$,
+    ),
   },
 ];

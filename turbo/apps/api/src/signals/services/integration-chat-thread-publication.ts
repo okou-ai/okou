@@ -28,6 +28,7 @@ export function integrationChatThreadValues(
   return {
     id,
     userId: args.userId,
+    orgId: args.orgId,
     agentId: args.agentId,
     selectedModel: args.initialModel.selectedModel,
     codexServiceTier:

@@ -1,17 +1,21 @@
 import { computed } from "ccstate";
 import { chatThreadDraftContract } from "@okouai/api-contracts/contracts/chat-threads";
 
-import { authContext$ } from "../auth/auth-context";
+import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { pathParamsOf } from "../context/request";
 import { chatThreadDraft } from "../services/chat-thread.service";
 import type { RouteEntry } from "../route-entry";
 
 const getThreadDraftInner$ = computed(async (get) => {
-  const auth = get(authContext$);
+  const auth = get(organizationAuthContext$);
   const params = get(pathParamsOf(chatThreadDraftContract.get));
   const draft = await get(
-    chatThreadDraft({ threadId: params.id, userId: auth.userId }),
+    chatThreadDraft({
+      threadId: params.id,
+      orgId: auth.orgId,
+      userId: auth.userId,
+    }),
   );
   return {
     status: 200 as const,
@@ -22,6 +26,6 @@ const getThreadDraftInner$ = computed(async (get) => {
 export const chatThreadDraftGetRoutes: readonly RouteEntry[] = [
   {
     route: chatThreadDraftContract.get,
-    handler: authRoute({}, getThreadDraftInner$),
+    handler: authRoute({ requireOrganization: true }, getThreadDraftInner$),
   },
 ];
