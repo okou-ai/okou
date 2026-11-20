@@ -25,8 +25,8 @@ export async function validatePermanentArtifactThreadCatalog(
   const userId = `artifact-owner-${threadId}`;
   try {
     await client.query(
-      "INSERT INTO chat_threads (id, user_id) VALUES ($1, $2)",
-      [threadId, userId],
+      "INSERT INTO chat_threads (id, user_id, org_id) VALUES ($1, $2, $3)",
+      [threadId, userId, `artifact-org-${threadId}`],
     );
     const values = {
       orgId: `artifact-org-${threadId}`,

@@ -484,10 +484,11 @@ async function validateCanonicalChatEventStorage(dbUrl: string): Promise<void> {
       `
         INSERT INTO "chat_threads" (
           "user_id",
+          "org_id",
           "agent_id",
           "title"
         )
-        VALUES ('append-only-test-user', $1, 'append-only migration test')
+        VALUES ('append-only-test-user', 'append-only-test-org', $1, 'append-only migration test')
         RETURNING "id"
       `,
       [agentId],
@@ -669,12 +670,14 @@ async function validateChatEventContextPointerConstraints(
         INSERT INTO "chat_threads" (
           "id",
           "user_id",
+          "org_id",
           "agent_id",
           "title"
         )
         VALUES (
           $1,
           'context-pointer-test-user',
+          'context-pointer-test-org',
           $2,
           'context pointer test'
         )

@@ -9,7 +9,7 @@ import type { ChatEventRow } from "@okouai/api-contracts/contracts/chat-event-ro
 import { CURRENT_CHAT_EVENT_SCHEMA_VERSION } from "@okouai/api-contracts/contracts/chat-event-schema-version";
 import { command, computed, type Computed } from "ccstate";
 import { and, asc, eq, gt, inArray, or, sql } from "drizzle-orm";
-import { agents } from "@okouai/db/schema/agent";
+import { chatThreadOrganizationPredicate } from "./chat-thread-organization.service";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatEventSnapshots } from "@okouai/db/schema/chat-event-snapshot";
 import { chatEventSequences } from "@okouai/db/schema/chat-event-sequence";
@@ -157,12 +157,11 @@ export function catchUpChatThreadEvents(args: {
         chatEventSequences,
         eq(chatEventSequences.chatThreadId, chatThreads.id),
       )
-      .innerJoin(agents, eq(agents.id, chatThreads.agentId))
       .where(
         and(
           inArray(chatThreads.id, threadIds),
           eq(chatThreads.userId, args.userId),
-          eq(agents.orgId, args.orgId),
+          chatThreadOrganizationPredicate(args.orgId),
         ),
       );
     const ownedThreadLastSeqIds = new Map(
@@ -269,7 +268,7 @@ export function catchUpChatThreadEvents(args: {
 export function chatThreadEventSnapshot(args: {
   readonly threadId: string;
   readonly userId: string;
-  readonly orgId?: string;
+  readonly orgId: string;
 }) {
   return command(
     async (

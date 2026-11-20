@@ -13,9 +13,21 @@ export async function validatePermanentChatThreadStorage(databaseUrl: string) {
   await client.connect();
   const db = drizzle(client, { schema });
   const id = randomUUID();
-  const values = { id, userId: `thread-owner-${id}`, title: "Initial title" };
+  const values = {
+    id,
+    orgId: `thread-org-${id}`,
+    userId: `thread-owner-${id}`,
+    title: "Initial title",
+  };
   try {
     const [created] = await db.insert(chatThreads).values(values).returning();
+    assert.equal(created?.orgId, values.orgId);
+    await assert.rejects(
+      client.query("INSERT INTO chat_threads (user_id) VALUES ($1)", [
+        values.userId,
+      ]),
+      { code: "23502", column: "org_id" },
+    );
     assert.equal(created?.id, id);
     assert.equal(created?.userId, values.userId);
     assert.equal(created?.title, values.title);

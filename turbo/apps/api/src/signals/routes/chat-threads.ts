@@ -25,7 +25,7 @@ import {
 } from "@okouai/api-contracts/contracts/client-headers";
 import { uuid } from "zod";
 
-import { authContext$, organizationAuthContext$ } from "../auth/auth-context";
+import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { request$ } from "../context/hono";
 import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
@@ -85,7 +85,7 @@ function isValidChatThreadId(id: string): boolean {
 }
 
 const getChatThreadInner$ = computed(async (get) => {
-  const auth = get(authContext$);
+  const auth = get(organizationAuthContext$);
   const params = get(pathParamsOf(chatThreadByIdContract.get));
 
   if (!isValidChatThreadId(params.id)) {
@@ -93,7 +93,11 @@ const getChatThreadInner$ = computed(async (get) => {
   }
 
   const thread = await get(
-    chatThreadDetail({ threadId: params.id, userId: auth.userId }),
+    chatThreadDetail({
+      threadId: params.id,
+      userId: auth.userId,
+      orgId: auth.orgId,
+    }),
   );
   if (!thread) {
     return chatThreadNotFound();
@@ -223,13 +227,13 @@ const catchUpChatEventsInner$ = command(
 
 const getChatEventSnapshotInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
-    const auth = get(authContext$);
+    const auth = get(organizationAuthContext$);
     const params = get(pathParamsOf(chatThreadEventsContract.snapshot));
     const snapshot = await set(
       chatThreadEventSnapshot({
         threadId: params.threadId,
         userId: auth.userId,
-        ...(auth.tokenType === "oauth" ? { orgId: auth.orgId } : {}),
+        orgId: auth.orgId,
       }),
       signal,
     );
@@ -262,14 +266,14 @@ const getChatEventSnapshotInner$ = command(
 
 const listChatEventRowsInner$ = command(
   async ({ get }, signal: AbortSignal) => {
-    const auth = get(authContext$);
+    const auth = get(organizationAuthContext$);
     const params = get(pathParamsOf(chatThreadEventsContract.rows));
     const query = get(queryOf(chatThreadEventsContract.rows));
     const page = await get(
       chatThreadEventRows({
         threadId: params.threadId,
         userId: auth.userId,
-        ...(auth.tokenType === "oauth" ? { orgId: auth.orgId } : {}),
+        orgId: auth.orgId,
         limit: query.limit,
         ...(query.sinceEventId === undefined
           ? { sinceSeqId: 0 as const }
@@ -307,10 +311,11 @@ const listChatEventRowsInner$ = command(
 );
 
 const listChatThreadDraftsInner$ = computed(async (get) => {
-  const auth = get(authContext$);
+  const auth = get(organizationAuthContext$);
 
   const draftThreadIds = await get(
     chatThreadDraftIds({
+      orgId: auth.orgId,
       userId: auth.userId,
     }),
   );
@@ -323,7 +328,7 @@ const listChatThreadDraftsInner$ = computed(async (get) => {
 
 const listChatThreadArtifactsInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
-    const auth = get(authContext$);
+    const auth = get(organizationAuthContext$);
     const params = get(pathParamsOf(chatThreadArtifactsContract.list));
     // Native iOS previews use the file inventory independently of Drive.
     const includeDriveStatus =
@@ -331,6 +336,7 @@ const listChatThreadArtifactsInner$ = command(
     const [runs, lookup] = await Promise.all([
       get(
         chatThreadArtifacts({
+          orgId: auth.orgId,
           threadId: params.threadId,
           userId: auth.userId,
         }),
@@ -431,15 +437,21 @@ export const chatThreadRoutes: readonly RouteEntry[] = [
   },
   {
     route: chatThreadsContract.drafts,
-    handler: authRoute({}, listChatThreadDraftsInner$),
+    handler: authRoute(
+      { requireOrganization: true },
+      listChatThreadDraftsInner$,
+    ),
   },
   {
     route: chatThreadByIdContract.get,
-    handler: authRoute({}, getChatThreadInner$),
+    handler: authRoute({ requireOrganization: true }, getChatThreadInner$),
   },
   {
     route: chatThreadArtifactsContract.list,
-    handler: authRoute({}, listChatThreadArtifactsInner$),
+    handler: authRoute(
+      { requireOrganization: true },
+      listChatThreadArtifactsInner$,
+    ),
   },
   {
     route: chatThreadEventsContract.catchUp,
@@ -456,7 +468,11 @@ export const chatThreadRoutes: readonly RouteEntry[] = [
   {
     route: chatThreadEventsContract.snapshot,
     handler: authRoute(
-      { requiredCapability: "chat-event:read", oauthScope: "okou:chat:read" },
+      {
+        requireOrganization: true,
+        requiredCapability: "chat-event:read",
+        oauthScope: "okou:chat:read",
+      },
       getChatEventSnapshotInner$,
     ),
   },
@@ -464,7 +480,11 @@ export const chatThreadRoutes: readonly RouteEntry[] = [
     route: chatThreadEventsContract.rows,
     responseTransforms: [iosEmailChatRowsTransform],
     handler: authRoute(
-      { requiredCapability: "chat-event:read", oauthScope: "okou:chat:read" },
+      {
+        requireOrganization: true,
+        requiredCapability: "chat-event:read",
+        oauthScope: "okou:chat:read",
+      },
       listChatEventRowsInner$,
     ),
   },

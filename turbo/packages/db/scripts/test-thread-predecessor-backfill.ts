@@ -77,7 +77,10 @@ async function assertReconciled(): Promise<void> {
   assert.equal(result?.incorrect, 0);
 }
 
-async function assertRetryAndPlans(batch: string): Promise<void> {
+async function assertRetryAndPlans(
+  batch: string,
+  beforeMillis: number,
+): Promise<void> {
   // A failed concurrent build can leave a named but invalid index behind.
   await assert.rejects(
     sql.unsafe(
@@ -90,7 +93,9 @@ async function assertRetryAndPlans(batch: string): Promise<void> {
   assert.equal(invalid?.indisvalid, false);
   await sql.unsafe(`ALTER TABLE chat_threads ADD CONSTRAINT test_abort_backfill
     CHECK (id <> '${firstThreadId}' OR framework_session_run_id IS NULL)`);
-  await assert.rejects(applyPendingMigrations(sql), { code: "23514" });
+  await assert.rejects(applyPendingMigrations(sql, { beforeMillis }), {
+    code: "23514",
+  });
   const [index] = await sql`SELECT indisvalid FROM pg_index
     WHERE indexrelid = to_regclass(${indexName})`;
   assert.equal(index?.indisvalid, true, "retry must replace the invalid index");
@@ -130,7 +135,7 @@ async function assertRetryAndPlans(batch: string): Promise<void> {
   }
   const completedPrefix = await sql`SELECT id, xmin::text FROM chat_threads
     WHERE agent_id = ${agentId} ORDER BY id`;
-  await applyPendingMigrations(sql);
+  await applyPendingMigrations(sql, { beforeMillis });
   assert.deepEqual(
     await sql`SELECT id, xmin::text FROM chat_threads
       WHERE agent_id = ${agentId} ORDER BY id`,
@@ -370,11 +375,18 @@ try {
   await admin.unsafe(`CREATE DATABASE "${databaseName}"`);
   await applyPendingMigrations(sql, { beforeMillis: entry.when });
   await seedSkewedHistory();
-  await assertRetryAndPlans(batch);
+  // This transition checks physical row versions across the predecessor repair.
+  // Later migrations may legitimately rewrite the same rows.
+  const repair = journal.entries.find(({ tag }) => {
+    return tag === "1463_repair_historical_thread_predecessor_agent";
+  });
+  assert.ok(repair);
+  const beforeMillis = repair.when + 1;
+  await assertRetryAndPlans(batch, beforeMillis);
   await assertReconciled();
   await assertHistoricalAgentRepair();
   const before = await sql`SELECT id, xmin::text FROM chat_threads ORDER BY id`;
-  await applyPendingMigrations(sql);
+  await applyPendingMigrations(sql, { beforeMillis });
   assert.deepEqual(
     await sql`SELECT id, xmin::text FROM chat_threads ORDER BY id`,
     before,

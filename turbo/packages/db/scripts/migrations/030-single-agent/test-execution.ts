@@ -426,11 +426,11 @@ try {
       (${retainedWorkflow},${org},${privateAgent},'second','private',${owner},${workflowInstruction},NULL,${sql.json(secondBundle.descriptor)},${owner},${owner},'{"kind":"empty"}'::jsonb),
       (${publicWorkflow},${org},${publicAgent},'second','public',${other},${workflowInstruction},NULL,${sql.json(secondBundle.descriptor)},${other},${other},'{"kind":"empty"}'::jsonb)`;
   await sql`INSERT INTO projects(id,org_id,user_id,name) VALUES(${originalProject},${org},${owner},'Existing Project')`;
-  await sql`INSERT INTO chat_threads(id,user_id,agent_id,project_id,title,framework,framework_session_id,framework_session_run_id)
-    VALUES(${chat},${owner},${privateAgent},${originalProject},${canary},'codex','native-session',${nativeRun}),
-      (${otherChat},${other},${privateAgent},NULL,'other retained chat',NULL,NULL,NULL),
-      (${randomUUID()},${owner},${publicAgent},NULL,'separate same-name Agent',NULL,NULL,NULL),
-      (${randomUUID()},'foreign',${foreignAgent},NULL,'foreign untouched',NULL,NULL,NULL)`;
+  await sql`INSERT INTO chat_threads(id,user_id,org_id,agent_id,project_id,title,framework,framework_session_id,framework_session_run_id)
+    VALUES(${chat},${owner},${org}, ${privateAgent},${originalProject},${canary},'codex','native-session',${nativeRun}),
+      (${otherChat},${other},${org}, ${privateAgent},NULL,'other retained chat',NULL,NULL,NULL),
+      (${randomUUID()},${owner},${org}, ${publicAgent},NULL,'separate same-name Agent',NULL,NULL,NULL),
+      (${randomUUID()},'foreign',${foreignOrg}, ${foreignAgent},NULL,'foreign untouched',NULL,NULL,NULL)`;
   await sql`INSERT INTO workflow_automations(id,org_id,workflow_id,owner_user_id,kind,schedule_type,interval_seconds,enabled)
     VALUES(${badAutomation},${org},${workflow},${other},'schedule','loop',900,false),
       (${keptAutomation},${org},${retainedWorkflow},${owner},'schedule','loop',900,true),
@@ -444,8 +444,8 @@ try {
     VALUES(${historicalRun},${other},${org},${privateAgent},${otherChat},'completed','retained historical prompt','automation',0,${badAutomation},'{"wide":9007199254740993}'::jsonb)`;
   await sql`INSERT INTO agent_runs(id,user_id,org_id,agent_id,chat_thread_id,status,prompt,trigger_source,autonomy_budget)
     VALUES(${nativeRun},${owner},${org},${privateAgent},${chat},'completed','native history','web',0)`;
-  await sql`INSERT INTO chat_threads(id,user_id,agent_id,title)
-    SELECT gen_random_uuid(),${owner},${privateAgent},'retained scale fixture' FROM generate_series(1,11065)`;
+  await sql`INSERT INTO chat_threads(id,user_id,org_id,agent_id,title)
+    SELECT gen_random_uuid(),${owner},${org}, ${privateAgent},'retained scale fixture' FROM generate_series(1,11065)`;
   const snapshotProjection = object({
     value: chatThreadSnapshotProjectionSchema,
   }).parse(

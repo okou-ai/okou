@@ -1,12 +1,12 @@
+import { chatThreadOrganizationPredicate } from "../services/chat-thread-organization.service";
 import { iosChatUltrafastTransforms } from "@okouai/api-contracts/client-transforms/chat-ultrafast";
 import { command } from "ccstate";
-import { and, eq, inArray, isNotNull } from "drizzle-orm";
+import { and, eq, isNotNull } from "drizzle-orm";
 import { chatThreadMetadataContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { modelSettingsSchema } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { agents } from "@okouai/db/schema/agent";
 
-import { authContext$ } from "../auth/auth-context";
+import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { pathParamsOf } from "../context/request";
 import { db$ } from "../external/db";
@@ -15,7 +15,7 @@ import { chatThreadServiceTierFromCodex } from "../services/chat-thread-event.se
 import type { RouteEntry } from "../route-entry";
 
 const getInner$ = command(async ({ get }, signal: AbortSignal) => {
-  const auth = get(authContext$);
+  const auth = get(organizationAuthContext$);
   const params = get(pathParamsOf(chatThreadMetadataContract.get));
   signal.throwIfAborted();
 
@@ -41,15 +41,7 @@ const getInner$ = command(async ({ get }, signal: AbortSignal) => {
         eq(chatThreads.id, params.id),
         eq(chatThreads.userId, auth.userId),
         isNotNull(chatThreads.agentId),
-        auth.tokenType === "oauth"
-          ? inArray(
-              chatThreads.agentId,
-              db
-                .select({ id: agents.id })
-                .from(agents)
-                .where(eq(agents.orgId, auth.orgId)),
-            )
-          : undefined,
+        chatThreadOrganizationPredicate(auth.orgId),
       ),
     )
     .limit(1);
@@ -83,7 +75,11 @@ export const chatThreadGetRoutes: readonly RouteEntry[] = [
     route: chatThreadMetadataContract.get,
     responseTransforms: [iosChatUltrafastTransforms.metadata],
     handler: authRoute(
-      { requiredCapability: "chat-thread:read", oauthScope: "okou:chat:read" },
+      {
+        requireOrganization: true,
+        requiredCapability: "chat-thread:read",
+        oauthScope: "okou:chat:read",
+      },
       getInner$,
     ),
   },

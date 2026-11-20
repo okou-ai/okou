@@ -63,6 +63,7 @@ const draft$ = computed(async (get) => {
     body: await get(
       chatThreadDraft({
         threadId: id,
+        orgId: get(organizationAuthContext$).orgId,
         userId: get(organizationAuthContext$).userId,
       }),
     ),
@@ -85,6 +86,7 @@ const saveDraft$ = command(async ({ get, set }, signal: AbortSignal) => {
     updateChatThreadDraft$,
     {
       threadId: id,
+      orgId: get(organizationAuthContext$).orgId,
       userId: get(organizationAuthContext$).userId,
       ...body.data,
     },

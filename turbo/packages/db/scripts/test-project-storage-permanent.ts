@@ -81,7 +81,13 @@ export async function validatePermanentProjectStorage(databaseUrl: string) {
     ]);
     const [thread] = await db
       .insert(chatThreads)
-      .values({ id: threadId, userId: owner, projectId, title: "Planning" })
+      .values({
+        id: threadId,
+        userId: owner,
+        orgId,
+        projectId,
+        title: "Planning",
+      })
       .returning();
     assert.equal(thread?.projectId, projectId);
     await assert.rejects(
