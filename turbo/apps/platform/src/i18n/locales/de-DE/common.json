@@ -525,7 +525,6 @@
       "video": "VID"
     },
     "googleDrive": {
-      "agentLoading": "Der Agent wird noch geladen",
       "connect": "Verbinden Sie Google Drive",
       "connectTooltip": "Verbinden Sie Google Drive, um Artefakte hochzuladen",
       "conversionNotice": "Erstellt eine bearbeitbare Kopie; die Formatierung kann abweichen.",

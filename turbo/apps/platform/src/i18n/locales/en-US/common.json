@@ -525,7 +525,6 @@
       "video": "VID"
     },
     "googleDrive": {
-      "agentLoading": "Agent is still loading",
       "connect": "Connect Google Drive",
       "connectTooltip": "Connect Google Drive to upload artifacts",
       "conversionNotice": "Creates an editable copy. Some formatting may change.",

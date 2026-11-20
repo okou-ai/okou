@@ -109,7 +109,7 @@ function artifactDownloadFilename(
 
 export type ArtifactDownloadSyncTarget = {
   readonly accountReady: boolean;
-  readonly agentId: string | null | undefined;
+  readonly threadId: string;
   readonly disconnected: boolean;
   readonly artifactId: string;
   readonly connectionId: string | undefined;
@@ -241,7 +241,10 @@ function useGoogleDriveCompletedOperation(
   const operation = useGet(googleDriveSyncAccount$);
   return operation &&
     operation.artifactId === syncTarget?.artifactId &&
-    operation.agentId === syncTarget.agentId
+    operation.threadId === syncTarget.threadId &&
+    (operation.connectionId === syncTarget.connectionId ||
+      (syncTarget.connectionId === undefined &&
+        syncTarget.recovery?.action === "connect"))
     ? operation
     : undefined;
 }
@@ -369,7 +372,6 @@ function GoogleDriveDisabledMenuItem({
 }
 
 type GoogleDrivePendingAction =
-  | { readonly kind: "authorize" }
   | {
       readonly kind: "connect";
       readonly account: PlatformConnectorAccountMutationIntent;
@@ -381,9 +383,6 @@ function resolveGoogleDrivePendingAction(
 ): GoogleDrivePendingAction {
   if (recovery) {
     switch (recovery.action) {
-      case "authorize": {
-        return { kind: "authorize" };
-      }
       case "connect": {
         return {
           kind: "connect",
@@ -399,6 +398,7 @@ function resolveGoogleDrivePendingAction(
           },
         };
       }
+      case "authorize":
       case "unavailable": {
         return { kind: "unavailable" };
       }
@@ -427,29 +427,18 @@ function useGoogleDriveMenuAction(
     if (!syncTarget || !actionSignal) {
       return;
     }
-    const run = (
-      connectedAccountId: string | undefined,
-      authorize: boolean,
-      signal: AbortSignal,
-    ) => {
-      if (!syncTarget.agentId) {
-        return Promise.resolve();
-      }
-      return syncArtifact(
-        {
-          agentId: syncTarget.agentId,
-          artifactId: syncTarget.artifactId,
-          ...(connectedAccountId ? { connectionId: connectedAccountId } : {}),
-          filename: syncTarget.filename,
-          mode,
-          authorize,
-        },
-        signal,
-      );
-    };
     if (availability.googleDriveReady) {
       detach(
-        run(availability.googleDriveConnectionId, false, actionSignal),
+        syncArtifact(
+          {
+            threadId: syncTarget.threadId,
+            artifactId: syncTarget.artifactId,
+            connectionId: availability.googleDriveConnectionId,
+            filename: syncTarget.filename,
+            mode,
+          },
+          actionSignal,
+        ),
         Reason.DomCallback,
         "artifact google drive sync",
       );
@@ -457,23 +446,6 @@ function useGoogleDriveMenuAction(
     }
     const action = availability.pendingAction;
     if (action.kind === "unavailable") {
-      return;
-    }
-    if (!syncTarget.agentId) {
-      toast.error(
-        i18n.t(($) => {
-          return $.artifacts.googleDrive.agentLoading;
-        }),
-      );
-      return;
-    }
-    const agentId = syncTarget.agentId;
-    if (action.kind === "authorize") {
-      detach(
-        run(syncTarget.connectionId, true, actionSignal),
-        Reason.DomCallback,
-        "artifact google drive authorize sync",
-      );
       return;
     }
     if (
@@ -490,12 +462,12 @@ function useGoogleDriveMenuAction(
           origin: availability.scopeRequired
             ? {
                 kind: "artifact-drive-reconnect",
-                agentId,
+                threadId: syncTarget.threadId,
                 artifactId: syncTarget.artifactId,
               }
             : {
                 kind: "artifact-drive-sync",
-                agentId,
+                threadId: syncTarget.threadId,
                 artifactId: syncTarget.artifactId,
                 filename: syncTarget.filename,
                 mode,

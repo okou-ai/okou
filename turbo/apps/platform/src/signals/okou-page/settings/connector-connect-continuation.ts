@@ -90,12 +90,12 @@ export type ConnectorConnectOrigin =
     } & ArtifactDriveReconnectTarget);
 
 interface ArtifactDriveReconnectTarget {
-  readonly agentId: string;
+  readonly threadId: string;
   readonly artifactId: string;
 }
 
 interface ArtifactDriveSyncTarget {
-  readonly agentId: string;
+  readonly threadId: string;
   readonly artifactId: string;
   readonly filename?: string;
   readonly mode: GoogleDriveUploadMode;
@@ -301,12 +301,11 @@ const continueConnectorConnectPlan$ = command(
         await set(
           syncArtifactAndRefresh$,
           {
-            agentId: plan.agentId,
+            threadId: plan.threadId,
             artifactId: plan.artifactId,
             connectionId,
             filename: plan.filename,
             mode: plan.mode,
-            authorize: true,
           },
           signal,
         );

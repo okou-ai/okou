@@ -38,7 +38,6 @@ export type AttachmentArtifactMetadata = {
   readonly title?: string;
   readonly googleDriveConnectionId?: string;
   readonly googleDriveAccountReady: boolean;
-  readonly agentId?: string | null;
   /** Public address of a hosted site; absent while the site is private. */
   readonly aliasUrl?: string;
   readonly artifactKind?: "hosted-site" | "presentation-html";

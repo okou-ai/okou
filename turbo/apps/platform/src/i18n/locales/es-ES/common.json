@@ -540,7 +540,6 @@
       "video": "VID"
     },
     "googleDrive": {
-      "agentLoading": "El agente sigue cargando",
       "connect": "Conectar Google Drive",
       "connectTooltip": "Conecta Google Drive para subir artefactos",
       "conversionNotice": "Crea una copia editable; el formato puede variar.",

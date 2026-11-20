@@ -1526,11 +1526,21 @@ function createLatestEventSignals(
   };
 }
 
-function createThreadArtifactRuns(threadId: string) {
+function createThreadArtifactRuns(
+  threadId: string,
+  driveAccountRevision$: Computed<string>,
+) {
   return computed(async (get): Promise<ChatThreadArtifactRun[]> => {
     get(artifactCatalogRevision$);
+    get(driveAccountRevision$);
     const client = get(apiClient$)(chatThreadArtifactsContract);
-    const result = await accept(client.list({ params: { threadId } }), [200]);
+    const result = await accept(
+      client.list({
+        params: { threadId },
+        query: { driveAccountModel: "chat" },
+      }),
+      [200],
+    );
     return result.body.runs;
   });
 }
@@ -2284,6 +2294,7 @@ function createMarkThreadReadIfNeeded({
 
 function createEventChangeEffects({
   threadId,
+  driveAccountRevision$,
   mailDraftCardSignals,
   chatEvents,
   projections,
@@ -2291,6 +2302,7 @@ function createEventChangeEffects({
   syncVisibleEventTrees$,
 }: {
   readonly threadId: string;
+  readonly driveAccountRevision$: Computed<string>;
   readonly mailDraftCardSignals: MailDraftCardSignalsRegistry;
   readonly chatEvents: ChatEventSignals;
   readonly projections: Pick<
@@ -2303,7 +2315,10 @@ function createEventChangeEffects({
     [boolean, AbortSignal]
   >;
 }) {
-  const catalogs = createThreadArtifactCatalogs(threadId);
+  const catalogs = createThreadArtifactCatalogs(
+    threadId,
+    driveAccountRevision$,
+  );
   const sidebar = createThreadSidebarSignals(
     threadId,
     mailDraftCardSignals,
@@ -2474,6 +2489,7 @@ interface ChatThreadMessagePipelineOptions {
   chatActionContext: ChatActionContext;
   chatEvents: ChatEventSignals;
   connector: ComposerConnectorSignals;
+  driveAccountRevision$: Computed<string>;
   thinkingSummaries$: Computed<Promise<ThinkingSummaries | null>>;
 }
 
@@ -2481,6 +2497,7 @@ function createChatThreadMessagePipeline({
   chatActionContext,
   chatEvents,
   connector,
+  driveAccountRevision$,
   thinkingSummaries$,
   onBrowserPageInput$,
 }: ChatThreadMessagePipelineOptions) {
@@ -2537,6 +2554,7 @@ function createChatThreadMessagePipeline({
   );
   const effects = createEventChangeEffects({
     threadId,
+    driveAccountRevision$,
     mailDraftCardSignals: resources.publicSignals.mailDraftCardSignals,
     chatEvents,
     projections,
@@ -4007,7 +4025,6 @@ export function createChatPanelSignals(
   persistence: ThreadDraftPersistence,
 ): ChatPanelSignals {
   const chatEvents = createChatEventSignals(threadId);
-  const artifacts$ = createThreadArtifactRuns(threadId);
   const threadDraft$ = createRemoteChatThreadDraft(threadId);
   const threadMeta$ = createThreadMeta(threadId);
   const optimisticCreateUnsettled$ =
@@ -4032,6 +4049,11 @@ export function createChatPanelSignals(
     draft,
     persistence,
   );
+  const driveAccountRevision$ = composer.connector.chatAccess.targetRevision({
+    kind: "builtin",
+    connectorSlug: "google-drive",
+  });
+  const artifacts$ = createThreadArtifactRuns(threadId, driveAccountRevision$);
   // The native input graph invokes this only after admitting page input.
   const onPageInput$ = command(({ get, set }) => {
     detach(
@@ -4044,6 +4066,7 @@ export function createChatPanelSignals(
     chatActionContext: { threadId, agentId },
     chatEvents,
     connector: composer.connector,
+    driveAccountRevision$,
     thinkingSummaries$: activity.thinkingSummaries$,
     onBrowserPageInput$: onPageInput$,
   });

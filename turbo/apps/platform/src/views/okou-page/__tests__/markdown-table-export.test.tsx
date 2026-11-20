@@ -20,7 +20,6 @@ import { artifactGoogleDriveContract } from "@okouai/api-contracts/contracts/art
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { builtinConnectorOauthStartContract } from "@okouai/api-contracts/contracts/connectors";
-import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import {
   click,
   setupPage,
@@ -249,30 +248,37 @@ function mockTableCloudFiles(
       return respond(200, { artifactId: file.artifactId });
     },
   );
-  context.mocks.api(artifactCatalogContract.get, ({ params, respond }) => {
-    const file = files.find((candidate) => {
-      return candidate.artifactId === params.artifactId;
-    });
-    if (!file) {
-      throw new Error(`Unexpected table artifact: ${params.artifactId}`);
-    }
-    return respond(200, {
-      ...fileArtifactDetail(
-        artifactSummary(file.artifactId, "file", "Table.xlsx"),
-        {
-          fileId: file.fileId,
-          filename: "Table.xlsx",
-          contentType: TYPE,
-          url: `https://app.example.test${artifactReferencePath(file.fileId, "Table.xlsx")}`,
+  context.mocks.api(
+    artifactCatalogContract.get,
+    ({ params, query, respond }) => {
+      expect(query).toMatchObject({
+        chatThreadId: context.resourceId,
+        driveAccountModel: "chat",
+      });
+      const file = files.find((candidate) => {
+        return candidate.artifactId === params.artifactId;
+      });
+      if (!file) {
+        throw new Error(`Unexpected table artifact: ${params.artifactId}`);
+      }
+      return respond(200, {
+        ...fileArtifactDetail(
+          artifactSummary(file.artifactId, "file", "Table.xlsx"),
+          {
+            fileId: file.fileId,
+            filename: "Table.xlsx",
+            contentType: TYPE,
+            url: `https://app.example.test${artifactReferencePath(file.fileId, "Table.xlsx")}`,
+          },
+        ),
+        googleDriveConnectionId: CONNECTION_ID,
+        googleDriveSync: options.googleDriveSync?.() ?? {
+          status: "not_synced",
+          accountReady: true,
         },
-      ),
-      googleDriveConnectionId: CONNECTION_ID,
-      googleDriveSync: options.googleDriveSync?.() ?? {
-        status: "not_synced",
-        accountReady: true,
-      },
-    });
-  });
+      });
+    },
+  );
 }
 
 test("Each table footer reports its own data rows and columns", async () => {
@@ -466,7 +472,7 @@ test("Each table exports its own real workbook with literal values and source UR
   ]);
 });
 
-test.each(["ready", "authorize", "connect", "reconnect"] as const)(
+test.each(["ready", "connect", "reconnect"] as const)(
   "Cloud exports preserve the selected account and upload mode (%s)",
   async (accountState) => {
     const telemetry = context.mocks.posthog();
@@ -474,7 +480,6 @@ test.each(["ready", "authorize", "connect", "reconnect"] as const)(
     const beforeConnectPopupCounts: number[] = [];
     const saves: { artifactId: string; connectionId?: string; mode: string }[] =
       [];
-    let authorized = accountState === "ready";
     let needsConnection =
       accountState === "connect" || accountState === "reconnect";
     const authorizationWindow = context.mocks.browser.authWindow();
@@ -545,26 +550,13 @@ test.each(["ready", "authorize", "connect", "reconnect"] as const)(
                   ? { action: "reconnect", connectionId: CONNECTION_ID }
                   : { action: "connect" },
             }
-          : authorized
-            ? { status: "not_synced", accountReady: true }
-            : { status: "disconnected", recovery: { action: "authorize" } };
+          : { status: "not_synced", accountReady: true };
       },
     });
     context.mocks.api(
-      userBuiltinConnectorsContract.update,
-      ({ body, respond }) => {
-        expect(body).toStrictEqual({
-          enabledConnectorSlugs: ["google-drive"],
-          operation: "add",
-        });
-        authorized = true;
-        return respond(200, { enabledConnectorSlugs: ["google-drive"] });
-      },
-    );
-    context.mocks.api(
-      artifactGoogleDriveContract.uploadWithMode,
+      artifactGoogleDriveContract.uploadFromChat,
       ({ params, body, respond }) => {
-        expect(authorized).toBeTruthy();
+        expect(body.chatThreadId).toBe(context.resourceId);
         saves.push({
           artifactId: params.artifactId,
           connectionId: body.connectionId,
@@ -622,7 +614,7 @@ test.each(CLOUD_EXPORTS)(
     let responseUrl = firstUrl;
     mockTableCloudFiles();
     context.mocks.api(
-      artifactGoogleDriveContract.uploadWithMode,
+      artifactGoogleDriveContract.uploadFromChat,
       ({ body, respond }) => {
         return respond(200, googleFile(body.mode, responseUrl));
       },
@@ -655,7 +647,7 @@ test("Interleaving two tables and Google destinations shows the matching success
   };
   mockTableCloudFiles({ files: TABLE_FILES });
   context.mocks.api(
-    artifactGoogleDriveContract.uploadWithMode,
+    artifactGoogleDriveContract.uploadFromChat,
     ({ params, body, respond }) => {
       const links = params.artifactId === CATALOG_ID ? firstLinks : secondLinks;
       return respond(200, googleFile(body.mode, links[body.mode]));
@@ -698,7 +690,7 @@ test("An unconfirmed Sheets conversion can be retried after saving to Drive", as
   let conversionConfirmed = false;
   mockTableCloudFiles();
   context.mocks.api(
-    artifactGoogleDriveContract.uploadWithMode,
+    artifactGoogleDriveContract.uploadFromChat,
     ({ body, respond }) => {
       if (body.mode === "google" && !conversionConfirmed) {
         return respond(200, {
@@ -765,7 +757,7 @@ test.each([
       });
     });
     context.mocks.api(
-      artifactGoogleDriveContract.uploadWithMode,
+      artifactGoogleDriveContract.uploadFromChat,
       ({ body, respond }) => {
         if (failure === "Google Drive API" && !recovered) {
           return respond(503, {
@@ -803,7 +795,7 @@ test("The table export trigger is disabled and named Saving… during the initia
     return new HttpResponse(null, { status: 200 });
   });
   context.mocks.api(
-    artifactGoogleDriveContract.uploadWithMode,
+    artifactGoogleDriveContract.uploadFromChat,
     ({ body, respond }) => {
       return respond(200, googleFile(body.mode, savedUrl));
     },
@@ -833,7 +825,7 @@ test.each(CLOUD_EXPORTS)(
     let responseUrl: string | null = null;
     mockTableCloudFiles();
     context.mocks.api(
-      artifactGoogleDriveContract.uploadWithMode,
+      artifactGoogleDriveContract.uploadFromChat,
       ({ body, respond }) => {
         return respond(200, googleFile(body.mode, responseUrl));
       },

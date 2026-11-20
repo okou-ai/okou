@@ -524,7 +524,6 @@
       "video": "VID"
     },
     "googleDrive": {
-      "agentLoading": "Agen masih memuat",
       "connect": "Hubungkan Google Drive",
       "connectTooltip": "Hubungkan Google Drive untuk mengunggah artefak",
       "conversionNotice": "Membuat salinan yang dapat diedit; format dapat berubah.",

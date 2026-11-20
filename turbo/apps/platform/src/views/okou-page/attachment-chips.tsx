@@ -384,7 +384,7 @@ function artifactDialogSyncTarget(
   }
   return {
     accountReady: artifact.googleDriveAccountReady,
-    agentId: artifact.agentId,
+    threadId: artifact.threadId,
     disconnected: artifact.googleDriveDisconnected,
     recovery: artifact.googleDriveRecovery,
     artifactId: artifact.artifactId,
@@ -417,13 +417,11 @@ function findArtifactDialogItemForUrl(
 }
 
 function artifactDialogMetadataFromItem(params: {
-  agentId: string | null | undefined;
   item: ArtifactDialogItem;
   threadId: string;
 }): AttachmentArtifactMetadata {
   const connectionId = params.item.file.googleDriveConnectionId;
   return {
-    agentId: params.agentId,
     ...(params.item.file.artifactId
       ? { artifactId: params.item.file.artifactId }
       : {}),
@@ -1298,7 +1296,6 @@ function ArtifactPreviewDialogThreadResolver({
   thread: ChatPanelSignals;
 }) {
   const loadable = useLastLoadable(thread.artifacts$);
-  const agentId = thread.agentId;
   const imageNavigation = thread.imageNavigation.lightbox;
   const imageRole = useGet(imageNavigation.role$);
   const hasPreviousImage = useGet(imageNavigation.hasPrevious$);
@@ -1318,7 +1315,6 @@ function ArtifactPreviewDialogThreadResolver({
     navigateImageLightbox({
       artifact: navigationItem.artifact
         ? artifactDialogMetadataFromItem({
-            agentId,
             item: navigationItem.artifact,
             threadId: thread.threadId,
           })
@@ -1354,7 +1350,6 @@ function ArtifactPreviewDialogThreadResolver({
     return (
       <ArtifactPreviewDialogContent
         artifact={artifactDialogMetadataFromItem({
-          agentId,
           item,
           threadId: thread.threadId,
         })}

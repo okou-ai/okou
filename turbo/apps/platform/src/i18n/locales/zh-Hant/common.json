@@ -524,7 +524,6 @@
       "video": "影片"
     },
     "googleDrive": {
-      "agentLoading": "智能體還在載入",
       "connect": "連線 Google Drive",
       "connectTooltip": "連線 Google Drive 後即可上傳成果",
       "conversionNotice": "建立可編輯副本，格式可能有所變更。",

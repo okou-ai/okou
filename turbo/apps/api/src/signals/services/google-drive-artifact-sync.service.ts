@@ -97,6 +97,8 @@ import { uploadedArtifactObject$ } from "./uploaded-artifact.service";
 import {
   ownedGoogleDriveArtifact$,
   artifactGoogleDriveAccount$,
+  chatGoogleDriveAccount$,
+  type DriveConnectorAccountResolution,
 } from "./artifact-google-drive-authorization.service";
 
 const log = logger("api:google-drive-artifact-sync");
@@ -180,11 +182,6 @@ interface ConnectorTokens {
   readonly accessToken: string;
   readonly connection: BuiltinConnectorCredentialConnection;
 }
-
-type DriveConnectorAccountResolution =
-  | { readonly type: "resolved"; readonly connectorId: string }
-  | { readonly type: "connect" }
-  | { readonly type: "unavailable" };
 
 type DriveConnectionLoadResult =
   | { readonly type: "ready"; readonly tokens: ConnectorTokens }
@@ -303,17 +300,21 @@ const loadDriveConnection$ = command(
       readonly orgId: string;
       readonly snapshot: ConnectorRuntimeAuthLookup;
       readonly userId: string;
-    } & ({ readonly threadId: string } | { readonly connectorId: string }),
+    } & (
+      | {
+          readonly threadId: string;
+          readonly driveAccountModel?: "chat" | undefined;
+        }
+      | { readonly connectorId: string }
+    ),
     signal: AbortSignal,
   ): Promise<DriveConnectionLoadResult> => {
     const resolution: DriveConnectorAccountResolution =
       "connectorId" in args
         ? { type: "resolved", connectorId: args.connectorId }
-        : await set(resolveDriveConnectorAccount$, {
-            orgId: args.orgId,
-            userId: args.userId,
-            threadId: args.threadId,
-          });
+        : args.driveAccountModel === "chat"
+          ? await set(chatGoogleDriveAccount$, args, signal)
+          : await set(resolveDriveConnectorAccount$, args);
     signal.throwIfAborted();
     if (resolution.type !== "resolved") {
       return {
@@ -635,6 +636,7 @@ export const googleDriveArtifactDetailStatus$ = command(
       readonly threadId: string;
       readonly orgId: string;
       readonly userId: string;
+      readonly driveAccountModel?: "chat" | undefined;
     },
     signal: AbortSignal,
   ) => {
@@ -694,6 +696,7 @@ export const googleDriveArtifactStatusLookup$ = command(
       readonly orgId: string | undefined;
       readonly userId: string;
       readonly source?: DriveArtifactStatusSource;
+      readonly driveAccountModel?: "chat" | undefined;
     },
     signal: AbortSignal,
   ): Promise<DriveStatusLookup> => {
@@ -730,6 +733,7 @@ export const googleDriveArtifactStatusLookup$ = command(
         orgId: args.orgId,
         userId: args.userId,
         threadId: args.threadId,
+        driveAccountModel: args.driveAccountModel,
         featureSwitchContext,
         snapshot,
       },
@@ -739,18 +743,20 @@ export const googleDriveArtifactStatusLookup$ = command(
     if (connection.type === "disconnected") {
       return connection;
     }
-    const authorized = await set(threadAllowsGoogleDriveArtifactSync$, {
-      orgId: args.orgId,
-      userId: args.userId,
-      threadId: args.threadId,
-    });
-    signal.throwIfAborted();
-    if (!authorized) {
-      return {
-        type: "disconnected",
-        connectionId: connection.tokens.connection.connectorId,
-        recovery: { action: "authorize" },
-      };
+    if (args.driveAccountModel !== "chat") {
+      const authorized = await set(threadAllowsGoogleDriveArtifactSync$, {
+        orgId: args.orgId,
+        userId: args.userId,
+        threadId: args.threadId,
+      });
+      signal.throwIfAborted();
+      if (!authorized) {
+        return {
+          type: "disconnected",
+          connectionId: connection.tokens.connection.connectorId,
+          recovery: { action: "authorize" },
+        };
+      }
     }
     const { tokens } = connection;
     // Schema-parse failure or transient network error is an unknown provider
@@ -1850,15 +1856,19 @@ function resolveSlidesTarget(
   return { kind: "target", mimeType: GOOGLE_SLIDES_MIME_TYPE };
 }
 
-interface SyncArtifactArgs {
+export type SyncArtifactArgs = {
   readonly orgId: string;
   readonly userId: string;
   readonly artifactId: string;
-  readonly agentId: string;
   readonly connectionId?: string;
-  readonly authorizedRunId?: string;
   readonly mode?: GoogleDriveUploadMode;
-}
+} & (
+  | { readonly agentId: string; readonly authorizedRunId?: string }
+  | {
+      readonly chatThreadId: string;
+      readonly runId?: string;
+    }
+);
 
 interface ArtifactUploadSource {
   readonly threadId: string | null;
@@ -1966,6 +1976,20 @@ type DriveScopeRequiredResponse = ReturnType<typeof driveScopeRequired>;
  *    after refresh-token retry exhausted.
  *  - 200 with `{ id, name, webViewLink }`.
  */
+const resolveArtifactDriveUploadAccount$ = command(
+  async ({ set }, args: SyncArtifactArgs, signal: AbortSignal) => {
+    if (!("chatThreadId" in args)) {
+      return await set(artifactGoogleDriveAccount$, args, signal);
+    }
+    const resolution = await set(
+      chatGoogleDriveAccount$,
+      { ...args, threadId: args.chatThreadId },
+      signal,
+    );
+    return resolution.type === "resolved" ? resolution.connectorId : null;
+  },
+);
+
 export const syncArtifactToGoogleDrive$ = command(
   async (
     { get, set },
@@ -2000,11 +2024,17 @@ export const syncArtifactToGoogleDrive$ = command(
         return target;
       }
     }
-    const connectorId = await set(artifactGoogleDriveAccount$, args, signal);
+    const connectorId = await set(
+      resolveArtifactDriveUploadAccount$,
+      args,
+      signal,
+    );
     signal.throwIfAborted();
     if (!connectorId) {
       return badRequestMessage(
-        "Connect and authorize Google Drive for this agent before uploading artifacts",
+        "chatThreadId" in args
+          ? "Google Drive account is unavailable in this Chat"
+          : "Connect and authorize Google Drive for this agent before uploading artifacts",
       );
     }
     const catalogDb = set(writeDb$);

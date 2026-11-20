@@ -20,10 +20,7 @@ import {
 import { triggerBlobDownload } from "../views/okou-page/attachment-url.ts";
 import { i18n } from "../i18n/index.ts";
 import { apiClient$ } from "./api-client.ts";
-import {
-  currentChatAgentRecordId$,
-  currentChatThreadId$,
-} from "./agent-chat.ts";
+import { currentChatThreadId$ } from "./agent-chat.ts";
 import { pageVersion$ } from "./page-signal.ts";
 import { syncArtifactAndRefresh$ } from "./chat-page/artifact-google-drive-sync.ts";
 import {
@@ -111,7 +108,6 @@ interface TableGoogleSave {
   readonly table: Element;
   readonly artifactId: string;
   readonly filename: string;
-  readonly agentId: string;
   readonly threadId: string;
   readonly mode: GoogleDriveUploadMode;
 }
@@ -130,7 +126,6 @@ const saveTableFile$ = command(
     { set },
     params: TableGoogleSave & {
       readonly connectionId?: string;
-      readonly authorize: boolean;
     },
     signal: AbortSignal,
   ) => {
@@ -184,7 +179,6 @@ export const connectMarkdownTable$ = command(
             {
               ...request.params,
               connectionId: connectedAccountId,
-              authorize: true,
             },
             ownerSignal,
           );
@@ -201,7 +195,7 @@ const saveTableToGoogle$ = command(
     const detail = await accept(
       get(apiClient$)(artifactCatalogContract).get({
         params: { artifactId: params.artifactId },
-        query: { chatThreadId: params.threadId },
+        query: { chatThreadId: params.threadId, driveAccountModel: "chat" },
         fetchOptions: { signal },
       }),
       [200],
@@ -212,19 +206,7 @@ const saveTableToGoogle$ = command(
       status?.status === "disconnected" ? status.recovery : undefined;
     const connectionId = detail.body.googleDriveConnectionId;
     if (status && status.status !== "disconnected") {
-      await set(
-        saveTableFile$,
-        { ...params, connectionId, authorize: false },
-        signal,
-      );
-      return;
-    }
-    if (recovery?.action === "authorize") {
-      await set(
-        saveTableFile$,
-        { ...params, connectionId, authorize: true },
-        signal,
-      );
+      await set(saveTableFile$, { ...params, connectionId }, signal);
       return;
     }
     if (recovery?.action !== "connect" && recovery?.action !== "reconnect") {
@@ -287,9 +269,7 @@ export const exportMarkdownTable$ = command(
     }
     const threadId = get(currentChatThreadId$);
     const cache = get(uploadedTables$);
-    const agentId = await get(currentChatAgentRecordId$);
-    signal.throwIfAborted();
-    if (!threadId || !agentId) {
+    if (!threadId) {
       toast.error(
         i18n.t(($) => {
           return $.markdown.tableExport.googleUnavailable;
@@ -307,7 +287,7 @@ export const exportMarkdownTable$ = command(
     cache.set(table, { content, artifactId });
     await set(
       saveTableToGoogle$,
-      { table, artifactId, filename, agentId, threadId, mode },
+      { table, artifactId, filename, threadId, mode },
       signal,
     );
   },

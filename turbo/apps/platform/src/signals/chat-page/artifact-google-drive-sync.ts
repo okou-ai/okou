@@ -8,7 +8,6 @@ import {
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { artifactGoogleDriveContract } from "@okouai/api-contracts/client/artifact-google-drive";
 import type { artifactGoogleDriveContract as SourceArtifactGoogleDriveContract } from "@okouai/api-contracts/contracts/artifact-google-drive";
-import { userBuiltinConnectorsContract } from "@okouai/api-contracts/client/user-connectors";
 import { accept } from "../../lib/accept.ts";
 import { i18n } from "../../i18n/index.ts";
 import { apiClient$, type ApiClientFactory } from "../api-client.ts";
@@ -16,11 +15,11 @@ import { pageVersion$ } from "../page-signal.ts";
 import type { infer as zInfer } from "zod";
 
 type GoogleDriveUploadedFile = zInfer<
-  (typeof SourceArtifactGoogleDriveContract.uploadWithMode.responses)[200]
+  (typeof SourceArtifactGoogleDriveContract.uploadFromChat.responses)[200]
 >;
 
 type ArtifactGoogleDriveSyncParams = {
-  readonly agentId: string;
+  readonly threadId: string;
   readonly connectionId?: string;
   readonly successMessage?: string;
 } & ArtifactGoogleDriveSyncFile;
@@ -34,7 +33,7 @@ type ArtifactGoogleDriveSyncFile = {
 type GoogleDriveUploadDenied = {
   readonly status: 403;
   readonly body: zInfer<
-    (typeof SourceArtifactGoogleDriveContract.uploadWithMode.responses)[403]
+    (typeof SourceArtifactGoogleDriveContract.uploadFromChat.responses)[403]
   >;
 };
 
@@ -61,10 +60,10 @@ async function syncArtifactFileToGoogleDrive(
   signal.throwIfAborted();
   const client = params.createClient(artifactGoogleDriveContract);
   const attempted = await accept(
-    client.uploadWithMode({
+    client.uploadFromChat({
       params: { artifactId: params.artifactId },
       body: {
-        agentId: params.agentId,
+        chatThreadId: params.threadId,
         mode: params.mode,
         ...(params.connectionId ? { connectionId: params.connectionId } : {}),
       },
@@ -131,7 +130,7 @@ async function syncArtifactFileToGoogleDrive(
 
 type GoogleDriveSyncAccount = {
   readonly artifactId: string;
-  readonly agentId: string;
+  readonly threadId: string;
   readonly connectionId: string | undefined;
   readonly ready: boolean;
   readonly recovery?: NonNullable<GoogleDriveUploadDenied["body"]["recovery"]>;
@@ -158,9 +157,7 @@ export const googleDriveSyncAccount$ = computed((get) => {
 export const syncArtifactAndRefresh$ = command(
   async (
     { get, set },
-    params: ArtifactGoogleDriveSyncParams & {
-      readonly authorize: boolean;
-    },
+    params: ArtifactGoogleDriveSyncParams,
     signal: AbortSignal,
   ): Promise<void> => {
     signal.throwIfAborted();
@@ -168,12 +165,6 @@ export const syncArtifactAndRefresh$ = command(
     // a replacement page's graph even if its completion races navigation.
     const account$ = get(pageGoogleDriveSyncAccount$);
     const createClient = get(apiClient$);
-    if (params.authorize) {
-      await authorizeGoogleDriveForAgent(
-        { agentId: params.agentId, createClient },
-        signal,
-      );
-    }
     const result = await syncArtifactFileToGoogleDrive(
       { ...params, createClient },
       signal,
@@ -183,14 +174,14 @@ export const syncArtifactAndRefresh$ = command(
     const account = get(account$);
     const sameCurrentAccount =
       account?.artifactId === params.artifactId &&
-      account.agentId === params.agentId &&
+      account.threadId === params.threadId &&
       account.connectionId === params.connectionId;
     if (result.kind === "scope-required") {
       // This lookup failed before any file upload. Offer exact-account OAuth
       // only on the user's next action; never replay this request here.
       set(account$, {
         artifactId: params.artifactId,
-        agentId: params.agentId,
+        threadId: params.threadId,
         connectionId: result.recovery.connectionId,
         ready: false,
         recovery: result.recovery,
@@ -204,7 +195,7 @@ export const syncArtifactAndRefresh$ = command(
     if (result.kind === "uploaded") {
       set(account$, {
         artifactId: params.artifactId,
-        agentId: params.agentId,
+        threadId: params.threadId,
         connectionId: params.connectionId,
         ready: true,
         googleImport:
@@ -226,7 +217,7 @@ export const finishArtifactDriveReconnect$ = command(
     { get, set },
     params: {
       readonly artifactId: string;
-      readonly agentId: string;
+      readonly threadId: string;
       readonly connectionId: string;
     },
     signal: AbortSignal,
@@ -236,40 +227,17 @@ export const finishArtifactDriveReconnect$ = command(
     const account = get(account$);
     if (
       account?.artifactId !== params.artifactId ||
-      account.agentId !== params.agentId ||
+      account.threadId !== params.threadId ||
       account.recovery?.connectionId !== params.connectionId
     ) {
       return;
     }
     set(account$, {
       artifactId: account.artifactId,
-      agentId: account.agentId,
+      threadId: account.threadId,
       connectionId: params.connectionId,
       ready: true,
       googleImport: account.googleImport,
     });
   },
 );
-
-async function authorizeGoogleDriveForAgent(
-  params: {
-    readonly agentId: string;
-    readonly createClient: ApiClientFactory;
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  const client = params.createClient(userBuiltinConnectorsContract);
-  await accept(
-    client.update({
-      params: { id: params.agentId },
-      body: {
-        enabledConnectorSlugs: ["google-drive"],
-        operation: "add",
-      },
-      fetchOptions: { signal },
-    }),
-    [200],
-    signal,
-  );
-  signal.throwIfAborted();
-}

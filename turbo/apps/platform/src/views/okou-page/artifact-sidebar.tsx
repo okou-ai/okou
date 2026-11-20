@@ -113,7 +113,6 @@ type ArtifactSidebarItem = {
 type ArtifactSidebarContentProps = {
   actionsPending?: boolean;
   artifactId?: string;
-  agentId?: string | null;
   artifactKind?: ChatThreadArtifactFile["artifactKind"];
   artifactRef: ArtifactRef;
   fullscreenState: ArtifactSidebarFullscreenState;
@@ -141,7 +140,6 @@ export function ArtifactSidebar({
   thread,
 }: ArtifactSidebarProps) {
   const loadable = useLastLoadable(thread.artifacts$);
-  const agentId = thread.agentId;
   const imageNavigation = thread.imageNavigation.sidebar;
   const hasPreviousImage = useGet(imageNavigation.hasPrevious$);
   const hasNextImage = useGet(imageNavigation.hasNext$);
@@ -172,7 +170,6 @@ export function ArtifactSidebar({
     <>
       <ArtifactSidebarContent
         actionsPending={loadable.state === "loading"}
-        agentId={agentId}
         artifactRef={artifactRef}
         fullscreenState={fullscreenState}
         imageCanvasSignals={thread.sidebar.imageCanvas}
@@ -194,16 +191,15 @@ export function ArtifactSidebar({
 }
 
 function artifactSidebarSyncTargetForItem({
-  agentId,
   item,
+  threadId,
 }: {
-  agentId?: string | null;
   item?: ArtifactSidebarItem;
   threadId?: string;
 }): ArtifactDownloadSyncTarget | undefined {
   return item
     ? artifactSidebarSyncTarget({
-        agentId,
+        threadId,
         file: item.file,
       })
     : undefined;
@@ -212,7 +208,6 @@ function artifactSidebarSyncTargetForItem({
 export function ArtifactSidebarContent({
   actionsPending = false,
   artifactId,
-  agentId,
   artifactKind,
   artifactRef,
   fullscreenState,
@@ -250,7 +245,6 @@ export function ArtifactSidebarContent({
   const syncTarget =
     providedSyncTarget ??
     artifactSidebarSyncTargetForItem({
-      agentId,
       item,
       threadId,
     });
@@ -434,7 +428,7 @@ function findArtifactItemForUrl(
 }
 
 export function artifactSidebarSyncTarget(params: {
-  agentId: string | null | undefined;
+  threadId?: string | undefined;
   file: Pick<
     ChatThreadArtifactFile,
     "artifactId" | "filename" | "googleDriveConnectionId" | "googleDriveSync"
@@ -442,14 +436,14 @@ export function artifactSidebarSyncTarget(params: {
 }): ArtifactDownloadSyncTarget | undefined {
   const { file } = params;
   const artifactId = file.artifactId;
-  if (!artifactId) {
+  if (!artifactId || !params.threadId) {
     return undefined;
   }
   return {
     accountReady:
       file.googleDriveSync?.status !== "disconnected" &&
       file.googleDriveSync?.accountReady === true,
-    agentId: params.agentId,
+    threadId: params.threadId,
     disconnected: file.googleDriveSync?.status === "disconnected",
     recovery:
       file.googleDriveSync?.status === "disconnected"
