@@ -1480,13 +1480,7 @@ export function createThreadClaimRunObjects(
     async (get): Promise<AutonomyBudgetResult> => {
       const input = await get(automationSource$);
       if (input.kind === "rejected") {
-        return {
-          kind: "invalid",
-          error: {
-            code: "CONFLICT",
-            message: "Workflow automation no longer exists",
-          },
-        };
+        return { kind: "invalid", error: input.assembly.rejection.error };
       }
       const { event, target, sourceRunIdType, sourceAutonomyBudget } = input;
       if (event.eventType !== "chat-run-finished" && sourceRunIdType === null) {

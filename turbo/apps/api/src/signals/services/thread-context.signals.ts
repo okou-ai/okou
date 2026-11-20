@@ -330,7 +330,7 @@ function createThreadInputResources(
   });
   const integrationSources: Readonly<
     Record<
-      NonNullable<PickedThreadInputEvent["contextType"]>,
+      Exclude<PickedThreadInputEvent["contextType"], "automation" | null>,
       Computed<Promise<unknown>>
     >
   > = {
@@ -344,7 +344,6 @@ function createThreadInputResources(
     agentphone: integrations.agentPhoneContext$,
     wechat: integrations.wechatContext$,
     discord: context.discordContext$,
-    automation: integrations.automationSnapshot$,
   };
   const inputResources$ = computed(async (get) => {
     const event = await get(pickedEvent$);
