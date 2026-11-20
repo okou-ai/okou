@@ -99,7 +99,7 @@ impl AcceptanceTasks {
             .await;
             let outcome = match acceptance {
                 SuppliedAcceptance::Accepted(acceptance) => {
-                    work.settle(Disposition::Accepted);
+                    work.settle(Disposition::Accepted(acceptance.accepted_at));
                     prepare_accepted(*acceptance, profile, context, work.preferred_home_source)
                         .await
                 }
