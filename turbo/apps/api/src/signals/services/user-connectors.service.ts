@@ -6,7 +6,6 @@ import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-id
 
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { writeDb$ } from "../external/db";
-import { publishUserSignal } from "../external/realtime";
 
 type UpdateUserBuiltinConnectorsResult =
   | {
@@ -62,17 +61,12 @@ export const updateUserBuiltinConnectors$ = command(
     if (!selection) {
       return { status: "agentNotFound" };
     }
-    const committed: UpdateUserBuiltinConnectorsResult = {
+    return {
       status: "updated",
       enabledConnectorSlugs:
         operation === "replace"
           ? enabledConnectorSlugs
           : selection.connector_slugs,
     };
-    // Register invalidation before callers observe cancellation after commit.
-    await publishUserSignal([args.userId], "composerAgentConnectorsChanged", {
-      agentId: args.agentId,
-    });
-    return committed;
   },
 );

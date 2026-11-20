@@ -58,4 +58,47 @@ describe("PUT /api/agents/:id/user-connectors", () => {
       new Set(["github", "slack"]),
     );
   });
+
+  it("applies independent Drive grants when another agent is missing", async () => {
+    const headers = { authorization: "Bearer clerk-session" };
+    mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
+    context.mocks.s3.send.mockResolvedValue({});
+    const app = setupApp({ context, routes: agentsRoutes });
+    const agents = await Promise.all(
+      ["First agent", "Second agent"].map((displayName) => {
+        return accept(
+          app(agentsMainContract).create({
+            headers,
+            body: { displayName, visibility: "private" },
+          }),
+          [201],
+        );
+      }),
+    );
+    const agentIds = agents.map(({ body }) => {
+      return body.agentId;
+    });
+    const updates = await Promise.all(
+      [randomUUID(), ...agentIds].map((id) => {
+        return app(userBuiltinConnectorsContract).update({
+          headers,
+          params: { id },
+          body: { enabledConnectorSlugs: ["google-drive"], operation: "add" },
+        });
+      }),
+    );
+    expect(
+      updates.map(({ status }) => {
+        return status;
+      }),
+    ).toStrictEqual([404, 200, 200]);
+    expect(
+      updates.slice(1).map(({ body }) => {
+        return body;
+      }),
+    ).toStrictEqual([
+      { enabledConnectorSlugs: ["google-drive"] },
+      { enabledConnectorSlugs: ["google-drive"] },
+    ]);
+  });
 });
