@@ -1,5 +1,7 @@
 # Changelog
 
+## [0.1.315](https://github.com/okou-ai/okou/compare/guest-write-file-v0.1.314...guest-write-file-v0.1.315) (2026-11-20)
+
 ## [0.1.314](https://github.com/okou-ai/okou/compare/guest-write-file-v0.1.313...guest-write-file-v0.1.314) (2026-11-20)
 
 

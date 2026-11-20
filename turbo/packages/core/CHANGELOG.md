@@ -1,5 +1,12 @@
 # Changelog
 
+## [8.857.2](https://github.com/okou-ai/okou/compare/core-v8.857.1...core-v8.857.2) (2026-11-20)
+
+
+### Bug Fixes
+
+* **platform:** improve chat sharing selection controls ([#49038](https://github.com/okou-ai/okou/issues/49038)) ([ad72ee8](https://github.com/okou-ai/okou/commit/ad72ee8660d9450fa57e8df86389fe30c1e9abae))
+
 ## [8.857.1](https://github.com/okou-ai/okou/compare/core-v8.857.0...core-v8.857.1) (2026-11-20)
 
 

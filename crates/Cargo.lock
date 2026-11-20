@@ -2042,7 +2042,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent"
-version = "0.110.12"
+version = "0.110.13"
 dependencies = [
  "aho-corasick",
  "api-contracts",
@@ -2082,7 +2082,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent-tests"
-version = "0.1.232"
+version = "0.1.233"
 dependencies = [
  "api-contracts",
  "base64 0.23.1",
@@ -2125,7 +2125,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-client"
-version = "0.23.117"
+version = "0.23.118"
 dependencies = [
  "guest-contracts",
  "guest-control-proto",
@@ -2143,7 +2143,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-proto"
-version = "0.22.93"
+version = "0.22.94"
 dependencies = [
  "guest-contracts",
  "proptest",
@@ -2151,7 +2151,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-server"
-version = "0.24.137"
+version = "0.24.138"
 dependencies = [
  "bytes",
  "chrono",
@@ -2172,7 +2172,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-tests"
-version = "0.12.210"
+version = "0.12.211"
 dependencies = [
  "cli-test-support",
  "guest-contracts",
@@ -2202,7 +2202,7 @@ dependencies = [
 
 [[package]]
 name = "guest-init"
-version = "0.20.123"
+version = "0.20.124"
 dependencies = [
  "guest-contracts",
  "guest-control-server",
@@ -2287,7 +2287,7 @@ dependencies = [
 
 [[package]]
 name = "guest-write-file"
-version = "0.1.314"
+version = "0.1.315"
 dependencies = [
  "cli-test-support",
  "guest-contracts",
@@ -4159,7 +4159,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.249.73"
+version = "0.249.74"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4233,7 +4233,7 @@ dependencies = [
 
 [[package]]
 name = "runner-executor"
-version = "0.23.2"
+version = "0.23.3"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4370,7 +4370,7 @@ dependencies = [
 
 [[package]]
 name = "runner-provider"
-version = "0.21.0"
+version = "0.21.1"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -4415,7 +4415,7 @@ dependencies = [
 
 [[package]]
 name = "runner-remote"
-version = "0.31.88"
+version = "0.31.89"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -4560,7 +4560,7 @@ dependencies = [
 
 [[package]]
 name = "runner-supervisor"
-version = "0.27.2"
+version = "0.27.3"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4894,7 +4894,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox-firecracker"
-version = "0.53.129"
+version = "0.53.130"
 dependencies = [
  "api-contracts",
  "async-trait",
