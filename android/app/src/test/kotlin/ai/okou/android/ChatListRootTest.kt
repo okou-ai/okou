@@ -1332,7 +1332,7 @@ class ChatListRootTest {
         compose.onNodeWithText("No chats in this view.").assertDoesNotExist()
 
         failing.set(false)
-        compose.onNodeWithText("Retry").performClick()
+        compose.onNodeWithText("Try again").performClick()
         awaitListAndNames()
         compose.onNodeWithText(loadFailure).assertDoesNotExist()
         compose.onNodeWithText("Project chat").assertIsDisplayed()
