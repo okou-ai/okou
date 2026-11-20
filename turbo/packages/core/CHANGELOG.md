@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.857.5](https://github.com/okou-ai/okou/compare/core-v8.857.4...core-v8.857.5) (2026-11-20)
+
+
+### Refactoring
+
+* **drive:** retire agent-scoped artifact exports ([#49545](https://github.com/okou-ai/okou/issues/49545)) ([8622b04](https://github.com/okou-ai/okou/commit/8622b04aa8c1c872e2dcb4fa52184072f6e6eda6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.95.2
+
 ## [8.857.4](https://github.com/okou-ai/okou/compare/core-v8.857.3...core-v8.857.4) (2026-11-20)
 
 
