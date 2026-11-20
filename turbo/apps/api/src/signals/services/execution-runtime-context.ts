@@ -53,7 +53,10 @@ type ExecutionInput = {
   readonly memoryMounts: readonly AcceptedMemoryMount[];
 };
 
-export function executionPackages({ facts, memoryMounts }: ExecutionInput) {
+export function executionPackages({
+  facts,
+  memoryMounts,
+}: Pick<ExecutionInput, "facts" | "memoryMounts">) {
   const { skillRoot, skillMounts, officialWorkflowBundles } = facts;
   const storageMounts = memoryMounts.map(({ mount }) => {
     return mount;

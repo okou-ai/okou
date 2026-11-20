@@ -81,6 +81,7 @@ import {
 } from "../external/realtime";
 
 import { getOfficialTelegramBotConfig } from "../external/telegram-official";
+import { waitUntil } from "../context/wait-until";
 import {
   joinAll,
   joinAllInOrder,
@@ -91,7 +92,11 @@ import {
   tapError,
 } from "../utils";
 import type { DirectRunDispatchResult } from "./direct-run-dispatch.service";
-import type { AdmittedRunLaunch } from "./direct-run-preparation.service";
+import {
+  prepareDirectRunPackages,
+  readExecutionBundleCache$,
+  type AdmittedRunLaunch,
+} from "./direct-run-preparation.service";
 import {
   prepareRunPackageMounts,
   selectExecutionPackages,
@@ -270,9 +275,12 @@ import {
 import type { AutomationRow } from "./workflow-automation-enqueue.service";
 import { workflowAutomationTriggerSource } from "./workflow-automation-trigger-source";
 import { recordWorkflowAdmissionDuration } from "./workflow-queue-admission-timing.service";
-import { createStorageSignals } from "./thread-storage.signals";
+import { createMemberMemoryHead } from "./member-memory-head.service";
 import { initializeMemberMemory$ } from "./member-memory-initialization.service";
-import type { AcceptedMemoryMount } from "./execution-storage.service";
+import {
+  buildMemberMemoryMount,
+  type AcceptedMemoryMount,
+} from "./execution-storage.service";
 import { settleRejectedAutomationInput$ } from "./workflow-schedule-failure.service";
 
 export interface ThreadClaim {
@@ -1791,11 +1799,8 @@ export function createThreadClaimRunObjects(
     pickedEvent$,
     threadContext,
   );
-  const { storage$, initializedMemoryMounts$ } = createStorageSignals(
-    bootstrap,
-    pickedEvent$,
-    threadContext,
-  );
+  const memoryOwner = { orgId: bootstrap.orgId, userId: bootstrap.userId };
+  const memoryHeadAfterInitialization$ = createMemberMemoryHead(memoryOwner);
   const runRuntimeInputs$ = computed(async (get) => {
     const [
       { authorization },
@@ -1981,6 +1986,7 @@ export function createThreadClaimRunObjects(
         },
         runner: {
           workflowAutomationId: args.agentRunMetadata.workflowAutomationId,
+          framework: launchFramework,
           agentInstructions: authorization.agentInstructions,
           protectedMountPaths: packageMounts.protectedMountPaths,
           nativeContinuation:
@@ -2189,7 +2195,7 @@ export function createThreadClaimRunObjects(
   // Resource reads do not wait for credit admission: its failure is checked
   // with the prepared resources before anything is committed.
   const resourceAllowed$ = computed(async (get) => {
-    // Eager storage must not evaluate a Run plan for an automation source
+    // Eager preparation must not evaluate a Run plan for an automation source
     // whose delegation admission already rejects it.
     if (await get(isAutomation$)) {
       return (
@@ -2203,24 +2209,22 @@ export function createThreadClaimRunObjects(
     ]);
     return ready && validSource;
   });
-  // Storage is read only for an admitted source. Rejections come from the Run
-  // plan; storage runs alongside it and its failure matters only when the plan
-  // is ready.
-  const preparedStorage$ = computed(async (get) => {
+  // Join the early Memory read once source admission allows the Run plan.
+  const preparedMemory$ = computed(async (get) => {
     if (!(await get(resourceAllowed$))) {
       return null;
     }
-    const [plan, storage] = await Promise.all([
+    const [plan, memory] = await Promise.all([
       get(runPlan$),
-      settle(get(storage$)),
+      settle(get(bootstrap.memory$)),
     ]);
     if (!plan || isRouteError(plan)) {
       return plan;
     }
-    if (!storage.ok) {
-      throw storage.error;
+    if (!memory.ok) {
+      throw memory.error;
     }
-    return storage.value;
+    return { head: memory.value };
   });
   /** The run token makes runner input a command; its result is passed on. */
   const prepareRunnerInput$ = command(
@@ -2295,36 +2299,32 @@ export function createThreadClaimRunObjects(
   });
   const prepareRunnerStorage$ = command(
     async ({ get, set }, args: ThreadRunnerFacts, signal: AbortSignal) => {
-      const [input, preparedStorage] = await Promise.all([
+      const [input, memory] = await joinAll([
         set(prepareRunnerInput$, args, signal),
-        get(preparedStorage$),
+        get(preparedMemory$),
       ]);
       signal.throwIfAborted();
       if (isRouteError(input)) {
         return input;
       }
-      if (!preparedStorage || isRouteError(preparedStorage)) {
-        return preparedStorage;
+      if (!memory || isRouteError(memory)) {
+        return memory;
       }
-      if (preparedStorage.kind === "missing") {
-        await set(
-          initializeMemberMemory$,
-          { orgId: bootstrap.orgId, userId: bootstrap.userId },
-          signal,
-        );
-        signal.throwIfAborted();
-      }
-      const memoryMounts =
-        preparedStorage.kind === "ready"
-          ? preparedStorage.mounts
-          : await get(initializedMemoryMounts$);
+      // The initializer returns its own revision. An empty receipt means
+      // another writer established HEAD after this pick captured Memory.
+      const head =
+        memory.head ??
+        (await set(initializeMemberMemory$, memoryOwner, signal)) ??
+        (await get(memoryHeadAfterInitialization$));
       signal.throwIfAborted();
+      if (!head) {
+        throw new Error("Member Memory has no HEAD after initialization");
+      }
+      const mount = buildMemberMemoryMount(memoryOwner, head, args.framework);
       return {
         ...input,
-        memoryMounts,
-        runStorageMounts: memoryMounts.map(({ mount }) => {
-          return mount;
-        }),
+        memoryMounts: [mount],
+        runStorageMounts: [mount.mount],
       };
     },
   );
@@ -2594,7 +2594,7 @@ export function createThreadClaimRunObjects(
       }
       const [resources] = await joinAll([
         set(prepareLaunchResources$, head, signal),
-        get(preparedStorage$),
+        get(preparedMemory$),
         // Connector reads start independently of prompt/model material. A
         // prefetch miss joins the same loader once for this selected identity.
         get(bootstrap.connectors$),
@@ -2746,28 +2746,24 @@ export function createThreadClaimRunObjects(
         ...commit,
         persistence: context.persistence,
         admissionTiming,
+        poolCapture,
       };
       const commitTiming = timing.run;
       const commitStartedAt = performance.now();
       const committed: AtomicLaunchCommitCompletion = await (async () => {
-        const result = await withPgPoolAcquisitionCapture(
-          poolCapture,
-          async () => {
-            return await set(
-              commitThreadLaunch$,
-              preparedCommit,
-              {
-                orgId: claim.orgId,
-                chatThreadId: claim.chatThreadId,
-                claimId: claim.claimId,
-                automationQueueEventId:
-                  context.head.contextType === "automation"
-                    ? context.head.id
-                    : null,
-              },
-              signal,
-            );
+        const result = await set(
+          commitThreadLaunch$,
+          preparedCommit,
+          {
+            orgId: claim.orgId,
+            chatThreadId: claim.chatThreadId,
+            claimId: claim.claimId,
+            automationQueueEventId:
+              context.head.contextType === "automation"
+                ? context.head.id
+                : null,
           },
+          signal,
         );
         if ("kind" in result && result.kind === "pending") {
           set(internalCommittedRunId$, result.admittedLaunch.run.id);
@@ -3275,6 +3271,7 @@ interface PreparedAtomicLaunchPersistence {
 interface PreparedThreadLaunchCommit extends ThreadLaunchCommitInput {
   readonly persistence: PreparedAtomicLaunchPersistence;
   readonly admissionTiming: AdmissionAttemptTiming;
+  readonly poolCapture: PgPoolAcquisitionCapture;
 }
 
 function prepareAtomicLaunchPersistence(
@@ -3514,6 +3511,7 @@ interface ThreadRunCommand {
 /** The Thread facts needed to prepare one Runner launch. */
 interface ThreadRunnerFacts {
   readonly workflowAutomationId: string | undefined;
+  readonly framework: SupportedFramework | "pi";
   readonly agentInstructions: ContentBundle | null;
   readonly protectedMountPaths: readonly string[];
   readonly facts: Pick<
@@ -3781,13 +3779,14 @@ type CreateRunErrorResult =
       "PROVIDER_UNAVAILABLE" | "MODEL_PROVIDER_UNAVAILABLE"
     >;
 
-// Pending persistence uses connection-free SQL plans owned by one command.
+/** Return the durable identity before the caller observes cancellation. */
 async function pendingLaunchCommitResult(
   args: PreparedThreadLaunchCommit,
   publication: Promise<{
     readonly persisted: ReturnType<typeof pendingAtomicLaunchResult>;
     readonly publicationReturnedAt: number;
   }>,
+  packages: AdmittedRunLaunch["packages"],
 ): Promise<AtomicLaunchCommitAttempt> {
   const { persisted, publicationReturnedAt } = await publication;
   args.admissionTiming.callbackFinished();
@@ -3797,7 +3796,7 @@ async function pendingLaunchCommitResult(
   return {
     kind: "pending",
     marketingRewardEventId: persisted.marketingRewardEventId,
-    admittedLaunch: admittedRunLaunch(args, persisted),
+    admittedLaunch: admittedRunLaunch(args, persisted, packages),
     publicationReturnedAt,
   };
 }
@@ -3805,9 +3804,11 @@ async function pendingLaunchCommitResult(
 function admittedRunLaunch(
   args: PreparedThreadLaunchCommit,
   persisted: PersistedAtomicLaunchRows,
+  packages: AdmittedRunLaunch["packages"],
 ): AdmittedRunLaunch {
   const { rowsArgs: rows, metadata } = args.persistence.rows;
   return {
+    packages,
     run: {
       id: args.identity.runId,
       isFirstRun: persisted.isFirstRun,
@@ -4132,6 +4133,7 @@ const commitThreadLaunch$ = command(
     ) {
       return conflict(OFFICIAL_WORKFLOW_RUN_ADMISSION_MESSAGE);
     }
+    const packages = prepareDirectRunPackages(args.launch);
     const db = set(writeDb$);
     const { admissionTiming, timing } = args;
     admissionTiming.transactionStarted();
@@ -4158,9 +4160,9 @@ const commitThreadLaunch$ = command(
         );
         signal.throwIfAborted();
         const outcome = await settle(
-          (async () => {
+          withPgPoolAcquisitionCapture(args.poolCapture, async () => {
             return parseRawRows(pendingLaunchRowSchema, await db.execute(plan));
-          })(),
+          }),
         );
         if (!outcome.ok) {
           signal.throwIfAborted();
@@ -4191,7 +4193,16 @@ const commitThreadLaunch$ = command(
     })().finally(() => {
       admissionTiming.recordLeafElapsed("persistence", leafStartedAt);
     });
-    // Return the durable identity before the caller observes cancellation.
-    return await pendingLaunchCommitResult(args, publication);
+    const bundleCache = set(
+      readExecutionBundleCache$,
+      packages.bundles.hashes,
+      signal,
+    );
+    // Own the speculative read even if the lease is lost or the pick aborts.
+    waitUntil(bundleCache);
+    return await pendingLaunchCommitResult(args, publication, {
+      ...packages,
+      cache: bundleCache,
+    });
   },
 );
