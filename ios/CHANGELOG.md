@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.51.1](https://github.com/okou-ai/okou/compare/ios-v0.51.0...ios-v0.51.1) (2026-11-20)
+
+
+### Bug Fixes
+
+* **mobile:** use chat bubble icons for mark read and unread ([#49277](https://github.com/okou-ai/okou/issues/49277)) ([745cfcf](https://github.com/okou-ai/okou/commit/745cfcfc47b9c05ba40031ab4af73765385a3c5d))
+
 ## [0.51.0](https://github.com/okou-ai/okou/compare/ios-v0.50.0...ios-v0.51.0) (2026-11-19)
 
 

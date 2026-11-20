@@ -13,6 +13,13 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1154.0](https://github.com/okou-ai/okou/compare/app-v0.1153.2...app-v0.1154.0) (2026-11-20)
+
+
+### Features
+
+* **platform:** grow the for you custom direction into its composer ([#49279](https://github.com/okou-ai/okou/issues/49279)) ([1e7094d](https://github.com/okou-ai/okou/commit/1e7094d1fecfbaa2f711462f1200d089f0000ab1))
+
 ## [0.1153.2](https://github.com/okou-ai/okou/compare/app-v0.1153.1...app-v0.1153.2) (2026-11-19)
 
 
