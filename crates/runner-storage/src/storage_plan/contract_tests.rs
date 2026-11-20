@@ -11,6 +11,7 @@ use runner_types::storage_manifest::{ArtifactEntry, StorageEntry, StorageManifes
 fn storage(mount_path: &Path, name: &str, version: &str, archive_url: String) -> StorageEntry {
     StorageEntry {
         template_guidance: None,
+        optional: false,
         name: name.into(),
         mount_path: mount_path.to_string_lossy().into_owned(),
         vas_storage_name: name.into(),
