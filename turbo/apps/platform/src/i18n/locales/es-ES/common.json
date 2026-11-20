@@ -4128,10 +4128,10 @@
     "markdown": "Escribe en texto sin formato o Markdown",
     "placeholder": "Dile a Okou cómo te gusta trabajar…",
     "proactiveSettings": {
-      "cardsOnly": "Solo están activadas las tarjetas nuevas. Elige un ajuste para las tarjetas y las revisiones cada hora.",
+      "cardsOnly": "Las tarjetas nuevas están activadas. Las revisiones cada hora y las actualizaciones diarias del perfil están desactivadas. Elige un ajuste común.",
       "choose": "Elegir…",
       "description": "Personaliza cómo trabaja Okou en este espacio de trabajo.",
-      "hourlyOnly": "Solo están activadas las revisiones cada hora. Elige un ajuste para las revisiones y las tarjetas nuevas.",
+      "hourlyOnly": "Las revisiones cada hora y las actualizaciones diarias del perfil están activadas. Las tarjetas nuevas están desactivadas. Elige un ajuste común.",
       "offers": "Recibe tarjetas de ofertas en «Para ti».",
       "sourcesHint": "Si desactivas una fuente, dejarás de recibir sus tarjetas nuevas y los avisos de tarjetas sin leer. Las tarjetas que ya tienes seguirán en Para ti.",
       "suggestions": "Revisa tus fuentes conectadas cada hora, actualiza tu perfil a diario y recibe sugerencias útiles sobre los próximos pasos.",

@@ -4128,10 +4128,10 @@
     "markdown": "Escreva em texto simples ou Markdown",
     "placeholder": "Diga ao Okou como você gosta de trabalhar…",
     "proactiveSettings": {
-      "cardsOnly": "Somente os novos cartões estão ativos. Escolha uma configuração para os cartões e as verificações por hora.",
+      "cardsOnly": "Os novos cartões estão ativos. As verificações por hora e as atualizações diárias do perfil estão desativadas. Escolha uma configuração para todos.",
       "choose": "Escolher…",
       "description": "Personalize como o Okou trabalha neste espaço de trabalho.",
-      "hourlyOnly": "Somente as verificações por hora estão ativas. Escolha uma configuração para as verificações e os novos cartões.",
+      "hourlyOnly": "As verificações por hora e as atualizações diárias do perfil estão ativas. Os novos cartões estão desativados. Escolha uma configuração para todos.",
       "offers": "Receba cartões de ofertas em “Para você”.",
       "sourcesHint": "Ao desativar uma fonte, você deixa de receber novos cartões e alertas de cartões não lidos dessa fonte. Os cartões existentes continuam em Para você.",
       "suggestions": "Verifique suas fontes conectadas a cada hora, atualize seu perfil diariamente e receba sugestões úteis de próximos passos.",

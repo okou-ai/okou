@@ -4070,10 +4070,10 @@
     "markdown": "Schreibe in Klartext oder Markdown",
     "placeholder": "Sag Okou, wie du gerne arbeitest…",
     "proactiveSettings": {
-      "cardsOnly": "Neue Karten sind aktiv, stündliche Prüfungen sind aus. Wähle eine Einstellung für beides.",
+      "cardsOnly": "Neue Karten sind aktiv, stündliche Prüfungen und tägliche Profilaktualisierungen sind aus. Wähle eine gemeinsame Einstellung.",
       "choose": "Auswählen…",
       "description": "Passe an, wie Okou in diesem Arbeitsbereich arbeitet.",
-      "hourlyOnly": "Stündliche Prüfungen sind aktiv, neue Karten sind aus. Wähle eine Einstellung für beides.",
+      "hourlyOnly": "Stündliche Prüfungen und tägliche Profilaktualisierungen sind aktiv, neue Karten sind aus. Wähle eine gemeinsame Einstellung.",
       "offers": "Erhalte Angebotskarten unter „Für dich“.",
       "sourcesHint": "Wenn du eine Kartenquelle deaktivierst, erhältst du von ihr keine neuen Karten oder Hinweise auf ungelesene Karten mehr. Vorhandene Karten bleiben in „Für dich“.",
       "suggestions": "Verbundene Quellen stündlich prüfen, dein Nutzerprofil täglich aktualisieren und hilfreiche nächste Schritte vorschlagen.",

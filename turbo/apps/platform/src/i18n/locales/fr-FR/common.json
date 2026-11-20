@@ -4128,10 +4128,10 @@
     "markdown": "Écrivez en texte brut ou en Markdown",
     "placeholder": "Indiquez à Okou comment vous aimez travailler…",
     "proactiveSettings": {
-      "cardsOnly": "Seules les nouvelles cartes sont activées. Choisissez un réglage commun aux cartes et aux vérifications horaires.",
+      "cardsOnly": "Les nouvelles cartes sont activées. Les vérifications horaires et les mises à jour quotidiennes du profil sont désactivées. Choisissez un réglage commun.",
       "choose": "Choisir…",
       "description": "Personnalisez la façon dont Okou travaille dans cet espace.",
-      "hourlyOnly": "Seules les vérifications horaires sont activées. Choisissez un réglage commun aux vérifications et aux nouvelles cartes.",
+      "hourlyOnly": "Les vérifications horaires et les mises à jour quotidiennes du profil sont activées. Les nouvelles cartes sont désactivées. Choisissez un réglage commun.",
       "offers": "Recevez des offres dans « Pour vous ».",
       "sourcesHint": "Désactiver une source interrompt l’arrivée de ses nouvelles cartes et les alertes de cartes non lues. Les cartes existantes restent dans Pour vous.",
       "suggestions": "Consultez vos sources connectées chaque heure, mettez à jour votre profil chaque jour et recevez des suggestions utiles pour la suite.",
