@@ -2190,3 +2190,70 @@ agents-management-007	turbo/apps/platform/src/views/agents-page/__tests__/agents
 agents-management-009	turbo/apps/platform/src/views/agents-page/__tests__/agents-management.test.tsx	Creating an agent requires a multi-line responsibility	444	passed
 agents-management-012	turbo/apps/platform/src/views/agents-page/__tests__/agents-management.test.tsx	Open an agent's management page from its card	476	passed
 agents-management-013	turbo/apps/platform/src/views/agents-page/__tests__/agents-management.test.tsx	Review an agent's profile and instructions	493	passed
+default-error-boundary-001	turbo/apps/platform/src/views/__tests__/default-error-boundary.test.tsx	The error page does not wait for the workspace worker	14	passed
+default-error-boundary-002	turbo/apps/platform/src/views/__tests__/default-error-boundary.test.tsx	The error page retains support and theme controls (dark: false)	47	passed
+auth-v1-navigation-hosts-001	turbo/apps/platform/src/views/auth-v1/__tests__/auth-v1-navigation-hosts.test.tsx	A nested sign-in route retains its state on the canonical Okou app	8	passed
+auth-v1-ui-load-001	turbo/apps/platform/src/views/auth-v1/__tests__/auth-v1-ui-load.test.tsx	A Clerk UI load failure reports the error without a partial auth form	10	passed
+auth-v1-viewport-001	turbo/apps/platform/src/views/auth-v1/__tests__/auth-v1-viewport.test.tsx	Leaving hosted auth restores the existing app zoom policy	44	passed
+auth-v1-page-001	turbo/apps/platform/src/views/auth-v1/__tests__/auth-v1-page.test.tsx	An unavailable invitation link still opens Clerk signup	20	passed
+auth-v1-page-002	turbo/apps/platform/src/views/auth-v1/__tests__/auth-v1-page.test.tsx	Invitation links persist a signed host-only cookie and preserve the signup return	34	passed
+auth-v1-page-003	turbo/apps/platform/src/views/auth-v1/__tests__/auth-v1-page.test.tsx	An invitation survives Clerk steps and is consumed after the authenticated registered result	60	passed
+auth-v1-page-004	turbo/apps/platform/src/views/auth-v1/__tests__/auth-v1-page.test.tsx	An invitation survives Clerk steps and is consumed after the authenticated ineligible result	60	passed
+auth-v1-page-005	turbo/apps/platform/src/views/auth-v1/__tests__/auth-v1-page.test.tsx	The hosted sign-in form renders with Google One Tap on the base route	132	passed
+auth-v1-page-006	turbo/apps/platform/src/views/auth-v1/__tests__/auth-v1-page.test.tsx	Nested sign-in task paths stay on the hosted sign-in form	165	passed
+auth-v1-page-007	turbo/apps/platform/src/views/auth-v1/__tests__/auth-v1-page.test.tsx	Clerk sign-in steps use app history and keep every query value	173	passed
+auth-v1-page-011	turbo/apps/platform/src/views/auth-v1/__tests__/auth-v1-page.test.tsx	A trusted Okou destination brands the hosted sign-in	200	passed
+auth-v1-page-015	turbo/apps/platform/src/views/auth-v1/__tests__/auth-v1-page.test.tsx	Sign-up redirects to sibling origins of the current host are kept	223	passed
+integration-url-diagnostics-002	turbo/apps/platform/src/views/auth-v1/__tests__/integration-url-diagnostics.test.tsx	/settings/telegram redacts actual auth diagnostics while keeping signed browser navigation	41	passed
+integration-url-diagnostics-003	turbo/apps/platform/src/views/auth-v1/__tests__/integration-url-diagnostics.test.tsx	/telegram/connect redacts actual auth diagnostics while keeping signed browser navigation	41	passed
+integration-url-diagnostics-004	turbo/apps/platform/src/views/auth-v1/__tests__/integration-url-diagnostics.test.tsx	/SETTINGS/telegram/ redacts actual auth diagnostics while keeping signed browser navigation	41	passed
+integration-url-diagnostics-009	turbo/apps/platform/src/views/auth-v1/__tests__/integration-url-diagnostics.test.tsx	/settings/agentphone proofs stay out of PostHog URL, referrer and person properties	60	passed
+integration-url-diagnostics-010	turbo/apps/platform/src/views/auth-v1/__tests__/integration-url-diagnostics.test.tsx	/settings/telegram proofs stay out of PostHog URL, referrer and person properties	60	passed
+integration-url-diagnostics-011	turbo/apps/platform/src/views/auth-v1/__tests__/integration-url-diagnostics.test.tsx	/telegram/connect proofs stay out of PostHog URL, referrer and person properties	60	passed
+integration-url-diagnostics-012	turbo/apps/platform/src/views/auth-v1/__tests__/integration-url-diagnostics.test.tsx	/SETTINGS/telegram/ proofs stay out of PostHog URL, referrer and person properties	60	passed
+integration-url-diagnostics-013	turbo/apps/platform/src/views/auth-v1/__tests__/integration-url-diagnostics.test.tsx	/connectors/slack/callback proofs stay out of PostHog URL, referrer and person properties	60	passed
+safe-area-001	turbo/apps/platform/src/views/css/__tests__/safe-area.test.ts	safe-area properties > starts the avoidable bottom inset at the physical one	54	passed
+export-page-001	turbo/apps/platform/src/views/export-page/__tests__/export-page.test.tsx	A completed export shows its contents, expiry, and cooldown	54	passed
+lab-page-001	turbo/apps/platform/src/views/lab-page/__tests__/lab-page.test.tsx	Lab remains available while onboarding is required	39	passed
+lab-page-002	turbo/apps/platform/src/views/lab-page/__tests__/lab-page.test.tsx	Lab groups active feature switches	70	passed
+lab-page-005	turbo/apps/platform/src/views/lab-page/__tests__/lab-page.test.tsx	Maintainer filters narrow the feature list	116	passed
+lab-page-006	turbo/apps/platform/src/views/lab-page/__tests__/lab-page.test.tsx	Toggle and reset a Lab override: _testOauthConnector	151	passed
+mail-draft-page-003	turbo/apps/platform/src/views/mail-draft/__tests__/mail-draft-page.test.tsx	Sending from the standalone page shows the sent email on the same URL	95	passed
+mail-draft-page-004	turbo/apps/platform/src/views/mail-draft/__tests__/mail-draft-page.test.tsx	Deleting from the standalone page removes the email without opening a chat	126	passed
+mail-draft-page-006	turbo/apps/platform/src/views/mail-draft/__tests__/mail-draft-page.test.tsx	An uncertain Outlook send offers a status check without resending	148	passed
+mail-draft-page-007	turbo/apps/platform/src/views/mail-draft/__tests__/mail-draft-page.test.tsx	An inaccessible mail link cannot expose email actions	176	passed
+mail-draft-page-009	turbo/apps/platform/src/views/mail-draft/__tests__/mail-draft-page.test.tsx	A draft whose Gmail access expired reopens once Gmail is reconnected	193	passed
+oauth-consent-page-001	turbo/apps/platform/src/views/oauth-consent-page/__tests__/oauth-consent-page.test.tsx	app.vm7.ai renders the app-hosted OAuth consent request	33	passed
+oauth-consent-page-003	turbo/apps/platform/src/views/oauth-consent-page/__tests__/oauth-consent-page.test.tsx	A signed-out consent request returns through app sign-in	71	passed
+preview-access-002	turbo/apps/platform/src/views/preview-access/__tests__/preview-access.test.tsx	Trusted preview access reaches the matching preview API	11	passed
+install-banner-002	turbo/apps/platform/src/views/pwa-install/__tests__/install-banner.test.tsx	The standalone app hides the install banner	16	passed
+queue-001	turbo/apps/platform/src/views/queue-page/__tests__/queue.test.tsx	The queue deep link opens a drawer that can be closed	64	passed
+queue-003	turbo/apps/platform/src/views/queue-page/__tests__/queue.test.tsx	Queue billing actions appear only for authorized administrators and supported plans	86	passed
+queue-004	turbo/apps/platform/src/views/queue-page/__tests__/queue.test.tsx	The queue labels the limited-free tier as Free	116	passed
+queue-007	turbo/apps/platform/src/views/queue-page/__tests__/queue.test.tsx	The queue shows active slot usage for each member	139	passed
+queue-009	turbo/apps/platform/src/views/queue-page/__tests__/queue.test.tsx	A full queue offers the next appropriate plan upgrade	172	passed
+redeem-campaign-page-001	turbo/apps/platform/src/views/redeem-campaign-page/__tests__/redeem-campaign-page.test.tsx	A billing outage shows a temporary redemption error	12	passed
+redeem-campaign-page-002	turbo/apps/platform/src/views/redeem-campaign-page/__tests__/redeem-campaign-page.test.tsx	A non-admin cannot redeem workspace campaign credits	37	passed
+redeem-campaign-page-003	turbo/apps/platform/src/views/redeem-campaign-page/__tests__/redeem-campaign-page.test.tsx	A processing redemption confirms payment	64	passed
+link-navigation-001	turbo/apps/platform/src/views/router/__tests__/link-navigation.test.tsx	An unknown route offers both of its destinations	34	passed
+link-navigation-002	turbo/apps/platform/src/views/router/__tests__/link-navigation.test.tsx	The Okou error page uses Okou support	75	passed
+link-navigation-004	turbo/apps/platform/src/views/router/__tests__/link-navigation.test.tsx	A link to the open page adds no history entry	90	passed
+link-navigation-005	turbo/apps/platform/src/views/router/__tests__/link-navigation.test.tsx	Meta-click leaves the internal destination to the browser	131	passed
+skill-import-dialog-001	turbo/apps/platform/src/views/skill-import/__tests__/skill-import-dialog.test.tsx	Import skills sits before Create in chat	171	passed
+skill-import-dialog-002	turbo/apps/platform/src/views/skill-import/__tests__/skill-import-dialog.test.tsx	Import skills opens a Claude Code prompt by default	182	passed
+skill-import-dialog-005	turbo/apps/platform/src/views/skill-import/__tests__/skill-import-dialog.test.tsx	Browser-owned View workflows activations keep the dialog listening for imports	222	passed
+skill-import-dialog-006	turbo/apps/platform/src/views/skill-import/__tests__/skill-import-dialog.test.tsx	View workflows click closes the import dialog and navigates in the current tab	263	passed
+skill-import-dialog-007	turbo/apps/platform/src/views/skill-import/__tests__/skill-import-dialog.test.tsx	View workflows Enter closes the import dialog and navigates in the current tab	263	passed
+skill-import-dialog-010	turbo/apps/platform/src/views/skill-import/__tests__/skill-import-dialog.test.tsx	Reopening retains the prompt and resyncs the whole session including closed-window uploads	291	passed
+skill-import-dialog-014	turbo/apps/platform/src/views/skill-import/__tests__/skill-import-dialog.test.tsx	Escape closes the import, releases realtime, and returns keyboard focus	350	passed
+workflow-instructions-003	turbo/apps/platform/src/views/workflows-page/__tests__/workflow-instructions.test.tsx	Retain the instructions draft on failure and clear it only after a successful save	42	passed
+workflow-instructions-004	turbo/apps/platform/src/views/workflows-page/__tests__/workflow-instructions.test.tsx	Retain the Markdown file draft on failure and clear it only after a successful save	42	passed
+workflow-instructions-006	turbo/apps/platform/src/views/workflows-page/__tests__/workflow-instructions.test.tsx	Discard restores Markdown file and clears the discarded undo history	113	passed
+ssh-cloudflare-access-001	turbo/apps/platform/src/views/okou-page/__tests__/ssh-cloudflare-access.test.tsx	A retained protected host requires explicit shared Access selection before saving	114	passed
+ssh-cloudflare-access-003	turbo/apps/platform/src/views/okou-page/__tests__/ssh-cloudflare-access.test.tsx	Direct and protected mode retain their port and configuration drafts but submit only active fields	160	passed
+ssh-cloudflare-access-005	turbo/apps/platform/src/views/okou-page/__tests__/ssh-cloudflare-access.test.tsx	An eligible protected host can explicitly change to Direct	203	passed
+ssh-cloudflare-access-006	turbo/apps/platform/src/views/okou-page/__tests__/ssh-cloudflare-access.test.tsx	A concurrent host update preserves the binding draft and blocks stale saving	237	passed
+ssh-delete-conflicts-001	turbo/apps/platform/src/views/okou-page/__tests__/ssh-delete-conflicts.test.tsx	A missing host after HTTP 404 cannot authorize deletion	71	passed
+ssh-delete-conflicts-002	turbo/apps/platform/src/views/okou-page/__tests__/ssh-delete-conflicts.test.tsx	A missing host after HTTP 409 cannot authorize deletion	71	passed
+ssh-delete-conflicts-005	turbo/apps/platform/src/views/okou-page/__tests__/ssh-delete-conflicts.test.tsx	A owner change while deletion awaits a token prevents stale submission	115	passed
+ssh-delete-conflicts-007	turbo/apps/platform/src/views/okou-page/__tests__/ssh-delete-conflicts.test.tsx	A same-session token refresh preserves the deletion snapshot and uses the current token	157	passed
