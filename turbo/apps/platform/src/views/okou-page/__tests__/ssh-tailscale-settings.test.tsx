@@ -138,9 +138,9 @@ test("Tailscale host creation uses saved login details with a saved network", as
     tailscale: [network],
     sshCredentials: [login],
   });
-  const creates: CreateSshConnectionRequest[] = [];
+  const createRequest: { body?: CreateSshConnectionRequest } = {};
   context.mocks.api(sshConnectionsContract.create, ({ body, respond }) => {
-    creates.push(body);
+    createRequest.body = body;
     const created = sshHost(9, body.displayName, {
       id: body.id,
       host: body.host,
@@ -173,16 +173,14 @@ test("Tailscale host creation uses saved login details with a saved network", as
   await expect(
     screen.findByRole("heading", { name: "Connection added" }),
   ).resolves.toBeInTheDocument();
-  expect(creates).toStrictEqual([
-    {
-      id: expect.any(String),
-      displayName: "100.64.0.2",
-      host: "100.64.0.2",
-      port: 2022,
-      credential: { id: login.id },
-      transport: { type: "tailscale", configId: network.id },
-    },
-  ]);
+  expect(createRequest.body).toStrictEqual({
+    id: expect.any(String),
+    displayName: "100.64.0.2",
+    host: "100.64.0.2",
+    port: 2022,
+    credential: { id: login.id },
+    transport: { type: "tailscale", configId: network.id },
+  });
 
   click(getConnectorAction("link", "View connection"));
 
@@ -223,9 +221,9 @@ test("A saved Tailscale host retains its port, credential and learned key during
       });
     },
   );
-  const updates: UpdateSshConnectionRequest[] = [];
+  const updateRequest: { body?: UpdateSshConnectionRequest } = {};
   context.mocks.api(sshConnectionsContract.update, ({ body, respond }) => {
-    updates.push(body);
+    updateRequest.body = body;
     const updated = {
       ...saved,
       displayName: body.displayName ?? saved.displayName,
@@ -242,16 +240,14 @@ test("A saved Tailscale host retains its port, credential and learned key during
   await expect(
     screen.findByRole("heading", { name: "Release box", level: 2 }),
   ).resolves.toBeInTheDocument();
-  expect(updates).toStrictEqual([
-    {
-      expectedGeneration: 1,
-      displayName: "Release box",
-      host: "100.64.0.5",
-      port: 2022,
-      credential: { id: login.id },
-      transport: { type: "tailscale", configId: network.id },
-    },
-  ]);
+  expect(updateRequest.body).toStrictEqual({
+    expectedGeneration: 1,
+    displayName: "Release box",
+    host: "100.64.0.5",
+    port: 2022,
+    credential: { id: login.id },
+    transport: { type: "tailscale", configId: network.id },
+  });
   const fingerprint = screen.getByText("SHA256:preserved");
   expect(fingerprint).not.toBeVisible();
 

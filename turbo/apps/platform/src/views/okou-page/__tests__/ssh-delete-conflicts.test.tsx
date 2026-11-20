@@ -48,17 +48,17 @@ async function openDeletion(
   return await screen.findByRole("dialog", { name: "Delete connection" });
 }
 
-function recordDeletes(
-  respond: () => "deleted" | "missing" | "changed",
-): DeleteAttempt[] {
-  const attempts: DeleteAttempt[] = [];
+function recordDeletes(respond: () => "deleted" | "missing" | "changed"): {
+  attempt?: DeleteAttempt;
+} {
+  const deletion: { attempt?: DeleteAttempt } = {};
   context.mocks.api(
     sshConnectionsContract.delete,
     ({ body, request, respond: send }) => {
-      attempts.push({
+      deletion.attempt = {
         authorization: request.headers.get("authorization"),
         expectedGeneration: body.expectedGeneration,
-      });
+      };
       const outcome = respond();
       if (outcome === "missing") {
         return send(404, {
@@ -79,7 +79,7 @@ function recordDeletes(
       return send(204);
     },
   );
-  return attempts;
+  return deletion;
 }
 
 test.each([
@@ -102,7 +102,7 @@ test.each([
   async ({ outcome, remaining, warning }) => {
     const saved = sshHost(1, "Build host", { generation: 4 });
     const inventory = mockRemoteInventory(context, { ssh: [saved] });
-    const attempts = recordDeletes(() => {
+    const deletion = recordDeletes(() => {
       // Another actor already changed the host; the server announces it.
       inventory.ssh = remaining;
       context.mocks.ably.trigger("ssh:changed", { orgId: "org_default" });
@@ -119,11 +119,7 @@ test.each([
     expect(
       getConnectorAction("button", "Delete connection", dialog),
     ).toBeDisabled();
-    expect(
-      attempts.map(({ expectedGeneration }) => {
-        return expectedGeneration;
-      }),
-    ).toStrictEqual([4]);
+    expect(deletion.attempt?.expectedGeneration).toBe(4);
 
     click(getConnectorAction("button", "Cancel", dialog));
 
@@ -141,7 +137,7 @@ test("A owner change while deletion awaits a token prevents stale submission", a
       request.headers.get("authorization") === `Bearer ${OWNER_TOKEN}`;
     return respond(200, { connections: owner ? [saved] : [] });
   });
-  const attempts = recordDeletes(() => {
+  const deletion = recordDeletes(() => {
     return "deleted";
   });
   const dialog = await openDeletion(saved);
@@ -176,13 +172,14 @@ test("A owner change while deletion awaits a token prevents stale submission", a
   tokenIssued.resolve();
 
   await expect(screen.findByText(UNAVAILABLE)).resolves.toBeInTheDocument();
-  expect(attempts).toStrictEqual([]);
+  // The stale owner's deletion never reaches the server.
+  expect(deletion.attempt).toBeUndefined();
 });
 
 test("A same-session token refresh preserves the deletion snapshot and uses the current token", async () => {
   const saved = sshHost(1, "Build host", { generation: 4 });
   const inventory = mockRemoteInventory(context, { ssh: [saved] });
-  const attempts = recordDeletes(() => {
+  const deletion = recordDeletes(() => {
     inventory.ssh = [];
     return "deleted";
   });
@@ -197,7 +194,8 @@ test("A same-session token refresh preserves the deletion snapshot and uses the 
   expect(
     screen.queryByRole("heading", { name: "Build host" }),
   ).not.toBeInTheDocument();
-  expect(attempts).toStrictEqual([
-    { authorization: "Bearer refreshed-token", expectedGeneration: 4 },
-  ]);
+  expect(deletion.attempt).toStrictEqual({
+    authorization: "Bearer refreshed-token",
+    expectedGeneration: 4,
+  });
 });

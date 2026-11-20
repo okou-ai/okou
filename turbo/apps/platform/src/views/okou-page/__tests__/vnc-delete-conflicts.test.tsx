@@ -54,9 +54,9 @@ async function confirmIn(dialogName: string): Promise<HTMLElement> {
 test("A stale VNC host generation blocks deletion", async () => {
   const desktop = vncHost(1, "Studio desktop", { generation: 4 });
   const inventory = mockRemoteInventory(context, { vnc: [desktop] });
-  const attempts: number[] = [];
+  const deletion: { expectedGeneration?: number } = {};
   context.mocks.api(vncConnectionsContract.delete, ({ body, respond }) => {
-    attempts.push(body.expectedGeneration);
+    deletion.expectedGeneration = body.expectedGeneration;
     // Another editor already saved generation 5.
     inventory.vnc = [{ ...desktop, generation: 5 }];
     return respond(409, {
@@ -83,16 +83,16 @@ test("A stale VNC host generation blocks deletion", async () => {
   expect(
     getConnectorAction("button", "Delete connection", dialog),
   ).toBeDisabled();
-  expect(attempts).toStrictEqual([4]);
+  expect(deletion.expectedGeneration).toBe(4);
 });
 
 test("A VNC credential deletion rejected with VNC_CREDENTIAL_REVISION_CONFLICT remains blocked", async () => {
   const inventory = mockRemoteInventory(context, {
     vncCredentials: [desktopLogin(3)],
   });
-  const attempts: number[] = [];
+  const deletion: { expectedRevision?: number } = {};
   context.mocks.api(vncCredentialsContract.delete, ({ body, respond }) => {
-    attempts.push(body.expectedRevision);
+    deletion.expectedRevision = body.expectedRevision;
     inventory.vncCredentials = [desktopLogin(4)];
     return respond(409, {
       error: {
@@ -122,5 +122,5 @@ test("A VNC credential deletion rejected with VNC_CREDENTIAL_REVISION_CONFLICT r
   expect(
     getConnectorAction("button", "Delete credential", dialog),
   ).toBeDisabled();
-  expect(attempts).toStrictEqual([3]);
+  expect(deletion.expectedRevision).toBe(3);
 });

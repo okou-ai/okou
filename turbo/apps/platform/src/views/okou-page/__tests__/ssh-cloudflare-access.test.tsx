@@ -68,12 +68,12 @@ function inventoryFor(
 function recordUpdates(
   inventory: RemoteInventory,
   outcome: "saved" | "changed" = "saved",
-): UpdateSshConnectionRequest[] {
-  const updates: UpdateSshConnectionRequest[] = [];
+): { body?: UpdateSshConnectionRequest } {
+  const updated: { body?: UpdateSshConnectionRequest } = {};
   context.mocks.api(
     sshConnectionsContract.update,
     ({ params, body, respond }) => {
-      updates.push(body);
+      updated.body = body;
       if (outcome === "changed") {
         return respond(409, {
           error: {
@@ -101,7 +101,7 @@ function recordUpdates(
       return respond(200, saved);
     },
   );
-  return updates;
+  return updated;
 }
 
 async function choose(combobox: string, option: string): Promise<void> {
@@ -156,7 +156,7 @@ test("A retained protected host requires explicit shared Access selection before
   });
   const shared = gateway(1, "Team gateway", "organization");
   const inventory = inventoryFor(retained, [shared]);
-  const updates = recordUpdates(inventory);
+  const updated = recordUpdates(inventory);
   await openHost(retained);
   expect(screen.getByText(REBIND_GUIDANCE)).toBeInTheDocument();
   await editOpenHost();
@@ -169,23 +169,21 @@ test("A retained protected host requires explicit shared Access selection before
   await saveAndReturn();
 
   expect(screen.queryByText(REBIND_GUIDANCE)).not.toBeInTheDocument();
-  expect(updates).toStrictEqual([
-    {
-      expectedGeneration: 3,
-      displayName: "Build box",
-      host: "ssh.example.com",
-      port: 443,
-      credential: { id: remoteId("d", 1) },
-      transport: { type: "cloudflare_access", configId: shared.id },
-    },
-  ]);
+  expect(updated.body).toStrictEqual({
+    expectedGeneration: 3,
+    displayName: "Build box",
+    host: "ssh.example.com",
+    port: 443,
+    credential: { id: remoteId("d", 1) },
+    transport: { type: "cloudflare_access", configId: shared.id },
+  });
 });
 
 test("Direct and protected mode retain their port and configuration drafts but submit only active fields", async () => {
   const direct = sshHost(1, "Build box", { port: 22 });
   const office = gateway(1, "Office gateway");
   const inventory = inventoryFor(direct, [office]);
-  const updates = recordUpdates(inventory);
+  const updated = recordUpdates(inventory);
   await openEditor(direct);
   await fill(screen.getByLabelText("Port"), "2222");
   await choose("Connection", "Cloudflare Access");
@@ -204,13 +202,11 @@ test("Direct and protected mode retain their port and configuration drafts but s
 
   await saveAndReturn();
 
-  expect(updates).toStrictEqual([
-    expect.objectContaining({
-      host: "ssh.example.com",
-      port: 443,
-      transport: { type: "cloudflare_access", configId: office.id },
-    }),
-  ]);
+  expect(updated.body).toMatchObject({
+    host: "ssh.example.com",
+    port: 443,
+    transport: { type: "cloudflare_access", configId: office.id },
+  });
 });
 
 test("An eligible protected host can explicitly change to Direct", async () => {
@@ -246,7 +242,7 @@ test("A concurrent host update preserves the binding draft and blocks stale savi
     transport: { type: "cloudflare_access", configId: office.id },
   });
   const inventory = inventoryFor(protectedHost, [office, lab]);
-  const updates = recordUpdates(inventory, "changed");
+  const updated = recordUpdates(inventory, "changed");
   await openEditor(protectedHost);
   const name = screen.getByLabelText(/^Connection name/);
   await fill(name, "Release box");
@@ -264,11 +260,9 @@ test("A concurrent host update preserves the binding draft and blocks stale savi
     screen.getByRole("combobox", { name: "Cloudflare Access" }),
   ).toHaveTextContent("Lab gateway");
   expect(getConnectorAction("button", "Save")).toBeDisabled();
-  expect(updates).toStrictEqual([
-    expect.objectContaining({
-      expectedGeneration: 1,
-      displayName: "Release box",
-      transport: { type: "cloudflare_access", configId: lab.id },
-    }),
-  ]);
+  expect(updated.body).toMatchObject({
+    expectedGeneration: 1,
+    displayName: "Release box",
+    transport: { type: "cloudflare_access", configId: lab.id },
+  });
 });

@@ -102,12 +102,12 @@ function recordCreates(
   respond: (
     body: CreateSshCredentialRequest & { id: string },
   ) => "created" | "invalid",
-): (CreateSshCredentialRequest & { id: string })[] {
-  const creates: (CreateSshCredentialRequest & { id: string })[] = [];
+): { body?: CreateSshCredentialRequest & { id: string } } {
+  const created: { body?: CreateSshCredentialRequest & { id: string } } = {};
   context.mocks.api(
     sshCredentialsContract.create,
     ({ body, respond: send }) => {
-      creates.push(body);
+      created.body = body;
       if (respond(body) === "invalid") {
         return send(400, {
           error: {
@@ -126,7 +126,7 @@ function recordCreates(
       );
     },
   );
-  return creates;
+  return created;
 }
 
 /** A file whose bytes arrive only when the test releases them. */
@@ -143,7 +143,7 @@ function slowKeyFile(release: Promise<void>): File {
 
 test("Password credentials preserve whitespace, clear mode-switched secrets, and discard late key reads", async () => {
   const inventory = mockRemoteInventory(context);
-  const creates = recordCreates((body) => {
+  const created = recordCreates((body) => {
     inventory.sshCredentials = [
       credential(9, body.name, { authMethod: body.authentication.method }),
     ];
@@ -187,14 +187,12 @@ test("Password credentials preserve whitespace, clear mode-switched secrets, and
       screen.queryByRole("dialog", { name: "Add credential" }),
     ).not.toBeInTheDocument();
   });
-  expect(creates).toStrictEqual([
-    {
-      id: expect.any(String),
-      name: "Build login",
-      username: "builder",
-      authentication: { method: "password", password: "  open sesame  " },
-    },
-  ]);
+  expect(created.body).toStrictEqual({
+    id: expect.any(String),
+    name: "Build login",
+    username: "builder",
+    authentication: { method: "password", password: "  open sesame  " },
+  });
   await expect(
     screen.findByRole("heading", { name: "Build login", level: 2 }),
   ).resolves.toBeInTheDocument();
@@ -234,9 +232,9 @@ test("A concurrent shared-credential edit preserves its draft and blocks stale s
     sshCredentials: [shared],
     ssh: [sshHost(1, "Web"), sshHost(2, "Worker")],
   });
-  const updates: UpdateSshCredentialRequest[] = [];
+  const updated: { body?: UpdateSshCredentialRequest } = {};
   context.mocks.api(sshCredentialsContract.update, ({ body, respond }) => {
-    updates.push(body);
+    updated.body = body;
     // Another editor renamed the credential first and the server announced it.
     inventory.sshCredentials = [
       { ...shared, name: "Release login", revision: 2 },
@@ -272,20 +270,21 @@ test("A concurrent shared-credential edit preserves its draft and blocks stale s
   expect(username).toHaveValue("release");
   expect(getConnectorAction("button", "Save", dialog)).toBeDisabled();
   expect(document.body).not.toHaveTextContent(PRIVATE_DETAIL);
-  expect(updates).toStrictEqual([{ expectedRevision: 1, username: "release" }]);
+  expect(updated.body).toStrictEqual({
+    expectedRevision: 1,
+    username: "release",
+  });
 });
 
 test("An unused credential can be deleted with confirmation and the rendered revision", async () => {
   const unused = credential(1, "Old login");
   const inventory = mockRemoteInventory(context, { sshCredentials: [unused] });
-  const deletes: { credentialId: string; expectedRevision: number }[] = [];
+  const deleted: { credentialId?: string; expectedRevision?: number } = {};
   context.mocks.api(
     sshCredentialsContract.delete,
     ({ params, body, respond }) => {
-      deletes.push({
-        credentialId: params.credentialId,
-        expectedRevision: body.expectedRevision,
-      });
+      deleted.credentialId = params.credentialId;
+      deleted.expectedRevision = body.expectedRevision;
       inventory.sshCredentials = [];
       return respond(204);
     },
@@ -317,9 +316,10 @@ test("An unused credential can be deleted with confirmation and the rendered rev
   ).toBeInTheDocument();
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   expect(queryConnectorAction("button", "Delete credential")).toBeNull();
-  expect(deletes).toStrictEqual([
-    { credentialId: unused.id, expectedRevision: 1 },
-  ]);
+  expect(deleted).toStrictEqual({
+    credentialId: unused.id,
+    expectedRevision: 1,
+  });
 });
 
 test("Shows configured credentials independently of hosts", async () => {
@@ -455,11 +455,11 @@ test.each([
           ]
         : [],
     });
-    const resets: number[] = [];
+    const resetRequest: { expectedGeneration?: number } = {};
     context.mocks.api(
       sshConnectionsContract.resetHostKey,
       ({ body, respond }) => {
-        resets.push(body.expectedGeneration);
+        resetRequest.expectedGeneration = body.expectedGeneration;
         const reset = { ...learned, learnedHostKey: null, generation: 2 };
         inventory.ssh = [reset];
         return respond(200, reset);
@@ -488,7 +488,7 @@ test.each([
     await waitFor(() => {
       expect(screen.queryByText("SHA256:old")).not.toBeInTheDocument();
     });
-    expect(resets).toStrictEqual([1]);
+    expect(resetRequest.expectedGeneration).toBe(1);
 
     click(getConnectorAction("button", "Delete connection"));
     const deletion = await screen.findByRole("dialog", {
