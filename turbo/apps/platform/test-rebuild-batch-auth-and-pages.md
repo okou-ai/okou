@@ -162,3 +162,17 @@ The files deferred by the fourth batch were completed after the main
   image-only import field, as the original test does, and now asserts the PDF
   is not attached. A fully selected shelf list stays as on main, and the single
   Presentation row uses `SHELVES[0]` to keep its type.
+
+## Partial files completed
+
+`chat-capability-browser-actions` and `unified-chat-workspace` already had
+every selected row executed and ledgered. Both pass on the synced head, so
+their BDD is removed. The revised `unified-chat-workspace-001` and `002`
+sections leave the eaae30ac upstream BDD.
+
+`chat-capability-voice-incremental-003` and
+`chat-capability-voice-recording-004` and `005` are added from their current
+main bodies beside the earlier rebuilt cases. Only the helpers and imports
+those cases use are brought over. All three match their Given, When and Then:
+the failure is shown and reported with its code and status, and restored long
+recordings send grouped polish segments without a second transcription.

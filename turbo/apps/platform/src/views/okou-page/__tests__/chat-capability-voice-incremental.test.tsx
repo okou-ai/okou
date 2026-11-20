@@ -11,10 +11,18 @@ import {
   readyChat,
   RUN_PATH,
 } from "./chat-capability-test-helpers.ts";
-import { findButton } from "./chat-run-test-fixtures.ts";
+import {
+  createChatRunFixtures,
+  findButton,
+  findEnabledButton,
+} from "./chat-run-test-fixtures.ts";
+import { initSentry } from "../../../lib/sentry.ts";
 
 const context = testContext();
 const { installCapabilityChat } = createChatCapabilityHelpers(context);
+const { installRunChat } = createChatRunFixtures(context);
+
+const endpoint = "*/api/voice-io/transcribe/segment";
 
 async function beginRecording(): Promise<HTMLElement> {
   await setupPage({ context, path: RUN_PATH });
@@ -75,4 +83,32 @@ test("Continue recording after an incremental transcription outage", async () =>
   await expect(
     screen.findByText("Speech recognition is temporarily busy."),
   ).resolves.toBeInTheDocument();
+});
+
+test("Keep genuine transcription failures actionable", async () => {
+  const status = 502;
+  const code = "VOICE_TRANSCRIPTION_FAILED";
+  const sentry = context.mocks.sentry();
+  initSentry();
+  context.mocks.browser.voiceInput({ rms: 0.1 });
+  installRunChat();
+  context.mocks.http.post(endpoint, () => {
+    return HttpResponse.json(
+      { error: { code, message: "Transcription configuration failed" } },
+      { status },
+    );
+  });
+  await setupPage({ context, path: RUN_PATH });
+  click(await findEnabledButton("Voice input"));
+  click(await findEnabledButton("Stop recording"));
+  await findEnabledButton("Remove voice draft");
+  await expect(
+    screen.findByText("Transcription configuration failed"),
+  ).resolves.toBeVisible();
+  expect(sentry.reports).toContainEqual(
+    expect.objectContaining({
+      type: "exception",
+      error: expect.objectContaining({ code, status }),
+    }),
+  );
 });

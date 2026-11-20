@@ -787,7 +787,7 @@ chat-capability-voice-quota-004	turbo/apps/platform/src/views/okou-page/__tests_
 chat-capability-voice-input-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-voice-input.test.tsx	Transcribe a voice draft with its editor context	74	passed
 chat-capability-voice-input-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-voice-input.test.tsx	Keep a silent voice draft recording until the user stops it	132	passed
 chat-capability-voice-input-006	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-voice-input.test.tsx	Finish a provider no-speech response and preserve the input	147	passed
-chat-capability-voice-recording-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-voice-recording.test.tsx	Include the final worklet chunk before transcribing	42	passed
+chat-capability-voice-recording-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-voice-recording.test.tsx	Include the final worklet chunk before transcribing	81	passed
 chat-run-composer-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-composer.test.tsx	Enable completion notifications after a visible send	50	passed
 chat-run-composer-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-composer.test.tsx	Send a large image with Auto	81	passed
 chat-run-composer-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-composer.test.tsx	Show follow-up instructions in the active conversation	128	passed
@@ -875,7 +875,7 @@ chat-thread-timeline-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-
 chat-thread-timeline-006	turbo/apps/platform/src/views/okou-page/__tests__/chat-thread-timeline.test.tsx	An assistant reply can open a new date section	106	passed
 chat-capability-browser-actions-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-browser-actions.test.tsx	Open a stopped browser without the refined panel	747	passed
 chat-capability-mail-feedback-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-mail-feedback.test.tsx	Keep inline feedback tied to the source email	23	passed
-chat-capability-voice-incremental-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-voice-incremental.test.tsx	Continue recording after an incremental transcription outage	34	passed
+chat-capability-voice-incremental-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-voice-incremental.test.tsx	Continue recording after an incremental transcription outage	42	passed
 chat-header-loading-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-header-loading.test.tsx	Open empty email and automation lists in a desktop chat	36	passed
 browser-session-page-002	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Window size settings retain each selected mode when reopened	114	passed
 chat-capability-browser-actions-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-browser-actions.test.tsx	Refresh the browser card after delayed attachment and a continuity gap	783	passed
@@ -2591,3 +2591,6 @@ integrations-discord-040	turbo/apps/platform/src/views/okou-page/__tests__/integ
 integrations-discord-044	turbo/apps/platform/src/views/okou-page/__tests__/integrations-discord.test.tsx	A missing bot configuration shows one unavailable state to an installed admin	885	passed
 integrations-discord-046	turbo/apps/platform/src/views/okou-page/__tests__/integrations-discord.test.tsx	A missing bot configuration shows one unavailable state to an installed member without a connection	885	passed
 integrations-discord-048	turbo/apps/platform/src/views/okou-page/__tests__/integrations-discord.test.tsx	Disconnecting stays pending until the refreshed status arrives	941	passed
+chat-capability-voice-incremental-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-voice-incremental.test.tsx	Keep genuine transcription failures actionable	88	passed
+chat-capability-voice-recording-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-voice-recording.test.tsx	Restore 128 completed segments with 1 transcripts per polish item	139	passed
+chat-capability-voice-recording-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-voice-recording.test.tsx	Restore 129 completed segments with 2 transcripts per polish item	139	passed
