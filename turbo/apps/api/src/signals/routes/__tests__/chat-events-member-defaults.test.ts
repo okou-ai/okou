@@ -34,47 +34,51 @@ function preferencesClient() {
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
 describe("new chat event member defaults", () => {
-  it("dispatches a member run without an organization default agent", async () => {
-    const { actor } = await entitledNativeChatActor();
-    if (!actor.orgId) throw new Error("Expected member organization");
-    const database = db();
-    await database
-      .update(orgMetadata)
-      .set({ defaultAgentId: null })
-      .where(eq(orgMetadata.orgId, actor.orgId));
-    const run = await sendChatRun(actor, {
-      prompt: "start a member-owned thread",
-    });
-    const [thread] = await database
-      .select({
-        agentId: chatThreads.agentId,
-        orgId: chatThreads.orgId,
-        userId: chatThreads.userId,
-      })
-      .from(chatThreads)
-      .where(eq(chatThreads.id, run.threadId));
-    expect(thread).toEqual({
-      agentId: null,
-      orgId: actor.orgId,
-      userId: actor.userId,
-    });
-    const [stored] = await database
-      .select({ agentId: agentRuns.agentId, status: agentRuns.status })
-      .from(agentRuns)
-      .where(eq(agentRuns.id, run.runId));
-    expect(stored).toEqual({ agentId: null, status: "running" });
-    const created = await database
-      .select({ agentId: chatThreadEvents.agentId })
-      .from(chatThreadEvents)
-      .where(
-        and(
-          eq(chatThreadEvents.chatThreadId, run.threadId),
-          eq(chatThreadEvents.kind, "created"),
-        ),
-      );
-    expect(created).toEqual([{ agentId: null }]);
-    await cancelChatRun(actor, run.runId);
-  });
+  it.each([undefined, "00000000-0000-4000-8000-000000000099"])(
+    "dispatches without a default agent when the request includes %s",
+    async (agentId) => {
+      const { actor } = await entitledNativeChatActor();
+      if (!actor.orgId) throw new Error("Expected member organization");
+      const database = db();
+      await database
+        .update(orgMetadata)
+        .set({ defaultAgentId: null })
+        .where(eq(orgMetadata.orgId, actor.orgId));
+      const run = await sendChatRun(actor, {
+        agentId,
+        prompt: "start a member-owned thread",
+      });
+      const [thread] = await database
+        .select({
+          agentId: chatThreads.agentId,
+          orgId: chatThreads.orgId,
+          userId: chatThreads.userId,
+        })
+        .from(chatThreads)
+        .where(eq(chatThreads.id, run.threadId));
+      expect(thread).toEqual({
+        agentId: null,
+        orgId: actor.orgId,
+        userId: actor.userId,
+      });
+      const [stored] = await database
+        .select({ agentId: agentRuns.agentId, status: agentRuns.status })
+        .from(agentRuns)
+        .where(eq(agentRuns.id, run.runId));
+      expect(stored).toEqual({ agentId: null, status: "running" });
+      const created = await database
+        .select({ agentId: chatThreadEvents.agentId })
+        .from(chatThreadEvents)
+        .where(
+          and(
+            eq(chatThreadEvents.chatThreadId, run.threadId),
+            eq(chatThreadEvents.kind, "created"),
+          ),
+        );
+      expect(created).toEqual([{ agentId: null }]);
+      await cancelChatRun(actor, run.runId);
+    },
+  );
 
   it("uses empty model settings and enables cloud browser without a saved member preference", async () => {
     const owner = await entitledNativeChatActor();

@@ -411,6 +411,7 @@ const chatThreadMetadataSchema = object({
 export type ComposerDraft = zInfer<typeof composerDraftSchema>;
 
 const chatThreadCreateBodySchema = object({
+  agentId: string().min(1).optional(),
   projectId: uuid().optional(),
   clientThreadId: uuid().optional(),
   eventId: chatThreadEventIdSchema.optional(),

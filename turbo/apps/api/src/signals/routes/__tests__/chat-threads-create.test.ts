@@ -1130,6 +1130,7 @@ describe("POST /api/chat-threads", () => {
       threadsClient().create({
         headers: { authorization: `Bearer ${token}` },
         body: {
+          agentId: randomUUID(),
           title: "Deep dive on P2",
           model: OTHER_WORKSPACE_MODEL,
         },
@@ -1151,7 +1152,9 @@ describe("POST /api/chat-threads", () => {
       }),
       [200],
     );
+    const { defaultAgentId } = await bdd.readOnboardingStatus(fixture.actor);
     expect(metadataResponse.body).toStrictEqual({
+      agentId: defaultAgentId,
       id: response.body.id,
       title: "Deep dive on P2",
       pinnedAt: null,

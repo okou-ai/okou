@@ -3759,6 +3759,7 @@ enum class CreateThreadRequestReasoningEffort {
 
 @Serializable
 data class CreateThreadRequest(
+    val `agentId`: String? = null,
     val `projectId`: String? = null,
     val `clientThreadId`: String? = null,
     val `eventId`: String? = null,
@@ -5461,6 +5462,7 @@ data class SendRequestVariant1UserMessage(
 
 @Serializable
 data class SendRequestVariant1(
+    val `agentId`: String? = null,
     val `prompt`: String,
     val `threadId`: String? = null,
     val `clientThreadId`: String? = null,
@@ -5481,6 +5483,7 @@ data class SendRequestVariant1(
 
 @Serializable
 data class SendRequestVariant2(
+    val `agentId`: String? = null,
     val `threadId`: String,
     val `revokesEventId`: String,
     val `clientEventId`: String? = null,
@@ -5488,6 +5491,7 @@ data class SendRequestVariant2(
 
 @Serializable
 data class SendRequestVariant3(
+    val `agentId`: String? = null,
     val `threadId`: String,
     val `interruptsRunId`: String,
     val `clientEventId`: String? = null,

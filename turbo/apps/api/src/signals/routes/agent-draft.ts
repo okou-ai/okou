@@ -1,3 +1,4 @@
+import { legacyAgentDraftTransforms } from "@okouai/api-contracts/client-transforms/member-chat-drafts";
 import { projectChatContract } from "@okouai/api-contracts/contracts/project-chat";
 import { personalProjectAccess$ } from "./projects";
 import { command, computed } from "ccstate";
@@ -176,6 +177,9 @@ function createAgentDraftRoutes(
   return [
     {
       route: contract.get,
+      ...(contract.get.path === agentDraftContract.get.path
+        ? { responseTransforms: legacyAgentDraftTransforms }
+        : {}),
       handler: authRoute(agentReadAuth, getAgentDraftInner$),
     },
     {

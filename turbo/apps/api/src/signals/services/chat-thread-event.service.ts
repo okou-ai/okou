@@ -1,3 +1,4 @@
+import { legacyThreadAgentId } from "./chat-thread-organization.service";
 import { db$ } from "../external/db";
 import { randomUUID } from "node:crypto";
 import {
@@ -253,7 +254,10 @@ const chatThreadEventSelection = Object.freeze({
   kind: chatThreadEvents.kind,
   projectId: chatThreadEvents.projectId,
   chatThreadId: chatThreadEvents.chatThreadId,
-  agentId: chatThreadEvents.agentId,
+  agentId: legacyThreadAgentId(
+    chatThreadEvents.agentId,
+    chatThreadEvents.orgId,
+  ),
   reassignedAgentId: chatThreadEvents.reassignedAgentId,
   title: chatThreadEvents.title,
   pinOrder: chatThreadEvents.pinOrder,
@@ -274,7 +278,10 @@ const pageChatThreadEventSelection = Object.freeze({
   kind: pageChatThreadEvent.kind,
   projectId: pageChatThreadEvent.projectId,
   chatThreadId: pageChatThreadEvent.chatThreadId,
-  agentId: pageChatThreadEvent.agentId,
+  agentId: legacyThreadAgentId(
+    pageChatThreadEvent.agentId,
+    pageChatThreadEvent.orgId,
+  ),
   reassignedAgentId: pageChatThreadEvent.reassignedAgentId,
   title: pageChatThreadEvent.title,
   pinOrder: pageChatThreadEvent.pinOrder,
@@ -300,6 +307,7 @@ function toApiChatThreadEvent(row: ChatThreadEventRow): ChatThreadEvent {
     id: row.id,
     seqId: row.seqId,
     chatThreadId: row.chatThreadId,
+    ...(row.agentId ? { agentId: row.agentId } : {}),
     title: row.title,
     pinOrder: row.pinOrder,
     ...(row.muted === null ? {} : { muted: row.muted }),

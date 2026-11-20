@@ -1645,6 +1645,9 @@ export function createChatFilesBddApi(context: TestContext) {
               const selectedModel =
                 body.model === undefined ? defaultModel : body.model;
               return {
+                ...(body.agentId === undefined
+                  ? {}
+                  : { agentId: body.agentId }),
                 prompt: body.prompt,
                 ...(body.threadId === undefined
                   ? {}
