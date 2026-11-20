@@ -59,8 +59,8 @@ function chatSearchScope(
     eq(chatEventSearchMessages.userId, args.userId),
     eq(chatEventSearchMessages.orgId, args.orgId),
     eq(chatThreads.hidden, false),
-    eq(chatThreads.orgId,args.orgId),
-    eq(chatThreads.userId,args.userId),
+    eq(chatThreads.orgId, args.orgId),
+    eq(chatThreads.userId, args.userId),
     args.projectId ? eq(chatThreads.projectId, args.projectId) : undefined,
     args.agentId
       ? eq(chatEventSearchMessages.agentId, args.agentId)

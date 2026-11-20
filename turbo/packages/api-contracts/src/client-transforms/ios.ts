@@ -14,7 +14,9 @@ import {
 export const iosResponseTransforms: readonly ClientResponseTransform[] = [
   ...Object.values(iosChatUltrafastTransforms),
   ...[...legacyAgentDraftTransforms, ...legacyThreadDraftTransforms].filter(
-    (t) => t.client === "ios",
+    (t) => {
+      return t.client === "ios";
+    },
   ),
   iosEmailChatRowsTransform,
   iosEmailChatCatchUpTransform,

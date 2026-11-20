@@ -141,6 +141,12 @@ export const linkWalletSpends = pgTable(
       uniqueIndex("idx_link_wallet_spends_intent").on(
         table.orgId,
         table.userId,
+        table.agentId,
+        table.intentId,
+      ),
+      uniqueIndex("idx_link_wallet_spends_member_intent").on(
+        table.orgId,
+        table.userId,
         table.intentId,
       ),
       uniqueIndex("idx_link_wallet_spends_provider").on(table.providerSpendId),

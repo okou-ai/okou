@@ -5247,6 +5247,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "agent_id": {
+          "name": "agent_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "chat_thread_id": {
           "name": "chat_thread_id",
           "type": "uuid",
@@ -20345,6 +20351,12 @@
               "nulls": "last"
             },
             {
+              "expression": "agent_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
               "expression": "intent_id",
               "isExpression": false,
               "asc": true,
@@ -20389,6 +20401,33 @@
           ],
           "isUnique": false,
           "where": "\"link_wallet_spends\".\"approval_thread_id\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_link_wallet_spends_member_intent": {
+          "name": "idx_link_wallet_spends_member_intent",
+          "columns": [
+            {
+              "expression": "org_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "intent_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
           "concurrently": false,
           "method": "btree",
           "with": {}

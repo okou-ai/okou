@@ -13,25 +13,27 @@ function legacyDraft(body: unknown) {
     ...draft,
     draftUserMessage: {
       ...message,
-      parts: message.parts.map((part) =>
-        part.type === "source" && part.kind === "agent" && !part.agentId
+      parts: message.parts.map((part) => {
+        return part.type === "source" && part.kind === "agent" && !part.agentId
           ? { type: "text", text: `${part.titleSnapshot} (${part.href})` }
-          : part,
-      ),
+          : part;
+      }),
     },
   };
 }
 
 function draftTransforms(path: string): ClientResponseTransform[] {
-  return (["ios", "android"] as const).map((client) => ({
-    client,
-    maxVersion: client === "ios" ? "0.51.5" : "0.32.4",
-    since: "#49637",
-    method: "GET",
-    path,
-    status: 200,
-    transform: legacyDraft,
-  }));
+  return (["ios", "android"] as const).map((client) => {
+    return {
+      client,
+      maxVersion: client === "ios" ? "0.51.5" : "0.32.4",
+      since: "#49637",
+      method: "GET",
+      path,
+      status: 200,
+      transform: legacyDraft,
+    };
+  });
 }
 
 export const legacyAgentDraftTransforms = draftTransforms(

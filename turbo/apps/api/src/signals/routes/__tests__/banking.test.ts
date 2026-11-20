@@ -92,7 +92,9 @@ async function createBankingRun(args: BankingFixtureArgs = {}) {
     args.triggerSource === "automation-event"
       ? await workflows.startEventAutomationRun(
           actor,
-          await bdd.bootstrapLimitedFreeOnboarding(actor, { displayName: "Okou" }),
+          await bdd.bootstrapLimitedFreeOnboarding(actor, {
+            displayName: "Okou",
+          }),
         )
       : await api.createThreadRun(actor, {
           agentId: agent.agentId,

@@ -99,12 +99,7 @@ const reconciliation$ = computed(async (get) => {
   );
   const removeIdentifiers = receipts.flatMap((receipt) => {
     const thread = owned.get(receipt.threadId);
-    if (
-      !thread ||
-      thread.hidden ||
-      thread.muted ||
-      thread.archived
-    ) {
+    if (!thread || thread.hidden || thread.muted || thread.archived) {
       return [receipt.identifier];
     }
     const terminalAt = finished.get(`${receipt.threadId}:${receipt.runId}`);

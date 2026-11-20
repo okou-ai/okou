@@ -9,6 +9,8 @@ import type { ClientResponseTransform } from "./types";
 export const androidResponseTransforms: readonly ClientResponseTransform[] = [
   ...Object.values(androidChatUltrafastTransforms),
   ...[...legacyAgentDraftTransforms, ...legacyThreadDraftTransforms].filter(
-    (t) => t.client === "android",
+    (t) => {
+      return t.client === "android";
+    },
   ),
 ];

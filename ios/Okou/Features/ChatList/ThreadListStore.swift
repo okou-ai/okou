@@ -575,7 +575,7 @@ extension ThreadListStore {
 
   @discardableResult
   func delete(
-    _ id: String, agentID: String, eventID: String,
+    _ id: String, agentID: String?, eventID: String,
     onFailure: (@MainActor (String) -> Void)? = nil
   ) async -> Bool {
     return await actions.delete(id, agentID: agentID, eventID: eventID, onFailure: onFailure)

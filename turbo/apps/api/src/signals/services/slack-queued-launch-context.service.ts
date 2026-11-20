@@ -146,7 +146,14 @@ export function createSlackLaunchContext(args: SlackLaunchSource) {
           ),
         ),
       )
-      .innerJoin(chatThreads, and(eq(chatThreads.id, chatEvents.chatThreadId),eq(chatThreads.orgId,args.orgId),eq(chatThreads.userId,args.userId)))
+      .innerJoin(
+        chatThreads,
+        and(
+          eq(chatThreads.id, chatEvents.chatThreadId),
+          eq(chatThreads.orgId, args.orgId),
+          eq(chatThreads.userId, args.userId),
+        ),
+      )
       .where(
         and(
           eq(chatEvents.id, args.eventId),
