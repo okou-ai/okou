@@ -25,6 +25,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
@@ -256,10 +257,13 @@ private fun ComposerFeedback(
     state: ComposerState,
     entry: ComposerEntry,
 ) {
+    val actionColors =
+        ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onBackground)
     if (state.persistence == ComposerPersistence.Failed) {
         Text(stringResource(R.string.composer_local_failed))
         TextButton(
-            onClick = { if (state.journal == null) model.open(target) else model.retryLocal() }
+            onClick = { if (state.journal == null) model.open(target) else model.retryLocal() },
+            colors = actionColors,
         ) {
             Text(stringResource(R.string.retry))
         }
@@ -276,7 +280,7 @@ private fun ComposerFeedback(
                     else R.string.composer_sync_failed
                 )
             )
-            TextButton(onClick = { model.retrySync(target) }) {
+            TextButton(onClick = { model.retrySync(target) }, colors = actionColors) {
                 Text(stringResource(R.string.composer_sync_retry))
             }
         }
@@ -284,7 +288,11 @@ private fun ComposerFeedback(
     }
     state.journal?.retainedDrafts?.forEach { (key, text) ->
         Text(text, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        TextButton(onClick = { model.restoreDraft(target, key) }, enabled = entry.text.isEmpty()) {
+        TextButton(
+            onClick = { model.restoreDraft(target, key) },
+            enabled = entry.text.isEmpty(),
+            colors = actionColors,
+        ) {
             Text(stringResource(R.string.composer_restore_draft))
         }
     }
@@ -296,7 +304,9 @@ private fun ComposerFeedback(
             )
         )
         if (state.context != ComposerContext.Loading)
-            TextButton(onClick = { model.open(target) }) { Text(stringResource(R.string.retry)) }
+            TextButton(onClick = { model.open(target) }, colors = actionColors) {
+                Text(stringResource(R.string.retry))
+            }
     }
     entry.pending?.let { pending ->
         Text(
@@ -305,17 +315,29 @@ private fun ComposerFeedback(
         )
         Text(pending.send.prompt, maxLines = 3, overflow = TextOverflow.Ellipsis)
         FlowRow {
-            TextButton(onClick = { model.observe(target) }, enabled = target.key !in state.busy) {
+            TextButton(
+                onClick = { model.observe(target) },
+                enabled = target.key !in state.busy,
+                colors = actionColors,
+            ) {
                 Text(stringResource(R.string.composer_check))
             }
-            TextButton(onClick = { model.retry(target) }, enabled = target.key !in state.busy) {
+            TextButton(
+                onClick = { model.retry(target) },
+                enabled = target.key !in state.busy,
+                colors = actionColors,
+            ) {
                 Text(stringResource(R.string.composer_retry))
             }
         }
     }
     entry.receipt?.let {
         Text(stringResource(it.disposition.label()), modifier = Modifier.testTag("send_receipt"))
-        TextButton(onClick = { model.observe(target) }, enabled = target.key !in state.busy) {
+        TextButton(
+            onClick = { model.observe(target) },
+            enabled = target.key !in state.busy,
+            colors = actionColors,
+        ) {
             Text(stringResource(R.string.composer_check))
         }
     }
