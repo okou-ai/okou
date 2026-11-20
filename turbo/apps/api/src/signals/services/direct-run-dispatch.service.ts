@@ -18,7 +18,7 @@ import { delay } from "signal-timers";
 import type { output } from "zod";
 import { env } from "../../lib/env";
 import { API_INVOCATION_MAX_DURATION_SECONDS } from "../../lib/invocation-budget";
-import { now, nowDate } from "../../lib/time";
+import { monotonicNow, now, nowDate } from "../../lib/time";
 import { db$ } from "../external/db";
 import { apiStartTime$ } from "../context/hono";
 import { postRunnerDispatch } from "../external/runner-ingress";
@@ -36,6 +36,10 @@ import {
 import { preparedRunnerReusePreference } from "./runner-reuse-preference";
 import { joinAll, settleIncludingAbort } from "../utils";
 import { recordRunContextSnapshot } from "./run-context-snapshot.service";
+import {
+  DirectRunDispatchTiming,
+  DispatchQueryTiming,
+} from "./direct-run-dispatch-timing";
 
 type PlacementPreference = Extract<RunnerPreference, { kind: "preference" }>;
 
@@ -197,6 +201,18 @@ const mayHaveTakenCustody = {
   unknown: true,
 } as const;
 
+function createDeliveryWindow(apiStartTime: number): DeliveryWindow {
+  // A queued input's latency marker can originate in an earlier invocation.
+  const notAfter = Math.min(
+    now() + 30_000,
+    apiStartTime + API_INVOCATION_MAX_DURATION_SECONDS * 1000 - 10_000,
+  );
+  return {
+    notAfter,
+    monotonicDeadline: performance.now() + Math.max(0, notAfter - now()),
+  };
+}
+
 function remainingDelivery(window: DeliveryWindow): number {
   return Math.min(
     window.notAfter - now(),
@@ -279,6 +295,8 @@ const offerToProcess$ = command(
       readonly envelope: DispatchEnvelope;
       readonly token: string;
       readonly window: DeliveryWindow;
+      readonly timing: DirectRunDispatchTiming;
+      readonly firstAttempt: ReturnType<DirectRunDispatchTiming["start"]>;
     },
     signal: AbortSignal,
   ) => {
@@ -286,9 +304,17 @@ const offerToProcess$ = command(
     let uncertain = false;
     let retry = 0;
     let offer: DispatchOffer | undefined;
-    for (;;) {
-      const state = await set(readDirectRunState$, args.runId, signal);
+    for (
+      let attempt = args.firstAttempt;
+      ;
+      attempt = args.timing.start(args.target, "retry")
+    ) {
+      const state = await attempt.stateRead.measure(() => {
+        return set(readDirectRunState$, args.runId, signal);
+      });
+      signal.throwIfAborted();
       if (!isCurrentOwner(state, args.target)) {
+        attempt.finish("stopped");
         return uncertain ? ("uncertain" as const) : ("stopped" as const);
       }
       offer ??= createDispatchOffer(
@@ -299,11 +325,13 @@ const offerToProcess$ = command(
       );
       const remaining = remainingDelivery(args.window);
       if (remaining <= 0) {
+        attempt.finish("expired");
         return uncertain ? ("uncertain" as const) : ("not-accepted" as const);
       }
       const { busyRetry } = offer;
       const finalAttempt =
         busyRetry?.retryAtExpiry === true && now() >= busyRetry.until;
+      attempt.finish("post-started");
       const observation = await postRunnerDispatch(
         {
           target: args.target,
@@ -314,6 +342,7 @@ const offerToProcess$ = command(
         },
         signal,
       );
+      attempt.postOutcome = observation;
       if (observation === "accepted") {
         return "accepted" as const;
       }
@@ -362,64 +391,76 @@ export const dispatchPreparedRun$ = command(
   async ({ get, set }, args: PreparedRunDelivery, signal: AbortSignal) => {
     signal.throwIfAborted();
     const input = args.input;
+    const timing = new DirectRunDispatchTiming();
     let owner: DirectRunTarget | null = null;
     let uncertain = false;
     const outcome = await settleIncludingAbort(async () => {
       const { executionContext, candidates } = args;
-      // A queued input's latency marker can originate in an earlier invocation.
-      const notAfter = Math.min(
-        now() + 30_000,
-        get(apiStartTime$) +
-          API_INVOCATION_MAX_DURATION_SECONDS * 1000 -
-          10_000,
-      );
-      const window = {
-        notAfter,
-        monotonicDeadline: performance.now() + Math.max(0, notAfter - now()),
-      };
+      const window = createDeliveryWindow(get(apiStartTime$));
       const token = `${OFFICIAL_RUNNER_TOKEN_PREFIX}${env("OFFICIAL_RUNNER_SECRET")}`;
       for (const target of candidates) {
         if (remainingDelivery(window) <= 0) {
           break;
         }
+        const firstAttempt = timing.start(
+          target,
+          owner === null ? "first" : "reroute",
+        );
         const envelope = {
           runnerId: target.runnerId,
           heartbeatGeneration: target.heartbeatGeneration,
           profile: input.profile,
-          notAfter,
+          notAfter: window.notAfter,
           executionContext,
         };
         const body = JSON.stringify(envelope);
         if (Buffer.byteLength(body, "utf8") > RUNNER_DISPATCH_MAX_BODY_BYTES) {
+          firstAttempt.finish("body-too-large");
           break;
         }
-        const selected = await set(
-          selectDirectRunOwner$,
-          {
-            runId: input.run.id,
-            userId: input.run.userId,
-            orgId: input.run.orgId,
-            target,
-            previous: owner,
-          },
-          signal,
-        );
+        const ownerAssignment = new DispatchQueryTiming();
+        firstAttempt.ownerAssignment = ownerAssignment;
+        const selected = await ownerAssignment.measure(() => {
+          return set(
+            selectDirectRunOwner$,
+            {
+              runId: input.run.id,
+              userId: input.run.userId,
+              orgId: input.run.orgId,
+              target,
+              previous: owner,
+            },
+            signal,
+          );
+        });
         if (!selected) {
+          firstAttempt.finish("owner-not-selected");
           break;
         }
         const firstOwner = owner === null;
         owner = target;
         if (firstOwner) {
+          const snapshotStarted = monotonicNow();
           recordRunContextSnapshot({
             ...args.contextSnapshot,
             recordedAt: nowDate(),
           });
+          firstAttempt.snapshotMs = monotonicNow() - snapshotStarted;
         }
         // An exception after entering this command cannot prove non-acceptance.
         uncertain = true;
         const delivery = await set(
           offerToProcess$,
-          { target, runId: input.run.id, body, envelope, token, window },
+          {
+            target,
+            runId: input.run.id,
+            body,
+            envelope,
+            token,
+            window,
+            timing,
+            firstAttempt,
+          },
           signal,
         );
         uncertain = delivery === "uncertain";
@@ -452,6 +493,8 @@ export const dispatchPreparedRun$ = command(
         signal,
       );
       return { kind: "failed" as const, terminal, failure: undefined };
+    }).finally(() => {
+      timing.record(input.run.id, signal.aborted);
     });
     signal.throwIfAborted();
     if (outcome.ok) {
