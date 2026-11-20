@@ -3389,9 +3389,11 @@ const handleInterruptSend$ = command(
 export const handleSendChatEvent$ = command(
   async (
     { get, set },
-    body: SendBody,
+    {
+      body,
+      projectId,
+    }: { readonly body: SendBody; readonly projectId?: string },
     signal: AbortSignal,
-    projectId?: string,
   ) => {
     const auth = get(organizationAuthContext$);
     if (isRecallSendBody(body)) {

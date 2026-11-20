@@ -114,16 +114,18 @@ const mcpSendChat$ = command(async ({ get, set }, signal: AbortSignal) => {
   const response = await set(
     sendValidatedChatEvent$,
     {
-      agentId,
-      threadId,
-      prompt,
-      model,
-      clientEventId: eventId,
-      userMessage: { version: 1, parts: [{ type: "text", text: prompt }] },
-      hasTextContent: true,
+      projectId,
+      data: {
+        agentId,
+        threadId,
+        prompt,
+        model,
+        clientEventId: eventId,
+        userMessage: { version: 1, parts: [{ type: "text", text: prompt }] },
+        hasTextContent: true,
+      },
     },
     signal,
-    projectId,
   );
   return response.status === 201
     ? { ...response, body: { ...response.body, eventId } }

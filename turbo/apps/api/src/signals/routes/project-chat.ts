@@ -48,7 +48,7 @@ const send$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!body.ok) {
     return body.response;
   }
-  return await set(sendValidatedChatEvent$, body.data, signal);
+  return await set(sendValidatedChatEvent$, { data: body.data }, signal);
 });
 const draft$ = computed(async (get) => {
   if (!get(personalProjectAccess$)) {
