@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.139](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.138...guest-control-server-v0.24.139) (2026-11-20)
+
+
+### Refactoring
+
+* **ipc:** centralize tool placement handshakes ([#49484](https://github.com/okou-ai/okou/issues/49484)) ([b5ae173](https://github.com/okou-ai/okou/commit/b5ae173de042e6624f944973354c9828f1811a50))
+
 ## [0.24.138](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.137...guest-control-server-v0.24.138) (2026-11-20)
 
 ## [0.24.137](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.136...guest-control-server-v0.24.137) (2026-11-20)

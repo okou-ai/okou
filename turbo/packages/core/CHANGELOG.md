@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.857.3](https://github.com/okou-ai/okou/compare/core-v8.857.2...core-v8.857.3) (2026-11-20)
+
+
+### Bug Fixes
+
+* **platform:** clarify markdown document preview hierarchy ([#49461](https://github.com/okou-ai/okou/issues/49461)) ([4411c56](https://github.com/okou-ai/okou/commit/4411c561192e7c85a6c8ecf89b9578c05f9c7f66))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.95.0
+
 ## [8.857.2](https://github.com/okou-ai/okou/compare/core-v8.857.1...core-v8.857.2) (2026-11-20)
 
 

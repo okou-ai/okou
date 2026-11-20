@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.31.1](https://github.com/okou-ai/okou/compare/android-v0.31.0...android-v0.31.1) (2026-11-20)
+
+
+### Performance Improvements
+
+* **android:** show chat row changes optimistically ([#49480](https://github.com/okou-ai/okou/issues/49480)) ([a11f1cf](https://github.com/okou-ai/okou/commit/a11f1cf6a41655d478ddbbf833c9032d136976c9))
+
 ## [0.31.0](https://github.com/okou-ai/okou/compare/android-v0.30.1...android-v0.31.0) (2026-11-20)
 
 
