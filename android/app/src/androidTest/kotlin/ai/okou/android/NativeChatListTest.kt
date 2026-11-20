@@ -1,6 +1,8 @@
 package ai.okou.android
 
 import ai.okou.android.auth.SessionModel
+import android.os.SystemClock
+import android.util.Log
 import android.view.KeyEvent
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -134,6 +136,33 @@ class NativeChatListTest {
             text("Project chat")
             clickText("Project chat")
             text(app.getString(R.string.history_completed))
+
+            assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
+            revealText("Personal chat")
+            clickText("Personal chat")
+            text("Hello history")
+            assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
+            assertTrue(device.wait(Until.gone(By.text("Hello history")), 10_000))
+            revealText("Project chat")
+            val historyRows = fixture.historyRows
+            val releaseHistory = CountDownLatch(1)
+            fixture.historyRows = { request ->
+                if (request.requestUrl?.pathSegments?.getOrNull(2) == CHAT_IN_PROJECT)
+                    releaseHistory.await()
+                historyRows(request)
+            }
+            try {
+                val tappedAt = SystemClock.elapsedRealtime()
+                clickText("Project chat")
+                text("Hello history")
+                Log.i(
+                    "OkouNativeHistory",
+                    "warm revisit tap-to-first-message=${SystemClock.elapsedRealtime() - tappedAt}ms",
+                )
+            } finally {
+                releaseHistory.countDown()
+                fixture.historyRows = historyRows
+            }
 
             // Resize the actual emulator display around the open destination.
             val size = device.executeShellCommand("wm size")

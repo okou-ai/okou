@@ -18,6 +18,7 @@ import ai.okou.android.historyEventWire
 import ai.okou.android.jsonResponse
 import androidx.test.core.app.ApplicationProvider
 import java.io.File
+import java.io.IOException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.first
@@ -623,6 +624,103 @@ class ConversationHistoryTest {
             model.close()
             lease.close()
         }
+    }
+
+    @Test
+    fun revisitingImmediatelyShowsTheConfirmedTimelineWhileCatchUpIsHeld() = runTest {
+        val lease = cache().open(identity) { true }
+        val service = Service()
+        val model =
+            ConversationHistoryModel(
+                service,
+                lease,
+                backgroundScope,
+                { true },
+                {},
+                {},
+                StandardTestDispatcher(testScheduler),
+            )
+        val started = CompletableDeferred<HistoryCursor>()
+        val response = CompletableDeferred<HistoryPage>()
+        try {
+            model.open(thread())
+            val original = model.uiState.first { it.phase == HistoryPhase.Ready }
+            model.open(thread(CHAT_IN_PROJECT))
+            model.uiState.first { it.phase == HistoryPhase.Ready }
+            val read = service.rowsRead
+            service.rowsRead = { id, cursor ->
+                if (id == CHAT_PERSONAL) {
+                    started.complete(cursor)
+                    response.await()
+                } else read(id, cursor)
+            }
+
+            model.open(thread())
+            val revisited = model.uiState.value
+            assertSame(original.transcript, revisited.transcript)
+            assertEquals(ChatListSource.Cache, revisited.source)
+            assertNull(revisited.confirmation)
+            val visit = checkNotNull(model.beginVisit(CHAT_PERSONAL, revisited.generation))
+            visit.confirmDisplayed(checkNotNull(original.confirmation))
+            assertEquals(original.confirmation.cursor, started.await())
+            assertEquals(0, service.markCount)
+
+            response.completeExceptionally(IOException("history unavailable"))
+            val failed = model.uiState.first { it.phase == HistoryPhase.Failed }
+            assertSame(original.transcript, failed.transcript)
+            assertNull(failed.confirmation)
+            service.rowsRead = read
+            model.refresh()
+            val refreshed = model.uiState.first { it.phase == HistoryPhase.Ready }
+            assertEquals(revisited.generation, checkNotNull(refreshed.confirmation).generation)
+            assertEquals(0, service.markCount)
+        } finally {
+            model.close()
+            lease.close()
+        }
+    }
+
+    @Test
+    fun onlyRecentAccessibleTimelinesAreRestoredImmediately() = runTest {
+        val lease = cache().open(identity) { true }
+        val service = Service()
+        val model =
+            ConversationHistoryModel(
+                service,
+                lease,
+                backgroundScope,
+                { true },
+                {},
+                {},
+                StandardTestDispatcher(testScheduler),
+            )
+        try {
+            for (id in listOf(CHAT_PERSONAL, CHAT_IN_PROJECT, "third", "fourth", "fifth")) {
+                model.open(thread(id))
+                model.uiState.first { it.phase == HistoryPhase.Ready }
+            }
+            model.open(thread())
+            assertNull(model.uiState.value.transcript)
+            model.uiState.first { it.phase == HistoryPhase.Ready }
+            model.open(thread("fifth"))
+            assertNotNull(model.uiState.value.transcript)
+            model.uiState.first { it.phase == HistoryPhase.Ready }
+            model.forgetWarmedHistory(CHAT_PERSONAL)
+            model.open(thread())
+            assertNull(model.uiState.value.transcript)
+            model.uiState.first { it.phase == HistoryPhase.Ready }
+
+            service.threadStatus = 403
+            model.refresh()
+            assertNull(model.uiState.first { it.phase == HistoryPhase.Missing }.transcript)
+            model.open(thread("fifth"))
+            model.open(thread())
+            assertNull(model.uiState.value.transcript)
+        } finally {
+            model.close()
+            lease.close()
+        }
+        assertNull(model.uiState.value.transcript)
     }
 
     @Test
