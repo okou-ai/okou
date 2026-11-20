@@ -767,10 +767,6 @@ export const clientDescriptorManifest = [
     contracts: ["usageMembersContract"],
   },
   {
-    module: "user-connectors",
-    contracts: ["userBuiltinConnectorsContract"],
-  },
-  {
     module: "user-export",
     contracts: ["userExportContract"],
   },

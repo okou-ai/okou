@@ -1537,7 +1537,6 @@ function createThreadArtifactRuns(
     const result = await accept(
       client.list({
         params: { threadId },
-        query: { driveAccountModel: "chat" },
       }),
       [200],
     );

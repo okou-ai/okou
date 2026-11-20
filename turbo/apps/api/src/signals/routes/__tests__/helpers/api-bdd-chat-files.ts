@@ -1603,11 +1603,15 @@ export function createChatFilesBddApi(context: TestContext) {
     async requestUploadArtifactToGoogleDrive(
       actor: ApiTestUser | null,
       artifactId: string,
-      body: { readonly agentId: string; readonly connectionId?: string },
+      body: {
+        readonly chatThreadId: string;
+        readonly mode: "original" | "google";
+        readonly connectionId?: string;
+      },
       statuses: readonly (200 | 400 | 401 | 403 | 404)[],
     ) {
       return await accept(
-        artifactGoogleDriveClient().upload({
+        artifactGoogleDriveClient().uploadFromChat({
           headers: authenticate(context, actor),
           params: { artifactId },
           body,

@@ -6,11 +6,7 @@
  */
 
 import { resetAblySubscriptions } from "../ably.ts";
-import {
-  apiAgentsHandlers,
-  resetMockAgents,
-  resetMockUserConnectors,
-} from "./api-agents.ts";
+import { apiAgentsHandlers, resetMockAgents } from "./api-agents.ts";
 import { apiBillingHandlers, resetMockBilling } from "./api-billing.ts";
 import { apiBuildInfoHandlers } from "./api-build-info.ts";
 import {
@@ -183,7 +179,6 @@ export function resetAllMockHandlers(): void {
   resetMockUsageRecord();
   resetMockWorkflowAutomations();
   resetMockAgents();
-  resetMockUserConnectors();
   resetMockWorkflows();
   resetMockOnboardingStatus();
 }

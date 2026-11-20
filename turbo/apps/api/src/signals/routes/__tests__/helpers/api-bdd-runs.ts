@@ -40,7 +40,6 @@ import {
   type CanonicalStorageManifest,
   type StorageManifest,
 } from "@okouai/api-contracts/contracts/runners";
-import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import { webhookStripeContract } from "@okouai/api-contracts/contracts/webhooks";
 import type StripeSDK from "stripe";
@@ -1031,25 +1030,6 @@ export function createRunsApi(context: TestContext) {
           body,
         }),
         statuses,
-      );
-    },
-
-    /** Sets the caller's Google Drive export authorization for an agent. */
-    async setDriveExportAuthorization(
-      actor: ApiTestUser,
-      agentId: string,
-      enabled = true,
-    ): Promise<void> {
-      await accept(
-        runApp(context)(userBuiltinConnectorsContract).update({
-          headers: authenticate(context, actor),
-          params: { id: agentId },
-          body: {
-            enabledConnectorSlugs: ["google-drive"],
-            operation: enabled ? "add" : "remove",
-          },
-        }),
-        [200],
       );
     },
 
