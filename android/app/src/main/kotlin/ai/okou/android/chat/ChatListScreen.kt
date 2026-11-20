@@ -581,12 +581,21 @@ private fun ChatRow(
         )
     val shape = RoundedCornerShape(8.dp)
     val colors = MaterialTheme.colorScheme
-    Box {
+    val readAction =
+        actions.firstOrNull { it == ChatRowAction.MarkRead || it == ChatRowAction.MarkUnread }
+    val archiveAction =
+        actions.firstOrNull { it == ChatRowAction.Archive || it == ChatRowAction.Unarchive }
+    ChatRowSwipe(
+        readAction = readAction.takeIf { openMenu != null },
+        archiveAction = archiveAction.takeIf { openMenu != null },
+        performAction = performAction,
+    ) { swipeModifier ->
         Row(
-            Modifier.fillMaxWidth()
+            swipeModifier
+                .fillMaxWidth()
                 .heightIn(min = 52.dp)
                 .clip(shape)
-                .then(if (isSelected) Modifier.background(colors.secondaryContainer) else Modifier)
+                .background(if (isSelected) colors.secondaryContainer else colors.background)
                 .contextMenuInput(openMenu)
                 .combinedClickable(
                     onClick = open,
@@ -643,7 +652,7 @@ private fun chatListTitleStyle() =
         letterSpacing = 0.sp,
     )
 
-private fun ChatRowAction.label(): Int =
+internal fun ChatRowAction.label(): Int =
     when (this) {
         ChatRowAction.MarkRead -> R.string.chat_mark_read
         ChatRowAction.MarkUnread -> R.string.chat_mark_unread

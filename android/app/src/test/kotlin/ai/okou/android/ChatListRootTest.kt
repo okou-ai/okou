@@ -31,6 +31,7 @@ import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextInputSelection
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipe
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.unit.dp
@@ -896,6 +897,108 @@ class ChatListRootTest {
             2,
             commands.mapNotNull { it.requestUrl?.queryParameter("eventId") }.distinct().size,
         )
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w400dp-h800dp")
+    fun markingReadInUnreadCanBeUndoneThroughCanonicalReadActions() {
+        val app = compose.activity.application as ChatListApplication
+        val unread = AtomicBoolean(true)
+        val commands = CopyOnWriteArrayList<String>()
+        app.fixture.indicators = {
+            if (unread.get())
+                jsonResponse(
+                    """{"agents":{},"threads":{"$CHAT_PERSONAL":"unread"},"unreadAt":{"$CHAT_PERSONAL":"$CHAT_DATE"}}"""
+                )
+            else jsonResponse("""{"agents":{},"threads":{},"unreadAt":{}}""")
+        }
+        app.fixture.commandResponse = { request ->
+            when (request.requestUrl?.encodedPath) {
+                "/api/chat-threads/$CHAT_PERSONAL/mark-read" -> {
+                    unread.set(false)
+                    commands.add("read")
+                    jsonResponse("""{"lastReadAt":"$CHAT_DATE"}""")
+                }
+                "/api/chat-threads/$CHAT_PERSONAL/mark-unread" -> {
+                    unread.set(true)
+                    commands.add("unread")
+                    jsonResponse("""{"lastReadAt":null}""")
+                }
+                else -> null
+            }
+        }
+        app.responseGate.countDown()
+        awaitListAndNames()
+        compose.onNodeWithContentDescription("Filter").performClick()
+        compose.onNodeWithText("Unread").performClick()
+        val rowTag = "chat_$CHAT_PERSONAL"
+        compose.onNodeWithTag("chat_list").performScrollToNode(hasTestTag(rowTag))
+        compose.onNodeWithTag(rowTag).performTouchInput {
+            swipe(center.copy(x = width * 0.2f), center)
+        }
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithText("Chat marked as read").fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithTag(rowTag).assertDoesNotExist()
+        compose.onNodeWithText("Undo").performClick()
+        compose.waitUntil(10_000) { unread.get() && commands.size == 2 }
+        compose.onNodeWithTag(rowTag).assertExists()
+        assertEquals(listOf("read", "unread"), commands.toList())
+        compose.onNodeWithText("Undo").assertDoesNotExist()
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w400dp-h800dp")
+    fun aCommittedArchiveSwipeOffersUndoAcrossFilters() {
+        val app = compose.activity.application as ChatListApplication
+        val events = app.fixture.rowEventTail {}
+        val commands = CopyOnWriteArrayList<RecordedRequest>()
+        app.fixture.commandResponse = { request ->
+            when (request.requestUrl?.encodedPath) {
+                "/api/chat-threads/$CHAT_PERSONAL/archive" -> {
+                    commands.add(request)
+                    events.add(24L to request.rowEvent(24, CHAT_PERSONAL, "archived"))
+                    MockResponse().setResponseCode(204)
+                }
+                "/api/chat-threads/$CHAT_PERSONAL/unarchive" -> {
+                    commands.add(request)
+                    events.add(25L to request.rowEvent(25, CHAT_PERSONAL, "unarchived"))
+                    MockResponse().setResponseCode(204)
+                }
+                else -> null
+            }
+        }
+        app.responseGate.countDown()
+        awaitListAndNames()
+        val rowTag = "chat_$CHAT_PERSONAL"
+        val row = compose.onNodeWithTag(rowTag)
+        compose.onNodeWithTag("chat_list").performScrollToNode(hasTestTag(rowTag))
+        val left = row.getUnclippedBoundsInRoot().left
+        row.performTouchInput { swipe(center, center.copy(x = centerX - 44.dp.toPx())) }
+        row.assertIsDisplayed()
+        assertEquals(left, row.getUnclippedBoundsInRoot().left)
+        row.performTouchInput {
+            swipe(center, center.copy(x = centerX - 90.dp.toPx(), y = centerY - 120.dp.toPx()))
+        }
+        assertEquals(left, row.getUnclippedBoundsInRoot().left)
+        assertTrue(commands.isEmpty())
+
+        row.performTouchInput { swipe(center.copy(x = width * 0.8f), center) }
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithText("Chat archived").fetchSemanticsNodes().isNotEmpty()
+        }
+        row.assertDoesNotExist()
+        compose.onNodeWithContentDescription("Filter").performClick()
+        compose.onNodeWithText("Archived").performClick()
+        compose.onNodeWithText("Undo").assertIsDisplayed().performClick()
+        compose.waitUntil(10_000) {
+            currentList()?.threads?.any { it.id == CHAT_PERSONAL && !it.archived } == true
+        }
+        assertEquals(
+            listOf("archive", "unarchive"),
+            commands.map { it.requestUrl?.pathSegments?.last() },
+        )
+        compose.onNodeWithText("Undo").assertDoesNotExist()
     }
 
     @Test

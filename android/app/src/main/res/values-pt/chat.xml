@@ -1,4 +1,9 @@
 <resources>
+    <string name="chat_undo_archived">Conversa arquivada</string>
+    <string name="chat_undo_unarchived">Conversa desarquivada</string>
+    <string name="chat_undo_marked_read">Conversa marcada como lida</string>
+    <string name="chat_undo">Desfazer</string>
+    <string name="chat_undo_close">Fechar</string>
     <string name="chat_list_offline">Sem conexão</string>
     <string name="chat_list_refresh_failed">Não foi possível atualizar a lista de conversas</string>
     <string name="chat_list_first_load_failed">Temporariamente indisponível para carregar</string>

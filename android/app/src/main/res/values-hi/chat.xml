@@ -1,4 +1,9 @@
 <resources>
+    <string name="chat_undo_archived">चैट संग्रहित की गई</string>
+    <string name="chat_undo_unarchived">चैट संग्रह से निकाली गई</string>
+    <string name="chat_undo_marked_read">चैट पढ़ी हुई चिह्नित की गई</string>
+    <string name="chat_undo">पूर्ववत करें</string>
+    <string name="chat_undo_close">बंद करें</string>
     <string name="chat_list_offline">ऑफ़लाइन</string>
     <string name="chat_list_refresh_failed">चैट सूची रीफ़्रेश नहीं हुई</string>
     <string name="chat_list_first_load_failed">फ़िलहाल लोड नहीं हो सका</string>
