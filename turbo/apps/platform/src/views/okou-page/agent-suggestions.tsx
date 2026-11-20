@@ -337,10 +337,7 @@ function SuggestionDirectionComposer({
                   })}
             </p>
           ) : composer ? (
-            <div
-              className="w-full min-w-0"
-              data-chat-composer
-            >
+            <div className="w-full min-w-0" data-chat-composer>
               <ChatComposer signals={composer} showPendingItems={false} />
             </div>
           ) : null}
