@@ -576,16 +576,21 @@ fn handle_connection_with_outcome(
             MSG_GUEST_STORAGE_MANIFEST,
             large_frame::OWNED_STORAGE_PAYLOAD_BYTES,
         ) {
-            let mut payload = Vec::with_capacity(frame.payload_len);
-            let Some(retained) =
-                large_frame::receive_into(&mut reader, &mut buf, &frame, &mut payload)
+            let Some((payload, retained)) =
+                large_frame::receive_storage(&mut reader, &mut buf, &frame)
                     .map_err(|error| session.failure(error))?
             else {
                 break;
             };
-            dispatcher
-                .dispatch_owned_storage(frame.seq, payload.into())
-                .map_err(|error| session.failure(error))?;
+            match payload {
+                large_frame::ReceivedStorage::Buffered(bytes) => {
+                    dispatcher.dispatch_owned_storage(frame.seq, bytes)
+                }
+                large_frame::ReceivedStorage::Sealed { file, mapping } => {
+                    dispatcher.dispatch_streamed_storage(frame.seq, file, mapping)
+                }
+            }
+            .map_err(|error| session.failure(error))?;
             session.mark_real_host_work(MSG_GUEST_STORAGE_MANIFEST);
             Some(retained)
         } else {

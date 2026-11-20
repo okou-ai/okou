@@ -18,15 +18,19 @@ fn sealed_input_requires_immutable_stdin_before_materialization() {
     use nix::fcntl::{FcntlArg, SealFlag, fcntl};
     use nix::sys::memfd::{MFdFlags, memfd_create};
     use std::fs::File;
-    use std::os::unix::fs::{FileExt, MetadataExt};
+    use std::io::{Seek, SeekFrom, Write};
+    use std::os::unix::fs::MetadataExt;
     use std::process::Stdio;
     use std::time::Duration;
 
     let fixture = BinaryLoggingFixture::new("sealed-input").unwrap();
     let input = input_with_files(&fixture, &valid_manifest(&fixture).unwrap()).unwrap();
-    let file =
+    let mut file =
         File::from(memfd_create(c"storage-input-test", MFdFlags::MFD_ALLOW_SEALING).unwrap());
-    file.write_all_at(&input, 0).unwrap();
+    let prefix = b"guest control context";
+    file.write_all(prefix).unwrap();
+    file.write_all(&input).unwrap();
+    file.seek(SeekFrom::Start(prefix.len() as u64)).unwrap();
     let output = fixture.dir.path().join("mount/private-filename");
     let apply = || {
         process::ChildExecution::spawn(

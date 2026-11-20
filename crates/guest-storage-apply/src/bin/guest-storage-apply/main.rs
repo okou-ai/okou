@@ -170,9 +170,16 @@ fn run(input: ManifestInput, runtime_dir: &Path) -> bool {
                     use guest_contracts::sealed_input::SealedInput;
                     use std::os::fd::AsFd;
 
-                    mapped =
-                        SealedInput::map(io::stdin().as_fd(), storage_files::MAX_INPUT_BYTES).ok();
-                    mapped.as_ref().map(SealedInput::as_bytes)
+                    let stdin = io::stdin();
+                    // Streamed frames retain their validated request prefix.
+                    // The worker positions stdin at the binary helper input.
+                    let offset = rustix::fs::seek(stdin.as_fd(), rustix::fs::SeekFrom::Current(0))
+                        .ok()
+                        .and_then(|offset| usize::try_from(offset).ok());
+                    mapped = SealedInput::map(stdin.as_fd(), storage_files::MAX_INPUT_BYTES).ok();
+                    mapped
+                        .as_ref()
+                        .and_then(|mapping| mapping.as_bytes().get(offset?..))
                 }
             };
             record_phase(InputPhase::Read, read_start, bytes.is_some());
