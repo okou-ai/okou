@@ -34,6 +34,7 @@ Original test `Restore 128 completed segments with 1 transcripts per polish item
 - **Given** A restored recording contains 128 completed transcript segments.
 - **When** The user chooses the recording when polishing is available.
 - **Then** The composer receives all transcript text, grouped into 128 polish segments with one transcript per item; the audio is not retranscribed.
+- **Rebuild note** Not accepted in batch 12. A restored draft with completed transcript segments can only be built publicly by recording and transcribing every 15-second segment. A local probe took about 11 s and 1.2 GB RSS for 64 segments, growing roughly quadratically, so 128 segments would need a raised test timeout, which the project guidance avoids (no timeout increases to absorb local resource cost). Decide whether to retire the case under "Cases Without Public Construction" or accept another public construction.
 
 ## chat-capability-voice-recording-005
 
@@ -42,6 +43,7 @@ Original test `Restore 129 completed segments with 2 transcripts per polish item
 - **Given** A restored recording contains 129 completed transcript segments.
 - **When** The user chooses the recording when polishing is available.
 - **Then** The composer receives all transcript text, grouped into 65 polish segments with up to two transcripts per item; the audio is not retranscribed.
+- **Rebuild note** Not accepted in batch 12. A restored draft with completed transcript segments can only be built publicly by recording and transcribing every 15-second segment. A local probe took about 11 s and 1.2 GB RSS for 64 segments, growing roughly quadratically, so 129 segments would need a raised test timeout, which the project guidance avoids (no timeout increases to absorb local resource cost). Decide whether to retire the case under "Cases Without Public Construction" or accept another public construction.
 
 ## chat-capability-voice-recording-006
 
