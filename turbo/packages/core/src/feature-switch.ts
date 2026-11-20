@@ -106,14 +106,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.MyOkouProactiveSettings]: {
-    maintainer: "yuma@okou.ai",
-    displayName: "My Okou proactive settings",
-    description:
-      "Manage proactive work and For you sources together in My Okou.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.SingleAgent]: {
     maintainer: "lancy@okou.ai",
     displayName: "My Okou",
@@ -154,12 +146,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
     restrictOverridesToAudience: true,
-  },
-  [FeatureSwitchKey.FeatureGuides]: {
-    maintainer: "yuma@okou.ai",
-    displayName: "Feature guides",
-    description: "Show published product updates once per user and edition.",
-    enabled: true,
   },
   [FeatureSwitchKey.BatchConnectorPermissions]: {
     maintainer: "ethan@okou.ai",

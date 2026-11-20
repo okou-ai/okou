@@ -31,7 +31,7 @@ import {
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
-import { myOkouProactiveSettingsEnabled$ } from "../../../../signals/single-agent.ts";
+import { proactiveSettingsInMyOkou$ } from "../../../../signals/single-agent.ts";
 import { featureSwitches$ } from "../../../../signals/external/feature-switch.ts";
 import { pageSignal$ } from "../../../../signals/page-signal.ts";
 import {
@@ -161,7 +161,7 @@ function SettingsDialog({
   const isAdmin =
     isAdminLoadable.state === "hasData" ? isAdminLoadable.data : false;
   const showDebug = features?.[FeatureSwitchKey.OkouDebug] ?? false;
-  const proactive = useLastResolved(myOkouProactiveSettingsEnabled$);
+  const proactive = useLastResolved(proactiveSettingsInMyOkou$);
   const singleAgent = features?.[FeatureSwitchKey.SingleAgent] ?? false;
 
   const sectionMeta = {
