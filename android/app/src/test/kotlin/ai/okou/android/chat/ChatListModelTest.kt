@@ -125,6 +125,80 @@ class ChatListModelTest {
     }
 
     @Test
+    fun confirmedSecondRenameSettlesEarlierUnconfirmedEdit() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val store = ViewModelStore()
+        val tail = mutableListOf(chatEventWire())
+        val source =
+            Service().apply {
+                listRead = {
+                    json.decodeFromString(
+                        """{"events":[${tail.joinToString(",")}],"hasMore":false}"""
+                    )
+                }
+            }
+        val service =
+            object : ChatListService by source {
+                override suspend fun renameThread(
+                    threadId: String,
+                    title: String,
+                    eventId: String,
+                ) {
+                    if (title == "First edit") throw IOException("unconfirmed write")
+                    tail.add(chatEventWire(id = eventId, seq = 18, kind = "renamed", title = title))
+                }
+            }
+        try {
+            val model =
+                ViewModelProvider(
+                    store,
+                    viewModelFactory {
+                        initializer {
+                            ChatListModel(
+                                service,
+                                cache(temporary.newFolder(), dispatcher),
+                                identity,
+                                { true },
+                                {},
+                                dispatcher,
+                            )
+                        }
+                    },
+                )[ChatListModel::class.java]
+            model.refresh()
+            advanceUntilIdle()
+
+            model.renameThread(CHAT_PERSONAL, "First edit")
+            advanceUntilIdle()
+            assertEquals("First edit", model.uiState.value.threads.single().title)
+            assertEquals(ChatRowAction.Rename, model.uiState.value.failedRowAction)
+            model.dismissRowActionFailure(ChatRowAction.Rename)
+
+            model.renameThread(CHAT_PERSONAL, "Second edit")
+            advanceUntilIdle()
+            assertEquals("Second edit", model.uiState.value.threads.single().title)
+            assertNull(model.uiState.value.failedRowAction)
+
+            tail.add(
+                chatEventWire(
+                    id = "77777777-7777-4777-8777-777777777777",
+                    seq = 19,
+                    kind = "renamed",
+                    title = "Remote edit",
+                )
+            )
+            model.refreshList()
+            advanceUntilIdle()
+            assertEquals("Remote edit", model.uiState.value.threads.single().title)
+        } finally {
+            store.clear()
+            runCurrent()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
     fun unmuteKeepsConfirmedStateWhenReadbackFails() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(dispatcher)

@@ -210,23 +210,23 @@ impl ManagedTasks {
                     },
                 },
             )?;
-            process_control_ipc::send_tool_placement(stream, placement.as_fd())?;
-            process_control_ipc::read_tool_placement_confirmation(stream)?;
-            if pidfd_exited(&pidfd)?
-                || !peer_matches(stream, self.uid, &scope.path.join(RUNTIME_CGROUP_NAME))?
-            {
-                return Err(io::Error::new(
-                    io::ErrorKind::PermissionDenied,
-                    "task launcher did not enter its runtime",
-                ));
-            }
-            if let Some(caller) = &caller {
-                self.require_active(caller)?;
-            }
-            // Publish only after confirmed placement, before sending ACK so a
-            // fast target cannot race the registry's admission publication.
-            scope.admitted.store(true, Ordering::Release);
-            process_control_ipc::write_tool_placement_ack(stream)
+            process_control_ipc::offer_tool_placement(stream, placement.as_fd(), || {
+                if pidfd_exited(&pidfd)?
+                    || !peer_matches(stream, self.uid, &scope.path.join(RUNTIME_CGROUP_NAME))?
+                {
+                    return Err(io::Error::new(
+                        io::ErrorKind::PermissionDenied,
+                        "task launcher did not enter its runtime",
+                    ));
+                }
+                if let Some(caller) = &caller {
+                    self.require_active(caller)?;
+                }
+                // Publish after confirmed placement and before ACK so the target
+                // can use the admitted scope as soon as it starts.
+                scope.admitted.store(true, Ordering::Release);
+                Ok(())
+            })
         })();
         drop(placement);
         drop(caller_admission);

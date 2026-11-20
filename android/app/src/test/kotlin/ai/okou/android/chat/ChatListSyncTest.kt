@@ -171,22 +171,35 @@ class ChatListSyncTest {
     fun largeTailCatchesUpBeforeRebasingAndIncludesEventsAfterTheNewSnapshot() = runTest {
         ChatListApiFixture().use { fixture ->
             val previous = longTail()
-            fixture.events = {
-                jsonResponse(
-                    """{"events":[${chatEventWire(id = eventId(102), seq = 102, kind = "renamed", title = "Newest title")}],"hasMore":false}"""
+            val compactedRename =
+                chatEventWire(id = eventId(102), seq = 102, kind = "renamed", title = "First title")
+            val laterRename =
+                chatEventWire(
+                    id = eventId(103),
+                    seq = 103,
+                    kind = "renamed",
+                    title = "Newest title",
                 )
+            fixture.events = {
+                jsonResponse("""{"events":[$compactedRename,$laterRename],"hasMore":false}""")
             }
             fixture.snapshot = {
                 jsonResponse(
-                    """{"url":"${fixture.server.url("/archive")}","expiresInSeconds":60,"latestEventId":"${eventId(101)}","latestSeqId":101}"""
+                    """{"url":"${fixture.server.url("/archive")}","expiresInSeconds":60,"latestEventId":"${eventId(102)}","latestSeqId":102}"""
                 )
             }
             fixture.archive = {
-                jsonResponse(Json.encodeToString(ChatArchive(replayChats(previous))))
+                jsonResponse(
+                    Json.encodeToString(
+                        ChatArchive(replayChats(previous).map { it.copy(title = "First title") })
+                    )
+                )
             }
-            val confirmed = ChatListSync(fixture.service).synchronize(previous).checkpoint
-            assertEquals(101L, confirmed.snapshotCursor.seqId)
-            assertEquals(listOf(102L), confirmed.events.map { it.cursor().seqId })
+            val result = ChatListSync(fixture.service).synchronize(previous)
+            val confirmed = result.checkpoint
+            assertEquals(102L, confirmed.snapshotCursor.seqId)
+            assertEquals(listOf(103L), confirmed.events.map { it.cursor().seqId })
+            assertTrue(eventId(102) in result.eventIdsBeforeRebase)
             assertEquals("Newest title", replayChats(confirmed).single().title)
             assertEquals(
                 "/api/chat-threads/events?sinceSeqId=101",
@@ -195,7 +208,7 @@ class ChatListSyncTest {
             assertEquals("/api/chat-threads/snapshot", fixture.server.takeRequest().path)
             assertEquals("/archive", fixture.server.takeRequest().path)
             assertEquals(
-                "/api/chat-threads/events?sinceSeqId=101",
+                "/api/chat-threads/events?sinceSeqId=102",
                 fixture.server.takeRequest().path,
             )
         }

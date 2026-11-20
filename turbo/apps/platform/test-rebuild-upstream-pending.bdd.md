@@ -71,6 +71,7 @@ markdown DOCX export > creates a Word package with headings, emphasis, tables, a
 - **Given** An exportable Markdown result contains headings, emphasis, a table and a link.
 - **When** Export the result as DOCX.
 - **Then** The Word package retains the heading, emphasis and table, and contains the safe hyperlink.
+- **Upstream change** `81238fbf` (#49446) maps the top-level Markdown heading to the Word Title style instead of Heading 1 ([Registration](https://github.com/okou-ai/okou/blob/81238fbf702ef4d41198ed807ab1139e3a0e14e4/turbo/apps/platform/src/lib/__tests__/markdown-docx.test.ts#L21)).
 - **Disposition** retain.
 - **Source** `test-rebuild-upstream-eaae30ac.bdd.md` at `cdc9484a`.
 
@@ -397,3 +398,33 @@ Without the refreshed design, sharing keeps the legacy footer and copy toast. [R
 - **Then** The legacy footer counts "0 selected" then "1 selected" without Select all; sharing shows the link in a "Shared chat link" field, copies it to the clipboard, and confirms "Link copied".
 - **Disposition** retain.
 - **Source** upstream `ad72ee86` (#49038) for the `ChatShareRefresh` design. The rebuilt chat-sharing tests cover the default design and stay as rebuilt.
+
+## upstream-4411c561-lab-page-116-02
+
+Staff see Markdown document typography enabled by default in Beta. [Registration](https://github.com/okou-ai/okou/blob/4411c561192e7c85a6c8ecf89b9578c05f9c7f66/turbo/apps/platform/src/views/lab-page/__tests__/lab-page.test.tsx#L116).
+
+- **Given** A staff member opens Lab with no explicit Markdown document typography setting.
+- **When** The feature list loads.
+- **Then** Markdown document typography appears in Beta and is enabled by default.
+- **Disposition** review.
+- **Source** upstream `4411c561` (#49461), a new row of the frozen `lab-page-003` test in the copied test file after it was removed. `lab-page-003` is not selected.
+
+## upstream-4411c561-lab-page-144-02
+
+External peers cannot opt into Markdown document typography in Lab. [Registration](https://github.com/okou-ai/okou/blob/4411c561192e7c85a6c8ecf89b9578c05f9c7f66/turbo/apps/platform/src/views/lab-page/__tests__/lab-page.test.tsx#L144).
+
+- **Given** An external peer opens Lab with the Lab and Markdown document typography switches enabled.
+- **When** The feature list loads.
+- **Then** Banking is listed, but Markdown document typography is not available.
+- **Disposition** review.
+- **Source** upstream `4411c561` (#49461), a new row of the frozen `lab-page-004` test in the copied test file after it was removed. `lab-page-004` is not selected.
+
+## upstream-81238fbf-chat-run-artifact-carryover-200-01
+
+Download a Word export with document title styles without changing Markdown headings. [Registration](https://github.com/okou-ai/okou/blob/81238fbf702ef4d41198ed807ab1139e3a0e14e4/turbo/apps/platform/src/views/okou-page/__tests__/chat-run-artifact-carryover.test.tsx#L200).
+
+- **Given** A related Markdown artifact uses one to six heading levels, two top-level headings, internal heading links and a fenced Markdown heading.
+- **When** The user opens it in the artifact preview, keeps its headings and downloads it as DOCX.
+- **Then** The preview keeps each Markdown heading level, and the downloaded `summary.docx` uses the Word Title style for top-level headings, keeping their bold text, and Heading 1 to Heading 5 for the next levels, keeps heading links working and leaves the fenced heading as code.
+- **Disposition** review.
+- **Source** upstream `81238fbf` (#49446), which replaces `upstream-eaae30ac-chat-run-artifact-carryover-197-01` (resolved as not selected) in the copied test file after it was removed.

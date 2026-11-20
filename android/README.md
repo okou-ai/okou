@@ -98,6 +98,12 @@ network freshness. Signed archive URLs, credentials and transient indicators are
 not persisted in the chat cache. Personal Instructions drafts use the separate
 intent store described above.
 
+Pin, pin reorder, rename, mute and archive actions project their visible result
+from memory before the request completes. Canonical event IDs settle these
+changes, including events observed before a snapshot rebase. If an outcome
+cannot be confirmed, Refresh chats reads back the list and clears the unresolved
+projection once that read succeeds.
+
 Conversation history shares this cache and its workspace authorization lease.
 Room schema v2 adds `history_scopes` (thread, authorization, canonical event format,
 paired cursor and confirmation time) and `history_events` (lossless raw event JSON,

@@ -1,5 +1,5 @@
 use super::*;
-use std::os::fd::OwnedFd;
+use std::os::fd::{AsFd, OwnedFd};
 use std::os::unix::ffi::OsStringExt;
 
 mod oom_priority;

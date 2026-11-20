@@ -4,6 +4,8 @@ use std::os::linux::net::SocketAddrExt;
 use std::os::unix::fs::MetadataExt;
 use std::os::unix::net::SocketAddr;
 
+use crate::{apply_tool_placement, offer_tool_placement};
+
 fn bind_test_listener(case: &str) -> (String, UnixListener) {
     let name = format!("vm0-test-{case}-{}", std::process::id());
     let listener = bind_abstract_listener(&name).unwrap();
@@ -178,13 +180,11 @@ fn workload_placement_confirmation_rejects_wrong_marker() {
 
 #[test]
 fn tool_placement_descriptor_and_handshake_round_trip() {
-    let (server, client) = UnixStream::pair().unwrap();
+    let (server, client) = tool_placement_stream_pair();
     let placement = std::fs::File::open("/dev/null").unwrap();
     let expected = placement.metadata().unwrap();
     let server = std::thread::spawn(move || {
-        send_tool_placement(&server, placement.as_fd()).unwrap();
-        read_tool_placement_confirmation(&server).unwrap();
-        write_tool_placement_ack(&server).unwrap();
+        offer_tool_placement(&server, placement.as_fd(), || Ok(())).unwrap();
     });
 
     let received = receive_tool_placement(&client).unwrap();
@@ -194,6 +194,54 @@ fn tool_placement_descriptor_and_handshake_round_trip() {
     write_tool_placement_confirmation(&client).unwrap();
     read_tool_placement_ack(&client).unwrap();
     server.join().unwrap();
+}
+
+#[test]
+fn tool_placement_launcher_check_error_prevents_confirmation() {
+    let (broker, launcher) = tool_placement_stream_pair();
+    let placement = std::fs::File::options()
+        .write(true)
+        .open("/dev/null")
+        .unwrap();
+    send_tool_placement(&broker, placement.as_fd()).unwrap();
+
+    let result = apply_tool_placement(&launcher, || Err(io::Error::from_raw_os_error(libc::EPERM)));
+    drop(launcher);
+
+    assert_eq!(result.unwrap_err().raw_os_error(), Some(libc::EPERM));
+    let confirmation = read_tool_placement_confirmation(&broker).unwrap_err();
+    assert_eq!(confirmation.kind(), io::ErrorKind::UnexpectedEof);
+}
+
+#[test]
+fn tool_placement_broker_check_error_prevents_ack() {
+    let (broker, launcher) = tool_placement_stream_pair();
+    let placement = std::fs::File::open("/dev/null").unwrap();
+    let worker = std::thread::spawn(move || {
+        offer_tool_placement(&broker, placement.as_fd(), || {
+            Err(io::Error::from_raw_os_error(libc::EPERM))
+        })
+    });
+
+    drop(receive_tool_placement(&launcher).unwrap());
+    write_tool_placement_confirmation(&launcher).unwrap();
+    let ack = read_tool_placement_ack(&launcher).unwrap_err();
+
+    assert_eq!(ack.kind(), io::ErrorKind::UnexpectedEof);
+    assert_eq!(
+        worker.join().unwrap().unwrap_err().raw_os_error(),
+        Some(libc::EPERM)
+    );
+}
+
+fn tool_placement_stream_pair() -> (UnixStream, UnixStream) {
+    let (broker, launcher) = UnixStream::pair().unwrap();
+    for stream in [&broker, &launcher] {
+        stream
+            .set_read_timeout(Some(Duration::from_secs(1)))
+            .unwrap();
+    }
+    (broker, launcher)
 }
 
 #[test]

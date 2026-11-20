@@ -135,9 +135,10 @@ exec /usr/bin/flock "$@"
 
     def pin_recipe(self):
         text = RECIPE.read_text()
+        sdk_digest = sha(self.root / "zig.tar.xz")
         for original, replacement in [
-            ("02aa270f183da276e5b5920b1dac44a63f1a49e55050ebde3aecc9eb82f93239", sha(self.root / "zig.tar.xz")),
-            ("958ed7d1e00d0ea76590d27666efbf7a932281b3d7ba0c6b01b0ff26498f667f", sha(self.root / "zig.tar.xz")),
+            ("02aa270f183da276e5b5920b1dac44a63f1a49e55050ebde3aecc9eb82f93239", sdk_digest),
+            ("958ed7d1e00d0ea76590d27666efbf7a932281b3d7ba0c6b01b0ff26498f667f", sdk_digest),
             ("3243ffbc8ea4d4ac22ddc7dd2a1dc54c57874c40648b60ff97009763554eaf13", sha(self.root / "krb5.tar.gz")),
         ]:
             text = text.replace(original, replacement)
@@ -411,8 +412,7 @@ exit 73
         log, _ = process.communicate(timeout=15)
         self.assertEqual(process.returncode, 0, log)
         self.assertIn(f"native package: hit={str(hit).lower()}", log)
-        self.assertEqual((output / "kerberos-worker").read_bytes(),
-                         (self.root / "fixture-helper").read_bytes())
+        self.assertEqual((output / "kerberos-worker").read_bytes(), fixture_helper_bytes())
         if hit:
             self.assertFalse((output / "dependencies").exists())
         entry = next(path for path in self.cache.glob("helper-*") if path.is_dir() and path.name[7:] in log)

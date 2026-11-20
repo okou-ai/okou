@@ -284,12 +284,16 @@ internal fun replayChatList(checkpoint: ChatCheckpoint): ReplayedChats {
         rows.values.sortedWith(
             compareByDescending<ConfirmedChat> { times.getValue(it.id) }.thenByDescending { it.id }
         )
+    return ReplayedChats(orderChatPins(byRecency), byRecency)
+}
+
+internal fun orderChatPins(byRecency: List<ConfirmedChat>): List<ConfirmedChat> {
     val pinned = byRecency.filter { it.pinnedAt != null }
-    if (pinned.isEmpty()) return ReplayedChats(byRecency, byRecency)
+    if (pinned.isEmpty()) return byRecency
     val ranks = pinned.associate { it.id to it.effectivePinOrder() }
     val orderedPins =
         pinned.sortedWith(
             compareBy<ConfirmedChat> { ranks.getValue(it.id) }.thenByDescending { it.id }
         )
-    return ReplayedChats(orderedPins + byRecency.filter { it.pinnedAt == null }, byRecency)
+    return orderedPins + byRecency.filter { it.pinnedAt == null }
 }

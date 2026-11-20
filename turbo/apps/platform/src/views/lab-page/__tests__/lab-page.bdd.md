@@ -26,6 +26,7 @@ Original test `Staff see presentation format enabled by default in Beta`. [Regis
 - **Given** A staff member opens Lab with no explicit Presentation output format setting.
 - **When** The feature list loads.
 - **Then** Presentation output format appears in Beta and is enabled by default.
+- **Upstream change** `4411c561` (#49461) makes the upstream test `Staff see %s enabled by default in Beta` cover Presentation output format and Markdown document typography ([Registration](https://github.com/okou-ai/okou/blob/4411c561192e7c85a6c8ecf89b9578c05f9c7f66/turbo/apps/platform/src/views/lab-page/__tests__/lab-page.test.tsx#L116)). This scenario keeps the Presentation output format row; the Markdown document typography row is pending as `upstream-4411c561-lab-page-116-02`.
 
 ## lab-page-004
 
@@ -34,6 +35,7 @@ Original test `External peers cannot opt into presentation format in Lab`. [Regi
 - **Given** An external peer opens Lab with the Lab and Presentation output format switches enabled.
 - **When** The feature list loads.
 - **Then** Banking is listed, but Presentation output format is not available.
+- **Upstream change** `4411c561` (#49461) makes the upstream test `External peers cannot opt into %s in Lab` cover Presentation output format and Markdown document typography ([Registration](https://github.com/okou-ai/okou/blob/4411c561192e7c85a6c8ecf89b9578c05f9c7f66/turbo/apps/platform/src/views/lab-page/__tests__/lab-page.test.tsx#L144)). This scenario keeps the Presentation output format row; the Markdown document typography row is pending as `upstream-4411c561-lab-page-144-02`.
 
 ## lab-page-005
 
