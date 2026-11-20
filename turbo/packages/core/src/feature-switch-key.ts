@@ -14,7 +14,6 @@ export enum FeatureSwitchKey {
   ProjectTitleReveal = "projectTitleReveal",
   ProjectThreadDeletion = "projectThreadDeletion",
   OkouAnimatedAvatar = "okouAnimatedAvatar",
-  FeatureGuides = "featureGuides",
   BatchConnectorPermissions = "batchConnectorPermissions",
   DesktopShell = "desktopShell",
   Dummy = "_dummy",

@@ -147,12 +147,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
     restrictOverridesToAudience: true,
   },
-  [FeatureSwitchKey.FeatureGuides]: {
-    maintainer: "yuma@okou.ai",
-    displayName: "Feature guides",
-    description: "Show published product updates once per user and edition.",
-    enabled: true,
-  },
   [FeatureSwitchKey.BatchConnectorPermissions]: {
     maintainer: "ethan@okou.ai",
     displayName: "Batch connector permissions",

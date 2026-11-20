@@ -49,11 +49,11 @@ async function identity(
 function signIn(owner: { orgId: string; userId: string }) {
   mocks.clerk.session(owner.userId, owner.orgId);
 }
-async function enable(value = true, key = FeatureSwitchKey.FeatureGuides) {
+async function setSingleAgentEnabled(value: boolean) {
   await accept(
     clients().switches.update({
       headers,
-      body: { switches: { [key]: value } },
+      body: { switches: { [FeatureSwitchKey.SingleAgent]: value } },
     }),
     [200],
   );
@@ -105,7 +105,7 @@ async function current() {
     .edition;
 }
 
-test("delivers published guides by default and respects a member's opt-out", async () => {
+test("delivers published guides to eligible members", async () => {
   await setupApp({
     context,
     routes: [...featureGuidesRoutes, ...featureSwitchesRoutes],
@@ -147,16 +147,6 @@ test("delivers published guides by default and respects a member's opt-out", asy
     revisionId: prepared.revisionId,
     content: prepared.input.content,
   });
-  await enable(false);
-  await expect(current()).resolves.toBeNull();
-  await accept(
-    clients().guide.seen({
-      headers,
-      params: { editionId: prepared.editionId },
-      body: { revisionId: prepared.revisionId },
-    }),
-    [403],
-  );
 });
 
 test("filters bound items by effective switches and leaves empty bindings unrestricted", async () => {
@@ -189,22 +179,20 @@ test("filters bound items by effective switches and leaves empty bindings unrest
   await publish(prepared);
   signIn(viewer);
   // My Okou is available by default; a retained member can keep it disabled.
-  await enable();
   await expect(current()).resolves.toMatchObject({
     content: { items: prepared.input.content.items.slice(0, 4) },
   });
 
   signIn(peer);
-  await enable();
-  await enable(false, FeatureSwitchKey.SingleAgent);
+  await setSingleAgentEnabled(false);
   await expect(current()).resolves.toMatchObject({
     content: { items: prepared.input.content.items.slice(0, 3) },
   });
-  await enable(true, FeatureSwitchKey.SingleAgent);
+  await setSingleAgentEnabled(true);
   await expect(current()).resolves.toMatchObject({
     content: { items: prepared.input.content.items.slice(0, 4) },
   });
-  await enable(false, FeatureSwitchKey.SingleAgent);
+  await setSingleAgentEnabled(false);
   await expect(current()).resolves.toMatchObject({
     content: { items: prepared.input.content.items.slice(0, 3) },
   });
@@ -228,8 +216,7 @@ test("suppresses an entirely gated edition without revealing a backlog or consum
   });
   await publish(prepared);
   signIn(viewer);
-  await enable();
-  await enable(false, FeatureSwitchKey.SingleAgent);
+  await setSingleAgentEnabled(false);
   await expect(current()).resolves.toBeNull();
   mockOptionalEnv("ENV", "preview");
   const preview = await accept(
@@ -237,7 +224,7 @@ test("suppresses an entirely gated edition without revealing a backlog or consum
     [200],
   );
   expect(preview.body.edition).toBeNull();
-  await enable(true, FeatureSwitchKey.SingleAgent);
+  await setSingleAgentEnabled(true);
   await expect(current()).resolves.toMatchObject({
     id: prepared.editionId,
     content: prepared.input.content,
@@ -250,9 +237,9 @@ test("suppresses an entirely gated edition without revealing a backlog or consum
     }),
     [200],
   );
-  await enable(false, FeatureSwitchKey.SingleAgent);
+  await setSingleAgentEnabled(false);
   await expect(current()).resolves.toBeNull();
-  await enable(true, FeatureSwitchKey.SingleAgent);
+  await setSingleAgentEnabled(true);
   await expect(current()).resolves.toBeNull();
 });
 
@@ -270,7 +257,6 @@ test("persists seen status per user and edition across workspaces and content re
   );
   await publish(prepared);
   signIn(viewer);
-  await enable();
   await expect(current()).resolves.not.toBeNull();
   await accept(
     clients().guide.seen({
@@ -282,10 +268,8 @@ test("persists seen status per user and edition across workspaces and content re
   );
   await expect(current()).resolves.toBeNull();
   await identity(otherOrgId, viewer.userId);
-  await enable();
   await expect(current()).resolves.toBeNull();
   signIn(peer);
-  await enable();
   await expect(current()).resolves.not.toBeNull();
   signIn(prepared.staff);
   const changed = await accept(
@@ -322,20 +306,16 @@ test("delivers an organization audience to its members without exposing the audi
   );
   await publish(prepared);
   signIn(viewer);
-  await enable();
   await expect(current()).resolves.toStrictEqual({
     id: prepared.editionId,
     revisionId: prepared.revisionId,
     content: prepared.input.content,
   });
   await identity(viewer.orgId);
-  await enable();
   await expect(current()).resolves.toMatchObject({ id: prepared.editionId });
   signIn(otherOrg);
-  await enable();
   await expect(current()).resolves.toMatchObject({ id: prepared.editionId });
   await identity();
-  await enable();
   await expect(current()).resolves.toBeNull();
   mockOptionalEnv("ENV", "preview");
   const preview = await accept(
@@ -367,10 +347,8 @@ test("matches targeted users by organization and user together and unions organi
   );
   await publish(prepared);
   await identity(viewer.orgId);
-  await enable();
   await expect(current()).resolves.toBeNull();
   await identity(otherUser.orgId, viewer.userId);
-  await enable();
   await expect(current()).resolves.toBeNull();
   await accept(
     clients().guide.seen({
@@ -381,15 +359,10 @@ test("matches targeted users by organization and user together and unions organi
     [404],
   );
   signIn(otherUser);
-  await enable();
   await expect(current()).resolves.toMatchObject({ id: prepared.editionId });
   await identity(wholeOrg.orgId);
-  await enable();
   await expect(current()).resolves.toMatchObject({ id: prepared.editionId });
   signIn(viewer);
-  await enable(false);
-  await expect(current()).resolves.toBeNull();
-  await enable();
   await expect(current()).resolves.toMatchObject({ id: prepared.editionId });
   await accept(
     clients().guide.seen({
@@ -436,7 +409,6 @@ test("selects the latest eligible edition per audience without resurfacing seen 
   );
   await publish(second);
   signIn(firstViewer);
-  await enable();
   await expect(current()).resolves.toMatchObject({ id: first.editionId });
   await accept(
     clients().guide.seen({
@@ -448,10 +420,8 @@ test("selects the latest eligible edition per audience without resurfacing seen 
   );
   await expect(current()).resolves.toBeNull();
   signIn(secondViewer);
-  await enable();
   await expect(current()).resolves.toMatchObject({ id: second.editionId });
   await identity();
-  await enable();
   await expect(current()).resolves.toMatchObject({ id: global.editionId });
 });
 
@@ -473,10 +443,8 @@ test("publishes audience changes only through a new immutable revision and prese
   );
   expect(changed.body.revisionId).not.toBe(prepared.revisionId);
   const peer = await identity(viewer.orgId);
-  await enable();
   await expect(current()).resolves.toBeNull();
   signIn(viewer);
-  await enable();
   await accept(
     clients().guide.seen({
       headers,
@@ -524,7 +492,6 @@ test("a seen edition does not reveal an older backlog and a new edition can appe
   const newer = await prepare(draft({ audience: { users: [viewer] } }));
   await publish(newer);
   signIn(viewer);
-  await enable();
   await expect(current()).resolves.toMatchObject({ id: newer.editionId });
   await accept(
     clients().guide.seen({
@@ -571,7 +538,6 @@ test("keeps drafts immutable and publishes only the selected revision", async ()
   expect(changed.body.revisionId).not.toBe(prepared.revisionId);
   await publish(prepared);
   signIn(viewer);
-  await enable();
   await expect(current()).resolves.toMatchObject({
     revisionId: prepared.revisionId,
     content: prepared.input.content,
@@ -601,7 +567,6 @@ test("respects scheduled and expired publication windows for targeted editions",
   );
   await publish(prepared);
   signIn(viewer);
-  await enable();
   await expect(current()).resolves.toBeNull();
   mockNow(NOW + 1000);
   await expect(current()).resolves.toMatchObject({ id: prepared.editionId });
@@ -609,9 +574,8 @@ test("respects scheduled and expired publication windows for targeted editions",
   await expect(current()).resolves.toBeNull();
 });
 
-test("requires hard staff authorization for importing and publishing, even after opting in", async () => {
+test("requires hard staff authorization for importing and publishing", async () => {
   const viewer = await identity();
-  await enable();
   const imported = await accept(
     clients().guide.import({
       headers,
@@ -634,7 +598,6 @@ test("requires hard staff authorization for importing and publishing, even after
 test("does not mark an unpublished revision as seen", async () => {
   const prepared = await prepare();
   await identity();
-  await enable();
   const rejected = await accept(
     clients().guide.seen({
       headers,
@@ -700,7 +663,6 @@ test("requires a session and validates content, audiences and publication window
 
 test("rejects guide replay in production deployments", async () => {
   await identity();
-  await enable();
   mockOptionalEnv("ENV", "production");
   const rejected = await accept(
     clients().guide.current({ headers, query: { preview: "1" } }),
@@ -713,13 +675,6 @@ test("previews the illustrated My Okou guide without publishing or acknowledging
   mockOptionalEnv("ENV", "preview");
   await identity();
   const query = { preview: "1", edition: "single-agent-2026-11-16" } as const;
-  await enable(false);
-  const disabled = await accept(
-    clients().guide.current({ headers, query }),
-    [200],
-  );
-  expect(disabled.body.edition).toBeNull();
-  await enable();
   const preview = await accept(
     clients().guide.current({ headers, query }),
     [200],
