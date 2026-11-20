@@ -460,7 +460,7 @@ export function AgentSuggestionCard({
         aria-label={t(($) => {
           return $.chat.agentSuggestions.dismiss;
         })}
-        className="absolute top-3 right-3"
+        className="absolute top-4.5 right-4 sm:top-7.5 sm:right-7"
         onClick={() => {
           detach(
             submitFeedback(item.id, "dismissed", signal),
@@ -527,7 +527,7 @@ function SuggestionFeedback({
             key={kind}
             type="button"
             variant="neutral"
-            className="h-auto min-h-9 gap-1.5 rounded-3xl px-3 py-1.5 text-[13px] font-normal whitespace-normal [&_svg]:text-muted-foreground"
+            className="h-auto min-h-9 gap-1.5 rounded-3xl border-divider px-3 py-1.5 text-[13px] font-normal whitespace-normal [&_svg]:text-muted-foreground"
             onClick={() => {
               detach(submitFeedback(item.id, kind, signal), Reason.DomCallback);
             }}
