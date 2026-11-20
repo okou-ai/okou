@@ -47,6 +47,8 @@ open class OkouApplication : Application() {
 
     open fun createAuthentication(): Authentication = ClerkAuthentication(this)
 
+    protected open fun startCrashReporting() = CrashReporting.start(this)
+
     open fun createWorkspaceSession(
         identity: WorkspaceIdentity,
         tokens: WorkspaceTokenProvider,
@@ -62,6 +64,7 @@ open class OkouApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        startCrashReporting()
         authentication.initialize()
     }
 }
