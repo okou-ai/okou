@@ -120,7 +120,10 @@ export function ForYouChatListRow({
       )}
     >
       <span className="flex w-8 shrink-0 items-center justify-center px-2">
-        <HandHeart aria-hidden className="size-4 shrink-0 text-nav-copy-muted" />
+        <HandHeart
+          aria-hidden
+          className="size-4 shrink-0 text-nav-copy-muted"
+        />
       </span>
       <span className="min-w-0 flex-1 truncate">
         {t(($) => {
