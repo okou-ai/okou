@@ -24,6 +24,12 @@ fn create_program(body: &str) -> (tempfile::TempDir, PathBuf) {
     (directory, path)
 }
 
+fn create_program_comparing_stdin(checks: &str, input: &[u8]) -> (tempfile::TempDir, PathBuf) {
+    let (directory, path) = create_program(&format!("{checks}\ncmp - \"$0.expected\""));
+    std::fs::write(path.with_extension("expected"), input).unwrap();
+    (directory, path)
+}
+
 fn send_request(
     stream: &mut impl Write,
     seq: u32,
@@ -217,17 +223,14 @@ fn fragmented_large_storage_input_reaches_helper_and_preserves_next_frame() {
     use guest_control_proto::{MSG_PING, MSG_PONG};
 
     let input = storage_input(16);
-    let directory = tempfile::tempdir().unwrap();
-    let expected = directory.path().join("expected-input");
-    std::fs::write(&expected, &input).unwrap();
     #[cfg(target_os = "linux")]
     let argument = storage_files::SEALED_STDIN_ARGUMENT;
     #[cfg(not(target_os = "linux"))]
     let argument = storage_files::STDIN_ARGUMENT;
-    let (_program_directory, program) = create_program(&format!(
-        "[ \"$1\" = {argument} ]; [ \"$OKOU_RUN_ID\" = storage-run ]; cmp - '{}'",
-        expected.display(),
-    ));
+    let (_directory, program) = create_program_comparing_stdin(
+        &format!("[ \"$1\" = '{argument}' ]; [ \"$OKOU_RUN_ID\" = storage-run ]"),
+        &input,
+    );
     let (handle, mut host) = start_guest_connection_with_storage_manifest_program(program);
 
     let mut frame = request_frame(420, 5_000, "storage-run", "/run/storage-run", &input);
@@ -298,13 +301,10 @@ fn decoded_storage_input_with_rpc_context_above_map_limit_uses_pipe() {
 
 #[cfg(target_os = "linux")]
 fn assert_storage_input_transport(input: &[u8], argument: &str, file_test: &str) {
-    let expected_dir = tempfile::tempdir().unwrap();
-    let expected = expected_dir.path().join("expected-input");
-    std::fs::write(&expected, input).unwrap();
-    let (_directory, program) = create_program(&format!(
-        "[ \"$1\" = '{argument}' ]; [ {file_test} /proc/self/fd/0 ]; cmp - '{}'",
-        expected.display(),
-    ));
+    let (_directory, program) = create_program_comparing_stdin(
+        &format!("[ \"$1\" = '{argument}' ]; [ {file_test} /proc/self/fd/0 ]"),
+        input,
+    );
     let (handle, mut host) = start_guest_connection_with_storage_manifest_program(program);
 
     send_request(
@@ -316,15 +316,19 @@ fn assert_storage_input_transport(input: &[u8], argument: &str, file_test: &str)
         input,
     );
     let result = read_result(&mut host, 423);
-    assert_eq!(result.termination, ExecTermination::Exited { exit_code: 0 });
+    assert_eq!(
+        result.termination,
+        ExecTermination::Exited { exit_code: 0 },
+        "helper stderr: {}",
+        String::from_utf8_lossy(&result.stderr),
+    );
     finish_guest_connection(handle, host);
 }
 
 #[test]
 fn truncated_large_storage_input_does_not_start_helper() {
-    let directory = tempfile::tempdir().unwrap();
-    let sentinel = directory.path().join("helper-started");
-    let (_program_directory, program) = create_program(&format!("touch '{}'", sentinel.display()));
+    let (_directory, program) = create_program(r#"touch "$0.started""#);
+    let sentinel = program.with_extension("started");
     let (handle, mut host) = start_guest_connection_with_storage_manifest_program(program);
 
     let mut frame = request_frame(
@@ -332,7 +336,7 @@ fn truncated_large_storage_input_does_not_start_helper() {
         5_000,
         "storage-run",
         "/run/storage-run",
-        &storage_input(16),
+        &storage_input(32),
     );
     frame.pop().unwrap();
     host.write_all(&frame).unwrap();

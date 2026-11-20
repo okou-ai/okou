@@ -40,7 +40,7 @@ const THREAD_STDOUT: &str = "gctl-store-out";
 const THREAD_STDERR: &str = "gctl-store-err";
 #[cfg(target_os = "linux")]
 const SEALED_STORAGE_MIN_BYTES: usize = 1024 * 1024;
-// Bound the copy into a second descriptor when the worker receives owned bytes.
+// Bound the copy from owned bytes into the helper's sealed stdin.
 #[cfg(target_os = "linux")]
 const SEALED_STORAGE_MAX_BYTES: usize = 8 * 1024 * 1024;
 
