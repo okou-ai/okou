@@ -64,10 +64,10 @@ def validate(directory):
         report.validate_witness_phases(
             events, PHASES, "missing duplicate or unordered later parking phases",
         )
-        identity = terminal[1]["sandbox_id"], terminal[1]["backing_generation"]
+        identity = report.witness_identity(terminal[1])
         report.validate_witness_clock_order(
             [terminal[3], *events, terminal[-1]], "later parking changed terminal phase ordering")
-        if any((e["sandbox_id"], e["backing_generation"]) != identity for e in events):
+        if report.witness_identity_changed(events, identity):
             raise ValueError("later parking changed original owner")
         blocked, pool, tail, waiting, complete, retired, joined = [e["evidence"] for e in events]
         path = blocked.get("status_path")
