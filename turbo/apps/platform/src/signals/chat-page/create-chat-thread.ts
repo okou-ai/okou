@@ -1841,6 +1841,7 @@ function createEventTreeParser(registries: EventTreeRegistries) {
         math: true,
         mermaid: true,
         cards,
+        tableExportThreadId: chatActionContext.threadId,
       });
       const diagramCodes: string[] = [];
       embedMermaidSignals(tree, (code) => {

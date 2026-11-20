@@ -477,6 +477,7 @@ function ArtifactCardView({
   return (
     <AttachmentPreview
       preview={signals}
+      threadId={threadId}
       attachment={{
         filename: signals.kind === "html" && label ? label : signals.filename,
         url: signals.url,

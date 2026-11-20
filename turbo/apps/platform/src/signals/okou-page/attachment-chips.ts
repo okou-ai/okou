@@ -467,6 +467,7 @@ export const openDocumentLightbox$ = command(
           markdownTree$: createMarkdownPreviewTree(
             text$,
             attachmentDiagramPreview.open$,
+            value.threadId ?? value.artifact?.threadId,
           ),
         });
         return;

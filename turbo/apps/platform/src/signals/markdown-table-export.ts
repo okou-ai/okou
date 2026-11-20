@@ -20,7 +20,6 @@ import {
 import { triggerBlobDownload } from "../views/okou-page/attachment-url.ts";
 import { i18n } from "../i18n/index.ts";
 import { apiClient$ } from "./api-client.ts";
-import { currentChatThreadId$ } from "./agent-chat.ts";
 import { pageVersion$ } from "./page-signal.ts";
 import { syncArtifactAndRefresh$ } from "./chat-page/artifact-google-drive-sync.ts";
 import {
@@ -255,6 +254,7 @@ export const exportMarkdownTable$ = command(
     { get, set },
     table: Element,
     mode: "excel" | GoogleDriveUploadMode,
+    threadId: string | undefined,
     signal: AbortSignal,
   ) => {
     signal.throwIfAborted();
@@ -267,7 +267,6 @@ export const exportMarkdownTable$ = command(
       triggerBlobDownload(workbook, filename, signal);
       return;
     }
-    const threadId = get(currentChatThreadId$);
     const cache = get(uploadedTables$);
     if (!threadId) {
       toast.error(

@@ -25,7 +25,6 @@ import { formatAppNumber } from "../../i18n/format.ts";
 import { getMarkdownTableDimensions } from "../../lib/markdown-table-dimensions.ts";
 import { captureArtifactAction } from "../../lib/posthog.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import { currentChatThreadId$ } from "../../signals/agent-chat.ts";
 import {
   exportMarkdownTable$,
   markdownTableConnection$,
@@ -61,7 +60,7 @@ function ExportableTable({
 }: ComponentPropsWithoutRef<"table"> & { node: Element }) {
   const { t } = useTranslation();
   const signal = useGet(pageSignal$);
-  const threadId = useGet(currentChatThreadId$);
+  const threadId = node.data?.tableExportThreadId;
   const connection = useGet(markdownTableConnection$);
   const [operation, exportTable] = useLoadableSet(exportMarkdownTable$);
   const pending = operation.state === "loading";
@@ -79,7 +78,7 @@ function ExportableTable({
           },
     );
     detach(
-      exportTable(node, mode, signal),
+      exportTable(node, mode, threadId, signal),
       Reason.DomCallback,
       "export markdown table",
     );

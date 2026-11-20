@@ -126,9 +126,14 @@ function artifactRefFromUrl(url: string): ArtifactRef {
   };
 }
 
+interface ThreadArtifactPreviewContext {
+  readonly openDiagram$: MermaidDiagramPreviewCommand;
+  readonly threadId: string;
+}
+
 function withTextPreview(
   ref: ArtifactRef,
-  openDiagram$: MermaidDiagramPreviewCommand,
+  { openDiagram$, threadId }: ThreadArtifactPreviewContext,
 ): ArtifactRef {
   if (!isTextPreviewKind(ref.kind)) {
     return ref;
@@ -140,7 +145,11 @@ function withTextPreview(
     text$,
     ...(ref.kind === "markdown"
       ? {
-          markdownTree$: createMarkdownPreviewTree(text$, openDiagram$),
+          markdownTree$: createMarkdownPreviewTree(
+            text$,
+            openDiagram$,
+            threadId,
+          ),
         }
       : {}),
   };
@@ -148,11 +157,11 @@ function withTextPreview(
 
 function materializeArtifactRef(
   input: ArtifactRefInput,
-  openDiagram$: MermaidDiagramPreviewCommand,
+  previewContext: ThreadArtifactPreviewContext,
   signal: AbortSignal,
 ): ArtifactRef {
   if (typeof input === "string") {
-    return withTextPreview(artifactRefFromUrl(input), openDiagram$);
+    return withTextPreview(artifactRefFromUrl(input), previewContext);
   }
   if (!("file" in input)) {
     return withTextPreview(
@@ -171,7 +180,7 @@ function materializeArtifactRef(
           ? {}
           : { shareAvailable: input.shareAvailable }),
       },
-      openDiagram$,
+      previewContext,
     );
   }
   const resource = createObjectUrlResource(input.file, signal);
@@ -190,7 +199,7 @@ function materializeArtifactRef(
         ? {}
         : { shareAvailable: input.shareAvailable }),
     },
-    openDiagram$,
+    previewContext,
   );
 }
 
@@ -355,11 +364,13 @@ export function createThreadSidebarSignals(
   const automationEditor = createThreadAutomationEditorSignals();
   const imageCanvas = createZoomableImageCanvasSignals();
   const diagram = createArtifactDiagramPreviewSignals();
+  const previewContext = { openDiagram$: diagram.open$, threadId };
   const { resetSidebarSessionSignal$, startSession$ } =
     createThreadSidebarSessionSignals(diagram.dispose$);
   const preview = createCatalogArtifactPreviewSignals(
     artifactCatalog,
     diagram.open$,
+    threadId,
   );
 
   const publishTarget$ = command(
@@ -416,7 +427,7 @@ export function createThreadSidebarSignals(
         type: "artifact",
         source: {
           kind: "attachment",
-          ref: materializeArtifactRef(input, diagram.open$, sessionSignal),
+          ref: materializeArtifactRef(input, previewContext, sessionSignal),
         },
       });
     },

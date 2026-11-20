@@ -163,12 +163,14 @@ function AttachmentAnchorChip({
   kind,
   preview,
   text$,
+  threadId,
 }: {
   filename: string;
   url: string;
   kind: AttachmentAnchorChipKind;
   preview: AttachmentPreviewSignals;
   text$?: TextPreviewComputed;
+  threadId?: string;
 }) {
   const pageSignal = useGet(pageSignal$);
   const { t } = useTranslation();
@@ -217,6 +219,7 @@ function AttachmentAnchorChip({
               url,
               filename,
               preview,
+              threadId,
               ...(text$ ? { text$ } : {}),
             },
             undefined,
@@ -499,7 +502,7 @@ function DocumentThumbnailPreview({
 }: {
   preview: AttachmentPreviewSignals;
   filename: string;
-  kind: "markdown" | "csv" | "pdf" | "html";
+  kind: "csv" | "pdf" | "html";
   previewImageLoad?: ImageLoadSignals;
   previewImagePending?: boolean;
   previewImageUrl?: string;
@@ -731,24 +734,27 @@ export function AttachmentPreview({
   onPreviewFile,
   previewImageLoad,
   text$,
+  threadId,
 }: {
   preview: AttachmentPreviewSignals;
   attachment: ChatAttachmentDescriptor;
   onPreviewFile: () => void;
   previewImageLoad?: ImageLoadSignals;
   text$?: TextPreviewComputed;
+  threadId: string;
 }) {
   const kind = classifyChatAttachment(attachment);
 
   switch (kind) {
     case "markdown": {
       return (
-        <DocumentThumbnailPreview
+        <AttachmentAnchorChip
           preview={preview}
           filename={attachment.filename}
           url={attachment.url}
           kind="markdown"
           text$={text$}
+          threadId={threadId}
         />
       );
     }
