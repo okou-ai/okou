@@ -471,11 +471,11 @@ describe("AUTH-01 sandbox and agent bearers", () => {
     });
   });
 
-  it("allows a Drive export grant with an execution token and rejects push registration", async () => {
+  it("rejects push registration with an execution token", async () => {
     const owned = await publicChatActor(context);
     const run = await owned.sendChatRun(owned.actor, {
       agentId: owned.agentId,
-      prompt: "configure connectors with the issued agent credential",
+      prompt: "register for push with the issued agent credential",
     });
     const { execution } = await owned.runExecution(run.runId);
     const token = execution.platformEnvironment?.OKOU_TOKEN;
@@ -484,13 +484,6 @@ describe("AUTH-01 sandbox and agent bearers", () => {
     }
     await owned.run(async () => {
       cfg.mockMembership(owned.actor, "org:admin");
-      const updated = await cfg.updateUserBuiltinConnectors(
-        { bearer: token },
-        owned.agentId,
-        ["google-drive"],
-      );
-      expect(updated.enabledConnectorSlugs).toStrictEqual(["google-drive"]);
-
       const pushForbidden = await cfg.requestRegisterPush(
         { bearer: token },
         {

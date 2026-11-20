@@ -42,6 +42,7 @@ Original test `Connect an account without Agent authorization, custom=false`. [R
 - **Given** A public built-in connector named Public Tools requires no credentials, and the agent's connector settings cannot be updated.
 - **When** The user connects Public Tools from connector discovery and opens its access menu.
 - **Then** The access submenu has a checked switch, and the connector row does not show an account count or enabled status. A public connection request is made without agent authorization.
+- **Upstream change** `8622b04a` (#49545) retires agent-scoped connector settings; the test is now `Connect and enable a no-auth account in Chat, custom=%s` and no longer configures a failing agent connector update, so the Given's unavailable agent settings no longer apply.
 
 ## chat-composer-chat-connector-access-006
 
@@ -50,6 +51,7 @@ Original test `Connect an account without Agent authorization, custom=true`. [Re
 - **Given** A public custom connector named Public Custom requires no credentials, and the agent's connector settings cannot be updated.
 - **When** The user selects Custom in connector discovery, starts connecting Public Custom, confirms Connect, and opens its access menu.
 - **Then** The access submenu has a checked switch, and the connector row does not show an account count or enabled status. No public built-in connection request is made.
+- **Upstream change** `8622b04a` (#49545) retires agent-scoped connector settings; the test is now `Connect and enable a no-auth account in Chat, custom=%s` and no longer configures a failing agent connector update, so the Given's unavailable agent settings no longer apply.
 
 ## chat-composer-chat-connector-access-007
 

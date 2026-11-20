@@ -2,6 +2,10 @@ import { utils as compoundUtils, write as writeCompoundFile } from "cfb";
 import { HttpResponse } from "msw";
 import { getRequestListener } from "@hono/node-server";
 import { artifactGoogleDriveContract } from "@okouai/api-contracts/contracts/artifact-google-drive";
+import {
+  CLIENT_TYPE_HEADER,
+  CLIENT_TYPE_IOS,
+} from "@okouai/api-contracts/contracts/client-headers";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
 import { hostRoutes } from "../host";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
@@ -11,6 +15,7 @@ import {
 } from "@okouai/core/google-workspace-conversion";
 import { chatThreadsArtifactsSyncRoutes } from "../chat-threads-artifacts-sync";
 import {
+  chatThreadArtifactsContract,
   chatThreadConnectorSelectionContract,
   chatThreadsContract,
   chatThreadUsageContract,
@@ -57,6 +62,7 @@ import {
 } from "./helpers/api-bdd-host-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { createChatConnectorAccessApi } from "./helpers/chat-connector-access";
 import { chatEventDisplayText } from "./helpers/chat-event";
 import { readThreadMessagesAfterBackgroundWork } from "./helpers/chat-events-fixture";
 import {
@@ -1887,7 +1893,6 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
         code: "drive-ok",
         state: stateFromAuthorizationUrl(start.authorizationUrl),
       });
-      await api.setDriveExportAuthorization(actor, agentId);
       const upload = mockGoogleDriveArtifactUpload({
         id: "private-drive-file",
         name: "private-report.zip",
@@ -1895,7 +1900,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       const synced = await chat.requestUploadArtifactToGoogleDrive(
         actor,
         artifact.artifactId,
-        { agentId },
+        { chatThreadId: run.threadId, mode: "original" },
         [200],
       );
       expect(synced.body).toMatchObject({ id: "private-drive-file" });
@@ -1983,7 +1988,6 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       code: "drive-ok",
       state: stateFromAuthorizationUrl(start.authorizationUrl),
     });
-    await api.setDriveExportAuthorization(actor, agentId);
     const upload = mockGoogleDriveArtifactUpload({
       id: "public-deck-drive-file",
       name: "deck.zip",
@@ -1991,7 +1995,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     await chat.requestUploadArtifactToGoogleDrive(
       actor,
       artifact.artifactId,
-      { agentId },
+      { chatThreadId: run.threadId, mode: "original" },
       [200],
     );
 
@@ -2054,7 +2058,6 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       code: "drive-ok",
       state: stateFromAuthorizationUrl(start.authorizationUrl),
     });
-    await api.setDriveExportAuthorization(actor, agentId);
     const upload = mockGoogleDriveArtifactUpload({
       id: "single-page-drive-file",
       name: "report.html",
@@ -2062,7 +2065,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     await chat.requestUploadArtifactToGoogleDrive(
       actor,
       artifact.artifactId,
-      { agentId },
+      { chatThreadId: run.threadId, mode: "original" },
       [200],
     );
 
@@ -2145,16 +2148,16 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       recovery: { action: "connect" },
     });
 
-    // Uploading requires a connected and Agent-authorized Drive account.
+    // Uploading requires a Drive account enabled in this Chat.
     const noConnector = await chat.requestUploadArtifactToGoogleDrive(
       actor,
       await chat.resolveCatalogArtifactId(actor, run.threadId, csvId),
-      { agentId },
+      { chatThreadId: run.threadId, mode: "original" },
       [400],
     );
     expectApiError(noConnector.body);
     expect(noConnector.body.error.message).toBe(
-      "Connect and authorize Google Drive for this agent before uploading artifacts",
+      "Google Drive account is unavailable in this Chat",
     );
 
     // Connect Google Drive through the public OAuth routes.
@@ -2174,33 +2177,38 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     );
     expect(connected.connectionStatus).toBe("connected");
 
-    // A connected Drive still needs to be enabled for the thread's agent.
+    const access = createChatConnectorAccessApi(context);
+    const selection = {
+      target: { kind: "builtin", connectorSlug: "google-drive" },
+      connectionId: connected.id,
+    } as const;
+    await access.setThreadOverride(actor, run.threadId, selection, false);
     artifacts = await chat.listThreadArtifacts(actor, run.threadId);
     expectDriveStatuses(artifacts, {
       status: "disconnected",
-      recovery: { action: "authorize" },
+      recovery: { action: "unavailable" },
     });
-    const disabledForAgent = await chat.requestUploadArtifactToGoogleDrive(
+    const disabledInChat = await chat.requestUploadArtifactToGoogleDrive(
       actor,
       await chat.resolveCatalogArtifactId(actor, run.threadId, csvId),
-      { agentId },
+      { chatThreadId: run.threadId, mode: "original" },
       [400],
     );
-    expectApiError(disabledForAgent.body);
-    expect(disabledForAgent.body.error.message).toBe(
-      "Connect and authorize Google Drive for this agent before uploading artifacts",
+    expectApiError(disabledInChat.body);
+    expect(disabledInChat.body.error.message).toBe(
+      "Google Drive account is unavailable in this Chat",
     );
 
     const unknownArtifact = await chat.requestUploadArtifactToGoogleDrive(
       actor,
       randomUUID(),
-      { agentId },
+      { chatThreadId: run.threadId, mode: "original" },
       [404],
     );
     expectApiError(unknownArtifact.body);
     expect(unknownArtifact.body.error.message).toBe("Artifact file not found");
 
-    await api.setDriveExportAuthorization(actor, agentId);
+    await access.setThreadOverride(actor, run.threadId, selection, true);
 
     const uploadRecorder = mockGoogleDriveArtifactUpload({
       id: "drive-uploaded-file",
@@ -2210,7 +2218,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     const synced = await chat.requestUploadArtifactToGoogleDrive(
       actor,
       await chat.resolveCatalogArtifactId(actor, run.threadId, csvId),
-      { agentId },
+      { chatThreadId: run.threadId, mode: "original" },
       [200],
     );
     expect(synced.body).toStrictEqual({
@@ -2249,6 +2257,28 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
         ],
       };
     });
+    const artifactsClient = setupApp({ context, routes: chatThreadRoutes })(
+      chatThreadArtifactsContract,
+    );
+    const native = await accept(
+      artifactsClient.list({
+        headers: authHeaders(actor),
+        extraHeaders: { [CLIENT_TYPE_HEADER]: CLIENT_TYPE_IOS },
+        params: { threadId: run.threadId },
+      }),
+      [200],
+    );
+    expect(native.body.runs).toMatchObject([
+      {
+        runId: run.runId,
+        files: expect.arrayContaining([
+          expect.objectContaining({ id: csvId, filename: "data.csv" }),
+          expect.objectContaining({ id: pdfId, filename: "report.pdf" }),
+        ]),
+      },
+    ]);
+    expect(listRecorder.queries).toHaveLength(0);
+
     artifacts = await chat.listThreadArtifacts(actor, run.threadId);
     expect(
       artifacts.runs[0]?.files.find((file) => {
@@ -2341,7 +2371,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     const refreshedUpload = await chat.requestUploadArtifactToGoogleDrive(
       actor,
       await chat.resolveCatalogArtifactId(actor, run.threadId, csvId),
-      { agentId },
+      { chatThreadId: run.threadId, mode: "original" },
       [200],
     );
     expect(refreshedUpload.body).toMatchObject({
@@ -2580,9 +2610,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       code: "drive-ok",
       state: stateFromAuthorizationUrl(start.authorizationUrl),
     });
-    await api.setDriveExportAuthorization(actor, agentId);
-
-    return { actor, agentId, deckId, run, sandboxHeaders };
+    return { actor, deckId, run, sandboxHeaders };
   }
 
   async function workspaceSource(
@@ -2614,11 +2642,11 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       ...prepared,
       upload: (mode: GoogleDriveUploadMode = "original") => {
         return accept(
-          client.uploadWithMode({
+          client.uploadFromChat({
             headers: authHeaders(prepared.actor),
             params: { artifactId },
             body: {
-              agentId: prepared.agentId,
+              chatThreadId: prepared.run.threadId,
               mode,
             },
           }),
@@ -3201,9 +3229,6 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
         state: stateFromAuthorizationUrl(oauth.authorizationUrl),
       });
     });
-    await owned.run(() => {
-      return api.setDriveExportAuthorization(actor, agentId);
-    });
     const client = setupApp({
       context,
       routes: chatThreadsArtifactsSyncRoutes,
@@ -3219,10 +3244,10 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       ) => {
         return owned.run(() => {
           return accept(
-            client.uploadWithMode({
+            client.uploadFromChat({
               headers: authHeaders(actor),
               params: { artifactId },
-              body: { agentId, mode },
+              body: { chatThreadId: run.threadId, mode },
             }),
             statuses,
           );
@@ -3231,16 +3256,6 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       driveAccount: () => {
         return owned.run(() => {
           return connectorsApi.readDefaultBuiltinAccount(actor, "google-drive");
-        });
-      },
-      uploadLegacy: (statuses: readonly (200 | 400 | 403)[] = [200]) => {
-        return owned.run(() => {
-          return chat.requestUploadArtifactToGoogleDrive(
-            actor,
-            artifactId,
-            { agentId },
-            statuses,
-          );
         });
       },
       sourceBytes: () => {
@@ -3394,24 +3409,6 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     },
     120_000,
   );
-
-  it("uploads native cropped picture frames through the legacy Slides conversion route", async () => {
-    const bytes = slidesPictureCropFixture();
-    const fixture = await publicOfficeConversionSource(bytes);
-    const native = {
-      id: "legacy-picture-deck",
-      name: "deck",
-      mimeType: GOOGLE_WORKSPACE_MIME_TYPES.presentation,
-    };
-    const uploaded = mockGoogleDriveArtifactUpload(native);
-    mockGoogleSlidesReadback([{ pageElementCount: 5 }]);
-    const response = await fixture.uploadLegacy();
-    expect(response.body).toMatchObject(native);
-    const outgoing = outgoingPictureDeck(uploaded, native.mimeType);
-    expectReportedPicture(uploadedSlidesPictures(outgoing)[0]!);
-    expectPicturePackagePreserved(bytes, outgoing);
-    await expect(fixture.sourceBytes()).resolves.toStrictEqual(bytes);
-  }, 120_000);
 
   it("preserves unsupported, fully outside and timed pictures during Slides conversion", async () => {
     const bytes = slidesPictureCropNoopFixture();
@@ -3627,7 +3624,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     await expect(fixture.sourceBytes()).resolves.toStrictEqual(bytes);
   }, 120_000);
 
-  it("non-chart Slides fidelity honors the Google switch and legacy passthrough", async () => {
+  it("preserves the original deck with Slides conversion disabled", async () => {
     const bytes = slidesNonChartFidelityFixture();
     const fixture = await publicOfficeConversionSource(bytes, "pptx", false);
     const original = {
@@ -3643,8 +3640,8 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       "Google Slides conversion is not enabled",
     );
     expect(uploaded.bodies).toHaveLength(0);
-    const legacy = await fixture.uploadLegacy();
-    expect(legacy.body).toMatchObject(original);
+    const raw = await fixture.upload("original");
+    expect(raw.body).toMatchObject(original);
     expect(outgoingPictureDeck(uploaded, original.mimeType)).toStrictEqual(
       bytes,
     );
@@ -4109,13 +4106,19 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
   );
 
   it.each([
-    { scenario: "scope 403", endpoint: "legacy" },
-    { scenario: "scope 403", endpoint: "explicit mode" },
-    { scenario: "other 403", endpoint: "explicit mode" },
-    { scenario: "401", endpoint: "explicit mode" },
+    {
+      scenario: "scope 403 with errors",
+      scopeError: { errors: [{ reason: "insufficientPermissions" }] },
+    },
+    {
+      scenario: "scope 403 with details",
+      scopeError: { details: [{ reason: "ACCESS_TOKEN_SCOPE_INSUFFICIENT" }] },
+    },
+    { scenario: "other 403", scopeError: null },
+    { scenario: "401", scopeError: null },
   ] as const)(
-    "folder lookup recovery fixture: $scenario ($endpoint)",
-    async ({ scenario, endpoint }) => {
+    "folder lookup recovery fixture: $scenario",
+    async ({ scenario, scopeError }) => {
       const fixture = await publicOfficeConversionSource(
         docsImportFixture(),
         "docx",
@@ -4127,17 +4130,10 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       const file = { id: "folder-fixture-upload", name: "fixture.docx" };
       const upload = mockGoogleDriveArtifactUpload(file);
       const lookup = mockGoogleDriveFilesList((request) => {
-        if (scenario === "scope 403") {
+        if (scopeError) {
           return {
             status: 403,
-            body: JSON.stringify({
-              error:
-                endpoint === "legacy"
-                  ? { errors: [{ reason: "insufficientPermissions" }] }
-                  : {
-                      details: [{ reason: "ACCESS_TOKEN_SCOPE_INSUFFICIENT" }],
-                    },
-            }),
+            body: JSON.stringify({ error: scopeError }),
           };
         }
         if (scenario === "other 403") {
@@ -4166,11 +4162,8 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
           files: [{ id: "fixture-folder", name: "folder" }],
         };
       });
-      const response =
-        endpoint === "legacy"
-          ? await fixture.uploadLegacy([200, 400, 403])
-          : await fixture.upload("original", [200, 400, 403]);
-      if (scenario === "scope 403") {
+      const response = await fixture.upload("original", [200, 400, 403]);
+      if (scopeError) {
         expect(response).toMatchObject({
           status: 403,
           body: {
@@ -4196,7 +4189,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
           body: { ...file, webViewLink: null },
         });
       }
-      const rejected = scenario === "scope 403" || scenario === "other 403";
+      const rejected = scopeError !== null || scenario === "other 403";
       expect(lookup.queries).toHaveLength(rejected ? 1 : 3);
       expect(oauth.refreshBodies).toHaveLength(scenario === "401" ? 1 : 0);
       expect(upload.metadata).toHaveLength(rejected ? 0 : 1);
@@ -4815,18 +4808,21 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
   ])(
     "$label",
     async ({ trashAccepted, expectedMessage }) => {
-      const { actor, agentId, deckId, run, sandboxHeaders } =
+      const { actor, deckId, run, sandboxHeaders } =
         await setupSlidesConversionSync({
           agentLabel: "Artifacts slides conversion agent",
           conversionEnabled: true,
         });
 
-      const uploadRecorder = mockGoogleDriveArtifactUpload({
+      const deck = {
         id: "drive-slides-deck",
         name: "deck.pptx",
         webViewLink:
           "https://docs.google.com/presentation/d/drive-slides-deck/edit",
-      });
+        mimeType: GOOGLE_WORKSPACE_MIME_TYPES.presentation,
+      };
+      const uploadRecorder = mockGoogleDriveArtifactUpload(deck);
+      mockGoogleWorkspaceReadback(deck);
       const readback = mockGoogleSlidesReadback(
         [{ pageElementCount: 0 }, { pageElementCount: 0 }],
         { trashAccepted },
@@ -4835,7 +4831,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       const synced = await chat.requestUploadArtifactToGoogleDrive(
         actor,
         await chat.resolveCatalogArtifactId(actor, run.threadId, deckId),
-        { agentId },
+        { chatThreadId: run.threadId, mode: "google" },
         [400],
       );
 
@@ -4898,7 +4894,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
   ])(
     "preserves Slides conversion failure messages for $envelope",
     async ({ providerError, expected }) => {
-      const { actor, agentId, deckId, run, sandboxHeaders } =
+      const { actor, deckId, run, sandboxHeaders } =
         await setupSlidesConversionSync({
           agentLabel: "Artifacts slides unreadable agent",
           conversionEnabled: true,
@@ -4919,7 +4915,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       const rejected = await chat.requestUploadArtifactToGoogleDrive(
         actor,
         await chat.resolveCatalogArtifactId(actor, run.threadId, deckId),
-        { agentId },
+        { chatThreadId: run.threadId, mode: "google" },
         [400],
       );
 
@@ -5016,8 +5012,6 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       isDefault: false,
       connectionStatus: "connected",
     });
-    await api.setDriveExportAuthorization(actor, agentId);
-
     const defaultRefresh = mockGoogleDriveConnectorOAuth();
     const defaultStatusRecorder = mockGoogleDriveFilesList(() => {
       return { status: 401 };
@@ -5048,15 +5042,6 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     );
     expect(selected.body.connectionId).toBe(selectedAccount.id);
 
-    await api.setDriveExportAuthorization(actor, agentId, false);
-    artifacts = await chat.listThreadArtifacts(actor, run.threadId);
-    expectDriveStatuses(artifacts, {
-      status: "disconnected",
-      recovery: { action: "authorize" },
-    });
-    expect(defaultStatusRecorder.authorizationHeaders).toHaveLength(1);
-
-    await api.setDriveExportAuthorization(actor, agentId);
     const selectedStatusRecorder = mockGoogleDriveFilesList(() => {
       return { status: 200, files: [] };
     });
@@ -5077,7 +5062,11 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     const synced = await chat.requestUploadArtifactToGoogleDrive(
       actor,
       await chat.resolveCatalogArtifactId(actor, run.threadId, fileId),
-      { agentId, connectionId: selectedAccount.id },
+      {
+        chatThreadId: run.threadId,
+        connectionId: selectedAccount.id,
+        mode: "original",
+      },
       [200],
     );
     expect(synced.body).toMatchObject({
@@ -5103,7 +5092,11 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     const scopeRejected = await chat.requestUploadArtifactToGoogleDrive(
       actor,
       await chat.resolveCatalogArtifactId(actor, run.threadId, fileId),
-      { agentId, connectionId: selectedAccount.id },
+      {
+        chatThreadId: run.threadId,
+        connectionId: selectedAccount.id,
+        mode: "original",
+      },
       [403],
     );
     expect(scopeRejected.body).toMatchObject({
@@ -5178,7 +5171,11 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     const unavailable = await chat.requestUploadArtifactToGoogleDrive(
       actor,
       await chat.resolveCatalogArtifactId(actor, run.threadId, fileId),
-      { agentId, connectionId: selectedAccount.id },
+      {
+        chatThreadId: run.threadId,
+        connectionId: selectedAccount.id,
+        mode: "original",
+      },
       [400],
     );
     expectApiError(unavailable.body);
@@ -5326,7 +5323,6 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       code: "drive-no-refresh",
       state: stateFromAuthorizationUrl(start.authorizationUrl),
     });
-    await api.setDriveExportAuthorization(actor, agentId);
     mockGoogleDriveFilesList(() => {
       return { status: 401 };
     });

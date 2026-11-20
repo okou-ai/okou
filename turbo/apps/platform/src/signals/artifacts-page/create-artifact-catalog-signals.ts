@@ -258,9 +258,7 @@ function createCatalogSelectionSignals(
       const result = await accept(
         client.get({
           params: { artifactId },
-          query: chatThreadId
-            ? { chatThreadId, driveAccountModel: "chat" }
-            : {},
+          query: chatThreadId ? { chatThreadId } : {},
         }),
         [200, 404],
       );

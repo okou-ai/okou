@@ -84,7 +84,7 @@ export function createCrossChatArtifactPreview(
     const result = await accept(
       get(apiClient$)(artifactCatalogContract).get({
         params: { artifactId: item.file.artifactId },
-        query: { chatThreadId: view.threadId, driveAccountModel: "chat" },
+        query: { chatThreadId: view.threadId },
       }),
       [200, 404],
     );

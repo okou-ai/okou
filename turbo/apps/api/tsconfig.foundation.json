@@ -263,7 +263,6 @@
     "src/signals/services/run-admission.service.ts",
     "src/signals/services/system-storage-presigned-url-cache.service.ts",
     "src/signals/services/time-automation.ts",
-    "src/signals/services/user-connectors.service.ts",
     "src/signals/services/connector-network-policy-refresh.service.ts",
     "src/signals/services/workflow-automation-account-classification.service.ts",
     "src/signals/services/workflow-automation-account-projection.service.ts",
