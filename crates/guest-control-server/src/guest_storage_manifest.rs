@@ -321,8 +321,7 @@ fn handle_request(
 
     writer
         .write_frame_after_lock_unless_cancelled(&frame, connection_cancel, || {
-            operation_guard.release();
-            drop(admission);
+            admission.finish_operation(&operation_guard);
         })
         .map(|_| ())
 }
