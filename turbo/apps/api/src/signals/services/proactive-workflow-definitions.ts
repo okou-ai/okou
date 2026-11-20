@@ -5,7 +5,7 @@ import {
 import {
   PROACTIVE_LEARNING_BLUEPRINT_KEY,
   PROACTIVE_LEARNING_DEFINITION_NAME,
-} from "@okouai/api-contracts/contracts/proactive-nightly";
+} from "@okouai/api-contracts/contracts/proactive";
 
 // Retained identities stop installed schedules without deleting their history.
 export const RETIRED_PROACTIVE_DEFINITION_NAMES = [

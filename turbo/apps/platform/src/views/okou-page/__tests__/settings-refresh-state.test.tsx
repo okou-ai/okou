@@ -6,7 +6,6 @@ import {
   userPreferencesContract,
   type UserPreferencesResponse,
 } from "@okouai/api-contracts/contracts/user-preferences";
-import { proactiveLearningContract } from "@okouai/api-contracts/contracts/proactive-nightly";
 import { proactiveSuggestionsContract } from "@okouai/api-contracts/contracts/proactive-suggestions";
 import { morningBriefPreferenceContract } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import {
@@ -200,20 +199,11 @@ test("overlapping saves to one preference read back the committed value", async 
   });
 });
 
-test.each([false, true])(
-  "saving Learning (initially %s) keeps enabled Suggestions unchanged while the save is pending",
-  async (initialEnabled) => {
-    let enabled = initialEnabled;
-    const saving = context.mocks.deferred<void>();
-    const release = context.mocks.deferred<void>();
+test.each(["reopening Settings", "returning to Preference"])(
+  "%s refreshes a Suggestions preference changed elsewhere after a save",
+  async (entry) => {
+    let enabled = false;
     context.mocks.api(proactiveSuggestionsContract.get, ({ respond }) => {
-      return respond(200, {
-        enabled: true,
-        status: "enabled",
-        unavailableReason: null,
-      });
-    });
-    context.mocks.api(proactiveLearningContract.get, ({ respond }) => {
       return respond(200, {
         enabled,
         status: enabled ? "enabled" : "paused",
@@ -221,10 +211,8 @@ test.each([false, true])(
       });
     });
     context.mocks.api(
-      proactiveLearningContract.update,
-      async ({ body, respond, withSignal }) => {
-        saving.resolve();
-        await withSignal(release.promise);
+      proactiveSuggestionsContract.update,
+      ({ body, respond }) => {
         enabled = body.enabled;
         return respond(200, {
           enabled,
@@ -236,70 +224,19 @@ test.each([false, true])(
     await setupPage({
       context,
       path: "/agents?settings=preference",
-      featureSwitches: {
-        [FeatureSwitchKey.AgentSuggestion]: true,
-        [FeatureSwitchKey.ProactiveLearning]: true,
-      },
+      featureSwitches: { [FeatureSwitchKey.AgentSuggestion]: true },
     });
     const suggestions = await screen.findByRole("switch", {
       name: "Suggestions",
     });
-    const learning = screen.getByRole("switch", { name: "Learning" });
+    await waitFor(() => {
+      expect(suggestions).toBeEnabled();
+      expect(suggestions).not.toBeChecked();
+    });
+    click(suggestions);
     await waitFor(() => {
       expect(suggestions).toBeChecked();
-      expect(learning).toBeEnabled();
-      expect(learning).toHaveAttribute("aria-checked", String(initialEnabled));
-    });
-    click(learning);
-    await saving.promise;
-    expect(learning).toHaveAttribute("aria-disabled", "true");
-    expect(learning).toHaveAttribute("aria-checked", String(initialEnabled));
-    expect(suggestions).toBeChecked();
-    expect(suggestions).toBeEnabled();
-    release.resolve();
-    await waitFor(() => {
-      expect(learning).toHaveAttribute("aria-checked", String(!initialEnabled));
-      expect(learning).not.toHaveAttribute("aria-disabled", "true");
-    });
-    expect(suggestions).toBeChecked();
-  },
-);
-
-test.each(["reopening Settings", "returning to Preference"])(
-  "%s refreshes a Learning preference changed elsewhere after a save",
-  async (entry) => {
-    let enabled = false;
-    context.mocks.api(proactiveLearningContract.get, ({ respond }) => {
-      return respond(200, {
-        enabled,
-        status: enabled ? "enabled" : "paused",
-        unavailableReason: null,
-      });
-    });
-    context.mocks.api(proactiveLearningContract.update, ({ body, respond }) => {
-      enabled = body.enabled;
-      return respond(200, {
-        enabled,
-        status: enabled ? "enabled" : "paused",
-        unavailableReason: null,
-      });
-    });
-    await setupPage({
-      context,
-      path: "/agents?settings=preference",
-      featureSwitches: { [FeatureSwitchKey.ProactiveLearning]: true },
-    });
-    const learning = await screen.findByRole("switch", {
-      name: "Learning",
-    });
-    await waitFor(() => {
-      expect(learning).toBeEnabled();
-      expect(learning).not.toBeChecked();
-    });
-    click(learning);
-    await waitFor(() => {
-      expect(learning).toBeChecked();
-      expect(learning).toBeEnabled();
+      expect(suggestions).toBeEnabled();
     });
     const settings = screen.getByRole("dialog", { name: "Settings" });
     if (entry === "reopening Settings") {
@@ -325,7 +262,7 @@ test.each(["reopening Settings", "returning to Preference"])(
     const reopened = await screen.findByRole("dialog", { name: "Settings" });
     await waitFor(() => {
       const refreshed = within(reopened).getByRole("switch", {
-        name: "Learning",
+        name: "Suggestions",
       });
       expect(refreshed).toBeEnabled();
       expect(refreshed).not.toBeChecked();
@@ -369,7 +306,6 @@ test("saving time zone keeps enabled Morning brief unchanged", async () => {
 test.each([
   { name: "Morning brief", contract: morningBriefPreferenceContract },
   { name: "Suggestions", contract: proactiveSuggestionsContract },
-  { name: "Learning", contract: proactiveLearningContract },
 ])(
   "updates $name from the save response while leaving other preferences usable",
   async ({ name, contract }) => {
@@ -403,7 +339,6 @@ test.each([
       path: "/agents?settings=preference",
       featureSwitches: {
         [FeatureSwitchKey.AgentSuggestion]: true,
-        [FeatureSwitchKey.ProactiveLearning]: true,
       },
     });
     const toggle = await screen.findByRole("switch", { name });
@@ -416,7 +351,7 @@ test.each([
     await userEvent.keyboard(" ");
     await saving.promise;
     const independent = screen.getByRole("switch", {
-      name: name === "Learning" ? "Morning brief" : "Learning",
+      name: name === "Suggestions" ? "Morning brief" : "Suggestions",
     });
     expect(independent).not.toBeChecked();
     expect(independent).toBeEnabled();

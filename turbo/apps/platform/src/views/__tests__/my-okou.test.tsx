@@ -396,7 +396,6 @@ test("My Okou settings are unavailable when SingleAgent is disabled", async () =
 const proactiveFeatures = {
   [FeatureSwitchKey.SingleAgent]: true,
   [FeatureSwitchKey.AgentSuggestion]: true,
-  [FeatureSwitchKey.ProactiveLearning]: true,
 } as const;
 
 test("An Instructions link opens its editor and a later ordinary visit starts on Proactive", async () => {
@@ -444,11 +443,10 @@ test("My Okou opens Proactive first, unifies legacy Suggestions choices, and ret
   const panel = within(
     await screen.findByRole("tabpanel", { name: "Proactive" }),
   );
-  const learn = await panel.findByRole("switch", { name: "Learning" });
   const offers = await panel.findByRole("switch", { name: "Offers" });
   const mixed = await panel.findByRole("combobox", { name: "Suggestions" });
   expect(mixed).toHaveAccessibleDescription(
-    "New cards are on. Hourly checks are off. Choose one setting for both.",
+    "New cards are on. Hourly checks and daily profile updates are off. Choose one setting for both.",
   );
   click(mixed);
   click(await screen.findByRole("option", { name: "Turn both off" }));
@@ -461,7 +459,6 @@ test("My Okou opens Proactive first, unifies legacy Suggestions choices, and ret
   await waitFor(() => {
     expect(panel.getByRole("switch", { name: "Suggestions" })).toBeChecked();
   });
-  expect(learn).not.toBeChecked();
   click(offers);
   await waitFor(() => {
     expect(offers).not.toBeChecked();
@@ -474,7 +471,6 @@ test("My Okou opens Proactive first, unifies legacy Suggestions choices, and ret
   ).toStrictEqual([
     "Morning brief",
     "Suggestions",
-    "Learning",
     "What’s new",
     "Offers",
     "System updates",
@@ -531,7 +527,7 @@ test("a member with only hourly checks can opt into new cards without showing a 
   );
   const choice = await panel.findByRole("combobox", { name: "Suggestions" });
   expect(choice).toHaveAccessibleDescription(
-    "Hourly checks are on. New cards are off. Choose one setting for both.",
+    "Hourly checks and daily profile updates are on. New cards are off. Choose one setting for both.",
   );
   click(choice);
   click(await screen.findByRole("option", { name: "Turn both on" }));

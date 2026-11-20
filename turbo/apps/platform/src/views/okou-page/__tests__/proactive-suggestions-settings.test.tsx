@@ -34,7 +34,6 @@ test("starts off, enables hourly checks independently of Morning Brief, and pres
     path: "/agents?settings=preference",
     featureSwitches: {
       [FeatureSwitchKey.AgentSuggestion]: true,
-      [FeatureSwitchKey.ProactiveLearning]: false,
     },
   });
   const toggle = await screen.findByRole("switch", {
@@ -78,7 +77,6 @@ test("keeps a pending opt-in cancellable when the primary Agent is unavailable",
     path: "/agents?settings=preference",
     featureSwitches: {
       [FeatureSwitchKey.AgentSuggestion]: true,
-      [FeatureSwitchKey.ProactiveLearning]: false,
     },
   });
   const card = await screen.findByTestId("proactive-suggestions-preference");
@@ -125,7 +123,6 @@ test("a failed opt-out preserves the current preference", async () => {
     path: "/agents?settings=preference",
     featureSwitches: {
       [FeatureSwitchKey.AgentSuggestion]: true,
-      [FeatureSwitchKey.ProactiveLearning]: false,
     },
   });
   const card = await screen.findByTestId("proactive-suggestions-preference");
@@ -160,7 +157,6 @@ test("keeps suggestions opted in during platform recovery without asking the use
     path: "/agents?settings=preference",
     featureSwitches: {
       [FeatureSwitchKey.AgentSuggestion]: true,
-      [FeatureSwitchKey.ProactiveLearning]: false,
     },
   });
   const card = await screen.findByTestId("proactive-suggestions-preference");

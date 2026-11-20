@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { proactiveLearningContract } from "@okouai/api-contracts/contracts/proactive-nightly";
+import { proactiveSuggestionsContract } from "@okouai/api-contracts/contracts/proactive-suggestions";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { proactiveLearningRoutes } from "../proactive-preferences";
+import { proactiveSuggestionsRoutes } from "../proactive-preferences";
 import { createRouteMocks } from "./helpers/route-test";
 import { createPublicRunnerMemory } from "./helpers/public-runner-memory";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
@@ -12,7 +12,7 @@ import { readPiExecutionMemory } from "./helpers/pi-memory-session";
 const context = testContext();
 
 describe("ordinary Pi published personal Memory", () => {
-  it("reads the selected published version across Runs, independently of Learning and ProactiveLearning", async () => {
+  it("reads the selected published version across Runs, independently of Suggestions and daily profile updates", async () => {
     const fixture = createPublicRunnerMemory(context);
     await fixture.run(async () => {
       const agentId = await fixture.initializeNative();
@@ -23,16 +23,17 @@ describe("ordinary Pi published personal Memory", () => {
       }
       const actor = { ...fixture.actor, orgId: fixture.actor.orgId };
       await updateFeatureSwitchesForUser(context, actor, {
-        proactiveLearning: true,
+        agentSuggestion: true,
       });
       createRouteMocks(context).clerk.session(
         actor.userId,
         actor.orgId,
         actor.orgRole,
       );
-      const learning = setupApp({ context, routes: proactiveLearningRoutes })(
-        proactiveLearningContract,
-      );
+      const learning = setupApp({
+        context,
+        routes: proactiveSuggestionsRoutes,
+      })(proactiveSuggestionsContract);
       const preference = await accept(
         learning.update({
           headers: { authorization: "Bearer clerk-session" },
@@ -42,7 +43,7 @@ describe("ordinary Pi published personal Memory", () => {
       );
       expect(preference.body.enabled).toBeFalsy();
       await updateFeatureSwitchesForUser(context, actor, {
-        proactiveLearning: false,
+        agentSuggestion: false,
       });
       fixture.installObjects();
 
@@ -82,7 +83,7 @@ describe("ordinary Pi published personal Memory", () => {
         versionId: published,
         mountPath: "/home/user/.pi/agent/memory",
       });
-      expect(selected.execution.featureFlags?.proactiveLearning).toBeFalsy();
+      expect(selected.execution.featureFlags?.agentSuggestion).toBeFalsy();
       const queued = await fixture.enqueue(
         agentId,
         "Keep the accepted Memory version while queued",

@@ -101,7 +101,7 @@ async function openDebug(learning = true) {
     path: "/agents?settings=debug",
     featureSwitches: {
       [FeatureSwitchKey.OkouDebug]: true,
-      [FeatureSwitchKey.ProactiveLearning]: learning,
+      [FeatureSwitchKey.AgentSuggestion]: learning,
     },
   });
   await screen.findByRole("heading", { name: "Debug" });

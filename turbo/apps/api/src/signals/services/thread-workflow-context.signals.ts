@@ -126,9 +126,7 @@ export function createThreadWorkflowContext(
       if (kind !== null) {
         if (
           !isFeatureEnabled(
-            kind === "suggestions"
-              ? FeatureSwitchKey.AgentSuggestion
-              : FeatureSwitchKey.ProactiveLearning,
+            FeatureSwitchKey.AgentSuggestion,
             await get(bootstrap.featureSwitches$),
           )
         ) {
@@ -137,10 +135,7 @@ export function createThreadWorkflowContext(
           });
         }
         const preferences = target.proactivePreferences;
-        const enabled =
-          kind === "suggestions"
-            ? preferences?.suggestionsEnabled
-            : preferences?.learningEnabled;
+        const enabled = preferences?.suggestionsEnabled;
         if (
           !preferences ||
           (context.eventType !== "manual" && (!automation.enabled || !enabled))
