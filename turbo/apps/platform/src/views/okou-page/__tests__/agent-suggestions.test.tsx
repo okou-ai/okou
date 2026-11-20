@@ -900,7 +900,8 @@ test("Each card shows its own background in the direction editor", async () => {
     expect(firstComposer).not.toBeInTheDocument();
   });
 
-  click(control("link", "Next suggestion", first));
+  // Paging controls belong to the whole stack, outside each card.
+  click(control("link", "Next suggestion"));
   const second = await findCard("Hire a designer");
   const secondComposer = await openDirection(second);
 

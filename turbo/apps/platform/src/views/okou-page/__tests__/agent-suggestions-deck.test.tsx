@@ -262,8 +262,9 @@ test("Not planned advances to the next card and Undo restores the selected card"
   ];
   mockFeed([first, second, third]);
   await openForYou();
-  const firstCard = await activeCard("Draft the hiring plan");
-  click(getAction("link", "Next suggestion", firstCard));
+  await activeCard("Draft the hiring plan");
+  // Paging controls belong to the whole stack, outside each card.
+  click(getAction("link", "Next suggestion"));
   const selected = await activeCard("Renew the office lease");
 
   click(getAction("button", "Not planned", selected));
