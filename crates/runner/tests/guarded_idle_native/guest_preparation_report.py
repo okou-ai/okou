@@ -11,6 +11,7 @@ from typing import Callable
 
 import batch_aba_report as batch
 import cleanup_report as cleanup
+import ext4_superblock
 import progress_report as foreground
 import later_parking_report as later
 import pressure_report as pressure
@@ -273,8 +274,11 @@ def validate(directory, contract):
     with report.open_original_stream(image) as stream:
         if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode) or os.fstat(stream.fileno()).st_size != home["bytes"]:
             raise ValueError("fixed retained original image is not complete")
-        stream.seek(1024); block=stream.read(1024)
-        if block[56:58]!=b"\x53\xef" or block[104:120].hex()!=home["filesystem_uuid"] or hashlib.sha256(block).hexdigest()!=home["superblock_sha256"]:
+        stream.seek(ext4_superblock.SUPERBLOCK_OFFSET)
+        block = stream.read(ext4_superblock.SUPERBLOCK_BYTES)
+        if (not ext4_superblock.has_magic(block)
+                or ext4_superblock.filesystem_uuid(block) != home["filesystem_uuid"]
+                or hashlib.sha256(block).hexdigest() != home["superblock_sha256"]):
             raise ValueError("fixed original home superblock changed")
         # Retain the checked inode through every real reader, even if its path
         # is renamed or replaced while the consumer runs.
