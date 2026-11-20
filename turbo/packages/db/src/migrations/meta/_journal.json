@@ -3585,6 +3585,13 @@
       "when": 1795133029099,
       "tag": "1590_activate_remaining_my_okou_workspaces",
       "breakpoints": true
+    },
+    {
+      "idx": 1591,
+      "version": "7",
+      "when": 1795146005372,
+      "tag": "1591_drop_retired_agent_connector_access",
+      "breakpoints": true
     }
   ]
 }

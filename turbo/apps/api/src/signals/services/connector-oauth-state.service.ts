@@ -1,6 +1,6 @@
 import { command, computed, type Computed } from "ccstate";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import { connectorOauthStates } from "@okouai/db/runtime/connector-oauth-state";
+import { connectorOauthStates } from "@okouai/db/schema/connector-oauth-state";
 import { and, eq, gt, isNotNull, isNull, type SQL } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";

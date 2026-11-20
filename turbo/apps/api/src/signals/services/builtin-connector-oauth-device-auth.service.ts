@@ -25,7 +25,7 @@ import type {
   OAuthDeviceAuthCompleteResultBase,
   OAuthDeviceAuthPollResultBase,
 } from "@okouai/connectors/auth-providers/provider-flow-types";
-import { builtinConnectorOauthDeviceAuthorizationSessions } from "@okouai/db/runtime/connector-oauth-device-authorization-session";
+import { builtinConnectorOauthDeviceAuthorizationSessions } from "@okouai/db/schema/connector-oauth-device-authorization-session";
 import { connectors } from "@okouai/db/schema/connector";
 import { command } from "ccstate";
 import { and, eq, inArray, lt, ne, or, sql } from "drizzle-orm";

@@ -22,7 +22,7 @@ import {
   type ConnectorAuthProviderGrantResult,
 } from "@okouai/connectors/auth-providers";
 import { isOAuthProviderHttpError } from "@okouai/connectors/auth-providers/oauth/error";
-import { builtinConnectorExternalCodeSessions } from "@okouai/db/runtime/connector-external-code-session";
+import { builtinConnectorExternalCodeSessions } from "@okouai/db/schema/connector-external-code-session";
 import { connectors } from "@okouai/db/schema/connector";
 import { command } from "ccstate";
 import { and, eq, inArray, ne, or, sql } from "drizzle-orm";
