@@ -185,3 +185,12 @@ previously accepted rows keep their titles. Their execution lines are
 re-anchored, and their checklist rows are replaced by rows for the restored
 bodies. An independent review covered all 42 items with no gaps, and all 14
 rows pass.
+
+`browser-session-page` `024`, `025` and `034` were blocked because the
+rebuilt native-page fixture could not hold a pending lease beside an initial
+authorization denial or overlap two renewal owners. Their main bodies, which
+are unchanged since the frozen baseline, still construct those premises and
+pass on the synced head. They are added with the helpers they use beside the
+25 rebuilt cases, and all 28 rows pass. For `025`, the connection row denies the
+same combined acquisition read as the session row, which the checklist
+records.

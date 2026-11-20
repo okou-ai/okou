@@ -877,36 +877,36 @@ chat-capability-browser-actions-003	turbo/apps/platform/src/views/okou-page/__te
 chat-capability-mail-feedback-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-mail-feedback.test.tsx	Keep inline feedback tied to the source email	23	passed
 chat-capability-voice-incremental-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-voice-incremental.test.tsx	Continue recording after an incremental transcription outage	42	passed
 chat-header-loading-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-header-loading.test.tsx	Open empty email and automation lists in a desktop chat	36	passed
-browser-session-page-002	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Window size settings retain each selected mode when reopened	114	passed
+browser-session-page-002	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Window size settings retain each selected mode when reopened	115	passed
 chat-capability-browser-actions-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-browser-actions.test.tsx	Refresh the browser card after delayed attachment and a continuity gap	783	passed
 chat-capability-browser-actions-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-browser-actions.test.tsx	Follow suspension and resumption in the live browser panel	846	passed
-browser-session-page-003	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	The Okou viewer shows its host blank page only while the blank tab is selected	142	passed
+browser-session-page-003	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	The Okou viewer shows its host blank page only while the blank tab is selected	143	passed
 chat-header-loading-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-header-loading.test.tsx	Keep header actions focusable and busy while the next chat loads	211	passed
 chat-header-loading-007	turbo/apps/platform/src/views/okou-page/__tests__/chat-header-loading.test.tsx	Open the destination's browser from the mobile menu after navigating	90	passed
 chat-header-loading-008	turbo/apps/platform/src/views/okou-page/__tests__/chat-header-loading.test.tsx	Let each pane open its own chat's mail	138	passed
-browser-session-page-004	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Apply numeric quality on Enter and blur while preserving IME editing	178	passed
-browser-session-page-006	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Apply quality presets and slider keys while preserving Escape focus	206	passed
-browser-session-page-007	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Commit an image quality drag from the numeric field only on release	321	passed
-browser-session-page-008	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Ignore queued drag events when Escape dismisses image quality	344	passed
-browser-session-page-009	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Preserve a chosen quality preset through lossless PNG and JPEG	253	passed
-browser-session-page-010	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Show unavailable when native browser acquisition reports a reclaimed lifetime	497	passed
-browser-session-page-028	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Remove live input when renewal is denied without a native disconnect	443	passed
-browser-session-page-032	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Restore the active native viewer when chat authorization returns	373	passed
-browser-session-page-014	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Synchronize the replacement display measured while the viewer is concealed	584	passed
-browser-session-page-016	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Send fresh input only to the replacement runtime	626	passed
-browser-session-page-017	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Revalidation in window zero with provider URL suspends input until the viewer returns	667	passed
-browser-session-page-018	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Revalidation in window zero with null provider URL suspends input until the viewer returns	667	passed
-browser-session-page-022	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Search from the address field after restarting a browser used with an IME	910	passed
-browser-session-page-038	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Pause the viewer when a suspended-session response confirms expiry after a temporary outage	806	passed
-browser-session-page-039	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Keep the mounted viewer usable after a temporary 502 renewal failure	828	passed
-browser-session-page-045	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Pause the viewer when an expired-session 404 confirms expiry after a temporary outage	806	passed
-browser-session-page-050	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Switch to the reopened native window and keep renewing its viewer	845	passed
-browser-session-page-035	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Renew a fresh grant while the previous lease is still pending	1052	passed
-browser-session-page-036	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Keep a renewed grant streaming when the superseded lease is denied	1069	passed
-browser-session-page-037	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Clear a denied lease after a batched revoke and grant	1089	passed
-browser-session-page-053	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Keep the replacement instance live when an older renewal arrives late	1210	passed
-browser-session-page-055	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Cancel the old heartbeat on navigation and renew only the new chat	1236	passed
-browser-session-page-023	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Discard the old blocked address hint when chat authorization renews	1260	passed
+browser-session-page-004	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Apply numeric quality on Enter and blur while preserving IME editing	179	passed
+browser-session-page-006	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Apply quality presets and slider keys while preserving Escape focus	207	passed
+browser-session-page-007	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Commit an image quality drag from the numeric field only on release	322	passed
+browser-session-page-008	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Ignore queued drag events when Escape dismisses image quality	345	passed
+browser-session-page-009	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Preserve a chosen quality preset through lossless PNG and JPEG	254	passed
+browser-session-page-010	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Show unavailable when native browser acquisition reports a reclaimed lifetime	498	passed
+browser-session-page-028	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Remove live input when renewal is denied without a native disconnect	444	passed
+browser-session-page-032	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Restore the active native viewer when chat authorization returns	374	passed
+browser-session-page-014	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Synchronize the replacement display measured while the viewer is concealed	585	passed
+browser-session-page-016	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Send fresh input only to the replacement runtime	627	passed
+browser-session-page-017	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Revalidation in window zero with provider URL suspends input until the viewer returns	668	passed
+browser-session-page-018	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Revalidation in window zero with null provider URL suspends input until the viewer returns	668	passed
+browser-session-page-022	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Search from the address field after restarting a browser used with an IME	911	passed
+browser-session-page-038	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Pause the viewer when a suspended-session response confirms expiry after a temporary outage	807	passed
+browser-session-page-039	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Keep the mounted viewer usable after a temporary 502 renewal failure	829	passed
+browser-session-page-045	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Pause the viewer when an expired-session 404 confirms expiry after a temporary outage	807	passed
+browser-session-page-050	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Switch to the reopened native window and keep renewing its viewer	846	passed
+browser-session-page-035	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Renew a fresh grant while the previous lease is still pending	1053	passed
+browser-session-page-036	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Keep a renewed grant streaming when the superseded lease is denied	1070	passed
+browser-session-page-037	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Clear a denied lease after a batched revoke and grant	1090	passed
+browser-session-page-053	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Keep the replacement instance live when an older renewal arrives late	1211	passed
+browser-session-page-055	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Cancel the old heartbeat on navigation and renew only the new chat	1237	passed
+browser-session-page-023	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Discard the old blocked address hint when chat authorization renews	1261	passed
 browser-viewer-acquisition-002	turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-acquisition.test.tsx	Use Start's returned connection while acquisition is stalled without a lifecycle echo	177	passed
 browser-viewer-acquisition-003	turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-acquisition.test.tsx	Use Start's returned connection while acquisition is stalled with one correlated lifecycle echo	177	passed
 browser-viewer-acquisition-007	turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-acquisition.test.tsx	Retire the operation ID after an unrelated notice invalidates Start	223	passed
@@ -2601,3 +2601,6 @@ chat-scroll-016	turbo/apps/platform/src/views/okou-page/__tests__/chat-scroll.te
 chat-scroll-017	turbo/apps/platform/src/views/okou-page/__tests__/chat-scroll.test.tsx	Keep history through PWA keyboard cycles	874	passed
 chat-scroll-018	turbo/apps/platform/src/views/okou-page/__tests__/chat-scroll.test.tsx	Keep tail when opening and closing capabilities in a completed conversation	965	passed
 chat-scroll-019	turbo/apps/platform/src/views/okou-page/__tests__/chat-scroll.test.tsx	Keep history when opening and closing capabilities in a stopped conversation	965	passed
+browser-session-page-024	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	An authorization denial from the session keeps the panel with a distinct placeholder	1383	passed
+browser-session-page-025	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	An authorization denial from the connection keeps the panel with a distinct placeholder	1383	passed
+browser-session-page-034	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	A denied renewal from a previous reload cannot revoke the current same-window viewer	1432	passed
