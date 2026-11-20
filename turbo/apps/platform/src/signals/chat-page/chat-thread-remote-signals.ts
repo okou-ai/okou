@@ -325,7 +325,10 @@ export const subscribeChatThreadRealtime$ = command(
   },
 );
 
-export function createCancellationRecoverySignals(threadId: string) {
+export function createCancellationRecoverySignals(
+  threadId: string,
+  options: { readonly deferInitialRead?: boolean } = {},
+) {
   const threadDetailReloadCounter$ = state(0);
   const optimisticCreateUnsettled$ =
     optimisticChatThreadCreateUnsettled(threadId);
@@ -334,7 +337,12 @@ export function createCancellationRecoverySignals(threadId: string) {
     if (get(optimisticCreateUnsettled$)) {
       return false;
     }
-    get(threadDetailReloadCounter$);
+    const reloadCounter = get(threadDetailReloadCounter$);
+    // Full panels reload after their realtime subscriptions attach. Reading
+    // once then covers the subscription gap without an earlier speculative GET.
+    if (options.deferInitialRead && reloadCounter === 0) {
+      return false;
+    }
     const client = get(apiClient$)(chatThreadByIdContract);
     const result = await accept(
       client.get({ params: { id: threadId } }),

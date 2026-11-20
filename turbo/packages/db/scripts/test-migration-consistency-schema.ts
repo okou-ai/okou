@@ -57,7 +57,6 @@ import { validateOfficialWorkflowStorageRetirement } from "./test-official-workf
 import { validateWorkflowPublicationContraction } from "./test-workflow-publication-contraction";
 import { validateStaffWorkflowAttachmentDeletion } from "./test-staff-workflow-attachment-deletion";
 import { validateInactiveWorkflowAttachmentDeletion } from "./test-inactive-workflow-attachment-deletion";
-import { validateSeedSkillBundleSchema } from "./test-seed-skill-bundle-schema";
 import { validateConnectorSkillBundleSchema } from "./test-connector-skill-bundle-schema";
 import { validateChatConnectorAccessSchema } from "./test-chat-connector-access-schema";
 import { validatePermanentArtifactThreadCatalog } from "./test-artifact-thread-catalog-permanent";
@@ -3128,7 +3127,6 @@ async function main(): Promise<void> {
     await validateWorkflowPublicationContraction(dbUrl1);
     await validateStaffWorkflowAttachmentDeletion(dbUrl1);
     await validateInactiveWorkflowAttachmentDeletion(dbUrl1);
-    await validateSeedSkillBundleSchema(dbUrl1);
     await validateConnectorSkillBundleSchema(dbUrl1);
     await validateChatConnectorAccessSchema(dbUrl1);
     await validatePermanentWorkflowNameScopes(dbUrl1);
@@ -3184,7 +3182,6 @@ async function main(): Promise<void> {
     await validateXResourceUsageSchema(dbUrl2);
     await validateAgentRunLaunchSnapshotSchema(dbUrl2);
     await validateAgentRunOfficialWorkflowProvenanceSchema(dbUrl2);
-    await validateSeedSkillBundleSchema(dbUrl2);
     await validateConnectorSkillBundleSchema(dbUrl2);
     await validateChatConnectorAccessSchema(dbUrl2);
     await validatePermanentWorkflowNameScopes(dbUrl2);

@@ -527,8 +527,6 @@
     "googleDrive": {
       "agentLoading": "Der Agent wird noch geladen",
       "connect": "Verbinden Sie Google Drive",
-      "connectTooltip": "Verbinden Sie Google Drive, um Artefakte hochzuladen",
-      "conversionNotice": "Erstellt eine bearbeitbare Kopie; die Formatierung kann abweichen.",
       "conversionUnconfirmed": "Die Google-Konvertierung konnte nicht bestätigt werden. Prüfe Drive vor einem erneuten Versuch.",
       "openDocs": "In Google Docs öffnen",
       "openSheets": "In Google Sheets öffnen",

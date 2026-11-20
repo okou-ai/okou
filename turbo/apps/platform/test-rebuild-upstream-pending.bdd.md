@@ -335,3 +335,13 @@ Keeps cancellation owned by the caller and terminates only once. [Registration](
 - **Then** The export is rejected as aborted and the Worker is terminated.
 - **Disposition** review.
 - **Source** upstream `18c9913d` (#49388), a Worker-client test that does not enter through a page. It was removed with the other non-page tests; rebuild it through a page-visible or external contract, or retire it per "Cases Without Public Construction".
+
+## upstream-23cd576d-project-cache-89-01
+
+Projects catch changes made while a cached page waits for realtime. [Registration](https://github.com/okou-ai/okou/blob/23cd576df69210cb535f8f819e27906c36d57dc6/turbo/apps/platform/src/views/okou-page/__tests__/project-cache.test.tsx#L89).
+
+- **Given** A workspace was visited before, so a new page starts from cached Projects, and its realtime connection is still being established.
+- **When** A project is renamed to "Launch ready" while the connection is pending, and the connection then completes.
+- **Then** The page first shows the cached "Launch" project and, once realtime attaches, catches up and shows "Launch ready".
+- **Disposition** retain.
+- **Source** upstream `23cd576d` (#49440), added to the copied test file after it was removed.

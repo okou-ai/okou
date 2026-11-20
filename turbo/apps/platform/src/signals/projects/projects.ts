@@ -198,7 +198,7 @@ export const syncProjects$ = command(
     });
   },
 );
-export const hydrateProjects$ = command(
+export const hydrateProjectCache$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const owner = get(projectState$);
     if (!(await get(projectsEnabled$))) {
@@ -223,21 +223,31 @@ export const hydrateProjects$ = command(
         set(owner.events$, cached);
       }
     }
-    await set(syncProjects$, signal);
-    // An open chat reveals its Project the first time; a Project page leaves
-    // the Project folded the way its member left it.
-    const threadId = get(pathParams$)?.threadId;
-    const projectId =
-      typeof threadId === "string"
-        ? get(eventDrivenChatThreads$).find((thread) => {
-            return thread.id === threadId;
-          })?.projectId
-        : null;
-    if (projectId) {
-      set(expandProject$, projectId, { ifUnset: true });
-    }
   },
 );
+export const hydrateProjects$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    await set(hydrateProjectCache$, signal);
+    if (!(await get(projectsEnabled$))) {
+      return;
+    }
+    await set(syncProjects$, signal);
+  },
+);
+export const revealCurrentThreadProject$ = command(({ get, set }) => {
+  // An open chat reveals its Project the first time; a Project page leaves
+  // the Project folded the way its member left it.
+  const threadId = get(pathParams$)?.threadId;
+  const projectId =
+    typeof threadId === "string"
+      ? get(eventDrivenChatThreads$).find((thread) => {
+          return thread.id === threadId;
+        })?.projectId
+      : null;
+  if (projectId) {
+    set(expandProject$, projectId, { ifUnset: true });
+  }
+});
 function operation() {
   return createProjectOperationId(now(), crypto.randomUUID());
 }

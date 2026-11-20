@@ -13,6 +13,28 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1155.1](https://github.com/okou-ai/okou/compare/app-v0.1155.0...app-v0.1155.1) (2026-11-20)
+
+
+### Bug Fixes
+
+* **platform:** retain safe document export failure phases ([#49388](https://github.com/okou-ai/okou/issues/49388)) ([18c9913](https://github.com/okou-ai/okou/commit/18c9913d10396c7e27679fecbb96aba52a7f80de))
+* **platform:** use the suggestions switch for my okou proactive settings ([#49439](https://github.com/okou-ai/okou/issues/49439)) ([1d42e69](https://github.com/okou-ai/okou/commit/1d42e6994ad6d82a6678d34b955335765fc560b5))
+
+
+### Refactoring
+
+* remove feature guides feature switch ([#49441](https://github.com/okou-ai/okou/issues/49441)) ([e5642ea](https://github.com/okou-ai/okou/commit/e5642ea2ef0ea2ba7a6cd451d395c8329a855c88))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.94.1
+    * @okouai/core bumped to 8.857.1
+    * @okouai/ui bumped to 1.21.70
+
 ## [0.1155.0](https://github.com/okou-ai/okou/compare/app-v0.1154.2...app-v0.1155.0) (2026-11-20)
 
 

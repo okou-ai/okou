@@ -3599,6 +3599,13 @@
       "when": 1795147356083,
       "tag": "1592_restore_my_okou_for_uninitialized_workspaces",
       "breakpoints": true
+    },
+    {
+      "idx": 1593,
+      "version": "7",
+      "when": 1795159373060,
+      "tag": "1593_drop_legacy_skills",
+      "breakpoints": true
     }
   ]
 }

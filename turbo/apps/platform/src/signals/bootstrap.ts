@@ -68,7 +68,10 @@ import {
 import { setupHomePage$ } from "./okou-page/home-page-setup.ts";
 import { singleAgentEnabled$ } from "./single-agent.ts";
 import { setupProjectPage$ } from "./projects/project-page-setup.ts";
-import { hydrateProjects$ } from "./projects/projects.ts";
+import {
+  hydrateProjects$,
+  revealCurrentThreadProject$,
+} from "./projects/projects.ts";
 import { setupChatPage$ } from "./chat-page/chat-page-setup.ts";
 import { clearChatThreadPanes$ } from "./chat-page/chat-thread-panes.ts";
 import { setupPromptPage$ } from "./prompt-page/prompt-page-setup.ts";
@@ -181,14 +184,17 @@ function setupSettingsParamAfterStableRoute(
   return command(async ({ get, set }, signal: AbortSignal) => {
     set(resetProjectUi$);
     const initialPathname = get(pathname$);
-    await set(setupPage, signal);
+    const hydrateSidebar = get(activeRoute$) !== "project";
+    // Sidebar freshness must not wait for a thread's draft or transcript.
+    await Promise.all([
+      set(setupPage, signal),
+      hydrateSidebar ? set(hydrateProjects$, signal) : undefined,
+    ]);
     signal.throwIfAborted();
     if (get(pathname$) !== initialPathname) {
       return;
     }
-    if (get(activeRoute$) !== "project") {
-      await set(hydrateProjects$, signal);
-    }
+    set(revealCurrentThreadProject$);
     await set(checkUnifiedSettingsParam$, signal);
   });
 }

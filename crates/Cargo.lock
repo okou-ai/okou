@@ -2042,7 +2042,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent"
-version = "0.110.11"
+version = "0.110.12"
 dependencies = [
  "aho-corasick",
  "api-contracts",
@@ -2082,7 +2082,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent-tests"
-version = "0.1.231"
+version = "0.1.232"
 dependencies = [
  "api-contracts",
  "base64 0.23.1",
@@ -2151,7 +2151,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-server"
-version = "0.24.136"
+version = "0.24.137"
 dependencies = [
  "bytes",
  "chrono",
@@ -2172,7 +2172,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-tests"
-version = "0.12.209"
+version = "0.12.210"
 dependencies = [
  "cli-test-support",
  "guest-contracts",
@@ -2202,7 +2202,7 @@ dependencies = [
 
 [[package]]
 name = "guest-init"
-version = "0.20.122"
+version = "0.20.123"
 dependencies = [
  "guest-contracts",
  "guest-control-server",
@@ -4159,7 +4159,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.249.72"
+version = "0.249.73"
 dependencies = [
  "api-contracts",
  "async-trait",
