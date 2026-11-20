@@ -70,6 +70,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.TextStyle
@@ -281,7 +282,10 @@ internal fun WorkspaceToolbarActions(
         TextButton(
             onClick = { update.activate?.invoke() },
             enabled = update.activate != null,
-            modifier = Modifier.width(104.dp).heightIn(min = 48.dp),
+            modifier =
+                Modifier.width(104.dp).heightIn(min = 48.dp).semantics {
+                    update.accessibilityLabel?.let { contentDescription = it }
+                },
             shape = RoundedCornerShape(12.dp),
             contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
             interactionSource = interactions,

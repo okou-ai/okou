@@ -69,6 +69,7 @@ internal data class UpdateToolbarAction(
     val label: String,
     val activate: (() -> Unit)?,
     @DrawableRes val icon: Int = R.drawable.ic_download,
+    val accessibilityLabel: String? = null,
 )
 
 private fun UpdateTransfer.Downloading.fraction(): Float =
@@ -95,8 +96,14 @@ internal fun updateToolbarAction(
     if (!state.announce) return null
     val transfer = state.transfer
     return when {
-        transfer is UpdateTransfer.Downloading ->
-            UpdateToolbarAction(transfer.percent(), openDetails)
+        transfer is UpdateTransfer.Downloading -> {
+            val percent = transfer.percent()
+            UpdateToolbarAction(
+                percent,
+                openDetails,
+                accessibilityLabel = stringResource(R.string.updates_downloading, percent),
+            )
+        }
         transfer is UpdateTransfer.Ready && state.canInstall ->
             UpdateToolbarAction(
                 stringResource(R.string.updates_install_toolbar),

@@ -1,14 +1,18 @@
 package ai.okou.android.updates
 
 import ai.okou.android.MainActivity
+import ai.okou.android.R
 import ai.okou.android.TestAuthentication
 import ai.okou.android.TestOkouApplication
 import ai.okou.android.api.RequiredUpdate
+import ai.okou.android.api.generated.AndroidUpdates
 import ai.okou.android.auth.Authentication
 import ai.okou.android.auth.AuthenticationState
 import android.app.Activity
+import android.app.LocaleManager
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.os.LocaleList
 import android.provider.Settings
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
@@ -31,7 +35,7 @@ import org.robolectric.annotation.Config
 class UpdateRootApplication : TestOkouApplication() {
     internal val fixture =
         ControlledUpdates().apply {
-            response = ai.okou.android.api.generated.AndroidUpdates(null, updateRelease("99.0.0"))
+            response = AndroidUpdates(null, updateRelease("99.0.0"))
             heldCheck = CompletableDeferred()
         }
 
@@ -85,6 +89,32 @@ class UpdateRootTest {
         compose.onNodeWithText("Update Okou to continue").assertExists()
         compose.onNodeWithText("Updating · 50%").assertExists()
         compose.onNodeWithText("Sign out").assertDoesNotExist()
+    }
+
+    @Test
+    fun requiredDiscoveryKeepsTheAppliedLocaleWhileTheSessionIsRestoring() {
+        compose.waitUntil(10_000) { app.updates.state.value.check == UpdateCheck.Checking }
+        val locales = checkNotNull(app.getSystemService(LocaleManager::class.java))
+        val original = locales.applicationLocales
+        val applied = LocaleList.forLanguageTags("zh-Hans")
+        val gate = checkNotNull(app.fixture.heldCheck)
+        try {
+            compose.activityRule.scenario.onActivity { locales.applicationLocales = applied }
+            compose.activityRule.scenario.recreate()
+            compose
+                .onNodeWithText(compose.activity.getString(R.string.auth_restoring))
+                .assertExists()
+            app.fixture.response = AndroidUpdates("99.0.0", updateRelease("99.0.0"))
+            gate.complete(Unit)
+            compose.waitUntil(10_000) { app.updates.state.value.required }
+            compose
+                .onNodeWithText(compose.activity.getString(R.string.updates_required))
+                .assertIsDisplayed()
+            assertEquals(applied, locales.applicationLocales)
+        } finally {
+            gate.complete(Unit)
+            compose.activityRule.scenario.onActivity { locales.applicationLocales = original }
+        }
     }
 
     @Test

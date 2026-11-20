@@ -7,6 +7,7 @@ import ai.okou.android.auth.SessionRoot
 import ai.okou.android.auth.SessionStage
 import ai.okou.android.auth.WorkspaceSessionFactory
 import ai.okou.android.preferences.applyApplicationLocale
+import ai.okou.android.preferences.resetApplicationLocale
 import ai.okou.android.state.SavedStatePolicy
 import ai.okou.android.updates.AppUpdateSettings
 import ai.okou.android.updates.UpdateHost
@@ -115,14 +116,22 @@ class MainActivity : AppCompatActivity() {
                     sessionState.ready?.preferences?.uiState?.collectAsStateWithLifecycle()?.value
                 }
             val locale = preferences?.locale
-            LaunchedEffect(presentedGeneration, locale, updateRequired, updateState.preparing) {
-                // Keep the applied native locale while the required screen blocks workspace access.
-                if (
-                    !updateRequired &&
-                        (locale != null || !updateState.preparing) &&
-                        authentication.isPresentationCurrent(presentedGeneration)
-                )
-                    applyApplicationLocale(locale)
+            val clearLocale =
+                !updateState.preparing &&
+                    when (sessionState.stage) {
+                        SessionStage.SignIn,
+                        SessionStage.ChooseWorkspace,
+                        SessionStage.AccessRemoved -> true
+                        else -> false
+                    }
+            LaunchedEffect(presentedGeneration, locale, updateRequired, clearLocale) {
+                // Session restoration keeps the native locale until membership is resolved.
+                if (updateRequired || !authentication.isPresentationCurrent(presentedGeneration))
+                    return@LaunchedEffect
+                when {
+                    locale != null -> applyApplicationLocale(locale)
+                    clearLocale -> resetApplicationLocale()
+                }
             }
             val systemDark = isSystemInDarkTheme()
             val cachedAppearance = sessionState.cachedAppearance
