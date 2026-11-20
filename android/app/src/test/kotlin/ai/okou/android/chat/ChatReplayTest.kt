@@ -307,9 +307,12 @@ class ChatReplayTest {
         val unreadIds = setOf(running.id, unread.id)
         assertEquals(
             ChatRowStatus.Muted,
-            chatRowStatus(indicators[running.id], running.muted == true),
+            chatRowStatus(indicators[running.id], running.muted == true, unread = false),
         )
-        assertEquals(ChatRowStatus.Muted, chatRowStatus(indicators[unread.id], muted = true))
+        assertEquals(
+            ChatRowStatus.Muted,
+            chatRowStatus(indicators[unread.id], muted = true, unread = true),
+        )
         assertEquals(
             ProjectActivity(unread = 1, running = 0),
             collapsedProjectActivity(listOf(running, unread), indicators, unreadIds),

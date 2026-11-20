@@ -142,11 +142,12 @@ internal fun ChatListScreen(
             state.agents,
             state.filter,
             state.indicators,
+            state.readIntents,
         ) {
             chatListGroups(state)
         }
     val indicators = state.indicators?.threads.orEmpty()
-    val unreadChatIds = state.indicators?.unreadAt.orEmpty().keys
+    val unreadChatIds = remember(state.indicators, state.readIntents) { state.unreadChatIds() }
     val sections =
         remember(groups, collapsed, indicators, unreadChatIds) {
             chatListSections(groups, collapsed, indicators, unreadChatIds)
@@ -161,8 +162,11 @@ internal fun ChatListScreen(
                         null ->
                             section.group.threads.forEach { thread ->
                                 if (
-                                    chatRowStatus(indicators[thread.id], thread.muted == true) ==
-                                        ChatRowStatus.Running
+                                    chatRowStatus(
+                                        indicators[thread.id],
+                                        thread.muted == true,
+                                        thread.id in unreadChatIds,
+                                    ) == ChatRowStatus.Running
                                 ) {
                                     add(thread.id)
                                 }
@@ -301,7 +305,11 @@ internal fun ChatListScreen(
                             ) {
                                 ChatRow(
                                     thread,
-                                    chatRowStatus(indicators[thread.id], thread.muted == true),
+                                    chatRowStatus(
+                                        indicators[thread.id],
+                                        thread.muted == true,
+                                        thread.id in unreadChatIds,
+                                    ),
                                     unread = thread.id in unreadChatIds,
                                     isSelected = thread.id == selectedChatId,
                                     runningFrame = runningFrame,

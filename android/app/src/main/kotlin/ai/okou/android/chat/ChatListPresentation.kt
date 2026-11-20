@@ -11,11 +11,15 @@ internal enum class ChatRowStatus {
     None,
 }
 
-internal fun chatRowStatus(indicator: IndicatorsThreadsValue?, muted: Boolean): ChatRowStatus =
+internal fun chatRowStatus(
+    indicator: IndicatorsThreadsValue?,
+    muted: Boolean,
+    unread: Boolean,
+): ChatRowStatus =
     when {
         muted -> ChatRowStatus.Muted
         indicator == IndicatorsThreadsValue.ACTIVE -> ChatRowStatus.Running
-        indicator == IndicatorsThreadsValue.UNREAD -> ChatRowStatus.Unread
+        unread -> ChatRowStatus.Unread
         else -> ChatRowStatus.None
     }
 
@@ -110,8 +114,7 @@ fun chatListGroups(
             ChatListFilter.Inbox -> !row.archived
             ChatListFilter.Archived -> row.archived
             ChatListFilter.Muted -> row.muted == true
-            ChatListFilter.Unread ->
-                row.muted != true && state.indicators?.unreadAt?.containsKey(row.id) == true
+            ChatListFilter.Unread -> row.muted != true && state.isUnread(row.id)
         }
     }
     val projects = state.listProjects()
