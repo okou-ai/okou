@@ -158,11 +158,12 @@ private fun ListControls(
             if (stacked) action.height + gap + checkNotNull(notice).height
             else maxOf(action.height, notice?.height ?: 0)
         layout(constraints.maxWidth, height) {
+            notice?.placeRelative(0, if (stacked && !inline) 0 else height - notice.height)
             action.placeRelative(
                 constraints.maxWidth - action.width,
                 if (stacked && inline) 0 else height - action.height,
+                zIndex = 1f,
             )
-            notice?.placeRelative(0, if (stacked && !inline) 0 else height - notice.height)
         }
     }
 }
