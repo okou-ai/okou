@@ -1149,7 +1149,6 @@ export function createChatEventsFixture(context: TestContext) {
       createPersonalModelProvider: api.createPersonalModelProvider,
       createThreadRun: api.createThreadRun,
       declareSteeredInput: api.declareSteeredInput,
-      enableAgentConnectors: api.enableAgentConnectors,
       ensurePersonalSubscriptionModel: api.ensurePersonalSubscriptionModel,
       grantProEntitlement: api.grantProEntitlement,
       heartbeatRunner: api.heartbeatRunner,

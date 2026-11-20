@@ -30,9 +30,6 @@ describe("authorized connector admission", () => {
         apiKey: `required-entry-${randomUUID()}`,
       });
     });
-    await own(() => {
-      return api.enableAgentConnectors(actor, agentId, ["openai"]);
-    });
     const run = await sendChatRun(actor, {
       agentId,
       prompt: "use the enabled OpenAI connection",
@@ -61,9 +58,6 @@ describe("authorized connector admission", () => {
       return connectors.connectManualGrant(actor, "manual-mcp", "api-token", {
         apiKey: `required-mcp-${randomUUID()}`,
       });
-    });
-    await own(() => {
-      return api.enableAgentConnectors(actor, agentId, ["manual-mcp"]);
     });
     const run = await sendChatRun(actor, {
       agentId,

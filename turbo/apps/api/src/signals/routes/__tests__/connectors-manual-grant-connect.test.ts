@@ -520,7 +520,6 @@ describe("POST /api/connectors/:connectorSlug/manual-grant", () => {
     await withConnectorRuntime(
       context,
       actor,
-      "test-subdomain",
       async ({ execution: receivedExecution, resolveAuth }) => {
         expect(receivedExecution.environment).toMatchObject({
           SUBDOMAIN_TEST_EMAIL: "support@example.com",

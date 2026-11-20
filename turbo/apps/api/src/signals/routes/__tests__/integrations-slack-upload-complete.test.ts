@@ -2509,10 +2509,9 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
           });
         });
         await fixture.run(() => {
-          return runsApi.enableAgentConnectors(
+          return runsApi.setDriveExportAuthorization(
             actorFor({ orgId, userId }),
             agentId,
-            ["google-drive"],
           );
         });
 
@@ -2829,9 +2828,7 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
           });
         });
         await fixture.run(() => {
-          return runsApi.enableAgentConnectors(actor, otherAgent.agentId, [
-            "google-drive",
-          ]);
+          return runsApi.setDriveExportAuthorization(actor, otherAgent.agentId);
         });
         await fixture.run(() => {
           return accept(

@@ -8,7 +8,6 @@ import { chatConnectorAccessRoutes } from "../chat-connector-access";
 import { chatThreadCreateRoutes } from "../chat-threads-create";
 import { mcpConnectorsRoutes } from "../mcp-connectors";
 import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
-import { createRunsApi } from "./helpers/api-bdd-runs";
 import {
   createChatEventsFixture,
   okouTokenFromExecution,
@@ -18,7 +17,6 @@ import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
 const connectors = createConnectorBddApi(context);
-const runs = createRunsApi(context);
 const chat = createChatEventsFixture(context);
 
 function client() {
@@ -61,7 +59,6 @@ describe("builtin MCP discovery authority", () => {
         absentRun.runId,
         absentExecution.sandboxHeaders,
       );
-      await runs.enableAgentConnectors(actor, agentId, ["manual-mcp"]);
       const admitted = await owned.sendChatRun(actor, {
         agentId,
         prompt: "Discover admitted accounts",
@@ -117,7 +114,6 @@ describe("builtin MCP discovery authority", () => {
       if (!selected) {
         throw new Error("Expected non-default account");
       }
-      await runs.enableAgentConnectors(actor, agentId, ["manual-mcp"]);
       createRouteMocks(context).clerk.session(
         actor.userId,
         actor.orgId,

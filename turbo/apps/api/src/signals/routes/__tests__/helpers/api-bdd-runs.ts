@@ -1034,24 +1034,23 @@ export function createRunsApi(context: TestContext) {
       );
     },
 
-    /**
-     * Replaces the caller's enabled connector slugs for an agent through
-     * PUT /api/agents/:id/user-connectors and returns the visible set.
-     */
-    async enableAgentConnectors(
+    /** Sets the caller's Google Drive export authorization for an agent. */
+    async setDriveExportAuthorization(
       actor: ApiTestUser,
       agentId: string,
-      connectorSlugs: readonly string[],
-    ): Promise<readonly string[]> {
-      const response = await accept(
+      enabled = true,
+    ): Promise<void> {
+      await accept(
         runApp(context)(userBuiltinConnectorsContract).update({
           headers: authenticate(context, actor),
           params: { id: agentId },
-          body: { enabledConnectorSlugs: [...connectorSlugs] },
+          body: {
+            enabledConnectorSlugs: ["google-drive"],
+            operation: enabled ? "add" : "remove",
+          },
         }),
         [200],
       );
-      return response.body.enabledConnectorSlugs;
     },
 
     /** Stores the member's model preference, used when a run names no model. */

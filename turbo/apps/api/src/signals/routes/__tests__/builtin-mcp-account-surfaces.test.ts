@@ -8,7 +8,6 @@ import {
   builtinConnectorsSearchContract,
 } from "@okouai/api-contracts/contracts/connectors";
 import { agentsByIdContract } from "@okouai/api-contracts/contracts/agents";
-import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import {
   chatThreadConnectorSelectionContract,
   chatThreadsContract,
@@ -241,14 +240,6 @@ describe("builtin MCP account surfaces", () => {
       displayName: "Scoped MCP selections",
     });
     createdAgents.push(agent.agentId);
-    await accept(
-      setupApp({ context, routes })(userBuiltinConnectorsContract).update({
-        headers,
-        params: { id: agent.agentId },
-        body: { enabledConnectorSlugs: [target.connectorSlug] },
-      }),
-      [200],
-    );
     const connected = await accept(
       setupApp({ context, routes })(
         builtinConnectorNoAuthGrantContract,

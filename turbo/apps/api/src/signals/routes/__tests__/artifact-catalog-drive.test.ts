@@ -88,7 +88,7 @@ describe("artifact catalog lazy Drive detail metadata", () => {
     const provider = mockGoogleDriveFilesList(() => {
       return { status: 200, files: [] };
     });
-    await runs.enableAgentConnectors(actor, agentId, ["google-drive"]);
+    await runs.setDriveExportAuthorization(actor, agentId);
 
     const list = await accept(
       catalog().list({
@@ -109,7 +109,7 @@ describe("artifact catalog lazy Drive detail metadata", () => {
     expect(plain.body).not.toHaveProperty("googleDriveConnectionId");
     expect(provider.queries).toStrictEqual([]);
 
-    await runs.enableAgentConnectors(actor, agentId, []);
+    await runs.setDriveExportAuthorization(actor, agentId, false);
     const unauthorized = await accept(
       catalog().get({
         headers: headers(actor),
@@ -125,7 +125,7 @@ describe("artifact catalog lazy Drive detail metadata", () => {
     });
     expect(provider.queries).toStrictEqual([]);
 
-    await runs.enableAgentConnectors(actor, agentId, ["google-drive"]);
+    await runs.setDriveExportAuthorization(actor, agentId);
     const ready = await accept(
       catalog().get({
         headers: headers(actor),
@@ -178,7 +178,7 @@ describe("artifact catalog lazy Drive detail metadata", () => {
     if (!connection) {
       throw new Error("Expected selected Drive connection");
     }
-    await runs.enableAgentConnectors(actor, agentId, ["google-drive"]);
+    await runs.setDriveExportAuthorization(actor, agentId);
     const view = await chat.createThread(actor, { agentId, model: null });
     await accept(
       setupApp({ context, routes: chatThreadRoutes })(
@@ -252,7 +252,7 @@ describe("artifact catalog lazy Drive detail metadata", () => {
     const { owner, run, artifactId } = await uploadedArtifact();
     const { actor, agentId } = owner;
     const connection = await connectDrive(actor);
-    await runs.enableAgentConnectors(actor, agentId, ["google-drive"]);
+    await runs.setDriveExportAuthorization(actor, agentId);
     const refresh = mockGoogleDriveConnectorOAuth({
       refreshOutcome: { type: "ok", accessToken: "detail-refreshed" },
     });
@@ -311,7 +311,7 @@ describe("artifact catalog lazy Drive detail metadata", () => {
     const { owner, run, artifactId } = await uploadedArtifact();
     const { actor, agentId } = owner;
     await connectDrive(actor);
-    await runs.enableAgentConnectors(actor, agentId, ["google-drive"]);
+    await runs.setDriveExportAuthorization(actor, agentId);
     const peer = bdd.user({ orgId: actor.orgId });
     const peerAgent = await bdd.createAgent(peer, {
       displayName: "Peer context",

@@ -111,9 +111,6 @@ async function createBuiltinCredentialConsumer(
   const runs = createRunsApi(context);
   const firewall = createFirewallApi(context);
   const callbacks = createWebhookCallbackApi(context);
-  await own(() => {
-    return runs.enableAgentConnectors(actor, agentId, [connectorSlug]);
-  });
   const sent = await fixture.sendChatRun(actor, {
     agentId,
     prompt: "Consume the connected account's current credential",

@@ -1898,7 +1898,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
         code: "drive-ok",
         state: stateFromAuthorizationUrl(start.authorizationUrl),
       });
-      await api.enableAgentConnectors(actor, agentId, ["google-drive"]);
+      await api.setDriveExportAuthorization(actor, agentId);
       const upload = mockGoogleDriveArtifactUpload({
         id: "private-drive-file",
         name: "private-report.zip",
@@ -1994,7 +1994,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       code: "drive-ok",
       state: stateFromAuthorizationUrl(start.authorizationUrl),
     });
-    await api.enableAgentConnectors(actor, agentId, ["google-drive"]);
+    await api.setDriveExportAuthorization(actor, agentId);
     const upload = mockGoogleDriveArtifactUpload({
       id: "public-deck-drive-file",
       name: "deck.zip",
@@ -2065,7 +2065,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       code: "drive-ok",
       state: stateFromAuthorizationUrl(start.authorizationUrl),
     });
-    await api.enableAgentConnectors(actor, agentId, ["google-drive"]);
+    await api.setDriveExportAuthorization(actor, agentId);
     const upload = mockGoogleDriveArtifactUpload({
       id: "single-page-drive-file",
       name: "report.html",
@@ -2211,7 +2211,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     expectApiError(unknownArtifact.body);
     expect(unknownArtifact.body.error.message).toBe("Artifact file not found");
 
-    await api.enableAgentConnectors(actor, agentId, ["google-drive"]);
+    await api.setDriveExportAuthorization(actor, agentId);
 
     const uploadRecorder = mockGoogleDriveArtifactUpload({
       id: "drive-uploaded-file",
@@ -2591,7 +2591,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       code: "drive-ok",
       state: stateFromAuthorizationUrl(start.authorizationUrl),
     });
-    await api.enableAgentConnectors(actor, agentId, ["google-drive"]);
+    await api.setDriveExportAuthorization(actor, agentId);
 
     return { actor, agentId, deckId, run, sandboxHeaders };
   }
@@ -3213,7 +3213,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       });
     });
     await owned.run(() => {
-      return api.enableAgentConnectors(actor, agentId, ["google-drive"]);
+      return api.setDriveExportAuthorization(actor, agentId);
     });
     const client = setupApp({
       context,
@@ -4979,7 +4979,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       isDefault: false,
       connectionStatus: "connected",
     });
-    await api.enableAgentConnectors(actor, agentId, ["google-drive"]);
+    await api.setDriveExportAuthorization(actor, agentId);
 
     const defaultRefresh = mockGoogleDriveConnectorOAuth();
     const defaultStatusRecorder = mockGoogleDriveFilesList(() => {
@@ -5011,7 +5011,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     );
     expect(selected.body.connectionId).toBe(selectedAccount.id);
 
-    await api.enableAgentConnectors(actor, agentId, []);
+    await api.setDriveExportAuthorization(actor, agentId, false);
     artifacts = await chat.listThreadArtifacts(actor, run.threadId);
     expectDriveStatuses(artifacts, {
       status: "disconnected",
@@ -5019,7 +5019,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     });
     expect(defaultStatusRecorder.authorizationHeaders).toHaveLength(1);
 
-    await api.enableAgentConnectors(actor, agentId, ["google-drive"]);
+    await api.setDriveExportAuthorization(actor, agentId);
     const selectedStatusRecorder = mockGoogleDriveFilesList(() => {
       return { status: 200, files: [] };
     });
@@ -5289,7 +5289,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       code: "drive-no-refresh",
       state: stateFromAuthorizationUrl(start.authorizationUrl),
     });
-    await api.enableAgentConnectors(actor, agentId, ["google-drive"]);
+    await api.setDriveExportAuthorization(actor, agentId);
     mockGoogleDriveFilesList(() => {
       return { status: 401 };
     });
