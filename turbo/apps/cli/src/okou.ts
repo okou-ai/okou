@@ -103,12 +103,22 @@ const COMMAND_CAPABILITY_MAP: Record<
   data: "data-search:read",
   banking: "banking:read",
   feed: ["suggestion:read", "suggestion:write"],
+  proactive: ["suggestion:read", "suggestion:write"],
   wallet: ["wallet:read", "wallet:write"],
 };
 
-const RUN_ONLY_COMMANDS = new Set(["mcp", "run", "feed"]);
+const RUN_ONLY_COMMANDS = new Set(["mcp", "run", "feed", "proactive"]);
 
 const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
+  {
+    name: "proactive",
+    description: "Read, enable or disable your Proactive settings",
+    load: async () => {
+      return (
+        await import("./commands/proactive/index")
+      ).createProactiveCommand();
+    },
+  },
   {
     name: "whatsapp",
     description: "Send messages and files to your connected WhatsApp account",
@@ -713,6 +723,11 @@ export function buildHelpText(
         : ["  Personal Instructions? okou instructions view"]
       : ["  Update yourself?       okou agent --help"]),
     "  Manage workflows?     okou workflow --help",
+    ...commandExampleIfVisible(
+      "proactive",
+      "  Proactive settings?    okou proactive --help",
+      payload,
+    ),
     ...commandExampleIfVisible(
       "chat",
       '  Rename this chat?     okou chat rename "New title"',

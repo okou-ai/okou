@@ -5,6 +5,8 @@ import {
   readFeedItems$,
 } from "../services/agent-suggestion-read.service";
 import { authRoute } from "../auth/auth-route";
+import { organizationAuthContext$ } from "../auth/auth-context";
+import { proactivePreferenceAccess$ } from "../services/proactive-preference-access";
 import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
 import { setResHeader$ } from "../context/hono";
 import type { RouteEntry } from "../route-entry";
@@ -102,14 +104,23 @@ const writeAuth = {
   requireOrganization: true,
   requiredCapability: "suggestion:write",
 } as const;
+const sourcesAccess$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const auth = get(organizationAuthContext$);
+  if (auth.tokenType !== "agent") {
+    return await set(suggestionAccess$, signal);
+  }
+  const denied = await set(proactivePreferenceAccess$, signal);
+  return denied ?? { userId: auth.userId, orgId: auth.orgId };
+});
+
 export const feedRoutes: readonly RouteEntry[] = [
   {
     route: feedContract.sources,
     handler: authRoute(
-      { accept: ["session"], requireOrganization: true },
+      readAuth,
       command(async ({ get, set }, signal: AbortSignal) => {
         set(setResHeader$, "Cache-Control", "no-store");
-        const owner = await set(suggestionAccess$, signal);
+        const owner = await set(sourcesAccess$, signal);
         return "status" in owner
           ? owner
           : {
@@ -122,9 +133,9 @@ export const feedRoutes: readonly RouteEntry[] = [
   {
     route: feedContract.updateSources,
     handler: authRoute(
-      { accept: ["session"], requireOrganization: true },
+      { ...readAuth, requiredCapability: "suggestion:write" },
       command(async ({ get, set }, signal: AbortSignal) => {
-        const owner = await set(suggestionAccess$, signal);
+        const owner = await set(sourcesAccess$, signal);
         if ("status" in owner) {
           return owner;
         }
