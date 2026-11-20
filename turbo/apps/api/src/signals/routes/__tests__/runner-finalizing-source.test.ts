@@ -269,7 +269,24 @@ describe("Independent finalizing resource dispatch", () => {
                 runId: envelope.executionContext.runId,
                 disposition: busy ? "busy" : "accepted",
               },
-              { status: busy ? 429 : 200 },
+              {
+                status: busy ? 429 : 200,
+                ...(scenario === "accept"
+                  ? {
+                      headers: {
+                        "x-okou-runner-dispatch-timing": busy
+                          ? "invalid"
+                          : JSON.stringify({
+                              runnerVersion: "1.2.3",
+                              bodyReadMs: 2,
+                              envelopeParseMs: 0.4,
+                              contextDecodeMs: 1,
+                              acceptanceMs: 5,
+                            }),
+                      },
+                    }
+                  : {}),
+              },
             );
           },
         });

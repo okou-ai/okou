@@ -1,34 +1,25 @@
 import { command } from "ccstate";
 import type { ProactivePreference } from "@okouai/api-contracts/contracts/proactive";
 import { forYouSources$, reloadForYouSources$ } from "../for-you-sources.ts";
-import { proactiveLearningContract } from "@okouai/api-contracts/client/proactive-nightly";
 import { proactiveSuggestionsContract } from "@okouai/api-contracts/client/proactive-suggestions";
 import { accept } from "../../../lib/accept.ts";
 import { featureSwitches$ } from "../../external/feature-switch.ts";
 import { createProactivePreference } from "./proactive-preference-resource.ts";
 
-function createWorkflowPreference(
-  contract:
-    typeof proactiveLearningContract | typeof proactiveSuggestionsContract,
-) {
-  return createProactivePreference(
-    featureSwitches$,
-    async (client) => {
-      return (await accept(client(contract).get(), [200])).body;
-    },
-    async (client, enabled, signal) => {
-      const request = { body: { enabled }, fetchOptions: { signal } };
-      const result = await accept(client(contract).update(request), [200]);
-      return { saved: true, value: result.body };
-    },
-  );
-}
-
-export const proactiveLearningSignals = createWorkflowPreference(
-  proactiveLearningContract,
-);
-export const proactiveSuggestionsSignals = createWorkflowPreference(
-  proactiveSuggestionsContract,
+export const proactiveSuggestionsSignals = createProactivePreference(
+  featureSwitches$,
+  async (client) => {
+    return (await accept(client(proactiveSuggestionsContract).get(), [200]))
+      .body;
+  },
+  async (client, enabled, signal) => {
+    const request = { body: { enabled }, fetchOptions: { signal } };
+    const result = await accept(
+      client(proactiveSuggestionsContract).update(request),
+      [200],
+    );
+    return { saved: true, value: result.body };
+  },
 );
 
 type LinkedSuggestionsPreference = ProactivePreference & {

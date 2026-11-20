@@ -10,6 +10,7 @@ Original test `runs the current default agent's official Learning while its nigh
 - **Given** The current default agent has an installed official Learning workflow, alongside a same-name custom workflow and workflows belonging to other agents. Its nightly schedule is paused.
 - **When** The user opens Debug and runs Learning.
 - **Then** The official Learning automation for the current default agent is queued, a link opens its chat, and the run button is disabled.
+- **Upstream change** `ec5330db` (#49438) gates Debug Learning on the agent-suggestion rollout instead of the retired proactive-learning rollout ([Registration](https://github.com/okou-ai/okou/blob/ec5330dbee67ad46e9dee4e000ba92863b223681/turbo/apps/platform/src/views/okou-page/__tests__/debug-learning.test.tsx#L104)). Titles and visible behavior in this file are otherwise unchanged; set up every scenario in this file under the agent-suggestion rollout.
 
 ## debug-learning-002
 
@@ -50,3 +51,4 @@ Original test `does not offer Learning outside its rollout`. [Registration](http
 - **Given** The user opens Debug while Learning is outside its rollout.
 - **When** The Debug page loads.
 - **Then** No Learning region is offered.
+- **Upstream change** `ec5330db` (#49438) makes the agent-suggestion rollout the rollout that controls Debug Learning ([Registration](https://github.com/okou-ai/okou/blob/ec5330dbee67ad46e9dee4e000ba92863b223681/turbo/apps/platform/src/views/okou-page/__tests__/debug-learning.test.tsx#L271)).

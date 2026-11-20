@@ -26,6 +26,7 @@ Original test `saving Learning (initially false) keeps enabled Suggestions uncha
 - **Given** Suggestions is enabled, and Learning is initially off.
 - **When** The user turns Learning on while its saved preference is being refreshed.
 - **Then** During refresh, Learning remains off and unavailable, while Suggestions remains checked and enabled. After refresh completes, Learning is on and available, and Suggestions remains checked.
+- **Upstream change** `ec5330db` (#49438) retires the separate Learning preference, so daily profile learning follows Suggestions, and removes this upstream test. The current save-isolation test is `updates $name from the save response while leaving other preferences usable` ([Registration](https://github.com/okou-ai/okou/blob/ec5330dbee67ad46e9dee4e000ba92863b223681/turbo/apps/platform/src/views/okou-page/__tests__/settings-refresh-state.test.tsx#L306)). Rebuild this scenario with Suggestions as the saved preference and Morning brief as the preference that stays unchanged.
 
 ## settings-refresh-state-004
 
@@ -34,6 +35,7 @@ Original test `saving Learning (initially true) keeps enabled Suggestions unchan
 - **Given** Suggestions is enabled, and Learning is initially on.
 - **When** The user turns Learning off while its saved preference is being refreshed.
 - **Then** During refresh, Learning remains on and unavailable, while Suggestions remains checked and enabled. After refresh completes, Learning is off and available, and Suggestions remains checked.
+- **Upstream change** `ec5330db` (#49438) retires the separate Learning preference and removes this upstream test. The current save-isolation test is `updates $name from the save response while leaving other preferences usable` ([Registration](https://github.com/okou-ai/okou/blob/ec5330dbee67ad46e9dee4e000ba92863b223681/turbo/apps/platform/src/views/okou-page/__tests__/settings-refresh-state.test.tsx#L306)).
 
 ## settings-refresh-state-005
 
@@ -42,6 +44,7 @@ Original test `reopening Settings refreshes a Learning preference changed elsewh
 - **Given** Learning is off in Settings.
 - **When** The user closes Settings, the preference is changed elsewhere to on, and the user reopens Settings.
 - **Then** Learning is checked and enabled in the reopened Settings.
+- **Upstream change** `ec5330db` (#49438) retires the separate Learning preference; the upstream test is now `%s refreshes a Suggestions preference changed elsewhere after a save` ([Registration](https://github.com/okou-ai/okou/blob/ec5330dbee67ad46e9dee4e000ba92863b223681/turbo/apps/platform/src/views/okou-page/__tests__/settings-refresh-state.test.tsx#L202)). Rebuild this scenario with the Suggestions switch.
 
 ## settings-refresh-state-006
 
@@ -50,6 +53,7 @@ Original test `returning to Preference refreshes a Learning preference changed e
 - **Given** Learning is off in Settings.
 - **When** The user switches to Chat, the preference is changed elsewhere to on, and the user returns to Preference.
 - **Then** Learning is checked and enabled in Preference.
+- **Upstream change** `ec5330db` (#49438) retires the separate Learning preference; the upstream test is now `%s refreshes a Suggestions preference changed elsewhere after a save` ([Registration](https://github.com/okou-ai/okou/blob/ec5330dbee67ad46e9dee4e000ba92863b223681/turbo/apps/platform/src/views/okou-page/__tests__/settings-refresh-state.test.tsx#L202)).
 
 ## settings-refresh-state-007
 
@@ -82,6 +86,7 @@ Original test `keeps Learning pending until its saved preference has been read b
 - **Given** Learning is enabled and its preference has not yet been read back after saving.
 - **When** The user turns Learning off and interacts with Morning brief while the read-back is pending.
 - **Then** Learning remains checked and unavailable until the saved preference is read back, then becomes unchecked and enabled. Morning brief can be turned on and remains enabled.
+- **Upstream change** `ec5330db` (#49438) retires the separate Learning preference and removes this upstream test; no Learning switch remains in Preference.
 
 ## settings-refresh-state-011
 

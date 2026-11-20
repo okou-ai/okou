@@ -1430,22 +1430,6 @@ export const clientContractImportManifest = [
     bindings: [],
   },
   {
-    module: "proactive-nightly",
-    contracts: ["proactiveLearningContract"],
-    bindings: [
-      {
-        name: "PROACTIVE_LEARNING_BLUEPRINT_KEY",
-        source: "contracts/proactive",
-        imported: "PROACTIVE_LEARNING_BLUEPRINT_KEY",
-      },
-      {
-        name: "PROACTIVE_LEARNING_DEFINITION_NAME",
-        source: "contracts/proactive",
-        imported: "PROACTIVE_LEARNING_DEFINITION_NAME",
-      },
-    ],
-  },
-  {
     module: "proactive-suggestions",
     contracts: ["proactiveSuggestionsContract"],
     bindings: [],

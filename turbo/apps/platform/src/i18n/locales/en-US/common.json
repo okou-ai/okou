@@ -4069,13 +4069,13 @@
     "markdown": "Write in plain text or use Markdown",
     "placeholder": "Tell Okou how you like to work…",
     "proactiveSettings": {
-      "cardsOnly": "New cards are on. Hourly checks are off. Choose one setting for both.",
+      "cardsOnly": "New cards are on. Hourly checks and daily profile updates are off. Choose one setting for both.",
       "choose": "Choose…",
       "description": "Personalize how Okou works in this workspace.",
-      "hourlyOnly": "Hourly checks are on. New cards are off. Choose one setting for both.",
+      "hourlyOnly": "Hourly checks and daily profile updates are on. New cards are off. Choose one setting for both.",
       "offers": "Receive offer cards in For you.",
       "sourcesHint": "Turning off a card source stops new cards and unread alerts from that source. Existing cards stay in For you.",
-      "suggestions": "Check connected sources hourly and receive new suggestion cards in For you.",
+      "suggestions": "Check connected sources hourly, update your user profile daily, and suggest useful next steps.",
       "systemUpdates": "Receive system announcements in For you.",
       "turnOff": "Turn both off",
       "turnOn": "Turn both on",
@@ -5724,17 +5724,8 @@
         "preparing": "Preparing your first Morning Brief. You can turn it off at any time.",
         "title": "Morning brief"
       },
-      "proactiveLearning": {
-        "description": "Review your activity overnight and improve personal memory.",
-        "errorMessage": "Could not load or update this setting.",
-        "missingDefaultAgent": "Okou is unavailable in this workspace. Contact a workspace administrator.",
-        "missingTimezone": "Set your time zone in Preferences.",
-        "preparationFailed": "This workflow is temporarily unavailable.",
-        "preparing": "Preparing this workflow.",
-        "title": "Learning"
-      },
       "proactiveSuggestions": {
-        "description": "Let Okou check your connected sources every hour and suggest useful next steps on your home page.",
+        "description": "Check connected sources hourly, update your user profile daily, and suggest useful next steps.",
         "errorMessage": "Proactive Suggestions settings could not be loaded or updated.",
         "missingDefaultAgent": "Okou is unavailable in this workspace. Contact a workspace administrator.",
         "missingTimezone": "Set your time zone in Preferences.",

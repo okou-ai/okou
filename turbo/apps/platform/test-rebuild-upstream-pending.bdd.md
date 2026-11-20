@@ -222,7 +222,8 @@ My Okou opens Proactive first, unifies legacy Suggestions choices, and retains a
 
 - **Given** Suggestions are enabled, so My Okou shows the Proactive layout; new suggestion cards are on and hourly checks are off.
 - **When** The user turns both Suggestions settings off, turns Suggestions back on, turns Offers off, and drafts new Instructions before switching tabs.
-- **Then** Proactive opens first and explains the mixed Suggestions state; after the choice, one Suggestions switch reflects both settings while Learning, Offers and System updates keep their own states. The Proactive and Instructions tabs keep the Suggestions choice and the Instructions draft across switches.
+- **Then** Proactive opens first and explains the mixed Suggestions state; after the choice, one Suggestions switch reflects both settings while Offers and System updates keep their own states. The Proactive and Instructions tabs keep the Suggestions choice and the Instructions draft across switches.
+- **Upstream change** `ec5330db` (#49438) removes the Learning switch, so it no longer appears in Proactive, and changes the mixed-state explanation to “New cards are on. Hourly checks and daily profile updates are off. Choose one setting for both.” ([Registration](https://github.com/okou-ai/okou/blob/ec5330dbee67ad46e9dee4e000ba92863b223681/turbo/apps/platform/src/views/__tests__/my-okou.test.tsx#L434)).
 - **Disposition** retain.
 - **Source** upstream `9d20531a` (#49401), added to the copied test file after it was removed.
 
@@ -233,6 +234,7 @@ A member with only hourly checks can opt into new cards without showing a stale 
 - **Given** Hourly checks are on and new suggestion cards are off, and the next feed-source refresh is delayed.
 - **When** The user chooses to turn both Suggestions settings on.
 - **Then** The mixed state is explained first; while the refresh is pending, the single Suggestions switch is shown on and unavailable, and it becomes available once the refresh completes.
+- **Upstream change** `ec5330db` (#49438) changes the mixed-state explanation to “Hourly checks and daily profile updates are on. New cards are off. Choose one setting for both.” ([Registration](https://github.com/okou-ai/okou/blob/ec5330dbee67ad46e9dee4e000ba92863b223681/turbo/apps/platform/src/views/__tests__/my-okou.test.tsx#L497)).
 - **Disposition** retain.
 - **Source** upstream `9d20531a` (#49401), added to the copied test file after it was removed.
 
