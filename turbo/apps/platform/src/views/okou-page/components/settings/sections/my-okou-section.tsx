@@ -1,7 +1,21 @@
-import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
+import {
+  useGet,
+  useLastLoadable,
+  useLastResolved,
+  useLoadable,
+  useSet,
+} from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
-import { Button, Skeleton, surfaceVariants } from "@okouai/ui";
+import {
+  Tabs,
+  TabsList,
+  TabsTrigger,
+  TabsContent,
+  Button,
+  Skeleton,
+  surfaceVariants,
+} from "@okouai/ui";
 import {
   myOkouSignals$,
   myOkouSectionRef$,
@@ -13,7 +27,47 @@ import { TiptapInstructionsEditor } from "../../../tiptap-instructions-editor.ts
 import { UnsavedBar } from "../../../unsaved-bar.tsx";
 import { InstructionsConflict } from "../../../instructions-conflict.tsx";
 
+import { myOkouProactiveSettingsEnabled$ } from "../../../../../signals/single-agent.ts";
+import { ProactiveSection } from "./proactive-section.tsx";
+
 export function MyOkouSection() {
+  const { t } = useTranslation();
+  const proactive = useLastResolved(myOkouProactiveSettingsEnabled$);
+  if (proactive === undefined) {
+    return <LoadingInstructions />;
+  }
+  if (!proactive) {
+    return <InstructionsSection />;
+  }
+  return (
+    <Tabs defaultValue="proactive">
+      <TabsList
+        aria-label={t(($) => {
+          return $.myOkou.title;
+        })}
+      >
+        <TabsTrigger value="proactive">
+          {t(($) => {
+            return $.settings.dialog.sections.proactiveLearning.title;
+          })}
+        </TabsTrigger>
+        <TabsTrigger value="instructions">
+          {t(($) => {
+            return $.myOkou.instructions;
+          })}
+        </TabsTrigger>
+      </TabsList>
+      <TabsContent value="proactive" className="mt-4">
+        <ProactiveSection inMyOkou />
+      </TabsContent>
+      <TabsContent value="instructions" className="mt-4">
+        <InstructionsSection />
+      </TabsContent>
+    </Tabs>
+  );
+}
+
+function InstructionsSection() {
   const signals = useLoadable(myOkouSignals$);
   const sectionRef = useSet(myOkouSectionRef$);
   return (

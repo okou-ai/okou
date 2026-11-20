@@ -5,7 +5,11 @@ import {
 } from "./wallet.ts";
 import { command, computed, state } from "ccstate";
 import { isOrgAdmin$ } from "../../org.ts";
-import { singleAgentEnabled$ } from "../../single-agent.ts";
+import { MORNING_BRIEF_PREFERENCES_FOCUS } from "@okouai/api-contracts/validators/morning-brief-preference";
+import {
+  myOkouProactiveSettingsEnabled$,
+  singleAgentEnabled$,
+} from "../../single-agent.ts";
 import { searchParams$, updateSearchParams$ } from "../../route.ts";
 import { reloadIndexedDbDiagnosticsFromWorker$ } from "../../shared-database.ts";
 import { resetSignal } from "../../utils.ts";
@@ -122,6 +126,7 @@ export const setSettingsActiveSection$ = command(
       set(reloadIndexedDbDiagnosticsFromWorker$);
       set(reloadConnectorCatalogRelease$);
     }
+    const previous = get(internalActiveSection$);
     set(internalActiveSection$, section);
     if (section !== "billing") {
       set(clearBillingScrollTarget$);
@@ -129,6 +134,12 @@ export const setSettingsActiveSection$ = command(
     }
     const params = new URLSearchParams(get(searchParams$));
     if (params.get("settings") !== section) {
+      if (
+        previous !== section &&
+        params.get("focus") === MORNING_BRIEF_PREFERENCES_FOCUS
+      ) {
+        params.delete("focus");
+      }
       params.set("settings", section);
       set(updateSearchParams$, params);
     }
@@ -218,6 +229,9 @@ export const closeSettingsModal$ = command(({ get, set }) => {
   if (params.has("settings") || params.has("billingView")) {
     params.delete("settings");
     params.delete("billingView");
+    if (params.get("focus") === MORNING_BRIEF_PREFERENCES_FOCUS) {
+      params.delete("focus");
+    }
     set(updateSearchParams$, params);
   }
 });
@@ -349,7 +363,14 @@ export const checkUnifiedSettingsParam$ = command(
       return;
     }
 
-    const section = value;
+    // Already-delivered morning brief emails and workflow links use Preference.
+    const section =
+      value === "preference" &&
+      params.get("focus") === MORNING_BRIEF_PREFERENCES_FOCUS &&
+      (await get(myOkouProactiveSettingsEnabled$))
+        ? "my-okou"
+        : value;
+    signal.throwIfAborted();
     const opensBillingPlans = section === "billing" && billingView === "plans";
     const opensBuyCredits = section === "billing" && billingView === "credits";
     const isAdmin = await get(isOrgAdmin$);

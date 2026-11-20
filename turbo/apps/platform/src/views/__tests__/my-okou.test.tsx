@@ -2,6 +2,8 @@ import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 import userEvent from "@testing-library/user-event";
 import { instructionsContract } from "@okouai/api-contracts/contracts/instructions";
+import { feedContract } from "@okouai/api-contracts/contracts/feed";
+import { proactiveSuggestionsContract } from "@okouai/api-contracts/contracts/proactive-suggestions";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   click,
@@ -374,4 +376,145 @@ test("My Okou settings are unavailable when SingleAgent is disabled", async () =
       "preference",
     );
   });
+});
+
+const proactiveFeatures = {
+  [FeatureSwitchKey.SingleAgent]: true,
+  [FeatureSwitchKey.MyOkouProactiveSettings]: true,
+  [FeatureSwitchKey.AgentSuggestion]: true,
+  [FeatureSwitchKey.ProactiveLearning]: true,
+} as const;
+
+test("My Okou opens Proactive first, unifies legacy Suggestions choices, and retains an Instructions draft across tabs", async () => {
+  context.mocks.api(instructionsContract.get, ({ respond }) => {
+    return respond(200, response("A saved instruction"));
+  });
+  await setupPage({
+    context,
+    path: "/?settings=my-okou",
+    featureSwitches: proactiveFeatures,
+  });
+  const panel = within(
+    await screen.findByRole("tabpanel", { name: "Proactive" }),
+  );
+  const learn = await panel.findByRole("switch", { name: "Learning" });
+  const offers = await panel.findByRole("switch", { name: "Offers" });
+  const mixed = await panel.findByRole("combobox", { name: "Suggestions" });
+  expect(mixed).toHaveAccessibleDescription(
+    "New cards are on. Hourly checks are off. Choose one setting for both.",
+  );
+  click(mixed);
+  click(await screen.findByRole("option", { name: "Turn both off" }));
+  const suggestions = await panel.findByRole("switch", { name: "Suggestions" });
+  await waitFor(() => {
+    expect(suggestions).not.toHaveAttribute("aria-disabled", "true");
+  });
+  expect(suggestions).not.toBeChecked();
+  click(suggestions);
+  await waitFor(() => {
+    expect(panel.getByRole("switch", { name: "Suggestions" })).toBeChecked();
+  });
+  expect(learn).not.toBeChecked();
+  click(offers);
+  await waitFor(() => {
+    expect(offers).not.toBeChecked();
+  });
+  expect(panel.getByRole("switch", { name: "System updates" })).toBeChecked();
+  expect(
+    panel.getAllByRole("switch").map((control) => {
+      return control.getAttribute("aria-label");
+    }),
+  ).toStrictEqual([
+    "Morning brief",
+    "Suggestions",
+    "Learning",
+    "What’s new",
+    "Offers",
+    "System updates",
+  ]);
+  const [proactiveTab, editorTab] = queryAllByRoleFast(
+    "tab",
+    screen.getByRole("tablist"),
+  );
+  expect(proactiveTab).toHaveTextContent("Proactive");
+  expect(editorTab).toHaveTextContent("Instructions");
+  click(editorTab);
+  const editor = await screen.findByRole("textbox", { name: "Instructions" });
+  await fill(editor, "Keep this draft");
+  click(proactiveTab);
+  const restored = await screen.findByRole("switch", { name: "Suggestions" });
+  await waitFor(() => {
+    expect(restored).toBeChecked();
+  });
+  click(editorTab);
+  const retained = await screen.findByRole("textbox", { name: "Instructions" });
+  expect(retained).toHaveTextContent("Keep this draft");
+});
+
+test("a member with only hourly checks can opt into new cards without showing a stale mixed state during refresh", async () => {
+  const refresh = context.mocks.deferred<void>();
+  let initial = true;
+  context.mocks.api(feedContract.sources, async ({ respond }) => {
+    const suggestions = !initial;
+    initial = false;
+    if (suggestions) {
+      await refresh.promise;
+    }
+    return respond(200, {
+      suggestions,
+      whatsNew: true,
+      offers: true,
+      systemUpdates: true,
+    });
+  });
+  context.mocks.api(proactiveSuggestionsContract.get, ({ respond }) => {
+    return respond(200, {
+      enabled: true,
+      status: "enabled",
+      unavailableReason: null,
+    });
+  });
+  await setupPage({
+    context,
+    path: "/?settings=my-okou",
+    featureSwitches: proactiveFeatures,
+  });
+  const panel = within(
+    await screen.findByRole("tabpanel", { name: "Proactive" }),
+  );
+  const choice = await panel.findByRole("combobox", { name: "Suggestions" });
+  expect(choice).toHaveAccessibleDescription(
+    "Hourly checks are on. New cards are off. Choose one setting for both.",
+  );
+  click(choice);
+  click(await screen.findByRole("option", { name: "Turn both on" }));
+  try {
+    const pending = await panel.findByRole("switch", { name: "Suggestions" });
+    expect(pending).toBeChecked();
+    expect(pending).toHaveAttribute("aria-disabled", "true");
+  } finally {
+    refresh.resolve();
+  }
+  await waitFor(() => {
+    expect(
+      panel.getByRole("switch", { name: "Suggestions" }),
+    ).not.toHaveAttribute("aria-disabled", "true");
+  });
+});
+
+test("existing morning brief links open the Proactive tab in My Okou", async () => {
+  await setupPage({
+    context,
+    path: "/agents?settings=preference&focus=morning-brief",
+    featureSwitches: proactiveFeatures,
+  });
+  const panel = await screen.findByRole("tabpanel", { name: "Proactive" });
+  const brief = await within(panel).findByRole("switch", {
+    name: "Morning brief",
+  });
+  expect(brief).toBeEnabled();
+  click(button("Preference"));
+  await screen.findByRole("heading", { name: "Appearance" });
+  expect(screen.queryByRole("switch", { name: "Morning brief" })).toBeNull();
+  expect(new URLSearchParams(location.search).get("focus")).toBeNull();
 });

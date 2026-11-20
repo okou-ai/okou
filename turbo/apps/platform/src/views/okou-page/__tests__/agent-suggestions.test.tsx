@@ -1731,6 +1731,32 @@ test("For you moves suggestions out of the homepage into its own chat-list entry
   expect(link("/for-you")).toHaveAttribute("aria-current", "page");
 });
 
+test("For you keeps deck navigation and moves source settings into My Okou", async () => {
+  const items = numberedSuggestions(2);
+  mockPool(items);
+  await setupPage({
+    context,
+    path: suggestionPath,
+    featureSwitches: {
+      ...features,
+      [FeatureSwitchKey.SingleAgent]: true,
+      [FeatureSwitchKey.MyOkouProactiveSettings]: true,
+    },
+  });
+  await activeForYouCard("Suggested action 1");
+  expect(
+    queryAllByRoleFast("button").some((control) => {
+      return control.getAttribute("aria-label") === "For you sources";
+    }),
+  ).toBeFalsy();
+  click(link(`/for-you?suggestion=${items[1].id}`));
+  await activeForYouCard("Suggested action 2");
+  expect(link(`/for-you?suggestion=${items[1].id}`)).toHaveAttribute(
+    "aria-current",
+    "step",
+  );
+});
+
 test("For you browses without consuming and restores a card from its URL", async () => {
   const items = numberedSuggestions(3);
   const pool = mockPool(items);

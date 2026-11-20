@@ -35,6 +35,7 @@ import {
   SuggestionSentNotice,
 } from "./agent-suggestions.tsx";
 import { SuggestionsComplete } from "./suggestions-complete.tsx";
+import { myOkouProactiveSettingsEnabled$ } from "../../signals/single-agent.ts";
 import { ForYouSources } from "./for-you-sources.tsx";
 import { PlatformFeedEvent } from "./platform-feed-event.tsx";
 import { forYouBackground$ } from "../../signals/okou-page/for-you-artwork.ts";
@@ -252,6 +253,7 @@ function ForYouNavigation() {
 }
 
 function ForYouHeader() {
+  const proactiveInMyOkou = useLastResolved(myOkouProactiveSettingsEnabled$);
   const { t } = useTranslation();
   const deck = useLastResolved(forYouDeck$);
   const cards = deck?.progressCards ?? [];
@@ -268,7 +270,7 @@ function ForYouHeader() {
   const browse = useSet(browseForYou$);
   const signal = useGet(pageSignal$);
   return (
-    <header className="relative grid h-16 shrink-0 grid-cols-[6.5rem_minmax(0,1fr)_auto] items-center gap-3 border-b border-border bg-card/95 px-4 backdrop-blur-md sm:h-18 sm:grid-cols-[10rem_minmax(0,1fr)_auto] sm:gap-8 sm:px-8">
+    <header className="relative grid h-16 shrink-0 grid-flow-col grid-cols-[6.5rem_minmax(0,1fr)] items-center gap-3 border-b border-border bg-card/95 px-4 backdrop-blur-md sm:h-18 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-8 sm:px-8">
       <div className="min-w-0">
         <h1 className="text-base font-semibold sm:text-lg">
           {t(($) => {
@@ -358,7 +360,7 @@ function ForYouHeader() {
             : null}
         </span>
       </div>
-      <ForYouSources />
+      {proactiveInMyOkou === false && <ForYouSources />}
     </header>
   );
 }
