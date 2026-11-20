@@ -1,7 +1,6 @@
 """Integration coverage for Codex model catalog cache entry lifecycle."""
 
 import asyncio
-import json
 from unittest.mock import patch
 
 import pytest
@@ -21,6 +20,7 @@ from tests.codex_model_catalog_cache_helpers import (
     prepare_miss,
     responses_flow,
 )
+from tests.repeated_bytes_helpers import repeat_bytes
 
 
 async def test_fresh_hit_is_partitioned_and_expiry_never_uses_conditions(real_flow):
@@ -306,16 +306,18 @@ async def test_fresh_hit_changes_count_bound_eviction_order(real_flow):
 
 
 async def test_byte_bound_evicts_least_recent_entries(real_flow):
-    large_padding = "x" * (catalog_validation.MAX_ENTRY_BYTES - 64)
-    large_body = json.dumps({"models": [], "padding": large_padding}).encode()
+    large_body = repeat_bytes(
+        b'{"models": [], "padding": "', b"x", catalog_validation.MAX_ENTRY_BYTES - 64, b'"}'
+    )
     assert len(large_body) <= catalog_validation.MAX_ENTRY_BYTES
     entry_count = catalog_cache.MAX_TOTAL_BYTES // len(large_body) + 1
+    split = len(large_body) // 2
+    wire_chunks = (large_body[:split], large_body[split:])
     for index in range(entry_count):
-        await install_catalog(
-            catalog_flow(real_flow, version=f"bytes-{index}"),
-            body=large_body,
-            etag=f'"bytes-{index}"',
-        )
+        flow = catalog_flow(real_flow, version=f"bytes-{index}")
+        await prepare_miss(flow)
+        flow.response = catalog_response(body=large_body, etag=f'"bytes-{index}"')
+        await finish_response(flow, wire_chunks=wire_chunks)
 
     byte_oldest = catalog_flow(real_flow, version="bytes-0")
     await prepare_miss(byte_oldest)
