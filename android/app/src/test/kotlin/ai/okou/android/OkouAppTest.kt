@@ -506,6 +506,29 @@ class OkouAppTest {
     }
 
     @Test
+    @Config(qualifiers = "en-rUS-w400dp-h240dp")
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun newChatKeepsSendVisibleWhenTheAvailableHeightShrinks() {
+        val density = compose.activity.resources.displayMetrics.density
+        // Model a tall application window whose content has less room after IME insets.
+        compose.runOnIdle {
+            windowSize.value = IntSize((400 * density).toInt(), (520 * density).toInt())
+        }
+        render()
+        compose.onNodeWithText("New chat").performClick()
+        val input = compose.onNodeWithTag("message_input").assertIsEnabled()
+        input.performTextReplacement((1..20).joinToString("\n") { "Draft line $it" })
+
+        val bounds = input.getUnclippedBoundsInRoot()
+        val editorHeight = bounds.bottom - bounds.top
+        assertTrue(editorHeight > 48.dp && editorHeight < 156.dp)
+        val send = compose.onNodeWithContentDescription("Send").assertIsDisplayed()
+        send.assertHeightIsEqualTo(48.dp)
+        val visible = send.fetchSemanticsNode().boundsInRoot
+        assertEquals(48 * density, visible.height, 0.5f)
+    }
+
+    @Test
     fun wideLayoutUsesTheWindowWidthAndMinimumHeight() {
         assertEquals(null, workspaceListPaneWidth(839, 900))
         assertEquals(null, workspaceListPaneWidth(1100, 479))

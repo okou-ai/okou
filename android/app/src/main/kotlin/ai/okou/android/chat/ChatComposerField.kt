@@ -6,6 +6,7 @@ import ai.okou.android.currentWindowSizeDp
 import ai.okou.android.state.rememberJournalEditor
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
@@ -110,7 +111,6 @@ fun ChatComposerField(
         modifier
             .fillMaxWidth()
             .imePadding()
-            .verticalScroll(rememberScrollState())
             .padding(
                 start = horizontalInset,
                 top = 4.dp,
@@ -119,82 +119,99 @@ fun ChatComposerField(
             )
             .testTag("chat_composer")
     ) {
-        if (state.persistence == ComposerPersistence.Failed) {
-            Text(stringResource(R.string.composer_local_failed))
-            TextButton(
-                onClick = { if (state.journal == null) model.open(target) else model.retryLocal() }
-            ) {
-                Text(stringResource(R.string.retry))
-            }
-        }
-        when (state.sync(target)) {
-            ComposerSync.Loading -> Text(stringResource(R.string.composer_sync_loading))
-            ComposerSync.Saving -> Text(stringResource(R.string.composer_sync_saving))
-            ComposerSync.Failed,
-            ComposerSync.Unsupported -> {
-                Text(
-                    stringResource(
-                        if (state.sync(target) == ComposerSync.Unsupported)
-                            R.string.composer_sync_unsupported
-                        else R.string.composer_sync_failed
-                    )
-                )
-                TextButton(onClick = { model.retrySync(target) }) {
-                    Text(stringResource(R.string.composer_sync_retry))
-                }
-            }
-            else -> Unit
-        }
-        state.journal?.retainedDrafts?.forEach { (key, text) ->
-            Text(text, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            TextButton(
-                onClick = { model.restoreDraft(target, key) },
-                enabled = entry.text.isEmpty(),
-            ) {
-                Text(stringResource(R.string.composer_restore_draft))
-            }
-        }
-        if (target.threadId == null && state.context != ComposerContext.Ready) {
-            Text(
-                stringResource(
-                    if (state.context == ComposerContext.Loading) R.string.composer_target_loading
-                    else R.string.composer_target_unavailable
-                )
-            )
-            if (state.context != ComposerContext.Loading)
-                TextButton(onClick = { model.open(target) }) {
+        // Measure the editor first so feedback cannot push Send behind the keyboard.
+        Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) {
+            if (state.persistence == ComposerPersistence.Failed) {
+                Text(stringResource(R.string.composer_local_failed))
+                TextButton(
+                    onClick = {
+                        if (state.journal == null) model.open(target) else model.retryLocal()
+                    }
+                ) {
                     Text(stringResource(R.string.retry))
                 }
-        }
-        entry.pending?.let { pending ->
-            Text(
-                stringResource(R.string.composer_unconfirmed),
-                style = MaterialTheme.typography.labelLarge,
-            )
-            Text(pending.send.prompt, maxLines = 3, overflow = TextOverflow.Ellipsis)
-            FlowRow {
+            }
+            when (state.sync(target)) {
+                ComposerSync.Loading -> Text(stringResource(R.string.composer_sync_loading))
+                ComposerSync.Saving -> Text(stringResource(R.string.composer_sync_saving))
+                ComposerSync.Failed,
+                ComposerSync.Unsupported -> {
+                    Text(
+                        stringResource(
+                            if (state.sync(target) == ComposerSync.Unsupported)
+                                R.string.composer_sync_unsupported
+                            else R.string.composer_sync_failed
+                        )
+                    )
+                    TextButton(onClick = { model.retrySync(target) }) {
+                        Text(stringResource(R.string.composer_sync_retry))
+                    }
+                }
+                else -> Unit
+            }
+            state.journal?.retainedDrafts?.forEach { (key, text) ->
+                Text(text, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                TextButton(
+                    onClick = { model.restoreDraft(target, key) },
+                    enabled = entry.text.isEmpty(),
+                ) {
+                    Text(stringResource(R.string.composer_restore_draft))
+                }
+            }
+            if (target.threadId == null && state.context != ComposerContext.Ready) {
+                Text(
+                    stringResource(
+                        if (state.context == ComposerContext.Loading)
+                            R.string.composer_target_loading
+                        else R.string.composer_target_unavailable
+                    )
+                )
+                if (state.context != ComposerContext.Loading)
+                    TextButton(onClick = { model.open(target) }) {
+                        Text(stringResource(R.string.retry))
+                    }
+            }
+            entry.pending?.let { pending ->
+                Text(
+                    stringResource(R.string.composer_unconfirmed),
+                    style = MaterialTheme.typography.labelLarge,
+                )
+                Text(pending.send.prompt, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                FlowRow {
+                    TextButton(
+                        onClick = { model.observe(target) },
+                        enabled = target.key !in state.busy,
+                    ) {
+                        Text(stringResource(R.string.composer_check))
+                    }
+                    TextButton(
+                        onClick = { model.retry(target) },
+                        enabled = target.key !in state.busy,
+                    ) {
+                        Text(stringResource(R.string.composer_retry))
+                    }
+                }
+            }
+            entry.receipt?.let {
+                Text(
+                    stringResource(it.disposition.label()),
+                    modifier = Modifier.testTag("send_receipt"),
+                )
                 TextButton(
                     onClick = { model.observe(target) },
                     enabled = target.key !in state.busy,
                 ) {
                     Text(stringResource(R.string.composer_check))
                 }
-                TextButton(onClick = { model.retry(target) }, enabled = target.key !in state.busy) {
-                    Text(stringResource(R.string.composer_retry))
-                }
             }
+            if (target.key in state.unobserved) Text(stringResource(R.string.composer_not_observed))
+            if (target.key in state.failed) Text(stringResource(R.string.composer_request_failed))
+            if (state.persistence == ComposerPersistence.Pending)
+                Text(
+                    stringResource(R.string.composer_saving),
+                    style = MaterialTheme.typography.labelSmall,
+                )
         }
-        entry.receipt?.let {
-            Text(
-                stringResource(it.disposition.label()),
-                modifier = Modifier.testTag("send_receipt"),
-            )
-            TextButton(onClick = { model.observe(target) }, enabled = target.key !in state.busy) {
-                Text(stringResource(R.string.composer_check))
-            }
-        }
-        if (target.key in state.unobserved) Text(stringResource(R.string.composer_not_observed))
-        if (target.key in state.failed) Text(stringResource(R.string.composer_request_failed))
         Row(
             Modifier.fillMaxWidth()
                 .background(colors.surface, cardShape)
@@ -204,6 +221,7 @@ fun ChatComposerField(
                     shape = cardShape,
                 )
                 .padding(start = 8.dp, top = 5.dp, end = 6.dp, bottom = 5.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.Bottom,
         ) {
             BasicTextField(
@@ -273,11 +291,6 @@ fun ChatComposerField(
                 )
             }
         }
-        if (state.persistence == ComposerPersistence.Pending)
-            Text(
-                stringResource(R.string.composer_saving),
-                style = MaterialTheme.typography.labelSmall,
-            )
     }
 }
 
