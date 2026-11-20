@@ -2009,7 +2009,7 @@ pub async fn prepare_fresh_archive_delivery(
     decoded: Option<&decoded::DecodedCache>,
 ) -> RunnerResult<FreshArchiveDelivery> {
     let archives = plan.cache_candidates();
-    let ordinary_required = archives
+    let mut ordinary_required = archives
         .iter()
         .any(|archive| archive.name.is_empty() || archive.version.is_empty());
     let mut groups = group_targets(collect_targets(archives));
@@ -2018,9 +2018,15 @@ pub async fn prepare_fresh_archive_delivery(
     }
     let candidates = groups
         .iter()
-        // Guest owns optional-only cold downloads. The shared Runner readiness
-        // gate publishes complete sources and aborts as a whole after a failure.
-        .map(|group| !group.optional_only() && !group_has_decoded(group, plan))
+        .map(|group| {
+            let optional_only = group.optional_only();
+            let decoded = group_has_decoded(group, plan);
+            // Guest owns optional-only cold downloads. Until ordinary preparation
+            // resolves the source, suffix admission could delay that Guest work.
+            ordinary_required |=
+                optional_only && !decoded && !plan.archive_unavailable(group.representative.handle);
+            !optional_only && !decoded
+        })
         .collect::<Vec<_>>();
     let owner_cancel = cancel.child_token();
     let phase_records = FreshArchivePhaseRecords::default();
