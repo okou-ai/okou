@@ -19,10 +19,15 @@ import {
   chatThreadEventsContract,
   chatThreadsContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
+import {
+  CLIENT_TYPE_HEADER,
+  CLIENT_TYPE_IOS,
+} from "@okouai/api-contracts/contracts/client-headers";
 import { uuid } from "zod";
 
 import { authContext$, organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
+import { request$ } from "../context/hono";
 import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
 import { generatePresignedGetUrl } from "../external/s3";
 import { notFound } from "../../lib/error";
@@ -320,6 +325,9 @@ const listChatThreadArtifactsInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(authContext$);
     const params = get(pathParamsOf(chatThreadArtifactsContract.list));
+    // Native iOS previews use the file inventory independently of Drive.
+    const includeDriveStatus =
+      get(request$).header(CLIENT_TYPE_HEADER) !== CLIENT_TYPE_IOS;
     const [runs, lookup] = await Promise.all([
       get(
         chatThreadArtifacts({
@@ -327,15 +335,17 @@ const listChatThreadArtifactsInner$ = command(
           userId: auth.userId,
         }),
       ),
-      set(
-        googleDriveArtifactStatusLookup$,
-        {
-          threadId: params.threadId,
-          orgId: auth.orgId,
-          userId: auth.userId,
-        },
-        signal,
-      ),
+      includeDriveStatus
+        ? set(
+            googleDriveArtifactStatusLookup$,
+            {
+              threadId: params.threadId,
+              orgId: auth.orgId,
+              userId: auth.userId,
+            },
+            signal,
+          )
+        : undefined,
     ]);
     signal.throwIfAborted();
     if (!runs) {
@@ -344,7 +354,11 @@ const listChatThreadArtifactsInner$ = command(
 
     return {
       status: 200 as const,
-      body: { runs: applyGoogleDriveArtifactSyncStatuses(runs, lookup) },
+      body: {
+        runs: lookup
+          ? applyGoogleDriveArtifactSyncStatuses(runs, lookup)
+          : runs,
+      },
     };
   },
 );

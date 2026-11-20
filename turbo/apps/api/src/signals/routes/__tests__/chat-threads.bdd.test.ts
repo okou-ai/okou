@@ -2,6 +2,10 @@ import { utils as compoundUtils, write as writeCompoundFile } from "cfb";
 import { HttpResponse } from "msw";
 import { getRequestListener } from "@hono/node-server";
 import { artifactGoogleDriveContract } from "@okouai/api-contracts/contracts/artifact-google-drive";
+import {
+  CLIENT_TYPE_HEADER,
+  CLIENT_TYPE_IOS,
+} from "@okouai/api-contracts/contracts/client-headers";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
 import { hostRoutes } from "../host";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
@@ -11,6 +15,7 @@ import {
 } from "@okouai/core/google-workspace-conversion";
 import { chatThreadsArtifactsSyncRoutes } from "../chat-threads-artifacts-sync";
 import {
+  chatThreadArtifactsContract,
   chatThreadConnectorSelectionContract,
   chatThreadsContract,
   chatThreadUsageContract,
@@ -2252,6 +2257,28 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
         ],
       };
     });
+    const artifactsClient = setupApp({ context, routes: chatThreadRoutes })(
+      chatThreadArtifactsContract,
+    );
+    const native = await accept(
+      artifactsClient.list({
+        headers: authHeaders(actor),
+        extraHeaders: { [CLIENT_TYPE_HEADER]: CLIENT_TYPE_IOS },
+        params: { threadId: run.threadId },
+      }),
+      [200],
+    );
+    expect(native.body.runs).toMatchObject([
+      {
+        runId: run.runId,
+        files: expect.arrayContaining([
+          expect.objectContaining({ id: csvId, filename: "data.csv" }),
+          expect.objectContaining({ id: pdfId, filename: "report.pdf" }),
+        ]),
+      },
+    ]);
+    expect(listRecorder.queries).toHaveLength(0);
+
     artifacts = await chat.listThreadArtifacts(actor, run.threadId);
     expect(
       artifacts.runs[0]?.files.find((file) => {
