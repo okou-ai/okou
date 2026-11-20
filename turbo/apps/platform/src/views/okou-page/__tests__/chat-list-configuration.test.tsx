@@ -117,12 +117,14 @@ test("Service tier and Computer Use settings update independently", async () => 
     hosts: [onlineComputerUseHost(STUDIO_MAC_ID)],
   });
 
-  await startPage({
+  const page = await startPage({
     context,
     path: `/chats/${configured.id}`,
     auth: chatListAuth(caseId),
     cachedChatThreadEvents: cachedChatListEvents(caseId, [configured, newer]),
   });
+  // First page content is the startup boundary before any page query.
+  await page.content;
 
   const before = await composerModelTrigger("GPT 5.6 Sol");
   expect(before).toHaveAttribute("aria-label", "GPT 5.6 Sol, Max");

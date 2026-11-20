@@ -43,12 +43,14 @@ async function openCachedChatList(story: ChatListStory): Promise<{
     remoteGate: remoteGate.promise,
   });
   installActiveChatBoundaries(context);
-  await startPage({
+  const page = await startPage({
     context,
     path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
     auth: chatListAuth(story.caseId),
     cachedChatThreadEvents: cachedChatListEvents(story.caseId, story.cached),
   });
+  // First page content is the startup boundary before any page query.
+  await page.content;
   return {
     releaseRemote: () => {
       remoteGate.resolve();

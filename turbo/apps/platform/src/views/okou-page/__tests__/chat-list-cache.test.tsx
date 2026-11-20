@@ -36,7 +36,7 @@ test("Cached conversations appear before remote synchronization", async () => {
   });
   installActiveChatBoundaries(context);
 
-  await startPage({
+  const page = await startPage({
     context,
     path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
     auth: chatListAuth(caseId),
@@ -50,6 +50,8 @@ test("Cached conversations appear before remote synchronization", async () => {
       ],
     ),
   });
+  // First page content is the startup boundary before any page query.
+  await page.content;
 
   await waitFor(() => {
     expect(sidebarThreadTitles()).toStrictEqual(["Latest cached title"]);
@@ -74,12 +76,14 @@ test("A complete cached conversation list remains navigable", async () => {
   });
   installActiveChatBoundaries(context);
 
-  await startPage({
+  const page = await startPage({
     context,
     path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
     auth: chatListAuth(caseId),
     cachedChatThreadEvents: cachedChatListEvents(caseId, threads),
   });
+  // First page content is the startup boundary before any page query.
+  await page.content;
 
   const expectedTitles = threads
     .map((thread) => {
