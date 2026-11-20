@@ -63,7 +63,6 @@ const refreshTelegramTypingForRun$ = command(
     const db = get(db$);
     const callbacks = await db
       .select({
-        url: agentRunCallbacks.url,
         internalKind: agentRunCallbacks.internalKind,
         payload: agentRunCallbacks.payload,
       })

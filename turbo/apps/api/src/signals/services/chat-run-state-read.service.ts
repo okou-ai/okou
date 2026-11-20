@@ -11,7 +11,6 @@ import {
 import { command } from "ccstate";
 import {
   and,
-  asc,
   desc,
   eq,
   exists,
@@ -88,56 +87,26 @@ export function runLifecycleMarkerReadPlan(
   };
 }
 
-export function sourceChatCallbackReadPlan(args: {
-  readonly runId: string;
-  readonly sourceCallbackId?: string;
-}) {
-  return {
-    columns: {
-      id: agentRunCallbacks.id,
-      encryptedSecret: agentRunCallbacks.encryptedSecret,
-    },
-    condition: and(
-      eq(agentRunCallbacks.runId, args.runId),
-      eq(agentRunCallbacks.internalKind, "chat"),
-      args.sourceCallbackId
-        ? eq(agentRunCallbacks.id, args.sourceCallbackId)
-        : undefined,
-    ),
-    order: asc(agentRunCallbacks.id),
-    limit: 1,
-  };
-}
-
-export function requiredSourceChatCallback(
-  source:
-    | Pick<typeof agentRunCallbacks.$inferSelect, "id" | "encryptedSecret">
-    | undefined,
-) {
-  if (!source) {
-    throw new Error("Canonical delivery run is missing its chat callback");
-  }
-
-  return source;
-}
-
 export const requireSourceChatCallback$ = command(
   async (
     { get },
-    args: {
-      readonly runId: string;
-      readonly sourceCallbackId?: string;
-    },
-  ) => {
-    const db = get(db$);
-    const plan = sourceChatCallbackReadPlan(args);
-    const [source] = await db
-      .select(plan.columns)
+    args: { readonly runId: string; readonly sourceCallbackId: string },
+  ): Promise<string> => {
+    const [source] = await get(db$)
+      .select({ id: agentRunCallbacks.id })
       .from(agentRunCallbacks)
-      .where(plan.condition)
-      .orderBy(plan.order)
-      .limit(plan.limit);
-    return requiredSourceChatCallback(source);
+      .where(
+        and(
+          eq(agentRunCallbacks.id, args.sourceCallbackId),
+          eq(agentRunCallbacks.runId, args.runId),
+          eq(agentRunCallbacks.internalKind, "chat"),
+        ),
+      )
+      .limit(1);
+    if (!source) {
+      throw new Error("Canonical delivery run is missing its chat callback");
+    }
+    return source.id;
   },
 );
 

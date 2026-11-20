@@ -52,7 +52,10 @@ import {
   allocateUploadedArtifact$,
   materializeUploadedArtifact$,
 } from "../services/uploaded-artifact.service";
-import { feishuOrgCallbackPayloadSchema } from "../services/feishu-org-callback-payload";
+import {
+  FEISHU_RUN_FILE_INDEX_KIND,
+  feishuRunFileIndexSchema,
+} from "../services/feishu-run-file-index";
 import {
   feishuInstallationAvailabilityReadPlan,
   feishuInstallationEnabledFromRows,
@@ -169,18 +172,18 @@ const resolveDownloadTarget$ = command(
     if (!args.runId) {
       return null;
     }
-    const [callback] = await get(db$)
+    const [fileIndex] = await get(db$)
       .select({ payload: agentRunCallbacks.payload })
       .from(agentRunCallbacks)
       .where(
         and(
           eq(agentRunCallbacks.runId, args.runId),
-          eq(agentRunCallbacks.internalKind, "feishu:org"),
+          eq(agentRunCallbacks.internalKind, FEISHU_RUN_FILE_INDEX_KIND),
         ),
       )
       .limit(1);
     signal.throwIfAborted();
-    const parsed = feishuOrgCallbackPayloadSchema.safeParse(callback?.payload);
+    const parsed = feishuRunFileIndexSchema.safeParse(fileIndex?.payload);
     if (!parsed.success) {
       return null;
     }

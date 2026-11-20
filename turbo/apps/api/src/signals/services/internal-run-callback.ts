@@ -1,67 +1,49 @@
-export const internalRunCallbackKinds = [
+export const workflowAutomationRunCallbackKinds = [
+  "workflow-automation:cron",
+  "workflow-automation:loop",
+] as const;
+
+export const terminalRunCallbackKinds = [
+  "chat",
+  ...workflowAutomationRunCallbackKinds,
+] as const;
+
+export const inlineChatDeliveryCallbackKinds = [
   "email:chat",
   "agentphone:chat",
-  "chat",
   "slack:chat",
   "wechat:chat",
   "feishu:chat",
   "teams:chat",
   "telegram:chat",
-  "feishu:org",
-  "workflow-automation:cron",
-  "workflow-automation:loop",
 ] as const;
 
-export type InternalRunCallbackKind = (typeof internalRunCallbackKinds)[number];
+const internalRunCallbackKinds = [
+  ...terminalRunCallbackKinds,
+  ...inlineChatDeliveryCallbackKinds,
+] as const;
 
-export type InternalRunCallbackStatus = "completed" | "failed" | "progress";
+export type TerminalRunCallbackKind = (typeof terminalRunCallbackKinds)[number];
+
+export type InternalRunCallbackKind = (typeof internalRunCallbackKinds)[number];
 
 export type InternalRunCallbackDispatchResult =
   | { readonly success: true; readonly skipped?: true }
   | { readonly success: false; readonly error: string };
 
-interface InternalRunCallbackEnvelopeBase {
-  readonly callbackId?: string;
+export interface InternalRunCallbackEnvelope {
+  readonly callbackId: string;
   readonly runId: string;
-  readonly result?: Record<string, unknown>;
+  readonly status: "completed" | "failed" | "progress";
   readonly payload: unknown;
 }
 
-export type InternalRunCallbackEnvelope = InternalRunCallbackEnvelopeBase & {
-  readonly status: InternalRunCallbackStatus;
-};
-
-interface InternalRunCallbackRecord {
+export function internalRunCallbackKindForRecord(callback: {
   readonly internalKind: string | null;
-}
-
-function isInternalRunCallbackKind(
-  value: string | null,
-): value is InternalRunCallbackKind {
-  switch (value) {
-    case "email:chat":
-    case "agentphone:chat":
-    case "chat":
-    case "wechat:chat":
-    case "slack:chat":
-    case "feishu:chat":
-    case "teams:chat":
-    case "telegram:chat":
-    case "feishu:org":
-    case "workflow-automation:cron":
-    case "workflow-automation:loop": {
-      return true;
-    }
-    default: {
-      return false;
-    }
-  }
-}
-
-export function internalRunCallbackKindForRecord(
-  callback: InternalRunCallbackRecord,
-): InternalRunCallbackKind | null {
-  return isInternalRunCallbackKind(callback.internalKind)
-    ? callback.internalKind
-    : null;
+}): InternalRunCallbackKind | null {
+  return (
+    internalRunCallbackKinds.find((kind) => {
+      return kind === callback.internalKind;
+    }) ?? null
+  );
 }

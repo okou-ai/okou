@@ -6936,14 +6936,16 @@ export function registerFeishuIntegrationTests(
           revokesEventId: expect.any(String),
           runId: run.id,
         });
-        const completedReply = [...fixtureState.outboundMessages]
-          .reverse()
-          .find((message) => {
+        const completedReplies = fixtureState.outboundMessages.filter(
+          (message) => {
             return (
               message.kind === "reply" &&
               messageContent(message).includes("Canonical Feishu answer")
             );
-          });
+          },
+        );
+        expect(completedReplies).toHaveLength(1);
+        const [completedReply] = completedReplies;
         expect(completedReply?.msgType).toBe("interactive");
         expect(completedReply?.target).toBe(firstMessageId);
         expect(completedReply?.replyInThread).toBeTruthy();
