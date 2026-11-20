@@ -570,10 +570,10 @@ test("Retain message selection and restore mobile actions after sharing", async 
   context.mocks.browser.matchMedia(false);
   await setupHeaderPage();
   click(buttonNamed("Share messages"));
-  await screen.findAllByText("0 selected");
+  await screen.findAllByText(/^0 of \d+ selected$/);
   expect(screen.queryByLabelText("More actions")).not.toBeInTheDocument();
   click(screen.getAllByText("Select message group")[0]!);
-  await screen.findAllByText("1 selected");
+  await screen.findAllByText(/^1 of \d+ selected$/);
   click(buttonNamed("Cancel"));
   await waitFor(() => {
     expect(buttonNamed("Share messages")).toBeInTheDocument();

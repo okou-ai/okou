@@ -14,7 +14,16 @@ import {
 } from "@okouai/ui";
 import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
-import { Check, ChevronDown, Globe, Share2, Users } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  Globe,
+  Lock,
+  Share2,
+  Users,
+  type LucideIcon,
+} from "lucide-react";
+import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { currentOrgInfo$ } from "../../signals/auth.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -114,6 +123,48 @@ export function MessageShareMenu({
   );
 }
 
+function audienceIcon(audience: SharedThreadAudience): LucideIcon {
+  if (audience === "private") {
+    return Lock;
+  }
+  return audience === "public" ? Globe : Users;
+}
+
+function audienceLabel(t: TFunction, audience: SharedThreadAudience): string {
+  if (audience === "private") {
+    return t(($) => {
+      return $.artifacts.sharing.onlyMeOption;
+    });
+  }
+  if (audience === "public") {
+    return t(($) => {
+      return $.artifacts.sharing.publicOption;
+    });
+  }
+  return t(($) => {
+    return $.artifacts.sharing.organizationOptionUnnamed;
+  });
+}
+
+/** The neutral trigger content for a chosen audience: its icon, its name and
+ * the disclosure chevron. */
+function AudienceTriggerContent({
+  audience,
+}: {
+  readonly audience: SharedThreadAudience;
+}) {
+  const { t } = useTranslation();
+  const Icon = audienceIcon(audience);
+  return (
+    <>
+      <Icon className="text-muted-foreground" />
+      {audienceLabel(t, audience)}
+      {/* Pushed to the trailing edge when the trigger fills its row. */}
+      <ChevronDown className="ml-auto text-muted-foreground" />
+    </>
+  );
+}
+
 export function SharedThreadAudiencePicker({
   audience,
   disabled,
@@ -131,6 +182,7 @@ export function SharedThreadAudiencePicker({
         render={
           <Button
             variant="neutral"
+            className="justify-start"
             disabled={disabled}
             aria-label={t(($) => {
               return $.artifacts.sharing.accessLabel;
@@ -138,18 +190,7 @@ export function SharedThreadAudiencePicker({
           />
         }
       >
-        {audience === "private"
-          ? t(($) => {
-              return $.artifacts.sharing.onlyMeOption;
-            })
-          : audience === "public"
-            ? t(($) => {
-                return $.artifacts.sharing.publicOption;
-              })
-            : t(($) => {
-                return $.artifacts.sharing.organizationOptionUnnamed;
-              })}
-        <ChevronDown className="text-muted-foreground" />
+        <AudienceTriggerContent audience={audience} />
       </PopoverTrigger>
       <ShareMenuContent
         label={t(($) => {
@@ -186,20 +227,20 @@ export function SharedThreadShareMenu({
       <PopoverTrigger
         render={
           <Button
-            variant={showLabel ? "default" : "quiet"}
+            variant={showLabel ? "neutral" : "quiet"}
             size={showLabel ? "default" : "icon-sm"}
+            className={showLabel ? "justify-start" : undefined}
             aria-label={t(($) => {
               return $.sharedThread.share;
             })}
           />
         }
       >
-        <Share2 size={showLabel ? 16 : 18} />
-        {showLabel
-          ? t(($) => {
-              return $.sharedThread.share;
-            })
-          : null}
+        {showLabel && details ? (
+          <AudienceTriggerContent audience={details.audience} />
+        ) : (
+          <Share2 size={showLabel ? 16 : 18} />
+        )}
       </PopoverTrigger>
       <ShareMenuContent
         label={t(($) => {

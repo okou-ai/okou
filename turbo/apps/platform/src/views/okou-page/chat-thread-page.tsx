@@ -1,4 +1,7 @@
-import { ChatShareSelectionControls } from "./chat-share-selection-controls.tsx";
+import {
+  ChatShareCloseButton,
+  ChatShareSelectionControls,
+} from "./chat-share-selection-controls.tsx";
 import {
   ChatComposerFooter,
   ChatPageHeader,
@@ -12,6 +15,7 @@ import {
   SharedThreadShareMenu,
 } from "./shared-thread-share-menu.tsx";
 import type { SharedThreadAudience } from "@okouai/api-contracts/contracts/shared-thread-visibility";
+import type { SharedThreadVisibilitySignals } from "../../signals/shared-thread-visibility.ts";
 import { emptyChatRunUsage$ } from "../../signals/chat-page/chat-run-usage.ts";
 import { ExternalSourceMessageAnnotation } from "./external-source-message-annotation.tsx";
 import { ChatResourcesButton } from "./chat-resources.tsx";
@@ -96,6 +100,7 @@ import {
   getShortcutLabel,
   getShortcutParts,
   Button,
+  Card,
   CopyButton,
   Checkbox,
   Input,
@@ -568,26 +573,11 @@ function DesktopChatThreadHeader({ thread }: { thread: ChatPanelSignals }) {
   const pageSignal = useGet(pageSignal$);
   const sharingPhase = useGet(thread.sharing.phase$);
   const startSharing = useSet(thread.sharing.start$);
-  const closeSharing = useSet(thread.sharing.close$);
   if (sharingPhase !== "idle") {
     return (
       <ChatPageHeader>
         <ChatShareSelectionControls sharing={thread.sharing} />
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => {
-            detach(
-              closeSharing(pageSignal),
-              Reason.DomCallback,
-              "close shared thread selection",
-            );
-          }}
-        >
-          {t(($) => {
-            return $.chat.sharing.cancel;
-          })}
-        </Button>
+        <ChatShareCloseButton sharing={thread.sharing} />
       </ChatPageHeader>
     );
   }
@@ -3588,10 +3578,8 @@ function SharedThreadCreatedLink({
 }) {
   const { t } = useTranslation();
   const visibility = useGet(thread.sharing.visibility$);
-  const close = useSet(thread.sharing.close$);
-  const pageSignal = useGet(pageSignal$);
   return (
-    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+    <div className="flex flex-col gap-2 composer-wide:flex-row composer-wide:items-center">
       <Input
         readOnly
         value={shareUrl}
@@ -3600,24 +3588,55 @@ function SharedThreadCreatedLink({
         })}
         className="min-w-0 flex-1"
       />
-      <div className="flex shrink-0 items-center gap-2">
-        {visibility && <SharedThreadShareMenu session={visibility} showLabel />}
-        <Button
-          variant="outline"
-          onClick={() => {
-            detach(
-              close(pageSignal),
-              Reason.DomCallback,
-              "close shared thread selection",
-            );
-          }}
-        >
-          {t(($) => {
-            return $.chat.sharing.close;
-          })}
-        </Button>
-      </div>
+      {visibility ? (
+        <div className="grid gap-2 composer-wide:flex composer-wide:shrink-0 composer-wide:items-center">
+          <SharedThreadShareMenu session={visibility} showLabel />
+          <SharedThreadCopyLinkButton session={visibility} />
+        </div>
+      ) : null}
     </div>
+  );
+}
+
+function SharedThreadCopyLinkButton({
+  session,
+}: {
+  readonly session: SharedThreadVisibilitySignals;
+}) {
+  const { t } = useTranslation();
+  const copied = useGet(session.copied$);
+  const copy = useSet(session.copy$);
+  const pageSignal = useGet(pageSignal$);
+  return (
+    <Button
+      onClick={() => {
+        detach(copy(pageSignal), Reason.DomCallback, "copy shared thread link");
+      }}
+    >
+      {copied ? <Check size={16} /> : <Copy size={16} />}
+      {t(($) => {
+        return copied
+          ? $.artifacts.sharing.copied
+          : $.artifacts.sharing.copyLink;
+      })}
+    </Button>
+  );
+}
+
+/** Sharing takes the composer's place, so it takes the composer's surface. */
+function ChatShareFooter({ children }: { readonly children: ReactNode }) {
+  return (
+    <ChatComposerFooter>
+      <div className="@container/composer">
+        <Card
+          surface="composer"
+          data-slot="chat-share-card"
+          className="p-3 composer-wide:pl-4"
+        >
+          {children}
+        </Card>
+      </div>
+    </ChatComposerFooter>
   );
 }
 
@@ -3652,60 +3671,66 @@ function ChatThreadBottomBar({
     ? `${window.location.origin}/share/threads/${sharedThreadId}`
     : null;
   return withChatScrollLayout(
-    <footer className="relative @container shrink-0 border-t border-border/60 px-4 py-3 sm:px-6">
-      <div className="mx-auto flex w-full max-w-[900px] flex-col gap-2">
-        {shareUrl ? (
-          <SharedThreadCreatedLink
-            key={shareUrl}
-            thread={thread}
-            shareUrl={shareUrl}
-          />
-        ) : (
-          <div className="flex flex-col gap-3 @lg:flex-row @lg:items-center @lg:justify-between">
-            <div className="min-w-0">
-              <p className="text-xs text-muted-foreground">
+    <ChatShareFooter>
+      {shareUrl ? (
+        <SharedThreadCreatedLink
+          key={shareUrl}
+          thread={thread}
+          shareUrl={shareUrl}
+        />
+      ) : (
+        <div className="flex flex-col gap-3 composer-wide:flex-row composer-wide:items-center">
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium text-foreground">
+              {t(
+                ($) => {
+                  return $.chat.sharing.shareCount;
+                },
+                { count: selectedCount },
+              )}
+            </p>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              {t(($) => {
+                return $.chat.sharing.visibilityDescription;
+              })}
+            </p>
+            {createLoadable.state === "hasError" ? (
+              <p className="mt-0.5 text-xs text-destructive">
                 {t(($) => {
-                  return $.chat.sharing.visibilityDescription;
+                  return $.chat.sharing.createFailed;
                 })}
               </p>
-              {createLoadable.state === "hasError" ? (
-                <p className="mt-0.5 text-xs text-destructive">
-                  {t(($) => {
-                    return $.chat.sharing.createFailed;
-                  })}
-                </p>
-              ) : null}
-            </div>
-            <div className="flex shrink-0 items-center gap-2">
-              <SharedThreadAudiencePicker
-                audience={audience}
-                disabled={creating}
-                onChange={changeAudience}
-              />
-              <Button
-                disabled={selectedCount === 0 || creating}
-                onClick={() => {
-                  detach(
-                    createSharedThread(pageSignal),
-                    Reason.DomCallback,
-                    "create shared thread",
-                  );
-                }}
-              >
-                {creating ? (
-                  <Loader2 size={16} className="animate-spin" />
-                ) : (
-                  <Share2 size={16} />
-                )}
-                {t(($) => {
-                  return $.chat.sharing.create;
-                })}
-              </Button>
-            </div>
+            ) : null}
           </div>
-        )}
-      </div>
-    </footer>,
+          <div className="grid gap-2 composer-wide:flex composer-wide:shrink-0 composer-wide:items-center">
+            <SharedThreadAudiencePicker
+              audience={audience}
+              disabled={creating}
+              onChange={changeAudience}
+            />
+            <Button
+              disabled={selectedCount === 0 || creating}
+              onClick={() => {
+                detach(
+                  createSharedThread(pageSignal),
+                  Reason.DomCallback,
+                  "create shared thread",
+                );
+              }}
+            >
+              {creating ? (
+                <Loader2 size={16} className="animate-spin" />
+              ) : (
+                <LinkIcon size={16} />
+              )}
+              {t(($) => {
+                return $.chat.sharing.create;
+              })}
+            </Button>
+          </div>
+        </div>
+      )}
+    </ChatShareFooter>,
   );
 }
 
@@ -6097,6 +6122,12 @@ function SelectablePagedGroupRow({
           nameLine
             ? "@[960px]:-mr-3 @[960px]:-ml-[54px] @[960px]:grid-cols-[2.25rem_minmax(0,1fr)] @[960px]:gap-2.5 @[960px]:pr-3"
             : "@[1060px]:-mr-3 @[1060px]:-ml-[100px] @[1060px]:grid-cols-[2.25rem_minmax(0,1fr)] @[1060px]:gap-2.5 @[1060px]:pr-3",
+          // A user message keeps a 32px action row under its bubble. Sharing
+          // offers no per-message action, so the row leaves the tint and its
+          // height moves to the margin: the tint hugs the bubble and the next
+          // group stays where it was.
+          group.role === "user" &&
+            "mb-[26px] [&_[data-chat-user-message-actions]]:hidden",
           "data-selected:bg-gray-50 dark:data-selected:bg-gray-100",
           phase === "selecting" &&
             (hasSelection
