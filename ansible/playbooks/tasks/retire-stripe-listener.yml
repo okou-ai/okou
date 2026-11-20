@@ -1,0 +1,10 @@
+- name: Require a PR-scoped listener
+  ansible.builtin.assert:
+    that: job_ref is match('^pr-[1-9][0-9]*$')
+
+- name: Stop Stripe listener and verify retirement
+  ansible.builtin.script:
+    cmd: "{{ playbook_dir }}/../../.github/scripts/runner/cleanup-metal-resources.py stop-stripe {{ job_ref[3:] }}"
+    executable: /usr/bin/python3
+  register: stripe_retirement
+  changed_when: stripe_retirement.rc == 0 and (stripe_retirement.stdout | from_json).stopped

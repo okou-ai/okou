@@ -25,11 +25,8 @@
           - job_ref | length > 0
         fail_msg: "Required variable: job_ref"
 
-    - name: Stop Stripe listener service
-      command: systemctl stop {{ service_name }}.service
-      register: stop_listener
-      changed_when: stop_listener.rc == 0
-      failed_when: false
+    - name: Retire the existing listener before cleanup
+      ansible.builtin.import_tasks: tasks/retire-stripe-listener.yml
 
     - name: Disable Stripe listener service
       command: systemctl disable {{ service_name }}.service
