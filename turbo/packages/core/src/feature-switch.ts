@@ -106,6 +106,15 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.MarkdownDocumentTypography]: {
+    maintainer: "bingjie@okou.ai",
+    displayName: "Markdown document typography",
+    description:
+      "Use a clearer heading hierarchy in Markdown document previews without changing chat typography.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    restrictOverridesToAudience: true,
+  },
   [FeatureSwitchKey.SingleAgent]: {
     maintainer: "lancy@okou.ai",
     displayName: "My Okou",

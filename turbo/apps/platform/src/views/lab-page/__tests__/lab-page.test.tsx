@@ -113,7 +113,10 @@ test("Lab groups active feature switches", async () => {
   expect(buttonNamed("Reset all")).toBeEnabled();
 });
 
-test("Staff see presentation format enabled by default in Beta", async () => {
+test.each([
+  FeatureSwitchKey.PresentationOutputFormat,
+  FeatureSwitchKey.MarkdownDocumentTypography,
+])("Staff see %s enabled by default in Beta", async (featureKey) => {
   const orgId = "org_3ANttyrbWYJk6JKRSTRLEsbsDLe";
   await setupPage({
     context,
@@ -129,29 +132,34 @@ test("Staff see presentation format enabled by default in Beta", async () => {
 
   await screen.findByRole("heading", { name: "Lab" });
   expect(
-    within(featureSwitchGroup("Beta")).getByText("Presentation output format"),
+    within(featureSwitchGroup("Beta")).getByText(
+      getFeatureSwitchMetadata()[featureKey].displayName ?? featureKey,
+    ),
   ).toBeInTheDocument();
   expect(
-    within(
-      featureSwitchRow(FeatureSwitchKey.PresentationOutputFormat),
-    ).getByRole("switch"),
+    within(featureSwitchRow(featureKey)).getByRole("switch"),
   ).toHaveAttribute("aria-checked", "true");
 });
 
-test("External peers cannot opt into presentation format in Lab", async () => {
+test.each([
+  FeatureSwitchKey.PresentationOutputFormat,
+  FeatureSwitchKey.MarkdownDocumentTypography,
+])("External peers cannot opt into %s in Lab", async (featureKey) => {
   await setupPage({
     context,
     path: "/_/lab",
     featureSwitches: {
       [FeatureSwitchKey.Lab]: true,
-      [FeatureSwitchKey.PresentationOutputFormat]: true,
+      [featureKey]: true,
     },
   });
 
   await screen.findByRole("heading", { name: "Lab" });
   expect(screen.getByText(FeatureSwitchKey.Banking)).toBeInTheDocument();
   expect(
-    screen.queryByText("Presentation output format"),
+    screen.queryByText(
+      getFeatureSwitchMetadata()[featureKey].displayName ?? featureKey,
+    ),
   ).not.toBeInTheDocument();
 });
 

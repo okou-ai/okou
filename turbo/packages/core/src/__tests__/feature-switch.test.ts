@@ -55,6 +55,36 @@ describe("isFeatureEnabled", () => {
     }
   });
 
+  it("enables Markdown document typography only in staff workspaces and honors staff overrides", () => {
+    const key = FeatureSwitchKey.MarkdownDocumentTypography;
+    const staff = {
+      userId: "staff-colleague",
+      orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
+    };
+    expect(isFeatureSwitchAvailable(key, staff)).toBe(true);
+    expect(isFeatureEnabled(key, staff)).toBe(true);
+    expect(getAllFeatureStates(staff)[key]).toBe(true);
+    for (const enabled of [false, true]) {
+      const context = { ...staff, overrides: { [key]: enabled } };
+      expect(isFeatureEnabled(key, context)).toBe(enabled);
+      expect(getAllFeatureStates(context)[key]).toBe(enabled);
+    }
+
+    for (const identity of [
+      {},
+      { userId: "external-user" },
+      { userId: "external-user", orgId: "external-org" },
+      { email: "bingjie@okou.ai", orgId: "external-org" },
+    ]) {
+      expect(isFeatureSwitchAvailable(key, identity)).toBe(false);
+      for (const overrides of [{}, { [key]: true }]) {
+        const context = { ...identity, overrides };
+        expect(isFeatureEnabled(key, context)).toBe(false);
+        expect(getAllFeatureStates(context)[key]).toBe(false);
+      }
+    }
+  });
+
   it("enables three-point timing only for Bingjie's user ID across workspaces", () => {
     const key = FeatureSwitchKey.ArtifactThreePointTiming;
     expect(getFeatureSwitchMetadata()[key].rolloutStage).toBe("internal");
