@@ -1,4 +1,4 @@
-import type { githubInstallations } from "@okouai/db/schema/github-installation";
+import type { githubInstallations } from "@okouai/db/runtime/github-installation";
 
 import { optionalEnv } from "../../lib/env";
 import { getGithubInstallationAccessToken } from "./github-app.service";

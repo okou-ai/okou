@@ -6,7 +6,6 @@ import {
   timestamp,
   varchar,
 } from "drizzle-orm/pg-core";
-import type { OrgMembersPinnedAgentIds } from "@okouai/db/jsonb-contracts/org-members-metadata";
 import type { ModelSettings } from "@okouai/db/jsonb-contracts/chat-model-settings";
 import type { ChatThreadServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
 import type {
@@ -25,9 +24,6 @@ export function orgMembersMetadataColumns() {
     proactiveLearningEnabled: boolean("proactive_learning_enabled"),
     locale: text("locale"),
     onboardingRole: text("onboarding_role"),
-    pinnedAgentIds: jsonb("pinned_agent_ids")
-      .$type<OrgMembersPinnedAgentIds>()
-      .default([]),
     sendMode: text("send_mode").notNull().default("enter"),
     cloudBrowserEnabledByDefault: boolean("cloud_browser_enabled_by_default")
       .notNull()

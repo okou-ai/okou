@@ -15,7 +15,7 @@ import {
   type GithubWorkflowJobCompletedEventConfig,
   type GithubWorkflowRunConclusion,
 } from "@okouai/api-contracts/contracts/workflows";
-import { githubInstallations } from "@okouai/db/schema/github-installation";
+import { githubInstallations } from "@okouai/db/runtime/github-installation";
 import {
   workflowGithubProcessedEvents,
   workflows,

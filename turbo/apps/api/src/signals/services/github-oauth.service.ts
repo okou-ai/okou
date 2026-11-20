@@ -27,7 +27,7 @@ import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { agents } from "@okouai/db/schema/agent";
 import { connectors } from "@okouai/db/schema/connector";
 import { connectorOauthStates } from "@okouai/db/schema/connector-oauth-state";
-import { githubInstallations } from "@okouai/db/schema/github-installation";
+import { githubInstallations } from "@okouai/db/runtime/github-installation";
 import { githubUserLinks } from "@okouai/db/schema/github-user-link";
 import { array, number, object, string } from "zod";
 import { command } from "ccstate";

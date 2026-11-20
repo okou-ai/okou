@@ -3,7 +3,7 @@ import {
   githubPullRequestReviewStateSchema,
   githubWorkflowRunConclusionSchema,
 } from "@okouai/api-contracts/contracts/workflows";
-import { githubInstallations } from "@okouai/db/schema/github-installation";
+import { githubInstallations } from "@okouai/db/runtime/github-installation";
 import { githubUserLinks } from "@okouai/db/schema/github-user-link";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { command } from "ccstate";
