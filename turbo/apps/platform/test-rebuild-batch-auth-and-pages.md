@@ -194,3 +194,12 @@ pass on the synced head. They are added with the helpers they use beside the
 25 rebuilt cases, and all 28 rows pass. For `025`, the connection row denies the
 same combined acquisition read as the session row, which the checklist
 records.
+
+`integrations-feishu` registered every case through one
+`describe.each(["feishu", "lark"])`. The selected Lark rows (`018`, `019`,
+`020`, `025`) are a subset of the selected Feishu rows. The per-provider setup
+moves into `integrationSuite`, unchanged. The four shared cases stay in a
+Feishu and Lark block, and the five Feishu-only cases run in a Feishu block,
+where the credentials case keeps only its Enter row. The 13 expanded rows
+match the 13 selected IDs. An independent review covered all 39 items with no
+gaps.

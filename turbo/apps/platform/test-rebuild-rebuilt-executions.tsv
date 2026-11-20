@@ -2604,3 +2604,16 @@ chat-scroll-019	turbo/apps/platform/src/views/okou-page/__tests__/chat-scroll.te
 browser-session-page-024	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	An authorization denial from the session keeps the panel with a distinct placeholder	1383	passed
 browser-session-page-025	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	An authorization denial from the connection keeps the panel with a distinct placeholder	1383	passed
 browser-session-page-034	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	A denied renewal from a previous reload cannot revoke the current same-window viewer	1432	passed
+integrations-feishu-005	turbo/apps/platform/src/views/okou-page/__tests__/integrations-feishu.test.tsx	feishu integration UI > Feishu appears when enabled and shows a connected bot	110	passed
+integrations-feishu-006	turbo/apps/platform/src/views/okou-page/__tests__/integrations-feishu.test.tsx	feishu integration UI > Feishu keeps a pending uninstall open and allows retry after failure	161	passed
+integrations-feishu-007	turbo/apps/platform/src/views/okou-page/__tests__/integrations-feishu.test.tsx	feishu integration UI > Reviewing a Feishu bot guide never connects	214	passed
+integrations-feishu-012	turbo/apps/platform/src/views/okou-page/__tests__/integrations-feishu.test.tsx	feishu integration UI > A workspace member can connect to a completed Feishu bot	307	passed
+integrations-feishu-018	turbo/apps/platform/src/views/okou-page/__tests__/integrations-feishu.test.tsx	lark integration UI > Lark appears when enabled and shows a connected bot	110	passed
+integrations-feishu-019	turbo/apps/platform/src/views/okou-page/__tests__/integrations-feishu.test.tsx	lark integration UI > Lark keeps a pending uninstall open and allows retry after failure	161	passed
+integrations-feishu-020	turbo/apps/platform/src/views/okou-page/__tests__/integrations-feishu.test.tsx	lark integration UI > Reviewing a Lark bot guide never connects	214	passed
+integrations-feishu-025	turbo/apps/platform/src/views/okou-page/__tests__/integrations-feishu.test.tsx	lark integration UI > A workspace member can connect to a completed Lark bot	307	passed
+integrations-feishu-001	turbo/apps/platform/src/views/okou-page/__tests__/integrations-feishu.test.tsx	feishu integration UI > An organization admin can start guided Feishu bot setup	376	passed
+integrations-feishu-002	turbo/apps/platform/src/views/okou-page/__tests__/integrations-feishu.test.tsx	feishu integration UI > Feishu credentials validate before advancing with Enter	424	passed
+integrations-feishu-008	turbo/apps/platform/src/views/okou-page/__tests__/integrations-feishu.test.tsx	feishu integration UI > A connected Feishu user can disconnect only their own account	484	passed
+integrations-feishu-009	turbo/apps/platform/src/views/okou-page/__tests__/integrations-feishu.test.tsx	feishu integration UI > Direct Feishu settings require Feishu to be enabled	528	passed
+integrations-feishu-013	turbo/apps/platform/src/views/okou-page/__tests__/integrations-feishu.test.tsx	feishu integration UI > A Feishu App ID already registered in Okou cannot be reused	541	passed
