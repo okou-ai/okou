@@ -3641,6 +3641,13 @@
       "when": 1795193646173,
       "tag": "1598_drop_retired_drive_agent_grants",
       "breakpoints": true
+    },
+    {
+      "idx": 1599,
+      "version": "7",
+      "when": 1795206895123,
+      "tag": "1599_retire_agent_storage",
+      "breakpoints": true
     }
   ]
 }

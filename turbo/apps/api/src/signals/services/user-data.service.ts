@@ -36,20 +36,6 @@ interface UserScopedQuery {
   readonly userId: string;
 }
 
-function toStringArray(value: unknown): string[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  return value.filter((item): item is string => {
-    return typeof item === "string";
-  });
-}
-
-/** Dedupe while keeping caller order — pinned order is user-controlled. */
-function normalizePinnedAgentIds(ids: readonly string[]): string[] {
-  return [...new Set(ids)];
-}
-
 function parseSendMode(value: unknown): SendMode {
   return value === "cmd-enter" ? "cmd-enter" : "enter";
 }
@@ -112,7 +98,6 @@ export function userPreferences({
         .select({
           timezone: orgMembersMetadata.timezone,
           locale: orgMembersMetadata.locale,
-          pinnedAgentIds: orgMembersMetadata.pinnedAgentIds,
           sendMode: orgMembersMetadata.sendMode,
           cloudBrowserEnabledByDefault:
             orgMembersMetadata.cloudBrowserEnabledByDefault,
@@ -162,9 +147,7 @@ export function userPreferences({
       timezone: row.timezone,
       locale: parseUserLocale(row.locale),
       supportedLocales: [...SUPPORTED_USER_LOCALES],
-      pinnedAgentIds: normalizePinnedAgentIds(
-        toStringArray(row.pinnedAgentIds),
-      ),
+      pinnedAgentIds: [],
       sendMode: parseSendMode(row.sendMode),
       cloudBrowserEnabledByDefault: row.cloudBrowserEnabledByDefault,
       chatResourcesEnabledByDefault: RETIRED_CHAT_RESOURCES_PREFERENCE,
@@ -252,10 +235,7 @@ function mergeUserPreferences(
     timezone: preferences.timezone ?? existing.timezone,
     locale: preferences.locale ?? existing.locale,
     supportedLocales: [...SUPPORTED_USER_LOCALES],
-    pinnedAgentIds:
-      preferences.pinnedAgentIds === undefined
-        ? existing.pinnedAgentIds
-        : normalizePinnedAgentIds(preferences.pinnedAgentIds),
+    pinnedAgentIds: [],
     sendMode: preferences.sendMode ?? existing.sendMode,
     cloudBrowserEnabledByDefault:
       preferences.cloudBrowserEnabledByDefault ??
@@ -278,9 +258,6 @@ function userPreferenceUpdateColumns(
       timezone: preferences.timezone,
     }),
     ...(preferences.locale !== undefined && { locale: preferences.locale }),
-    ...(preferences.pinnedAgentIds !== undefined && {
-      pinnedAgentIds: normalizePinnedAgentIds(preferences.pinnedAgentIds),
-    }),
     ...(preferences.sendMode !== undefined && {
       sendMode: preferences.sendMode,
     }),
@@ -331,7 +308,6 @@ export const updateUserPreferences$ = command(
         selectedModel: AUTO_SELECTED_MODEL,
         timezone: merged.timezone,
         locale: merged.locale,
-        pinnedAgentIds: merged.pinnedAgentIds,
         sendMode: merged.sendMode,
         cloudBrowserEnabledByDefault: merged.cloudBrowserEnabledByDefault,
         theme: merged.theme,

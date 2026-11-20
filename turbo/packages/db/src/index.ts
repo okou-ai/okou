@@ -51,7 +51,6 @@ import * as modelProviderAccountSchema from "./schema/model-provider-account";
 import * as runModelCatalogSchema from "./schema/run-model-catalog";
 import * as modelRouteSchema from "./schema/model-route";
 import * as variableSchema from "./schema/variable";
-import * as composeJobSchema from "./schema/compose-job";
 import * as connectorSchema from "./schema/connector";
 import * as chatThreadConnectorSelectionSchema from "./schema/chat-thread-connector-selection";
 import * as chatThreadConnectorAccessSchema from "./schema/chat-thread-connector-access";
@@ -251,7 +250,6 @@ export const schema = {
   ...feishuChatThreadRouteSchema,
   ...feishuChatIngressSchema,
   ...variableSchema,
-  ...composeJobSchema,
   ...connectorSchema,
   ...chatThreadConnectorSelectionSchema,
   ...chatThreadConnectorAccessSchema,

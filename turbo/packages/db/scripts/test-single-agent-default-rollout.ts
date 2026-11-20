@@ -74,7 +74,10 @@ try {
   // A rejected target must leave neither partial overrides nor a journal entry.
   await sql`ALTER TABLE user_feature_switches ADD CONSTRAINT reject_rollout_fixture
     CHECK(user_id <> 'reject-this-row')`;
-  await assert.rejects(applyPendingMigrations(sql), /reject_rollout_fixture/u);
+  await assert.rejects(
+    applyPendingMigrations(sql, { beforeMillis: migration.when + 1 }),
+    /reject_rollout_fixture/u,
+  );
   assert.deepEqual(await flags(), before);
   assert.deepEqual(
     Array.from(
@@ -86,7 +89,7 @@ try {
 
   // A real competing settings writer wins whether it commits before or after backfill.
   await Promise.all([
-    applyPendingMigrations(sql),
+    applyPendingMigrations(sql, { beforeMillis: migration.when + 1 }),
     writer`INSERT INTO user_feature_switches(org_id,user_id,switches)
       VALUES(${external},'concurrent-setting','{"singleAgent":true,"_dummy":false}')
       ON CONFLICT(org_id,user_id) DO UPDATE
@@ -143,7 +146,7 @@ try {
     SET switches=switches || '{"singleAgent":true}'::jsonb
     WHERE org_id=${external} AND user_id='missing-row'`;
   const retryBefore = await flags();
-  await applyPendingMigrations(sql);
+  await applyPendingMigrations(sql, { beforeMillis: migration.when + 1 });
   assert.deepEqual(await flags(), retryBefore);
   console.log(
     "Single Agent cohort, overrides, staff, concurrent settings, rollback and release retry passed",
