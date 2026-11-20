@@ -313,6 +313,55 @@ async fn acquire_rejects_group_writable_direct_parent() {
     assert!(!path.exists());
 }
 
+#[test]
+fn existing_shared_batch_uses_current_parent_after_replacement() {
+    let dir = tempfile::tempdir().unwrap();
+    let parent = dir.path().join("locks");
+    let path = parent.join("entry.lock");
+    drop(open_lock_file(&path).unwrap());
+    let mut batch = ExistingSharedLockBatch::default();
+    assert!(matches!(
+        batch.try_acquire_or_missing(&path).unwrap(),
+        ExistingTryLock::Acquired(_)
+    ));
+
+    std::fs::rename(&parent, dir.path().join("retired-locks")).unwrap();
+    let current = Flock::lock(open_lock_file(&path).unwrap(), FlockArg::LockExclusive).unwrap();
+    assert!(matches!(
+        batch.try_acquire_or_missing(&path).unwrap(),
+        ExistingTryLock::Busy
+    ));
+    drop(current);
+    assert!(matches!(
+        batch.try_acquire_or_missing(&path).unwrap(),
+        ExistingTryLock::Acquired(_)
+    ));
+
+    let missing = parent.join("missing.lock");
+    assert!(matches!(
+        batch.try_acquire_or_missing(&missing).unwrap(),
+        ExistingTryLock::Missing
+    ));
+    assert!(!missing.exists());
+}
+
+#[test]
+fn existing_shared_batch_rechecks_parent_permissions() {
+    let dir = tempfile::tempdir().unwrap();
+    let parent = dir.path().join("locks");
+    let path = parent.join("entry.lock");
+    drop(open_lock_file(&path).unwrap());
+    let mut batch = ExistingSharedLockBatch::default();
+    assert!(matches!(
+        batch.try_acquire_or_missing(&path).unwrap(),
+        ExistingTryLock::Acquired(_)
+    ));
+
+    std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o770)).unwrap();
+    let error = batch.try_acquire_or_missing(&path).err().unwrap();
+    assert!(error.to_string().contains("group/other writable"));
+}
+
 #[tokio::test]
 async fn acquire_allows_sticky_intermediate_parent_but_rejects_sticky_direct_parent() {
     let dir = tempfile::tempdir().unwrap();

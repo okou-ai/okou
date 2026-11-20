@@ -58,17 +58,13 @@ fn valid_path_envelope_can_still_fail_bounded_index_publication_cleanly() {
 fn content_budget_is_checked_before_opening_file_bodies() {
     let (_root, home, entry, _) = setup();
     fs::remove_file(entry.join("data.bin")).unwrap();
+    let cancel = CancellationToken::new();
+    let mut reader = BatchReader::new(&home, &cancel);
     assert!(
-        read_with_budget(
-            &home,
-            "name",
-            "v1",
-            4,
-            storage_files::MAX_FILES,
-            &CancellationToken::new()
-        )
-        .unwrap()
-        .is_none()
+        reader
+            .read("name", "v1", 4, storage_files::MAX_FILES)
+            .unwrap()
+            .is_none()
     );
     // When selected with sufficient budget, invalid positive content remains an error.
     assert!(read(&home, "name", "v1", &CancellationToken::new()).is_err());
@@ -79,28 +75,17 @@ fn file_budget_is_checked_before_bodies_but_does_not_hide_invalid_metadata() {
     let (_root, home, entry, _) = setup();
     fs::remove_file(entry.join("data.bin")).unwrap();
     let cancel = CancellationToken::new();
+    let mut reader = BatchReader::new(&home, &cancel);
     assert!(
-        read_with_budget(
-            &home,
-            "name",
-            "v1",
-            storage_files::MAX_STORAGE_BYTES,
-            0,
-            &cancel
-        )
-        .unwrap()
-        .is_none()
+        reader
+            .read("name", "v1", storage_files::MAX_STORAGE_BYTES, 0)
+            .unwrap()
+            .is_none()
     );
     assert!(
-        read_with_budget(
-            &home,
-            "name",
-            "v1",
-            storage_files::MAX_STORAGE_BYTES,
-            1,
-            &cancel
-        )
-        .is_err()
+        reader
+            .read("name", "v1", storage_files::MAX_STORAGE_BYTES, 1)
+            .is_err()
     );
     let index_path = entry.join("index.json");
     let mut index: serde_json::Value =
@@ -108,16 +93,10 @@ fn file_budget_is_checked_before_bodies_but_does_not_hide_invalid_metadata() {
     index["files"][0]["mode"] = serde_json::json!(0o1000);
     fs::write(index_path, serde_json::to_vec(&index).unwrap()).unwrap();
     assert_eq!(
-        read_with_budget(
-            &home,
-            "name",
-            "v1",
-            storage_files::MAX_STORAGE_BYTES,
-            0,
-            &cancel
-        )
-        .unwrap_err()
-        .kind(),
+        reader
+            .read("name", "v1", storage_files::MAX_STORAGE_BYTES, 0)
+            .unwrap_err()
+            .kind(),
         io::ErrorKind::InvalidData
     );
 }

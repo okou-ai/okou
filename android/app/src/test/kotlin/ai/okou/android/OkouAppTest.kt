@@ -2,12 +2,14 @@ package ai.okou.android
 
 import ai.okou.android.api.WorkspaceTokenProvider
 import ai.okou.android.api.generated.AndroidUpdates
+import ai.okou.android.api.generated.ChatEvents
 import ai.okou.android.api.generated.UpdatePreferencesRequest
 import ai.okou.android.api.generated.UserPreferences
 import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.auth.WorkspaceSession
 import ai.okou.android.chat.ChatComposerModel
 import ai.okou.android.chat.ChatListModel
+import ai.okou.android.chat.ChatListService
 import ai.okou.android.chat.RunControlsModel
 import ai.okou.android.preferences.MemberPreferencesModel
 import ai.okou.android.preferences.MemberPreferencesSettings
@@ -27,12 +29,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertHeightIsEqualTo
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertWidthIsEqualTo
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isSelectable
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -53,6 +57,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import java.io.IOException
 import java.text.NumberFormat
 import java.util.Locale
+import kotlinx.coroutines.CompletableDeferred
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -84,6 +89,7 @@ class OkouAppTest {
         fontScale: Float = 1f,
         updateState: () -> UpdateUiState? = { null },
         failPreferenceSave: () -> Boolean = { false },
+        chatService: ChatListService = TestChatService(),
     ) {
         val models =
             compose.runOnIdle {
@@ -93,7 +99,7 @@ class OkouAppTest {
                         viewModelFactory {
                             initializer {
                                 ChatListModel(
-                                    TestChatService(),
+                                    chatService,
                                     (compose.activity.application as TestOkouApplication).chatCache,
                                     WorkspaceIdentity(
                                         "https://api.okou.ai",
@@ -433,16 +439,33 @@ class OkouAppTest {
     @Test
     @Config(qualifiers = "de-rDE-w400dp-h800dp")
     fun longLocalizedLabelsRemainOperableAtLargeFontScale() {
-        render(fontScale = 2f)
+        val initialListResponse = CompletableDeferred<Unit>()
+        val chatService =
+            object : TestChatService() {
+                override suspend fun chatEvents(since: Long?): ChatEvents {
+                    initialListResponse.await()
+                    return super.chatEvents(since)
+                }
+            }
+        render(fontScale = 2f, chatService = chatService)
         compose.onNodeWithContentDescription("Einstellungen").assertIsDisplayed().performClick()
         selectAppearance("Dunkel", row = "Erscheinungsbild")
         compose.onNodeWithText("Dunkel").assertIsDisplayed()
         compose.onNodeWithText("Arbeitsbereichseinstellungen").performScrollTo().assertIsDisplayed()
         compose.onNodeWithContentDescription("Zurück").assertIsDisplayed().performClick()
         compose.onNodeWithContentDescription("Chats").assertIsDisplayed()
+        compose.onNodeWithText("Chats werden geladen…").assertIsDisplayed()
+        initialListResponse.complete(Unit)
+
+        val refreshableList =
+            hasTestTag("chat_list") and
+                SemanticsMatcher.keyIsDefined(SemanticsActions.CustomActions)
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(refreshableList).fetchSemanticsNodes().isNotEmpty()
+        }
         val refresh =
             compose
-                .onNodeWithTag("chat_list")
+                .onNode(refreshableList)
                 .fetchSemanticsNode()
                 .config[SemanticsActions.CustomActions]
                 .single { it.label == "Chats aktualisieren" }

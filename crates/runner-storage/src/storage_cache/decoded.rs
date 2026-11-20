@@ -199,6 +199,7 @@ impl DecodedCache {
                 let mut result = Vec::with_capacity(keys.len());
                 let mut ready_bytes = 0;
                 let mut ready_files = 0;
+                let mut reader = disk::BatchReader::new(&inner.home, &inner.cancel);
                 for key in keys {
                     let Some((name, version)) = key else {
                         result.push(None);
@@ -219,13 +220,11 @@ impl DecodedCache {
                         result.push(None);
                         continue;
                     };
-                    let files = disk::read_with_budget(
-                        &inner.home,
+                    let files = reader.read(
                         &name,
                         &version,
                         READ_AHEAD_BYTES - ready_bytes,
                         READ_AHEAD_FILES - ready_files,
-                        &inner.cancel,
                     )?;
                     if let Some(files) = &files {
                         ready_bytes += files.iter().map(|file| file.content.len()).sum::<usize>();
