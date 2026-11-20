@@ -45,7 +45,7 @@ export interface QueuedUserMessage {
   readonly userMessage: ChatEventUserMessage;
   readonly requiredOfficialWorkflowIds?: readonly string[];
   readonly selectedModel: string | null;
-  readonly contextType: QueuedUserMessageContextType;
+  readonly contextType: Exclude<QueuedUserMessageContextType, "automation">;
   readonly contextId: string | null;
   readonly autonomyBudget:
     | ChildAutonomyBudget
