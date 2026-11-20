@@ -1019,11 +1019,20 @@ async fn optional_workflow_reuse_tracks_only_packages_that_guest_applied() {
         .await
         .unwrap();
     let mut leases = Vec::new();
-    for reused_package in [false, true] {
+    for (should_apply, damaged_document) in [(true, false), (false, false), (true, true)] {
         if let Some(report) = outcome.startup_report.take() {
             report.finish().await;
         }
-        if reused_package {
+        let mut current = context_for_run();
+        if damaged_document {
+            // Retiring the other package admits a real Guest application that
+            // can also observe an optional Workflow changed since publication.
+            current
+                .storage_manifest
+                .as_mut()
+                .unwrap()
+                .storages
+                .truncate(1);
             fs::write(target.join("SKILL.md"), b"invalid local Workflow document").unwrap();
             fs::write(target.join("other.txt"), b"stale").unwrap();
         }
@@ -1035,44 +1044,61 @@ async fn optional_workflow_reuse_tracks_only_packages_that_guest_applied() {
         )
         .await;
         leases.push(lease);
-        (outcome, _) = complete_guest_storage(
-            execute_job_reuse(
-                idle,
-                context_for_run(),
-                &config,
-                &params,
-                CancellationToken::new(),
-            ),
-            &overrides,
-            guest.path(),
-        )
-        .await;
-        assert_eq!(outcome.exit_code(), 0, "{:?}", outcome.error());
-        let calls = overrides.storage_manifest_calls();
-        let request = &calls.last().unwrap().manifest_json;
-        let manifest_json = if reused_package {
-            request.as_slice()
+        let first_call = overrides.storage_manifest_calls().len();
+        let execution = Box::pin(execute_job_reuse(
+            idle,
+            current,
+            &config,
+            &params,
+            CancellationToken::new(),
+        ));
+        (outcome, _) = if should_apply {
+            complete_guest_storage(execution, &overrides, guest.path()).await
         } else {
-            storage_files::split_input(request).unwrap().0
+            let gate = MockLifecycleGate::new();
+            overrides.set_storage_manifest_lifecycle_gate(gate.clone());
+            tokio::select! {
+                result = execution => result,
+                entered = gate.wait_entered(1, RUN_IN_SANDBOX_TEST_TIMEOUT) => {
+                    entered.unwrap();
+                    panic!("exact reuse should not call Guest storage");
+                }
+            }
         };
-        let manifest: Manifest = serde_json::from_slice(manifest_json).unwrap();
-        assert_eq!(manifest.storages[0].cached, reused_package);
+        let calls = overrides.storage_manifest_calls();
+        assert_eq!(
+            calls.len() - first_call,
+            usize::from(should_apply),
+            "exact reuse skips the Guest storage operation"
+        );
+        assert_eq!(outcome.exit_code(), 0, "{:?}", outcome.error());
+        if should_apply {
+            let request = &calls[first_call].manifest_json;
+            let json = if damaged_document {
+                request.as_slice()
+            } else {
+                storage_files::split_input(request).unwrap().0
+            };
+            let manifest: Manifest = serde_json::from_slice(json).unwrap();
+            assert_eq!(manifest.storages[0].cached, damaged_document);
+        }
         assert_eq!(
             outcome.storage_fingerprints.storages.contains_key(mount),
-            !reused_package
+            !damaged_document
         );
-        if reused_package {
+        if damaged_document {
             assert!(!target.exists());
+            assert!(!required_target.exists());
         } else {
             let applied = fs::read_to_string(target.join("SKILL.md")).unwrap();
             assert!(applied.contains("name: example--wf-shared"));
+            assert_eq!(
+                fs::read(required_target.join("SKILL.md")).unwrap(),
+                b"required"
+            );
         }
-        assert_eq!(
-            fs::read(required_target.join("SKILL.md")).unwrap(),
-            b"required"
-        );
     }
-    assert_eq!(overrides.start_agent_process_calls().len(), 3);
+    assert_eq!(overrides.start_agent_process_calls().len(), 4);
     if let Some(report) = outcome.startup_report.take() {
         report.finish().await;
     }

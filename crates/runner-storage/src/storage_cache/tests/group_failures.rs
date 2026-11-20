@@ -250,6 +250,53 @@ async fn group_processing_lock_error_preserves_source_and_cache() {
 }
 
 #[tokio::test]
+async fn optional_lookup_failure_survives_a_later_guest_staging_error() {
+    let temp = tempfile::tempdir().unwrap();
+    let home = home_at(&temp);
+    let sandbox = MockSandbox::new("stage-failure-after-optional-lookup");
+    sandbox.push_write_file_result(Err(sandbox_write_file_error("Guest rejected staging")));
+    let mut optional = storage_entry(
+        "/skills/optional".into(),
+        "https://storage.example/optional.tar.gz".into(),
+        "optional",
+        "v1",
+    );
+    optional.optional = true;
+    let required = storage_entry(
+        "/skills/required".into(),
+        "https://storage.example/required.tar.gz".into(),
+        "required",
+        "v1",
+    );
+    let body = tarball_bytes();
+    write_cached_archive(&home, "optional", "v1", &body);
+    write_cached_archive(&home, "required", "v1", &body);
+    let lock = home.storage_lock("optional", "v1");
+    std::fs::create_dir_all(lock.parent().unwrap()).unwrap();
+    std::os::unix::fs::symlink(temp.path(), &lock).unwrap();
+
+    let mut plan = plan_from_entries(vec![optional, required], Vec::new(), None);
+    let mut telemetry = new_telemetry();
+    let error = populate_cache(&mut plan, &sandbox, &home, &mut telemetry)
+        .await
+        .err()
+        .expect("a Guest staging error remains fatal to this sandbox");
+    assert!(error.to_string().contains("Guest rejected staging"));
+    let writes = sandbox.write_file_calls();
+    assert_eq!(writes.len(), 1);
+    assert_eq!(writes[0].path, guest_archive_path("required", "v1"));
+
+    let mut skipped = HashSet::new();
+    let manifest = plan.into_guest_manifest_retaining_skips(&mut skipped);
+    assert_eq!(skipped, HashSet::from(["/skills/optional".to_owned()]));
+    assert!(manifest.storages[0].archive_url.is_none());
+    assert_eq!(
+        manifest.storages[1].archive_url.as_deref(),
+        Some("https://storage.example/required.tar.gz")
+    );
+}
+
+#[tokio::test]
 async fn full_warm_batch_failure_preserves_sources_and_cache() {
     let temp = tempfile::tempdir().unwrap();
     let home = home_at(&temp);

@@ -1678,7 +1678,16 @@ async fn prepare_guest_storage(
                 Ok(AppliedStorage::default())
             } else {
                 let deferred =
-                    populate_storage_plan(&mut plan, None, sandbox, config, telemetry, None).await?;
+                    match populate_storage_plan(&mut plan, None, sandbox, config, telemetry, None)
+                        .await
+                    {
+                        Ok(deferred) => deferred,
+                        Err(error) => {
+                            skipped_optional_mounts
+                                .extend(plan.unavailable_optional_mounts().map(str::to_owned));
+                            return Err(error);
+                        }
+                    };
                 let files = plan.take_decoded();
                 let guest_manifest = plan.into_guest_manifest_retaining_skips(skipped_optional_mounts);
                 let download_started = Instant::now();

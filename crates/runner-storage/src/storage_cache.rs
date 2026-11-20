@@ -1204,12 +1204,25 @@ struct GuestStageRecorder<'a> {
     guest_writes: &'a GuestWriteLocks,
     telemetry: &'a mut JobTelemetry,
     metrics: &'a mut StorageCacheStageMetrics,
+    unavailable: &'a mut Vec<ArchiveHandle>,
 }
 
 struct ProcessedGroupTask {
     group: CacheTargetGroup,
     metrics: CacheProcessMetrics,
     processed: RunnerResult<ProcessedGroup>,
+}
+
+impl ProcessedGroupTask {
+    fn remember_optional_failure(&self, unavailable: &mut Vec<ArchiveHandle>) {
+        if self
+            .processed
+            .as_ref()
+            .is_ok_and(|processed| matches!(processed.outcome, TargetOutcome::Unavailable))
+        {
+            unavailable.extend(self.group.targets().map(|target| target.handle));
+        }
+    }
 }
 
 /// Pin admitted extracted files before deciding whether an archive is needed.
@@ -1691,24 +1704,14 @@ async fn stage_fresh_archives(
     Ok(outcomes)
 }
 
-async fn abort_pending_processed_groups(groups: &mut JoinSet<ProcessedGroupTaskResult>) {
-    groups.abort_all();
-    while groups.join_next().await.is_some() {}
-}
-
 async fn join_next_processed_group(
     groups: &mut JoinSet<ProcessedGroupTaskResult>,
 ) -> RunnerResult<Option<ProcessedGroupTaskResult>> {
-    match groups.join_next().await {
-        Some(Ok(result)) => Ok(Some(result)),
-        Some(Err(error)) => {
-            abort_pending_processed_groups(groups).await;
-            Err(RunnerError::Internal(format!(
-                "storage cache group task failed: {error}"
-            )))
-        }
-        None => Ok(None),
-    }
+    groups
+        .join_next()
+        .await
+        .transpose()
+        .map_err(|error| RunnerError::Internal(format!("storage cache group task failed: {error}")))
 }
 
 async fn stage_processed_group(
@@ -1730,28 +1733,19 @@ async fn stage_processed_group(
 }
 
 async fn stage_joined_processed_group(
-    groups: &mut JoinSet<ProcessedGroupTaskResult>,
     task: ProcessedGroupTask,
     outcomes: &mut Vec<(CacheTargetGroup, TargetOutcome)>,
     stage_batch: &mut GuestStageBatch,
     stage: &mut GuestStageRecorder<'_>,
 ) -> RunnerResult<()> {
+    task.remember_optional_failure(stage.unavailable);
     let ProcessedGroupTask {
         group,
         metrics,
         processed,
     } = task;
     metrics.record_to(stage.telemetry);
-    let result = match processed {
-        Ok(processed) => {
-            stage_processed_group(group, processed, outcomes, stage_batch, stage).await
-        }
-        Err(error) => Err(error),
-    };
-    if result.is_err() {
-        abort_pending_processed_groups(groups).await;
-    }
-    result
+    stage_processed_group(group, processed?, outcomes, stage_batch, stage).await
 }
 
 /// Test-only wrapper for [`populate_cache_with_fresh_delivery`] without fresh
@@ -1872,12 +1866,14 @@ async fn populate_cache_inner(
         })
         .collect::<Vec<_>>();
 
+    let mut unavailable = Vec::new();
     let stage_result: RunnerResult<Vec<(CacheTargetGroup, TargetOutcome)>> = async {
         let mut stage = GuestStageRecorder {
             sandbox,
             guest_writes: &guest_writes,
             telemetry,
             metrics: &mut stage_metrics,
+            unavailable: &mut unavailable,
         };
 
         let mut outcomes = if let Some(delivery) = fresh_delivery.as_deref_mut() {
@@ -1930,6 +1926,11 @@ async fn populate_cache_inner(
             }
             if let Some(delivery) = fresh_delivery {
                 delivery.cancel_and_drain(telemetry).await;
+            }
+            // An unrelated Guest staging failure can replace the sandbox. Keep
+            // the ordinary lookup failures when discarding the other outcomes.
+            for handle in unavailable {
+                plan.mark_optional_unavailable(handle)?;
             }
             return Err(error);
         }

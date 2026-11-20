@@ -652,16 +652,16 @@ impl StoragePlan {
 
     /// Return whether applying this plan requires guest execution.
     ///
-    /// The result is `false` only when there is no cleanup, every storage is
-    /// required and reused, and there are no artifacts. Optional mounts need
-    /// Guest confirmation even when their fingerprints match.
+    /// Matching fingerprints attest to previously applied storage. When other
+    /// work requires an application, Guest also checks reused optional mounts.
     pub fn requires_guest_work(&self) -> bool {
         !self.cleanup_paths.is_empty()
             || !self.removed_package_paths.is_empty()
             || !self.instruction_cleanups.is_empty()
-            || self.storages.iter().any(|entry| {
-                entry.optional || !matches!(entry.action, StorageAction::ReuseExisting)
-            })
+            || self
+                .storages
+                .iter()
+                .any(|entry| !matches!(entry.action, StorageAction::ReuseExisting))
             || !self.artifacts.is_empty()
     }
 
@@ -769,7 +769,8 @@ impl StoragePlan {
         }
     }
 
-    pub(crate) fn unavailable_optional_mounts(&self) -> impl Iterator<Item = &str> {
+    /// Mounts whose package failures have been resolved in this plan.
+    pub fn unavailable_optional_mounts(&self) -> impl Iterator<Item = &str> {
         self.storages
             .iter()
             .filter(|entry| matches!(entry.action, StorageAction::Unavailable))
