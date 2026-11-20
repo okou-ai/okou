@@ -3620,6 +3620,13 @@
       "when": 1795164449391,
       "tag": "1595_drop_legacy_pi_resource_version_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 1596,
+      "version": "7",
+      "when": 1795172051644,
+      "tag": "1596_activate_final_my_okou_workspaces",
+      "breakpoints": true
     }
   ]
 }
