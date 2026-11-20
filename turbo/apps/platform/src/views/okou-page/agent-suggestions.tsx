@@ -339,9 +339,11 @@ function SuggestionDirectionComposer({
             </p>
           ) : composer ? (
             <div
-              // The composer indents its paragraph 4px past the quote; here the
-              // caret shares the heading's and the quote's left edge instead.
-              className="w-full min-w-0 [&_.ProseMirror_p]:pl-0"
+              // The caret shares the heading's and the quote's left edge, and
+              // the quote holds one line for its note instead of a 96px field,
+              // so the open row stays near the height of the original card
+              // composer. The note still grows with what the member writes.
+              className="w-full min-w-0 [&_.ProseMirror_p]:pl-0 [&_[data-feedback-item]]:min-h-0"
               data-chat-composer
             >
               <ChatComposer signals={composer} showPendingItems={false} />
