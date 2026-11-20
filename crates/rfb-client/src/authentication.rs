@@ -137,12 +137,7 @@ where
     let server_name = ServerName::try_from(server_name)
         .map_err(|_| Error::InvalidServerName)?
         .to_owned();
-    phase(
-        AuthenticationStage::RfbVersion,
-        deadline,
-        exchange_version(&mut stream, ServerVersion::Rfb38),
-    )
-    .await?;
+    exchange_version(&mut stream, ServerVersion::Rfb38, deadline).await?;
     phase(
         AuthenticationStage::SecurityNegotiation,
         deadline,

@@ -47,12 +47,7 @@ pub(crate) async fn authenticate<S>(
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
-    phase(
-        AuthenticationStage::RfbVersion,
-        deadline,
-        exchange_version(&mut stream, ServerVersion::Apple),
-    )
-    .await?;
+    exchange_version(&mut stream, ServerVersion::Apple, deadline).await?;
     // Unlike ordinary RFB 3.8 security types, Apple's direct-SRP branch
     // entry starts with the single selection byte. Sending a separate byte
     // here makes macOS read the entry's length prefix as another auth type.
