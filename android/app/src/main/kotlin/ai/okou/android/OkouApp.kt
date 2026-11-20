@@ -542,6 +542,7 @@ internal fun OkouApp(
                                 ChatListScreen(
                                     list,
                                     { chats?.refreshMetadata() },
+                                    { chats?.refreshIndicators() },
                                     ::openChat,
                                     { id, action -> chats?.performRowAction(id, action) },
                                     { id, title -> chats?.renameThread(id, title) },
