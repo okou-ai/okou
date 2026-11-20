@@ -3986,6 +3986,7 @@ async function browserUseResponse(
           502,
           "BROWSER_USE_OUTPUT_TOO_LARGE",
           "Managed browser provider response is too large",
+          response.status,
         );
       }
       const body = text.text

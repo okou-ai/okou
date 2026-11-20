@@ -255,9 +255,26 @@ test.each([
 );
 
 // Logger-owned status and redaction contract at the provider HTTP boundary.
-test.each([401, 403])(
-  "records the upstream Browser session lookup HTTP %i alongside the mapped status",
-  async (upstreamHttpStatus) => {
+test.each([
+  {
+    upstreamHttpStatus: 401,
+    mappedHttpStatus: 503,
+    errorCode: "BROWSER_USE_AUTH_ERROR",
+  },
+  {
+    upstreamHttpStatus: 403,
+    mappedHttpStatus: 503,
+    errorCode: "BROWSER_USE_AUTH_ERROR",
+  },
+  {
+    upstreamHttpStatus: 403,
+    mappedHttpStatus: 502,
+    errorCode: "BROWSER_USE_OUTPUT_TOO_LARGE",
+    oversized: true,
+  },
+])(
+  "records upstream HTTP $upstreamHttpStatus for $errorCode alongside the mapped status",
+  async ({ upstreamHttpStatus, mappedHttpStatus, errorCode, oversized }) => {
     const { fixture, open, view } = createBrowserFixtures(context);
     const f = await fixture();
     await f.owned.run(async () => {
@@ -273,12 +290,15 @@ test.each([401, 403])(
         model: f.owned.model,
       });
       const privateDetail = "private-provider-auth-detail";
+      const detail = oversized
+        ? privateDetail.padEnd(513 * 1024, "x")
+        : privateDetail;
       server.use(
         http.get(
           `${PROVIDER_URL}/browsers/${providerSessionId}`,
           () => {
             return HttpResponse.json(
-              { detail: privateDetail },
+              { detail },
               { status: upstreamHttpStatus },
             );
           },
@@ -300,8 +320,8 @@ test.each([401, 403])(
         primaryWindowId: first.window?.primaryWindowId,
         phase: "find-provider",
         errorKind: "provider",
-        errorCode: "BROWSER_USE_AUTH_ERROR",
-        mappedHttpStatus: 503,
+        errorCode,
+        mappedHttpStatus,
         upstreamHttpStatus,
         context: "BrowserReconcile",
       });
