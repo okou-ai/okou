@@ -5,7 +5,7 @@ use std::ops::RangeInclusive;
 use guest_control_proto::{Decoder, IncompleteFrame};
 
 use crate::error::to_io_error;
-use crate::handlers::create_batch_input;
+use crate::sealed_input;
 
 // Ordinary batches at the sealed-helper cutoff are still incomplete after a
 // socket read. Receive them into the helper's input before the decoder can
@@ -22,7 +22,7 @@ pub(super) fn receive_write(
     scratch: &mut [u8],
     frame: &IncompleteFrame,
 ) -> io::Result<Option<(File, usize)>> {
-    let mut input = create_batch_input()?;
+    let mut input = sealed_input::create(c"guest-write-files")?;
     Ok(receive_into(reader, scratch, frame, &mut input)?.map(|retained| (input, retained)))
 }
 

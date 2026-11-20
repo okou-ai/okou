@@ -4,9 +4,6 @@ use std::time::Duration;
 
 use crate::exec_terminal::EXEC_OUTPUT_DRAIN_DEADLINE;
 
-#[cfg(target_os = "linux")]
-pub mod sealed_input;
-
 /// Maximum aggregate content in one client-side file batch, leaving room for
 /// paths and framing below the protocol's maximum message size.
 /// Larger private inputs retain the existing individual/chunked write path.

@@ -60,8 +60,8 @@ fn request_frame(
     guest_control_proto::encode(MSG_GUEST_STORAGE_MANIFEST, seq, &payload).unwrap()
 }
 
-fn large_storage_input() -> Vec<u8> {
-    let files: Vec<_> = (0..16)
+fn storage_input(file_count: u8) -> Vec<u8> {
+    let files: Vec<_> = (0..file_count)
         .map(|index| StorageFile {
             path: format!("file-{index}"),
             mode: 0o644,
@@ -213,12 +213,16 @@ printf 'helper stderr\n' >&2
 fn fragmented_large_storage_input_reaches_helper_and_preserves_next_frame() {
     use guest_control_proto::{MSG_PING, MSG_PONG};
 
-    let input = large_storage_input();
+    let input = storage_input(16);
     let directory = tempfile::tempdir().unwrap();
     let expected = directory.path().join("expected-input");
     std::fs::write(&expected, &input).unwrap();
+    #[cfg(target_os = "linux")]
+    let argument = storage_files::SEALED_STDIN_ARGUMENT;
+    #[cfg(not(target_os = "linux"))]
+    let argument = storage_files::STDIN_ARGUMENT;
     let (_program_directory, program) = create_program(&format!(
-        "[ \"$1\" = --storage-files-stdin ]; [ \"$OKOU_RUN_ID\" = storage-run ]; cmp - '{}'",
+        "[ \"$1\" = {argument} ]; [ \"$OKOU_RUN_ID\" = storage-run ]; cmp - '{}'",
         expected.display(),
     ));
     let (handle, mut host) = start_guest_connection_with_storage_manifest_program(program);
@@ -248,6 +252,37 @@ fn fragmented_large_storage_input_reaches_helper_and_preserves_next_frame() {
     finish_guest_connection(handle, host);
 }
 
+#[cfg(target_os = "linux")]
+#[test]
+fn decoded_storage_input_over_eight_mib_reaches_helper_through_pipe() {
+    // Eight MiB of file contents plus framing exceeds the sealed input limit.
+    let input = storage_input(32);
+    assert!(input.len() > 8 * 1024 * 1024);
+    let (_directory, program) = create_program(&format!(
+        "[ \"$1\" = {} ]; [ -p /proc/self/fd/0 ]; wc -c",
+        storage_files::STDIN_ARGUMENT,
+    ));
+    let (handle, mut host) = start_guest_connection_with_storage_manifest_program(program);
+
+    send_request(
+        &mut host,
+        423,
+        5_000,
+        "storage-run",
+        "/run/storage-run",
+        &input,
+    );
+    let result = read_result(&mut host, 423);
+    assert_eq!(result.termination, ExecTermination::Exited { exit_code: 0 });
+    let received_bytes = std::str::from_utf8(&result.stdout)
+        .unwrap()
+        .trim()
+        .parse::<usize>()
+        .unwrap();
+    assert_eq!(received_bytes, input.len());
+    finish_guest_connection(handle, host);
+}
+
 #[test]
 fn truncated_large_storage_input_does_not_start_helper() {
     let directory = tempfile::tempdir().unwrap();
@@ -260,7 +295,7 @@ fn truncated_large_storage_input_does_not_start_helper() {
         5_000,
         "storage-run",
         "/run/storage-run",
-        &large_storage_input(),
+        &storage_input(16),
     );
     frame.pop().unwrap();
     host.write_all(&frame).unwrap();
@@ -346,7 +381,7 @@ fn decoded_storage_timeout_reaps_helper_without_reading_blocked_bulk_stdin() {
         pid_path.as_str()
     ));
     let (handle, mut host, timeout_gate) = start_with_timeout_gate(program, None);
-    let input = large_storage_input();
+    let input = storage_input(3);
     send_request(&mut host, 414, 20, "run", "/run", &input);
     let pid = process_guard.read_pid();
     assert_eq!(

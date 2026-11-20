@@ -1,4 +1,4 @@
-use guest_contracts::{env, runtime_paths};
+use guest_contracts::{env, runtime_paths, storage_files};
 use guest_storage_apply::input_telemetry::{InputPhase, record_payload_size, record_phase};
 use guest_telemetry::{log_error, log_info, telemetry::record_sandbox_op};
 use std::fs::File;
@@ -16,7 +16,13 @@ enum ManifestInput {
     InstructionsStdin { check: bool },
     Path(String),
     Stdin,
-    FilesStdin,
+    FilesStdin(StorageFilesStdin),
+}
+
+enum StorageFilesStdin {
+    Pipe,
+    #[cfg(target_os = "linux")]
+    Sealed,
 }
 
 fn main() {
@@ -102,12 +108,14 @@ fn manifest_input_from_args() -> Option<ManifestInput> {
     if args.next().is_some() {
         return None;
     }
-    if arg == "--storage-files-stdin" {
-        Some(ManifestInput::FilesStdin)
-    } else if arg == MANIFEST_STDIN_ARG {
-        Some(ManifestInput::Stdin)
-    } else {
-        Some(ManifestInput::Path(arg))
+    match arg.as_str() {
+        MANIFEST_STDIN_ARG => Some(ManifestInput::Stdin),
+        storage_files::STDIN_ARGUMENT => Some(ManifestInput::FilesStdin(StorageFilesStdin::Pipe)),
+        #[cfg(target_os = "linux")]
+        storage_files::SEALED_STDIN_ARGUMENT => {
+            Some(ManifestInput::FilesStdin(StorageFilesStdin::Sealed))
+        }
+        _ => Some(ManifestInput::Path(arg)),
     }
 }
 
@@ -135,7 +143,7 @@ fn run(input: ManifestInput, runtime_dir: &Path) -> bool {
                 &metadata,
             )
         }
-        ManifestInput::FilesStdin => {
+        ManifestInput::FilesStdin(source) => {
             let stale_start = Instant::now();
             let stale_removed = remove_stale_manifest_file(runtime_paths::STORAGE_MANIFEST_PATH);
             record_phase(InputPhase::StaleCleanup, stale_start, stale_removed);
@@ -144,20 +152,36 @@ fn run(input: ManifestInput, runtime_dir: &Path) -> bool {
                 return false;
             }
             let mut input = Vec::new();
-            let limit = guest_contracts::storage_files::MAX_INPUT_BYTES as u64;
+            #[cfg(target_os = "linux")]
+            let mapped;
             let read_start = Instant::now();
-            let read_ok = std::io::stdin()
-                .take(limit + 1)
-                .read_to_end(&mut input)
-                .is_ok()
-                && input.len() as u64 <= limit;
-            record_phase(InputPhase::Read, read_start, read_ok);
-            if !read_ok {
+            let bytes = match source {
+                StorageFilesStdin::Pipe => {
+                    let limit = storage_files::MAX_INPUT_BYTES;
+                    let read_ok = io::stdin()
+                        .take(limit as u64 + 1)
+                        .read_to_end(&mut input)
+                        .is_ok()
+                        && input.len() <= limit;
+                    read_ok.then_some(input.as_slice())
+                }
+                #[cfg(target_os = "linux")]
+                StorageFilesStdin::Sealed => {
+                    use guest_contracts::sealed_input::SealedInput;
+                    use std::os::fd::AsFd;
+
+                    mapped =
+                        SealedInput::map(io::stdin().as_fd(), storage_files::MAX_INPUT_BYTES).ok();
+                    mapped.as_ref().map(SealedInput::as_bytes)
+                }
+            };
+            record_phase(InputPhase::Read, read_start, bytes.is_some());
+            let Some(bytes) = bytes else {
                 record_payload_size(None);
                 log_error!(LOG_TAG, "Failed to read bounded storage files input");
                 return false;
-            }
-            guest_storage_apply::run_storage_files_bytes_in_runtime(&input, runtime_dir)
+            };
+            guest_storage_apply::run_storage_files_bytes_in_runtime(bytes, runtime_dir)
         }
         ManifestInput::Path(manifest_path) => run_path(&manifest_path, runtime_dir),
         ManifestInput::Stdin => {
