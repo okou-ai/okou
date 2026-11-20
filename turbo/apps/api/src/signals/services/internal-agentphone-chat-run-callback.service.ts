@@ -1,3 +1,6 @@
+import { db$, writeDb$ } from "../external/db";
+import { formatIntegrationChatMessage$ } from "./integration-run-errors.service";
+import { sendPendingAgentPhoneContactCard$ } from "./agentphone-contact-card.service";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import type { RunFailureReasonToken } from "@okouai/api-contracts/contracts/run-failure-reasons";
@@ -8,16 +11,30 @@ import { command } from "ccstate";
 import { and, eq, isNotNull } from "drizzle-orm";
 import { logger } from "../../lib/log";
 import { sendAgentPhoneMessage } from "../external/agentphone-client";
-import { sendWhatsappTextWithTaskFallback, type WhatsappCompletedTask } from "./whatsapp-task-notification.service";
+import {
+  sendWhatsappTextWithTaskFallback,
+  type WhatsappCompletedTask,
+  loadWhatsappCompletedTask$,
+} from "./whatsapp-task-notification.service";
 import { recordSandboxOperation } from "../external/sandbox-op-log";
 import { now, nowDate } from "../../lib/time";
-import { isClerkResourceNotFound } from "../external/clerk";
+import { isClerkResourceNotFound, clerk$ } from "../external/clerk";
 import { settle, settleIncludingAbort, tapError } from "../utils";
 import {
   agentphoneChatCallbackPayloadSchema,
   type AgentPhoneDeliveryTarget,
 } from "./agentphone-chat-callback-payload";
-import { agentPhoneReplyDestination, agentPhoneRouteLinkColumn, agentPhoneReplyChunks, agentPhoneUserLinksForChannel, markdownToImessagePlain, type AgentPhoneMessageVisibilityRecipient } from "./agentphone-shared.service";
+import {
+  agentPhoneReplyDestination,
+  agentPhoneRouteLinkColumn,
+  agentPhoneReplyChunks,
+  agentPhoneUserLinksForChannel,
+  markdownToImessagePlain,
+  type AgentPhoneMessageVisibilityRecipient,
+  recordAgentPhoneGroupReplyRoute$,
+  resolveAgentPhoneConversationVisibilityRecipients$,
+  storeOutboundAgentPhoneMessage$,
+} from "./agentphone-shared.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
 import {
   canonicalChatEventContent,

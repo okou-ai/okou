@@ -56,7 +56,6 @@ const reconciliation$ = computed(async (get) => {
       : db
           .select({
             id: chatThreads.id,
-            agentId: chatThreads.agentId,
             lastReadAt: chatThreads.lastReadAt,
             hidden: chatThreads.hidden,
             muted: chatThreads.muted,
@@ -102,7 +101,6 @@ const reconciliation$ = computed(async (get) => {
     const thread = owned.get(receipt.threadId);
     if (
       !thread ||
-      !thread.agentId ||
       thread.hidden ||
       thread.muted ||
       thread.archived

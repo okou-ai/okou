@@ -9,16 +9,7 @@ import {
   type ChatEventUserMessage,
 } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import {
-  and,
-  desc,
-  eq,
-  isNotNull,
-  isNull,
-  not,
-  sql,
-  type SQL,
-} from "drizzle-orm";
+import { and, desc, eq, isNull, not, sql, type SQL } from "drizzle-orm";
 import { logger } from "../../lib/log";
 import { stripMarkdown } from "../../lib/strip-markdown";
 import { command } from "ccstate";
@@ -384,10 +375,10 @@ const persistChatThreadTitle$ = command(
           eq(chatThreads.userId, userId),
           isNull(chatThreads.title),
           isNull(chatThreads.renamedAt),
-          isNotNull(chatThreads.agentId),
+          eq(chatThreads.orgId, orgId),
         ),
       )
-      .returning({ agentId: chatThreads.agentId });
+      .returning({ id: chatThreads.id });
     // Reserve a list sequence only if this statement won the conditional title
     // write. A member rename or concurrent generator leaves no extra event.
     const { rowCount } = await db.execute(
@@ -396,7 +387,6 @@ const persistChatThreadTitle$ = command(
         {
           cte: sql`updated AS (${update.getSQL()})`,
           gate: sql`EXISTS (SELECT 1 FROM updated)`,
-          agentId: sql`(SELECT agent_id FROM updated)`,
         },
       ),
     );

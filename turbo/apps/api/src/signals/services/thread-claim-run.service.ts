@@ -1,3 +1,15 @@
+import { publishChatThreadMessageCreated$ } from "./chat-event-publication.service";
+import { loadEmailSourceMessageContext$ } from "./email-source-message.service";
+import { revokeDeletedWorkflowAutomationInputs$ } from "./workflow-automation-queue-revocation.service";
+import { writeDb$ } from "../external/db";
+import { dispatchCompleteSideEffects$ } from "./agent-run-lifecycle.service";
+import { finalizeClaimedRunUserMessage$ } from "./chat-run-event.service";
+import { morningBriefScheduleClaimBound$ } from "./morning-brief-schedule-claim.service";
+import { maxAutonomyBudget$ } from "../autonomy-budget-limit";
+import { chatInputEnqueueCommits$ } from "./chat-input-enqueue-observation";
+import { formatIntegrationRunError$ } from "./integration-run-errors.service";
+import { initializeMemberMemory$ } from "./member-memory-initialization.service";
+import { settleRejectedAutomationInput$ } from "./workflow-schedule-failure.service";
 import type { AgentRunCallbackPayload } from "@okouai/db/jsonb-contracts/agent-run-callback";
 import { STAFF_SINGLE_AGENT_ORG_ID } from "@okouai/core/single-agent-migration";
 import { buildEmailPrompt } from "./email-prompt";
@@ -18,7 +30,10 @@ import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
 import { createThreadContext } from "./thread-context.signals";
 import type { AdmittedExecutionFacts } from "./admitted-execution-facts";
-import { createOkouTokenInputSignals } from "./thread-okou-token.signals";
+import {
+  createOkouTokenInputSignals,
+  prepareOkouToken$,
+} from "./thread-okou-token.signals";
 import { createConnectorAdmissionSignals } from "./thread-connector-environment.signals";
 import { modelProviderPermissionManifest } from "./permission-manifest.service";
 import { FirewallBaseUrlResolutionError } from "@okouai/connectors/firewall-types";
@@ -117,7 +132,17 @@ import {
   chatThreadEventSequences,
   chatThreadEvents,
 } from "@okouai/db/schema/chat-thread-event";
-import { type QueuedChatPromptData, queuedChatRunCallbackInputs, type QueuedLaunchMaterial, type QueuedPromptLaunchContext, queuedPromptRejectionContext, type RunLaunchCallbackRecord } from "./internal-chat-run-callback.service";
+import {
+  type QueuedChatPromptData,
+  queuedChatRunCallbackInputs,
+  type QueuedLaunchMaterial,
+  type QueuedPromptLaunchContext,
+  queuedPromptRejectionContext,
+  type RunLaunchCallbackRecord,
+  deliverQueuedPromptRejection$,
+  deliverUnexpectedQueuedPromptRejection$,
+  recordQueuedPromptRunLaunch$,
+} from "./internal-chat-run-callback.service";
 import { FEISHU_RUN_FILE_INDEX_KIND } from "./feishu-run-file-index";
 import {
   OfficialWorkflowRunAdmissionError,

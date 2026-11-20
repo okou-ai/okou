@@ -106,7 +106,6 @@ export type UserMessageRenderPart =
       readonly type: "source";
       readonly kind: "agent";
       readonly part: UserMessageAgentSourcePart;
-      readonly signals: AgentReferenceSignals;
     }
   | {
       readonly type: "source";

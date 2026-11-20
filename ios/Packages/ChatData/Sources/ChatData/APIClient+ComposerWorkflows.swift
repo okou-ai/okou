@@ -11,6 +11,7 @@ extension APIClient {
   /// The API owns Agent availability, access checks, and Workflow filtering.
   public func composerWorkflows(agentID: String?) async throws -> [ComposerWorkflow] {
     try await request(
-      "/api/workflows/for-composer", query: agentID.map { [URLQueryItem(name: "agentId", value: $0)] } ?? [])
+      "/api/workflows/for-composer",
+      query: agentID.map { [URLQueryItem(name: "agentId", value: $0)] } ?? [])
   }
 }

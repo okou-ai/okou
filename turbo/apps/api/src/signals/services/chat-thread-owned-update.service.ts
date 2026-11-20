@@ -1,3 +1,4 @@
+import { writeDb$ } from "../external/db";
 import { command } from "ccstate";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { and, eq, type SQL } from "drizzle-orm";

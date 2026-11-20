@@ -29,7 +29,6 @@ import { and, eq, sql, type SQL } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { object, string, uuid } from "zod";
 import { pgTimestampWithoutTimezoneToDateSchema } from "../../lib/db-raw-rows";
-import { agents } from "@okouai/db/schema/agent";
 import { nowDate } from "../../lib/time";
 import type {
   WorkflowAutomationEventPayload,
@@ -248,7 +247,7 @@ interface ChatAgentRunDisplayContext {
   readonly agentRunContext?: {
     readonly sourceRunId: string;
     readonly sourceChatThreadId: string;
-    readonly sourceAgentId: string;
+    readonly sourceAgentId?: string;
   };
 }
 
@@ -421,7 +420,7 @@ type NewDisplayContext =
       readonly type: "agent_run";
       readonly id: string;
       readonly sourceChatThreadId: string;
-      readonly sourceAgentId: string;
+      readonly sourceAgentId?: string;
     }
   | {
       readonly type: "slack";
@@ -573,7 +572,6 @@ function newDisplayContext(
       type: "agent_run",
       id: agentRunContext.sourceRunId,
       sourceChatThreadId: agentRunContext.sourceChatThreadId,
-      sourceAgentId: agentRunContext.sourceAgentId,
     };
   }
 
@@ -706,20 +704,14 @@ function insertAgentRunDisplayContext(
   const source = new QueryBuilder()
     .select({
       sourceUserId: chatThreads.userId,
-      sourceOrgId: agents.orgId,
+      sourceOrgId: chatThreads.orgId,
     })
     .from(chatThreads)
-    .innerJoin(agents, eq(agents.id, chatThreads.agentId))
-    .where(
-      and(
-        eq(chatThreads.id, context.sourceChatThreadId),
-        eq(agents.id, context.sourceAgentId),
-      ),
-    );
+    .where(eq(chatThreads.id, context.sourceChatThreadId));
   return sql`INSERT INTO ${chatAgentRunContext} (
-    id, source_chat_thread_id, source_agent_id, source_user_id, source_org_id, created_at
+    id, source_chat_thread_id, source_user_id, source_org_id, created_at
   ) SELECT ${context.id}::uuid, ${context.sourceChatThreadId}::uuid,
-    ${context.sourceAgentId}::uuid, source.user_id, source.org_id,
+    source.user_id, source.org_id,
     ${createdAt.toISOString()}::timestamp
     FROM (${source.getSQL()}) AS source
     ${eligibility ? sql`WHERE ${eligibility}` : sql.empty()}

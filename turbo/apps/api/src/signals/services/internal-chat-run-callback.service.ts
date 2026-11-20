@@ -1,4 +1,57 @@
 import {
+  publishChatThreadMessageCreated$,
+  projectCommittedChatThreadSearch$,
+} from "./chat-event-publication.service";
+import {
+  dispatchEmailChatDeliveryOnce$,
+  deliverEmailChatAdmissionFailure$,
+} from "./internal-email-chat-run-callback.service";
+import { loadWechatQueuedDelivery$ } from "./wechat-context.service";
+import { reconcileWechatThreadTyping$ } from "./wechat-thread-typing.service";
+import {
+  sendWechatChatReply$,
+  dispatchWechatChatDelivery$,
+} from "./wechat-delivery.service";
+import { db$, writeDb$ } from "../external/db";
+import { recordLastEventToComplete$ } from "./internal-chat-run-output-timing.service";
+import {
+  clearCanonicalSlackThreadStatusIfIdle$,
+  reconcileCanonicalSlackThreadStatus$,
+} from "./canonical-slack-thread-status.service";
+import {
+  insertAssistantEvents$,
+  insertRecommendedFollowupsEvent$,
+  touchChatThreadLastMessageAtIndependently$,
+} from "./chat-event-shared.service";
+import { dispatchConfiguredChatRunFinishedEvent$ } from "./chat-run-finished-event-dispatch.service";
+import { loadDiscordQueuedDelivery$ } from "./discord-queued-launch-context.service";
+import { scheduleDiscordRunTyping$ } from "./discord-run-typing.service";
+import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
+import {
+  deliverAgentPhoneChatAdmissionFailure$,
+  dispatchAgentPhoneChatDeliveryOnce$,
+} from "./internal-agentphone-chat-run-callback.service";
+import {
+  clearCanonicalFeishuThinkingReaction$,
+  deliverFeishuChatAdmissionFailure$,
+  dispatchFeishuChatDeliveryOnce$,
+} from "./internal-feishu-chat-run-callback.service";
+import {
+  deliverSlackChatAdmissionFailure$,
+  dispatchSlackChatDeliveryOnce$,
+} from "./internal-slack-chat-run-callback.service";
+import {
+  deliverTeamsChatAdmissionFailure$,
+  dispatchTeamsChatDeliveryOnce$,
+} from "./internal-teams-chat-run-callback.service";
+import {
+  deliverTelegramChatAdmissionFailure$,
+  dispatchTelegramChatDeliveryOnce$,
+} from "./internal-telegram-chat-run-callback.service";
+import { sendUserPushNotifications$ } from "./push-notifications.service";
+import { formatRunErrorForRunOwner$ } from "./run-error-format.service";
+import { saveRunSummary$ } from "./run-summary.service";
+import {
   emailDeliveryTargetSchema,
   type EmailDeliveryTarget,
 } from "./email-chat-callback-payload";
@@ -39,7 +92,10 @@ import {
 } from "./agentphone-chat-callback-payload";
 import { createAgentPhoneQueuedDelivery } from "./agentphone-queued-launch-context.service";
 import { integrationCompletionFallbackEventIdForRun } from "./assistant-event-id";
-import { type CompletedRunOutput } from "./chat-event-row-read.service";
+import {
+  type CompletedRunOutput,
+  loadCompletedRunOutput$,
+} from "./chat-event-row-read.service";
 import {
   assistantErrorEventInsertSql,
   assistantErrorEventType,
@@ -56,8 +112,23 @@ import type {
   QueuedUserMessageTriggerSource,
 } from "./chat-queued-event.service";
 import type { ChatRunFinishedEvent } from "./chat-run-finished-event";
-import { canonicalDeliveryEventReadPlan, integrationCompletionFallbackReadPlan, runLifecycleMarkerReadPlan, type ChatRunInfo, type ChatThreadForRunRow } from "./chat-run-state-read.service";
-import { generateChatNotificationSummary, generateChatThreadRecommendedFollowupsFromContext, type ChatCompletionContextMessage } from "./chat-title.service";
+import {
+  canonicalDeliveryEventReadPlan,
+  integrationCompletionFallbackReadPlan,
+  runLifecycleMarkerReadPlan,
+  type ChatRunInfo,
+  type ChatThreadForRunRow,
+  loadTerminalChatCallback$,
+  loadTerminalChatCallbackLocator$,
+  requireSourceChatCallback$,
+} from "./chat-run-state-read.service";
+import {
+  generateChatNotificationSummary,
+  generateChatThreadRecommendedFollowupsFromContext,
+  type ChatCompletionContextMessage,
+  loadChatThreadRecommendedFollowupContext$,
+  generateAndPersistChatThreadTitle$,
+} from "./chat-title.service";
 import {
   discordDeliveryTargetSchema,
   type DiscordDeliveryTarget,
@@ -74,7 +145,10 @@ import {
   FEISHU_RUN_FILE_INDEX_KIND,
   type FeishuRunFileIndex,
 } from "./feishu-run-file-index";
-import { type DiscordReplyRequest } from "./internal-discord-chat-run-callback.service";
+import {
+  type DiscordReplyRequest,
+  sendDiscordChatReply$,
+} from "./internal-discord-chat-run-callback.service";
 import type {
   InternalRunCallbackEnvelope,
   TerminalRunCallbackKind,
@@ -1884,7 +1958,6 @@ const prepareCompletedTerminalChatCallbackWork$ = command(
         runStatus: "completed",
         failureReason: null,
         lastResultText: completed.lastResultText,
-        sourceAgentId: args.chatThread.agentId,
         sourceThreadTitle: args.chatThread.title,
       },
       deferredSideEffects: {
@@ -1970,7 +2043,6 @@ const prepareFailedTerminalChatCallbackWork$ = command(
         // Failed runs surface their error separately; patterns only ever
         // match assistant output, so terminal errors carry no matchable text.
         lastResultText: null,
-        sourceAgentId: args.chatThread.agentId,
         sourceThreadTitle: args.chatThread.title,
       },
       deferredSideEffects: {

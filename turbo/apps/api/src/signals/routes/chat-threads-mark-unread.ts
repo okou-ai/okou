@@ -1,3 +1,6 @@
+import { synchronizeUserPushBadge$ } from "../services/push-notifications.service";
+import { organizationAuthContext$ } from "../auth/auth-context";
+import { writeDb$ } from "../external/db";
 import { chatThreadOrganizationPredicate } from "../services/chat-thread-organization.service";
 import { waitUntil } from "../context/wait-until";
 import { command } from "ccstate";

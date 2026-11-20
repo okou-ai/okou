@@ -208,7 +208,7 @@ function claimedSlackIngressReadPlan(ingressId: string) {
       connectionId: slackOrgConnections.id,
       slackUserId: slackOrgConnections.slackUserId,
       workspaceId: slackOrgInstallations.slackWorkspaceId,
-      orgId: agents.orgId,
+      orgId: chatThreads.orgId,
       installationOrgId: slackOrgInstallations.orgId,
       encryptedBotToken: slackOrgInstallations.encryptedBotToken,
       botUserId: slackOrgInstallations.botUserId,

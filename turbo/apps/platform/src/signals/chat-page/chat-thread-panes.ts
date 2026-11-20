@@ -39,7 +39,7 @@ const L = logger("ChatPanes");
 
 interface ChatThreadTarget {
   readonly threadId: string;
-  readonly agentId: string;
+  readonly agentId?: string;
   readonly draftOwner: ThreadDraftOwner;
 }
 

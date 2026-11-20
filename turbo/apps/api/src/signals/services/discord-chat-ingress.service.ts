@@ -1,3 +1,5 @@
+import { writeDb$ } from "../external/db";
+import { loadNewChatThreadDefaults$ } from "./chat-thread-defaults.service";
 import { createHash, randomUUID } from "node:crypto";
 import type { ModelSettings } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { explicitModelSettings } from "@okouai/core/auto-run-model";

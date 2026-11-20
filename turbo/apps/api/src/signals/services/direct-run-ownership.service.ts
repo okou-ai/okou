@@ -1,3 +1,4 @@
+import { db$, writeDb$ } from "../external/db";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";

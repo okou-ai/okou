@@ -1,3 +1,7 @@
+import { formatIntegrationChatMessage$ } from "./integration-run-errors.service";
+import { integrationModelRecoveryForDelivery$ } from "./integration-model-recovery.service";
+import { db$, writeDb$ } from "../external/db";
+import { storeTelegramBotMessage$ } from "./telegram-callback-persistence.service";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatEvents } from "@okouai/db/schema/chat-event";
@@ -27,7 +31,10 @@ import {
   telegramChatCallbackPayloadSchema,
   type TelegramDeliveryTarget,
 } from "./telegram-chat-callback-payload";
-import { type TelegramOwnerLink } from "./telegram-chat-ingress.service";
+import {
+  type TelegramOwnerLink,
+  persistTelegramReplyChainRoute$,
+} from "./telegram-chat-ingress.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
 import {
   canonicalChatEventContent,

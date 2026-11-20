@@ -1,3 +1,4 @@
+import { db$ } from "../external/db";
 import { whatsappUserLinks } from "@okouai/db/schema/whatsapp";
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
 import { chatAgentphoneContext } from "@okouai/db/schema/chat-agentphone-context";

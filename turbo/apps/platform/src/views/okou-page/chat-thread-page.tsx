@@ -345,7 +345,7 @@ import {
 } from "./components/model-provider-picker.tsx";
 import { ChatFeedbackSelection } from "./chat-feedback-selection.tsx";
 import { formatSubscriptionUsageReset } from "./subscription-usage-format.ts";
-import { AgentAvatarImg, AvatarFromUrl } from "./sidebar-shared.tsx";
+import { AvatarFromUrl } from "./sidebar-shared.tsx";
 import { MyOkouAvatarButton } from "./my-okou-avatar-button.tsx";
 import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "./sidebar-breakpoint.ts";
 import { setBillingSubPage$ } from "../../signals/okou-page/settings/workspace-settings-state.ts";
@@ -374,14 +374,10 @@ import { IconTooltipButton } from "../components/icon-tooltip.tsx";
 import {
   ChatAssistantMessageBody,
   ChatUserMessageBubble,
-  CHAT_THREAD_ASSISTANT_AVATAR_FRAME_CLASS,
-  CHAT_THREAD_ASSISTANT_AVATAR_IMAGE_CLASS,
   CHAT_THREAD_ASSISTANT_MESSAGE_ACTIONS_CLASS,
   CHAT_THREAD_ASSISTANT_MESSAGE_ACTIONS_ROW_CLASS,
   CHAT_THREAD_ASSISTANT_MESSAGE_GROUP_CLASS,
   CHAT_THREAD_ASSISTANT_MESSAGE_ROW_CLASS,
-  CHAT_THREAD_ASSISTANT_NAME_LINE_AVATAR_FRAME_CLASS,
-  CHAT_THREAD_ASSISTANT_NAME_LINE_AVATAR_IMAGE_CLASS,
   CHAT_THREAD_ASSISTANT_NAME_LINE_CLASS,
   CHAT_THREAD_ASSISTANT_RESPONSE_COLUMN_CLASS,
   CHAT_THREAD_CONTENT_MAIN_CLASS,
@@ -402,7 +398,6 @@ import {
   CHAT_THREAD_USER_MESSAGE_ROW_CLASS,
 } from "./chat-message-surface.tsx";
 import { SCROLL_FADE_Y_END } from "./scroll-fade.ts";
-import { agents$, defaultAgentId$ } from "../../signals/agent.ts";
 import { assistantName$ } from "../../signals/branding.ts";
 
 type RecommendedFollowup = ChatRecommendedFollowup;
@@ -6001,85 +5996,13 @@ function AssistantErrorState({
   );
 }
 
-function AssistantBubbleAvatar({ thread }: { thread: ChatPanelSignals }) {
-  const defaultId = useLastResolved(defaultAgentId$);
-  return thread.agentId === defaultId ? (
-    // One per reply; only the replies on screen draw frames, so a long
-    // transcript stays cheap.
-    <MyOkouAvatarButton size={36} className="size-7 @[900px]:size-9" />
-  ) : (
-    <LegacyAssistantBubbleAvatar thread={thread} />
-  );
+function AssistantBubbleAvatar() {
+  return <MyOkouAvatarButton size={36} className="size-7 @[900px]:size-9" />;
 }
 
-function LegacyAssistantBubbleAvatar({ thread }: { thread: ChatPanelSignals }) {
-  const { t } = useTranslation();
-  const agentId = thread.agentId;
-  return (
-    <Link
-      pathname="/agents/:agentId"
-      options={{ pathParams: { agentId } }}
-      className={`${CHAT_THREAD_ASSISTANT_AVATAR_FRAME_CLASS} transition-colors duration-150 hover:bg-state-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2`}
-      aria-label={t(($) => {
-        return $.chat.agentPage.viewAgentProfile;
-      })}
-    >
-      <AgentAvatarImg
-        name={agentId}
-        alt=""
-        className={CHAT_THREAD_ASSISTANT_AVATAR_IMAGE_CLASS}
-      />
-    </Link>
-  );
-}
-
-// The visible agent name is the link's accessible name, so voice control and
-// screen readers address the line by what it shows.
-function AssistantNameLine({ thread }: { thread: ChatPanelSignals }) {
+function AssistantNameLine() {
   const name = useGet(assistantName$);
-
-  const defaultId = useLastResolved(defaultAgentId$);
-  return thread.agentId === defaultId ? (
-    <span className={CHAT_THREAD_ASSISTANT_NAME_LINE_CLASS}>{name}</span>
-  ) : (
-    <LegacyAssistantNameLine thread={thread} />
-  );
-}
-
-function LegacyAssistantNameLine({ thread }: { thread: ChatPanelSignals }) {
-  const agentId = thread.agentId;
-  const agents = useLastResolved(agents$);
-  const assistantName = useGet(assistantName$);
-  // Hold the name until the agent list resolves rather than flashing the
-  // product name in front of a named agent.
-  const name =
-    agents === undefined
-      ? null
-      : (agents.find((agent) => {
-          return agent.agentId === agentId;
-        })?.displayName ?? assistantName);
-  return (
-    <Link
-      pathname="/agents/:agentId"
-      options={{ pathParams: { agentId } }}
-      data-chat-assistant-name-line
-      className={cn(
-        CHAT_THREAD_ASSISTANT_NAME_LINE_CLASS,
-        // The hover surface overhangs the column by its own inset, so the
-        // avatar still starts on the response edge.
-        "-ml-1 rounded-lg pr-2 pl-1 transition-colors duration-150 hover:bg-state-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-      )}
-    >
-      <span className={CHAT_THREAD_ASSISTANT_NAME_LINE_AVATAR_FRAME_CLASS}>
-        <AgentAvatarImg
-          name={agentId}
-          alt=""
-          className={CHAT_THREAD_ASSISTANT_NAME_LINE_AVATAR_IMAGE_CLASS}
-        />
-      </span>
-      <span className="min-w-0 truncate">{name}</span>
-    </Link>
-  );
+  return <span className={CHAT_THREAD_ASSISTANT_NAME_LINE_CLASS}>{name}</span>;
 }
 
 // ---------------------------------------------------------------------------
@@ -7130,7 +7053,6 @@ function SourceMessageAnnotation({
       <AgentRunSourceMessageAnnotation
         part={renderPart.part}
         className={className}
-        signals={renderPart.signals}
       />
     );
   }
@@ -7145,17 +7067,14 @@ function SourceMessageAnnotation({
 function AgentRunSourceMessageAnnotation({
   part,
   className,
-  signals,
 }: {
   part: Extract<
     Extract<UserMessageNonContentPart, { type: "source" }>,
     { kind: "agent" }
   >;
   className: string;
-  signals: AgentReferenceSignals;
 }) {
   const { t } = useTranslation();
-  const agent = useLastResolved(signals.agent$);
   return (
     <Link
       pathname={ROUTES.chat}
@@ -7172,7 +7091,7 @@ function AgentRunSourceMessageAnnotation({
       className={`${className} transition-colors hover:bg-state-hover hover:text-foreground`}
     >
       <AvatarFromUrl
-        avatarUrl={agent?.avatarUrl}
+        avatarUrl={undefined}
         alt=""
         className="size-4 shrink-0 overflow-hidden rounded-full object-cover object-top"
         size={16}
@@ -8328,11 +8247,7 @@ function PagedAssistantGroup({
             : CHAT_THREAD_ASSISTANT_MESSAGE_ROW_CLASS
         }
       >
-        {nameLine ? (
-          <AssistantNameLine thread={thread} />
-        ) : (
-          <AssistantBubbleAvatar thread={thread} />
-        )}
+        {nameLine ? <AssistantNameLine /> : <AssistantBubbleAvatar />}
         <div
           className={cn(
             "relative",

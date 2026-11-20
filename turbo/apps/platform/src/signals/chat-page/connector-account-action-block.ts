@@ -130,6 +130,7 @@ export function parseConnectorAccountActionUrl(
   if (
     !context ||
     !agentId ||
+    !context.agentId ||
     !chatActionIdMatches(agentId, context.agentId) ||
     !selection ||
     !callback?.callbackPrompt ||

@@ -1,3 +1,4 @@
+import { db$ } from "../external/db";
 import { command } from "ccstate";
 import { chatThreadSnapshotProjectionSchema } from "@okouai/api-contracts/contracts/chat-threads";
 import { modelSettingsSchema } from "@okouai/api-contracts/contracts/model-reasoning-effort";

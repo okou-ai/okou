@@ -520,7 +520,7 @@ export const walletUserContract = c.router({
     path: "/api/wallet/spend/status",
     headers: authHeadersSchema,
     body: object({
-      agentId: uuid(),
+      agentId: uuid().optional(),
       threadId: uuid(),
       approvalUrl: zUrl().max(8192),
     }),

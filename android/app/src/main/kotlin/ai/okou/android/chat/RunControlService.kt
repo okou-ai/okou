@@ -42,9 +42,7 @@ data class RunControlJournal(
         require(format == 1 && pending.map { it.id }.distinct().size == pending.size)
         require(
             pending.all {
-                it.id.isNotEmpty() &&
-                    it.threadId.isNotEmpty() &&
-                    it.targetId.isNotEmpty()
+                it.id.isNotEmpty() && it.threadId.isNotEmpty() && it.targetId.isNotEmpty()
             }
         )
     }

@@ -1,6 +1,23 @@
+import {
+  publishChatThreadMessageCreated$,
+  projectCommittedChatThreadSearch$,
+} from "./chat-event-publication.service";
+import { touchNativeChatThread$ } from "./native-chat-event-write.service";
+import { writeDb$ } from "../external/db";
+import { reconcileWechatThreadTyping$ } from "./wechat-thread-typing.service";
+import { loadNewChatThreadDefaults$ } from "./chat-thread-defaults.service";
+import { resolveDefaultModelFirstPin$ } from "./model-selection.service";
+import {
+  pickEnqueuedChatThread$,
+  notifyRunningChatRunOfPendingInput$,
+} from "./chat-thread-queue-drain.service";
 import { wechatAttachments } from "../external/wechat-media";
 import { MAX_WECHAT_FILE_SIZE_BYTES } from "@okouai/api-contracts/contracts/integrations-wechat-files";
-import { integrationInputMessageFiles, type IntegrationInputFile } from "./integration-input-assets.service";
+import {
+  integrationInputMessageFiles,
+  type IntegrationInputFile,
+  materializeIntegrationInputAssets$,
+} from "./integration-input-assets.service";
 import { isWechatOwnerMessage, wechatEventId } from "./wechat-message-identity";
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
 import { publishThreadListChangedSafely } from "../external/realtime";
@@ -15,8 +32,6 @@ import {
   wechatMessages,
 } from "@okouai/db/schema/wechat";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { agents } from "@okouai/db/schema/agent";
 import { waitUntil } from "../context/wait-until";
 import type { WechatMessage } from "@okouai/api-contracts/contracts/wechat-protocol";
 import { monotonicNow, nowDate } from "../../lib/time";
@@ -27,7 +42,10 @@ import {
   integrationChatThreadInsertFromRouteSql,
   integrationThreadCreatedEventSql,
 } from "./integration-chat-thread-publication";
-import { type ThreadModelReplacement } from "./chat-input-model.service";
+import {
+  type ThreadModelReplacement,
+  resolveEnqueuedChatInputModel$,
+} from "./chat-input-model.service";
 import { chatThreadServiceTierFromCodex } from "./chat-thread-event.service";
 import {
   createUserMessageDocument,
@@ -108,22 +126,6 @@ const ensureThread$ = command(
     if (existing.chatThreadId) {
       return existing.chatThreadId;
     }
-    const [agent] = await db
-      .select({ id: agents.id })
-      .from(orgMetadata)
-      .innerJoin(
-        agents,
-        and(
-          eq(agents.id, orgMetadata.defaultAgentId),
-          eq(agents.orgId, orgMetadata.orgId),
-        ),
-      )
-      .where(eq(orgMetadata.orgId, connection.orgId))
-      .limit(1);
-    signal.throwIfAborted();
-    if (!agent) {
-      throw new WechatIngressError("default_agent_unavailable", false);
-    }
     const owner = { orgId: connection.orgId, userId: connection.userId };
     const initialModel = await set(
       resolveDefaultModelFirstPin$,
@@ -132,7 +134,7 @@ const ensureThread$ = command(
     );
     const defaults = await set(loadNewChatThreadDefaults$, owner, signal);
     const thread = integrationChatThreadValues(
-      { ...owner, agentId: agent.id, currentTime: nowDate(), initialModel },
+      { ...owner, currentTime: nowDate(), initialModel },
       randomUUID(),
       defaults,
     );
@@ -158,14 +160,13 @@ const ensureThread$ = command(
       .onConflictDoNothing({ target: wechatChatThreadRoutes.connectionId })
       .returning({ chatThreadId: wechatChatThreadRoutes.chatThreadId });
     const route = db.$with("wechat_route").as(routeInsert);
-    const threadInsert = sql`${integrationChatThreadInsertFromRouteSql(thread, route)} RETURNING ${chatThreads.agentId}`;
+    const threadInsert = sql`${integrationChatThreadInsertFromRouteSql(thread, route)} RETURNING ${chatThreads.id}`;
     const [inserted] = parseRawRows(
       object({ chatThreadId: uuid() }),
       await db.execute(
         integrationThreadCreatedEventSql(connection.orgId, thread, {
           cte: sql`wechat_route AS (${routeInsert.getSQL()}), wechat_thread AS (${threadInsert})`,
           gate: sql`EXISTS(SELECT 1 FROM wechat_thread)`,
-          agentId: sql`(SELECT agent_id FROM wechat_thread)`,
           result: sql`SELECT chat_thread_id AS "chatThreadId" FROM wechat_route WHERE EXISTS(SELECT 1 FROM inserted)`,
         }),
       ),

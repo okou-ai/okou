@@ -1,3 +1,5 @@
+import { db$ } from "../external/db";
+import { loadSelectedChatMessageRows$ } from "./shared-thread.service";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";

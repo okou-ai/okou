@@ -1,3 +1,6 @@
+import { publishChatThreadMessageCreated$ } from "./chat-event-publication.service";
+import { writeDb$ } from "../external/db";
+import { publishFirstAssistantEventCreatedSafely$ } from "./chat-first-assistant-event-metric.service";
 import type { ChatRecommendedFollowup } from "@okouai/api-contracts/contracts/chat-threads";
 import { serializeChatFollowupsContent } from "@okouai/api-contracts/validators/chat-threads";
 import {

@@ -326,13 +326,12 @@ public actor ChatCommands {
     let projectId: String?
 
     enum CodingKeys: String, CodingKey {
-      case agentId, clientThreadId, eventId, model, serviceTier, reasoningEffort, projectId
+      case clientThreadId, eventId, model, serviceTier, reasoningEffort, projectId
       case initialRemoteAccessOverrides
     }
 
     func encode(to encoder: Encoder) throws {
       var container = encoder.container(keyedBy: CodingKeys.self)
-      try container.encode(agentId, forKey: .agentId)
       try container.encode(clientThreadId, forKey: .clientThreadId)
       try container.encode(eventId, forKey: .eventId)
       try container.encode(model, forKey: .model)

@@ -1,3 +1,8 @@
+import { setAuthContext$ } from "../auth/auth-context";
+import { db$ } from "../external/db";
+import { getMemberRoleAndUpdateCache$ } from "./auth.service";
+import { sendNormalEvent$ } from "./chat-events.command";
+import { getWalletSpend$ } from "./link-wallet.service";
 import { command } from "ccstate";
 import {
   and,
@@ -164,7 +169,6 @@ export const pollLinkApproval$ = command(
         {
           orgId: row.orgId,
           userId: row.userId,
-          agentId: row.agentId,
         },
         row.id,
         false,

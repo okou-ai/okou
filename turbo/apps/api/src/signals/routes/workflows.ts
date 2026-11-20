@@ -420,7 +420,7 @@ function workflowCreationAdmissionPlan(args: PreparedWorkflowCreation) {
             ? eq(chatThreads.id, body.chatThreadId)
             : sql`false`,
           eq(chatThreads.userId, member.userId),
-          eq(chatThreads.agentId, body.agentId),
+          eq(chatThreads.orgId, args.orgId),
         ),
       )
       .limit(1)

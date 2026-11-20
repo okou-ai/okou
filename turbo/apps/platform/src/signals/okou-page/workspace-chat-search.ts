@@ -1,3 +1,7 @@
+import { apiClient$ } from "../api-client.ts";
+import { chatThreads$ } from "../agent-chat.ts";
+import { eventDrivenChatThreads$ } from "../chat-page/chat-thread-event-sourcing.ts";
+import { chatListQuery$, debouncedChatListQuery$ } from "./sidebar-state.ts";
 import { computed } from "ccstate";
 import { chatSearchContract } from "@okouai/api-contracts/client/chat-threads";
 import type { ChatSearchResult } from "@okouai/api-contracts/contracts/chat-threads";

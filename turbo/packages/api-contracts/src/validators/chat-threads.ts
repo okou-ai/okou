@@ -490,7 +490,7 @@ const userMessageAgentSourcePartSchema = object({
   kind: literal("agent"),
   runId: uuid(),
   threadId: uuid(),
-  agentId: uuid(),
+  agentId: uuid().optional(),
   titleSnapshot: string().min(1),
   href: string().min(1),
 }).strict();

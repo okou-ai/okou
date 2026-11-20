@@ -1,3 +1,4 @@
+import { db$ } from "../external/db";
 import { randomUUID } from "node:crypto";
 import {
   modelSettingsPatchSchema,

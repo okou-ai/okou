@@ -1,3 +1,4 @@
+import { db$ } from "../external/db";
 import { command, computed } from "ccstate";
 import { OFFICIAL_TELEGRAM_BOT_ID } from "@okouai/api-contracts/contracts/integrations-telegram";
 import { chatEvents } from "@okouai/db/schema/chat-event";

@@ -488,7 +488,7 @@ data class SaveAgentDraftDraftUserMessagePartsItemVariant8(
     val `kind`: SaveAgentDraftDraftUserMessagePartsItemVariant8Kind,
     val `runId`: String,
     val `threadId`: String,
-    val `agentId`: String,
+    val `agentId`: String? = null,
     val `titleSnapshot`: String,
     val `href`: String,
 ) : SaveAgentDraftDraftUserMessagePartsItem
@@ -1479,7 +1479,6 @@ object SaveAgentDraftDraftUserMessagePartsItemSerializer :
                     } == true &&
                     value.containsKey("runId") &&
                     value.containsKey("threadId") &&
-                    value.containsKey("agentId") &&
                     value.containsKey("titleSnapshot") &&
                     value.containsKey("href")) &&
                     (value["type"].let { field ->
@@ -2139,7 +2138,7 @@ data class SaveThreadDraftDraftUserMessagePartsItemVariant8(
     val `kind`: SaveThreadDraftDraftUserMessagePartsItemVariant8Kind,
     val `runId`: String,
     val `threadId`: String,
-    val `agentId`: String,
+    val `agentId`: String? = null,
     val `titleSnapshot`: String,
     val `href`: String,
 ) : SaveThreadDraftDraftUserMessagePartsItem
@@ -3131,7 +3130,6 @@ object SaveThreadDraftDraftUserMessagePartsItemSerializer :
                     } == true &&
                     value.containsKey("runId") &&
                     value.containsKey("threadId") &&
-                    value.containsKey("agentId") &&
                     value.containsKey("titleSnapshot") &&
                     value.containsKey("href")) &&
                     (value["type"].let { field ->
@@ -4255,7 +4253,7 @@ data class SendRequestVariant1UserMessagePartsItemVariant8(
     val `kind`: SendRequestVariant1UserMessagePartsItemVariant8Kind,
     val `runId`: String,
     val `threadId`: String,
-    val `agentId`: String,
+    val `agentId`: String? = null,
     val `titleSnapshot`: String,
     val `href`: String,
 ) : SendRequestVariant1UserMessagePartsItem
@@ -5264,7 +5262,6 @@ object SendRequestVariant1UserMessagePartsItemSerializer :
                     } == true &&
                     value.containsKey("runId") &&
                     value.containsKey("threadId") &&
-                    value.containsKey("agentId") &&
                     value.containsKey("titleSnapshot") &&
                     value.containsKey("href")) &&
                     (value["type"].let { field ->

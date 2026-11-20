@@ -1,3 +1,5 @@
+import { apiClient$ } from "../api-client.ts";
+import { searchParams$ } from "../route.ts";
 import { command, computed } from "ccstate";
 import { chatThreadMetadataContract } from "@okouai/api-contracts/client/chat-threads";
 import { accept } from "../../lib/accept.ts";

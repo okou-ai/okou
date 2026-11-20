@@ -1,3 +1,9 @@
+import { activeRoute$ } from "../active-route.ts";
+import { apiClient$ } from "../api-client.ts";
+import { updateDocumentTitle$ } from "../document-title.ts";
+import { rootSignal$ } from "../root-signal.ts";
+import { pathParams$ } from "../route.ts";
+import { queryChatThreadEventSharedDatabase$ } from "../shared-database.ts";
 import { command, computed, state, type Command } from "ccstate";
 import { chatThreadMetadataContract } from "@okouai/api-contracts/client/chat-threads";
 import type {
@@ -9,7 +15,10 @@ import type { ModelSettings } from "@okouai/api-contracts/contracts/model-reason
 import { replayChatThreadEvents } from "@okouai/core/chat-thread-event-replay";
 import { accept } from "../../lib/accept.ts";
 import { nowDate } from "../../lib/time.ts";
-import { type ChatThreadMetadataShortcutOutcome } from "../../lib/posthog.ts";
+import {
+  type ChatThreadMetadataShortcutOutcome,
+  captureChatThreadMetadataShortcut$,
+} from "../../lib/posthog.ts";
 import {
   resetSignal,
   createDeferredPromise,
@@ -707,7 +716,7 @@ export const touchOptimisticChatThreadSort$ = command(
     args: {
       readonly id: string;
       readonly threadId: string;
-      readonly agentId: string;
+      readonly agentId?: string;
       readonly createdAt: string;
     },
   ) => {

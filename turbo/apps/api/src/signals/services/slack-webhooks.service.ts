@@ -591,9 +591,8 @@ const resolveConnectedSlackAgentRouteAdmission$ = command(
       // A pinned thread can retain its organization after the account changes.
       if (args.connection.orgId) {
         const [thread] = await get(db$)
-          .select({ orgId: agents.orgId })
+          .select({ orgId: chatThreads.orgId })
           .from(chatThreads)
-          .innerJoin(agents, eq(agents.id, chatThreads.agentId))
           .where(
             and(
               eq(chatThreads.id, existingRoute.chatThreadId),

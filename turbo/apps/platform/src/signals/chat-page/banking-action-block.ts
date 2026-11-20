@@ -91,6 +91,7 @@ export function parseBankingActionUrl(
   if (
     !context ||
     !agentId ||
+    !context.agentId ||
     !chatActionIdMatches(agentId, context.agentId) ||
     !reason ||
     reason.length > 500 ||

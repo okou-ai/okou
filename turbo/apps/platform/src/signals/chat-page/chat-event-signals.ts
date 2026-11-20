@@ -27,7 +27,7 @@ import { withSelectedModelAnnotation } from "./model-selection-request.ts";
 export interface ChatAgentRunSource {
   readonly runId: string;
   readonly threadId: string;
-  readonly agentId: string;
+  readonly agentId?: string;
   readonly titleSnapshot: string;
 }
 
@@ -57,7 +57,7 @@ export function withOptimisticAgentRunSource(
 export interface SendInputChatEvent {
   readonly kind: "input";
   readonly delivery: "run" | "queue";
-  readonly agentId: string;
+  readonly agentId?: string;
   readonly prompt: string;
   readonly hasTextContent: boolean;
   readonly userMessage: UserMessageInputDocument;
@@ -73,13 +73,13 @@ export interface SendInputChatEvent {
 
 export interface SendRevokeChatEvent {
   readonly kind: "revoke";
-  readonly agentId: string;
+  readonly agentId?: string;
   readonly revokesEventId: string;
 }
 
 export interface SendInterruptChatEvent {
   readonly kind: "interrupt";
-  readonly agentId: string;
+  readonly agentId?: string;
   readonly interruptsRunId: string;
 }
 

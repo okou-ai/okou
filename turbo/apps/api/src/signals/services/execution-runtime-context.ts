@@ -8,7 +8,10 @@ import { billableFirewallsForPermissions } from "./built-in-route-pricing";
 import type { AdmittedExecutionFacts } from "./admitted-execution-facts";
 import { NATIVE_CONTEXT_RECOVERY_PROMPT } from "./chat-session-continuity.service";
 import { dataRouterEnvironment } from "./data-router-environment";
-import { type AcceptedMemoryMount } from "./execution-storage.service";
+import {
+  type AcceptedMemoryMount,
+  prepareExecutionMemoryMount$,
+} from "./execution-storage.service";
 import type { ExecutionPackageMounts } from "./execution-workflow-selection";
 import type { ModelFirstPin } from "./model-selection.service";
 import {

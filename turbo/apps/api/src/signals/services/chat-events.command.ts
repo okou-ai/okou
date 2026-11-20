@@ -1,4 +1,19 @@
 import {
+  publishChatThreadMessageCreated$,
+  projectCommittedChatThreadSearch$,
+} from "./chat-event-publication.service";
+import { deliverMarketingRewardEvents$ } from "./marketing-reward-event-delivery.service";
+import { organizationAuthContext$ } from "../auth/auth-context";
+import { apiStartTime$, route$ } from "../context/hono";
+import { db$, writeDb$ } from "../external/db";
+import { cancelRun$ } from "./agent-run-cancellation.service";
+import { notifyBrowserUserActionCallback$ } from "./browser-user-action-callback.service";
+import { touchSentChatThreadSort$ } from "./chat-event-shared.service";
+import {
+  notifyRunningChatRunOfPendingInput$,
+  pickEnqueuedChatThread$,
+} from "./chat-thread-queue-drain.service";
+import {
   AUTO_SELECTED_MODEL,
   isAutoSelectedModel,
 } from "@okouai/core/auto-run-model";
@@ -82,8 +97,16 @@ import {
   settle,
   settleIncludingAbort,
 } from "../utils";
-import { createAgentRunContextSignals, type AgentRunContextSignals } from "./agent-run-context.signals";
-import { resolveRunSelectionModel, type ModelSelectionBootstrap } from "./model-selection.service";
+import {
+  createAgentRunContextSignals,
+  type AgentRunContextSignals,
+  preloadAgentRunContext$,
+} from "./agent-run-context.signals";
+import {
+  resolveRunSelectionModel,
+  type ModelSelectionBootstrap,
+  resolveDefaultModelFirstPin$,
+} from "./model-selection.service";
 import {
   queuedChatThreadPublicationPlan,
   type PublishedChatThreadLease,
@@ -123,7 +146,10 @@ import {
   type NewChatEvent,
 } from "./chat-event.service";
 import type { ChatInputEnqueueCommit } from "./chat-input-enqueue-observation";
-import { capturedModelReplacement } from "./chat-input-model.service";
+import {
+  capturedModelReplacement,
+  resolveChatInputModelSelection$,
+} from "./chat-input-model.service";
 import { resolveChatReasoningEffort } from "./chat-reasoning-effort.service";
 import { prepareChatThreadInsert } from "./chat-thread-create.service";
 import {
@@ -131,7 +157,11 @@ import {
   chatThreadEventInsertPlan,
   chatThreadServiceTierFromCodex,
 } from "./chat-thread-event.service";
-import { officialWorkflowThreadCondition, OFFICIAL_WORKFLOW_THREAD_READ_ONLY_MESSAGE } from "./official-workflow-policy.service";
+import {
+  officialWorkflowThreadCondition,
+  OFFICIAL_WORKFLOW_THREAD_READ_ONLY_MESSAGE,
+  isOfficialWorkflowThread$,
+} from "./official-workflow-policy.service";
 import { isForeignKeyViolation } from "../../lib/pg-errors";
 import { chatThreadOrganizationCondition } from "./chat-thread-organization.service";
 import { pgBooleanDecoder } from "../../lib/db-structured-result";
@@ -154,8 +184,14 @@ import { isCatalogCodexServiceTierSupported } from "./model-route-capabilities.s
 import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 import { selectedUserPresentationTemplateIds } from "./presentation-template-data.service";
 import { selectedUserTemplateIds } from "./user-template-data.service";
-import { shouldDispatchCancelSideEffects } from "./run-cancel.service";
-import { createPublicArtifactObjectReads } from "./artifact-storage.service";
+import {
+  shouldDispatchCancelSideEffects,
+  dispatchCancelSideEffects$,
+} from "./run-cancel.service";
+import {
+  createPublicArtifactObjectReads,
+  resolvedArtifactObject$,
+} from "./artifact-storage.service";
 import {
   completedPrivateAttachmentSize,
   privateArtifactFromRow,
@@ -309,7 +345,6 @@ const resolveChatAgentRunSourceById$ = command(
       .select({
         runId: agentRuns.id,
         threadId: chatThreads.id,
-        agentId: chatThreads.agentId,
         title: chatThreads.title,
         autonomyBudget: agentRuns.autonomyBudget,
       })
@@ -318,6 +353,7 @@ const resolveChatAgentRunSourceById$ = command(
         chatThreads,
         and(
           eq(chatThreads.id, agentRuns.chatThreadId),
+          eq(chatThreads.orgId, auth.orgId),
           eq(chatThreads.userId, auth.userId),
         ),
       )
@@ -335,12 +371,11 @@ const resolveChatAgentRunSourceById$ = command(
       return null;
     }
     const annotation =
-      source.threadId === null || source.agentId === null
+      source.threadId === null
         ? null
         : {
             runId: source.runId,
             threadId: source.threadId,
-            agentId: source.agentId,
             titleSnapshot: agentRunSourceTitleSnapshot(source.title),
           };
     return { annotation };
@@ -821,7 +856,6 @@ const loadExistingSendThreadRow$ = command(
     const [thread] = await db
       .select({
         id: chatThreads.id,
-        agentId: chatThreads.agentId,
         selectedModel: chatThreads.selectedModel,
         modelSettings: chatThreads.modelSettings,
         codexServiceTier: chatThreads.codexServiceTier,
@@ -1398,7 +1432,6 @@ function normalSendEvent(params: {
             agentRunContext: {
               sourceRunId: params.agentRunSource.runId,
               sourceChatThreadId: params.agentRunSource.threadId,
-              sourceAgentId: params.agentRunSource.agentId,
             },
           }
         : {

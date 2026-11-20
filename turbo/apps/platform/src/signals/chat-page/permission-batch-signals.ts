@@ -1,3 +1,6 @@
+import { apiClient$ } from "../api-client.ts";
+import { featureSwitches$ } from "../external/feature-switch.ts";
+import { runChatActionCallback$ } from "./action-callback.ts";
 import { command, computed, state } from "ccstate";
 
 import type { UserPermissionGrantExpiresIn } from "@okouai/api-contracts/validators/user-permission-grants";
@@ -6,7 +9,12 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept } from "../../lib/accept.ts";
 import { agentById } from "../agent.ts";
 import { firewallPermissionMetadataByConnector } from "../firewall-permission-metadata.ts";
-import { findPermissionInMetadata, resolveUserPermissionGrantPolicy, permissionGrantsForConnectors } from "../permission-allow/permission-allow-signals.ts";
+import {
+  findPermissionInMetadata,
+  resolveUserPermissionGrantPolicy,
+  permissionGrantsForConnectors,
+  applyUserPermissionGrants$,
+} from "../permission-allow/permission-allow-signals.ts";
 import type {
   PlatformConnectorPermissionMetadata,
   PlatformUserPermissionGrant,

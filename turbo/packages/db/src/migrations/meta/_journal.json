@@ -3662,6 +3662,13 @@
       "when": 1795210655967,
       "tag": "1601_member_wallet_spend_intent",
       "breakpoints": true
+    },
+    {
+      "idx": 1602,
+      "version": "7",
+      "when": 1795211330416,
+      "tag": "1602_member_run_provenance",
+      "breakpoints": true
     }
   ]
 }

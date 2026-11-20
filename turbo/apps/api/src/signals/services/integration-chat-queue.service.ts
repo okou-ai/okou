@@ -1,3 +1,4 @@
+import { writeDb$ } from "../external/db";
 import { chatEmailContext } from "@okouai/db/schema/email-integration";
 import { chatAgentphoneContext } from "@okouai/db/schema/chat-agentphone-context";
 import { chatDiscordContext } from "@okouai/db/schema/chat-discord-context";

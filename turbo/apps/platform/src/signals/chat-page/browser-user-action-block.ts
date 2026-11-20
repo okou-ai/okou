@@ -232,7 +232,8 @@ function hasValidBrowserUserActionClaims(
   }
   return (
     !context ||
-    (chatActionIdMatches(agentId, context.agentId) &&
+    (context.agentId !== undefined &&
+      chatActionIdMatches(agentId, context.agentId) &&
       chatActionIdMatches(threadId, context.threadId))
   );
 }

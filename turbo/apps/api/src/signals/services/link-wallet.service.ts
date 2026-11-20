@@ -1,3 +1,5 @@
+import { organizationAuthContext$ } from "../auth/auth-context";
+import { db$, writeDb$ } from "../external/db";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type { WalletChangedPayload } from "@okouai/api-contracts/contracts/realtime";
 
@@ -37,7 +39,10 @@ import { parseRawRows } from "../../lib/db-raw-rows";
 import { publishUserSignal } from "../external/realtime";
 import { onRejection } from "../utils";
 import { isLinkApprovalConfigured } from "./link-approval-config.service";
-import { requireApprovalThread } from "./link-wallet-continuation.service";
+import {
+  requireApprovalThread,
+  takeOverWalletApproval$,
+} from "./link-wallet-continuation.service";
 import {
   decryptStoredSecretValue,
   encryptStoredSecretValue,

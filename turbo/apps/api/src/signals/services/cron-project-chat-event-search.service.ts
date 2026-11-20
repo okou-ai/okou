@@ -17,7 +17,6 @@ import {
 } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
-import { agents } from "@okouai/db/schema/agent";
 import {
   chatEventSearchMessages,
   chatEventSearchMessageWatermarks,
@@ -56,7 +55,6 @@ interface CandidateThread {
   readonly chatThreadId: string;
   readonly userId: string;
   readonly orgId: string;
-  readonly agentId: string;
 }
 
 interface ThreadProjectionStats {
@@ -93,7 +91,6 @@ interface CanonicalSearchMessageInsert {
   readonly runId: string | null;
   readonly userId: string;
   readonly orgId: string;
-  readonly agentId: string;
   readonly role: SearchableRole;
   readonly createdAt: Date;
   readonly text: string;
@@ -212,7 +209,6 @@ function searchMessage(
     runId: row.runId,
     orgId: thread.orgId,
     userId: thread.userId,
-    agentId: thread.agentId,
     role: projection.role,
     createdAt: row.createdAt,
     text: projection.text,
@@ -305,7 +301,6 @@ function searchProjectionCommitSql(
       run_id: message.runId,
       user_id: message.userId,
       org_id: message.orgId,
-      agent_id: message.agentId,
       role: message.role,
       created_at: message.createdAt.toISOString(),
       text: message.text,
@@ -451,16 +446,14 @@ export const projectChatThreadSearch$ = command(
       .select({
         chatThreadId: chatThreads.id,
         userId: chatThreads.userId,
-        orgId: agents.orgId,
-        agentId: agents.id,
+        orgId: chatThreads.orgId,
       })
       .from(chatThreads)
-      .innerJoin(agents, eq(chatThreads.agentId, agents.id))
       .where(
         and(
           eq(chatThreads.id, owner.threadId),
           eq(chatThreads.userId, owner.userId),
-          eq(agents.orgId, owner.orgId),
+          eq(chatThreads.orgId, owner.orgId),
         ),
       )
       .limit(1);
@@ -579,8 +572,7 @@ function searchProjectionCandidateSource(batchSize: number): SQL {
   const selection = {
     chatThreadId: chatThreads.id,
     userId: chatThreads.userId,
-    orgId: agents.orgId,
-    agentId: agents.id,
+    orgId: chatThreads.orgId,
   };
   const head = query
     .select(selection)
@@ -589,7 +581,6 @@ function searchProjectionCandidateSource(batchSize: number): SQL {
       chatEventSequences,
       eq(chatEventSequences.chatThreadId, chatThreads.id),
     )
-    .innerJoin(agents, eq(chatThreads.agentId, agents.id))
     .leftJoin(
       chatEventSearchMessageWatermarks,
       eq(chatEventSearchMessageWatermarks.chatThreadId, chatThreads.id),
@@ -613,7 +604,6 @@ function searchProjectionCandidateSource(batchSize: number): SQL {
   const tail = query
     .select(selection)
     .from(chatThreads)
-    .innerJoin(agents, eq(chatThreads.agentId, agents.id))
     .where(
       and(
         gt(chatThreads.id, upperId),
@@ -626,8 +616,8 @@ function searchProjectionCandidateSource(batchSize: number): SQL {
   // Both halves share one statement snapshot and disjoint ID ranges.
   return sql`(
     WITH bounds(upper_id) AS MATERIALIZED (${bounds}),
-    head(thread_id, user_id, org_id, agent_id) AS MATERIALIZED (${head}),
-    tail(thread_id, user_id, org_id, agent_id) AS MATERIALIZED (
+    head(thread_id, user_id, org_id) AS MATERIALIZED (${head}),
+    tail(thread_id, user_id, org_id) AS MATERIALIZED (
       ${tail}
       LIMIT GREATEST(${batchSize} - (SELECT ${count()} FROM head), 0)
     )
@@ -651,8 +641,7 @@ export const projectChatEventSearch$ = command(
       .select({
         chatThreadId: sql`candidates.thread_id`.mapWith(chatThreads.id),
         userId: sql`candidates.user_id`.mapWith(chatThreads.userId),
-        orgId: sql`candidates.org_id`.mapWith(agents.orgId),
-        agentId: sql`candidates.agent_id`.mapWith(agents.id),
+        orgId: sql`candidates.org_id`.mapWith(chatThreads.orgId),
       })
       .from(searchProjectionCandidateSource(chatEventSearchThreadBatchSize()))
       .orderBy(asc(sql`candidates.thread_id`));

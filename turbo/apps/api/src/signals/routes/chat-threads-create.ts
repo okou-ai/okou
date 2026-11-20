@@ -1,3 +1,8 @@
+import { personalProjectAccess$ } from "./projects";
+import { organizationAuthContext$ } from "../auth/auth-context";
+import { clerk$ } from "../external/clerk";
+import { db$ } from "../external/db";
+import { loadNewChatThreadDefaults$ } from "../services/chat-thread-defaults.service";
 import {
   androidChatUltrafastTransforms,
   iosChatUltrafastTransforms,
@@ -24,13 +29,25 @@ import {
   notFound,
   resourceUnavailable,
 } from "../../lib/error";
-import { type CreatedChatThread, type ExistingChatThread } from "../services/chat-thread.service";
-import { autoSelectionPin, validateCodexServiceTier } from "../services/model-selection.service";
+import {
+  type CreatedChatThread,
+  type ExistingChatThread,
+  createChatThread$,
+} from "../services/chat-thread.service";
+import {
+  autoSelectionPin,
+  validateCodexServiceTier,
+  resolveDefaultModelFirstPin$,
+  resolveModelSelectionPin$,
+} from "../services/model-selection.service";
 import { chatThreadServiceTierFromCodex } from "../services/chat-thread-event.service";
 import { hasCurrentVncMembership } from "../services/vnc-owner-lifecycle.service";
 import { resolveChatReasoningEffort } from "../services/chat-reasoning-effort.service";
 import { chatThreadOrganizationPredicate } from "../services/chat-thread-organization.service";
-import { type ModelCatalog } from "../services/model-catalog.service";
+import {
+  type ModelCatalog,
+  modelCatalog$,
+} from "../services/model-catalog.service";
 import type { RouteEntry } from "../route-entry";
 const createBody$ = bodyResultOf(chatThreadsContract.create);
 

@@ -1,3 +1,4 @@
+import { db$, writeDb$ } from "../external/db";
 import {
   workflows,
   workflowUserAutomationThreads,
@@ -43,8 +44,13 @@ import {
   chatThreadEventInsertSql,
 } from "./chat-thread-event.service";
 import { resolveChatReasoningEffort } from "./chat-reasoning-effort.service";
-import { type ModelCatalog } from "./model-catalog.service";
-import { autoSelectionPin, validateCodexServiceTier, type ModelFirstPin } from "./model-selection.service";
+import { type ModelCatalog, loadModelCatalog$ } from "./model-catalog.service";
+import {
+  autoSelectionPin,
+  validateCodexServiceTier,
+  type ModelFirstPin,
+  resolveModelSelectionPin$,
+} from "./model-selection.service";
 import { chatThreadOrganizationPredicate } from "./chat-thread-organization.service";
 import { command } from "ccstate";
 import { settle } from "../utils";
