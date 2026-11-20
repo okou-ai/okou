@@ -1541,7 +1541,7 @@ describe("POST /api/webhooks/gmail", () => {
       concurrent.map((response) => {
         return response.body;
       }),
-    ).toEqual(
+    ).toStrictEqual(
       expect.arrayContaining([
         { success: true, watchStates: 1, dispatched: 1, duplicates: 0 },
         { success: true, watchStates: 1, dispatched: 0, duplicates: 1 },
