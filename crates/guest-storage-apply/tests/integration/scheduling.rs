@@ -193,11 +193,11 @@ fn wait_for_event(
     }
 }
 
-fn wait_for_events(
-    receiver: &mpsc::Receiver<String>,
+fn wait_for_events<T>(
+    receiver: &mpsc::Receiver<T>,
     count: usize,
     timeout: Duration,
-) -> Result<Vec<String>, String> {
+) -> Result<Vec<T>, String> {
     let deadline = Instant::now() + timeout;
     let mut events = Vec::new();
 
@@ -762,45 +762,39 @@ fn download_concurrency_cap_limits_initial_starts() {
 }
 
 #[test]
-fn medium_remote_batch_starts_seventeen_requests_before_releasing_a_slot() {
+fn mixed_batch_sizes_the_initial_window_by_remote_archives() {
     const WINDOW_SIZE: usize = 17;
-    const REMOTE_ARCHIVES: usize = 2 * WINDOW_SIZE;
-    let scenario =
-        stringify!(medium_remote_batch_starts_seventeen_requests_before_releasing_a_slot);
+    const REMOTE_ARCHIVES: usize = 34;
+    let scenario = stringify!(mixed_batch_sizes_the_initial_window_by_remote_archives);
     let dir = tempfile::tempdir().unwrap();
     let archive = create_tar_gz(&[("result.txt", b"remote contents")]).unwrap();
+    let staged = dir.path().join("staged.tar.gz");
+    let local_archive = create_tar_gz(&[("result.txt", b"local contents")]).unwrap();
+    std::fs::write(&staged, local_archive).unwrap();
     let mut response = format!(
         "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
         archive.len()
     )
     .into_bytes();
     response.extend(archive);
+    let (request_tx, request_rx) = mpsc::channel();
     let server = TcpTestServer::start(move |server| {
-        let mut requests = Vec::with_capacity(REMOTE_ARCHIVES);
-        // Withhold each response until the whole group has sent headers.
-        // A 16-slot Guest cannot make progress through this origin.
-        for _ in 0..REMOTE_ARCHIVES / WINDOW_SIZE {
-            let mut connections = Vec::with_capacity(WINDOW_SIZE);
-            for _ in 0..WINDOW_SIZE {
-                let mut stream = server.accept()?.ok_or_else(|| {
-                    io::Error::other("archive origin stopped before a group arrived")
-                })?;
-                stream.set_read_timeout(Some(REQUEST_START_TIMEOUT))?;
-                stream.set_write_timeout(Some(COMPLETION_TIMEOUT))?;
-                requests.push(read_http_request_path(&mut stream)?);
-                connections.push(stream);
-            }
-            for mut stream in connections {
-                stream.write_all(&response)?;
-            }
+        for _ in 0..REMOTE_ARCHIVES {
+            let mut stream = server.accept()?.ok_or_else(|| {
+                io::Error::other("archive origin stopped before a request arrived")
+            })?;
+            stream.set_read_timeout(Some(REQUEST_START_TIMEOUT))?;
+            stream.set_write_timeout(Some(COMPLETION_TIMEOUT))?;
+            let path = read_http_request_path(&mut stream)?;
+            request_tx.send((path, stream)).map_err(io::Error::other)?;
         }
-        Ok(requests)
+        Ok(())
     })
     .unwrap();
     let mut expected_requests = (0..REMOTE_ARCHIVES)
         .map(|index| format!("/archive-{index}"))
         .collect::<Vec<_>>();
-    let storages = expected_requests
+    let mut storages = expected_requests
         .iter()
         .enumerate()
         .map(|(index, path)| {
@@ -810,25 +804,50 @@ fn medium_remote_batch_starts_seventeen_requests_before_releasing_a_slot() {
             )
         })
         .collect::<Vec<_>>();
+    let local_mount = dir.path().join("local");
+    storages.push((
+        path_to_string(&local_mount).unwrap(),
+        format!("file://{}", staged.display()),
+    ));
     let mut execution = spawn_guest_storage_apply(scenario, &dir, &storages).unwrap();
-    let status = execution.child.wait_with_timeout(COMPLETION_TIMEOUT);
-    let requests = server.finish();
+    let mut requests = Vec::with_capacity(REMOTE_ARCHIVES);
+    for wave in 0..REMOTE_ARCHIVES / WINDOW_SIZE {
+        let held = wait_for_events(&request_rx, WINDOW_SIZE, REQUEST_START_TIMEOUT).unwrap();
+        if wave == 0 {
+            // Counting the staged archive would widen the first window to 18.
+            let extra = request_rx.recv_timeout(NEGATIVE_START_TIMEOUT);
+            assert!(
+                matches!(extra, Err(mpsc::RecvTimeoutError::Timeout)),
+                "expected only {WINDOW_SIZE} remote requests before release, got {extra:?}"
+            );
+        }
+        for (path, mut stream) in held {
+            requests.push(path);
+            stream.write_all(&response).unwrap();
+        }
+    }
 
     assert!(
-        status
-            .expect("Guest should finish both request groups")
+        execution
+            .child
+            .wait_with_timeout(COMPLETION_TIMEOUT)
+            .unwrap()
             .success()
     );
-    let mut requests = requests.unwrap();
+    server.finish().unwrap();
     requests.sort_unstable();
     expected_requests.sort_unstable();
     assert_eq!(requests, expected_requests);
-    for (mount, _) in &storages {
+    for (mount, _) in storages.iter().take(REMOTE_ARCHIVES) {
         assert_eq!(
             std::fs::read(Path::new(mount).join("result.txt")).unwrap(),
             b"remote contents"
         );
     }
+    assert_eq!(
+        std::fs::read(local_mount.join("result.txt")).unwrap(),
+        b"local contents"
+    );
 }
 
 #[test]
