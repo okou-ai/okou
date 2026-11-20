@@ -18,10 +18,9 @@ export default defineConfig({
   plugins: [
     build({
       emptyOutDir: true,
-      entry:
-        process.env.OKOU_BUILD_RUNNER_DISPATCH_PREVIEW === "1"
-          ? "./src/index-runner-dispatch-preview.ts"
-          : "./src/index.ts",
+      entry: /^pr-\d+$/.test(process.env.INPUT_META_PR ?? "")
+        ? "./src/index-runner-dispatch-preview.ts"
+        : "./src/index.ts",
       // Keep the prebuilt Vercel function's Node req/res entry on the same
       // adapter as the standalone server; v2 removed the /vercel export.
       entryContentAfterHooks: [
