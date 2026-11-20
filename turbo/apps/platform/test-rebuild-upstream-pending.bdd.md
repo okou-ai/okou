@@ -265,3 +265,73 @@ The morning brief link opens Preference when the Suggestions feature switch is o
 - **Then** Settings opens on Preference and shows an enabled Morning brief switch.
 - **Disposition** retain.
 - **Source** upstream `1d42e699` (#49439), added to the copied test file after it was removed.
+
+## upstream-18c9913d-document-export-worker-93-01
+
+Classifies synchronous Worker bootstrap failure without retaining its message. [Registration](https://github.com/okou-ai/okou/blob/18c9913d10396c7e27679fecbb96aba52a7f80de/turbo/apps/platform/src/lib/__tests__/document-export-worker.test.ts#L93).
+
+- **Given** The document export Worker cannot be constructed.
+- **When** The user exports a document.
+- **Then** The export fails in the bootstrap phase with a message that omits the original error, and no Worker remains.
+- **Disposition** review.
+- **Source** upstream `18c9913d` (#49388), a Worker-client test that does not enter through a page. It was removed with the other non-page tests; rebuild it through a page-visible or external contract, or retire it per "Cases Without Public Construction".
+
+## upstream-18c9913d-document-export-worker-108-01
+
+Classifies pre-ready and post-ready Worker errors separately. [Registration](https://github.com/okou-ai/okou/blob/18c9913d10396c7e27679fecbb96aba52a7f80de/turbo/apps/platform/src/lib/__tests__/document-export-worker.test.ts#L108).
+
+- **Given** One export Worker fails before reporting ready and another fails after it.
+- **When** The user runs both exports.
+- **Then** The first export fails in the bootstrap phase and the second as a native Worker error; each Worker is terminated.
+- **Disposition** review.
+- **Source** upstream `18c9913d` (#49388), a Worker-client test that does not enter through a page. It was removed with the other non-page tests; rebuild it through a page-visible or external contract, or retire it per "Cases Without Public Construction".
+
+## upstream-18c9913d-document-export-worker-132-01
+
+Classifies a synchronous postMessage failure without retaining its message. [Registration](https://github.com/okou-ai/okou/blob/18c9913d10396c7e27679fecbb96aba52a7f80de/turbo/apps/platform/src/lib/__tests__/document-export-worker.test.ts#L132).
+
+- **Given** Sending the export request to the Worker throws synchronously.
+- **When** The user exports a document.
+- **Then** The export fails in the message decoding phase without retaining the original message, and the Worker is terminated.
+- **Disposition** review.
+- **Source** upstream `18c9913d` (#49388), a Worker-client test that does not enter through a page. It was removed with the other non-page tests; rebuild it through a page-visible or external contract, or retire it per "Cases Without Public Construction".
+
+## upstream-18c9913d-document-export-worker-145-01
+
+Classifies message decoding and controlled rendering failures safely. [Registration](https://github.com/okou-ai/okou/blob/18c9913d10396c7e27679fecbb96aba52a7f80de/turbo/apps/platform/src/lib/__tests__/document-export-worker.test.ts#L145).
+
+- **Given** One Worker replies with a malformed message, one cannot decode its reply, and one rejects rendering for a document with private content.
+- **When** The user runs the exports.
+- **Then** Malformed and undecodable replies fail in the message decoding phase and the rendering rejection fails as such; no error exposes the private document content, and each Worker is terminated.
+- **Disposition** review.
+- **Source** upstream `18c9913d` (#49388), a Worker-client test that does not enter through a page. It was removed with the other non-page tests; rebuild it through a page-visible or external contract, or retire it per "Cases Without Public Construction".
+
+## upstream-18c9913d-document-export-worker-199-01
+
+Preserves the successful pdf export response and request. [Registration](https://github.com/okou-ai/okou/blob/18c9913d10396c7e27679fecbb96aba52a7f80de/turbo/apps/platform/src/lib/__tests__/document-export-worker.test.ts#L199).
+
+- **Given** The export Worker renders a PDF successfully.
+- **When** The user exports the document as PDF.
+- **Then** The Worker receives the original request and the export resolves with the generated file; the Worker is then terminated.
+- **Disposition** review.
+- **Source** upstream `18c9913d` (#49388), a Worker-client test that does not enter through a page. It was removed with the other non-page tests; rebuild it through a page-visible or external contract, or retire it per "Cases Without Public Construction".
+
+## upstream-18c9913d-document-export-worker-199-02
+
+Preserves the successful docx export response and request. [Registration](https://github.com/okou-ai/okou/blob/18c9913d10396c7e27679fecbb96aba52a7f80de/turbo/apps/platform/src/lib/__tests__/document-export-worker.test.ts#L199).
+
+- **Given** The export Worker renders a DOCX file successfully.
+- **When** The user exports the document as DOCX.
+- **Then** The Worker receives the original request and the export resolves with the generated file; the Worker is then terminated.
+- **Disposition** review.
+- **Source** upstream `18c9913d` (#49388), a Worker-client test that does not enter through a page. It was removed with the other non-page tests; rebuild it through a page-visible or external contract, or retire it per "Cases Without Public Construction".
+
+## upstream-18c9913d-document-export-worker-219-01
+
+Keeps cancellation owned by the caller and terminates only once. [Registration](https://github.com/okou-ai/okou/blob/18c9913d10396c7e27679fecbb96aba52a7f80de/turbo/apps/platform/src/lib/__tests__/document-export-worker.test.ts#L219).
+
+- **Given** A document export is running in a Worker.
+- **When** The caller cancels the export.
+- **Then** The export is rejected as aborted and the Worker is terminated.
+- **Disposition** review.
+- **Source** upstream `18c9913d` (#49388), a Worker-client test that does not enter through a page. It was removed with the other non-page tests; rebuild it through a page-visible or external contract, or retire it per "Cases Without Public Construction".
