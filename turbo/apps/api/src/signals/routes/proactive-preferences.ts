@@ -21,6 +21,7 @@ import {
 import { ensureProactiveWorkflows$ } from "../services/proactive-workflows-lifecycle.service";
 import { PROACTIVE_WORKFLOW_DEFINITIONS } from "../services/proactive-workflow-definitions";
 import { settle } from "../utils";
+import { proactivePreferenceAccess$ } from "../services/proactive-preference-access";
 
 const readProactivePreference$ = command(
   async (
@@ -141,6 +142,10 @@ const preferenceRoute$ = command(
     operation: "read" | "update" | "withFeed",
     signal: AbortSignal,
   ) => {
+    const denied = await set(proactivePreferenceAccess$, signal);
+    if (denied) {
+      return denied;
+    }
     const auth = get(organizationAuthContext$);
     const owner = { orgId: auth.orgId, userId: auth.userId };
     const eligibility = await set(
@@ -210,17 +215,28 @@ const read$ = command(async ({ set }, signal: AbortSignal) => {
 const update$ = command(async ({ set }, signal: AbortSignal) => {
   return await set(preferenceRoute$, "update", signal);
 });
-const auth = { accept: ["session"], requireOrganization: true } as const;
+const readAuth = {
+  accept: ["session", "agent"],
+  requireOrganization: true,
+  requiredCapability: "suggestion:read",
+} as const;
+const writeAuth = {
+  ...readAuth,
+  requiredCapability: "suggestion:write",
+} as const;
 export const proactiveSuggestionsRoutes: readonly RouteEntry[] = [
-  { route: proactiveSuggestionsContract.get, handler: authRoute(auth, read$) },
+  {
+    route: proactiveSuggestionsContract.get,
+    handler: authRoute(readAuth, read$),
+  },
   {
     route: proactiveSuggestionsContract.update,
-    handler: authRoute(auth, update$),
+    handler: authRoute(writeAuth, update$),
   },
   {
     route: proactiveSuggestionsContract.updateWithFeed,
     handler: authRoute(
-      auth,
+      writeAuth,
       command(async ({ set }, signal: AbortSignal) => {
         return await set(preferenceRoute$, "withFeed", signal);
       }),
