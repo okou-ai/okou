@@ -20,7 +20,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 const LOCAL_CONCURRENT: usize = 4;
-const MAX_CONCURRENT: usize = 16;
+const BASE_REMOTE_CONCURRENT: usize = 16;
 const MEDIUM_REMOTE_MAX_CONCURRENT: usize = 20;
 const LARGE_REMOTE_BATCH: usize = 64;
 const LARGE_REMOTE_CONCURRENT: usize = 24;
@@ -444,7 +444,7 @@ fn download_concurrency(remote_count: usize, task_count: usize) -> usize {
         // Fit up to 40 remote requests into two windows with a bounded increase.
         _ => remote_count
             .div_ceil(2)
-            .clamp(MAX_CONCURRENT, MEDIUM_REMOTE_MAX_CONCURRENT),
+            .clamp(BASE_REMOTE_CONCURRENT, MEDIUM_REMOTE_MAX_CONCURRENT),
     };
     remote_count.clamp(LOCAL_CONCURRENT, limit).min(task_count)
 }
