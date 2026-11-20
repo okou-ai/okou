@@ -6,16 +6,10 @@
     <string name="chat_list_title">Chat</string>
     <string name="chat_refresh">Aggiorna chat</string>
     <string name="chat_loading">Caricamento delle chat…</string>
-    <string name="chat_refreshing">Aggiornamento delle chat…</string>
-    <string name="chat_load_failed">Impossibile caricare le chat. Controlla la connessione e riprova.</string>
     <string name="chat_refresh_failed">Impossibile aggiornare. Sono mostrate le ultime chat caricate.</string>
     <string name="chat_cached">Sono mostrate le chat salvate.</string>
     <string name="chat_cache_unavailable">Lo spazio offline non è disponibile. Queste chat potrebbero non essere disponibili dopo un riavvio.</string>
-    <string name="chat_metadata_loading">Caricamento dei nomi Okou e dei progetti…</string>
     <string name="chat_metadata_unavailable">Alcune informazioni su Okou o sui progetti non sono disponibili.</string>
-    <string name="chat_status_unavailable">Impossibile aggiornare lo stato. Gli indicatori precedenti potrebbero essere obsoleti.</string>
-    <string name="chat_status_loading">Verifica degli stati attivo e non letto…</string>
-    <string name="chat_refresh_status">Aggiorna stato</string>
     <string name="chat_inbox">Posta in arrivo</string>
     <string name="chat_mark_all_read">Segna tutto come letto</string>
     <string name="chat_mark_all_read_unconfirmed">Alcune chat potrebbero essere ancora da leggere.</string>
@@ -36,7 +30,6 @@
     <string name="chat_agent_identity">Okou · %1$s</string>
     <string name="chat_pinned">Fissata</string>
     <string name="chat_active">Attiva</string>
-    <string name="chat_metadata_cached">Sono mostrati i nomi Okou e dei progetti salvati.</string>
     <string name="chat_actions">Azioni della chat</string>
     <string name="chat_mark_read">Segna come letto</string>
     <string name="chat_mark_unread">Segna come non letto</string>

@@ -63,7 +63,8 @@ internal fun ChatListViewport(
     content: @Composable (Dp, (@Composable () -> Unit)?) -> Unit,
 ) {
     SubcomposeLayout(modifier) { bounds ->
-        val short = bounds.maxHeight < maxOf(216.dp, 16.sp.toDp() * 9).roundToPx()
+        val height = bounds.maxHeight
+        val short = height < maxOf(216.dp, 16.sp.toDp() * 9).roundToPx()
         val edge = 16.dp.roundToPx()
         val gap = 8.dp.roundToPx()
         val loose = bounds.copy(minWidth = 0, minHeight = 0)
@@ -114,12 +115,13 @@ internal fun ChatListViewport(
                     // Lazy item keys preserve the visible row. Keep the final row in view
                     // when the reader is already at the end.
                     val followEnd =
-                        remember(listState, reserve, short) {
+                        remember(listState, reserve, height, short) {
                             listState.canScrollBackward && !listState.canScrollForward
                         }
-                    LaunchedEffect(listState, reserve, short) {
-                        if (followEnd && listState.layoutInfo.totalItemsCount > 0)
-                            listState.scrollToItem(listState.layoutInfo.totalItemsCount - 1)
+                    LaunchedEffect(listState, reserve, height, short) {
+                        val lastIndex = listState.layoutInfo.totalItemsCount - 1
+                        if (followEnd && !listState.isScrollInProgress && lastIndex >= 0)
+                            listState.requestScrollToItem(lastIndex)
                     }
                     content(reserve, inline)
                 }

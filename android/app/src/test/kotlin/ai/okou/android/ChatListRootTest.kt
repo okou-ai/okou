@@ -39,7 +39,9 @@ import androidx.lifecycle.viewModelScope
 import java.util.UUID
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.Job
 import kotlinx.serialization.json.Json
@@ -409,12 +411,19 @@ class ChatListRootTest {
     @Test
     fun expiredSignedStorageKeepsTheWorkspaceOpenAndRetriesWithAFreshDescriptor() {
         val app = compose.activity.application as ChatListApplication
+        val descriptors = AtomicInteger()
+        val archives = AtomicInteger()
         app.fixture.snapshot = {
+            val url = app.fixture.server.url("/archive?attempt=${descriptors.incrementAndGet()}")
             jsonResponse(
-                """{"url":"${app.fixture.server.url("/archive")}","expiresInSeconds":60,"latestEventId":null,"latestSeqId":null}"""
+                """{"url":"$url","expiresInSeconds":60,"latestEventId":null,"latestSeqId":null}"""
             )
         }
-        app.fixture.archive = { okhttp3.mockwebserver.MockResponse().setResponseCode(403) }
+        app.fixture.archive = {
+            if (archives.incrementAndGet() == 1) MockResponse().setResponseCode(403)
+            else jsonResponse("""{"chatThreads":[]}""")
+        }
+        compose.onNodeWithContentDescription("Search").performClick()
         app.responseGate.countDown()
         compose.waitUntil(10_000) {
             compose
@@ -422,12 +431,13 @@ class ChatListRootTest {
                 .fetchSemanticsNodes()
                 .isNotEmpty()
         }
-        compose.onNodeWithContentDescription("Chats").assertExists()
-        app.fixture.archive = { jsonResponse("""{"chatThreads":[]}""") }
-        reconnectList(app)
-        awaitListAndNames()
-        compose.onNodeWithTag("chat_list").performScrollToNode(hasText("Project chat"))
-        compose.onNodeWithText("Project chat").assertExists()
+        compose.onNodeWithTag("chat_search").assertExists()
+        shadowOf(Looper.getMainLooper()).idleFor(5, TimeUnit.SECONDS)
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithText("Project chat").fetchSemanticsNodes().isNotEmpty()
+        }
+        assertTrue(descriptors.get() >= 2)
+        compose.onNodeWithContentDescription("Back").performClick()
         compose.onNodeWithContentDescription("Settings").performClick()
         compose.onNodeWithText("Appearance").assertExists()
     }

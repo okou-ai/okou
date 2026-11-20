@@ -480,26 +480,36 @@ class ChatListModelTest {
             runCurrent()
             assertEquals(first + 6, attempts)
             assertEquals(ChatReadPhase.Ready, model.uiState.value.listPhase)
-            assertFalse(model.uiState.value.listReadFailed)
+            assertNull(model.uiState.value.listReadFailure)
         }
     }
 
     @Test
     fun listRetryKeepsTheServerDeadlineAfterHidingTheList() = runTest {
         var attempts = 0
+        var indicatorsAvailable = false
         val service =
-            Service().apply {
-                listRead = {
+            object : Service() {
+                override suspend fun chatSnapshot() =
+                    ChatSnapshotVariant1("https://example.test/archive", 60, null, null)
+
+                override suspend fun chatArchive(url: String): ChatArchive {
                     attempts++
-                    if (attempts == 1) throw ApiFailure.Http(429, null, null, 20)
-                    page()
+                    if (attempts == 1) throw ChatSnapshotUnavailable(429, retryAfterSeconds = 20)
+                    return ChatArchive(emptyList())
+                }
+
+                override suspend fun indicators(): Indicators {
+                    if (!indicatorsAvailable) throw ApiFailure.Http(503, null, null, null)
+                    return super.indicators()
                 }
             }
         withCatchUpModel(service) { model ->
             model.refresh()
             runCurrent()
             assertEquals(1, attempts)
-            assertTrue(model.uiState.value.listReadFailed)
+            assertEquals(ChatListReadFailure.Retrying, model.uiState.value.listReadFailure)
+            assertEquals(ChatReadPhase.Failed, model.uiState.value.indicatorsPhase)
 
             model.listVisibilityChanged(false)
             advanceTimeBy(15_000)
@@ -512,10 +522,40 @@ class ChatListModelTest {
             runCurrent()
             assertEquals(1, attempts)
 
+            indicatorsAvailable = true
             advanceTimeBy(1)
             runCurrent()
             assertEquals(2, attempts)
             assertEquals(ChatReadPhase.Ready, model.uiState.value.listPhase)
+            assertEquals(ChatReadPhase.Ready, model.uiState.value.indicatorsPhase)
+        }
+    }
+
+    @Test
+    fun anInFlightFailureDoesNotCountAfterSwitchingAwayAndBackToTheSameFilter() = runTest {
+        val first = CompletableDeferred<ChatEvents>()
+        val service = Service()
+        withCatchUpModel(service) { model ->
+            model.refresh()
+            runCurrent()
+            val unavailable = ApiFailure.Http(503, null, null, null)
+            service.listRead = { first.await() }
+            model.refreshList()
+            runCurrent()
+            assertEquals(ChatReadPhase.Loading, model.uiState.value.listPhase)
+            model.selectFilter(ChatListFilter.Unread)
+            model.selectFilter(ChatListFilter.Inbox)
+
+            service.listRead = { throw unavailable }
+            first.completeExceptionally(unavailable)
+            runCurrent()
+            advanceTimeBy(30_000)
+            runCurrent()
+            assertFalse(model.uiState.value.sustainedRefreshFailure)
+
+            advanceTimeBy(5_000)
+            runCurrent()
+            assertTrue(model.uiState.value.sustainedRefreshFailure)
         }
     }
 
