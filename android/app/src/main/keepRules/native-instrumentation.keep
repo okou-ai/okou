@@ -54,8 +54,21 @@
   int realtime_connecting;
   int realtime_unavailable;
   int recovery_continue;
+  int retry;
   int settings;
+  int updates_allow_install;
   int updates_check;
+  int updates_check_in_progress;
+  int updates_close;
+  int updates_current;
+  int updates_downloading;
+  int updates_error_check;
+  int updates_install_toolbar;
+  int updates_later;
+  int updates_new_version;
+  int updates_open_settings;
+  int updates_preparing;
+  int updates_ready;
   int updates_required;
   int updates_target;
   int updates_title;
@@ -78,6 +91,8 @@
 }
 -keep,allowobfuscation class ai.okou.android.api.generated.AndroidUpdatesRelease {
   public <init>(java.lang.String, long, long, java.lang.String, java.lang.String, java.lang.String);
+  public static ai.okou.android.api.generated.AndroidUpdatesRelease copy$default(ai.okou.android.api.generated.AndroidUpdatesRelease, java.lang.String, long, long, java.lang.String, java.lang.String, java.lang.String, int, java.lang.Object);
+  public long getSize();
 }
 -keep,allowobfuscation class ai.okou.android.api.generated.ChatArchive {
 }
@@ -499,7 +514,7 @@
   public ai.okou.android.instructions.InstructionsPhase getPhase();
 }
 -keep,allowobfuscation class ai.okou.android.updates.AppUpdates {
-  public <init>(ai.okou.android.updates.UpdateService, ai.okou.android.updates.UpdateStore, java.lang.String, int, kotlinx.coroutines.CoroutineDispatcher, kotlin.jvm.functions.Function0, int, kotlin.jvm.internal.DefaultConstructorMarker);
+  public <init>(ai.okou.android.updates.UpdateService, ai.okou.android.updates.UpdateStore, java.lang.String, int, kotlinx.coroutines.CoroutineDispatcher, kotlin.jvm.functions.Function0, kotlinx.coroutines.flow.Flow, int, kotlin.jvm.internal.DefaultConstructorMarker);
   public void close();
   public kotlinx.coroutines.flow.StateFlow getState();
   public void requireUpdate(ai.okou.android.api.RequiredUpdate);
@@ -516,8 +531,14 @@
   public java.lang.Object load(kotlin.coroutines.Continuation);
   public java.lang.Object save(ai.okou.android.updates.UpdateRecord, kotlin.coroutines.Continuation);
 }
+-keep,allowobfuscation class ai.okou.android.updates.UpdateTransfer$Downloading {
+}
+-keep,allowobfuscation interface ai.okou.android.updates.UpdateTransfer {
+}
 -keep,allowobfuscation class ai.okou.android.updates.UpdateUiState {
+  public boolean getCanInstall();
   public boolean getRequired();
+  public ai.okou.android.updates.UpdateTransfer getTransfer();
 }
 -keep,allowobfuscation @interface androidx.annotation.ChecksSdkIntAtLeast {
   public int api();
@@ -781,6 +802,7 @@
 }
 -keep,allowobfuscation class kotlin.coroutines.jvm.internal.Boxing {
   public static java.lang.Boolean boxBoolean(boolean);
+  public static java.lang.Long boxLong(long);
 }
 -keep,allowobfuscation class kotlin.coroutines.jvm.internal.ContinuationImpl {
   public <init>(kotlin.coroutines.Continuation);
@@ -827,6 +849,7 @@
 -keep,allowobfuscation class kotlin.io.FilesKt__FileReadWriteKt {
   public static byte[] readBytes(java.io.File);
   public static void writeBytes(java.io.File, byte[]);
+  public static void writeText$default(java.io.File, java.lang.String, java.nio.charset.Charset, int, java.lang.Object);
 }
 -keep,allowobfuscation class kotlin.io.FilesKt__UtilsKt {
   public static boolean deleteRecursively(java.io.File);
@@ -936,6 +959,11 @@
 }
 -keep,allowobfuscation interface kotlin.sequences.Sequence {
   public java.util.Iterator iterator();
+}
+-keep,allowobfuscation class kotlin.sequences.SequencesKt {
+}
+-keep,allowobfuscation class kotlin.sequences.SequencesKt__SequencesKt {
+  public static kotlin.sequences.Sequence generateSequence(java.lang.Object, kotlin.jvm.functions.Function1);
 }
 -keep,allowobfuscation class kotlin.text.CharsKt {
 }
@@ -1074,6 +1102,8 @@
 }
 -keep,allowobfuscation interface kotlinx.coroutines.channels.SendChannel {
   public java.lang.Object trySend-JP2dKIU(java.lang.Object);
+}
+-keep,allowobfuscation interface kotlinx.coroutines.flow.Flow {
 }
 -keep,allowobfuscation interface kotlinx.coroutines.flow.FlowCollector {
   public java.lang.Object emit(java.lang.Object, kotlin.coroutines.Continuation);

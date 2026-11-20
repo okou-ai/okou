@@ -37,6 +37,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.painterResource
@@ -86,10 +87,12 @@ internal fun SettingsRow(
     onClick: (() -> Unit)? = null,
     enabled: Boolean = true,
     showChevron: Boolean = onClick != null,
+    valueLeading: (@Composable () -> Unit)? = null,
 ) {
     val colors = MaterialTheme.colorScheme
     val muted = colors.onSurfaceVariant
-    val expandedText = LocalDensity.current.fontScale > 1.3f
+    val expandedText =
+        LocalConfiguration.current.screenWidthDp < 360 || LocalDensity.current.fontScale > 1.3f
     val action =
         if (onClick == null) Modifier
         else Modifier.clickable(enabled = enabled, role = Role.Button, onClick = onClick)
@@ -105,22 +108,36 @@ internal fun SettingsRow(
         leading()
         Column(Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.bodyLarge)
-            if (expandedText && value != null)
-                Text(value, color = muted, style = MaterialTheme.typography.bodyMedium)
+            if (expandedText && value != null) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    valueLeading?.invoke()
+                    Text(value, color = muted, style = MaterialTheme.typography.bodyMedium)
+                }
+            }
         }
-        if (!expandedText && value != null)
-            Text(
-                value,
-                Modifier.widthIn(max = 144.dp),
-                color = muted,
-                style = MaterialTheme.typography.bodyMedium,
-                textAlign = TextAlign.End,
-            )
+        if (!expandedText && value != null) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                valueLeading?.invoke()
+                Text(
+                    value,
+                    Modifier.widthIn(max = 144.dp),
+                    color = muted,
+                    style = MaterialTheme.typography.bodyMedium,
+                    textAlign = TextAlign.End,
+                )
+            }
+        }
         if (showChevron)
             Icon(
                 painterResource(R.drawable.ic_chevron_right),
                 contentDescription = null,
-                modifier = Modifier.size(16.dp),
+                modifier = Modifier.size(18.dp),
                 tint = muted,
             )
     }

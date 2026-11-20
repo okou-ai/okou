@@ -108,11 +108,7 @@ class SessionModel(
         viewModelScope.launch { authentication.state.collect { reconcile(it) } }
         viewModelScope.launch {
             updatesRequired.collect { required ->
-                if (required && !requiredUpdate) {
-                    requiredUpdate = true
-                    retire()
-                    mutable.value = SessionUiState(generation, SessionStage.UpdateRequired)
-                }
+                if (required && !requiredUpdate) enterRequiredUpdate()
             }
         }
     }
@@ -125,6 +121,17 @@ class SessionModel(
         workspace = null
         presentation?.clear()
         presentation = null
+    }
+
+    private fun enterRequiredUpdate() {
+        val state = mutable.value
+        val appearance =
+            state.ready?.preferences?.uiState?.value?.confirmed?.appearance
+                ?: state.cachedAppearance
+        requiredUpdate = true
+        retire()
+        mutable.value =
+            SessionUiState(generation, SessionStage.UpdateRequired, cachedAppearance = appearance)
     }
 
     private fun reconcile(snapshot: AuthenticationState, force: Boolean = false) {
@@ -388,15 +395,17 @@ class SessionModel(
         error: Exception,
     ): Boolean {
         if (!current(ticket, snapshot)) return false
+        if (error is ApiFailure.UpdateRequired) {
+            enterRequiredUpdate()
+            return true
+        }
         val stage =
             when {
-                error is ApiFailure.UpdateRequired -> SessionStage.UpdateRequired
                 error is ApiFailure.Unauthenticated ||
                     error is ApiFailure.Http && error.status in setOf(401, 403, 404) ->
                     SessionStage.AccessRemoved
                 else -> return false
             }
-        if (stage == SessionStage.UpdateRequired) requiredUpdate = true
         retire()
         mutable.value = SessionUiState(generation, stage)
         return true
