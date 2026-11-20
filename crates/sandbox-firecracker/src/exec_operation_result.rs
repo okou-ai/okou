@@ -55,13 +55,12 @@ fn captured_exec_output_bytes(
     name: &str,
     output: ExecOwnedCapturedOutput,
 ) -> io::Result<(Vec<u8>, bool)> {
-    match output {
-        ExecOwnedCapturedOutput::Captured { bytes, truncated } => Ok((bytes, truncated)),
-        ExecOwnedCapturedOutput::Discarded => Err(io::Error::new(
+    output.into_captured().ok_or_else(|| {
+        io::Error::new(
             io::ErrorKind::InvalidData,
             format!("exec result discarded {name} for capture request"),
-        )),
-    }
+        )
+    })
 }
 
 pub(crate) fn exec_termination_from_vsock_termination(
