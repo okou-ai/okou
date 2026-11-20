@@ -26,7 +26,7 @@ use crate::operation_tracker::{
 };
 use crate::{GuestControlClient, exec_operation};
 
-pub(crate) use frame::{FrameWriteDecision, FrameWriteTiming};
+pub(crate) use frame::{FrameWriteDecision, FrameWriteTiming, OutboundFrame};
 pub(super) use request::{
     CompositeNormalOperation, normal_operation_transition_error,
     normal_request_on_shared_with_timing_frame_builder,

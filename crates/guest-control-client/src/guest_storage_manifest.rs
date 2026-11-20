@@ -12,11 +12,12 @@ use guest_control_proto::{
     encode_guest_storage_manifest_request_frame_prefix_into,
 };
 
+use crate::connection::OutboundFrame;
 use crate::helper_output::owned_capture;
 use crate::protocol_error;
 use crate::{
     FrameWriteObserver, GuestControlClient, normal_request_on_shared_with_timing_frame_builder,
-    validate_fixed_helper_response,
+    normal_request_on_shared_with_write_observer_frame_builder, validate_fixed_helper_response,
 };
 
 const TERMINAL_MSG_TYPES: &[u8] = &[MSG_ERROR, MSG_GUEST_STORAGE_MANIFEST_RESULT];
@@ -73,7 +74,7 @@ impl GuestControlClient {
             MSG_GUEST_AGENT_INSTRUCTIONS_RESULT, decode_guest_agent_instructions_result,
             encode_guest_agent_instructions_request_frame_into,
         };
-        let response = normal_request_on_shared_with_timing_frame_builder(
+        let response = normal_request_on_shared_with_write_observer_frame_builder(
             &self.shared,
             &[MSG_ERROR, MSG_GUEST_AGENT_INSTRUCTIONS_RESULT],
             request_timeout,
@@ -88,10 +89,8 @@ impl GuestControlClient {
                     request.runtime_dir,
                     request.metadata,
                 )
-                .map(|()| &[][..])
                 .map_err(protocol_error::invalid_input)
             },
-            None,
         )
         .await?;
         if response.msg_type == MSG_ERROR {
@@ -189,30 +188,33 @@ impl GuestControlClient {
             TERMINAL_MSG_TYPES,
             request_timeout,
             FrameWriteObserver::noop(),
-            |seq, frame| {
-                if manifest_json.len() >= BORROWED_STORAGE_FRAME_MIN_BYTES
+            |seq| {
+                let mut frame = Vec::new();
+                let suffix = if manifest_json.len() >= BORROWED_STORAGE_FRAME_MIN_BYTES
                     && manifest_json.starts_with(INPUT_MAGIC)
                 {
-                    return encode_guest_storage_manifest_request_frame_prefix_into(
-                        frame,
+                    encode_guest_storage_manifest_request_frame_prefix_into(
+                        &mut frame,
                         seq,
                         process_timeout_ms,
                         run_id,
                         runtime_dir,
                         manifest_json,
                     )
-                    .map_err(protocol_error::invalid_input);
-                }
-                encode_guest_storage_manifest_request_frame_into(
-                    frame,
-                    seq,
-                    process_timeout_ms,
-                    run_id,
-                    runtime_dir,
-                    manifest_json,
-                )
-                .map(|()| &[][..])
-                .map_err(protocol_error::invalid_input)
+                    .map_err(protocol_error::invalid_input)?
+                } else {
+                    encode_guest_storage_manifest_request_frame_into(
+                        &mut frame,
+                        seq,
+                        process_timeout_ms,
+                        run_id,
+                        runtime_dir,
+                        manifest_json,
+                    )
+                    .map_err(protocol_error::invalid_input)?;
+                    &[]
+                };
+                Ok(OutboundFrame::bytes(frame, suffix))
             },
             timing.as_deref_mut().map(|timing| &mut timing.host),
         )
