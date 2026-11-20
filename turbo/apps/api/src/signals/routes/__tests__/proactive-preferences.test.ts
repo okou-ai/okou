@@ -19,15 +19,13 @@ import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
 const context = testContext();
 const bdd = createBddApi(context);
 const mocks = createRouteMocks(context);
-const app = setupApp({
-  context,
-  routes: [
-    ...morningBriefPreferenceRoutes,
-    ...proactiveSuggestionsRoutes,
-    ...feedRoutes,
-    ...cronOfficialWorkflowCatalogRoutes,
-  ],
-});
+const routes = Object.freeze([
+  ...morningBriefPreferenceRoutes,
+  ...proactiveSuggestionsRoutes,
+  ...feedRoutes,
+  ...cronOfficialWorkflowCatalogRoutes,
+]);
+const app = setupApp({ context, routes });
 
 function preferenceClient(
   contract:
@@ -51,14 +49,7 @@ function preferenceClient(
 
 async function preferenceRun(suggestions = true) {
   const owned = await publicChatActor(context);
-  installWorkflowVolumeS3Fixture(context);
   return await owned.run(async () => {
-    await accept(
-      app(cronOfficialWorkflowCatalogContract).sync({
-        headers: { authorization: "Bearer test-cron-secret" },
-      }),
-      [200],
-    );
     const { actor } = owned;
     const { defaultAgentId } = await bdd.readOnboardingStatus(actor);
     if (!actor.orgId || !defaultAgentId) {
@@ -92,9 +83,17 @@ async function preferenceRun(suggestions = true) {
 }
 
 describe("Proactive CLI preferences", () => {
-  it("lets the primary Run disable and re-enable every preference, with session readback and linked suggestion delivery", async () => {
+  it("publishes the Official catalog and lets the primary Run control preferences and delivery", async () => {
+    const isolatedApp = await setupApp({ context, routes, isolatePg: true });
     const { owned, actor, headers } = await preferenceRun();
+    installWorkflowVolumeS3Fixture(context);
     await owned.run(async () => {
+      await accept(
+        isolatedApp(cronOfficialWorkflowCatalogContract).sync({
+          headers: { authorization: "Bearer test-cron-secret" },
+        }),
+        [200],
+      );
       for (const contract of [
         morningBriefPreferenceContract,
         proactiveSuggestionsContract,
