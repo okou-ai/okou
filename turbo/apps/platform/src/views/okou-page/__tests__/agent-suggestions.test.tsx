@@ -291,7 +291,6 @@ function mockPool(initial: Suggestion[] = [makeSuggestion()]) {
 }
 const features = {
   [FeatureSwitchKey.AgentSuggestion]: true,
-  [FeatureSwitchKey.ProactiveLearning]: false,
 } as const;
 // Suggestions live independently of the default Agent's new-chat draft.
 const suggestionPath = "/for-you";

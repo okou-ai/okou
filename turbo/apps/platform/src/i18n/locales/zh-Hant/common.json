@@ -4058,7 +4058,7 @@
       "hourlyOnly": "目前只執行每小時檢查。請選擇同時開啟或關閉每小時檢查與新卡片。",
       "offers": "在「為你推薦」中接收優惠卡片。",
       "sourcesHint": "關閉卡片來源後，就會停止接收該來源的新卡片和未讀提醒。現有卡片會保留在「為你推薦」中。",
-      "suggestions": "每小時檢查已連結的資料來源，並在「為你推薦」中接收新的建議卡片。",
+      "suggestions": "每小時檢查已連接的資訊來源，每天更新使用者畫像，並推薦有用的下一步行動。",
       "systemUpdates": "在「為你推薦」中接收系統公告。",
       "turnOff": "同時關閉",
       "turnOn": "同時開啟",
@@ -5703,17 +5703,8 @@
         "preparing": "正在準備你的第一份晨報，你可以隨時關閉。",
         "title": "晨報"
       },
-      "proactiveLearning": {
-        "description": "夜間回顧你的資訊和工作，整理個人記憶、更新理解。",
-        "errorMessage": "無法載入或更新此設定。",
-        "missingDefaultAgent": "目前工作區的 Okou 暫時無法使用，請聯絡工作區管理員。",
-        "missingTimezone": "請在偏好設定中設定時區。",
-        "preparationFailed": "此工作流程暫不可用。",
-        "preparing": "正在準備此工作流程。",
-        "title": "主動學習"
-      },
       "proactiveSuggestions": {
-        "description": "讓 Okou 每小時檢查已連接的資訊來源，並在首頁推薦實用的下一步行動。",
+        "description": "每小時檢查已連接的資訊來源，每天更新使用者畫像，並推薦有用的下一步行動。",
         "errorMessage": "無法載入或更新主動建議設定。",
         "missingDefaultAgent": "目前工作區的 Okou 暫時無法使用，請聯絡工作區管理員。",
         "missingTimezone": "請在偏好設定中設定時區。",

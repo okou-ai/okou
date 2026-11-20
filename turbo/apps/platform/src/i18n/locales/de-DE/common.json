@@ -4076,7 +4076,7 @@
       "hourlyOnly": "Stündliche Prüfungen sind aktiv, neue Karten sind aus. Wähle eine Einstellung für beides.",
       "offers": "Erhalte Angebotskarten unter „Für dich“.",
       "sourcesHint": "Wenn du eine Kartenquelle deaktivierst, erhältst du von ihr keine neuen Karten oder Hinweise auf ungelesene Karten mehr. Vorhandene Karten bleiben in „Für dich“.",
-      "suggestions": "Prüfe verbundene Quellen stündlich und erhalte neue Vorschlagskarten unter „Für dich“.",
+      "suggestions": "Verbundene Quellen stündlich prüfen, dein Nutzerprofil täglich aktualisieren und hilfreiche nächste Schritte vorschlagen.",
       "systemUpdates": "Erhalte Systemmeldungen unter „Für dich“.",
       "turnOff": "Beides deaktivieren",
       "turnOn": "Beides aktivieren",
@@ -5725,17 +5725,8 @@
         "preparing": "Ihr erster Morgenbericht wird vorbereitet. Sie können ihn jederzeit deaktivieren.",
         "title": "Morgenbrief"
       },
-      "proactiveLearning": {
-        "description": "Aktivitäten nachts überprüfen und persönliche Erinnerungen verbessern.",
-        "errorMessage": "Diese Einstellung konnte nicht geladen oder aktualisiert werden.",
-        "missingDefaultAgent": "Okou ist in diesem Arbeitsbereich nicht verfügbar. Wende dich an einen Administrator.",
-        "missingTimezone": "Legen Sie Ihre Zeitzone in den Einstellungen fest.",
-        "preparationFailed": "Dieser Workflow ist vorübergehend nicht verfügbar.",
-        "preparing": "Dieser Workflow wird vorbereitet.",
-        "title": "Lernen"
-      },
       "proactiveSuggestions": {
-        "description": "Okou prüft stündlich deine verbundenen Quellen und schlägt auf der Startseite sinnvolle nächste Schritte vor.",
+        "description": "Verbundene Quellen stündlich prüfen, dein Nutzerprofil täglich aktualisieren und hilfreiche nächste Schritte vorschlagen.",
         "errorMessage": "Die Einstellungen konnten nicht geladen oder aktualisiert werden.",
         "missingDefaultAgent": "Okou ist in diesem Arbeitsbereich nicht verfügbar. Wende dich an einen Administrator.",
         "missingTimezone": "Legen Sie Ihre Zeitzone in den Einstellungen fest.",

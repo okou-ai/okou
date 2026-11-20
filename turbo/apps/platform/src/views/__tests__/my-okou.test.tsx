@@ -391,7 +391,6 @@ const proactiveFeatures = {
   [FeatureSwitchKey.SingleAgent]: true,
   [FeatureSwitchKey.MyOkouProactiveSettings]: true,
   [FeatureSwitchKey.AgentSuggestion]: true,
-  [FeatureSwitchKey.ProactiveLearning]: true,
 } as const;
 
 test("An Instructions link opens its editor and a later ordinary visit starts on Proactive", async () => {
@@ -439,7 +438,6 @@ test("My Okou opens Proactive first, unifies legacy Suggestions choices, and ret
   const panel = within(
     await screen.findByRole("tabpanel", { name: "Proactive" }),
   );
-  const learn = await panel.findByRole("switch", { name: "Learning" });
   const offers = await panel.findByRole("switch", { name: "Offers" });
   const mixed = await panel.findByRole("combobox", { name: "Suggestions" });
   expect(mixed).toHaveAccessibleDescription(
@@ -456,7 +454,6 @@ test("My Okou opens Proactive first, unifies legacy Suggestions choices, and ret
   await waitFor(() => {
     expect(panel.getByRole("switch", { name: "Suggestions" })).toBeChecked();
   });
-  expect(learn).not.toBeChecked();
   click(offers);
   await waitFor(() => {
     expect(offers).not.toBeChecked();
@@ -469,7 +466,6 @@ test("My Okou opens Proactive first, unifies legacy Suggestions choices, and ret
   ).toStrictEqual([
     "Morning brief",
     "Suggestions",
-    "Learning",
     "What’s new",
     "Offers",
     "System updates",

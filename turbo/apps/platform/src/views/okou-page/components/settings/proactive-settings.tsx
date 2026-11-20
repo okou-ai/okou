@@ -1,8 +1,5 @@
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import type {
-  ProactivePreference as ProactivePreferenceValue,
-  ProactiveWorkflowKind,
-} from "@okouai/api-contracts/contracts/proactive";
+import type { ProactivePreference as ProactivePreferenceValue } from "@okouai/api-contracts/contracts/proactive";
 import {
   Select,
   SelectContent,
@@ -19,7 +16,6 @@ import { featureSwitches$ } from "../../../../signals/external/feature-switch.ts
 import { pageSignal$ } from "../../../../signals/page-signal.ts";
 import { detach, Reason } from "../../../../signals/utils.ts";
 import {
-  proactiveLearningSignals,
   myOkouSuggestionsSignals,
   proactiveSuggestionsSignals,
 } from "../../../../signals/okou-page/settings/proactive-preferences.ts";
@@ -41,16 +37,6 @@ function preferenceStatusKey(
             ? "preparationFailed"
             : null;
 }
-
-const PREFERENCE_SIGNALS = {
-  suggestions: proactiveSuggestionsSignals,
-  learning: proactiveLearningSignals,
-} as const;
-
-const PREFERENCE_KEYS = {
-  suggestions: "proactiveSuggestions",
-  learning: "proactiveLearning",
-} as const;
 
 function MixedSuggestionsChoice({
   descriptionId,
@@ -113,20 +99,13 @@ function MixedSuggestionsChoice({
   );
 }
 
-function ProactivePreference({
-  kind,
-  inMyOkou,
-}: {
-  readonly kind: ProactiveWorkflowKind;
-  readonly inMyOkou: boolean;
-}) {
+function ProactivePreference({ inMyOkou }: { readonly inMyOkou: boolean }) {
   const { t } = useTranslation();
-  const descriptionId = `${inMyOkou ? "my-okou" : "preference"}-${kind}-description`;
-  const key = PREFERENCE_KEYS[kind];
-  const linked = kind === "suggestions" && inMyOkou;
+  const descriptionId = `${inMyOkou ? "my-okou" : "preference"}-suggestions-description`;
+  const linked = inMyOkou;
   const { preference$, update$ } = linked
     ? myOkouSuggestionsSignals
-    : PREFERENCE_SIGNALS[kind];
+    : proactiveSuggestionsSignals;
   const preference = useLastLoadable(preference$);
   const [mutation, update] = useLoadableSet(update$);
   const signal = useGet(pageSignal$);
@@ -153,7 +132,7 @@ function ProactivePreference({
   return (
     <div
       className="border-t border-t-gray-400 first:border-t-0"
-      data-testid={`proactive-${kind}-preference`}
+      data-testid="proactive-suggestions-preference"
     >
       <PreferenceCardRow
         icon={Sparkles}
@@ -161,21 +140,21 @@ function ProactivePreference({
         inline={inMyOkou}
         iconContainerClassName="h-10 w-10 rounded-xl bg-primary/10 text-brand-text"
         title={t(($) => {
-          return $.settings.preferences[key].title;
+          return $.settings.preferences.proactiveSuggestions.title;
         })}
         descriptionId={descriptionId}
         description={
           linked
             ? suggestionDescriptions[partial ?? "suggestions"]
             : t(($) => {
-                return $.settings.preferences[key].description;
+                return $.settings.preferences.proactiveSuggestions.description;
               })
         }
         status={
           <div aria-live="polite" className="text-xs text-muted-foreground">
             {statusKey !== null &&
               t(($) => {
-                return $.settings.preferences[key][statusKey];
+                return $.settings.preferences.proactiveSuggestions[statusKey];
               })}
           </div>
         }
@@ -191,7 +170,7 @@ function ProactivePreference({
             <Switch
               aria-describedby={descriptionId}
               aria-label={t(($) => {
-                return $.settings.preferences[key].title;
+                return $.settings.preferences.proactiveSuggestions.title;
               })}
               checked={value?.enabled ?? false}
               disabled={busy || value === undefined}
@@ -211,17 +190,6 @@ export function ProactiveSuggestionsSettings({
 }) {
   const flags = useLastResolved(featureSwitches$);
   return flags?.[FeatureSwitchKey.AgentSuggestion] ? (
-    <ProactivePreference kind="suggestions" inMyOkou={inMyOkou} />
-  ) : null;
-}
-
-export function ProactiveLearningSettings({
-  inline = false,
-}: {
-  readonly inline?: boolean;
-}) {
-  const flags = useLastResolved(featureSwitches$);
-  return flags?.[FeatureSwitchKey.ProactiveLearning] ? (
-    <ProactivePreference kind="learning" inMyOkou={inline} />
+    <ProactivePreference inMyOkou={inMyOkou} />
   ) : null;
 }

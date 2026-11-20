@@ -66,7 +66,6 @@ export function officialWorkflowSourcePlan(scope: {
       proactivePreferences: {
         memberUserId: preferences.memberUserId,
         suggestionsEnabled: preferences.suggestionsEnabled,
-        learningEnabled: preferences.learningEnabled,
       },
     },
   };

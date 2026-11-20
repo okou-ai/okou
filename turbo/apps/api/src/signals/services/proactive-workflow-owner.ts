@@ -1,6 +1,5 @@
 import { and, eq, exists, or, type SQL } from "drizzle-orm";
 import { alias, QueryBuilder } from "drizzle-orm/pg-core";
-import type { ProactiveWorkflowKind } from "@okouai/api-contracts/contracts/proactive";
 import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { agents } from "@okouai/db/schema/agent";
@@ -11,21 +10,16 @@ export function proactiveWorkflowOwnerPreferenceQuery(
   agentId: string,
   options?: {
     readonly prerequisite?: SQL;
-    readonly requiredPreference?: ProactiveWorkflowKind;
+    readonly requirePreference?: boolean;
   },
 ) {
   const preference = alias(orgMembersMetadata, "proactive_owner_preference");
   const organization = alias(orgMetadata, "proactive_owner_org");
   const agent = alias(agents, "proactive_owner_agent");
-  const enabled = {
-    suggestions: preference.proactiveSuggestionsEnabled,
-    learning: preference.proactiveLearningEnabled,
-  };
   return new QueryBuilder()
     .select({
       memberUserId: preference.userId,
-      suggestionsEnabled: enabled.suggestions,
-      learningEnabled: enabled.learning,
+      suggestionsEnabled: preference.proactiveSuggestionsEnabled,
     })
     .from(preference)
     .innerJoin(organization, eq(organization.orgId, preference.orgId))
@@ -43,9 +37,9 @@ export function proactiveWorkflowOwnerPreferenceQuery(
         eq(agent.id, agentId),
         or(eq(agent.visibility, "public"), eq(agent.owner, owner.userId)),
         options?.prerequisite,
-        options?.requiredPreference === undefined
-          ? undefined
-          : eq(enabled[options.requiredPreference], true),
+        options?.requirePreference
+          ? eq(preference.proactiveSuggestionsEnabled, true)
+          : undefined,
       ),
     );
 }
@@ -54,12 +48,10 @@ export function proactiveWorkflowOwnerPreferenceQuery(
 export function proactiveWorkflowOwnerEnabledSql(
   owner: ProactiveWorkflowOwner,
   agentId: string,
-  kind: ProactiveWorkflowKind,
-  requirePreference = true,
 ) {
   return exists(
     proactiveWorkflowOwnerPreferenceQuery(owner, agentId, {
-      requiredPreference: requirePreference ? kind : undefined,
+      requirePreference: true,
     }),
   );
 }

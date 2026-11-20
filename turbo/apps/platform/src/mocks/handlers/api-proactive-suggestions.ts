@@ -2,9 +2,7 @@ import {
   proactiveSuggestionsContract,
   type ProactiveSuggestionsPreference,
 } from "@okouai/api-contracts/contracts/proactive-suggestions";
-import type { ProactivePreference } from "@okouai/api-contracts/contracts/proactive";
 import { mockApi } from "../msw-contract.ts";
-import { proactiveLearningContract } from "@okouai/api-contracts/contracts/proactive-nightly";
 import {
   feedContract,
   type FeedSources,
@@ -23,15 +21,9 @@ let preference: ProactiveSuggestionsPreference = {
   status: "paused",
   unavailableReason: null,
 };
-let learning: ProactivePreference = {
-  enabled: false,
-  status: "paused",
-  unavailableReason: null,
-};
 export function resetMockProactiveSuggestions(): void {
   sources = { ...defaultSources };
   preference = { enabled: false, status: "paused", unavailableReason: null };
-  learning = { enabled: false, status: "paused", unavailableReason: null };
 }
 export const apiProactiveSuggestionsHandlers = [
   // The For you row follows the feed and unread summary whenever Suggestions are on.
@@ -56,17 +48,6 @@ export const apiProactiveSuggestionsHandlers = [
   mockApi(feedContract.markRead, ({ respond }) =>
     respond(200, { readAt: nowDate().toISOString() }),
   ),
-  mockApi(proactiveLearningContract.get, ({ respond }) =>
-    respond(200, learning),
-  ),
-  mockApi(proactiveLearningContract.update, ({ body, respond }) => {
-    learning = {
-      ...learning,
-      enabled: body.enabled,
-      status: body.enabled ? "enabled" : "paused",
-    };
-    return respond(200, learning);
-  }),
   mockApi(proactiveSuggestionsContract.get, ({ respond }) =>
     respond(200, preference),
   ),

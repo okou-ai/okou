@@ -23,7 +23,8 @@ export const proactiveLearningContract = c.router({
     path: "/api/preferences/proactive-learning",
     headers: authHeadersSchema,
     responses,
-    summary: "Read your Proactive Learning preference",
+    summary:
+      "Read the Suggestions preference for daily profile updates (legacy Learning alias)",
   },
   update: {
     method: "PUT",
@@ -32,6 +33,6 @@ export const proactiveLearningContract = c.router({
     body,
     responses,
     summary:
-      "Enable daily updates to your user profile and team responsibilities",
+      "Set the Suggestions preference for both proactive jobs (legacy Learning alias)",
   },
 });

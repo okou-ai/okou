@@ -4134,7 +4134,7 @@
       "hourlyOnly": "Sono attivi solo i controlli orari. Scegli una sola impostazione per controlli e nuove schede.",
       "offers": "Ricevi schede con offerte in «Per te».",
       "sourcesHint": "Disattivando una fonte, non riceverai più le sue nuove schede né gli avvisi per quelle da leggere. Le schede esistenti rimangono in Per te.",
-      "suggestions": "Controlla ogni ora le fonti collegate e ricevi nuove schede di suggerimenti in «Per te».",
+      "suggestions": "Controlla le fonti collegate ogni ora, aggiorna il tuo profilo ogni giorno e ricevi suggerimenti utili sui prossimi passi.",
       "systemUpdates": "Ricevi gli avvisi di sistema in «Per te».",
       "turnOff": "Disattiva entrambi",
       "turnOn": "Attiva entrambi",
@@ -5794,17 +5794,8 @@
         "preparing": "Preparazione del primo riepilogo mattutino. Puoi disattivarlo in qualsiasi momento.",
         "title": "Riepilogo mattutino"
       },
-      "proactiveLearning": {
-        "description": "Rivedi le attività durante la notte e migliora la memoria personale.",
-        "errorMessage": "Impossibile caricare o aggiornare questa impostazione.",
-        "missingDefaultAgent": "Okou non è disponibile in quest’area di lavoro. Contatta un amministratore.",
-        "missingTimezone": "Imposta il fuso orario nelle preferenze.",
-        "preparationFailed": "Questo flusso è temporaneamente non disponibile.",
-        "preparing": "Preparazione del flusso di lavoro.",
-        "title": "Apprendimento"
-      },
       "proactiveSuggestions": {
-        "description": "Okou controlla ogni ora le fonti collegate e propone azioni utili nella pagina iniziale.",
+        "description": "Controlla le fonti collegate ogni ora, aggiorna il tuo profilo ogni giorno e ricevi suggerimenti utili sui prossimi passi.",
         "errorMessage": "Impossibile caricare o aggiornare le impostazioni.",
         "missingDefaultAgent": "Okou non è disponibile in quest’area di lavoro. Contatta un amministratore.",
         "missingTimezone": "Imposta il fuso orario nelle preferenze.",

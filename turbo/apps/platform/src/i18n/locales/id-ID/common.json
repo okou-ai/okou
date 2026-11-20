@@ -4058,7 +4058,7 @@
       "hourlyOnly": "Hanya pemeriksaan setiap jam yang aktif. Pilih satu pengaturan untuk pemeriksaan dan kartu baru.",
       "offers": "Terima kartu penawaran di Untuk Anda.",
       "sourcesHint": "Menonaktifkan sumber kartu menghentikan kartu baru dan notifikasi kartu yang belum dibaca dari sumber tersebut. Kartu yang sudah ada tetap tersedia di Untuk Anda.",
-      "suggestions": "Periksa sumber yang terhubung setiap jam dan terima kartu saran baru di Untuk Anda.",
+      "suggestions": "Periksa sumber terhubung setiap jam, perbarui profil Anda setiap hari, dan dapatkan saran langkah berikutnya.",
       "systemUpdates": "Terima pengumuman sistem di Untuk Anda.",
       "turnOff": "Nonaktifkan keduanya",
       "turnOn": "Aktifkan keduanya",
@@ -5703,17 +5703,8 @@
         "preparing": "Menyiapkan ringkasan pagi pertama Anda. Anda dapat menonaktifkannya kapan saja.",
         "title": "Brief Pagi"
       },
-      "proactiveLearning": {
-        "description": "Tinjau aktivitas pada malam hari dan perbarui memori pribadi.",
-        "errorMessage": "Pengaturan ini tidak dapat dimuat atau diperbarui.",
-        "missingDefaultAgent": "Okou tidak tersedia di ruang kerja ini. Hubungi administrator ruang kerja.",
-        "missingTimezone": "Atur zona waktu Anda di Preferensi.",
-        "preparationFailed": "Alur kerja ini sementara tidak tersedia.",
-        "preparing": "Menyiapkan alur kerja ini.",
-        "title": "Pembelajaran"
-      },
       "proactiveSuggestions": {
-        "description": "Okou memeriksa sumber terhubung setiap jam dan menyarankan langkah berikutnya yang berguna di beranda.",
+        "description": "Periksa sumber terhubung setiap jam, perbarui profil Anda setiap hari, dan dapatkan saran langkah berikutnya.",
         "errorMessage": "Pengaturan tidak dapat dimuat atau diperbarui.",
         "missingDefaultAgent": "Okou tidak tersedia di ruang kerja ini. Hubungi administrator ruang kerja.",
         "missingTimezone": "Atur zona waktu Anda di Preferensi.",

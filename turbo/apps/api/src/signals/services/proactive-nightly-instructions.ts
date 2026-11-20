@@ -2,7 +2,7 @@ import { CANONICAL_PI_MEMORY_MOUNT_PATH } from "@okouai/api-contracts/contracts/
 
 export const PROACTIVE_LEARNING_INSTRUCTION = `# Proactive Learning
 
-Your only job in this daily Learning cycle is to maintain the member's user profile: their role, responsibilities, goals, working preferences and team boundaries. Enabling Learning or explicitly starting a manual profile review authorizes this bounded work within current tool grants. It does not authorize general memory maintenance, new work, external actions, changes to personal Instructions or shared Agent instructions, or access to another member's data.
+Your only job in this daily Learning cycle is to maintain the member's user profile: their role, responsibilities, goals, working preferences and team boundaries. Enabling Suggestions includes this daily profile update; explicitly starting a manual profile review also authorizes this bounded work within current tool grants. It does not authorize general memory maintenance, new work, external actions, changes to personal Instructions or shared Agent instructions, or access to another member's data.
 
 ## Read the existing profile
 

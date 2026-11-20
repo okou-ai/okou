@@ -268,15 +268,8 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.AgentSuggestion]: {
     maintainer: "lancy@okou.ai",
     displayName: "Suggestions",
-    description: "Discover and curate useful next-step suggestions.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.ProactiveLearning]: {
-    maintainer: "lancy@okou.ai",
-    displayName: "Proactive learning",
     description:
-      "Update your user profile and team responsibilities overnight.",
+      "Update the user profile daily and curate useful next-step suggestions.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },

@@ -1,5 +1,5 @@
 import { command } from "ccstate";
-import { and, eq } from "drizzle-orm";
+import { and, eq, or } from "drizzle-orm";
 import { proactiveSuggestionsContract } from "@okouai/api-contracts/contracts/proactive-suggestions";
 import { proactiveLearningContract } from "@okouai/api-contracts/contracts/proactive-nightly";
 import type {
@@ -31,11 +31,6 @@ const PREFERENCE_CONTRACTS = {
   learning: proactiveLearningContract,
 } as const;
 
-const PREFERENCE_FIELDS = {
-  suggestions: "proactiveSuggestionsEnabled",
-  learning: "proactiveLearningEnabled",
-} as const;
-
 const readProactivePreference$ = command(
   async (
     { get },
@@ -46,7 +41,10 @@ const readProactivePreference$ = command(
     >,
     signal: AbortSignal,
   ): Promise<ProactivePreference> => {
-    const definition = PROACTIVE_WORKFLOW_DEFINITIONS[kind];
+    const definitions =
+      kind === "suggestions"
+        ? Object.values(PROACTIVE_WORKFLOW_DEFINITIONS)
+        : [PROACTIVE_WORKFLOW_DEFINITIONS.learning];
     const automations = await get(db$)
       .select({
         enabled: workflowAutomations.enabled,
@@ -59,8 +57,17 @@ const readProactivePreference$ = command(
         and(
           eq(workflows.orgId, owner.orgId),
           eq(workflows.ownerUserId, owner.userId),
-          eq(workflows.officialDefinitionName, definition.name),
-          eq(workflowAutomations.officialBlueprintKey, definition.blueprintKey),
+          or(
+            ...definitions.map((definition) => {
+              return and(
+                eq(workflows.officialDefinitionName, definition.name),
+                eq(
+                  workflowAutomations.officialBlueprintKey,
+                  definition.blueprintKey,
+                ),
+              );
+            }),
+          ),
           eligibility.agentId === null
             ? undefined
             : eq(workflows.agentId, eligibility.agentId),
@@ -70,7 +77,7 @@ const readProactivePreference$ = command(
     const unavailableReason =
       eligibility.agentId === null
         ? "missing-default-agent"
-        : kind === "learning" && eligibility.timezone === null
+        : eligibility[kind].enabled && eligibility.timezone === null
           ? "missing-timezone"
           : null;
     return {
@@ -82,7 +89,7 @@ const readProactivePreference$ = command(
             })
           ? "error"
           : unavailableReason === null &&
-              automations.length === 1 &&
+              automations.length === definitions.length &&
               automations.every((automation) => {
                 return automation.enabled && automation.status === "current";
               })
@@ -98,18 +105,20 @@ const savePreference$ = command(
     { set },
     owner: ProactiveWorkflowOwner,
     {
-      kind,
       enabled,
       withFeed,
     }: {
-      readonly kind: ProactiveWorkflowKind;
       readonly enabled: boolean;
       readonly withFeed: boolean;
     },
     signal: AbortSignal,
   ) => {
     const db = set(writeDb$);
-    const choice = { [PREFERENCE_FIELDS[kind]]: enabled };
+    // Mirror the retired choice for outgoing API instances; Suggestions owns both jobs.
+    const choice = {
+      proactiveSuggestionsEnabled: enabled,
+      proactiveLearningEnabled: enabled,
+    };
     const saveWorkflowPreference = db
       .insert(orgMembersMetadata)
       .values({ ...owner, ...choice })
@@ -182,7 +191,7 @@ function createProactivePreferenceRoutes(
         await set(
           savePreference$,
           owner,
-          { kind, enabled: body.data.enabled, withFeed },
+          { enabled: body.data.enabled, withFeed },
           signal,
         );
         const setup = await settle(
@@ -251,5 +260,6 @@ function createProactivePreferenceRoutes(
 
 export const proactiveSuggestionsRoutes =
   createProactivePreferenceRoutes("suggestions");
+// Resident clients may still call this route; it reads and writes the same Suggestions choice.
 export const proactiveLearningRoutes =
   createProactivePreferenceRoutes("learning");

@@ -4134,7 +4134,7 @@
       "hourlyOnly": "Somente as verificações por hora estão ativas. Escolha uma configuração para as verificações e os novos cartões.",
       "offers": "Receba cartões de ofertas em “Para você”.",
       "sourcesHint": "Ao desativar uma fonte, você deixa de receber novos cartões e alertas de cartões não lidos dessa fonte. Os cartões existentes continuam em Para você.",
-      "suggestions": "Verifique as fontes conectadas a cada hora e receba novos cartões de sugestões em “Para você”.",
+      "suggestions": "Verifique suas fontes conectadas a cada hora, atualize seu perfil diariamente e receba sugestões úteis de próximos passos.",
       "systemUpdates": "Receba avisos do sistema em “Para você”.",
       "turnOff": "Desativar ambos",
       "turnOn": "Ativar ambos",
@@ -5794,17 +5794,8 @@
         "preparing": "Preparando seu primeiro resumo matinal. Você pode desativá-lo a qualquer momento.",
         "title": "Resumo matinal"
       },
-      "proactiveLearning": {
-        "description": "Revise sua atividade à noite e melhore a memória pessoal.",
-        "errorMessage": "Não foi possível carregar ou atualizar esta configuração.",
-        "missingDefaultAgent": "O Okou está indisponível neste espaço de trabalho. Entre em contato com um administrador.",
-        "missingTimezone": "Defina seu fuso horário nas Preferências.",
-        "preparationFailed": "Este fluxo está temporariamente indisponível.",
-        "preparing": "Preparando este fluxo de trabalho.",
-        "title": "Aprendizado"
-      },
       "proactiveSuggestions": {
-        "description": "O Okou verifica suas fontes conectadas a cada hora e sugere próximos passos úteis na página inicial.",
+        "description": "Verifique suas fontes conectadas a cada hora, atualize seu perfil diariamente e receba sugestões úteis de próximos passos.",
         "errorMessage": "Não foi possível carregar ou atualizar as configurações.",
         "missingDefaultAgent": "O Okou está indisponível neste espaço de trabalho. Entre em contato com um administrador.",
         "missingTimezone": "Defina seu fuso horário nas Preferências.",

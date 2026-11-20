@@ -79,7 +79,6 @@ export interface ThreadAutomationTarget {
   > | null;
   readonly proactivePreferences: {
     readonly suggestionsEnabled: boolean | null;
-    readonly learningEnabled: boolean | null;
   } | null;
   readonly workflow: Pick<
     typeof workflows.$inferSelect,

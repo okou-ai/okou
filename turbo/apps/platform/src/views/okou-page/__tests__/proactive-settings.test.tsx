@@ -6,12 +6,11 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
 
-test("groups proactive preferences in Preference and keeps their opt-ins independent", async () => {
+test("groups proactive preferences in Preference and keeps Suggestions independent of Morning Brief", async () => {
   await setupPage({
     context,
     path: "/agents?settings=preference",
     featureSwitches: {
-      [FeatureSwitchKey.ProactiveLearning]: true,
       [FeatureSwitchKey.AgentSuggestion]: true,
     },
   });
@@ -22,14 +21,11 @@ test("groups proactive preferences in Preference and keeps their opt-ins indepen
   const morning = await within(region).findByRole("switch", {
     name: "Morning brief",
   });
-  const learning = await within(region).findByRole("switch", {
-    name: "Learning",
-  });
   const suggestions = await within(region).findByRole("switch", {
     name: "Suggestions",
   });
   await waitFor(() => {
-    for (const toggle of [morning, suggestions, learning]) {
+    for (const toggle of [morning, suggestions]) {
       expect(toggle).toBeEnabled();
       expect(toggle).not.toBeChecked();
     }
@@ -40,46 +36,30 @@ test("groups proactive preferences in Preference and keeps their opt-ins indepen
       .map((toggle) => {
         return toggle.getAttribute("aria-label");
       }),
-  ).toStrictEqual(["Morning brief", "Suggestions", "Learning"]);
-  click(learning);
-  await waitFor(() => {
-    return expect(learning).toBeChecked();
-  });
-  expect(suggestions).not.toBeChecked();
-  expect(morning).not.toBeChecked();
+  ).toStrictEqual(["Morning brief", "Suggestions"]);
   click(suggestions);
   await waitFor(() => {
     return expect(suggestions).toBeChecked();
   });
-  expect(learning).toBeChecked();
   expect(morning).not.toBeChecked();
 });
 
 test.each([
   {
     rollout: "Morning brief",
-    proactiveLearning: false,
     suggestions: false,
     labels: ["Morning brief"],
   },
   {
     rollout: "Suggestions",
-    proactiveLearning: false,
     suggestions: true,
     labels: ["Morning brief", "Suggestions"],
-  },
-  {
-    rollout: "Learning",
-    proactiveLearning: true,
-    suggestions: false,
-    labels: ["Morning brief", "Learning"],
   },
 ])("offers $rollout independently of the other rollout", async (flags) => {
   await setupPage({
     context,
     path: "/agents?settings=preference",
     featureSwitches: {
-      [FeatureSwitchKey.ProactiveLearning]: flags.proactiveLearning,
       [FeatureSwitchKey.AgentSuggestion]: flags.suggestions,
     },
   });

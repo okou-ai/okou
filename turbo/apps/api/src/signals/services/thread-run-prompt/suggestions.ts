@@ -25,10 +25,7 @@ export function createSuggestionsPrompt(
       skillVolumes: [],
     };
     const features = await get(bootstrap.featureSwitches$);
-    if (
-      !isFeatureEnabled(FeatureSwitchKey.AgentSuggestion, features) &&
-      !isFeatureEnabled(FeatureSwitchKey.ProactiveLearning, features)
-    ) {
+    if (!isFeatureEnabled(FeatureSwitchKey.AgentSuggestion, features)) {
       return empty;
     }
     const event = await get(pickedEvent$);
@@ -51,12 +48,7 @@ export function createSuggestionsPrompt(
       return empty;
     }
     const target = await get(threadContext.automationTarget$);
-    const enabled = learning
-      ? isFeatureEnabled(FeatureSwitchKey.ProactiveLearning, features) &&
-        target?.proactivePreferences?.learningEnabled
-      : isFeatureEnabled(FeatureSwitchKey.AgentSuggestion, features) &&
-        target?.proactivePreferences?.suggestionsEnabled;
-    if (!enabled) {
+    if (!target?.proactivePreferences?.suggestionsEnabled) {
       return empty;
     }
     const result = await settle(get(feedback$));

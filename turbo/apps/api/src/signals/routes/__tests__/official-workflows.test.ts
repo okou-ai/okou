@@ -260,8 +260,8 @@ describe("My Okou proactive settings", () => {
   });
 });
 
-describe("Proactive Learning preference", () => {
-  it("preserves the Learning choice independently of Suggestions", async () => {
+describe("Legacy Learning preference alias", () => {
+  it("uses the Suggestions choice for hourly checks and daily profile updates", async () => {
     const app = setupApp({
       context,
       routes: [...proactiveLearningRoutes, ...proactiveSuggestionsRoutes],
@@ -275,7 +275,6 @@ describe("Proactive Learning preference", () => {
       context,
       { ...actor, orgId: actor.orgId },
       {
-        [FeatureSwitchKey.ProactiveLearning]: true,
         [FeatureSwitchKey.AgentSuggestion]: true,
       },
     );
@@ -291,7 +290,7 @@ describe("Proactive Learning preference", () => {
       client.get({ headers: authHeaders(actor) }),
       [200],
     );
-    expect(initial.body).toMatchObject({ enabled: false, status: "paused" });
+    expect(initial.body.enabled).toBeTruthy();
     await accept(
       client.update({ headers: authHeaders(actor), body: { enabled: true } }),
       [200],
@@ -310,7 +309,7 @@ describe("Proactive Learning preference", () => {
       app(proactiveSuggestionsContract).get({ headers: authHeaders(actor) }),
       [200],
     );
-    expect(suggestions.body.enabled).toBeTruthy();
+    expect(suggestions.body.enabled).toBeFalsy();
   });
 
   it("keeps an opt-in cancellable while the Learning time zone is unavailable", async () => {
@@ -326,7 +325,7 @@ describe("Proactive Learning preference", () => {
     await updateFeatureSwitchesForUser(
       context,
       { ...actor, orgId: actor.orgId },
-      { [FeatureSwitchKey.ProactiveLearning]: true },
+      { [FeatureSwitchKey.AgentSuggestion]: true },
     );
     const client = app(proactiveLearningContract);
     const pending = await accept(
@@ -357,7 +356,7 @@ describe("Proactive Learning preference", () => {
 });
 
 describe("Proactive Suggestions preference", () => {
-  it("keeps the independent Suggestions choice while the catalog is unavailable", async () => {
+  it("keeps the shared Suggestions choice while the catalog is unavailable", async () => {
     const app = setupApp({
       context,
       routes: [...proactiveSuggestionsRoutes, ...proactiveLearningRoutes],
@@ -372,7 +371,6 @@ describe("Proactive Suggestions preference", () => {
       context,
       { ...actor, orgId: actor.orgId },
       {
-        [FeatureSwitchKey.ProactiveLearning]: true,
         [FeatureSwitchKey.AgentSuggestion]: false,
       },
     );
@@ -381,13 +379,12 @@ describe("Proactive Suggestions preference", () => {
       context,
       { ...actor, orgId: actor.orgId },
       {
-        [FeatureSwitchKey.ProactiveLearning]: false,
         [FeatureSwitchKey.AgentSuggestion]: true,
       },
     );
     await accept(
       app(proactiveLearningContract).get({ headers: authHeaders(actor) }),
-      [403],
+      [200],
     );
     const initial = await accept(
       client.get({ headers: authHeaders(actor) }),
@@ -418,7 +415,6 @@ describe("Proactive Suggestions preference", () => {
       context,
       { ...actor, orgId: actor.orgId },
       {
-        [FeatureSwitchKey.ProactiveLearning]: true,
         [FeatureSwitchKey.AgentSuggestion]: false,
       },
     );
@@ -427,7 +423,6 @@ describe("Proactive Suggestions preference", () => {
       context,
       { ...actor, orgId: actor.orgId },
       {
-        [FeatureSwitchKey.ProactiveLearning]: false,
         [FeatureSwitchKey.AgentSuggestion]: true,
       },
     );
