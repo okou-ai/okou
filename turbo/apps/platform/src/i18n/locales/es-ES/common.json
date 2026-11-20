@@ -1553,7 +1553,6 @@
           "action": "Registrar visita",
           "description": "Registra tu visita una vez al día. Se reinicia a las 00:00 UTC.",
           "name": "Entrar cada día",
-          "pendingDescription": "Tu registro diario se ha guardado. Los créditos se actualizarán tras la confirmación.",
           "unit": "al día"
         },
         "connector": {
@@ -1570,12 +1569,6 @@
         },
         "inReview": "En revisión",
         "intro": {
-          "checkin": {
-            "amount": "+{{amount}} créditos",
-            "confirm": "Volver al trabajo",
-            "description": "Los créditos pagan el trabajo en sí: cada ejecución, cada artefacto, cada flujo que corre con un horario.",
-            "title": "Lo de hoy está hecho"
-          },
           "connector": {
             "confirm": "Ver todos los conectores",
             "connected": "Conectado",

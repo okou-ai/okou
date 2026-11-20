@@ -1553,7 +1553,6 @@
           "action": "Fazer check-in",
           "description": "Faça check-in uma vez por dia. Reinicia às 00:00 UTC.",
           "name": "Entrar todo dia",
-          "pendingDescription": "Seu check-in foi salvo. Os créditos serão atualizados após a confirmação.",
           "unit": "por dia"
         },
         "connector": {
@@ -1570,12 +1569,6 @@
         },
         "inReview": "Em análise",
         "intro": {
-          "checkin": {
-            "amount": "+{{amount}} créditos",
-            "confirm": "Voltar ao trabalho",
-            "description": "Os créditos pagam o trabalho em si: cada execução, cada artefato, cada fluxo que roda no horário.",
-            "title": "O de hoje está feito"
-          },
           "connector": {
             "confirm": "Ver todos os conectores",
             "connected": "Conectado",
