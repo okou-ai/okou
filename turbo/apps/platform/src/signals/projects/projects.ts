@@ -198,7 +198,7 @@ export const syncProjects$ = command(
     });
   },
 );
-export const hydrateProjects$ = command(
+export const hydrateProjectCache$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const owner = get(projectState$);
     if (!(await get(projectsEnabled$))) {
@@ -222,6 +222,14 @@ export const hydrateProjects$ = command(
       if (get(owner.events$) === null) {
         set(owner.events$, cached);
       }
+    }
+  },
+);
+export const hydrateProjects$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    await set(hydrateProjectCache$, signal);
+    if (!(await get(projectsEnabled$))) {
+      return;
     }
     await set(syncProjects$, signal);
     // An open chat reveals its Project the first time; a Project page leaves

@@ -4020,7 +4020,9 @@ export function createChatPanelSignals(
     threadMeta$,
   );
   const container = createChatThreadContainerSignals();
-  const cancellationRecovery = createCancellationRecoverySignals(threadId);
+  const cancellationRecovery = createCancellationRecoverySignals(threadId, {
+    deferInitialRead: true,
+  });
   const composer = createThreadComposerSignalsWithContext(
     threadId,
     chatEvents,
