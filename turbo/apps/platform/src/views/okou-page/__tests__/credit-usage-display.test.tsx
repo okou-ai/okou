@@ -176,7 +176,8 @@ test("Historical run usage appears when scrolling reveals its answer", async () 
   await waitFor(() => {
     expect(usageButton("67")).toBeInTheDocument();
   });
-  expect(screen.queryByText("Completed answer 1")).not.toBeInTheDocument();
+  const historicalAnswerText = "Completed answer 1";
+  expect(screen.queryByText(historicalAnswerText)).not.toBeInTheDocument();
   expect(
     queryAllByRoleFast("button").some((button) => {
       return button.getAttribute("aria-label") === "Credit usage 61";
@@ -189,7 +190,10 @@ test("Historical run usage appears when scrolling reveals its answer", async () 
   }
   fireEvent.scroll(viewport, { target: { scrollTop: 0 } });
 
-  await screen.findByText("Completed answer 1");
+  const historicalAnswer =
+    await within(viewport).findByText(historicalAnswerText);
+  // Verify page-wide uniqueness after scrolling reveals the answer.
+  expect(screen.getByText(historicalAnswerText)).toBe(historicalAnswer);
   await openUsage("61");
   expect(usageButton("67")).toBeInTheDocument();
   const details = screen.getByRole("dialog");
