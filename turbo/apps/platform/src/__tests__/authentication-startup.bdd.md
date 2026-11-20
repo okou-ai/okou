@@ -10,6 +10,7 @@ Original test `Authentication is ready before Platform content becomes interacti
 - **Given** Authentication is still loading when a user opens the Agents page.
 - **When** The page starts and authentication later finishes.
 - **Then** The startup skeleton is visible while the Agents heading and links are unavailable. After authentication, the skeleton is hidden and the Agents heading and links appear without a sign-in form.
+- **Upstream change** `4e5707de` (#49556) retires the multi-agent Agents page, so `/agents` now only redirects to Home with My Okou settings open; the upstream test is now `Authentication is ready before Platform content becomes interactive` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/__tests__/authentication-startup.test.tsx#L66)), which opens `/workflows`. Rebuild this scenario on the Workflows page, expecting the Workflows heading wherever it expects the Agents heading.
 
 ## authentication-startup-002
 
@@ -26,6 +27,7 @@ Original test `Foreground presence follows tab visibility without stopping realt
 - **Given** A signed-in user is viewing the Agents page in a visible tab, with foreground presence active and realtime subscribed.
 - **When** The tab becomes hidden and then visible again.
 - **Then** Presence leaves while hidden and rejoins when visible; the realtime subscription remains active throughout.
+- **Upstream change** `4e5707de` (#49556) retires the multi-agent Agents page, so `/agents` now only redirects to Home with My Okou settings open; the upstream test is now `Foreground presence follows tab visibility without stopping realtime` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/__tests__/authentication-startup.test.tsx#L111)), which opens `/workflows`. Rebuild this scenario with the user viewing the Workflows page instead of the Agents page.
 
 ## authentication-startup-004
 
@@ -90,6 +92,7 @@ Original test `Authentication startup is reused without a duplicate load`. [Regi
 - **Given** Clerk has already begun loading before the user opens the Agents page.
 - **When** The page starts and authentication finishes loading.
 - **Then** The Agents page appears using the existing Clerk startup, with exactly one Clerk load and no duplicate resource request or UI request.
+- **Upstream change** `4e5707de` (#49556) retires the multi-agent Agents page, so `/agents` now only redirects to Home with My Okou settings open; the upstream test is now `Authentication startup is reused without a duplicate load` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/__tests__/authentication-startup.test.tsx#L284)), which opens `/workflows`. Rebuild this scenario opening the Workflows page and expecting its Workflows heading to appear.
 
 ## authentication-startup-012
 
@@ -106,6 +109,7 @@ Original test `Startup onboarding follows the current account and workspace`. [R
 - **Given** The user opens the Agents page while onboarding status is being fetched, and the current workspace becomes org_current before that response completes.
 - **When** The onboarding response says onboarding is needed but the account has an organization.
 - **Then** The Agents page appears, identity is requested once, and the onboarding prompt does not appear.
+- **Upstream change** `4e5707de` (#49556) retires the multi-agent Agents page, so `/agents` now only redirects to Home with My Okou settings open; the upstream test is now `Startup onboarding follows the current account and workspace` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/__tests__/authentication-startup.test.tsx#L341)), which opens `/workflows`. Rebuild this scenario opening the Workflows page and expecting the Workflows heading with no onboarding prompt.
 
 ## authentication-startup-014
 
@@ -146,3 +150,4 @@ Original test `Workspace switching navigates home when the active organization c
 - **Given** A user is viewing the Agents page with an active organization.
 - **When** The active organization changes to Beta.
 - **Then** The browser navigates to the home path (/).
+- **Upstream change** `4e5707de` (#49556) retires the multi-agent Agents page, so `/agents` now only redirects to Home with My Okou settings open; the upstream test is now `Workspace switching navigates home when the active organization changes` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/__tests__/authentication-startup.test.tsx#L434)), which starts on `/workflows`. Rebuild this scenario starting from the Workflows page; the organization change still navigates to `/`.

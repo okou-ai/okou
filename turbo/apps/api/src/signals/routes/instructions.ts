@@ -3,8 +3,6 @@ import {
   instructionsContract,
   type InstructionsResponse,
 } from "@okouai/api-contracts/contracts/instructions";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   SINGLE_AGENT_SEED_INSTRUCTIONS,
   SINGLE_AGENT_SEED_INSTRUCTIONS_BUNDLE,
@@ -22,7 +20,6 @@ import { setResHeader$ } from "../context/hono";
 import { db$, writeDb$ } from "../external/db";
 import { publishUserSignal } from "../external/realtime";
 import type { RouteEntry } from "../route-entry";
-import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
 import { publishContentBundle$ } from "../services/content-bundle.service";
 
 const personalModeAllowed$ = command(
@@ -49,13 +46,7 @@ const personalModeAllowed$ = command(
       signal.throwIfAborted();
       return run !== undefined;
     }
-    const features = await set(
-      loadUserFeatureSwitchContext$,
-      auth.orgId,
-      auth.userId,
-      signal,
-    );
-    return isFeatureEnabled(FeatureSwitchKey.SingleAgent, features);
+    return true;
   },
 );
 

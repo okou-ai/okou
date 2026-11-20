@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { projectsContract } from "@okouai/api-contracts/contracts/projects";
 import type { UserMessageInputDocument } from "@okouai/api-contracts/contracts/chat-threads";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createProjectOperationId } from "@okouai/core/project-operation-id";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
@@ -12,24 +11,12 @@ import { chatEventsRoutes } from "../chat-events";
 import { projectRoutes } from "../projects";
 import type { ApiTestUser } from "./helpers/api-bdd";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const context = testContext();
 const fixture = createChatEventsFixture(context);
 
 function projects() {
   return setupApp({ context, routes: projectRoutes })(projectsContract);
-}
-
-async function enableProjects(actor: ApiTestUser, enabled = true) {
-  if (!actor.orgId) {
-    throw new Error("Expected an organization");
-  }
-  await updateFeatureSwitchesForUser(
-    context,
-    { ...actor, orgId: actor.orgId },
-    { [FeatureSwitchKey.SingleAgent]: enabled },
-  );
 }
 
 async function createProject(actor: ApiTestUser, name: string) {
@@ -50,9 +37,8 @@ function mention(projectId: string, nameSnapshot = "Captured project") {
 }
 
 describe("project reference admission through chat send", () => {
-  it("keeps sends without references available while Projects is disabled", async () => {
+  it("admits ordinary chat messages without Project references", async () => {
     const { actor, agentId } = await fixture.entitledNativeChatActor();
-    await enableProjects(actor, false);
     const run = await fixture.sendChatRun(actor, {
       agentId,
       prompt: "No project references",
@@ -65,7 +51,6 @@ describe("project reference admission through chat send", () => {
 
   it("preserves multiple, repeated and mixed-case references in ordinary parts and feedback notes", async () => {
     const { actor, agentId } = await fixture.entitledNativeChatActor();
-    await enableProjects(actor);
     const first = await createProject(actor, "Research");
     const second = await createProject(actor, "Launch");
     const document: UserMessageInputDocument = {
@@ -113,7 +98,6 @@ describe("project reference admission through chat send", () => {
     "rejects a mixed valid/missing batch from %s without publishing an input",
     async (location) => {
       const { actor, agentId } = await fixture.entitledNativeChatActor();
-      await enableProjects(actor);
       const project = await createProject(actor, "Available");
       const thread = await fixture.chat.createThread(actor, { agentId });
       const before = await fixture.chat.listThreadEvents(actor, thread.id);
@@ -150,12 +134,10 @@ describe("project reference admission through chat send", () => {
     "rejects a batch containing a foreign %s project without leaking its existence",
     async (boundary) => {
       const { actor, agentId } = await fixture.entitledNativeChatActor();
-      await enableProjects(actor);
       const own = await createProject(actor, "Own");
       const foreign = fixture.bdd.user(
         boundary === "user" ? { orgId: actor.orgId } : { userId: actor.userId },
       );
-      await enableProjects(foreign);
       const other = await createProject(foreign, "Private elsewhere");
       const result = await fixture.chat.requestSendEvent(
         actor,
@@ -177,36 +159,6 @@ describe("project reference admission through chat send", () => {
       });
     },
   );
-
-  it("rejects references after Projects is disabled without publishing an input", async () => {
-    const { actor, agentId } = await fixture.entitledNativeChatActor();
-    await enableProjects(actor);
-    const project = await createProject(actor, "Existing");
-    const thread = await fixture.chat.createThread(actor, { agentId });
-    await enableProjects(actor, false);
-    const result = await fixture.chat.requestSendEvent(
-      actor,
-      {
-        agentId,
-        threadId: thread.id,
-        prompt: "Disabled references",
-        userMessage: {
-          version: 1,
-          parts: [mention(project.id), mention(project.id)],
-        },
-      },
-      [404],
-    );
-    expect(result.body).toMatchObject({
-      error: {
-        code: "NOT_FOUND",
-        message: "Project or conversation not found",
-      },
-    });
-    expect(
-      (await fixture.chat.listThreadEvents(actor, thread.id)).events,
-    ).toStrictEqual([]);
-  });
 
   it("retains request validation for malformed reference IDs", async () => {
     const actor = fixture.bdd.user();
@@ -231,7 +183,6 @@ describe("project reference admission through chat send", () => {
 
   it("does not enqueue references for an already aborted application owner", async () => {
     const { actor, agentId } = await fixture.entitledNativeChatActor();
-    await enableProjects(actor);
     const project = await createProject(actor, "Available");
     const thread = await fixture.chat.createThread(actor, { agentId });
     const response = await fixture.requestSendEventRaw(
@@ -256,7 +207,6 @@ describe("project reference admission through chat send", () => {
 
   it("keeps the captured input or rejects admission when a referenced project is deleted concurrently", async () => {
     const { actor, agentId } = await fixture.entitledNativeChatActor();
-    await enableProjects(actor);
     const project = await createProject(actor, "Deleting");
     const thread = await fixture.chat.createThread(actor, { agentId });
     const eventId = randomUUID();

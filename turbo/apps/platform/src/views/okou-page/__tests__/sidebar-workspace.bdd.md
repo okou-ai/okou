@@ -42,6 +42,7 @@ Original test `Toggle unread chats by reselecting an unread pinned agent`. [Regi
 - **Given** The user has pinned Research Agent and Support Agent, and the chat list is filtered to unread chats.
 - **When** The user selects Support Agent, selects it again, then selects it a third time.
 - **Then** The first selection navigates to Support Agent’s chat and shows both its unread and read chats. The second selection stays on that route without navigating and shows only its unread chat; the third stays on the same route without navigating and restores both chats.
+- **Upstream change** `4e5707de` (#49556) retires pinned agents and per-agent chat pages and removes this upstream test. Retire this scenario; the Unread chat-list filter itself remains covered in sidebar-chat-history.
 
 ## sidebar-workspace-006
 

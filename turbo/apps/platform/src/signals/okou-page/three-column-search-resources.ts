@@ -1,13 +1,10 @@
-import { singleAgentEnabled$ } from "../single-agent.ts";
 import { createAttachmentPreviewSignals } from "../attachment-resource-url.ts";
 import { computed, type Computed } from "ccstate";
-import type { AgentResponse } from "@okouai/api-contracts/contracts/agents";
 import { artifactCatalogContract } from "@okouai/api-contracts/client/artifact-catalog";
 import type { ArtifactSummary } from "@okouai/api-contracts/contracts/artifact-catalog";
 import type { WorkflowSummary } from "@okouai/api-contracts/contracts/workflows";
 
 import { accept } from "../../lib/accept.ts";
-import { agents$ } from "../agent.ts";
 import { apiClient$ } from "../api-client.ts";
 import {
   createImageLoadSignals,
@@ -18,29 +15,6 @@ import { chatListQuery$, debouncedChatListQuery$ } from "./sidebar-state.ts";
 
 const MAX_RESOURCE_SEARCH_RESULTS = 25;
 const SPOTLIGHT_ARTIFACT_THUMBNAIL_WIDTH_PX = 64;
-
-interface ThreeColumnAgentSearchResult {
-  readonly query: string;
-  readonly agents: readonly AgentResponse[];
-}
-
-export const threeColumnAgentSearchResults$ = computed(
-  async (get): Promise<ThreeColumnAgentSearchResult> => {
-    const query = get(chatListQuery$).trim().toLowerCase();
-    if (!query || (await get(singleAgentEnabled$))) {
-      return { query, agents: [] };
-    }
-    const agents = await get(agents$);
-    return {
-      query,
-      agents: agents
-        .filter((agent) => {
-          return agent.displayName?.toLowerCase().includes(query) ?? false;
-        })
-        .slice(0, MAX_RESOURCE_SEARCH_RESULTS),
-    };
-  },
-);
 
 interface ThreeColumnWorkflowSearchResult {
   readonly query: string;

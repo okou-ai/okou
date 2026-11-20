@@ -34,6 +34,7 @@ Original test `Forward the captured passage after the native selection collapses
 - **Given** A conversation is open with the passage “The launch plan has three careful stages.” selected and passage actions visible.
 - **When** The user presses Forward, the native selection collapses on pointer release, and the user clicks Forward.
 - **Then** A dialog displays the captured passage, and the passage actions are dismissed.
+- **Upstream change** `4e5707de` (#49556) retires the Forward target picker and removes this upstream test: the passage toolbar's third action is now always `Fork`, which opens the `Okou` Fork composer with the captured passage. Only the Forward picker is retired; rebuild this scenario by pressing `Fork` while the native selection collapses on pointer release, expecting the `Okou` dialog to show the captured passage and the passage actions to be dismissed.
 
 ## chat-selection-actions-005
 

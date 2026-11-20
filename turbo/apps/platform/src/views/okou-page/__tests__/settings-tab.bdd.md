@@ -82,6 +82,7 @@ Original test `Edit default Okou description and tone through the profile deep l
 - **Given** The default Okou agent is opened through its profile deep link.
 - **When** The user changes its description and tone, saves, and switches between Profile and Instructions.
 - **Then** The description and friendly tone are saved and remain visible when returning to Profile. The name stays Okou and read-only; avatar customization, visibility controls, and agent deletion are absent.
+- **Upstream change** `4e5707de` (#49556) retires the default Agent's profile page (`/agents/<default agent id>?tab=profile` now redirects to `/?settings=my-okou&focus=instructions`) and removes this upstream test. Retire this scenario; the bookmark redirect is covered by the profile row of `The default Agent's saved %s bookmark opens personal Instructions` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/okou-page/__tests__/settings-tab.test.tsx#L418)).
 
 ## settings-tab-011
 
@@ -90,6 +91,7 @@ Original test `Edit and reopen default Okou instructions through the deep link`.
 - **Given** The default Okou agent is opened through its Instructions deep link with existing instructions.
 - **When** The user changes and saves the instructions, then switches to Profile and back to Instructions.
 - **Then** The Instructions tab is initially selected, and the saved instructions appear when it is reopened.
+- **Upstream change** `4e5707de` (#49556) retires the default Agent's profile and Instructions tabs (`/agents/<default agent id>?tab=instructions` now redirects to `/?settings=my-okou&focus=instructions`, showing the user's personal Instructions) and removes this upstream test. Retire the edit, save and reopen part; the deep link remains as the instructions row of `The default Agent's saved %s bookmark opens personal Instructions` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/okou-page/__tests__/settings-tab.test.tsx#L418)), so rebuild this scenario as opening the bookmark and seeing the Settings dialog with the saved personal Instructions.
 
 ## settings-tab-012
 
@@ -122,6 +124,7 @@ Original test `Refresh only owned workflow copy targets whenever the delete drop
 - **Given** The delete dialog is open for an agent, and the available agents include the source agent, a shared agent owned by someone else, and personal agents.
 - **When** The user opens the workflow-copy destination list, selects a personal agent, then reopens the list after the available personal agent changes.
 - **Then** Only owned agents other than the source are offered as destinations; the shared agent and source are omitted. The refreshed list replaces the old personal-agent option with the latest one.
+- **Upstream change** `4e5707de` (#49556) limits workflow-copy destinations in the delete dialog to the current workspace default Agent, even when another user owns it; other owned or retained Agents and the source are no longer offered. The upstream test is now `Offer only the current workspace default when rescuing a retained Agent workflow` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/okou-page/__tests__/settings-tab.test.tsx#L624)). Rebuild this scenario expecting each reopened list to offer only the then-current default Agent.
 
 ## settings-tab-016
 

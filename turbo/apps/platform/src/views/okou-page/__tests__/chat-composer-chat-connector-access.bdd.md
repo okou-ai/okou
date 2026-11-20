@@ -10,6 +10,7 @@ Original test `Directory permissions preserve connector-wide rules and disabled 
 - **Given** GitHub has two accounts, both initially disabled, with connector-wide permissions available. The chat runs in multi-agent mode.
 - **When** The user denies the repos|write permission in the directory and applies the change, then reopens GitHub access and its permissions.
 - **Then** Both account switches remain off, the directory editor states that its rules apply across chats and accounts, and repos|write remains denied. Closing the editor restores focus to the Connectors control.
+- **Upstream change** `4e5707de` (#49556) makes the single-agent (My Okou) mode permanent, so the multi-agent variant this scenario pins no longer exists; the upstream test is now `Directory permissions preserve connector-wide rules and disabled accounts` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-chat-connector-access.test.tsx#L352)), with no mode parameter. Rebuild this scenario without the multi-agent precondition; the permission, account-switch and focus expectations are unchanged.
 
 ## chat-composer-chat-connector-access-002
 
@@ -68,6 +69,7 @@ Original test `Release a pending account save and its cached state when leaving 
 - **Given** GitHub has two enabled accounts in a new-chat composer, and a Work access save is pending.
 - **When** The user leaves the composer for a new chat before the save responds, then allows the pending response to finish.
 - **Then** Leaving the chat aborts the pending request. In the new-chat composer, both Work and Personal access are enabled.
+- **Upstream change** `4e5707de` (#49556) removes the chat list header's New chat button and moves the new-chat composer from `/agents/<agentId>/chat` to `/`; the upstream test is now `Release a pending account save and its cached state when leaving the Chat` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-chat-connector-access.test.tsx#L586)). Rebuild this scenario by leaving through the New chat link at the top of the chat list and expecting the path `/` when the pending save is aborted.
 
 ## chat-composer-chat-connector-access-009
 
@@ -132,6 +134,7 @@ Original test `Preserve the internally resolved account when enabling several ac
 - **Given** A new chat starts with both GitHub accounts disabled.
 - **When** The user enables Personal first and Work second, then sends “Use my personal GitHub account” as the first run.
 - **Then** The first run uses Personal as the resolved account, and both account switches remain enabled in the resulting chat.
+- **Upstream change** `4e5707de` (#49556) moves the new-chat composer from `/agents/<agentId>/chat` to `/` (the old path now only redirects there); the upstream test is now `Preserve the internally resolved account when enabling several accounts before the first Run` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-chat-connector-access.test.tsx#L827)). Rebuild this scenario starting the new chat at `/`.
 
 ## chat-composer-chat-connector-access-017
 
@@ -140,6 +143,7 @@ Original test `Initialize new Chat access before first Run, including selection 
 - **Given** A new chat starts with Work enabled and Personal disabled; selecting the current account succeeds.
 - **When** The user enables Personal, disables Work, and sends “Use my personal GitHub account” as the first run.
 - **Then** The first run starts only after Personal is enabled and selected. In the resulting chat, Personal is enabled, Work is disabled, and the connector row shows two accounts.
+- **Upstream change** `4e5707de` (#49556) moves the new-chat composer from `/agents/<agentId>/chat` to `/` (the old path now only redirects there); the upstream test is now `Initialize new Chat access before first Run, including selection retry=%s` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-chat-connector-access.test.tsx#L871)). Rebuild this scenario starting the new chat at `/`.
 
 ## chat-composer-chat-connector-access-018
 
@@ -148,3 +152,4 @@ Original test `Initialize new Chat access before first Run, including selection 
 - **Given** A new chat starts with Work enabled and Personal disabled; the first attempt to save the selected account is rejected.
 - **When** The user enables Personal, disables Work, and sends “Use my personal GitHub account.” After the account-save error, the user sends the retained draft again.
 - **Then** The first attempt shows “Account access could not be saved” and keeps the draft and new-chat path. The retry starts with Personal enabled and selected; afterward Personal remains enabled, Work remains disabled, and the connector row shows two accounts.
+- **Upstream change** `4e5707de` (#49556) moves the new-chat composer from `/agents/<agentId>/chat` to `/` (the old path now only redirects there); the upstream test is now `Initialize new Chat access before first Run, including selection retry=%s` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-chat-connector-access.test.tsx#L871)). Rebuild this scenario starting the new chat at `/`; after the account-save error the retained draft stays on `/`.

@@ -34,6 +34,7 @@ Original test `Show the @ search hint until typing, selection or dismissal (new 
 - **Given** A user is composing in an existing chat and types “Draft @”.
 - **When** They begin and end an IME composition, type “zeta” and confirm the agent suggestion, then type “Draft @” again and press Escape.
 - **Then** The search hint is visible after typing “Draft @”, disappears during composition, and returns when composition ends. Enter during composition does not insert an agent mention and leaves the suggestion menu open. Typing “zeta” hides the hint; confirming inserts “Zeta Agent” and keeps the hint hidden. Escape closes the menu and hides the hint while preserving “Draft @” and composer focus.
+- **Upstream change** `4e5707de` (#49556) removes Agent suggestions from @ mentions, so the menu offers only Projects and chats and the hint reads “Search chats or projects…”; the upstream test is now `Show the @ search hint until typing, selection or dismissal (new chat: %s)` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-mentions.test.tsx#L283)). Rebuild this scenario with that hint and type “launch” instead of “zeta”, so “Zeta launch notes” is active and Enter inserts a chat-thread mention; the IME and Escape steps are unchanged.
 
 ## chat-composer-mentions-005
 
@@ -42,6 +43,7 @@ Original test `Show the @ search hint until typing, selection or dismissal (new 
 - **Given** A user is composing a new chat and types “Draft @”.
 - **When** They begin and end an IME composition, type “zeta” and confirm the agent suggestion, then type “Draft @” again and press Escape.
 - **Then** The search hint is visible after typing “Draft @”, disappears during composition, and returns when composition ends. Enter during composition does not insert an agent mention and leaves the suggestion menu open. Typing “zeta” hides the hint; confirming inserts “Zeta Agent” and keeps the hint hidden. Escape closes the menu and hides the hint while preserving “Draft @” and composer focus.
+- **Upstream change** `4e5707de` (#49556) removes Agent suggestions from @ mentions, so the menu offers only Projects and chats, the hint reads “Search chats or projects…”, and the new-chat composer moves from `/agents/<agentId>/chat` to `/`; the upstream test is now `Show the @ search hint until typing, selection or dismissal (new chat: %s)` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-mentions.test.tsx#L283)). Rebuild this scenario at `/?compose=1` with that hint and type “launch” instead of “zeta”, so “Zeta launch notes” is active and Enter inserts a chat-thread mention; the IME and Escape steps are unchanged.
 
 ## chat-composer-mentions-006
 
@@ -66,6 +68,7 @@ Original test `Composer-anchored mentions keep priority order and select the top
 - **Given** A user is composing in an existing chat where the matching agents are Reviewer, Private Ops, and Zeta Agent, and a matching chat thread is titled “Zeta launch notes.”
 - **When** They type @ and navigate the suggestions with the arrow keys and Enter.
 - **Then** Agents appear before chat threads, with Reviewer, Private Ops, and Zeta Agent first in that order; Reviewer is selected initially and Scout is not suggested. “Zeta launch notes” appears among the thread suggestions. ArrowUp keeps Reviewer selected, ArrowDown selects Private Ops, and ArrowUp followed by Enter inserts Reviewer and closes the menu while retaining composer focus.
+- **Upstream change** `4e5707de` (#49556) removes Agent suggestions and the Agents group from @ mentions; the upstream test is now `Composer-anchored mentions keep priority order and select the top candidate by default (new chat: %s)` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-mentions.test.tsx#L392)). Rebuild this scenario with chats only: “Saved Zeta mention”, “Zeta launch notes” and “Scout planning” lead with no Agents heading, “Saved Zeta mention” is selected initially and kept by ArrowUp, ArrowDown selects “Zeta launch notes”, and ArrowUp then Enter inserts “Saved Zeta mention” as a chat-thread mention.
 
 ## chat-composer-mentions-009
 
@@ -82,6 +85,7 @@ Original test `Composer-anchored mentions open above the centred start page comp
 - **Given** A user is composing a new chat on the centred start page in a wide window, with matching agents Reviewer, Private Ops, and Zeta Agent.
 - **When** They type @ and navigate the suggestions with the arrow keys.
 - **Then** The mention menu opens above the composer and lists Reviewer, Private Ops, and Zeta Agent first, with Reviewer selected initially. ArrowUp keeps Reviewer selected and ArrowDown selects Private Ops.
+- **Upstream change** `4e5707de` (#49556) removes Agent suggestions from @ mentions and moves the new-chat composer from `/agents/<agentId>/chat` to `/`; the upstream test is now `Composer-anchored mentions open above the centred start page composer too` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-mentions.test.tsx#L441)). Rebuild this scenario at `/?compose=1`, expecting the menu above the composer with “Saved Zeta mention”, “Zeta launch notes” and “Scout planning” first, “Saved Zeta mention” selected initially and kept by ArrowUp, and ArrowDown selecting “Zeta launch notes”.
 
 ## chat-composer-mentions-011
 
@@ -90,6 +94,7 @@ Original test `Composer-anchored mentions navigate downward across groups and in
 - **Given** A user is composing in an existing chat; agent suggestions are listed before matching chat threads.
 - **When** They type @, press ArrowDown three times, and press Tab.
 - **Then** The thread suggestion immediately below the agent group becomes the selected visual target, and Tab inserts that thread mention and closes the menu.
+- **Upstream change** `4e5707de` (#49556) removes the Agents group from @ mentions, so there is no group boundary to cross; the upstream test is now `Composer-anchored mentions navigate downward and insert the visual target` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-mentions.test.tsx#L479)). Rebuild this scenario with a single ArrowDown selecting the second chat suggestion, then Tab inserting that chat-thread mention and closing the menu.
 
 ## chat-composer-mentions-012
 
@@ -98,6 +103,7 @@ Original test `Composer-anchored mentions reset after filtering and preserve IME
 - **Given** A user is composing in an existing chat and has selected Private Ops from the unfiltered mention suggestions.
 - **When** They replace the query with “@zeta”, confirm Enter during IME composition, end composition, press ArrowDown, press Escape, then click the composer again.
 - **Then** Filtering selects Zeta Agent. Enter during composition leaves the menu open and does not insert a mention; after composition ends, ArrowDown removes the active selection. Escape closes the menu while preserving “@zeta”. Clicking the composer reopens the menu with Zeta Agent selected.
+- **Upstream change** `4e5707de` (#49556) removes Agent suggestions from @ mentions; the upstream test is now `Composer-anchored mentions reset after filtering and preserve IME confirmation and Escape (new chat: %s)` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-mentions.test.tsx#L503)). Rebuild this scenario with chat suggestions: ArrowDown selects “Zeta launch notes”, “@zeta” selects “Saved Zeta mention”, IME Enter inserts no chat-thread mention, and reopening the menu selects “Saved Zeta mention” again.
 
 ## chat-composer-mentions-013
 
@@ -114,6 +120,7 @@ Original test `Save a selected agent mention and retain it when returning to the
 - **Given** A user is composing in an existing chat that has a saved draft containing a Zeta Agent mention; Zeta Agent has a current avatar.
 - **When** They select Zeta Agent from the mention suggestions, open the chat with the saved draft, and return to the original chat.
 - **Then** The suggestion and inserted mention show Zeta Agent’s current avatar, and the inserted mention is saved in the draft. The saved mention remains visible when the user returns to the original chat.
+- **Upstream change** `4e5707de` (#49556) removes Agent suggestions from @ mentions, so an Agent mention can no longer be selected, shown with an avatar or newly saved; the upstream test is now `A previously saved Agent mention can still be opened in a retained chat` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-mentions.test.tsx#L551)). Retire the selection, avatar and draft-save part; rebuild only the retained part: opening the chat whose saved draft contains a Zeta Agent mention shows that mention as “Zeta Agent” in the composer.
 
 ## chat-composer-mentions-015
 

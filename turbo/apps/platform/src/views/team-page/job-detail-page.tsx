@@ -475,7 +475,7 @@ function AgentHeader({
 }
 
 // Wraps the shared settings tab with agent-scoped data so the delete dialog can
-// offer to copy bound workflows onto another agent before the agent is removed.
+// offer to keep bound workflows under the workspace default before deletion.
 function AgentProfileSettings({
   agentId,
   isDefaultAgent,
@@ -498,7 +498,6 @@ function AgentProfileSettings({
   const workflowsLoadable = useLastLoadable(currentAgentVisibleWorkflows$);
   const workflowsStatus = useLoadable(currentAgentVisibleWorkflows$);
   const agentsLoadable = useLastLoadable(agents$);
-  const user = useLastResolved(user$);
 
   const deleteWorkflows =
     workflowsLoadable.state === "hasData"
@@ -513,7 +512,7 @@ function AgentProfileSettings({
     agentsLoadable.state === "hasData"
       ? agentsLoadable.data
           .filter((agent) => {
-            return agent.agentId !== agentId && agent.ownerId === user?.id;
+            return agent.agentId !== agentId && agent.isDefaultAgent;
           })
           .map((agent) => {
             return { id: agent.agentId, displayName: agent.displayName };

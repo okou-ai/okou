@@ -246,8 +246,7 @@ function BatchHeader({
 
 function BatchPermissionDetails({ batch }: BatchViewProps) {
   const { t } = useTranslation();
-  const singleAgent =
-    useLastResolved(featureSwitches$)?.[FeatureSwitchKey.SingleAgent] ?? false;
+
   const {
     complete,
     loadFailed,
@@ -279,9 +278,7 @@ function BatchPermissionDetails({ batch }: BatchViewProps) {
       )}
       <p className="text-sm text-muted-foreground">
         {t(($) => {
-          return singleAgent
-            ? $.authorization.permissionBatch.myOkouSharedScopeNote
-            : $.authorization.permissionBatch.sharedScopeNote;
+          return $.authorization.permissionBatch.myOkouSharedScopeNote;
         })}
       </p>
       {groups.length === 0 && !ready && !loadFailed && (

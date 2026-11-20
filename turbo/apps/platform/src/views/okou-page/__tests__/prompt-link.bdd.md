@@ -10,6 +10,7 @@ Original test `A prompt link prefills a specific agent's chat`. [Registration](h
 - **Given** A visitor opens a specific agent's chat using a link containing “Draft a launch brief.”
 - **When** The chat page loads.
 - **Then** The prompt appears in the editable composer and can be extended with “ for Friday.” The agent chat remains selected, the URL query is cleared, and no chat is created or sent.
+- **Upstream change** `4e5707de` (#49556) makes every `/agents/:agentId/chat` link redirect to the single chat page at Home, keeping its prompt; the upstream test is now `A prompt link prefills a specific agent's chat` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/okou-page/__tests__/prompt-link.test.tsx#L142)), which expects the path `/`. Rebuild this scenario expecting the prefilled, extendable draft on Home (`/`) instead of the agent chat staying selected; it now overlaps prompt-link-004 apart from the typed extension.
 
 ## prompt-link-002
 
@@ -18,6 +19,7 @@ Original test `A prompt link prefills a new chat from Home`. [Registration](http
 - **Given** A visitor opens Home using a link containing “Outline the customer interview.”
 - **When** The page loads and the visitor adds “ questions” to the prompt.
 - **Then** The prompt remains editable with the added text, navigation proceeds to the default agent's chat, the query is cleared, and no chat is created or sent.
+- **Upstream change** `4e5707de` (#49556) makes Home (`/`) the chat page itself instead of redirecting to the default agent's chat; the upstream test is now `A prompt link prefills a new chat from Home` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/okou-page/__tests__/prompt-link.test.tsx#L164)), which expects the path to stay `/`. Rebuild this scenario expecting the extended draft to stay on Home with the query cleared; it now overlaps prompt-link-003 apart from the typed extension.
 
 ## prompt-link-003
 

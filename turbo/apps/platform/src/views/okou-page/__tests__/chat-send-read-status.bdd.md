@@ -34,6 +34,7 @@ Original test `Forwarding dismisses its composer before unread refresh or POST c
 - **Given** The user selects a passage in a completed conversation and opens its forwarding composer, with an existing draft reading “Keep the existing notes.”
 - **When** They forward the passage with “Review these stages with the team” while unread refresh and the send POST are both pending.
 - **Then** “Forwarded successfully” appears and the forwarding dialog closes before either request completes. The original conversation’s draft remains unchanged; after the POST completes, the agent receives the forwarded passage.
+- **Upstream change** `4e5707de` (#49556) retires the Forward target picker and removes this upstream test: a passage can no longer be forwarded into an existing conversation (“Forwarded successfully”), and the toolbar action is now `Fork`, whose `Okou` composer still closes on optimistic send with “New chat created” and starts a new chat. Only forwarding into an existing conversation is retired; rebuild this scenario with `Fork`, expecting “New chat created” and the dialog closing before the unread refresh or POST completes with the source draft unchanged, without expecting the agent's reply in the source conversation.
 
 ## chat-send-read-status-005
 

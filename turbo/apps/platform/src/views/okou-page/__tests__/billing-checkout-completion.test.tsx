@@ -23,12 +23,12 @@ const CONCURRENCY_ADDED =
   "Concurrency added. Your new slots will become available after Stripe confirms the subscription.";
 
 test("Returning from concurrency checkout confirms purchased capacity", async () => {
-  await setupPage({ context, path: "/agents?concurrency=purchased" });
+  await setupPage({ context, path: "/workflows?concurrency=purchased" });
 
   await expect(
     screen.findByText(CONCURRENCY_ADDED),
   ).resolves.toBeInTheDocument();
-  expect(window.location.pathname).toBe("/agents");
+  expect(window.location.pathname).toBe("/workflows");
   expect(
     new URLSearchParams(window.location.search).has("concurrency"),
   ).toBeFalsy();

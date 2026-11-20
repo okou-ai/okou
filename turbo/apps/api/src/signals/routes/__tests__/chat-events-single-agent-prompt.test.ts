@@ -1,21 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { testContext } from "../../../__tests__/test-context";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { publicChatActor } from "./helpers/public-chat-actor";
 
 const context = testContext();
 const fixture = createChatEventsFixture(context);
 
 describe("captured My Okou execution guidance", () => {
-  it("keeps fixed identity and personal scope through dispatch after a live flag change", async () => {
+  it("keeps fixed identity and personal scope through dispatch", async () => {
     const owned = await publicChatActor(context);
     const { actor } = owned;
     if (!actor.orgId) {
       throw new Error("Expected a workspace member");
     }
-    const member = { ...actor, orgId: actor.orgId };
     await owned.run(async () => {
       fixture.bdd.acceptAgentStorageWrites();
       const status = await fixture.bdd.readOnboardingStatus(actor);
@@ -26,16 +23,10 @@ describe("captured My Okou execution guidance", () => {
         description: "MUTABLE_SHARED_ROLE_DO_NOT_INHERIT",
         sound: "friendly",
       });
-      owned.ownsFeatureSwitches();
-      await updateFeatureSwitchesForUser(context, member, {
-        [FeatureSwitchKey.SingleAgent]: true,
-      });
+
       const run = await owned.sendChatRun(actor, {
         agentId: status.defaultAgentId,
         prompt: "Work with my personal Instructions",
-      });
-      await updateFeatureSwitchesForUser(context, member, {
-        [FeatureSwitchKey.SingleAgent]: false,
       });
       const { execution } = await owned.runExecution(run.runId);
       const prompt = execution.appendSystemPrompt ?? "";
@@ -70,34 +61,16 @@ describe("captured My Okou execution guidance", () => {
       expect(prompt).not.toContain("okou agent edit");
       expect(prompt).not.toContain("okou agent view");
       await fixture.cancelChatRun(actor, run.runId);
-
-      const legacy = await owned.sendChatRun(actor, {
-        agentId: status.defaultAgentId,
-        prompt: "Use the legacy saved mode",
-      });
-      const legacyExecution = await owned.runExecution(legacy.runId);
-      expect(legacyExecution.execution.appendSystemPrompt).toContain(
-        "MUTABLE_SHARED_ROLE_DO_NOT_INHERIT",
-      );
-      expect(legacyExecution.execution.appendSystemPrompt).toContain(
-        "Agent instructions are team-shared",
-      );
     });
   });
 
-  it("retains legacy configuration for a non-default executor even when the member switch is enabled", async () => {
+  it("retains legacy configuration for a non-default executor", async () => {
     const owned = await publicChatActor(context);
     const { actor, agentId } = owned;
     if (!actor.orgId) {
       throw new Error("Expected a workspace member");
     }
     await owned.run(async () => {
-      owned.ownsFeatureSwitches();
-      await updateFeatureSwitchesForUser(
-        context,
-        { ...actor, orgId: actor.orgId! },
-        { [FeatureSwitchKey.SingleAgent]: true },
-      );
       const run = await owned.sendChatRun(actor, {
         agentId,
         prompt: "Read this retained executor's history",

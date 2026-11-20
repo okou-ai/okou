@@ -123,7 +123,6 @@ type ComposerSuggestionSignals = Pick<
   | "setSlashHintMenuRef$"
   | "setMentionHintMenuRef$"
   | "clearSlashRange$"
-  | "insertAgent$"
   | "insertChatThread$"
 > & {
   /** A token can own a session before its asynchronous rows are available. */
@@ -451,7 +450,6 @@ function composerSuggestionSignals(
     setSlashHintMenuRef$: composer.setSlashHintMenuRef$,
     setMentionHintMenuRef$: composer.setMentionHintMenuRef$,
     clearSlashRange$: composer.clearSlashRange$,
-    insertAgent$: composer.insertAgent$,
     insertChatThread$: composer.insertChatThread$,
   };
 }

@@ -7,7 +7,6 @@ import {
   ChatPageHeader,
   ChatPageLayout,
 } from "./chat-page-layout.tsx";
-import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
 import { ProjectReference } from "../projects/project-reference.tsx";
 import {
   MessageShareMenu,
@@ -6003,9 +6002,8 @@ function AssistantErrorState({
 }
 
 function AssistantBubbleAvatar({ thread }: { thread: ChatPanelSignals }) {
-  const singleAgent = useLastResolved(singleAgentEnabled$) ?? false;
   const defaultId = useLastResolved(defaultAgentId$);
-  return singleAgent && thread.agentId === defaultId ? (
+  return thread.agentId === defaultId ? (
     // One per reply; only the replies on screen draw frames, so a long
     // transcript stays cheap.
     <MyOkouAvatarButton size={36} className="size-7 @[900px]:size-9" />
@@ -6039,9 +6037,9 @@ function LegacyAssistantBubbleAvatar({ thread }: { thread: ChatPanelSignals }) {
 // screen readers address the line by what it shows.
 function AssistantNameLine({ thread }: { thread: ChatPanelSignals }) {
   const name = useGet(assistantName$);
-  const singleAgent = useLastResolved(singleAgentEnabled$) ?? false;
+
   const defaultId = useLastResolved(defaultAgentId$);
-  return singleAgent && thread.agentId === defaultId ? (
+  return thread.agentId === defaultId ? (
     <span className={CHAT_THREAD_ASSISTANT_NAME_LINE_CLASS}>{name}</span>
   ) : (
     <LegacyAssistantNameLine thread={thread} />

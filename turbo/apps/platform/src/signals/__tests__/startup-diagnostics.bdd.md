@@ -10,6 +10,7 @@ Original test `A failed stylesheet keeps Loading visible without reporting compl
 - **Given** The main stylesheet fails to load while the member visits the Agents page.
 - **When** Startup renders the route.
 - **Then** The Agents heading is visible but inert, and the Loading status remains visible. No completed-startup or bootstrap-phase timing event is reported.
+- **Upstream change** `4e5707de` (#49556) retires the multi-agent Agents page, so `/agents` now only redirects to Home with My Okou settings open; the upstream test is now `A failed stylesheet keeps Loading visible without reporting completed startup` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/signals/__tests__/startup-diagnostics.test.tsx#L55)), which visits `/workflows`. Rebuild this scenario visiting the Workflows page and expecting the Workflows heading to be visible but inert.
 
 ## startup-diagnostics-002
 

@@ -1,4 +1,4 @@
-import { singleAgentEnabled } from "../../lib/api/single-agent";
+import { isPersonalExecution } from "../../lib/personal-execution";
 import { listWorkflows } from "../../lib/api/domains/workflows";
 import { workflowAgentScope } from "./mode";
 import { getOkouAgentId } from "../../lib/okou-env";
@@ -19,7 +19,7 @@ export async function resolveWorkflowRef(
   ref: string,
   options: WorkflowRefOptions,
 ): Promise<string> {
-  const singleAgent = await singleAgentEnabled();
+  const singleAgent = isPersonalExecution();
   if (singleAgent && options.agent) {
     throw new Error(
       "Workflow Agent targets are unavailable in My Okou. Use the current workspace or an explicit Workflow ID",

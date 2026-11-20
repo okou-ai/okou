@@ -18,6 +18,7 @@ Original test `Navigate workspace search filters without changing the query or c
 - **Given** The user is on a workspace chat and opens workspace search, then enters “Research.”
 - **When** They navigate the filter options with the keyboard and activate each filter, using Space or Enter.
 - **Then** The filters are All, Chats, Messages, Agents, Workflows, and Artifacts. All starts selected; activating each other filter selects it without changing the query. Only Agents shows one result; the other filters show zero. Escape closes search and returns focus to its trigger.
+- **Upstream change** `4e5707de` (#49556) removes agent results and the Agents filter from workspace search and moves this upstream test to `workspace-search-filters.test.tsx`, where it searches from `/` for a chat titled Research notes; the upstream test is now `Navigate workspace search filters without changing the query or clearing selection` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/okou-page/__tests__/workspace-search-filters.test.tsx#L17)). Rebuild this scenario at `/` with a matching chat: the filters are All, Chats, Messages, Workflows, and Artifacts; only All and Chats show one result, and the rest show zero.
 
 ## workspace-agent-search-003
 
@@ -26,3 +27,4 @@ Original test `Selecting a workspace agent search result opens its chat`. [Regis
 - **Given** The user is on a workspace chat and opens workspace search.
 - **When** They search for “Support” and select “Support Agent.”
 - **Then** The app opens that agent’s chat, displays “Chats with Support Agent,” and closes search.
+- **Upstream change** `4e5707de` (#49556) removes agent results from workspace search and per-agent chat pages, and deletes this upstream test file. Retire this scenario.

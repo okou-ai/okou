@@ -66,6 +66,7 @@ Original test `Agent instructions receive external updates with SingleAgent disa
 - **Given** The agent instructions page is open with SingleAgent disabled and initially shows “Original instructions.”
 - **When** An external instructions-changed event occurs and the refreshed instructions are “Instructions saved elsewhere.”
 - **Then** The editor updates to “Instructions saved elsewhere.”
+- **Upstream change** `4e5707de` (#49556) removes the SingleAgent switch, and the default agent's `/agents/<id>` page now redirects to My Okou settings, so this page is reached only for a retained non-default agent; the upstream test is now `Agent instructions receive external updates on a retained agent` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/okou-page/__tests__/agent-instructions.test.tsx#L141)). Rebuild this scenario on a non-default agent's `/agents/<id>?tab=instructions` page with no SingleAgent setting.
 
 ## agent-instructions-009
 

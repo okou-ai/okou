@@ -3,7 +3,6 @@
     "cancel": "キャンセル",
     "close": "閉じる",
     "copying": "コピー中…",
-    "create": "作成",
     "delete": "エージェントの削除",
     "deleting": "削除中…",
     "discard": "破棄",
@@ -63,8 +62,7 @@
     "tabs": {
       "instructions": "指示",
       "profile": "プロフィール"
-    },
-    "viewProfile": "エージェントのプロフィールを表示する"
+    }
   },
   "errors": {
     "unknown": "不明なエラー"
@@ -457,47 +455,6 @@
     "saved": "指示を保存しました"
   },
   "list": {
-    "actions": {
-      "new": "新しいエージェント"
-    },
-    "cards": {
-      "coreDescription": "あなたのコアエージェント",
-      "createdBy": "{{creator}} によって作成されました",
-      "subagentDescription": "サブエージェント",
-      "unknownCreator": "不明"
-    },
-    "create": {
-      "accessibilityDescription": "新しいエージェントに名前を付け、その可視性を選択し、そのアバターをカスタマイズします。",
-      "creating": "作成中…",
-      "description": "エージェントに名前を付け、それを使用できる人を設定します。",
-      "namePlaceholder": "例: リサーチアシスタント",
-      "newAgentAlt": "新しいエージェント",
-      "responsibilityLabel": "このエージェントに何を手伝ってほしいですか？",
-      "responsibilityPlaceholder": "例: 毎週月曜日に HubSpot から先週のパイプラインを要約し、対応が必要な商談を知らせる。",
-      "success": "{{agentName}} が正常に作成されました",
-      "title": "新しいエージェントを作成する",
-      "visibility": {
-        "private": {
-          "description": "（あなただけが閲覧・使用できます）",
-          "label": "非公開"
-        },
-        "public": {
-          "description": "(このワークスペース内の誰でも使用できます)",
-          "label": "公開"
-        }
-      },
-      "visibilityLabel": "公開範囲"
-    },
-    "description": "{{agentName}} とサブエージェントが連携して、あなたとあなたのチームに合わせたワークフローを実行します。",
-    "documentTitle": "エージェント",
-    "privateEmpty": {
-      "description": "自分だけが表示および使用できるエージェントを作成します。プライベートエージェントは無制限です。",
-      "title": "非公開のエージェントはまだありません"
-    },
-    "tabs": {
-      "private": "非公開",
-      "public": "公開"
-    },
     "title": "エージェント"
   },
   "profile": {
@@ -563,33 +520,19 @@
     }
   },
   "sidebar": {
-    "addPin": "ピン留め",
-    "clearSearch": "検索をクリア",
     "escapeShortcut": "Esc",
     "filterAll": "すべて",
     "markAllRead": "すべて既読としてマークする",
-    "noAgentsToPin": "他のエージェントはまだありません。",
     "noResults": "結果が見つかりませんでした",
-    "pin": "サイドバーにピン留めする",
-    "pinAgent": "エージェントをピン留め",
-    "pinAgentDescription": "サイドバーにピン留めするエージェントを選択してください。",
-    "pinned": "ピン留め済み",
-    "pinnedAgents": "ピン留めしたエージェント",
-    "pinSuccess": "{{agentName}}をピン留めしました",
     "resultCount_other": "{{count}} 件の結果",
-    "searchAgents": "エージェントを検索...",
     "searching": "検索中...",
     "searchWorkspace": "ワークスペースを検索...",
     "sections": {
-      "agents": "エージェント",
       "artifacts": "アーティファクト",
       "chats": "チャット",
       "messages": "メッセージ",
-      "others": "その他",
       "workflows": "ワークフロー"
-    },
-    "unpin": "固定を解除する",
-    "unpinSuccess": "{{agentName}}のピン留めを解除しました"
+    }
   },
   "status": {
     "unread": "未読"

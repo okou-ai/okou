@@ -66,6 +66,7 @@ Original test `a reconnect link identifies owner@example.com before confirmation
 - **Given** A valid WeChat reconnect link is opened by a signed-in user whose email is owner@example.com; the link's account and workspace details are available for review.
 - **When** The user presses Enter on Reconnect.
 - **Then** Before confirmation, the page identifies owner@example.com, WeChat Workspace, and Workspace Assistant, with no QR code. Reconnect succeeds, the page shows the instruction to return to WeChat and send a message, the reconnect action and QR remain absent, and the token is removed from the URL.
+- **Upstream change** `4e5707de` (#49556) always names the default agent with the assistant name, so the reconnect confirmation shows `Okou` instead of the default agent's display name; the upstream test is now `a reconnect link identifies $account before confirmation` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/okou-page/__tests__/integrations-wechat.test.tsx#L258)). Rebuild this scenario expecting Okou where it expects Workspace Assistant.
 
 ## integrations-wechat-009
 

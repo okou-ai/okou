@@ -1,3 +1,4 @@
+import { retainedWorkflowCaller } from "./helpers/retained-workflow-caller";
 import { randomUUID } from "node:crypto";
 import { agentsByIdContract } from "@okouai/api-contracts/contracts/agents";
 import { workflowsDetailContract } from "@okouai/api-contracts/contracts/workflows";
@@ -13,6 +14,7 @@ import { createRouteMocks } from "./helpers/route-test";
 import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
 
 const context = testContext();
+const retainedHeaders = retainedWorkflowCaller(context);
 const bdd = createBddApi(context);
 const misc = createMiscRoutesApi(context);
 const mocks = createRouteMocks(context);
@@ -39,6 +41,7 @@ test("rejects a prepared copy after the source Workflow changes", async () => {
     },
     [201],
   );
+  const copyHeaders = await retainedHeaders(actor);
   if (workflow.status !== 201) {
     throw new Error("Expected the source Workflow to be created");
   }
@@ -53,7 +56,7 @@ test("rejects a prepared copy after the source Workflow changes", async () => {
     setupApp({ context, routes: workflowsRoutes })(
       workflowsDetailContract,
     ).copy({
-      headers: headers(actor),
+      headers: copyHeaders,
       params: { workflowId: workflow.body.id },
       body: { toAgentId: target.agentId },
     }),
@@ -117,6 +120,7 @@ test("rejects a prepared admin copy after another owner's target Agent becomes p
     },
     [201],
   );
+  const copyHeaders = await retainedHeaders(admin);
   if (workflow.status !== 201) {
     throw new Error("Expected the source Workflow to be created");
   }
@@ -131,7 +135,7 @@ test("rejects a prepared admin copy after another owner's target Agent becomes p
     setupApp({ context, routes: workflowsRoutes })(
       workflowsDetailContract,
     ).copy({
-      headers: headers(admin),
+      headers: copyHeaders,
       params: { workflowId: workflow.body.id },
       body: { toAgentId: target.agentId },
     }),

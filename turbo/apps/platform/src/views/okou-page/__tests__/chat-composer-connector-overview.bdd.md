@@ -74,6 +74,7 @@ Original test `Release the cached subscription on navigation and reload the retu
 - **Given** The user has opened the Connectors panel in an existing Chat and loaded Probe 1.
 - **When** They navigate to New chat, return to the original Chat using browser back, and reopen the Connectors panel.
 - **Then** The connector-change subscription is released while away. Returning to the Chat loads Probe 1 again with a second full overview request and no target refreshes.
+- **Upstream change** `4e5707de` (#49556) removes the chat list header's New chat button and moves the new-chat composer from `/agents/<agentId>/chat` to `/`; the upstream test is now `Release the cached subscription on navigation and reload the returning Chat` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-overview.test.tsx#L506)). Rebuild this scenario by navigating through the New chat link at the top of the chat list and expecting `/` before going back to the Chat.
 
 ## chat-composer-connector-overview-010
 

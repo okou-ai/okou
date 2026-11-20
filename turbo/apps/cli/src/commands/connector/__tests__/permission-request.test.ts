@@ -1,3 +1,4 @@
+import { capturedRunToken } from "../../../test/fixtures/captured-run-token";
 /**
  * Tests for okou connector permission-request command.
  *
@@ -139,6 +140,22 @@ describe("okou connector permission-request command", () => {
 
   beforeEach(() => {
     vi.stubEnv("OKOU_TOKEN", "test-token");
+    server.use(
+      http.get("*/api/agents", () => {
+        return HttpResponse.json([
+          {
+            agentId: "current-workspace-executor",
+            isDefaultAgent: true,
+            ownerId: "owner",
+            description: null,
+            displayName: "Okou",
+            sound: null,
+            avatarUrl: null,
+            visibility: "public",
+          },
+        ]);
+      }),
+    );
     vi.stubEnv("OKOU_CHAT_THREAD_ID", "");
     vi.stubEnv("OKOU_API_BACKEND_URL", "https://app.okou.ai");
     const result = resolvedUrlDiagnostic();
@@ -550,7 +567,7 @@ describe("okou connector permission-request command", () => {
     expect(logCalls).not.toContain("expiresIn=");
   });
 
-  it("uses the agents landing page when OKOU_AGENT_ID is not set", async () => {
+  it("uses the workspace executor for a standalone permission request", async () => {
     vi.stubEnv("OKOU_API_BACKEND_URL", "https://app.okou.ai");
     vi.stubEnv("OKOU_AGENT_ID", "");
 
@@ -565,12 +582,15 @@ describe("okou connector permission-request command", () => {
     ]);
 
     const logCalls = mockConsoleLog.mock.calls.flat().join("\n");
-    expect(logCalls).toContain("/agents?");
+    expect(logCalls).toContain(
+      "/agents/current-workspace-executor/permissions?",
+    );
     expect(logCalls).not.toContain("/agents/permissions");
   });
 
-  it("uses --agent when OKOU_AGENT_ID is not set", async () => {
+  it("honors explicit selection from a retained Run credential", async () => {
     vi.stubEnv("OKOU_API_BACKEND_URL", "https://app.okou.ai");
+    vi.stubEnv("OKOU_TOKEN", capturedRunToken(["agent:read"]));
     vi.stubEnv("OKOU_AGENT_ID", "");
 
     await permissionRequestCommand.parseAsync([

@@ -18,6 +18,7 @@ Original test `unified preference settings > maps the legacy preference URL /set
 - **Given** A member opens the legacy /settings URL.
 - **When** The settings page loads.
 - **Then** Unified Settings opens to Preference at /agents?settings=preference, with no legacy tab parameter.
+- **Upstream change** `4e5707de` (#49556) retires the Agents page, so the legacy `/settings` redirect now ends on Home; the upstream row is `unified preference settings > maps the legacy preference URL /settings into unified Settings` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/okou-page/__tests__/preference-settings.test.tsx#L56)). Rebuild this scenario expecting Unified Settings on Preference at `/?settings=preference` instead of `/agents?settings=preference`.
 
 ## preference-settings-003
 

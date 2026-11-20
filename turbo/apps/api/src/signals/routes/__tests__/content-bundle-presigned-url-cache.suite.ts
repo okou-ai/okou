@@ -15,7 +15,6 @@ import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 describe("content bundle presigned URL cache", () => {
   const context = testContext();
@@ -50,20 +49,15 @@ describe("content bundle presigned URL cache", () => {
   }> {
     const bdd = createBddApi(context);
     const api = createRunsApi(context);
-    createMiscRoutesApi(context);
     const actor = bdd.user();
     api.acceptStorageDownloads();
     api.acceptTelemetryIngest();
     const runnerGroup = await api.configureRunnerGroup();
-    await api.grantProEntitlement(actor);
+    const { defaultAgentId } = await api.grantProEntitlement(actor);
     await api.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
     });
-    const agent = await bdd.createAgent(actor, {
-      displayName: "Content bundle cache agent",
-      visibility: "private",
-    });
-    return { actor, agentId: agent.agentId, runnerGroup };
+    return { actor, agentId: defaultAgentId, runnerGroup };
   }
 
   beforeEach(() => {
@@ -77,15 +71,6 @@ describe("content bundle presigned URL cache", () => {
 
   async function workflowCacheFixture() {
     const { actor, agentId, runnerGroup } = await entitledWorkflowActor();
-    if (!actor.orgId) {
-      throw new Error("Expected a retained Agent workspace");
-    }
-    // Named-Agent Workflow mounts exercise a retained multi-Agent membership.
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId: actor.orgId },
-      { singleAgent: false },
-    );
     const misc = createMiscRoutesApi(context);
     const chats = createChatEventsFixture(context);
     installWorkflowVolumeS3Fixture(context);

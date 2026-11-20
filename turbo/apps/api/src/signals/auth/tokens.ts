@@ -52,10 +52,6 @@ const RUN_CONTROL_TOKEN_TTL_SECONDS = 3 * 60 * 60;
 const CONDITIONAL_CAPABILITIES = [
   ["phone-use:read", FeatureSwitchKey.PhoneUse],
   ["phone-use:write", FeatureSwitchKey.PhoneUse],
-  ["instructions:read", FeatureSwitchKey.SingleAgent],
-  ["instructions:write", FeatureSwitchKey.SingleAgent],
-  ["project:read", FeatureSwitchKey.SingleAgent],
-  ["project:write", FeatureSwitchKey.SingleAgent],
   ["computer-use:shell:write", FeatureSwitchKey.DesktopShell],
   ["suggestion:read", FeatureSwitchKey.AgentSuggestion],
   ["suggestion:write", FeatureSwitchKey.AgentSuggestion],
@@ -225,11 +221,12 @@ function isCapabilityAvailableToAgent(
 ): boolean {
   if (
     capability === "instructions:read" ||
-    capability === "instructions:write"
+    capability === "instructions:write" ||
+    capability === "project:read" ||
+    capability === "project:write" ||
+    capability === "suggestion:read" ||
+    capability === "suggestion:write"
   ) {
-    return options?.isDefaultAgent === true;
-  }
-  if (capability === "suggestion:read" || capability === "suggestion:write") {
     return options?.isDefaultAgent === true;
   }
   if (
@@ -489,10 +486,7 @@ function buildOkouTokenClaims(
     runId,
     orgId,
     capabilities,
-    ...(options?.isDefaultAgent === true &&
-    featureEnabled(FeatureSwitchKey.SingleAgent)
-      ? { singleAgent: true as const }
-      : {}),
+    ...(options?.isDefaultAgent === true ? { singleAgent: true as const } : {}),
     ...phoneUseTokenClaims(capabilities, options),
     ...(capabilities.includes("computer-use:write") &&
     options?.computerUseHostId

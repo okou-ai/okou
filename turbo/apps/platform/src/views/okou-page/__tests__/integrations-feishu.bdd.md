@@ -74,6 +74,7 @@ Original test `feishu integration UI > Direct Feishu settings require Feishu to 
 - **Given** Feishu is disabled and a user navigates directly to Feishu settings.
 - **When** The settings page loads.
 - **Then** The user is redirected to the home agent chat, and the Feishu bots heading is absent.
+- **Upstream change** `4e5707de` (#49556) makes Home (`/`) the chat page itself instead of redirecting to the default agent's `/agents/:agentId/chat`; the upstream test is now `Direct ${provider.name} settings require ${provider.name} to be enabled` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/okou-page/__tests__/integrations-feishu.test.tsx#L543)), which expects the redirect to end at `/`. Rebuild this scenario expecting the user to land on Home (`/`) with the Feishu bots heading absent.
 
 ## integrations-feishu-010
 

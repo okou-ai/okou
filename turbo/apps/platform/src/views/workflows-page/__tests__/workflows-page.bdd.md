@@ -106,6 +106,7 @@ Original test `Block workflow publishing without permission on the owning agent`
 - **Given** A user can manage a workflow but cannot publish it because they do not own its agent.
 - **When** The user tries to make the workflow public.
 - **Then** Publishing remains disabled, the workflow stays private, and the page explains that publishing under an agent the user does not own requires organization administrator permissions.
+- **Upstream change** `4e5707de` (#49556) drops the agent-ownership explanation and always shows the workspace publication permission message; the upstream test is now `Block workflow publishing without permission on the owning agent` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/workflows-page/__tests__/workflows-page.test.tsx#L1708)). Rebuild this scenario with a manageable workflow the user cannot publish, expecting the disabled Make workflow public switch to stay off and “You don’t have permission to publish workflows in this workspace.”
 
 ## workflows-page-014
 
@@ -114,6 +115,7 @@ Original test `Refine a workflow in its agent chat`. [Registration](https://gith
 - **Given** A user views the instructions for Sales Research.
 - **When** The user chooses Refine with Research Bot.
 - **Then** The user is taken to the workflow's chat with Research Bot, and the composer contains “help me refine the workflow /sales-research.”
+- **Upstream change** `4e5707de` (#49556) names the refine action after Okou instead of the owning agent and opens the workflow's My Okou Chat; the upstream test is now `Refine a workflow in a My Okou Chat` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/workflows-page/__tests__/workflows-page.test.tsx#L1737)). Rebuild this scenario by choosing Refine with Okou and expecting the workflow chat at `/chats/<threadId>` with the same composer text.
 
 ## workflows-page-015
 
@@ -130,6 +132,7 @@ Original test `Copy a workflow to another agent`. [Registration](https://github.
 - **Given** A user views Sales Research, which has an automation, and can copy it to Support Bot.
 - **When** The user copies the workflow without choosing to remove the original, then chooses View on the success notice.
 - **Then** A private copy is created for Support Bot. The original workflow and its automation are untouched, the user remains on the source page until choosing View, and View opens the copy's automations page.
+- **Upstream change** `4e5707de` (#49556) removes copying a workflow to another agent (the Copy workflow dialog, its Copy to picker and the View notice) and removes this upstream test. Retire this scenario; Make private copy into the caller's workspace remains covered by workflows-page-073 and workflows-page-074.
 
 ## workflows-page-017
 
@@ -138,6 +141,7 @@ Original test `Move a workflow to another agent`. [Registration](https://github.
 - **Given** A user views Sales Research, which has one automation, and chooses Support Bot as the destination for a move.
 - **When** The user selects the option to remove the original and confirms Copy and remove.
 - **Then** The automation is paused, the original workflow is deleted, and the user is taken to the private copy's automations page with a “Moved to Support Bot” notice.
+- **Upstream change** `4e5707de` (#49556) removes moving a workflow to another agent (Copy and remove, which paused automations and deleted the original) and removes this upstream test. Retire this scenario; Make private copy, which has no removal step, remains covered by workflows-page-073 and workflows-page-074.
 
 ## workflows-page-018
 
@@ -170,6 +174,7 @@ Original test `Edit workflow metadata`. [Registration](https://github.com/okou-a
 - **Given** A user opens metadata for Sales Research.
 - **When** The user changes its display name to Account Brief, slug to account-brief, and description, then saves.
 - **Then** The form presents the existing values and guidance for slug format and workflow usage, indicates unsaved changes, and submits the updated name, slug, and description.
+- **Upstream change** `4e5707de` (#49556) removes the read-only Agent row from workflow metadata and changes the description guidance to “Tell Okou when to use this workflow.”; the upstream test is now `Edit workflow metadata` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/workflows-page/__tests__/workflows-page.test.tsx#L1848)). Rebuild this scenario expecting that guidance; the submitted name, slug and description are unchanged.
 
 ## workflows-page-022
 
@@ -546,6 +551,7 @@ Original test `Browse workspace workflows`. [Registration](https://github.com/ok
 - **Given** The workspace contains the Sales Research workflow.
 - **When** The user opens the workflow list and hovers over its title.
 - **Then** The Workflows heading and Sales Research appear, and the hover reveals the TU text.
+- **Upstream change** `4e5707de` (#49556) always requests the Workflows list for the workspace default executor and shows only its workflows, without the agent filter or Runs as details; this scenario has no upstream test in the parent commit, because its upstream test was already removed in #48898. Rebuild this scenario with Sales Research owned by the workspace default executor.
 
 ## workflows-page-069
 

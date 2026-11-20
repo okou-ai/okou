@@ -129,6 +129,7 @@ test("The add menu opens each home capability and restores its own trigger only 
     }),
   ).toStrictEqual([
     "Attach",
+    "Project",
     "Template",
     "Find people",
     "Research",

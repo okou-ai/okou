@@ -26,6 +26,7 @@ Original test `The breadcrumb links back to the Agent chat`. [Registration](http
 - **Given** The user is viewing an agent's ideas page.
 - **When** They follow the Chat breadcrumb.
 - **Then** They return to that agent's chat.
+- **Upstream change** `4e5707de` (#49556) retires per-agent chat pages, so the Chat breadcrumb on an agent's ideas page now lands on the My Okou chat at `/`; the upstream test is now `The breadcrumb links back to My Okou` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/okou-page/__tests__/ideas-page.test.tsx#L176)). Rebuild this scenario expecting the composer at `/` after following the Chat breadcrumb, not the agent's chat route.
 
 ## ideas-page-004
 
@@ -50,6 +51,7 @@ Original test `A custom Agent can start the instruction self-management example`
 - **Given** The user views a custom agent's ideas catalog.
 - **When** They select “Self-update instructions.”
 - **Then** The custom agent's chat opens with “Update yourself: add the following instructions — ...” in the composer.
+- **Upstream change** `4e5707de` (#49556) retires per-agent chat pages (`/agents/<id>/chat` now redirects to `/` and keeps the prompt), so the custom agent's self-update idea opens the My Okou chat; the upstream test is now `A custom Agent can start the instruction self-management example` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/okou-page/__tests__/ideas-page.test.tsx#L228)). Rebuild this scenario expecting the prompt in the composer at `/` rather than in the custom agent's chat.
 
 ## ideas-page-007
 
@@ -74,6 +76,7 @@ Original test `A card on /ideas exposes its prompt link and opens by keyboard`. 
 - **Given** The user views /ideas with a default agent and searches for “Daily standup report.”
 - **When** They keyboard-activate the matching use-case link.
 - **Then** The default chat opens with the full daily standup prompt in the composer.
+- **Upstream change** `4e5707de` (#49556) makes My Okou permanent, so Home no longer redirects to the default agent's `/agents/<id>/chat`; the upstream row is `A card on /ideas exposes its prompt link and opens by keyboard` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/okou-page/__tests__/ideas-page.test.tsx#L296)). Rebuild this scenario expecting the card link `/?prompt=…` and the composer with the prompt to stay at `/`.
 
 ## ideas-page-010
 
@@ -82,6 +85,7 @@ Original test `A card on /agents/c0000000-0000-4000-a000-0000000… exposes its 
 - **Given** The user views a custom agent's ideas page and searches for “Daily standup report.”
 - **When** They keyboard-activate the matching use-case link.
 - **Then** That custom agent's chat opens with the full daily standup prompt in the composer.
+- **Upstream change** `4e5707de` (#49556) retires per-agent chat pages, so the card link still targets `/agents/<custom agent id>/chat?prompt=…` but that route now redirects to the My Okou chat at `/`; the upstream test is now the custom-agent row of `A card on $path exposes its prompt link and opens by keyboard` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/okou-page/__tests__/ideas-page.test.tsx#L296)). Rebuild this scenario expecting the daily standup prompt in the composer at `/` rather than in the custom agent's chat.
 
 ## ideas-page-011
 

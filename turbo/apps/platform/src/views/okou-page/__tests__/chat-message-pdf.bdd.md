@@ -10,6 +10,7 @@ Original test `Generate first, then offer a native PDF download whose bytes surv
 - **Given** A chat contains an assistant message, and PDF generation is available.
 - **When** The user starts generation with Enter and then clicks the resulting download twice before leaving the chat.
 - **Then** Generation is announced while pending, then a focused native PDF download named “Launch-plan.pdf” appears. Its URL serves the same PDF bytes on both clicks and is revoked when navigating away.
+- **Upstream change** `4e5707de` (#49556) removes the chat list header's New chat icon button that the original test used to leave the chat; the upstream test is now `Offer a native PDF download whose bytes survive repeated clicks on %s` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/okou-page/__tests__/chat-message-pdf.test.tsx#L137)), which leaves through the Workflows link. Rebuild this scenario leaving the chat via the Workflows link and expecting the download URL to be revoked once `/workflows` is shown.
 
 ## chat-message-pdf-002
 

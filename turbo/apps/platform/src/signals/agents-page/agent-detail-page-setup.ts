@@ -1,4 +1,3 @@
-import { singleAgentEnabled$ } from "../single-agent.ts";
 import { command } from "ccstate";
 import { createElement } from "react";
 import { JobDetailPage } from "../../views/team-page/job-detail-page.tsx";
@@ -22,10 +21,7 @@ export const setupAgentDetailPage$ = command(
       );
     }
 
-    if (
-      (await get(singleAgentEnabled$)) &&
-      agentId === (await get(defaultAgentId$))
-    ) {
+    if (agentId === (await get(defaultAgentId$))) {
       signal.throwIfAborted();
       const tab = get(searchParams$).get("tab");
       if (tab === "authorization" || tab === null) {

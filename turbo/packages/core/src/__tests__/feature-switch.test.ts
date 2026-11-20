@@ -22,20 +22,6 @@ describe("FeatureSwitchKey", () => {
 });
 
 describe("isFeatureEnabled", () => {
-  it("defaults SingleAgent on across workspaces and honors overrides", () => {
-    const key = FeatureSwitchKey.SingleAgent;
-    for (const orgId of ["external-org", "org_3ANttyrbWYJk6JKRSTRLEsbsDLe"]) {
-      const identity = { userId: "existing-account", orgId };
-      expect(isFeatureEnabled(key, identity)).toBe(true);
-      expect(getAllFeatureStates(identity)[key]).toBe(true);
-      for (const enabled of [true, false]) {
-        const context = { ...identity, overrides: { [key]: enabled } };
-        expect(isFeatureEnabled(key, context)).toBe(enabled);
-        expect(getAllFeatureStates(context)[key]).toBe(enabled);
-      }
-    }
-  });
-
   it.each([
     FeatureSwitchKey.ArtifactSidebarPreview,
     FeatureSwitchKey.ArtifactPreviewActionGroup,

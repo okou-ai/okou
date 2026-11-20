@@ -37,7 +37,13 @@ const deliverableEdition$ = computed(async (get) => {
   const switches: Readonly<Record<string, boolean | undefined>> =
     getAllFeatureStates(await get(switchContext$));
   const items = edition.content.items.filter((item) => {
-    return !item.featureSwitch || switches[item.featureSwitch] === true;
+    // Remove this binding once no deliverable or republishable revision uses it.
+    // Published revisions keep their original content and receipt identity.
+    return (
+      !item.featureSwitch ||
+      item.featureSwitch === "singleAgent" ||
+      switches[item.featureSwitch] === true
+    );
   });
   return items.length > 0
     ? { ...edition, content: { ...edition.content, items } }

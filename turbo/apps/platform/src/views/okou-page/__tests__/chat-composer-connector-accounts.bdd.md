@@ -42,6 +42,7 @@ Original test `Carry a connector account choice into a new chat`. [Registration]
 - **Given** A user starts a new chat with GitHub authorized and Work as the default account; Personal is another available account.
 - **When** The user selects Personal, closes and reopens the connector controls, then sends a message.
 - **Then** Personal remains selected after reopening, and the new chat request carries the Personal account selection into the created chat.
+- **Upstream change** `4e5707de` (#49556) moves the new-chat composer from `/agents/<agentId>/chat` to `/` (the old path now only redirects there); this scenario has no upstream test in the parent commit, because its upstream test was already removed in #48841. Rebuild this scenario starting the new chat at `/`.
 
 ## chat-composer-connector-accounts-006
 
@@ -50,6 +51,7 @@ Original test `An unavailable account keeps the new-chat draft and attachments (
 - **Given** A user starts a new chat, selects Personal for GitHub, enters a message, and attaches a file. No edits are made while chat creation is pending.
 - **When** Sending fails because the selected account is unavailable; the user chooses Use default and retries.
 - **Then** The user stays on the new-chat page with the original message and attachment retained, and no message is sent on the failed attempt. The retry creates a chat without an explicit account selection and sends the original message with the attachment.
+- **Upstream change** `4e5707de` (#49556) moves the new-chat composer from `/agents/<agentId>/chat` to `/` (the old path now only redirects there); the upstream test is now `An unavailable account keeps the new-chat draft and attachments (edited while creating: %s)` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-accounts.test.tsx#L111)). Rebuild this scenario starting the new chat at `/`; the failed attempt keeps the user on `/`.
 
 ## chat-composer-connector-accounts-007
 
@@ -58,6 +60,7 @@ Original test `An unavailable account keeps the new-chat draft and attachments (
 - **Given** A user starts a new chat, selects Personal for GitHub, enters a message, and attaches a file.
 - **When** Sending is pending and the user edits the message; creation then fails because the selected account is unavailable. The user chooses Use default and retries.
 - **Then** The user stays on the new-chat page with the newer message and attachment retained, and no message is sent on the failed attempt. The retry creates a chat without an explicit account selection and sends the newer message with the attachment.
+- **Upstream change** `4e5707de` (#49556) moves the new-chat composer from `/agents/<agentId>/chat` to `/` (the old path now only redirects there); the upstream test is now `An unavailable account keeps the new-chat draft and attachments (edited while creating: %s)` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-accounts.test.tsx#L111)). Rebuild this scenario starting the new chat at `/`; the failed attempt keeps the user on `/`.
 
 ## chat-composer-connector-accounts-008
 
@@ -66,6 +69,7 @@ Original test `Resending an unconfirmed creation reuses its chat and event ident
 - **Given** A user starts a new chat, selects Personal for GitHub, and enters a message. The first create request receives an internal error after the server may have committed the chat.
 - **When** The user retries sending after seeing that the create response was interrupted.
 - **Then** The message is sent and the user navigates to the chat identified by the original client chat ID. The retry repeats the same create request, preserving its chat and event identities.
+- **Upstream change** `4e5707de` (#49556) moves the new-chat composer from `/agents/<agentId>/chat` to `/` (the old path now only redirects there); the upstream test is now `Resending an unconfirmed creation reuses its chat and event identities` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-accounts.test.tsx#L258)). Rebuild this scenario starting the new chat at `/`.
 
 ## chat-composer-connector-accounts-009
 

@@ -31,7 +31,7 @@ import {
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
-import { proactiveSettingsInMyOkou$ } from "../../../../signals/single-agent.ts";
+import { proactiveSettingsInMyOkou$ } from "../../../../signals/proactive-settings.ts";
 import { featureSwitches$ } from "../../../../signals/external/feature-switch.ts";
 import { pageSignal$ } from "../../../../signals/page-signal.ts";
 import {
@@ -162,7 +162,6 @@ function SettingsDialog({
     isAdminLoadable.state === "hasData" ? isAdminLoadable.data : false;
   const showDebug = features?.[FeatureSwitchKey.OkouDebug] ?? false;
   const proactive = useLastResolved(proactiveSettingsInMyOkou$);
-  const singleAgent = features?.[FeatureSwitchKey.SingleAgent] ?? false;
 
   const sectionMeta = {
     "my-okou": {
@@ -305,10 +304,7 @@ function SettingsDialog({
       return $.settings.dialog.groups.personal;
     }),
     items: personalItems.filter((item) => {
-      return (
-        (item.id !== "debug" || showDebug) &&
-        (item.id !== "my-okou" || singleAgent)
-      );
+      return item.id !== "debug" || showDebug;
     }),
   };
   const workspaceGroup: SidebarGroup = {
@@ -375,10 +371,10 @@ function SettingsDialog({
   });
 
   // If the user lost admin while the dialog is open, fall back to a safe section
-  const availableSection = resolveAvailableSettingsSection(activeSection, {
+  const availableSection = resolveAvailableSettingsSection(
+    activeSection,
     isAdmin,
-    singleAgent,
-  });
+  );
   const resolvedSection: SettingsSection =
     !showDebug && availableSection === "debug"
       ? "preference"

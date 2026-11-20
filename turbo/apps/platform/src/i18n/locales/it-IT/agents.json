@@ -3,7 +3,6 @@
     "cancel": "Annulla",
     "close": "Chiudi",
     "copying": "Copia in corso…",
-    "create": "Crea",
     "delete": "Elimina agente",
     "deleting": "Eliminazione in corso…",
     "discard": "Scarta",
@@ -63,8 +62,7 @@
     "tabs": {
       "instructions": "Istruzioni",
       "profile": "Profilo"
-    },
-    "viewProfile": "Visualizza il profilo dell'agente"
+    }
   },
   "errors": {
     "unknown": "Errore sconosciuto"
@@ -457,47 +455,6 @@
     "saved": "Istruzioni salvate"
   },
   "list": {
-    "actions": {
-      "new": "Nuovo agente"
-    },
-    "cards": {
-      "coreDescription": "Il tuo agente principale",
-      "createdBy": "Creato da {{creator}}",
-      "subagentDescription": "Subagente",
-      "unknownCreator": "Sconosciuto"
-    },
-    "create": {
-      "accessibilityDescription": "Dai un nome al nuovo agente, scegli la sua visibilità e personalizza il suo avatar.",
-      "creating": "Creazione...",
-      "description": "Assegna un nome al tuo agente e imposta chi può utilizzarlo.",
-      "namePlaceholder": "ad es. Assistente di ricerca",
-      "newAgentAlt": "Nuovo agente",
-      "responsibilityLabel": "In cosa vuoi che ti aiuti questo agente?",
-      "responsibilityPlaceholder": "ad es. ogni lunedì, riassumere la pipeline della settimana precedente da HubSpot e segnalare le trattative che richiedono attenzione.",
-      "success": "{{agentName}} creato correttamente",
-      "title": "Crea un nuovo agente",
-      "visibility": {
-        "private": {
-          "description": "(solo tu puoi vederlo e usarlo)",
-          "label": "Privato"
-        },
-        "public": {
-          "description": "(chiunque in quest'area di lavoro può usarlo)",
-          "label": "Pubblico"
-        }
-      },
-      "visibilityLabel": "Visibilità"
-    },
-    "description": "{{agentName}} e i sub-agenti lavorano insieme per eseguire flussi di lavoro su misura per te e il tuo team.",
-    "documentTitle": "Agenti",
-    "privateEmpty": {
-      "description": "Crea un agente visibile e utilizzabile solo da te. Gli agenti privati sono illimitati.",
-      "title": "Non ci sono ancora agenti privati"
-    },
-    "tabs": {
-      "private": "Privato",
-      "public": "Pubblico"
-    },
     "title": "Agenti"
   },
   "profile": {
@@ -563,35 +520,21 @@
     }
   },
   "sidebar": {
-    "addPin": "Fissa",
-    "clearSearch": "Cancella ricerca",
     "escapeShortcut": "Esc",
     "filterAll": "Tutti",
     "markAllRead": "Segna tutti come letti",
-    "noAgentsToPin": "Non hai ancora altri agenti.",
     "noResults": "Nessun risultato trovato",
-    "pin": "Fissa nella barra laterale",
-    "pinAgent": "Fissa un agente",
-    "pinAgentDescription": "Scegli un agente da fissare nella barra laterale.",
-    "pinned": "In evidenza",
-    "pinnedAgents": "Agenti in evidenza",
-    "pinSuccess": "{{agentName}} fissato",
     "resultCount_one": "{{count}} risultato",
     "resultCount_many": "{{count}} risultati",
     "resultCount_other": "{{count}} risultati",
-    "searchAgents": "Cerca agenti...",
     "searching": "Ricerca in corso...",
     "searchWorkspace": "Cerca nello spazio di lavoro...",
     "sections": {
-      "agents": "Agenti",
       "artifacts": "Artefatti",
       "chats": "Chat",
       "messages": "Messaggi",
-      "others": "Altri",
       "workflows": "Flussi di lavoro"
-    },
-    "unpin": "Rimuovi dalla barra laterale",
-    "unpinSuccess": "{{agentName}} rimosso dalla barra laterale"
+    }
   },
   "status": {
     "unread": "Non letto"

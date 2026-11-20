@@ -58,3 +58,4 @@ Original test `Forward sends the passage with its source thread to the chosen ag
 - **Given** A chat displays the passage “launch plan has three careful stages,” and single-agent mode is disabled.
 - **When** I select the passage, forward it to Okou, and send “Share this with the launch team.”
 - **Then** A new chat for the chosen agent receives the passage as feedback with the source run cited and includes the written note.
+- **Upstream change** `4e5707de` (#49556) retires the Forward target picker (`Forward to` dialog and agent choice), so a selected passage can only be forked into a new personal chat with Okou, and removes this upstream test. Retire this scenario; the retained send behavior is covered by `chat-fork-006` (upstream `Fork sends the selected passage and its source to a new personal chat`, [Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/okou-page/__tests__/chat-fork.test.tsx#L176)).

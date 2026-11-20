@@ -28,51 +28,6 @@ interface WorkspaceSearchChatMessageResult {
   readonly chatMessages: readonly ChatSearchResult[];
 }
 
-interface SearchableAgent {
-  readonly agentId: string;
-  readonly displayName?: string | null;
-}
-
-function agentSearchRank(agent: SearchableAgent, query: string): number | null {
-  const values = [agent.displayName ?? "", agent.agentId].map((value) => {
-    return value.toLowerCase();
-  });
-  if (
-    values.some((value) => {
-      return value.startsWith(query);
-    })
-  ) {
-    return 0;
-  }
-  if (
-    values.some((value) => {
-      return value.includes(query);
-    })
-  ) {
-    return 1;
-  }
-  return null;
-}
-
-export function rankAgentsForSearch<T extends SearchableAgent>(
-  agents: readonly T[],
-  query: string,
-): T[] {
-  return agents
-    .map((agent, index) => {
-      return { agent, index, rank: agentSearchRank(agent, query) };
-    })
-    .filter((entry): entry is typeof entry & { readonly rank: number } => {
-      return entry.rank !== null;
-    })
-    .sort((left, right) => {
-      return left.rank - right.rank || left.index - right.index;
-    })
-    .map((entry) => {
-      return entry.agent;
-    });
-}
-
 function workspaceSearchChatThread(
   thread: EventDrivenChatThread,
 ): WorkspaceSearchChatThread {

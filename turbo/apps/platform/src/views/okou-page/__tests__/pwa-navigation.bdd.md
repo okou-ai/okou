@@ -26,6 +26,7 @@ Original test `Open workspace search from the compact mobile chat header (standa
 - **Given** A user is viewing the mobile chat list in a regular browser with a conversation present.
 - **When** The user opens workspace search from the compact header and presses Escape.
 - **Then** The header offers agent switching, workspace search, new chat, and the chat-list menu in that order. Search opens with its field focused, then closes; the conversation list and chat-list address remain visible.
+- **Upstream change** `4e5707de` (#49556) removes the mobile agent switcher (the compact header now shows the assistant name), always shows Create Project, and serves the mobile chat list at `/`; the upstream test is now `Open workspace search from the compact mobile chat header (standalone: %s)` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/okou-page/__tests__/pwa-navigation.test.tsx#L124)). Rebuild this scenario at `/`, expecting the header buttons Search workspace, Create Project, New chat, and Open chat list menu in that order.
 
 ## pwa-navigation-004
 
@@ -50,6 +51,7 @@ Original test `Browse and filter mobile browser chats before opening a conversat
 - **Given** A user views the mobile chat list in a regular browser with one active conversation and one archived conversation.
 - **When** The user opens the chat-list menu, selects Archived, opens the archived conversation, returns to chats, starts a new chat, and opens Me.
 - **Then** The initial list shows the active conversation but not the archived one, and its navigation marks Chats current alongside Connectors, Artifacts, and Me. Archived filtering shows only the archived conversation without changing the chat-list address. Opening it shows the composer at its conversation address; returning restores the list and agent name. New chat shows the composer at the chat-list address with compose=1 and a Back to chats control. Me then opens at /me.
+- **Upstream change** `4e5707de` (#49556) moves the mobile chat list to `/` and replaces the agent switcher with the assistant name, so returning no longer checks an agent name; the upstream test is now `Browse and filter mobile browser chats before opening a conversation and returning` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/okou-page/__tests__/pwa-navigation.test.tsx#L210)). Rebuild this scenario with `/` as the chat-list address (Chats tab, Back to chats, and New chat at `/?compose=1`) and drop the agent-name check.
 
 ## pwa-navigation-007
 
@@ -114,6 +116,7 @@ Original test `Point to unread chats in other agents from the tabs and the agent
 - **Given** A user views a mobile browser chat list, and another agent has unread chats while the current agent does not.
 - **When** The user checks the navigation and opens the agent switcher.
 - **Then** Unread indicators appear on the Chats tab and the other agent's switcher option, but not on Me or the current agent's option.
+- **Upstream change** `4e5707de` (#49556) removes the mobile agent switcher, so the Chats tab at `/` alone points to unread chats from any agent; the upstream test is now `Show the Chats tab unread indicator across all Chats` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/okou-page/__tests__/pwa-navigation.test.tsx#L596)). Rebuild this scenario at `/`: when only another agent has unread chats, the Chats tab shows Unread and Me does not; drop the switcher-option checks.
 
 ## pwa-navigation-015
 
@@ -138,3 +141,4 @@ Original test `Switch the mobile browser chat list to another agent`. [Registrat
 - **Given** A user views the mobile browser chat list for List agent, with one conversation for that agent and another for Research agent.
 - **When** The user opens the agent switcher and selects Research agent.
 - **Then** Initially only the List agent conversation is shown. After switching, the Research agent conversation appears, the switcher names Research agent, the address changes to that agent's chat-list path, the List agent conversation is absent, and the Chats tab for the new path is current.
+- **Upstream change** `4e5707de` (#49556) retires the mobile agent switcher and per-agent chat lists (`/agents/{id}/chat` now redirects to `/`) and removes this upstream test. Retire this scenario.

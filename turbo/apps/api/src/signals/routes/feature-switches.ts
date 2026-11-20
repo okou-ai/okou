@@ -4,7 +4,6 @@ import {
   type FeatureSwitchesResponse,
 } from "@okouai/api-contracts/contracts/feature-switches";
 import { getAllFeatureStates } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
@@ -36,8 +35,9 @@ function featureSwitchResponseBody(params: {
     switches: params.switches,
     effectiveSwitches: {
       ...effectiveSwitches,
-      // Shipped native clients consume this capability name; My Okou owns its value.
-      projects: effectiveSwitches[FeatureSwitchKey.SingleAgent],
+      // Keep these names until supported Android and CLI releases no longer read them (#49547).
+      singleAgent: true,
+      projects: true,
     },
   };
 }

@@ -1,4 +1,3 @@
-import { singleAgentEnabled$ } from "./single-agent.ts";
 /**
  * Fundamental agent signals used across the platform.
  *
@@ -63,13 +62,7 @@ export const reloadAgentById$ = command(({ set }) => {
   });
 });
 
-export const defaultAgentName$ = computed(async (get) => {
-  if (await get(singleAgentEnabled$)) {
-    return get(assistantName$);
-  }
-  const defaultAgent = await get(defaultAgent$);
-  return defaultAgent?.displayName ?? get(assistantName$);
-});
+export const defaultAgentName$ = assistantName$;
 
 export const currentAgentId$ = computed((get) => {
   const route = get(activeRoute$);
@@ -94,7 +87,7 @@ export const currentAgentId$ = computed((get) => {
 export const defaultAgentChatPageActive$ = computed(async (get) => {
   const route = get(activeRoute$);
   if (route === "home") {
-    return await get(singleAgentEnabled$);
+    return true;
   }
   const agentId = get(currentAgentId$);
   if (route !== "agentChat" || agentId === null) {
@@ -121,19 +114,6 @@ export const agents$ = computed(async (get) => {
   return result.body;
 });
 
-export const sortedAgents$ = computed(async (get) => {
-  const agents = await get(agents$);
-  const defaultId = await get(defaultAgentId$);
-  return [
-    ...agents.filter((a) => {
-      return a.agentId === defaultId;
-    }),
-    ...agents.filter((a) => {
-      return a.agentId !== defaultId;
-    }),
-  ];
-});
-
 /** Bump to refetch the agents list. */
 export const reloadAgents$ = command(({ set }) => {
   discardApiBootstrapResponse(
@@ -145,20 +125,6 @@ export const reloadAgents$ = command(({ set }) => {
   });
 });
 
-/** Non-default agents. */
-export const subagents$ = computed(async (get) => {
-  const all = await get(agents$);
-  const defaultId = await get(defaultAgentId$);
-  return all.filter((a) => {
-    return a.agentId !== defaultId;
-  });
-});
-
 // ---------------------------------------------------------------------------
 // Metadata
 // ---------------------------------------------------------------------------
-
-export interface SubagentInfo {
-  agentId: string;
-  displayName?: string | null;
-}

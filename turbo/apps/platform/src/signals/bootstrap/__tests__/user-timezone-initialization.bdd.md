@@ -10,6 +10,7 @@ Original test `A member's first organization visit stores the browser timezone`.
 - **Given** A member visits an organization for the first time with no stored timezone, an English locale, and a browser timezone of Asia/Shanghai.
 - **When** The Agents page loads.
 - **Then** Preferences initialize with timezone Asia/Shanghai and locale en-US. The preferences are read once and no update request is made.
+- **Upstream change** `4e5707de` (#49556) retires the multi-agent Agents page, so `/agents` now only redirects to Home with My Okou settings open; the upstream test is now `A member's first organization visit stores the browser timezone` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/signals/bootstrap/__tests__/user-timezone-initialization.test.tsx#L95)), which loads `/workflows`. Rebuild this scenario loading the Workflows page (Workflows heading) instead of the Agents page.
 
 ## user-timezone-initialization-002
 

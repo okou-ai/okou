@@ -13,7 +13,6 @@ import { workflowsRoutes } from "../workflows";
 import { workflowAutomationsRoutes } from "../workflow-automations";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { createRouteMocks } from "./helpers/route-test";
 import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
@@ -22,7 +21,6 @@ import { publicRunOwner } from "./helpers/public-run-owner";
 
 const context = testContext();
 const bdd = createBddApi(context);
-const billing = createBillingMediaApi(context);
 const workflowBdd = createWorkflowsBddApi(context);
 const mocks = createRouteMocks(context);
 function headers(actor: ApiTestUser) {
@@ -55,8 +53,6 @@ async function fixture() {
   });
   const alice = bdd.user({ orgId: admin.orgId, orgRole: "org:member" });
   const bob = bdd.user({ orgId: admin.orgId, orgRole: "org:member" });
-  await billing.updateFeatureSwitches(alice, { singleAgent: true });
-  await billing.updateFeatureSwitches(bob, { singleAgent: true });
   const s3 = installWorkflowVolumeS3Fixture(context);
   const source = await accept(
     collection().create({
@@ -295,23 +291,17 @@ test("copies only the caller's Automations and preserves the existing private co
   });
 });
 
-test("keeps default-namespace listing gated and does not widen legacy private copy admission", async () => {
+test("lists workspace Workflows and restricts member writes to the default executor", async () => {
   const { admin, alice, defaultAgentId, source } = await fixture();
-  const other = await bdd.createAgent(admin, {
-    displayName: "Retained legacy agent",
-    visibility: "public",
-  });
-  const legacy = await accept(
+  const other = await bdd.createAgent(admin, { visibility: "public" });
+  await accept(
     collection().create({
       headers: headers(admin),
-      body: {
-        agentId: other.agentId,
-        name: `legacy-${randomUUID().slice(0, 8)}`,
-      },
+      body: { agentId: other.agentId, name: "outside-workspace" },
     }),
-    [201],
+    [403],
   );
-  const enabled = await accept(
+  const listed = await accept(
     collection().list({
       headers: headers(alice),
       query: { agentId: other.agentId },
@@ -319,8 +309,13 @@ test("keeps default-namespace listing gated and does not widen legacy private co
     [200],
   );
   expect(
-    enabled.body.every((row) => {
-      return row.agentId === defaultAgentId;
+    listed.body.map((workflow) => {
+      return workflow.id;
+    }),
+  ).toContain(source.id);
+  expect(
+    listed.body.every((workflow) => {
+      return workflow.agentId === defaultAgentId;
     }),
   ).toBeTruthy();
   await accept(
@@ -331,24 +326,6 @@ test("keeps default-namespace listing gated and does not widen legacy private co
     }),
     [403],
   );
-  await billing.updateFeatureSwitches(alice, { singleAgent: false });
-  await accept(
-    detail().copy({
-      headers: headers(alice),
-      params: { workflowId: source.id },
-      body: { toAgentId: defaultAgentId },
-    }),
-    [403],
-  );
-  const disabled = await accept(
-    collection().list({ headers: headers(admin) }),
-    [200],
-  );
-  expect(
-    disabled.body.some((row) => {
-      return row.id === legacy.body.id;
-    }),
-  ).toBeTruthy();
 });
 
 test("rejects a member copy if its default target changes during publication", async () => {
@@ -387,11 +364,10 @@ test("rejects a member copy if its default target changes during publication", a
   ).toStrictEqual([]);
 });
 
-test("keeps captured workspace Workflow scope after dispatch and a live switch change", async () => {
+test("preserves distinct Workflow permissions for default and retained Run credentials", async () => {
   const owned = await publicChatActor(context, { tier: "team" });
   const runs = createRunsApi(context);
   await owned.run(async () => {
-    await billing.updateFeatureSwitches(owned.actor, { singleAgent: false });
     installWorkflowVolumeS3Fixture(context);
     const { defaultAgentId } = await bdd.readOnboardingStatus(owned.actor);
     if (!defaultAgentId) {
@@ -413,17 +389,6 @@ test("keeps captured workspace Workflow scope after dispatch and a live switch c
       displayName: "Retained legacy executor",
       visibility: "public",
     });
-    const legacy = await accept(
-      collection().create({
-        headers: headers(owned.actor),
-        body: {
-          agentId: other.agentId,
-          name: `runtime-legacy-${randomUUID().slice(0, 8)}`,
-          visibility: "public",
-        },
-      }),
-      [201],
-    );
     const member = bdd.user({
       orgId: owned.actor.orgId,
       orgRole: "org:member",
@@ -434,7 +399,6 @@ test("keeps captured workspace Workflow scope after dispatch and a live switch c
     await owner.run(async () => {
       await bdd.completeOnboarding(member);
       await runs.ensurePersonalSubscriptionModel(member);
-      await billing.updateFeatureSwitches(member, { singleAgent: true });
       const queued = await runs.createThreadRun(member, {
         agentId: defaultAgentId,
         prompt: "Make my private Workflow copy",
@@ -442,7 +406,6 @@ test("keeps captured workspace Workflow scope after dispatch and a live switch c
       });
       const execution = await runs.executionInput(queued.runId);
       owner.rememberExecution(queued.runId, execution.sandboxToken);
-      await billing.updateFeatureSwitches(member, { singleAgent: false });
       const runHeaders = {
         authorization: `Bearer ${execution.platformEnvironment.OKOU_TOKEN!}`,
       };
@@ -467,7 +430,7 @@ test("keeps captured workspace Workflow scope after dispatch and a live switch c
         return row.id;
       });
       expect(listedIds).toContain(copied.body.id);
-      expect(listedIds).not.toContain(legacy.body.id);
+      expect(listedIds).toContain(source.body.id);
       await accept(
         visibility().publish({
           headers: runHeaders,
@@ -487,11 +450,10 @@ test("keeps captured workspace Workflow scope after dispatch and a live switch c
       );
       await runs.requestCancelRun(member, queued.runId, [200]);
       const retained = await runs.createThreadRun(member, {
-        agentId: defaultAgentId,
+        agentId: other.agentId,
         prompt: "Keep legacy Workflow scope",
         model: "auto",
       });
-      await billing.updateFeatureSwitches(member, { singleAgent: true });
       const retainedExecution = await runs.executionInput(retained.runId);
       owner.rememberExecution(retained.runId, retainedExecution.sandboxToken);
       await accept(

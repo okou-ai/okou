@@ -1,9 +1,6 @@
 import { command } from "ccstate";
 import { setChatThreadOnlyArchived$ } from "../chat-page/chat-thread-only-archived.ts";
-import {
-  chatThreadOnlyUnread$,
-  setChatThreadOnlyUnread$,
-} from "../chat-page/chat-thread-only-unread.ts";
+import { setChatThreadOnlyUnread$ } from "../chat-page/chat-thread-only-unread.ts";
 import { setChatThreadOnlyMuted$ } from "../chat-page/chat-thread-only-muted.ts";
 
 export const setChatThreadUnreadFilter$ = command(
@@ -24,8 +21,4 @@ export const setChatThreadMutedFilter$ = command(({ set }) => {
   set(setChatThreadOnlyUnread$, false);
   set(setChatThreadOnlyArchived$, false);
   set(setChatThreadOnlyMuted$, true);
-});
-
-export const toggleChatThreadUnreadFilter$ = command(({ get, set }) => {
-  set(setChatThreadUnreadFilter$, !get(chatThreadOnlyUnread$));
 });

@@ -274,3 +274,4 @@ Original test `An onboarded visitor can redeem without bringing a prompt`. [Regi
 - **Given** An already-onboarded visitor opens with redeem code PRO-CAMPAIGN and no prompt.
 - **When** The onboarding route resolves.
 - **Then** The code is redeemed, its query parameter is removed, and the visitor is sent to the default agent chat.
+- **Upstream change** `4e5707de` (#49556) makes My Okou permanent, so the default chat is Home (`/`) rather than an `/agents/<id>/chat` route; the upstream test is now `An onboarded visitor can redeem without bringing a prompt` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/onboarding-sources-first/__tests__/onboarding-sources-first-flow.test.tsx#L1290)). Rebuild this scenario expecting the visitor to land on `/` after redemption.

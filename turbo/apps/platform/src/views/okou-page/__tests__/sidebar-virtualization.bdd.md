@@ -10,6 +10,7 @@ Original test `Keep the chat viewport keyboard-focusable only while a conversati
 - **Given** A chat list has 32 conversations and a five-row viewport, with no conversation open.
 - **When** The user opens a conversation and then starts a new chat.
 - **Then** The viewport is keyboard-focusable while the conversation is open and is no longer keyboard-focusable after starting a new chat.
+- **Upstream change** `4e5707de` (#49556) makes `/` the only chat page (`/agents/{id}/chat` redirects there) and replaces the header New chat button with a New chat row linking to `/` at the top of the list; the upstream test is now `Keep the chat viewport keyboard-focusable only while a conversation is open` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.test.tsx#L165)). Rebuild this scenario by starting the new chat from the New chat row.
 
 ## sidebar-virtualization-002
 
@@ -218,6 +219,7 @@ Original test `Refresh virtualization after pinning adds a grid row and unpinnin
 - **Given** A virtualized conversation list initially renders 25 rows while four pinned-agent cards are shown.
 - **When** The user pins another agent and then unpins it.
 - **Then** With five cards, the list refreshes to 18 rows; after returning to four cards, it refreshes to 25 rows.
+- **Upstream change** `4e5707de` (#49556) retires pinned agents and the pinned-agent grid and removes this upstream test. Retire this scenario.
 
 ## sidebar-virtualization-028
 

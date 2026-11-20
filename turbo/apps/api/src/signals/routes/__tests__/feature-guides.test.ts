@@ -49,11 +49,11 @@ async function identity(
 function signIn(owner: { orgId: string; userId: string }) {
   mocks.clerk.session(owner.userId, owner.orgId);
 }
-async function setSingleAgentEnabled(value: boolean) {
+async function setTestSwitch(value: boolean) {
   await accept(
     clients().switches.update({
       headers,
-      body: { switches: { [FeatureSwitchKey.SingleAgent]: value } },
+      body: { switches: { [FeatureSwitchKey.Dummy]: value } },
     }),
     [200],
   );
@@ -159,13 +159,13 @@ test("filters bound items by effective switches and leaves empty bindings unrest
       ...input.content,
       items: input.content.items.flatMap((item) => {
         return [
-          { ...item, featureId: "unbound" },
           { ...item, featureId: "null", featureSwitch: null },
           { ...item, featureId: "empty", featureSwitch: "" },
+          { ...item, featureId: "my-okou", featureSwitch: "singleAgent" },
           {
             ...item,
-            featureId: "projects",
-            featureSwitch: FeatureSwitchKey.SingleAgent,
+            featureId: "conditional",
+            featureSwitch: FeatureSwitchKey.Dummy,
           },
           {
             ...item,
@@ -178,21 +178,20 @@ test("filters bound items by effective switches and leaves empty bindings unrest
   });
   await publish(prepared);
   signIn(viewer);
-  // My Okou is available by default; a retained member can keep it disabled.
   await expect(current()).resolves.toMatchObject({
     content: { items: prepared.input.content.items.slice(0, 4) },
   });
 
   signIn(peer);
-  await setSingleAgentEnabled(false);
+  await setTestSwitch(false);
   await expect(current()).resolves.toMatchObject({
     content: { items: prepared.input.content.items.slice(0, 3) },
   });
-  await setSingleAgentEnabled(true);
+  await setTestSwitch(true);
   await expect(current()).resolves.toMatchObject({
     content: { items: prepared.input.content.items.slice(0, 4) },
   });
-  await setSingleAgentEnabled(false);
+  await setTestSwitch(false);
   await expect(current()).resolves.toMatchObject({
     content: { items: prepared.input.content.items.slice(0, 3) },
   });
@@ -210,13 +209,13 @@ test("suppresses an entirely gated edition without revealing a backlog or consum
     content: {
       ...input.content,
       items: input.content.items.map((item) => {
-        return { ...item, featureSwitch: FeatureSwitchKey.SingleAgent };
+        return { ...item, featureSwitch: FeatureSwitchKey.Dummy };
       }),
     },
   });
   await publish(prepared);
   signIn(viewer);
-  await setSingleAgentEnabled(false);
+  await setTestSwitch(false);
   await expect(current()).resolves.toBeNull();
   mockOptionalEnv("ENV", "preview");
   const preview = await accept(
@@ -224,7 +223,7 @@ test("suppresses an entirely gated edition without revealing a backlog or consum
     [200],
   );
   expect(preview.body.edition).toBeNull();
-  await setSingleAgentEnabled(true);
+  await setTestSwitch(true);
   await expect(current()).resolves.toMatchObject({
     id: prepared.editionId,
     content: prepared.input.content,
@@ -237,9 +236,9 @@ test("suppresses an entirely gated edition without revealing a backlog or consum
     }),
     [200],
   );
-  await setSingleAgentEnabled(false);
+  await setTestSwitch(false);
   await expect(current()).resolves.toBeNull();
-  await setSingleAgentEnabled(true);
+  await setTestSwitch(true);
   await expect(current()).resolves.toBeNull();
 });
 
@@ -528,7 +527,7 @@ test("keeps drafts immutable and publishes only the selected revision", async ()
         content: {
           ...prepared.input.content,
           items: prepared.input.content.items.map((item) => {
-            return { ...item, featureSwitch: FeatureSwitchKey.SingleAgent };
+            return { ...item, featureSwitch: FeatureSwitchKey.Dummy };
           }),
         },
       },

@@ -59,7 +59,6 @@ test("Without For you, the first chat moves up to New chat and New chat moves do
     auth: chatListAuth(caseId),
     cachedChatThreadEvents: cachedChatListEvents(caseId, [older, newest]),
     featureSwitches: {
-      [FeatureSwitchKey.SingleAgent]: true,
       [FeatureSwitchKey.AgentSuggestion]: false,
     },
   });
@@ -96,7 +95,6 @@ test("The side pane moves only between chats and never onto the entries", async 
       newest,
     ]),
     featureSwitches: {
-      [FeatureSwitchKey.SingleAgent]: true,
       [FeatureSwitchKey.AgentSuggestion]: true,
     },
   });

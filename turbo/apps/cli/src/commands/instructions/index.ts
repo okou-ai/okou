@@ -5,11 +5,11 @@ import {
   getInstructions,
   updateInstructions,
 } from "../../lib/api/domains/instructions";
-import { singleAgentEnabled } from "../../lib/api/single-agent";
+import { isPersonalExecution } from "../../lib/personal-execution";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 
 async function requirePersonalInstructions() {
-  if (!(await singleAgentEnabled())) {
+  if (!isPersonalExecution()) {
     throw new Error(
       "Personal Instructions are unavailable in this context. Use okou agent --help for the current experience.",
     );

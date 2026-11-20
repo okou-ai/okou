@@ -9,8 +9,6 @@ import { createEmailThreadPrompt } from "./email";
 import { createSuggestionsPrompt } from "./suggestions";
 import { createWechatThreadPrompt } from "./wechat";
 import { computed, type Computed } from "ccstate";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { AgentRunContextSignals } from "../agent-run-context.signals";
 import { createConnectorsContext } from "../connectors-context.service";
 import { createSystemSkillsContext } from "../system-skills-context.service";
@@ -140,15 +138,7 @@ function createExecutionPromptSources(
     return get(bootstrap.featureSwitches$);
   });
   const singleAgent$ = computed(async (get) => {
-    const [agent, features] = await Promise.all([
-      get(agent$),
-      get(featureSwitches$),
-    ]);
-    return (
-      agent !== null &&
-      agent.id === agent.defaultAgentId &&
-      isFeatureEnabled(FeatureSwitchKey.SingleAgent, features)
-    );
+    return (await get(featureSwitches$)).personalExecution;
   });
   const memberRoutes$ = computed((get) => {
     return get(bootstrap.memberRoutes$);

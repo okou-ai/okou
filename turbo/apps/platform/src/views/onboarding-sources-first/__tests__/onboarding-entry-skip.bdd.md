@@ -50,6 +50,7 @@ Original test `A skip link without a task completes onboarding and opens App fro
 - **Given** A user who needs onboarding opens `/onboarding` with a skip link and redeem code, but no task.
 - **When** The skip link is followed and onboarding completes.
 - **Then** The App message box appears at an agent chat route.
+- **Upstream change** `4e5707de` (#49556) makes My Okou permanent, so App now opens at Home (`/`) instead of an `/agents/<id>/chat` route; the upstream row is `A skip link without a task completes onboarding and opens App from /onboarding` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/onboarding-sources-first/__tests__/onboarding-entry-skip.test.tsx#L229)). Rebuild this scenario expecting the message box at `/`.
 
 ## onboarding-entry-skip-007
 

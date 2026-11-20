@@ -10,6 +10,7 @@ Original test `A preview visitor can skip unanswered onboarding on pr-40584-app-
 - **Given** An admin visitor on pr-40584-app-okou-app-preview.vm0.workers.dev has unanswered onboarding.
 - **When** The visitor chooses Skip.
 - **Then** Onboarding is left for an agent chat; the unanswered industry question is no longer shown.
+- **Upstream change** `4e5707de` (#49556) makes My Okou permanent, so skipping now opens the chat at Home (`/`) instead of an `/agents/<id>/chat` route; the upstream row is `A preview visitor can skip unanswered onboarding on $host` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/onboarding-sources-first/__tests__/onboarding-preview-skip.test.tsx#L46)). Rebuild this scenario expecting the message box at `/`.
 
 ## onboarding-preview-skip-002
 
@@ -82,6 +83,7 @@ Original test `Skip waits for completion and remains retryable after a failure`.
 - **Given** A visitor on a preview host has unanswered onboarding and the completion request is pending.
 - **When** The visitor chooses Skip, the request fails, and the visitor retries after the failure.
 - **Then** Skip is busy and disabled while the request is pending, with the visitor remaining on onboarding. After failure, an error is shown and Skip becomes enabled without navigating; a successful retry opens an agent chat.
+- **Upstream change** `4e5707de` (#49556) makes My Okou permanent, so the successful retry now opens the chat at Home (`/`) instead of an `/agents/<id>/chat` route; the upstream test is now `Skip waits for completion and remains retryable after a failure` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/onboarding-sources-first/__tests__/onboarding-preview-skip.test.tsx#L109)). Rebuild this scenario expecting the message box at `/` after the retry.
 
 ## onboarding-preview-skip-011
 
@@ -90,3 +92,4 @@ Original test `Skipping a preview prompt handoff opens the app without running t
 - **Given** A visitor on a preview host has a prompt handoff containing “Draft the launch plan” and a redeem code.
 - **When** The visitor chooses Skip.
 - **Then** The app opens an agent chat with an empty message composer, and the prompt query is removed; the prompt is not run.
+- **Upstream change** `4e5707de` (#49556) makes My Okou permanent, so skipping now opens the chat at Home (`/`) instead of an `/agents/<id>/chat` route; the upstream test is now `Skipping a preview prompt handoff opens the app without running the prompt` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/onboarding-sources-first/__tests__/onboarding-preview-skip.test.tsx#L166)). Rebuild this scenario expecting an empty composer at `/` without the prompt query.

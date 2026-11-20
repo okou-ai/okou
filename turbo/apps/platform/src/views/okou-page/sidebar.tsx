@@ -1,5 +1,4 @@
 import { ProjectCreateButton } from "../projects/project-row.tsx";
-import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
 import { Collapsible } from "@base-ui/react/collapsible";
 import type { ComponentProps, CSSProperties, ReactNode } from "react";
 import { useLastResolved, useGet, useSet } from "ccstate-react";
@@ -8,8 +7,6 @@ import {
   LayoutGrid,
   Package,
   Route,
-  Users,
-  Edit,
   MessageCircle,
   PanelLeftClose,
   Plug,
@@ -24,7 +21,7 @@ import {
 } from "../../signals/okou-page/nav.ts";
 import { activeRoute$ } from "../../signals/active-route.ts";
 import { ROUTES, type RouteKey } from "../../signals/route-paths.ts";
-import { defaultAgentId$, defaultAgentName$ } from "../../signals/agent.ts";
+import { defaultAgentName$ } from "../../signals/agent.ts";
 import { assistantName$ } from "../../signals/branding.ts";
 import { okouRailEntryEnabled$ } from "../../signals/okou-page/okou-rail-entry.ts";
 import {
@@ -46,10 +43,7 @@ import {
   useChatThreadsFilterLabel,
 } from "./sidebar-threads.tsx";
 import { threeColumnSidebarChatThreadScrollSignals } from "../../signals/chat-page/sidebar-chat-thread-scroll.ts";
-import {
-  PinAgentDialogContainer,
-  PinnedAgentListSection,
-} from "./sidebar-pinned.tsx";
+
 import { ThreeColumnSearchDialog } from "./sidebar-dialogs.tsx";
 import { SidebarUpgradeCard } from "./sidebar-upgrade.tsx";
 import { ResizeSeam } from "./resize-seam.tsx";
@@ -61,7 +55,6 @@ import {
   chatListWidth$,
 } from "../../signals/okou-page/unified-chat-workspace.ts";
 import { detachedNavigateTo$ } from "../../signals/route.ts";
-import { newChatAgentId$ } from "../../signals/agent-chat.ts";
 import { GLOBAL_KEYBOARD_SHORTCUTS } from "../../lib/global-keyboard-shortcuts.ts";
 import { workspaceResizing$ } from "../../signals/chat-page/workspace-resize.ts";
 
@@ -69,7 +62,7 @@ type NavIcon = (props: { size?: number; className?: string }) => ReactNode;
 
 const slackIcon = settingsIconAssetUrl("slack");
 
-type ManageNavId = "agents" | "artifacts" | "connectors" | "workflows";
+type ManageNavId = "artifacts" | "connectors" | "workflows";
 type SidebarNavId = ManageNavId | "chat" | "works";
 
 interface ManageNavItem {
@@ -80,12 +73,6 @@ interface ManageNavItem {
 }
 
 const MANAGE_NAV: readonly ManageNavItem[] = [
-  {
-    id: "agents",
-    activeKeys: ["agents", "agentDetail", "agentPermissions"],
-    pathname: "/agents",
-    icon: Users as NavIcon,
-  },
   {
     id: "workflows",
     activeKeys: [
@@ -135,14 +122,9 @@ const FOOTER_NAV: readonly FooterNavItem[] = [
 
 function useManageNavItems() {
   const { t } = useTranslation();
-  const singleAgent = useLastResolved(singleAgentEnabled$) ?? false;
+
   const manageLabel = (id: ManageNavId): string => {
     switch (id) {
-      case "agents": {
-        return t(($) => {
-          return $.appShell.sidebar.navigation.agents;
-        });
-      }
       case "artifacts": {
         return t(($) => {
           return $.appShell.sidebar.navigation.artifacts;
@@ -160,9 +142,7 @@ function useManageNavItems() {
       }
     }
   };
-  return MANAGE_NAV.filter((item) => {
-    return !singleAgent || item.id !== "agents";
-  }).map((item) => {
+  return MANAGE_NAV.map((item) => {
     return { ...item, label: manageLabel(item.id) };
   });
 }
@@ -210,7 +190,6 @@ const RAIL_FRAME =
 function LabeledRailLink({
   id,
   navPath,
-  navOptions,
   label,
   icon: Icon,
   iconImg,
@@ -220,7 +199,6 @@ function LabeledRailLink({
 }: {
   id: SidebarNavId;
   navPath: string;
-  navOptions?: Parameters<typeof Link>[0]["options"];
   label: string;
   icon: NavIcon;
   iconImg?: string | undefined;
@@ -249,7 +227,6 @@ function LabeledRailLink({
   return (
     <Link
       pathname={navPath as Parameters<typeof Link>[0]["pathname"]}
-      options={navOptions}
       onClick={(event) => {
         // Only a click that navigates here, not one opening a new tab.
         if (onNavigate && shouldHandleLinkClick(event)) {
@@ -338,21 +315,15 @@ function OkouRailIcon({ className }: { className?: string }) {
 
 function LabeledChatRailLink() {
   const activeId = useGet(activeRoute$);
-  const singleAgent = useLastResolved(singleAgentEnabled$) ?? false;
+
   const okouEntry = useLastResolved(okouRailEntryEnabled$) ?? false;
   const assistantName = useGet(assistantName$);
-  const defaultAgentId = useLastResolved(defaultAgentId$) ?? null;
   const showInbox = useSet(showChatThreadInbox$);
-  // My Okou's chat page is `/` itself.
-  const agentChatId = singleAgent ? null : defaultAgentId;
   const { t } = useTranslation();
   return (
     <LabeledRailLink
       id="chat"
-      navPath={agentChatId ? ROUTES.agentChat : ROUTES.home}
-      navOptions={
-        agentChatId ? { pathParams: { agentId: agentChatId } } : undefined
-      }
+      navPath={ROUTES.home}
       label={
         okouEntry
           ? assistantName
@@ -496,11 +467,6 @@ export function ThreeColumnSearchDialogContainer() {
           pathParams: { threadId },
         });
       }}
-      onSelectAgent={(agentId) => {
-        navigate("/agents/:agentId/chat", {
-          pathParams: { agentId },
-        });
-      }}
       onSelectWorkflow={(workflowId) => {
         navigate("/workflows/:workflowId", {
           pathParams: { workflowId },
@@ -522,9 +488,6 @@ export function ThreeColumnSearchDialogContainer() {
 const CHAT_LIST_INSET = "px-3";
 
 function ChatListHeader() {
-  const currentChatAgentId = useLastResolved(newChatAgentId$) ?? null;
-  const singleAgent = useLastResolved(singleAgentEnabled$) ?? false;
-  const navigate = useSet(detachedNavigateTo$);
   const openThreeColumnSearch = useSet(openThreeColumnSearchDialog$);
   const { t } = useTranslation();
   // My Okou has a single chat list, so the header carries the list's actions
@@ -535,17 +498,6 @@ function ChatListHeader() {
   const searchLabel = t(($) => {
     return $.appShell.sidebar.searchWorkspace;
   });
-  const newChatLabel = t(($) => {
-    return $.chat.newChat;
-  });
-  const onNewChat = () => {
-    if (!currentChatAgentId) {
-      return;
-    }
-    navigate(ROUTES.agentChat, {
-      pathParams: { agentId: currentChatAgentId },
-    });
-  };
   const searchItem = {
     shortcut: GLOBAL_KEYBOARD_SHORTCUTS.searchWorkspace.binding,
     trigger: (
@@ -563,23 +515,6 @@ function ChatListHeader() {
         iconSize="md"
       >
         <Search size={18} />
-      </Button>
-    ),
-  };
-  const newChatItem = {
-    shortcut: GLOBAL_KEYBOARD_SHORTCUTS.newChat.binding,
-    trigger: (
-      <Button
-        type="button"
-        onClick={onNewChat}
-        disabled={!currentChatAgentId}
-        aria-label={newChatLabel}
-        aria-keyshortcuts={GLOBAL_KEYBOARD_SHORTCUTS.newChat.ariaKeyShortcuts}
-        variant="quiet"
-        size="icon-sm"
-        iconSize="md"
-      >
-        <Edit size={18} />
       </Button>
     ),
   };
@@ -601,26 +536,15 @@ function ChatListHeader() {
         CHAT_LIST_INSET,
       )}
     >
-      {singleAgent ? (
-        <>
-          <ShortcutTooltipGroup items={[toggleItem]} />
-          <span className="min-w-0 flex-1 truncate pl-1 text-[15px] font-semibold text-nav-copy">
-            {filterLabel}
-          </span>
-          <ShortcutTooltipGroup items={[searchItem]} />
-          <ProjectCreateButton />
-          <ChatThreadsListMenu showMarkAllRead />
-        </>
-      ) : (
-        <>
-          <span className="min-w-0 flex-1 truncate pl-2 text-[15px] font-semibold text-nav-copy">
-            {t(($) => {
-              return $.appShell.sidebar.chat;
-            })}
-          </span>
-          <ShortcutTooltipGroup items={[searchItem, newChatItem, toggleItem]} />
-        </>
-      )}
+      <>
+        <ShortcutTooltipGroup items={[toggleItem]} />
+        <span className="min-w-0 flex-1 truncate pl-1 text-[15px] font-semibold text-nav-copy">
+          {filterLabel}
+        </span>
+        <ShortcutTooltipGroup items={[searchItem]} />
+        <ProjectCreateButton />
+        <ChatThreadsListMenu showMarkAllRead />
+      </>
     </div>
   );
 }
@@ -655,7 +579,6 @@ function ChatListResizeSeam() {
 }
 
 function ChatListColumn() {
-  const singleAgent = useLastResolved(singleAgentEnabled$) ?? false;
   const width = useGet(chatListWidth$);
   return (
     <aside
@@ -671,14 +594,11 @@ function ChatListColumn() {
     >
       <ChatListHeader />
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden pt-1">
-        <div className={CHAT_LIST_INSET}>
-          <PinnedAgentListSection />
-        </div>
         <ChatThreadsSection
           scrollSignals={threeColumnSidebarChatThreadScrollSignals}
           contentClassName={CHAT_LIST_INSET}
           showMarkAllRead
-          showTitle={!singleAgent}
+          showTitle={false}
         />
       </div>
       {/* Collapses to nothing when SidebarUpgradeCard renders null, so the
@@ -737,7 +657,7 @@ export function Sidebar() {
     <>
       <LabeledNavRail />
       <ThreeColumnSearchDialogContainer />
-      <PinAgentDialogContainer />
+
       <ChatThreadDialogs />
     </>
   );

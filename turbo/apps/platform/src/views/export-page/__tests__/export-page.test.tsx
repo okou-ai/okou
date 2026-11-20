@@ -45,7 +45,7 @@ test("A completed export shows its contents, expiry, and cooldown", async () => 
   for (const item of [
     "Your chat threads",
     "Your chat messages",
-    "Instructions for agents you can access",
+    "Instructions",
     "Instructions for workflows you can access",
     "Your current memory files",
     "Artifact, attachment, and workflow supporting files are not included.",

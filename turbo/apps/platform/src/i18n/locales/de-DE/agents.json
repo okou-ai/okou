@@ -3,7 +3,6 @@
     "cancel": "Abbrechen",
     "close": "Schließen",
     "copying": "Kopieren…",
-    "create": "Erstellen",
     "delete": "Agent löschen",
     "deleting": "Löschen…",
     "discard": "Verwerfen",
@@ -63,8 +62,7 @@
     "tabs": {
       "instructions": "Anweisungen",
       "profile": "Profil"
-    },
-    "viewProfile": "Agentenprofil anzeigen"
+    }
   },
   "errors": {
     "unknown": "Unbekannter Fehler"
@@ -457,47 +455,6 @@
     "saved": "Anweisungen gespeichert"
   },
   "list": {
-    "actions": {
-      "new": "Neuer Agent"
-    },
-    "cards": {
-      "coreDescription": "Ihr Hauptagent",
-      "createdBy": "Erstellt von {{creator}}",
-      "subagentDescription": "Sub-Agent",
-      "unknownCreator": "Unbekannt"
-    },
-    "create": {
-      "accessibilityDescription": "Benennen Sie den neuen Agenten, wählen Sie seine Sichtbarkeit und passen Sie seinen Avatar an.",
-      "creating": "Wird erstellt…",
-      "description": "Benennen Sie Ihren Agenten und legen Sie fest, wer ihn verwenden darf.",
-      "namePlaceholder": "z.B. Forschungsassistent",
-      "newAgentAlt": "Neuer Agent",
-      "responsibilityLabel": "Wobei soll Ihnen dieser Agent helfen?",
-      "responsibilityPlaceholder": "z. B. jeden Montag die Pipeline der letzten Woche aus HubSpot zusammenfassen und Deals markieren, die Aufmerksamkeit brauchen.",
-      "success": "{{agentName}} erfolgreich erstellt",
-      "title": "Neuen Agenten erstellen",
-      "visibility": {
-        "private": {
-          "description": "(Nur Sie können ihn sehen und verwenden)",
-          "label": "Privat"
-        },
-        "public": {
-          "description": "(Alle in diesem Arbeitsbereich können ihn verwenden)",
-          "label": "Öffentlich"
-        }
-      },
-      "visibilityLabel": "Sichtbarkeit"
-    },
-    "description": "{{agentName}} und Sub-Agenten arbeiten zusammen, um maßgeschneiderte Workflows für Sie und Ihr Team durchzuführen.",
-    "documentTitle": "Agenten",
-    "privateEmpty": {
-      "description": "Erstellen Sie einen Agenten, den nur Sie sehen und verwenden können. Private Agenten sind unbegrenzt.",
-      "title": "Noch keine privaten Agenten"
-    },
-    "tabs": {
-      "private": "Privat",
-      "public": "Öffentlich"
-    },
     "title": "Agenten"
   },
   "profile": {
@@ -563,34 +520,20 @@
     }
   },
   "sidebar": {
-    "addPin": "Anheften",
-    "clearSearch": "Suche löschen",
     "escapeShortcut": "Esc",
     "filterAll": "Alle",
     "markAllRead": "Alles als gelesen markieren",
-    "noAgentsToPin": "Du hast noch keine weiteren Agenten.",
     "noResults": "Keine Ergebnisse gefunden",
-    "pin": "An die Seitenleiste anheften",
-    "pinAgent": "Agent anheften",
-    "pinAgentDescription": "Wähle einen Agenten aus, den du an die Seitenleiste anheften möchtest.",
-    "pinned": "Angepinnt",
-    "pinnedAgents": "Angepinnte Agenten",
-    "pinSuccess": "{{agentName}} angepinnt",
     "resultCount_one": "{{count}} Ergebnis",
     "resultCount_other": "{{count}} Ergebnisse",
-    "searchAgents": "Suchagenten...",
     "searching": "Suche...",
     "searchWorkspace": "Arbeitsbereich durchsuchen...",
     "sections": {
-      "agents": "Agenten",
       "artifacts": "Artefakte",
       "chats": "Chats",
       "messages": "Nachrichten",
-      "others": "Andere",
       "workflows": "Workflows"
-    },
-    "unpin": "Nicht mehr anheften",
-    "unpinSuccess": "{{agentName}} nicht mehr angepinnt"
+    }
   },
   "status": {
     "unread": "Ungelesen"

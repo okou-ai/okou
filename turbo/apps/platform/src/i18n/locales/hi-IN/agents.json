@@ -3,7 +3,6 @@
     "cancel": "रद्द करें",
     "close": "बंद करें",
     "copying": "प्रतिलिपि बनाई जा रही है...",
-    "create": "बनाएं",
     "delete": "एजेंट हटाएँ",
     "deleting": "हटाया जा रहा है...",
     "discard": "खारिज करना",
@@ -63,8 +62,7 @@
     "tabs": {
       "instructions": "निर्देश",
       "profile": "प्रोफ़ाइल"
-    },
-    "viewProfile": "एजेंट प्रोफ़ाइल देखें"
+    }
   },
   "errors": {
     "unknown": "अज्ञात त्रुटि"
@@ -457,47 +455,6 @@
     "saved": "निर्देश सहेजे गए"
   },
   "list": {
-    "actions": {
-      "new": "नया एजेंट"
-    },
-    "cards": {
-      "coreDescription": "आपका मुख्य एजेंट",
-      "createdBy": "{{creator}} द्वारा बनाया गया",
-      "subagentDescription": "उप-एजेंट",
-      "unknownCreator": "अज्ञात"
-    },
-    "create": {
-      "accessibilityDescription": "नए एजेंट को नाम दें, उसकी दृश्यता चुनें और उसके अवतार को अनुकूलित करें।",
-      "creating": "बनाया जा रहा है...",
-      "description": "अपने एजेंट का नाम बताएं और निर्धारित करें कि इसका उपयोग कौन कर सकता है।",
-      "namePlaceholder": "जैसे अनुसंधान सहायक",
-      "newAgentAlt": "नया एजेंट",
-      "responsibilityLabel": "आप इस एजेंट से किस काम में मदद चाहते हैं?",
-      "responsibilityPlaceholder": "जैसे हर सोमवार, HubSpot से पिछले हफ़्ते की पाइपलाइन का सारांश बनाएं और उन डील को चिह्नित करें जिन पर ध्यान देने की ज़रूरत है।",
-      "success": "{{agentName}} सफलतापूर्वक बनाया गया",
-      "title": "एक नया एजेंट बनाएं",
-      "visibility": {
-        "private": {
-          "description": "(केवल आप ही इसे देख और उपयोग कर सकते हैं)",
-          "label": "निजी"
-        },
-        "public": {
-          "description": "(इस वर्कस्पेस में कोई भी इसका उपयोग कर सकता है)",
-          "label": "जनता"
-        }
-      },
-      "visibilityLabel": "दृश्यता"
-    },
-    "description": "{{agentName}} और उप-एजेंट आपके और आपकी टीम के लिए अनुरूप वर्कफ़्लो चलाने के लिए मिलकर काम कर रहे हैं।",
-    "documentTitle": "एजेंटों",
-    "privateEmpty": {
-      "description": "एक एजेंट बनाएं जिसे केवल आप ही देख और उपयोग कर सकें। निजी एजेंट असीमित हैं.",
-      "title": "अभी तक कोई निजी एजेंट नहीं"
-    },
-    "tabs": {
-      "private": "निजी",
-      "public": "जनता"
-    },
     "title": "एजेंटों"
   },
   "profile": {
@@ -563,34 +520,20 @@
     }
   },
   "sidebar": {
-    "addPin": "पिन करें",
-    "clearSearch": "खोज साफ़ करें",
     "escapeShortcut": "Esc",
     "filterAll": "सभी",
     "markAllRead": "सभी को पढ़ा दिखाएं",
-    "noAgentsToPin": "आपके पास अभी कोई अन्य एजेंट नहीं है।",
     "noResults": "कोई परिणाम नहीं मिला",
-    "pin": "साइडबार पर पिन करें",
-    "pinAgent": "एजेंट पिन करें",
-    "pinAgentDescription": "साइडबार पर पिन करने के लिए एक एजेंट चुनें।",
-    "pinned": "पिन की गई",
-    "pinnedAgents": "पिन किए गए एजेंट",
-    "pinSuccess": "{{agentName}} को पिन किया गया",
     "resultCount_one": "{{count}} परिणाम",
     "resultCount_other": "{{count}} परिणाम",
-    "searchAgents": "खोज एजेंट...",
     "searching": "खोज जारी है...",
     "searchWorkspace": "वर्कस्पेस में खोजें...",
     "sections": {
-      "agents": "एजेंट",
       "artifacts": "आर्टिफ़ैक्ट्स",
       "chats": "चैट",
       "messages": "संदेश",
-      "others": "अन्य",
       "workflows": "वर्कफ़्लो"
-    },
-    "unpin": "अनपिन",
-    "unpinSuccess": "{{agentName}} को अनपिन किया गया"
+    }
   },
   "status": {
     "unread": "अपठित"

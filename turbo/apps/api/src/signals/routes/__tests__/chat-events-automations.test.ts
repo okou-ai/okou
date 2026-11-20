@@ -304,7 +304,11 @@ describe("thread-bound Pi terminal failures", () => {
   it.each([{ status: "failed" }, { status: "cancelled" }] as const)(
     "settles a user-owned automation $status once without Built-in charges",
     async ({ status }) => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
+      const {
+        actor,
+        defaultAgentId: agentId,
+        runnerGroup,
+      } = await entitledChatActor();
       await configureSubscriptionPiModel(
         actor,
         { accountId: "terminal-owner" },

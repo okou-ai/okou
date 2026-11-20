@@ -26,6 +26,7 @@ Original test `Deleting the last chat opens a new chat (My Okou: true)`. [Regist
 - **Given** My Okou is enabled and the only chat, Release plan, is open.
 - **When** The user confirms deleting Release plan.
 - **Then** Chat deleted appears and a new chat opens at / with a message box; no missing-chat error appears.
+- **Upstream change** `4e5707de` (#49556) makes My Okou permanent and drops the My Okou parameter; the upstream test is now `Deleting the last chat opens a new chat` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.test.tsx#L152)). Rebuild this scenario without any feature switch; Chat deleted, the new chat at /, and the absent missing-chat error are unchanged.
 
 ## sidebar-chat-history-004
 
@@ -90,6 +91,7 @@ Original test `Archive an unread chat without retaining its agent reminder or ch
 - **Given** Review later is unread, its agent has an unread reminder, and Mark all read is available.
 - **When** The user archives Review later and then undoes the archive from the toast.
 - **Then** Archiving shows Chat archived. and removes the agent's unread reminder without changing Review later's unread state or disabling Mark all read. Undo restores the chat's unread indicator and the agent's unread reminder; Mark all read remains available.
+- **Upstream change** `4e5707de` (#49556) retires pinned agents, so no agent unread reminder is shown; the upstream test is now `Archive an unread chat without changing reading state` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.test.tsx#L540)). Rebuild this scenario without the agent-reminder checks: archiving shows Chat archived. without changing Review later's unread state or disabling Mark all read, and Undo restores its unread indicator.
 
 ## sidebar-chat-history-012
 
@@ -202,6 +204,7 @@ Original test `Route New chat to the current agent and Chat to the default agent
 - **Given** Research conversation is open under Research Agent, while the labeled Chat link points to the default agent.
 - **When** The user starts New chat from the chat-list header, then selects Chat from the navigation rail.
 - **Then** New chat opens at /agents/{RESEARCH_AGENT_ID}/chat. Chat opens at /agents/{AGENT_ID}/chat and shows the chat composer.
+- **Upstream change** `4e5707de` (#49556) gives all chats one My Okou chat page at `/`: the chat list leads with a New chat row instead of a header New chat button, the Chats with Research Agent heading is gone, and the rail Chat link points to `/`; the upstream test is now `Open a new My Okou Chat from a retained conversation` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.test.tsx#L1044)). Rebuild this scenario from the Research Agent conversation: the New chat row opens `/`, and Chat (href `/`) opens `/` with the chat composer.
 
 ## sidebar-chat-history-026
 

@@ -10,6 +10,7 @@ Original test `The iOS billing management link opens Billing settings (My Okou=f
 - **Given** A user opens billing settings on iOS with My Okou disabled.
 - **When** They visit the billing settings link.
 - **Then** Billing settings opens with the Billing heading.
+- **Upstream change** `4e5707de` (#49556) removes the My Okou feature switch, so My Okou can no longer be disabled, and removes this upstream test. Retire this scenario; opening Billing settings from `/settings/billing` remains covered by org-billing-tab-002.
 
 ## org-billing-tab-002
 
@@ -18,6 +19,7 @@ Original test `The iOS billing management link opens Billing settings (My Okou=t
 - **Given** A user opens billing settings on iOS with My Okou enabled.
 - **When** They visit the billing settings link.
 - **Then** Billing settings opens with the Billing heading.
+- **Upstream change** `4e5707de` (#49556) removes the My Okou feature switch and makes this behavior permanent; the upstream test is now `The iOS billing management link opens Billing settings` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/okou-page/__tests__/org-billing-tab.test.tsx#L283)). Rebuild this scenario without any My Okou switch setup; `/settings/billing` still opens the Settings dialog on Billing.
 
 ## org-billing-tab-003
 

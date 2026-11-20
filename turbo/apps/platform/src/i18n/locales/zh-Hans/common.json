@@ -333,15 +333,12 @@
   },
   "appShell": {
     "pwaNavigation": {
-      "agentsUnavailable": "无法加载智能体",
       "back": "返回",
       "backToChats": "返回聊天列表",
       "chatListUnavailable": "无法加载聊天",
       "chats": "聊天",
       "me": "我",
-      "navigation": "主导航",
-      "searchAgents": "搜索智能体",
-      "switchAgent": "切换智能体"
+      "navigation": "主导航"
     },
     "shortcutHelp": {
       "close": "关闭快捷键面板",
@@ -358,10 +355,8 @@
         "collapseProject": "收起 Project",
         "expandProject": "展开 Project",
         "newChat": "新建聊天",
-        "nextAgent": "下一个智能体",
         "nextThread": "下一个会话",
         "openFirstThread": "打开第一个会话",
-        "previousAgent": "上一个智能体",
         "previousThread": "上一个会话",
         "renameChat": "重命名聊天",
         "scrollBottom": "滚动到底部",
@@ -2001,7 +1996,6 @@
     },
     "composer": {
       "add": "添加",
-      "agentSuggestions": "智能体",
       "configureModel": "配置模型",
       "create": {
         "addStyle": "添加风格",
@@ -2013,7 +2007,7 @@
         "slideCountAuto": "自动",
         "slideCountRange": "{{range}} 页"
       },
-      "mentionHint": "搜索智能体或聊天…",
+      "mentionHint": "搜索聊天或项目…",
       "message": "消息",
       "modelForThisChat": "本次对话使用的模型",
       "placeholder": "让我自动化工作流、管理任务…",
@@ -2218,16 +2212,7 @@
       "sent": "已创建新聊天"
     },
     "forward": {
-      "action": "转发",
-      "agents": "智能体",
-      "back": "返回",
       "composerPlaceholder": "添加留言",
-      "content": "内容",
-      "description": "把选中的内容发给某个智能体或聊天，继续处理。",
-      "noResults": "未找到智能体或聊天",
-      "search": "搜索智能体和聊天…",
-      "sent": "转发成功",
-      "threads": "聊天",
       "title": "转发到"
     },
     "mail": {
@@ -3083,8 +3068,6 @@
           "menu": "销售与业务"
         }
       },
-      "description": "连接第三方服务，供你的智能体使用。",
-      "descriptionWithCount": "连接 {{value}} 个服务，供你的智能体使用。",
       "directory": {
         "browse": "浏览",
         "builtin": "内置连接器",
@@ -5353,7 +5336,6 @@
         "startFailed": "导出启动失败"
       },
       "scope": {
-        "agentInstructions": "你可访问的智能体指令",
         "chatMessages": "你的聊天消息",
         "chatThreads": "你的聊天会话",
         "filesExcluded": "不包含成果、附件和工作流的相关文件。",
@@ -6885,20 +6867,15 @@
       }
     },
     "common": {
-      "agents": "智能体",
       "cancel": "取消",
       "close": "关闭",
-      "copyWorkflow": "复制工作流",
       "delete": "删除",
       "deleteWorkflow": "删除工作流",
       "instructions": "指令",
       "manual": "手动",
-      "others": "其他",
-      "pinned": "已置顶",
       "private": "私有",
       "public": "公开",
       "settings": "设置",
-      "view": "查看",
       "workflow": "工作流",
       "workflows": "工作流"
     },
@@ -6915,29 +6892,9 @@
       "createInChat": "在对话中创建",
       "createInChatDescription": "还没有合适的工作流时，从一段对话开始。",
       "createWorkflow": "创建工作流",
-      "noAgents": "还没有智能体",
-      "noAgentsFound": "未找到智能体",
       "noWorkflows": "还没有工作流。在对话中创建一个即可继续。"
     },
     "detail": {
-      "copy": {
-        "agentFallback": "该智能体",
-        "copied": "已复制到{{agent}}",
-        "copyAndRemove": "复制并移除",
-        "description": "把这个工作流复制给另一个智能体，作为新的私有工作流。",
-        "moved": "已移动到{{agent}}",
-        "moveDescription": "原工作流已从{{agent}}移除。",
-        "noAgents": "还没有其他智能体",
-        "privateReady": "私有副本已创建。",
-        "removalAlert": "原工作流会被删除",
-        "removalNoAutomations": "这个工作流会从{{agent}}删除。",
-        "removalWithAutomations_one": "{{agent}}上的 {{count}} 个自动化会暂停，这个工作流会被删除。",
-        "removalWithAutomations_other": "{{agent}}上的 {{count}} 个自动化会暂停，这个工作流会被删除。",
-        "removeOriginal": "复制后从{{agent}}移除原工作流",
-        "selectAgent": "选择智能体",
-        "title": "复制工作流",
-        "to": "复制到"
-      },
       "delete": {
         "confirm": "{{title}}及其绑定的所有自动化都会被删除。",
         "dangerDescription": "删除这个工作流及其自动化。此操作无法撤销。",
@@ -6959,10 +6916,6 @@
         "upload": "上传文本文件",
         "uploadAria": "上传工作流文件"
       },
-      "info": {
-        "copyDescription": "把这个工作流复制给另一个智能体。",
-        "copyTitle": "复制工作流"
-      },
       "metadata": {
         "agent": "智能体",
         "agentDescription": "这个工作流属于该智能体。",
@@ -6983,12 +6936,7 @@
       "notFound": "未找到该工作流。",
       "refineWith": "用{{agent}}优化",
       "sectionNavigation": "工作流详情栏目",
-      "shadow": {
-        "end": "（对你生效）。这个工作流因标识符相同的优先级规则被屏蔽。",
-        "resolvesTo": "当前指向"
-      },
       "visibility": {
-        "adminRequired": "在不属于你的智能体下发布工作流，需要组织管理员权限。",
         "automationWarning": "自动化将停止",
         "confirmDescription": "这是危险操作。工作流设为私有后，其他成员基于它建立的自动化会停止运行。",
         "confirmTitle": "把这个工作流设为私有？",
@@ -7016,9 +6964,7 @@
     },
     "list": {
       "actionRequired": "需要处理",
-      "agentEmpty": "还没有以这个智能体身份运行的工作流。",
       "all": "全部",
-      "allAgents": "全部智能体",
       "automated": "已自动化",
       "automations": "自动化",
       "createdBy": "创建者",
@@ -7036,8 +6982,6 @@
       "openRecovery": "打开{{title}}的恢复",
       "ownerLoading": "正在加载作者…",
       "ownerUnavailable": "无法获取作者",
-      "runsAs": "运行身份",
-      "runsAsAria": "以{{agent}}身份运行",
       "section": {
         "event": "由自动化触发",
         "later": "更久以后",

@@ -1,3 +1,4 @@
+import { capturedRunToken } from "../../../test/fixtures/captured-run-token";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -116,7 +117,7 @@ describe("okou connector permission-request --batch-file", () => {
   }
   beforeEach(async () => {
     directory = await mkdtemp(join(tmpdir(), "okou-permission-batch-"));
-    vi.stubEnv("OKOU_TOKEN", "test-token");
+    vi.stubEnv("OKOU_TOKEN", capturedRunToken(["agent:read"]));
     vi.stubEnv("OKOU_API_BACKEND_URL", "https://app.okou.ai");
     vi.stubEnv("OKOU_AGENT_ID", "agent-current");
     vi.stubEnv("OKOU_CHAT_THREAD_ID", "thread-current");
@@ -241,7 +242,7 @@ describe("okou connector permission-request --batch-file", () => {
     expect(output()).not.toContain("action=allow");
   });
 
-  it("resolves an explicit Agent outside a run", async () => {
+  it("resolves an explicit Agent with a retained Run credential", async () => {
     vi.stubEnv("OKOU_AGENT_ID", "");
     await run([slack], ["--agent", "agent-explicit"]);
     expect(actionUrl().pathname).toBe(

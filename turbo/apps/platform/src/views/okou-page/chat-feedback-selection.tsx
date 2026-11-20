@@ -1,5 +1,5 @@
-import { Copy, Forward, GitFork, MessageCircle } from "lucide-react";
-import { useLastResolved, useGet, useSet } from "ccstate-react";
+import { Copy, GitFork, MessageCircle } from "lucide-react";
+import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import {
   Button,
@@ -11,7 +11,6 @@ import {
 } from "@okouai/ui";
 import { rootSignal$ } from "../../signals/root-signal.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import type {
   ChatThreadFeedbackSelection,
@@ -50,7 +49,7 @@ function FeedbackToolbar({
   onForward?: () => void;
 }) {
   const { t } = useTranslation();
-  const singleAgent = useLastResolved(singleAgentEnabled$) ?? false;
+
   return (
     <div className="flex items-center gap-0.5">
       <Button
@@ -91,18 +90,14 @@ function FeedbackToolbar({
             size="xs"
             onClick={onForward}
             aria-keyshortcuts="f"
-            title={
-              singleAgent
-                ? t(($) => {
-                    return $.chat.fork.description;
-                  })
-                : undefined
-            }
+            title={t(($) => {
+              return $.chat.fork.description;
+            })}
             className="text-foreground"
           >
-            {singleAgent ? <GitFork /> : <Forward />}
+            <GitFork />
             {t(($) => {
-              return singleAgent ? $.chat.fork.action : $.chat.forward.action;
+              return $.chat.fork.action;
             })}
             <ShortcutHint shortcut="f" />
           </Button>
@@ -195,10 +190,6 @@ export function ChatForwardDialogMount({
   const selection = useGet(feedback.forwardSelection$);
   const close = useSet(feedback.closeForward$);
   return selection ? (
-    <ChatForwardDialog
-      selection={selection}
-      feedback={feedback}
-      onDismiss={close}
-    />
+    <ChatForwardDialog feedback={feedback} onDismiss={close} />
   ) : null;
 }

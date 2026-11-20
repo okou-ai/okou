@@ -1,4 +1,4 @@
-import { proactiveSettingsInMyOkou$ } from "../../../../../signals/single-agent.ts";
+import { proactiveSettingsInMyOkou$ } from "../../../../../signals/proactive-settings.ts";
 import { useGet, useLoadable, useLastResolved } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";

@@ -10,6 +10,7 @@ Original test `Lab remains available while onboarding is required`. [Registratio
 - **Given** Onboarding is required, the Lab and Banking switches are enabled, and a pinned private agent is available.
 - **When** The user opens Lab.
 - **Then** Lab remains available, Banking appears in Alpha, and the pinned agent is shown.
+- **Upstream change** `4e5707de` (#49556) removes pinned agents from the sidebar, so a pinned private agent is no longer shown anywhere on the page; the upstream test is now `Lab remains available while onboarding is required` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/lab-page/__tests__/lab-page.test.tsx#L39)) and no longer checks for it. Rebuild this scenario without the pinned-agent setup and expectation; Lab availability during onboarding and Banking in Alpha remain.
 
 ## lab-page-002
 

@@ -34,6 +34,7 @@ Original test `Hiding the compliance block keeps it hidden on this device`. [Reg
 - **Given** The compliance block is visible on the home page.
 - **When** The user hides it, leaves for the Agents page, and returns to Chat.
 - **Then** The block disappears and remains hidden on this device; focus moves to the composer when it is hidden.
+- **Upstream change** `4e5707de` (#49556) removes the Agents entry from the navigation; the upstream test is now `Hiding the compliance block keeps it hidden on this device` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/okou-page/__tests__/capability-home-page.test.tsx#L164)), which leaves home through the Workflows link. Rebuild this scenario leaving for the Workflows page (Workflows heading) and returning through Chat.
 
 ## capability-home-page-005
 

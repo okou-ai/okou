@@ -74,6 +74,7 @@ Original test `A new chat leaves host defaults untouched when no choice is chang
 - **Given** A new chat has one SSH host that defaults on, and the user has not changed its choice.
 - **When** The user sends the first message.
 - **Then** The thread is created with no initial remote access overrides; the host default remains untouched.
+- **Upstream change** `4e5707de` (#49556) moves the new-chat composer from `/agents/<agentId>/chat` to `/` (the old path now only redirects there); the upstream test is now `A new chat leaves host defaults untouched when no choice is changed` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-ssh.test.tsx#L517)). Rebuild this scenario starting the new chat at `/`.
 
 ## chat-composer-ssh-010
 
@@ -146,3 +147,4 @@ Original test `Directory SSH setup follows shelves and categories`. [Registratio
 - **Given** A new chat has an empty SSH setup and a connector directory with five productivity connectors.
 - **When** The user browses Remote access, switches to Custom and then Discover, selects All, and chooses Manage SSH hosts.
 - **Then** The Custom view reports no custom connectors and has no Manage SSH hosts link; Discover and All show the link. Choosing it opens the remote connection form at /connectors with the SSH setup query parameters.
+- **Upstream change** `4e5707de` (#49556) moves the new-chat composer from `/agents/<agentId>/chat` to `/` (the old path now only redirects there); the upstream test is now `Directory SSH setup follows shelves and categories` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-ssh.test.tsx#L880)). Rebuild this scenario starting the new chat at `/`; Manage SSH hosts still opens `/connectors` with the SSH setup query.

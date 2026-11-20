@@ -18,6 +18,7 @@ Original test `The app waits for authoritative workspace features before mountin
 - **Given** A signed-in user opens the agents page while the authoritative workspace-feature response is still pending.
 - **When** The app starts before that response is released, then receives the response enabling feature guides and disabling single-agent mode.
 - **Then** Before the response, a bootstrap skeleton is visible, the app root is not mounted, and feature guides are not requested; afterward the Agents page mounts and feature guides are requested once.
+- **Upstream change** `4e5707de` (#49556) removes the single-agent switch and retires the Agents page (`/agents` now only redirects to Home); the upstream test is now `The app waits for authoritative workspace features before mounting` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/signals/__tests__/bootstrap-feature-switch.test.tsx#L34)), which opens `/workflows` and releases a response without any single-agent switch. Rebuild this scenario on the Workflows page with no single-agent setting in the released response, expecting the Workflows heading where the Agents page mounted.
 
 ## bootstrap-feature-switch-003
 

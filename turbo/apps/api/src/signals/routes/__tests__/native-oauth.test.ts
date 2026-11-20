@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import { http, HttpResponse } from "msw";
 import { array, number, object, record, string } from "zod";
 import { projectsContract } from "@okouai/api-contracts/contracts/projects";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createProjectOperationId } from "@okouai/core/project-operation-id";
 import { testContext, accept } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
@@ -17,7 +16,6 @@ import { voiceIoPolishRoutes } from "../voice-io-polish";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createMcpWebApi } from "./helpers/mcp-web-api";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
@@ -51,13 +49,6 @@ async function project(actor: ApiTestUser, name: string) {
   if (!actor.orgId) {
     throw new Error("Project requires an organization");
   }
-  await updateFeatureSwitchesForUser(
-    context,
-    { ...actor, orgId: actor.orgId },
-    {
-      [FeatureSwitchKey.SingleAgent]: true,
-    },
-  );
   createRouteMocks(context).clerk.session(
     actor.userId,
     actor.orgId,

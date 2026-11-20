@@ -10,6 +10,7 @@ Original test `Pinned links preserve the current agent and unread filter for Alt
 - **Given** The sidebar is open on Nova’s chat, with read and unread conversations and the Research Agent pinned.
 - **When** The user activates Nova and then Research Agent while holding Alt.
 - **Then** The current URL and selected agent remain Nova’s chat. The unread conversation stays visible and the read conversation stays hidden.
+- **Upstream change** `4e5707de` (#49556) retires pinned agents and the pinned-agent grid and removes this upstream test. Retire this scenario; modified-click activation of conversation links remains in sidebar-pinned-links-010.
 
 ## sidebar-pinned-links-002
 
@@ -42,6 +43,7 @@ Original test `Pinned links preserve the current agent and unread filter for [Mo
 - **Given** The sidebar is open on Nova’s chat, with read and unread conversations and the Research Agent pinned.
 - **When** The user activates Research Agent with the middle mouse button.
 - **Then** The current URL remains Nova’s chat, and the read conversation stays hidden.
+- **Upstream change** `4e5707de` (#49556) retires pinned agents and the pinned-agent grid and removes this upstream test. Retire this scenario.
 
 ## sidebar-pinned-links-006
 
@@ -50,6 +52,7 @@ Original test `Pinned links preserve the current agent and unread filter for [Mo
 - **Given** The sidebar is open on Nova’s chat, with read and unread conversations and the Research Agent pinned.
 - **When** The user activates Research Agent with the right mouse button.
 - **Then** The current URL remains Nova’s chat, and the read conversation stays hidden.
+- **Upstream change** `4e5707de` (#49556) retires pinned agents and the pinned-agent grid and removes this upstream test. Retire this scenario.
 
 ## sidebar-pinned-links-007
 
@@ -66,6 +69,7 @@ Original test `Pinned links preserve the current agent and unread filter for key
 - **Given** The sidebar is open on Nova’s chat, with Nova and Research Agent pinned.
 - **When** The user presses Enter on Nova, then focuses Research Agent and presses Enter.
 - **Then** Nova’s chat remains selected after activating Nova, and the URL changes to Research Agent’s chat after activating Research Agent.
+- **Upstream change** `4e5707de` (#49556) retires pinned agents and per-agent chat pages and removes this upstream test. Retire this scenario.
 
 ## sidebar-pinned-links-009
 

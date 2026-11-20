@@ -333,15 +333,12 @@
   },
   "appShell": {
     "pwaNavigation": {
-      "agentsUnavailable": "एजेंट लोड नहीं हो सके",
       "back": "पीछे",
       "backToChats": "चैट पर वापस जाएँ",
       "chatListUnavailable": "चैट लोड नहीं हो सकीं",
       "chats": "चैट",
       "me": "मैं",
-      "navigation": "मुख्य नेविगेशन",
-      "searchAgents": "एजेंट खोजें",
-      "switchAgent": "एजेंट बदलें"
+      "navigation": "मुख्य नेविगेशन"
     },
     "shortcutHelp": {
       "close": "कुंजीपटल शॉर्टकट बंद करें",
@@ -358,10 +355,8 @@
         "collapseProject": "Project संक्षिप्त करें",
         "expandProject": "Project विस्तृत करें",
         "newChat": "नई चैट",
-        "nextAgent": "अगला एजेंट",
         "nextThread": "अगला थ्रेड",
         "openFirstThread": "पहला थ्रेड खोलें",
-        "previousAgent": "पिछला एजेंट",
         "previousThread": "पिछला थ्रेड",
         "renameChat": "चैट का नाम बदलें",
         "scrollBottom": "नीचे स्क्रॉल करें",
@@ -2007,7 +2002,6 @@
     },
     "composer": {
       "add": "जोड़ें",
-      "agentSuggestions": "एजेंट",
       "configureModel": "मॉडल कॉन्फ़िगर करें",
       "create": {
         "addStyle": "शैली जोड़ें",
@@ -2019,7 +2013,7 @@
         "slideCountAuto": "स्वचालित",
         "slideCountRange": "{{range}} स्लाइड"
       },
-      "mentionHint": "एजेंट या चैट खोजें…",
+      "mentionHint": "चैट या प्रोजेक्ट खोजें…",
       "message": "संदेश",
       "modelForThisChat": "इस चैट के लिए मॉडल",
       "placeholder": "मुझसे वर्कफ़्लो ऑटोमेट करने और टास्क मैनेज करने के लिए कहें...",
@@ -2227,16 +2221,7 @@
       "sent": "नई चैट बनाई गई"
     },
     "forward": {
-      "action": "फ़ॉरवर्ड करें",
-      "agents": "एजेंट",
-      "back": "वापस",
       "composerPlaceholder": "संदेश जोड़ें",
-      "content": "सामग्री",
-      "description": "चुनी गई सामग्री पर काम जारी रखने के लिए उसे किसी एजेंट या चैट में भेजें।",
-      "noResults": "कोई एजेंट या चैट नहीं मिली",
-      "search": "एजेंट और चैट खोजें...",
-      "sent": "सफलतापूर्वक फ़ॉरवर्ड किया गया",
-      "threads": "चैट",
       "title": "फ़ॉरवर्ड करें"
     },
     "mail": {
@@ -3101,8 +3086,6 @@
           "menu": "बिक्री और व्यवसाय"
         }
       },
-      "description": "अपने एजेंटों के उपयोग के लिए तृतीय-पक्ष सेवाओं को कनेक्ट करें।",
-      "descriptionWithCount": "अपने एजेंटों के उपयोग के लिए {{value}} सेवाओं को कनेक्ट करें।",
       "directory": {
         "browse": "ब्राउज़ करें",
         "builtin": "बिल्ट-इन कनेक्टर",
@@ -5376,7 +5359,6 @@
         "startFailed": "निर्यात प्रारंभ करने में विफल"
       },
       "scope": {
-        "agentInstructions": "आपकी पहुँच वाले एजेंटों के निर्देश",
         "chatMessages": "आपके चैट संदेश",
         "chatThreads": "आपकी चैट बातचीत",
         "filesExcluded": "आर्टिफ़ैक्ट, अटैचमेंट और वर्कफ़्लो की सहायक फ़ाइलें शामिल नहीं हैं।",
@@ -6913,20 +6895,15 @@
       }
     },
     "common": {
-      "agents": "एजेंटों",
       "cancel": "रद्द करना",
       "close": "बंद करना",
-      "copyWorkflow": "वर्कफ़्लो कॉपी करें",
       "delete": "मिटाना",
       "deleteWorkflow": "वर्कफ़्लो हटाएँ",
       "instructions": "निर्देश",
       "manual": "नियमावली",
-      "others": "अन्य",
-      "pinned": "पिन की गई",
       "private": "निजी",
       "public": "सार्वजनिक",
       "settings": "सेटिंग्स",
-      "view": "देखना",
       "workflow": "वर्कफ़्लो",
       "workflows": "वर्कफ़्लो"
     },
@@ -6943,29 +6920,9 @@
       "createInChat": "चैट में बनाएं",
       "createInChatDescription": "जब कोई वर्कफ़्लो फ़िट न हो तो बातचीत से शुरुआत करें।",
       "createWorkflow": "वर्कफ़्लो बनाएँ",
-      "noAgents": "अभी तक कोई एजेंट नहीं",
-      "noAgentsFound": "कोई एजेंट नहीं मिला",
       "noWorkflows": "अभी तक कोई वर्कफ़्लो नहीं. जारी रखने के लिए चैट में एक बनाएं."
     },
     "detail": {
-      "copy": {
-        "agentFallback": "एजेंट",
-        "copied": "{{agent}} में कॉपी किया गया",
-        "copyAndRemove": "कॉपी करें और हटा दें",
-        "description": "इस वर्कफ़्लो को नए निजी वर्कफ़्लो के रूप में किसी अन्य एजेंट के पास कॉपी करें।",
-        "moved": "{{agent}} में ले जाया गया",
-        "moveDescription": "मूल को {{agent}} से हटा दिया गया।",
-        "noAgents": "अभी तक कोई अन्य एजेंट नहीं है",
-        "privateReady": "एक निजी प्रति तैयार है.",
-        "removalAlert": "इससे मूल हटा दिया जाता है",
-        "removalNoAutomations": "यह वर्कफ़्लो {{agent}} से हटा दिया गया है।",
-        "removalWithAutomations_one": "{{agent}} पर {{count}} ऑटोमेशन रोक दिया गया है और यह वर्कफ़्लो हटा दिया गया है।",
-        "removalWithAutomations_other": "{{agent}} पर {{count}} ऑटोमेशन रोक दिया गया है और यह वर्कफ़्लो हटा दिया गया है।",
-        "removeOriginal": "कॉपी करने के बाद मूल को {{agent}} से हटा दें",
-        "selectAgent": "एक एजेंट चुनें",
-        "title": "वर्कफ़्लो कॉपी करें",
-        "to": "में कॉपी"
-      },
       "delete": {
         "confirm": "{{title}} और सभी बाउंड ऑटोमेशन हटा दिए जाएंगे।",
         "dangerDescription": "इस वर्कफ़्लो और इसके ऑटोमेशन को हटाएँ। इस एक्शन को वापस नहीं किया जा सकता।",
@@ -6987,10 +6944,6 @@
         "upload": "टेक्स्ट फ़ाइलें अपलोड करें",
         "uploadAria": "वर्कफ़्लो फ़ाइलें अपलोड करें"
       },
-      "info": {
-        "copyDescription": "इस वर्कफ़्लो को किसी अन्य एजेंट के पास कॉपी करें.",
-        "copyTitle": "वर्कफ़्लो कॉपी करें"
-      },
       "metadata": {
         "agent": "एजेंट",
         "agentDescription": "यह वर्कफ़्लो इस एजेंट का है.",
@@ -7011,12 +6964,7 @@
       "notFound": "वर्कफ़्लो नहीं मिला.",
       "refineWith": "{{agent}} के साथ परिष्कृत करें",
       "sectionNavigation": "वर्कफ़्लो विवरण अनुभाग",
-      "shadow": {
-        "end": "आपके लिए। यह वर्कफ़्लो समान-स्लग प्राथमिकता नियम द्वारा छायांकित है।",
-        "resolvesTo": "वर्तमान में संकल्प करता है"
-      },
       "visibility": {
-        "adminRequired": "किसी ऐसे एजेंट के अंतर्गत वर्कफ़्लो प्रकाशित करने के लिए जिसके आप स्वामी नहीं हैं, संगठन व्यवस्थापक अनुमति की आवश्यकता होती है।",
         "automationWarning": "ऑटोमेशन बंद हो जाएगा",
         "confirmDescription": "यह एक खतरनाक ऑपरेशन है. हालाँकि यह वर्कफ़्लो निजी है, इस पर बने अन्य सदस्यों के ऑटोमेशन चलना बंद कर देते हैं।",
         "confirmTitle": "इस वर्कफ़्लो को निजी बनाएं?",
@@ -7044,9 +6992,7 @@
     },
     "list": {
       "actionRequired": "कार्रवाई आवश्यक",
-      "agentEmpty": "इस एजेंट के रूप में अभी तक कोई वर्कफ़्लो नहीं चलता है।",
       "all": "सभी",
-      "allAgents": "सभी एजेंट",
       "automated": "स्वचालित",
       "automations": "ऑटोमेशन",
       "createdBy": "के द्वारा बनाई गई",
@@ -7064,8 +7010,6 @@
       "openRecovery": "{{title}} की रिकवरी खोलें",
       "ownerLoading": "लेखक लोड हो रहा है…",
       "ownerUnavailable": "लेखक उपलब्ध नहीं है",
-      "runsAs": "के रूप में चलता है",
-      "runsAsAria": "{{agent}} के रूप में चलता है",
       "section": {
         "event": "ऑटोमेशन पर",
         "later": "बाद में",

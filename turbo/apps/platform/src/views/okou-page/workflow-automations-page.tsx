@@ -1,3 +1,4 @@
+import { detachedNavigateTo$ } from "../../signals/route.ts";
 import {
   useGet,
   useLastLoadable,
@@ -37,22 +38,16 @@ import { useTranslation } from "react-i18next";
 import { i18n } from "../../i18n/index.ts";
 import { defaultAgentId$, agents$ } from "../../signals/agent.ts";
 import {
-  selectedWorkflowAutomationAgentId$,
-  setWorkflowAutomationAgentQuery$,
   setWorkflowAutomationDialogOpen$,
   startCreateWorkflowFromAutomationDialog$,
-  workflowAutomationAgentSelectionLocked$,
-  workflowAutomationAgentQuery$,
   workflowAutomationDialogIntent$,
   workflowAutomationDialogOpen$,
 } from "../../signals/automation-page/workflow-automation-dialog.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import { navigateToAgentChat$ } from "../../signals/okou-page/agent-chat-navigation.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
 import { Link as RouterLink } from "../router/link.tsx";
 import { shouldHandleLinkClick } from "../router/link-click.ts";
 import {
-  singleAgentWorkflows$,
   allVisibleWorkflows$,
   setWorkflowAutomationEnabled$,
   workflowWebhookUpgradeDialogSource$,
@@ -62,22 +57,12 @@ import {
   atTimeInTimezone,
   cronWallTimeInTimezone,
 } from "../../signals/okou-page/cron.ts";
-import { pinnedAgentIds$ } from "../../signals/okou-page/pinned-agents.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import {
-  AgentDialogAgentButton,
-  agentDialogMatchesQuery,
-  AgentDialogSearch,
-  AgentDialogSection,
-} from "./sidebar-dialogs.tsx";
-import { AvatarFromUrl } from "./sidebar-shared.tsx";
-import {
-  agentLabel,
   formatWorkflowIntervalSeconds,
   githubAutomationFilterValueLabel,
   gmailAutomationSummary,
   gmailAutomationTitle,
-  labelInitials,
   workflowTitle,
 } from "../workflows-page/workflow-shared.tsx";
 import {
@@ -587,32 +572,6 @@ export function automationTypeLabel(
   });
 }
 
-function WorkflowAgentAvatar({
-  agent,
-  label,
-}: {
-  readonly agent: AgentResponse | undefined;
-  readonly label: string;
-}) {
-  const className =
-    "h-5 w-5 shrink-0 overflow-hidden rounded-full border border-border/60 bg-gray-50 object-cover object-top text-[9px] font-semibold text-muted-foreground";
-  if (agent?.avatarUrl) {
-    return (
-      <AvatarFromUrl
-        avatarUrl={agent.avatarUrl}
-        alt={label}
-        className={className}
-        size={20}
-      />
-    );
-  }
-  return (
-    <span className={cn("inline-flex items-center justify-center", className)}>
-      {labelInitials(label)}
-    </span>
-  );
-}
-
 export function AutomationListIcon({
   automation,
   size = "md",
@@ -742,7 +701,6 @@ export function WorkflowAutomationEnabledSwitch({
 
 function WorkflowSelectionStep({
   workflows,
-  agents,
   loading,
   onClose,
   onCreateWorkflow,
@@ -754,7 +712,6 @@ function WorkflowSelectionStep({
   readonly onCreateWorkflow: () => void;
 }) {
   const { t } = useTranslation();
-  const singleAgent = useLastResolved(singleAgentWorkflows$);
 
   if (loading) {
     return (
@@ -801,10 +758,6 @@ function WorkflowSelectionStep({
       {workflows.length > 0 ? (
         <div className="grid gap-2">
           {workflows.map((workflow) => {
-            const label = agentLabel(workflow);
-            const agent = agents.find((item) => {
-              return item.agentId === workflow.agentId;
-            });
             return (
               <RouterLink
                 key={workflow.id}
@@ -822,15 +775,7 @@ function WorkflowSelectionStep({
                     {workflowTitle(workflow)}
                   </span>
                   <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-sm text-muted-foreground">
-                    {!singleAgent && (
-                      <WorkflowAgentAvatar agent={agent} label={label} />
-                    )}
-                    {!singleAgent && (
-                      <span className="max-w-[10rem] shrink-0 truncate">
-                        {label}
-                      </span>
-                    )}
-                    {singleAgent && workflow.shadowedBy ? (
+                    {workflow.shadowedBy ? (
                       <span>
                         {t(($) => {
                           return $.workflows.workspace.overridden;
@@ -839,11 +784,6 @@ function WorkflowSelectionStep({
                     ) : null}
                     {workflow.description ? (
                       <>
-                        {!singleAgent && (
-                          <span className="select-none text-muted-foreground/50">
-                            ·
-                          </span>
-                        )}
                         <span className="min-w-0 truncate">
                           {workflow.description}
                         </span>
@@ -866,126 +806,6 @@ function WorkflowSelectionStep({
   );
 }
 
-function AgentSelectionStep({
-  agents,
-  onSelectAgent,
-}: {
-  readonly agents: readonly AgentResponse[];
-  readonly onSelectAgent: (agentId: string) => void;
-}) {
-  const { t } = useTranslation();
-  const query = useGet(workflowAutomationAgentQuery$);
-  const setQuery = useSet(setWorkflowAutomationAgentQuery$);
-  const pinnedIds = useLastResolved(pinnedAgentIds$) ?? [];
-  const pinnedIdSet = new Set(pinnedIds);
-  const pinned = agents.filter((agent) => {
-    return pinnedIdSet.has(agent.agentId);
-  });
-  const unpinned = agents.filter((agent) => {
-    return !pinnedIdSet.has(agent.agentId);
-  });
-  const trimmedQuery = query.trim().toLowerCase();
-  const filteredPinned = trimmedQuery
-    ? pinned.filter((agent) => {
-        return agentDialogMatchesQuery(agent, trimmedQuery);
-      })
-    : pinned;
-  const filteredUnpinned = trimmedQuery
-    ? unpinned.filter((agent) => {
-        return agentDialogMatchesQuery(agent, trimmedQuery);
-      })
-    : unpinned;
-
-  if (agents.length === 0) {
-    return (
-      <div className="flex min-h-0 flex-1 flex-col">
-        <AgentDialogSearch query={query} setQuery={setQuery} />
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-4">
-          <p className="px-1 py-2 text-xs text-muted-foreground">
-            {t(($) => {
-              return $.workflows.createDialog.noAgents;
-            })}
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <AgentDialogSearch query={query} setQuery={setQuery} />
-      <div className="min-h-0 flex-1 overflow-y-auto pb-2">
-        {filteredPinned.length > 0 ? (
-          <AgentDialogSection
-            label={t(($) => {
-              return $.workflows.common.pinned;
-            })}
-          >
-            {filteredPinned.map((agent) => {
-              return (
-                <div
-                  key={agent.agentId}
-                  className="flex items-center gap-2 rounded-lg px-1 py-2 transition-colors hover:bg-state-hover"
-                >
-                  <AgentDialogAgentButton
-                    agent={agent}
-                    onSelect={() => {
-                      onSelectAgent(agent.agentId);
-                    }}
-                  />
-                </div>
-              );
-            })}
-          </AgentDialogSection>
-        ) : null}
-
-        {filteredUnpinned.length > 0 ? (
-          <AgentDialogSection
-            label={
-              filteredPinned.length > 0
-                ? t(($) => {
-                    return $.workflows.common.others;
-                  })
-                : t(($) => {
-                    return $.workflows.common.agents;
-                  })
-            }
-            className="pb-3"
-          >
-            {filteredUnpinned.map((agent) => {
-              return (
-                <div
-                  key={agent.agentId}
-                  className="flex items-center gap-2 rounded-lg px-1 py-2 transition-colors hover:bg-state-hover"
-                >
-                  <AgentDialogAgentButton
-                    agent={agent}
-                    onSelect={() => {
-                      onSelectAgent(agent.agentId);
-                    }}
-                  />
-                </div>
-              );
-            })}
-          </AgentDialogSection>
-        ) : null}
-
-        {trimmedQuery &&
-        filteredPinned.length === 0 &&
-        filteredUnpinned.length === 0 ? (
-          <div className="px-5 pb-5">
-            <p className="px-1 py-2 text-xs text-muted-foreground">
-              {t(($) => {
-                return $.workflows.createDialog.noAgentsFound;
-              })}
-            </p>
-          </div>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
 function WorkflowAutomationDialogFooter({
   onCancel,
 }: {
@@ -1004,8 +824,6 @@ function WorkflowAutomationDialogFooter({
 }
 
 export function CreateWorkflowAutomationDialog() {
-  const pageSignal = useGet(pageSignal$);
-  const singleAgent = useLastResolved(singleAgentWorkflows$);
   const defaultAgentId = useLastResolved(defaultAgentId$);
   const { t } = useTranslation();
   const agentsLoadable = useLastLoadable(agents$);
@@ -1017,34 +835,22 @@ export function CreateWorkflowAutomationDialog() {
   const open = useGet(workflowAutomationDialogOpen$);
   const setOpen = useSet(setWorkflowAutomationDialogOpen$);
   const intent = useGet(workflowAutomationDialogIntent$);
-  const agentSelectionLocked = useGet(workflowAutomationAgentSelectionLocked$);
-  const selectedAgentIdState = useGet(selectedWorkflowAutomationAgentId$);
   const startCreateWorkflow = useSet(startCreateWorkflowFromAutomationDialog$);
-  const navigateToAgentChat = useSet(navigateToAgentChat$);
-  const selectedAgentId = selectedAgentIdState;
-  const selectedAgent =
-    agents.find((agent) => {
-      return agent.agentId === selectedAgentId;
-    }) ?? null;
+  const navigateHome = useSet(detachedNavigateTo$);
 
-  const selectAgent = (agentId: string) => {
+  const openWorkspaceChat = () => {
     const prompt =
       intent === "automation-chat"
         ? CREATE_AUTOMATION_CHAT_PROMPT
         : CREATE_WORKFLOW_WITH_CHAT_PROMPT;
     const searchParams = new URLSearchParams({ prompt });
     setOpen(false);
-    detach(
-      navigateToAgentChat(agentId, { searchParams }, pageSignal),
-      Reason.DomCallback,
-    );
+    navigateHome(ROUTES.home, { searchParams });
   };
 
   const creatingAutomationInChat = intent === "automation-chat";
   const creatingWorkflow = intent === "workflow";
   const selectingExistingWorkflow = intent === "automation";
-  const agentChoices =
-    agentSelectionLocked && selectedAgent ? [selectedAgent] : agents;
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -1067,7 +873,7 @@ export function CreateWorkflowAutomationDialog() {
                   })}
           </DialogTitle>
           <DialogDescription className="mt-1 text-sm text-muted-foreground">
-            {singleAgent && !selectingExistingWorkflow
+            {!selectingExistingWorkflow
               ? t(($) => {
                   return $.workflows.workspace.createDescription;
                 })
@@ -1095,16 +901,12 @@ export function CreateWorkflowAutomationDialog() {
             }}
             onCreateWorkflow={startCreateWorkflow}
           />
-        ) : singleAgent ? (
+        ) : (
           <div className="px-5 pb-4">
             <Button
               variant="neutral"
               disabled={!defaultAgentId}
-              onClick={() => {
-                if (defaultAgentId) {
-                  selectAgent(defaultAgentId);
-                }
-              }}
+              onClick={openWorkspaceChat}
             >
               {creatingAutomationInChat
                 ? t(($) => {
@@ -1115,11 +917,6 @@ export function CreateWorkflowAutomationDialog() {
                   })}
             </Button>
           </div>
-        ) : (
-          <AgentSelectionStep
-            agents={agentChoices}
-            onSelectAgent={selectAgent}
-          />
         )}
 
         <WorkflowAutomationDialogFooter

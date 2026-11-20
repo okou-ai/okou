@@ -18,6 +18,7 @@ Original test `Home preserves a prompt handoff (My Okou=false)`. [Registration](
 - **Given** A prompt handoff for “Draft a launch plan” is present, and the My Okou feature is disabled.
 - **When** The user opens Home.
 - **Then** The prompt appears in the message composer, and the URL navigates to the current organization's default agent chat.
+- **Upstream change** `4e5707de` (#49556) makes My Okou permanent, so Home keeps a prompt handoff at `/` instead of forwarding it to the default agent's `/agents/<id>/chat` route, and removes this upstream test. Retire this scenario; prefilling the prompt on Home remains covered by home-route-003.
 
 ## home-route-003
 
@@ -26,3 +27,4 @@ Original test `Home preserves a prompt handoff (My Okou=true)`. [Registration](h
 - **Given** A prompt handoff for “Draft a launch plan” is present, and the My Okou feature is enabled.
 - **When** The user opens Home.
 - **Then** The prompt appears in the message composer, and the URL remains at /.
+- **Upstream change** `4e5707de` (#49556) removes the My Okou feature switch and makes this behavior permanent; the upstream test is now `Home preserves a prompt handoff` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/okou-page/__tests__/home-route.test.tsx#L78)). Rebuild this scenario without any My Okou switch setup, expecting the prompt in the composer and the URL to stay at `/`.

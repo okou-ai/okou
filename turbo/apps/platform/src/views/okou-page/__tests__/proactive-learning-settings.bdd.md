@@ -11,6 +11,7 @@ Original test `groups proactive preferences in Preference and keeps their opt-in
 - **When** The user enables Learning and then Suggestions.
 - **Then** The three switches appear in the order Morning brief, Suggestions, Learning; enabling either switch leaves the other two unchanged.
 - **Upstream change** `ec5330db` (#49438) removes the Learning switch and its rollout; the upstream test moved to `proactive-settings.test.tsx` as `groups proactive preferences in Preference and keeps Suggestions independent of Morning Brief` ([Registration](https://github.com/okou-ai/okou/blob/ec5330dbee67ad46e9dee4e000ba92863b223681/turbo/apps/platform/src/views/okou-page/__tests__/proactive-settings.test.tsx#L9)). Rebuild this scenario with Morning brief and Suggestions in that order; enabling Suggestions leaves Morning brief unchanged.
+- **Upstream change** `4e5707de` (#49556) makes My Okou permanent, so with the Suggestions rollout on, Proactive preferences move from Preference to the My Okou settings section; the upstream test is now `groups proactive preferences in My Okou and keeps Suggestions independent of Morning Brief` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/okou-page/__tests__/proactive-settings.test.tsx#L41)). Rebuild this scenario from `/?settings=my-okou` (My Okou heading), checking that Morning brief and Suggestions are present and that enabling Suggestions leaves Morning brief unchanged.
 
 ## proactive-learning-settings-002
 

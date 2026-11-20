@@ -26,18 +26,18 @@ function workspaceChoices(): string[] {
   );
 }
 
-function expectAgentsPage(): void {
-  expect(location.pathname).toBe("/agents");
+function expectWorkflowsPage(): void {
+  expect(location.pathname).toBe("/workflows");
   expect(location.search).toBe("");
   expect(
-    screen.getByRole("heading", { name: "Agents", level: 1 }),
+    screen.getByRole("heading", { name: "Workflows", level: 1 }),
   ).toBeInTheDocument();
 }
 
 test("A temporary authentication refresh keeps the active workspace", async () => {
   await setupPage({
     context,
-    path: "/agents",
+    path: "/workflows",
     auth: {
       user: { id: "user_avery", fullName: "Avery Stone" },
       organization: {
@@ -47,7 +47,7 @@ test("A temporary authentication refresh keeps the active workspace", async () =
     },
   });
   await expect(
-    screen.findByRole("heading", { name: "Agents", level: 1 }),
+    screen.findByRole("heading", { name: "Workflows", level: 1 }),
   ).resolves.toBeInTheDocument();
   click(await findFastControl("button", "Switch workspace"));
   await expect(screen.findByRole("menu")).resolves.toHaveTextContent("Org A");
@@ -61,7 +61,7 @@ test("A temporary authentication refresh keeps the active workspace", async () =
   await waitFor(() => {
     expect(workspaceChoices()).toStrictEqual(["Org A", "Org B"]);
   });
-  expectAgentsPage();
+  expectWorkflowsPage();
 
   clerk.organization({
     activeOrg: { id: "org_a", name: "Org A" },
@@ -73,5 +73,5 @@ test("A temporary authentication refresh keeps the active workspace", async () =
     expect(workspaceChoices()).toStrictEqual(["Org B"]);
   });
   expect(screen.getByRole("menu")).toHaveTextContent("Org A");
-  expectAgentsPage();
+  expectWorkflowsPage();
 });

@@ -71,7 +71,6 @@ async function openBatch(path = batchPath()) {
     host: "app.okou.ai",
     featureSwitches: {
       [FeatureSwitchKey.BatchConnectorPermissions]: true,
-      [FeatureSwitchKey.SingleAgent]: false,
     },
   });
 }

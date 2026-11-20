@@ -31,7 +31,7 @@ function ComposerProjectMenuItems({
   readonly project: ComposerProjectSignals;
 }) {
   const { t } = useTranslation();
-  const projects = useLastResolved(projects$) ?? [];
+  const projects = useGet(projects$);
   const select = useSet(project.select$);
   const pageSignal = useGet(pageSignal$);
   const openEditor = useSet(openProjectEditor$);
@@ -114,7 +114,7 @@ function ComposerProjectChip({
 }) {
   const { t } = useTranslation();
   const available = useComposerProjectAvailable(project);
-  const projects = useLastResolved(projects$) ?? [];
+  const projects = useGet(projects$);
   const select = useSet(project.select$);
   const pageSignal = useGet(pageSignal$);
   const current = projects.find((item) => {

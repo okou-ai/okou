@@ -18,6 +18,7 @@ Original test `Hand off from the pin manager to the create-agent dialog and back
 - **Given** The sidebar has Nova pinned and the pin manager is open.
 - **When** The user chooses New agent, then presses Escape in the create-agent dialog.
 - **Then** The create-agent dialog opens with its Name field focused, replacing the pin manager. Escape closes it and returns focus to the pin control.
+- **Upstream change** `4e5707de` (#49556) retires the Pin an agent manager and the create-agent dialog and deletes this upstream test file. Retire this scenario.
 
 ## sidebar-command-interactions-003
 
@@ -26,6 +27,7 @@ Original test `Create the first agent from an empty pin manager with Enter`. [Re
 - **Given** The user has only the default agent, and the pin manager has no other agents to show.
 - **When** The user selects the empty manager’s next command with ArrowDown and presses Enter.
 - **Then** The create-agent dialog opens.
+- **Upstream change** `4e5707de` (#49556) retires the Pin an agent manager and agent creation and deletes this upstream test file. Retire this scenario.
 
 ## sidebar-command-interactions-004
 

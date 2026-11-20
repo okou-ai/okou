@@ -6,7 +6,6 @@ import { env, mockEnv } from "../../../lib/env";
 import { testContext } from "../../../__tests__/test-context";
 import { createBddApi, expectApiError } from "./helpers/api-bdd";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const context = testContext();
 
@@ -190,34 +189,19 @@ describe("MISC-02: preferences, push subscription, user export, and empty logs",
 describe("MISC-03: workflows lifecycle through public API", () => {
   it("chains create, list, read, update, delete, and post-delete read", async () => {
     const { api, base, admin, member } = testActors();
-    // Both members exercise retained named-Agent visibility and permissions.
-    for (const actor of [admin, member]) {
-      if (!actor.orgId) {
-        throw new Error("Expected a retained Agent workspace");
-      }
-      await updateFeatureSwitchesForUser(
-        context,
-        { ...actor, orgId: actor.orgId },
-        { singleAgent: false },
-      );
-    }
     const memberWorkflowName = `bdd-member-workflow-${randomUUID().slice(0, 8)}`;
     const workflowName = `bdd-workflow-${randomUUID().slice(0, 8)}`;
 
-    // Workflows are agent-scoped (1:N) and creating one requires
-    // write-permission on the target agent (owner, or org admin on a public
-    // agent). Admin owns the agent it creates on; the member creates its
-    // private workflow on its own agent.
-    const agent = await base.createAgent(admin, {
-      displayName: "BDD workflows agent",
-    });
-    const memberAgent = await base.createAgent(member, {
-      displayName: "BDD member workflows agent",
-    });
+    await base.completeOnboarding(admin);
+    await base.completeOnboarding(member);
+    const { defaultAgentId } = await base.readOnboardingStatus(admin);
+    if (!defaultAgentId) {
+      throw new Error("Expected a workspace default executor");
+    }
 
     const memberCreated = await api.createWorkflow(
       member,
-      memberAgent.agentId,
+      defaultAgentId,
       memberWorkflowName,
       { content: "# Member private workflow" },
       [201],
@@ -237,14 +221,14 @@ describe("MISC-03: workflows lifecycle through public API", () => {
 
     const invalidCreate = await api.requestCreateInvalidWorkflow(
       admin,
-      agent.agentId,
+      defaultAgentId,
       [400],
     );
     expectApiError(invalidCreate.body);
 
     const created = await api.createWorkflow(
       admin,
-      agent.agentId,
+      defaultAgentId,
       workflowName,
       { content: "# BDD Workflow\n\nCreated through API." },
       [201],

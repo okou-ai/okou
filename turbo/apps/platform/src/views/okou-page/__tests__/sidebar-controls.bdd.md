@@ -10,6 +10,7 @@ Original test `Move to the next relevant agent with a shortcut`. [Registration](
 - **Given** The user is viewing Research Agent’s chat, and Support Agent has an unread conversation titled “Support escalation.”
 - **When** The user presses Ctrl+Shift+}.
 - **Then** The app navigates to Support Agent’s chat and shows “Support escalation” in the sidebar.
+- **Upstream change** `4e5707de` (#49556) removes per-agent chat pages and the keyboard shortcuts that moved between agents, and removes this upstream test. Retire this scenario.
 
 ## sidebar-controls-002
 
@@ -34,6 +35,7 @@ Original test `Keep a pending pin save owned while the manager closes and reopen
 - **Given** A pin save for Research Agent is pending while the pin manager is open.
 - **When** The user closes and reopens the manager before the save completes, then waits for it to finish.
 - **Then** While the save is pending, Support Agent is disabled in the reopened manager. Once the save completes, Research Agent appears in the grid and Support Agent becomes available to pin.
+- **Upstream change** `4e5707de` (#49556) retires pinned agents and the Pin an agent manager and removes this upstream test. Retire this scenario.
 
 ## sidebar-controls-005
 
@@ -74,6 +76,7 @@ Original test `Refresh the thread unread indicator`. [Registration](https://gith
 - **Given** Nova’s sidebar indicator and a conversation’s indicator both initially have no unread state.
 - **When** The server changes the state to unread and an indicator-change notification arrives.
 - **Then** The conversation’s unread indicator appears.
+- **Upstream change** `4e5707de` (#49556) retires pinned agents and the Agents page, so only the thread variant remains and it starts on the My Okou chat page at `/`; the upstream test is now `Refresh the thread unread indicator` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/okou-page/__tests__/sidebar-controls.test.tsx#L191)). Rebuild this scenario from `/`, observing only the conversation's Unread label.
 
 ## sidebar-controls-010
 
@@ -82,6 +85,7 @@ Original test `Refresh the running indicator after the indicator notification wi
 - **Given** A conversation is initially marked unread, with no chat content loaded.
 - **When** The server changes it to running and sends an indicator notification, then changes it back to unread and sends another notification after the refresh throttle window.
 - **Then** The sidebar changes from Unread to Running and back to Unread without warming the chat.
+- **Upstream change** `4e5707de` (#49556) retires the Agents page (`/agents` now redirects to My Okou settings at `/?settings=my-okou`), so the upstream test starts on the My Okou chat page at `/`; the upstream test is now `Refresh the running indicator after the %s notification without warming chats` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/okou-page/__tests__/sidebar-controls.test.tsx#L239)). Rebuild this scenario from `/`; the Unread, Running, Unread sequence and the no-warming check are unchanged.
 
 ## sidebar-controls-011
 
@@ -98,6 +102,7 @@ Original test `Refresh the latest unread state after an indicator burst with a f
 - **Given** A conversation is initially not unread, and an indicator refresh request is in flight when the server changes its state.
 - **When** The server changes it to unread and sends 20 more indicator notifications; the leading refresh fails with a 503 response.
 - **Then** After the notification burst, the sidebar shows the latest unread state.
+- **Upstream change** `4e5707de` (#49556) retires the Agents page (`/agents` now redirects to My Okou settings at `/?settings=my-okou`), so the upstream test starts on the My Okou chat page at `/`; the upstream test is now `Refresh the latest unread state after an indicator burst with a failed leading fetch: %s` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/okou-page/__tests__/sidebar-controls.test.tsx#L302)). Rebuild this scenario from `/`; the burst and final unread state are unchanged.
 
 ## sidebar-controls-013
 
@@ -122,6 +127,7 @@ Original test `Reorder pinned agents while keeping Nova first`. [Registration](h
 - **Given** Six pinned agents appear in this order: Nova, Research Agent, Support Agent, Operations Agent, Analytics Agent, Billing Agent.
 - **When** The user drags Support Agent onto Billing Agent, then tries to drag Research Agent onto Nova.
 - **Then** Support Agent moves to the end, after Billing Agent, while Nova remains first. The attempted drop onto Nova is rejected and the order stays unchanged.
+- **Upstream change** `4e5707de` (#49556) retires pinned agents and the pinned-agent grid and removes this upstream test. Retire this scenario.
 
 ## sidebar-controls-016
 
@@ -138,3 +144,4 @@ Original test `Search, pin, and open an agent from the pin manager`. [Registrati
 - **Given** The pin manager lists Research Agent and Support Agent, and a Research Agent conversation titled “Research kickoff” exists.
 - **When** The user searches for “support,” searches for “ops,” clears the search, pins Research Agent, closes the manager, and opens Research Agent from the grid.
 - **Then** The first search shows Support Agent but not Research Agent; “ops” shows no results. Clearing search restores Research Agent. After pinning, the manager offers Unpin, and opening the agent shows “Chats with Research Agent” and “Research kickoff” in the sidebar.
+- **Upstream change** `4e5707de` (#49556) retires pinned agents, the Pin an agent manager, and per-agent chat pages, and removes this upstream test. Retire this scenario.

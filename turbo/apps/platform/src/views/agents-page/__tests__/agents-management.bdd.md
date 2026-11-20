@@ -10,6 +10,7 @@ Original test `Pressing Enter defaults to a private agent from Private with 1 pu
 - **Given** The agent list has one public agent, and the Private list is selected.
 - **When** I open agent creation, enter a responsibility and a name with surrounding spaces, then press Enter.
 - **Then** A single private agent named “Private Analyst” is created. The dialog closes, the Private list shows the new agent, and switching to Public does not show it.
+- **Upstream change** `4e5707de` (#49556) retires the Agents list page and its agent creation dialog (`/agents` now redirects to `/?settings=my-okou`) and removes this upstream test. Retire this scenario.
 
 ## agents-management-002
 
@@ -34,6 +35,7 @@ Original test `Confirming an IME candidate (composing) keeps agent creation open
 - **Given** Agent creation is open with a responsibility entered, and I am composing a Chinese name with an input method editor.
 - **When** I confirm the candidate by pressing Enter while composition is active.
 - **Then** The candidate remains in the focused name field and the creation dialog stays open. Pressing Enter again after composition ends creates one agent with that name and closes the dialog.
+- **Upstream change** `4e5707de` (#49556) retires the Agents list page and its agent creation dialog (`/agents` now redirects to `/?settings=my-okou`) and removes this upstream test. Retire this scenario.
 
 ## agents-management-005
 
@@ -50,6 +52,7 @@ Original test `Blank Enter and cancelling a named draft do not create an agent`.
 - **Given** Agent creation is open with a responsibility entered.
 - **When** I press Enter with a whitespace-only name, then enter a draft name, change visibility to Public, cancel, and reopen creation for Private.
 - **Then** The blank name cannot be submitted. Cancelling creates no agent, and the reopened form has blank name and responsibility fields with Private visibility selected.
+- **Upstream change** `4e5707de` (#49556) retires the Agents list page and its agent creation dialog (`/agents` now redirects to `/?settings=my-okou`) and removes this upstream test. Retire this scenario.
 
 ## agents-management-007
 
@@ -58,6 +61,7 @@ Original test `A pending create disables submission and adds only one agent card
 - **Given** Agent creation is open with a valid name and responsibility, and the create request is pending.
 - **When** I try to submit again and click the pending submission control before the request completes.
 - **Then** The name and responsibility fields, Cancel control, and submission control are disabled while pending. After completion, exactly one agent card named “Pending analyst” is present.
+- **Upstream change** `4e5707de` (#49556) retires the Agents list page and its agent creation dialog (`/agents` now redirects to `/?settings=my-okou`) and removes this upstream test. Retire this scenario.
 
 ## agents-management-008
 
@@ -74,6 +78,7 @@ Original test `Creating an agent requires a multi-line responsibility`. [Registr
 - **Given** Agent creation is open and the name is filled in.
 - **When** I try to submit with no responsibility, then with whitespace-only responsibility, then enter a two-line responsibility.
 - **Then** The responsibility field is required and submission remains disabled for empty or whitespace-only content. Submission becomes enabled after entering both lines, and the dialog remains open.
+- **Upstream change** `4e5707de` (#49556) retires the Agents list page and its agent creation dialog (`/agents` now redirects to `/?settings=my-okou`) and removes this upstream test. Retire this scenario.
 
 ## agents-management-010
 
@@ -98,6 +103,7 @@ Original test `Open an agent's management page from its card`. [Registration](ht
 - **Given** The agent list contains a public agent named “Marketing Bot.”
 - **When** I open its card.
 - **Then** Its management page displays the “Marketing Bot” heading, and the document title is “Marketing Bot | Okou”.
+- **Upstream change** `4e5707de` (#49556) retires the Agents list page and its agent cards (`/agents` now redirects to `/?settings=my-okou`) and removes this upstream test. Retire this scenario; a non-default agent's management page remains reachable only by its direct `/agents/<id>` URL, covered by `agents-management-013` (upstream `Review an agent's profile and instructions`, [Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/agents-page/__tests__/agents-management.test.tsx#L147)).
 
 ## agents-management-013
 

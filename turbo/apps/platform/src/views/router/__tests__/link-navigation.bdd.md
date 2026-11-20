@@ -10,6 +10,7 @@ Original test `An unknown route offers both of its destinations`. [Registration]
 - **Given** A user visits an unknown route.
 - **When** The not-found page loads and the user selects Back to home.
 - **Then** The page offers Back to home and Browse workflows destinations with the expected paths; selecting Back to home leaves the not-found page and shows the Agents navigation.
+- **Upstream change** `4e5707de` (#49556) removes the Agents item from the navigation rail; the upstream test is now `An unknown route offers both of its destinations` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/router/__tests__/link-navigation.test.tsx#L36)), which checks for Workflows instead. Rebuild this scenario expecting the Workflows navigation item after selecting Back to home.
 
 ## link-navigation-002
 
@@ -42,6 +43,7 @@ Original test `Meta-click leaves the internal destination to the browser`. [Regi
 - **Given** A user is on an agent chat page and the Agents navigation link targets /agents.
 - **When** The user Meta-clicks the link.
 - **Then** The app remains on the chat page with its navigation visible and the link destination remains /agents; native browser-context behavior is not verified here.
+- **Upstream change** `4e5707de` (#49556) removes the Agents rail item and per-agent chat pages; the upstream row is now `Meta-click leaves the internal destination to the browser` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/router/__tests__/link-navigation.test.tsx#L161)), which starts on Home (`/`) and Meta-clicks the Workflows link. Rebuild this scenario on `/` with the Workflows link, expecting the app to stay on `/` and the link to keep targeting `/workflows`.
 
 ## link-navigation-006
 

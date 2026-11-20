@@ -1,13 +1,10 @@
-import { command, computed, state } from "ccstate";
-import { currentChatAgentId$, currentChatAgentScope$ } from "../agent-chat.ts";
-import { sortedAgents$ } from "../agent.ts";
+import { computed } from "ccstate";
+import { currentChatAgentScope$ } from "../agent-chat.ts";
 import { unreadAgentIds$ } from "../chat-page/chat-thread-indicators-from-worker.ts";
 import { chatThreadOnlyArchived$ } from "../chat-page/chat-thread-only-archived.ts";
 import { chatThreadOnlyMuted$ } from "../chat-page/chat-thread-only-muted.ts";
 import { chatThreadOnlyUnread$ } from "../chat-page/chat-thread-only-unread.ts";
 import { createSidebarChatThreadScrollSignals } from "../chat-page/sidebar-chat-thread-scroll.ts";
-import { detachedNavigateTo$ } from "../route.ts";
-import { rankAgentsForSearch } from "./workspace-chat-search.ts";
 
 // A 56px touch row and its 4px gutter share one virtual geometry.
 export const PWA_CHAT_THREAD_ROW_HEIGHT = 60;
@@ -25,51 +22,6 @@ export const pwaChatThreadScrollSignals$ = computed((get) => {
   });
 });
 
-const internalAgentSwitcherOpen$ = state(false);
-const internalAgentQuery$ = state("");
-
-export const pwaAgentSwitcherOpen$ = computed((get) => {
-  return get(internalAgentSwitcherOpen$);
-});
-
-export const pwaAgentQuery$ = computed((get) => {
-  return get(internalAgentQuery$);
-});
-
-export const setPwaAgentSwitcherOpen$ = command(({ set }, open: boolean) => {
-  set(internalAgentSwitcherOpen$, open);
-  if (!open) {
-    set(internalAgentQuery$, "");
-  }
-});
-
-export const setPwaAgentQuery$ = command(({ set }, query: string) => {
-  set(internalAgentQuery$, query);
-});
-
 export const pwaHasUnreadChats$ = computed(async (get) => {
   return (await get(unreadAgentIds$)).size > 0;
-});
-
-// The list already shows the current agent's unread chats, so the switcher
-// only points at unread chats it hides.
-export const pwaOtherAgentsHaveUnreadChats$ = computed(async (get) => {
-  const unreadAgentIds = await get(unreadAgentIds$);
-  const currentAgentId = await get(currentChatAgentId$);
-  return [...unreadAgentIds].some((agentId) => {
-    return agentId !== currentAgentId;
-  });
-});
-
-export const pwaAgentOptions$ = computed(async (get) => {
-  const agents = await get(sortedAgents$);
-  const query = get(internalAgentQuery$).trim().toLowerCase();
-  return query ? rankAgentsForSearch(agents, query) : agents;
-});
-
-export const selectPwaAgent$ = command(({ set }, agentId: string) => {
-  set(setPwaAgentSwitcherOpen$, false);
-  set(detachedNavigateTo$, "/agents/:agentId/chat", {
-    pathParams: { agentId },
-  });
 });

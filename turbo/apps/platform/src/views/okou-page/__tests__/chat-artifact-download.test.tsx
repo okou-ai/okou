@@ -100,7 +100,7 @@ test.each([
     });
     expect(browser.blobForUrl(download!.url)).toBe(download?.blob);
 
-    click(await findNamedButton("New chat"));
+    click(await findNamedLink("Workflows"));
     await waitFor(() => {
       expect(location.pathname).not.toBe(`/chats/${ATTACHMENT_THREAD_ID}`);
       expect(browser.blobForUrl(download!.url)).toBeNull();

@@ -6,12 +6,8 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "../sidebar-breakpoint.ts";
 
 const context = testContext();
-const NOVA_AGENT_ID = "c0000000-0000-4000-a000-000000000c71";
 
 test("The greeting shows its complete sentence, one box per word", async () => {
-  context.mocks.data.agents([
-    { agentId: NOVA_AGENT_ID, displayName: "Nova", visibility: "public" },
-  ]);
   // A desktop window whose user asks for reduced motion.
   context.mocks.browser.matchMedia((query) => {
     return [
@@ -21,7 +17,7 @@ test("The greeting shows its complete sentence, one box per word", async () => {
     ].includes(query);
   });
 
-  await setupPage({ context, path: `/agents/${NOVA_AGENT_ID}/chat` });
+  await setupPage({ context, path: "/" });
 
   const greeting = await screen.findByTestId("chat-greeting");
   const heading = within(greeting).getByRole("heading");

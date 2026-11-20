@@ -1,7 +1,5 @@
 import { computed, type Computed } from "ccstate";
 import { and, eq, inArray } from "drizzle-orm";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { projects } from "@okouai/db/schema/project";
 import { db$ } from "../external/db";
 import type { BootstrapFeatureSwitchContext } from "./agent-run-context.signals";
@@ -31,7 +29,7 @@ export function createThreadProjectContext(
       return null;
     }
     const owner = await get(featureSwitches$);
-    if (!isFeatureEnabled(FeatureSwitchKey.SingleAgent, owner)) {
+    if (!owner.personalExecution) {
       return null;
     }
     const refs = picked.userMessage

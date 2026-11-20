@@ -26,6 +26,7 @@ Original test `Returning to an interrupted chat does not reuse abandoned details
 - **Given** The user enters a chat while its metadata request is pending, leaves for Agents, and the abandoned request then completes.
 - **When** The user returns to the chat, whose new metadata lookup reports not found.
 - **Then** The abandoned title is never shown; Agents remains correctly titled after leaving, and on returning no chat region or abandoned title appears.
+- **Upstream change** `4e5707de` (#49556) retires the multi-agent Agents page and its navigation entry; the upstream test is now `Returning to an interrupted chat does not reuse abandoned details` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/okou-page/__tests__/chat-metadata.test.tsx#L305)), which starts on and leaves for Workflows. Rebuild this scenario using the Workflows page wherever it uses Agents, expecting the document title `Workflows | Okou` after leaving.
 
 ## chat-metadata-004
 

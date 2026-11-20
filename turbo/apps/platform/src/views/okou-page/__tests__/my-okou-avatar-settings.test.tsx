@@ -1,5 +1,4 @@
 import { instructionsContract } from "@okouai/api-contracts/contracts/instructions";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -37,7 +36,6 @@ test("The home avatar opens My Okou settings", async () => {
   await setupPage({
     context,
     path: "/",
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
   });
   const avatar = await waitFor(() => {
     const button = myOkouAvatar();

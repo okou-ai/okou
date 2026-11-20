@@ -10,6 +10,7 @@ Original test `A new user keeps prompt and connector context through onboarding 
 - **Given** A new user needs onboarding and arrives with a prompt, GitHub connector context, and a presentation source parameter; My Okou is disabled.
 - **When** They open the home page.
 - **Then** The onboarding page appears with the prompt prefilled, and the URL retains the prompt, connector, and source context.
+- **Upstream change** `4e5707de` (#49556) removes the My Okou feature switch, so My Okou can no longer be disabled; the onboarding redirect and preserved context are unchanged, and the upstream test is now `A new user keeps prompt and connector context through onboarding` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/okou-page/__tests__/onboarding.test.tsx#L18)). Rebuild this scenario without the My Okou condition.
 
 ## onboarding-002
 

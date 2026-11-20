@@ -10,6 +10,7 @@ Original test `Keep the new chat shortcut usable in a Mac browser`. [Registratio
 - **Given** A user is on a chat page in a Mac browser, with the message composer focused.
 - **When** The user presses Command+Shift+O.
 - **Then** The browser navigates to the new chat for the chat-list agent.
+- **Upstream change** `4e5707de` (#49556) makes My Okou permanent, so the new chat shortcut opens the My Okou new chat at `/` instead of the chat-list agent's `/agents/<id>/chat`; the upstream row is `Keep the new chat shortcut usable in a Mac browser` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/okou-page/__tests__/keyboard-shortcut-hints.test.tsx#L55)). Rebuild this scenario expecting the browser to land on `/`.
 
 ## keyboard-shortcut-hints-002
 

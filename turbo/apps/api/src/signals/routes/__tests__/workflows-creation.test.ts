@@ -1,3 +1,4 @@
+import { retainedWorkflowCaller } from "./helpers/retained-workflow-caller";
 import { randomUUID } from "node:crypto";
 import {
   workflowsCollectionContract,
@@ -8,27 +9,12 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createDeferredPromise } from "../../utils";
 import { workflowsRoutes } from "../workflows";
-import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
-import { createRouteMocks } from "./helpers/route-test";
+import { createBddApi } from "./helpers/api-bdd";
 import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const context = testContext();
 const bdd = createBddApi(context);
-const mocks = createRouteMocks(context);
-async function headers(actor: ApiTestUser) {
-  if (!actor.orgId) {
-    throw new Error("Expected a retained Agent workspace");
-  }
-  // Owners and collaborators exercise retained Agent publication permissions.
-  await updateFeatureSwitchesForUser(
-    context,
-    { ...actor, orgId: actor.orgId },
-    { singleAgent: false },
-  );
-  mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-  return { authorization: "Bearer clerk-session" };
-}
+const headers = retainedWorkflowCaller(context);
 function collection(signal = context.signal, rethrowErrors = false) {
   return setupApp({ context, routes: workflowsRoutes, signal, rethrowErrors })(
     workflowsCollectionContract,

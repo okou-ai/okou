@@ -192,7 +192,7 @@ describe("registerCommands", () => {
     vi.stubEnv("OKOU_TOKEN", undefined);
 
     const prog = buildProgram();
-    expect(hiddenCommandNames(prog)).toEqual(["mcp", "run"]);
+    expect(hiddenCommandNames(prog)).toEqual(["agent", "mcp", "run"]);
     expect(registeredCommandNames(prog)).toContain("upgrade");
     expect(visibleCommandNames(prog)).toContain("browser");
   });
@@ -291,7 +291,7 @@ describe("registerCommands", () => {
 
     const prog = buildProgram();
 
-    expect(hiddenCommandNames(prog)).toEqual(["mcp", "run"]);
+    expect(hiddenCommandNames(prog)).toEqual(["agent", "mcp", "run"]);
     expect(registeredCommandNames(prog)).toContain("upgrade");
     expect(visibleCommandNames(prog)).toContain("browser");
   });

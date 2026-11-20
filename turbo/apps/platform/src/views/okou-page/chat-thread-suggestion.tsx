@@ -1,12 +1,8 @@
-import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
-import { useLastResolved } from "ccstate-react";
 import type { ComponentProps, Ref } from "react";
 import { cn, PopoverContent } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import { Folder } from "lucide-react";
-import type { ComposerAgentSuggestion } from "../../signals/okou-page/composer-agent-suggestion-domain.ts";
 import type { ComposerChatThreadSuggestion } from "../../signals/okou-page/chat-thread-suggestion-domain.ts";
-import { AvatarFromUrl } from "./sidebar-shared.tsx";
 
 function scrollSelectedSuggestionIntoView(
   option: HTMLButtonElement | null,
@@ -23,15 +19,11 @@ function scrollSelectedSuggestionIntoView(
 
 function ComposerMentionSuggestionItem({
   name,
-  avatarUrl,
-  showAvatar = true,
   project,
   selected,
   onSelect,
 }: {
   readonly name: string;
-  readonly avatarUrl: string | null;
-  readonly showAvatar?: boolean;
   readonly project?: true;
   readonly selected: boolean;
   readonly onSelect: () => void;
@@ -47,21 +39,12 @@ function ComposerMentionSuggestionItem({
       )}
       onClick={onSelect}
     >
-      {project ? (
+      {project && (
         <Folder
           size={20}
           className="shrink-0 text-muted-foreground"
           aria-hidden="true"
         />
-      ) : (
-        showAvatar && (
-          <AvatarFromUrl
-            avatarUrl={avatarUrl}
-            alt=""
-            className="h-5 w-5 shrink-0 rounded-full"
-            size={20}
-          />
-        )
       )}
       <span className="truncate text-sm text-popover-foreground">{name}</span>
     </button>
@@ -71,51 +54,23 @@ function ComposerMentionSuggestionItem({
 export function ComposerMentionSuggestionMenu({
   menuRef,
   anchor,
-  agents,
   chatThreads,
   selectedIndex,
-  onSelectAgent,
   onSelectChatThread,
 }: {
   readonly menuRef: Ref<HTMLDivElement>;
   readonly anchor?: ComponentProps<typeof PopoverContent>["anchor"];
-  readonly agents: readonly ComposerAgentSuggestion[];
   readonly chatThreads: readonly ComposerChatThreadSuggestion[];
   readonly selectedIndex: number;
-  readonly onSelectAgent: (agent: ComposerAgentSuggestion) => void;
   readonly onSelectChatThread: (
     chatThread: ComposerChatThreadSuggestion,
   ) => void;
 }) {
-  const singleAgent = useLastResolved(singleAgentEnabled$) ?? false;
   const { t } = useTranslation();
-  const agentSection = agents.length > 0 && (
-    <div key="agents">
-      <div className="px-1 pt-2 pb-1 text-xs font-medium text-muted-foreground">
-        {t(($) => {
-          return $.chat.composer.agentSuggestions;
-        })}
-      </div>
-      {agents.map((agent, index) => {
-        const selected = index === selectedIndex;
-        return (
-          <ComposerMentionSuggestionItem
-            key={agent.id}
-            name={agent.name}
-            avatarUrl={agent.avatarUrl}
-            selected={selected}
-            onSelect={() => {
-              onSelectAgent(agent);
-            }}
-          />
-        );
-      })}
-    </div>
-  );
   const threadSection = chatThreads.length > 0 && (
     <div key="threads">
       {chatThreads.map((chatThread, index) => {
-        const selected = agents.length + index === selectedIndex;
+        const selected = index === selectedIndex;
         return (
           <div key={chatThread.id}>
             {(index === 0 ||
@@ -132,8 +87,6 @@ export function ComposerMentionSuggestionMenu({
             )}
             <ComposerMentionSuggestionItem
               name={chatThread.title}
-              avatarUrl={chatThread.avatarUrl}
-              showAvatar={!singleAgent}
               project={chatThread.project}
               selected={selected}
               onSelect={() => {
@@ -161,7 +114,6 @@ export function ComposerMentionSuggestionMenu({
       data-testid="chat-thread-suggestion-menu"
     >
       <div className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-1.5">
-        {agentSection}
         {threadSection}
       </div>
     </PopoverContent>

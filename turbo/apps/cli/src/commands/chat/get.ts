@@ -1,4 +1,4 @@
-import { singleAgentEnabled } from "../../lib/api/single-agent";
+import { isPersonalExecution } from "../../lib/personal-execution";
 import chalk from "chalk";
 import { Command } from "commander";
 
@@ -52,7 +52,7 @@ Notes:
       console.log(chalk.green("✓ Chat thread loaded"));
       console.log(chalk.dim(`  Thread: ${thread.id}`));
       console.log(chalk.cyan(`  URL:    [Open chat](${url})`));
-      if (thread.agentId && !(await singleAgentEnabled())) {
+      if (thread.agentId && !isPersonalExecution()) {
         console.log(chalk.dim(`  Agent:  ${thread.agentId}`));
       }
       console.log(chalk.dim(`  Title:  ${thread.title ?? "(untitled)"}`));

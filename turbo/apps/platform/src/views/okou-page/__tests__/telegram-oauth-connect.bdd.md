@@ -106,6 +106,7 @@ Original test `Leaving Works cancels authorization and ignores a later tab resul
 - **Given** A user starts Telegram authorization from Works and the authorization tab opens.
 - **When** The user navigates to Agents, a result later arrives from the still-open authorization tab, and the user returns to Works.
 - **Then** The late result does not connect Telegram. Works is shown again with Connect enabled.
+- **Upstream change** `4e5707de` (#49556) removes the Agents entry from the navigation; the upstream test is now `Leaving Works cancels authorization and ignores a later tab result` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/okou-page/__tests__/telegram-oauth-connect.test.tsx#L391)), which leaves Works through the Workflows link. Rebuild this scenario navigating to the Workflows page (`/workflows`) instead of Agents.
 
 ## telegram-oauth-connect-014
 

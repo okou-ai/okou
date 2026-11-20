@@ -106,6 +106,9 @@ export function createMarkdownChatFixture(
       };
     },
     install: ({ rows, onRowsRequest }) => {
+      context.mocks.data.onboardingStatus({
+        defaultAgentId: MARKDOWN_AGENT_ID,
+      });
       context.mocks.data.agents([
         {
           agentId: MARKDOWN_AGENT_ID,

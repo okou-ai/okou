@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import { setWorkflowVisibility } from "../../lib/api/domains/workflows";
-import { singleAgentEnabled } from "../../lib/api/single-agent";
+import { isPersonalExecution } from "../../lib/personal-execution";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import {
   resolveWorkflowRef,
@@ -18,7 +18,7 @@ function visibilityCommand(visibility: "public" | "private") {
     .argument("<workflow>", "Workflow ID or name")
     .action(
       withErrorHandler(async (ref: string, options: WorkflowRefOptions) => {
-        if (!(await singleAgentEnabled()))
+        if (!isPersonalExecution())
           throw new Error("This command is available in My Okou");
         const id = await resolveWorkflowRef(ref, options);
         const workflow = await setWorkflowVisibility(id, visibility);

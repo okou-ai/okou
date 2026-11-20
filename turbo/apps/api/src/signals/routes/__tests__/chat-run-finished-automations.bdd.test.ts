@@ -64,25 +64,20 @@ async function setupChatAutomationFixture(): Promise<ChatAutomationFixture> {
   mockOptionalEnv("OPENROUTER_API_KEY", undefined);
   chatCallbacks.disableVapid();
   const runnerGroup = await api.configureRunnerGroup();
-  await api.grantProEntitlement(actor);
+  const { defaultAgentId: agentId } = await api.grantProEntitlement(actor);
   const { providerId } = await api.ensurePersonalSubscriptionModel(actor);
   // Completion and queue fixtures use the retained native Claude route.
   await api.ensurePersonalSubscriptionModel(actor, {
     model: "claude-fable-5-1",
   });
-  const agent = await bdd.createAgent(actor, {
-    displayName: "Chat run finished automation agent",
-    description: "Exercises chat-run-finished automation dispatch.",
-    visibility: "private",
-  });
   const workflowId = await wf.createWorkflow(actor, {
-    agentId: agent.agentId,
+    agentId,
     name: "chat-run-finished-workflow",
   });
   context.mocks.s3.send.mockResolvedValue({});
   return {
     actor: { ...actor, orgId: actor.orgId },
-    agentId: agent.agentId,
+    agentId,
     providerId,
     workflowId,
     runnerGroup,
@@ -104,9 +99,6 @@ function ownAutomationRuns(
           [204],
         );
       }
-    },
-    afterRuns: async () => {
-      await bdd.deleteAgent(fixture.actor, fixture.agentId);
     },
   });
 }

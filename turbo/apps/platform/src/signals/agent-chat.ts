@@ -1,4 +1,3 @@
-import { singleAgentEnabled$ } from "./single-agent.ts";
 import { command, computed, state, type Computed } from "ccstate";
 import type { EventDrivenChatThread } from "@okouai/core/chat-thread-event-replay";
 import { comparePinnedThreads } from "@okouai/core/chat-thread-pin-order";
@@ -20,7 +19,7 @@ import {
   type ChatThreadListRow,
   type ChatThreadNavigationList,
 } from "./chat-page/chat-thread-list-rows.ts";
-import { projects$, projectsEnabled$ } from "./projects/projects.ts";
+import { projects$ } from "./projects/projects.ts";
 import { expandedProjectIds$ } from "./projects/project-expansion.ts";
 
 const internalChatAgentId$ = state<string | null>(null);
@@ -70,12 +69,8 @@ export const currentChatAgentId$ = computed(
   },
 );
 
-/** Fresh enabled chats always use the default executor; existing threads keep theirs. */
-export const newChatAgentId$ = computed(async (get) => {
-  return (await get(singleAgentEnabled$))
-    ? await get(defaultAgentId$)
-    : await get(currentChatAgentId$);
-});
+/** New chats use the default executor. Existing threads keep theirs. */
+export const newChatAgentId$ = defaultAgentId$;
 
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -106,10 +101,7 @@ export const currentChatAgent$ = computed(async (get) => {
 
 export const currentChatAgentDisplayName$ = computed(
   async (get): Promise<string | null> => {
-    if (
-      (await get(singleAgentEnabled$)) &&
-      (await get(currentChatAgentId$)) === (await get(defaultAgentId$))
-    ) {
+    if ((await get(currentChatAgentId$)) === (await get(defaultAgentId$))) {
       return "Okou";
     }
     // A missing agent and a missing name both mean "no display name".
@@ -154,18 +146,15 @@ function threadIdsOf(threads: readonly EventDrivenChatThread[]) {
 }
 
 // Projects collect chats across Agents, so every Agent list shows them.
-const allProjectThreads$ = computed(
-  async (get): Promise<EventDrivenChatThread[]> => {
-    if (!(await get(projectsEnabled$))) {
-      return [];
-    }
-    return sortChatThreads(
+const allProjectThreads$ = computed((get): Promise<EventDrivenChatThread[]> => {
+  return Promise.resolve(
+    sortChatThreads(
       get(eventDrivenChatThreads$).filter((thread) => {
         return thread.projectId !== null;
       }),
-    );
-  },
-);
+    ),
+  );
+});
 
 function createChatThreadListView({
   threads$,
@@ -250,22 +239,18 @@ function createChatThreadListSignals(
   agentId: string | null,
   filter: ChatThreadListFilter,
 ): ChatThreadListSignals {
-  const allThreads$ = computed(
-    async (get): Promise<EventDrivenChatThread[]> => {
-      if (!agentId) {
-        return [];
-      }
-      const projectsListed = await get(projectsEnabled$);
-      return sortChatThreads(
+  const allThreads$ = computed((get): Promise<EventDrivenChatThread[]> => {
+    if (!agentId) {
+      return Promise.resolve([]);
+    }
+    return Promise.resolve(
+      sortChatThreads(
         get(eventDrivenChatThreads$).filter((thread) => {
-          return (
-            thread.agentId === agentId &&
-            (!projectsListed || thread.projectId === null)
-          );
+          return thread.agentId === agentId && thread.projectId === null;
         }),
-      );
-    },
-  );
+      ),
+    );
+  });
   const listed = (thread: EventDrivenChatThread) => {
     if (filter.onlyMuted) {
       return thread.muted;
@@ -346,27 +331,22 @@ export const unreadChatThreadListSignals$ = computed(
   async (get): Promise<ChatThreadListSignals> => {
     const agentId = await get(currentChatAgentId$);
     const indicators = await get(chatThreadIndicatorsFromWorker$);
-    const projectsListed = await get(projectsEnabled$);
+
     const unread = get(eventDrivenChatThreads$).filter((thread) => {
       return indicators.threads[thread.id] === "unread";
     });
     const threads = agentId
       ? sortChatThreads(
           unread.filter((thread) => {
-            return (
-              thread.agentId === agentId &&
-              (!projectsListed || thread.projectId === null)
-            );
+            return thread.agentId === agentId && thread.projectId === null;
           }),
         )
       : [];
-    const projectThreads = projectsListed
-      ? sortChatThreads(
-          unread.filter((thread) => {
-            return thread.projectId !== null;
-          }),
-        )
-      : [];
+    const projectThreads = sortChatThreads(
+      unread.filter((thread) => {
+        return thread.projectId !== null;
+      }),
+    );
     const threadIds = threadIdsOf(threads);
     const projectThreads$ = computed(() => {
       return Promise.resolve(projectThreads);

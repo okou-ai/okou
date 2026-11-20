@@ -58,23 +58,18 @@ import { brandName$ } from "../../signals/branding.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
 import { openSkillImportDialog$ } from "../../signals/skill-import/skill-import-dialog.ts";
 import {
-  singleAgentWorkflows$,
   allVisibleWorkflows$,
   allWorkflowAutomationEntries$,
   isGoogleCalendarWorkflowAutomation,
-  setWorkflowAgentFilter$,
   setWorkflowFilter$,
   setWorkflowSortMode$,
-  workflowAgentFilter$,
   workflowFilter$,
   workflowSortMode$,
-  WORKFLOW_ALL_AGENTS,
   type WorkflowFilter,
   type WorkflowSortMode,
   type WorkflowAutomationEntry,
 } from "../../signals/workflows-page/workflows-signals.ts";
 import { userPreferences$ } from "../../signals/okou-page/settings/user-preferences.ts";
-import { AgentAvatarImg } from "../okou-page/sidebar-shared.tsx";
 import { Link } from "../router/link.tsx";
 import { emptyWorkflowImg } from "../okou-page/platform-assets.ts";
 import {
@@ -84,11 +79,7 @@ import {
   automationTypeLabel,
   WorkflowAutomationEnabledSwitch,
 } from "../okou-page/workflow-automations-page.tsx";
-import {
-  agentLabel,
-  labelInitials,
-  workflowTitle,
-} from "./workflow-shared.tsx";
+import { labelInitials, workflowTitle } from "./workflow-shared.tsx";
 import { WorkflowWebhookUpgradeDialog } from "./workflow-webhook-upgrade-dialog.tsx";
 
 type WorkflowAutomationEntryMap = ReadonlyMap<
@@ -166,26 +157,6 @@ function ConnectorPillMarker({
 }
 
 /** The agent that runs the workflow, drawn as its real avatar. */
-function AgentAvatar({ workflow }: { readonly workflow: WorkflowSummary }) {
-  const singleAgent = useLastResolved(singleAgentWorkflows$);
-  const label = agentLabel(workflow);
-  if (singleAgent) {
-    return null;
-  }
-  return (
-    <AgentAvatarImg
-      name={workflow.agentId}
-      alt={i18n.t(
-        ($) => {
-          return $.workflows.list.runsAsAria;
-        },
-        { agent: label },
-      )}
-      className="h-6 w-6 shrink-0 rounded-md"
-      size={24}
-    />
-  );
-}
 
 const MEMBER_AVATAR_FALLBACK_DELAY_MS = 600;
 
@@ -217,25 +188,19 @@ function MemberAvatar({
 }
 
 function VisibilityIcon({ workflow }: { readonly workflow: WorkflowSummary }) {
-  const singleAgent = useLastResolved(singleAgentWorkflows$);
   const org = useLastResolved(currentOrgInfo$);
   const isPublic = workflow.visibility === "public";
   const Icon = isPublic ? Globe : Lock;
-  const label =
-    isPublic && singleAgent
-      ? i18n.t(
-          ($) => {
-            return $.workflows.workspace.sharedWith;
-          },
-          { workspace: org?.name ?? "" },
-        )
-      : isPublic
-        ? i18n.t(($) => {
-            return $.workflows.common.public;
-          })
-        : i18n.t(($) => {
-            return $.workflows.common.private;
-          });
+  const label = isPublic
+    ? i18n.t(
+        ($) => {
+          return $.workflows.workspace.sharedWith;
+        },
+        { workspace: org?.name ?? "" },
+      )
+    : i18n.t(($) => {
+        return $.workflows.common.private;
+      });
   return (
     <TooltipProvider delay={200}>
       <Tooltip>
@@ -437,7 +402,7 @@ function WorkflowHoverContent({
   readonly failed: boolean;
 }) {
   useTranslation();
-  const singleAgent = useLastResolved(singleAgentWorkflows$);
+
   const title = workflowTitle(workflow);
   const loading = !profile && !failed;
   const ownerLabel =
@@ -504,20 +469,6 @@ function WorkflowHoverContent({
             )}
           </div>
         </div>
-        {!singleAgent && (
-          <div
-            data-slot="workflow-runs-as"
-            className="flex h-6 min-w-0 items-center gap-2"
-          >
-            <span className="w-16 shrink-0 text-muted-foreground">
-              {i18n.t(($) => {
-                return $.workflows.list.runsAs;
-              })}
-            </span>
-            <AgentAvatar workflow={workflow} />
-            <span className="truncate">{agentLabel(workflow)}</span>
-          </div>
-        )}
       </div>
     </div>
   );
@@ -594,7 +545,6 @@ function WorkflowRow({
   readonly entries: readonly WorkflowAutomationEntry[];
   readonly displayTimezone: string;
 }) {
-  const singleAgent = useLastResolved(singleAgentWorkflows$);
   const title = workflowTitle(workflow);
   return (
     <article className="flex items-center gap-3 px-5 py-3.5 text-left text-foreground transition-colors hover:bg-state-hover">
@@ -615,14 +565,14 @@ function WorkflowRow({
             <span className="min-w-0 truncate text-sm font-medium underline decoration-dotted decoration-foreground/40 decoration-[1px] underline-offset-2">
               {title}
             </span>
-            {singleAgent && workflow.shadowedBy ? (
+            {workflow.shadowedBy ? (
               <Badge className="shrink-0 text-xs text-muted-foreground">
                 {i18n.t(($) => {
                   return $.workflows.workspace.overridden;
                 })}
               </Badge>
             ) : null}
-            {singleAgent && !workflow.shadowedBy ? (
+            {!workflow.shadowedBy ? (
               <span className="truncate text-xs text-muted-foreground">
                 {i18n.t(
                   ($) => {
@@ -648,7 +598,6 @@ function WorkflowRow({
       </WorkflowTooltip>
       <ConnectorCell entries={entries} displayTimezone={displayTimezone} />
       <VisibilityIcon workflow={workflow} />
-      <AgentAvatar workflow={workflow} />
     </article>
   );
 }
@@ -684,42 +633,6 @@ function applyWorkflowFilters(
         return true;
       }
     }
-  });
-}
-
-interface AgentFilterOption {
-  readonly agentId: string;
-  readonly label: string;
-}
-
-/** The distinct agents that own at least one workflow, sorted by label. */
-function agentFilterOptions(
-  workflows: readonly WorkflowSummary[],
-): readonly AgentFilterOption[] {
-  const labelsByAgentId = new Map<string, string>();
-  for (const workflow of workflows) {
-    if (!labelsByAgentId.has(workflow.agentId)) {
-      labelsByAgentId.set(workflow.agentId, agentLabel(workflow));
-    }
-  }
-  return [...labelsByAgentId]
-    .map(([agentId, label]) => {
-      return { agentId, label };
-    })
-    .sort((a, b) => {
-      return a.label.localeCompare(b.label, i18n.resolvedLanguage);
-    });
-}
-
-function applyAgentFilter(
-  workflows: readonly WorkflowSummary[],
-  agentFilter: string,
-): readonly WorkflowSummary[] {
-  if (agentFilter === WORKFLOW_ALL_AGENTS) {
-    return workflows;
-  }
-  return workflows.filter((workflow) => {
-    return workflow.agentId === agentFilter;
   });
 }
 
@@ -1113,85 +1026,6 @@ function SortDropdown({
   );
 }
 
-function AgentFilterDropdown({
-  value,
-  options,
-  onChange,
-}: {
-  readonly value: string;
-  readonly options: readonly AgentFilterOption[];
-  readonly onChange: (value: string) => void;
-}) {
-  const selected = options.find((option) => {
-    return option.agentId === value;
-  });
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        render={
-          <Button
-            type="button"
-            variant="neutral"
-            size="sm"
-            className="h-9 shrink-0 gap-1.5 rounded-lg"
-          />
-        }
-      >
-        {selected ? (
-          <AgentAvatarImg
-            name={selected.agentId}
-            alt={selected.label}
-            className="h-4 w-4 shrink-0 rounded"
-            size={16}
-          />
-        ) : (
-          <User size={15} className="" />
-        )}
-        <span className="max-w-[8rem] truncate">
-          {selected?.label ??
-            i18n.t(($) => {
-              return $.workflows.list.allAgents;
-            })}
-        </span>
-        <ChevronDown size={14} />
-      </DropdownMenuTrigger>
-      <DropdownMenuContent
-        align="end"
-        className="max-h-[min(20rem,var(--available-height))] overflow-y-auto"
-      >
-        <DropdownMenuItem
-          onClick={() => {
-            onChange(WORKFLOW_ALL_AGENTS);
-          }}
-        >
-          <User size={15} className="" />
-          {i18n.t(($) => {
-            return $.workflows.list.allAgents;
-          })}
-        </DropdownMenuItem>
-        {options.map((option) => {
-          return (
-            <DropdownMenuItem
-              key={option.agentId}
-              onClick={() => {
-                onChange(option.agentId);
-              }}
-            >
-              <AgentAvatarImg
-                name={option.agentId}
-                alt={option.label}
-                className="h-4 w-4 shrink-0 rounded"
-                size={16}
-              />
-              <span className="min-w-0 truncate">{option.label}</span>
-            </DropdownMenuItem>
-          );
-        })}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
 function sortWorkflows(
   workflows: readonly WorkflowSummary[],
   sortMode: WorkflowSortMode,
@@ -1215,18 +1049,13 @@ function sortWorkflows(
 function WorkflowFilterBar({
   filter,
   sortMode,
-  agentFilter,
-  agentOptions,
 }: {
   readonly filter: WorkflowFilter;
   readonly sortMode: WorkflowSortMode;
-  readonly agentFilter: string;
-  readonly agentOptions: readonly AgentFilterOption[];
 }) {
   const { t } = useTranslation();
   const setFilter = useSet(setWorkflowFilter$);
   const setSortMode = useSet(setWorkflowSortMode$);
-  const setAgentFilter = useSet(setWorkflowAgentFilter$);
 
   return (
     <div
@@ -1273,13 +1102,6 @@ function WorkflowFilterBar({
         ]}
       />
       <div className="ml-auto flex items-center gap-1.5">
-        {agentOptions.length > 1 ? (
-          <AgentFilterDropdown
-            value={agentFilter}
-            options={agentOptions}
-            onChange={setAgentFilter}
-          />
-        ) : null}
         <SortDropdown value={sortMode} onChange={setSortMode} />
       </div>
     </div>
@@ -1339,9 +1161,7 @@ export function WorkflowsPage() {
   const brandName = useGet(brandName$);
   const filter = useGet(workflowFilter$);
   const sortMode = useGet(workflowSortMode$);
-  const singleAgent = useLastResolved(singleAgentWorkflows$);
-  const storedAgentFilter = useGet(workflowAgentFilter$);
-  const agentFilter = singleAgent ? WORKFLOW_ALL_AGENTS : storedAgentFilter;
+
   const workflowsLoadable = useLastLoadable(allVisibleWorkflows$);
   const automationEntriesLoadable = useLastLoadable(
     allWorkflowAutomationEntries$,
@@ -1362,18 +1182,9 @@ export function WorkflowsPage() {
   const displayTimezone =
     preferences?.timezone ??
     new Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const agentOptions =
-    !singleAgent && workflows ? agentFilterOptions(workflows) : [];
   const filteredWorkflows = workflows
     ? sortWorkflows(
-        applyAgentFilter(
-          applyWorkflowFilters(
-            workflows,
-            automationEntriesByWorkflowId,
-            filter,
-          ),
-          agentFilter,
-        ),
+        applyWorkflowFilters(workflows, automationEntriesByWorkflowId, filter),
         sortMode,
       )
     : null;
@@ -1403,25 +1214,14 @@ export function WorkflowsPage() {
 
       <main className="flex-1 overflow-auto px-4 pb-safe-or-8 pt-3 [scrollbar-gutter:stable] sm:px-6">
         <div className="mx-auto flex max-w-[900px] flex-col gap-4">
-          <WorkflowFilterBar
-            filter={filter}
-            sortMode={sortMode}
-            agentFilter={agentFilter}
-            agentOptions={agentOptions}
-          />
+          <WorkflowFilterBar filter={filter} sortMode={sortMode} />
           <WorkflowListPanel
             workflows={filteredWorkflows}
             loading={loading}
             sortMode={sortMode}
-            emptyDescription={
-              agentFilter === WORKFLOW_ALL_AGENTS
-                ? emptyDescriptionForFilter(filter)
-                : t(($) => {
-                    return $.workflows.list.agentEmpty;
-                  })
-            }
+            emptyDescription={emptyDescriptionForFilter(filter)}
             emptyAction={
-              filter === "all" && agentFilter === WORKFLOW_ALL_AGENTS ? (
+              filter === "all" ? (
                 <Button
                   type="button"
                   variant="outline"

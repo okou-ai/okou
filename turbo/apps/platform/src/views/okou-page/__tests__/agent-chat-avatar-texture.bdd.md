@@ -26,6 +26,7 @@ Original test `Keep every other avatar surface untextured`. [Registration](https
 - **Given** A chat greeting uses a composed avatar, and the same avatar appears on other surfaces.
 - **When** The chat page is rendered.
 - **Then** Surfaces outside the greeting remain untextured and their artwork is not anchored to the bottom edge.
+- **Upstream change** `4e5707de` (#49556) retires other agents' chat pages (`/agents/<id>/chat` now redirects to My Okou's chat at `/`) and the sidebar's pinned agent avatars, and removes this upstream test. Retire this scenario; the retained chat greeting avatar is covered by `agent-chat-avatar-texture-006`.
 
 ## agent-chat-avatar-texture-004
 
@@ -42,6 +43,7 @@ Original test `Draw the organization default agent with the animated Okou avatar
 - **Given** The organization’s default agent avatar is rendered outside My Okou with the animated-avatar feature enabled.
 - **When** The chat greeting is rendered.
 - **Then** The default artwork is replaced by the animated Okou avatar.
+- **Upstream change** `4e5707de` (#49556) removes the chat greeting outside My Okou (`/agents/<id>/chat` now redirects to `/`, whose greeting always draws Okou's animated avatar) and removes this upstream test. Retire this scenario; the retained animated greeting is covered by `agent-chat-avatar-texture-006` (upstream `Greet with Okou's own animated avatar under My Okou`, [Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/okou-page/__tests__/agent-chat-avatar-texture.test.tsx#L21)).
 
 ## agent-chat-avatar-texture-006
 
