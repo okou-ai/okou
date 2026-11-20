@@ -3,11 +3,7 @@ import {
   featureGuideEditionSchema,
   featureGuidesContract,
 } from "@okouai/api-contracts/contracts/feature-guides";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import {
-  getAllFeatureStates,
-  isFeatureEnabled,
-} from "@okouai/core/feature-switch";
+import { getAllFeatureStates } from "@okouai/core/feature-switch";
 import { isStaffOrg } from "@okouai/core/staff-org";
 import { optionalEnv } from "../../lib/env";
 import singleAgentGuide from "../../feature-guides/single-agent-2026-11-16.json";
@@ -33,12 +29,6 @@ const viewer$ = computed((get) => {
 });
 const switchContext$ = createUserFeatureSwitchContext(viewer$);
 const currentFeatureGuide$ = currentFeatureGuide(viewer$);
-const enabled$ = computed(async (get) => {
-  return isFeatureEnabled(
-    FeatureSwitchKey.FeatureGuides,
-    await get(switchContext$),
-  );
-});
 const deliverableEdition$ = computed(async (get) => {
   const edition = await get(currentFeatureGuide$);
   if (!edition) {
@@ -63,11 +53,7 @@ const receipt$ = featureGuideReceipt(
 const currentQuery$ = queryOf(featureGuidesContract.current);
 const current$ = command(async ({ get, set }, signal: AbortSignal) => {
   set(setResHeader$, "Cache-Control", "private, no-store");
-  const enabled = await get(enabled$);
   signal.throwIfAborted();
-  if (!enabled) {
-    return { status: 200 as const, body: { edition: null } };
-  }
   const preview = get(currentQuery$)?.preview === "1";
   if (preview && optionalEnv("ENV") !== "preview") {
     return resourceUnavailable(
@@ -114,11 +100,6 @@ const seenRevision$ = acknowledgeableFeatureGuideRevision(
   }),
 );
 const seen$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const enabled = await get(enabled$);
-  signal.throwIfAborted();
-  if (!enabled) {
-    return resourceUnavailable("Feature guides are not enabled");
-  }
   const body = await get(seenBody$);
   signal.throwIfAborted();
   if (!body.ok) {
