@@ -338,15 +338,12 @@ function SuggestionDirectionComposer({
                   })}
             </p>
           ) : composer ? (
-            <div
-              // The caret shares the heading's and the quote's left edge, and
-              // the quote holds one line for its note instead of a 96px field,
-              // so the open row stays near the height of the original card
-              // composer. The note still grows with what the member writes.
-              className="w-full min-w-0 [&_.ProseMirror_p]:pl-0 [&_[data-feedback-item]]:min-h-0"
-              data-chat-composer
-            >
-              <ChatComposer signals={composer} showPendingItems={false} />
+            <div className="w-full min-w-0" data-chat-composer>
+              <ChatComposer
+                signals={composer}
+                showPendingItems={false}
+                layout="card"
+              />
             </div>
           ) : null}
         </div>
@@ -389,25 +386,6 @@ export function AgentSuggestionCard({
       aria-labelledby={`suggestion-title-${item.id}`}
       className="flex flex-1 flex-col"
     >
-      {/* Dismissing closes the whole card, so it sits on the card's corner. */}
-      <Button
-        type="button"
-        variant="quiet"
-        size="icon-sm"
-        showTooltip
-        aria-label={t(($) => {
-          return $.chat.agentSuggestions.dismiss;
-        })}
-        className="absolute top-3 right-3 z-10"
-        onClick={() => {
-          detach(
-            submitFeedback(item.id, "dismissed", signal),
-            Reason.DomCallback,
-          );
-        }}
-      >
-        <X />
-      </Button>
       <ForYouCardHeading
         id={item.id}
         title={item.content.title}
@@ -472,6 +450,26 @@ export function AgentSuggestionCard({
         {active && <SuggestionDirection entry={entry} />}
       </div>
       <SuggestionFeedback entry={entry} />
+      {/* Dismissing closes the whole card, so it sits on the card's corner.
+          It comes last so ordinary paint order keeps it above the artwork. */}
+      <Button
+        type="button"
+        variant="quiet"
+        size="icon-sm"
+        showTooltip
+        aria-label={t(($) => {
+          return $.chat.agentSuggestions.dismiss;
+        })}
+        className="absolute top-3 right-3"
+        onClick={() => {
+          detach(
+            submitFeedback(item.id, "dismissed", signal),
+            Reason.DomCallback,
+          );
+        }}
+      >
+        <X />
+      </Button>
     </article>
   );
 }
