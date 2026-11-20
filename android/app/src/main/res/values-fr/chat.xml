@@ -1,4 +1,9 @@
 <resources>
+    <string name="chat_undo_archived">Discussion archivée</string>
+    <string name="chat_undo_unarchived">Discussion désarchivée</string>
+    <string name="chat_undo_marked_read">Discussion marquée comme lue</string>
+    <string name="chat_undo">Annuler</string>
+    <string name="chat_undo_close">Fermer</string>
     <string name="chat_list_offline">Hors ligne</string>
     <string name="chat_list_refresh_failed">Échec de l’actualisation de la liste des chats</string>
     <string name="chat_list_first_load_failed">Chargement temporairement indisponible</string>
