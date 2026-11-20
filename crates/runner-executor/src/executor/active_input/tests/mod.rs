@@ -1,3 +1,4 @@
+use std::future::Future;
 use std::sync::Arc;
 use std::task::Poll;
 use std::time::Duration;
@@ -6,7 +7,7 @@ use sandbox::{GuestProcessControlHandle, ProcessControlAck, ProcessControlOutcom
 use tokio::sync::{Notify, mpsc};
 use tokio_util::sync::CancellationToken;
 
-use super::ActiveInputForwarder;
+use super::{ACTIVE_INPUT_SHUTDOWN_GRACE, ActiveInputForwarder};
 use runner_provider::local_queue::{self, ActiveInputEntry, LocalQueue};
 use runner_provider::{ActiveInputSource, local_active_input_event_id};
 use runner_types::ids::RunId;
@@ -15,6 +16,30 @@ mod local;
 mod shutdown;
 
 const TEST_TIMEOUT: Duration = Duration::from_secs(5);
+
+tokio::task_local! {
+    static ADVANCE_SHUTDOWN_GRACE: bool;
+}
+
+pub(super) fn inherit_shutdown_clock<T>(task: impl Future<Output = T>) -> impl Future<Output = T> {
+    ADVANCE_SHUTDOWN_GRACE.scope(ADVANCE_SHUTDOWN_GRACE.try_get().unwrap_or(false), task)
+}
+
+pub(super) async fn wait_for_shutdown_grace<F: Future>(
+    grace: tokio::time::Timeout<F>,
+) -> Result<F::Output, tokio::time::error::Elapsed> {
+    if !ADVANCE_SHUTDOWN_GRACE.try_get().unwrap_or(false) {
+        return grace.await;
+    }
+    tokio::pin!(grace);
+    if let Poll::Ready(result) = futures_util::poll!(grace.as_mut()) {
+        return result;
+    }
+    // The opted-in tests hold the peer at a known I/O boundary. The pending
+    // poll arms the real grace timer and the helper resumes before repolling it.
+    raw_http_test_support::clock::advance_timer_phase(ACTIVE_INPUT_SHUTDOWN_GRACE).await;
+    grace.await
+}
 
 enum CancelForwarding {
     Job,
