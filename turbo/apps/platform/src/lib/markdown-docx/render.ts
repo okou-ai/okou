@@ -136,6 +136,34 @@ function rewrite(value: PandocValue, layout: Layout): PandocValue {
     return value;
   }
   const { t, c } = value;
+  if (t === "Header") {
+    const [level, attrs, content] = array(c);
+    if (typeof level !== "number") {
+      throw new Error("Unexpected Pandoc heading level");
+    }
+    const children = rewrite(content, layout);
+    if (level !== 1) {
+      return { t, c: [level - 1, attrs, children] };
+    }
+    const [identifier, classes, attributes] = array(attrs);
+    // Pandoc applies custom paragraph styles to Divs, not Headers.
+    return {
+      t: "Div",
+      c: [
+        [
+          identifier,
+          classes,
+          [
+            ...array(attributes).filter((entry) => {
+              return array(entry)[0] !== "custom-style";
+            }),
+            ["custom-style", "Title"],
+          ],
+        ],
+        [{ t: "Para", c: children }],
+      ],
+    };
+  }
   if (t === "Link" || t === "Image") {
     return rewriteLink(t, c, layout);
   }
