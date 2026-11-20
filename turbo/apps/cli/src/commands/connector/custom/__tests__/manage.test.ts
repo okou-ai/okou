@@ -112,7 +112,7 @@ describe("connector custom show/delete", () => {
     expect(output).not.toHaveProperty("queryInjections");
   });
 
-  it("deletes the resolved definition without a body or agent grant", async () => {
+  it("deletes the resolved definition with an empty request body", async () => {
     let deleted = false;
     server.use(
       http.delete(
