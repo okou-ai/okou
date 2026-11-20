@@ -1,4 +1,8 @@
 import {
+  ChatShareHeaderControls,
+  useChatShareRefresh,
+} from "./chat-share-selection-controls.tsx";
+import {
   ChatComposerFooter,
   ChatPageHeader,
   ChatPageLayout,
@@ -11,6 +15,7 @@ import {
   SharedThreadShareMenu,
 } from "./shared-thread-share-menu.tsx";
 import type { SharedThreadAudience } from "@okouai/api-contracts/contracts/shared-thread-visibility";
+import type { SharedThreadVisibilitySignals } from "../../signals/shared-thread-visibility.ts";
 import { emptyChatRunUsage$ } from "../../signals/chat-page/chat-run-usage.ts";
 import { ExternalSourceMessageAnnotation } from "./external-source-message-annotation.tsx";
 import { ChatResourcesButton } from "./chat-resources.tsx";
@@ -125,6 +130,7 @@ import {
   ThinkingMessages,
   useMediaQuery,
   buttonVariants,
+  surfaceVariants,
 } from "@okouai/ui";
 import { RUN_ERROR_GUIDANCE } from "@okouai/api-contracts/contracts/errors";
 import {
@@ -209,7 +215,6 @@ import {
 import {
   asInputChatEvent,
   chatEventDisplayError,
-  isInputChatEvent,
   isRenderableAssistantEvent,
   isWorkflowUserMessage,
   rendersUserBubble,
@@ -229,7 +234,11 @@ import {
   type ChatThreadRowSignals,
 } from "../../signals/chat-page/chat-thread-rows.ts";
 import { chatEventRenderKey } from "../../signals/chat-page/chat-event-group-keys.ts";
-import { chatGroupForSharing } from "../../signals/chat-page/chat-thread-sharing.ts";
+import {
+  chatGroupForSharing,
+  shareableEventFromChatEvent,
+  type SharedThreadSelectionPhase,
+} from "../../signals/chat-page/chat-thread-sharing.ts";
 import { ConnectModal } from "./components/settings/add-connection-dialog.tsx";
 import { useConnectorAccountLabel } from "./components/settings/use-connector-account-label.ts";
 import { CustomConnectorConnectDialog } from "./components/settings/custom-connector-connect-dialog.tsx";
@@ -409,12 +418,6 @@ type UserMessageAnnotationRenderPart = Extract<
   { readonly type: "source" | "automation" }
 >;
 
-function isUserMessageNonContentPart(
-  part: UserMessagePart,
-): part is UserMessageNonContentPart {
-  return part.type === "source" || part.type === "automation";
-}
-
 type UserMessageHiddenPart = Extract<
   UserMessageRenderPart["part"],
   {
@@ -457,12 +460,6 @@ function runModelDisplayName(
     : model;
 }
 
-function userMessageNonContentPart(
-  document: UserMessageDocument | undefined,
-): UserMessageNonContentPart | undefined {
-  return document?.parts.find(isUserMessageNonContentPart);
-}
-
 function userMessageAnnotationRenderPart(
   document: UserMessageRenderDocument | undefined,
 ): UserMessageAnnotationRenderPart | undefined {
@@ -470,14 +467,6 @@ function userMessageAnnotationRenderPart(
     (renderPart): renderPart is UserMessageAnnotationRenderPart => {
       return renderPart.type === "source" || renderPart.type === "automation";
     },
-  );
-}
-
-function eventNonContentPart(
-  event: EnrichedChatEvent,
-): UserMessageNonContentPart | undefined {
-  return userMessageNonContentPart(
-    isInputChatEvent(event) ? event.userMessage : undefined,
   );
 }
 
@@ -584,35 +573,15 @@ function DesktopChatThreadHeader({ thread }: { thread: ChatPanelSignals }) {
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
   const sharingPhase = useGet(thread.sharing.phase$);
-  const selectedCount = useGet(thread.sharing.selectedCount$);
   const startSharing = useSet(thread.sharing.start$);
-  const closeSharing = useSet(thread.sharing.close$);
+  const shareRefresh = useChatShareRefresh();
   if (sharingPhase !== "idle") {
     return (
       <ChatPageHeader>
-        <span className="text-sm font-medium text-foreground">
-          {t(
-            ($) => {
-              return $.chat.sharing.selectedCount;
-            },
-            { count: selectedCount },
-          )}
-        </span>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => {
-            detach(
-              closeSharing(pageSignal),
-              Reason.DomCallback,
-              "close shared thread selection",
-            );
-          }}
-        >
-          {t(($) => {
-            return $.chat.sharing.cancel;
-          })}
-        </Button>
+        <ChatShareHeaderControls
+          sharing={thread.sharing}
+          refreshed={shareRefresh}
+        />
       </ChatPageHeader>
     );
   }
@@ -3613,6 +3582,153 @@ function SharedThreadCreatedLink({
 }) {
   const { t } = useTranslation();
   const visibility = useGet(thread.sharing.visibility$);
+  return (
+    <div className="flex flex-col gap-2 composer-wide:flex-row composer-wide:items-center">
+      <Input
+        readOnly
+        value={shareUrl}
+        aria-label={t(($) => {
+          return $.chat.sharing.shareLink;
+        })}
+        className="min-w-0 flex-1"
+      />
+      {visibility ? (
+        <div className="grid gap-2 composer-wide:flex composer-wide:shrink-0 composer-wide:items-center">
+          <SharedThreadShareMenu session={visibility} showLabel refreshed />
+          <SharedThreadCopyLinkButton session={visibility} />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function SharedThreadCopyLinkButton({
+  session,
+}: {
+  readonly session: SharedThreadVisibilitySignals;
+}) {
+  const { t } = useTranslation();
+  const copied = useGet(session.copied$);
+  const copy = useSet(session.copy$);
+  const pageSignal = useGet(pageSignal$);
+  return (
+    <Button
+      onClick={() => {
+        detach(copy(pageSignal), Reason.DomCallback, "copy shared thread link");
+      }}
+    >
+      {copied ? <Check size={16} /> : <Copy size={16} />}
+      {t(($) => {
+        return copied
+          ? $.artifacts.sharing.copied
+          : $.artifacts.sharing.copyLink;
+      })}
+    </Button>
+  );
+}
+
+/** Sharing sits where the composer was, on the shared page surface. Its
+ * standard 20px radius is concentric with the controls it holds: their 8px
+ * plus the card's 12px padding. */
+function ChatShareCard({ children }: { readonly children: ReactNode }) {
+  return (
+    <ChatComposerFooter>
+      <div className="@container/composer">
+        <div
+          data-slot="chat-share-card"
+          className={surfaceVariants({ className: "p-3 composer-wide:pl-4" })}
+        >
+          {children}
+        </div>
+      </div>
+    </ChatComposerFooter>
+  );
+}
+
+function ChatShareFooter({ thread }: { readonly thread: ChatPanelSignals }) {
+  const { t } = useTranslation();
+  const selectedCount = useGet(thread.sharing.selectedCount$);
+  const sharedThreadId = useGet(thread.sharing.createdSharedThreadId$);
+  const audience = useGet(thread.sharing.audience$);
+  const changeAudience = useSet(thread.sharing.changeAudience$);
+  const pageSignal = useGet(pageSignal$);
+  const [createLoadable, createSharedThread] = useLoadableSet(
+    thread.sharing.create$,
+  );
+  const creating = createLoadable.state === "loading";
+  const shareUrl = sharedThreadId
+    ? `${window.location.origin}/share/threads/${sharedThreadId}`
+    : null;
+  return (
+    <ChatShareCard>
+      {shareUrl ? (
+        <SharedThreadCreatedLink
+          key={shareUrl}
+          thread={thread}
+          shareUrl={shareUrl}
+        />
+      ) : (
+        <div className="flex flex-col gap-3 composer-wide:flex-row composer-wide:items-center">
+          <div className="min-w-0 flex-1">
+            {/* The header carries the count. Until something is chosen this
+                says what to do; after that, who can change access. */}
+            <p className="text-sm text-muted-foreground">
+              {t(($) => {
+                return selectedCount === 0
+                  ? $.chat.sharing.selectPrompt
+                  : $.chat.sharing.accessNote;
+              })}
+            </p>
+            {createLoadable.state === "hasError" ? (
+              <p className="mt-0.5 text-xs text-destructive">
+                {t(($) => {
+                  return $.chat.sharing.createFailed;
+                })}
+              </p>
+            ) : null}
+          </div>
+          <div className="grid gap-2 composer-wide:flex composer-wide:shrink-0 composer-wide:items-center">
+            <SharedThreadAudiencePicker
+              audience={audience}
+              disabled={creating}
+              refreshed
+              onChange={changeAudience}
+            />
+            <Button
+              disabled={selectedCount === 0 || creating}
+              onClick={() => {
+                detach(
+                  createSharedThread(pageSignal),
+                  Reason.DomCallback,
+                  "create shared thread",
+                );
+              }}
+            >
+              {creating ? (
+                <Loader2 size={16} className="animate-spin" />
+              ) : (
+                <LinkIcon size={16} />
+              )}
+              {t(($) => {
+                return $.chat.sharing.createLink;
+              })}
+            </Button>
+          </div>
+        </div>
+      )}
+    </ChatShareCard>
+  );
+}
+
+function LegacySharedThreadCreatedLink({
+  thread,
+  shareUrl,
+}: {
+  readonly thread: ChatPanelSignals;
+  readonly shareUrl: string;
+}) {
+  const { t } = useTranslation();
+  const visibility = useGet(thread.sharing.visibility$);
   const close = useSet(thread.sharing.close$);
   const pageSignal = useGet(pageSignal$);
   return (
@@ -3646,15 +3762,12 @@ function SharedThreadCreatedLink({
   );
 }
 
-function ChatThreadBottomBar({
+function LegacyChatShareFooter({
   thread,
-  discoveryInContent,
 }: {
   readonly thread: ChatPanelSignals;
-  readonly discoveryInContent: boolean;
 }) {
   const { t } = useTranslation();
-  const phase = useGet(thread.sharing.phase$);
   const selectedCount = useGet(thread.sharing.selectedCount$);
   const sharedThreadId = useGet(thread.sharing.createdSharedThreadId$);
   const audience = useGet(thread.sharing.audience$);
@@ -3663,24 +3776,15 @@ function ChatThreadBottomBar({
   const [createLoadable, createSharedThread] = useLoadableSet(
     thread.sharing.create$,
   );
-  if (phase === "idle") {
-    return withChatScrollLayout(
-      <ChatThreadComposer
-        thread={thread}
-        discoveryInContent={discoveryInContent}
-      />,
-    );
-  }
-
   const creating = createLoadable.state === "loading";
   const shareUrl = sharedThreadId
     ? `${window.location.origin}/share/threads/${sharedThreadId}`
     : null;
-  return withChatScrollLayout(
+  return (
     <footer className="relative shrink-0 border-t border-border/60 px-4 py-3 sm:px-6">
       <div className="mx-auto flex w-full max-w-[900px] flex-col gap-2">
         {shareUrl ? (
-          <SharedThreadCreatedLink
+          <LegacySharedThreadCreatedLink
             key={shareUrl}
             thread={thread}
             shareUrl={shareUrl}
@@ -3738,7 +3842,33 @@ function ChatThreadBottomBar({
           </div>
         )}
       </div>
-    </footer>,
+    </footer>
+  );
+}
+
+function ChatThreadBottomBar({
+  thread,
+  discoveryInContent,
+}: {
+  readonly thread: ChatPanelSignals;
+  readonly discoveryInContent: boolean;
+}) {
+  const phase = useGet(thread.sharing.phase$);
+  const refreshed = useChatShareRefresh();
+  if (phase === "idle") {
+    return withChatScrollLayout(
+      <ChatThreadComposer
+        thread={thread}
+        discoveryInContent={discoveryInContent}
+      />,
+    );
+  }
+  return withChatScrollLayout(
+    refreshed ? (
+      <ChatShareFooter thread={thread} />
+    ) : (
+      <LegacyChatShareFooter thread={thread} />
+    ),
   );
 }
 
@@ -6001,39 +6131,193 @@ function PagedGroupRow({
   );
 }
 
-function shareableEventFromChatEvent(
-  event: EnrichedChatEvent,
-): { readonly id: string; readonly text: string } | null {
-  if (event.seqId === undefined) {
-    return null;
-  }
-  if (event.eventType === "output.message") {
-    return event.content && event.content.length > 0
-      ? { id: event.id, text: event.content }
-      : null;
-  }
-  if (
-    event.eventType !== "input.prompt" &&
-    event.eventType !== "input.automation"
-  ) {
-    return null;
-  }
-  const displayText = messageDocumentToDisplayText(event.userMessage)?.trim();
-  if (displayText) {
-    return { id: event.id, text: displayText };
-  }
-  const automation = eventNonContentPart(event);
-  if (automation?.type !== "automation") {
-    return null;
-  }
-  const automationText =
-    automation.automationBrief?.trim() || automation.workflowName.trim();
-  return automationText.length > 0
-    ? { id: event.id, text: automationText }
-    : null;
+function shareGroupDates(
+  group: ChatEventGroup,
+  dateDividers: ReadonlyMap<string, ChatDateDivider>,
+  sharing: boolean,
+) {
+  const firstEventId = group.events[0]?.id;
+  const leadingDate =
+    sharing && group.role === "user" && firstEventId
+      ? dateDividers.get(firstEventId)
+      : undefined;
+  const contentDates = leadingDate
+    ? new Map(
+        [...dateDividers].filter(([id]) => {
+          return id !== firstEventId;
+        }),
+      )
+    : dateDividers;
+  return { leadingDate, contentDates };
 }
 
-function SelectablePagedGroupRow({
+function RefreshedSelectablePagedGroupRow({
+  group,
+  thread,
+  modelChanges,
+  stackFirstOnPrevious,
+  dateDividers,
+  runWorkSection,
+  statusRow,
+  statusTailEvents,
+}: Parameters<typeof PagedGroupRow>[0]) {
+  const { t } = useTranslation();
+  const phase = useGet(thread.sharing.phase$);
+  const selectedEventIds = useGet(thread.sharing.selectedEventIds$);
+  const toggle = useSet(thread.sharing.toggle$);
+  const nameLine =
+    useLastResolved(featureSwitches$)?.[FeatureSwitchKey.ChatReplyNameLine] ===
+    true;
+  const sharing = phase !== "idle";
+  const displayGroup = sharing ? chatGroupForSharing(group) : group;
+  const events = displayGroup.events.flatMap((event) => {
+    const shareable = shareableEventFromChatEvent(event);
+    return shareable ? [shareable] : [];
+  });
+  const { leadingDate, contentDates } = shareGroupDates(
+    displayGroup,
+    dateDividers,
+    sharing && events.length > 0,
+  );
+  const content = (
+    <PagedGroupRow
+      group={displayGroup}
+      thread={thread}
+      modelChanges={modelChanges}
+      stackFirstOnPrevious={sharing ? false : stackFirstOnPrevious}
+      dateDividers={contentDates}
+      runWorkSection={sharing ? undefined : runWorkSection}
+      statusRow={sharing ? undefined : statusRow}
+      statusTailEvents={sharing ? undefined : statusTailEvents}
+    />
+  );
+  if (phase === "idle" || events.length === 0) {
+    return content;
+  }
+  const selectedCount = events.filter((event) => {
+    return selectedEventIds.has(event.id);
+  }).length;
+  const hasSelection = selectedCount > 0;
+  const allSelected = selectedCount === events.length;
+  const indeterminate = hasSelection && !allSelected;
+
+  const toggleGroup = () => {
+    if (phase !== "selecting") {
+      return;
+    }
+    const result = toggle(group.beginEventId, events);
+    if (result === "too-large") {
+      toast.error(
+        t(($) => {
+          return $.chat.sharing.tooLarge;
+        }),
+      );
+    }
+  };
+
+  const aliasEventIds =
+    group.role === "assistant"
+      ? [
+          ...group.events,
+          ...(runWorkSection
+            ? runWorkSection.hiddenGroups.flatMap((hiddenGroup) => {
+                return hiddenGroup.events;
+              })
+            : []),
+        ]
+          .map((event) => {
+            return event.id;
+          })
+          .join(" ")
+      : undefined;
+  const selection = {
+    allSelected,
+    indeterminate,
+    selecting: phase === "selecting",
+    onToggle: toggleGroup,
+  };
+  // Preserve the message list's rhythm inside this group, including the gaps
+  // that back-to-back user bubbles stack into.
+  const messages = (
+    <div
+      className={cn("flex min-w-0 flex-col", CHAT_THREAD_MESSAGE_ROW_GAP_CLASS)}
+    >
+      {content}
+    </div>
+  );
+
+  return (
+    <>
+      {leadingDate ? <ChatThreadDateDivider divider={leadingDate} /> : null}
+      <div
+        data-chat-share-selectable-group
+        data-chat-scroll-anchor-alias-event-ids={aliasEventIds}
+        data-selected={hasSelection || undefined}
+        className={shareGroupClassName({
+          nameLine,
+          role: group.role,
+          phase,
+          hasSelection,
+        })}
+      >
+        <ShareGroupSelectionColumn role={group.role} {...selection} />
+        <div
+          className={cn(
+            "min-w-0",
+            !nameLine && "@[900px]:pl-[46px]",
+            // Once anything is chosen, what is left out steps back, and
+            // pointing at its checkbox brings it forward again.
+            selectedEventIds.size > 0 && !hasSelection && "opacity-40",
+            phase === "selecting" &&
+              "[@media(hover:hover)]:group-has-[[data-chat-share-selection]:hover]/share-group:opacity-100",
+          )}
+        >
+          {messages}
+        </div>
+      </div>
+    </>
+  );
+}
+
+function shareGroupClassName({
+  nameLine,
+  role,
+  phase,
+  hasSelection,
+}: {
+  readonly nameLine: boolean;
+  readonly role: ChatEventGroup["role"];
+  readonly phase: SharedThreadSelectionPhase;
+  readonly hasSelection: boolean;
+}): string {
+  return cn(
+    "group/share-group relative -mx-2 -my-1 grid grid-cols-[1.75rem_minmax(0,1fr)] gap-2 rounded-xl px-2 py-1.5 transition-colors",
+    // Keep the checkbox outside the reading column only once the pane
+    // has enough gutter for it and, in the avatar layout, the avatar.
+    nameLine
+      ? "@[960px]:-mr-3 @[960px]:-ml-[54px] @[960px]:grid-cols-[2.25rem_minmax(0,1fr)] @[960px]:gap-2.5 @[960px]:pr-3"
+      : "@[1060px]:-mr-3 @[1060px]:-ml-[100px] @[1060px]:grid-cols-[2.25rem_minmax(0,1fr)] @[1060px]:gap-2.5 @[1060px]:pr-3",
+    // Sharing offers no per-message action, so a user message drops the
+    // action row under its bubble. Every group then sits the same 16px
+    // from the next, and the tint hugs the bubble.
+    role === "user" && "[&_[data-chat-user-message-actions]]:hidden",
+    "data-selected:bg-gray-50 dark:data-selected:bg-gray-100",
+    phase === "selecting" &&
+      (hasSelection
+        ? "[@media(hover:hover)]:has-[[data-chat-share-selection]:hover]:bg-state-hover-overlay"
+        : "[@media(hover:hover)]:has-[[data-chat-share-selection]:hover]:bg-state-hover"),
+  );
+}
+
+function SelectablePagedGroupRow(props: Parameters<typeof PagedGroupRow>[0]) {
+  return useChatShareRefresh() ? (
+    <RefreshedSelectablePagedGroupRow {...props} />
+  ) : (
+    <LegacySelectablePagedGroupRow {...props} />
+  );
+}
+
+function LegacySelectablePagedGroupRow({
   group,
   thread,
   modelChanges,
@@ -6147,7 +6431,7 @@ function SelectablePagedGroupRow({
         {/* The selection column owns selection. Message content stays
             outside it so text selection, links, and message actions keep
             their owners. */}
-        <ShareGroupSelectionColumn role={group.role} {...selection} />
+        <LegacyShareGroupSelectionColumn role={group.role} {...selection} />
         {messages}
       </div>
     );
@@ -6198,6 +6482,49 @@ function shareGroupCheckboxHoverClass({
   );
 }
 
+function ShareGroupSelectionColumn({
+  role,
+  ...props
+}: ShareGroupSelectionProps & { role: ChatEventGroup["role"] }) {
+  const { t } = useTranslation();
+  const { allSelected, indeterminate, selecting, onToggle } = props;
+  return (
+    <Field.Root
+      data-chat-share-selection
+      className="group/share-selection relative flex justify-center"
+    >
+      {/* The label covers the whole column, including the row's padding,
+          and keeps its text for assistive technology only. */}
+      <Field.Label className="absolute -inset-y-1.5 -left-2 -right-2 cursor-default data-disabled:pointer-events-none @[960px]:-right-2.5">
+        <span className="sr-only">
+          {shareGroupSelectionLabel(t, allSelected)}
+        </span>
+      </Field.Label>
+      {/* Centred on the group's first line: the name line of a reply, or the
+          first text line of a bubble. Sticky, so a long reply keeps its
+          checkbox in view. */}
+      <span
+        className={cn(
+          "sticky top-2 flex items-center",
+          role === "assistant"
+            ? "h-8"
+            : "h-[calc(1lh+1.5rem)] text-[0.9375rem] leading-[1.7]",
+        )}
+      >
+        <Checkbox
+          checked={allSelected}
+          indeterminate={indeterminate}
+          // Once the link exists the selection is the record of what was
+          // shared: read-only, at full strength rather than faded as disabled.
+          readOnly={!selecting}
+          className={cn(shareGroupCheckboxHoverClass(props))}
+          onCheckedChange={onToggle}
+        />
+      </span>
+    </Field.Root>
+  );
+}
+
 function ShareGroupLabelRow(props: ShareGroupSelectionProps) {
   const { t } = useTranslation();
   const { allSelected, indeterminate, selecting, onToggle } = props;
@@ -6228,7 +6555,7 @@ function ShareGroupLabelRow(props: ShareGroupSelectionProps) {
   );
 }
 
-function ShareGroupSelectionColumn({
+function LegacyShareGroupSelectionColumn({
   role,
   ...props
 }: ShareGroupSelectionProps & { role: ChatEventGroup["role"] }) {
