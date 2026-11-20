@@ -63,6 +63,7 @@
   int updates_downloading;
   int updates_error_check;
   int updates_install_toolbar;
+  int updates_later;
   int updates_new_version;
   int updates_open_settings;
   int updates_ready;
@@ -838,9 +839,6 @@
 -keep,allowobfuscation class kotlin.internal.ProgressionUtilKt {
   public static int getProgressionLastElement(int, int, int);
 }
--keep,allowobfuscation class kotlin.io.ByteStreamsKt {
-  public static byte[] readBytes(java.io.InputStream);
-}
 -keep,allowobfuscation class kotlin.io.CloseableKt {
   public static void closeFinally(java.io.Closeable, java.lang.Throwable);
 }
@@ -849,6 +847,7 @@
 -keep,allowobfuscation class kotlin.io.FilesKt__FileReadWriteKt {
   public static byte[] readBytes(java.io.File);
   public static void writeBytes(java.io.File, byte[]);
+  public static void writeText$default(java.io.File, java.lang.String, java.nio.charset.Charset, int, java.lang.Object);
 }
 -keep,allowobfuscation class kotlin.io.FilesKt__UtilsKt {
   public static java.io.File copyTo$default(java.io.File, java.io.File, boolean, int, int, java.lang.Object);

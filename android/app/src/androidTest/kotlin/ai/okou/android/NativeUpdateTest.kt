@@ -8,7 +8,6 @@ import ai.okou.android.updates.UpdateRecord
 import ai.okou.android.updates.UpdateService
 import ai.okou.android.updates.UpdateStore
 import ai.okou.android.updates.UpdateTransfer
-import android.os.ParcelFileDescriptor
 import android.view.KeyEvent
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.takeScreenshot
@@ -23,7 +22,6 @@ import java.io.File
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
-import java.util.regex.Pattern
 import kotlinx.coroutines.CompletableDeferred
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -41,7 +39,10 @@ class NativeUpdateTest {
             takeScreenshot().writeToTestStorage("android-update-$it")
         }
 
-    internal fun verifyJourney(capture: (String) -> Unit) {
+    internal fun verifyJourney(
+        continueInSystem: ((UiDevice, TestOkouApplication) -> Unit)? = null,
+        capture: (String) -> Unit,
+    ) {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val app = instrumentation.targetContext.applicationContext as TestOkouApplication
         val device = UiDevice.getInstance(instrumentation)
@@ -228,7 +229,9 @@ class NativeUpdateTest {
             openOverflow()
             assertNotNull(text(filter))
             check(file.parentFile!!.isDirectory || file.parentFile!!.mkdirs())
-            File(app.applicationInfo.sourceDir).copyTo(file, overwrite = true)
+            if (continueInSystem == null)
+                file.writeText("verified package from the service fixture")
+            else File(app.applicationInfo.sourceDir).copyTo(file, overwrite = true)
             download.complete(file)
             assertTrue(
                 device.wait(
@@ -247,7 +250,8 @@ class NativeUpdateTest {
             device.pressBack()
             exists(R.string.updates_open_settings)
             captureState("install-permission.png")
-            confirmAndCancel(device, app, capture)
+            if (continueInSystem == null) click(R.string.updates_later)
+            else continueInSystem(device, app)
             exists(R.string.updates_install_toolbar)
             captureState("toolbar-ready.png")
             openOverflow()
@@ -281,13 +285,6 @@ class NativeUpdateTest {
                     { owner.close() },
                     { file.delete() },
                     { app.updateOwner = previous },
-                    {
-                        val permission =
-                            instrumentation.uiAutomation.executeShellCommand(
-                                "appops set ${app.packageName} REQUEST_INSTALL_PACKAGES default"
-                            )
-                        ParcelFileDescriptor.AutoCloseInputStream(permission).use { it.readBytes() }
-                    },
                     { instrumentation.resetInTouchMode() },
                 )) try {
                 cleanup()
@@ -296,45 +293,5 @@ class NativeUpdateTest {
             }
         }
         MultipleFailureException.assertEmpty(failures)
-    }
-
-    private fun confirmAndCancel(
-        device: UiDevice,
-        app: TestOkouApplication,
-        capture: (String) -> Unit,
-    ) {
-        val openSettings =
-            By.pkg(app.packageName).text(app.getString(R.string.updates_open_settings))
-        checkNotNull(device.wait(Until.findObject(openSettings), 10_000)).click()
-        val sourceSwitch = By.pkg("com.android.settings").checkable(true)
-        checkNotNull(device.wait(Until.findObject(sourceSwitch), 10_000)) {
-                "Android source permission switch was not visible"
-            }
-            .click()
-        check(
-            device.wait(
-                object : Condition<UiDevice, Boolean> {
-                    override fun apply(device: UiDevice) =
-                        app.packageManager.canRequestPackageInstalls()
-                },
-                10_000,
-            )
-        ) {
-            "Android did not grant this source permission"
-        }
-        device.pressBack()
-
-        val cancel = By.text(Pattern.compile("^(cancel|取消)$", Pattern.CASE_INSENSITIVE))
-        val dismiss =
-            checkNotNull(device.wait(Until.findObject(cancel), 15_000)) {
-                "Android installer confirmation was not visible"
-            }
-        val install =
-            By.pkg(dismiss.applicationPackage)
-                .text(Pattern.compile("^(install|安装)$", Pattern.CASE_INSENSITIVE))
-        assertNotNull(device.wait(Until.findObject(install), 10_000))
-        device.waitForIdle()
-        capture("android-installer.png")
-        dismiss.click()
     }
 }
