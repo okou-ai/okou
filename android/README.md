@@ -450,7 +450,7 @@ The wrapper streams emulator logcat to `build/reports/instrumentation/logcat/`
 while Gradle owns the device. It gives the native command a 15-minute deadline
 within a 20-minute test step and 25-minute job budget so timeout diagnostics can finish before job
 termination. Nonzero exits, timeout and cancellation remain failures. CI also
-requires all ten distinct native cases with no failures, errors or skips.
+requires all eleven distinct native cases with no failures, errors or skips.
 CI retains these outputs and the Gradle execution log for seven days in
 `android-instrumentation-api35-<revision>` artifacts. Reruns append
 `-attempt-<number>` so earlier diagnostics remain available.
