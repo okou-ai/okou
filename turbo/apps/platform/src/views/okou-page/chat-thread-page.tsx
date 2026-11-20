@@ -6120,7 +6120,6 @@ function SelectablePagedGroupRow({
           nameLine,
           role: group.role,
           phase,
-          hasSelection,
         })}
       >
         <ShareGroupSelectionColumn role={group.role} {...selection} />
@@ -6128,9 +6127,12 @@ function SelectablePagedGroupRow({
           className={cn(
             "min-w-0 transition-opacity",
             !nameLine && "@[900px]:pl-[46px]",
-            // Once the link exists, what was left out steps back so the
-            // shared messages read as the result.
-            phase === "created" && !hasSelection && "opacity-40",
+            // Selection reads as a spotlight rather than a fill: once
+            // anything is chosen, what is left out steps back, and pointing at
+            // its checkbox brings it forward again.
+            selectedEventIds.size > 0 && !hasSelection && "opacity-40",
+            phase === "selecting" &&
+              "[@media(hover:hover)]:group-has-[[data-chat-share-selection]:hover]/share-group:opacity-100",
           )}
         >
           {messages}
@@ -6144,15 +6146,13 @@ function shareGroupClassName({
   nameLine,
   role,
   phase,
-  hasSelection,
 }: {
   readonly nameLine: boolean;
   readonly role: ChatEventGroup["role"];
   readonly phase: SharedThreadSelectionPhase;
-  readonly hasSelection: boolean;
 }): string {
   return cn(
-    "relative -mx-2 -my-1 grid grid-cols-[1.75rem_minmax(0,1fr)] gap-2 rounded-xl px-2 py-1.5 transition-colors",
+    "group/share-group relative -mx-2 -my-1 grid grid-cols-[1.75rem_minmax(0,1fr)] gap-2 rounded-xl px-2 py-1.5 transition-colors",
     // Keep the checkbox outside the reading column only once the pane
     // has enough gutter for it and, in the avatar layout, the avatar.
     nameLine
@@ -6162,11 +6162,8 @@ function shareGroupClassName({
     // action row under its bubble. Every group then sits the same 16px
     // from the next, and the tint hugs the bubble.
     role === "user" && "[&_[data-chat-user-message-actions]]:hidden",
-    "data-selected:bg-gray-50 dark:data-selected:bg-gray-100",
     phase === "selecting" &&
-      (hasSelection
-        ? "[@media(hover:hover)]:has-[[data-chat-share-selection]:hover]:bg-state-hover-overlay"
-        : "[@media(hover:hover)]:has-[[data-chat-share-selection]:hover]:bg-state-hover"),
+      "[@media(hover:hover)]:has-[[data-chat-share-selection]:hover]:bg-state-hover",
   );
 }
 
