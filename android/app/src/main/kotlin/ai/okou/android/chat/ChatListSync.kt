@@ -19,7 +19,7 @@ class ChatListSync(
     data class Result(
         val checkpoint: ChatCheckpoint,
         val changed: Boolean,
-        val eventsBeforeRebase: List<ChatEventsEventsItem> = emptyList(),
+        val eventIdsBeforeRebase: Set<String> = emptySet(),
     )
 
     suspend fun synchronize(cached: ChatCheckpoint?): Result =
@@ -49,7 +49,15 @@ class ChatListSync(
             val rebased = tail(snapshot, fromSnapshot = true).checkpoint
             // A lagging snapshot must not roll back a tail already confirmed in this refresh.
             if (rebased.cursor.seqId < confirmed.checkpoint.cursor.seqId) result
-            else Result(rebased, changed = true, eventsBeforeRebase = confirmed.checkpoint.events)
+            else
+                Result(
+                    rebased,
+                    changed = true,
+                    eventIdsBeforeRebase =
+                        confirmed.checkpoint.events.mapNotNullTo(hashSetOf()) {
+                            it.cursor().eventId
+                        },
+                )
         }
 
     private suspend fun snapshot(): ChatCheckpoint {

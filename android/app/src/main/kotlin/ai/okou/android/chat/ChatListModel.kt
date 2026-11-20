@@ -785,7 +785,7 @@ class ChatListModel(
                             checkpoint.snapshotCursor.eventId?.let(::add)
                             saved.checkpoint.events.forEach { it.cursor().eventId?.let(::add) }
                             checkpoint.events.forEach { it.cursor().eventId?.let(::add) }
-                            result.eventsBeforeRebase.forEach { it.cursor().eventId?.let(::add) }
+                            addAll(result.eventIdsBeforeRebase)
                         }
                         settleRowEdits(observed)
                     }

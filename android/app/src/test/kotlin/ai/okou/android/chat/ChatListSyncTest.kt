@@ -199,7 +199,7 @@ class ChatListSyncTest {
             val confirmed = result.checkpoint
             assertEquals(102L, confirmed.snapshotCursor.seqId)
             assertEquals(listOf(103L), confirmed.events.map { it.cursor().seqId })
-            assertTrue(result.eventsBeforeRebase.any { it.cursor().eventId == eventId(102) })
+            assertTrue(eventId(102) in result.eventIdsBeforeRebase)
             assertEquals("Newest title", replayChats(confirmed).single().title)
             assertEquals(
                 "/api/chat-threads/events?sinceSeqId=101",
