@@ -10,7 +10,13 @@ import {
   myOkouProactiveSettingsEnabled$,
   singleAgentEnabled$,
 } from "../../single-agent.ts";
-import { searchParams$, updateSearchParams$ } from "../../route.ts";
+import {
+  hash$,
+  historyState$,
+  replaceSearchParams$,
+  searchParams$,
+  updateSearchParams$,
+} from "../../route.ts";
 import { reloadIndexedDbDiagnosticsFromWorker$ } from "../../shared-database.ts";
 import { resetSignal } from "../../utils.ts";
 import { usagePackManagementAsync$ } from "../billing.ts";
@@ -119,6 +125,36 @@ export const settingsActiveSection$ = computed((get) => {
   return get(internalActiveSection$);
 });
 
+export const myOkouTab$ = computed((get) => {
+  const params = get(searchParams$);
+  return params.get("settings") === "my-okou" &&
+    params.get("focus") === "instructions"
+    ? "instructions"
+    : "proactive";
+});
+
+export const setMyOkouTab$ = command(
+  ({ get, set }, tab: "instructions" | "proactive") => {
+    const params = new URLSearchParams(get(searchParams$));
+    if (tab === "instructions") {
+      params.set("focus", "instructions");
+    } else {
+      params.delete("focus");
+    }
+    set(replaceSearchParams$, params, get(historyState$), get(hash$));
+  },
+);
+
+function setSettingsSectionParam(
+  params: URLSearchParams,
+  section: SettingsSection,
+) {
+  if (section !== "my-okou" && params.get("focus") === "instructions") {
+    params.delete("focus");
+  }
+  params.set("settings", section);
+}
+
 export const setSettingsActiveSection$ = command(
   ({ get, set }, section: SettingsSection, signal: AbortSignal) => {
     signal.throwIfAborted();
@@ -140,7 +176,7 @@ export const setSettingsActiveSection$ = command(
       ) {
         params.delete("focus");
       }
-      params.set("settings", section);
+      setSettingsSectionParam(params, section);
       set(updateSearchParams$, params);
     }
   },
@@ -152,7 +188,7 @@ export const openSettingsBillingPlans$ = command(({ get, set }) => {
   set(clearBillingScrollTarget$);
 
   const params = new URLSearchParams(get(searchParams$));
-  params.set("settings", "billing");
+  setSettingsSectionParam(params, "billing");
   params.set("billingView", "plans");
   set(updateSearchParams$, params);
 });
@@ -229,7 +265,8 @@ export const closeSettingsModal$ = command(({ get, set }) => {
   if (params.has("settings") || params.has("billingView")) {
     params.delete("settings");
     params.delete("billingView");
-    if (params.get("focus") === MORNING_BRIEF_PREFERENCES_FOCUS) {
+    const focus = params.get("focus");
+    if (focus === MORNING_BRIEF_PREFERENCES_FOCUS || focus === "instructions") {
       params.delete("focus");
     }
     set(updateSearchParams$, params);
@@ -310,7 +347,7 @@ export const setSettingsDialogOpen$ = command(
     const params = new URLSearchParams(get(searchParams$));
     const section = get(internalActiveSection$);
     if (params.get("settings") !== section) {
-      params.set("settings", section);
+      setSettingsSectionParam(params, section);
       set(updateSearchParams$, params);
     }
   },

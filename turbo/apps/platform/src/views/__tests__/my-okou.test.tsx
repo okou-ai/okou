@@ -324,22 +324,31 @@ test("Workspace switching isolates drafts and restores the original workspace dr
   });
 });
 
-test.each(["profile", "instructions"])(
-  "Default configuration %s opens personal Instructions",
-  async (tab) => {
+test.each([
+  { tab: "profile", proactive: false },
+  { tab: "instructions", proactive: false },
+  { tab: "profile", proactive: true },
+  { tab: "instructions", proactive: true },
+])(
+  "Default configuration $tab opens personal Instructions with the Proactive layout $proactive",
+  async ({ tab, proactive }) => {
     context.mocks.api(instructionsContract.get, ({ respond }) => {
       return respond(200, response("Personal value"));
     });
     await setupPage({
       context,
       path: `/agents/c0000000-0000-4000-a000-000000000001?tab=${tab}`,
-      featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
+      featureSwitches: {
+        [FeatureSwitchKey.SingleAgent]: true,
+        [FeatureSwitchKey.MyOkouProactiveSettings]: proactive,
+      },
     });
-    await waitFor(() => {
-      expect(location.pathname).toBe("/");
-      expect(location.search).toBe("?settings=my-okou");
-    });
-    await screen.findByLabelText("Instructions");
+    const editor = await screen.findByRole("textbox", { name: "Instructions" });
+    expect(editor).toHaveTextContent("Personal value");
+    expect(location.pathname).toBe("/");
+    expect(new URLSearchParams(location.search).get("settings")).toBe(
+      "my-okou",
+    );
   },
 );
 
@@ -384,6 +393,39 @@ const proactiveFeatures = {
   [FeatureSwitchKey.AgentSuggestion]: true,
   [FeatureSwitchKey.ProactiveLearning]: true,
 } as const;
+
+test("An Instructions link opens its editor and a later ordinary visit starts on Proactive", async () => {
+  context.mocks.api(instructionsContract.get, ({ respond }) => {
+    return respond(200, response("Instructions from the welcome link"));
+  });
+  await setupPage({
+    context,
+    path: "/?settings=my-okou&focus=instructions",
+    featureSwitches: proactiveFeatures,
+  });
+  const instructions = await screen.findByRole("tabpanel", {
+    name: "Instructions",
+  });
+  const editor = await within(instructions).findByRole("textbox", {
+    name: "Instructions",
+  });
+  expect(editor).toHaveTextContent("Instructions from the welcome link");
+  click(button("Chat"));
+  await screen.findByRole("heading", { name: "Chat" });
+  click(button("My Okou"));
+  await screen.findByRole("tabpanel", { name: "Proactive" });
+  click(within(screen.getByRole("tablist")).getByText("Instructions"));
+  await screen.findByRole("tabpanel", { name: "Instructions" });
+  expect(new URLSearchParams(location.search).get("focus")).toBe(
+    "instructions",
+  );
+  const dialog = screen.getByRole("dialog", { name: "Settings" });
+  click(within(dialog).getByLabelText("Close"));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+  expect(new URLSearchParams(location.search).get("focus")).toBeNull();
+});
 
 test("My Okou opens Proactive first, unifies legacy Suggestions choices, and retains an Instructions draft across tabs", async () => {
   context.mocks.api(instructionsContract.get, ({ respond }) => {

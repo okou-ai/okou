@@ -21,7 +21,11 @@ import {
   myOkouSectionRef$,
   type MyOkouSignals,
 } from "../../../../../signals/my-okou.ts";
-import { settingsActionSignal$ } from "../../../../../signals/okou-page/settings/settings-dialog.ts";
+import {
+  myOkouTab$,
+  setMyOkouTab$,
+  settingsActionSignal$,
+} from "../../../../../signals/okou-page/settings/settings-dialog.ts";
 import { detach, Reason } from "../../../../../signals/utils.ts";
 import { TiptapInstructionsEditor } from "../../../tiptap-instructions-editor.tsx";
 import { UnsavedBar } from "../../../unsaved-bar.tsx";
@@ -33,6 +37,8 @@ import { ProactiveSection } from "./proactive-section.tsx";
 export function MyOkouSection() {
   const { t } = useTranslation();
   const proactive = useLastResolved(myOkouProactiveSettingsEnabled$);
+  const tab = useGet(myOkouTab$);
+  const setTab = useSet(setMyOkouTab$);
   if (proactive === undefined) {
     return <LoadingInstructions />;
   }
@@ -40,7 +46,7 @@ export function MyOkouSection() {
     return <InstructionsSection />;
   }
   return (
-    <Tabs defaultValue="proactive">
+    <Tabs value={tab} onValueChange={setTab}>
       <TabsList
         aria-label={t(($) => {
           return $.myOkou.title;
