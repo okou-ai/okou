@@ -1766,3 +1766,35 @@ raw-video-thumbnail-001	turbo/apps/platform/src/views/okou-page/__tests__/raw-vi
 raw-video-thumbnail-003	turbo/apps/platform/src/views/okou-page/__tests__/raw-video-thumbnail.test.tsx	Shared raw videos preserve playback with or without public posters	88	passed
 thread-resource-thumbnails-001	turbo/apps/platform/src/views/okou-page/__tests__/thread-resource-thumbnails.test.tsx	Thread artifacts use authorized thumbnails and open the original image	68	passed
 thread-resource-thumbnails-002	turbo/apps/platform/src/views/okou-page/__tests__/thread-resource-thumbnails.test.tsx	Workspace search uses a small authorized thumbnail for a private image	99	passed
+feishu-appid-lifecycle-001	turbo/apps/platform/src/views/okou-page/__tests__/feishu-appid-lifecycle.test.tsx	feishu app validation preserves a newly opened setup	17	passed
+feishu-completion-lifecycle-001	turbo/apps/platform/src/views/okou-page/__tests__/feishu-completion-lifecycle.test.tsx	feishu setup completion preserves a newer bot draft and its page	19	passed
+feishu-icon-download-002	turbo/apps/platform/src/views/okou-page/__tests__/feishu-icon-download.test.tsx	feishu icon download Enter downloads the cross-origin icon with the platform filename	63	passed
+feishu-icon-download-003	turbo/apps/platform/src/views/okou-page/__tests__/feishu-icon-download.test.tsx	feishu icon download reports an unreadable icon without navigating away from setup	71	passed
+feishu-icon-download-004	turbo/apps/platform/src/views/okou-page/__tests__/feishu-icon-download.test.tsx	lark icon download click downloads the cross-origin icon with the platform filename	91	passed
+feishu-setup-guide-001	turbo/apps/platform/src/views/okou-page/__tests__/feishu-setup-guide.test.tsx	feishu screenshots and secret controls preserve the current draft	19	passed
+feishu-setup-guide-002	turbo/apps/platform/src/views/okou-page/__tests__/feishu-setup-guide.test.tsx	lark screenshots and secret controls preserve the current draft	19	passed
+feishu-setup-guide-003	turbo/apps/platform/src/views/okou-page/__tests__/feishu-setup-guide.test.tsx	feishu review guide navigates steps and resets reference screenshots	74	passed
+feishu-setup-guide-004	turbo/apps/platform/src/views/okou-page/__tests__/feishu-setup-guide.test.tsx	lark review guide navigates steps and resets reference screenshots	74	passed
+feishu-setup-guide-005	turbo/apps/platform/src/views/okou-page/__tests__/feishu-setup-guide.test.tsx	feishu setup deep links preserve admin access	128	passed
+feishu-token-lifecycle-001	turbo/apps/platform/src/views/okou-page/__tests__/feishu-token-lifecycle.test.tsx	feishu token setup preserves a newer bot draft	19	passed
+agentphone-connect-page-001	turbo/apps/platform/src/views/okou-page/__tests__/agentphone-connect-page.test.tsx	rejects connection links with a malformed signature	56	passed
+agentphone-connect-page-003	turbo/apps/platform/src/views/okou-page/__tests__/agentphone-connect-page.test.tsx	shows the existing connection without another Connect action	78	passed
+agentphone-connect-page-004	turbo/apps/platform/src/views/okou-page/__tests__/agentphone-connect-page.test.tsx	offers an explicit switch and sends the confirmed previous number	87	passed
+agentphone-connect-page-006	turbo/apps/platform/src/views/okou-page/__tests__/agentphone-connect-page.test.tsx	keeps the switch confirmation when its signed link expires	123	passed
+agentphone-connect-page-008	turbo/apps/platform/src/views/okou-page/__tests__/agentphone-connect-page.test.tsx	shows the connected overview and opens the official conversation for +15555550123	149	passed
+agentphone-connect-page-010	turbo/apps/platform/src/views/okou-page/__tests__/agentphone-connect-page.test.tsx	opens the shared connection dialog from the unlinked overview and shows completion	173	passed
+agentphone-connect-page-013	turbo/apps/platform/src/views/okou-page/__tests__/agentphone-connect-page.test.tsx	confirms the current WhatsApp number before replacing it	211	passed
+agentphone-connect-page-015	turbo/apps/platform/src/views/okou-page/__tests__/agentphone-connect-page.test.tsx	offers the existing WhatsApp QR flow from its dedicated settings page	262	passed
+cloudflare-access-chat-refresh-001	turbo/apps/platform/src/views/okou-page/__tests__/cloudflare-access-chat-refresh.test.tsx	Reopening the composer refreshes a renamed SSH host while preserving default access	18	passed
+cloudflare-access-parity-001	turbo/apps/platform/src/views/okou-page/__tests__/cloudflare-access-parity.test.tsx	An unchanged save returns to details without updating the configuration	84	passed
+cloudflare-access-parity-002	turbo/apps/platform/src/views/okou-page/__tests__/cloudflare-access-parity.test.tsx	Shared deletion refreshes changed impact on cloudflare-access:changed and requires fresh confirmation	100	passed
+cloudflare-access-parity-004	turbo/apps/platform/src/views/okou-page/__tests__/cloudflare-access-parity.test.tsx	Shared deletion keeps confirmation when a refreshed impact snapshot is unchanged	124	passed
+custom-managed-default-reconnect-001	turbo/apps/platform/src/views/okou-page/__tests__/custom-managed-default-reconnect.test.tsx	Preserve the feishu managed default connection lifecycle	22	passed
+discord-oauth-compatibility-001	turbo/apps/platform/src/views/okou-page/__tests__/discord-oauth-compatibility.test.tsx	The current Works opener completes safely with a closed after approval consent tab	46	passed
+discord-oauth-compatibility-002	turbo/apps/platform/src/views/okou-page/__tests__/discord-oauth-compatibility.test.tsx	The current Works opener completes safely with a ready consent tab	46	passed
+discord-oauth-compatibility-003	turbo/apps/platform/src/views/okou-page/__tests__/discord-oauth-compatibility.test.tsx	Approval and closure while a pending response is in flight still completes from /works	127	passed
+discord-oauth-compatibility-004	turbo/apps/platform/src/views/okou-page/__tests__/discord-oauth-compatibility.test.tsx	Approval and closure while a pending response is in flight still completes from /settings/discord	127	passed
+discord-oauth-compatibility-005	turbo/apps/platform/src/views/okou-page/__tests__/discord-oauth-compatibility.test.tsx	A missing opener reports authorization interruption without retaining proof	199	passed
+discord-oauth-compatibility-007	turbo/apps/platform/src/views/okou-page/__tests__/discord-oauth-compatibility.test.tsx	A closes after approval opener reports authorization interruption without retaining proof	199	passed
+discord-oauth-compatibility-008	turbo/apps/platform/src/views/okou-page/__tests__/discord-oauth-compatibility.test.tsx	The first completion result wins over a duplicate result	233	passed
+discord-oauth-compatibility-014	turbo/apps/platform/src/views/okou-page/__tests__/discord-oauth-compatibility.test.tsx	A failed attempt keeps its consent popup until route abort closes it	262	passed
