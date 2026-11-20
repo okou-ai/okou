@@ -1674,8 +1674,7 @@
           "change": "Changer la couverture",
           "default": "Par défaut",
           "gallery": "Couvertures",
-          "option": "Couverture {{index}}",
-          "reset": "Rétablir par défaut"
+          "option": "Couverture {{index}}"
         },
         "loading": "Chargement des suggestions",
         "next": "Suggestion suivante",

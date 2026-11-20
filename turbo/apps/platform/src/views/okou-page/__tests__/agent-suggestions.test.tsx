@@ -2324,7 +2324,7 @@ test("Cover and card artwork stay fixed through browsing, feedback and Undo", as
   );
 });
 
-test("The member picks a For you cover, keeps it after reload and can reset it", async () => {
+test("The member picks a For you cover, keeps it after reload and can return to the default", async () => {
   const items = numberedSuggestions(2);
   mockPool(items);
   await openForYou();
@@ -2342,7 +2342,6 @@ test("The member picks a For you cover, keeps it after reload and can reset it",
     "aria-checked",
     "true",
   );
-  expect(button("Reset to default", "button", picker)).toBeDisabled();
   click(button("Cover 8", "radio", picker));
   await waitFor(() => {
     expect(cover()).toBe(forYouCovers[7].src);
@@ -2360,7 +2359,7 @@ test("The member picks a For you cover, keeps it after reload and can reset it",
 
   click(button("Change cover"));
   const reopened = await screen.findByRole("dialog", { name: "Change cover" });
-  click(button("Reset to default", "button", reopened));
+  click(button("Cover 1", "radio", reopened));
   await waitFor(() => {
     expect(cover()).toBe(forYouCovers[0].src);
   });

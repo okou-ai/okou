@@ -321,25 +321,11 @@ function ForYouCover() {
           })}
           className="w-[28rem] max-w-[calc(100vw-32px)] p-3"
         >
-          <div className="flex items-center justify-between px-1 pb-2.5">
-            <p className="text-sm font-medium text-foreground">
-              {t(($) => {
-                return $.chat.agentSuggestions.forYou.cover.gallery;
-              })}
-            </p>
-            <Button
-              variant="quiet"
-              size="sm"
-              disabled={cover.id === DEFAULT_FOR_YOU_COVER_ID}
-              onClick={() => {
-                select(DEFAULT_FOR_YOU_COVER_ID);
-              }}
-            >
-              {t(($) => {
-                return $.chat.agentSuggestions.forYou.cover.reset;
-              })}
-            </Button>
-          </div>
+          <p className="px-1.5 pb-2 text-sm font-medium text-foreground">
+            {t(($) => {
+              return $.chat.agentSuggestions.forYou.cover.gallery;
+            })}
+          </p>
           <RadioGroup
             value={cover.id}
             onValueChange={(value) => {
@@ -348,7 +334,7 @@ function ForYouCover() {
             aria-label={t(($) => {
               return $.chat.agentSuggestions.forYou.cover.gallery;
             })}
-            className="grid max-h-80 grid-cols-3 gap-2 overflow-y-auto p-0.5"
+            className="grid max-h-80 grid-cols-3 gap-2 overflow-y-auto p-1.5"
           >
             {forYouCovers.map((option, index) => {
               return (

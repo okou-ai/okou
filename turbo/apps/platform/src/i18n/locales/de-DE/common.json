@@ -1649,8 +1649,7 @@
           "change": "Titelbild ändern",
           "default": "Standard",
           "gallery": "Titelbilder",
-          "option": "Titelbild {{index}}",
-          "reset": "Auf Standard zurücksetzen"
+          "option": "Titelbild {{index}}"
         },
         "loading": "Vorschläge werden geladen",
         "next": "Nächster Vorschlag",
