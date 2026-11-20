@@ -15,7 +15,7 @@ async fn native_finalization_keeps_history_and_publishes_identity_after_acknowle
             let mut runtime = finalization_runtime().unwrap();
             let session_id = "native-completion-session";
             let history = b"{\"type\":\"assistant\",\"message\":\"retained context\"}\n";
-            let dir = write_literal_session_history(&mut runtime, session_id, history).unwrap();
+            let dir = write_retained_session_history(&mut runtime, session_id, history).unwrap();
             let path = claude_history_path(dir.path(), session_id);
             let complete = api.server().mock(|when, then| {
                 when.method(POST)
@@ -80,7 +80,7 @@ async fn recovery_completion_accepts_missing_local_history_without_publishing_ho
     let _files = SessionFinalizationFilesGuard::new();
     let _telemetry = FinalizationTelemetryGuard::new(&api);
     let mut runtime = finalization_runtime().unwrap();
-    let dir = write_literal_session_history(&mut runtime, "missing-history", b"{}").unwrap();
+    let dir = write_retained_session_history(&mut runtime, "missing-history", b"{}").unwrap();
     std::fs::remove_file(claude_history_path(dir.path(), "missing-history")).unwrap();
     let complete = api.server().mock(|when, then| {
         when.method(POST).path("/api/webhooks/agent/complete")
