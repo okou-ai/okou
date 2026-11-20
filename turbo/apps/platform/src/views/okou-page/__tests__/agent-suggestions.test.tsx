@@ -374,30 +374,18 @@ function captureSend(): Promise<SentInput> {
   return sent.promise;
 }
 const DIRECTION = "What do you have in mind?";
-async function openDirectionEditor(
+async function openCustomDirection(
   container: ParentNode = document.body,
-  target = "New chat",
-): Promise<HTMLElement> {
+): Promise<{ editor: HTMLElement; note: HTMLElement }> {
   const trigger = button(DIRECTION, "button", container);
   const card = trigger.closest("article");
   if (!card) {
     throw new Error("Expected the direction trigger inside a suggestion card");
   }
   click(trigger);
-  return await within(card).findByRole("region", { name: target });
-}
-async function openCustomDirection(
-  container: ParentNode = document.body,
-): Promise<{ editor: HTMLElement; note: HTMLElement }> {
-  const editor = await openDirectionEditor(container);
+  const editor = await within(card).findByRole("region", { name: DIRECTION });
   const note = await within(editor).findByRole("textbox", { name: DIRECTION });
   return { editor, note };
-}
-async function closeDirectionEditor(editor: HTMLElement): Promise<void> {
-  click(within(editor).getByLabelText("Close"));
-  await waitFor(() => {
-    expect(editor).not.toBeInTheDocument();
-  });
 }
 async function writeDirection(note: HTMLElement, text: string): Promise<void> {
   const user = userEvent.setup();
@@ -1040,7 +1028,11 @@ test("Custom direction opens a full composer for a new chat without touching the
   await screen.findByText(makeSuggestion().content.title);
   const { editor, note } = await openCustomDirection();
   expect(pathname()).toBe(suggestionPath);
-  expect(within(editor).getByRole("heading")).toHaveTextContent("New chat");
+  expect(within(editor).queryByRole("heading")).not.toBeInTheDocument();
+  expect(within(editor).queryByLabelText("Close")).not.toBeInTheDocument();
+  expect(
+    within(editor).queryByLabelText("Remove feedback"),
+  ).not.toBeInTheDocument();
   expect(composer(editor)).toHaveTextContent(makeSuggestion().content.title);
   expect(composer(editor)).not.toHaveTextContent("launch-plan-v2");
   expect(composer(editor)).not.toHaveTextContent("Keep my original draft");
@@ -1053,39 +1045,29 @@ test("Custom direction opens a full composer for a new chat without touching the
     expect(button("Send", "button", editor)).toBeEnabled();
   });
   expect(pool.consumed).toStrictEqual([]);
-  await closeDirectionEditor(editor);
-  expect(button(DIRECTION)).toHaveFocus();
-  expect(
-    screen.getByRole("article", { name: makeSuggestion().content.title }),
-  ).toBeInTheDocument();
   click(okouRow());
   await waitFor(() => {
     expect(composer()).toHaveTextContent("Keep my original draft");
   });
   expect(composer()).not.toHaveTextContent(makeSuggestion().content.title);
 });
-test("Sending after removing the quote leaves the suggestion available", async () => {
+test("Selecting a suggested action switches away from the open custom composer", async () => {
   const suggestion = makeSuggestion();
-  mockPool([suggestion]);
+  const pool = mockPool([suggestion]);
   const sent = captureSend();
   await openSuggestions();
   const card = await screen.findByRole("article", {
     name: suggestion.content.title,
   });
   const { editor, note } = await openCustomDirection(card);
-  await writeDirection(note, "Send this as a standalone message");
-  click(button("Remove feedback", "button", editor));
-  await waitFor(() => {
-    expect(button("Send", "button", editor)).toBeEnabled();
-  });
-  click(button("Send", "button", editor));
+  await writeDirection(note, "Check the budget first");
+  click(button(makeOption().label, "button", card));
+  await screen.findByText(SENT);
+  expect(editor).not.toBeInTheDocument();
   const { userMessage } = await sent;
-  expect(userMessage?.parts).toContainEqual({
-    type: "text",
-    text: "Send this as a standalone message",
-  });
+  expect(userMessage).toStrictEqual(makeOption().draft.draftUserMessage);
   await waitFor(() => {
-    expect(button(DIRECTION, "button", card)).toBeInTheDocument();
+    expect(pool.consumed).toStrictEqual([suggestion.id]);
   });
 });
 test("Each card shows its own background in the direction editor", async () => {
@@ -1316,11 +1298,7 @@ test("A custom direction continues the chat its card names without touching its 
   });
   await openSuggestions();
   await screen.findByText(suggestion.content.title);
-  const editor = await openDirectionEditor(
-    document.body,
-    "Referenced decision",
-  );
-  const note = await within(editor).findByRole("textbox", { name: DIRECTION });
+  const { editor, note } = await openCustomDirection();
   expect(composer(editor)).toHaveTextContent(suggestion.content.title);
   expect(composer(editor)).not.toHaveTextContent("Existing remote draft");
   await writeDirection(note, "Use the latest numbers from this chat");
@@ -1381,11 +1359,7 @@ test("A custom direction continues its named chat before the chat list has loade
   });
   await openSuggestions();
   await screen.findByText(suggestion.content.title);
-  const editor = await openDirectionEditor(
-    document.body,
-    "Referenced decision",
-  );
-  const note = await within(editor).findByRole("textbox", { name: DIRECTION });
+  const { editor, note } = await openCustomDirection();
   await writeDirection(note, "Keep this in the decision chat");
   await waitFor(() => {
     expect(button("Send", "button", editor)).toBeEnabled();
