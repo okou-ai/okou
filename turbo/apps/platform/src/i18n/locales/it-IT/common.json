@@ -542,8 +542,6 @@
     "googleDrive": {
       "agentLoading": "L'agente è ancora in fase di caricamento",
       "connect": "Connetti Google Drive",
-      "connectTooltip": "Connetti Google Drive per caricare gli artefatti",
-      "conversionNotice": "Crea una copia modificabile; la formattazione potrebbe variare.",
       "conversionUnconfirmed": "Impossibile confermare la conversione Google. Controlla Drive prima di riprovare.",
       "openDocs": "Apri in Google Docs",
       "openSheets": "Apri in Google Sheets",
