@@ -1,5 +1,11 @@
 import { chatThreadEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
-import { act, fireEvent, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 
 import {
@@ -8,6 +14,7 @@ import {
   queryAllByRoleFast,
 } from "../../../__tests__/page-helper.ts";
 import { createChatEvent } from "../../../mocks/mock-helpers.ts";
+import { syncActiveChatEvents$ } from "../../../signals/chat-page/chat-event-signal-registry.ts";
 import {
   chatEventRowsResponse,
   testContext,
@@ -65,6 +72,9 @@ interface ChatScrollGeometry {
 
 interface MutableConversation {
   readonly publish: (events: readonly MockChatEventInput[]) => void;
+  readonly syncPublishedEvents: (
+    events: readonly MockChatEventInput[],
+  ) => Promise<void>;
 }
 
 function rect(top: number, height: number, width = 800, left = 0): DOMRect {
@@ -355,6 +365,12 @@ function mockMutableConversation(
     publish: (nextEvents) => {
       events.push(...nextEvents);
       createChatEvent(threadId);
+    },
+    syncPublishedEvents: async (nextEvents) => {
+      events.push(...nextEvents);
+      // Await the same thread catch-up the page uses on Worker invalidation.
+      // These tests exercise scroll and presentation after catch-up.
+      await context.store.set(syncActiveChatEvents$, threadId, context.signal);
     },
   };
 }
@@ -675,8 +691,8 @@ test("Keep the pre-hide anchor when incoming messages arrive behind automations"
   const anchorY = anchorById(container, readingId).getBoundingClientRect().top;
   await openUtilityAutomations();
   const frames = controlRevealFrames();
-  act(() => {
-    conversation.publish(completedTurn(9));
+  await act(async () => {
+    await conversation.syncPublishedEvents(completedTurn(9));
   });
   await screen.findByText("History answer 9");
   geometry.writes.length = 0;
@@ -777,8 +793,8 @@ test("Hand the retained primary transcript restore to the new Router page when t
     ).toBe(nextAnchorY);
     expect(container.scrollTop).toBe(550);
   });
-  act(() => {
-    conversation.publish(completedTurn(9));
+  await act(async () => {
+    await conversation.syncPublishedEvents(completedTurn(9));
   });
   await screen.findByText("History answer 9");
   await frames.paint();
@@ -809,8 +825,8 @@ test("Keep a fresh live history capture after tail when incoming messages arrive
   await openUtilityAutomations();
   expect(container.clientHeight).toBe(0);
   const frames = controlRevealFrames();
-  act(() => {
-    conversation.publish(completedTurn(9));
+  await act(async () => {
+    await conversation.syncPublishedEvents(completedTurn(9));
   });
   await screen.findByText("History answer 9");
   click(buttonByLabel("Close automations"));
@@ -1352,27 +1368,19 @@ async function completeRunWhileReadingExpandedWork() {
     ],
     [activeRunId],
   );
-  await setupPage({
-    context,
-    path: `/chats/${THREAD_IDS.expandedWork}`,
-    host: "app.okou.ai",
-  });
-  await screen.findByText("Reading the rollout health report");
-  await waitFor(() => {
-    expect(
-      document.querySelector("[data-chat-skeleton]"),
-    ).not.toBeInTheDocument();
-  });
+  const container = await openConversation(
+    THREAD_IDS.expandedWork,
+    "Reading the rollout health report",
+  );
 
   click(buttonByLabel("Expand work history"));
-  await screen.findByText("Checked the first rollout stage");
-  const container = chatScrollContainer();
+  await within(container).findByText("Checked the first rollout stage");
   const geometry = installChatScrollGeometry(container);
   scrollFromUser(container, geometry.bottomScrollTop() - 150);
   await expectHistoryPositionHeld();
 
-  act(() => {
-    conversation.publish([
+  await act(async () => {
+    await conversation.syncPublishedEvents([
       {
         id: "scroll-expanded-work-final",
         role: "assistant",
@@ -1393,8 +1401,7 @@ async function completeRunWhileReadingExpandedWork() {
     ]);
   });
 
-  await screen.findByText("The rollout is healthy");
-  await screen.findByText("Worked for 1 min");
+  await within(container).findByText("The rollout is healthy");
 }
 
 test("Keep expanded work history and its duration visible after the run completes", async () => {
@@ -1418,8 +1425,8 @@ test("Follow new messages while reading the latest reply", async () => {
   const geometry = installChatScrollGeometry(container);
   expect(container.scrollTop).toBe(geometry.bottomScrollTop());
 
-  act(() => {
-    conversation.publish(completedTurn(6));
+  await act(async () => {
+    await conversation.syncPublishedEvents(completedTurn(6));
   });
 
   const incomingAnswer = await screen.findByText("History answer 6");
@@ -1446,11 +1453,11 @@ test("Preserve the reading position when new messages are added", async () => {
   const readingAnchorId = anchorId(readingAnchor);
   const readingTop = readingAnchor.getBoundingClientRect().top;
 
-  act(() => {
-    conversation.publish(completedTurn(11));
+  await act(async () => {
+    await conversation.syncPublishedEvents(completedTurn(11));
   });
 
-  const liveAnswer = await screen.findByText("History answer 11");
+  const liveAnswer = await within(container).findByText("History answer 11");
   expect(liveAnswer).toBeVisible();
   await waitFor(() => {
     expect(
@@ -1458,11 +1465,11 @@ test("Preserve the reading position when new messages are added", async () => {
     ).toBe(readingTop);
   });
 
-  act(() => {
-    conversation.publish(completedTurn(12));
+  await act(async () => {
+    await conversation.syncPublishedEvents(completedTurn(12));
   });
 
-  const nextAnswer = await screen.findByText("History answer 12");
+  const nextAnswer = await within(container).findByText("History answer 12");
   expect(nextAnswer).toBeVisible();
   await waitFor(() => {
     expect(
