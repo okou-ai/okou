@@ -16,7 +16,6 @@ export type { ExportArtifactUrl } from "@okouai/db/jsonb-contracts/export-job";
  * Export Jobs table
  * Tracks async GDPR data export operations.
  * Jobs produce a ZIP file uploaded to R2 with a time-limited download link.
- * Follows the compose_jobs pattern for status tracking and idempotency.
  */
 export const exportJobs = pgTable(
   "export_jobs",

@@ -9,12 +9,11 @@ import {
   index,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
-import { agents } from "./agent";
 import type { GitHubInstallationRepoConfigs } from "@okouai/db/jsonb-contracts/github-installation";
 
 /**
  * GitHub Installations table
- * Stores GitHub App installation data and default agent configuration.
+ * Stores GitHub App installation data.
  * One record per GitHub App installation (org or user account level).
  * User association is managed via the github_user_links table.
  */
@@ -32,12 +31,6 @@ export const githubInstallations = pgTable(
     targetId: varchar("target_id", { length: 255 }),
     targetName: varchar("target_name", { length: 255 }),
     adminGithubUserId: varchar("admin_github_user_id", { length: 255 }),
-    defaultAgentId: uuid("default_agent_id").references(
-      () => {
-        return agents.id;
-      },
-      { onDelete: "cascade" },
-    ),
     repoConfigs: jsonb("repo_configs").$type<GitHubInstallationRepoConfigs>(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),

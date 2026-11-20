@@ -86,9 +86,14 @@ async function prepareLiteralPlusMarkdownChat(initialReply?: string) {
 
 test("Opening Instructions preserves literal plus signs in a new streamed reply", async () => {
   const { chat, rows } = await prepareLiteralPlusMarkdownChat();
-  await expect(
-    screen.findByText("++Plain message++"),
-  ).resolves.toBeInTheDocument();
+  const threadSelector = `[data-chat-thread-container-id="${chat.threadId}"]`;
+  const queryMessage = (text: string) => {
+    const thread = document.querySelector<HTMLElement>(threadSelector);
+    return thread && within(thread).queryByText(text);
+  };
+  await waitFor(() => {
+    expect(queryMessage("++Plain message++")).toBeInTheDocument();
+  });
   rows.push(
     chat.outputMessage("**Streaming:** ++Reply", {
       id: "streamed-markdown",
@@ -97,7 +102,13 @@ test("Opening Instructions preserves literal plus signs in a new streamed reply"
     }),
   );
   context.mocks.ably.trigger(chat.realtimeTopic);
-  const streaming = await screen.findByText("Streaming:");
+  const streaming = await waitFor(() => {
+    const content = queryMessage("Streaming:");
+    if (!content) {
+      throw new Error("Expected the streamed reply");
+    }
+    return content;
+  });
   expect(streaming.tagName).toBe("STRONG");
   expect(markdownFrameFor(streaming)).toHaveTextContent("++Reply");
   expect(markdownFrameFor(streaming).querySelector("u")).toBeNull();

@@ -1,5 +1,5 @@
 {
-  "id": "a999adbd-02ff-4166-86d7-f1930e7ff51b",
+  "id": "3e3d6fd0-3e1b-460b-bdfd-4f56eff80496",
   "prevId": "243b5123-4c68-40e6-946b-8d2b1b50c57a",
   "version": "7",
   "dialect": "postgresql",
@@ -1221,14 +1221,6 @@
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
-        "uq_agents_id_org": {
-          "name": "uq_agents_id_org",
-          "nullsNotDistinct": false,
-          "columns": [
-            "id",
-            "org_id"
-          ]
-        },
         "idx_agents_id_org_owner": {
           "name": "idx_agents_id_org_owner",
           "nullsNotDistinct": false,
@@ -8912,12 +8904,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "org_id": {
-          "name": "org_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
         "agent_id": {
           "name": "agent_id",
           "type": "uuid",
@@ -9197,21 +9183,6 @@
             "id"
           ],
           "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "chat_threads_agent_org_fk": {
-          "name": "chat_threads_agent_org_fk",
-          "tableFrom": "chat_threads",
-          "tableTo": "agents",
-          "columnsFrom": [
-            "agent_id",
-            "org_id"
-          ],
-          "columnsTo": [
-            "id",
-            "org_id"
-          ],
-          "onDelete": "no action",
           "onUpdate": "no action"
         },
         "chat_threads_project_owner_fk": {
@@ -9567,160 +9538,6 @@
           "value": "(\"cloudflare_access_configs\".\"scope\" = 'personal' AND \"cloudflare_access_configs\".\"user_id\" IS NOT NULL) OR (\"cloudflare_access_configs\".\"scope\" = 'organization' AND \"cloudflare_access_configs\".\"user_id\" IS NULL)"
         }
       },
-      "isRLSEnabled": false
-    },
-    "public.compose_jobs": {
-      "name": "compose_jobs",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "github_url": {
-          "name": "github_url",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "overwrite": {
-          "name": "overwrite",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "content": {
-          "name": "content",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "instructions": {
-          "name": "instructions",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "source": {
-          "name": "source",
-          "type": "varchar(20)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'github'"
-        },
-        "status": {
-          "name": "status",
-          "type": "varchar(20)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "sandbox_id": {
-          "name": "sandbox_id",
-          "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "result": {
-          "name": "result",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "error": {
-          "name": "error",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "started_at": {
-          "name": "started_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "completed_at": {
-          "name": "completed_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "idx_compose_jobs_user_status": {
-          "name": "idx_compose_jobs_user_status",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "status",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_compose_jobs_created": {
-          "name": "idx_compose_jobs_created",
-          "columns": [
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_compose_jobs_user_active": {
-          "name": "idx_compose_jobs_user_active",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "status IN ('pending', 'running')",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.computer_use_authorization_requests": {
@@ -16917,12 +16734,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "default_agent_id": {
-          "name": "default_agent_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "repo_configs": {
           "name": "repo_configs",
           "type": "jsonb",
@@ -16977,21 +16788,7 @@
           "with": {}
         }
       },
-      "foreignKeys": {
-        "github_installations_default_agent_id_agents_id_fk": {
-          "name": "github_installations_default_agent_id_agents_id_fk",
-          "tableFrom": "github_installations",
-          "tableTo": "agents",
-          "columnsFrom": [
-            "default_agent_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
+      "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
@@ -24671,13 +24468,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
-        },
-        "pinned_agent_ids": {
-          "name": "pinned_agent_ids",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false,
-          "default": "'[]'::jsonb"
         },
         "send_mode": {
           "name": "send_mode",
