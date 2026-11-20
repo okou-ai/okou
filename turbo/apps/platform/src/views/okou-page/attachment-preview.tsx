@@ -29,8 +29,7 @@ interface ChatAttachmentDescriptor {
   previewImagePending?: boolean;
 }
 
-type DocumentPreviewKind =
-  "markdown" | "text" | "json" | "csv" | "pdf" | "html";
+type DocumentPreviewKind = "markdown" | "text" | "json" | "csv" | "pdf";
 
 function contentTypeForDocumentPreviewKind(kind: DocumentPreviewKind): string {
   if (kind === "markdown") {
@@ -45,10 +44,7 @@ function contentTypeForDocumentPreviewKind(kind: DocumentPreviewKind): string {
   if (kind === "csv") {
     return "text/csv";
   }
-  if (kind === "pdf") {
-    return "application/pdf";
-  }
-  return "text/html";
+  return "application/pdf";
 }
 
 /**
@@ -69,41 +65,12 @@ export function shouldUseNativeAnchorNavigation(
   );
 }
 
-type TextPreviewProps = {
-  filename: string;
-  url: string;
-  kind: "text" | "json";
-  preview: AttachmentPreviewSignals;
-  text$?: TextPreviewComputed;
-};
-
 const MEDIA_PREVIEW_CARD_CLASS =
   "inline-flex w-[min(100%,400px)] overflow-hidden rounded-lg border border-foreground/10 bg-background text-left align-top text-foreground no-underline transition-all duration-200";
 const MEDIA_PREVIEW_CARD_HOVER_CLASS =
   "hover:scale-[1.015] hover:border-foreground/20";
 
-function TextPreview({
-  filename,
-  kind,
-  preview,
-  text$,
-  url,
-}: TextPreviewProps) {
-  return (
-    <AttachmentAnchorChip
-      filename={filename}
-      url={url}
-      kind={kind}
-      preview={preview}
-      text$={text$}
-    />
-  );
-}
-
-type AttachmentAnchorChipKind =
-  "text" | "json" | "markdown" | "csv" | "pdf" | "html";
-
-function documentPreviewAccentClass(kind: AttachmentAnchorChipKind) {
+function documentPreviewAccentClass(kind: DocumentPreviewKind) {
   if (kind === "markdown") {
     return "from-emerald-500/15 via-lime-500/10 to-background";
   }
@@ -167,10 +134,10 @@ function AttachmentAnchorChip({
 }: {
   filename: string;
   url: string;
-  kind: AttachmentAnchorChipKind;
+  kind: DocumentPreviewKind;
   preview: AttachmentPreviewSignals;
   text$?: TextPreviewComputed;
-  threadId?: string;
+  threadId: string;
 }) {
   const pageSignal = useGet(pageSignal$);
   const { t } = useTranslation();
@@ -193,13 +160,9 @@ function AttachmentAnchorChip({
             ? t(($) => {
                 return $.artifacts.preview.openKinds.csv;
               })
-            : kind === "pdf"
-              ? t(($) => {
-                  return $.artifacts.preview.openKinds.pdf;
-                })
-              : t(($) => {
-                  return $.artifacts.preview.openKinds.html;
-                });
+            : t(($) => {
+                return $.artifacts.preview.openKinds.pdf;
+              });
 
   return (
     <a
@@ -383,6 +346,7 @@ function HtmlSitePreviewCard({
   previewImageLoad,
   previewImagePending,
   previewImageUrl,
+  threadId,
   url,
 }: {
   preview: AttachmentPreviewSignals;
@@ -390,6 +354,7 @@ function HtmlSitePreviewCard({
   previewImageLoad?: ImageLoadSignals;
   previewImagePending?: boolean;
   previewImageUrl?: string;
+  threadId: string;
   url: string;
 }) {
   const pageSignal = useGet(pageSignal$);
@@ -410,7 +375,7 @@ function HtmlSitePreviewCard({
         event.currentTarget.blur();
         detach(
           openDocument(
-            { kind: "html", url, filename, preview },
+            { kind: "html", url, filename, preview, threadId },
             undefined,
             pageSignal,
           ),
@@ -490,49 +455,6 @@ function HtmlSitePreviewViewport({
   );
 }
 
-function DocumentThumbnailPreview({
-  preview,
-  filename,
-  kind,
-  previewImageLoad,
-  previewImagePending,
-  previewImageUrl,
-  text$,
-  url,
-}: {
-  preview: AttachmentPreviewSignals;
-  filename: string;
-  kind: "csv" | "pdf" | "html";
-  previewImageLoad?: ImageLoadSignals;
-  previewImagePending?: boolean;
-  previewImageUrl?: string;
-  text$?: TextPreviewComputed;
-  url: string;
-}) {
-  if (kind === "html") {
-    return (
-      <HtmlSitePreviewCard
-        preview={preview}
-        filename={filename}
-        previewImageLoad={previewImageLoad}
-        previewImagePending={previewImagePending}
-        previewImageUrl={previewImageUrl}
-        url={url}
-      />
-    );
-  }
-
-  return (
-    <AttachmentAnchorChip
-      filename={filename}
-      url={url}
-      kind={kind}
-      preview={preview}
-      text$={text$}
-    />
-  );
-}
-
 function FileThumbnailPreview({
   onPreview,
   filename,
@@ -579,11 +501,13 @@ function AudioPreview({
   contentType,
   filename,
   preview,
+  threadId,
   url,
 }: {
   contentType?: string;
   filename: string;
   preview: AttachmentPreviewSignals;
+  threadId: string;
   url: string;
 }) {
   const pageSignal = useGet(pageSignal$);
@@ -602,7 +526,7 @@ function AudioPreview({
         event.currentTarget.blur();
         detach(
           openAudioLightbox(
-            { url, filename, contentType, preview },
+            { url, filename, contentType, preview, threadId },
             undefined,
             pageSignal,
           ),
@@ -642,11 +566,13 @@ function VideoThumbnailPreview({
   contentType,
   filename,
   preview,
+  threadId,
   url,
 }: {
   contentType?: string;
   filename: string;
   preview: AttachmentPreviewSignals;
+  threadId: string;
   url: string;
 }) {
   const pageSignal = useGet(pageSignal$);
@@ -662,7 +588,7 @@ function VideoThumbnailPreview({
         event.currentTarget.blur();
         detach(
           openVideoLightbox(
-            { url, filename, contentType, preview },
+            { url, filename, contentType, preview, threadId },
             undefined,
             pageSignal,
           ),
@@ -746,71 +672,32 @@ export function AttachmentPreview({
   const kind = classifyChatAttachment(attachment);
 
   switch (kind) {
-    case "markdown": {
+    case "markdown":
+    case "text":
+    case "json":
+    case "csv":
+    case "pdf": {
       return (
         <AttachmentAnchorChip
           preview={preview}
           filename={attachment.filename}
           url={attachment.url}
-          kind="markdown"
+          kind={kind}
           text$={text$}
           threadId={threadId}
         />
       );
     }
-    case "text": {
-      return (
-        <TextPreview
-          filename={attachment.filename}
-          url={attachment.url}
-          kind="text"
-          preview={preview}
-          text$={text$}
-        />
-      );
-    }
-    case "json": {
-      return (
-        <TextPreview
-          filename={attachment.filename}
-          url={attachment.url}
-          kind="json"
-          preview={preview}
-          text$={text$}
-        />
-      );
-    }
-    case "csv": {
-      return (
-        <DocumentThumbnailPreview
-          preview={preview}
-          filename={attachment.filename}
-          url={attachment.url}
-          kind="csv"
-          text$={text$}
-        />
-      );
-    }
-    case "pdf": {
-      return (
-        <DocumentThumbnailPreview
-          preview={preview}
-          filename={attachment.filename}
-          url={attachment.url}
-          kind="pdf"
-        />
-      );
-    }
     case "html": {
       return (
-        <DocumentThumbnailPreview
+        <HtmlSitePreviewCard
           preview={preview}
           filename={attachment.filename}
           previewImageLoad={previewImageLoad}
           previewImagePending={attachment.previewImagePending}
           previewImageUrl={attachment.previewImageUrl}
           url={attachment.url}
-          kind="html"
+          threadId={threadId}
         />
       );
     }
@@ -820,6 +707,7 @@ export function AttachmentPreview({
           contentType={attachment.contentType}
           filename={attachment.filename}
           preview={preview}
+          threadId={threadId}
           url={attachment.url}
         />
       );
@@ -830,6 +718,7 @@ export function AttachmentPreview({
           contentType={attachment.contentType}
           filename={attachment.filename}
           preview={preview}
+          threadId={threadId}
           url={attachment.url}
         />
       );

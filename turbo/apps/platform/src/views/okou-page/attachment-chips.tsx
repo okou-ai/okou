@@ -39,13 +39,14 @@ import {
   Video,
   X,
 } from "lucide-react";
-import type {
-  ChatThreadArtifactFile,
-  ChatThreadArtifactRun,
-} from "@okouai/api-contracts/contracts/chat-threads";
 import type { ChatAttachment } from "../../signals/okou-page/chat-draft";
 import type { AttachmentPreviewSignals } from "../../signals/attachment-resource-url.ts";
 import type { ChatPanelSignals } from "../../signals/chat-page/chat-panel-signals.ts";
+import {
+  findChatArtifactForUrl,
+  type ChatArtifactPreviewItem,
+  type CrossChatArtifactPreviewSignals,
+} from "../../signals/chat-page/chat-artifact-preview.ts";
 import { downloadAttachment$ } from "../../signals/attachment-download.ts";
 import { captureArtifactAction } from "../../lib/posthog.ts";
 import { artifactDownloadType } from "../../lib/artifact-download-type.ts";
@@ -67,6 +68,7 @@ import { ArtifactMarkdownDocument } from "../components/artifact-markdown-docume
 import {
   attachmentSidebarRef,
   attachmentLightboxImageCanvasSignals,
+  crossChatLightboxArtifact,
   lightboxUrl$,
   annotateLightboxImage$,
   closeLightboxWithDialogExit$,
@@ -84,10 +86,7 @@ import type { ComposerSignals } from "../../signals/okou-page/composer-signals.t
 import { openThreadArtifactSplitView$ } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
 import { ArtifactImageNavigationRegion } from "./artifact-image-navigation-region.tsx";
 import { FilePreviewIcon } from "./file-preview-icon.tsx";
-import {
-  artifactPreviewUrlsMatch,
-  attachmentFilenameFromUrl,
-} from "./attachment-url.ts";
+import { attachmentFilenameFromUrl } from "./attachment-url.ts";
 import { AnnotationMarkLayer } from "./image-annotation-marks.tsx";
 import {
   annotationMarkCount,
@@ -356,11 +355,6 @@ function artifactDialogFilename(preview: AttachmentLightboxState): string {
     : attachmentFilenameFromUrl(preview.url);
 }
 
-type ArtifactDialogItem = {
-  runId: string;
-  file: ChatThreadArtifactFile;
-};
-
 function artifactDialogKindLabel(
   preview: AttachmentLightboxState,
   artifact: AttachmentArtifactMetadata | undefined,
@@ -378,8 +372,12 @@ function artifactDialogKindLabel(
 
 function artifactDialogSyncTarget(
   artifact: AttachmentArtifactMetadata | undefined,
+  viewingThreadId: string | undefined,
 ): ArtifactDownloadSyncTarget | undefined {
-  if (!artifact?.artifactId) {
+  if (
+    !artifact?.artifactId ||
+    (viewingThreadId !== undefined && artifact.threadId !== viewingThreadId)
+  ) {
     return undefined;
   }
   return {
@@ -397,27 +395,8 @@ function artifactDialogSyncTarget(
   };
 }
 
-function findArtifactDialogItemForUrl(
-  runs: ChatThreadArtifactRun[],
-  url: string,
-): ArtifactDialogItem | undefined {
-  for (const run of runs) {
-    const file = run.files.find((candidate) => {
-      return (
-        artifactPreviewUrlsMatch(candidate.url, url) ||
-        (candidate.aliasUrl !== undefined &&
-          artifactPreviewUrlsMatch(candidate.aliasUrl, url))
-      );
-    });
-    if (file) {
-      return { runId: run.runId, file };
-    }
-  }
-  return undefined;
-}
-
 function artifactDialogMetadataFromItem(params: {
-  item: ArtifactDialogItem;
+  item: ChatArtifactPreviewItem;
   threadId: string;
 }): AttachmentArtifactMetadata {
   const connectionId = params.item.file.googleDriveConnectionId;
@@ -1225,11 +1204,9 @@ function ArtifactPreviewDialog({
 }: {
   preview: AttachmentLightboxState;
 }) {
-  const leftThread = useLastResolved(currentLeftThread$);
-  const rightThread = useLastResolved(currentRightThread$);
-  const previewThreadId =
-    (preview.kind === "image" ? preview.threadId : undefined) ??
-    preview.artifact?.threadId;
+  const leftThread = useGet(currentLeftThread$);
+  const rightThread = useGet(currentRightThread$);
+  const previewThreadId = preview.threadId ?? preview.artifact?.threadId;
   const previewThread =
     leftThread?.threadId === previewThreadId
       ? leftThread
@@ -1240,6 +1217,7 @@ function ArtifactPreviewDialog({
   if (previewThread) {
     return (
       <ArtifactPreviewDialogThreadResolver
+        key={previewThread.threadId}
         preview={preview}
         thread={previewThread}
       />
@@ -1258,6 +1236,7 @@ function ArtifactPreviewDialog({
   if (leftThread) {
     return (
       <ArtifactPreviewDialogThreadResolver
+        key={leftThread.threadId}
         preview={preview}
         thread={leftThread}
         fallbackThread={
@@ -1272,6 +1251,7 @@ function ArtifactPreviewDialog({
   if (rightThread) {
     return (
       <ArtifactPreviewDialogThreadResolver
+        key={rightThread.threadId}
         preview={preview}
         thread={rightThread}
       />
@@ -1284,6 +1264,25 @@ function ArtifactPreviewDialog({
       preview={preview}
     />
   );
+}
+
+export function useCrossChatArtifact(
+  signals: CrossChatArtifactPreviewSignals,
+  threadId: string,
+  url: string,
+) {
+  const view = useGet(signals.view$);
+  const artifact = useLastLoadable(signals.artifact$);
+  const currentView = view?.threadId === threadId && view.url === url;
+  return {
+    item:
+      currentView &&
+      artifact.state === "hasData" &&
+      artifact.data?.view === view
+        ? artifact.data.item
+        : undefined,
+    loading: currentView && artifact.state === "loading",
+  };
 }
 
 function ArtifactPreviewDialogThreadResolver({
@@ -1302,10 +1301,15 @@ function ArtifactPreviewDialogThreadResolver({
   const hasNextImage = useGet(imageNavigation.hasNext$);
   const resolveImageNavigationTarget = useSet(imageNavigation.target$);
   const navigateImageLightbox = useSet(navigateImageLightbox$);
+  const crossChatArtifact = useCrossChatArtifact(
+    crossChatLightboxArtifact,
+    thread.threadId,
+    preview.url,
+  );
   const item =
-    loadable.state === "hasData"
-      ? findArtifactDialogItemForUrl(loadable.data, preview.url)
-      : undefined;
+    (loadable.state === "hasData"
+      ? findChatArtifactForUrl(loadable.data, preview.url)
+      : undefined) ?? crossChatArtifact.item;
   const imageNavigationAvailable =
     preview.kind === "image" &&
     (imageRole === "assistant" || loadable.state === "hasData");
@@ -1346,23 +1350,11 @@ function ArtifactPreviewDialogThreadResolver({
     };
   };
 
-  if (item) {
-    return (
-      <ArtifactPreviewDialogContent
-        artifact={artifactDialogMetadataFromItem({
-          item,
-          threadId: thread.threadId,
-        })}
-        imageNavigation={{
-          onNext: imageNavigationAction("next", hasNextImage),
-          onPrevious: imageNavigationAction("previous", hasPreviousImage),
-        }}
-        preview={preview}
-      />
-    );
-  }
-
-  if (fallbackThread && loadable.state === "hasData") {
+  const imageNavigationActions = {
+    onNext: imageNavigationAction("next", hasNextImage),
+    onPrevious: imageNavigationAction("previous", hasPreviousImage),
+  };
+  if (!item && fallbackThread && loadable.state === "hasData") {
     return (
       <ArtifactPreviewDialogThreadResolver
         preview={preview}
@@ -1371,17 +1363,17 @@ function ArtifactPreviewDialogThreadResolver({
     );
   }
 
-  // The previewed image is not a run artifact (e.g. a human-uploaded image that
-  // resolves from the user artifacts bucket). It still navigates among the other
-  // images in its message.
   return (
     <ArtifactPreviewDialogContent
-      actionsPending={loadable.state === "loading"}
-      artifact={preview.artifact}
-      imageNavigation={{
-        onNext: imageNavigationAction("next", hasNextImage),
-        onPrevious: imageNavigationAction("previous", hasPreviousImage),
-      }}
+      actionsPending={
+        !item && (loadable.state === "loading" || crossChatArtifact.loading)
+      }
+      artifact={
+        item
+          ? artifactDialogMetadataFromItem({ item, threadId: thread.threadId })
+          : preview.artifact
+      }
+      imageNavigation={imageNavigationActions}
       preview={preview}
     />
   );
@@ -1419,8 +1411,14 @@ function ArtifactPreviewDialogActions({
   const annotationTarget =
     preview.kind === "image" ? preview.annotationTarget : undefined;
   const openInSplitView = () => {
-    openArtifactSidebarPreview(attachmentSidebarRef(preview));
-    closeLightboxWithDialogExit(rootSignal);
+    if (
+      openArtifactSidebarPreview(
+        attachmentSidebarRef(preview),
+        preview.threadId ?? artifact?.threadId,
+      )
+    ) {
+      closeLightboxWithDialogExit(rootSignal);
+    }
   };
   return (
     <div className="flex shrink-0 items-center gap-1">
@@ -1475,7 +1473,7 @@ function ArtifactPreviewDialogActions({
           previewKind={preview.kind}
           filename={filename}
           iconSize={18}
-          syncTarget={artifactDialogSyncTarget(artifact)}
+          syncTarget={artifactDialogSyncTarget(artifact, preview.threadId)}
           url={preview.url}
         />
         <ArtifactDeleteButton

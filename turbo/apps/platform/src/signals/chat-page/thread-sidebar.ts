@@ -24,6 +24,10 @@ import { detach, Reason, resetSignal } from "../utils.ts";
 import { pageSignal$ } from "../page-signal.ts";
 import { refreshWorkspaceLayout$ } from "./workspace-layout.ts";
 import {
+  createCrossChatArtifactPreview,
+  type CrossChatArtifactPreviewSignals,
+} from "./chat-artifact-preview.ts";
+import {
   prepareNarrowSidebarScroll$,
   restoreNarrowSidebarScroll$,
 } from "./chat-layout.ts";
@@ -233,6 +237,7 @@ interface ThreadAutomationEditor {
 }
 
 export interface ThreadSidebarSignals {
+  readonly crossChatArtifact: CrossChatArtifactPreviewSignals;
   readonly target$: Computed<ThreadSidebarTarget | null>;
   readonly open$: Command<void, [ThreadSidebarOpenTarget, AbortSignal]>;
   readonly openCatalogArtifact$: Command<Promise<void>, [string, AbortSignal]>;
@@ -305,12 +310,12 @@ function createThreadSidebarSessionSignals(dispose$: Command<void, []>) {
   return { resetSidebarSessionSignal$, startSession$ };
 }
 
-function createThreadSidebarTarget(
+function createThreadSidebarTargetSignals(
   threadId: string,
   mailRegistry: MailDraftCardSignalsRegistry,
   internalTarget$: State<NonMailThreadSidebarTarget | null>,
 ) {
-  return computed((get): ThreadSidebarTarget | null => {
+  const target$ = computed((get): ThreadSidebarTarget | null => {
     const location = get(threadMailLocation$);
     if (location?.threadId === threadId && location.view === "detail") {
       const signals = get(mailRegistry.values$).find((candidate) => {
@@ -326,6 +331,15 @@ function createThreadSidebarTarget(
     }
     return get(internalTarget$);
   });
+  const crossChatArtifact = createCrossChatArtifactPreview(
+    computed((get) => {
+      const target = get(target$);
+      return target?.type === "artifact" && target.source.kind === "attachment"
+        ? { threadId, url: target.source.ref.url }
+        : undefined;
+    }),
+  );
+  return { target$, crossChatArtifact };
 }
 
 function createThreadAutomationEditorSignals() {
@@ -352,6 +366,26 @@ function createThreadAutomationEditorSignals() {
   };
 }
 
+function createThreadSidebarPreviewSignals(
+  threadId: string,
+  artifactCatalog: ArtifactCatalogViewSignals,
+) {
+  const diagram = createArtifactDiagramPreviewSignals();
+  const preview = createCatalogArtifactPreviewSignals(
+    artifactCatalog,
+    diagram.open$,
+    threadId,
+  );
+  return {
+    diagram,
+    selectedArtifactText$: preview.text$,
+    selectedArtifactMarkdownTree$: preview.markdownTree$,
+    selectedArtifactResourceUrl$: preview.resourceUrl$,
+    selectedArtifactImageUrl$: preview.imageUrl$,
+    selectedArtifactShareUrl$: preview.shareUrl$,
+  };
+}
+
 export function createThreadSidebarSignals(
   threadId: string,
   mailRegistry: MailDraftCardSignalsRegistry,
@@ -363,15 +397,10 @@ export function createThreadSidebarSignals(
   const internalFullscreen$ = state(false);
   const automationEditor = createThreadAutomationEditorSignals();
   const imageCanvas = createZoomableImageCanvasSignals();
-  const diagram = createArtifactDiagramPreviewSignals();
-  const previewContext = { openDiagram$: diagram.open$, threadId };
+  const preview = createThreadSidebarPreviewSignals(threadId, artifactCatalog);
+  const previewContext = { openDiagram$: preview.diagram.open$, threadId };
   const { resetSidebarSessionSignal$, startSession$ } =
-    createThreadSidebarSessionSignals(diagram.dispose$);
-  const preview = createCatalogArtifactPreviewSignals(
-    artifactCatalog,
-    diagram.open$,
-    threadId,
-  );
+    createThreadSidebarSessionSignals(preview.diagram.dispose$);
 
   const publishTarget$ = command(
     ({ get, set }, target: NonMailThreadSidebarTarget): void => {
@@ -444,7 +473,11 @@ export function createThreadSidebarSignals(
   });
 
   return {
-    target$: createThreadSidebarTarget(threadId, mailRegistry, internalTarget$),
+    ...createThreadSidebarTargetSignals(
+      threadId,
+      mailRegistry,
+      internalTarget$,
+    ),
     open$,
     openCatalogArtifact$,
     openAttachment$,
@@ -477,12 +510,7 @@ export function createThreadSidebarSignals(
       );
     }),
     imageCanvas,
-    diagram,
     artifactCatalog,
-    selectedArtifactText$: preview.text$,
-    selectedArtifactMarkdownTree$: preview.markdownTree$,
-    selectedArtifactResourceUrl$: preview.resourceUrl$,
-    selectedArtifactImageUrl$: preview.imageUrl$,
-    selectedArtifactShareUrl$: preview.shareUrl$,
+    ...preview,
   };
 }

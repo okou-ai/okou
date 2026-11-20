@@ -43,14 +43,16 @@ import {
 import { useTranslation } from "react-i18next";
 import type { ArtifactRef } from "../../signals/chat-page/thread-sidebar.ts";
 import {
+  findChatArtifactForUrl,
+  type ChatArtifactPreviewItem,
+} from "../../signals/chat-page/chat-artifact-preview.ts";
+import {
   CsvPreviewTable,
   parseCsvPreviewRows,
   TextPreviewLoader,
+  useCrossChatArtifact,
 } from "./attachment-chips.tsx";
-import {
-  artifactPreviewUrlsMatch,
-  publicAttachmentUrl,
-} from "./attachment-url.ts";
+import { publicAttachmentUrl } from "./attachment-url.ts";
 import { ArtifactImageNavigationRegion } from "./artifact-image-navigation-region.tsx";
 import { ArtifactMarkdownDocument } from "../components/artifact-markdown-document.tsx";
 import type { TextPreviewComputed } from "../../signals/text-preview.ts";
@@ -105,11 +107,6 @@ type ArtifactSidebarProps = {
   readonly thread: ChatPanelSignals;
 };
 
-type ArtifactSidebarItem = {
-  runId: string;
-  file: ChatThreadArtifactFile;
-};
-
 type ArtifactSidebarContentProps = {
   actionsPending?: boolean;
   artifactId?: string;
@@ -118,7 +115,7 @@ type ArtifactSidebarContentProps = {
   fullscreenState: ArtifactSidebarFullscreenState;
   imageCanvasSignals: ZoomableImageCanvasSignals;
   imageNavigation?: ArtifactImageNavigationActions;
-  item?: ArtifactSidebarItem;
+  item?: ChatArtifactPreviewItem;
   markdownTree$?: MarkdownPreviewTreeComputed;
   onBack?: () => void;
   onClose: () => void;
@@ -146,10 +143,15 @@ export function ArtifactSidebar({
   const resolveImageNavigationTarget = useSet(imageNavigation.target$);
   const text$ = providedText$ ?? artifactRef.text$;
   const markdownTree$ = providedMarkdownTree$ ?? artifactRef.markdownTree$;
+  const crossChatArtifact = useCrossChatArtifact(
+    thread.sidebar.crossChatArtifact,
+    thread.threadId,
+    artifactRef.url,
+  );
   const item =
-    loadable.state === "hasData"
-      ? findArtifactItemForUrl(loadable.data, artifactRef.url)
-      : undefined;
+    (loadable.state === "hasData"
+      ? findChatArtifactForUrl(loadable.data, artifactRef.url)
+      : undefined) ?? crossChatArtifact.item;
   const imageNavigationAction = (
     direction: EventImageNavigationDirection,
     available: boolean,
@@ -169,7 +171,9 @@ export function ArtifactSidebar({
   return (
     <>
       <ArtifactSidebarContent
-        actionsPending={loadable.state === "loading"}
+        actionsPending={
+          !item && (loadable.state === "loading" || crossChatArtifact.loading)
+        }
         artifactRef={artifactRef}
         fullscreenState={fullscreenState}
         imageCanvasSignals={thread.sidebar.imageCanvas}
@@ -194,7 +198,7 @@ function artifactSidebarSyncTargetForItem({
   item,
   threadId,
 }: {
-  item?: ArtifactSidebarItem;
+  item?: ChatArtifactPreviewItem;
   threadId?: string;
 }): ArtifactDownloadSyncTarget | undefined {
   return item
@@ -408,25 +412,6 @@ type ArtifactKindForBody =
   | "audio"
   | "file";
 
-function findArtifactItemForUrl(
-  runs: { runId: string; files: ChatThreadArtifactFile[] }[],
-  url: string,
-): ArtifactSidebarItem | undefined {
-  for (const run of runs) {
-    const file = run.files.find((candidate) => {
-      return (
-        artifactPreviewUrlsMatch(candidate.url, url) ||
-        (candidate.aliasUrl !== undefined &&
-          artifactPreviewUrlsMatch(candidate.aliasUrl, url))
-      );
-    });
-    if (file) {
-      return { runId: run.runId, file };
-    }
-  }
-  return undefined;
-}
-
 export function artifactSidebarSyncTarget(params: {
   threadId?: string | undefined;
   file: Pick<
@@ -470,7 +455,7 @@ export function artifactSidebarSyncTarget(params: {
 
 function resolveArtifactDisplay(
   ref: ArtifactRef,
-  item?: ArtifactSidebarItem,
+  item?: ChatArtifactPreviewItem,
 ): ArtifactDisplay {
   if (item) {
     return {

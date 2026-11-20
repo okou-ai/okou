@@ -235,35 +235,12 @@ export function ArtifactShareButton({
   );
 }
 
-function useGoogleDriveCompletedOperation(
-  syncTarget: ArtifactDownloadSyncTarget | undefined,
-) {
-  const operationFor = useGet(googleDriveArtifactOperation$);
-  if (!syncTarget) {
-    return undefined;
-  }
-  const operation = operationFor(syncTarget);
-  if (!operation) {
-    return undefined;
-  }
-  const { connectionId, recovery } = syncTarget;
-  // An acknowledgment can bridge the status that started the action.
-  // A refreshed recovery status takes precedence, even for the same account.
-  if (recovery && recovery !== operation.recoveryAtStart) {
-    return undefined;
-  }
-  const sameAccount =
-    connectionId !== undefined && operation.connectionId === connectionId;
-  const firstConnection =
-    connectionId === undefined && recovery?.action === "connect";
-  return sameAccount || firstConnection ? operation : undefined;
-}
-
 function useGoogleDriveAvailability(
   syncTarget: ArtifactDownloadSyncTarget | undefined,
   enabled: boolean,
 ) {
-  const completedOperation = useGoogleDriveCompletedOperation(syncTarget);
+  const operationFor = useGet(googleDriveArtifactOperation$);
+  const completedOperation = syncTarget ? operationFor(syncTarget) : undefined;
   const recovery = completedOperation?.recovery ?? syncTarget?.recovery;
   const accountReady = completedOperation?.recovery
     ? false

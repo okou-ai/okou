@@ -390,21 +390,12 @@ function ArtifactCardView({
   const openFileLightbox = useSet(openAttachmentFileLightbox$);
   const openImageLightbox = useSet(openAttachmentImageLightbox$);
   const openVideoLightbox = useSet(openAttachmentVideoLightbox$);
-  const openLightbox = (url: string): void => {
-    detach(
-      openImageLightbox(
-        {
-          threadId,
-          url,
-          filename: signals.filename,
-          contentType: signals.contentType,
-          preview: signals,
-        },
-        undefined,
-        pageSignal,
-      ),
-      Reason.DomCallback,
-    );
+  const attachment = {
+    threadId,
+    url: signals.url,
+    filename: signals.filename,
+    contentType: signals.contentType,
+    preview: signals,
   };
   const previewImageLoadable = useLastLoadable(signals.previewImageUrl$);
   const previewImagePending = previewImageLoadable.state === "loading";
@@ -428,7 +419,10 @@ function ArtifactCardView({
         imageClassName="block h-full w-full object-contain"
         linkClassName={CHAT_INLINE_IMAGE_PREVIEW_CLASS}
         onPreview={() => {
-          openLightbox(signals.url);
+          detach(
+            openImageLightbox(attachment, undefined, pageSignal),
+            Reason.DomCallback,
+          );
         }}
         load={signals.previewImageLoad}
         placeholderClassName="h-full w-full"
@@ -454,16 +448,7 @@ function ArtifactCardView({
         filename={signals.filename}
         onPreview={() => {
           detach(
-            openVideoLightbox(
-              {
-                url: signals.url,
-                filename: signals.filename,
-                contentType: signals.contentType,
-                preview: signals,
-              },
-              undefined,
-              pageSignal,
-            ),
+            openVideoLightbox(attachment, undefined, pageSignal),
             Reason.DomCallback,
           );
         }}
@@ -487,16 +472,7 @@ function ArtifactCardView({
       }}
       onPreviewFile={() => {
         detach(
-          openFileLightbox(
-            {
-              filename: signals.filename,
-              contentType: signals.contentType,
-              url: signals.url,
-              preview: signals,
-            },
-            undefined,
-            pageSignal,
-          ),
+          openFileLightbox(attachment, undefined, pageSignal),
           Reason.DomCallback,
         );
       }}

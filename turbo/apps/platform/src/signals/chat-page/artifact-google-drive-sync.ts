@@ -137,19 +137,56 @@ type GoogleDriveArtifactOperation = {
   readonly googleImport?: GoogleDriveUploadedFile | undefined;
 };
 
+type GoogleDriveArtifactOperations = ReadonlyMap<
+  string,
+  ReadonlyMap<string | undefined, GoogleDriveArtifactOperation>
+>;
+
 function driveOperationKey(target: { threadId: string; artifactId: string }) {
   return `${target.threadId}:${target.artifactId}`;
 }
 
+function withDriveOperation(
+  operations: GoogleDriveArtifactOperations,
+  key: string,
+  operation: GoogleDriveArtifactOperation,
+): GoogleDriveArtifactOperations {
+  const accounts = new Map(operations.get(key));
+  accounts.set(operation.connectionId, operation);
+  return new Map(operations).set(key, accounts);
+}
+
 const pageGoogleDriveOperations$ = computed((get) => {
   get(pageVersion$);
-  return state<ReadonlyMap<string, GoogleDriveArtifactOperation>>(new Map());
+  return state<GoogleDriveArtifactOperations>(new Map());
 });
 
 export const googleDriveArtifactOperation$ = computed((get) => {
   const operations = get(get(pageGoogleDriveOperations$));
-  return (target: { threadId: string; artifactId: string }) => {
-    return operations.get(driveOperationKey(target));
+  return (target: {
+    readonly threadId: string;
+    readonly artifactId: string;
+    readonly connectionId?: string | undefined;
+    readonly recovery?: ChatThreadArtifactGoogleDriveRecovery | undefined;
+  }) => {
+    const accounts = operations.get(driveOperationKey(target));
+    if (!accounts) {
+      return undefined;
+    }
+    const { connectionId, recovery } = target;
+    // First connection can acknowledge the snapshot before a new account ID
+    // reaches the view. A later recovery snapshot takes precedence.
+    const operation =
+      connectionId !== undefined
+        ? accounts.get(connectionId)
+        : recovery?.action === "connect"
+          ? [...accounts.values()].find((candidate) => {
+              return candidate.recoveryAtStart === recovery;
+            })
+          : undefined;
+    return recovery && recovery !== operation?.recoveryAtStart
+      ? undefined
+      : operation;
   };
 });
 
@@ -166,24 +203,29 @@ export const syncArtifactAndRefresh$ = command(
     // a replacement page's graph even if its completion races navigation.
     const operations$ = get(pageGoogleDriveOperations$);
     const key = driveOperationKey(params);
+    const scopeAtStart = get(operations$)
+      .get(key)
+      ?.get(params.connectionId)?.recovery;
     const result = await set(uploadArtifactToGoogleDrive$, params, signal);
     signal.throwIfAborted();
-    // Another upload mode may have completed while this request was pending.
+    // Another upload may have completed or the user may have switched accounts.
     const operations = get(operations$);
-    const account = operations.get(key);
-    const sameCurrentAccount =
-      account !== undefined && account.connectionId === params.connectionId;
+    const connectionId =
+      result.kind === "scope-required"
+        ? result.recovery.connectionId
+        : params.connectionId;
+    const account = operations.get(key)?.get(connectionId);
     if (result.kind === "scope-required") {
       // This lookup failed before any file upload. Offer exact-account OAuth
       // only on the user's next action; never replay this request here.
       set(
         operations$,
-        new Map(operations).set(key, {
-          connectionId: result.recovery.connectionId,
+        withDriveOperation(operations, key, {
+          connectionId,
           recoveryAtStart: params.recoveryAtStart,
           ready: false,
           recovery: result.recovery,
-          googleImport: sameCurrentAccount ? account.googleImport : undefined,
+          googleImport: account?.googleImport,
         }),
       );
       await accept(Promise.resolve(result.response), [200], signal, {
@@ -192,24 +234,28 @@ export const syncArtifactAndRefresh$ = command(
       return;
     }
     if (result.kind === "uploaded") {
+      // An already accepted upload can finish after another request finds
+      // that the account now needs consent.
+      const pendingScope = account?.recovery;
+      const needsReconnect =
+        pendingScope !== undefined && pendingScope !== scopeAtStart;
       set(
         operations$,
-        new Map(operations).set(key, {
-          connectionId: params.connectionId,
-          recoveryAtStart: params.recoveryAtStart,
-          ready: true,
+        withDriveOperation(operations, key, {
+          connectionId,
+          recoveryAtStart: needsReconnect
+            ? account?.recoveryAtStart
+            : params.recoveryAtStart,
+          ready: !needsReconnect,
+          ...(needsReconnect ? { recovery: pendingScope } : {}),
           googleImport:
-            params.mode === "google"
-              ? result.file
-              : sameCurrentAccount
-                ? account.googleImport
-                : undefined,
+            params.mode === "google" ? result.file : account?.googleImport,
         }),
       );
-    } else if (sameCurrentAccount) {
+    } else if (account) {
       set(
         operations$,
-        new Map(operations).set(key, { ...account, ready: false }),
+        withDriveOperation(operations, key, { ...account, ready: false }),
       );
     }
   },
@@ -230,13 +276,13 @@ export const finishArtifactDriveReconnect$ = command(
     const operations$ = get(pageGoogleDriveOperations$);
     const operations = get(operations$);
     const key = driveOperationKey(params);
-    const account = operations.get(key);
-    if (account?.recovery?.connectionId !== params.connectionId) {
+    const account = operations.get(key)?.get(params.connectionId);
+    if (!account?.recovery) {
       return;
     }
     set(
       operations$,
-      new Map(operations).set(key, {
+      withDriveOperation(operations, key, {
         connectionId: params.connectionId,
         ready: true,
         recoveryAtStart: account.recoveryAtStart,
