@@ -54,6 +54,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -177,8 +178,18 @@ internal fun OkouApp(
                 if (action.updatesChat) R.string.chat_row_action_failed
                 else R.string.chat_read_action_failed
             )
+        val refreshLabel = stringResource(R.string.chat_refresh)
         LaunchedEffect(chats, action, message, showChatList) {
-            if (showChatList) snackbar.showSnackbar(message, duration = SnackbarDuration.Indefinite)
+            if (
+                showChatList &&
+                    snackbar.showSnackbar(
+                        message,
+                        actionLabel = refreshLabel.takeIf { action.updatesChat },
+                        duration = SnackbarDuration.Indefinite,
+                    ) == SnackbarResult.ActionPerformed
+            ) {
+                chats?.reloadAfterRowActionFailure()
+            }
             chats?.dismissRowActionFailure(action)
         }
     }
@@ -476,8 +487,8 @@ internal fun OkouApp(
                                 if (listWidth != null) listToolbar()
                                 ChatListScreen(
                                     list,
-                                    { chats?.refresh() },
-                                    { chats?.refreshList() },
+                                    { chats?.refresh(userInitiated = true) },
+                                    { chats?.reloadAfterRowActionFailure() },
                                     { chats?.refreshMetadata() },
                                     { chats?.refreshIndicators() },
                                     ::openChat,
@@ -610,8 +621,11 @@ private fun WorkspaceFeedbackHost(state: SnackbarHostState, modifier: Modifier) 
     LaunchedEffect(current, accessibility) {
         if (current != null) {
             val duration =
-                accessibility?.calculateRecommendedTimeoutMillis(5_000L, containsText = true)
-                    ?: 5_000L
+                accessibility?.calculateRecommendedTimeoutMillis(
+                    5_000L,
+                    containsText = true,
+                    containsControls = current.visuals.actionLabel != null,
+                ) ?: 5_000L
             delay(duration)
             current.dismiss()
         }
@@ -624,12 +638,14 @@ private fun WorkspaceFeedbackHost(state: SnackbarHostState, modifier: Modifier) 
             contentColor = MaterialTheme.colorScheme.inverseOnSurface,
             shadowElevation = 4.dp,
         ) {
-            Box(
+            Row(
                 Modifier.heightIn(min = 48.dp).padding(horizontal = 14.dp, vertical = 10.dp),
-                contentAlignment = Alignment.CenterStart,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
+                val action = data.visuals.actionLabel
                 Text(
                     data.visuals.message,
+                    modifier = if (action == null) Modifier else Modifier.weight(1f),
                     style =
                         MaterialTheme.typography.bodyMedium.copy(
                             fontSize = 14.sp,
@@ -637,6 +653,17 @@ private fun WorkspaceFeedbackHost(state: SnackbarHostState, modifier: Modifier) 
                             letterSpacing = 0.sp,
                         ),
                 )
+                if (action != null) {
+                    TextButton(
+                        onClick = data::performAction,
+                        colors =
+                            ButtonDefaults.textButtonColors(
+                                contentColor = MaterialTheme.colorScheme.inversePrimary
+                            ),
+                    ) {
+                        Text(action)
+                    }
+                }
             }
         }
     }
