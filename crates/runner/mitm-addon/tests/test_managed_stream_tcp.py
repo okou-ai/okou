@@ -252,11 +252,10 @@ async def test_native_header_wait_binds_before_body_reads_and_resumes_on_cancel(
     tmp_path, fake_firewall_headers, scheduling, ending
 ):
     registry = _write_registry(tmp_path, sandbox_info=sandbox(tmp_path))
+    suffix = b'"}],"provider":{}}' if ending == "timeout" else b'"}]}'
     body = repeat_bytes(
-        b'{"model":"' + PRESET.encode() + b'","messages":[{"content":"', b"x", 200_000, b'"}]}'
+        b'{"model":"' + PRESET.encode() + b'","messages":[{"content":"', b"x", 200_000, suffix
     )
-    if ending == "timeout":
-        body = body[:-1] + b',"provider":{}}'
     header = (
         b"POST "
         + PATHS["openai-completions"].encode()

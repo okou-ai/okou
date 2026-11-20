@@ -76,8 +76,12 @@ def test_rejects_ambiguous_or_invalid_complete_json(real_flow, body):
 
 
 def test_checks_routing_after_the_diagnostic_capture_limit(real_flow):
-    body = repeat_bytes(b'{"messages":[{"role":"user","content":"', b"x", 100_000, b"")
-    body += b'"}],"model":"@preset/captured-org-route","provider":{}}'
+    body = repeat_bytes(
+        b'{"messages":[{"role":"user","content":"',
+        b"x",
+        100_000,
+        b'"}],"model":"@preset/captured-org-route","provider":{}}',
+    )
     with pytest.raises(managed.RequestRejectedError, match="request_fields"):
         managed.validate_request(request(real_flow, body), {"piModelConfig": model_config()})
 
