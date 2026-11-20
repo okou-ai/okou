@@ -10,6 +10,29 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.98.2](https://github.com/okou-ai/okou/compare/api-v2.98.1...api-v2.98.2) (2026-11-20)
+
+
+### Refactoring
+
+* **api:** preconnect runner dispatch with built-in fetch ([#49557](https://github.com/okou-ai/okou/issues/49557)) ([25f0b2b](https://github.com/okou-ai/okou/commit/25f0b2b6cec4fc8c5cf100125b74325a21229b4e))
+* retire the single-agent feature switch ([#49556](https://github.com/okou-ai/okou/issues/49556)) ([4e5707d](https://github.com/okou-ai/okou/commit/4e5707de3ea728c59038345c47399cd51510a499))
+
+
+### Performance Improvements
+
+* **api:** overlap run bundle cache reads with admission preparation ([#49569](https://github.com/okou-ai/okou/issues/49569)) ([99a8cb2](https://github.com/okou-ai/okou/commit/99a8cb2b3253928960cc9ac7e3eeed104bdd574a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.95.3
+    * @okouai/core bumped to 8.857.6
+    * @okouai/db bumped to 2.56.3
+    * @okouai/pi-agent-runtime bumped to 1.52.18
+
 ## [2.98.1](https://github.com/okou-ai/okou/compare/api-v2.98.0...api-v2.98.1) (2026-11-20)
 
 

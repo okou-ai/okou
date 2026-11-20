@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.53.132](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.131...sandbox-firecracker-v0.53.132) (2026-11-20)
+
+
+### Refactoring
+
+* **firecracker:** centralize sandbox termination lifecycle ([#49582](https://github.com/okou-ai/okou/issues/49582)) ([458ae88](https://github.com/okou-ai/okou/commit/458ae88608d55fc826ca4316f3463020f403aa6c))
+
 ## [0.53.131](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.130...sandbox-firecracker-v0.53.131) (2026-11-20)
 
 ## [0.53.130](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.129...sandbox-firecracker-v0.53.130) (2026-11-20)
