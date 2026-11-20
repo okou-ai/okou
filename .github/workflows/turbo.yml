@@ -974,10 +974,12 @@ jobs:
         env:
           DATABASE_URL: postgresql://postgres@postgres:5432/postgres
         run: pnpm --filter @okouai/db db:migrate
-      - name: Test S3 transport lifecycle
+      - name: Test Node transport lifecycles
         if: matrix.shard == 1
         working-directory: turbo/apps/api
-        run: pnpm test:s3-client
+        run: |
+          pnpm test:s3-client
+          pnpm test:runner-dispatch-preview
       - name: Test API
         working-directory: turbo
         env:

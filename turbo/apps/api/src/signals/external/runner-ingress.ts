@@ -12,6 +12,14 @@ import { monotonicNow } from "../../lib/time";
 import { safeJsonParse, safeSync, settleIncludingAbort } from "../utils";
 import type { DirectRunTarget } from "../services/direct-run-ownership.service";
 import { recordSandboxOperation } from "./sandbox-op-log";
+import {
+  currentRunnerDispatchPreview,
+  runnerDispatchCohort,
+  type PreconnectedSocketUse,
+  type RunnerDispatchPreview,
+  type RunnerDispatchRequest,
+  type RunnerDispatchResponse,
+} from "./runner-dispatch-preview";
 
 type DispatchObservation =
   "accepted" | "rejected" | "busy" | "unknown" | "not-delivered";
@@ -30,9 +38,11 @@ interface DispatchTransportObservation {
   readonly origin: string;
   readonly path: string;
   readonly startedAt: number;
+  readonly preview: RunnerDispatchPreview | undefined;
   sendCount: number;
   connection?: "first_use" | "reused";
   sendHeadersMs?: number;
+  preconnectedSocketUse?: PreconnectedSocketUse;
 }
 
 function diagnosticRecord(value: unknown): value is Record<string, unknown> {
@@ -75,16 +85,20 @@ const dispatchTransport = singleton(() => {
     const active = diagnosticRecord(event.request)
       ? requests.get(event.request)
       : undefined;
+    const preconnectedSocketUse = active?.preview?.takeSocketUse(event.socket);
     if (active && ++active.sendCount === 1) {
       active.connection = connection;
       active.sendHeadersMs = monotonicNow() - active.startedAt;
+      active.preconnectedSocketUse = preconnectedSocketUse;
     }
   });
 
   return scope;
 });
 
-function readRunnerDispatchTiming(response: Response | undefined) {
+function readRunnerDispatchTiming(
+  response: RunnerDispatchResponse | undefined,
+) {
   const header = response?.headers.get(dispatchTimingHeader);
   if (!header || header.length > 512) {
     return undefined;
@@ -128,21 +142,24 @@ export async function postRunnerDispatch(
 ): Promise<DispatchObservation> {
   signal.throwIfAborted();
   const { target, runId, body, bodyBytes, serviceToken, timeoutMs } = args;
-  let response: Response | undefined;
+  let response: RunnerDispatchResponse | undefined;
   let responseHeadersMs: number | undefined;
   let observation: DispatchObservation | undefined;
   const startedAt = monotonicNow();
   const origin = `https://${target.hostname}`;
   const path = `/runners/${target.runnerId}/control/runs/${runId}/dispatch`;
+  const preview = currentRunnerDispatchPreview();
+  const cohort = preview && runnerDispatchCohort(runId);
   const transport: DispatchTransportObservation = {
     origin,
     path,
     startedAt,
     sendCount: 0,
+    preview,
   };
   return await (async () => {
     const dispatch = () => {
-      return fetch(origin + path, {
+      const options: RunnerDispatchRequest = {
         method: "POST",
         redirect: "error",
         cache: "no-store",
@@ -155,7 +172,11 @@ export async function postRunnerDispatch(
           signal,
           AbortSignal.timeout(Math.max(1, Math.ceil(timeoutMs))),
         ]),
-      });
+      };
+      const url = origin + path;
+      return preview && cohort
+        ? preview.fetch(cohort, url, options)
+        : fetch(url, options);
     };
     // Worker-native fetch does not use Node's Undici diagnostic channels.
     const fetched = await settleIncludingAbort(
@@ -211,6 +232,11 @@ export async function postRunnerDispatch(
               : "unknown",
           api_send_headers_ms:
             transport.sendCount === 1 ? transport.sendHeadersMs : undefined,
+          api_preconnect_cohort: cohort,
+          api_preconnect_socket_use:
+            transport.sendCount === 1
+              ? transport.preconnectedSocketUse
+              : undefined,
           response_headers_ms: responseHeadersMs,
           http_status: response?.status,
           dispatch_outcome:
@@ -228,7 +254,7 @@ export async function postRunnerDispatch(
 }
 
 async function observeRunnerDispatch(
-  response: Response,
+  response: RunnerDispatchResponse,
   target: DirectRunTarget,
   runId: string,
   signal: AbortSignal,
