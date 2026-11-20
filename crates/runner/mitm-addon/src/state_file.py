@@ -13,12 +13,11 @@ type StatValidator = Callable[[Path, os.stat_result], None]
 
 
 class StateFileIdentity(NamedTuple):
-    """Identity captured for the descriptor opened for a state-file read.
+    """Comparable identity from a state-file stat result.
 
-    The device, inode, modification time, and size fields come from ``fstat()``
-    on the descriptor before the read. ``absolute_path`` records the path passed
-    to the open operation. Together, these fields identify the opened file for
-    caller cache decisions; they do not perform a later path lookup.
+    A loaded snapshot gets its metadata from the descriptor before the read.
+    A catalog reuse probe gets its metadata from the configured path.
+    Both use the absolute spelling of the sampled path.
     """
 
     absolute_path: str
@@ -26,6 +25,22 @@ class StateFileIdentity(NamedTuple):
     st_ino: int
     st_mtime_ns: int
     st_size: int
+
+
+def absolute_path_key(path: Path) -> str:
+    """Return the absolute path spelling without resolving symlinks."""
+    return str(path.absolute())
+
+
+def identity_from_stat(path: Path, st: os.stat_result) -> StateFileIdentity:
+    """Project the stat result already acquired by the caller."""
+    return StateFileIdentity(
+        absolute_path=absolute_path_key(path),
+        st_dev=st.st_dev,
+        st_ino=st.st_ino,
+        st_mtime_ns=st.st_mtime_ns,
+        st_size=st.st_size,
+    )
 
 
 class StateFileNotRegularError(OSError):
@@ -123,13 +138,7 @@ def open_state_file(
             _fd=fd,
             path=path,
             description=description,
-            identity=StateFileIdentity(
-                absolute_path=str(path.absolute()),
-                st_dev=st.st_dev,
-                st_ino=st.st_ino,
-                st_mtime_ns=st.st_mtime_ns,
-                st_size=st.st_size,
-            ),
+            identity=identity_from_stat(path, st),
         )
     except BaseException:
         os.close(fd)
