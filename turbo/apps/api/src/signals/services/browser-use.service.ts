@@ -245,7 +245,12 @@ export class BrowserUseProviderError extends Error {
   readonly status: 502 | 503;
   readonly code: string;
 
-  constructor(status: 502 | 503, code: string, message: string) {
+  constructor(
+    status: 502 | 503,
+    code: string,
+    message: string,
+    readonly upstreamHttpStatus?: number,
+  ) {
     super(message);
     this.name = "BrowserUseProviderError";
     this.status = status;
@@ -3905,25 +3910,29 @@ function providerMessage(body: unknown): string {
 }
 
 function providerError(response: Response, body: unknown) {
+  const { status } = response;
   const message = providerMessage(body);
-  if (response.status === 401 || response.status === 403) {
+  if (status === 401 || status === 403) {
     return new BrowserUseProviderError(
       503,
       "BROWSER_USE_AUTH_ERROR",
       "Managed browser provider authentication failed",
+      status,
     );
   }
-  if (response.status === 402 || response.status === 429) {
+  if (status === 402 || status === 429) {
     return new BrowserUseProviderError(
       503,
       "BROWSER_USE_CAPACITY",
       "Managed browser capacity is temporarily unavailable",
+      status,
     );
   }
   return new BrowserUseProviderError(
     502,
     "BROWSER_USE_ERROR",
     `Managed browser provider failed: ${message}`,
+    status,
   );
 }
 
@@ -3942,6 +3951,7 @@ async function browserUseResponse(
     );
   }
 
+  let upstreamHttpStatus: number | undefined;
   const result = await settle(
     (async (): Promise<{ response: Response; body: unknown }> => {
       const acceptedResponse = await settle(
@@ -3968,6 +3978,7 @@ async function browserUseResponse(
       } else {
         throw acceptedResponse.error;
       }
+      upstreamHttpStatus = response.status;
       const text = await readBoundedResponseText(
         response,
         MAX_BROWSER_USE_RESPONSE_BYTES,
@@ -3977,6 +3988,7 @@ async function browserUseResponse(
           502,
           "BROWSER_USE_OUTPUT_TOO_LARGE",
           "Managed browser provider response is too large",
+          response.status,
         );
       }
       const body = text.text
@@ -3995,6 +4007,9 @@ async function browserUseResponse(
       502,
       "BROWSER_USE_ERROR",
       "Managed browser provider request failed",
+      result.error instanceof HttpStatusError
+        ? result.error.status
+        : upstreamHttpStatus,
     );
   }
 
