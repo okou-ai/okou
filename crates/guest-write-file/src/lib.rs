@@ -164,12 +164,20 @@ fn run_batch(mut stdin: impl Read, output: OutputMode) -> io::Result<()> {
 }
 
 fn write_batch(payload: &[u8], mode: OutputMode) -> io::Result<()> {
+    write_batch_with(payload, mode, |output, content| output.write_all(content))
+}
+
+fn write_batch_with(
+    payload: &[u8],
+    mode: OutputMode,
+    mut write_content: impl FnMut(&mut File, &[u8]) -> io::Result<()>,
+) -> io::Result<()> {
     let files = guest_control_proto::decode_write_files(payload)
         .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error.to_string()))?;
 
     for file in files {
         let mut output = mode.open(Path::new(file.path))?;
-        output.write_all(file.content)?;
+        write_content(&mut output, file.content)?;
         output.flush()?;
     }
     Ok(())
