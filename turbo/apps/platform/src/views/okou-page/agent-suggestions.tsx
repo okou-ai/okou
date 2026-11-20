@@ -37,10 +37,20 @@ import { Link } from "../router/link.tsx";
 import { ForYouCardHeading } from "./for-you-card-heading.tsx";
 import { ChatComposer } from "./composer.tsx";
 
-// Option rows and the direction trigger share one surface. Hover lays the state
-// overlay over the nested fill, so the row darkens instead of losing its fill.
+// Option rows and the direction trigger share one shape. The rows and the
+// feedback group hang out of the card's content box by this 16px inset, so
+// their text lines up with the heading. Hover lays the state overlay over the
+// row's own fill, so the row darkens instead of losing it.
 const SUGGESTION_ROW =
-  "h-auto min-h-13 w-full justify-between gap-3 whitespace-normal rounded-3xl bg-nested-fill px-5 py-3 text-left text-sm font-normal hover:bg-nested-fill [&:hover]:bg-state-hover-overlay";
+  "h-auto min-h-14 w-full justify-between gap-3 whitespace-normal rounded-3xl px-4 py-3 text-left text-sm font-normal [&:hover]:bg-state-hover-overlay";
+
+// An option is a raised button on the card; the direction trigger stays a
+// quiet input-like row in the nested fill.
+const SUGGESTION_OPTION =
+  "border border-border bg-card text-foreground shadow-[0_1px_2px_rgb(37_33_33/0.04)] hover:border-control-border hover:bg-card hover:shadow-surface";
+
+const SUGGESTION_DIRECTION_TRIGGER =
+  "bg-nested-fill text-muted-foreground hover:bg-nested-fill";
 
 function SuggestionOptionContent({
   option,
@@ -49,7 +59,7 @@ function SuggestionOptionContent({
 }) {
   return (
     <span className="flex min-w-0 flex-1 flex-col gap-0.5 wrap-break-word">
-      <span className="leading-6">{option.label}</span>
+      <span className="leading-6 font-medium">{option.label}</span>
       {option.description && (
         <span className="text-[13px] leading-5 text-muted-foreground">
           {option.description}
@@ -221,7 +231,7 @@ function SuggestionDirectionEntry({
       data-suggestion-direction-trigger={entry.item.id}
       type="button"
       variant="quiet"
-      className={cn(SUGGESTION_ROW, "text-muted-foreground")}
+      className={cn(SUGGESTION_ROW, SUGGESTION_DIRECTION_TRIGGER)}
       aria-description={t(($) => {
         return $.chat.agentSuggestions.customDirectionDescription;
       })}
@@ -287,7 +297,7 @@ function SuggestionDirectionComposer({
       <div className="flex min-h-12 min-w-0 items-center gap-2 pr-2 pl-4">
         <h3
           id={headingId}
-          className="min-w-0 flex-1 truncate text-base leading-6 font-normal text-foreground"
+          className="min-w-0 flex-1 truncate text-sm leading-6 font-normal text-foreground"
         >
           {target.kind === "thread"
             ? (target.title ?? newChatTitle)
@@ -410,14 +420,14 @@ export function AgentSuggestionCard({
           ) : null
         }
       />
-      <div className="mb-6 mt-5 flex flex-col gap-2.5">
+      <div className="-mx-4 mt-5 mb-6 flex flex-col gap-2.5">
         {item.content.options.map((option) => {
           return (
             <Button
               key={option.id}
               type="button"
               variant="quiet"
-              className={cn(SUGGESTION_ROW, "text-foreground")}
+              className={cn(SUGGESTION_ROW, SUGGESTION_OPTION)}
               aria-label={option.label}
               aria-description={[
                 option.description,
@@ -460,7 +470,7 @@ export function AgentSuggestionCard({
         aria-label={t(($) => {
           return $.chat.agentSuggestions.dismiss;
         })}
-        className="absolute top-4.5 right-4 sm:top-7.5 sm:right-7"
+        className="absolute top-5.5 right-5 sm:top-8.5 sm:right-8"
         onClick={() => {
           detach(
             submitFeedback(item.id, "dismissed", signal),
@@ -519,7 +529,7 @@ function SuggestionFeedback({
       aria-label={t(($) => {
         return $.chat.agentSuggestions.feedbackPrompt;
       })}
-      className="mt-auto grid grid-cols-2 gap-2 sm:grid-cols-4"
+      className="-mx-4 mt-auto grid grid-cols-2 gap-2 sm:grid-cols-4"
     >
       {feedbackActions.map(({ kind, label, Icon }) => {
         return (

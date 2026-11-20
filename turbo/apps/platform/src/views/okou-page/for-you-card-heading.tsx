@@ -36,7 +36,7 @@ export function ForYouCardHeading({
           </p>
         )}
       </div>
-      <div className="relative mx-2.5 self-stretch max-[360px]:mx-2 sm:mx-3">
+      <div className="relative ml-2.5 self-stretch max-[360px]:ml-2 sm:ml-3">
         {/* Decorative artwork follows the copy height without stretching it. */}
         {illustration && (
           <img
@@ -46,7 +46,7 @@ export function ForYouCardHeading({
             draggable={false}
             width={152}
             height={136}
-            className="absolute inset-0 m-auto h-full max-h-27 w-full select-none object-contain max-[360px]:max-h-25 sm:max-h-34"
+            className="absolute inset-0 m-auto h-full max-h-27 w-full select-none object-contain object-right max-[360px]:max-h-25 sm:max-h-34"
           />
         )}
       </div>
