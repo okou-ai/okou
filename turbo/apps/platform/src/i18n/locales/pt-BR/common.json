@@ -1680,6 +1680,13 @@
       "feedbackPrompt": "O que achou desta sugestão?",
       "feedLabel": "Feed",
       "forYou": {
+        "cover": {
+          "change": "Alterar capa",
+          "default": "Padrão",
+          "gallery": "Capas",
+          "option": "Capa {{index}}",
+          "reset": "Restaurar padrão"
+        },
         "loading": "Carregando sugestões",
         "next": "Próxima sugestão",
         "previous": "Sugestão anterior",

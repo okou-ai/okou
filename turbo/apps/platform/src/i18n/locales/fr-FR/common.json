@@ -1680,6 +1680,13 @@
       "feedbackPrompt": "Que pensez-vous de cette suggestion ?",
       "feedLabel": "Fil",
       "forYou": {
+        "cover": {
+          "change": "Changer la couverture",
+          "default": "Par défaut",
+          "gallery": "Couvertures",
+          "option": "Couverture {{index}}",
+          "reset": "Rétablir par défaut"
+        },
         "loading": "Chargement des suggestions",
         "next": "Suggestion suivante",
         "previous": "Suggestion précédente",

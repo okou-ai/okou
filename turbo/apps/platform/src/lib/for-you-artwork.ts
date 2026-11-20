@@ -1,16 +1,180 @@
 import { platformStaticAssetUrl } from "./static-assets.ts";
 
-export const forYouBackgrounds = [
-  platformStaticAssetUrl("views/for-you/assets/background-1-c8d82f9c0325.webp"),
-  platformStaticAssetUrl("views/for-you/assets/background-2-e60f7272e8fe.webp"),
-  platformStaticAssetUrl("views/for-you/assets/background-3-4ea7624112f6.webp"),
-  platformStaticAssetUrl("views/for-you/assets/background-4-fef93154d8f7.webp"),
-  platformStaticAssetUrl("views/for-you/assets/background-5-f1ed40854105.webp"),
-  platformStaticAssetUrl("views/for-you/assets/background-6-a78ff6119f8b.webp"),
-  platformStaticAssetUrl("views/for-you/assets/background-7-7c7e76076eb1.webp"),
-  platformStaticAssetUrl("views/for-you/assets/background-8-306fd261b52d.webp"),
-  platformStaticAssetUrl("views/for-you/assets/background-9-1d20cc17c404.webp"),
+// Okou-original 2.5:1 covers for the For you banner.
+export const forYouCovers = [
+  {
+    id: "cover-01",
+    src: platformStaticAssetUrl(
+      "views/for-you/assets/cover-01-dae5e2af3215.webp",
+    ),
+    thumbnail: platformStaticAssetUrl(
+      "views/for-you/assets/cover-01-thumb-beb59cdbe6bd.webp",
+    ),
+  },
+  {
+    id: "cover-02",
+    src: platformStaticAssetUrl(
+      "views/for-you/assets/cover-02-c4e423a845da.webp",
+    ),
+    thumbnail: platformStaticAssetUrl(
+      "views/for-you/assets/cover-02-thumb-6e0c54da4455.webp",
+    ),
+  },
+  {
+    id: "cover-03",
+    src: platformStaticAssetUrl(
+      "views/for-you/assets/cover-03-7833024f9308.webp",
+    ),
+    thumbnail: platformStaticAssetUrl(
+      "views/for-you/assets/cover-03-thumb-72da71763deb.webp",
+    ),
+  },
+  {
+    id: "cover-04",
+    src: platformStaticAssetUrl(
+      "views/for-you/assets/cover-04-8bd71d3d0364.webp",
+    ),
+    thumbnail: platformStaticAssetUrl(
+      "views/for-you/assets/cover-04-thumb-eaf89a5a0480.webp",
+    ),
+  },
+  {
+    id: "cover-05",
+    src: platformStaticAssetUrl(
+      "views/for-you/assets/cover-05-c0518205f46a.webp",
+    ),
+    thumbnail: platformStaticAssetUrl(
+      "views/for-you/assets/cover-05-thumb-87f12089b719.webp",
+    ),
+  },
+  {
+    id: "cover-06",
+    src: platformStaticAssetUrl(
+      "views/for-you/assets/cover-06-51bbed54ce35.webp",
+    ),
+    thumbnail: platformStaticAssetUrl(
+      "views/for-you/assets/cover-06-thumb-95ca9506d7b5.webp",
+    ),
+  },
+  {
+    id: "cover-07",
+    src: platformStaticAssetUrl(
+      "views/for-you/assets/cover-07-e4c980c62f38.webp",
+    ),
+    thumbnail: platformStaticAssetUrl(
+      "views/for-you/assets/cover-07-thumb-ad9879df695e.webp",
+    ),
+  },
+  {
+    id: "cover-08",
+    src: platformStaticAssetUrl(
+      "views/for-you/assets/cover-08-b848542ef383.webp",
+    ),
+    thumbnail: platformStaticAssetUrl(
+      "views/for-you/assets/cover-08-thumb-e4b71d5847f1.webp",
+    ),
+  },
+  {
+    id: "cover-09",
+    src: platformStaticAssetUrl(
+      "views/for-you/assets/cover-09-b4d14a817e11.webp",
+    ),
+    thumbnail: platformStaticAssetUrl(
+      "views/for-you/assets/cover-09-thumb-2c41b44bce1d.webp",
+    ),
+  },
+  {
+    id: "cover-10",
+    src: platformStaticAssetUrl(
+      "views/for-you/assets/cover-10-eb2c8032f5bc.webp",
+    ),
+    thumbnail: platformStaticAssetUrl(
+      "views/for-you/assets/cover-10-thumb-b31ebc318796.webp",
+    ),
+  },
+  {
+    id: "cover-11",
+    src: platformStaticAssetUrl(
+      "views/for-you/assets/cover-11-9a0bb233c32b.webp",
+    ),
+    thumbnail: platformStaticAssetUrl(
+      "views/for-you/assets/cover-11-thumb-32fd94948836.webp",
+    ),
+  },
+  {
+    id: "cover-12",
+    src: platformStaticAssetUrl(
+      "views/for-you/assets/cover-12-fa0354c4a6e0.webp",
+    ),
+    thumbnail: platformStaticAssetUrl(
+      "views/for-you/assets/cover-12-thumb-2c69c0ec1771.webp",
+    ),
+  },
+  {
+    id: "cover-13",
+    src: platformStaticAssetUrl(
+      "views/for-you/assets/cover-13-6afd53add535.webp",
+    ),
+    thumbnail: platformStaticAssetUrl(
+      "views/for-you/assets/cover-13-thumb-3a78b4a5581b.webp",
+    ),
+  },
+  {
+    id: "cover-14",
+    src: platformStaticAssetUrl(
+      "views/for-you/assets/cover-14-38ad560cb8ee.webp",
+    ),
+    thumbnail: platformStaticAssetUrl(
+      "views/for-you/assets/cover-14-thumb-b2e919051b48.webp",
+    ),
+  },
+  {
+    id: "cover-15",
+    src: platformStaticAssetUrl(
+      "views/for-you/assets/cover-15-1fd78847e1e8.webp",
+    ),
+    thumbnail: platformStaticAssetUrl(
+      "views/for-you/assets/cover-15-thumb-6a93a13eb6c8.webp",
+    ),
+  },
+  {
+    id: "cover-16",
+    src: platformStaticAssetUrl(
+      "views/for-you/assets/cover-16-db44fe9ad13b.webp",
+    ),
+    thumbnail: platformStaticAssetUrl(
+      "views/for-you/assets/cover-16-thumb-8ff4893544d7.webp",
+    ),
+  },
+  {
+    id: "cover-17",
+    src: platformStaticAssetUrl(
+      "views/for-you/assets/cover-17-39b84fc3729c.webp",
+    ),
+    thumbnail: platformStaticAssetUrl(
+      "views/for-you/assets/cover-17-thumb-2527d154ca8f.webp",
+    ),
+  },
+  {
+    id: "cover-18",
+    src: platformStaticAssetUrl(
+      "views/for-you/assets/cover-18-a36171f0dc3f.webp",
+    ),
+    thumbnail: platformStaticAssetUrl(
+      "views/for-you/assets/cover-18-thumb-d742db4b4a7f.webp",
+    ),
+  },
 ] as const;
+
+type ForYouCoverId = (typeof forYouCovers)[number]["id"];
+
+// The first cover is the default.
+export const DEFAULT_FOR_YOU_COVER_ID: ForYouCoverId = forYouCovers[0].id;
+
+// The banner's bottom edge is a repeating torn-paper alpha mask.
+export const forYouCoverTornEdge = platformStaticAssetUrl(
+  "views/for-you/assets/cover-torn-edge-d189ebb4db4f.png",
+);
 
 export const forYouIllustrations = [
   platformStaticAssetUrl(

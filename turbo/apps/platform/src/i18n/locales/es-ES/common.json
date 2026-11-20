@@ -1680,6 +1680,13 @@
       "feedbackPrompt": "¿Qué te parece esta sugerencia?",
       "feedLabel": "Actividad",
       "forYou": {
+        "cover": {
+          "change": "Cambiar portada",
+          "default": "Predeterminada",
+          "gallery": "Portadas",
+          "option": "Portada {{index}}",
+          "reset": "Restablecer predeterminada"
+        },
         "loading": "Cargando sugerencias",
         "next": "Siguiente sugerencia",
         "previous": "Sugerencia anterior",

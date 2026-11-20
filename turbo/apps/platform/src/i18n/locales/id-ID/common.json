@@ -1651,6 +1651,13 @@
       "feedbackPrompt": "Bagaimana saran ini?",
       "feedLabel": "Feed",
       "forYou": {
+        "cover": {
+          "change": "Ganti sampul",
+          "default": "Default",
+          "gallery": "Sampul",
+          "option": "Sampul {{index}}",
+          "reset": "Kembalikan ke default"
+        },
         "loading": "Memuat saran",
         "next": "Saran berikutnya",
         "previous": "Saran sebelumnya",

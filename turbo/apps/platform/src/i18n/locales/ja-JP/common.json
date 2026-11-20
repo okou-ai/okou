@@ -1651,6 +1651,13 @@
       "feedbackPrompt": "この提案はいかがですか？",
       "feedLabel": "フィード",
       "forYou": {
+        "cover": {
+          "change": "カバーを変更",
+          "default": "デフォルト",
+          "gallery": "カバー",
+          "option": "カバー {{index}}",
+          "reset": "デフォルトに戻す"
+        },
         "loading": "提案を読み込み中",
         "next": "次の提案",
         "previous": "前の提案",
