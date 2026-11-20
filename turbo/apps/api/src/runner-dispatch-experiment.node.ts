@@ -3,8 +3,8 @@ import { Agent, buildConnector, fetch } from "undici";
 import { monotonicNow } from "./lib/time";
 import type {
   PreconnectedSocketUse,
-  RunnerDispatchPreview,
-} from "./signals/external/runner-dispatch-preview";
+  RunnerDispatchExperiment,
+} from "./signals/external/runner-dispatch-experiment";
 
 const MAX_PRECONNECTIONS = 4;
 const PRECONNECTION_LIFETIME_MS = 1000;
@@ -26,10 +26,10 @@ interface PreviewOptions {
   ) => void;
 }
 
-export function createRunnerDispatchPreview({
+export function createRunnerDispatchExperiment({
   ca,
   observe,
-}: PreviewOptions): RunnerDispatchPreview {
+}: PreviewOptions): RunnerDispatchExperiment {
   const control = new Agent({ connect: { ca } });
   const reservations = new Map<string, Adoption>();
   const socketUses = new WeakMap<object, PreconnectedSocketUse>();

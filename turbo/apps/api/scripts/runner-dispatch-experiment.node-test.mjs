@@ -9,7 +9,19 @@ import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { createSecureContext } from "node:tls";
 import { setImmediate } from "node:timers/promises";
-import { createRunnerDispatchPreview } from "../src/runner-dispatch-preview.node.ts";
+import { createRunnerDispatchExperiment } from "../src/runner-dispatch-experiment.node.ts";
+import { runnerDispatchCohort } from "../src/signals/external/runner-dispatch-experiment.ts";
+
+test("assigns separate production cohorts and excludes the other 90 buckets", () => {
+  const cohorts = Array.from({ length: 100 }, (_, bucket) => {
+    const runId =
+      bucket.toString(16).padStart(8, "0") + "-0000-4000-8000-000000000000";
+    return runnerDispatchCohort(runId, 5);
+  });
+  assert.deepEqual(cohorts.slice(0, 5), Array(5).fill("preconnect"));
+  assert.deepEqual(cohorts.slice(5, 10), Array(5).fill("control"));
+  assert.deepEqual(cohorts.slice(10), Array(90).fill(undefined));
+});
 
 let directory;
 let cert;
@@ -133,7 +145,7 @@ test(
   async (test) => {
     await withPeer(async (peer) => {
       const observe = test.mock.fn();
-      const preview = createRunnerDispatchPreview({ ca: cert, observe });
+      const preview = createRunnerDispatchExperiment({ ca: cert, observe });
       const run = new globalThis.AbortController();
       preview.reserve("first", peer.origin, run.signal);
       preview.reserve("duplicate", peer.origin, run.signal);
@@ -182,7 +194,7 @@ test(
   async (test) => {
     await withPeer(async (peer) => {
       const observe = test.mock.fn();
-      const preview = createRunnerDispatchPreview({ ca: cert, observe });
+      const preview = createRunnerDispatchExperiment({ ca: cert, observe });
       preview.reserve("ready", peer.origin, test.signal);
       await peer.firstHandshake;
       peer.releaseHandshake();
@@ -206,7 +218,7 @@ test(
   async (test) => {
     await withPeer(async (peer) => {
       const observe = test.mock.fn();
-      const preview = createRunnerDispatchPreview({ ca: cert, observe });
+      const preview = createRunnerDispatchExperiment({ ca: cert, observe });
       const run = new globalThis.AbortController();
       preview.reserve("cancelled", peer.origin, run.signal);
       await peer.firstHandshake;
@@ -232,7 +244,7 @@ test(
     await withPeer(async (first) => {
       await withPeer(async (second) => {
         const outcome = Promise.withResolvers();
-        const preview = createRunnerDispatchPreview({
+        const preview = createRunnerDispatchExperiment({
           ca: cert,
           observe(runId, result) {
             outcome.resolve({ runId, result });

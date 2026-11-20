@@ -1,4 +1,3 @@
-import process from "node:process";
 import build from "@hono/vite-build/vercel";
 import { defineConfig } from "vite";
 
@@ -18,9 +17,7 @@ export default defineConfig({
   plugins: [
     build({
       emptyOutDir: true,
-      entry: /^pr-\d+$/.test(process.env.INPUT_META_PR ?? "")
-        ? "./src/index-runner-dispatch-preview.ts"
-        : "./src/index.ts",
+      entry: "./src/index.ts",
       // Keep the prebuilt Vercel function's Node req/res entry on the same
       // adapter as the standalone server; v2 removed the /vercel export.
       entryContentAfterHooks: [

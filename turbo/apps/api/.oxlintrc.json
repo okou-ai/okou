@@ -23,7 +23,6 @@
         "eslint.config.mjs",
         "scripts/bench-p90-reporter.ts",
         "src/index.ts",
-        "src/index-runner-dispatch-preview.ts",
         "src/worker.ts",
         "src/worker-unsupported-pg-native.ts",
         "vite.config.ts",

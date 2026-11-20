@@ -23,7 +23,6 @@
     "apps/api": {
       "entry": [
         "src/index.ts",
-        "src/index-runner-dispatch-preview.ts",
         "src/server.ts",
         "src/worker.ts",
         "src/worker-unsupported-pg-native.ts",

@@ -261,7 +261,6 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "env": ["INPUT_META_PR"],
       "inputs": [
         "$TURBO_DEFAULT$",
         ".env*",

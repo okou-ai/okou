@@ -16,9 +16,9 @@ import { monotonicNow, now, nowDate } from "../../lib/time";
 import { apiStartTime$ } from "../context/hono";
 import { postRunnerDispatch } from "../external/runner-ingress";
 import {
-  currentRunnerDispatchPreview,
+  currentRunnerDispatchExperiment,
   runnerDispatchCohort,
-} from "../external/runner-dispatch-preview";
+} from "../external/runner-dispatch-experiment";
 import { failUnacceptedRun$ } from "./agent-run-terminal-transition.service";
 import {
   prepareDirectRun$,
@@ -74,15 +74,16 @@ export const prepareDirectRunDispatch$ = command(
         (async () => {
           const candidates = await set(readDirectRunCandidates$, input, signal);
           const candidatesReadyAt = monotonicNow();
-          const preview = currentRunnerDispatchPreview();
+          const experiment = currentRunnerDispatchExperiment();
           const target = candidates[0];
           if (
-            preview &&
+            experiment &&
             target &&
-            runnerDispatchCohort(input.run.id) === "preconnect"
+            runnerDispatchCohort(input.run.id, experiment.samplePercent) ===
+              "preconnect"
           ) {
             safeSync(() => {
-              preview.reserve(
+              experiment.reserve(
                 input.run.id,
                 `https://${target.hostname}`,
                 signal,

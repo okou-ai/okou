@@ -13,13 +13,13 @@ import { safeJsonParse, safeSync, settleIncludingAbort } from "../utils";
 import type { DirectRunTarget } from "../services/direct-run-ownership.service";
 import { recordSandboxOperation } from "./sandbox-op-log";
 import {
-  currentRunnerDispatchPreview,
+  currentRunnerDispatchExperiment,
   runnerDispatchCohort,
   type PreconnectedSocketUse,
-  type RunnerDispatchPreview,
+  type RunnerDispatchExperiment,
   type RunnerDispatchRequest,
   type RunnerDispatchResponse,
-} from "./runner-dispatch-preview";
+} from "./runner-dispatch-experiment";
 
 type DispatchObservation =
   "accepted" | "rejected" | "busy" | "unknown" | "not-delivered";
@@ -38,7 +38,7 @@ interface DispatchTransportObservation {
   readonly origin: string;
   readonly path: string;
   readonly startedAt: number;
-  readonly preview: RunnerDispatchPreview | undefined;
+  readonly experiment: RunnerDispatchExperiment | undefined;
   sendCount: number;
   connection?: "first_use" | "reused";
   sendHeadersMs?: number;
@@ -85,7 +85,9 @@ const dispatchTransport = singleton(() => {
     const active = diagnosticRecord(event.request)
       ? requests.get(event.request)
       : undefined;
-    const preconnectedSocketUse = active?.preview?.takeSocketUse(event.socket);
+    const preconnectedSocketUse = active?.experiment?.takeSocketUse(
+      event.socket,
+    );
     if (active && ++active.sendCount === 1) {
       active.connection = connection;
       active.sendHeadersMs = monotonicNow() - active.startedAt;
@@ -148,14 +150,15 @@ export async function postRunnerDispatch(
   const startedAt = monotonicNow();
   const origin = `https://${target.hostname}`;
   const path = `/runners/${target.runnerId}/control/runs/${runId}/dispatch`;
-  const preview = currentRunnerDispatchPreview();
-  const cohort = preview && runnerDispatchCohort(runId);
+  const experiment = currentRunnerDispatchExperiment();
+  const cohort =
+    experiment && runnerDispatchCohort(runId, experiment.samplePercent);
   const transport: DispatchTransportObservation = {
     origin,
     path,
     startedAt,
     sendCount: 0,
-    preview,
+    experiment,
   };
   return await (async () => {
     const dispatch = () => {
@@ -174,8 +177,8 @@ export async function postRunnerDispatch(
         ]),
       };
       const url = origin + path;
-      return preview && cohort
-        ? preview.fetch(cohort, url, options)
+      return experiment && cohort
+        ? experiment.fetch(cohort, url, options)
         : fetch(url, options);
     };
     // Worker-native fetch does not use Node's Undici diagnostic channels.

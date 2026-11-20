@@ -96,7 +96,7 @@ describe("Vercel build", () => {
         "--import",
         "tsx",
         "--test",
-        "scripts/runner-dispatch-preview.node-test.mjs",
+        "scripts/runner-dispatch-experiment.node-test.mjs",
       ],
       { cwd: apiRoot, signal: context.signal, stdio: "inherit" },
     );
