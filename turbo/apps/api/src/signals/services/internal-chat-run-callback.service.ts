@@ -185,21 +185,8 @@ type ChatCallbackPreCreateTimingActionType =
   | "api_dispatch_pre_create_agent_chat_callback_insert_assistant_items"
   | "api_dispatch_pre_create_agent_chat_callback_insert_lifecycle_marker"
   | "api_dispatch_pre_create_agent_chat_callback_load_followup_context"
-  | "api_dispatch_pre_create_agent_chat_callback_auto_send_load_thread"
-  | "api_dispatch_pre_create_agent_chat_callback_auto_send_lookup_queued_message"
-  | "api_dispatch_pre_create_agent_chat_callback_auto_send_load_agent"
   | "api_dispatch_pre_create_agent_chat_callback_auto_send_build_input"
-  | "api_dispatch_pre_create_agent_chat_callback_auto_send_resolve_model_pin"
-  | "api_dispatch_pre_create_agent_chat_callback_auto_send_load_session_state"
-  | "api_dispatch_pre_create_agent_chat_callback_auto_send_build_prior_context"
-  | "api_dispatch_pre_create_agent_chat_callback_auto_send_resolve_computer_use_host"
-  | "api_dispatch_pre_create_agent_chat_callback_auto_send_resolve_template_context"
-  | "api_dispatch_pre_create_agent_chat_callback_auto_send_build_prompt"
-  | "api_dispatch_pre_create_agent_chat_callback_auto_send_resolve_attachments"
-  | "api_dispatch_pre_create_agent_chat_callback_auto_send_check_active_run"
-  | "api_dispatch_pre_create_agent_chat_callback_auto_send_queue_age"
-  | "api_dispatch_pre_create_agent_chat_callback_auto_send_create_run"
-  | "api_dispatch_pre_create_agent_chat_callback_auto_send_publish_signals";
+  | "api_dispatch_pre_create_agent_chat_callback_auto_send_queue_age";
 
 interface ChatCallbackPreCreateTimingRecord {
   readonly actionType: ChatCallbackPreCreateTimingActionType;

@@ -156,12 +156,6 @@ export function unpricedBuiltInRouteCategories(
   });
 }
 
-interface ModelUsageContext {
-  readonly billableFirewalls: readonly string[];
-  readonly modelUsageProvider: string | undefined;
-  readonly modelUsageLongContextMinTotalInputTokens: number;
-}
-
 export function billableFirewallsForPermissions(args: {
   readonly modelProvider: ResolvedModelProviderEnvironment | null;
   readonly permissions:
@@ -184,39 +178,13 @@ function isModelProviderFirewallName(name: string): boolean {
 }
 
 /**
- * Why a run's usage cannot be billed: Built-in usage without a reporting
- * provider, or a Built-in route category without pricing. Each owner maps
- * this to its own rejection.
+ * Check that this run's captured Built-in route can report billable usage
+ * and that settlement can price every category it may report. Route selection
+ * skips unpriced candidates, and this check also covers routes captured earlier.
  */
-interface ModelUsageRejection {
-  readonly kind: "unreported_usage" | "unpriced_route";
-  readonly message: string;
-}
-
-function validateModelUsageProviderInvariant(args: {
-  readonly modelProvider: ResolvedModelProviderEnvironment | null;
-  readonly billableFirewalls: readonly string[];
-  readonly modelUsageProvider: string | undefined;
-}): ModelUsageRejection | null {
-  if (!isBuiltInModelProviderType(args.modelProvider?.type)) {
-    return null;
-  }
-  if (!args.billableFirewalls.some(isModelProviderFirewallName)) {
-    return null;
-  }
-  if (args.modelUsageProvider) {
-    return null;
-  }
-  return {
-    kind: "unreported_usage",
-    message:
-      "Built-in model provider did not resolve a supported model for usage reporting",
-  };
-}
-
-export function prepareModelUsageContext(args: {
+export function validateModelUsage(args: {
   readonly catalog: ModelCatalog;
-  readonly modelProvider: ResolvedModelProviderEnvironment | null;
+  readonly modelProvider: ResolvedModelProviderEnvironment;
   readonly permissionManifest:
     Pick<PermissionManifest, "firewalls" | "billableFirewalls"> | undefined;
   /**
@@ -224,39 +192,29 @@ export function prepareModelUsageContext(args: {
    * required for a Built-in run (null for every other run).
    */
   readonly routePricing: BuiltInRoutePricing | null;
-}): ModelUsageContext | ModelUsageRejection {
+}): string | null {
+  if (!isBuiltInModelProviderType(args.modelProvider.type)) {
+    return null;
+  }
   const billableFirewalls = billableFirewallsForPermissions({
     modelProvider: args.modelProvider,
     permissions: args.permissionManifest,
   });
   const route = builtInRouteForContext(args.catalog, args.modelProvider);
-  const modelUsageProvider = isBuiltInModelProviderType(
-    args.modelProvider?.type,
-  )
-    ? (route?.pricingProvider ?? undefined)
-    : catalogModelUsageProvider(args.catalog, args.modelProvider);
-  const validation =
-    validateModelUsageProviderInvariant({
-      modelProvider: args.modelProvider,
-      billableFirewalls,
-      modelUsageProvider,
-    }) ??
-    validateBuiltInRoutePricing({
-      billableFirewalls,
-      route,
-      routePricing: args.routePricing,
-    });
-
-  return (
-    validation ?? {
-      billableFirewalls,
-      modelUsageProvider,
-      // The assigned route's own pricing trigger; a pricing alias never
-      // changes it. Non-Built-in runs are not platform-billed.
-      modelUsageLongContextMinTotalInputTokens:
-        route?.longContextMinTotalInputTokens ?? 0,
-    }
-  );
+  if (!billableFirewalls.some(isModelProviderFirewallName)) {
+    return null;
+  }
+  if (!route?.pricingProvider) {
+    return "Built-in model provider did not resolve a supported model for usage reporting";
+  }
+  if (!args.routePricing) {
+    throw new Error("A Built-in run requires its route pricing snapshot");
+  }
+  const unpriced = unpricedBuiltInRouteCategories(args.routePricing, route);
+  if (unpriced.length === 0) {
+    return null;
+  }
+  return builtInRoutePricingRejectionMessage(route.model, unpriced);
 }
 
 /**
@@ -277,40 +235,6 @@ export function runRoutePricingFromSnapshot(
 }
 
 /**
- * Final new-run admission: every usage category the assigned Built-in route
- * can report for this run's service tier must resolve to a `usage_pricing`
- * row (or the provider's `__fallback__` row) with settlement's lookup, so a
- * run never executes into `missing_pricing`. Route selection already skips
- * unpriced candidates; this also covers a route captured earlier.
- */
-function validateBuiltInRoutePricing(args: {
-  readonly billableFirewalls: readonly string[];
-  readonly route: CatalogRoute | null;
-  readonly routePricing: BuiltInRoutePricing | null;
-}): ModelUsageRejection | null {
-  if (
-    !args.route ||
-    !args.billableFirewalls.some(isModelProviderFirewallName)
-  ) {
-    return null;
-  }
-  if (!args.routePricing) {
-    throw new Error("A Built-in run requires its route pricing snapshot");
-  }
-  const unpriced = unpricedBuiltInRouteCategories(
-    args.routePricing,
-    args.route,
-  );
-  if (unpriced.length === 0) {
-    return null;
-  }
-  return {
-    kind: "unpriced_route",
-    message: builtInRoutePricingRejectionMessage(args.route.model, unpriced),
-  };
-}
-
-/**
  * The catalog Built-in route a Built-in run was assigned. Its pricing link is
  * the provider the Runner addon reports model usage events under, which
  * settlement uses as the `usage_pricing` provider; it is read from the same
@@ -319,12 +243,9 @@ function validateBuiltInRoutePricing(args: {
  */
 function builtInRouteForContext(
   catalog: ModelCatalog,
-  modelProvider: ResolvedModelProviderEnvironment | null,
+  modelProvider: ResolvedModelProviderEnvironment,
 ): CatalogRoute | null {
-  if (
-    !modelProvider?.selectedModel ||
-    !isBuiltInModelProviderType(modelProvider.type)
-  ) {
+  if (!modelProvider.selectedModel) {
     return null;
   }
   const runtime = modelProvider.builtInModelRuntimeRoute;
@@ -354,20 +275,4 @@ function builtInRouteForContext(
         ),
       }
     : route;
-}
-
-/**
- * Runs other than Built-in are not platform-billed (only Built-in runs have
- * billable model firewalls) and keep reporting under the catalog model ID.
- */
-function catalogModelUsageProvider(
-  catalog: ModelCatalog,
-  modelProvider: ResolvedModelProviderEnvironment | null,
-): string | undefined {
-  // A route without a selected model has no catalog pricing identity.
-  if (!modelProvider?.selectedModel) {
-    return undefined;
-  }
-  const model = modelProvider.selectedModel;
-  return catalog.byModel.has(model) ? model : undefined;
 }

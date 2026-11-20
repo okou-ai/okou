@@ -1646,7 +1646,7 @@ const runWorkflowInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       body,
       userId: auth.userId,
       orgId: auth.orgId,
-      agentRunPreCreateSource: "workflow_slash_command",
+      skipThreadSortTouch: true,
       getStartedWorkflowId: workflow.id,
     },
     signal,
