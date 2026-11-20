@@ -16,6 +16,16 @@ fn respond_reusable_error(stream: &mut TcpStream) -> io::Result<()> {
     stream.flush()
 }
 
+fn respond_reusable_archive(stream: &mut TcpStream, body: &[u8]) -> io::Result<()> {
+    write!(
+        stream,
+        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: keep-alive\r\n\r\n",
+        body.len()
+    )?;
+    stream.write_all(body)?;
+    stream.flush()
+}
+
 #[test]
 fn binary_reuses_connection_after_successful_fixed_length_archive() {
     let first = create_tar_gz(&[("first", b"first archive")]).unwrap();
@@ -23,13 +33,7 @@ fn binary_reuses_connection_after_successful_fixed_length_archive() {
     let server = TcpTestServer::start(move |server| {
         let mut stream = accept(&server)?;
         request(&mut stream, "/first")?;
-        write!(
-            stream,
-            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: keep-alive\r\n\r\n",
-            first.len()
-        )?;
-        stream.write_all(&first)?;
-        stream.flush()?;
+        respond_reusable_archive(&mut stream, &first)?;
 
         let next_path = read_http_request_path(&mut stream)?;
         let reused = !next_path.is_empty();
@@ -119,52 +123,101 @@ fn binary_observes_cold_and_prior_call_transport_without_sensitive_fields() {
 }
 
 #[test]
-fn concurrent_calls_keep_observations_separate() {
+fn concurrent_calls_keep_observations_separate_and_reuse_connections() {
+    const WAVE_SIZE: usize = 4;
     let archive = create_tar_gz(&[("result", b"independent")]).unwrap();
     let server = TcpTestServer::start(move |server| {
         let mut streams = Vec::new();
-        let mut paths = Vec::new();
+        let mut first_paths = Vec::new();
         // Hold every response until all four requests arrive. Each call must
         // own a different connection; no elapsed-time concurrency assertion.
-        for _ in 0..4 {
+        for _ in 0..WAVE_SIZE {
             let mut stream = accept(&server)?;
-            paths.push(read_http_request_path(&mut stream)?);
+            first_paths.push(read_http_request_path(&mut stream)?);
             streams.push(stream);
+        }
+        for stream in &mut streams {
+            respond_reusable_archive(stream, &archive)?;
+        }
+        let mut second_paths = Vec::new();
+        for stream in &mut streams {
+            let path = read_http_request_path(stream)?;
+            if path.is_empty() {
+                return Err(io::Error::other("archive connection closed before reuse"));
+            }
+            second_paths.push(path);
         }
         for stream in &mut streams {
             respond(stream, &archive)?;
         }
-        paths.sort();
-        Ok(paths)
+        first_paths.sort();
+        second_paths.sort();
+        Ok((first_paths, second_paths))
     })
     .unwrap();
     let fixture = BinaryLoggingFixture::new("connection-concurrent").unwrap();
-    let mounts: Vec<_> = (0..4)
-        .map(|index| fixture.dir.path().join(format!("mount-{index}")))
+    let parent = fixture.dir.path().join("mounts");
+    let mounts: Vec<_> = (0..2 * WAVE_SIZE)
+        .map(|index| parent.join(format!("mount-{index}")))
         .collect();
-    let manifest = json!({"storageMounts": mounts.iter().enumerate().map(|(index, mount)| {
-        let url = format!("{}/archive-{index}", server.base_url());
-        // URI schemes are case-insensitive; every accepted remote call must
-        // retain its diagnostic even when the manifest preserves mixed case.
-        let url = if index == 0 { url.replacen("http://", "HtTp://", 1) } else { url };
-        json!({"mountPath": mount, "archiveUrl": url})
-    }).collect::<Vec<_>>()});
-    let output = run_manifest(&fixture, &manifest).unwrap();
+    let mut storage_mounts = mounts
+        .iter()
+        .enumerate()
+        .map(|(index, mount)| {
+            let url = format!("{}/archive-{index}", server.base_url());
+            // URI schemes are case-insensitive; every accepted remote call must
+            // retain its diagnostic even when the manifest preserves mixed case.
+            let url = if index == 0 {
+                url.replacen("http://", "HtTp://", 1)
+            } else {
+                url
+            };
+            json!({"mountPath": mount, "archiveUrl": url})
+        })
+        .collect::<Vec<_>>();
+    // The ordered parent mount waits for the first four archives to finish
+    // and keeps the second four pending until all their sockets are idle.
+    let local_archive = fixture.dir.path().join("local.tar.gz");
+    std::fs::write(
+        &local_archive,
+        create_tar_gz(&[("local", b"local")]).unwrap(),
+    )
+    .unwrap();
+    storage_mounts.insert(
+        WAVE_SIZE,
+        json!({
+            "mountPath": parent,
+            "archiveUrl": format!("file://{}", local_archive.display())
+        }),
+    );
+    let output = run_manifest(&fixture, &json!({"storageMounts": storage_mounts})).unwrap();
+    let (first_paths, second_paths) = server.finish().unwrap();
     assert!(output.status.success(), "{:?}", output);
     assert_eq!(
-        server.finish().unwrap(),
+        first_paths,
         ["/archive-0", "/archive-1", "/archive-2", "/archive-3"]
     );
+    assert_eq!(
+        second_paths,
+        ["/archive-4", "/archive-5", "/archive-6", "/archive-7"]
+    );
+    assert_eq!(std::fs::read(parent.join("local")).unwrap(), b"local");
     for mount in &mounts {
         assert_eq!(std::fs::read(mount.join("result")).unwrap(), b"independent");
     }
     let records = observations(&fixture).unwrap();
-    assert_eq!(records.len(), 4, "{records:?}");
-    for record in &records {
+    assert_eq!(records.len(), 2 * WAVE_SIZE, "{records:?}");
+    for record in &records[..WAVE_SIZE] {
         assert_record(record, "response_headers", "new_for_call_only");
         assert_phase(record, "resolve_outside_setup", 1, 0);
         assert_phase(record, "resolve_inside_setup", 0, 0);
         assert_phase(record, "connection_setup", 1, 0);
+    }
+    for record in &records[WAVE_SIZE..] {
+        assert_record(record, "response_headers", "prior_call_only");
+        assert_phase(record, "resolve_outside_setup", 1, 0);
+        assert_phase(record, "resolve_inside_setup", 0, 0);
+        assert_phase(record, "connection_setup", 0, 0);
     }
 }
 
