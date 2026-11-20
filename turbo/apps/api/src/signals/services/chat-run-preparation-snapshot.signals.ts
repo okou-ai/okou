@@ -2,8 +2,9 @@ import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { chatEvents } from "@okouai/db/schema/chat-event";
+import { chatNetworkBodyCaptures } from "@okouai/db/schema/chat-network-body-capture";
 import { computed } from "ccstate";
-import { and, asc, count, eq, exists, lt, not, sql } from "drizzle-orm";
+import { and, asc, count, eq, exists, lt, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 
 import {
@@ -111,6 +112,21 @@ export function createChatRunPreparationSnapshot(
     );
     const hasCapacity =
       capacity === 0 ? sql`true` : lt(occupancy.activeCount, capacity);
+    const hasPromptCapacity = and(
+      hasCapacity,
+      eq(head.eventType, "input.prompt"),
+    );
+    const storedCapture = exists(
+      new QueryBuilder()
+        .select({ id: chatNetworkBodyCaptures.chatEventId })
+        .from(chatNetworkBodyCaptures)
+        .where(eq(chatNetworkBodyCaptures.chatEventId, head.id)),
+    );
+    // The receipt can supply the flag only for the input it committed.
+    const capture = requestInput
+      ? sql`CASE WHEN ${eq(head.id, requestInput.id)}
+          THEN ${requestInput.captureNetworkBodies} ELSE ${storedCapture} END`
+      : storedCapture;
     const [row] = await database
       .with(occupancy, head)
       .select({
@@ -137,14 +153,18 @@ export function createChatRunPreparationSnapshot(
         },
         // No head/full queues do not inspect policy; automation
         // inputs bypass the prompt-only Official thread policy as before.
-        isOfficialWorkflowThread: sql`CASE WHEN ${not(hasCapacity)} THEN false
-            WHEN ${eq(head.eventType, "input.prompt")} THEN ${officialWorkflowThreadCondition(
-              {
-                threadId: claim.chatThreadId,
-                orgId: claim.orgId,
-                userId: bootstrap.userId,
-              },
-            )} ELSE false END`.mapWith(pgBooleanDecoder),
+        isOfficialWorkflowThread:
+          sql`CASE WHEN ${hasPromptCapacity} THEN ${officialWorkflowThreadCondition(
+            {
+              threadId: claim.chatThreadId,
+              orgId: claim.orgId,
+              userId: bootstrap.userId,
+            },
+          )} ELSE false END`.mapWith(pgBooleanDecoder),
+        captureNetworkBodies:
+          sql`CASE WHEN ${hasPromptCapacity} THEN ${capture} ELSE false END`.mapWith(
+            pgBooleanDecoder,
+          ),
       })
       .from(occupancy)
       .leftJoin(head, sql`true`)
@@ -181,6 +201,7 @@ export function createChatRunPreparationSnapshot(
       thread,
       preparation: {
         isOfficialWorkflowThread: row.isOfficialWorkflowThread,
+        captureNetworkBodies: row.captureNetworkBodies,
       },
     };
     return {

@@ -72,7 +72,7 @@ import type { TemplateUsageIdentity } from "../../lib/template-usage-identity";
 import { recordTemplateUsage } from "../../lib/template-usage-log";
 
 import { monotonicNow, now, nowDate, nowDateSql } from "../../lib/time";
-import { db$, writeDb$ } from "../external/db";
+import { writeDb$ } from "../external/db";
 import {
   publishChatIndicatorsChangedSafely,
   publishDesktopShellAuthorizationChangedSafely,
@@ -207,8 +207,6 @@ import {
   chatEvents,
   type ChatEventUserMessage,
 } from "@okouai/db/schema/chat-event";
-
-import { chatNetworkBodyCaptures } from "@okouai/db/schema/chat-network-body-capture";
 
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import type { PersistedStorageMount } from "@okouai/db/types";
@@ -1028,7 +1026,7 @@ export function createThreadClaimRunObjects(
   });
   // Generated once per claim graph; read after authorization admits the head.
   const runIds$ = threadContext.runIds$;
-  const head$ = computed(async (get): Promise<ChatQueueHeadContext> => {
+  const head$ = computed(async (get) => {
     const event = await get(pickedEvent$);
     if (!event) {
       throw new Error("Claim has no picked event");
@@ -1042,6 +1040,7 @@ export function createThreadClaimRunObjects(
       contextId: event.contextId,
       userId: bootstrap.userId,
       agentId: bootstrap.agentId,
+      captureNetworkBodies: event.preparation.captureNetworkBodies,
     };
   });
   const queuedInput$ = computed(async (get) => {
@@ -1261,28 +1260,15 @@ export function createThreadClaimRunObjects(
     };
   });
   const runTemplates$ = threadContext.templates$;
-  const captureNetworkBodies$ = computed(async (get) => {
-    const head = await get(head$);
-    if (requestInput?.id === head.id) {
-      return requestInput.captureNetworkBodies;
-    }
-    const db = get(db$);
-    const [row] = await db
-      .select({ id: chatNetworkBodyCaptures.chatEventId })
-      .from(chatNetworkBodyCaptures)
-      .where(eq(chatNetworkBodyCaptures.chatEventId, head.id))
-      .limit(1);
-    return row !== undefined;
-  });
   const assembledPrompt$ = computed(
     async (get): Promise<ChatQueueRunAssembly> => {
-      const [args, material, model, session, capture, features, templates] =
+      const [args, material, model, session, head, features, templates] =
         await Promise.all([
           get(promptArgs$),
           get(promptMaterial$),
           get(threadContext.modelSelection$),
           get(threadContext.threadContinuation$),
-          get(captureNetworkBodies$),
+          get(head$),
           get(bootstrap.featureSwitches$),
           get(runTemplates$),
         ]);
@@ -1327,7 +1313,6 @@ export function createThreadClaimRunObjects(
       if (!session) {
         throw new Error("A valid prompt model is missing session preparation");
       }
-      const head = await get(head$);
       const { triggerSource, delivery } = material.launch;
       return {
         kind: "assembled",
@@ -1344,7 +1329,7 @@ export function createThreadClaimRunObjects(
           ...(isFeatureEnabled(FeatureSwitchKey.RealAgentInPreview, features)
             ? { realAgentInPreview: true }
             : {}),
-          ...(capture ? { captureNetworkBodies: true } : {}),
+          ...(head.captureNetworkBodies ? { captureNetworkBodies: true } : {}),
         },
         promptContinuation: session,
         officialWorkflow,
@@ -1719,10 +1704,11 @@ export function createThreadClaimRunObjects(
     );
   });
   const captureNetworkBodiesGate$ = computed(async (get) => {
-    const capture = (await get(isAutomation$))
-      ? false
-      : await get(captureNetworkBodies$);
-    return enforceCaptureNetworkBodiesGate(bootstrap.orgId, capture);
+    const head = await get(head$);
+    return enforceCaptureNetworkBodiesGate(
+      head.orgId,
+      head.captureNetworkBodies,
+    );
   });
   const preparedRunInput$ = computed(async (get) => {
     if (!(await get(selectionReady$))) {

@@ -9,13 +9,14 @@ import { expectCanonicalStorageManifest } from "./helpers/api-bdd-runs";
 import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
 import { readExecutionContentBundle } from "./helpers/execution-content-bundle";
 import { testContext } from "../../../__tests__/test-context";
-import { buildArtifactKeyV2 } from "../../../lib/file-url";
 import { createDeferredPromise } from "../../utils";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import type { ApiTestUser } from "./helpers/api-bdd";
 import {
   createChatEventsFixture,
   userMessages,
 } from "./helpers/chat-events-fixture";
+import { installS3Fixture } from "./helpers/template-publish-fixture";
 
 const context = testContext();
 const {
@@ -32,9 +33,24 @@ const {
   requestSendEventWithBearer,
 } = createChatEventsFixture(context);
 
-function deferAttachmentMetadata(userId: string, filename: string) {
-  const fileId = randomUUID();
-  const key = buildArtifactKeyV2(fileId, filename);
+async function deferAttachmentMetadata(actor: ApiTestUser, filename: string) {
+  const storage = installS3Fixture(context);
+  const contentType = "text/plain";
+  const bytes = Buffer.from("Attachment contents");
+  const upload = await chat.prepareUpload(actor, {
+    filename,
+    contentType,
+    size: bytes.length,
+  });
+  if (!("uploadUrl" in upload)) {
+    throw new Error("Expected a single-part upload");
+  }
+  // Leave the upload uncompleted so the Chat send verifies the object.
+  storage.put(upload.uploadUrl, bytes, contentType);
+  const key = storage.signedKey(upload.uploadUrl);
+  if (!key) {
+    throw new Error("Expected the signed attachment key");
+  }
   const entered = createDeferredPromise<void>(context.signal);
   const release = createDeferredPromise<void>(context.signal);
   const originalSend = context.mocks.s3.send.getMockImplementation();
@@ -42,28 +58,22 @@ function deferAttachmentMetadata(userId: string, filename: string) {
     throw new Error("Expected the fixture's S3 implementation");
   }
   context.mocks.s3.send.mockImplementation(async (command: unknown) => {
-    if (command instanceof HeadObjectCommand && command.input.Key === key) {
+    if (
+      command instanceof HeadObjectCommand &&
+      command.input.Key === key &&
+      !entered.settled()
+    ) {
       entered.resolve(undefined);
       await release.promise;
-      return {
-        ContentLength: 42,
-        ContentType: "text/plain",
-        LastModified: new Date("2026-10-02T00:00:00Z"),
-        Metadata: {
-          "artifact-id": fileId,
-          filename: encodeURIComponent(filename),
-          "user-id": encodeURIComponent(userId),
-        },
-      };
     }
     return await originalSend(command);
   });
   return {
     part: {
       type: "file" as const,
-      fileId,
+      fileId: upload.id,
       filenameSnapshot: filename,
-      contentType: "text/plain",
+      contentType,
     },
     entered: entered.promise,
     release: () => {
@@ -428,8 +438,8 @@ describe("chat agent bootstrap prefetch", () => {
 
   it("keeps the captured model selection when the member preference changes during attachment resolution", async () => {
     const { actor, agentId } = await entitledNativeChatActor();
-    const attachment = deferAttachmentMetadata(
-      actor.userId,
+    const attachment = await deferAttachmentMetadata(
+      actor,
       "model-snapshot.txt",
     );
     const sending = sendChatRun(actor, {
@@ -444,12 +454,15 @@ describe("chat agent bootstrap prefetch", () => {
         ],
       },
     });
-    await attachment.entered;
     // Attachment metadata is awaited after model capture and before enqueue.
-    await api
-      .updateUserModelPreference(actor, null)
-      .finally(attachment.release);
-    const sent = await sending;
+    const [sent] = await Promise.all([
+      sending,
+      attachment.entered.then(() => {
+        return api
+          .updateUserModelPreference(actor, null)
+          .finally(attachment.release);
+      }),
+    ]);
     expect((await api.readRun(actor, sent.runId)).source).toMatchObject({
       model: "claude-fable-5-1",
       providerType: "claude-code-oauth-token",
@@ -468,7 +481,7 @@ describe("chat agent bootstrap prefetch", () => {
       prompt: "Start a session",
     });
     const { sandboxHeaders } = await runExecution(first.runId);
-    const attachment = deferAttachmentMetadata(actor.userId, "follow-up.txt");
+    const attachment = await deferAttachmentMetadata(actor, "follow-up.txt");
     const clientEventId = randomUUID();
     const prompt = "Continue this session with the attachment";
     const sending = chat.requestSendEvent(
@@ -488,11 +501,14 @@ describe("chat agent bootstrap prefetch", () => {
       {},
     );
     const sessionId = `bdd-cli-${first.runId}`;
-    await attachment.entered;
-    await completeChatRunOk(first.runId, sandboxHeaders, {
-      cliAgentSessionId: sessionId,
-    }).finally(attachment.release);
-    await sending;
+    await Promise.all([
+      sending,
+      attachment.entered.then(() => {
+        return completeChatRunOk(first.runId, sandboxHeaders, {
+          cliAgentSessionId: sessionId,
+        }).finally(attachment.release);
+      }),
+    ]);
     await flushWaitUntilForTest();
     const { events } = await chat.listThreadEvents(actor, first.threadId);
     const successor = userMessages(events).find((message) => {
