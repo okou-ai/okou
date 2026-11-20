@@ -12,6 +12,7 @@ import {
   prepareExecutionMemoryMount$,
   type AcceptedMemoryMount,
 } from "./execution-storage.service";
+import type { ExecutionPackageMounts } from "./execution-workflow-selection";
 import type { ModelFirstPin } from "./model-selection.service";
 import {
   emptyEnvironment,
@@ -22,7 +23,6 @@ import {
   DEFAULT_DISALLOWED_TOOLS,
   runPlatformEnvironment,
 } from "./run-execution-defaults";
-import { normalizeMountOverlay } from "./storage-mount-overlay";
 import {
   modelProviderEnvironment,
   paidToolPlatformEnvironment,
@@ -52,37 +52,6 @@ type ExecutionInput = {
   readonly facts: AdmittedExecutionFacts;
   readonly memoryMount: AcceptedMemoryMount;
 };
-
-export function executionPackages({
-  facts,
-  memoryMount,
-}: Pick<ExecutionInput, "facts" | "memoryMount">) {
-  const { skillRoot, skillMounts, officialWorkflowBundles } = facts;
-  const winners = normalizeMountOverlay([...skillMounts, memoryMount.mount]);
-  const seedSkillBundles = winners.flatMap((volume) => {
-    return "contentBundle" in volume
-      ? [{ ...volume.contentBundle, mountPath: volume.mountPath }]
-      : [];
-  });
-  const templateGuidanceBundles = winners.flatMap((volume, index) => {
-    return "templateGuidanceBundle" in volume
-      ? [
-          {
-            ...volume.templateGuidanceBundle,
-            beforeMountPaths: winners.slice(index + 1).map((later) => {
-              return later.mountPath;
-            }),
-          },
-        ]
-      : [];
-  });
-  return {
-    skillRoot,
-    officialWorkflowBundles,
-    seedSkillBundles,
-    templateGuidanceBundles,
-  };
-}
 
 function executionPlatform({ run, facts }: ExecutionInput) {
   const framework = run.framework;
@@ -140,7 +109,7 @@ export const prepareExecutionRuntimeContext$ = command(
   async (
     { set },
     input: ExecutionInput,
-    packages: ReturnType<typeof executionPackages>,
+    packages: ExecutionPackageMounts,
     signal: AbortSignal,
   ) => {
     const { run, facts } = input;

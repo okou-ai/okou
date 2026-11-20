@@ -106,7 +106,7 @@ export function mergeRunPromptAndSkills(
   };
 }
 
-export type ResolvedSkillVolume =
+type ResolvedSkillVolume =
   | TemplateSkillVolume
   | {
       readonly contentBundle: ContentBundle;
