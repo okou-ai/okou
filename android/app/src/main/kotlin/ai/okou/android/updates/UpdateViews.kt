@@ -5,6 +5,7 @@ import ai.okou.android.R
 import ai.okou.android.SettingsIcon
 import ai.okou.android.SettingsRow
 import ai.okou.android.api.generated.AndroidUpdatesRelease
+import ai.okou.android.state.rememberUpdateDetailsOpen
 import android.text.format.Formatter
 import androidx.activity.compose.BackHandler
 import androidx.annotation.DrawableRes
@@ -40,9 +41,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -127,7 +126,7 @@ internal fun UpdateHost(
     showAnnouncement: Boolean,
     content: @Composable (openUpdates: () -> Unit) -> Unit,
 ) {
-    var details by rememberSaveable { mutableStateOf(false) }
+    var details by rememberUpdateDetailsOpen()
     val showDetails = details && !state.required
     LaunchedEffect(automaticInstall, showDetails, windowFocused) {
         if (automaticInstall != null && !showDetails && windowFocused)
