@@ -12,9 +12,15 @@
     <string name="chat_status_unavailable">Status tidak dapat diperbarui. Indikator sebelumnya mungkin sudah tidak akurat.</string>
     <string name="chat_status_loading">Memeriksa status aktif dan belum dibaca…</string>
     <string name="chat_refresh_status">Perbarui status</string>
-    <string name="chat_all">Semua</string>
+    <string name="chat_inbox">Kotak masuk</string>
+    <string name="chat_mark_all_read">Tandai semua sebagai telah dibaca</string>
+    <string name="chat_mark_all_read_unconfirmed">Beberapa chat mungkin masih belum dibaca.</string>
+    <plurals name="chat_mark_all_read_success">
+        <item quantity="other">%1$d chat ditandai telah dibaca.</item>
+    </plurals>
     <string name="chat_filter">Filter</string>
-    <string name="chat_clear_filter">Hapus filter</string>
+    <string name="chat_filter_subtitle">Filter · %1$s</string>
+    <string name="chat_back_to_inbox">Kembali ke Kotak Masuk</string>
     <string name="chat_more_actions">Tindakan lainnya</string>
     <string name="chat_unread">Belum dibaca</string>
     <string name="chat_archived">Diarsipkan</string>

@@ -21,9 +21,12 @@
   int chat_archived;
   int chat_empty;
   int chat_filter;
+  int chat_filter_subtitle;
+  int chat_inbox;
   int chat_list_title;
   int chat_loading;
   int chat_more_actions;
+  int chat_muted;
   int composer_accepted;
   int composer_new;
   int composer_saving;
@@ -55,7 +58,7 @@
   int updates_required;
   int updates_target;
   int updates_title;
-  int updates_view;
+  int updates_toolbar;
 }
 -keep,allowobfuscation class ai.okou.android.R {
 }

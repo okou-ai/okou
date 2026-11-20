@@ -90,9 +90,6 @@ fun ConversationRoute(
                         list.agents.firstOrNull { it.agentId == thread.agentId }?.displayName
                             ?: stringResource(R.string.chat_agent_identity, thread.agentId)
                     )
-                    thread.projectId?.let { id ->
-                        Text(list.projects.firstOrNull { it.id == id }?.name ?: id)
-                    }
                     thread.selectedModel?.let { Text(it) }
                 }
                 TextButton(onClick = model::refresh, colors = actionColors) {

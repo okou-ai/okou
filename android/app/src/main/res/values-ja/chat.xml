@@ -12,9 +12,15 @@
     <string name="chat_status_unavailable">状態を更新できませんでした。以前の表示は古い可能性があります。</string>
     <string name="chat_status_loading">アクティブ・未読状態を確認中…</string>
     <string name="chat_refresh_status">状態を更新</string>
-    <string name="chat_all">すべて</string>
+    <string name="chat_inbox">受信トレイ</string>
+    <string name="chat_mark_all_read">すべて既読にする</string>
+    <string name="chat_mark_all_read_unconfirmed">一部のチャットが未読のままの可能性があります。</string>
+    <plurals name="chat_mark_all_read_success">
+        <item quantity="other">%1$d 件のチャットを既読にしました。</item>
+    </plurals>
     <string name="chat_filter">フィルター</string>
-    <string name="chat_clear_filter">フィルターを解除</string>
+    <string name="chat_filter_subtitle">フィルター · %1$s</string>
+    <string name="chat_back_to_inbox">受信トレイに戻る</string>
     <string name="chat_more_actions">その他の操作</string>
     <string name="chat_unread">未読</string>
     <string name="chat_archived">アーカイブ済み</string>

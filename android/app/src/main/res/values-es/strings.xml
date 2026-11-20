@@ -118,6 +118,7 @@
     <string name="updates_preparing">Preparando actualización…</string>
     <string name="updates_check">Buscar actualizaciones</string>
     <string name="updates_view">Ver actualización</string>
+    <string name="updates_toolbar">Actualizar</string>
     <string name="updates_later">Más tarde</string>
     <string name="updates_download">Descargar actualización</string>
     <string name="updates_install">Instalar actualización</string>

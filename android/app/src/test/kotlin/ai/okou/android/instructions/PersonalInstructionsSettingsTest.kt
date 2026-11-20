@@ -65,7 +65,7 @@ class PersonalInstructionsSettingsTest {
         var otherJob: Job? = null
         val failures = mutableListOf<Throwable>()
         try {
-            compose.onNodeWithText("Chats").assertExists()
+            compose.onNodeWithContentDescription("Chats").assertExists()
             val firstSession = ViewModelProvider(compose.activity)[SessionModel::class.java]
             val first = checkNotNull(firstSession.uiState.value.ready).instructions
             editorJob = first.viewModelScope.coroutineContext[Job]
@@ -144,7 +144,7 @@ class PersonalInstructionsSettingsTest {
     @Test
     fun loadingLeavesSettingsUsableAndConflictsPreserveNativeSelectionUntilExplicitReload() {
         val app = compose.activity.application as InstructionsApplication
-        compose.onNodeWithText("Chats").assertExists()
+        compose.onNodeWithContentDescription("Chats").assertExists()
         compose.onNodeWithContentDescription("Settings").performClick()
         compose.onNodeWithText("Appearance").assertExists()
         compose.onNodeWithText("Instructions").performScrollTo().performClick()
@@ -214,7 +214,7 @@ class PersonalInstructionsSettingsTest {
         compose.onNodeWithContentDescription("Back").performClick()
         compose.onNodeWithText("Appearance").assertExists()
         compose.onNodeWithContentDescription("Back").performClick()
-        compose.onNodeWithText("Chats").assertExists()
+        compose.onNodeWithContentDescription("Chats").assertExists()
     }
 
     @After

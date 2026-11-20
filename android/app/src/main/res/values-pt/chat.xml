@@ -12,9 +12,16 @@
     <string name="chat_status_unavailable">Não foi possível atualizar o estado. Os indicadores anteriores podem estar desatualizados.</string>
     <string name="chat_status_loading">Verificando atividade e conversas não lidas…</string>
     <string name="chat_refresh_status">Atualizar estado</string>
-    <string name="chat_all">Todas</string>
+    <string name="chat_inbox">Caixa de entrada</string>
+    <string name="chat_mark_all_read">Marcar tudo como lido</string>
+    <string name="chat_mark_all_read_unconfirmed">Algumas conversas ainda podem estar por ler.</string>
+    <plurals name="chat_mark_all_read_success">
+        <item quantity="one">%1$d conversa marcada como lida.</item>
+        <item quantity="other">%1$d conversas marcadas como lidas.</item>
+    </plurals>
     <string name="chat_filter">Filtrar</string>
-    <string name="chat_clear_filter">Limpar filtro</string>
+    <string name="chat_filter_subtitle">Filtro · %1$s</string>
+    <string name="chat_back_to_inbox">Voltar para a caixa de entrada</string>
     <string name="chat_more_actions">Mais ações</string>
     <string name="chat_unread">Não lidas</string>
     <string name="chat_archived">Arquivadas</string>

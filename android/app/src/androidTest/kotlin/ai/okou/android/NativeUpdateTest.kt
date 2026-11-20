@@ -7,6 +7,7 @@ import ai.okou.android.updates.AppUpdates
 import ai.okou.android.updates.UpdateRecord
 import ai.okou.android.updates.UpdateService
 import ai.okou.android.updates.UpdateStore
+import android.view.KeyEvent
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.takeScreenshot
 import androidx.test.core.graphics.writeToTestStorage
@@ -77,10 +78,10 @@ class NativeUpdateTest {
             scenario = ActivityScenario.launch(MainActivity::class.java)
             fun text(value: String) =
                 device.wait(Until.findObject(By.pkg(app.packageName).text(value)), 10_000)
-            assertNotNull(text(app.getString(R.string.chat_list_title)))
+            device.awaitChatList(app)
             gate.complete(Unit)
-            val updateAction = app.getString(R.string.updates_view)
-            assertNotNull(text(updateAction))
+            val updateAction = app.getString(R.string.updates_toolbar)
+            val updateCenter = requireNotNull(text(updateAction)).visibleCenter
             assertTrue(
                 device.wait(Until.gone(By.desc(app.getString(R.string.chat_filter))), 10_000)
             )
@@ -96,11 +97,47 @@ class NativeUpdateTest {
                 device.hasObject(By.pkg(app.packageName).desc(app.getString(R.string.settings)))
             )
             more.click()
-            assertNotNull(text(app.getString(R.string.chat_filter)))
+            val filter = app.getString(R.string.chat_filter)
+            val inbox = app.getString(R.string.chat_inbox)
+            val muted = app.getString(R.string.chat_muted)
+            fun awaitMenuFocus(label: String) =
+                device.awaitKeyboardFocus(By.pkg(app.packageName).text(label))
+            assertNotNull(text(filter))
             assertNotNull(text(app.getString(R.string.settings)))
+            instrumentation.setInTouchMode(false)
+            awaitMenuFocus(filter)
+            assertTrue(device.pressDPadCenter())
+            awaitMenuFocus(inbox)
+            assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_MOVE_END))
+            awaitMenuFocus(muted)
+            assertTrue(device.pressDPadDown())
+            awaitMenuFocus(inbox)
+            assertTrue(device.pressDPadUp())
+            awaitMenuFocus(muted)
+            assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_MOVE_HOME))
+            awaitMenuFocus(inbox)
+            assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_ESCAPE))
+            awaitMenuFocus(filter)
+            assertTrue(device.pressDPadCenter())
+            awaitMenuFocus(inbox)
             assertTrue(device.pressBack())
+            awaitMenuFocus(filter)
+            assertTrue(device.pressBack())
+            val moreLabel = app.getString(R.string.chat_more_actions)
+            device.awaitKeyboardFocus(By.pkg(app.packageName).desc(moreLabel))
+            assertTrue(device.wait(Until.gone(By.pkg(app.packageName).text(filter)), 10_000))
+            assertTrue(device.pressDPadCenter())
+            awaitMenuFocus(filter)
+            assertTrue(device.pressDPadCenter())
+            awaitMenuFocus(inbox)
+            // Dismissing a popup can leave no accessibility acknowledgement for UiDevice.click.
+            device.click(updateCenter.x, updateCenter.y)
+            assertTrue(device.wait(Until.gone(By.pkg(app.packageName).text(inbox)), 10_000))
+            assertTrue(device.wait(Until.gone(By.pkg(app.packageName).text(filter)), 10_000))
+            val updateTarget = app.getString(R.string.updates_target, "99.0.0")
+            assertFalse(device.hasObject(By.pkg(app.packageName).text(updateTarget)))
             requireNotNull(text(updateAction)).click()
-            assertNotNull(text(app.getString(R.string.updates_target, "99.0.0")))
+            assertNotNull(text(updateTarget))
             takeScreenshot().writeToTestStorage("android-update-optional.png")
             owner.requireUpdate(RequiredUpdate("99.0.0"))
             assertNotNull(text(app.getString(R.string.updates_required)))
@@ -122,6 +159,7 @@ class NativeUpdateTest {
                     { scenario?.close() },
                     { owner.close() },
                     { app.updateOwner = previous },
+                    { instrumentation.resetInTouchMode() },
                 )) try {
                 cleanup()
             } catch (error: Throwable) {

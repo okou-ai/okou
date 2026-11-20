@@ -34,11 +34,7 @@ class NativeAuthenticationRootTest {
                             10_000,
                         )
                     )
-                    assertFalse(
-                        device.hasObject(
-                            By.pkg(app.packageName).text(app.getString(R.string.chat_list_title))
-                        )
-                    )
+                    assertFalse(device.hasObject(chatListRegion(app)))
                     assertFalse(device.hasObject(By.text(app.getString(R.string.settings))))
                 }
                 verify()
