@@ -9,7 +9,6 @@ use runner_types::storage_manifest::{ArtifactEntry, StorageEntry, StorageManifes
 fn storage(mount_path: &str, name: &str, version: &str) -> StorageEntry {
     StorageEntry {
         template_guidance: None,
-        optional: false,
         name: name.into(),
         mount_path: mount_path.into(),
         vas_storage_name: name.into(),

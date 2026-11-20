@@ -1,10 +1,9 @@
 use std::path::Path;
 
-use guest_contracts::storage_files::MAX_COMPLETE_MANIFEST_BYTES;
 use guest_control_proto::{
     DecodedExecResult, DecodedGuestStorageManifestRequest, ExecCapturedOutput, ExecTermination,
     GUEST_STORAGE_MANIFEST_MAX_RUN_ID_BYTES, GUEST_STORAGE_MANIFEST_MAX_RUNTIME_DIR_BYTES,
-    GUEST_STORAGE_MANIFEST_OUTPUT_LIMIT_BYTES, MSG_GUEST_STORAGE_MANIFEST,
+    GUEST_STORAGE_MANIFEST_OUTPUT_LIMIT_BYTES, MAX_EXEC_STDIN_BYTES, MSG_GUEST_STORAGE_MANIFEST,
     MSG_GUEST_STORAGE_MANIFEST_RESULT, ProtocolError, decode_guest_storage_manifest_request,
     decode_guest_storage_manifest_result, encode, encode_exec_result,
     encode_guest_storage_manifest_request, encode_guest_storage_manifest_request_frame_into,
@@ -527,7 +526,7 @@ proptest! {
             prop_assert!(Path::new(decoded.runtime_dir).is_absolute());
             prop_assert!(decoded.runtime_dir.len() <= GUEST_STORAGE_MANIFEST_MAX_RUNTIME_DIR_BYTES);
             prop_assert!(!decoded.runtime_dir.as_bytes().contains(&0));
-            prop_assert!(decoded.manifest_json.len() <= MAX_COMPLETE_MANIFEST_BYTES);
+            prop_assert!(decoded.manifest_json.len() <= MAX_EXEC_STDIN_BYTES);
 
             let reencoded = encode_guest_storage_manifest_request(
                 decoded.timeout_ms,
@@ -623,7 +622,7 @@ fn request_enforces_context_and_size_boundaries() {
             if size == GUEST_STORAGE_MANIFEST_MAX_RUNTIME_DIR_BYTES + 1
     ));
 
-    let max_manifest = vec![0xA5; MAX_COMPLETE_MANIFEST_BYTES];
+    let max_manifest = vec![0xA5; MAX_EXEC_STDIN_BYTES];
     let payload = encode_guest_storage_manifest_request(1, "run", "/run", &max_manifest).unwrap();
     assert_eq!(
         decode_guest_storage_manifest_request(&payload)
@@ -631,11 +630,11 @@ fn request_enforces_context_and_size_boundaries() {
             .manifest_json,
         max_manifest,
     );
-    let oversized_manifest = vec![0xA5; MAX_COMPLETE_MANIFEST_BYTES + 1];
+    let oversized_manifest = vec![0xA5; MAX_EXEC_STDIN_BYTES + 1];
     assert!(matches!(
         encode_guest_storage_manifest_request(1, "run", "/run", &oversized_manifest),
         Err(ProtocolError::PayloadTooLarge("manifest_json", size))
-            if size == MAX_COMPLETE_MANIFEST_BYTES + 1
+            if size == MAX_EXEC_STDIN_BYTES + 1
     ));
 }
 

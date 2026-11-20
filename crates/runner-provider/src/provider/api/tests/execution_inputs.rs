@@ -10,7 +10,6 @@ fn complete_publication_preserves_canonical_execution_inputs() {
     assert_eq!(context.run_id, run_id);
     assert_eq!(context.prompt, "Inspect the fixture repository");
     let storages = &context.storage_manifest.as_ref().unwrap().storages;
-    assert!(storages.iter().all(|entry| !entry.optional));
     let instructions = storages
         .iter()
         .find(|entry| entry.vas_storage_name == "instruction")
@@ -89,29 +88,6 @@ fn complete_publication_preserves_canonical_execution_inputs() {
 }
 
 #[test]
-fn complete_publication_retains_explicit_skill_optionality() {
-    let mut body: Value = serde_json::from_str(RUNNER_EXECUTION_CONTEXT_FIXTURE).unwrap();
-    let original = body["contentBundles"]["skills"][0].clone();
-    let mut optional = original.clone();
-    optional["mountPath"] = serde_json::json!("/home/user/.codex/skills/optional-skill");
-    optional["optional"] = serde_json::json!(true);
-    let mut required = original.clone();
-    required["mountPath"] = serde_json::json!("/home/user/.codex/skills/required-skill");
-    required["optional"] = serde_json::json!(false);
-    body["contentBundles"]["skills"] = serde_json::json!([original, optional, required]);
-    let context = decode_execution_publication(&serde_json::to_vec(&body).unwrap()).unwrap();
-    let optional_mounts: Vec<_> = context
-        .storage_manifest
-        .unwrap()
-        .storages
-        .into_iter()
-        .filter(|entry| entry.optional)
-        .map(|entry| entry.mount_path)
-        .collect();
-    assert_eq!(optional_mounts, ["/home/user/.codex/skills/optional-skill"]);
-}
-
-#[test]
 fn complete_publication_rejects_invalid_bundles_and_conflicting_mounts() {
     for kind in [
         "missing",
@@ -121,8 +97,6 @@ fn complete_publication_rejects_invalid_bundles_and_conflicting_mounts() {
         "size",
         "url",
         "mount",
-        "optional-type",
-        "instruction-optionality",
         "duplicate",
         "storage-conflict",
         "instruction-conflict",
@@ -149,12 +123,6 @@ fn complete_publication_rejects_invalid_bundles_and_conflicting_mounts() {
             "mount" => {
                 body["contentBundles"]["skills"][0]["mountPath"] =
                     serde_json::json!("/home/user/.codex")
-            }
-            "optional-type" => {
-                body["contentBundles"]["skills"][0]["optional"] = serde_json::json!("true");
-            }
-            "instruction-optionality" => {
-                body["contentBundles"]["instructions"]["optional"] = serde_json::json!(true);
             }
             "duplicate" => {
                 let duplicate = body["contentBundles"]["skills"][0].clone();

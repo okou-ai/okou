@@ -51,7 +51,6 @@ async fn workflow_storage_paths_are_cleaned_after_finalization_and_exact_reuse()
     first.storage_manifest = Some(runner_types::storage_manifest::StorageManifest {
         storages: vec![runner_types::storage_manifest::StorageEntry {
             template_guidance: None,
-            optional: false,
             name: "workflow".into(),
             mount_path: mount.into(),
             vas_storage_name: "workflow".into(),
@@ -92,10 +91,7 @@ async fn workflow_storage_paths_are_cleaned_after_finalization_and_exact_reuse()
             }
             let manifest: guest_contracts::storage_manifest::Manifest =
                 serde_json::from_slice(&call.manifest_json).unwrap();
-            manifest
-                .removed_package_paths
-                .iter()
-                .any(|path| path == mount)
+            manifest.cleanup_paths.iter().any(|path| path == mount)
         }),
         "the retained bundle path must be removed before the next Agent starts"
     );

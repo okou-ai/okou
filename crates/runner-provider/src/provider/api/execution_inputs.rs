@@ -46,8 +46,6 @@ struct SkillBundle {
     archive_bytes: u64,
     download_url: String,
     mount_path: String,
-    #[serde(default)]
-    optional: bool,
 }
 
 #[derive(Deserialize)]
@@ -124,7 +122,6 @@ impl BundleReference {
         }
         Ok(StorageEntry {
             template_guidance: None,
-            optional: false,
             name: name.into(),
             mount_path,
             vas_storage_name: name.into(),
@@ -178,14 +175,14 @@ fn normalize(
         if !paths.insert(skill.mount_path.clone()) {
             return Err("Conflicting content bundle mount".into());
         }
-        let mut entry = BundleReference {
-            sha256: skill.sha256,
-            archive_bytes: skill.archive_bytes,
-            download_url: skill.download_url,
-        }
-        .storage(WORKFLOW_STORAGE_NAME, skill.mount_path)?;
-        entry.optional = skill.optional;
-        entries.push(entry);
+        entries.push(
+            BundleReference {
+                sha256: skill.sha256,
+                archive_bytes: skill.archive_bytes,
+                download_url: skill.download_url,
+            }
+            .storage(WORKFLOW_STORAGE_NAME, skill.mount_path)?,
+        );
     }
     let instruction_file = if let Some(reference) = packages.instructions {
         let framework = guest_contracts::env::CliAgentTypeSelection::parse(&context.cli_agent_type);

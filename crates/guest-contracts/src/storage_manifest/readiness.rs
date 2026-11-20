@@ -10,7 +10,6 @@ use uuid::Uuid;
 ///
 /// The publisher must use a fresh operation ID, finish each source write before
 /// creating its empty regular ready marker, and never modify a published source.
-/// An optional-only source may publish an empty unavailable marker instead.
 /// An empty regular failed marker aborts the operation. Markers belong to the
 /// captured Run runtime and its existing reclamation owner, not a retained cache.
 /// The default publication wait is 60 seconds. The embedded Host can bind it to
@@ -99,12 +98,6 @@ impl ArchiveReadiness {
     #[must_use]
     pub fn ready_path(&self, runtime: &Path, index: usize) -> PathBuf {
         self.directory(runtime).join(format!("{index}.ready"))
-    }
-
-    /// Finish one optional-only source without staging an archive.
-    #[must_use]
-    pub fn unavailable_path(&self, runtime: &Path, index: usize) -> PathBuf {
-        self.directory(runtime).join(format!("{index}.unavailable"))
     }
 
     /// Explicit producer failure for this operation only.

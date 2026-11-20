@@ -13,7 +13,7 @@ const ARCHIVE_PATH: &str = "/archive.tar.gz";
 const FILE_PATH: &str = "file.txt";
 const PAYLOAD: &[u8] = b"ORIGINAL_PAYLOAD";
 
-pub(super) fn create_stored_archive() -> io::Result<Vec<u8>> {
+fn create_stored_archive() -> io::Result<Vec<u8>> {
     let mut tar = tar::Builder::new(Vec::new());
     let mut header = tar::Header::new_gnu();
     header.set_mode(0o644);

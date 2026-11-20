@@ -40,7 +40,6 @@ impl Quarantine {
         let eligible = manifest
             .cleanup_paths
             .iter()
-            .chain(&manifest.removed_package_paths)
             .map(Path::new)
             .filter(|path| {
                 path.is_absolute()
@@ -70,7 +69,6 @@ impl Quarantine {
         }) || manifest
             .cleanup_paths
             .iter()
-            .chain(&manifest.removed_package_paths)
             .any(|path| overlaps(&normalize_path(Path::new(path)), &private))
         {
             return Ok(None);

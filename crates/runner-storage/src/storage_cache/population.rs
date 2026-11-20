@@ -258,7 +258,8 @@ pub(super) async fn prepare_ordinary(
                 let Some(task) = next_group(&mut groups, cancel).await? else {
                     break;
                 };
-                stage_joined_processed_group(task, &mut outcomes, &mut batch, stage).await?;
+                stage_joined_processed_group(&mut groups, task, &mut outcomes, &mut batch, stage)
+                    .await?;
                 check_cancel(cancel)?;
             }
             let home = home.clone();
@@ -266,9 +267,7 @@ pub(super) async fn prepare_ordinary(
                 let mut metrics = CacheProcessMetrics::default();
                 let started = Instant::now();
                 let processed = process_group_hit_or_passthrough(&group, &home, &mut metrics).await;
-                let success = processed
-                    .as_ref()
-                    .is_ok_and(|value| !matches!(value.outcome, TargetOutcome::Unavailable(_)));
+                let success = processed.is_ok();
                 metrics.record(
                     STORAGE_CACHE_PROCESS_GROUP,
                     started.elapsed(),
@@ -283,7 +282,8 @@ pub(super) async fn prepare_ordinary(
             });
         }
         while let Some(task) = next_group(&mut groups, cancel).await? {
-            stage_joined_processed_group(task, &mut outcomes, &mut batch, stage).await?;
+            stage_joined_processed_group(&mut groups, task, &mut outcomes, &mut batch, stage)
+                .await?;
         }
         check_cancel(cancel)?;
         // A ready partial batch belongs to this owner, not the cold response.
@@ -291,12 +291,7 @@ pub(super) async fn prepare_ordinary(
         Ok(outcomes)
     }
     .await;
-    groups.abort_all();
-    while let Some(joined) = groups.join_next().await {
-        if let Ok(task) = joined {
-            task.remember_optional_failure(stage.unavailable);
-        }
-    }
+    abort_pending_processed_groups(&mut groups).await;
     result
 }
 
