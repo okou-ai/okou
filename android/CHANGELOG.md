@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.32.1](https://github.com/okou-ai/okou/compare/android-v0.32.0...android-v0.32.1) (2026-11-20)
+
+
+### Performance Improvements
+
+* **android:** enable authorized chat interactions during startup ([#49514](https://github.com/okou-ai/okou/issues/49514)) ([f94cfdb](https://github.com/okou-ai/okou/commit/f94cfdb0f906c69b6132c0dcb0de43b4e48da7f0))
+
 ## [0.32.0](https://github.com/okou-ai/okou/compare/android-v0.31.1...android-v0.32.0) (2026-11-20)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.1](https://github.com/okou-ai/okou/compare/runner-types-v0.19.0...runner-types-v0.19.1) (2026-11-20)
+
+
+### Bug Fixes
+
+* **runner:** isolate optional package mount failures ([#49375](https://github.com/okou-ai/okou/issues/49375)) ([56468e0](https://github.com/okou-ai/okou/commit/56468e04dfb10c1adce08e41698106db41ec6bf3))
+
 ## [0.19.0](https://github.com/okou-ai/okou/compare/runner-types-v0.18.22...runner-types-v0.19.0) (2026-11-20)
 
 

@@ -13,6 +13,19 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1158.0](https://github.com/okou-ai/okou/compare/app-v0.1157.0...app-v0.1158.0) (2026-11-20)
+
+
+### Features
+
+* **platform:** calm the for you finish and blend the header ([#49512](https://github.com/okou-ai/okou/issues/49512)) ([15aad19](https://github.com/okou-ai/okou/commit/15aad19327616ecf1d2fc89a10a51b69c3c0b9fd))
+
+
+### Bug Fixes
+
+* **platform:** even out the for you card's gaps and grays ([#49521](https://github.com/okou-ai/okou/issues/49521)) ([199de74](https://github.com/okou-ai/okou/commit/199de74529c8568f7ccf8d13bf83f1c822120ecf))
+* **platform:** give the for you cover gallery room and drop reset ([#49508](https://github.com/okou-ai/okou/issues/49508)) ([b126e4c](https://github.com/okou-ai/okou/commit/b126e4ca50e5b80832239c3ddc955fe1d6f678bc))
+
 ## [0.1157.0](https://github.com/okou-ai/okou/compare/app-v0.1156.1...app-v0.1157.0) (2026-11-20)
 
 
