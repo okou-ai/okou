@@ -345,3 +345,53 @@ Projects catch changes made while a cached page waits for realtime. [Registratio
 - **Then** The page first shows the cached "Launch" project and, once realtime attaches, catches up and shows "Launch ready".
 - **Disposition** retain.
 - **Source** upstream `23cd576d` (#49440), added to the copied test file after it was removed.
+
+## upstream-ad72ee86-chat-sharing-277-01
+
+The selection column toggles a message group once. [Registration](https://github.com/okou-ai/okou/blob/ad72ee8660d9450fa57e8df86389fe30c1e9abae/turbo/apps/platform/src/views/okou-page/__tests__/chat-sharing.test.tsx#L277).
+
+- **Given** Refined message sharing is enabled and a chat is in sharing mode.
+- **When** The user selects a message group from its selection column and then deselects it.
+- **Then** Exactly one message group is selected, and deselecting it leaves no group selected.
+- **Disposition** retain.
+- **Source** upstream `ad72ee86` (#49038) for the `ChatShareRefresh` design. The rebuilt chat-sharing tests cover the default design and stay as rebuilt.
+
+## upstream-ad72ee86-chat-sharing-298-01
+
+Select all, clear all, and individual selection use the same message groups. [Registration](https://github.com/okou-ai/okou/blob/ad72ee8660d9450fa57e8df86389fe30c1e9abae/turbo/apps/platform/src/views/okou-page/__tests__/chat-sharing.test.tsx#L298).
+
+- **Given** Refined message sharing is enabled for a chat with a prompt group and an answer group.
+- **When** The user selects all, deselects all, selects the prompt individually, selects all again, deselects the answer, selects all once more, and creates a link.
+- **Then** Select all and individual choices act on the same groups: both are checked after Select all, both clear after Deselect all, and Select all becomes available again after one group is deselected. The link is created from the full selection.
+- **Disposition** retain.
+- **Source** upstream `ad72ee86` (#49038) for the `ChatShareRefresh` design. The rebuilt chat-sharing tests cover the default design and stay as rebuilt.
+
+## upstream-ad72ee86-chat-sharing-700-01
+
+Select all includes the complete transcript after selected messages move outside the render window. [Registration](https://github.com/okou-ai/okou/blob/ad72ee8660d9450fa57e8df86389fe30c1e9abae/turbo/apps/platform/src/views/okou-page/__tests__/chat-sharing.test.tsx#L700).
+
+- **Given** Refined message sharing is enabled and a selected answer later moves outside the rendered window as new turns arrive.
+- **When** The user selects all and shares.
+- **Then** The selection count reflects the whole transcript and the shared snapshot includes every message group, including those outside the render window.
+- **Disposition** retain.
+- **Source** upstream `ad72ee86` (#49038) for the `ChatShareRefresh` design. The rebuilt chat-sharing tests cover the default design and stay as rebuilt.
+
+## upstream-ad72ee86-chat-sharing-974-01
+
+An oversized Select all leaves the existing selection intact. [Registration](https://github.com/okou-ai/okou/blob/ad72ee8660d9450fa57e8df86389fe30c1e9abae/turbo/apps/platform/src/views/okou-page/__tests__/chat-sharing.test.tsx#L974).
+
+- **Given** Refined message sharing is enabled, one message is selected, and selecting every group would exceed the shareable size.
+- **When** The user chooses Select all.
+- **Then** The oversized selection is rejected with an explanation and the existing selection stays unchanged.
+- **Disposition** retain.
+- **Source** upstream `ad72ee86` (#49038) for the `ChatShareRefresh` design. The rebuilt chat-sharing tests cover the default design and stay as rebuilt.
+
+## upstream-ad72ee86-chat-sharing-1349-01
+
+Without the refreshed design, sharing keeps the legacy footer and copy toast. [Registration](https://github.com/okou-ai/okou/blob/ad72ee8660d9450fa57e8df86389fe30c1e9abae/turbo/apps/platform/src/views/okou-page/__tests__/chat-sharing.test.tsx#L1349).
+
+- **Given** Refined message sharing is disabled.
+- **When** The user enters sharing mode, selects one message group, and shares it.
+- **Then** The legacy footer counts "0 selected" then "1 selected" without Select all; sharing shows the link in a "Shared chat link" field, copies it to the clipboard, and confirms "Link copied".
+- **Disposition** retain.
+- **Source** upstream `ad72ee86` (#49038) for the `ChatShareRefresh` design. The rebuilt chat-sharing tests cover the default design and stay as rebuilt.

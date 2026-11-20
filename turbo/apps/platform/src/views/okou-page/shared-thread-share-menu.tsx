@@ -14,7 +14,16 @@ import {
 } from "@okouai/ui";
 import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
-import { Check, Globe, Share2, Users } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  Globe,
+  Lock,
+  Share2,
+  Users,
+  type LucideIcon,
+} from "lucide-react";
+import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { currentOrgInfo$ } from "../../signals/auth.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -114,13 +123,74 @@ export function MessageShareMenu({
   );
 }
 
+function audienceIcon(audience: SharedThreadAudience): LucideIcon {
+  if (audience === "private") {
+    return Lock;
+  }
+  return audience === "public" ? Globe : Users;
+}
+
+// Names the audience the way the menu's options do, so the trigger and the
+// checked option read the same.
+function audienceLabel(
+  t: TFunction,
+  audience: SharedThreadAudience,
+  organizationName: string | null,
+): string {
+  if (audience === "private") {
+    return t(($) => {
+      return $.artifacts.sharing.onlyMeOption;
+    });
+  }
+  if (audience === "public") {
+    return t(($) => {
+      return $.artifacts.sharing.publicOption;
+    });
+  }
+  if (organizationName === null) {
+    return t(($) => {
+      return $.artifacts.sharing.organizationOptionUnnamed;
+    });
+  }
+  return t(
+    ($) => {
+      return $.artifacts.sharing.organizationOption;
+    },
+    { organization: organizationName },
+  );
+}
+
+/** The neutral trigger content for a chosen audience: its icon, its name and
+ * the disclosure chevron. */
+function AudienceTriggerContent({
+  audience,
+  organizationName,
+}: {
+  readonly audience: SharedThreadAudience;
+  readonly organizationName: string | null;
+}) {
+  const { t } = useTranslation();
+  const Icon = audienceIcon(audience);
+  return (
+    <>
+      <Icon className="text-muted-foreground" />
+      {audienceLabel(t, audience, organizationName)}
+      {/* Pushed to the trailing edge when the trigger fills its row. */}
+      <ChevronDown className="ml-auto text-muted-foreground" />
+    </>
+  );
+}
+
 export function SharedThreadAudiencePicker({
   audience,
   disabled,
+  refreshed = false,
   onChange,
 }: {
   readonly audience: SharedThreadAudience;
   readonly disabled: boolean;
+  /** `ChatShareRefresh`: the neutral trigger with the audience's icon. */
+  readonly refreshed?: boolean;
   readonly onChange: (audience: SharedThreadAudience) => void;
 }) {
   const { t } = useTranslation();
@@ -129,27 +199,35 @@ export function SharedThreadAudiencePicker({
     <Popover>
       <PopoverTrigger
         render={
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={disabled}
-            aria-label={t(($) => {
-              return $.artifacts.sharing.accessLabel;
-            })}
-          />
+          refreshed ? (
+            <Button
+              variant="neutral"
+              className="justify-start"
+              disabled={disabled}
+              aria-label={t(($) => {
+                return $.artifacts.sharing.accessLabel;
+              })}
+            />
+          ) : (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={disabled}
+              aria-label={t(($) => {
+                return $.artifacts.sharing.accessLabel;
+              })}
+            />
+          )
         }
       >
-        {audience === "private"
-          ? t(($) => {
-              return $.artifacts.sharing.onlyMeOption;
-            })
-          : audience === "public"
-            ? t(($) => {
-                return $.artifacts.sharing.publicOption;
-              })
-            : t(($) => {
-                return $.artifacts.sharing.organizationOptionUnnamed;
-              })}
+        {refreshed ? (
+          <AudienceTriggerContent
+            audience={audience}
+            organizationName={organization?.name ?? null}
+          />
+        ) : (
+          audienceLabel(t, audience, null)
+        )}
       </PopoverTrigger>
       <ShareMenuContent
         label={t(($) => {
@@ -164,12 +242,65 @@ export function SharedThreadAudiencePicker({
   );
 }
 
+/** The labelled `ChatShareRefresh` trigger names the audience; otherwise the
+ * trigger is the Share icon, with its label when `showLabel` is set. */
+function ShareMenuTrigger({
+  showLabel,
+  audienceTrigger,
+  details,
+}: {
+  readonly showLabel: boolean;
+  readonly audienceTrigger: boolean;
+  readonly details:
+    | {
+        readonly audience: SharedThreadAudience;
+        readonly organization: { readonly name: string };
+      }
+    | null
+    | undefined;
+}) {
+  const { t } = useTranslation();
+  const label = t(($) => {
+    return $.sharedThread.share;
+  });
+  return (
+    <PopoverTrigger
+      render={
+        <Button
+          variant={
+            audienceTrigger ? "neutral" : showLabel ? "default" : "quiet"
+          }
+          size={showLabel ? "default" : "icon-sm"}
+          className={audienceTrigger ? "justify-start" : undefined}
+          aria-label={label}
+        />
+      }
+    >
+      {audienceTrigger && details ? (
+        <AudienceTriggerContent
+          audience={details.audience}
+          organizationName={details.organization.name}
+        />
+      ) : (
+        <>
+          <Share2 size={showLabel ? 16 : 18} />
+          {showLabel && !audienceTrigger ? label : null}
+        </>
+      )}
+    </PopoverTrigger>
+  );
+}
+
 export function SharedThreadShareMenu({
   session,
   showLabel = false,
+  refreshed = false,
 }: {
   readonly session: SharedThreadVisibilitySignals;
   readonly showLabel?: boolean;
+  /** `ChatShareRefresh`: a labelled trigger names the audience and sits
+   * beside its own Copy link action. */
+  readonly refreshed?: boolean;
 }) {
   const { t } = useTranslation();
   const status = useLoadable(session.status$);
@@ -181,26 +312,14 @@ export function SharedThreadShareMenu({
   const saving = changeState.state === "loading";
   const saveError = useGet(session.saveError$);
   const recipient = status.state === "hasData" && !status.data;
+  const audienceTrigger = showLabel && refreshed;
   return (
     <Popover>
-      <PopoverTrigger
-        render={
-          <Button
-            variant={showLabel ? "default" : "quiet"}
-            size={showLabel ? "default" : "icon-sm"}
-            aria-label={t(($) => {
-              return $.sharedThread.share;
-            })}
-          />
-        }
-      >
-        <Share2 size={showLabel ? 16 : 18} />
-        {showLabel
-          ? t(($) => {
-              return $.sharedThread.share;
-            })
-          : null}
-      </PopoverTrigger>
+      <ShareMenuTrigger
+        showLabel={showLabel}
+        audienceTrigger={audienceTrigger}
+        details={details}
+      />
       <ShareMenuContent
         label={t(($) => {
           return $.sharedThread.share;
@@ -222,13 +341,19 @@ export function SharedThreadShareMenu({
         onChange={(audience) => {
           detach(change(audience, signal), Reason.DomCallback);
         }}
-        copy={{
-          copied,
-          disabled: !details && !recipient,
-          onCopy: () => {
-            detach(copy(signal), Reason.DomCallback);
-          },
-        }}
+        // The labelled trigger sits beside its own Copy link action, so its
+        // menu carries only the access choice.
+        copy={
+          audienceTrigger
+            ? undefined
+            : {
+                copied,
+                disabled: !details && !recipient,
+                onCopy: () => {
+                  detach(copy(signal), Reason.DomCallback);
+                },
+              }
+        }
       />
     </Popover>
   );
