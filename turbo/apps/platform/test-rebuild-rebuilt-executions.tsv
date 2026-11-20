@@ -2257,3 +2257,12 @@ ssh-delete-conflicts-001	turbo/apps/platform/src/views/okou-page/__tests__/ssh-d
 ssh-delete-conflicts-002	turbo/apps/platform/src/views/okou-page/__tests__/ssh-delete-conflicts.test.tsx	A missing host after HTTP 409 cannot authorize deletion	71	passed
 ssh-delete-conflicts-005	turbo/apps/platform/src/views/okou-page/__tests__/ssh-delete-conflicts.test.tsx	A owner change while deletion awaits a token prevents stale submission	115	passed
 ssh-delete-conflicts-007	turbo/apps/platform/src/views/okou-page/__tests__/ssh-delete-conflicts.test.tsx	A same-session token refresh preserves the deletion snapshot and uses the current token	157	passed
+color-themes-001	turbo/apps/platform/src/views/css/__tests__/color-themes.test.ts	color theme palettes > labels golden-hour's fills with the stronger of white and Ink	100	passed
+color-themes-002	turbo/apps/platform/src/views/css/__tests__/color-themes.test.ts	color theme palettes > labels citrus-spark's fills with the stronger of white and Ink	100	passed
+color-themes-008	turbo/apps/platform/src/views/css/__tests__/color-themes.test.ts	color theme palettes > gives golden-hour an ambient strength in both themes	126	passed
+color-themes-009	turbo/apps/platform/src/views/css/__tests__/color-themes.test.ts	color theme palettes > gives citrus-spark an ambient strength in both themes	126	passed
+color-themes-010	turbo/apps/platform/src/views/css/__tests__/color-themes.test.ts	color theme palettes > gives berry-blush an ambient strength in both themes	126	passed
+color-themes-011	turbo/apps/platform/src/views/css/__tests__/color-themes.test.ts	color theme palettes > gives cotton-sky an ambient strength in both themes	126	passed
+color-themes-012	turbo/apps/platform/src/views/css/__tests__/color-themes.test.ts	color theme palettes > gives blue-horizon an ambient strength in both themes	126	passed
+chat-capability-voice-isolation-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-voice-isolation.test.tsx	Release a VAD session initialized after the old composer was cancelled	29	passed
+chat-capability-voice-isolation-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-voice-isolation.test.tsx	keep local recordings isolated when the composer changes user > preserves the complete scenario	113	passed
