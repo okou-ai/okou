@@ -13,7 +13,11 @@ fn download_concurrency_scales_with_remote_batch_size() {
     assert_eq!(download_concurrency(41, 128), 20);
     assert_eq!(download_concurrency(63, 128), 20);
     assert_eq!(download_concurrency(64, 128), 24);
-    assert_eq!(download_concurrency(95, 128), 24);
+    assert_eq!(download_concurrency(72, 128), 24);
+    assert_eq!(download_concurrency(73, 128), 25);
+    assert_eq!(download_concurrency(82, 130), 28);
+    assert_eq!(download_concurrency(86, 95), 29);
+    assert_eq!(download_concurrency(95, 128), 32);
     assert_eq!(download_concurrency(96, 128), 32);
     assert_eq!(download_concurrency(97, 128), 33);
     assert_eq!(download_concurrency(110, 115), 37);
