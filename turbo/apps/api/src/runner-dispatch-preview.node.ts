@@ -112,7 +112,11 @@ export function createRunnerDispatchPreview({
       }
       claimant = { options, callback, use: ready ? "ready" : "pending" };
       if (ready) {
-        finish(claimant.use);
+        // Undici calls the connector from its resume loop. Delivering a ready
+        // socket inline would re-enter the loop and lose its send wake-up.
+        queueMicrotask(() => {
+          finish(socket.destroyed ? "failed" : "ready");
+        });
       }
       return true;
     };

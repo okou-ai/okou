@@ -49,6 +49,7 @@ after(async () => {
 
 async function withPeer(run) {
   const handshake = Promise.withResolvers();
+  const secure = Promise.withResolvers();
   const firstClosed = Promise.withResolvers();
   const context = createSecureContext({ key, cert });
   const ports = [];
@@ -88,6 +89,7 @@ async function withPeer(run) {
       socket.once("close", firstClosed.resolve);
     }
   });
+  server.once("secureConnection", secure.resolve);
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
   const address = server.address();
@@ -100,6 +102,7 @@ async function withPeer(run) {
       ports,
       bodyPorts,
       firstHandshake: handshake.promise,
+      firstSecureConnection: secure.promise,
       firstClosed: firstClosed.promise,
       releaseHandshake,
     });
@@ -169,6 +172,30 @@ test(
       assert.equal(peer.ports.length, 1);
       assert.deepEqual(peer.bodyPorts, [peer.ports[0], peer.ports[0]]);
       assert.equal(observe.mock.callCount(), 1);
+    });
+  },
+);
+
+test(
+  "sends the POST on a handshake that completed before dispatch",
+  { timeout: 5000 },
+  async (test) => {
+    await withPeer(async (peer) => {
+      const observe = test.mock.fn();
+      const preview = createRunnerDispatchPreview({ ca: cert, observe });
+      preview.reserve("ready", peer.origin, test.signal);
+      await peer.firstHandshake;
+      peer.releaseHandshake();
+      await peer.firstSecureConnection;
+      assert.deepEqual(peer.bodyPorts, []);
+
+      await send(preview, peer.origin, "preconnect");
+      assert.deepEqual(observe.mock.calls[0].arguments.slice(0, 2), [
+        "ready",
+        "ready",
+      ]);
+      assert.equal(peer.ports.length, 1);
+      assert.deepEqual(peer.bodyPorts, peer.ports);
     });
   },
 );
