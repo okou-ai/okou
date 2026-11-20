@@ -210,9 +210,17 @@ internal fun ChatListScreen(
             skeletonVisible = true
         }
     }
+    // Follow changes to refreshed content without turning Project expansion into a scroll action.
+    val lastContentKey =
+        remember(groups) {
+            groups.asReversed().firstNotNullOfOrNull { group ->
+                group.threads.lastOrNull()?.id ?: group.project?.id?.let(::projectRowKey)
+            }
+        }
     ChatListViewport(
         Modifier.fillMaxSize(),
         listState,
+        lastContentKey = lastContentKey,
         status = status,
         newChatEnabled = newChatEnabled,
         newChat = { newChat(null) },

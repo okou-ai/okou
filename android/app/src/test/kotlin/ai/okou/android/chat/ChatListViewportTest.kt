@@ -19,6 +19,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.unit.dp
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -32,14 +33,16 @@ class ChatListViewportTest {
     @get:Rule val compose = createComposeRule()
 
     @Test
-    fun aShorterFloatingViewportKeepsTheLastRowAboveTheAction() {
+    fun aReaderAtTheEndFollowsNewRowsAndViewportChanges() {
         val height = mutableStateOf(480.dp)
+        val rowCount = mutableStateOf(30)
         compose.setContent {
             OkouTheme {
                 val listState = rememberLazyListState()
                 ChatListViewport(
                     Modifier.fillMaxWidth().height(height.value),
                     listState,
+                    lastContentKey = "chat_${rowCount.value - 1}",
                     status = ChatListStatus.Offline,
                     newChatEnabled = true,
                     newChat = {},
@@ -50,7 +53,7 @@ class ChatListViewportTest {
                         state = listState,
                         contentPadding = PaddingValues(bottom = bottomSpace),
                     ) {
-                        items(30, key = { it }) { index ->
+                        items(rowCount.value, key = { it }) { index ->
                             Box(Modifier.fillMaxWidth().height(52.dp).testTag("chat_$index")) {
                                 Text("Chat $index")
                             }
@@ -61,7 +64,11 @@ class ChatListViewportTest {
         }
         val rows = compose.onNodeWithTag("rows")
         rows.performScrollToIndex(29)
-        val lastRow = compose.onNodeWithTag("chat_29")
+        compose.onNodeWithTag("chat_29").assertIsDisplayed()
+
+        compose.runOnIdle { rowCount.value = 32 }
+
+        val lastRow = compose.onNodeWithTag("chat_31")
         lastRow.assertIsDisplayed()
 
         compose.runOnIdle { height.value = 280.dp }
@@ -69,5 +76,13 @@ class ChatListViewportTest {
         lastRow.assertIsDisplayed()
         val action = compose.onNodeWithText("New chat").getUnclippedBoundsInRoot()
         assertTrue(lastRow.getUnclippedBoundsInRoot().bottom < action.top)
+
+        rows.performScrollToIndex(8)
+        val visibleRow = compose.onNodeWithTag("chat_8")
+        val position = visibleRow.getUnclippedBoundsInRoot().top
+
+        compose.runOnIdle { rowCount.value = 33 }
+
+        assertEquals(position, visibleRow.getUnclippedBoundsInRoot().top)
     }
 }

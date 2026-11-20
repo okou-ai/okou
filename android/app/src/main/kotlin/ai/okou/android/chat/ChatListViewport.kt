@@ -56,6 +56,7 @@ private enum class ListLayer {
 internal fun ChatListViewport(
     modifier: Modifier,
     listState: LazyListState,
+    lastContentKey: String?,
     status: ChatListStatus?,
     newChatEnabled: Boolean,
     newChat: () -> Unit,
@@ -115,10 +116,10 @@ internal fun ChatListViewport(
                     // Lazy item keys preserve the visible row. Keep the final row in view
                     // when the reader is already at the end.
                     val followEnd =
-                        remember(listState, reserve, height, short) {
+                        remember(listState, reserve, height, short, lastContentKey) {
                             listState.canScrollBackward && !listState.canScrollForward
                         }
-                    LaunchedEffect(listState, reserve, height, short) {
+                    LaunchedEffect(listState, reserve, height, short, lastContentKey) {
                         val lastIndex = listState.layoutInfo.totalItemsCount - 1
                         if (followEnd && !listState.isScrollInProgress && lastIndex >= 0)
                             listState.requestScrollToItem(lastIndex)
