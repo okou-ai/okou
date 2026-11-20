@@ -43,12 +43,7 @@ pub(crate) async fn authenticate<S>(
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
-    phase(
-        AuthenticationStage::RfbVersion,
-        deadline,
-        exchange_version(&mut stream, ServerVersion::Apple),
-    )
-    .await?;
+    exchange_version(&mut stream, ServerVersion::Apple, deadline).await?;
     phase(
         AuthenticationStage::SecurityNegotiation,
         deadline,
