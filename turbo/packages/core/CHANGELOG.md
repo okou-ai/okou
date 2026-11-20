@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.858.0](https://github.com/okou-ai/okou/compare/core-v8.857.6...core-v8.858.0) (2026-11-20)
+
+
+### Features
+
+* enable project thread deletion for all workspaces ([#49617](https://github.com/okou-ai/okou/issues/49617)) ([36f34d9](https://github.com/okou-ai/okou/commit/36f34d9c10a2706aea1577cef9d57ae28197def3))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.96.0
+
 ## [8.857.6](https://github.com/okou-ai/okou/compare/core-v8.857.5...core-v8.857.6) (2026-11-20)
 
 

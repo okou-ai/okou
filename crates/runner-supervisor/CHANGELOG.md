@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.27.8](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.27.7...runner-supervisor-v0.27.8) (2026-11-20)
+
+
+### Refactoring
+
+* **runner-supervisor:** centralize job completion reconciliation ([#49624](https://github.com/okou-ai/okou/issues/49624)) ([6fefb5b](https://github.com/okou-ai/okou/commit/6fefb5b470f93082a235faef79cc2b07c60e05ae))
+
 ## [0.27.7](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.27.6...runner-supervisor-v0.27.7) (2026-11-20)
 
 
