@@ -202,6 +202,48 @@ async fn sandbox_stop_kill_and_drop_remove_the_owned_endpoint() {
 }
 
 #[tokio::test]
+async fn sandbox_stop_and_kill_preserve_crash_and_retire_rpc() {
+    for graceful in [true, false] {
+        let dir = tempfile::tempdir().unwrap();
+        let mut sandbox = test_sandbox_with_state(SandboxState::Running);
+        prepare_socket_paths(&mut sandbox, dir.path());
+        sandbox.park_coordinator.bind_run_control("run-a").unwrap();
+        sandbox.guest_rpc_endpoint = Some(sandbox.bind_guest_rpc_endpoint().unwrap());
+        let path = sandbox.sock_paths.guest_rpc();
+        assert!(path.exists());
+
+        let mut child = monitored_cat_process();
+        let stdin = child.stdin.take().unwrap();
+        let state = sandbox.state_tx.subscribe();
+        sandbox.runtime.set_process(monitor_process(
+            &sandbox.id,
+            child,
+            Arc::clone(&sandbox.state),
+            Arc::clone(&sandbox.state_publish_lock),
+            sandbox.state_tx.clone(),
+            Arc::clone(&sandbox.guest),
+            sandbox.runtime_cancel.clone(),
+        ));
+        drop(stdin);
+        tokio::time::timeout(
+            Duration::from_secs(5),
+            wait_for_backend_crash(state.clone()),
+        )
+        .await
+        .unwrap();
+        assert_eq!(*state.borrow(), SandboxState::Crashed);
+
+        if graceful {
+            sandbox.stop().await.unwrap();
+        } else {
+            sandbox.kill().await.unwrap();
+        }
+        assert_eq!(*state.borrow(), SandboxState::Crashed);
+        assert!(!path.exists());
+    }
+}
+
+#[tokio::test]
 async fn sandbox_park_and_final_exec_park_cannot_cross_an_accepted_guest_rpc_request() {
     for (final_exec, blank) in [(false, false), (true, false), (false, true)] {
         let dir = tempfile::tempdir().unwrap();

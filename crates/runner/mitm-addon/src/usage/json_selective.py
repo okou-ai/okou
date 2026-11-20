@@ -23,6 +23,16 @@ from enum import Enum, auto
 from typing import Literal, Protocol, TypeVar, cast
 
 from .json_limits import validate_positive_int
+from .json_syntax import (
+    JSON_HEX_BYTES,
+    JSON_STRING_CONTROL_LIMIT,
+    JSON_STRING_ESCAPES,
+    JSON_WHITESPACE,
+    SURROGATE_MAX,
+    SURROGATE_MIN,
+    contains_surrogate,
+    is_json_value_start,
+)
 
 
 class _PathMarker(Enum):
@@ -72,7 +82,7 @@ _INTERNAL_PATH_MARKERS = frozenset(
         "\0__json_selective_array_element__",
     )
 )
-_JSON_CONTROL_CHAR_MAX = 0x20
+_JSON_NUMBER_TERMINATORS = JSON_WHITESPACE + b",]}"
 # These are the only bytes that can change discarded string state while
 # scanning an ordinary ASCII prefix.
 _DISCARDED_STRING_STATE_BYTE_RE = re.compile(rb'[\x00-\x1f"\\\x80-\xff]')
@@ -103,8 +113,6 @@ _UTF8_MIN_TWO_BYTE_CODEPOINT = 0x80
 _UTF8_MIN_THREE_BYTE_CODEPOINT = 0x800
 _UTF8_MIN_FOUR_BYTE_CODEPOINT = 0x10000
 _UTF8_MAX_CODEPOINT = 0x10FFFF
-_UTF8_SURROGATE_MIN = 0xD800
-_UTF8_SURROGATE_MAX = 0xDFFF
 _DEFAULT_MAX_DEPTH = 256
 _SLOW_SCALAR_BYTES_PER_WORK_UNIT = 32
 _DISCARDED_STRING_BULK_BYTES_PER_WORK_UNIT = 64 * 1024
@@ -532,7 +540,7 @@ class JsonSelectiveExtractor:
 
     def _consume_main(self, chunk: bytes, i: int) -> int:
         b = chunk[i]
-        if b in b" \t\r\n":
+        if b in JSON_WHITESPACE:
             return i + 1
 
         if self._root_done:
@@ -616,7 +624,7 @@ class JsonSelectiveExtractor:
                     return self._end_container(i)
                 self._error = "expected json value"
                 return i + 1
-            if not _is_json_value_start(b):
+            if not is_json_value_start(b):
                 self._error = "expected json value"
                 return i + 1
             is_first_element = frame.state == "value_or_end"
@@ -910,7 +918,7 @@ class JsonSelectiveExtractor:
                 i += 1
 
                 if state.unicode_remaining:
-                    if not _is_hex_byte(b):
+                    if b not in JSON_HEX_BYTES:
                         self._error = "invalid unicode escape"
                         return i
                     self._append_string_byte(state, b)
@@ -920,7 +928,7 @@ class JsonSelectiveExtractor:
                     continue
 
                 if state.escape:
-                    if b not in b'"\\/bfnrtu':
+                    if b not in JSON_STRING_ESCAPES:
                         self._error = "invalid string escape"
                         return i
                     self._append_string_byte(state, b)
@@ -944,7 +952,7 @@ class JsonSelectiveExtractor:
                     self._string = None
                     return i
 
-                if b < _JSON_CONTROL_CHAR_MAX:
+                if b < JSON_STRING_CONTROL_LIMIT:
                     self._error = "control character in string"
                     return i
                 self._accept_string_byte(state, b)
@@ -1031,7 +1039,7 @@ class JsonSelectiveExtractor:
                     self._error = "duplicate object key"
                     return
                 frame.members.add(value)
-            if _contains_surrogate(value):
+            if isinstance(value, str) and contains_surrogate(value):
                 value = _UNKNOWN_KEY
             frame.pending_key = value
             frame.state = "colon"
@@ -1046,7 +1054,7 @@ class JsonSelectiveExtractor:
             self._document_policy.scalar(state.path, value)
             self._value_complete()
             return
-        if _contains_surrogate(value):
+        if isinstance(value, str) and contains_surrogate(value):
             self._value_complete()
             return
         self._record_selected_scalar(state.path, value)
@@ -1064,7 +1072,7 @@ class JsonSelectiveExtractor:
         start = i
         while i < end:
             b = chunk[i]
-            if b in b" \t\r\n,]}":
+            if b in _JSON_NUMBER_TERMINATORS:
                 self._finish_number()
                 break
             self._accept_number_byte(state, b)
@@ -1254,10 +1262,6 @@ class JsonSelectiveExtractor:
         return min(chunk_len, i + self._discarded_string_bulk_work_bytes_remaining)
 
 
-def _is_hex_byte(b: int) -> bool:
-    return ord("0") <= b <= ord("9") or ord("a") <= b <= ord("f") or ord("A") <= b <= ord("F")
-
-
 def _decode_json_string(raw: bytearray, *, has_escape: bool) -> str:
     text = raw.decode("utf-8")
     if not has_escape:
@@ -1270,12 +1274,8 @@ def _decode_json_string(raw: bytearray, *, has_escape: bool) -> str:
     return value
 
 
-def _is_json_value_start(b: int) -> bool:
-    return b in b'{["tfn-' or ord("0") <= b <= ord("9")
-
-
 def _is_discarded_ascii_string_byte(b: int) -> bool:
-    return _JSON_CONTROL_CHAR_MAX <= b < _UTF8_ONE_BYTE_MAX and b not in b'"\\'
+    return JSON_STRING_CONTROL_LIMIT <= b < _UTF8_ONE_BYTE_MAX and b not in b'"\\'
 
 
 def _can_bulk_skip_discarded_string_byte(state: _StringState, b: int) -> bool:
@@ -1369,13 +1369,7 @@ def _is_utf8_continuation(b: int) -> bool:
 def _is_valid_utf8_codepoint(codepoint: int, min_codepoint: int) -> bool:
     return (
         min_codepoint <= codepoint <= _UTF8_MAX_CODEPOINT
-        and not _UTF8_SURROGATE_MIN <= codepoint <= _UTF8_SURROGATE_MAX
-    )
-
-
-def _contains_surrogate(value: object) -> bool:
-    return isinstance(value, str) and any(
-        _UTF8_SURROGATE_MIN <= ord(ch) <= _UTF8_SURROGATE_MAX for ch in value
+        and not SURROGATE_MIN <= codepoint <= SURROGATE_MAX
     )
 
 

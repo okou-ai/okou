@@ -1,10 +1,9 @@
 //! Integration coverage for the guest-storage-apply slot scheduler.
 //!
-//! The scheduler may run up to sixteen remote downloads at once, but archives whose
-//! mount paths are equal or have an ancestor/descendant relationship must not
-//! extract concurrently. These tests also cover slot refill behavior: when an
-//! active download blocks a conflicting queued task, a later independent task
-//! should still be able to fill an available slot.
+//! The scheduler sizes its download window by remote batch size and serializes
+//! archives with equal or overlapping mount paths. These tests also cover slot
+//! refill when a conflicting queued task blocks and a later independent task can
+//! use the free slot.
 //!
 //! The harness uses request-start events and explicit release gates to create
 //! deterministic scheduler pressure. Bounded waits are assertion deadlines and
@@ -16,9 +15,11 @@ use crate::binary_logging::BinaryLoggingFixture;
 #[cfg(unix)]
 use crate::process;
 use crate::process::ChildExecution;
-use crate::support::{create_tar_gz, write_manifest};
+use crate::support::{TcpTestServer, create_tar_gz, read_http_request_path, write_manifest};
 use httpmock::prelude::*;
 use httpmock::{HttpMockRequest, HttpMockResponse, Mock};
+use std::collections::HashMap;
+use std::io::{self, Write as _};
 use std::path::Path;
 use std::sync::{Arc, Condvar, Mutex, mpsc};
 use std::time::{Duration, Instant};
@@ -193,11 +194,11 @@ fn wait_for_event(
     }
 }
 
-fn wait_for_events(
-    receiver: &mpsc::Receiver<String>,
+fn wait_for_events<T>(
+    receiver: &mpsc::Receiver<T>,
     count: usize,
     timeout: Duration,
-) -> Result<Vec<String>, String> {
+) -> Result<Vec<T>, String> {
     let deadline = Instant::now() + timeout;
     let mut events = Vec::new();
 
@@ -759,6 +760,95 @@ fn download_concurrency_cap_limits_initial_starts() {
         Err(mpsc::RecvTimeoutError::Timeout)
     ));
     completion.unwrap();
+}
+
+#[test]
+fn mixed_batch_sizes_the_initial_window_by_remote_archives() {
+    const WINDOW_SIZE: usize = 17;
+    const REMOTE_ARCHIVES: usize = 34;
+    let scenario = stringify!(mixed_batch_sizes_the_initial_window_by_remote_archives);
+    let dir = tempfile::tempdir().unwrap();
+    let staged = dir.path().join("staged.tar.gz");
+    let local_archive = create_tar_gz(&[("result.txt", b"local contents")]).unwrap();
+    std::fs::write(&staged, local_archive).unwrap();
+    let (request_tx, request_rx) = mpsc::channel();
+    let server = TcpTestServer::start(move |server| {
+        for _ in 0..REMOTE_ARCHIVES {
+            let mut stream = server.accept()?.ok_or_else(|| {
+                io::Error::other("archive origin stopped before a request arrived")
+            })?;
+            stream.set_read_timeout(Some(REQUEST_START_TIMEOUT))?;
+            stream.set_write_timeout(Some(COMPLETION_TIMEOUT))?;
+            let path = read_http_request_path(&mut stream)?;
+            request_tx.send((path, stream)).map_err(io::Error::other)?;
+        }
+        Ok(())
+    })
+    .unwrap();
+    let mut responses = HashMap::with_capacity(REMOTE_ARCHIVES);
+    let mut storages = Vec::with_capacity(REMOTE_ARCHIVES + 1);
+    for index in 0..REMOTE_ARCHIVES {
+        let path = format!("/archive-{index}");
+        let archive = create_tar_gz(&[("result.txt", path.as_bytes())]).unwrap();
+        let mut response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            archive.len()
+        )
+        .into_bytes();
+        response.extend(archive);
+        let mount = dir.path().join(format!("mount-{index}"));
+        storages.push((
+            path_to_string(&mount).unwrap(),
+            format!("{}{path}", server.base_url()),
+        ));
+        responses.insert(path, response);
+    }
+    let local_mount = dir.path().join("local");
+    storages.push((
+        path_to_string(&local_mount).unwrap(),
+        format!("file://{}", staged.display()),
+    ));
+    let mut execution = spawn_guest_storage_apply(scenario, &dir, &storages).unwrap();
+    for wave in 0..REMOTE_ARCHIVES / WINDOW_SIZE {
+        let held = wait_for_events(&request_rx, WINDOW_SIZE, REQUEST_START_TIMEOUT).unwrap();
+        if wave == 0 {
+            // Counting the staged archive would widen the first window to 18.
+            let extra = request_rx.recv_timeout(NEGATIVE_START_TIMEOUT);
+            assert!(
+                matches!(extra, Err(mpsc::RecvTimeoutError::Timeout)),
+                "expected only {WINDOW_SIZE} remote requests before release, got {extra:?}"
+            );
+        }
+        for (path, mut stream) in held {
+            let response = responses
+                .remove(&path)
+                .unwrap_or_else(|| panic!("unexpected or repeated request for {path}"));
+            stream.write_all(&response).unwrap();
+        }
+    }
+
+    assert!(
+        execution
+            .child
+            .wait_with_timeout(COMPLETION_TIMEOUT)
+            .unwrap()
+            .success()
+    );
+    server.finish().unwrap();
+    assert!(responses.is_empty());
+    for index in 0..REMOTE_ARCHIVES {
+        let result = dir.path().join(format!("mount-{index}/result.txt"));
+        assert_eq!(
+            std::fs::read_to_string(&result).unwrap(),
+            format!("/archive-{index}"),
+            "archive written to the wrong mount at {}",
+            result.display()
+        );
+    }
+    assert_eq!(
+        std::fs::read(local_mount.join("result.txt")).unwrap(),
+        b"local contents"
+    );
 }
 
 #[test]

@@ -9,7 +9,7 @@ use std::io;
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 #[cfg(target_os = "linux")]
 use std::time::Instant;
@@ -27,48 +27,7 @@ pub(crate) struct Readiness {
 
 struct State {
     directory: CleanupDirectory,
-    sources: Vec<Source>,
-}
-
-struct Source {
-    url: String,
-    optional_only: bool,
-    gate: Arc<SourceGate>,
-}
-
-#[derive(Clone, Copy, Eq, PartialEq)]
-pub(crate) enum SourceStatus {
-    Pending,
-    Ready,
-    Unavailable,
-}
-
-pub(crate) struct SourceGate(AtomicU8);
-
-impl SourceGate {
-    pub(crate) fn new() -> Self {
-        Self(AtomicU8::new(SourceStatus::Pending as u8))
-    }
-
-    pub(crate) fn publish(&self, status: SourceStatus) {
-        self.0.store(status as u8, Ordering::Release);
-    }
-
-    fn status(&self) -> SourceStatus {
-        match self.0.load(Ordering::Acquire) {
-            0 => SourceStatus::Pending,
-            1 => SourceStatus::Ready,
-            _ => SourceStatus::Unavailable,
-        }
-    }
-
-    pub(crate) fn pending(&self) -> bool {
-        self.status() == SourceStatus::Pending
-    }
-
-    pub(crate) fn unavailable(&self) -> bool {
-        self.status() == SourceStatus::Unavailable
-    }
+    sources: Vec<(String, Arc<AtomicBool>)>,
 }
 
 fn invalid(message: &'static str) -> io::Error {
@@ -120,24 +79,14 @@ impl Readiness {
         let runtime = runtime.ok_or_else(|| invalid("missing private runtime"))?;
         let directory = descriptor.directory(runtime);
         runtime_paths::ensure_dir(&directory)?;
-        let state =
-            Arc::new(State {
-                directory: CleanupDirectory::open(&directory)?,
-                sources: descriptor
-                    .sources
-                    .iter()
-                    .map(|url| Source {
-                        url: url.clone(),
-                        optional_only: !manifest.storages.iter().any(|entry| {
-                            !entry.optional && entry.archive_url.as_ref() == Some(url)
-                        }) && !manifest
-                            .artifacts
-                            .iter()
-                            .any(|entry| entry.archive_url.as_ref() == Some(url)),
-                        gate: Arc::new(SourceGate::new()),
-                    })
-                    .collect(),
-            });
+        let state = Arc::new(State {
+            directory: CleanupDirectory::open(&directory)?,
+            sources: descriptor
+                .sources
+                .iter()
+                .map(|url| (url.clone(), Arc::new(AtomicBool::new(false))))
+                .collect(),
+        });
         // Watch before scanning so publication between the scan and the first
         // wait is retained by the kernel rather than lost.
         #[cfg(target_os = "linux")]
@@ -185,7 +134,6 @@ impl Readiness {
                     .map(|entry| PathBuf::from(&entry.mount_path)),
             )
             .chain(manifest.cleanup_paths.iter().map(PathBuf::from))
-            .chain(manifest.removed_package_paths.iter().map(PathBuf::from))
             // Conservatively cover each cleanup directory without interpreting
             // managed filenames, preservation, repair or deletion semantics.
             .chain(
@@ -210,12 +158,12 @@ impl Readiness {
         Ok(true)
     }
 
-    pub(crate) fn gate(&self, url: &str) -> Option<Arc<SourceGate>> {
+    pub(crate) fn gate(&self, url: &str) -> Option<Arc<AtomicBool>> {
         self.state
             .sources
             .iter()
-            .find(|source| source.url == url)
-            .map(|source| source.gate.clone())
+            .find(|(source, _)| source == url)
+            .map(|(_, ready)| ready.clone())
     }
 }
 
@@ -247,29 +195,23 @@ impl State {
             return Err(io::Error::other("archive publisher failed"));
         }
         let mut changed = false;
-        for (index, source) in self.sources.iter().enumerate() {
+        for (index, (_, gate)) in self.sources.iter().enumerate() {
             let ready = self.marker(&format!("{index}.ready"))?;
-            let unavailable =
-                source.optional_only && self.marker(&format!("{index}.unavailable"))?;
-            let status = match (ready, unavailable) {
-                (false, false) => SourceStatus::Pending,
-                (true, false) => SourceStatus::Ready,
-                (false, true) => SourceStatus::Unavailable,
-                (true, true) => return Err(invalid("conflicting archive readiness results")),
-            };
-            let previous = source.gate.status();
-            if previous != SourceStatus::Pending && status != previous {
-                return Err(invalid("archive readiness result changed"));
+            let previous = gate.load(Ordering::Acquire);
+            if previous && !ready {
+                return Err(invalid("archive readiness was withdrawn"));
             }
-            changed |= status != previous;
-            source.gate.publish(status);
+            changed |= ready != previous;
+            gate.store(ready, Ordering::Release);
         }
         Ok(changed)
     }
 
     #[cfg(target_os = "linux")]
     fn pending(&self) -> bool {
-        self.sources.iter().any(|source| source.gate.pending())
+        self.sources
+            .iter()
+            .any(|(_, gate)| !gate.load(Ordering::Acquire))
     }
 }
 

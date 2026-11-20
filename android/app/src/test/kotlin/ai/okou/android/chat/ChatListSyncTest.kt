@@ -19,9 +19,9 @@ import org.junit.Test
 class ChatListSyncTest {
     private fun eventId(seq: Int) = "${seq.toString().padStart(8, '0')}-0000-4000-8000-000000000000"
 
-    private fun longTail(): ChatCheckpoint {
+    private fun longTail(lastSeqId: Int = 101): ChatCheckpoint {
         val events =
-            (1..101).joinToString(",") {
+            (1..lastSeqId).joinToString(",") {
                 chatEventWire(
                     id = eventId(it),
                     seq = it.toLong(),
@@ -119,8 +119,9 @@ class ChatListSyncTest {
             assertEquals("/api/chat-threads/snapshot", fixture.server.takeRequest().path)
             assertEquals("/api/chat-threads/events", fixture.server.takeRequest().path)
             fixture.events = { jsonResponse("""{"events":[],"hasMore":false}""") }
-            val restored = ChatListSync(fixture.service).synchronize(previous).checkpoint
-            assertEquals(ChatCursor(CHAT_EVENT, 17), restored.cursor)
+            val unchanged = ChatListSync(fixture.service).synchronize(previous)
+            assertFalse(unchanged.changed)
+            assertSame(previous, unchanged.checkpoint)
         }
     }
 
@@ -195,7 +196,14 @@ class ChatListSyncTest {
                     )
                 )
             }
-            val result = ChatListSync(fixture.service).synchronize(previous)
+            val sync = ChatListSync(fixture.service)
+            val caughtUp = sync.synchronize(previous)
+            assertTrue(caughtUp.shouldRebase)
+            assertEquals(
+                listOf(102L, 103L),
+                caughtUp.checkpoint.events.takeLast(2).map { it.cursor().seqId },
+            )
+            val result = checkNotNull(sync.rebase(caughtUp.checkpoint))
             val confirmed = result.checkpoint
             assertEquals(102L, confirmed.snapshotCursor.seqId)
             assertEquals(listOf(103L), confirmed.events.map { it.cursor().seqId })
@@ -211,6 +219,39 @@ class ChatListSyncTest {
                 "/api/chat-threads/events?sinceSeqId=102",
                 fixture.server.takeRequest().path,
             )
+        }
+    }
+
+    @Test
+    fun optionalRebaseSkipsDownloadingTheCurrentSnapshot() = runTest {
+        ChatListApiFixture().use { fixture ->
+            val full = longTail(lastSeqId = 102)
+            val creation = full.events.first()
+            val cursor = creation.cursor()
+            val archive =
+                ChatArchive(replayChats(full.copy(events = listOf(creation), cursor = cursor)))
+            fixture.snapshot = {
+                jsonResponse(
+                    """{"url":"${fixture.server.url("/archive")}","expiresInSeconds":60,"latestEventId":"${cursor.eventId}","latestSeqId":${cursor.seqId}}"""
+                )
+            }
+            fixture.archive = { jsonResponse(Json.encodeToString(archive)) }
+            fixture.events = { request ->
+                val since = checkNotNull(request.requestUrl?.queryParameter("sinceSeqId")).toLong()
+                val events = full.events.filter { it.cursor().seqId > since }
+                jsonResponse(Json.encodeToString(ChatEvents(events, hasMore = false)))
+            }
+            val sync = ChatListSync(fixture.service)
+            val previous = sync.synchronize(null).checkpoint
+            val unchanged = sync.synchronize(previous)
+            assertSame(previous, unchanged.checkpoint)
+            assertTrue(unchanged.shouldRebase)
+            val requestsBeforeRebase = fixture.server.requestCount
+
+            val rebased = sync.rebase(unchanged.checkpoint)
+
+            assertEquals(requestsBeforeRebase + 1, fixture.server.requestCount)
+            assertNull(rebased)
         }
     }
 
@@ -232,7 +273,11 @@ class ChatListSyncTest {
                         )
                 }
                 fixture.archive = { MockResponse().setResponseCode(503) }
-                val confirmed = ChatListSync(fixture.service).synchronize(previous).checkpoint
+                val sync = ChatListSync(fixture.service)
+                val caughtUp = sync.synchronize(previous)
+                assertTrue(caughtUp.shouldRebase)
+                val confirmed = caughtUp.checkpoint
+                assertNull(sync.rebase(confirmed))
                 assertEquals(102L, confirmed.cursor.seqId)
                 assertEquals("Newest title", replayChats(confirmed).single().title)
                 assertEquals(
@@ -248,9 +293,10 @@ class ChatListSyncTest {
         ChatListApiFixture().use { fixture ->
             fixture.events = { jsonResponse("""{"events":[],"hasMore":false}""") }
             fixture.snapshot = { MockResponse().setResponseCode(401) }
-            val error =
-                runCatching { ChatListSync(fixture.service).synchronize(longTail()) }
-                    .exceptionOrNull()
+            val sync = ChatListSync(fixture.service)
+            val caughtUp = sync.synchronize(longTail())
+            assertTrue(caughtUp.shouldRebase)
+            val error = runCatching { sync.rebase(caughtUp.checkpoint) }.exceptionOrNull()
             assertTrue(error is ApiFailure.Http && error.status == 401)
         }
     }

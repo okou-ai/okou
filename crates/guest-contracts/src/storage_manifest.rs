@@ -38,8 +38,6 @@
 //! is not an input requirement of this decoder.
 
 use std::collections::HashSet;
-use std::io;
-use std::path::{Component, Path};
 
 use serde::{Deserialize, Serialize};
 
@@ -47,21 +45,6 @@ mod readiness;
 mod template_guidance;
 pub use readiness::ArchiveReadiness;
 pub use template_guidance::*;
-
-/// Cache namespace for complete Skill and Workflow packages.
-pub const WORKFLOW_STORAGE_NAME: &str = "workflow";
-
-/// Confirmed optional-package skips from a normally exited storage helper.
-///
-/// Each index identifies a read-only entry in the batch's `Manifest::storages`
-/// whose mount was skipped and cleaned. This can describe a subset of a failed
-/// batch. The exit status still determines whether the application succeeded.
-#[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct StorageApplyReceipt {
-    /// Read-only mount indexes that were skipped and cleaned.
-    pub skipped_optional: Vec<usize>,
-}
 
 /// In-memory execution projection behind the canonical storage manifest wire contract.
 ///
@@ -76,8 +59,6 @@ pub struct Manifest {
     pub artifacts: Vec<ArtifactEntry>,
     /// Paths to remove before materializing changed entries.
     pub cleanup_paths: Vec<String>,
-    /// Roots of managed packages removed from the current selection.
-    pub removed_package_paths: Vec<String>,
     /// Instruction-specific cleanup operations.
     pub instruction_cleanups: Vec<InstructionCleanupEntry>,
     /// Optional publication gates for local archives in this operation.
@@ -91,8 +72,6 @@ struct ManifestWire {
     #[serde(default)]
     cleanup_paths: Vec<String>,
     #[serde(default)]
-    removed_package_paths: Vec<String>,
-    #[serde(default)]
     instruction_cleanups: Vec<InstructionCleanupEntry>,
     #[serde(default)]
     archive_readiness: Option<ArchiveReadiness>,
@@ -103,8 +82,6 @@ struct ManifestWire {
 struct CanonicalManifest<'a> {
     storage_mounts: BorrowedStorageMounts<'a>,
     cleanup_paths: &'a [String],
-    #[serde(skip_serializing_if = "<[String]>::is_empty")]
-    removed_package_paths: &'a [String],
     #[serde(skip_serializing_if = "instruction_cleanup_slice_is_empty")]
     instruction_cleanups: &'a [InstructionCleanupEntry],
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -149,7 +126,6 @@ impl Serialize for Manifest {
                 artifacts: &self.artifacts,
             },
             cleanup_paths: &self.cleanup_paths,
-            removed_package_paths: &self.removed_package_paths,
             instruction_cleanups: &self.instruction_cleanups,
             archive_readiness: &self.archive_readiness,
         }
@@ -166,7 +142,6 @@ impl<'de> Deserialize<'de> for Manifest {
         let mut manifest = Self::from_storage_mounts(
             wire.storage_mounts,
             wire.cleanup_paths,
-            wire.removed_package_paths,
             wire.instruction_cleanups,
         )
         .map_err(serde::de::Error::custom)?;
@@ -181,62 +156,18 @@ impl<'de> Deserialize<'de> for Manifest {
 }
 
 impl Manifest {
-    /// Count the canonical JSON bytes without allocating an output buffer.
-    pub fn json_size(&self) -> serde_json::Result<usize> {
-        struct Count(usize);
-
-        impl io::Write for Count {
-            fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-                self.0 = self
-                    .0
-                    .checked_add(bytes.len())
-                    .ok_or_else(|| io::Error::other("manifest JSON size overflow"))?;
-                Ok(bytes.len())
-            }
-
-            fn flush(&mut self) -> io::Result<()> {
-                Ok(())
-            }
-        }
-
-        let mut count = Count(0);
-        serde_json::to_writer(&mut count, self)?;
-        Ok(count.0)
-    }
-
-    /// Package-root cleanup must see the other mounts in the application.
-    pub fn requires_complete_mount_list(&self) -> bool {
-        !self.removed_package_paths.is_empty() || self.storages.iter().any(|entry| entry.optional)
-    }
-
     fn from_storage_mounts(
         storage_mounts: Vec<StorageMountEntry>,
         cleanup_paths: Vec<String>,
-        removed_package_paths: Vec<String>,
         instruction_cleanups: Vec<InstructionCleanupEntry>,
     ) -> Result<Self, String> {
         validate_unique_mount_paths(storage_mounts.iter().map(|mount| mount.mount_path.as_str()))?;
-        if !removed_package_paths.is_empty() {
-            let mut paths: HashSet<_> = storage_mounts
-                .iter()
-                .map(|entry| entry.mount_path.as_str())
-                .chain(cleanup_paths.iter().map(String::as_str))
-                .collect();
-            for path in &removed_package_paths {
-                if !valid_package_root(path) || !paths.insert(path.as_str()) {
-                    return Err("Invalid removed package mount".into());
-                }
-            }
-        }
 
         let mut storages = Vec::new();
         let mut artifacts = Vec::new();
 
         for mount in storage_mounts {
             if mount.writeback {
-                if mount.optional {
-                    return Err("Writable storage cannot be optional".into());
-                }
                 if mount.template_guidance.is_some() {
                     return Err("Template guidance cannot be writable".into());
                 }
@@ -262,23 +193,7 @@ impl Manifest {
             if let Some(reference) = &mount.template_guidance {
                 reference.validate()?;
             }
-            if mount.optional {
-                if mount.name.as_deref() != Some(WORKFLOW_STORAGE_NAME)
-                    || mount.template_guidance.is_some()
-                    || !valid_package_root(&mount.mount_path)
-                {
-                    return Err("Invalid optional package mount".into());
-                }
-                if mount
-                    .archive_url
-                    .as_deref()
-                    .is_some_and(|url| mount.cached || url.is_empty() || url == "null")
-                {
-                    return Err("Invalid optional package source".into());
-                }
-            }
             storages.push(StorageEntry {
-                optional: mount.optional,
                 template_guidance: mount.template_guidance,
                 mount_path: mount.mount_path,
                 archive_url: mount.archive_url,
@@ -292,19 +207,10 @@ impl Manifest {
             storages,
             artifacts,
             cleanup_paths,
-            removed_package_paths,
             instruction_cleanups,
             archive_readiness: None,
         })
     }
-}
-
-fn valid_package_root(mount: &str) -> bool {
-    let path = Path::new(mount);
-    path.is_absolute()
-        && path.file_name().is_some()
-        && !mount.contains('\0')
-        && !path.components().any(|part| part == Component::ParentDir)
 }
 
 /// Validate exact raw mount-path uniqueness in canonical input order.
@@ -331,16 +237,12 @@ pub fn validate_unique_mount_paths<'a>(
 pub struct StorageEntry {
     /// Guest filesystem path where the storage is mounted.
     pub mount_path: String,
-    /// Archive URL, absent when existing contents are reused or a package is unavailable.
+    /// Archive URL, or `None` when existing contents are reused.
     #[serde(default)]
     pub archive_url: Option<String>,
     /// Whether existing contents match the current fingerprint.
     #[serde(default)]
     pub cached: bool,
-    /// Isolate failure of this Skill or Workflow. For an uncached optional
-    /// mount, an absent URL means Runner preparation found it unavailable.
-    #[serde(default, skip_serializing_if = "is_false")]
-    pub optional: bool,
     /// VAS storage name used for diagnostics and cache identity.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vas_storage_name: Option<String>,
@@ -409,9 +311,6 @@ pub struct StorageMountEntry {
     /// Whether existing contents match the current fingerprint.
     #[serde(default)]
     pub cached: bool,
-    /// Whether the consumer can continue when this package is unavailable.
-    #[serde(default, skip_serializing_if = "is_false")]
-    pub optional: bool,
     /// Whether the resolved Storage version is explicitly empty.
     #[serde(default, skip_serializing_if = "is_false")]
     pub empty: bool,
@@ -441,8 +340,6 @@ struct BorrowedStorageMountEntry<'a> {
     archive_url: Option<&'a str>,
     cached: bool,
     #[serde(skip_serializing_if = "is_false")]
-    optional: bool,
-    #[serde(skip_serializing_if = "is_false")]
     empty: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     missing_root_policy: Option<&'a str>,
@@ -460,7 +357,6 @@ impl<'a> BorrowedStorageMountEntry<'a> {
             mount_path: &entry.mount_path,
             archive_url: entry.archive_url.as_deref(),
             cached: entry.cached,
-            optional: entry.optional,
             empty: false,
             missing_root_policy: None,
             writeback: false,
@@ -476,7 +372,6 @@ impl<'a> BorrowedStorageMountEntry<'a> {
             mount_path: &entry.mount_path,
             archive_url: entry.archive_url.as_deref(),
             cached: entry.cached,
-            optional: false,
             empty: entry.empty,
             missing_root_policy: entry.missing_root_policy.as_deref(),
             writeback: true,

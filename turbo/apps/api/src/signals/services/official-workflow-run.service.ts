@@ -7,7 +7,7 @@ import type {
   AgentRunOfficialWorkflowProvenance,
 } from "@okouai/db/jsonb-contracts/agent-run-session-conversation";
 
-export const OFFICIAL_WORKFLOW_RUN_ADMISSION_MESSAGE =
+const OFFICIAL_WORKFLOW_RUN_ADMISSION_MESSAGE =
   "Official Workflow execution state is not current; retry";
 
 export class OfficialWorkflowRunAdmissionError extends Error {

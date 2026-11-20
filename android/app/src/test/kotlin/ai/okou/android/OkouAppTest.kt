@@ -20,20 +20,30 @@ import ai.okou.android.updates.updateToolbarAction
 import android.content.res.Configuration
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.InputMode
+import androidx.compose.ui.input.InputModeManager
+import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.WindowInfo
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertHeightIsEqualTo
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertWidthIsEqualTo
@@ -46,12 +56,19 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.test.performTextInputSelection
+import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -80,6 +97,7 @@ class OkouAppTest {
     private var background: Color? = null
     private val deviceConfiguration = mutableStateOf<Configuration?>(null)
     private val windowSize = mutableStateOf<IntSize?>(null)
+    private val contentHeight = mutableStateOf(Dp.Infinity)
     private val release = updateRelease("99.0.0")
     private val availableUpdate =
         UpdateUiState(
@@ -94,6 +112,7 @@ class OkouAppTest {
         updateState: () -> UpdateUiState? = { null },
         failPreferenceSave: () -> Boolean = { false },
         chatService: ChatListService = TestChatService(),
+        inputModeManager: InputModeManager? = null,
     ) {
         val models =
             compose.runOnIdle {
@@ -201,6 +220,7 @@ class OkouAppTest {
                 LocalConfiguration provides
                     (deviceConfiguration.value ?: LocalConfiguration.current),
                 LocalDensity provides Density(LocalDensity.current.density, fontScale),
+                LocalInputModeManager provides (inputModeManager ?: LocalInputModeManager.current),
                 LocalWindowInfo provides
                     object : WindowInfo by window {
                         override val containerSize: IntSize
@@ -211,26 +231,32 @@ class OkouAppTest {
                 OkouTheme(dark) {
                     val color = MaterialTheme.colorScheme.background
                     SideEffect { background = color }
-                    OkouApp(
-                        models.first.first,
-                        models.first.second,
-                        controls,
-                        settingsContent = { _, _ ->
-                            SettingsScreen(
-                                workspacePreferences = { MemberPreferencesSettings(models.second) }
+                    Box {
+                        Box(Modifier.heightIn(max = contentHeight.value)) {
+                            OkouApp(
+                                models.first.first,
+                                models.first.second,
+                                controls,
+                                settingsContent = { _, _ ->
+                                    SettingsScreen(
+                                        workspacePreferences = {
+                                            MemberPreferencesSettings(models.second)
+                                        }
+                                    )
+                                },
+                                updateToolbarAction =
+                                    updateState()?.let {
+                                        updateToolbarAction(
+                                            it,
+                                            download = {},
+                                            install = {},
+                                            installProgress = null,
+                                            openDetails = {},
+                                        )
+                                    },
                             )
-                        },
-                        updateToolbarAction =
-                            updateState()?.let {
-                                updateToolbarAction(
-                                    it,
-                                    download = {},
-                                    install = {},
-                                    installProgress = null,
-                                    openDetails = {},
-                                )
-                            },
-                    )
+                        }
+                    }
                 }
             }
         }
@@ -440,6 +466,126 @@ class OkouAppTest {
         compose.onNodeWithTag("workspace_new_chat").assertDoesNotExist()
         compose.runOnIdle { windowSize.value = null }
         compose.onNodeWithTag("workspace_new_chat").assertExists()
+    }
+
+    @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun shortNewChatEditorKeepsTheDraftAndSelectionWhenResized() {
+        render()
+        compose.onNodeWithText("New chat").performClick()
+        val input = compose.onNodeWithTag("message_input").assertIsDisplayed().assertIsEnabled()
+        fun resize(heightDp: Int) =
+            compose.runOnIdle {
+                val density = compose.activity.resources.displayMetrics.density
+                windowSize.value = IntSize((400 * density).toInt(), (heightDp * density).toInt())
+            }
+        val draft = (1..20).joinToString("\n") { "Draft line $it" }
+        val selection = TextRange(12)
+        fun assertDraftAndSelection() {
+            val semantics = input.fetchSemanticsNode().config
+            assertEquals(draft, semantics[SemanticsProperties.EditableText].text)
+            assertEquals(selection, semantics[SemanticsProperties.TextSelectionRange])
+        }
+
+        input.performTextReplacement(draft)
+        input.performTextInputSelection(selection)
+        input.assertHeightIsEqualTo(160.dp)
+
+        resize(479)
+        input.assertHeightIsEqualTo(48.dp)
+        compose
+            .onNodeWithContentDescription("Send")
+            .assertIsDisplayed()
+            .assertWidthIsEqualTo(48.dp)
+            .assertHeightIsEqualTo(48.dp)
+        assertDraftAndSelection()
+
+        resize(480)
+        input.assertHeightIsEqualTo(144.dp)
+        assertDraftAndSelection()
+
+        resize(520)
+        input.assertHeightIsEqualTo(156.dp)
+    }
+
+    @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun shortNewChatEditorFitsOneLineAtLargeFontScale() {
+        val density = compose.activity.resources.displayMetrics.density
+        compose.runOnIdle {
+            windowSize.value = IntSize((540 * density).toInt(), (320 * density).toInt())
+        }
+        render(fontScale = 2f)
+        compose.onNodeWithText("New chat").performClick()
+        val input = compose.onNodeWithTag("message_input").assertIsDisplayed()
+        input.performTextReplacement("First line\nSecond line")
+
+        val scaledLineHeight = with(Density(density, fontScale = 2f)) { 26.sp.toDp() }
+        input.assertHeightIsEqualTo(scaledLineHeight + 16.dp)
+        compose.onNodeWithContentDescription("Send").assertIsDisplayed()
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w400dp-h520dp")
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun newChatKeepsSendAndRetryReachableWhenTheAvailableHeightShrinks() {
+        val density = compose.activity.resources.displayMetrics.density
+        compose.runOnIdle {
+            windowSize.value = IntSize((400 * density).toInt(), (520 * density).toInt())
+        }
+        render(
+            inputModeManager =
+                object : InputModeManager {
+                    override val inputMode = InputMode.Keyboard
+
+                    override fun requestInputMode(inputMode: InputMode) =
+                        this.inputMode == inputMode
+                }
+        )
+        compose.onNodeWithText("New chat").performClick()
+        val input = compose.onNodeWithTag("message_input").assertIsEnabled()
+        val draft = (1..20).joinToString("\n") { "Draft line $it" }
+        input.performTextReplacement(draft)
+        input.performClick().assertIsFocused()
+        input.assertHeightIsEqualTo(156.dp)
+
+        // Model the space lost to the IME while the editor stays focused.
+        for (height in listOf(300.dp, 270.dp, 240.dp, 210.dp)) {
+            compose.runOnIdle { contentHeight.value = height }
+        }
+
+        val bounds = input.getUnclippedBoundsInRoot()
+        val editorHeight = bounds.bottom - bounds.top
+        assertTrue(editorHeight > 48.dp && editorHeight < 156.dp)
+        val send =
+            compose.onNodeWithContentDescription("Send").assertIsDisplayed().assertIsNotEnabled()
+        send.assertHeightIsEqualTo(48.dp)
+        val visible = send.fetchSemanticsNode().boundsInRoot
+        assertEquals(48 * density, visible.height, 0.5f)
+
+        val retry = compose.onNodeWithText("Try again").assertIsEnabled()
+        val beforeFocus = retry.fetchSemanticsNode()
+        assertTrue(beforeFocus.boundsInRoot.height < beforeFocus.size.height)
+        input.performKeyInput {
+            keyDown(Key.ShiftLeft)
+            pressKey(Key.Tab)
+            keyUp(Key.ShiftLeft)
+        }
+        val afterFocus = retry.assertIsFocused().assertIsDisplayed().fetchSemanticsNode()
+        assertEquals(afterFocus.size.height.toFloat(), afterFocus.boundsInRoot.height, 0.5f)
+        input.performSemanticsAction(SemanticsActions.RequestFocus)
+        val recovery = retry.performScrollTo().assertIsDisplayed().fetchSemanticsNode()
+        assertEquals(recovery.size.height.toFloat(), recovery.boundsInRoot.height, 0.5f)
+        send.performScrollTo().assertIsDisplayed()
+        assertEquals(48 * density, send.fetchSemanticsNode().boundsInRoot.height, 0.5f)
+        assertEquals(
+            draft,
+            input
+                .assertIsFocused()
+                .fetchSemanticsNode()
+                .config[SemanticsProperties.EditableText]
+                .text,
+        )
     }
 
     @Test

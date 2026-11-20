@@ -12,6 +12,7 @@ from .json_selective import (
     ScalarField,
     json_nesting_within_limit,
 )
+from .json_syntax import contains_surrogate
 from .model_tokens import (
     MODEL_USAGE_CATEGORIES,
     MODEL_USAGE_CATEGORY_CACHE_CREATION,
@@ -49,9 +50,6 @@ _CHAT_COMPLETIONS_CHOICE_KEYS = frozenset(
         "finish_reason",
     )
 )
-_UTF8_SURROGATE_MIN = 0xD800
-_UTF8_SURROGATE_MAX = 0xDFFF
-
 _TOP_LEVEL_USAGE_PATH = ("usage",)
 _FIRST_CHOICE_USAGE_PATH = ("choices", FIRST_ARRAY_ELEMENT, "usage")
 _USAGE_PATHS = (_TOP_LEVEL_USAGE_PATH, _FIRST_CHOICE_USAGE_PATH)
@@ -117,17 +115,13 @@ def _reject_json_constant(value: str) -> object:
     raise _FastPathRejectedError(value)
 
 
-def _contains_surrogate(value: str) -> bool:
-    return any(_UTF8_SURROGATE_MIN <= ord(char) <= _UTF8_SURROGATE_MAX for char in value)
-
-
 def _json_value_is_unambiguous(value: object) -> bool:
     if isinstance(value, str):
-        return not _contains_surrogate(value)
+        return not contains_surrogate(value)
     if isinstance(value, _JsonObjectPairs):
         keys: set[str] = set()
         for key, child in value:
-            if key in keys or _contains_surrogate(key) or not _json_value_is_unambiguous(child):
+            if key in keys or contains_surrogate(key) or not _json_value_is_unambiguous(child):
                 return False
             keys.add(key)
         return True

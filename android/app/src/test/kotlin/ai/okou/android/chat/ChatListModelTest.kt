@@ -9,11 +9,14 @@ import ai.okou.android.CHAT_PROJECT
 import ai.okou.android.TestChatService
 import ai.okou.android.TestOkouApplication
 import ai.okou.android.TestRealtimeService
+import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.generated.Agents
 import ai.okou.android.api.generated.AgentsItem
 import ai.okou.android.api.generated.AgentsItemVisibility
+import ai.okou.android.api.generated.ChatArchive
 import ai.okou.android.api.generated.ChatEvents
 import ai.okou.android.api.generated.ChatSnapshot
+import ai.okou.android.api.generated.ChatSnapshotVariant1
 import ai.okou.android.api.generated.FeatureSwitches
 import ai.okou.android.api.generated.Indicators
 import ai.okou.android.api.generated.IndicatorsThreadsValue
@@ -92,7 +95,7 @@ class ChatListModelTest {
             """{"events":[${events.joinToString(",")}],"hasMore":false}"""
         )
 
-    private inner class Service : TestChatService() {
+    private open inner class Service : TestChatService() {
         var flagsRead: suspend () -> FeatureSwitches = { FeatureSwitches(emptyMap(), emptyMap()) }
         var agentRead: suspend () -> Agents = {
             listOf(
@@ -162,6 +165,248 @@ class ChatListModelTest {
             store.clear()
             runCurrent()
             Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun anEarlierReadbackCannotSettleTheNextIntent() = runTest {
+        val commitRead = CompletableDeferred<ReadState>()
+        val stale = CompletableDeferred<Indicators>()
+        val commitUnread = CompletableDeferred<ReadState>()
+        fun status(time: String) =
+            Indicators(
+                emptyMap(),
+                mapOf(CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD),
+                mapOf(CHAT_PERSONAL to time),
+            )
+        val read = Indicators(emptyMap(), emptyMap(), emptyMap())
+        val source =
+            object : Service() {
+                    override suspend fun markRead(threadId: String) = commitRead.await()
+
+                    override suspend fun markUnread(threadId: String) = commitUnread.await()
+                }
+                .apply { statusRead = { status(CHAT_DATE) } }
+        withCatchUpModel(source) { model ->
+            model.refresh()
+            advanceUntilIdle()
+            model.performRowAction(CHAT_PERSONAL, ChatRowAction.MarkRead)
+            runCurrent()
+            assertFalse(model.uiState.value.isUnread(CHAT_PERSONAL))
+            assertTrue(
+                chatListGroups(model.uiState.value, ChatListFilter.Unread).all {
+                    it.threads.isEmpty()
+                }
+            )
+
+            source.statusRead = { stale.await() }
+            commitRead.complete(ReadState(CHAT_DATE))
+            runCurrent()
+            assertFalse(model.uiState.value.isUnread(CHAT_PERSONAL))
+
+            model.performRowAction(CHAT_PERSONAL, ChatRowAction.MarkUnread)
+            runCurrent()
+            assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
+            stale.complete(read)
+            runCurrent()
+            assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
+            source.statusRead = { read }
+            commitUnread.completeExceptionally(ApiFailure.Http(404, null, null, null))
+            advanceUntilIdle()
+            assertFalse(model.uiState.value.isUnread(CHAT_PERSONAL))
+            assertEquals(ChatRowAction.MarkUnread, model.uiState.value.failedRowAction)
+        }
+    }
+
+    @Test
+    fun earlierUnreadReadbackCannotUndoAReadWithoutAPreviousWatermark() = runTest {
+        val unreadReadback = CompletableDeferred<Indicators>()
+        val readWrite = CompletableDeferred<ReadState>()
+        val read = Indicators(emptyMap(), emptyMap(), emptyMap())
+        val unread =
+            Indicators(
+                emptyMap(),
+                mapOf(CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD),
+                mapOf(CHAT_PERSONAL to CHAT_DATE),
+            )
+        val source =
+            object : Service() {
+                    override suspend fun markUnread(threadId: String) = ReadState(null)
+
+                    override suspend fun markRead(threadId: String) = readWrite.await()
+                }
+                .apply { statusRead = { read } }
+        withCatchUpModel(source) { model ->
+            model.refresh()
+            advanceUntilIdle()
+            source.statusRead = { unreadReadback.await() }
+            model.performRowAction(CHAT_PERSONAL, ChatRowAction.MarkUnread)
+            runCurrent()
+            assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
+
+            model.performRowAction(CHAT_PERSONAL, ChatRowAction.MarkRead)
+            runCurrent()
+            assertFalse(model.uiState.value.isUnread(CHAT_PERSONAL))
+            unreadReadback.complete(unread)
+            runCurrent()
+            assertFalse(model.uiState.value.isUnread(CHAT_PERSONAL))
+
+            source.statusRead = { unread }
+            readWrite.completeExceptionally(ApiFailure.Http(404, null, null, null))
+            advanceUntilIdle()
+            assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
+        }
+    }
+
+    @Test
+    fun rejectedUnreadKeepsAnEarlierReadReceiptWhileIndicatorsArePending() = runTest {
+        val readback = CompletableDeferred<Indicators>()
+        val source =
+            object : Service() {
+                    override suspend fun markRead(threadId: String) = ReadState(CHAT_DATE)
+
+                    override suspend fun markUnread(threadId: String): ReadState =
+                        throw ApiFailure.Http(404, null, null, null)
+                }
+                .apply {
+                    statusRead = {
+                        Indicators(
+                            emptyMap(),
+                            mapOf(CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD),
+                            mapOf(CHAT_PERSONAL to CHAT_DATE),
+                        )
+                    }
+                }
+        withCatchUpModel(source) { model ->
+            model.refresh()
+            advanceUntilIdle()
+            source.statusRead = { readback.await() }
+            model.performRowAction(CHAT_PERSONAL, ChatRowAction.MarkRead)
+            runCurrent()
+            assertFalse(model.uiState.value.isUnread(CHAT_PERSONAL))
+
+            model.performRowAction(CHAT_PERSONAL, ChatRowAction.MarkUnread)
+            assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
+            runCurrent()
+            assertFalse(model.uiState.value.isUnread(CHAT_PERSONAL))
+            assertEquals(ChatRowAction.MarkUnread, model.uiState.value.failedRowAction)
+
+            model.dismissRowActionFailure(ChatRowAction.MarkUnread)
+            readback.completeExceptionally(IOException("status unavailable"))
+            advanceUntilIdle()
+            assertEquals(ChatReadPhase.Failed, model.uiState.value.indicatorsPhase)
+            assertNull(model.uiState.value.failedRowAction)
+            assertFalse(model.uiState.value.isUnread(CHAT_PERSONAL))
+
+            source.statusRead = { Indicators(emptyMap(), emptyMap(), emptyMap()) }
+            model.refreshIndicators()
+            advanceUntilIdle()
+            assertFalse(model.uiState.value.isUnread(CHAT_PERSONAL))
+        }
+    }
+
+    @Test
+    fun bulkReadShowsNewerUnreadActivityWhileWriteAndReadbackArePending() = runTest {
+        val write = CompletableDeferred<ReadState>()
+        val readback = CompletableDeferred<Indicators>()
+        fun unread(time: String) =
+            Indicators(
+                emptyMap(),
+                mapOf(CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD),
+                mapOf(CHAT_PERSONAL to time),
+            )
+        val newer = unread("2026-11-13T00:01:00.000Z")
+        val source =
+            object : Service() {
+                    override suspend fun markRead(threadId: String) = write.await()
+                }
+                .apply { statusRead = { unread(CHAT_DATE) } }
+        withCatchUpModel(source) { model ->
+            model.refresh()
+            advanceUntilIdle()
+            model.markAllRead()
+            runCurrent()
+            assertFalse(model.uiState.value.isUnread(CHAT_PERSONAL))
+
+            source.statusRead = { newer }
+            model.refreshIndicators()
+            runCurrent()
+            assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
+
+            source.statusRead = { readback.await() }
+            write.complete(ReadState(CHAT_DATE))
+            runCurrent()
+            assertTrue(model.uiState.value.markingAllRead)
+            assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
+
+            readback.complete(newer)
+            advanceUntilIdle()
+            assertEquals(ChatMarkAllReadResult(1, 1), model.uiState.value.markAllReadResult)
+            assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
+        }
+    }
+
+    @Test
+    fun missingIndicatorDoesNotConfirmAnAmbiguousBulkWrite() = runTest {
+        val source =
+            object : Service() {
+                    override suspend fun markRead(threadId: String): ReadState {
+                        statusRead = { Indicators(emptyMap(), emptyMap(), emptyMap()) }
+                        throw IOException("response lost")
+                    }
+                }
+                .apply {
+                    statusRead = {
+                        Indicators(
+                            emptyMap(),
+                            mapOf(CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD),
+                            mapOf(CHAT_PERSONAL to CHAT_DATE),
+                        )
+                    }
+                }
+        withCatchUpModel(source) { model ->
+            model.refresh()
+            advanceUntilIdle()
+            model.markAllRead()
+            advanceUntilIdle()
+            val state = model.uiState.value
+            assertFalse(state.isUnread(CHAT_PERSONAL))
+            assertEquals(ChatMarkAllReadResult(0, 1), state.markAllReadResult)
+        }
+    }
+
+    @Test
+    fun ambiguousUnreadWriteKeepsTheProjectionOfflineAndReconcilesAfterReconnect() = runTest {
+        val response = CompletableDeferred<ReadState>()
+        val source =
+            object : Service() {
+                    override suspend fun markUnread(threadId: String) = response.await()
+                }
+                .apply { statusRead = { Indicators(emptyMap(), emptyMap(), emptyMap()) } }
+        withCatchUpModel(source) { model ->
+            model.refresh()
+            advanceUntilIdle()
+            model.performRowAction(CHAT_PERSONAL, ChatRowAction.MarkUnread)
+            runCurrent()
+            assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
+            source.statusRead = { throw IOException("offline") }
+            response.completeExceptionally(IOException("response lost"))
+            advanceUntilIdle()
+            assertEquals(ChatReadPhase.Failed, model.uiState.value.indicatorsPhase)
+            assertEquals(ChatRowAction.MarkUnread, model.uiState.value.failedRowAction)
+            assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
+
+            source.statusRead = {
+                Indicators(
+                    emptyMap(),
+                    mapOf(CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD),
+                    mapOf(CHAT_PERSONAL to CHAT_DATE),
+                )
+            }
+            model.refreshIndicators()
+            advanceUntilIdle()
+            assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
+            assertTrue(model.uiState.value.readIntents.isEmpty())
         }
     }
 
@@ -748,6 +993,8 @@ class ChatListModelTest {
             assertEquals(ChatReadPhase.Ready, model.uiState.value.listPhase)
             assertFalse(model.uiState.value.cacheUnavailable)
             assertEquals(initial.confirmedAt, model.uiState.value.confirmedAt)
+            assertSame(initial.threads, model.uiState.value.threads)
+            assertSame(initial.threadsByRecency, model.uiState.value.threadsByRecency)
             service.listRead = {
                 json.decodeFromString<ChatEvents>(
                     """{"events":[${chatEventWire(id = "77777777-7777-4777-8777-777777777777", seq = 23, kind = "renamed", title = "Updated")}],"hasMore":false}"""
@@ -755,12 +1002,14 @@ class ChatListModelTest {
             }
             model.refreshList()
             advanceUntilIdle()
-            assertEquals("Updated", model.uiState.value.threads.single().title)
-            assertTrue(model.uiState.value.cacheUnavailable)
+            val unsaved = model.uiState.value
+            assertEquals("Updated", unsaved.threads.single().title)
+            assertTrue(unsaved.cacheUnavailable)
             execute(root, "DROP TRIGGER fail_chat_write")
             model.refreshList()
             advanceUntilIdle()
-            assertEquals("Updated", model.uiState.value.threads.single().title)
+            assertSame(unsaved.threads, model.uiState.value.threads)
+            assertEquals(unsaved.confirmedAt, model.uiState.value.confirmedAt)
             assertFalse(model.uiState.value.cacheUnavailable)
             service.agentRead = { Service().agents().map { it.copy(displayName = "Updated Okou") } }
             service.flagsRead = { FeatureSwitches(emptyMap(), mapOf("projects" to true)) }
@@ -778,6 +1027,162 @@ class ChatListModelTest {
                     assertTrue(saved.navigation.projectsEnabled)
                 }
         } finally {
+            store.clear()
+            runCurrent()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun cacheRejectionUsesNewerStoredCheckpointBeforePublishing() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val root = temporary.newFolder()
+        val cache = cache(root, dispatcher)
+        val store = ViewModelStore()
+        try {
+            val newer = page(listOf(chatEventWire(seq = 23, title = "Newer on disk"))).events
+            val checkpoint =
+                ChatCheckpoint(ChatArchive(emptyList()), ChatCursor(), newer, newer.last().cursor())
+            cache.open(identity) { true }.use { it.save(checkpoint, 1234) }
+            val model =
+                ViewModelProvider(
+                    store,
+                    viewModelFactory {
+                        initializer {
+                            ChatListModel(Service(), cache, identity, { true }, {}, dispatcher)
+                        }
+                    },
+                )[ChatListModel::class.java]
+
+            model.refreshList()
+            advanceUntilIdle()
+
+            val state = model.uiState.value
+            assertEquals(ChatReadPhase.Ready, state.listPhase)
+            assertEquals(listOf("Newer on disk"), state.threads.map { it.title })
+            assertEquals(1234L, state.confirmedAt)
+            assertFalse(state.cacheUnavailable)
+        } finally {
+            store.clear()
+            runCurrent()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun backgroundRebaseYieldsToNewerReadsAndPreservesPendingMutationConfirmation() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val cache = cache(temporary.newFolder(), dispatcher)
+        val store = ViewModelStore()
+        val superseded = CompletableDeferred<ChatSnapshot>()
+        val current = CompletableDeferred<ChatSnapshot>()
+        val renameEventId = CompletableDeferred<String>()
+        val renameResponse = CompletableDeferred<Unit>()
+        fun eventId(seq: Int) = "${seq.toString().padStart(8, '0')}-0000-4000-8000-000000000000"
+        fun renamed(seq: Int, title: String, id: String = eventId(seq)) =
+            chatEventWire(id = id, seq = seq.toLong(), kind = "renamed", title = title)
+        val tail =
+            page(listOf(chatEventWire(seq = 1)) + (2..101).map { renamed(it, "Cached") }).events
+        val checkpoint =
+            ChatCheckpoint(ChatArchive(emptyList()), ChatCursor(), tail, tail.last().cursor())
+        val row = replayChats(checkpoint).single()
+        val oldSnapshot = ChatSnapshotVariant1("https://fixture.test/old", 60, eventId(103), 103)
+        val newSnapshot = ChatSnapshotVariant1("https://fixture.test/new", 60, eventId(105), 105)
+        var snapshotReads = 0
+        val service =
+            object : TestChatService() {
+                override suspend fun chatSnapshot() =
+                    if (++snapshotReads == 1) withContext(NonCancellable) { superseded.await() }
+                    else current.await()
+
+                override suspend fun chatArchive(url: String) =
+                    ChatArchive(
+                        listOf(
+                            row.copy(
+                                title = if (url == oldSnapshot.url) "Superseded" else "Other device"
+                            )
+                        )
+                    )
+
+                override suspend fun renameThread(
+                    threadId: String,
+                    title: String,
+                    eventId: String,
+                ) {
+                    renameEventId.complete(eventId)
+                    renameResponse.await()
+                }
+
+                override suspend fun chatEvents(since: Long?) =
+                    when (since) {
+                        101L -> page(listOf(renamed(102, "First increment")))
+                        102L -> page(listOf(renamed(103, "Newest")))
+                        103L ->
+                            if (renameEventId.isCompleted)
+                                page(
+                                    listOf(
+                                        renamed(104, "Local rename", renameEventId.await()),
+                                        renamed(105, "Other device"),
+                                    )
+                                )
+                            else page(emptyList())
+                        105L -> page(emptyList())
+                        else -> error("Unexpected cursor $since")
+                    }
+            }
+        try {
+            cache.open(identity) { true }.use { it.save(checkpoint, 1234) }
+            val model =
+                ViewModelProvider(
+                    store,
+                    viewModelFactory {
+                        initializer {
+                            ChatListModel(service, cache, identity, { true }, {}, dispatcher)
+                        }
+                    },
+                )[ChatListModel::class.java]
+            model.refresh()
+            runCurrent()
+            assertEquals(1, snapshotReads)
+            assertEquals(ChatReadPhase.Ready, model.uiState.value.listPhase)
+            assertEquals("First increment", model.uiState.value.threads.single().title)
+
+            model.refreshList()
+            runCurrent()
+            assertEquals(2, snapshotReads)
+            assertEquals(ChatReadPhase.Ready, model.uiState.value.listPhase)
+            assertEquals("Newest", model.uiState.value.threads.single().title)
+            superseded.complete(oldSnapshot)
+            runCurrent()
+            assertEquals("Newest", model.uiState.value.threads.single().title)
+
+            model.renameThread(CHAT_PERSONAL, "Local rename")
+            runCurrent()
+            assertTrue(renameEventId.isCompleted)
+            current.complete(newSnapshot)
+            runCurrent()
+            assertEquals("Local rename", model.uiState.value.threads.single().title)
+
+            renameResponse.complete(Unit)
+            advanceUntilIdle()
+            assertNull(model.uiState.value.failedRowAction)
+            assertEquals("Other device", model.uiState.value.threads.single().title)
+            store.clear()
+            runCurrent()
+            cache
+                .open(identity) { true }
+                .use {
+                    val saved = checkNotNull(it.load()).checkpoint
+                    assertEquals(ChatCursor(eventId(105), 105), saved.snapshotCursor)
+                    assertTrue(saved.events.isEmpty())
+                    assertEquals("Other device", replayChats(saved).single().title)
+                }
+        } finally {
+            superseded.complete(oldSnapshot)
+            current.complete(newSnapshot)
+            renameResponse.complete(Unit)
             store.clear()
             runCurrent()
             Dispatchers.resetMain()
@@ -856,7 +1261,7 @@ class ChatListModelTest {
     }
 
     @Test
-    fun networkListBecomesVisibleOnlyAfterTheDiskWriteAndReadbackComplete() = runTest {
+    fun networkListBecomesVisibleOnlyAfterTheDiskWriteCommits() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(dispatcher)
         val cache = cache(temporary.newFolder())
