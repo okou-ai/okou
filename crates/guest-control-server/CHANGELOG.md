@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.135](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.134...guest-control-server-v0.24.135) (2026-11-20)
+
+
+### Performance Improvements
+
+* **guest-control:** stream decoded storage up to the helper input limit ([#49387](https://github.com/okou-ai/okou/issues/49387)) ([f7dec25](https://github.com/okou-ai/okou/commit/f7dec25340899b5803db413e07c8002b0ff6c433))
+
 ## [0.24.134](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.133...guest-control-server-v0.24.134) (2026-11-20)
 
 

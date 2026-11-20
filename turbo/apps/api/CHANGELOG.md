@@ -10,6 +10,13 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.96.0](https://github.com/okou-ai/okou/compare/api-v2.95.7...api-v2.96.0) (2026-11-20)
+
+
+### Features
+
+* **api:** force app.vm0.ai clients to upgrade to v0.1154.2 ([#49404](https://github.com/okou-ai/okou/issues/49404)) ([e8a2091](https://github.com/okou-ai/okou/commit/e8a20918cc75930cce2f3512e764fad9ea6eb4f3))
+
 ## [2.95.7](https://github.com/okou-ai/okou/compare/api-v2.95.6...api-v2.95.7) (2026-11-20)
 
 
