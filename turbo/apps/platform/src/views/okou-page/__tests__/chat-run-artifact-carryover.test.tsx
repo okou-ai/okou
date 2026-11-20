@@ -178,7 +178,7 @@ test("Show format download items and report conversion failures in a toast", asy
   if (!pdf) {
     throw new Error("Expected Markdown PDF download");
   }
-  expect(within(pdf).getByText("PDF")).toBeInTheDocument();
+  expect(pdf).toHaveTextContent("Download as PDF");
   click(pdf);
   const error = await screen.findByText(
     "Export failed. Select an export option to try again.",
@@ -240,7 +240,7 @@ test("Download a Word export after selecting it in the Markdown artifact preview
   if (!docx) {
     throw new Error("Expected Markdown DOCX download");
   }
-  expect(within(docx).getByText("DOCX")).toBeInTheDocument();
+  expect(docx).toHaveTextContent("Download as DOCX");
   click(docx);
   await waitFor(() => {
     expect(browser.downloads).toHaveLength(1);

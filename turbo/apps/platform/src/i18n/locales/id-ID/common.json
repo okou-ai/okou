@@ -526,8 +526,6 @@
     "googleDrive": {
       "agentLoading": "Agen masih memuat",
       "connect": "Hubungkan Google Drive",
-      "connectTooltip": "Hubungkan Google Drive untuk mengunggah artefak",
-      "conversionNotice": "Membuat salinan yang dapat diedit; format dapat berubah.",
       "conversionUnconfirmed": "Konversi Google tidak dapat dikonfirmasi. Periksa Drive sebelum mencoba lagi.",
       "openDocs": "Buka di Google Docs",
       "openSheets": "Buka di Google Sheets",

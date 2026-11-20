@@ -9,7 +9,6 @@ import { featureSwitches$ } from "../../signals/external/feature-switch.ts";
 import { isShareableArtifactReference } from "../../signals/artifact-sharing.ts";
 import type { AttachmentPreviewSignals } from "../../signals/attachment-resource-url.ts";
 import { ArtifactShareMenu } from "./artifact-share-menu.tsx";
-import { FilePreviewIcon } from "./file-preview-icon.tsx";
 import { HostedSiteShareMenu } from "./hosted-site-share-menu.tsx";
 import {
   currentHostedSiteUrl,
@@ -610,37 +609,24 @@ function GoogleDriveConnectMenuItem({
   const { googleDriveAuthMethod, googleDriveConnector, pendingAction } =
     availability;
   return (
-    <TooltipProvider delay={200}>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <DropdownMenuItem
-              disabled={
-                pendingAction.kind === "unavailable" ||
-                (pendingAction.kind === "connect" &&
-                  (!googleDriveConnector || !googleDriveAuthMethod))
-              }
-              onClick={onClick}
-            >
-              <GoogleDriveMenuIcon target={target} />
-              {availability.scopeRequired
-                ? t(($) => {
-                    return $.artifacts.googleDrive.reconnect;
-                  })
-                : (uploadLabel ??
-                  t(($) => {
-                    return $.artifacts.googleDrive.connect;
-                  }))}
-            </DropdownMenuItem>
-          }
-        />
-        <TooltipContent side="left">
-          {t(($) => {
-            return $.artifacts.googleDrive.connectTooltip;
-          })}
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
+    <DropdownMenuItem
+      disabled={
+        pendingAction.kind === "unavailable" ||
+        (pendingAction.kind === "connect" &&
+          (!googleDriveConnector || !googleDriveAuthMethod))
+      }
+      onClick={onClick}
+    >
+      <GoogleDriveMenuIcon target={target} />
+      {availability.scopeRequired
+        ? t(($) => {
+            return $.artifacts.googleDrive.reconnect;
+          })
+        : (uploadLabel ??
+          t(($) => {
+            return $.artifacts.googleDrive.connect;
+          }))}
+    </DropdownMenuItem>
   );
 }
 
@@ -718,25 +704,10 @@ function GoogleDriveMenuItem({
 
   if (googleDriveReady) {
     return (
-      <TooltipProvider delay={200}>
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <DropdownMenuItem onClick={syncOrConnect}>
-                <GoogleDriveMenuIcon target={target} />
-                {labels.upload}
-              </DropdownMenuItem>
-            }
-          />
-          <TooltipContent side="left">
-            {target
-              ? t(($) => {
-                  return $.artifacts.googleDrive.conversionNotice;
-                })
-              : labels.upload}
-          </TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
+      <DropdownMenuItem onClick={syncOrConnect}>
+        <GoogleDriveMenuIcon target={target} />
+        {labels.upload}
+      </DropdownMenuItem>
     );
   }
 
@@ -843,11 +814,7 @@ function MarkdownArtifactExportItem({
       {pending ? (
         <Loader2 size={20} className="animate-spin" />
       ) : (
-        <FilePreviewIcon
-          filename={`file.${format}`}
-          size="sm"
-          className="shrink-0"
-        />
+        <Download size={14} />
       )}
       {label}
     </DropdownMenuItem>
