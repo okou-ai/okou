@@ -417,8 +417,11 @@ pub fn private_file_open_flags() -> i32 {
 }
 
 pub(crate) fn validate_file_parent(path: &Path, context: &str) -> io::Result<()> {
-    let parent = file_parent(path);
-    validate_dir(parent, DirMode::TrustedParent, context)
+    open_file_parent(path, context).map(|_| ())
+}
+
+pub(crate) fn open_file_parent(path: &Path, context: &str) -> io::Result<File> {
+    open_dir_components(file_parent(path), DirMode::TrustedParent, context, false).map(File::from)
 }
 
 pub fn file_parent(path: &Path) -> &Path {
@@ -710,20 +713,13 @@ fn secure_dir_component(
             }
         }
         DirMode::TrustedParent if is_final => {
-            validate_trusted_component_owner(
+            validate_trusted_parent(
                 stat.st_uid,
                 walk.expected_uid,
+                stat.st_mode as u32,
                 walk.context,
                 component_path,
             )?;
-            let component_mode = (stat.st_mode as u32) & 0o7777;
-            if component_mode & GROUP_OR_OTHER_WRITE_BITS != 0 {
-                return Err(permission_denied(format!(
-                    "{} {} is group/other writable",
-                    walk.context,
-                    component_path.display()
-                )));
-            }
         }
         DirMode::SharedTrustedParent | DirMode::SharedTrusted => {
             validate_trusted_component_owner(
@@ -776,6 +772,23 @@ fn secure_dir_component(
         }
     }
 
+    Ok(())
+}
+
+pub(crate) fn validate_trusted_parent(
+    uid: u32,
+    expected_uid: u32,
+    mode: u32,
+    context: &str,
+    path: &Path,
+) -> io::Result<()> {
+    validate_trusted_component_owner(uid, expected_uid, context, path)?;
+    if mode & GROUP_OR_OTHER_WRITE_BITS != 0 {
+        return Err(permission_denied(format!(
+            "{context} {} is group/other writable",
+            path.display()
+        )));
+    }
     Ok(())
 }
 
