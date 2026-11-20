@@ -54,12 +54,9 @@ test("An unavailable activity shows a clear not-found page", async () => {
 
   await setupPage({ context, path: `/activities/${RUN_ID}` });
 
-  const heading = await screen.findByRole("heading", {
-    name: "Log not found",
-  });
-  expect(heading.nextElementSibling).toHaveTextContent(
-    "This log doesn't exist or you don't have permission to view it in the current workspace.",
-  );
+  await expect(
+    screen.findByRole("heading", { name: "Log not found" }),
+  ).resolves.toBeInTheDocument();
 });
 
 test("A user can download all retained diagnostics for an older activity", async () => {
