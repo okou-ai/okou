@@ -7,10 +7,12 @@ use std::path::{Path, PathBuf};
 use std::process::Output;
 
 const SAMPLE_LIMIT: usize = 32;
+const TAR_BLOCK_BYTES: usize = 512;
+const SKIP_CYCLE_LEN: usize = 6;
 const PATH_BYTES: usize = 256;
 const LINE_BYTES: usize = 1024;
 const SUMMARY: &str = "Archive skipped-entry summary for ";
-const REASONS: [&str; 6] = [
+const REASONS: [&str; SKIP_CYCLE_LEN] = [
     "entry with path escaping target dir",
     "symlink with unreadable target",
     "symlink with target escaping dir",
@@ -48,7 +50,7 @@ fn append_member(
     header.set_cksum();
     bytes.extend_from_slice(header.as_bytes());
     bytes.extend_from_slice(content);
-    bytes.resize(bytes.len().div_ceil(512) * 512, 0);
+    bytes.resize(bytes.len().div_ceil(TAR_BLOCK_BYTES) * TAR_BLOCK_BYTES, 0);
     Ok(())
 }
 
@@ -59,8 +61,9 @@ fn append_file(bytes: &mut Vec<u8>, path: &[u8], content: &[u8]) -> io::Result<(
 fn tar_with_skips(skips: usize) -> io::Result<Vec<u8>> {
     let mut bytes = Vec::new();
     append_file(&mut bytes, b"before.txt", b"accepted before")?;
-    for index in 0..skips {
-        let (path, kind, link): (&[u8], _, &[u8]) = match index % 6 {
+    let cycle_start = bytes.len();
+    for index in 0..skips.min(SKIP_CYCLE_LEN) {
+        let (path, kind, link): (&[u8], _, &[u8]) = match index {
             0 => (b"../outside.txt", tar::EntryType::Regular, b""),
             1 => (b"unreadable-symlink", tar::EntryType::Symlink, b""),
             2 => (
@@ -78,6 +81,15 @@ fn tar_with_skips(skips: usize) -> io::Result<Vec<u8>> {
         };
         append_member(&mut bytes, path, kind, link, b"")?;
     }
+
+    // Each skipped member is a single header block with no payload.
+    let cycle = cycle_start..bytes.len();
+    let remaining = skips.saturating_sub(SKIP_CYCLE_LEN);
+    for _ in 0..remaining / SKIP_CYCLE_LEN {
+        bytes.extend_from_within(cycle.clone());
+    }
+    let tail_len = (remaining % SKIP_CYCLE_LEN) * TAR_BLOCK_BYTES;
+    bytes.extend_from_within(cycle_start..cycle_start + tail_len);
     Ok(bytes)
 }
 
