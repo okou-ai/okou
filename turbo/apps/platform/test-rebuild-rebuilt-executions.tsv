@@ -2129,3 +2129,36 @@ agent-instructions-009	turbo/apps/platform/src/views/okou-page/__tests__/agent-i
 agent-instructions-011	turbo/apps/platform/src/views/okou-page/__tests__/agent-instructions.test.tsx	A legacy save conflict keeps the draft until discard reloads the latest instructions	149	passed
 agent-instructions-012	turbo/apps/platform/src/views/okou-page/__tests__/agent-instructions.test.tsx	Saving instructions disables both unsaved actions until the update completes	184	passed
 agent-instructions-013	turbo/apps/platform/src/views/okou-page/__tests__/agent-instructions.test.tsx	A user can format and save agent instructions	215	passed
+ideas-page-003	turbo/apps/platform/src/views/okou-page/__tests__/ideas-page.test.tsx	The breadcrumb links back to the Agent chat	107	passed
+ideas-page-006	turbo/apps/platform/src/views/okou-page/__tests__/ideas-page.test.tsx	A custom Agent can start the instruction self-management example	144	passed
+ideas-page-009	turbo/apps/platform/src/views/okou-page/__tests__/ideas-page.test.tsx	A card on /ideas exposes its prompt link and opens by keyboard	169	passed
+ideas-page-010	turbo/apps/platform/src/views/okou-page/__tests__/ideas-page.test.tsx	A card on /agents/c0000000-0000-4000-a000-0000000… exposes its prompt link and opens by keyboard	169	passed
+ideas-page-011	turbo/apps/platform/src/views/okou-page/__tests__/ideas-page.test.tsx	Search for a use case and start it with the agent	228	passed
+ideas-page-012	turbo/apps/platform/src/views/okou-page/__tests__/ideas-page.test.tsx	Start the Zapier migration idea from the available connector catalog	254	passed
+feature-guides-002	turbo/apps/platform/src/views/okou-page/__tests__/feature-guides.test.tsx	cycles features with swipes and footer controls, resets walkthroughs, and pre-fills a task	163	passed
+feature-guides-003	turbo/apps/platform/src/views/okou-page/__tests__/feature-guides.test.tsx	keeps the feature selected during small, vertical, multi-touch, and cancelled gestures	260	passed
+feature-guides-004	turbo/apps/platform/src/views/okou-page/__tests__/feature-guides.test.tsx	preserves video controls while allowing a swipe from the surrounding description	321	passed
+feature-guides-005	turbo/apps/platform/src/views/okou-page/__tests__/feature-guides.test.tsx	shows a Discord image, hides single-feature navigation, and opens setup with a text link	373	passed
+feature-guides-007	turbo/apps/platform/src/views/okou-page/__tests__/feature-guides.test.tsx	opens chats from the feature guide text link	439	passed
+feature-guides-008	turbo/apps/platform/src/views/okou-page/__tests__/feature-guides.test.tsx	keeps an already-seen edition closed based on the server response	517	passed
+feature-guides-012	turbo/apps/platform/src/views/okou-page/__tests__/feature-guides.test.tsx	cycles the illustrated project, instructions and workflow preview with buttons and swipes	529	passed
+growth-entry-002	turbo/apps/platform/src/views/okou-page/__tests__/growth-entry.test.tsx	The growth menu credit balance opens Usage settings	156	passed
+growth-entry-003	turbo/apps/platform/src/views/okou-page/__tests__/growth-entry.test.tsx	The growth menu opens Okou is in Slack through a native link with keyboard activation	205	passed
+growth-entry-005	turbo/apps/platform/src/views/okou-page/__tests__/growth-entry.test.tsx	Installed Slack shifts the growth entry to inviting people	234	passed
+growth-entry-007	turbo/apps/platform/src/views/okou-page/__tests__/growth-entry.test.tsx	A non-admin does not see the workspace growth entry	263	passed
+initial-locale-001	turbo/apps/platform/src/views/okou-page/__tests__/initial-locale.test.tsx	Initial page language: the site cookie takes precedence over b…	10	passed
+initial-locale-002	turbo/apps/platform/src/views/okou-page/__tests__/initial-locale.test.tsx	Initial page language: the first supported browser language fa…	10	passed
+localization-001	turbo/apps/platform/src/views/okou-page/__tests__/localization.test.tsx	French uses local number formatting	84	passed
+agent-chat-tagline-001	turbo/apps/platform/src/views/okou-page/__tests__/agent-chat-tagline.test.tsx	The greeting shows its complete sentence, one box per word	57	passed
+agent-chat-avatar-texture-003	turbo/apps/platform/src/views/okou-page/__tests__/agent-chat-avatar-texture.test.tsx	Keep every other avatar surface untextured	128	passed
+agent-chat-avatar-texture-005	turbo/apps/platform/src/views/okou-page/__tests__/agent-chat-avatar-texture.test.tsx	Draw the organization default agent with the animated Okou avatar once it is on	149	passed
+agent-chat-avatar-texture-006	turbo/apps/platform/src/views/okou-page/__tests__/agent-chat-avatar-texture.test.tsx	Greet with Okou's own animated avatar under My Okou	172	passed
+debug-learning-001	turbo/apps/platform/src/views/okou-page/__tests__/debug-learning.test.tsx	runs the current default agent's official Learning while its nightly schedule is paused	110	passed
+debug-learning-002	turbo/apps/platform/src/views/okou-page/__tests__/debug-learning.test.tsx	explains the installation prerequisite instead of running a same-name custom workflow	173	passed
+debug-learning-004	turbo/apps/platform/src/views/okou-page/__tests__/debug-learning.test.tsx	dismissal cancels a pending Learning request	187	passed
+debug-morning-brief-001	turbo/apps/platform/src/views/okou-page/__tests__/debug-morning-brief.test.tsx	a member runs a real brief, sees its conversation link and requests another	34	passed
+debug-morning-brief-003	turbo/apps/platform/src/views/okou-page/__tests__/debug-morning-brief.test.tsx	reports a failed run with its conversation for details	69	passed
+debug-morning-brief-005	turbo/apps/platform/src/views/okou-page/__tests__/debug-morning-brief.test.tsx	supports keyboard activation with one submission	88	passed
+debug-openrouter-preset-001	turbo/apps/platform/src/views/okou-page/__tests__/debug-openrouter-preset.test.tsx	lets the administrator select a preset, restore the system default, and select another preset	21	passed
+debug-openrouter-preset-002	turbo/apps/platform/src/views/okou-page/__tests__/debug-openrouter-preset.test.tsx	hides the preset control for role member with Debug true	64	passed
+debug-openrouter-preset-006	turbo/apps/platform/src/views/okou-page/__tests__/debug-openrouter-preset.test.tsx	displays an existing operator preset without adding it to the selectable allowlist	79	passed

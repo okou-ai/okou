@@ -81,3 +81,13 @@ ten files: `org-members-tab`, `sidebar-chat-history`, `project-chat-list`,
 `workflow-queue`, `my-okou` and `agent-instructions`. It passed targeted
 Vitest, Platform test TypeScript, ESLint and both Oxlint configurations before
 BDD removal.
+
+The second batch accepted 33 of 63 frozen rows across ten files:
+`ideas-page`, `feature-guides`, `growth-entry`, `initial-locale`,
+`localization`, `agent-chat-tagline`, `agent-chat-avatar-texture`,
+`debug-learning`, `debug-morning-brief` and `debug-openrouter-preset`. It
+passed the same checks before BDD removal.
+
+`chat-scroll` and `unified-chat-workspace` were not selected for this round.
+`chat-scroll` already has accepted rows in the branch, and
+`unified-chat-workspace-001` was renamed upstream. Both keep their BDD.
