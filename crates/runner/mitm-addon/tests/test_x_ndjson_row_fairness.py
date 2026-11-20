@@ -14,7 +14,7 @@ import usage
 from body_limits import LARGE_RESPONSE_DECOMPRESS_LIMIT
 from tests.flow_helpers import response_stream
 from tests.jsonl_log_helpers import read_jsonl_entries_after_flush
-from tests.repeated_bytes_helpers import repeat_marker
+from tests.repeated_bytes_helpers import repeat_bytes
 from tests.x_flow_helpers import make_x_pipeline_flow, make_x_response_flow
 
 
@@ -23,8 +23,10 @@ def _inline_delivery(sync_usage_executor):
     pass
 
 
-def _costly_row(repetitions):
-    return repeat_marker(b'{"data":{"id":"1","text":"\\u0061"}}', b"\\u0061", repetitions)
+def _costly_row(repetitions: int, *, prefix: bytes = b"", suffix: bytes = b"") -> bytes:
+    return repeat_bytes(
+        prefix + b'{"data":{"id":"1","text":"', b"\\u0061", repetitions, b'"}}' + suffix
+    )
 
 
 @pytest.mark.parametrize("repetitions", [250_000, 350_000], ids=["accepted", "over-budget"])
@@ -41,9 +43,7 @@ async def test_costly_row_yields_before_completion_and_preserves_billing(
         sandbox_run_id=str(uuid.uuid4()),
         content_encoding=encoding,
     )
-    body = _costly_row(repetitions)
-    if terminated:
-        body += b'\n{"data":{"id":"2"}}\n'
+    body = _costly_row(repetitions, suffix=b'\n{"data":{"id":"2"}}\n' if terminated else b"")
     wire = gzip.compress(body) if encoding else body
     chunk_size = chunk_size or len(wire)
     yielded_while_pending = False
@@ -112,9 +112,9 @@ async def test_abandoning_incomplete_row_preserves_only_completed_prefix(
         path="/2/tweets/search/stream",
         sandbox_run_id=str(uuid.uuid4()),
     )
-    wire = b'{"data":{"id":"2"}}\n' + _costly_row(250_000)
-    if terminated:
-        wire += b"\n"
+    wire = _costly_row(
+        250_000, prefix=b'{"data":{"id":"2"}}\n', suffix=b"\n" if terminated else b""
+    )
     with usage_webhook_api() as webhook:
         mitm_addon.responseheaders(flow)
         assert response_stream(flow)(wire) == wire
