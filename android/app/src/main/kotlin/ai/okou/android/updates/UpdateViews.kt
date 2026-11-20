@@ -6,6 +6,7 @@ import ai.okou.android.SettingsIcon
 import ai.okou.android.SettingsRow
 import ai.okou.android.api.generated.AndroidUpdatesRelease
 import ai.okou.android.state.rememberUpdateDetailsOpen
+import ai.okou.android.state.rememberUpdateWorkspaceState
 import android.text.format.Formatter
 import androidx.activity.compose.BackHandler
 import androidx.annotation.DrawableRes
@@ -126,6 +127,7 @@ internal fun UpdateHost(
     content: @Composable (openUpdates: () -> Unit) -> Unit,
 ) {
     var details by rememberUpdateDetailsOpen()
+    val workspaceState = rememberUpdateWorkspaceState()
     val showDetails = details && !state.required
     LaunchedEffect(automaticInstall, showDetails, windowFocused) {
         if (automaticInstall != null && !showDetails && windowFocused)
@@ -155,7 +157,10 @@ internal fun UpdateHost(
                     }
                 }
             }
-            Box(Modifier.weight(1f)) { content { details = true } }
+            Box(Modifier.weight(1f)) {
+                // Retain navigation metadata while the required screen owns the task.
+                workspaceState.SaveableStateProvider("workspace") { content { details = true } }
+            }
         }
     }
     if (showDetails) {

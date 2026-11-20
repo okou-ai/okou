@@ -104,6 +104,8 @@ class MainActivity : AppCompatActivity() {
             val sessionState by authentication.uiState.collectAsStateWithLifecycle()
             val updateState by updates.state.collectAsStateWithLifecycle()
             val lifecycleState by lifecycle.currentStateAsState()
+            val updateRequired =
+                updateState.required || sessionState.stage == SessionStage.UpdateRequired
             // Capture the rendered owner, rather than reading a newer State value on an old click.
             val presentedGeneration = sessionState.generation
             val preferences =
@@ -112,10 +114,15 @@ class MainActivity : AppCompatActivity() {
                     // predecessor.
                     sessionState.ready?.preferences?.uiState?.collectAsStateWithLifecycle()?.value
                 }
-            LaunchedEffect(presentedGeneration, preferences?.locale) {
-                if (authentication.isPresentationCurrent(presentedGeneration)) {
-                    applyApplicationLocale(preferences?.locale)
-                }
+            val locale = preferences?.locale
+            LaunchedEffect(presentedGeneration, locale, updateRequired, updateState.preparing) {
+                // Keep the applied native locale while the required screen blocks workspace access.
+                if (
+                    !updateRequired &&
+                        (locale != null || !updateState.preparing) &&
+                        authentication.isPresentationCurrent(presentedGeneration)
+                )
+                    applyApplicationLocale(locale)
             }
             val systemDark = isSystemInDarkTheme()
             val cachedAppearance = sessionState.cachedAppearance
@@ -158,9 +165,7 @@ class MainActivity : AppCompatActivity() {
                         updateInstall.automaticRelease = null
                 }
                 UpdateHost(
-                    if (sessionState.stage == SessionStage.UpdateRequired)
-                        updateState.copy(required = true)
-                    else updateState,
+                    updateState.copy(required = updateRequired),
                     { updates.check() },
                     ::downloadUpdate,
                     updates::defer,

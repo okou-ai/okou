@@ -259,6 +259,7 @@ class NativeUpdateTest {
             exists(R.string.updates_ready)
             captureState("settings-ready.png")
 
+            val activeLocale = app.resources.configuration.locales.toLanguageTags()
             candidate.set(release.copy(version = "99.1.0"))
             owner.requireUpdate(RequiredUpdate("99.1.0"))
             exists(R.string.updates_required)
@@ -268,6 +269,7 @@ class NativeUpdateTest {
             exists(R.string.updates_required)
             scenario.recreate()
             exists(R.string.updates_required)
+            assertEquals(activeLocale, app.resources.configuration.locales.toLanguageTags())
             assertTrue(owner.state.value.required)
             takeScreenshot().writeToTestStorage("android-update-required.png")
         } catch (error: Throwable) {
