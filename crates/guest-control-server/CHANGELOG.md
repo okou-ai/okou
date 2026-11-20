@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.137](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.136...guest-control-server-v0.24.137) (2026-11-20)
+
+
+### Performance Improvements
+
+* **guest-control:** stream medium ordinary file batches ([#49437](https://github.com/okou-ai/okou/issues/49437)) ([e85ae29](https://github.com/okou-ai/okou/commit/e85ae298c9b6caf90c75f096095a7dbc5c52f46d))
+
 ## [0.24.136](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.135...guest-control-server-v0.24.136) (2026-11-20)
 
 
