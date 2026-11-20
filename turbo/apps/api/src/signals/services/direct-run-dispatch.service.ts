@@ -1,9 +1,5 @@
 import {
-  DEFAULT_RUNNER_PROFILE,
-  DEFAULT_RUNNER_PROFILE_VCPU,
-  DEFAULT_RUNNER_PROFILE_MEMORY_MB,
   RUNNER_DISPATCH_MAX_BODY_BYTES,
-  isCanonicalRunnerHostname,
   type runnerDispatchEnvelopeSchema,
 } from "@okouai/api-contracts/contracts/runner-dispatch";
 import { OFFICIAL_RUNNER_TOKEN_PREFIX } from "@okouai/api-contracts/contracts/runner-primitives";
@@ -11,15 +7,12 @@ import type {
   ExecutionContext,
   RunnerPreference,
 } from "@okouai/api-contracts/contracts/runners";
-import { runnerState } from "@okouai/db/runtime/runner-state";
 import { command, type Command } from "ccstate";
-import { and, arrayContains, eq, gt } from "drizzle-orm";
 import { delay } from "signal-timers";
 import type { output } from "zod";
 import { env } from "../../lib/env";
 import { API_INVOCATION_MAX_DURATION_SECONDS } from "../../lib/invocation-budget";
 import { monotonicNow, now, nowDate } from "../../lib/time";
-import { db$ } from "../external/db";
 import { apiStartTime$ } from "../context/hono";
 import { postRunnerDispatch } from "../external/runner-ingress";
 import { failUnacceptedRun$ } from "./agent-run-terminal-transition.service";
@@ -33,88 +26,11 @@ import {
   readDirectRunState$,
   type DirectRunTarget,
 } from "./direct-run-ownership.service";
-import { preparedRunnerReusePreference } from "./runner-reuse-preference";
+import { readDirectRunCandidates$ } from "./runner-reuse-preference";
 import { joinAll, settleIncludingAbort } from "../utils";
 import { recordRunContextSnapshot } from "./run-context-snapshot.service";
 
 type PlacementPreference = Extract<RunnerPreference, { kind: "preference" }>;
-
-const readDirectRunCandidates$ = command(
-  async ({ get }, input: AdmittedRunLaunch, signal: AbortSignal) => {
-    signal.throwIfAborted();
-    if (input.profile !== DEFAULT_RUNNER_PROFILE) {
-      throw new Error("Unsupported direct Run profile");
-    }
-    const rows = await get(db$)
-      .select()
-      .from(runnerState)
-      .where(
-        and(
-          eq(runnerState.runnerGroup, input.runnerGroup),
-          eq(runnerState.mode, "running"),
-          eq(runnerState.ingressServiceActive, true),
-          gt(runnerState.heartbeatGeneration, 0),
-          gt(runnerState.lastSeenAt, new Date(now() - 180_000)),
-          arrayContains(runnerState.admittableProfiles, [input.profile]),
-        ),
-      );
-    signal.throwIfAborted();
-    const preference = preparedRunnerReusePreference(
-      input.reusePreparation,
-      input.createdAt,
-    );
-    const candidates = rows.flatMap((row) => {
-      if (
-        row.runnerHostname === null ||
-        !isCanonicalRunnerHostname(row.runnerHostname) ||
-        row.totalVcpu < DEFAULT_RUNNER_PROFILE_VCPU ||
-        row.totalMemoryMb < DEFAULT_RUNNER_PROFILE_MEMORY_MB
-      ) {
-        return [];
-      }
-      return [
-        {
-          runnerId: row.runnerId,
-          heartbeatGeneration: row.heartbeatGeneration,
-          hostname: row.runnerHostname,
-          preference:
-            preference.kind === "preference" &&
-            row.runnerId === preference.runnerIdentity.runnerId &&
-            row.heartbeatGeneration ===
-              preference.runnerIdentity.heartbeatGeneration
-              ? preference
-              : undefined,
-          score: Math.max(
-            0,
-            Math.min(
-              (row.totalVcpu - row.allocatedVcpu) / DEFAULT_RUNNER_PROFILE_VCPU,
-              (row.totalMemoryMb - row.allocatedMemoryMb) /
-                DEFAULT_RUNNER_PROFILE_MEMORY_MB,
-              row.maxConcurrent === 0
-                ? Infinity
-                : row.maxConcurrent - row.runningCount,
-            ),
-          ),
-        },
-      ];
-    });
-    // Shuffle first so the stable sort breaks equal-priority, equal-headroom ties randomly.
-    for (let i = candidates.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      const a = candidates[i],
-        b = candidates[j];
-      if (a && b) {
-        candidates[i] = b;
-        candidates[j] = a;
-      }
-    }
-    return candidates.sort((a, b) => {
-      const priority =
-        Number(b.preference !== undefined) - Number(a.preference !== undefined);
-      return priority || b.score - a.score;
-    });
-  },
-);
 
 type DirectRunCandidates = Awaited<
   ReturnType<(typeof readDirectRunCandidates$)["write"]>
@@ -301,6 +217,8 @@ const offerToProcess$ = command(
     let firstCandidateReadyAt = args.firstCandidateReadyAt;
     let offer: DispatchOffer | undefined;
     for (;;) {
+      // Runner reconciles cancellation asynchronously after binding the supplied
+      // input. Check ownership immediately before the first offer and after waits.
       const state = await set(readDirectRunState$, args.runId, signal);
       if (!isCurrentOwner(state, args.target)) {
         return uncertain ? ("uncertain" as const) : ("stopped" as const);

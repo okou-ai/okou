@@ -2,13 +2,11 @@
 
 import time
 
+from packaged_accounting import read_cgroup_counters
+
 
 def cpu(path):
-    return int(
-        dict(line.split() for line in (path / "cpu.stat").read_text().splitlines())[
-            "usage_usec"
-        ]
-    )
+    return int(read_cgroup_counters(path / "cpu.stat")["usage_usec"])
 
 
 def probe(cgroup, env, pi_session, requests, record):

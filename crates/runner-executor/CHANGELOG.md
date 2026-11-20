@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.6](https://github.com/okou-ai/okou/compare/runner-executor-v0.23.5...runner-executor-v0.23.6) (2026-11-20)
+
+
+### Bug Fixes
+
+* **runner:** isolate optional package mount failures ([#49375](https://github.com/okou-ai/okou/issues/49375)) ([56468e0](https://github.com/okou-ai/okou/commit/56468e04dfb10c1adce08e41698106db41ec6bf3))
+
 ## [0.23.5](https://github.com/okou-ai/okou/compare/runner-executor-v0.23.4...runner-executor-v0.23.5) (2026-11-20)
 
 ## [0.23.4](https://github.com/okou-ai/okou/compare/runner-executor-v0.23.3...runner-executor-v0.23.4) (2026-11-20)

@@ -1,5 +1,12 @@
 # Changelog
 
+## [10.35.0](https://github.com/okou-ai/okou/compare/cli-v10.34.17...cli-v10.35.0) (2026-11-20)
+
+
+### Features
+
+* **cli:** add controls for all proactive settings ([#49491](https://github.com/okou-ai/okou/issues/49491)) ([fa9de5d](https://github.com/okou-ai/okou/commit/fa9de5d35ef2dba39d40940af9290b5ab692450b))
+
 ## [10.34.17](https://github.com/okou-ai/okou/compare/cli-v10.34.16...cli-v10.34.17) (2026-11-20)
 
 

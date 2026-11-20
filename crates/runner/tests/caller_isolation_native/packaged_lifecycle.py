@@ -8,6 +8,8 @@ import sys
 import time
 from pathlib import Path
 
+from packaged_accounting import read_cgroup_counters
+
 ROOT = Path("/home/user/workspace")
 
 
@@ -78,10 +80,7 @@ def probe(root, env, pi_session, tasks, record):
     populated = {}
     while True:
         populated = {
-            str(group): dict(
-                line.split()
-                for line in (group / "cgroup.events").read_text().splitlines()
-            ).get("populated")
+            str(group): read_cgroup_counters(group / "cgroup.events").get("populated")
             for group in created
         }
         if (

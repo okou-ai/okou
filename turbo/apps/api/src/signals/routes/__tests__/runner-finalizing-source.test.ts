@@ -194,6 +194,50 @@ describe("Independent finalizing resource dispatch", () => {
     });
   });
 
+  it("prefers a dispatchable Home holder when the exact sandbox holder cannot accept", async () => {
+    const f = await terminalPredecessor(context, "completed");
+    mockNow(f.clock + 2500);
+    const reuseKey = `thread:${f.run.threadId}`;
+    await heartbeat(f, {
+      snapshotSequence: 2,
+      ingressServiceActive: false,
+      heldSandboxStates: [
+        {
+          reuseKey,
+          lastCompletedAt: nowDate().toISOString(),
+          reusableSandbox: { profile: "vm0/default", sourceRunId: f.run.runId },
+        },
+      ],
+    });
+    const home = await f.owned.run(async () => {
+      await f.api.registerDirectRunner(f.group, {
+        maxConcurrent: 8,
+        heartbeat: { totalVcpu: 32, totalMemoryMb: 65_536 },
+      });
+      return await f.api.registerDirectRunner(f.group, {
+        maxConcurrent: 1,
+        heartbeat: {
+          heldHomeStates: [
+            {
+              reuseKey,
+              lastCompletedAt: nowDate().toISOString(),
+              homeCaches: [
+                {
+                  profile: "vm0/default",
+                  homeAffinityVersion: 1,
+                  sourceRunId: f.run.runId,
+                },
+              ],
+            },
+          ],
+        },
+      });
+    });
+    const next = await continuation(f);
+    expect(next.status).toBe("running");
+    await expectOwner(f, next.runId, home.runnerId, home.heartbeatGeneration);
+  });
+
   it("routes to a same-host replacement while its predecessor drains", async () => {
     const f = await terminalPredecessor(context, "completed");
     await heartbeat(f, {

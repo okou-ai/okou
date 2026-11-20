@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.9](https://github.com/okou-ai/okou/compare/runner-host-v0.12.8...runner-host-v0.12.9) (2026-11-20)
+
+
+### Bug Fixes
+
+* **runner:** isolate optional package mount failures ([#49375](https://github.com/okou-ai/okou/issues/49375)) ([56468e0](https://github.com/okou-ai/okou/commit/56468e04dfb10c1adce08e41698106db41ec6bf3))
+
 ## [0.12.8](https://github.com/okou-ai/okou/compare/runner-host-v0.12.7...runner-host-v0.12.8) (2026-11-20)
 
 

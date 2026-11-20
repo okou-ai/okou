@@ -266,6 +266,7 @@ class ChatReplayTest {
             ChatListUiState(
                 threads = listOf(outside, member, hidden, archived),
                 listPhase = ChatReadPhase.Ready,
+                source = ChatListSource.Network,
                 agents = agents(),
                 projectsEnabled = true,
                 projectsSettingsSource = ChatListSource.Network,

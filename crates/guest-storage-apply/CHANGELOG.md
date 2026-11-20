@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.32.37](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.36...guest-storage-apply-v0.32.37) (2026-11-20)
+
+
+### Bug Fixes
+
+* **runner:** isolate optional package mount failures ([#49375](https://github.com/okou-ai/okou/issues/49375)) ([56468e0](https://github.com/okou-ai/okou/commit/56468e04dfb10c1adce08e41698106db41ec6bf3))
+
+
+### Performance Improvements
+
+* **guest-storage-apply:** shorten wide remote archive batches ([#49525](https://github.com/okou-ai/okou/issues/49525)) ([a8f3005](https://github.com/okou-ai/okou/commit/a8f3005f9988f68d822489d6c0912159e0e6bbf3))
+
 ## [0.32.36](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.35...guest-storage-apply-v0.32.36) (2026-11-20)
 
 

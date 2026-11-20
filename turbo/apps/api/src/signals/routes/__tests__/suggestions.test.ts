@@ -267,7 +267,7 @@ describe("Agent suggestions", () => {
     expect(resumed.body.state.status).toBe("active");
   });
 
-  it("protects For you preferences and read receipts with session, rollout and owner boundaries", async () => {
+  it("protects For you preferences and read receipts with rollout and owner boundaries", async () => {
     const fixture = await primaryRun();
     const card = await accept(
       client().create({ headers: fixture.headers, body: input() }),
@@ -285,13 +285,14 @@ describe("Agent suggestions", () => {
       [FeatureSwitchKey.AgentSuggestion]: true,
     });
     await accept(client().summary({ headers: {} }), [401]);
-    await accept(
+    const saved = await accept(
       client().updateSources({
         headers: fixture.headers,
         body: { offers: false },
       }),
-      [403],
+      [200],
     );
+    expect(saved.body.offers).toBeFalsy();
     const other = {
       userId: `user_${randomUUID()}`,
       orgId: fixture.actor.orgId,

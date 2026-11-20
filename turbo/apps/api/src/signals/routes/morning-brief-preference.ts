@@ -6,6 +6,7 @@ import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
 import type { RouteEntry } from "../route-entry";
 import { reconcileExistingMorningBrief$ } from "../services/morning-brief-recovery.service";
+import { proactivePreferenceAccess$ } from "../services/proactive-preference-access";
 import {
   morningBriefPreference$,
   updateMorningBriefPreference$,
@@ -15,13 +16,13 @@ import {
 const morningBriefPreferenceReadAuth = {
   requireOrganization: true,
   missingOrganizationStatus: 401,
-  requiredCapability: "agent:read",
+  requiredCapability: "suggestion:read",
 } as const;
 
 const morningBriefPreferenceWriteAuth = {
   requireOrganization: true,
   missingOrganizationStatus: 401,
-  requiredCapability: "agent:write",
+  requiredCapability: "suggestion:write",
 } as const;
 
 function memberFromAuth(auth: {
@@ -40,6 +41,10 @@ function failureResponse(failure: MorningBriefPreferenceFailure) {
 
 const getMorningBriefPreferenceInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
+    const denied = await set(proactivePreferenceAccess$, signal);
+    if (denied) {
+      return denied;
+    }
     const auth = get(organizationAuthContext$);
     signal.throwIfAborted();
     const result = await set(
@@ -60,6 +65,10 @@ const getMorningBriefPreferenceInner$ = command(
 const updateBody$ = bodyResultOf(morningBriefPreferenceContract.update);
 const retryMorningBriefPreferenceInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
+    const denied = await set(proactivePreferenceAccess$, signal);
+    if (denied) {
+      return denied;
+    }
     const auth = get(organizationAuthContext$);
     const reconciled = await set(
       reconcileExistingMorningBrief$,
@@ -81,6 +90,10 @@ const retryMorningBriefPreferenceInner$ = command(
 
 const updateMorningBriefPreferenceInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
+    const denied = await set(proactivePreferenceAccess$, signal);
+    if (denied) {
+      return denied;
+    }
     const auth = get(organizationAuthContext$);
     signal.throwIfAborted();
     const body = await get(updateBody$);
