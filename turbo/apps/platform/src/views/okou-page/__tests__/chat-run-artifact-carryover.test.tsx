@@ -159,6 +159,9 @@ test("Show format download items and report conversion failures in a toast", asy
     true,
   );
 
+  const notifications = screen.getByRole("region", {
+    name: /^Notifications\b/,
+  });
   const dialog = await openRelatedArtifacts();
   const row = relatedArtifactRow(dialog, markdownUrl);
   const actions = row.parentElement?.parentElement;
@@ -183,9 +186,10 @@ test("Show format download items and report conversion failures in a toast", asy
   }
   expect(pdf).toHaveTextContent("Download as PDF");
   click(pdf);
-  const error = await screen.findByText(
-    "Export failed. Select an export option to try again.",
-  );
+  const errorMessage = "Export failed. Select an export option to try again.";
+  const error = await within(notifications).findByText(errorMessage);
+  // Verify page-wide uniqueness once the toast is rendered.
+  expect(screen.getByText(errorMessage)).toBe(error);
   expect(error.closest("[data-sonner-toast]")).toHaveAttribute(
     "data-type",
     "error",
