@@ -425,12 +425,12 @@ fn clean_optional_mounts<'a>(
     let mounts = manifest
         .storages
         .iter()
-        .map(|entry| entry.mount_path.as_str())
+        .map(|entry| (entry.mount_path.as_str(), entry.optional))
         .chain(
             manifest
                 .artifacts
                 .iter()
-                .map(|entry| entry.mount_path.as_str()),
+                .map(|entry| (entry.mount_path.as_str(), false)),
         );
     cleanup::cleanup_optional_mounts(paths.map(String::as_str), mounts, quarantine)
 }

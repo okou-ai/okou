@@ -334,27 +334,35 @@ fn optional_root(path: &Path) -> io::Result<Option<OptionalRoot>> {
     };
     let anchored = parent.proc_path().join(name);
     match fs::symlink_metadata(&anchored) {
-        Ok(metadata) if metadata.is_dir() || metadata.is_file() => Ok(Some(OptionalRoot {
+        Ok(metadata) => Ok(Some(OptionalRoot {
             _parent: parent,
             anchored,
             metadata,
         })),
-        Ok(_) => Err(io::Error::other(
-            "optional package target is not a directory or regular file",
-        )),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
         Err(error) => Err(error),
     }
 }
 
-pub(crate) fn optional_mount_is_dir(path: &Path) -> io::Result<bool> {
-    Ok(optional_root(path)?.is_some_and(|root| root.metadata.is_dir()))
+#[derive(PartialEq, Eq)]
+pub(crate) enum OptionalMountState {
+    Missing,
+    Directory,
+    Obstructed,
+}
+
+pub(crate) fn optional_mount_state(path: &Path) -> io::Result<OptionalMountState> {
+    Ok(match optional_root(path)? {
+        None => OptionalMountState::Missing,
+        Some(root) if root.metadata.is_dir() => OptionalMountState::Directory,
+        Some(_) => OptionalMountState::Obstructed,
+    })
 }
 
 /// Clear package roots while preserving every other declared mount.
 pub(crate) fn cleanup_optional_mounts<'path, 'mount>(
     paths: impl Iterator<Item = &'path str>,
-    mounts: impl Iterator<Item = &'mount str>,
+    mounts: impl Iterator<Item = (&'mount str, bool)>,
     quarantine: Option<&crate::quarantine::Quarantine>,
 ) -> bool {
     cleanup_optional_mounts_with_detector(
@@ -367,7 +375,7 @@ pub(crate) fn cleanup_optional_mounts<'path, 'mount>(
 
 fn cleanup_optional_mounts_with_detector<'path, 'mount>(
     paths: impl Iterator<Item = &'path str>,
-    mut mounts: impl Iterator<Item = &'mount str>,
+    mut mounts: impl Iterator<Item = (&'mount str, bool)>,
     quarantine: Option<&crate::quarantine::Quarantine>,
     detector: CleanupMountPointDetector<impl Fn() -> io::Result<Vec<u8>>>,
 ) -> bool {
@@ -411,6 +419,7 @@ fn cleanup_optional_mounts_with_detector<'path, 'mount>(
                 }
                 fs::remove_dir_all(&root.anchored)
             } else {
+                // Unlink only this entry, including a symlink at the package root.
                 fs::remove_file(&root.anchored)
             }
         })();
@@ -426,12 +435,18 @@ fn cleanup_optional_mounts_with_detector<'path, 'mount>(
 }
 
 fn protected_mount_paths<'a>(
-    mounts: impl Iterator<Item = &'a str>,
+    mounts: impl Iterator<Item = (&'a str, bool)>,
 ) -> io::Result<Vec<(PathBuf, &'a str)>> {
     let mut protected = Vec::new();
-    for mount in mounts {
+    for (mount, optional) in mounts {
         let path = std::path::absolute(mount)?;
         let logical = normalize_path(&path);
+        // Optional packages are applied only through paths without symlinks.
+        // A link at their root is an obstruction and has no target to preserve.
+        if optional {
+            protected.push((logical, mount));
+            continue;
+        }
         let trace = match path.canonicalize() {
             Ok(resolved) if resolved == logical => {
                 path.components().any(|part| part == Component::ParentDir)

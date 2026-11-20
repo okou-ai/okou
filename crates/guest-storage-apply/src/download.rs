@@ -1,5 +1,6 @@
 use crate::LOG_TAG;
 use crate::archive;
+use crate::cleanup::{OptionalMountState, optional_mount_state};
 use crate::error::DownloadError;
 use crate::readiness::Readiness;
 use crate::source;
@@ -360,11 +361,19 @@ pub(crate) fn prepare_download_tasks<'input>(
 ) -> Result<Vec<PreparedDownloadTask<'input>>, String> {
     let mut prepared = Vec::with_capacity(tasks.len());
     for task in tasks {
-        if task.optional {
-            crate::cleanup::optional_mount_is_dir(Path::new(task.mount_path()))
-                .map_err(|error| format!("{} unsafe package target: {error}", task.label))?;
-        }
-        match task.prepare() {
+        let target = if task.optional
+            && optional_mount_state(Path::new(task.mount_path()))
+                .map_err(|error| format!("{} unsafe package target: {error}", task.label))?
+                == OptionalMountState::Obstructed
+        {
+            Err(format!(
+                "{} target preparation failed: package root is not a directory",
+                task.label
+            ))
+        } else {
+            task.prepare()
+        };
+        match target {
             Ok(effective_mount_path) => prepared.push(PreparedDownloadTask {
                 task,
                 effective_mount_path,
@@ -666,9 +675,12 @@ fn panic_message(payload: &(dyn Any + Send)) -> String {
 fn run_download_attempt(download: &mut StartedDownload<'_>) -> Result<(), DownloadError> {
     // An overlapping ancestor archive can change target state after plan
     // preparation. Recheck before writing through the retained identity.
-    if download.task.task.optional {
-        crate::cleanup::optional_mount_is_dir(download.task.logical_mount_path())
-            .map_err(|error| DownloadError::new(format!("Unsafe package target: {error}")))?;
+    if download.task.task.optional
+        && optional_mount_state(download.task.logical_mount_path())
+            .map_err(|error| DownloadError::new(format!("Unsafe package target: {error}")))?
+            == OptionalMountState::Obstructed
+    {
+        return Err(DownloadError::new("Package root is not a directory"));
     }
     if let Some(files) = &download.task.task.files {
         if download.task.task.template_guidance.is_some() {

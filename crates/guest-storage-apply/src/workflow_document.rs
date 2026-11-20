@@ -1,5 +1,6 @@
 //! Materialize renamed Workflow documents without mutating their shared R2 package.
 
+use crate::cleanup::{OptionalMountState, optional_mount_state};
 use guest_contracts::{
     storage_files::StorageFile,
     storage_manifest::{StorageEntry, WORKFLOW_STORAGE_NAME},
@@ -26,9 +27,9 @@ pub(crate) fn apply_all(entries: &[StorageEntry], skipped: &mut HashSet<String>)
                 skipped.insert(entry.mount_path.clone());
                 continue;
             }
-            match crate::cleanup::optional_mount_is_dir(Path::new(&entry.mount_path)) {
-                Ok(true) => {}
-                Ok(false) => {
+            match optional_mount_state(Path::new(&entry.mount_path)) {
+                Ok(OptionalMountState::Directory) => {}
+                Ok(OptionalMountState::Missing | OptionalMountState::Obstructed) => {
                     record_optional_failure(
                         entry,
                         "package root is missing or not a directory",

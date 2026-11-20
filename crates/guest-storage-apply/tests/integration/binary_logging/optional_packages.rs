@@ -124,6 +124,62 @@ fn unsafe_optional_mount_cleanup_stops_application() -> io::Result<()> {
 }
 
 #[test]
+fn optional_symlink_is_removed_only_if_other_mounts_do_not_use_it() -> io::Result<()> {
+    let server = MockServer::start();
+    let archive = server.mock(|when, then| {
+        when.method(GET).path("/optional.tar.gz");
+        then.status(404);
+    });
+    for shared in [false, true] {
+        let fixture = BinaryLoggingFixture::new("optional-symlink")?;
+        let backing = fixture.dir.path().join("backing");
+        fs::create_dir(&backing)?;
+        fs::write(backing.join("keep"), "required")?;
+        let optional = fixture.dir.path().join("optional");
+        symlink(&backing, &optional)?;
+        let cycle = fixture.dir.path().join("cycle");
+        symlink(&cycle, &cycle)?;
+        let required = if shared {
+            let alias = fixture.dir.path().join("required");
+            symlink(&optional, &alias)?;
+            alias
+        } else {
+            backing
+        };
+        let output = fixture.run_manifest_stdin(&serde_json::to_vec(&json!({
+            "storageMounts": [
+                {"mountPath": required, "cached": true},
+                {"mountPath": optional, "name": "workflow", "optional": true,
+                 "archiveUrl": server.url("/optional.tar.gz")},
+                {"mountPath": cycle, "name": "workflow", "optional": true, "cached": true}
+            ]
+        }))?)?;
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if shared {
+            assert!(!output.status.success());
+            assert!(output.stdout.is_empty());
+            assert!(stderr.contains("overlaps another mount"), "{stderr}");
+            assert!(fs::symlink_metadata(&optional)?.is_symlink());
+        } else {
+            assert!(output.status.success(), "{stderr}");
+            assert_eq!(
+                serde_json::from_slice::<StorageApplyReceipt>(&output.stdout)?.skipped_optional,
+                [1, 2]
+            );
+            for path in [&optional, &cycle] {
+                assert_eq!(
+                    fs::symlink_metadata(path).unwrap_err().kind(),
+                    io::ErrorKind::NotFound
+                );
+            }
+        }
+        assert_eq!(fs::read(required.join("keep"))?, b"required");
+    }
+    archive.assert_calls(0);
+    Ok(())
+}
+
+#[test]
 fn optional_mount_under_an_aliased_parent_is_unsafe() -> io::Result<()> {
     let fixture = BinaryLoggingFixture::new("optional-parent-alias")?;
     let alias = fixture.dir.path().join("alias");

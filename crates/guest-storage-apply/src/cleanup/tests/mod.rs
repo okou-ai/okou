@@ -146,7 +146,7 @@ fn optional_cleanup_preserves_bind_sources_and_reuses_the_mount_snapshot() {
         .map(|path| path.to_str().unwrap());
     assert!(!cleanup_optional_mounts_with_detector(
         paths.into_iter(),
-        paths.into_iter(),
+        paths.into_iter().map(|path| (path, true)),
         None,
         detector,
     ));
@@ -176,7 +176,7 @@ fn optional_cleanup_preserves_symlinks_used_by_a_mount_that_has_not_been_created
     let required = required.to_str().unwrap();
     assert!(!cleanup_optional_mounts(
         std::iter::once(optional),
-        [optional, required].into_iter(),
+        [(optional, true), (required, false)].into_iter(),
         None,
     ));
     assert_eq!(
