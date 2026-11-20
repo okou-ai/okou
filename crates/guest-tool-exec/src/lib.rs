@@ -3,7 +3,6 @@
 use std::env;
 use std::ffi::{OsStr, OsString};
 use std::io::{self, Read, Write};
-use std::os::fd::AsFd;
 use std::os::unix::process::CommandExt;
 use std::path::{Component, Path};
 use std::process::{Command, ExitCode};
@@ -213,11 +212,7 @@ fn place_current_process(endpoint: &str) -> io::Result<()> {
     let stream = process_control_ipc::connect_abstract_with_timeout(endpoint, PLACEMENT_TIMEOUT)?;
     stream.set_read_timeout(Some(PLACEMENT_TIMEOUT))?;
     stream.set_write_timeout(Some(PLACEMENT_TIMEOUT))?;
-    let placement = process_control_ipc::receive_tool_placement(&stream)?;
-    process_control_ipc::write_self_to_cgroup(placement.as_fd())?;
-    drop(placement);
-    process_control_ipc::write_tool_placement_confirmation(&stream)?;
-    process_control_ipc::read_tool_placement_ack(&stream)
+    process_control_ipc::apply_tool_placement(&stream, || Ok(()))
 }
 
 fn exec_shell() -> io::Error {
