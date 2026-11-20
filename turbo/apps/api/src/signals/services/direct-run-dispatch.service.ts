@@ -14,7 +14,10 @@ import { env } from "../../lib/env";
 import { API_INVOCATION_MAX_DURATION_SECONDS } from "../../lib/invocation-budget";
 import { monotonicNow, now, nowDate } from "../../lib/time";
 import { apiStartTime$ } from "../context/hono";
-import { postRunnerDispatch } from "../external/runner-ingress";
+import {
+  postRunnerDispatch,
+  reserveRunnerDispatch,
+} from "../external/runner-ingress";
 import { failUnacceptedRun$ } from "./agent-run-terminal-transition.service";
 import {
   prepareDirectRun$,
@@ -28,7 +31,7 @@ import {
   type DirectRunTarget,
 } from "./direct-run-ownership.service";
 import { readDirectRunCandidates$ } from "./runner-reuse-preference";
-import { joinAll, settleIncludingAbort } from "../utils";
+import { joinAll, safeSync, settleIncludingAbort } from "../utils";
 import { recordRunContextSnapshot } from "./run-context-snapshot.service";
 
 type PlacementPreference = Extract<RunnerPreference, { kind: "preference" }>;
@@ -71,7 +74,14 @@ export const prepareDirectRunDispatch$ = command(
         set(prepareDirectRun$, input, packages, signal),
         (async () => {
           const candidates = await set(readDirectRunCandidates$, input, signal);
-          return { candidates, candidatesReadyAt: monotonicNow() };
+          const candidatesReadyAt = monotonicNow();
+          const target = candidates[0];
+          if (target) {
+            safeSync(() => {
+              reserveRunnerDispatch(target, input.run.id, signal);
+            });
+          }
+          return { candidates, candidatesReadyAt };
         })(),
       ]);
       signal.throwIfAborted();

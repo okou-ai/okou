@@ -1,4 +1,11 @@
 import "./instrument";
+import { env } from "./lib/env";
+import { normalizeBuildCommitSha } from "./lib/build-info";
+import { singleton } from "./lib/singleton";
+import { createRunnerDispatchTransport } from "./runner-dispatch-transport.node";
+import { withRunnerDispatchTransport } from "./signals/external/runner-dispatch-transport";
+import { recordSandboxOperation } from "./signals/external/sandbox-op-log";
+import { safeSync } from "./signals/utils";
 import { createProductionApp } from "./production-bootstrap";
 
 // Vercel function entry point built by `@hono/vite-build/vercel` (see
@@ -21,4 +28,31 @@ const app = (() => {
   return createProductionApp(instanceAbortController.signal);
 })();
 
-export default app;
+const runnerDispatchTransport = singleton(() => {
+  return createRunnerDispatchTransport({
+    observe(runId, outcome, durationMs) {
+      safeSync(() => {
+        recordSandboxOperation({
+          sandboxType: "runner",
+          actionType: "api_dispatch_runner_preconnect",
+          runId,
+          durationMs,
+          success: outcome === "used",
+          dimensions: {
+            preconnect_outcome: outcome,
+            api_commit_sha:
+              normalizeBuildCommitSha(env("GIT_COMMIT_SHA")) ?? undefined,
+          },
+        });
+      });
+    },
+  });
+});
+
+const fetch: typeof app.fetch = (...args) => {
+  return withRunnerDispatchTransport(runnerDispatchTransport(), () => {
+    return app.fetch(...args);
+  });
+};
+
+export default { fetch };
