@@ -1,4 +1,8 @@
 <resources>
+    <string name="chat_list_offline">오프라인</string>
+    <string name="chat_list_refresh_failed">채팅 목록을 새로 고치지 못했습니다</string>
+    <string name="chat_list_first_load_failed">일시적으로 불러올 수 없습니다</string>
+    <string name="chat_list_load_when_online">다시 온라인 상태가 되면 채팅이 로드됩니다.</string>
     <string name="chat_list_title">채팅</string>
     <string name="chat_refresh">채팅 새로고침</string>
     <string name="chat_loading">채팅을 불러오는 중…</string>

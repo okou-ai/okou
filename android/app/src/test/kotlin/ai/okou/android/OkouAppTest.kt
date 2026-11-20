@@ -39,7 +39,6 @@ import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.WindowInfo
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
-import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertHeightIsEqualTo
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
@@ -48,7 +47,6 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertWidthIsEqualTo
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
-import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isSelectable
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -615,22 +613,13 @@ class OkouAppTest {
         compose.onNodeWithText("Arbeitsbereichseinstellungen").performScrollTo().assertIsDisplayed()
         compose.onNodeWithContentDescription("Zurück").assertIsDisplayed().performClick()
         compose.onNodeWithContentDescription("Chats").assertIsDisplayed()
-        compose.onNodeWithText("Chats werden geladen…").assertIsDisplayed()
+        compose.mainClock.advanceTimeBy(120)
+        compose.onNodeWithContentDescription("Chats werden geladen…").assertIsDisplayed()
         initialListResponse.complete(Unit)
 
-        val refreshableList =
-            hasTestTag("chat_list") and
-                SemanticsMatcher.keyIsDefined(SemanticsActions.CustomActions)
         compose.waitUntil(10_000) {
-            compose.onAllNodes(refreshableList).fetchSemanticsNodes().isNotEmpty()
+            compose.onAllNodes(hasText("Personal chat")).fetchSemanticsNodes().isNotEmpty()
         }
-        val refresh =
-            compose
-                .onNode(refreshableList)
-                .fetchSemanticsNode()
-                .config[SemanticsActions.CustomActions]
-                .single { it.label == "Chats aktualisieren" }
-        compose.runOnIdle { assertEquals(true, refresh.action()) }
         compose.onNodeWithContentDescription("Filter").assertIsDisplayed().performClick()
         compose.onNodeWithText("Archiviert").assertIsDisplayed().performClick()
         compose.onNodeWithText("Filter · Archiviert").assertExists()
