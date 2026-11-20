@@ -168,10 +168,6 @@ def _allocate_firewall_auth_registry_generation() -> int:
     return _next_firewall_auth_registry_generation
 
 
-def _path_key(path: Path) -> str:
-    return str(path.absolute())
-
-
 def _state_for_path(path_key: str) -> _RegistryCacheState:
     if _registry_state.registry_path != path_key:
         if _registry_state.snapshot.loaded_key is not None:
@@ -546,7 +542,7 @@ def _load_registry_state(registry_path: str) -> RegistryState:
     than reusing stale registry data.
     """
     path = Path(registry_path)
-    path_key = _path_key(path)
+    path_key = state_file.absolute_path_key(path)
     state = _state_for_path(path_key)
     builtin_catalog_cache_path = _builtin_firewall_catalog_cache_path()
     builtin_catalog_snapshot: registry_firewalls.BuiltinFirewallCatalogSnapshot | None = None
