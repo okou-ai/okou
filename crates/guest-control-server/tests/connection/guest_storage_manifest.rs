@@ -60,16 +60,19 @@ fn request_frame(
     guest_control_proto::encode(MSG_GUEST_STORAGE_MANIFEST, seq, &payload).unwrap()
 }
 
-fn storage_input(file_count: u8) -> Vec<u8> {
-    let files: Vec<_> = (0..file_count)
+fn storage_input_files(file_count: u8) -> Vec<StorageFile> {
+    (0..file_count)
         .map(|index| StorageFile {
             path: format!("file-{index}"),
             mode: 0o644,
             mtime: 1,
             content: vec![index; storage_files::MAX_FILE_BYTES],
         })
-        .collect();
-    storage_files::encode_input(b"{}", &[("/mount", &files)]).unwrap()
+        .collect()
+}
+
+fn storage_input(file_count: u8) -> Vec<u8> {
+    storage_files::encode_input(b"{}", &[("/mount", &storage_input_files(file_count))]).unwrap()
 }
 
 struct TestResult {
@@ -254,13 +257,53 @@ fn fragmented_large_storage_input_reaches_helper_and_preserves_next_frame() {
 
 #[cfg(target_os = "linux")]
 #[test]
-fn decoded_storage_input_over_eight_mib_reaches_helper_through_pipe() {
-    // Eight MiB of file contents plus framing exceeds the sealed input limit.
+fn decoded_storage_input_over_eight_mib_reaches_helper_through_sealed_stdin() {
     let input = storage_input(32);
     assert!(input.len() > 8 * 1024 * 1024);
+    assert_storage_input_transport(&input, storage_files::SEALED_STDIN_ARGUMENT, "-f");
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn decoded_storage_input_with_rpc_context_above_map_limit_uses_pipe() {
+    let first = storage_input_files(30);
+    let mut second = storage_input_files(29);
+    second.push(StorageFile {
+        path: "remainder".into(),
+        mode: 0o644,
+        mtime: 1,
+        content: Vec::new(),
+    });
+    let payload_len =
+        storage_files::encoded_payload_len(&[("/first", &first), ("/second", &second)]).unwrap();
+    second
+        .last_mut()
+        .unwrap()
+        .content
+        .resize(storage_files::MAX_PAYLOAD_BYTES - payload_len, 255);
+    let mut manifest = br#"{
+        "storageMounts": [
+            {"mountPath":"/first","archiveUrl":"file:///tmp/unused-first"},
+            {"mountPath":"/second","archiveUrl":"file:///tmp/unused-second"}
+        ]
+    }"#
+    .to_vec();
+    manifest.resize(storage_files::MAX_MANIFEST_BYTES, b' ');
+    let input = storage_files::encode_input(&manifest, &[("/first", &first), ("/second", &second)])
+        .unwrap();
+    // The RPC context puts the whole received file beyond this helper-input limit.
+    assert_eq!(input.len(), storage_files::MAX_INPUT_BYTES);
+    assert_storage_input_transport(&input, storage_files::STDIN_ARGUMENT, "-p");
+}
+
+#[cfg(target_os = "linux")]
+fn assert_storage_input_transport(input: &[u8], argument: &str, file_test: &str) {
+    let expected_dir = tempfile::tempdir().unwrap();
+    let expected = expected_dir.path().join("expected-input");
+    std::fs::write(&expected, input).unwrap();
     let (_directory, program) = create_program(&format!(
-        "[ \"$1\" = {} ]; [ -p /proc/self/fd/0 ]; wc -c",
-        storage_files::STDIN_ARGUMENT,
+        "[ \"$1\" = '{argument}' ]; [ {file_test} /proc/self/fd/0 ]; cmp - '{}'",
+        expected.display(),
     ));
     let (handle, mut host) = start_guest_connection_with_storage_manifest_program(program);
 
@@ -270,16 +313,10 @@ fn decoded_storage_input_over_eight_mib_reaches_helper_through_pipe() {
         5_000,
         "storage-run",
         "/run/storage-run",
-        &input,
+        input,
     );
     let result = read_result(&mut host, 423);
     assert_eq!(result.termination, ExecTermination::Exited { exit_code: 0 });
-    let received_bytes = std::str::from_utf8(&result.stdout)
-        .unwrap()
-        .trim()
-        .parse::<usize>()
-        .unwrap();
-    assert_eq!(received_bytes, input.len());
     finish_guest_connection(handle, host);
 }
 

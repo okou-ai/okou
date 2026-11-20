@@ -574,7 +574,7 @@ fn handle_connection_with_outcome(
             Some(retained)
         } else if let Some(frame) = decoder.take_incomplete_frame(
             MSG_GUEST_STORAGE_MANIFEST,
-            large_frame::OWNED_STORAGE_PAYLOAD_BYTES,
+            large_frame::STREAMED_STORAGE_PAYLOAD_BYTES,
         ) {
             let Some((payload, retained)) =
                 large_frame::receive_storage(&mut reader, &mut buf, &frame)
