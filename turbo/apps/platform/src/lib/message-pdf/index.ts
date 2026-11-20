@@ -1,4 +1,4 @@
-import type { Root, RootContent } from "hast";
+import type { Element, Root, RootContent } from "hast";
 
 import { resolvePlatformEnvironment } from "../platform-host.ts";
 import { fetchAppAsset } from "../resource-fetch.ts";
@@ -60,10 +60,45 @@ function requiredExtraFonts(tree: Root) {
   return needed;
 }
 
+/** Use the same document tree for font selection and rendering of file labels. */
+function linkFileCards(
+  parent: Root | Element,
+  fileCards: ReadonlyMap<string, string>,
+  insideLink = false,
+): void {
+  for (const node of parent.children) {
+    if (node.type !== "element") {
+      continue;
+    }
+    const { src, alt } = node.properties;
+    const filename =
+      node.tagName === "img" && typeof src === "string"
+        ? fileCards.get(src)
+        : undefined;
+    if (filename !== undefined) {
+      // An enclosing Markdown link retains its authored destination. Otherwise
+      // link the original artifact reference, never its temporary storage URL.
+      node.tagName = insideLink ? "span" : "a";
+      node.properties = insideLink ? {} : { href: src };
+      node.children = [
+        {
+          type: "text",
+          value: typeof alt === "string" && alt.trim() ? alt : filename,
+        },
+      ];
+    } else {
+      linkFileCards(node, fileCards, insideLink || node.tagName === "a");
+    }
+  }
+}
+
 /** Export independently parsed Markdown responses. Invoke only from the export command. */
 export async function generateMessagePdfBlob(
   contents: readonly string[],
-  imageUrls: ReadonlyMap<string, string>,
+  resources: {
+    readonly imageUrls: ReadonlyMap<string, string>;
+    readonly fileCards?: ReadonlyMap<string, string>;
+  },
   signal: AbortSignal,
   baseUrl = location.href,
 ): Promise<Blob> {
@@ -75,6 +110,9 @@ export async function generateMessagePdfBlob(
       return parseMessagePdfTree(content).children;
     }),
   };
+  if (resources.fileCards?.size) {
+    linkFileCards(tree, resources.fileCards);
+  }
   const needed = requiredExtraFonts(tree);
   const production = resolvePlatformEnvironment() === "production";
   const fontUrls = production
@@ -85,7 +123,7 @@ export async function generateMessagePdfBlob(
   };
   const [assets, regularFont, boldFont, italicFont, boldItalicFont, emojiFont] =
     await Promise.all([
-      preparePdfAssets(tree, imageUrls, signal),
+      preparePdfAssets(tree, resources.imageUrls, signal),
       readFont(fontUrls.regular),
       readFont(fontUrls.bold),
       needed.italic ? readFont(fontUrls.italic) : undefined,

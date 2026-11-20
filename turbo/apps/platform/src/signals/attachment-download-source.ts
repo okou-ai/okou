@@ -8,7 +8,7 @@ import { apiClient$ } from "./api-client.ts";
 import { clerk$ } from "./auth.ts";
 import { isAuthenticatedAttachmentUrl } from "./attachment-resource-url.ts";
 
-type AttachmentDownloadSource =
+type AttachmentDownloadSource = (
   | {
       readonly kind: "managed";
       readonly resourceUrl: string;
@@ -24,7 +24,13 @@ type AttachmentDownloadSource =
       readonly kind: "unmanaged";
       readonly resourceUrl: string;
       readonly hosted: false;
-    };
+    }
+) & {
+  readonly artifact?: {
+    readonly filename: string;
+    readonly contentType: string;
+  };
+};
 
 /** Resolve on every click, under the action's cancellation and current access. */
 export const attachmentDownloadSource$ = command(
@@ -51,10 +57,13 @@ export const attachmentDownloadSource$ = command(
           { showErrorToast: false },
         );
         if (result.status === 200) {
+          const { filename, contentType } = result.body;
+          const artifact = { filename, contentType };
           if (result.body.downloadAllowed === false && audience === "app") {
             return {
               kind: "paywalled",
               resourceUrl: result.body.url,
+              artifact,
               hosted: result.body.target.kind === "html",
             };
           }
@@ -62,6 +71,7 @@ export const attachmentDownloadSource$ = command(
             return {
               kind: "managed",
               resourceUrl: result.body.url,
+              artifact,
               downloadUrl: result.body.downloadUrl,
               hosted: result.body.target.kind === "html",
             };
@@ -83,6 +93,10 @@ export const attachmentDownloadSource$ = command(
         kind: "managed",
         resourceUrl: result.body.url,
         downloadUrl: result.body.downloadUrl,
+        artifact: {
+          filename: result.body.preview.filename,
+          contentType: result.body.preview.contentType,
+        },
         hosted:
           result.body.preview.contentType.split(";")[0].trim() === "text/html",
       };
