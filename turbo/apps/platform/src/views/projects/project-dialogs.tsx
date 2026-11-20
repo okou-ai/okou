@@ -24,7 +24,7 @@ import {
   createProject$,
   renameProject$,
   deleteProject$,
-  moveProjectThread$,
+  moveProjectThreadFromDialog$,
 } from "../../signals/projects/projects.ts";
 import {
   setProjectEditorName$,
@@ -35,7 +35,6 @@ import {
   completeProjectDialogClose$,
   projectSearch$,
   setProjectSearch$,
-  projectDialogHasSuccessor$,
   type ProjectDialog,
 } from "../../signals/projects/project-ui.ts";
 import { eventDrivenChatThreads$ } from "../../signals/chat-page/chat-thread-event-sourcing.ts";
@@ -53,35 +52,7 @@ import {
 import { mobileChatViewport$ } from "../../signals/okou-page/pwa-navigation.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { rootSignal$ } from "../../signals/root-signal.ts";
-import { detach, Reason, waitForBrowserPaint } from "../../signals/utils.ts";
-// A rename keeps its Project menu; deleting a Project returns to the list's
-// create control. Creating from a chat returns to that chat's surviving row,
-// and creating from a new chat's composer returns to the message.
-function projectDialogFocusTarget(dialog: ProjectDialog) {
-  if (dialog.kind === "editor" && dialog.fromComposer) {
-    return document.querySelector<HTMLElement>(
-      '[data-slot="chat-composer-card"] [contenteditable="true"]',
-    );
-  }
-  const threadId =
-    dialog.kind === "membership"
-      ? dialog.threadId
-      : dialog.kind === "editor"
-        ? dialog.fromThreadId
-        : undefined;
-  const projectId = "projectId" in dialog ? dialog.projectId : undefined;
-  const target = threadId
-    ? document.querySelector<HTMLElement>(
-        `[data-sidebar-chat-thread-id="${threadId}"]`,
-      )
-    : projectId
-      ? document.querySelector<HTMLElement>(
-          `[data-project-menu-id="${projectId}"]`,
-        )
-      : null;
-  return target ?? document.querySelector<HTMLElement>("[data-project-create]");
-}
-
+import { detach, Reason } from "../../signals/utils.ts";
 function ProjectNameField() {
   const { t } = useTranslation();
   const name = useGet(projectEditorName$);
@@ -113,7 +84,6 @@ function ProjectEditor({ dialog }: { dialog: EditorDialog }) {
   const name = useGet(projectEditorName$);
   const close = useSet(closeProjectDialog$);
   const completeClose = useSet(completeProjectDialogClose$);
-  const hasSuccessor = useSet(projectDialogHasSuccessor$);
   const [creation, create] = useLoadableSet(createProject$);
   const [renaming, rename] = useLoadableSet(renameProject$);
   const signal = useGet(pageSignal$);
@@ -128,18 +98,7 @@ function ProjectEditor({ dialog }: { dialog: EditorDialog }) {
       await completion;
       return;
     }
-    await create(
-      {
-        name,
-        ...(dialog.fromThreadId ? { fromThreadId: dialog.fromThreadId } : {}),
-        open: dialog.fromComposer === true,
-        onOptimisticCommit: async () => {
-          await waitForBrowserPaint(creationSignal);
-          close(dialog);
-        },
-      },
-      creationSignal,
-    );
+    await create(dialog, name, creationSignal);
   }
   return (
     <Dialog
@@ -155,13 +114,7 @@ function ProjectEditor({ dialog }: { dialog: EditorDialog }) {
         }
       }}
     >
-      <DialogContent
-        finalFocus={() => {
-          return hasSuccessor(dialog)
-            ? false
-            : projectDialogFocusTarget(dialog);
-        }}
-      >
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>
             {dialog.projectId
@@ -221,14 +174,12 @@ function ProjectEditor({ dialog }: { dialog: EditorDialog }) {
 function MembershipSurface({
   dialog,
   mobile,
-  finalFocus,
   onOpenChange,
   onOpenChangeComplete,
   children,
 }: {
   dialog: Extract<ProjectDialog, { kind: "membership" }>;
   mobile: boolean;
-  finalFocus: () => HTMLElement | false;
   onOpenChange: (open: boolean) => void;
   onOpenChangeComplete: (open: boolean) => void;
   children: ReactNode;
@@ -245,7 +196,6 @@ function MembershipSurface({
           closeLabel={t(($) => {
             return $.projects.close;
           })}
-          finalFocus={finalFocus}
         >
           <DrawerHeader>
             <DrawerTitle>
@@ -272,7 +222,6 @@ function MembershipSurface({
         aria-label={t(($) => {
           return $.projects.moveTitle;
         })}
-        finalFocus={finalFocus}
       >
         {children}
       </PopoverContent>
@@ -343,38 +292,21 @@ function ProjectMembershipPicker({
   const mobile = useGet(mobileChatViewport$);
   const close = useSet(closeProjectDialog$);
   const completeClose = useSet(completeProjectDialogClose$);
-  const [moving, move] = useLoadableSet(moveProjectThread$);
+  const [moving, move] = useLoadableSet(moveProjectThreadFromDialog$);
   const signal = useGet(pageSignal$);
-  const hasSuccessor = useSet(projectDialogHasSuccessor$);
   const pending = moving.state === "loading";
   const matches = projects.filter((project) => {
     return project.name
       .toLocaleLowerCase()
       .includes(search.trim().toLocaleLowerCase());
   });
-  async function closeAfterPaint() {
-    await waitForBrowserPaint(signal);
-    close(dialog);
-  }
-  async function select(id: string | null) {
-    await Promise.all([move(dialog.threadId, id, signal), closeAfterPaint()]);
+  function select(id: string | null) {
+    return move(dialog, id, signal);
   }
   function onOpenChange(open: boolean) {
     if (!open) {
       close(dialog);
     }
-  }
-  // Moving can replace the original row. Focus its surviving navigation link,
-  // or return to the menu trigger when the row has stayed in place.
-  function finalFocus() {
-    if (hasSuccessor(dialog)) {
-      return false;
-    }
-    return (
-      document.querySelector<HTMLElement>(
-        `[data-sidebar-chat-thread-id="${dialog.threadId}"]`,
-      ) ?? dialog.anchor
-    );
   }
   const content = (
     <div className="flex min-h-0 flex-col gap-2">
@@ -443,7 +375,6 @@ function ProjectMembershipPicker({
     <MembershipSurface
       dialog={dialog}
       mobile={mobile}
-      finalFocus={finalFocus}
       onOpenChange={onOpenChange}
       onOpenChangeComplete={(open) => {
         if (!open) {
@@ -480,7 +411,6 @@ function ProjectDeleteChoices({
         {enabled &&
           (threads.state !== "hasData" || threads.data.length > 0) && (
             <Button
-              data-project-delete-all
               variant="outline"
               disabled={pending || threads.state !== "hasData"}
               onClick={() => {
@@ -543,11 +473,6 @@ function ProjectDeleteConfirmation({
       initialFocus={() => {
         return document.querySelector<HTMLButtonElement>(
           "[data-project-delete-back]",
-        );
-      }}
-      finalFocus={() => {
-        return document.querySelector<HTMLButtonElement>(
-          "[data-project-delete-all]",
         );
       }}
       showCloseButton={!pending}
@@ -628,7 +553,6 @@ function DeleteProjectDialog({
 }) {
   const { t } = useTranslation();
   const close = useSet(closeProjectDialog$);
-  const hasSuccessor = useSet(projectDialogHasSuccessor$);
   const [deletion, remove] = useLoadableSet(deleteProject$);
   const [threadDeletion, removeThreads] = useLoadableSet(
     deleteProjectAndThreads$,
@@ -641,10 +565,6 @@ function DeleteProjectDialog({
   const signal = useGet(pageSignal$);
   const pending =
     deletion.state === "loading" || threadDeletion.state === "loading";
-  async function onDeleted() {
-    await waitForBrowserPaint(signal);
-    close(dialog);
-  }
   return (
     <Dialog
       open
@@ -661,11 +581,6 @@ function DeleteProjectDialog({
         closeLabel={t(($) => {
           return $.projects.close;
         })}
-        finalFocus={() => {
-          return hasSuccessor(dialog)
-            ? false
-            : projectDialogFocusTarget(dialog);
-        }}
       >
         <DialogHeader>
           <DialogTitle>
@@ -686,10 +601,7 @@ function DeleteProjectDialog({
         <ProjectDeleteChoices
           pending={pending}
           onDeleteProject={() => {
-            detach(
-              remove(dialog.projectId, onDeleted, signal),
-              Reason.DomCallback,
-            );
+            detach(remove(dialog, signal), Reason.DomCallback);
           }}
         />
         {deletion.state === "hasError" && (
@@ -711,7 +623,7 @@ function DeleteProjectDialog({
             pending={pending}
             hasError={threadDeletion.state === "hasError"}
             onDelete={() => {
-              detach(removeThreads(onDeleted, signal), Reason.DomCallback);
+              detach(removeThreads(dialog, signal), Reason.DomCallback);
             }}
           />
         </Dialog>

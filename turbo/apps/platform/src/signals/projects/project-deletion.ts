@@ -16,7 +16,11 @@ import {
 import { navigateToNewChat$ } from "../okou-page/nav.ts";
 import { onRef } from "../utils.ts";
 import { pathParams$ } from "../route.ts";
-import { projectDialogSession$ } from "./project-ui.ts";
+import {
+  closeProjectDialog$,
+  projectDialogSession$,
+  type ProjectDialog,
+} from "./project-ui.ts";
 import { deleteProjectWithEventId$, syncProjects$ } from "./projects.ts";
 
 const deletionSession$ = computed((get) => {
@@ -137,7 +141,14 @@ const navigateAfterProjectDeletion$ = command(
 );
 
 export const deleteProjectAndThreads$ = command(
-  async ({ get, set }, onDeleted: () => Promise<void>, signal: AbortSignal) => {
+  async (
+    { get, set },
+    dialog: Extract<ProjectDialog, { kind: "delete" }>,
+    signal: AbortSignal,
+  ) => {
+    if (get(projectDialogSession$) !== dialog) {
+      return;
+    }
     const session = get(deletionSession$);
     const confirmed = get(session.confirmation$);
     if (!session.projectId || !confirmed) {
@@ -156,8 +167,8 @@ export const deleteProjectAndThreads$ = command(
       );
       if (project.status === 404) {
         await set(syncProjects$, signal);
-        await onDeleted();
         signal.throwIfAborted();
+        set(closeProjectDialog$, dialog);
         await set(catchUpChatThreadEventSource$, signal);
         await set(
           navigateAfterProjectDeletion$,
@@ -231,13 +242,7 @@ export const deleteProjectAndThreads$ = command(
       get(session.projectDeleteEventId$) ??
       createProjectOperationId(now(), crypto.randomUUID());
     set(session.projectDeleteEventId$, eventId);
-    await set(
-      deleteProjectWithEventId$,
-      session.projectId,
-      eventId,
-      onDeleted,
-      signal,
-    );
+    await set(deleteProjectWithEventId$, dialog, eventId, signal);
     await set(
       navigateAfterProjectDeletion$,
       session.projectId,

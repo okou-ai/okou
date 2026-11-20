@@ -3,6 +3,7 @@ import {
   expandProject$,
   restoreProjectExpansion$,
 } from "./project-expansion.ts";
+import { closeProjectDialog$, type ProjectDialog } from "./project-ui.ts";
 import { now, nowDate } from "../../lib/time.ts";
 import { command, computed, state } from "ccstate";
 import { projectsContract } from "@okouai/api-contracts/client/projects";
@@ -251,24 +252,14 @@ export const waitForProjectCreation$ = command(
 export const createProject$ = command(
   async (
     { get, set },
-    {
-      name,
-      fromThreadId,
-      open = false,
-      onOptimisticCommit,
-    }: {
-      readonly name: string;
-      /** A chat that moves into the new Project as it is created. */
-      readonly fromThreadId?: string;
-      /** Open the new Project's page, where the next chat starts inside it. */
-      readonly open?: boolean;
-      readonly onOptimisticCommit?: () => Promise<void>;
-    },
+    dialog: Extract<ProjectDialog, { kind: "editor" }>,
+    name: string,
     signal: AbortSignal,
   ) => {
     signal.throwIfAborted();
     const projects = get(projects$);
     signal.throwIfAborted();
+    const { fromThreadId } = dialog;
     const owner = get(projectState$);
     const eventId = operation();
     const createdAt = nowDate().toISOString();
@@ -298,7 +289,7 @@ export const createProject$ = command(
       ];
     });
     set(expandProject$, eventId);
-    if (open) {
+    if (dialog.fromComposer) {
       // The page opens on the optimistic Project; a chat sent from it waits
       // for the creation to be confirmed.
       set(detachedNavigateTo$, ROUTES.project, {
@@ -318,7 +309,8 @@ export const createProject$ = command(
         createdAt: thread.sortAt,
       });
     }
-    const [result] = await Promise.all([confirmation, onOptimisticCommit?.()]);
+    set(closeProjectDialog$, dialog);
+    const result = await confirmation;
     signal.throwIfAborted();
     await set(syncProjects$, signal);
     await set(catchUpChatThreadEventSource$, signal);
@@ -429,11 +421,11 @@ export const renameProject$ = command(
 export const deleteProjectWithEventId$ = command(
   async (
     { get, set },
-    id: string,
+    dialog: Extract<ProjectDialog, { kind: "delete" }>,
     eventId: string,
-    onDeleted: () => Promise<void>,
     signal: AbortSignal,
   ) => {
+    const id = dialog.projectId;
     await set(waitForProjectCreation$, id, signal);
     await accept(
       get(apiClient$)(projectsContract).delete({
@@ -448,19 +440,17 @@ export const deleteProjectWithEventId$ = command(
     // The Project has left the list; chat synchronization must not keep its
     // confirmation dialog open.
     signal.throwIfAborted();
-    await onDeleted();
-    signal.throwIfAborted();
+    set(closeProjectDialog$, dialog);
     await set(catchUpChatThreadEventSource$, signal);
   },
 );
 export const deleteProject$ = command(
   async (
     { set },
-    id: string,
-    onDeleted: () => Promise<void>,
+    dialog: Extract<ProjectDialog, { kind: "delete" }>,
     signal: AbortSignal,
   ) => {
-    await set(deleteProjectWithEventId$, id, operation(), onDeleted, signal);
+    await set(deleteProjectWithEventId$, dialog, operation(), signal);
   },
 );
 export const moveProjectThread$ = command(
@@ -502,5 +492,24 @@ export const moveProjectThread$ = command(
       signal,
     );
     await set(catchUpChatThreadEventSource$, signal);
+  },
+);
+
+export const moveProjectThreadFromDialog$ = command(
+  async (
+    { set },
+    dialog: Extract<ProjectDialog, { kind: "membership" }>,
+    projectId: string | null,
+    signal: AbortSignal,
+  ) => {
+    signal.throwIfAborted();
+    const completion = set(
+      moveProjectThread$,
+      dialog.threadId,
+      projectId,
+      signal,
+    );
+    set(closeProjectDialog$, dialog);
+    await completion;
   },
 );
