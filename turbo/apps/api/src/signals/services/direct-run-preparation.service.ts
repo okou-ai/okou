@@ -28,7 +28,6 @@ import {
   prepareExecutionNetworkPolicy$,
   type ExecutionPublicationRun,
 } from "./run-execution-publication.service";
-import type { RunnerReusePreparation } from "./runner-reuse-preference";
 import {
   persistStoragePresignedUrls$,
   type StoragePresignedUrlCacheWrite,
@@ -43,7 +42,7 @@ export interface AdmittedRunLaunch {
   readonly profile: string;
   readonly reuseKey: string;
   readonly createdAt: Date;
-  readonly reusePreparation: RunnerReusePreparation;
+  readonly predecessorRunId: string | null;
 }
 
 export interface DirectRunCachePublication {

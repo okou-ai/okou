@@ -97,10 +97,6 @@ import {
   selectExecutionPackages,
 } from "./execution-workflow-selection";
 import { dispatchCompleteSideEffects$ } from "./agent-run-lifecycle.service";
-import {
-  prepareRunnerReusePreference$,
-  type RunnerReusePreparation,
-} from "./runner-reuse-preference";
 import type { AgentRunContextSignals } from "./agent-run-context.signals";
 import type { ResolvedModelProviderEnvironment } from "./agent-run-contracts";
 import {
@@ -3792,31 +3788,16 @@ async function pendingLaunchCommitResult(
     readonly persisted: ReturnType<typeof pendingAtomicLaunchResult>;
     readonly publicationReturnedAt: number;
   }>,
-  preparation: Promise<RunnerReusePreparation>,
 ): Promise<AtomicLaunchCommitAttempt> {
-  const [published, preparedReuse] = await Promise.allSettled([
-    publication,
-    preparation,
-  ]);
-  if (published.status === "rejected") {
-    throw published.reason;
-  }
+  const { persisted, publicationReturnedAt } = await publication;
   args.admissionTiming.callbackFinished();
-  const { persisted, publicationReturnedAt } = published.value;
   if (persisted.kind === "queue-first-claim-lost") {
     return persisted;
   }
-  const reusePreparation: RunnerReusePreparation =
-    preparedReuse.status === "fulfilled"
-      ? preparedReuse.value
-      : {
-          selection: { ok: false, error: preparedReuse.reason },
-          operations: [],
-        };
   return {
     kind: "pending",
     marketingRewardEventId: persisted.marketingRewardEventId,
-    admittedLaunch: admittedRunLaunch(args, persisted, reusePreparation),
+    admittedLaunch: admittedRunLaunch(args, persisted),
     publicationReturnedAt,
   };
 }
@@ -3824,7 +3805,6 @@ async function pendingLaunchCommitResult(
 function admittedRunLaunch(
   args: PreparedThreadLaunchCommit,
   persisted: PersistedAtomicLaunchRows,
-  reusePreparation: RunnerReusePreparation,
 ): AdmittedRunLaunch {
   const { rowsArgs: rows, metadata } = args.persistence.rows;
   return {
@@ -3859,7 +3839,8 @@ function admittedRunLaunch(
     profile: args.launch.profile,
     reuseKey: args.launch.reuseKey,
     createdAt: persisted.createdAt,
-    reusePreparation,
+    predecessorRunId:
+      args.createArgs.threadContinuation.expected.frameworkSessionRunId,
   };
 }
 
@@ -4210,21 +4191,7 @@ const commitThreadLaunch$ = command(
     })().finally(() => {
       admissionTiming.recordLeafElapsed("persistence", leafStartedAt);
     });
-    const { chatThreadId, userId, orgId, threadContinuation } = args.createArgs;
-    const { runnerGroup, profile, reuseKey } = args.launch;
-    const preparation = set(prepareRunnerReusePreference$, {
-      runId: args.identity.runId,
-      runnerGroup,
-      profile,
-      reuseKey,
-      thread: {
-        threadId: chatThreadId,
-        userId,
-        orgId,
-        predecessorRunId: threadContinuation.expected.frameworkSessionRunId,
-      },
-    });
     // Return the durable identity before the caller observes cancellation.
-    return await pendingLaunchCommitResult(args, publication, preparation);
+    return await pendingLaunchCommitResult(args, publication);
   },
 );
