@@ -242,9 +242,11 @@ function useGoogleDriveCompletedOperation(
   return operation &&
     operation.artifactId === syncTarget?.artifactId &&
     operation.threadId === syncTarget.threadId &&
-    (operation.connectionId === syncTarget.connectionId ||
+    ((operation.connectionId !== undefined &&
+      operation.connectionId === syncTarget.connectionId) ||
       (syncTarget.connectionId === undefined &&
-        syncTarget.recovery?.action === "connect"))
+        operation.connectRecovery !== undefined &&
+        operation.connectRecovery === syncTarget.recovery))
     ? operation
     : undefined;
 }
@@ -470,6 +472,10 @@ function useGoogleDriveMenuAction(
                 threadId: syncTarget.threadId,
                 artifactId: syncTarget.artifactId,
                 filename: syncTarget.filename,
+                connectRecovery:
+                  syncTarget.recovery?.action === "connect"
+                    ? syncTarget.recovery
+                    : undefined,
                 mode,
               },
           options: {

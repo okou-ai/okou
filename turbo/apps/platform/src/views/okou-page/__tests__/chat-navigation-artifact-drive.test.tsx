@@ -805,6 +805,15 @@ test("Connect Google Drive and sync an artifact", async () => {
   expect(artifactActions(telemetry)).toStrictEqual([
     { action: "google_drive_sync", surface: "page", target: "file" },
   ]);
+  drive.requireNewConnection();
+  context.mocks.ably.trigger(
+    `chatThreadDetailChanged:${NAVIGATION_ARTIFACT_THREAD_ID}`,
+  );
+  await waitFor(() => {
+    expect(
+      roleItemNamed("menuitem", "Connect Google Drive"),
+    ).not.toHaveAttribute("aria-disabled", "true");
+  });
 });
 
 test("Recover missing Drive scope for a native upload only after explicit exact-account consent", async () => {

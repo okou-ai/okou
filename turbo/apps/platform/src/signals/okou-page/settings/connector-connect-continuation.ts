@@ -96,6 +96,7 @@ interface ArtifactDriveReconnectTarget {
 
 interface ArtifactDriveSyncTarget {
   readonly threadId: string;
+  readonly connectRecovery?: { readonly action: "connect" } | undefined;
   readonly artifactId: string;
   readonly filename?: string;
   readonly mode: GoogleDriveUploadMode;
@@ -302,6 +303,7 @@ const continueConnectorConnectPlan$ = command(
           syncArtifactAndRefresh$,
           {
             threadId: plan.threadId,
+            connectRecovery: plan.connectRecovery,
             artifactId: plan.artifactId,
             connectionId,
             filename: plan.filename,

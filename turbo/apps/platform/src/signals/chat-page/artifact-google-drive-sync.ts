@@ -20,6 +20,7 @@ type GoogleDriveUploadedFile = zInfer<
 
 type ArtifactGoogleDriveSyncParams = {
   readonly threadId: string;
+  readonly connectRecovery?: { readonly action: "connect" } | undefined;
   readonly connectionId?: string;
   readonly successMessage?: string;
 } & ArtifactGoogleDriveSyncFile;
@@ -133,6 +134,7 @@ type GoogleDriveSyncAccount = {
   readonly threadId: string;
   readonly connectionId: string | undefined;
   readonly ready: boolean;
+  readonly connectRecovery?: { readonly action: "connect" } | undefined;
   readonly recovery?: NonNullable<GoogleDriveUploadDenied["body"]["recovery"]>;
   readonly googleImport?: GoogleDriveUploadedFile | undefined;
 };
@@ -183,6 +185,7 @@ export const syncArtifactAndRefresh$ = command(
         artifactId: params.artifactId,
         threadId: params.threadId,
         connectionId: result.recovery.connectionId,
+        connectRecovery: params.connectRecovery,
         ready: false,
         recovery: result.recovery,
         googleImport: sameCurrentAccount ? account.googleImport : undefined,
@@ -197,6 +200,7 @@ export const syncArtifactAndRefresh$ = command(
         artifactId: params.artifactId,
         threadId: params.threadId,
         connectionId: params.connectionId,
+        connectRecovery: params.connectRecovery,
         ready: true,
         googleImport:
           params.mode === "google"
@@ -237,6 +241,7 @@ export const finishArtifactDriveReconnect$ = command(
       threadId: account.threadId,
       connectionId: params.connectionId,
       ready: true,
+      connectRecovery: account.connectRecovery,
       googleImport: account.googleImport,
     });
   },
