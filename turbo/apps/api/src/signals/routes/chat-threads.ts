@@ -377,7 +377,13 @@ const searchChatInner$ = computed(async (get) => {
 
   return {
     status: 200 as const,
-    body: { results: [...result.results] },
+    body: {
+      results: result.results.map(
+        ({ agentName, chatThreadId, matchedMessage, matchedRanges }) => {
+          return { agentName, chatThreadId, matchedMessage, matchedRanges };
+        },
+      ),
+    },
   };
 });
 

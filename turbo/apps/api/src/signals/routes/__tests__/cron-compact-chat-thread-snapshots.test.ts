@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { Readable } from "node:stream";
 import { gunzipSync } from "node:zlib";
 import {
   GetObjectCommand,
@@ -18,6 +19,8 @@ import { server } from "../../../mocks/server";
 import { cronCompactChatThreadSnapshotsRoutes } from "../cron-compact-chat-thread-snapshots";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import { mcpGetChatThreadOutputSchema } from "@okouai/api-contracts/contracts/mcp-chat-snapshots";
+import { createMcpWebApi } from "./helpers/mcp-web-api";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 
 const context = testContext();
@@ -72,6 +75,13 @@ test("publishes scoped sidebars with pinned and archived threads", async () => {
       }
       objects.set(Key, Buffer.from(Body));
       return Promise.resolve({});
+    }
+    if (request instanceof GetObjectCommand) {
+      const bytes = objects.get(request.input.Key ?? "");
+      if (!bytes) {
+        throw new Error("Expected a published snapshot");
+      }
+      return Promise.resolve({ Body: Readable.from([bytes]) });
     }
     if (request instanceof ListObjectsV2Command) {
       return Promise.resolve({
@@ -133,6 +143,26 @@ test("publishes scoped sidebars with pinned and archived threads", async () => {
   ).toStrictEqual(new Set([pinned.id, archived.id, ordinary.id]));
   expect(snapshot.chatThreads).toContainEqual(
     expect.objectContaining({ id: archived.id, archived: true }),
+  );
+  const mcp = createMcpWebApi(context);
+  const token = mcp.authorize(actor);
+  const result = await mcp.call(token(), "get_chat_thread_list");
+  expect(result.isError).not.toBeTruthy();
+  expect(result.content[0]?.text).not.toContain("agentId");
+  expect(result.content[0]?.text).not.toContain(
+    "https://snapshot-storage.example",
+  );
+  const projected = mcpGetChatThreadOutputSchema.parse(
+    result.structuredContent,
+  );
+  expect(
+    projected.snapshot?.chatThreads.map(({ threadId }) => {
+      return threadId;
+    }),
+  ).toStrictEqual(
+    snapshot.chatThreads.map(({ id }) => {
+      return id;
+    }),
   );
   const otherSnapshot = await chat.getThreadSnapshot(otherOrg);
   expect(otherSnapshot.chatThreads).toMatchObject([{ id: foreign.id }]);

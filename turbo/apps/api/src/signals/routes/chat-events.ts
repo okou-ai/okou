@@ -33,7 +33,14 @@ import {
 const sendEventBody$ = bodyResultOf(chatEventsContract.send);
 
 export const sendValidatedChatEvent$ = command(
-  async ({ get, set }, data: ChatEventSendBody, signal: AbortSignal) => {
+  async (
+    { get, set },
+    {
+      data,
+      projectId,
+    }: { readonly data: ChatEventSendBody; readonly projectId?: string },
+    signal: AbortSignal,
+  ) => {
     signal.throwIfAborted();
     const auth = get(organizationAuthContext$);
     const scope =
@@ -90,7 +97,11 @@ export const sendValidatedChatEvent$ = command(
         return invalid;
       }
     }
-    const result = await set(handleSendChatEvent$, data, signal);
+    const result = await set(
+      handleSendChatEvent$,
+      { body: data, projectId },
+      signal,
+    );
     if (custom && result.status === 201 && data.clientEventId) {
       await set(
         recordAcceptedSuggestionFollowup$,
@@ -126,7 +137,7 @@ const sendChatEventInner$ = command(
       get(organizationAuthContext$).tokenType,
       body.data.threadId !== undefined,
     );
-    return await set(sendValidatedChatEvent$, body.data, signal);
+    return await set(sendValidatedChatEvent$, { data: body.data }, signal);
   },
 );
 

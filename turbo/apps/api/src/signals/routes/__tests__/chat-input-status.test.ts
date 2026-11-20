@@ -144,7 +144,6 @@ describe("retained chat input observation", () => {
       const first = mcpSendChatMessageOutputSchema.parse(
         toolBody(
           await mcp.call(f.token(), "send_chat_message", {
-            agentId: f.agentId,
             prompt: "Observe this accepted input",
           }),
         ),
@@ -166,7 +165,6 @@ describe("retained chat input observation", () => {
       const second = mcpSendChatMessageOutputSchema.parse(
         toolBody(
           await mcp.call(f.token(), "send_chat_message", {
-            agentId: f.agentId,
             threadId: first.threadId,
             prompt,
           }),
@@ -410,7 +408,6 @@ describe("retained chat input observation", () => {
       });
       toolBody(
         await mcp.call(f.token(), "revoke_queued_message", {
-          agentId: f.agentId,
           threadId: active.threadId,
           eventId,
         }),

@@ -1,3 +1,7 @@
+import { projectsContract } from "@okouai/api-contracts/contracts/projects";
+import { createProjectOperationId } from "@okouai/core/project-operation-id";
+import { projectRoutes } from "../projects";
+import { setupApp } from "../../../__tests__/test-helpers";
 import { randomUUID } from "node:crypto";
 import {
   Client,
@@ -11,7 +15,6 @@ import {
   chatEventsContract,
   chatThreadEventsContract,
   chatThreadsContract,
-  indicatorsSchema,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   mcpGetChatMessagesOutputSchema,
@@ -23,12 +26,12 @@ import {
 } from "@okouai/api-contracts/contracts/mcp-chat-tools";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { array, number, object, string } from "zod";
-import { testContext } from "../../../__tests__/test-context";
+import { accept, testContext } from "../../../__tests__/test-context";
 import { createAppWithRoutes } from "../../../app-factory-core";
 import { now, withMockNowForTest } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { mcpServerRoutes } from "../mcp-server";
-import { mcpChatSearchContract } from "@okouai/api-contracts/contracts/mcp-chat-search";
+import { mcpProjectChatSearchContract } from "@okouai/api-contracts/contracts/mcp-chat-search";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -46,12 +49,12 @@ const mcp = createMcpWebApi(context);
 async function fixture() {
   const actor = bdd.user({ orgId: `org_${randomUUID()}` });
   bdd.acceptAgentStorageWrites();
-  const agent = await bdd.createAgent(actor, {
+  await createRunsApi(context).configureRunnerGroup({ registerRunner: false });
+  const agentId = await bdd.bootstrapLimitedFreeOnboarding(actor, {
     displayName: "Web MCP adapter",
-    visibility: "private",
   });
   const token = mcp.authorize(actor);
-  return { actor, agentId: agent.agentId, token };
+  return { actor, agentId, token };
 }
 function body(result: Awaited<ReturnType<typeof mcp.call>>): unknown {
   return (
@@ -68,11 +71,10 @@ async function send(
   threadId?: string,
 ) {
   const result = await mcp.call(f.token(), "send_chat_message", {
-    agentId: f.agentId,
     prompt,
     ...(threadId ? { threadId } : {}),
   });
-  expect(result.isError).not.toBeTruthy();
+  expect(result.isError, JSON.stringify(result.content)).not.toBeTruthy();
   return mcpSendChatMessageOutputSchema.parse(body(result));
 }
 
@@ -126,7 +128,8 @@ describe("thin MCP Web adapters", () => {
           "get_chat_input_status",
           "get_chat_messages",
           "get_chat_thread_list",
-          "list_agents",
+          "list_project_threads",
+          "list_projects",
           "list_models",
           "rename_chat_thread",
           "revoke_queued_message",
@@ -137,6 +140,8 @@ describe("thin MCP Web adapters", () => {
       );
       const validator = new AjvJsonSchemaValidator();
       for (const tool of tools) {
+        const schemas = JSON.stringify([tool.inputSchema, tool.outputSchema]);
+        expect(schemas).not.toMatch(/"(?:agentId|reassignedAgentId|agents)":/u);
         expect(() => {
           return validator.getValidator(tool.inputSchema as JsonSchemaType);
         }).not.toThrow();
@@ -189,15 +194,15 @@ describe("thin MCP Web adapters", () => {
       });
       expect(searched.isError).not.toBeTruthy();
       expect(
-        mcpChatSearchContract.search.responses[200].parse(
+        mcpProjectChatSearchContract.search.responses[200].parse(
           searched.structuredContent,
         ),
       ).toStrictEqual({ results: [] });
       const searchThreadId = randomUUID();
       const searchHit = {
         threadId: searchThreadId,
-        agentId: f.agentId,
-        displayName: null,
+        projectId: null,
+        projectName: null,
         matchedMessage: {
           threadId: searchThreadId,
           role: "user",
@@ -220,16 +225,13 @@ describe("thin MCP Web adapters", () => {
       }
       expect(
         Object.keys(sendTool.inputSchema.properties ?? {}).sort(),
-      ).toStrictEqual(["agentId", "model", "prompt", "threadId"]);
+      ).toStrictEqual(["model", "projectId", "prompt", "threadId"]);
       expect(sendTool.outputSchema).toMatchObject({
         properties: { eventId: { type: "string", format: "uuid" } },
       });
       for (const [name, args] of [
-        ["send_chat_message", { agentId: f.agentId, prompt: "reference" }],
-        [
-          "revoke_queued_message",
-          { agentId: f.agentId, eventId: randomUUID() },
-        ],
+        ["send_chat_message", { prompt: "reference" }],
+        ["revoke_queued_message", { eventId: randomUUID() }],
         ["get_chat_messages", {}],
         ["rename_chat_thread", { title: "reference" }],
         ["update_chat_thread_model", { model: null }],
@@ -295,9 +297,9 @@ describe("thin MCP Web adapters", () => {
       });
       const sent = await sdk.callTool({
         name: "send_chat_message",
-        arguments: { agentId: f.agentId, prompt: "SDK canonical reference" },
+        arguments: { prompt: "SDK canonical reference" },
       });
-      expect(sent.isError).not.toBeTruthy();
+      expect(sent.isError, JSON.stringify(sent.content)).not.toBeTruthy();
       const reference = mcpSendChatMessageOutputSchema.parse(
         sent.structuredContent,
       );
@@ -424,12 +426,11 @@ describe("thin MCP Web adapters", () => {
     expect(deniedSend.status).toBe(403);
   });
 
-  it("returns unmodified Web agents, models and indicator responses", async () => {
+  it("returns unmodified Web project and model lists", async () => {
     const f = await fixture();
     for (const [name, path] of [
-      ["list_agents", "/api/agents"],
+      ["list_projects", "/api/projects"],
       ["list_models", "/api/run-models"],
-      ["get_chat_indicators", "/api/indicators"],
     ]) {
       if (!name || !path) {
         throw new Error("Invalid route case");
@@ -439,10 +440,102 @@ describe("thin MCP Web adapters", () => {
       const result = await mcp.call(f.token(), name);
       expect(result.isError).not.toBeTruthy();
       expect(body(result)).toStrictEqual(web.body);
-      if (name === "list_agents") {
-        expect(result.structuredContent).toBeUndefined();
-      }
     }
+  });
+
+  it("starts a Chat in an owned Project and continues a retained Agent Chat by thread ID", async () => {
+    const f = await fixture();
+    const id = createProjectOperationId(now(), randomUUID());
+    const projects = setupApp({ context, routes: projectRoutes })(
+      projectsContract,
+    );
+    createRouteMocks(context).clerk.session(
+      f.actor.userId,
+      f.actor.orgId,
+      f.actor.orgRole,
+    );
+    await accept(
+      projects.create({
+        headers: { authorization: "Bearer clerk-session" },
+        body: { id, eventId: id, name: "Research" },
+      }),
+      [201],
+    );
+
+    expect(body(await mcp.call(f.token(), "list_projects"))).toMatchObject({
+      projects: [{ id, name: "Research" }],
+    });
+    const peer = f.token({ sub: `user_${randomUUID()}` });
+    expect(body(await mcp.call(peer, "list_projects"))).toStrictEqual({
+      projects: [],
+    });
+    expect(
+      error(await mcp.call(peer, "list_project_threads", { projectId: id }))
+        .code,
+    ).toBe("NOT_FOUND");
+    expect(
+      error(
+        await mcp.call(peer, "send_chat_message", {
+          projectId: id,
+          prompt: "private project",
+        }),
+      ).code,
+    ).toBe("NOT_FOUND");
+
+    const sent = mcpSendChatMessageOutputSchema.parse(
+      body(
+        await mcp.call(f.token(), "send_chat_message", {
+          projectId: id,
+          prompt: "start the Project Chat",
+        }),
+      ),
+    );
+    const lifecycle = mcpGetChatThreadOutputSchema.parse(
+      body(await mcp.call(f.token(), "get_chat_thread_list")),
+    );
+    expect(lifecycle.events).toContainEqual(
+      expect.objectContaining({
+        kind: "created",
+        threadId: sent.threadId,
+        projectId: id,
+      }),
+    );
+    const listed = await mcp.call(f.token(), "list_project_threads", {
+      projectId: id,
+      limit: 1,
+    });
+    expect(listed.isError).not.toBeTruthy();
+    expect(body(listed)).toMatchObject({
+      threads: [{ threadId: sent.threadId, projectId: id }],
+      nextAfter: null,
+    });
+    expect(
+      error(
+        await mcp.call(f.token(), "send_chat_message", {
+          threadId: sent.threadId,
+          projectId: id,
+          prompt: "invalid continuation",
+        }),
+      ).code,
+    ).toBe("BAD_REQUEST");
+
+    expect(listed.content[0]?.text).not.toContain("agentId");
+    const retained = await bdd.createAgent(f.actor, {
+      visibility: "private",
+      displayName: "Retained Agent",
+    });
+    const thread = await chat.createThread(f.actor, {
+      agentId: retained.agentId,
+      title: "Retained Chat",
+    });
+    const continued = await send(f, "continue the retained Chat", thread.id);
+    expect(continued.threadId).toBe(thread.id);
+    expect(
+      (await chat.listThreadEventRows(f.actor, thread.id)).map(({ id }) => {
+        return id;
+      }),
+    ).toContain(continued.eventId);
+    await flushWaitUntilForTest();
   });
 
   it("reflects committed Run transitions without marking indicator or history reads as read", async () => {
@@ -460,8 +553,7 @@ describe("thin MCP Web adapters", () => {
 
       const initial = await mcp.call(token(), "get_chat_indicators");
       expect(initial.isError).not.toBeTruthy();
-      expect(indicatorsSchema.parse(body(initial))).toStrictEqual({
-        agents: { [f.agentId]: "active" },
+      expect(body(initial)).toStrictEqual({
         threads: { [run.threadId]: "active" },
         unreadAt: {},
       });
@@ -500,8 +592,7 @@ describe("thin MCP Web adapters", () => {
 
       const unread = await mcp.call(token(), "get_chat_indicators");
       expect(unread.isError).not.toBeTruthy();
-      expect(indicatorsSchema.parse(body(unread))).toStrictEqual({
-        agents: { [f.agentId]: "unread" },
+      expect(body(unread)).toStrictEqual({
         threads: { [run.threadId]: "unread" },
         unreadAt: { [run.threadId]: terminal?.createdAt },
       });
@@ -631,24 +722,31 @@ describe("thin MCP Web adapters", () => {
     ).toBe("BAD_REQUEST");
   });
 
-  it("preserves the native snapshot pointer and projects inline lifecycle entity references", async () => {
+  it("projects lifecycle events without exposing execution identities", async () => {
     const f = await fixture();
     const sent = await send(f, "lifecycle aggregate");
     await flushWaitUntilForTest();
     const page = mcpGetChatThreadOutputSchema.parse(
       body(await mcp.call(f.token(), "get_chat_thread_list")),
     );
-    const snapshot = await mcp.web(f.token(), "/api/chat-threads/snapshot");
     const events = await mcp.web(f.token(), "/api/chat-threads/events");
     const nativeEvents = chatThreadsContract.events.responses[200].parse(
       events.body,
     );
     expect(page).toStrictEqual({
-      snapshot: snapshot.body,
+      snapshot: { chatThreads: [], latestEventId: null, latestSeqId: null },
       ...nativeEvents,
-      events: nativeEvents.events.map(({ id, chatThreadId, ...event }) => {
-        return { ...event, eventId: id, threadId: chatThreadId };
-      }),
+      events: nativeEvents.events.map(
+        ({
+          id,
+          chatThreadId,
+          agentId: _agentId,
+          reassignedAgentId: _reassignedAgentId,
+          ...event
+        }) => {
+          return { ...event, eventId: id, threadId: chatThreadId };
+        },
+      ),
     });
     expect(
       page.events.some((event) => {
@@ -666,6 +764,7 @@ describe("thin MCP Web adapters", () => {
         }),
       ),
     );
+    expect(next.snapshot).toBeNull();
     expect(next.events).toStrictEqual([]);
     expect(next.hasMore).toBeFalsy();
   });
@@ -737,7 +836,6 @@ describe("thin MCP Web adapters", () => {
     const sent = await send(f, "recall me", active.threadId);
     await flushWaitUntilForTest();
     const args = {
-      agentId: f.agentId,
       threadId: sent.threadId,
       eventId: sent.eventId,
     };
@@ -748,7 +846,7 @@ describe("thin MCP Web adapters", () => {
     );
     expect(recalled.isError).not.toBeTruthy();
     const web = await mcp.web(f.token(), "/api/chat/events", "POST", {
-      agentId: args.agentId,
+      agentId: f.agentId,
       threadId: args.threadId,
       revokesEventId: args.eventId,
     });
@@ -773,7 +871,7 @@ describe("thin MCP Web adapters", () => {
 
   it("preserves Web search filters and empty results", async () => {
     const f = await fixture();
-    const query = { keyword: "plain keyword", agentId: f.agentId };
+    const query = { keyword: "plain keyword" };
     const web = await mcp.web(
       f.token(),
       `/api/chat/search?keyword=plain%20keyword&agentId=${f.agentId}`,
@@ -781,7 +879,7 @@ describe("thin MCP Web adapters", () => {
     const search = await mcp.call(f.token(), "search_chat_messages", query);
     expect(search.isError).not.toBeTruthy();
     expect(
-      mcpChatSearchContract.search.responses[200].parse(body(search)),
+      mcpProjectChatSearchContract.search.responses[200].parse(body(search)),
     ).toStrictEqual({ results: [] });
     expect(body(search)).toStrictEqual(web.body);
   });
@@ -807,7 +905,6 @@ describe("thin MCP Web adapters", () => {
     expect(
       error(
         await mcp.call(peer, "revoke_queued_message", {
-          agentId: f.agentId,
           threadId: sent.threadId,
           eventId: randomUUID(),
         }),
@@ -816,20 +913,23 @@ describe("thin MCP Web adapters", () => {
     expect(
       error(
         await mcp.call(peer, "send_chat_message", {
-          agentId: f.agentId,
           threadId: sent.threadId,
           prompt: "forged",
         }),
       ).code,
-    ).toBe("FORBIDDEN");
+    ).toBe("NOT_FOUND");
     const unrelated = bdd.user({ orgId: `org_${randomUUID()}` });
     const unrelatedAgent = await bdd.createAgent(unrelated, {
       displayName: "Other organization",
     });
+    const thread = await chat.createThread(unrelated, {
+      agentId: unrelatedAgent.agentId,
+      title: "Other organization",
+    });
     expect(
       error(
         await mcp.call(f.token(), "send_chat_message", {
-          agentId: unrelatedAgent.agentId,
+          threadId: thread.id,
           prompt: "wrong organization",
         }),
       ).code,
@@ -877,7 +977,9 @@ describe("thin MCP Web adapters", () => {
   it("preserves Web validation errors rather than inventing MCP error codes", async () => {
     const f = await fixture();
     const args = { agentId: f.agentId, prompt: "" };
-    const result = await mcp.call(f.token(), "send_chat_message", args);
+    const result = await mcp.call(f.token(), "send_chat_message", {
+      prompt: args.prompt,
+    });
     const web = await mcp.web(f.token(), "/api/chat/events", "POST", {
       ...args,
       userMessage: { version: 1, parts: [{ type: "text", text: "" }] },

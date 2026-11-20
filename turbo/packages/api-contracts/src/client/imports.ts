@@ -1225,7 +1225,17 @@ export const clientContractImportManifest = [
   },
   {
     module: "mcp-chat-search",
-    contracts: ["mcpChatSearchContract"],
+    contracts: ["mcpChatSearchContract", "mcpProjectChatSearchContract"],
+    bindings: [],
+  },
+  {
+    module: "mcp-chat-snapshots",
+    contracts: ["mcpThreadSnapshotContract"],
+    bindings: [],
+  },
+  {
+    module: "mcp-chat-tools",
+    contracts: ["mcpChatCommandContract"],
     bindings: [],
   },
   {
