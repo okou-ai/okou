@@ -3,6 +3,8 @@
 Baseline [b0a10287edf4](https://github.com/okou-ai/okou/tree/b0a10287edf4242383c28e39c6f7675053febb32).
 Source [artifact-sharing.test.tsx](artifact-sharing.test.tsx).
 
+Batch 25 accepted 001, 004 and 007. The remaining selected row, 002, keeps this file open.
+
 ## artifact-sharing-001
 
 Original test `the share menu describes each audience beneath its name by default`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/artifacts-page/__tests__/artifact-sharing.test.tsx#L141).
@@ -18,6 +20,8 @@ Original test `owners can change three access levels separately from copying the
 - **Given** An owner opens sharing for a private artifact.
 - **When** The owner selects Organization, Public access, then Only me, copying the link after each change.
 - **Then** Each selected access level becomes checked, and the API receives the changes in that order: organization, public, private. Each copy writes the same canonical app link; there is no text box or copied-link notice before copying, and only one permission-status read occurs.
+
+Batch 25 disposition: unverified. The separate Router exercise confirmed the checked audience at each step, the ordered audience writes, the absence of a text box and copied-link notice before copying, and the canonical clipboard value after each copy. The number of identical permission-status reads has no observable page outcome. The status fixture was independent of read frequency. [Platform assertion rules](../../../../../../../docs/app/app-testing.md#assertions) prohibit request counts. The original Then remains intact. This ID has no accepted Vitest row.
 
 ## artifact-sharing-003
 

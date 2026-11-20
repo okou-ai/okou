@@ -1,0 +1,114 @@
+import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
+import {
+  artifactSharesContract,
+  type ArtifactShareStatus,
+} from "@okouai/api-contracts/contracts/artifact-shares";
+import { screen, waitFor, within } from "@testing-library/react";
+import { expect, test } from "vitest";
+
+import { click, setupPage } from "../../../__tests__/page-helper.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { getButtonByName } from "./artifact-catalog-test-helpers.ts";
+
+const context = testContext();
+const host = "app.okou.ai";
+const path = "/artifacts/coast025ab.png";
+const ownerUrl = "https://app.okou.ai/artifacts/owner025ab.png";
+
+function permissions(audience: "private" | "public"): ArtifactShareStatus {
+  const sharedUrl =
+    audience === "public" ? "https://a.okou.io/short025ab.png" : null;
+  return {
+    audience,
+    ownerUrl,
+    shortUrl: sharedUrl,
+    url: sharedUrl,
+    selectedVersion: null,
+    candidateVersion: null,
+    shareId: sharedUrl ? "50000000-0000-4000-8000-000000000025" : null,
+    selectedTarget: sharedUrl
+      ? { kind: "file", id: "55000000-0000-4000-8000-000000000025" }
+      : null,
+    organization: { id: "acme", name: "Acme" },
+  };
+}
+
+async function openOwnerMenu(audience: "private" | "public") {
+  const file = "https://media.example.test/coast.png";
+  context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
+    return respond(200, {
+      url: file,
+      downloadUrl: file,
+      filename: "Coast.png",
+      contentType: "image/png",
+      expiresAt: "2099-01-01T00:00:00Z",
+      target: { kind: "file", id: "55000000-0000-4000-8000-000000000025" },
+    });
+  });
+  context.mocks.api(artifactSharesContract.status, ({ respond }) => {
+    return respond(200, permissions(audience));
+  });
+  await setupPage({
+    context,
+    host,
+    path,
+  });
+  await expect(
+    screen.findByRole("heading", { name: "Coast.png" }),
+  ).resolves.toBeInTheDocument();
+  click(getButtonByName("Share"));
+  return await screen.findByRole("radiogroup");
+}
+
+test("artifact-sharing-001 explains the three audiences to the private file owner", async () => {
+  const menu = await openOwnerMenu("private");
+  for (const [name, description, checked] of [
+    ["Only me", "Only you can open it", "true"],
+    ["Anyone at Acme", "Teammates can view", "false"],
+    ["Anyone with the link", "No sign-in needed", "false"],
+  ] as const) {
+    const choice = within(menu).getByLabelText(name);
+    expect(choice).toHaveAccessibleDescription(description);
+    expect(within(menu).getByText(description)).toBeVisible();
+    expect(choice).toHaveAttribute("aria-checked", checked);
+  }
+  expect(getButtonByName("Copy link")).toBeEnabled();
+});
+
+test("artifact-sharing-004 copies the permission response's canonical owner address", async () => {
+  const clipboard = context.mocks.browser.clipboardWriteText();
+  await openOwnerMenu("public");
+  click(getButtonByName("Copy link"));
+  await waitFor(() => {
+    return expect(clipboard.writes).toStrictEqual([ownerUrl]);
+  });
+});
+
+test("artifact-sharing-007 returns to the full artifact link after the visitor explicitly chooses sign-in", async () => {
+  const navigation = context.mocks.browser.locationAssign();
+  const route =
+    path +
+    "?redirect_url=" +
+    encodeURIComponent("https://outside.example.test/other") +
+    "#coast";
+  context.mocks.api(artifactReferencesContract.publicUrl, ({ respond }) => {
+    return respond(404, {
+      error: { code: "NOT_FOUND", message: "No public file" },
+    });
+  });
+  await setupPage({ context, path: route, auth: null, host });
+  await expect(
+    screen.findByRole("heading", { name: "You can’t view this artifact" }),
+  ).resolves.toBeInTheDocument();
+  expect(navigation.calls).toStrictEqual([]);
+  click(getButtonByName("Sign in"));
+  await waitFor(() => {
+    const destination = new URL(navigation.calls[0] ?? "", location.href);
+    expect(destination.origin + destination.pathname).toBe(
+      "https://" + host + "/sign-in",
+    );
+    expect(
+      new URLSearchParams(destination.hash.split("?")[1]).get("redirect_url"),
+    ).toBe("https://" + host + route);
+  });
+});

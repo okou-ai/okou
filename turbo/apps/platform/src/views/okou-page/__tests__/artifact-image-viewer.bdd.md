@@ -3,6 +3,8 @@
 Baseline [b0a10287edf4](https://github.com/okou-ai/okou/tree/b0a10287edf4242383c28e39c6f7675053febb32).
 Source [artifact-image-viewer.test.tsx](artifact-image-viewer.test.tsx).
 
+Batch 25 accepted 001 as the alternate for artifact-sharing-002. Selected IDs 002 and 003 remain pending.
+
 ## artifact-image-viewer-001
 
 Original test `The image viewer waits for the preview image to decode`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/artifact-image-viewer.test.tsx#L239).
