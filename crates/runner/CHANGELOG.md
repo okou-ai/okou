@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.249.72](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.71...runner-rs-v0.249.72) (2026-11-20)
+
+
+### Refactoring
+
+* **runner:** share file residency replay evidence reads ([#49417](https://github.com/okou-ai/okou/issues/49417)) ([0cc571e](https://github.com/okou-ai/okou/commit/0cc571ee83e2e7298785b65429fb782793a673b9))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.249.71](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.70...runner-rs-v0.249.71) (2026-11-20)
 
 ## [0.249.70](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.69...runner-rs-v0.249.70) (2026-11-20)

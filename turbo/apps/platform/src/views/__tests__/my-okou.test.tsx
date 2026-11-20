@@ -43,7 +43,10 @@ async function setupPersonal(content = "Use concise updates") {
   await setupPage({
     context,
     path: "/?settings=my-okou",
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
+    featureSwitches: {
+      [FeatureSwitchKey.SingleAgent]: true,
+      [FeatureSwitchKey.AgentSuggestion]: false,
+    },
   });
   return await screen.findByLabelText("Instructions");
 }
@@ -325,13 +328,13 @@ test("Workspace switching isolates drafts and restores the original workspace dr
 });
 
 test.each([
-  { tab: "profile", proactive: false },
-  { tab: "instructions", proactive: false },
-  { tab: "profile", proactive: true },
-  { tab: "instructions", proactive: true },
+  { tab: "profile", suggestions: false },
+  { tab: "instructions", suggestions: false },
+  { tab: "profile", suggestions: true },
+  { tab: "instructions", suggestions: true },
 ])(
-  "Default configuration $tab opens personal Instructions with the Proactive layout $proactive",
-  async ({ tab, proactive }) => {
+  "Default configuration $tab opens personal Instructions with Suggestions set to $suggestions",
+  async ({ tab, suggestions }) => {
     context.mocks.api(instructionsContract.get, ({ respond }) => {
       return respond(200, response("Personal value"));
     });
@@ -340,7 +343,7 @@ test.each([
       path: `/agents/c0000000-0000-4000-a000-000000000001?tab=${tab}`,
       featureSwitches: {
         [FeatureSwitchKey.SingleAgent]: true,
-        [FeatureSwitchKey.MyOkouProactiveSettings]: proactive,
+        [FeatureSwitchKey.AgentSuggestion]: suggestions,
       },
     });
     const editor = await screen.findByRole("textbox", { name: "Instructions" });
@@ -368,7 +371,10 @@ test("My Okou settings are unavailable when SingleAgent is disabled", async () =
   await setupPage({
     context,
     path: "/?settings=my-okou",
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: false },
+    featureSwitches: {
+      [FeatureSwitchKey.SingleAgent]: false,
+      [FeatureSwitchKey.AgentSuggestion]: true,
+    },
   });
   const dialog = await screen.findByRole("dialog", { name: "Settings" });
   expect(
@@ -389,7 +395,6 @@ test("My Okou settings are unavailable when SingleAgent is disabled", async () =
 
 const proactiveFeatures = {
   [FeatureSwitchKey.SingleAgent]: true,
-  [FeatureSwitchKey.MyOkouProactiveSettings]: true,
   [FeatureSwitchKey.AgentSuggestion]: true,
 } as const;
 
@@ -555,4 +560,21 @@ test("existing morning brief links open the Proactive tab in My Okou", async () 
   await screen.findByRole("heading", { name: "Appearance" });
   expect(screen.queryByRole("switch", { name: "Morning brief" })).toBeNull();
   expect(new URLSearchParams(location.search).get("focus")).toBeNull();
+});
+
+test("the morning brief link opens Preference when the Suggestions feature switch is off", async () => {
+  await setupPage({
+    context,
+    path: "/agents?settings=preference&focus=morning-brief",
+    featureSwitches: {
+      [FeatureSwitchKey.SingleAgent]: true,
+      [FeatureSwitchKey.AgentSuggestion]: false,
+    },
+  });
+  const dialog = await screen.findByRole("dialog", { name: "Settings" });
+  await within(dialog).findByRole("heading", { name: "Preference" });
+  const brief = await within(dialog).findByRole("switch", {
+    name: "Morning brief",
+  });
+  expect(brief).toBeEnabled();
 });

@@ -56,9 +56,7 @@ export const loadProactiveWorkflowsEligibility$ = command(
     const suggestionsEnabled = preference?.suggestionsEnabled ?? false;
     const timezone = preference?.timezone ?? null;
     return {
-      myOkouProactiveSettings:
-        isFeatureEnabled(FeatureSwitchKey.SingleAgent, features) &&
-        isFeatureEnabled(FeatureSwitchKey.MyOkouProactiveSettings, features),
+      singleAgent: isFeatureEnabled(FeatureSwitchKey.SingleAgent, features),
       suggestions: {
         available: suggestionsAvailable,
         enabled: suggestionsEnabled,

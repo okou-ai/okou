@@ -1,5 +1,9 @@
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
+import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import {
+  workflows,
+  workflowUserAutomationThreads,
   workflowWebhookAutomations,
   workflowWebhookDeliveries,
 } from "@okouai/db/schema/workflow";
@@ -12,8 +16,10 @@ import { GoogleCalendarSourceTransitionChangedError } from "./workflow-google-ca
 import { GoogleFormsSourceTransitionChangedError } from "./workflow-google-forms-queue.service";
 import { GoogleMeetAutomationSourceChangedError } from "./workflow-google-meet-queue.service";
 import { NotionAutomationSourceChangedError } from "./workflow-notion-queue.service";
+import type { RunWorkflowAutomationNowArgs } from "./workflow-automation-enqueue.service";
 
 export class ChatRunFinishedAutomationAlreadyAdmittedError extends Error {}
+export class ChatRunFinishedAutomationBindingChangedError extends Error {}
 
 export type WorkflowQueueReceipt =
   | {
@@ -33,6 +39,7 @@ export type WorkflowQueueReceipt =
 
 export type WorkflowSourceFailure =
   | { readonly kind: "chat-run-finished" }
+  | { readonly kind: "chat-run-finished-binding" }
   | { readonly kind: "gmail" }
   | { readonly kind: "gmail-binding" }
   | { readonly kind: "gmail-receipt" }
@@ -52,12 +59,56 @@ export interface WorkflowSourceAdmissionPlan {
   readonly gmailDuplicateSql?: SQL;
 }
 
+export type WorkflowAutomationBinding = Pick<
+  RunWorkflowAutomationNowArgs,
+  "automation" | "agentId" | "chatThreadId"
+>;
+
+/** Hold the observed binding for the duration of the atomic admission. */
+export function currentWorkflowAutomationBindingSql(
+  { automation, agentId, chatThreadId }: WorkflowAutomationBinding,
+  condition: SQL,
+  lock: "schedule-claim" | "event-receipt",
+) {
+  const binding = workflowUserAutomationThreads;
+  const lockAutomation =
+    lock === "schedule-claim" ? sql`FOR NO KEY UPDATE` : sql`FOR SHARE`;
+  return sql`SELECT ${workflowAutomations.id} FROM ${workflowAutomations}
+    JOIN ${workflows} ON ${eq(workflows.id, workflowAutomations.workflowId)}
+    JOIN ${binding} ON ${and(
+      eq(binding.orgId, workflowAutomations.orgId),
+      eq(binding.userId, workflowAutomations.ownerUserId),
+      eq(binding.workflowId, workflows.id),
+    )}
+    JOIN ${chatThreads} ON ${eq(chatThreads.id, binding.chatThreadId)}
+    WHERE ${and(
+      eq(workflowAutomations.id, automation.id),
+      eq(workflowAutomations.enabled, true),
+      eq(workflowAutomations.orgId, automation.orgId),
+      eq(workflowAutomations.ownerUserId, automation.ownerUserId),
+      eq(workflowAutomations.workflowId, automation.workflowId),
+      eq(workflows.orgId, automation.orgId),
+      eq(workflows.agentId, agentId),
+      eq(chatThreads.id, chatThreadId),
+      eq(chatThreads.userId, automation.ownerUserId),
+      eq(chatThreads.agentId, agentId),
+      condition,
+    )}
+    ${lockAutomation} OF ${workflowAutomations}
+    FOR SHARE OF ${workflows}, ${binding}, ${chatThreads}`;
+}
+
 export function workflowSourceAdmissionError(
   failure: WorkflowSourceFailure,
 ): Error {
   switch (failure.kind) {
     case "chat-run-finished": {
       return new Error("Chat run finished admission lost its source callback");
+    }
+    case "chat-run-finished-binding": {
+      return new ChatRunFinishedAutomationBindingChangedError(
+        "Chat run finished automation binding changed before admission",
+      );
     }
     case "gmail": {
       return new GmailAutomationSourceChangedError();
@@ -95,16 +146,30 @@ function callbackReceiptCondition(
 
 export function workflowCallbackReceiptPlan(
   source: Extract<WorkflowQueueReceipt, { kind: "chat-run-finished" }>,
-  automationId: string,
+  binding: WorkflowAutomationBinding,
 ): WorkflowSourceAdmissionPlan {
+  const { automation } = binding;
+  const condition = sql`EXISTS (SELECT 1 FROM inserted)
+    AND ${workflowAutomations.kind} = 'event'
+    AND ${workflowAutomations.eventType} = 'chat-run-finished'
+    AND ${workflowAutomations.eventConfig} IS NOT DISTINCT FROM ${JSON.stringify(automation.eventConfig)}::jsonb`;
   const receipts = sql`coalesce(${agentRunCallbacks.payload}->'chatRunFinishedAutomationIds', '[]'::jsonb)`;
-  const recorded = sql`${receipts} @> to_jsonb(ARRAY[${automationId}::text])`;
+  const recorded = sql`${receipts} @> to_jsonb(ARRAY[${automation.id}::text])`;
   return {
     steps: [
       {
+        precedingCtes: [
+          sql`chat_run_finished_current_binding AS MATERIALIZED (${currentWorkflowAutomationBindingSql(binding, condition, "event-receipt")})`,
+        ],
+        statement: sql`SELECT 1 FROM chat_run_finished_current_binding`,
+        failure: { kind: "chat-run-finished-binding" },
+      },
+      {
         statement: sql`UPDATE ${agentRunCallbacks}
-        SET payload = jsonb_set(${agentRunCallbacks.payload}, '{chatRunFinishedAutomationIds}', ${receipts} || to_jsonb(${automationId}::text))
-        WHERE ${and(callbackReceiptCondition(source), not(recorded))} RETURNING id`,
+        SET payload = jsonb_set(${agentRunCallbacks.payload}, '{chatRunFinishedAutomationIds}', ${receipts} || to_jsonb(${automation.id}::text))
+        WHERE ${and(callbackReceiptCondition(source), not(recorded))}
+          AND EXISTS (SELECT 1 FROM chat_run_finished_current_binding)
+        RETURNING id`,
         failure: { kind: "chat-run-finished" },
       },
     ],

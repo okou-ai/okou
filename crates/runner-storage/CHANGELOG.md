@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.2](https://github.com/okou-ai/okou/compare/runner-storage-v0.12.1...runner-storage-v0.12.2) (2026-11-20)
+
+
+### Performance Improvements
+
+* **runner-storage:** overlap saturated archive delivery ([#49427](https://github.com/okou-ai/okou/issues/49427)) ([a8b60c6](https://github.com/okou-ai/okou/commit/a8b60c6771f9704c207d51aa56dd27a43a727705))
+
 ## [0.12.1](https://github.com/okou-ai/okou/compare/runner-storage-v0.12.0...runner-storage-v0.12.1) (2026-11-20)
 
 ## [0.12.0](https://github.com/okou-ai/okou/compare/runner-storage-v0.11.11...runner-storage-v0.12.0) (2026-11-20)

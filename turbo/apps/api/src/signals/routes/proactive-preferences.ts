@@ -172,7 +172,7 @@ function createProactivePreferenceRoutes(
       }
       if (operation !== "read") {
         const withFeed = operation === "withFeed";
-        if (withFeed && !eligibility.myOkouProactiveSettings) {
+        if (withFeed && !eligibility.singleAgent) {
           return resourceUnavailable(
             "My Okou proactive settings are not enabled.",
           );

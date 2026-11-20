@@ -1,7 +1,15 @@
 import { workflowAutomationSnapshotCondition } from "./workflow-automation-snapshot";
-import { sql, type SQL } from "drizzle-orm";
+import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
+import { eq, sql, type SQL } from "drizzle-orm";
 import { SCHEDULE_GRACE_MS } from "./schedule-expiry-policy";
-import type { WorkflowScheduleClaimPlan } from "./workflow-automation-enqueue.service";
+import type {
+  WorkflowRecurringScheduleClaim,
+  WorkflowScheduleClaimPlan,
+} from "./workflow-automation-enqueue.service";
+import {
+  currentWorkflowAutomationBindingSql,
+  type WorkflowAutomationBinding,
+} from "./workflow-input-queue.service";
 
 /** Distinguishes a failed admission from preparation that never attempted it. */
 export class WorkflowScheduleAdmissionError extends Error {
@@ -12,6 +20,36 @@ export class WorkflowScheduleAdmissionError extends Error {
     super(cause instanceof Error ? cause.message : String(cause), { cause });
     this.name = "WorkflowScheduleAdmissionError";
   }
+}
+
+export function consumeRecurringWorkflowScheduleCtes(
+  binding: WorkflowAutomationBinding,
+  claim: WorkflowRecurringScheduleClaim,
+  eligibility: SQL,
+) {
+  const observation = workflowAutomationSnapshotCondition(
+    claim.automationSnapshot,
+  );
+  if (!observation) {
+    throw new Error("Recurring schedule requires its source observation");
+  }
+  const condition = sql`${eligibility} AND ${observation}
+    AND ${workflowAutomations.kind} = 'schedule'
+    AND ${workflowAutomations.officialBlueprintKey} IS NULL
+    AND ${workflowAutomations.scheduleType} IN ('cron', 'loop')
+    AND ${eq(workflowAutomations.nextRunAt, claim.scheduledAnchorAt)}`;
+  return [
+    sql`workflow_current_schedule AS MATERIALIZED (${currentWorkflowAutomationBindingSql(binding, condition, "schedule-claim")})`,
+    sql`workflow_consumed_claim AS (
+      UPDATE ${workflowAutomations}
+      SET next_run_at = NULL,
+        last_run_at = ${sql.param(claim.claimedAt, workflowAutomations.lastRunAt)},
+        updated_at = ${sql.param(claim.claimedAt, workflowAutomations.updatedAt)}
+      FROM workflow_current_schedule
+      WHERE ${workflowAutomations.id} = workflow_current_schedule.id
+      RETURNING ${workflowAutomations.id}
+    )`,
+  ];
 }
 
 /** Consume the exact Official anchor; a concurrent toggle, claim or expiry wins. */
