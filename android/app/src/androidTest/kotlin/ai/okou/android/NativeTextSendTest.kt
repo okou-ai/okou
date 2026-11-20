@@ -68,6 +68,8 @@ class NativeTextSendTest {
                     .findObject(UiSelector().packageName(app.packageName).text(app.getString(id)))
                     .click()
             }
+            val send =
+                By.pkg(app.packageName).desc(app.getString(R.string.composer_send)).clickable(true)
             fun editor() =
                 checkNotNull(
                     device.wait(
@@ -132,13 +134,7 @@ class NativeTextSendTest {
                                             ?.value
                                             ?.canSend(target) == true
                                 }
-                                return ready &&
-                                    device
-                                        .findObject(
-                                            By.pkg(app.packageName)
-                                                .text(app.getString(R.string.composer_send))
-                                        )
-                                        ?.isEnabled == true
+                                return ready && device.findObject(send)?.isEnabled == true
                             }
                         },
                         10_000,
@@ -146,7 +142,7 @@ class NativeTextSendTest {
                 )
             }
             readyToSend(ComposerTarget())
-            click(R.string.composer_send)
+            checkNotNull(device.findObject(send)).click()
             text("New conversation")
             assertEquals(1, fixture.inputs.size)
             editor().click()
@@ -160,7 +156,7 @@ class NativeTextSendTest {
                     CHAT_AGENT,
                 )
             )
-            click(R.string.composer_send)
+            checkNotNull(device.findObject(send)).click()
             assertTrue(
                 device.wait(
                     object : Condition<UiDevice, Boolean> {

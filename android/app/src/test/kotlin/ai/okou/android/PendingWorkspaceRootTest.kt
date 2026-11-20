@@ -232,7 +232,7 @@ class PendingWorkspaceRootTest {
         compose.onNodeWithTag("message_input").assertDoesNotExist()
         compose.runOnIdle { app.preferencesResponse.complete(Unit) }
         compose.onNodeWithTag("message_input").assertExists()
-        compose.onNodeWithText("Send").assertIsNotEnabled()
+        compose.onNodeWithContentDescription("Send").assertIsNotEnabled()
         compose.onNodeWithContentDescription("Back").performClick()
         compose.onNodeWithTag("chat_search_query").assert(hasText("startup"))
         compose.onNodeWithText(CACHED_CHAT).assertExists()
