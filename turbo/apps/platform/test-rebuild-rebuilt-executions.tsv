@@ -13,8 +13,8 @@ email-subscription-settings-003	turbo/apps/platform/src/views/okou-page/__tests_
 onboarding-team-redirect-002	turbo/apps/platform/src/views/onboarding-sources-first/__tests__/onboarding-team-redirect.test.tsx	A member opening an old invitation link keeps their redeem code	9	passed
 permission-allow-page-003	turbo/apps/platform/src/views/permission-allow/__tests__/permission-allow-page.test.tsx	The approval stays pending after a grant event until its chat continuation succeeds	92	passed
 permission-allow-page-004	turbo/apps/platform/src/views/permission-allow/__tests__/permission-allow-page.test.tsx	The approval stays pending after a grant event until its chat continuation fails	104	passed
-permission-allow-page-006	turbo/apps/platform/src/views/permission-allow/__tests__/permission-allow-page.test.tsx	An existing allow grant needs no confirmation	130	passed
-permission-allow-page-007	turbo/apps/platform/src/views/permission-allow/__tests__/permission-allow-page.test.tsx	An existing deny grant needs no confirmation	130	passed
+permission-allow-page-006	turbo/apps/platform/src/views/permission-allow/__tests__/permission-allow-page.test.tsx	An existing allow grant needs no confirmation	117	passed
+permission-allow-page-007	turbo/apps/platform/src/views/permission-allow/__tests__/permission-allow-page.test.tsx	An existing deny grant needs no confirmation	117	passed
 permission-allow-page-008	turbo/apps/platform/src/views/permission-allow/__tests__/permission-allow-page.test.tsx	An older permission link can replace a Slack allow with a permanent denial	154	passed
 permission-allow-page-009	turbo/apps/platform/src/views/permission-allow/__tests__/permission-allow-page.test.tsx	An expired or invalid grant (not-a-date) requires fresh confirmation	184	passed
 permission-allow-page-010	turbo/apps/platform/src/views/permission-allow/__tests__/permission-allow-page.test.tsx	An expired or invalid grant (2030-01-01T00:00:00.000Z) requires fresh confirmation	184	passed
@@ -27,8 +27,8 @@ permission-batch-page-011	turbo/apps/platform/src/views/permission-allow/__tests
 notification-navigation-001	turbo/apps/platform/src/views/notifications/__tests__/notification-navigation.test.tsx	A relative chat notification opens the linked conversation	8	passed
 service-status-notice-001	turbo/apps/platform/src/views/router/__tests__/service-status-notice.test.tsx	A desktop user can open or dismiss an active service incident	31	passed
 service-status-notice-003	turbo/apps/platform/src/views/router/__tests__/service-status-notice.test.tsx	A mobile user can see an active incident alongside main navigation	55	passed
-hosted-site-authorization-002	turbo/apps/platform/src/views/hosted-site-authorization/__tests__/hosted-site-authorization.test.tsx	The authorization bridge returns visitors to the website access page when denied	33	passed
-hosted-site-authorization-004	turbo/apps/platform/src/views/hosted-site-authorization/__tests__/hosted-site-authorization.test.tsx	The authorization bridge returns visitors to the website access page when unavailable	33	passed
+hosted-site-authorization-002	turbo/apps/platform/src/views/hosted-site-authorization/__tests__/hosted-site-authorization.test.tsx	The authorization bridge returns visitors to the website access page when denied	25	passed
+hosted-site-authorization-004	turbo/apps/platform/src/views/hosted-site-authorization/__tests__/hosted-site-authorization.test.tsx	The authorization bridge returns visitors to the website access page when unavailable	25	passed
 hosted-site-authorization-006	turbo/apps/platform/src/views/hosted-site-authorization/__tests__/hosted-site-authorization.test.tsx	Organization selection preserves the hosted-site authorization continuation	62	passed
 shared-thread-presentation-001	turbo/apps/platform/src/views/shared-thread-page/__tests__/shared-thread-presentation.test.tsx	An unavailable public conversation offers sign-in with a return to the same link	14	passed
 shared-thread-presentation-002	turbo/apps/platform/src/views/shared-thread-page/__tests__/shared-thread-presentation.test.tsx	Anonymous readers see the public title, prompt and rendered Markdown	41	passed
@@ -118,8 +118,8 @@ hosted-site-sharing-015	turbo/apps/platform/src/views/artifacts-page/__tests__/h
 hosted-site-sharing-018	turbo/apps/platform/src/views/artifacts-page/__tests__/hosted-site-sharing.test.tsx	A failed clipboard write still records the confirmed banner preference	496	passed
 hosted-site-sharing-019	turbo/apps/platform/src/views/artifacts-page/__tests__/hosted-site-sharing.test.tsx	Copy link succeeds when the analytics SDK throws	523	passed
 hosted-site-sharing-024	turbo/apps/platform/src/views/artifacts-page/__tests__/hosted-site-sharing.test.tsx	A conflicting banner edit keeps the confirmed preference for copying	554	passed
-hosted-site-sharing-025	turbo/apps/platform/src/views/artifacts-page/__tests__/hosted-site-sharing.test.tsx	Owners change visibility in the dialog preview and copy the stable address	595	passed
-hosted-site-sharing-026	turbo/apps/platform/src/views/artifacts-page/__tests__/hosted-site-sharing.test.tsx	Owners change visibility in the sidebar preview and copy the stable address	595	passed
+hosted-site-sharing-025	turbo/apps/platform/src/views/artifacts-page/__tests__/hosted-site-sharing.test.tsx	Owners change visibility in the dialog preview and copy the stable address	592	passed
+hosted-site-sharing-026	turbo/apps/platform/src/views/artifacts-page/__tests__/hosted-site-sharing.test.tsx	Owners change visibility in the sidebar preview and copy the stable address	592	passed
 hosted-site-sharing-027	turbo/apps/platform/src/views/artifacts-page/__tests__/hosted-site-sharing.test.tsx	Grouped Share stays open while a visibility change refreshes the preview	643	passed
 hosted-site-sharing-033	turbo/apps/platform/src/views/artifacts-page/__tests__/hosted-site-sharing.test.tsx	Pending permissions do not claim public access before reporting Only me	689	passed
 hosted-site-sharing-034	turbo/apps/platform/src/views/artifacts-page/__tests__/hosted-site-sharing.test.tsx	Unavailable visibility settings keep every audience choice disabled	712	passed
@@ -135,11 +135,11 @@ chat-private-artifact-previews-004	turbo/apps/platform/src/views/okou-page/__tes
 chat-private-artifact-previews-006	turbo/apps/platform/src/views/okou-page/__tests__/chat-private-artifact-previews.test.tsx	An uploaded private image without a public URL previews its resolved original	131	passed
 chat-private-artifact-previews-008	turbo/apps/platform/src/views/okou-page/__tests__/chat-private-artifact-previews.test.tsx	Opening a previewed image in split view keeps its resolved original	187	passed
 chat-private-artifact-previews-009	turbo/apps/platform/src/views/okou-page/__tests__/chat-private-artifact-previews.test.tsx	Navigating assistant images reuses the original each thread card resolved	208	passed
-chat-artifact-download-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-artifact-download.test.tsx	report.pdf stays downloadable when the browser reads its bytes after the click	66	passed
-chat-artifact-download-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-artifact-download.test.tsx	report.png stays downloadable when the browser reads its bytes after the click	66	passed
-chat-artifact-download-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-artifact-download.test.tsx	photo.png downloads through a newly granted URL on every click	123	passed
-chat-artifact-download-008	turbo/apps/platform/src/views/okou-page/__tests__/chat-artifact-download.test.tsx	proposal.DOCX downloads through a newly granted URL on every click	123	passed
-chat-artifact-download-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-artifact-download.test.tsx	report.pdf downloads through a newly granted URL on every click	123	passed
+chat-artifact-download-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-artifact-download.test.tsx	report.pdf stays downloadable when the browser reads its bytes after the click	63	passed
+chat-artifact-download-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-artifact-download.test.tsx	report.png stays downloadable when the browser reads its bytes after the click	63	passed
+chat-artifact-download-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-artifact-download.test.tsx	photo.png downloads through a newly granted URL on every click	111	passed
+chat-artifact-download-008	turbo/apps/platform/src/views/okou-page/__tests__/chat-artifact-download.test.tsx	proposal.DOCX downloads through a newly granted URL on every click	111	passed
+chat-artifact-download-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-artifact-download.test.tsx	report.pdf downloads through a newly granted URL on every click	111	passed
 chat-artifact-download-011	turbo/apps/platform/src/views/okou-page/__tests__/chat-artifact-download.test.tsx	A server-denied download keeps the preview available and opens the plans	171	passed
 chat-artifact-action-group-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-artifact-action-group.test.tsx	Replacing the sidebar from another chat waits for that chat's metadata	205	passed
 chat-artifact-action-group-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-artifact-action-group.test.tsx	The dialog reveals all actions together when ownership resolves before sharing	328	passed
@@ -162,15 +162,15 @@ chat-run-artifact-carryover-002	turbo/apps/platform/src/views/okou-page/__tests_
 chat-run-artifact-carryover-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-artifact-carryover.test.tsx	A carried file without a preview downloads over an existing artifact sidebar	177	passed
 chat-run-artifact-carryover-009	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-artifact-carryover.test.tsx	Expanding short history reveals formatted text, inline media and an action card	243	passed
 chat-run-artifact-carryover-010	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-artifact-carryover.test.tsx	Artifacts from a revoked output message are ignored	279	passed
-chat-hosted-site-download-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-hosted-site-download.test.tsx	A SPA route link downloads every published member as a ZIP	139	passed
-chat-hosted-site-download-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-hosted-site-download.test.tsx	A public alias link downloads every published member as a ZIP	139	passed
-chat-hosted-site-download-008	turbo/apps/platform/src/views/okou-page/__tests__/chat-hosted-site-download.test.tsx	A hosted-site link keeps its HTML filename and reports its product type	169	passed
-chat-hosted-site-download-009	turbo/apps/platform/src/views/okou-page/__tests__/chat-hosted-site-download.test.tsx	A presentation-html link keeps its HTML filename and reports its product type	169	passed
+chat-hosted-site-download-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-hosted-site-download.test.tsx	A SPA route link downloads every published member as a ZIP	136	passed
+chat-hosted-site-download-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-hosted-site-download.test.tsx	A public alias link downloads every published member as a ZIP	136	passed
+chat-hosted-site-download-008	turbo/apps/platform/src/views/okou-page/__tests__/chat-hosted-site-download.test.tsx	A hosted-site link keeps its HTML filename and reports its product type	166	passed
+chat-hosted-site-download-009	turbo/apps/platform/src/views/okou-page/__tests__/chat-hosted-site-download.test.tsx	A presentation-html link keeps its HTML filename and reports its product type	166	passed
 chat-hosted-site-download-010	turbo/apps/platform/src/views/okou-page/__tests__/chat-hosted-site-download.test.tsx	An unreadable public site listing reports failure without a partial download	200	passed
 chat-hosted-site-download-011	turbo/apps/platform/src/views/okou-page/__tests__/chat-hosted-site-download.test.tsx	An unreadable public site member reports failure without a partial download	200	passed
 chat-hosted-site-download-013	turbo/apps/platform/src/views/okou-page/__tests__/chat-hosted-site-download.test.tsx	A public page stays downloadable when its publication listing returns 404	226	passed
-chat-hosted-site-download-014	turbo/apps/platform/src/views/okou-page/__tests__/chat-hosted-site-download.test.tsx	A direct /assets/cat.png URL downloads only that image	247	passed
-chat-hosted-site-download-016	turbo/apps/platform/src/views/okou-page/__tests__/chat-hosted-site-download.test.tsx	A direct /image/ URL downloads only that image	247	passed
+chat-hosted-site-download-014	turbo/apps/platform/src/views/okou-page/__tests__/chat-hosted-site-download.test.tsx	A direct /assets/cat.png URL downloads only that image	244	passed
+chat-hosted-site-download-016	turbo/apps/platform/src/views/okou-page/__tests__/chat-hosted-site-download.test.tsx	A direct /image/ URL downloads only that image	244	passed
 chat-attachment-composer-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-attachment-composer.test.tsx	Pasted text and file and a dropped PDF land in the composer	45	passed
 chat-attachment-composer-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-attachment-composer.test.tsx	A confirmed image annotation reaches the agent as structured data	113	passed
 chat-attachment-composer-006	turbo/apps/platform/src/views/okou-page/__tests__/chat-attachment-composer.test.tsx	A restored draft image keeps its saved annotation mark	155	passed
@@ -181,9 +181,9 @@ chat-attachment-artifact-viewer-004	turbo/apps/platform/src/views/okou-page/__te
 chat-attachment-artifact-viewer-006	turbo/apps/platform/src/views/okou-page/__tests__/chat-attachment-artifact-viewer.test.tsx	Image navigation stays inside each split-view chat	295	passed
 chat-attachment-artifact-viewer-007	turbo/apps/platform/src/views/okou-page/__tests__/chat-attachment-artifact-viewer.test.tsx	User attachment previews offer downloads without sharing while an agent image shares its URL	392	passed
 chat-attachment-artifact-viewer-008	turbo/apps/platform/src/views/okou-page/__tests__/chat-attachment-artifact-viewer.test.tsx	A private site card uses its resolved screenshot without the thread artifact list	464	passed
-chat-attachment-artifact-viewer-014	turbo/apps/platform/src/views/okou-page/__tests__/chat-attachment-artifact-viewer.test.tsx	An inaccessible restricted.pdf (403) shows an access card in the lightbox	534	passed
-chat-attachment-artifact-viewer-013	turbo/apps/platform/src/views/okou-page/__tests__/chat-attachment-artifact-viewer.test.tsx	An inaccessible restricted.png (404) shows an access card in the lightbox	534	passed
-chat-attachment-artifact-viewer-015	turbo/apps/platform/src/views/okou-page/__tests__/chat-attachment-artifact-viewer.test.tsx	An inaccessible restricted.txt (401) shows an access card in the lightbox	534	passed
+chat-attachment-artifact-viewer-014	turbo/apps/platform/src/views/okou-page/__tests__/chat-attachment-artifact-viewer.test.tsx	An inaccessible restricted.pdf (403) shows an access card in the lightbox	530	passed
+chat-attachment-artifact-viewer-013	turbo/apps/platform/src/views/okou-page/__tests__/chat-attachment-artifact-viewer.test.tsx	An inaccessible restricted.png (404) shows an access card in the lightbox	530	passed
+chat-attachment-artifact-viewer-015	turbo/apps/platform/src/views/okou-page/__tests__/chat-attachment-artifact-viewer.test.tsx	An inaccessible restricted.txt (401) shows an access card in the lightbox	530	passed
 chat-attachment-artifact-viewer-023	turbo/apps/platform/src/views/okou-page/__tests__/chat-attachment-artifact-viewer.test.tsx	A multi-file hosted publication downloads as a zip of every member	677	passed
 chat-attachment-artifact-viewer-024	turbo/apps/platform/src/views/okou-page/__tests__/chat-attachment-artifact-viewer.test.tsx	A publication whose files cannot be listed reports a failed download	705	passed
 chat-attachment-artifact-viewer-025	turbo/apps/platform/src/views/okou-page/__tests__/chat-attachment-artifact-viewer.test.tsx	A self-contained hosted page downloads as the page itself	717	passed
@@ -195,17 +195,17 @@ chat-navigation-artifact-sidebar-010	turbo/apps/platform/src/views/okou-page/__t
 chat-navigation-artifact-sidebar-011	turbo/apps/platform/src/views/okou-page/__tests__/chat-navigation-artifact-sidebar.test.tsx	A hosted site preview survives list and fullscreen changes until closed from its menu	284	passed
 chat-navigation-artifact-sidebar-013	turbo/apps/platform/src/views/okou-page/__tests__/chat-navigation-artifact-sidebar.test.tsx	Back to chats leaves the mobile artifact pane for the chat list	356	passed
 chat-navigation-artifact-sidebar-014	turbo/apps/platform/src/views/okou-page/__tests__/chat-navigation-artifact-sidebar.test.tsx	Artifacts and chats lists the current thread's artifacts	395	passed
-chat-navigation-artifact-drive-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-navigation-artifact-drive.test.tsx	A Drive upload without a view URL confirms the sync without a link	475	passed
-chat-navigation-artifact-drive-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-navigation-artifact-drive.test.tsx	An artifact syncs with its selected Drive account during a catalog and inventory outage	492	passed
-chat-navigation-artifact-drive-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-navigation-artifact-drive.test.tsx	An artifact without Drive metadata disables Drive but still downloads	535	passed
-chat-navigation-artifact-drive-008	turbo/apps/platform/src/views/okou-page/__tests__/chat-navigation-artifact-drive.test.tsx	Missing Drive scope for a Docs upload recovers only after explicit reconnection and retry	552	passed
-chat-navigation-artifact-drive-009	turbo/apps/platform/src/views/okou-page/__tests__/chat-navigation-artifact-drive.test.tsx	A scope failure beside an existing Docs import keeps one reconnect action and the Docs link	605	passed
-chat-navigation-artifact-drive-010	turbo/apps/platform/src/views/okou-page/__tests__/chat-navigation-artifact-drive.test.tsx	Dismissing Drive scope recovery never resumes the upload	655	passed
-chat-navigation-artifact-drive-013	turbo/apps/platform/src/views/okou-page/__tests__/chat-navigation-artifact-drive.test.tsx	A reopened preview stays usable after its pending Drive setup is cancelled	692	passed
-chat-navigation-artifact-drive-014	turbo/apps/platform/src/views/okou-page/__tests__/chat-navigation-artifact-drive.test.tsx	Drive authorization keeps the artifact preview open and syncs it	744	passed
-chat-navigation-artifact-drive-016	turbo/apps/platform/src/views/okou-page/__tests__/chat-navigation-artifact-drive.test.tsx	A failed original upload keeps the Slides editor link	772	passed
-chat-navigation-artifact-drive-017	turbo/apps/platform/src/views/okou-page/__tests__/chat-navigation-artifact-drive.test.tsx	One Drive reconnection serves both upload modes in the same preview	804	passed
-chat-navigation-artifact-drive-021	turbo/apps/platform/src/views/okou-page/__tests__/chat-navigation-artifact-drive.test.tsx	Connecting Drive from a document preview exposes its Google Docs link in place	857	passed
+chat-navigation-artifact-drive-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-navigation-artifact-drive.test.tsx	A Drive upload without a view URL confirms the sync without a link	467	passed
+chat-navigation-artifact-drive-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-navigation-artifact-drive.test.tsx	An artifact syncs with its selected Drive account during a catalog and inventory outage	484	passed
+chat-navigation-artifact-drive-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-navigation-artifact-drive.test.tsx	An artifact without Drive metadata disables Drive but still downloads	527	passed
+chat-navigation-artifact-drive-008	turbo/apps/platform/src/views/okou-page/__tests__/chat-navigation-artifact-drive.test.tsx	Missing Drive scope for a Docs upload recovers only after explicit reconnection and retry	544	passed
+chat-navigation-artifact-drive-009	turbo/apps/platform/src/views/okou-page/__tests__/chat-navigation-artifact-drive.test.tsx	A scope failure beside an existing Docs import keeps one reconnect action and the Docs link	596	passed
+chat-navigation-artifact-drive-010	turbo/apps/platform/src/views/okou-page/__tests__/chat-navigation-artifact-drive.test.tsx	Dismissing Drive scope recovery never resumes the upload	645	passed
+chat-navigation-artifact-drive-013	turbo/apps/platform/src/views/okou-page/__tests__/chat-navigation-artifact-drive.test.tsx	A reopened preview stays usable after its pending Drive setup is cancelled	681	passed
+chat-navigation-artifact-drive-014	turbo/apps/platform/src/views/okou-page/__tests__/chat-navigation-artifact-drive.test.tsx	Drive authorization keeps the artifact preview open and syncs it	733	passed
+chat-navigation-artifact-drive-016	turbo/apps/platform/src/views/okou-page/__tests__/chat-navigation-artifact-drive.test.tsx	A failed original upload keeps the Slides editor link	761	passed
+chat-navigation-artifact-drive-017	turbo/apps/platform/src/views/okou-page/__tests__/chat-navigation-artifact-drive.test.tsx	One Drive reconnection serves both upload modes in the same preview	793	passed
+chat-navigation-artifact-drive-021	turbo/apps/platform/src/views/okou-page/__tests__/chat-navigation-artifact-drive.test.tsx	Connecting Drive from a document preview exposes its Google Docs link in place	846	passed
 chat-attachment-message-previews-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-attachment-message-previews.test.tsx	Only a complete artifact address becomes a rich preview	103	passed
 chat-attachment-message-previews-007	turbo/apps/platform/src/views/okou-page/__tests__/chat-attachment-message-previews.test.tsx	A persisted video attachment opens in the sidebar and closes from it	145	passed
 chat-attachment-message-previews-008	turbo/apps/platform/src/views/okou-page/__tests__/chat-attachment-message-previews.test.tsx	A persisted PDF attachment opens in the document sidebar and closes from it	164	passed
@@ -333,9 +333,9 @@ chat-composer-presentation-gallery-001	turbo/apps/platform/src/views/okou-page/_
 chat-composer-presentation-gallery-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-presentation-gallery.test.tsx	Send a presentation theme restored from a saved draft	170	passed
 chat-composer-presentation-gallery-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-presentation-gallery.test.tsx	Use a presentation template's default theme	192	passed
 chat-composer-presentation-gallery-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-presentation-gallery.test.tsx	Navigate every slide in a presentation template	215	passed
-chat-composer-slash-custom-templates-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-slash-custom-templates.test.tsx	The Templates overview's Presentation type offers accessible custom templates and sends their references	185	passed
+chat-composer-slash-custom-templates-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-slash-custom-templates.test.tsx	The Templates overview's Presentation type offers accessible custom templates and sends their references	172	passed
 chat-composer-slash-custom-templates-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-slash-custom-templates.test.tsx	The Templates overview's Illustration type offers accessible custom templates with their preview image and sends their references	199	passed
-chat-composer-slash-custom-templates-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-slash-custom-templates.test.tsx	The Templates overview's Document type offers accessible custom templates and sends their references	185	passed
+chat-composer-slash-custom-templates-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-slash-custom-templates.test.tsx	The Templates overview's Document type offers accessible custom templates and sends their references	172	passed
 chat-composer-document-templates-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-document-templates.test.tsx	Document category and scroll survive preview	71	passed
 chat-composer-document-templates-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-document-templates.test.tsx	Using a document template preserves the draft until the user sends it	109	passed
 chat-composer-document-templates-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-document-templates.test.tsx	The Document tray opens its picker with the keyboard	141	passed
@@ -373,7 +373,7 @@ chat-composer-chat-connector-access-017	turbo/apps/platform/src/views/okou-page/
 chat-composer-chat-connector-access-018	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-chat-connector-access.test.tsx	Initialize new Chat access before first Run, including selection retry=true	654	passed
 chat-composer-connector-accounts-006	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-accounts.test.tsx	An unavailable account keeps the new-chat draft and attachments (edited while creating: false)	112	passed
 chat-composer-connector-accounts-007	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-accounts.test.tsx	An unavailable account keeps the new-chat draft and attachments (edited while creating: true)	112	passed
-chat-composer-connector-accounts-008	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-accounts.test.tsx	Resending an unconfirmed creation reuses its chat and event identities	260	passed
+chat-composer-connector-accounts-008	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-accounts.test.tsx	Resending an unconfirmed creation reuses its chat and event identities	259	passed
 chat-composer-connector-focus-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-focus.test.tsx	keeps filtered connectors accessible without losing search focus	94	passed
 chat-composer-connector-focus-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-focus.test.tsx	focuses the loaded connector search during reopen	101	passed
 chat-composer-connector-focus-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-focus.test.tsx	keeps mobile connector search unfocused after loading	127	passed
@@ -385,19 +385,19 @@ chat-composer-connector-overview-007	turbo/apps/platform/src/views/okou-page/__t
 chat-composer-connector-overview-008	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-overview.test.tsx	Load full readiness only for an opened panel's selected off-page account	337	passed
 chat-composer-connector-overview-009	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-overview.test.tsx	Release the cached subscription on navigation and reload the returning Chat	395	passed
 chat-composer-connector-status-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-status.test.tsx	Saved connectors with unavailable defaults stay visible for account repair	76	passed
-chat-composer-connector-status-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-status.test.tsx	Healthy saved accounts stay connected while zero-account connectors remain available to add	111	passed
-chat-composer-connector-status-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-status.test.tsx	A saved custom connector remains available for account management	144	passed
-chat-composer-connector-status-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-status.test.tsx	Connecting a custom account updates the directory when it is reopened	159	passed
-chat-composer-connector-status-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-status.test.tsx	Pending connected membership does not expose an ordinary add action as if no account exists	200	passed
-chat-composer-connector-status-006	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-status.test.tsx	Connected inventory failure leaves managed Feishu in its own lifecycle	221	passed
+chat-composer-connector-status-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-status.test.tsx	Healthy saved accounts stay connected while zero-account connectors remain available to add	110	passed
+chat-composer-connector-status-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-status.test.tsx	A saved custom connector remains available for account management	143	passed
+chat-composer-connector-status-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-status.test.tsx	Connecting a custom account updates the directory when it is reopened	158	passed
+chat-composer-connector-status-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-status.test.tsx	Pending connected membership does not expose an ordinary add action as if no account exists	199	passed
+chat-composer-connector-status-006	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-status.test.tsx	Connected inventory failure leaves managed Feishu in its own lifecycle	220	passed
 chat-composer-connectors-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connectors.test.tsx	Configure connector permissions from the composer	86	passed
-chat-composer-connectors-006	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connectors.test.tsx	Show only the connector actions that are useful in chat	130	passed
-chat-composer-connectors-008	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connectors.test.tsx	Start connector setup from chat	196	passed
-chat-composer-connectors-009	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connectors.test.tsx	Complete connector authorization from chat	255	passed
-chat-composer-connectors-011	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connectors.test.tsx	Respect integration-managed connector availability in chat	303	passed
-chat-composer-connectors-013	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connectors.test.tsx	Search beyond featured connectors from chat	358	passed
-chat-composer-connectors-015	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connectors.test.tsx	Exclude unconnected integration-managed connectors from chat setup	395	passed
-chat-composer-connectors-016	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connectors.test.tsx	Enable a credential-free connector directly from chat	428	passed
+chat-composer-connectors-006	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connectors.test.tsx	Show only the connector actions that are useful in chat	129	passed
+chat-composer-connectors-008	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connectors.test.tsx	Start connector setup from chat	192	passed
+chat-composer-connectors-009	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connectors.test.tsx	Complete connector authorization from chat	249	passed
+chat-composer-connectors-011	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connectors.test.tsx	Respect integration-managed connector availability in chat	297	passed
+chat-composer-connectors-013	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connectors.test.tsx	Search beyond featured connectors from chat	347	passed
+chat-composer-connectors-015	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connectors.test.tsx	Exclude unconnected integration-managed connectors from chat setup	384	passed
+chat-composer-connectors-016	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connectors.test.tsx	Enable a credential-free connector directly from chat	417	passed
 chat-composer-mentions-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-mentions.test.tsx	Show matching chat threads in priority order from the top (new chat: false)	173	passed
 chat-composer-mentions-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-mentions.test.tsx	Show the @ search hint until typing, selection or dismissal (new chat: false)	265	passed
 chat-composer-mentions-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-mentions.test.tsx	Show the @ search hint until typing, selection or dismissal (new chat: true)	265	passed
@@ -418,8 +418,8 @@ chat-composer-slash-hint-001	turbo/apps/platform/src/views/okou-page/__tests__/c
 chat-composer-slash-hint-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-slash-hint.test.tsx	Show the hint after a bare slash and dismiss it with the menu at /chats/b1000000-0000-4000-a000-000000000101	72	passed
 chat-composer-slash-hint-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-slash-hint.test.tsx	Show the hint immediately after a slash before adjacent space and text	107	passed
 chat-composer-slash-hint-007	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-slash-hint.test.tsx	Keep the hint out of copied and sent Draft / and hide it for a selection	131	passed
-chat-composer-slash-hint-010	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-slash-hint.test.tsx	Preserve IME confirmation while the slash hint is present in Draft /	164	passed
-chat-composer-slash-hint-012	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-slash-hint.test.tsx	Preserve IME confirmation while the slash hint is present in /1231	164	passed
+chat-composer-slash-hint-010	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-slash-hint.test.tsx	Preserve IME confirmation while the slash hint is present in Draft /	161	passed
+chat-composer-slash-hint-012	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-slash-hint.test.tsx	Preserve IME confirmation while the slash hint is present in /1231	161	passed
 chat-composer-slash-hint-013	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-slash-hint.test.tsx	Follow a slash on a new line without treating a URL or a partial query as an empty query	198	passed
 chat-composer-slash-actions-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-slash-actions.test.tsx	Pointing at Workflows opens its list beside the first level	124	passed
 chat-composer-slash-actions-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-slash-actions.test.tsx	The keyboard enters the Workflows list and leaves it again	149	passed
@@ -437,8 +437,8 @@ chat-composer-slash-panel-007	turbo/apps/platform/src/views/okou-page/__tests__/
 chat-composer-slash-panel-008	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-slash-panel.test.tsx	Browse all templates opens the picker and consumes its slash token	193	passed
 chat-composer-slash-panel-011	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-slash-panel.test.tsx	Mobile slash suggestions at an existing chat show capabilities before Workflows and navigate in visual order	209	passed
 chat-composer-slash-panel-013	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-slash-panel.test.tsx	Desktop slash suggestions at an existing chat keep capability actions nearest the composer	252	passed
-chat-composer-slash-panel-015	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-slash-panel.test.tsx	Keyboard navigation crosses from capability actions into workflows with desktop=true	282	passed
-chat-composer-slash-panel-016	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-slash-panel.test.tsx	Keyboard navigation crosses from capability actions into workflows with desktop=false	282	passed
+chat-composer-slash-panel-015	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-slash-panel.test.tsx	Keyboard navigation crosses from capability actions into workflows with desktop=true	279	passed
+chat-composer-slash-panel-016	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-slash-panel.test.tsx	Keyboard navigation crosses from capability actions into workflows with desktop=false	279	passed
 chat-composer-slash-panel-017	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-slash-panel.test.tsx	The workflow overview expands without losing its selectable workflows with desktop=true	334	passed
 chat-composer-slash-panel-020	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-slash-panel.test.tsx	Keyboard navigation selects Show more without expanding until activation with desktop=true	361	passed
 chat-composer-slash-panel-023	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-slash-panel.test.tsx	Manage workflows opens the Workflows page	399	passed
@@ -449,18 +449,18 @@ chat-composer-ssh-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-com
 chat-composer-ssh-009	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-ssh.test.tsx	A new chat leaves host defaults untouched when no choice is changed	303	passed
 chat-composer-ssh-012	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-ssh.test.tsx	Pending SSH choices survive reopen from a desktop viewport	378	passed
 chat-composer-ssh-014	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-ssh.test.tsx	Apply SSH host choices during thread creation	413	passed
-chat-composer-ssh-015	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-ssh.test.tsx	Remote access in two chat panes reads and updates each pane's thread	449	passed
-chat-composer-ssh-016	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-ssh.test.tsx	Chat SSH setup respects hosts=0	562	passed
-chat-composer-ssh-017	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-ssh.test.tsx	Chat SSH setup respects hosts=1	562	passed
-chat-composer-ssh-018	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-ssh.test.tsx	Directory SSH setup follows shelves and categories	603	passed
+chat-composer-ssh-015	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-ssh.test.tsx	Remote access in two chat panes reads and updates each pane's thread	448	passed
+chat-composer-ssh-016	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-ssh.test.tsx	Chat SSH setup respects hosts=0	561	passed
+chat-composer-ssh-017	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-ssh.test.tsx	Chat SSH setup respects hosts=1	561	passed
+chat-composer-ssh-018	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-ssh.test.tsx	Directory SSH setup follows shelves and categories	602	passed
 chat-composer-vnc-dependencies-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-vnc-dependencies.test.tsx	New-chat SSH choices preserve row order, keyboard focus and VNC dependency feedback	233	passed
 chat-composer-vnc-dependencies-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-vnc-dependencies.test.tsx	Saved-chat SSH keeps keyboard focus through a slow On save from default true	266	passed
 chat-composer-vnc-dependencies-008	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-vnc-dependencies.test.tsx	A completed failed save preserves the user's new keyboard destination	305	passed
 chat-composer-vnc-dependencies-009	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-vnc-dependencies.test.tsx	Dismissing Remote access during a save retains the connector trigger focus	351	passed
 chat-composer-vnc-dependencies-011	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-vnc-dependencies.test.tsx	An enabled VNC host follows its exact SSH dependency	396	passed
 chat-composer-vnc-dependencies-012	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-vnc-dependencies.test.tsx	A disabled VNC host shows its SSH dependency without a warning	412	passed
-chat-composer-vnc-dependencies-013	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-vnc-dependencies.test.tsx	VNC dependency feedback follows the chat override over default true	424	passed
-chat-composer-vnc-dependencies-014	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-vnc-dependencies.test.tsx	VNC dependency feedback follows the chat override over default false	424	passed
+chat-composer-vnc-dependencies-013	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-vnc-dependencies.test.tsx	VNC dependency feedback follows the chat override over default true	421	passed
+chat-composer-vnc-dependencies-014	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-vnc-dependencies.test.tsx	VNC dependency feedback follows the chat override over default false	421	passed
 chat-composer-vnc-dependencies-015	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-vnc-dependencies.test.tsx	A new chat updates VNC warnings from unsent host choices	451	passed
 chat-composer-vnc-dependencies-017	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-vnc-dependencies.test.tsx	Direct VNC transport still explains an SSH-backed KDC dependency	475	passed
 chat-composer-vnc-dependencies-021	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-vnc-dependencies.test.tsx	A failed access refresh reports its error without claiming dependency status	489	passed
@@ -482,14 +482,14 @@ chat-composer-custom-templates-027	turbo/apps/platform/src/views/okou-page/__tes
 chat-composer-custom-templates-030	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-custom-templates.test.tsx	A failed visibility change keeps the template and reports the error	762	passed
 chat-composer-custom-templates-033	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-custom-templates.test.tsx	Importing a document uses the custom template dispatcher	783	passed
 chat-composer-custom-templates-036	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-custom-templates.test.tsx	A failed custom catalog leaves built-in templates available	820	passed
-chat-batch-permissions-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-batch-permissions.test.tsx	Review full scopes grouped by connector and apply the selected duration together	175	passed
-chat-batch-permissions-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-batch-permissions.test.tsx	Approve only missing scopes without reapplying or extending active grants	270	passed
-chat-batch-permissions-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-batch-permissions.test.tsx	Keep the whole batch unavailable when one connector's delayed authoritative metadata fails	303	passed
-chat-batch-permissions-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-batch-permissions.test.tsx	Reject the entire batch with an invalid original row	359	passed
-chat-capability-permissions-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-permissions.test.tsx	Fail closed on permission load and save errors	134	passed
-chat-capability-permissions-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-permissions.test.tsx	Reflect current connector permission decisions	197	passed
-chat-capability-permissions-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-permissions.test.tsx	Permission cards keep the full operation pending and expose callback failure	279	passed
-chat-capability-permissions-006	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-permissions.test.tsx	Review and confirm connector permissions individually	339	passed
+chat-batch-permissions-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-batch-permissions.test.tsx	Review full scopes grouped by connector and apply the selected duration together	173	passed
+chat-batch-permissions-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-batch-permissions.test.tsx	Approve only missing scopes without reapplying or extending active grants	268	passed
+chat-batch-permissions-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-batch-permissions.test.tsx	Keep the whole batch unavailable when one connector's delayed authoritative metadata fails	301	passed
+chat-batch-permissions-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-batch-permissions.test.tsx	Reject the entire batch with an invalid original row	357	passed
+chat-capability-permissions-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-permissions.test.tsx	Fail closed on permission load and save errors	132	passed
+chat-capability-permissions-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-permissions.test.tsx	Reflect current connector permission decisions	195	passed
+chat-capability-permissions-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-permissions.test.tsx	Permission cards keep the full operation pending and expose callback failure	277	passed
+chat-capability-permissions-006	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-permissions.test.tsx	Review and confirm connector permissions individually	337	passed
 chat-capability-phone-use-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-phone-use.test.tsx	Show online phones and refresh on reopen	65	passed
 chat-capability-phone-use-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-phone-use.test.tsx	A selected phone stays visible offline so its chat access can be revoked	90	passed
 chat-capability-phone-use-006	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-phone-use.test.tsx	Connect my phone explains chat-menu consent and native preparation separately	123	passed
@@ -499,21 +499,21 @@ chat-capability-phone-use-011	turbo/apps/platform/src/views/okou-page/__tests__/
 chat-thread-sidebar-resize-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-thread-sidebar-resize.test.tsx	A captured touch resize ends on pointerup and leaves the sidebar usable	78	passed
 chat-thread-sidebar-resize-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-thread-sidebar-resize.test.tsx	A second touch cannot move or end the active resize	113	passed
 chat-thread-sidebar-resize-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-thread-sidebar-resize.test.tsx	Closing the sidebar during a resize removes its blocking mask	133	passed
-chat-capability-connectors-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-connectors.test.tsx	with an unconnected banking conversation > connect banking and expose the connected accounts	338	passed
-chat-capability-connectors-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-connectors.test.tsx	with an active banking grant > revoke active banking access after continuing the conversation	422	passed
-chat-capability-connectors-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-connectors.test.tsx	Read a canonical custom default only on action activation (connected)	466	passed
-chat-capability-connectors-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-connectors.test.tsx	Read a canonical custom default only on action activation (reconnect-required)	466	passed
-chat-capability-connectors-008	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-connectors.test.tsx	Reconnect a saved custom MCP default before resuming	613	passed
-chat-capability-connectors-009	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-connectors.test.tsx	Keep an incomplete custom MCP reconnect open without resuming	625	passed
-chat-capability-connectors-011	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-connectors.test.tsx	Continue a chat with the saved default account of a connected connector	636	passed
-chat-capability-connectors-013	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-connectors.test.tsx	Enable a single no-auth connector without an unnecessary dialog	701	passed
+chat-capability-connectors-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-connectors.test.tsx	with an unconnected banking conversation > connect banking and expose the connected accounts	316	passed
+chat-capability-connectors-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-connectors.test.tsx	with an active banking grant > revoke active banking access after continuing the conversation	400	passed
+chat-capability-connectors-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-connectors.test.tsx	Read a canonical custom default only on action activation (connected)	444	passed
+chat-capability-connectors-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-connectors.test.tsx	Read a canonical custom default only on action activation (reconnect-required)	444	passed
+chat-capability-connectors-008	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-connectors.test.tsx	Reconnect a saved custom MCP default before resuming	587	passed
+chat-capability-connectors-009	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-connectors.test.tsx	Keep an incomplete custom MCP reconnect open without resuming	597	passed
+chat-capability-connectors-011	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-connectors.test.tsx	Continue a chat with the saved default account of a connected connector	606	passed
+chat-capability-connectors-013	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-connectors.test.tsx	Enable a single no-auth connector without an unnecessary dialog	668	passed
 custom-connector-connect-lifecycle-001	turbo/apps/platform/src/views/okou-page/__tests__/custom-connector-connect-lifecycle.test.tsx	Cancel a pending custom connection and connect another account	20	passed
-custom-default-reconnect-003	turbo/apps/platform/src/views/okou-page/__tests__/custom-default-reconnect.test.tsx	Reconnect the current default when a healthy sibling exists	102	passed
-custom-default-reconnect-004	turbo/apps/platform/src/views/okou-page/__tests__/custom-default-reconnect.test.tsx	Wait for the initial account inventory before offering a custom connection	290	passed
-custom-default-reconnect-006	turbo/apps/platform/src/views/okou-page/__tests__/custom-default-reconnect.test.tsx	Add the first custom OAuth account after confirming zero accounts	305	passed
-custom-default-reconnect-007	turbo/apps/platform/src/views/okou-page/__tests__/custom-default-reconnect.test.tsx	Cancel a pending default lookup before starting provider authorization	321	passed
-custom-default-reconnect-009	turbo/apps/platform/src/views/okou-page/__tests__/custom-default-reconnect.test.tsx	Keep a no-default lookup from creating another account	341	passed
-custom-default-reconnect-010	turbo/apps/platform/src/views/okou-page/__tests__/custom-default-reconnect.test.tsx	Reconnect the expired OAuth account after its completion receipt	351	passed
+custom-default-reconnect-003	turbo/apps/platform/src/views/okou-page/__tests__/custom-default-reconnect.test.tsx	Reconnect the current default when a healthy sibling exists	98	passed
+custom-default-reconnect-004	turbo/apps/platform/src/views/okou-page/__tests__/custom-default-reconnect.test.tsx	Wait for the initial account inventory before offering a custom connection	277	passed
+custom-default-reconnect-006	turbo/apps/platform/src/views/okou-page/__tests__/custom-default-reconnect.test.tsx	Add the first custom OAuth account after confirming zero accounts	292	passed
+custom-default-reconnect-007	turbo/apps/platform/src/views/okou-page/__tests__/custom-default-reconnect.test.tsx	Cancel a pending default lookup before starting provider authorization	308	passed
+custom-default-reconnect-009	turbo/apps/platform/src/views/okou-page/__tests__/custom-default-reconnect.test.tsx	Keep a no-default lookup from creating another account	328	passed
+custom-default-reconnect-010	turbo/apps/platform/src/views/okou-page/__tests__/custom-default-reconnect.test.tsx	Reconnect the expired OAuth account after its completion receipt	338	passed
 email-connect-page-001	turbo/apps/platform/src/views/okou-page/__tests__/email-connect-page.test.tsx	connects in the active workspace without asking a multi-workspace user to choose again	41	passed
 email-connect-page-003	turbo/apps/platform/src/views/okou-page/__tests__/email-connect-page.test.tsx	adds an email from the Works card with a short code and updates the open dialog	77	passed
 email-connect-page-004	turbo/apps/platform/src/views/okou-page/__tests__/email-connect-page.test.tsx	opens unsigned email settings with the login email connected	142	passed
@@ -529,14 +529,14 @@ integrations-wechat-005	turbo/apps/platform/src/views/okou-page/__tests__/integr
 integrations-wechat-008	turbo/apps/platform/src/views/okou-page/__tests__/integrations-wechat.test.tsx	a reconnect link identifies owner@example.com before confirmation	166	passed
 integrations-wechat-010	turbo/apps/platform/src/views/okou-page/__tests__/integrations-wechat.test.tsx	an unavailable reconnect link offers the same QR connection flow on the settings page	247	passed
 integrations-wechat-011	turbo/apps/platform/src/views/okou-page/__tests__/integrations-wechat.test.tsx	a rejected reconnect remains unconnected and shows recovery guidance	301	passed
-directed-connect-page-004	turbo/apps/platform/src/views/okou-page/__tests__/directed-connect-page.test.tsx	Connect a custom OAuth connector from a directed link	395	passed
-directed-connect-page-008	turbo/apps/platform/src/views/okou-page/__tests__/directed-connect-page.test.tsx	Connect a no-auth connector and continue the originating chat	571	passed
-directed-connect-page-009	turbo/apps/platform/src/views/okou-page/__tests__/directed-connect-page.test.tsx	Complete OpenID and continue the originating chat	651	passed
-directed-connect-page-011	turbo/apps/platform/src/views/okou-page/__tests__/directed-connect-page.test.tsx	Show the saved builtin account's configuration_invalid reason in the connect dialog	708	passed
-directed-connect-page-012	turbo/apps/platform/src/views/okou-page/__tests__/directed-connect-page.test.tsx	Reconnect the expired public OAuth account	780	passed
-directed-connect-page-013	turbo/apps/platform/src/views/okou-page/__tests__/directed-connect-page.test.tsx	Reconnect the exact account and continue the originating chat only after success	914	passed
-directed-connect-page-014	turbo/apps/platform/src/views/okou-page/__tests__/directed-connect-page.test.tsx	Connect a manual grant and continue the originating chat	1002	passed
-directed-authorize-page-006	turbo/apps/platform/src/views/okou-page/__tests__/directed-connect-page.test.tsx	Closing directed OAuth before completion leaves GitHub disconnected	1088	passed
+directed-connect-page-004	turbo/apps/platform/src/views/okou-page/__tests__/directed-connect-page.test.tsx	Connect a custom OAuth connector from a directed link	387	passed
+directed-connect-page-008	turbo/apps/platform/src/views/okou-page/__tests__/directed-connect-page.test.tsx	Connect a no-auth connector and continue the originating chat	550	passed
+directed-connect-page-009	turbo/apps/platform/src/views/okou-page/__tests__/directed-connect-page.test.tsx	Complete OpenID and continue the originating chat	619	passed
+directed-connect-page-011	turbo/apps/platform/src/views/okou-page/__tests__/directed-connect-page.test.tsx	Show the saved builtin account's configuration_invalid reason in the connect dialog	673	passed
+directed-connect-page-012	turbo/apps/platform/src/views/okou-page/__tests__/directed-connect-page.test.tsx	Reconnect the expired public OAuth account	745	passed
+directed-connect-page-013	turbo/apps/platform/src/views/okou-page/__tests__/directed-connect-page.test.tsx	Reconnect the exact account and continue the originating chat only after success	873	passed
+directed-connect-page-014	turbo/apps/platform/src/views/okou-page/__tests__/directed-connect-page.test.tsx	Connect a manual grant and continue the originating chat	961	passed
+directed-authorize-page-006	turbo/apps/platform/src/views/okou-page/__tests__/directed-connect-page.test.tsx	Closing directed OAuth before completion leaves GitHub disconnected	1046	passed
 preferences-page-001	turbo/apps/platform/src/views/okou-page/__tests__/preferences-page.test.tsx	A missing workspace theme follows the system and explicit choices are saved	94	passed
 preferences-page-002	turbo/apps/platform/src/views/okou-page/__tests__/preferences-page.test.tsx	A saved workspace mode overrides the cookie and saves independently of the palette	138	passed
 preferences-page-004	turbo/apps/platform/src/views/okou-page/__tests__/preferences-page.test.tsx	A cached palette is visible during startup and cleared when the workspace uses the default	274	passed
@@ -596,19 +596,19 @@ connectors-auth-methods-015	turbo/apps/platform/src/views/okou-page/__tests__/co
 connectors-auth-methods-016	turbo/apps/platform/src/views/okou-page/__tests__/connectors-auth-methods.test.tsx	Keep a replacement account name prompt when an earlier save completes	590	passed
 connectors-auth-methods-017	turbo/apps/platform/src/views/okou-page/__tests__/connectors-auth-methods.test.tsx	Submit a chosen device-authorization start option	665	passed
 connectors-auth-methods-018	turbo/apps/platform/src/views/okou-page/__tests__/connectors-auth-methods.test.tsx	Start provider sign-in from catalog metadata	739	passed
-connectors-custom-001	turbo/apps/platform/src/views/okou-page/__tests__/connectors-custom.test.tsx	Do not complete or authorize an exact account when required configuration is incomplete	377	passed
-connectors-custom-003	turbo/apps/platform/src/views/okou-page/__tests__/connectors-custom.test.tsx	Create a custom connector without authentication	403	passed
-connectors-custom-010	turbo/apps/platform/src/views/okou-page/__tests__/connectors-custom.test.tsx	Manage a custom HTTP connector through creation and connection	461	passed
-connectors-custom-011	turbo/apps/platform/src/views/okou-page/__tests__/connectors-custom.test.tsx	Manage a custom HTTP connector through rename and deletion	498	passed
-connectors-custom-021	turbo/apps/platform/src/views/okou-page/__tests__/connectors-custom.test.tsx	Edit a custom HTTP connector without losing advanced configuration	537	passed
-connectors-custom-022	turbo/apps/platform/src/views/okou-page/__tests__/connectors-custom.test.tsx	Do not grant access after an unsuccessful custom connection	571	passed
-connectors-custom-024	turbo/apps/platform/src/views/okou-page/__tests__/connectors-custom.test.tsx	Manage a custom connector before it is connected	607	passed
-connectors-custom-013	turbo/apps/platform/src/views/okou-page/__tests__/connectors-custom.test.tsx	Manage custom HTTP OAuth through configuration update and connection	640	passed
-connectors-custom-014	turbo/apps/platform/src/views/okou-page/__tests__/connectors-custom.test.tsx	Manage a manual MCP connector through its lifecycle	701	passed
-connectors-custom-015	turbo/apps/platform/src/views/okou-page/__tests__/connectors-custom.test.tsx	Create and connect an MCP server through automatic authorization	751	passed
-connectors-custom-017	turbo/apps/platform/src/views/okou-page/__tests__/connectors-custom.test.tsx	Keep saved custom accounts manageable when only the default needs reconnect	815	passed
-connectors-custom-018	turbo/apps/platform/src/views/okou-page/__tests__/connectors-custom.test.tsx	Reconnect an OAuth account after cancelled consent and metadata changes	877	passed
-connectors-custom-020	turbo/apps/platform/src/views/okou-page/__tests__/connectors-custom.test.tsx	Add and optionally name a custom OAuth account	962	passed
+connectors-custom-001	turbo/apps/platform/src/views/okou-page/__tests__/connectors-custom.test.tsx	Do not complete or authorize an exact account when required configuration is incomplete	364	passed
+connectors-custom-003	turbo/apps/platform/src/views/okou-page/__tests__/connectors-custom.test.tsx	Create a custom connector without authentication	389	passed
+connectors-custom-010	turbo/apps/platform/src/views/okou-page/__tests__/connectors-custom.test.tsx	Manage a custom HTTP connector through creation and connection	447	passed
+connectors-custom-011	turbo/apps/platform/src/views/okou-page/__tests__/connectors-custom.test.tsx	Manage a custom HTTP connector through rename and deletion	484	passed
+connectors-custom-021	turbo/apps/platform/src/views/okou-page/__tests__/connectors-custom.test.tsx	Edit a custom HTTP connector without losing advanced configuration	523	passed
+connectors-custom-022	turbo/apps/platform/src/views/okou-page/__tests__/connectors-custom.test.tsx	Do not grant access after an unsuccessful custom connection	557	passed
+connectors-custom-024	turbo/apps/platform/src/views/okou-page/__tests__/connectors-custom.test.tsx	Manage a custom connector before it is connected	592	passed
+connectors-custom-013	turbo/apps/platform/src/views/okou-page/__tests__/connectors-custom.test.tsx	Manage custom HTTP OAuth through configuration update and connection	625	passed
+connectors-custom-014	turbo/apps/platform/src/views/okou-page/__tests__/connectors-custom.test.tsx	Manage a manual MCP connector through its lifecycle	686	passed
+connectors-custom-015	turbo/apps/platform/src/views/okou-page/__tests__/connectors-custom.test.tsx	Create and connect an MCP server through automatic authorization	736	passed
+connectors-custom-017	turbo/apps/platform/src/views/okou-page/__tests__/connectors-custom.test.tsx	Keep saved custom accounts manageable when only the default needs reconnect	800	passed
+connectors-custom-018	turbo/apps/platform/src/views/okou-page/__tests__/connectors-custom.test.tsx	Reconnect an OAuth account after cancelled consent and metadata changes	862	passed
+connectors-custom-020	turbo/apps/platform/src/views/okou-page/__tests__/connectors-custom.test.tsx	Add and optionally name a custom OAuth account	947	passed
 integrations-hub-status-001	turbo/apps/platform/src/views/okou-page/__tests__/integrations-hub-status.test.tsx	Integrations show current status and refresh after GitHub connects	65	passed
 integrations-hub-status-002	turbo/apps/platform/src/views/okou-page/__tests__/integrations-hub-status.test.tsx	Slack keeps account disconnect in its overflow menu (admin: true)	122	passed
 integrations-hub-status-005	turbo/apps/platform/src/views/okou-page/__tests__/integrations-hub-status.test.tsx	Authorize the official Telegram bot directly in a new tab from Integrations	158	passed
@@ -2425,16 +2425,16 @@ marketing-handoff-recovery-015	turbo/apps/platform/src/views/okou-page/__tests__
 marketing-handoff-recovery-016	turbo/apps/platform/src/views/okou-page/__tests__/marketing-handoff-recovery.test.tsx	Authentication and upgrade failures (401) keep their existing handling	267	passed
 marketing-handoff-recovery-017	turbo/apps/platform/src/views/okou-page/__tests__/marketing-handoff-recovery.test.tsx	Authentication and upgrade failures (426) keep their existing handling	267	passed
 marketing-handoff-recovery-018	turbo/apps/platform/src/views/okou-page/__tests__/marketing-handoff-recovery.test.tsx	A valid task restores its text and attachments into the agent composer	290	passed
-prompt-link-001	turbo/apps/platform/src/views/okou-page/__tests__/prompt-link.test.tsx	A prompt link prefills a specific agent's chat	142	passed
-prompt-link-002	turbo/apps/platform/src/views/okou-page/__tests__/prompt-link.test.tsx	A prompt link prefills a new chat from Home	164	passed
-prompt-link-003	turbo/apps/platform/src/views/okou-page/__tests__/prompt-link.test.tsx	My Okou prefills a prompt link on its chat page at Home	184	passed
-prompt-link-005	turbo/apps/platform/src/views/okou-page/__tests__/prompt-link.test.tsx	A prompt route starts a chat with its selected personal subscription model	200	passed
-prompt-link-008	turbo/apps/platform/src/views/okou-page/__tests__/prompt-link.test.tsx	Completing a prompt link preserves a model chosen in a later composer	248	passed
-prompt-link-009	turbo/apps/platform/src/views/okou-page/__tests__/prompt-link.test.tsx	A prompt link starts an illustration chat with its selected style	312	passed
-prompt-link-010	turbo/apps/platform/src/views/okou-page/__tests__/prompt-link.test.tsx	A prompt link starts a presentation chat with its selected template	334	passed
-prompt-link-012	turbo/apps/platform/src/views/okou-page/__tests__/prompt-link.test.tsx	A prompt link starts a website chat with its selected template	363	passed
-prompt-link-013	turbo/apps/platform/src/views/okou-page/__tests__/prompt-link.test.tsx	An unavailable model leaves a prompt link recoverable	385	passed
-prompt-link-018	turbo/apps/platform/src/views/okou-page/__tests__/prompt-link.test.tsx	A file-only hash handoff sends its imported private attachment	424	passed
+prompt-link-001	turbo/apps/platform/src/views/okou-page/__tests__/prompt-link.test.tsx	A prompt link prefills a specific agent's chat	140	passed
+prompt-link-002	turbo/apps/platform/src/views/okou-page/__tests__/prompt-link.test.tsx	A prompt link prefills a new chat from Home	162	passed
+prompt-link-003	turbo/apps/platform/src/views/okou-page/__tests__/prompt-link.test.tsx	My Okou prefills a prompt link on its chat page at Home	182	passed
+prompt-link-005	turbo/apps/platform/src/views/okou-page/__tests__/prompt-link.test.tsx	A prompt route starts a chat with its selected personal subscription model	198	passed
+prompt-link-008	turbo/apps/platform/src/views/okou-page/__tests__/prompt-link.test.tsx	Completing a prompt link preserves a model chosen in a later composer	245	passed
+prompt-link-009	turbo/apps/platform/src/views/okou-page/__tests__/prompt-link.test.tsx	A prompt link starts an illustration chat with its selected style	309	passed
+prompt-link-010	turbo/apps/platform/src/views/okou-page/__tests__/prompt-link.test.tsx	A prompt link starts a presentation chat with its selected template	331	passed
+prompt-link-012	turbo/apps/platform/src/views/okou-page/__tests__/prompt-link.test.tsx	A prompt link starts a website chat with its selected template	360	passed
+prompt-link-013	turbo/apps/platform/src/views/okou-page/__tests__/prompt-link.test.tsx	An unavailable model leaves a prompt link recoverable	382	passed
+prompt-link-018	turbo/apps/platform/src/views/okou-page/__tests__/prompt-link.test.tsx	A file-only hash handoff sends its imported private attachment	421	passed
 wallet-action-card-001	turbo/apps/platform/src/views/okou-page/__tests__/wallet-action-card.test.tsx	a workspace notification completes wallet consent and continues the owning chat once	113	passed
 wallet-action-card-002	turbo/apps/platform/src/views/okou-page/__tests__/wallet-action-card.test.tsx	wallet consent completed before the user's click continues from the current authorization	167	passed
 wallet-action-card-005	turbo/apps/platform/src/views/okou-page/__tests__/wallet-action-card.test.tsx	a failed consent stops waiting without sending a message even when its notification claims authorization	188	passed
