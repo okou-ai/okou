@@ -75,8 +75,6 @@ class SessionModelTest {
 
         override suspend fun preferences() = loadPreferences()
 
-        override suspend fun personalInstructionsEnabled() = false
-
         override suspend fun personalInstructions(): PersonalInstructions =
             error("Instructions are not enabled in this fixture")
 

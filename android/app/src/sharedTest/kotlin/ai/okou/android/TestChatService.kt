@@ -4,7 +4,6 @@ import ai.okou.android.api.generated.Agents
 import ai.okou.android.api.generated.ChatArchive
 import ai.okou.android.api.generated.ChatEvents
 import ai.okou.android.api.generated.ChatSnapshot
-import ai.okou.android.api.generated.FeatureSwitches
 import ai.okou.android.api.generated.Indicators
 import ai.okou.android.api.generated.ProjectArchive
 import ai.okou.android.api.generated.ProjectEvents
@@ -56,8 +55,6 @@ open class TestChatService : ChatListService {
         pinOrder: String,
         eventId: String,
     ): Unit = error("Unexpected pin reorder")
-
-    override suspend fun featureSwitches() = FeatureSwitches(emptyMap(), mapOf("projects" to false))
 
     override suspend fun chatSnapshot() =
         Json.decodeFromString<ChatSnapshot>(

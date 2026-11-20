@@ -39,14 +39,11 @@ class PersonalInstructionsModelTest {
         var saved =
             PersonalInstructions("org-a", "user-a", "Original", "2026-11-14T00:00:00Z", "v1")
         val writes = mutableListOf<Pair<String, String>>()
-        var availability: suspend () -> Boolean = { true }
         var read: suspend () -> PersonalInstructions = { saved }
         var write: suspend (String, String) -> PersonalInstructions = { content, version ->
             if (version != saved.version) throw ApiFailure.Http(409, null, null, null)
             saved.copy(content = content, version = saved.version + "-next").also { saved = it }
         }
-
-        override suspend fun personalInstructionsEnabled() = availability()
 
         override suspend fun personalInstructions() = read()
 
@@ -383,7 +380,7 @@ class PersonalInstructionsModelTest {
         }
 
     @Test
-    fun localIntentRestoresWhenTheOptionalAvailabilityRequestFails() =
+    fun localIntentRestoresWhenTheInstructionsReadFails() =
         check { service, store, create, failures ->
             var model = create(false)
             model.open()
@@ -391,7 +388,7 @@ class PersonalInstructionsModelTest {
             model.edit("Keep my offline draft 👋")
             runCurrent()
             model = create(true)
-            service.availability = { throw ApiFailure.Network(IOException("offline")) }
+            service.read = { throw ApiFailure.Network(IOException("offline")) }
             model.open()
             runCurrent()
             assertEquals(InstructionsPhase.Failed, model.uiState.value.phase)
@@ -402,13 +399,13 @@ class PersonalInstructionsModelTest {
             assertEquals(service.saved.content, model.uiState.value.content)
             assertTrue(model.uiState.value.canEdit)
             assertNotNull(model.uiState.value.draft)
-            service.availability = { true }
+            service.read = { service.saved }
             model.refresh()
             runCurrent()
             assertEquals(InstructionsPhase.Ready, model.uiState.value.phase)
             assertNull(model.uiState.value.draft)
             assertNull(store.load(identity).draft)
-            service.availability = { throw ApiFailure.Network(IOException("offline again")) }
+            service.read = { throw ApiFailure.Network(IOException("offline again")) }
             model.refresh()
             runCurrent()
             model.edit("Continue editing offline")
@@ -416,7 +413,7 @@ class PersonalInstructionsModelTest {
             assertEquals("Continue editing offline", store.load(identity).draft?.content)
             assertTrue(service.writes.isEmpty())
             assertTrue(failures.isEmpty())
-            service.availability = { true }
+            service.read = { service.saved }
             model.refresh()
             runCurrent()
             model.save()

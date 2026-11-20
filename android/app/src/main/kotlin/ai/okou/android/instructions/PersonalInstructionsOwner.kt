@@ -171,15 +171,9 @@ internal class PersonalInstructionsOwner(
                     }
                     op.revision = revision
                     requireCurrent(op)
-                    if (!connection.service.personalInstructionsEnabled()) {
-                        requireCurrent(op)
-                        mutable.value = mutable.value.copy(read = InstructionsRead.Unavailable)
-                    } else {
-                        requireCurrent(op)
-                        val saved = connection.service.personalInstructions()
-                        requireCurrent(op)
-                        acceptRead(op, saved, discard)
-                    }
+                    val saved = connection.service.personalInstructions()
+                    requireCurrent(op)
+                    acceptRead(op, saved, discard)
                 } catch (cancelled: CancellationException) {
                     finish(op, interrupted = true)
                     throw cancelled

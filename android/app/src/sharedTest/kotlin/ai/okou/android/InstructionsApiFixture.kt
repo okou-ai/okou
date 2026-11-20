@@ -19,7 +19,6 @@ class InstructionsApiFixture : Closeable {
     private val transport = FixtureHttpsServer()
     val server = transport.server
     val requests = ConcurrentLinkedQueue<RecordedRequest>()
-    @Volatile var enabled = true
     @Volatile var denied = false
     @Volatile var disconnectSave = false
     @Volatile var beforeRead: () -> Unit = {}
@@ -53,14 +52,10 @@ class InstructionsApiFixture : Closeable {
             object : Dispatcher() {
                 override fun dispatch(request: RecordedRequest): MockResponse {
                     requests.add(request)
-                    if (request.path == "/api/feature-switches")
-                        return json(
-                            """{"switches":{},"effectiveSwitches":{"singleAgent":$enabled}}"""
-                        )
                     if (request.path != "/api/instructions")
                         return MockResponse().setResponseCode(404)
                     if (request.method == "GET") beforeRead()
-                    if (!enabled || denied)
+                    if (denied)
                         return json("""{"error":{"code":"FORBIDDEN","message":"Unavailable"}}""")
                             .setResponseCode(403)
                     if (request.method == "PUT")

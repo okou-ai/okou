@@ -41,9 +41,6 @@ class ComposerApiFixture : Closeable {
     @Volatile var draftReadStatus = 200
 
     init {
-        chats.flags = {
-            json("""{"switches":{},"effectiveSwitches":{"projects":true,"singleAgent":true}}""")
-        }
         chats.commandResponse = { request ->
             val path = request.requestUrl?.encodedPath.orEmpty()
             when {

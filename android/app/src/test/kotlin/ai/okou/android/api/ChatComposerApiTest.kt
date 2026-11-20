@@ -13,7 +13,6 @@ import ai.okou.android.chat.HistoryEvent
 import ai.okou.android.chat.ServerDraftTarget
 import ai.okou.android.chat.TextDisposition
 import ai.okou.android.chat.plainText
-import ai.okou.android.jsonResponse
 import java.util.UUID
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
@@ -166,21 +165,6 @@ class ChatComposerApiTest {
                 assertEquals(cursor, page.cursor)
                 assertFalse(page.hasMore)
             }
-        }
-    }
-
-    @Test
-    fun retiredSingleAgentKeyDefaultsToMyOkouAndExplicitFalseStillDisablesIt() = runTest {
-        ComposerApiFixture().use { fixture ->
-            fixture.chats.flags = { jsonResponse("""{"switches":{},"effectiveSwitches":{}}""") }
-            assertEquals(CHAT_AGENT, fixture.service.newChatAgent())
-            assertTrue(fixture.service.personalInstructionsEnabled())
-
-            fixture.chats.flags = {
-                jsonResponse("""{"switches":{},"effectiveSwitches":{"singleAgent":false}}""")
-            }
-            assertNull(fixture.service.newChatAgent())
-            assertFalse(fixture.service.personalInstructionsEnabled())
         }
     }
 

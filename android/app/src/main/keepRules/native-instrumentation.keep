@@ -112,9 +112,6 @@
 }
 -keep,allowobfuscation class ai.okou.android.api.generated.CreatedThread {
 }
--keep,allowobfuscation class ai.okou.android.api.generated.FeatureSwitches {
-  public <init>(java.util.Map, java.util.Map);
-}
 -keep,allowobfuscation interface ai.okou.android.api.generated.HistorySnapshot {
 }
 -keep,allowobfuscation class ai.okou.android.api.generated.Indicators {
@@ -259,7 +256,6 @@
   public java.lang.Object chatSnapshot(kotlin.coroutines.Continuation);
   public java.lang.Object composerDraft(ai.okou.android.chat.ServerDraftTarget, kotlin.coroutines.Continuation);
   public java.lang.Object createThread(ai.okou.android.api.generated.CreateThreadRequest, kotlin.coroutines.Continuation);
-  public java.lang.Object featureSwitches(kotlin.coroutines.Continuation);
   public java.lang.Object historyArchive(java.lang.String, kotlin.coroutines.Continuation);
   public java.lang.Object historyCatchUp(java.util.Map, kotlin.coroutines.Continuation);
   public java.lang.Object historyRows(java.lang.String, ai.okou.android.chat.HistoryCursor, kotlin.coroutines.Continuation);
@@ -272,7 +268,6 @@
   public java.lang.Object observeRealtime(kotlinx.coroutines.flow.StateFlow, kotlin.jvm.functions.Function3, kotlin.jvm.functions.Function2, kotlin.coroutines.Continuation);
   public java.lang.Object organization(kotlin.coroutines.Continuation);
   public java.lang.Object personalInstructions(kotlin.coroutines.Continuation);
-  public java.lang.Object personalInstructionsEnabled(kotlin.coroutines.Continuation);
   public java.lang.Object preferences(kotlin.coroutines.Continuation);
   public java.lang.Object projectArchive(java.lang.String, kotlin.coroutines.Continuation);
   public java.lang.Object projectEvents(long, kotlin.coroutines.Continuation);
@@ -328,7 +323,6 @@
   public java.lang.Object chatArchive(java.lang.String, kotlin.coroutines.Continuation);
   public java.lang.Object chatEvents(java.lang.Long, kotlin.coroutines.Continuation);
   public java.lang.Object chatSnapshot(kotlin.coroutines.Continuation);
-  public java.lang.Object featureSwitches(kotlin.coroutines.Continuation);
   public java.lang.Object historyArchive(java.lang.String, kotlin.coroutines.Continuation);
   public java.lang.Object historyCatchUp(java.util.Map, kotlin.coroutines.Continuation);
   public java.lang.Object historyRows(java.lang.String, ai.okou.android.chat.HistoryCursor, kotlin.coroutines.Continuation);
@@ -512,7 +506,6 @@
 }
 -keep,allowobfuscation interface ai.okou.android.instructions.PersonalInstructionsService {
   public java.lang.Object personalInstructions(kotlin.coroutines.Continuation);
-  public java.lang.Object personalInstructionsEnabled(kotlin.coroutines.Continuation);
   public java.lang.Object updatePersonalInstructions(java.lang.String, java.lang.String, kotlin.coroutines.Continuation);
 }
 -keep,allowobfuscation class ai.okou.android.instructions.PersonalInstructionsState {
@@ -764,7 +757,6 @@
 }
 -keep,allowobfuscation class kotlin.collections.MapsKt__MapsJVMKt {
   public static int mapCapacity(int);
-  public static java.util.Map mapOf(kotlin.Pair);
 }
 -keep,allowobfuscation class kotlin.collections.MapsKt__MapsKt {
   public static java.util.Map emptyMap();

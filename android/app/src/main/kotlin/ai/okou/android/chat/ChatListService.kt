@@ -4,7 +4,6 @@ import ai.okou.android.api.generated.Agents
 import ai.okou.android.api.generated.ChatArchive
 import ai.okou.android.api.generated.ChatEvents
 import ai.okou.android.api.generated.ChatSnapshot
-import ai.okou.android.api.generated.FeatureSwitches
 import ai.okou.android.api.generated.Indicators
 import ai.okou.android.api.generated.ProjectArchive
 import ai.okou.android.api.generated.ProjectEvents
@@ -45,6 +44,4 @@ interface ChatListService : ConversationHistoryService {
     suspend fun projectArchive(url: String): ProjectArchive
 
     suspend fun projectEvents(since: Long): ProjectEvents
-
-    suspend fun featureSwitches(): FeatureSwitches
 }

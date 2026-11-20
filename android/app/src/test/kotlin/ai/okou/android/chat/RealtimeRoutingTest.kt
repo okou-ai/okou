@@ -91,7 +91,6 @@ class RealtimeRoutingTest {
                         it.listPhase == ChatReadPhase.Ready &&
                             it.projectsPhase == ChatReadPhase.Ready &&
                             it.agentsPhase == ChatReadPhase.Ready &&
-                            it.projectsSettingsPhase == ChatReadPhase.Ready &&
                             it.indicatorsPhase == ChatReadPhase.Ready
                     }
                 }
