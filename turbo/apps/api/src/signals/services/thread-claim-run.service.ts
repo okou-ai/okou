@@ -132,7 +132,6 @@ import {
   deliverUnexpectedQueuedPromptRejection$,
   type QueuedChatPromptData,
   queuedChatRunCallbackInputs,
-  queuedIntegrationLaunchFields,
   type QueuedLaunchMaterial,
   queuedMessageAdmissionFailure,
   type QueuedMessageAdmissionFailure,
@@ -501,6 +500,28 @@ class QueuedPromptLaunchUnavailableError extends Error {
   }
 }
 
+function bindQueuedPromptDelivery(
+  launchMaterial: QueuedLaunchMaterial,
+  agentId: string,
+): QueuedLaunchMaterial {
+  const { delivery } = launchMaterial;
+  return {
+    ...launchMaterial,
+    delivery: {
+      ...delivery,
+      ...(delivery.telegramDelivery
+        ? { telegramDelivery: { ...delivery.telegramDelivery, agentId } }
+        : {}),
+      ...(delivery.emailDelivery
+        ? { emailDelivery: { ...delivery.emailDelivery, agentId } }
+        : {}),
+      ...(delivery.agentphoneDelivery
+        ? { agentphoneDelivery: { ...delivery.agentphoneDelivery, agentId } }
+        : {}),
+    },
+  };
+}
+
 function queuedPromptRunInput(args: {
   readonly input: QueuedChatPromptData;
   readonly launch: QueuedLaunchMaterial;
@@ -528,7 +549,7 @@ function queuedPromptRunInput(args: {
       args.features,
     ),
     captureNetworkBodies: args.capture,
-    ...queuedIntegrationLaunchFields(launch, input.agent.id),
+    ...launch.delivery,
     autonomyBudget: input.queuedMessage.autonomyBudget.autonomyBudget,
   };
 }
@@ -735,12 +756,7 @@ export interface ThreadRunContext {
   readonly persistence: ReturnType<typeof prepareAtomicLaunchPersistence>;
   readonly head: ChatQueueHeadContext;
   readonly producerBinding: ClaimProducerBinding;
-  readonly rejection:
-    | {
-        readonly kind: "prompt";
-        readonly runInput: QueuedRunAdmissionFailureInput;
-      }
-    | Extract<ClaimRejectionContext, { readonly kind: "automation" }>;
+  readonly rejection: ClaimRejectionContext;
   readonly launchRecord: ClaimLaunchRecord;
 }
 
@@ -788,7 +804,10 @@ type ClaimProducerBinding = {
 } | null;
 
 type ClaimRejectionContext =
-  | { readonly kind: "prompt"; readonly runInput: CreateQueuedChatRunInput }
+  | {
+      readonly kind: "prompt";
+      readonly runInput: QueuedRunAdmissionFailureInput;
+    }
   | { readonly kind: "automation"; readonly userId: string };
 
 type ClaimLaunchRecord =
@@ -888,31 +907,24 @@ function claimCommitInput(input: RunPlan): ThreadRunContext["input"] {
   };
 }
 
-function claimRejectionContext(
-  rejection: ClaimRejectionContext,
-): ThreadRunContext["rejection"] {
-  if (rejection.kind === "automation") {
-    return rejection;
-  }
-  const input = rejection.runInput;
+function queuedPromptRejectionInput(
+  input: CreateQueuedChatRunInput,
+): QueuedRunAdmissionFailureInput {
   return {
-    kind: "prompt",
-    runInput: {
-      orgId: input.orgId,
-      userId: input.userId,
-      agentId: input.agentId,
-      threadId: input.threadId,
-      queuedMessage: input.queuedMessage,
-      triggerSource: input.triggerSource,
-      slackDelivery: input.slackDelivery,
-      feishuDelivery: input.feishuDelivery,
-      teamsDelivery: input.teamsDelivery,
-      discordDelivery: input.discordDelivery,
-      wechatDelivery: input.wechatDelivery,
-      telegramDelivery: input.telegramDelivery,
-      emailDelivery: input.emailDelivery,
-      agentphoneDelivery: input.agentphoneDelivery,
-    },
+    orgId: input.orgId,
+    userId: input.userId,
+    agentId: input.agentId,
+    threadId: input.threadId,
+    queuedMessage: input.queuedMessage,
+    triggerSource: input.triggerSource,
+    slackDelivery: input.slackDelivery,
+    feishuDelivery: input.feishuDelivery,
+    teamsDelivery: input.teamsDelivery,
+    discordDelivery: input.discordDelivery,
+    wechatDelivery: input.wechatDelivery,
+    telegramDelivery: input.telegramDelivery,
+    emailDelivery: input.emailDelivery,
+    agentphoneDelivery: input.agentphoneDelivery,
   };
 }
 
@@ -1304,7 +1316,7 @@ export function createThreadClaimRunObjects(
       };
     },
   );
-  const promptMaterial$ = computed(
+  const promptSourceMaterial$ = computed(
     async (get): Promise<QueuedLaunchMaterial> => {
       const { queuedMessage } = await get(promptArgs$);
       switch (queuedMessage.contextType) {
@@ -1402,6 +1414,13 @@ export function createThreadClaimRunObjects(
       throw new QueuedPromptLaunchUnavailableError();
     },
   );
+  const promptMaterial$ = computed(async (get) => {
+    const source = await get(promptSourceMaterial$);
+    return {
+      source,
+      launch: bindQueuedPromptDelivery(source, bootstrap.agentId),
+    };
+  });
   const runTemplates$ = threadContext.templates$;
   const captureNetworkBodies$ = computed(async (get) => {
     const head = await get(head$);
@@ -1429,7 +1448,7 @@ export function createThreadClaimRunObjects(
         }
       | QueuedMessageAdmissionFailure
     > => {
-      const [args, launch, model, session, capture, features, templates] =
+      const [args, material, model, session, capture, features, templates] =
         await Promise.all([
           get(promptArgs$),
           get(promptMaterial$),
@@ -1441,7 +1460,7 @@ export function createThreadClaimRunObjects(
         ]);
       const autonomy = args.queuedMessage.autonomyBudget;
       if (autonomy.kind !== "ok") {
-        return queuedMessageAdmissionFailure(args, launch, {
+        return queuedMessageAdmissionFailure(args, material.source, {
           code:
             autonomy.kind === "exhausted"
               ? "AUTONOMY_BUDGET_EXHAUSTED"
@@ -1453,16 +1472,24 @@ export function createThreadClaimRunObjects(
         });
       }
       if ("status" in model) {
-        return queuedMessageAdmissionFailure(args, launch, model.body.error);
+        return queuedMessageAdmissionFailure(
+          args,
+          material.source,
+          model.body.error,
+        );
       }
       if ("error" in templates) {
-        return queuedMessageAdmissionFailure(args, launch, templates.error);
+        return queuedMessageAdmissionFailure(
+          args,
+          material.source,
+          templates.error,
+        );
       }
       const officialWorkflow = await get(officialWorkflow$);
       if (isRouteError(officialWorkflow)) {
         return queuedMessageAdmissionFailure(
           args,
-          launch,
+          material.source,
           officialWorkflow.body.error,
         );
       }
@@ -1470,7 +1497,7 @@ export function createThreadClaimRunObjects(
       if (isRouteError(promptAndSkills)) {
         return queuedMessageAdmissionFailure(
           args,
-          launch,
+          material.source,
           promptAndSkills.body.error,
         );
       }
@@ -1480,7 +1507,7 @@ export function createThreadClaimRunObjects(
       return {
         runInput: queuedPromptRunInput({
           input: args,
-          launch,
+          launch: material.launch,
           prompt: promptAndSkills.userPrompt,
           model,
           capture,
@@ -1567,7 +1594,10 @@ export function createThreadClaimRunObjects(
         officialWorkflow: preparedInput.officialWorkflow,
         promptAndSkills: preparedInput.promptAndSkills,
         producerBinding: null,
-        rejection: { kind: "prompt", runInput },
+        rejection: {
+          kind: "prompt",
+          runInput: queuedPromptRejectionInput(runInput),
+        },
         launchRecord: {
           kind: "prompt",
           timing,
@@ -1618,7 +1648,7 @@ export function createThreadClaimRunObjects(
     };
   });
   const promptReady$ = computed(async (get) => {
-    if (!(await get(promptIdentity$))) {
+    if (await get(earlyPromptAssembly$)) {
       return false;
     }
     const [args, model] = await Promise.all([
@@ -1647,7 +1677,7 @@ export function createThreadClaimRunObjects(
       threadId: args.threadId,
       agentId: args.agent.id,
       queuedMessage: args.queuedMessage,
-      ...queuedIntegrationLaunchFields(material.value, args.agent.id),
+      ...material.value.launch.delivery,
     });
   });
   const automationSource$ = computed(async (get) => {
@@ -2844,7 +2874,7 @@ export function createThreadClaimRunObjects(
                 launch: runnerLaunch,
                 head,
                 producerBinding: assembly.producerBinding,
-                rejection: claimRejectionContext(assembly.rejection),
+                rejection: assembly.rejection,
                 launchRecord: claimLaunchRecord(
                   assembly.launchRecord,
                   input.integrationContext,
