@@ -799,7 +799,6 @@
   public static java.lang.Object getCOROUTINE_SUSPENDED();
 }
 -keep,allowobfuscation class kotlin.coroutines.jvm.internal.Boxing {
-  public static java.lang.Boolean boxBoolean(boolean);
   public static java.lang.Long boxLong(long);
 }
 -keep,allowobfuscation class kotlin.coroutines.jvm.internal.ContinuationImpl {
