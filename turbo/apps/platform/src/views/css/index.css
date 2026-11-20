@@ -1193,7 +1193,9 @@ body {
    difference, because edges are read from lightness and the brand yellow
    turns only a third of its difference from the ground into lightness (pink
    and blue about four fifths); Create's ink is therefore a golden amber. Dark
-   takes the same pairs down to the dark ground's depth. */
+   turns the relationship over: on a dark ground a darker tint reads as a
+   stain, so paper is a saturated tint lighter than the ground and ink a
+   brighter one, with Create warmed to amber because a dark yellow is olive. */
 :root {
   --okou-capability-people-paper: color-mix(
     in oklab,
@@ -1249,42 +1251,42 @@ body {
 :root:where([data-theme="dark"]) {
   --okou-capability-people-paper: color-mix(
     in oklab,
-    #783e5e 36%,
+    #e9609f 21%,
     hsl(var(--muted))
   );
   --okou-capability-people-ink: color-mix(
     in oklab,
-    #d77fae 34%,
+    #ffaed6 46%,
     hsl(var(--muted))
   );
   --okou-capability-research-paper: color-mix(
     in oklab,
-    #325c7a 37%,
+    #3c9be6 22%,
     hsl(var(--muted))
   );
   --okou-capability-research-ink: color-mix(
     in oklab,
-    #5fb2e6 32%,
+    #9ad8ff 47%,
     hsl(var(--muted))
   );
   --okou-capability-create-paper: color-mix(
     in oklab,
-    #70641a 27%,
+    #ffb000 14%,
     hsl(var(--muted))
   );
   --okou-capability-create-ink: color-mix(
     in oklab,
-    #d9b710 27%,
+    #ffd84a 41%,
     hsl(var(--muted))
   );
   --okou-capability-workflow-paper: color-mix(
     in oklab,
-    #486828 29%,
+    #86cf1e 17%,
     hsl(var(--muted))
   );
   --okou-capability-workflow-ink: color-mix(
     in oklab,
-    #7fbb22 30%,
+    #b7ee5a 46%,
     hsl(var(--muted))
   );
 }
