@@ -18,16 +18,11 @@ import {
 } from "./canonical-chat-event-read.service";
 import { queuedThreadInputCondition } from "./chat-queued-event.service";
 import {
-  chatThreadRequestSelection,
-  type ChatThreadRequestFacts,
-} from "./chat-thread-request-facts";
+  pickedThreadColumns,
+  type EnqueuedChatInputFacts,
+} from "./chat-run-preparation-facts";
 import { officialWorkflowThreadCondition } from "./official-workflow-policy.service";
 import type { PickedThreadInputEvent } from "./thread-run-prompt/types";
-
-/** Preparation facts only: neither a connector grant nor commit-time authority. */
-export interface ChatRunPreparationFacts {
-  readonly isOfficialWorkflowThread: boolean;
-}
 
 function buildPreparationTables(
   claim: { readonly orgId: string; readonly chatThreadId: string },
@@ -99,11 +94,11 @@ function buildPreparationTables(
   return { occupancy, head };
 }
 
-/** Read the FIFO head and its owned Thread in one availability statement. */
+/** Capture availability, the FIFO head, and its Thread binding together. */
 export function createChatRunPreparationSnapshot(
   claim: { readonly orgId: string; readonly chatThreadId: string },
   bootstrap: AgentRunContextSignals,
-  requestFacts?: ChatThreadRequestFacts,
+  requestInput?: EnqueuedChatInputFacts,
 ) {
   return computed(async (get) => {
     const database = get(db$);
@@ -112,7 +107,7 @@ export function createChatRunPreparationSnapshot(
     const { occupancy, head } = buildPreparationTables(
       claim,
       capacity,
-      requestFacts?.input.id,
+      requestInput?.id,
     );
     const hasCapacity =
       capacity === 0 ? sql`true` : lt(occupancy.activeCount, capacity);
@@ -126,8 +121,7 @@ export function createChatRunPreparationSnapshot(
             .from(activeAgentRuns)
             .where(eq(activeAgentRuns.chatThreadId, claim.chatThreadId)),
         ).mapWith(pgBooleanDecoder),
-        // An immediate send already owns its Thread snapshot.
-        ...(requestFacts ? {} : { thread: chatThreadRequestSelection() }),
+        thread: pickedThreadColumns,
         head: {
           id: head.id,
           chatThreadId: head.chatThreadId,
@@ -156,19 +150,16 @@ export function createChatRunPreparationSnapshot(
       .leftJoin(head, sql`true`)
       .leftJoin(
         chatThreads,
-        requestFacts
-          ? sql`false`
-          : and(
-              eq(chatThreads.id, head.chatThreadId),
-              eq(chatThreads.userId, bootstrap.userId),
-              eq(chatThreads.agentId, bootstrap.agentId),
-            ),
+        and(
+          eq(chatThreads.id, head.chatThreadId),
+          eq(chatThreads.userId, bootstrap.userId),
+          eq(chatThreads.agentId, bootstrap.agentId),
+        ),
       );
     if (!row) {
       throw new Error("Chat preparation occupancy returned no row");
     }
-    const thread = requestFacts?.thread ?? row.thread;
-    const picked = row.head;
+    const { thread, head: picked } = row;
     if (!thread || !picked) {
       return {
         hasCapacity: row.hasCapacity,
@@ -177,8 +168,7 @@ export function createChatRunPreparationSnapshot(
       };
     }
     // Only this request's actual FIFO head may use its canonical input facts.
-    const owned =
-      requestFacts?.input.id === picked.id ? requestFacts.input : undefined;
+    const owned = requestInput?.id === picked.id ? requestInput : undefined;
     const pickedEvent: PickedThreadInputEvent = {
       ...picked,
       userMessage: owned ? owned.userMessage : picked.userMessage,

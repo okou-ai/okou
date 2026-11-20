@@ -13,10 +13,7 @@ import {
   parseRawRows,
 } from "../../lib/db-raw-rows";
 import { chatEventCommandResultSchema } from "./chat-event-append.service";
-import {
-  chatThreadRequestSelection,
-  type ChatThreadRequestFacts,
-} from "./chat-thread-request-facts";
+import type { EnqueuedChatInputFacts } from "./chat-run-preparation-facts";
 
 import type { ChatInputModelSelection } from "@okouai/api-contracts/contracts/chat-input-model";
 import type {
@@ -881,7 +878,13 @@ const loadExistingSendThreadRow$ = command(
     const db = get(db$);
     const [thread] = await db
       .select({
-        ...chatThreadRequestSelection(),
+        id: chatThreads.id,
+        agentId: chatThreads.agentId,
+        selectedModel: chatThreads.selectedModel,
+        modelSettings: chatThreads.modelSettings,
+        codexServiceTier: chatThreads.codexServiceTier,
+        computerUseHostId: chatThreads.computerUseHostId,
+        cloudBrowserEnabled: chatThreads.cloudBrowserEnabled,
         isOfficialWorkflowThread: officialWorkflowThreadCondition({
           threadId,
           orgId: args.orgId,
@@ -1079,54 +1082,27 @@ interface NewSendThread {
 }
 type SendThread = ExistingSendThread | NewSendThread;
 
-function normalSendRequestFacts(
+function normalSendInputFacts(
   args: NormalSendArgs,
-  thread: SendThread,
-  previousBinding:
-    | Pick<
-        ChatThreadRequestFacts["thread"],
-        | "framework"
-        | "frameworkSessionId"
-        | "frameworkSessionRunId"
-        | "projectId"
-        | "title"
-        | "renamedAt"
-      >
-    | undefined,
-  event: Pick<
-    ChatThreadRequestFacts["input"],
-    "id" | "userMessage" | "modelSelection"
-  >,
-): ChatThreadRequestFacts {
+  chatThreadId: string,
+  event: Pick<EnqueuedChatInputFacts, "id" | "userMessage" | "modelSelection">,
+): EnqueuedChatInputFacts {
   return {
     orgId: args.orgId,
-    thread: {
-      id: thread.threadId,
-      projectId: previousBinding?.projectId ?? null,
-      userId: args.userId,
-      agentId: args.body.agentId,
-      ...thread.runSettings,
-      ...thread.computerAccess,
-      framework: previousBinding?.framework ?? null,
-      frameworkSessionId: previousBinding?.frameworkSessionId ?? null,
-      frameworkSessionRunId: previousBinding?.frameworkSessionRunId ?? null,
-      // A new thread's row is inserted untitled and unrenamed.
-      title: previousBinding?.title ?? null,
-      renamedAt: previousBinding?.renamedAt ?? null,
-    },
-    input: {
-      id: event.id,
-      userMessage: event.userMessage,
-      modelSelection: event.modelSelection,
-      requiredOfficialWorkflowIds: args.requiredOfficialWorkflowIds,
-      captureNetworkBodies: Boolean(args.body.captureNetworkBodies),
-      ...(args.requestReceivedAt === undefined
-        ? {}
-        : { requestReceivedAt: args.requestReceivedAt }),
-      ...(args.enqueueTiming
-        ? { enqueueObservationId: args.enqueueTiming.observationId }
-        : {}),
-    },
+    chatThreadId,
+    userId: args.userId,
+    agentId: args.body.agentId,
+    id: event.id,
+    userMessage: event.userMessage,
+    modelSelection: event.modelSelection,
+    requiredOfficialWorkflowIds: args.requiredOfficialWorkflowIds,
+    captureNetworkBodies: Boolean(args.body.captureNetworkBodies),
+    ...(args.requestReceivedAt === undefined
+      ? {}
+      : { requestReceivedAt: args.requestReceivedAt }),
+    ...(args.enqueueTiming
+      ? { enqueueObservationId: args.enqueueTiming.observationId }
+      : {}),
   };
 }
 const resolveSendThread$ = command(
@@ -2314,7 +2290,7 @@ const publishEnqueuedNormalSend$ = command(
       readonly enqueueCommit?: ChatInputEnqueueCommit;
       readonly publishedLease?: PublishedChatThreadLease;
       readonly context: AgentRunContextSignals;
-      readonly requestFacts: ChatThreadRequestFacts;
+      readonly requestInput: EnqueuedChatInputFacts;
     },
     signal: AbortSignal,
   ): Promise<void> => {
@@ -2325,7 +2301,7 @@ const publishEnqueuedNormalSend$ = command(
       enqueueCommit,
       publishedLease,
       context,
-      requestFacts,
+      requestInput,
     } = input;
     if (
       thread.kind === "existing" &&
@@ -2344,7 +2320,7 @@ const publishEnqueuedNormalSend$ = command(
           ...(enqueueCommit ? { enqueueCommit } : {}),
           ...(publishedLease ? { publishedLease } : {}),
           context,
-          requestFacts,
+          requestInput,
         },
         signal,
       ),
@@ -2645,7 +2621,6 @@ const publishPreparedNormalSend$ = command(
     publication: {
       readonly input: NormalSendInput;
       readonly context: AgentRunContextSignals;
-      readonly previousBinding: Parameters<typeof normalSendRequestFacts>[2];
     },
     signal: AbortSignal,
   ) => {
@@ -2678,12 +2653,7 @@ const publishPreparedNormalSend$ = command(
           ...(enqueueCommit ? { enqueueCommit } : {}),
           ...(publishedLease ? { publishedLease } : {}),
           context,
-          requestFacts: normalSendRequestFacts(
-            args,
-            thread,
-            publication.previousBinding,
-            event,
-          ),
+          requestInput: normalSendInputFacts(args, thread.threadId, event),
         },
         signal,
       ),
@@ -2814,8 +2784,6 @@ export const sendNormalEvent$ = command(
               replacementTarget: revocation?.replacementTarget,
             },
             context,
-            previousBinding:
-              "thread" in authorized ? authorized.thread : undefined,
           },
           signal,
         );
