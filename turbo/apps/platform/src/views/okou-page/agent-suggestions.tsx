@@ -45,14 +45,15 @@ const SUGGESTION_ROW =
   "h-auto min-h-14 w-full justify-between gap-3 whitespace-normal rounded-3xl px-4 py-3 text-left text-sm font-normal [&:hover]:bg-state-hover-overlay";
 
 // An option is a raised button on the card; the direction trigger stays a
-// quiet input-like row in the nested fill. The option's outline is an inset
+// quiet input-like row in the muted fill, the gray ramp's Linen stop that the
+// brand's Off White sits on. The option's outline is an inset
 // ring rather than a border, so it takes no width and the label keeps the
 // 16px inset the heading aligns to.
 const SUGGESTION_OPTION =
   "bg-card text-foreground shadow-[0_1px_2px_rgb(37_33_33/0.04)] inset-ring inset-ring-border hover:bg-card hover:shadow-surface hover:inset-ring-control-border";
 
 const SUGGESTION_DIRECTION_TRIGGER =
-  "bg-nested-fill text-muted-foreground hover:bg-nested-fill";
+  "bg-muted text-muted-foreground hover:bg-muted";
 
 function SuggestionOptionContent({
   option,
@@ -61,7 +62,7 @@ function SuggestionOptionContent({
 }) {
   return (
     <span className="flex min-w-0 flex-1 flex-col gap-0.5 wrap-break-word">
-      <span className="leading-6 font-medium">{option.label}</span>
+      <span className="leading-6">{option.label}</span>
       {option.description && (
         <span className="text-[13px] leading-5 text-muted-foreground">
           {option.description}
@@ -294,7 +295,7 @@ function SuggestionDirectionComposer({
   return (
     <section
       aria-labelledby={headingId}
-      className="min-w-0 rounded-3xl bg-nested-fill"
+      className="min-w-0 rounded-3xl bg-muted"
     >
       <div className="flex min-h-12 min-w-0 items-center gap-2 pr-2 pl-4">
         <h3
@@ -422,7 +423,7 @@ export function AgentSuggestionCard({
           ) : null
         }
       />
-      <div className="-mx-4 mt-5 mb-6 flex flex-col gap-2.5">
+      <div className="-mx-4 mt-5 mb-6 flex flex-col gap-3">
         {item.content.options.map((option) => {
           return (
             <Button
@@ -462,9 +463,9 @@ export function AgentSuggestionCard({
         {active && <SuggestionDirection entry={entry} />}
       </div>
       <SuggestionFeedback entry={entry} />
-      {/* Dismissing closes the whole card, so it sits in the card's corner,
-          inside the padding, where it cannot cover the artwork. It comes last
-          so ordinary paint order keeps it above everything else. */}
+      {/* Dismissing closes the whole card, so it sits on the card's corner,
+          its icon on the content's right edge. It comes last so ordinary paint
+          order keeps it above the artwork. */}
       <Button
         type="button"
         variant="quiet"
@@ -473,7 +474,7 @@ export function AgentSuggestionCard({
         aria-label={t(($) => {
           return $.chat.agentSuggestions.dismiss;
         })}
-        className="absolute top-1.5 right-1.5 sm:top-3 sm:right-3"
+        className="absolute top-5.5 right-5 sm:top-8.5 sm:right-8"
         onClick={() => {
           detach(
             submitFeedback(item.id, "dismissed", signal),
@@ -540,7 +541,7 @@ function SuggestionFeedback({
             key={kind}
             type="button"
             variant="neutral"
-            className="h-auto min-h-9 gap-1.5 rounded-3xl border-divider bg-card px-3 py-1.5 text-[13px] font-normal whitespace-normal [&_svg]:text-muted-foreground"
+            className="h-auto min-h-9 gap-1.5 rounded-3xl border-border bg-card px-3 py-1.5 text-[13px] font-normal whitespace-normal [&_svg]:text-muted-foreground"
             onClick={() => {
               detach(submitFeedback(item.id, kind, signal), Reason.DomCallback);
             }}
