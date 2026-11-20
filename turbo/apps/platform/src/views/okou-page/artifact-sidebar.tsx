@@ -424,12 +424,11 @@ export function artifactSidebarSyncTarget(params: {
   if (!artifactId || !params.threadId) {
     return undefined;
   }
+  const driveStatus = file.googleDriveSync?.status;
   return {
-    accountReady:
-      file.googleDriveSync?.status !== "disconnected" &&
-      file.googleDriveSync?.accountReady === true,
+    accountReady: driveStatus !== undefined && driveStatus !== "disconnected",
     threadId: params.threadId,
-    disconnected: file.googleDriveSync?.status === "disconnected",
+    disconnected: driveStatus === "disconnected",
     recovery:
       file.googleDriveSync?.status === "disconnected"
         ? file.googleDriveSync.recovery
