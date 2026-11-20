@@ -623,9 +623,11 @@ function createIdentityContext(
 export const preloadAgentRunContext$ = command(
   ({ get }, signals: AgentRunContextSignals, signal: AbortSignal): void => {
     signal.throwIfAborted();
-    // Start the launch-critical dependency chains before independent projections.
+    // Start the org/member and global model reads before launch-only prefetches.
+    // Normal sends already dispatched the Thread read before reaching this point.
     // All nodes start in this turn; the starter awaits none of them.
     const nodes: readonly Computed<Promise<unknown>>[] = [
+      signals.modelFacts$,
       signals.requestThreadConnectorSources$,
       signals.catalog$,
       signals.authorizedConnectors$,
@@ -638,7 +640,6 @@ export const preloadAgentRunContext$ = command(
       signals.plan$,
       signals.concurrencyCapacity$,
       signals.credits$,
-      signals.modelFacts$,
       signals.modelCatalog$,
       signals.memberModels$,
       signals.memberRoutes$,
