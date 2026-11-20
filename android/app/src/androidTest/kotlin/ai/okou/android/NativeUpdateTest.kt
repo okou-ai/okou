@@ -15,8 +15,10 @@ import androidx.test.core.graphics.writeToTestStorage
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
+import androidx.test.uiautomator.BySelector
 import androidx.test.uiautomator.Condition
 import androidx.test.uiautomator.UiDevice
+import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.Until
 import java.io.File
 import java.io.IOException
@@ -91,10 +93,12 @@ class NativeUpdateTest {
         val failures = mutableListOf<Throwable>()
         try {
             scenario = ActivityScenario.launch(MainActivity::class.java)
-            fun text(value: String) =
-                device.wait(Until.findObject(By.pkg(app.packageName).text(value)), 10_000)
-            fun button(value: String) =
-                generateSequence(requireNotNull(text(value))) { it.parent }.first { it.isClickable }
+            fun find(label: BySelector) = device.wait(Until.findObject(label), 10_000)
+            fun text(value: String) = find(By.pkg(app.packageName).text(value))
+            fun button(label: BySelector): UiObject2 {
+                val node = checkNotNull(find(label)) { "Expected update control $label" }
+                return generateSequence(node) { it.parent }.first { it.isClickable }
+            }
             fun click(label: Int) = requireNotNull(text(app.getString(label))).click()
             fun exists(label: Int) = assertNotNull(text(app.getString(label)))
             fun captureState(name: String) {
@@ -134,7 +138,7 @@ class NativeUpdateTest {
             backToChatList()
 
             val updateAction = app.getString(R.string.updates_toolbar)
-            val updateBounds = button(updateAction).visibleBounds
+            val updateBounds = button(By.pkg(app.packageName).text(updateAction)).visibleBounds
             captureState("toolbar-available")
             assertTrue(
                 device.wait(Until.gone(By.desc(app.getString(R.string.chat_filter))), 10_000)
@@ -203,8 +207,7 @@ class NativeUpdateTest {
             requireNotNull(text(updateAction)).click()
             val percent = "50%"
             val progressLabel = app.getString(R.string.updates_downloading, percent)
-            val progressButton = By.pkg(app.packageName).desc(progressLabel).clickable(true)
-            val progress = requireNotNull(device.wait(Until.findObject(progressButton), 10_000))
+            val progress = button(By.pkg(app.packageName).desc(progressLabel))
             assertEquals(updateBounds, progress.visibleBounds)
             assertNotNull(text(percent))
             assertFalse(device.hasObject(By.pkg(app.packageName).text(updateTarget)))
