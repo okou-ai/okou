@@ -190,10 +190,10 @@ describe("chat search publication", () => {
     const native = await chat.searchChat(owner, keyword);
     expect(
       new Set(native.results.map(({ chatThreadId }) => chatThreadId)),
-    ).toEqual(new Set(ownerInputs.map(({ threadId }) => threadId)));
+    ).toStrictEqual(new Set(ownerInputs.map(({ threadId }) => threadId)));
     await expect(
       chat.searchChat(owner, keyword, { agentId: foreign.agentId }),
-    ).resolves.toEqual(native);
+    ).resolves.toStrictEqual(native);
     const token = mcp.authorize(owner);
     context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
       data: [owner.orgId, otherOrg.orgId].map((orgId) => {
