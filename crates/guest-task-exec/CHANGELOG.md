@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.93](https://github.com/okou-ai/okou/compare/guest-task-exec-v0.2.92...guest-task-exec-v0.2.93) (2026-11-20)
+
+
+### Refactoring
+
+* **ipc:** centralize tool placement handshakes ([#49484](https://github.com/okou-ai/okou/issues/49484)) ([b5ae173](https://github.com/okou-ai/okou/commit/b5ae173de042e6624f944973354c9828f1811a50))
+
 ## [0.2.92](https://github.com/okou-ai/okou/compare/guest-task-exec-v0.2.91...guest-task-exec-v0.2.92) (2026-11-20)
 
 ## [0.2.91](https://github.com/okou-ai/okou/compare/guest-task-exec-v0.2.90...guest-task-exec-v0.2.91) (2026-11-19)

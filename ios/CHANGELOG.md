@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.51.3](https://github.com/okou-ai/okou/compare/ios-v0.51.2...ios-v0.51.3) (2026-11-20)
+
+
+### CI
+
+* **ios:** run swiftlint checks in one job ([#48682](https://github.com/okou-ai/okou/issues/48682)) ([8666b98](https://github.com/okou-ai/okou/commit/8666b9829b54fd86e91dc84d18e97961a4721570))
+
 ## [0.51.2](https://github.com/okou-ai/okou/compare/ios-v0.51.1...ios-v0.51.2) (2026-11-20)
 
 
