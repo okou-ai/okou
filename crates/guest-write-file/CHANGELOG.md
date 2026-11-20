@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.317](https://github.com/okou-ai/okou/compare/guest-write-file-v0.1.316...guest-write-file-v0.1.317) (2026-11-20)
+
+
+### Refactoring
+
+* **guest:** centralize guest write destination policy ([#49552](https://github.com/okou-ai/okou/issues/49552)) ([6003409](https://github.com/okou-ai/okou/commit/6003409fadc41b407e53ceac6ca2f9fc219cd439))
+
 ## [0.1.316](https://github.com/okou-ai/okou/compare/guest-write-file-v0.1.315...guest-write-file-v0.1.316) (2026-11-20)
 
 ## [0.1.315](https://github.com/okou-ai/okou/compare/guest-write-file-v0.1.314...guest-write-file-v0.1.315) (2026-11-20)

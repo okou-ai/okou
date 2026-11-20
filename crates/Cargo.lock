@@ -2172,7 +2172,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-tests"
-version = "0.12.214"
+version = "0.12.215"
 dependencies = [
  "cli-test-support",
  "guest-contracts",
@@ -2287,7 +2287,7 @@ dependencies = [
 
 [[package]]
 name = "guest-write-file"
-version = "0.1.316"
+version = "0.1.317"
 dependencies = [
  "cli-test-support",
  "guest-contracts",
@@ -4159,7 +4159,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.249.77"
+version = "0.249.78"
 dependencies = [
  "api-contracts",
  "async-trait",
