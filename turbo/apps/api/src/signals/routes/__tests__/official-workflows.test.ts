@@ -213,18 +213,22 @@ describe("My Okou proactive settings", () => {
     const headers = authHeaders(actor);
     const hourly = app(proactiveSuggestionsContract);
     const feed = app(feedContract);
-    await updateFeatureSwitchesForUser(context, owner, {
-      [FeatureSwitchKey.AgentSuggestion]: true,
-      [FeatureSwitchKey.MyOkouProactiveSettings]: false,
-    });
-    await accept(
-      hourly.updateWithFeed({ headers, body: { enabled: false } }),
-      [403],
-    );
+    for (const flags of [
+      { suggestions: false, singleAgent: true },
+      { suggestions: true, singleAgent: false },
+    ]) {
+      await updateFeatureSwitchesForUser(context, owner, {
+        [FeatureSwitchKey.AgentSuggestion]: flags.suggestions,
+        [FeatureSwitchKey.SingleAgent]: flags.singleAgent,
+      });
+      await accept(
+        hourly.updateWithFeed({ headers, body: { enabled: false } }),
+        [403],
+      );
+    }
     await updateFeatureSwitchesForUser(context, owner, {
       [FeatureSwitchKey.SingleAgent]: true,
       [FeatureSwitchKey.AgentSuggestion]: true,
-      [FeatureSwitchKey.MyOkouProactiveSettings]: true,
     });
     expect(
       (await accept(hourly.get({ headers }), [200])).body.enabled,

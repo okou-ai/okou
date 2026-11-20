@@ -31,12 +31,12 @@ import { TiptapInstructionsEditor } from "../../../tiptap-instructions-editor.ts
 import { UnsavedBar } from "../../../unsaved-bar.tsx";
 import { InstructionsConflict } from "../../../instructions-conflict.tsx";
 
-import { myOkouProactiveSettingsEnabled$ } from "../../../../../signals/single-agent.ts";
+import { proactiveSettingsInMyOkou$ } from "../../../../../signals/single-agent.ts";
 import { ProactiveSection } from "./proactive-section.tsx";
 
 export function MyOkouSection() {
   const { t } = useTranslation();
-  const proactive = useLastResolved(myOkouProactiveSettingsEnabled$);
+  const proactive = useLastResolved(proactiveSettingsInMyOkou$);
   const tab = useGet(myOkouTab$);
   const setTab = useSet(setMyOkouTab$);
   if (proactive === undefined) {

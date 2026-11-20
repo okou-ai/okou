@@ -11,7 +11,6 @@ export enum FeatureSwitchKey {
   PresentationOutputFormat = "presentationOutputFormat",
   MarkdownFirstOutput = "markdownFirstOutput",
   SingleAgent = "singleAgent",
-  MyOkouProactiveSettings = "myOkouProactiveSettings",
   ProjectTitleReveal = "projectTitleReveal",
   ProjectThreadDeletion = "projectThreadDeletion",
   OkouAnimatedAvatar = "okouAnimatedAvatar",
