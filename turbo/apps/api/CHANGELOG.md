@@ -10,6 +10,28 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.97.4](https://github.com/okou-ai/okou/compare/api-v2.97.3...api-v2.97.4) (2026-11-20)
+
+
+### Refactoring
+
+* **drive:** authorize artifact and table exports with chat accounts ([#49430](https://github.com/okou-ai/okou/issues/49430)) ([efa10f0](https://github.com/okou-ai/okou/commit/efa10f0bb95b3f3c9c5d09aa3e1049c3c49163e7))
+
+
+### Performance Improvements
+
+* **api:** capture and overlap remaining run launch inputs ([#49489](https://github.com/okou-ai/okou/issues/49489)) ([1b6f8c8](https://github.com/okou-ai/okou/commit/1b6f8c886493476eafcc18cbd729fb81941bd334))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.95.1
+    * @okouai/core bumped to 8.857.4
+    * @okouai/db bumped to 2.56.0
+    * @okouai/pi-agent-runtime bumped to 1.52.16
+
 ## [2.97.3](https://github.com/okou-ai/okou/compare/api-v2.97.2...api-v2.97.3) (2026-11-20)
 
 
