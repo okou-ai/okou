@@ -27,6 +27,8 @@ Original test `Retire the previous error as soon as a new message is sent, befor
 - **When** The user sends “Continue checking,” before the new request is acknowledged or produces output.
 - **Then** The previous error disappears as thinking begins, while the previous result and its artifact and Copy message action remain.
 
+Accepted in batch 31. The prior generic error is visible before the new send. While the response is held, the new prompt and Thinking replace the error, and the previous answer keeps its artifact and Copy message action.
+
 ## chat-run-status-tail-004
 
 Original test `A subsequent failed response replaces the previous error while retaining its result`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/chat-run-status-tail.test.tsx#L185).
@@ -35,6 +37,8 @@ Original test `A subsequent failed response replaces the previous error while re
 - **When** The new run is acknowledged and fails with an execution timeout.
 - **Then** The new failure is shown as “Time limit reached” in the status tail, replacing the previous generic error. Thinking disappears, one event-actions group is shown, and the previous result and its artifact and Copy message action remain.
 
+Accepted in batch 31. The prior failure and the new thinking state are both visible before the acknowledged continuation times out. The new error renders in the status tail and one event-actions group remains.
+
 ## chat-run-status-tail-005
 
 Original test `Derive the latest response from recorded input in the same run when opening a chat`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/chat-run-status-tail.test.tsx#L199).
@@ -42,6 +46,8 @@ Original test `Derive the latest response from recorded input in the same run wh
 - **Given** A run has produced a result and failed, followed in the recorded history by another prompt in that same run; the run is active.
 - **When** The user opens the chat.
 - **Then** The recorded prompt “Continue from the recorded input” appears, the previous generic failure is absent, and the result and its artifact and Copy message action remain.
+
+Unverified in batch 31. A Router control reopened the same conversation after recording this input against the failed run ID. The earlier generic error disappeared and the result, artifact and Copy message remained. The transcript had neither Thinking nor Stop. The event fold continues to classify the run.failed ID as terminal even if thread metadata lists it as active. The active-run precondition remains open. This ID earns no credit.
 
 ## chat-run-status-tail-006
 
@@ -66,3 +72,5 @@ Original test `Retire completion and followups while retaining the result action
 - **Given** A completed run has a result, related artifact, and the followup “Summarize the check.”
 - **When** The user sends “Start another check” while the new request is still awaiting acknowledgement.
 - **Then** Thinking appears and the followup group disappears, while the previous result, artifact, and Copy message action remain.
+
+Accepted in batch 31. The completed result first shows the Keep going group and its suggestion. A held new send replaces the suggestions with Thinking and retains the earlier result and actions.
