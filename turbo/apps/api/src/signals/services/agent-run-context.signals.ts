@@ -250,6 +250,8 @@ function catalogMetadataSlugs(selection: ExecutionConnectorSelection) {
 }
 
 export interface BootstrapConnectorAccount extends ConnectorSourceRow {
+  readonly externalEmail: string | null;
+  readonly displayName: string | null;
   readonly connectorId: string;
   readonly isDefault: boolean;
   readonly defaultEnabledForChats: boolean;
@@ -753,6 +755,8 @@ const bootstrapCredentialsDecoder = zodDriverValueDecoder(
 
 const bootstrapConnectorAccountColumns = Object.freeze({
   id: connectors.id,
+  externalEmail: connectors.externalEmail,
+  displayName: connectors.displayName,
   connectorSlug: connectors.connectorSlug,
   customConnectorId: connectors.customConnectorId,
   isDefault: connectors.isDefault,

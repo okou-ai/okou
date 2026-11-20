@@ -228,6 +228,7 @@ import {
   TransactionRollbackError,
   DrizzleQueryError,
   isNotNull,
+  ne,
   sql,
   type SQL,
   type SQLWrapper,
@@ -3025,6 +3026,7 @@ interface PersistedAtomicLaunchRows {
   readonly kind: "pending";
   readonly marketingRewardEventId: string | null;
   readonly createdAt: Date;
+  readonly isFirstRun: boolean;
 }
 
 interface PreparedRunnerLaunch {
@@ -3813,24 +3815,21 @@ async function pendingLaunchCommitResult(
   return {
     kind: "pending",
     marketingRewardEventId: persisted.marketingRewardEventId,
-    admittedLaunch: admittedRunLaunch(
-      args,
-      persisted.createdAt,
-      reusePreparation,
-    ),
+    admittedLaunch: admittedRunLaunch(args, persisted, reusePreparation),
     publicationReturnedAt,
   };
 }
 
 function admittedRunLaunch(
   args: PreparedThreadLaunchCommit,
-  createdAt: Date,
+  persisted: PersistedAtomicLaunchRows,
   reusePreparation: RunnerReusePreparation,
 ): AdmittedRunLaunch {
   const { rowsArgs: rows, metadata } = args.persistence.rows;
   return {
     run: {
       id: args.identity.runId,
+      isFirstRun: persisted.isFirstRun,
       userId: rows.userId,
       orgId: rows.orgId,
       agentId: rows.resolved.agentId,
@@ -3858,7 +3857,7 @@ function admittedRunLaunch(
     runnerGroup: args.launch.runnerGroup,
     profile: args.launch.profile,
     reuseKey: args.launch.reuseKey,
-    createdAt,
+    createdAt: persisted.createdAt,
     reusePreparation,
   };
 }
@@ -3868,6 +3867,7 @@ const pendingLaunchRowSchema = discriminatedUnion("kind", [
     kind: literal("pending"),
     runId: string(),
     createdAt: pgTimestampWithoutTimezoneToDateSchema,
+    isFirstRun: boolean(),
     boundThreadId: string().nullable(),
     billingAttributionId: string().nullable(),
     marketingRewardEventId: uuid().nullable(),
@@ -3894,6 +3894,7 @@ function pendingAtomicLaunchResult(
     kind: "pending",
     marketingRewardEventId: row.marketingRewardEventId,
     createdAt: row.createdAt,
+    isFirstRun: row.isFirstRun,
   };
 }
 
@@ -3977,6 +3978,16 @@ function pendingAtomicLaunchPlan(
       (SELECT id FROM launch_workflow_source) AS "marketingRewardEventId",
       (SELECT ${returnedCteColumn(context.insertedRun, "id")} FROM ${context.insertedRun}) AS "runId",
       (SELECT ${returnedCteColumn(context.insertedRun, "created_at")} FROM ${context.insertedRun})::text AS "createdAt",
+      CASE WHEN EXISTS (SELECT 1 FROM ${context.insertedRun}) THEN
+        NOT EXISTS (
+          SELECT 1 FROM ${chatEvents}
+          WHERE ${and(
+            eq(chatEvents.chatThreadId, args.commit.createArgs.chatThreadId),
+            isNotNull(chatEvents.runId),
+            ne(chatEvents.runId, context.rowsArgs.identity.runId),
+          )}
+        )
+      END AS "isFirstRun",
       ${returnedCteId(context.updatedThread)} AS "boundThreadId"
     WHERE (SELECT ${count()} FROM launch_active) >= 0`;
 }

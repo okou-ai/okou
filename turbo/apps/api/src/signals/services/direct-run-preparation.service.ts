@@ -1,7 +1,6 @@
-import { chatEvents } from "@okouai/db/schema/chat-event";
 import { command } from "ccstate";
-import { and, eq, isNotNull, ne, sql } from "drizzle-orm";
-import { array, boolean, object } from "zod";
+import { sql } from "drizzle-orm";
+import { array, object } from "zod";
 import { normalizeBuildCommitSha } from "../../lib/build-info";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { env } from "../../lib/env";
@@ -10,7 +9,10 @@ import { rawSqlReadDb$ } from "../external/db";
 import { recordSandboxOperations } from "../external/sandbox-op-log";
 import { joinAll } from "../utils";
 import type { AdmittedExecutionFacts } from "./admitted-execution-facts";
-import { selectExecutionContentBundles } from "./execution-content-bundle";
+import {
+  selectExecutionContentBundles,
+  signExecutionContentBundles$,
+} from "./execution-content-bundle";
 import type { AcceptedMemoryMount } from "./execution-storage.service";
 import {
   executionPackages,
@@ -22,7 +24,8 @@ import {
   contentBundleUrlCacheSnapshotSql,
 } from "./content-bundle-presigned-url-cache";
 import {
-  prepareExecutionPublication$,
+  buildExecutionContext,
+  prepareExecutionNetworkPolicyRefreshes$,
   type ExecutionPublicationRun,
 } from "./run-execution-publication.service";
 import type { RunnerReusePreparation } from "./runner-reuse-preference";
@@ -31,9 +34,9 @@ import {
   type StoragePresignedUrlCacheWrite,
 } from "./system-storage-presigned-url-cache.service";
 
-/** Receipt from durable Thread Run admission, before first-run classification. */
+/** Receipt from durable Thread Run admission. */
 export interface AdmittedRunLaunch {
-  readonly run: Omit<ExecutionPublicationRun, "isFirstRun">;
+  readonly run: ExecutionPublicationRun;
   readonly memoryMounts: readonly AcceptedMemoryMount[];
   readonly facts: AdmittedExecutionFacts;
   readonly runnerGroup: string;
@@ -52,34 +55,26 @@ export interface DirectRunCachePublication {
   };
 }
 
-const executionPublicationFactsSchema = object({
-  isFirstRun: boolean(),
+const bundleCacheRowSchema = object({
   cachedBundleUrls: array(cachedContentBundleUrlSchema),
 });
 
-const readExecutionPublicationFacts$ = command(
-  async (
-    { get },
-    run: AdmittedRunLaunch["run"],
-    bundleHashes: readonly string[],
-    signal: AbortSignal,
-  ) => {
+const readExecutionBundleCache$ = command(
+  async ({ get }, bundleHashes: readonly string[], signal: AbortSignal) => {
     signal.throwIfAborted();
     const db = get(rawSqlReadDb$);
     const cache = get(contentBundleUrlCacheContext$);
     const timestamp = nowDate().toISOString();
     const startedAt = monotonicNow();
     const rows = await db.execute(sql`SELECT
-      NOT EXISTS(SELECT 1 FROM ${chatEvents} WHERE ${and(eq(chatEvents.chatThreadId, run.chatThreadId), isNotNull(chatEvents.runId), ne(chatEvents.runId, run.id))}) AS "isFirstRun",
       ${contentBundleUrlCacheSnapshotSql(cache, bundleHashes)} AS "cachedBundleUrls"`);
     signal.throwIfAborted();
-    const [row] = parseRawRows(executionPublicationFactsSchema, rows);
+    const [row] = parseRawRows(bundleCacheRowSchema, rows);
     if (!row) {
-      throw new Error("Execution publication query returned no row");
+      throw new Error("Execution bundle cache query returned no row");
     }
     const readyAt = monotonicNow();
     return {
-      isFirstRun: row.isFirstRun,
       bundleUrlCache: { context: cache, rows: row.cachedBundleUrls },
       timing: { timestamp, startedAt, readyAt },
     };
@@ -94,7 +89,7 @@ export const prepareDirectRun$ = command(
       input.facts.executionPackages,
       packageContext,
     );
-    const [runtime, publicationFacts] = await joinAll([
+    const [runtime, publication] = await joinAll([
       (async () => {
         const prepared = await set(
           prepareExecutionRuntimeContext$,
@@ -102,48 +97,60 @@ export const prepareDirectRun$ = command(
           packageContext,
           signal,
         );
-        return { prepared, readyAt: monotonicNow() };
+        signal.throwIfAborted();
+        const readyAt = monotonicNow();
+        const refreshedPolicies = await set(
+          prepareExecutionNetworkPolicyRefreshes$,
+          {
+            preparedContext: prepared.context,
+            networkPolicyInputs: prepared.networkPolicyInputs,
+          },
+        );
+        return { prepared, readyAt, refreshedPolicies };
       })(),
-      set(readExecutionPublicationFacts$, input.run, bundles.hashes, signal),
+      (async () => {
+        const cache = await set(
+          readExecutionBundleCache$,
+          bundles.hashes,
+          signal,
+        );
+        const signed = await set(
+          signExecutionContentBundles$,
+          bundles,
+          cache.bundleUrlCache,
+          signal,
+        );
+        return { signed, timing: cache.timing };
+      })(),
     ]);
     signal.throwIfAborted();
     const { prepared } = runtime;
     const bundleCacheWaitMs = Math.max(
       0,
-      publicationFacts.timing.readyAt - runtime.readyAt,
+      publication.timing.readyAt - runtime.readyAt,
     );
-    const run = {
-      ...input.run,
-      isFirstRun: publicationFacts.isFirstRun,
-    };
+    const { run } = input;
     const context = prepared.context;
-    const publication = await set(
-      prepareExecutionPublication$,
-      {
-        run,
-        reuseKey: input.reuseKey,
-        preparedContext: context,
-        networkPolicyInputs: prepared.networkPolicyInputs,
-        bundles,
-        bundleUrlCache: publicationFacts.bundleUrlCache,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
+    const executionContext = buildExecutionContext({
+      run,
+      reuseKey: input.reuseKey,
+      preparedContext: context,
+      refreshedPolicies: runtime.refreshedPolicies,
+      contentBundles: publication.signed.contentBundles,
+    });
     return {
       cachePublication: {
         cacheWrites: [
           ...prepared.storageCacheWrites,
-          ...publication.cacheWrites,
+          ...publication.signed.cacheWrites,
         ],
         bundleCacheRead: {
-          startedAt: publicationFacts.timing.timestamp,
-          durationMs:
-            publicationFacts.timing.readyAt - publicationFacts.timing.startedAt,
+          startedAt: publication.timing.timestamp,
+          durationMs: publication.timing.readyAt - publication.timing.startedAt,
           consumerWaitMs: bundleCacheWaitMs,
         },
       } satisfies DirectRunCachePublication,
-      executionContext: publication.executionContext,
+      executionContext,
       contextSnapshot: {
         runId: run.id,
         userId: run.userId,
@@ -152,10 +159,10 @@ export const prepareDirectRun$ = command(
         vars: run.vars,
         context: {
           ...context,
-          networkPolicies: publication.executionContext.networkPolicies,
+          networkPolicies: executionContext.networkPolicies,
         },
         secretNames: ["OKOU_TOKEN"],
-        secretValues: publication.executionContext.secretValues,
+        secretValues: executionContext.secretValues,
       },
     };
   },
