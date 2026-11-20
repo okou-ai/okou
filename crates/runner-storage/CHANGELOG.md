@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.4](https://github.com/okou-ai/okou/compare/runner-storage-v0.12.3...runner-storage-v0.12.4) (2026-11-20)
+
+
+### Performance Improvements
+
+* **runner-storage:** reuse lock directory validation during decoded lookup ([#49507](https://github.com/okou-ai/okou/issues/49507)) ([7bce2d6](https://github.com/okou-ai/okou/commit/7bce2d6ad365e3f9f37954859e09edbd0ef9c122))
+
 ## [0.12.3](https://github.com/okou-ai/okou/compare/runner-storage-v0.12.2...runner-storage-v0.12.3) (2026-11-20)
 
 ## [0.12.2](https://github.com/okou-ai/okou/compare/runner-storage-v0.12.1...runner-storage-v0.12.2) (2026-11-20)

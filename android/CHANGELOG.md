@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.32.0](https://github.com/okou-ai/okou/compare/android-v0.31.1...android-v0.32.0) (2026-11-20)
+
+
+### Features
+
+* **android:** refine the app update flow ([#49373](https://github.com/okou-ai/okou/issues/49373)) ([7e5f217](https://github.com/okou-ai/okou/commit/7e5f217014ed860f896cc0c52c2057d0f133a6ec))
+
+
+### Bug Fixes
+
+* **android:** derive adaptive layouts from current window bounds ([#49506](https://github.com/okou-ai/okou/issues/49506)) ([96ffeee](https://github.com/okou-ai/okou/commit/96ffeee19e932079c7f2247f02ff68512a9dc787))
+
+
+### Performance Improvements
+
+* **android:** shorten authorized chat cache startup ([#49495](https://github.com/okou-ai/okou/issues/49495)) ([5a94fd7](https://github.com/okou-ai/okou/commit/5a94fd7cbb2d465eafc2765e6cd04b9c72ef69f9))
+
 ## [0.31.1](https://github.com/okou-ai/okou/compare/android-v0.31.0...android-v0.31.1) (2026-11-20)
 
 

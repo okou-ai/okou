@@ -13,6 +13,32 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1157.0](https://github.com/okou-ai/okou/compare/app-v0.1156.1...app-v0.1157.0) (2026-11-20)
+
+
+### Features
+
+* **platform:** redraw home capability cards as cut-paper collages ([#49494](https://github.com/okou-ai/okou/issues/49494)) ([a77891b](https://github.com/okou-ai/okou/commit/a77891b5bd4ca834962750ccc270e26730141c30))
+
+
+### Bug Fixes
+
+* **platform:** use hand-heart icon for the for-you sidebar entry ([#49510](https://github.com/okou-ai/okou/issues/49510)) ([457c2ef](https://github.com/okou-ai/okou/commit/457c2ef882312be0abdabc66bfae678f6095837a))
+
+
+### Refactoring
+
+* **drive:** authorize artifact and table exports with chat accounts ([#49430](https://github.com/okou-ai/okou/issues/49430)) ([efa10f0](https://github.com/okou-ai/okou/commit/efa10f0bb95b3f3c9c5d09aa3e1049c3c49163e7))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.95.1
+    * @okouai/core bumped to 8.857.4
+    * @okouai/ui bumped to 1.21.73
+
 ## [0.1156.1](https://github.com/okou-ai/okou/compare/app-v0.1156.0...app-v0.1156.1) (2026-11-20)
 
 

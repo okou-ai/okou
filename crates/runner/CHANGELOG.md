@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.249.76](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.75...runner-rs-v0.249.76) (2026-11-20)
+
+
+### Refactoring
+
+* **runner:** share native witness identity validation ([#49501](https://github.com/okou-ai/okou/issues/49501)) ([2c52ff5](https://github.com/okou-ai/okou/commit/2c52ff5d690ff10a5d46b2d8574fe8a293533816))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.249.75](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.74...runner-rs-v0.249.75) (2026-11-20)
 
 ### Release Dependencies

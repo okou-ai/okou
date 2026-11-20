@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.51.4](https://github.com/okou-ai/okou/compare/ios-v0.51.3...ios-v0.51.4) (2026-11-20)
+
+
+### CI
+
+* **ios:** save swiftlint tool caches on pull request refs ([#49485](https://github.com/okou-ai/okou/issues/49485)) ([56341ff](https://github.com/okou-ai/okou/commit/56341ff42e39f6b2317b92b5f2670fbd22b68a4f))
+
 ## [0.51.3](https://github.com/okou-ai/okou/compare/ios-v0.51.2...ios-v0.51.3) (2026-11-20)
 
 
