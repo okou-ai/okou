@@ -91,7 +91,8 @@ async function createBankingRun(args: BankingFixtureArgs = {}) {
   const run =
     args.triggerSource === "automation-event"
       ? await workflows.startEventAutomationRun(
-          actor, await bdd.bootstrapLimitedFreeOnboarding(actor, {}),
+          actor,
+          await bdd.bootstrapLimitedFreeOnboarding(actor, {}),
         )
       : await api.createThreadRun(actor, {
           agentId: agent.agentId,
@@ -252,10 +253,12 @@ async function connectBankingFixture(
     throw new Error("Expected a publicly connected banking account");
   }
   const grantAgentId = args.grantOnAnotherAgent
-    ? (await createBddApi(context).createAgent(actor, {
-        displayName: "Historical authorization",
-        visibility: "private",
-      })).agentId
+    ? (
+        await createBddApi(context).createAgent(actor, {
+          displayName: "Historical authorization",
+          visibility: "private",
+        })
+      ).agentId
     : agentId;
   await accept(
     client.saveAgentGrant({

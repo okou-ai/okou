@@ -798,7 +798,7 @@ const sendNewThreadMessage$ = command(
     readonly threadId: string;
     readonly sendResult: Promise<void>;
   } | null> => {
-    const { agentId, prompt } = request;
+    const { prompt } = request;
     const { computerUseHostId, cloudBrowserEnabled } = request;
     const draft = request.draft ?? get(talkDraft$);
     const submittedInput = get(draft.input$);

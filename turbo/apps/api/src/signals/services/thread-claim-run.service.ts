@@ -63,7 +63,6 @@ import {
   AUTONOMY_BUDGET_EXHAUSTED_MESSAGE,
   badRequestMessage,
   conflict,
-  notFound,
   providerUnavailable,
 } from "../../lib/error";
 import { logger } from "../../lib/log";
@@ -500,7 +499,6 @@ function buildWorkflowAutomationQueuedLaunchMaterial(args: {
   readonly eventType: string | null;
   readonly eventPayload: WorkflowAutomationEventPayload | null;
   readonly automation: AutomationRow;
-  readonly agentId: string;
   readonly chatThreadId: string;
 }): WorkflowAutomationQueuedLaunchMaterial | null {
   if (
@@ -514,7 +512,6 @@ function buildWorkflowAutomationQueuedLaunchMaterial(args: {
   return {
     callbacks: buildWorkflowAutomationCallbacks(
       args.automation,
-      args.agentId,
       args.chatThreadId,
       eventType,
     ),
@@ -683,7 +680,6 @@ interface WorkflowAutomationQueuedLaunchMaterial {
 
 function buildWorkflowAutomationCallbacks(
   automation: AutomationRow,
-  agentId: string,
   chatThreadId: string,
   eventType: WorkflowAutomationEventType,
 ): RunLaunchCallbackRecord[] {
@@ -719,7 +715,7 @@ function buildWorkflowAutomationCallbacks(
   }
   callbacks.push({
     internalKind: "chat",
-    payload: { threadId: chatThreadId, agentId },
+    payload: { threadId: chatThreadId },
   });
   return callbacks;
 }
@@ -1411,7 +1407,6 @@ export function createThreadClaimRunObjects(
     }
     return queuedChatRunCallbackInputs({
       threadId: args.threadId,
-      agentId: args.agent.id,
       queuedMessageId: args.queuedMessage.id,
       delivery: material.value.launch.delivery,
     });
@@ -1529,7 +1524,6 @@ export function createThreadClaimRunObjects(
         eventType: event.eventType,
         eventPayload: await get(threadContext.automationPayload$),
         automation: target.automation,
-        agentId: target.workflow.agentId,
         chatThreadId: event.chatThreadId,
       });
       if (!material) {

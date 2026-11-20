@@ -9,7 +9,8 @@ import {
   acceptedCatalogDefinitionRevision,
   acceptedOfficialWorkflowCatalogReadPlan,
 } from "./official-workflow-catalog-read.service";
-import { proactiveWorkflowOwnerPreferenceQuery } from "./proactive-workflow-owner";
+import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
+import { QueryBuilder } from "drizzle-orm/pg-core";
 
 /** Read the release, its exact bundle revision, and installation authority with the Automation. */
 export function officialWorkflowSourcePlan(scope: {
@@ -17,13 +18,20 @@ export function officialWorkflowSourcePlan(scope: {
   readonly userId: string;
 }) {
   const catalog = acceptedOfficialWorkflowCatalogReadPlan();
-  const preferences = proactiveWorkflowOwnerPreferenceQuery(
-    scope,
-    workflows.agentId,
-    {
-      prerequisite: isNotNull(officialWorkflowCatalogReleases.id),
-    },
-  ).as("official_workflow_preferences");
+  const preferences = new QueryBuilder()
+    .select({
+      memberUserId: orgMembersMetadata.userId,
+      suggestionsEnabled: orgMembersMetadata.proactiveSuggestionsEnabled,
+    })
+    .from(orgMembersMetadata)
+    .where(
+      and(
+        eq(orgMembersMetadata.orgId, scope.orgId),
+        eq(orgMembersMetadata.userId, scope.userId),
+        isNotNull(officialWorkflowCatalogReleases.id),
+      ),
+    )
+    .as("official_workflow_preferences");
   return {
     catalogCondition: and(
       catalog.condition,

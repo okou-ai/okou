@@ -8,9 +8,7 @@ import {
   userMessageInputDocumentSchema,
 } from "@okouai/api-contracts/contracts/chat-threads";
 
-import {
-  sendChatEvent,
-} from "../../lib/api/domains/chat";
+import { sendChatEvent } from "../../lib/api/domains/chat";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { printChatUsageError, resolveChatThreadId } from "./shared";
 

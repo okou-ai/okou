@@ -2501,9 +2501,7 @@ const prepareNormalSendContext$ = command(
             request.body.threadId,
             signal,
           );
-    if (
-      request.body.threadId !== undefined && !existing
-    ) {
+    if (request.body.threadId !== undefined && !existing) {
       return notFound("Chat thread not found");
     }
     const context = createAgentRunContextSignals(

@@ -39,7 +39,6 @@ async function expectAgentTokenThreadOwnershipBoundaries(args: {
     return requestSendEventWithBearer(
       args.sourceToken,
       {
-        agentId: args.agentId,
         threadId: crossUserThread.id,
         prompt: "reject cross-user delegated chat admission",
       },
@@ -56,7 +55,6 @@ async function expectAgentTokenThreadOwnershipBoundaries(args: {
     return requestSendEventWithBearer(
       args.sourceToken,
       {
-        agentId: crossOrg.agentId,
         threadId: crossOrgThread.id,
         prompt: "reject cross-org delegated chat admission",
       },
@@ -69,7 +67,6 @@ async function expectAgentTokenThreadOwnershipBoundaries(args: {
     return requestSendEventWithBearer(
       args.sourceToken,
       {
-        agentId: args.agentId,
         threadId: randomUUID(),
         prompt: "reject unowned-thread delegated chat admission",
       },
@@ -159,7 +156,6 @@ describe("CHAT-02: model-first routing", () => {
     const delegated = await requestSendEventWithBearer(
       sourceToken,
       {
-        agentId,
         clientEventId: delegatedEventId,
         threadId: targetThread.id,
         prompt: delegatedPrompt,

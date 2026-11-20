@@ -109,15 +109,3 @@ export function agentList(
     });
   });
 }
-
-export interface BootstrapAgent {
-  readonly id: string;
-  readonly orgId: string;
-  readonly owner: string;
-  readonly visibility: "public" | "private";
-  readonly name: string;
-  readonly displayName: string | null;
-  readonly description: string | null;
-  readonly sound: string | null;
-  readonly defaultAgentId: string | null;
-}

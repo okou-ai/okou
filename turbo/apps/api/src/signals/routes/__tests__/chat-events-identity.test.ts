@@ -234,7 +234,6 @@ describe("CHAT-02: run-scoped agent-token chat launches", () => {
       const immediateSend = await requestSendEventWithBearer(
         okouToken,
         {
-          agentId,
           clientEventId: immediateEventId,
           threadId: createdThread.body.id,
           prompt: "immediate run-scoped handoff",
@@ -290,7 +289,6 @@ describe("CHAT-02: run-scoped agent-token chat launches", () => {
       const queued = await requestSendEventWithBearer(
         okouToken,
         {
-          agentId,
           clientEventId: queuedEventId,
           threadId: createdThread.body.id,
           prompt: "queued run-scoped handoff",
@@ -386,7 +384,6 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
       const nestedSend = await owned.requestSendEventWithBearer(
         plainToken,
         {
-          agentId,
           clientEventId: nestedEventId,
           threadId: plain.threadId,
           prompt: "run tokens can send chat messages",
@@ -399,7 +396,6 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
           chatEventsClient().send({
             headers: { authorization: `Bearer ${plainToken}` },
             body: {
-              agentId,
               threadId: plain.threadId,
               revokesEventId: nestedEventId,
               clientEventId: randomUUID(),

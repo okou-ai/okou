@@ -172,7 +172,6 @@ import { createTelegramQueuedDelivery } from "./telegram-queued-launch-context.s
 const log = logger("callback:chat");
 const chatCallbackPayloadSchema = object({
   threadId: string(),
-  agentId: string(),
   slackDelivery: object({
     workspaceId: string().optional(),
     channelId: string(),
@@ -239,7 +238,6 @@ export type RunLaunchCallbackRecord =
 
 export function queuedChatRunCallbackInputs(input: {
   readonly threadId: string;
-  readonly agentId: string;
   readonly queuedMessageId: string;
   readonly delivery: QueuedIntegrationDeliveries;
 }): RunLaunchCallbackRecord[] {
@@ -248,7 +246,6 @@ export function queuedChatRunCallbackInputs(input: {
       internalKind: "chat",
       payload: {
         threadId: input.threadId,
-        agentId: input.agentId,
         queuedMessageId: input.queuedMessageId,
         ...input.delivery,
       },

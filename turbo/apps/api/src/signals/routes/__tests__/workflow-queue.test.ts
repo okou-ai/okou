@@ -339,7 +339,6 @@ async function startOrgConcurrencyBlocker(scenario: Scenario): Promise<string> {
     chatEventsClient().send({
       headers: authHeaders(),
       body: {
-        agentId: scenario.agentId,
         prompt: "hold org concurrency open",
         model: "claude-fable-5-1",
         hasTextContent: true,
@@ -1319,7 +1318,6 @@ describe("workflow queue", () => {
       chatEventsClient().send({
         headers: authHeaders(),
         body: {
-          agentId: scenario.agentId,
           threadId: automation.threadId,
           prompt: "user interjection",
           hasTextContent: true,
@@ -1397,7 +1395,6 @@ describe("workflow queue", () => {
       chatEventsClient().send({
         headers: authHeaders(),
         body: {
-          agentId: scenario.agentId,
           threadId: automation.threadId,
           revokesEventId: target.id,
           clientEventId,
@@ -1495,7 +1492,6 @@ describe("workflow queue", () => {
       chatEventsClient().send({
         headers: authHeaders(),
         body: {
-          agentId: scenario.agentId,
           threadId,
           prompt: "queued user message before manual Run now",
           userMessage: {

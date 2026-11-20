@@ -17,7 +17,7 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import { clearAllDetached } from "../../utils";
 import { holdDownloadSigning } from "./helpers/hold-download-signing";
 import { mailRoutes } from "../mail";
-import { createBddApi, expectApiError } from "./helpers/api-bdd";
+import { expectApiError } from "./helpers/api-bdd";
 import { mockGmailConnectorOAuth } from "./helpers/api-bdd-connectors";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { createPublicChatAdmissionFixture } from "./helpers/public-chat-admission-fixture";
@@ -230,7 +230,6 @@ describe("CHAT-02: web chat send and client ids", () => {
       chatEventsClient().send({
         headers: sessionHeaders(actor),
         body: {
-          agentId,
           prompt,
           userMessage: {
             version: 1,
@@ -866,10 +865,15 @@ describe("CHAT-02: admission without spendable credits", () => {
     const fixture = createPublicChatAdmissionFixture(context);
     await fixture.run(async () => {
       const { actor, agentId } = await fixture.createPaidNativeActor();
-      await accept(setupApp({ context, routes: instructionsRoutes })(instructionsContract).update({
-        headers: sessionHeaders(actor),
-        body: { content: `Pending ${randomUUID()}` },
-      }), [200]);
+      await accept(
+        setupApp({ context, routes: instructionsRoutes })(
+          instructionsContract,
+        ).update({
+          headers: sessionHeaders(actor),
+          body: { content: `Pending ${randomUUID()}` },
+        }),
+        [200],
+      );
       const thread = await chat.createThread(actor, { agentId });
       const signing = holdDownloadSigning(context);
       const pendingEventId = randomUUID();

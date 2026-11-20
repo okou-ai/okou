@@ -3,9 +3,7 @@ import { randomUUID } from "node:crypto";
 import chalk from "chalk";
 import { Command } from "commander";
 
-import {
-  sendChatEvent,
-} from "../../lib/api/domains/chat";
+import { sendChatEvent } from "../../lib/api/domains/chat";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { isUuid } from "../../lib/utils/uuid";
 import { printChatUsageError, resolveChatThreadId } from "./shared";

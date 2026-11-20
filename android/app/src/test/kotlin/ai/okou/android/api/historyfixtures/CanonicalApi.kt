@@ -15,23 +15,83 @@ import retrofit2.http.QueryMap
 
 internal interface CanonicalApi {
     @GET("/api/chat-threads/{threadId}/event-snapshot")
-    suspend fun `snapshot`(@Header("Authorization") token: String, @Path("threadId") `pathThreadId`: String): Response<HistorySnapshot>
+    suspend fun `snapshot`(
+        @Header("Authorization") token: String,
+        @Path("threadId") `pathThreadId`: String,
+    ): Response<HistorySnapshot>
 
     @GET("/api/chat-threads/{threadId}/event-rows")
-    suspend fun `rowsWire`(@Header("Authorization") token: String, @Path("threadId") `pathThreadId`: String, @QueryMap parameters: Map<String, String>): Response<HistoryRows>
+    suspend fun `rowsWire`(
+        @Header("Authorization") token: String,
+        @Path("threadId") `pathThreadId`: String,
+        @QueryMap parameters: Map<String, String>,
+    ): Response<HistoryRows>
 
     @GET("/api/chat-threads/{id}")
-    suspend fun `detail`(@Header("Authorization") token: String, @Path("id") `pathId`: String): Response<ThreadDetail>
+    suspend fun `detail`(
+        @Header("Authorization") token: String,
+        @Path("id") `pathId`: String,
+    ): Response<ThreadDetail>
 
     @POST("/api/chat-threads/{id}/mark-read")
-    suspend fun `markRead`(@Header("Authorization") token: String, @Path("id") `pathId`: String): Response<ReadState>
+    suspend fun `markRead`(
+        @Header("Authorization") token: String,
+        @Path("id") `pathId`: String,
+    ): Response<ReadState>
 }
 
-internal suspend fun CanonicalApi.`rows`(token: String, `pathThreadId`: String, query: RowsQuery): Response<HistoryRows> =
-    `rowsWire`(token, `pathThreadId`, query.toQueryParameters())
+internal suspend fun CanonicalApi.`rows`(
+    token: String,
+    `pathThreadId`: String,
+    query: RowsQuery,
+): Response<HistoryRows> = `rowsWire`(token, `pathThreadId`, query.toQueryParameters())
 
 internal fun RowsQuery.toQueryParameters(): Map<String, String> {
     val value = Json.encodeToJsonElement(RowsQuery.serializer(), this) as JsonObject
-    require(listOf((value.keys.all { it in setOf("sinceSeqId", "sinceEventId", "limit") } && value["sinceSeqId"].let { field -> (field is JsonPrimitive && !field.isString && field.doubleOrNull?.let { it.isFinite() && it == 0.0 } == true) } && !value.containsKey("sinceEventId") && value["limit"].let { field -> (field is JsonPrimitive && !field.isString && field.doubleOrNull?.let { it.isFinite() && it >= 1.0 && it <= 50.0 } == true) }), (value.keys.all { it in setOf("sinceSeqId", "sinceEventId", "limit") } && value["sinceSeqId"].let { field -> (field is JsonPrimitive && !field.isString && field.doubleOrNull?.let { it.isFinite() && it % 1.0 == 0.0 && it <= 9007199254740991.0 && it > 0.0 } == true) } && value["sinceEventId"].let { field -> (field is JsonPrimitive && field.isString && Regex("^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)\$").containsMatchIn(field.content)) } && value["limit"].let { field -> (field is JsonPrimitive && !field.isString && field.doubleOrNull?.let { it.isFinite() && it >= 1.0 && it <= 50.0 } == true) })).count { it } == 1) { "Invalid RowsQuery" }
+    require(
+        listOf(
+                (value.keys.all { it in setOf("sinceSeqId", "sinceEventId", "limit") } &&
+                    value["sinceSeqId"].let { field ->
+                        (field is JsonPrimitive &&
+                            !field.isString &&
+                            field.doubleOrNull?.let { it.isFinite() && it == 0.0 } == true)
+                    } &&
+                    !value.containsKey("sinceEventId") &&
+                    value["limit"].let { field ->
+                        (field is JsonPrimitive &&
+                            !field.isString &&
+                            field.doubleOrNull?.let { it.isFinite() && it >= 1.0 && it <= 50.0 } ==
+                                true)
+                    }),
+                (value.keys.all { it in setOf("sinceSeqId", "sinceEventId", "limit") } &&
+                    value["sinceSeqId"].let { field ->
+                        (field is JsonPrimitive &&
+                            !field.isString &&
+                            field.doubleOrNull?.let {
+                                it.isFinite() &&
+                                    it % 1.0 == 0.0 &&
+                                    it <= 9007199254740991.0 &&
+                                    it > 0.0
+                            } == true)
+                    } &&
+                    value["sinceEventId"].let { field ->
+                        (field is JsonPrimitive &&
+                            field.isString &&
+                            Regex(
+                                    "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)\$"
+                                )
+                                .containsMatchIn(field.content))
+                    } &&
+                    value["limit"].let { field ->
+                        (field is JsonPrimitive &&
+                            !field.isString &&
+                            field.doubleOrNull?.let { it.isFinite() && it >= 1.0 && it <= 50.0 } ==
+                                true)
+                    }),
+            )
+            .count { it } == 1
+    ) {
+        "Invalid RowsQuery"
+    }
     return value.mapValues { (_, field) -> (field as JsonPrimitive).content }
 }

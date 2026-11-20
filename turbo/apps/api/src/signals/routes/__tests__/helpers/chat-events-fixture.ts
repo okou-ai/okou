@@ -884,7 +884,6 @@ export function createChatEventsFixture(context: TestContext) {
   async function requestSendEventWithBearer(
     token: string,
     body: {
-      readonly agentId?: string;
       readonly clientEventId?: string;
       readonly clientThreadId?: string;
       readonly prompt: string;

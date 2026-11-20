@@ -9,8 +9,14 @@ import retrofit2.http.POST
 
 internal interface CanonicalApi {
     @POST("/api/chat-threads")
-    suspend fun `createThread`(@Header("Authorization") token: String, @Body body: CreateThreadRequest): Response<CreatedThread>
+    suspend fun `createThread`(
+        @Header("Authorization") token: String,
+        @Body body: CreateThreadRequest,
+    ): Response<CreatedThread>
 
     @POST("/api/chat/events")
-    suspend fun `send`(@Header("Authorization") token: String, @Body body: SendRequest): Response<AcceptedInput>
+    suspend fun `send`(
+        @Header("Authorization") token: String,
+        @Body body: SendRequest,
+    ): Response<AcceptedInput>
 }
