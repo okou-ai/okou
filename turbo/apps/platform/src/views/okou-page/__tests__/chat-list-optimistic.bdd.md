@@ -11,6 +11,8 @@ Original test `A new conversation appears before server confirmation`. [Registra
 - **When** They send “Start the local conversation.”
 - **Then** A single “New chat” appears in the sidebar with the requested thread ID before confirmation. No draft is requested.
 
+Batch 29, unverified. A Router control sent this text with thread creation held. The sidebar contained one New chat link with the client-requested destination. The sidebar and composer expose no evidence that a draft read never occurred. Request-count assertions are excluded by the App testing guide.
+
 ## chat-list-optimistic-002
 
 Original test `An optimistic QuickTime preview does not list artifacts before thread creation`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/chat-list-optimistic.test.tsx#L160).
@@ -18,6 +20,8 @@ Original test `An optimistic QuickTime preview does not list artifacts before th
 - **Given** A user is composing a new conversation and attaches a QuickTime video named recording.mov; thread creation remains unconfirmed.
 - **When** They send the message with the attachment.
 - **Then** A preview for recording.mov appears using the video URL with a start time of 0.001 seconds. The missing-thread artifact response produces no visible error toast, and creation remains unconfirmed.
+
+Batch 29, unverified. The pending user turn exposed Preview recording.mov and the resolved video URL ending in #t=0.001. With creation held, a separate probe reached that preview and then timed out at the normal test limit waiting for the thread-artifacts handler. The inline preview does not consume an artifact-list error. Opening the lightbox would add another action. No post-404 toast outcome was established.
 
 ## chat-list-optimistic-003
 
@@ -43,6 +47,8 @@ Original test `The changed model survives the first send before server confirmat
 - **When** They change the model to Claude Sonnet 5 and send their first message.
 - **Then** The creation request uses Claude Sonnet 5, the composer still shows Claude Sonnet 5, no draft is requested, and creation remains unconfirmed.
 
+Batch 29, unverified. An isolated Router control changed GPT 5.6 Luna to Claude Sonnet 5, submitted the first message and observed the matching model in the pending create body and composer. Neither surface exposes the absence of a draft read. The control earns no execution credit.
+
 ## chat-list-optimistic-006
 
 Original test `Sending in an older conversation moves it to the top`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/chat-list-optimistic.test.tsx#L270).
@@ -58,3 +64,5 @@ Original test `Server confirmation settles a new conversation without duplicatio
 - **Given** A user starts a new conversation with Claude Sonnet 5 selected while server creation is pending.
 - **When** They send a message, then the server confirms creation and the thread-list event arrives.
 - **Then** The sidebar initially shows one “New chat” link. After confirmation, it shows one link for the same thread titled “Confirmed conversation,” with no duplicate.
+
+Accepted in batch 29. The passing test covers both phases for the same chat destination. Count this ID once when the remaining selected scenarios are resolved.
