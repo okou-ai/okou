@@ -94,10 +94,7 @@ import {
   type RunnerReusePreparation,
 } from "./runner-reuse-preference";
 import type { AgentRunContextSignals } from "./agent-run-context.signals";
-import type {
-  ResolvedModelProviderEnvironment,
-  InternalRunCallback,
-} from "./agent-run-contracts";
+import type { ResolvedModelProviderEnvironment } from "./agent-run-contracts";
 import {
   type AdmissionAttemptOutcome,
   AdmissionAttemptTiming,
@@ -125,20 +122,17 @@ import {
 } from "@okouai/db/schema/chat-thread-event";
 import { agents } from "@okouai/db/schema/agent";
 import {
-  type CreateQueuedChatRunInput,
   deliverQueuedPromptRejection$,
   deliverUnexpectedQueuedPromptRejection$,
   type QueuedChatPromptData,
   queuedChatRunCallbackInputs,
   type QueuedLaunchMaterial,
-  queuedMessageAdmissionFailure,
-  type QueuedMessageAdmissionFailure,
-  queuedMessageRejection,
   type QueuedPromptLaunchContext,
-  type QueuedRunAdmissionFailureInput,
+  queuedPromptRejectionContext,
   recordQueuedPromptRunLaunch$,
-  rejectedQueuedRunAdmissionFailure,
+  type RunLaunchCallbackRecord,
 } from "./internal-chat-run-callback.service";
+import { FEISHU_RUN_FILE_INDEX_KIND } from "./feishu-run-file-index";
 import { morningBriefScheduleClaimBound$ } from "./morning-brief-schedule-claim.service";
 import {
   OFFICIAL_WORKFLOW_RUN_ADMISSION_MESSAGE,
@@ -458,56 +452,6 @@ function bindQueuedPromptDelivery(
   };
 }
 
-function queuedPromptRunInput(args: {
-  readonly input: QueuedChatPromptData;
-  readonly launch: QueuedLaunchMaterial;
-  readonly prompt: string;
-  readonly model: ThreadModelSelection;
-  readonly capture: boolean;
-  readonly features: FeatureSwitchContext;
-}): CreateQueuedChatRunInput {
-  const { input, launch, model } = args;
-  if (input.queuedMessage.autonomyBudget.kind !== "ok") {
-    throw new Error("Rejected autonomy input cannot become a run");
-  }
-  return {
-    orgId: input.agent.orgId,
-    userId: input.userId,
-    agentId: input.agent.id,
-    prompt: args.prompt,
-    threadId: input.threadId,
-    queuedMessage: input.queuedMessage,
-    codexServiceTier: model.codexServiceTier,
-    reasoningEffort: model.reasoningEffort,
-    triggerSource: launch.triggerSource,
-    realAgentInPreview: isFeatureEnabled(
-      FeatureSwitchKey.RealAgentInPreview,
-      args.features,
-    ),
-    captureNetworkBodies: args.capture,
-    ...launch.delivery,
-    autonomyBudget: input.queuedMessage.autonomyBudget.autonomyBudget,
-  };
-}
-
-function promptRunCommand(
-  input: CreateQueuedChatRunInput,
-  admissionTime: number,
-): ThreadRunCommand {
-  return {
-    owner: { userId: input.userId, orgId: input.orgId },
-    // Dispatch timing starts at admission; queue waiting is recorded separately.
-    apiStartTime: admissionTime,
-    chatThreadId: input.threadId,
-    codexServiceTier: input.codexServiceTier,
-    reasoningEffort: input.reasoningEffort,
-    triggerSource: input.triggerSource,
-    agentRunMetadata: { autonomyBudget: input.autonomyBudget },
-    ...(input.realAgentInPreview ? { realAgentInPreview: true } : {}),
-    ...(input.captureNetworkBodies ? { captureNetworkBodies: true } : {}),
-  };
-}
-
 type ChatQueueRunAssembly =
   | ({
       readonly kind: "assembled";
@@ -624,7 +568,7 @@ type QueuedAutomationLaunch =
       readonly chatThreadId: string;
       readonly apiStartTime: number;
       readonly triggerBrief: string | undefined;
-      readonly callbacks: readonly InternalRunCallback[];
+      readonly callbacks: readonly RunLaunchCallbackRecord[];
       readonly autonomyBudget: number;
       readonly recordLastRunId: boolean;
       readonly recordLastRunAt: boolean;
@@ -667,11 +611,7 @@ function claimAssemblyRejection(
   if (assembly.kind !== "assembled") {
     return { userId: head.userId, error };
   }
-  return assembly.rejection.kind === "prompt"
-    ? queuedMessageRejection(
-        rejectedQueuedRunAdmissionFailure(assembly.rejection.runInput, error),
-      )
-    : { userId: assembly.rejection.userId, error };
+  return { ...assembly.rejection, error };
 }
 
 /**
@@ -736,12 +676,7 @@ function finalizeClaimRunContext(
   };
 }
 
-type ClaimRejectionContext =
-  | {
-      readonly kind: "prompt";
-      readonly runInput: QueuedRunAdmissionFailureInput;
-    }
-  | { readonly kind: "automation"; readonly userId: string };
+type ClaimRejectionContext = Omit<ChatQueueHeadRejection, "error">;
 
 type ClaimLaunchRecord =
   | {
@@ -771,8 +706,8 @@ function buildWorkflowAutomationCallbacks(
   agentId: string,
   chatThreadId: string,
   eventType: WorkflowAutomationEventType,
-): InternalRunCallback[] {
-  const callbacks: InternalRunCallback[] = [];
+): RunLaunchCallbackRecord[] {
+  const callbacks: RunLaunchCallbackRecord[] = [];
   // Debug adds one delivery and never settles the daily schedule occurrence.
   const nightlyManual =
     eventType === "manual" &&
@@ -839,27 +774,6 @@ function claimCommitInput(input: RunPlan): ThreadRunContext["input"] {
   };
 }
 
-function queuedPromptRejectionInput(
-  input: CreateQueuedChatRunInput,
-): QueuedRunAdmissionFailureInput {
-  return {
-    orgId: input.orgId,
-    userId: input.userId,
-    agentId: input.agentId,
-    threadId: input.threadId,
-    queuedMessage: input.queuedMessage,
-    triggerSource: input.triggerSource,
-    slackDelivery: input.slackDelivery,
-    feishuDelivery: input.feishuDelivery,
-    teamsDelivery: input.teamsDelivery,
-    discordDelivery: input.discordDelivery,
-    wechatDelivery: input.wechatDelivery,
-    telegramDelivery: input.telegramDelivery,
-    emailDelivery: input.emailDelivery,
-    agentphoneDelivery: input.agentphoneDelivery,
-  };
-}
-
 /**
  * Generation writes a title only over NULL title and renamed_at, and a rename
  * sets both, so a titled or renamed claim snapshot never needs another read.
@@ -884,13 +798,13 @@ function claimLaunchRecord(
   if (record.kind === "automation") {
     return record;
   }
-  const input = record.context.runInput;
+  const { triggerSource } = record.context;
   return {
     ...record,
     context: {
       ...record.context,
       integrationContext:
-        input.triggerSource === "web" || input.triggerSource === "agent"
+        triggerSource === "web" || triggerSource === "agent"
           ? undefined
           : integrationContext,
     },
@@ -1174,11 +1088,7 @@ export function createThreadClaimRunObjects(
       }
       return {
         id: event.id,
-        userMessage: event.userMessage,
-        requiredOfficialWorkflowIds: requiredOfficialWorkflowIds ?? undefined,
-        selectedModel: event.modelSelection?.selectedModel ?? null,
         contextType: event.contextType,
-        contextId: event.contextId,
         autonomyBudget: queuedUserMessageAutonomyBudget(
           event.contextType,
           event.sourceAutonomyBudget,
@@ -1363,19 +1273,8 @@ export function createThreadClaimRunObjects(
       .limit(1);
     return row !== undefined;
   });
-  const promptRunInput$ = computed(
-    async (
-      get,
-    ): Promise<
-      | {
-          readonly runInput: CreateQueuedChatRunInput;
-          readonly continuation: ChatThreadContinuation;
-          readonly officialWorkflow: OfficialWorkflowObservation | undefined;
-          readonly promptAndSkills: PromptAndSkillVolumes;
-          readonly templateUsageIdentities: readonly TemplateUsageIdentity[];
-        }
-      | QueuedMessageAdmissionFailure
-    > => {
+  const assembledPrompt$ = computed(
+    async (get): Promise<ChatQueueRunAssembly> => {
       const [args, material, model, session, capture, features, templates] =
         await Promise.all([
           get(promptArgs$),
@@ -1386,9 +1285,20 @@ export function createThreadClaimRunObjects(
           get(bootstrap.featureSwitches$),
           get(runTemplates$),
         ]);
+      const reject = (
+        error: ChatQueueHeadRejection["error"],
+      ): ChatQueueRunAssembly => {
+        return {
+          kind: "rejected",
+          rejection: {
+            ...queuedPromptRejectionContext(args, material.source.delivery),
+            error,
+          },
+        };
+      };
       const autonomy = args.queuedMessage.autonomyBudget;
       if (autonomy.kind !== "ok") {
-        return queuedMessageAdmissionFailure(args, material.source, {
+        return reject({
           code:
             autonomy.kind === "exhausted"
               ? "AUTONOMY_BUDGET_EXHAUSTED"
@@ -1400,51 +1310,59 @@ export function createThreadClaimRunObjects(
         });
       }
       if ("status" in model) {
-        return queuedMessageAdmissionFailure(
-          args,
-          material.source,
-          model.body.error,
-        );
+        return reject(model.body.error);
       }
       if ("error" in templates) {
-        return queuedMessageAdmissionFailure(
-          args,
-          material.source,
-          templates.error,
-        );
+        return reject(templates.error);
       }
       const officialWorkflow = await get(officialWorkflow$);
       if (isRouteError(officialWorkflow)) {
-        return queuedMessageAdmissionFailure(
-          args,
-          material.source,
-          officialWorkflow.body.error,
-        );
+        return reject(officialWorkflow.body.error);
       }
       const promptAndSkills = await get(preparedPromptAndSkillVolumes$);
       if (isRouteError(promptAndSkills)) {
-        return queuedMessageAdmissionFailure(
-          args,
-          material.source,
-          promptAndSkills.body.error,
-        );
+        return reject(promptAndSkills.body.error);
       }
       if (!session) {
         throw new Error("A valid prompt model is missing session preparation");
       }
+      const head = await get(head$);
+      const { triggerSource, delivery } = material.launch;
       return {
-        runInput: queuedPromptRunInput({
-          input: args,
-          launch: material.launch,
-          prompt: promptAndSkills.userPrompt,
-          model,
-          capture,
-          features,
-        }),
-        continuation: session,
+        kind: "assembled",
+        source: "prompt",
+        run: {
+          owner: { userId: args.userId, orgId: args.agent.orgId },
+          // Dispatch timing starts at admission; queue waiting is recorded separately.
+          apiStartTime: head.apiStartTime,
+          chatThreadId: args.threadId,
+          codexServiceTier: model.codexServiceTier,
+          reasoningEffort: model.reasoningEffort,
+          triggerSource,
+          agentRunMetadata: { autonomyBudget: autonomy.autonomyBudget },
+          ...(isFeatureEnabled(FeatureSwitchKey.RealAgentInPreview, features)
+            ? { realAgentInPreview: true }
+            : {}),
+          ...(capture ? { captureNetworkBodies: true } : {}),
+        },
+        promptContinuation: session,
         officialWorkflow,
         promptAndSkills,
-        templateUsageIdentities: templates.templateUsageIdentities,
+        rejection: queuedPromptRejectionContext(args, delivery),
+        launchRecord: {
+          kind: "prompt",
+          templateUsageIdentities: templates.templateUsageIdentities,
+          context: {
+            userId: head.userId,
+            orgId: args.agent.orgId,
+            threadId: args.threadId,
+            prompt: promptAndSkills.userPrompt,
+            triggerSource,
+            discordDelivery: delivery.discordDelivery,
+            wechatDelivery: delivery.wechatDelivery,
+            titled: threadTitled((await get(pickedEvent$))?.thread),
+          },
+        },
       };
     },
   );
@@ -1465,46 +1383,10 @@ export function createThreadClaimRunObjects(
         return early;
       }
       const head = await get(head$);
-      const prepared = await settle(get(promptRunInput$));
-      if (!prepared.ok) {
-        return queuedPromptPreparationRejection(prepared.error, head);
-      }
-      const preparedInput = prepared.value;
-      if ("kind" in preparedInput) {
-        return {
-          kind: "rejected",
-          rejection: queuedMessageRejection(preparedInput),
-        };
-      }
-      const { runInput, templateUsageIdentities } = preparedInput;
-      return {
-        kind: "assembled",
-        source: "prompt",
-        run: promptRunCommand(runInput, head.apiStartTime),
-        promptContinuation: preparedInput.continuation,
-        officialWorkflow: preparedInput.officialWorkflow,
-        promptAndSkills: preparedInput.promptAndSkills,
-        rejection: {
-          kind: "prompt",
-          runInput: queuedPromptRejectionInput(runInput),
-        },
-        launchRecord: {
-          kind: "prompt",
-          templateUsageIdentities,
-          context: {
-            userId: head.userId,
-            titled: threadTitled((await get(pickedEvent$))?.thread),
-            runInput: {
-              orgId: runInput.orgId,
-              threadId: runInput.threadId,
-              prompt: runInput.prompt,
-              discordDelivery: runInput.discordDelivery,
-              wechatDelivery: runInput.wechatDelivery,
-              triggerSource: runInput.triggerSource,
-            },
-          },
-        },
-      };
+      const prepared = await settle(get(assembledPrompt$));
+      return prepared.ok
+        ? prepared.value
+        : queuedPromptPreparationRejection(prepared.error, head);
     },
   );
   const availablePromptMaterial$ = computed(async (get) => {
@@ -1565,8 +1447,8 @@ export function createThreadClaimRunObjects(
     return queuedChatRunCallbackInputs({
       threadId: args.threadId,
       agentId: args.agent.id,
-      queuedMessage: args.queuedMessage,
-      ...material.value.launch.delivery,
+      queuedMessageId: args.queuedMessage.id,
+      delivery: material.value.launch.delivery,
     });
   });
   const automationSource$ = computed(async (get) => {
@@ -1803,7 +1685,7 @@ export function createThreadClaimRunObjects(
         },
         officialWorkflow,
         promptAndSkills,
-        rejection: { kind: "automation", userId: automation.ownerUserId },
+        rejection: { userId: automation.ownerUserId },
         launchRecord: {
           kind: "automation",
           automationId: automation.id,
@@ -1855,7 +1737,7 @@ export function createThreadClaimRunObjects(
     );
   });
   const callbackInputs$ = computed(
-    async (get): Promise<readonly InternalRunCallback[]> => {
+    async (get): Promise<readonly RunLaunchCallbackRecord[]> => {
       return (await get(isAutomation$))
         ? get(automationCallbacks$)
         : get(promptCallbacks$);
@@ -2786,18 +2668,9 @@ export function createThreadClaimRunObjects(
       error: { readonly code: string; readonly message: string },
       signal: AbortSignal,
     ): Promise<void> => {
-      const rejection: ChatQueueHeadRejection =
-        context.rejection.kind === "prompt"
-          ? queuedMessageRejection(
-              rejectedQueuedRunAdmissionFailure(
-                context.rejection.runInput,
-                error,
-              ),
-            )
-          : { userId: context.rejection.userId, error };
       await set(
         rejectChatQueueHead$,
-        { head: context.head, rejection },
+        { head: context.head, rejection: { ...context.rejection, error } },
         signal,
       );
     },
@@ -2919,7 +2792,7 @@ export function createThreadClaimRunObjects(
                 userId: context.head.userId,
                 chatThreadId: context.head.chatThreadId,
                 dispatchPath: "queued-claim",
-                triggerSource: launched.context.runInput.triggerSource,
+                triggerSource: launched.context.triggerSource,
                 usedAt: new Date(result.publicationReturnedAt),
               },
               launched.templateUsageIdentities,
@@ -3172,7 +3045,7 @@ interface PreparedRunnerLaunch {
 }
 
 interface PreparedLaunchCallback {
-  readonly internalKind: InternalRunCallback["internalKind"];
+  readonly internalKind: RunLaunchCallbackRecord["internalKind"];
   readonly payload: AgentRunCallbackPayload;
 }
 
@@ -3439,6 +3312,7 @@ function appendLaunchCallbackCte(args: {
   readonly ctes: WithSubquery[];
   readonly callbacks: readonly PreparedLaunchCallback[];
   readonly insertedRun: ReturnedIdCte;
+  readonly createdAt: Date;
 }): void {
   if (args.callbacks.length === 0) {
     return;
@@ -3452,10 +3326,12 @@ function appendLaunchCallbackCte(args: {
             agentRunCallbacks,
             {
               runId: returnedCteId(args.insertedRun),
-              url: null,
               internalKind: callback.internalKind,
-              encryptedSecret: null,
               payload: callback.payload,
+              // The file index is available as soon as the Run is published.
+              ...(callback.internalKind === FEISHU_RUN_FILE_INDEX_KIND
+                ? { status: "delivered", deliveredAt: args.createdAt }
+                : {}),
             },
             ["runId"],
             sql`EXISTS (SELECT 1 FROM ${args.insertedRun})`,
@@ -3549,6 +3425,7 @@ function buildAtomicLaunchCteContext(args: AtomicLaunchRowsPlanArgs) {
     ctes,
     callbacks: rowsArgs.callbacks,
     insertedRun,
+    createdAt,
   });
   return {
     rowsArgs,

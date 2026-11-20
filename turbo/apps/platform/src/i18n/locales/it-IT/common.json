@@ -1551,7 +1551,6 @@
           "action": "Fai check-in",
           "description": "Fai check-in una volta al giorno. Si reimposta alle 00:00 UTC.",
           "name": "Accedi ogni giorno",
-          "pendingDescription": "Il tuo check-in è stato salvato. I crediti verranno aggiornati dopo la conferma.",
           "unit": "al giorno"
         },
         "connector": {
@@ -1568,12 +1567,6 @@
         },
         "inReview": "In revisione",
         "intro": {
-          "checkin": {
-            "amount": "+{{amount}} crediti",
-            "confirm": "Torna al lavoro",
-            "description": "I crediti pagano il lavoro vero e proprio: ogni esecuzione, ogni artefatto, ogni workflow che parte da solo.",
-            "title": "Per oggi è fatta"
-          },
           "connector": {
             "confirm": "Vedi tutti i connettori",
             "connected": "Connesso",

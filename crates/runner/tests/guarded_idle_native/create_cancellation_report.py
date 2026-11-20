@@ -45,8 +45,9 @@ def validate(directory):
     generations, created_ids = set(), set()
     for case, events in witnesses.items():
         terminal = terminals[case]
-        if tuple(e["phase"] for e in events) != PHASES:
-            raise ValueError("missing duplicate or unordered actual create phases")
+        report.validate_witness_phases(
+            events, PHASES, "missing duplicate or unordered actual create phases",
+        )
         identity = terminal[1]["sandbox_id"], terminal[1]["backing_generation"]
         if any((e["sandbox_id"],e["backing_generation"]) != identity for e in events):
             raise ValueError("actual create lost original generation")

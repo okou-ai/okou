@@ -204,7 +204,6 @@ export const hasWechatTypingTargetForRun$ = command(
   async ({ set }, runId: string, signal: AbortSignal): Promise<boolean> => {
     const callbacks = await set(writeDb$)
       .select({
-        url: agentRunCallbacks.url,
         internalKind: agentRunCallbacks.internalKind,
         payload: agentRunCallbacks.payload,
       })

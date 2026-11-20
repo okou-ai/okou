@@ -290,6 +290,7 @@ Original test `An ordinary day's check-in confirms the reward and streak in a di
 - **Given** A member has not checked in today and has an eight-day streak.
 - **When** They check in from the quest panel.
 - **Then** A “Checked in for today” dialog shows a 9-day streak and +100 credits.
+- **Upstream change** `44fa0d5b` (#49459) keeps check-in feedback in the rewards menu instead of a success dialog; the upstream test is now `An ordinary day's check-in confirms the reward and streak in the menu` ([Registration](https://github.com/okou-ai/okou/blob/44fa0d5b0f0081dbdbac2b89553831df76749907/turbo/apps/platform/src/views/okou-page/__tests__/get-started-entry.test.tsx#L1417)). Rebuild this scenario against the current menu behavior.
 
 ## get-started-entry-037
 
@@ -298,6 +299,7 @@ Original test `Check-in waits for refreshed rewards before showing the success d
 - **Given** A member has not checked in today and has an eight-day streak.
 - **When** They check in, but the refreshed reward status is still loading.
 - **Then** The success dialog stays hidden while rewards refresh, and the check-in control is marked busy. Once refreshed rewards arrive, the dialog shows a 9-day streak and +100 credits.
+- **Upstream change** `44fa0d5b` (#49459) keeps check-in feedback in the rewards menu instead of a success dialog; the upstream test is now `Check-in keeps the menu open and busy through the request and reward refresh` ([Registration](https://github.com/okou-ai/okou/blob/44fa0d5b0f0081dbdbac2b89553831df76749907/turbo/apps/platform/src/views/okou-page/__tests__/get-started-entry.test.tsx#L1433)). Rebuild this scenario against the current menu behavior.
 
 ## get-started-entry-038
 
@@ -306,6 +308,7 @@ Original test `A saved check-in waits for a financial confirmation before celebr
 - **Given** A member has not checked in today.
 - **When** Their check-in is saved but awaits financial confirmation.
 - **Then** They are told the check-in was saved and credits will update after confirmation. No success dialog or “Checked in” status appears, and the quest is marked “In review.”
+- **Upstream change** `44fa0d5b` (#49459) keeps check-in feedback in the rewards menu instead of a success dialog; the upstream test is now `A saved check-in stays in review in the menu until financially confirmed` ([Registration](https://github.com/okou-ai/okou/blob/44fa0d5b0f0081dbdbac2b89553831df76749907/turbo/apps/platform/src/views/okou-page/__tests__/get-started-entry.test.tsx#L1491)). Rebuild this scenario against the current menu behavior.
 
 ## get-started-entry-039
 
@@ -314,6 +317,7 @@ Original test `A failed check-in does not show a success dialog`. [Registration]
 - **Given** A member has not checked in today.
 - **When** Their check-in request fails with “Check-in unavailable.”
 - **Then** The error is shown, no success dialog appears, and the quest still offers “Check in.”
+- **Upstream change** `44fa0d5b` (#49459) keeps check-in feedback in the rewards menu instead of a success dialog; the upstream test is now `A failed check-in keeps the menu open and can be retried` ([Registration](https://github.com/okou-ai/okou/blob/44fa0d5b0f0081dbdbac2b89553831df76749907/turbo/apps/platform/src/views/okou-page/__tests__/get-started-entry.test.tsx#L1516)). Rebuild this scenario against the current menu behavior.
 
 ## get-started-entry-040
 
@@ -322,6 +326,7 @@ Original test `Checking in confirms the reward instead of closing silently`. [Re
 - **Given** An admin has not checked in today.
 - **When** They check in from the quest panel.
 - **Then** A “Checked in for today” dialog confirms +100 credits and explains that credits pay for runs, artifacts, and scheduled workflows.
+- **Upstream change** `44fa0d5b` (#49459) keeps check-in feedback in the rewards menu instead of a success dialog; the upstream test is now `A check-in continues after manual dismissal and updates the reopened menu` ([Registration](https://github.com/okou-ai/okou/blob/44fa0d5b0f0081dbdbac2b89553831df76749907/turbo/apps/platform/src/views/okou-page/__tests__/get-started-entry.test.tsx#L1553)). Rebuild this scenario against the current menu behavior.
 
 ## get-started-entry-041
 

@@ -168,6 +168,12 @@ def validate_phase_clock(value, begin, end, message):
     return value
 
 
+def validate_witness_phases(events, phases, message):
+    """Require the exact declared phase sequence in witness order."""
+    if tuple(event["phase"] for event in events) != phases:
+        raise ValueError(message)
+
+
 def validate_witness_clock_order(events, message):
     """Require strict two-clock order in an already-admitted witness sequence."""
     for field in ("monotonic_ns", "unix_ns"):
@@ -356,8 +362,9 @@ def _validate_receipts(directory, cases, phases, collector):
     results = {}
     sandbox_ids, backing_generations = set(), set()
     for case, events in sorted(receipts.items()):
-        if tuple(e["phase"] for e in events) != phases:
-            raise ValueError(f"missing, duplicate or unordered native phases: {case}")
+        validate_witness_phases(
+            events, phases, f"missing, duplicate or unordered native phases: {case}",
+        )
         if events[0]["evidence"].get("artifacts") != expected:
             raise ValueError("native source/artifact/input identity mismatch")
         times = [e["monotonic_ns"] for e in events]

@@ -62,8 +62,9 @@ def validate(directory):
     original_ids = {v["sandbox_id"] for v in result["cases"].values()}
     for case, events in witnesses.items():
         terminal = terminals[case]
-        if tuple(e["phase"] for e in events) != PHASES:
-            raise ValueError("missing, duplicate or unordered continuation witnesses")
+        report.validate_witness_phases(
+            events, PHASES, "missing, duplicate or unordered continuation witnesses",
+        )
         identity = (terminal[1]["sandbox_id"], terminal[1]["backing_generation"])
         times = [e["monotonic_ns"] for e in events]
         if (any((e["sandbox_id"], e["backing_generation"]) != identity for e in events)

@@ -1526,7 +1526,6 @@
           "action": "Check in",
           "description": "Check in once a day. Resets at 00:00 UTC.",
           "name": "Check in daily",
-          "pendingDescription": "Your check-in was saved. Credits will update after confirmation.",
           "unit": "a day"
         },
         "connector": {
@@ -1543,12 +1542,6 @@
         },
         "inReview": "In review",
         "intro": {
-          "checkin": {
-            "amount": "+{{amount}} credits",
-            "confirm": "Back to work",
-            "description": "Credits pay for the work itself: every run, every artifact, every workflow that runs on a schedule.",
-            "title": "Checked in for today"
-          },
           "connector": {
             "confirm": "Browse all connectors",
             "connected": "Connected",
