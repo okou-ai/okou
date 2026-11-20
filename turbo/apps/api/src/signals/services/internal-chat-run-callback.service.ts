@@ -187,11 +187,6 @@ const chatCallbackPayloadSchema = object({
 
 type ChatCallbackPayload = zInfer<typeof chatCallbackPayloadSchema>;
 
-interface AgentForAutoSend {
-  readonly id: string;
-  readonly orgId: string;
-}
-
 export interface CreateQueuedChatRunInput {
   readonly orgId: string;
   readonly userId: string;
@@ -359,23 +354,25 @@ type FailedChatCallbackResult =
     }
   | DuplicateTerminalCallback;
 
-interface TerminalChatCallbackWork {
-  readonly outcome: "written" | "replayed" | "duplicate";
-  readonly deliveryReceipts: RunLifecycleDeliveryCallbacks;
-  readonly runFinishedEvent?: ChatRunFinishedEvent;
-  readonly deferredSideEffects?:
-    | {
-        readonly status: "completed";
-        readonly run: ChatRunInfo;
-        readonly lastResultText: string | null;
-        readonly followupContext: readonly ChatCompletionContextMessage[];
-      }
-    | {
-        readonly status: "failed";
-        readonly run: ChatRunInfo;
-        readonly displayErrorMessage: string;
-      };
-}
+type TerminalChatCallbackWork =
+  | DuplicateTerminalCallback
+  | {
+      readonly outcome: "written" | "replayed";
+      readonly deliveryReceipts: RunLifecycleDeliveryCallbacks;
+      readonly runFinishedEvent: ChatRunFinishedEvent;
+      readonly deferredSideEffects:
+        | {
+            readonly status: "completed";
+            readonly run: ChatRunInfo;
+            readonly lastResultText: string | null;
+            readonly followupContext: readonly ChatCompletionContextMessage[];
+          }
+        | {
+            readonly status: "failed";
+            readonly run: ChatRunInfo;
+            readonly displayErrorMessage: string;
+          };
+    };
 
 export function queuedChatRunCallbackInputs(
   input: Pick<
@@ -1272,16 +1269,12 @@ const materializeCompletedChatResult$ = command(
     signal: AbortSignal,
   ): Promise<string | null> => {
     const { latestAssistant, resultFallback } = args.output;
-    let lastResultText = latestAssistant?.content ?? null;
-    const latestAssistantSequence = latestAssistant?.sequenceNumber ?? null;
-
     const shouldInsertResultFallback =
       resultFallback !== null &&
-      (lastResultText === null ||
+      (latestAssistant === null ||
         (args.preferResultFallback &&
-          resultFallback.sequenceNumber >
-            (latestAssistantSequence ?? Number.NEGATIVE_INFINITY) &&
-          resultFallback.content !== lastResultText));
+          resultFallback.sequenceNumber > latestAssistant.sequenceNumber &&
+          resultFallback.content !== latestAssistant.content));
     if (shouldInsertResultFallback) {
       const inserted = await set(
         insertAssistantEvents$,
@@ -1315,9 +1308,9 @@ const materializeCompletedChatResult$ = command(
         );
       }
       signal.throwIfAborted();
-      lastResultText = resultFallback.content;
+      return resultFallback.content;
     }
-    return lastResultText;
+    return latestAssistant?.content ?? null;
   },
 );
 
@@ -1722,7 +1715,10 @@ export interface QueuedMessageModelRouteError {
 export interface QueuedChatPromptData {
   readonly threadId: string;
   readonly userId: string;
-  readonly agent: AgentForAutoSend;
+  readonly agent: {
+    readonly id: string;
+    readonly orgId: string;
+  };
   readonly queuedMessage: QueuedUserMessage;
 }
 
@@ -1741,12 +1737,6 @@ type QueuedIntegrationDeliveries = Pick<
 export interface QueuedLaunchMaterial {
   readonly triggerSource: QueuedUserMessageTriggerSource;
   readonly delivery: QueuedIntegrationDeliveries;
-}
-
-function queuedIntegrationDeliveries(
-  launchMaterial: QueuedLaunchMaterial,
-): QueuedIntegrationDeliveries {
-  return launchMaterial.delivery;
 }
 
 function unreachableQueuedContextType(contextType: never): never {
@@ -1941,7 +1931,7 @@ export function queuedIntegrationLaunchFields(
   launchMaterial: QueuedLaunchMaterial,
   agentId: string,
 ) {
-  const delivery = queuedIntegrationDeliveries(launchMaterial);
+  const { delivery } = launchMaterial;
   return {
     ...delivery,
     ...(delivery.telegramDelivery
@@ -2328,7 +2318,7 @@ const prepareCompletedTerminalChatCallbackWork$ = command(
   ): Promise<TerminalChatCallbackWork> => {
     const completed = await set(handleCompletedChatCallback$, args, signal);
     signal.throwIfAborted();
-    if (completed.outcome !== "written" && completed.outcome !== "replayed") {
+    if (completed.outcome === "duplicate") {
       return completed;
     }
 
@@ -2391,7 +2381,7 @@ const prepareFailedTerminalChatCallbackWork$ = command(
       signal,
     );
     signal.throwIfAborted();
-    if (failed.outcome !== "written" && failed.outcome !== "replayed") {
+    if (failed.outcome === "duplicate") {
       return failed;
     }
 
@@ -2795,15 +2785,18 @@ const finishTerminalChatCallbackAfterProjection$ = command(
     });
     signal.throwIfAborted();
 
+    const { work } = args;
+    if (work.outcome === "duplicate") {
+      return;
+    }
+
     // A committed marker must not acknowledge an unfinished automation. Throw
     // back to the existing callback owner so its failed/pending row can retry.
-    if (args.work.runFinishedEvent) {
-      await set(
-        dispatchConfiguredChatRunFinishedEvent$,
-        args.work.runFinishedEvent,
-        signal,
-      );
-    }
+    await set(
+      dispatchConfiguredChatRunFinishedEvent$,
+      work.runFinishedEvent,
+      signal,
+    );
     signal.throwIfAborted();
 
     // Scheduling is the last step, so a replay after an earlier attempt threw
@@ -2811,50 +2804,44 @@ const finishTerminalChatCallbackAfterProjection$ = command(
     // also follow an attempt that reached this point but failed its final
     // acknowledgement, or overlap a concurrent redrive. That residual is
     // at-least-once for summary, follow-up generation and push.
-    const deferredSideEffects = args.work.deferredSideEffects;
-    if (
-      deferredSideEffects &&
-      (args.work.outcome === "written" || args.work.outcome === "replayed")
-    ) {
-      const backgroundSignal = new AbortController().signal;
-      // Use this Run's persisted delivery targets, not thread history or
-      // delivery success. Channel failures must not fall back to Web push.
-      const sendClientPush = !hasExternalNotificationDeliveryChannel(
-        args.callback.payload,
-      );
-      waitUntil(
-        runTerminalChatCallbackSideEffects({
-          runId: args.runId,
-          status: args.callbackStatus,
-          operation:
-            deferredSideEffects.status === "completed"
-              ? set(
-                  runCompletedChatCallbackSideEffects$,
-                  {
-                    runId: args.runId,
-                    chatThread: args.chatThread,
-                    run: deferredSideEffects.run,
-                    lastResultText: deferredSideEffects.lastResultText,
-                    followupContext: deferredSideEffects.followupContext,
-                    sendClientPush,
-                  },
-                  backgroundSignal,
-                )
-              : set(
-                  runFailedChatCallbackSideEffects$,
-                  {
-                    runId: args.runId,
-                    run: deferredSideEffects.run,
-                    chatThread: args.chatThread,
-                    displayErrorMessage:
-                      deferredSideEffects.displayErrorMessage,
-                    sendClientPush,
-                  },
-                  backgroundSignal,
-                ),
-        }),
-      );
-    }
+    const { deferredSideEffects } = work;
+    const backgroundSignal = new AbortController().signal;
+    // Use this Run's persisted delivery targets, not thread history or
+    // delivery success. Channel failures must not fall back to Web push.
+    const sendClientPush = !hasExternalNotificationDeliveryChannel(
+      args.callback.payload,
+    );
+    waitUntil(
+      runTerminalChatCallbackSideEffects({
+        runId: args.runId,
+        status: args.callbackStatus,
+        operation:
+          deferredSideEffects.status === "completed"
+            ? set(
+                runCompletedChatCallbackSideEffects$,
+                {
+                  runId: args.runId,
+                  chatThread: args.chatThread,
+                  run: deferredSideEffects.run,
+                  lastResultText: deferredSideEffects.lastResultText,
+                  followupContext: deferredSideEffects.followupContext,
+                  sendClientPush,
+                },
+                backgroundSignal,
+              )
+            : set(
+                runFailedChatCallbackSideEffects$,
+                {
+                  runId: args.runId,
+                  run: deferredSideEffects.run,
+                  chatThread: args.chatThread,
+                  displayErrorMessage: deferredSideEffects.displayErrorMessage,
+                  sendClientPush,
+                },
+                backgroundSignal,
+              ),
+      }),
+    );
   },
 );
 
