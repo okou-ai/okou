@@ -32,7 +32,7 @@ interface Authentication {
 
     fun initialize()
 
-    suspend fun refresh(expected: NativeSession)
+    suspend fun refresh(expected: NativeSession): MembershipAccess?
 
     suspend fun memberships(expected: NativeSession): List<WorkspaceMembership>
 
