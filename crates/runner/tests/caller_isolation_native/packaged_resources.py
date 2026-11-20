@@ -8,6 +8,7 @@ import time
 from pathlib import Path
 
 import packaged_vendor_resources
+from packaged_accounting import parse_cgroup_counters
 
 PI_ANCHORS = (
     "/home",
@@ -184,9 +185,7 @@ def nested_child_probe(root, env, as_role, tasks, record):
             deadline = time.monotonic() + 10
             while True:
                 events.seek(0)
-                state = dict(
-                    line.split() for line in events.read().decode().splitlines()
-                )
+                state = parse_cgroup_counters(events.read().decode())
                 if state.get("populated") == "0":
                     empty = True
                     break
