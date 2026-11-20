@@ -13,6 +13,13 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1154.2](https://github.com/okou-ai/okou/compare/app-v0.1154.1...app-v0.1154.2) (2026-11-20)
+
+
+### Refactoring
+
+* **app:** stop writing onboarding drafts to browser storage ([#49384](https://github.com/okou-ai/okou/issues/49384)) ([25d468f](https://github.com/okou-ai/okou/commit/25d468f63e71aef164ac83bf0b412e871256fc02))
+
 ## [0.1154.1](https://github.com/okou-ai/okou/compare/app-v0.1154.0...app-v0.1154.1) (2026-11-20)
 
 
