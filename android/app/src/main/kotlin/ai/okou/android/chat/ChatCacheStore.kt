@@ -7,6 +7,7 @@ import ai.okou.android.api.generated.ProjectArchive
 import ai.okou.android.api.generated.ProjectEventsEventsItem
 import ai.okou.android.auth.WorkspaceIdentity
 import android.content.Context
+import android.util.AtomicFile
 import androidx.room.Room
 import androidx.room.deferredTransaction
 import androidx.room.immediateTransaction
@@ -26,6 +27,8 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import okhttp3.HttpUrl.Companion.toHttpUrl
 
@@ -44,6 +47,11 @@ data class CachedProjects(val checkpoint: ProjectCheckpoint, val confirmedAt: Lo
 
 data class CachedHistory(val checkpoint: HistoryCheckpoint, val confirmedAt: Long)
 
+@Serializable data class CachedUnread(val confirmedAt: Long, val unreadAt: Map<String, String>)
+
+@Serializable
+private data class UnreadCacheRecord(val authorization: String, val snapshot: CachedUnread)
+
 /** One application-owned Room database. Leases fence consumers, not database lifetime. */
 class ChatCacheStore
 internal constructor(
@@ -58,6 +66,7 @@ internal constructor(
     ) : this(directory, dispatcher, chatDatabaseFactory(context.applicationContext, dispatcher))
 
     private val lock = Mutex()
+    private val unreadLock = Mutex()
     private val active = AtomicReference<Lease?>()
     private var database: ChatCacheDatabase? = null
     private val file = directory.resolve("chats.db")
@@ -72,7 +81,7 @@ internal constructor(
         database?.let {
             return it
         }
-        if (!directory.isDirectory && !directory.mkdirs())
+        if (!directory.isDirectory && !directory.mkdirs() && !directory.isDirectory)
             throw IOException("Cannot create chat cache")
         return createDatabase(file).also { database = it }
     }
@@ -115,12 +124,58 @@ internal constructor(
         private var rebuild = false
         private var rebuildProjects = false
         private val rebuildHistories = hashSetOf<String>()
+        private val unreadFile = AtomicFile(directory.resolve("$key-unread.json"))
 
         private fun current() = !retired && active.get() === this && authorized()
 
         private fun checkCurrent() {
             if (!current()) throw CancellationException("Chat cache owner retired")
         }
+
+        internal suspend fun loadUnread(): CachedUnread? =
+            withContext(dispatcher) {
+                unreadLock.withLock {
+                    checkCurrent()
+                    val record =
+                        try {
+                            json.decodeFromString<UnreadCacheRecord>(
+                                unreadFile.readFully().decodeToString()
+                            )
+                        } catch (_: IOException) {
+                            return@withLock null
+                        } catch (_: SerializationException) {
+                            return@withLock null
+                        }
+                    checkCurrent()
+                    record.snapshot.takeIf { record.authorization == authorization }
+                }
+            }
+
+        internal suspend fun saveUnread(snapshot: CachedUnread): Boolean =
+            withContext(dispatcher) {
+                unreadLock.withLock {
+                    checkCurrent()
+                    val data = json.encodeToString(UnreadCacheRecord(authorization, snapshot))
+                    try {
+                        val output = unreadFile.startWrite()
+                        var committed = false
+                        try {
+                            output.write(data.encodeToByteArray())
+                            currentCoroutineContext().ensureActive()
+                            checkCurrent()
+                            unreadFile.finishWrite(output)
+                            committed = true
+                            if (!current()) unreadFile.delete()
+                            checkCurrent()
+                        } finally {
+                            if (!committed) unreadFile.failWrite(output)
+                        }
+                        true
+                    } catch (_: IOException) {
+                        false
+                    }
+                }
+            }
 
         suspend fun loadHistory(threadId: String): CachedHistory? =
             withContext(dispatcher) {

@@ -138,6 +138,33 @@ class ChatCacheStoreTest {
     }
 
     @Test
+    fun unreadSnapshotReopensOnlyForTheSameAuthorizedWorkspaceAndAccount() = runTest {
+        val root = temporary.newFolder()
+        val snapshot = CachedUnread(1_000L, mapOf(CHAT_PERSONAL to CHAT_DATE))
+        val original = cache(root).open(identity) { true }
+        assertTrue(original.saveUnread(snapshot))
+        original.close()
+        val reopened = cache(root)
+        val returning = reopened.open(identity.copy(sessionId = "session-b")) { true }
+        assertEquals(snapshot, returning.loadUnread())
+
+        for (replacement in
+            listOf(
+                identity.copy(workspaceId = "org-b"),
+                identity.copy(userId = "user-b"),
+                identity.copy(authorizationScope = "admin"),
+                identity.copy(apiOrigin = "https://other.okou.ai/"),
+            )) {
+            reopened.open(replacement) { true }.use { assertNull(it.loadUnread()) }
+        }
+        assertTrue(
+            runCatching { returning.saveUnread(snapshot) }.exceptionOrNull()
+                is CancellationException
+        )
+        reopened.open(identity) { true }.use { assertEquals(snapshot, it.loadUnread()) }
+    }
+
+    @Test
     fun projectDatasetReopensWithoutAChatCacheAndRejectsStaleOrUnauthorizedWrites() = runTest {
         val root = temporary.newFolder()
         val store = cache(root)

@@ -99,10 +99,14 @@ are decoded from streams without a full response byte-array/String copy.
 The versioned database contains only rebuildable server-confirmed data;
 unsupported local schemas may be recreated, never migrated together with drafts
 or credentials. Room exports its schema under `app/schemas` through its Gradle/KSP
-integration. A saved list and the last status refresh do not establish current
-network freshness. Signed archive URLs, credentials and transient indicators are
-not persisted in the chat cache. Personal Instructions drafts use the separate
-intent store described above.
+integration. The private chat cache also stores the last confirmed unread map
+for each workspace and account, with its authorization scope. After authorized
+startup, the unread dots, filter, and collapsed Project counts can use that
+snapshot for up to two minutes from confirmation. A successful indicators read
+replaces it. Running indicators and run controls still use live responses.
+Signed archive URLs are confined to a snapshot fetch, and credentials belong to
+the authentication owner. Personal Instructions drafts use the separate intent
+store described above.
 
 Pin, pin reorder, rename, mute and archive actions project their visible result
 from memory before the request completes. Canonical event IDs settle these
