@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 
 use crate::log::log;
+use crate::quiesce::OperationGuard;
 use crate::writer::GuestWriter;
 
 pub(crate) enum LazyConnectionWorkerSubmitError {
@@ -173,6 +174,14 @@ impl SingleActiveAdmission {
 
 pub(crate) struct SingleActivePermit {
     active: Arc<AtomicBool>,
+}
+
+impl SingleActivePermit {
+    /// Release the pending operation before admitting new work to this worker.
+    pub(crate) fn finish_operation(self, operation_guard: &OperationGuard) {
+        operation_guard.release();
+        drop(self);
+    }
 }
 
 impl Drop for SingleActivePermit {
