@@ -266,8 +266,8 @@ test.each(["reopening Settings", "returning to My Okou"])(
       click(within(rail).getByLabelText("Test User"));
       click(within(await screen.findByRole("menu")).getByText("Settings"));
     }
-    click(getSettingsButton("My Okou"));
     const reopened = await screen.findByRole("dialog", { name: "Settings" });
+    click(within(reopened).getByRole("button", { name: "My Okou" }));
     await waitFor(() => {
       const refreshed = within(reopened).getByRole("switch", {
         name: "Suggestions",

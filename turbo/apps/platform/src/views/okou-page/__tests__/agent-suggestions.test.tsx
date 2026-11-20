@@ -3,13 +3,14 @@ import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft"
 import { suggestionFeedbacks } from "@okouai/api-contracts/contracts/suggestion-context";
 import {
   act,
+  cleanup,
   fireEvent,
   screen,
   waitFor,
   within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import {
   feedContract,
   type Suggestion,
@@ -37,7 +38,11 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  createTestRuntime,
+  testContext,
+} from "../../../signals/__tests__/test-helpers.ts";
+import { resetSignal } from "../../../signals/utils.ts";
 import { pathname } from "../../../signals/location.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
 import {
@@ -47,6 +52,7 @@ import {
 import { nowDate } from "../../../lib/time.ts";
 import { forYouCovers } from "../../../lib/for-you-artwork.ts";
 const context = testContext();
+const reloadedContext = createTestRuntime(context);
 const agentId = "c0000000-0000-4000-a000-000000000001";
 const threadId = "b0000000-0000-4000-a000-000000000811";
 function makeSuggestion(): Suggestion {
@@ -2349,7 +2355,13 @@ test("Cover and card artwork stay fixed through browsing, feedback and Undo", as
 test("The member picks a For you cover, keeps it after reload and can return to the default", async () => {
   const items = numberedSuggestions(2);
   mockPool(items);
-  await openForYou();
+  const resetPage$ = resetSignal();
+  const signal = context.store.set(resetPage$, context.signal);
+  await setupPage({
+    context: { ...context, signal },
+    path: suggestionPath,
+    featureSwitches: features,
+  });
   await activeForYouCard(items[0].content.title);
   const cover = () => {
     return document
@@ -2373,8 +2385,18 @@ test("The member picks a For you cover, keeps it after reload and can return to 
     "true",
   );
 
-  // A fresh page reads the pick back from this browser.
-  await openForYou();
+  // A fresh app store reads the cover back from browser storage.
+  context.store.set(resetPage$);
+  cleanup();
+  vi.mocked(window.history.pushState).mockRestore();
+  vi.mocked(window.history.replaceState).mockRestore();
+  vi.mocked(window.history.back).mockRestore();
+  vi.mocked(window.history.forward).mockRestore();
+  await setupPage({
+    context: reloadedContext,
+    path: suggestionPath,
+    featureSwitches: features,
+  });
   await activeForYouCard(items[0].content.title);
   expect(cover()).toBe(forYouCovers[7].src);
 

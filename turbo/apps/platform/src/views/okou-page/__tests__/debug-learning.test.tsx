@@ -260,8 +260,8 @@ test("dismissal also cancels Learning discovery", async () => {
   await openDebug();
   await requested.promise;
   expect(runButton()).toBeDisabled();
-  const user = userEvent.setup({ delay: null });
-  await user.keyboard("{Escape}");
+  const settings = screen.getByRole("dialog", { name: "Settings" });
+  click(within(settings).getByLabelText("Close", { selector: "button" }));
   await waitFor(() => {
     expect(screen.queryByRole("dialog", { name: "Settings" })).toBeNull();
     expect(

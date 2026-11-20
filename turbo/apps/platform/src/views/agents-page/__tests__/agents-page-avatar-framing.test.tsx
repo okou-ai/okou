@@ -2,7 +2,7 @@
  * Boundary exception, per `docs/testing.md#external-behavior`.
  *
  * These cases are set up entirely through the production page — the real
- * Agents route and the real agent list — but they cannot be verified through
+ * retained Agent profile route and real avatar renderer — but they cannot be verified through
  * it. Avatar framing has no page-observable result: it is a transform whose
  * only effect is the rendered size of the artwork, and jsdom performs no
  * layout, so nothing a user could see changes in the DOM. The applied
@@ -20,13 +20,18 @@ import {
   agentsByIdContract,
   type AgentResponse,
 } from "@okouai/api-contracts/contracts/agents";
-import { waitFor } from "@testing-library/react";
-import { expect, test } from "vitest";
+import { cleanup, waitFor } from "@testing-library/react";
+import { expect, test, vi } from "vitest";
 
 import { setupPage } from "../../../__tests__/page-helper.ts";
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  createTestRuntime,
+  testContext,
+} from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
+const firstProfile = createTestRuntime(context);
+const nextProfile = createTestRuntime(context);
 
 const FLAT_HAIR_AGENT_ID = "c0000000-0000-4000-a000-000000000021";
 const TALL_HAIR_AGENT_ID = "c0000000-0000-4000-a000-000000000022";
@@ -99,13 +104,16 @@ function centeringOffset(transform: string): number {
   return Number(match[1]);
 }
 
-async function readProfileAvatar(target: AgentResponse): Promise<HTMLElement> {
+async function readProfileAvatar(
+  target: AgentResponse,
+  runtime = firstProfile,
+): Promise<HTMLElement> {
   context.mocks.data.agents([target]);
   context.mocks.api(agentsByIdContract.get, ({ respond }) => {
     return respond(200, target);
   });
   await setupPage({
-    context,
+    context: runtime,
     path: "/agents/" + target.agentId + "?tab=profile",
   });
   return await waitFor(() => {
@@ -119,13 +127,24 @@ async function readProfileAvatar(target: AgentResponse): Promise<HTMLElement> {
   });
 }
 
+async function readNextProfileAvatar() {
+  firstProfile.dispose();
+  cleanup();
+  vi.mocked(window.history.pushState).mockRestore();
+  vi.mocked(window.history.replaceState).mockRestore();
+  vi.mocked(window.history.back).mockRestore();
+  vi.mocked(window.history.forward).mockRestore();
+  return await readProfileAvatar(
+    agent(TALL_HAIR_AGENT_ID, TALL_HAIR_AVATAR_URL),
+    nextProfile,
+  );
+}
+
 test("Center each composer avatar and pull the cast toward one size", async () => {
   const flatAvatar = await readProfileAvatar(
     agent(FLAT_HAIR_AGENT_ID, FLAT_HAIR_AVATAR_URL),
   );
-  const tallAvatar = await readProfileAvatar(
-    agent(TALL_HAIR_AGENT_ID, TALL_HAIR_AVATAR_URL),
-  );
+  const tallAvatar = await readNextProfileAvatar();
 
   const flat = avatarFramingTransform(flatAvatar);
   const tall = avatarFramingTransform(tallAvatar);
@@ -182,9 +201,7 @@ test("Move the head to the chin baseline instead of resizing it", async () => {
   const flatAvatar = await readProfileAvatar(
     agent(FLAT_HAIR_AGENT_ID, FLAT_HAIR_AVATAR_URL),
   );
-  const tallAvatar = await readProfileAvatar(
-    agent(TALL_HAIR_AGENT_ID, TALL_HAIR_AVATAR_URL),
-  );
+  const tallAvatar = await readNextProfileAvatar();
 
   // The face assets are all drawn at one width. Resizing a head to reach the
   // shared collar made it up to 1.24x wider than its neighbour while the neck

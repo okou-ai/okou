@@ -1,3 +1,5 @@
+import { instructionsContract } from "@okouai/api-contracts/contracts/instructions";
+import { instructionsRoutes } from "../instructions";
 import { randomUUID } from "node:crypto";
 import { chatInputStatusContract } from "@okouai/api-contracts/contracts/chat-input-status";
 import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
@@ -1097,10 +1099,14 @@ describe("workflow queue", () => {
   it("revokes queued automation input while an admitted Run prepares dispatch", async () => {
     const scenario = await setup();
     const automation = await createScheduleAutomation(scenario);
-    await bdd.updateAgentInstructions(
-      scenario.actor,
-      scenario.agentId,
-      `Queue preparation ${randomUUID()}`,
+    await accept(
+      setupApp({ context, routes: instructionsRoutes })(
+        instructionsContract,
+      ).update({
+        headers: authHeaders(),
+        body: { content: "Queue preparation " + randomUUID() },
+      }),
+      [200],
     );
     const signing = holdDownloadSigning(context);
     const preparation = await settleIncludingAbort(async () => {
