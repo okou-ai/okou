@@ -19,8 +19,8 @@ from .model_tokens import (
     MODEL_USAGE_CATEGORY_INPUT,
     MODEL_USAGE_CATEGORY_OUTPUT,
 )
-from .openai_tokens import input_partition_overlaps, is_usage_quantity, partition_input_tokens
-from .quantities import MAX_USAGE_QUANTITY
+from .openai_tokens import partition_input_tokens
+from .quantities import MAX_USAGE_QUANTITY, is_usage_quantity
 from .sse import SseUsageScanner
 
 _CHAT_COMPLETIONS_MAX_WORK_UNITS = 65_536
@@ -242,30 +242,26 @@ def _usage_snapshot(result: JsonExtractionResult) -> dict | None:
         if cached_tokens_path in result.value_present
         else result.values.get((*usage_path, "prompt_cache_hit_tokens"))
     )
-    input_tokens, cache_read_tokens, cache_creation_tokens = partition_input_tokens(
+    partition = partition_input_tokens(
         result.values.get((*usage_path, "prompt_tokens")),
         cached_tokens,
         result.values.get((*usage_path, "prompt_tokens_details", "cache_write_tokens")),
     )
 
     usage: dict = {}
-    if input_partition_overlaps(
-        result.values.get((*usage_path, "prompt_tokens")),
-        cached_tokens,
-        result.values.get((*usage_path, "prompt_tokens_details", "cache_write_tokens")),
-    ):
+    if partition.overlaps:
         usage["input_partition_incomplete"] = True
-    _store_quantity(usage, MODEL_USAGE_CATEGORY_INPUT, input_tokens)
+    _store_quantity(usage, MODEL_USAGE_CATEGORY_INPUT, partition.uncached_tokens)
     _store_quantity(
         usage,
         MODEL_USAGE_CATEGORY_OUTPUT,
         result.values.get((*usage_path, "completion_tokens")),
     )
-    _store_quantity(usage, MODEL_USAGE_CATEGORY_CACHE_READ, cache_read_tokens)
+    _store_quantity(usage, MODEL_USAGE_CATEGORY_CACHE_READ, partition.cache_read_tokens)
     _store_quantity(
         usage,
         MODEL_USAGE_CATEGORY_CACHE_CREATION,
-        cache_creation_tokens,
+        partition.cache_creation_tokens,
     )
 
     if not any(category in usage for category in MODEL_USAGE_CATEGORIES):

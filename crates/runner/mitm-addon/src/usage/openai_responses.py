@@ -42,10 +42,9 @@ from .model_tokens import (
     MODEL_USAGE_CATEGORY_OUTPUT,
     update_model_usage_quantity,
 )
-from .openai_tokens import input_partition_overlaps
-from .openai_tokens import is_usage_quantity as _is_usage_quantity
-from .openai_tokens import partition_input_tokens as _partition_input_tokens
+from .openai_tokens import partition_input_tokens
 from .quantities import MAX_USAGE_QUANTITY
+from .quantities import is_usage_quantity as _is_usage_quantity
 from .sse import SseUsageScanner
 
 _SseUsageParseErrorCallback = Callable[[str, str], None]
@@ -485,18 +484,18 @@ def _merge_input_partition(target: dict, source: dict) -> None:
             cache_write_tokens,
         )
 
-    ordinary_input_tokens, cached_tokens, cache_write_tokens = _partition_input_tokens(
+    partition = partition_input_tokens(
         merged_raw.get(MODEL_USAGE_CATEGORY_INPUT),
         merged_raw.get(MODEL_USAGE_CATEGORY_CACHE_READ),
         merged_raw.get(MODEL_USAGE_CATEGORY_CACHE_CREATION),
     )
-    if ordinary_input_tokens is None:
+    if partition.uncached_tokens is None:
         return
 
-    target[MODEL_USAGE_CATEGORY_INPUT] = ordinary_input_tokens
+    target[MODEL_USAGE_CATEGORY_INPUT] = partition.uncached_tokens
     for category, value in (
-        (MODEL_USAGE_CATEGORY_CACHE_READ, cached_tokens),
-        (MODEL_USAGE_CATEGORY_CACHE_CREATION, cache_write_tokens),
+        (MODEL_USAGE_CATEGORY_CACHE_READ, partition.cache_read_tokens),
+        (MODEL_USAGE_CATEGORY_CACHE_CREATION, partition.cache_creation_tokens),
     ):
         if value is None:
             target.pop(category, None)
@@ -505,11 +504,12 @@ def _merge_input_partition(target: dict, source: dict) -> None:
 
 
 def _store_response_values(values: dict, target: dict, prefix: tuple[str, ...] = ()) -> None:
-    if input_partition_overlaps(
+    partition = partition_input_tokens(
         values.get((*prefix, "usage", "input_tokens")),
         values.get((*prefix, "usage", "input_tokens_details", "cached_tokens")),
         values.get((*prefix, "usage", "input_tokens_details", "cache_write_tokens")),
-    ):
+    )
+    if partition.overlaps:
         target["input_partition_incomplete"] = True
     model = values.get((*prefix, "model"))
     if isinstance(model, str) and model:
@@ -523,15 +523,10 @@ def _store_response_values(values: dict, target: dict, prefix: tuple[str, ...] =
     if isinstance(service_tier, str) and service_tier:
         target["service_tier"] = service_tier
 
-    uncached_input_tokens, cached_tokens, cache_creation_tokens = _partition_input_tokens(
-        values.get((*prefix, "usage", "input_tokens")),
-        values.get((*prefix, "usage", "input_tokens_details", "cached_tokens")),
-        values.get((*prefix, "usage", "input_tokens_details", "cache_write_tokens")),
-    )
     update_model_usage_quantity(
         target,
         MODEL_USAGE_CATEGORY_INPUT,
-        uncached_input_tokens,
+        partition.uncached_tokens,
     )
     update_model_usage_quantity(
         target,
@@ -542,12 +537,12 @@ def _store_response_values(values: dict, target: dict, prefix: tuple[str, ...] =
     update_model_usage_quantity(
         target,
         MODEL_USAGE_CATEGORY_CACHE_READ,
-        cached_tokens,
+        partition.cache_read_tokens,
     )
     update_model_usage_quantity(
         target,
         MODEL_USAGE_CATEGORY_CACHE_CREATION,
-        cache_creation_tokens,
+        partition.cache_creation_tokens,
     )
 
 
