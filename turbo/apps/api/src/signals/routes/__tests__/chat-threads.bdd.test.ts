@@ -439,7 +439,6 @@ async function sendNoCreditMessage(
  */
 async function completeChatRunInThread(
   actor: ApiTestUser,
-  runnerGroup: string,
   args: {
     readonly agentId: string;
     readonly threadId?: string;
@@ -451,7 +450,8 @@ async function completeChatRunInThread(
     ...(args.threadId === undefined ? {} : { threadId: args.threadId }),
     prompt: args.prompt,
   });
-  const { sandboxHeaders } = await runExecution(runnerGroup, run.runId);
+  const { sandboxToken } = await api.executionInput(run.runId);
+  const sandboxHeaders = { authorization: `Bearer ${sandboxToken}` };
   chatCallbacks.mockChatOutputEvents([]);
   await completeChatRunOk(run.runId, sandboxHeaders);
   await flushWaitUntilForTest();
@@ -1257,7 +1257,7 @@ describe("CHAT-01 chat thread read state", () => {
       displayName: "Unread peer agent",
       visibility: "private",
     });
-    const peerRun = await completeChatRunInThread(peer, runnerGroup, {
+    const peerRun = await completeChatRunInThread(peer, {
       agentId: peerAgent.agentId,
       prompt: "peer unread thread stays isolated",
     });
@@ -1270,14 +1270,10 @@ describe("CHAT-01 chat thread read state", () => {
       displayName: "Unread other org agent",
       visibility: "private",
     });
-    const otherOrgRun = await completeChatRunInThread(
-      sameUserOtherOrg,
-      runnerGroup,
-      {
-        agentId: otherOrgAgent.agentId,
-        prompt: "other org unread thread stays isolated",
-      },
-    );
+    const otherOrgRun = await completeChatRunInThread(sameUserOtherOrg, {
+      agentId: otherOrgAgent.agentId,
+      prompt: "other org unread thread stays isolated",
+    });
 
     await expect(chat.listUnreadAgents(owner)).resolves.toStrictEqual([]);
     await expect(chat.listUnreadChatThreadIds(owner)).resolves.toStrictEqual(
@@ -1339,11 +1335,11 @@ describe("CHAT-01 chat thread read state", () => {
       [],
     );
 
-    const runA = await completeChatRunInThread(owner, runnerGroup, {
+    const runA = await completeChatRunInThread(owner, {
       agentId: agentA,
       prompt: "unread aggregate A",
     });
-    const runB = await completeChatRunInThread(owner, runnerGroup, {
+    const runB = await completeChatRunInThread(owner, {
       agentId: agentB,
       prompt: "unread aggregate B",
     });
@@ -1368,13 +1364,12 @@ describe("CHAT-01 chat thread read state", () => {
   }, 120_000);
 
   it("does not let a muted thread hide another unread thread under the same agent", async () => {
-    const { actor, agentId, runnerGroup } =
-      await entitledChatActor("Mixed mute states");
-    const muted = await completeChatRunInThread(actor, runnerGroup, {
+    const { actor, agentId } = await entitledChatActor("Mixed mute states");
+    const muted = await completeChatRunInThread(actor, {
       agentId,
       prompt: "Muted unread task",
     });
-    const other = await completeChatRunInThread(actor, runnerGroup, {
+    const other = await completeChatRunInThread(actor, {
       agentId,
       prompt: "Unmuted unread task",
     });
@@ -1423,7 +1418,7 @@ describe("CHAT-01 chat thread read state", () => {
 
     // A completed run's thread must not appear in the active list. Run it
     // first so the pro-tier concurrency slots stay free for the runs below.
-    const completedRun = await completeChatRunInThread(owner, runnerGroup, {
+    const completedRun = await completeChatRunInThread(owner, {
       agentId: ownerAgent,
       prompt: "terminal completed thread",
     });
@@ -1493,20 +1488,20 @@ describe("CHAT-01 chat thread read state", () => {
   }, 120_000);
 
   it("limits unified unread indicators to seven days without limiting active threads", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor(
+    const { actor, agentId } = await entitledChatActor(
       "Bounded indicator window agent",
     );
     const currentTime = now();
 
     await withMockNowForTest(currentTime, async () => {
       mockNow(currentTime - 7 * DAY_MS - 1);
-      await completeChatRunInThread(actor, runnerGroup, {
+      await completeChatRunInThread(actor, {
         agentId,
         prompt: "expired unread indicator",
       });
 
       mockNow(currentTime);
-      const recentRun = await completeChatRunInThread(actor, runnerGroup, {
+      const recentRun = await completeChatRunInThread(actor, {
         agentId,
         prompt: "recent unread indicator",
       });
@@ -1530,11 +1525,9 @@ describe("CHAT-01 chat thread read state", () => {
   }, 120_000);
 
   it("returns the 50 newest unread indicators across the organization", async () => {
-    const {
-      actor,
-      agentId: agentA,
-      runnerGroup,
-    } = await entitledChatActor("Bounded indicator agent A");
+    const { actor, agentId: agentA } = await entitledChatActor(
+      "Bounded indicator agent A",
+    );
     const agentB = (
       await bdd.createAgent(actor, {
         displayName: "Bounded indicator agent B",
@@ -1548,7 +1541,7 @@ describe("CHAT-01 chat thread read state", () => {
       for (let index = 0; index < 51; index += 1) {
         mockNow(firstCompletedAt + index * 1000);
         runs.push(
-          await completeChatRunInThread(actor, runnerGroup, {
+          await completeChatRunInThread(actor, {
             agentId: index % 2 === 0 ? agentA : agentB,
             prompt: `bounded unread indicator ${index}`,
           }),
@@ -1576,11 +1569,8 @@ describe("CHAT-01 chat thread read state", () => {
   }, 240_000);
 
   it("marks all unread chat threads for one agent", async () => {
-    const {
-      actor: owner,
-      agentId: agentA,
-      runnerGroup,
-    } = await entitledChatActor("Mark-read agent A");
+    const { actor: owner, agentId: agentA } =
+      await entitledChatActor("Mark-read agent A");
     const agentB = (
       await bdd.createAgent(owner, {
         displayName: "Mark-read agent B",
@@ -1588,15 +1578,15 @@ describe("CHAT-01 chat thread read state", () => {
       })
     ).agentId;
 
-    const firstRunA = await completeChatRunInThread(owner, runnerGroup, {
+    const firstRunA = await completeChatRunInThread(owner, {
       agentId: agentA,
       prompt: "mark all read A one",
     });
-    const secondRunA = await completeChatRunInThread(owner, runnerGroup, {
+    const secondRunA = await completeChatRunInThread(owner, {
       agentId: agentA,
       prompt: "mark all read A two",
     });
-    const runB = await completeChatRunInThread(owner, runnerGroup, {
+    const runB = await completeChatRunInThread(owner, {
       agentId: agentB,
       prompt: "mark all read B",
     });
