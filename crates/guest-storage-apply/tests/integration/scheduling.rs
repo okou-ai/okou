@@ -1,10 +1,9 @@
 //! Integration coverage for the guest-storage-apply slot scheduler.
 //!
-//! The scheduler may run up to sixteen remote downloads at once, but archives whose
-//! mount paths are equal or have an ancestor/descendant relationship must not
-//! extract concurrently. These tests also cover slot refill behavior: when an
-//! active download blocks a conflicting queued task, a later independent task
-//! should still be able to fill an available slot.
+//! The scheduler sizes its download window by remote batch size and serializes
+//! archives with equal or overlapping mount paths. These tests also cover slot
+//! refill when a conflicting queued task blocks and a later independent task can
+//! use the free slot.
 //!
 //! The harness uses request-start events and explicit release gates to create
 //! deterministic scheduler pressure. Bounded waits are assertion deadlines and
@@ -16,9 +15,10 @@ use crate::binary_logging::BinaryLoggingFixture;
 #[cfg(unix)]
 use crate::process;
 use crate::process::ChildExecution;
-use crate::support::{create_tar_gz, write_manifest};
+use crate::support::{TcpTestServer, create_tar_gz, read_http_request_path, write_manifest};
 use httpmock::prelude::*;
 use httpmock::{HttpMockRequest, HttpMockResponse, Mock};
+use std::io::{self, Write as _};
 use std::path::Path;
 use std::sync::{Arc, Condvar, Mutex, mpsc};
 use std::time::{Duration, Instant};
@@ -759,6 +759,76 @@ fn download_concurrency_cap_limits_initial_starts() {
         Err(mpsc::RecvTimeoutError::Timeout)
     ));
     completion.unwrap();
+}
+
+#[test]
+fn medium_remote_batch_starts_seventeen_requests_before_releasing_a_slot() {
+    const WINDOW_SIZE: usize = 17;
+    const REMOTE_ARCHIVES: usize = 2 * WINDOW_SIZE;
+    let scenario =
+        stringify!(medium_remote_batch_starts_seventeen_requests_before_releasing_a_slot);
+    let dir = tempfile::tempdir().unwrap();
+    let archive = create_tar_gz(&[("result.txt", b"remote contents")]).unwrap();
+    let mut response = format!(
+        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        archive.len()
+    )
+    .into_bytes();
+    response.extend(archive);
+    let server = TcpTestServer::start(move |server| {
+        let mut requests = Vec::with_capacity(REMOTE_ARCHIVES);
+        // Withhold each response until the whole group has sent headers.
+        // A 16-slot Guest cannot make progress through this origin.
+        for _ in 0..REMOTE_ARCHIVES / WINDOW_SIZE {
+            let mut connections = Vec::with_capacity(WINDOW_SIZE);
+            for _ in 0..WINDOW_SIZE {
+                let mut stream = server.accept()?.ok_or_else(|| {
+                    io::Error::other("archive origin stopped before a group arrived")
+                })?;
+                stream.set_read_timeout(Some(REQUEST_START_TIMEOUT))?;
+                stream.set_write_timeout(Some(COMPLETION_TIMEOUT))?;
+                requests.push(read_http_request_path(&mut stream)?);
+                connections.push(stream);
+            }
+            for mut stream in connections {
+                stream.write_all(&response)?;
+            }
+        }
+        Ok(requests)
+    })
+    .unwrap();
+    let mut expected_requests = (0..REMOTE_ARCHIVES)
+        .map(|index| format!("/archive-{index}"))
+        .collect::<Vec<_>>();
+    let storages = expected_requests
+        .iter()
+        .enumerate()
+        .map(|(index, path)| {
+            (
+                path_to_string(&dir.path().join(format!("mount-{index}"))).unwrap(),
+                format!("{}{path}", server.base_url()),
+            )
+        })
+        .collect::<Vec<_>>();
+    let mut execution = spawn_guest_storage_apply(scenario, &dir, &storages).unwrap();
+    let status = execution.child.wait_with_timeout(COMPLETION_TIMEOUT);
+    let requests = server.finish();
+
+    assert!(
+        status
+            .expect("Guest should finish both request groups")
+            .success()
+    );
+    let mut requests = requests.unwrap();
+    requests.sort_unstable();
+    expected_requests.sort_unstable();
+    assert_eq!(requests, expected_requests);
+    for (mount, _) in &storages {
+        assert_eq!(
+            std::fs::read(Path::new(mount).join("result.txt")).unwrap(),
+            b"remote contents"
+        );
+    }
 }
 
 #[test]
