@@ -27,6 +27,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
+function isArrayBuffer(value: unknown): value is ArrayBuffer {
+  return Object.prototype.toString.call(value) === "[object ArrayBuffer]";
+}
+
 function isDocumentExportRequest(
   value: unknown,
 ): value is DocumentExportRequest {
@@ -46,8 +50,8 @@ function isDocumentExportRequest(
     typeof value.baseUrl === "string" &&
     isRecord(value.tree) &&
     isRecord(value.assets) &&
-    value.regularFont instanceof ArrayBuffer &&
-    value.boldFont instanceof ArrayBuffer
+    isArrayBuffer(value.regularFont) &&
+    isArrayBuffer(value.boldFont)
   );
 }
 
