@@ -169,7 +169,7 @@ class ChatListModel(
     private val sync = ChatListSync(service, dispatcher)
     private var confirmed: CachedChats? = null
     private var confirmedRows = ReplayedChats(emptyList(), emptyList())
-    private val rowEdits = mutableMapOf<Pair<String, ChatRowField>, ChatRowEdit>()
+    private var rowEdits = emptyList<ChatRowEdit>()
     private val unconfirmedRowEvents = mutableSetOf<String>()
     private var confirmedProjects: CachedProjects? = null
     private var cacheRead = false
@@ -483,11 +483,7 @@ class ChatListModel(
                     }
                 if (edits.isNotEmpty()) {
                     requireCurrent()
-                    for (edit in edits) {
-                        rowEdits.put(edit.threadId to edit.field, edit)?.let {
-                            unconfirmedRowEvents.remove(it.eventId)
-                        }
-                    }
+                    rowEdits = rowEdits + edits
                     publishRows()
                 }
                 try {
@@ -562,7 +558,7 @@ class ChatListModel(
                     refreshList()
                     listJob?.join()
                     requireCurrent()
-                    val unresolved = edits.filter { rowEdits[it.threadId to it.field] == it }
+                    val unresolved = edits.filter { it in rowEdits }
                     if (unresolved.isNotEmpty()) {
                         unconfirmedRowEvents.addAll(unresolved.map { it.eventId })
                         mutable.value = mutable.value.copy(failedRowAction = action)
@@ -580,7 +576,7 @@ class ChatListModel(
     }
 
     private fun publishRows(state: ChatListUiState = mutable.value) {
-        val rows = confirmedRows.withRowEdits(rowEdits.values)
+        val rows = confirmedRows.withRowEdits(rowEdits)
         mutable.value = state.copy(threads = rows.threads, threadsByRecency = rows.byRecency)
     }
 
@@ -791,8 +787,7 @@ class ChatListModel(
                             checkpoint.events.forEach { it.cursor().eventId?.let(::add) }
                             result.eventsBeforeRebase.forEach { it.cursor().eventId?.let(::add) }
                         }
-                        rowEdits.values.removeAll { it.eventId in observed }
-                        unconfirmedRowEvents.removeAll(observed)
+                        settleRowEdits(observed)
                     }
                     publishRows(
                         mutable.value.copy(
@@ -806,6 +801,19 @@ class ChatListModel(
                 } catch (error: Exception) {
                     fail(error) { it.copy(listPhase = ChatReadPhase.Failed) }
                 }
+            }
+    }
+
+    private fun settleRowEdits(observed: Set<String>) {
+        val settledThrough = mutableMapOf<Pair<String, ChatRowField>, Int>()
+        rowEdits.forEachIndexed { index, edit ->
+            if (edit.eventId in observed) settledThrough[edit.threadId to edit.field] = index
+        }
+        rowEdits =
+            rowEdits.filterIndexed { index, edit ->
+                val settled = index <= (settledThrough[edit.threadId to edit.field] ?: -1)
+                if (settled) unconfirmedRowEvents.remove(edit.eventId)
+                !settled
             }
     }
 
