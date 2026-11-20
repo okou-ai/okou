@@ -1924,6 +1924,44 @@ jobs:
             echo "App Worker upstream: ${WORKER_PREVIEW_URL}"
           } >> "$GITHUB_STEP_SUMMARY"
 
+  select-runner-placement:
+    runs-on: ubuntu-latest
+    needs: [prepare]
+    timeout-minutes: 5
+    if: |
+      needs.prepare.outputs.job-ref != '' &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) &&
+      (
+        needs.prepare.outputs.turbo-runner-consumer-needed == 'true' ||
+        needs.prepare.outputs.playwright-runner-consumer-needed == 'true'
+      )
+    outputs:
+      host: ${{ steps.select.outputs.host }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup SSH via Cloudflare Tunnel
+        uses: ./.github/actions/setup-ssh-tunnel
+        with:
+          ssh-user: ${{ vars.AWS_METAL_RUNNER_USER }}
+          ssh-hosts: ${{ secrets.AWS_METAL_RUNNER_HOSTS }}
+          ssh-key: ${{ secrets.AWS_METAL_RUNNER_SSH_KEY }}
+          cf-access-client-id: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          cf-access-client-secret: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+
+      - name: Select the shared Runner and Stripe host
+        id: select
+        shell: bash
+        env:
+          AWS_METAL_RUNNER_HOSTS: ${{ secrets.AWS_METAL_RUNNER_HOSTS }}
+          METAL_USER: ${{ vars.AWS_METAL_RUNNER_USER }}
+          JOB_REF: ${{ needs.prepare.outputs.runner-image-job-ref }}
+        run: |
+          set -euo pipefail
+          context=$(.github/scripts/runner/runner-host-architecture-groups.sh select-context "$JOB_REF")
+          host=$(jq -er '.host | strings | select(length > 0)' <<<"$context")
+          echo "host=$host" >> "$GITHUB_OUTPUT"
+
   deploy-stripe-listener:
     runs-on: ubuntu-latest
     # Namespace acquisition can wait eight minutes behind a runner owner.
@@ -1932,12 +1970,11 @@ jobs:
     concurrency:
       group: deploy-stripe-listener-${{ needs.prepare.outputs.job-ref }}
       cancel-in-progress: true
-    # Use the actual Runner placement for the Stripe listener.
-    needs: [prepare, deploy-runner-start]
+    needs: [prepare, select-runner-placement]
     if: |
       always() &&
       github.event_name != 'push' &&
-      needs.deploy-runner-start.result == 'success' &&
+      needs.select-runner-placement.result == 'success' &&
       (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) &&
       needs.prepare.outputs.job-ref != '' && (
         needs.prepare.outputs.turbo-runner-consumer-needed == 'true' ||
@@ -1957,7 +1994,7 @@ jobs:
         uses: ./.github/actions/setup-ssh-tunnel
         with:
           ssh-user: ${{ vars.AWS_METAL_RUNNER_USER }}
-          ssh-hosts: ${{ fromJSON(needs.deploy-runner-start.outputs.runner-receipt).host }}
+          ssh-hosts: ${{ needs.select-runner-placement.outputs.host }}
           ssh-key: ${{ secrets.AWS_METAL_RUNNER_SSH_KEY }}
           cf-access-client-id: ${{ secrets.CF_ACCESS_CLIENT_ID }}
           cf-access-client-secret: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
@@ -1965,7 +2002,7 @@ jobs:
       - name: Start Stripe CLI listener on the Runner host
         env:
           METAL_USER: ${{ vars.AWS_METAL_RUNNER_USER }}
-          METAL_HOSTS: ${{ fromJSON(needs.deploy-runner-start.outputs.runner-receipt).host }}
+          METAL_HOSTS: ${{ needs.select-runner-placement.outputs.host }}
           JOB_REF: ${{ needs.prepare.outputs.job-ref }}
           API_PREVIEW_URL: ${{ needs.prepare.outputs.api-preview-url }}
           STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
@@ -2337,7 +2374,7 @@ jobs:
     concurrency:
       group: deploy-runner-start-${{ needs.prepare.outputs.job-ref }}
       cancel-in-progress: true
-    needs: [prepare, deploy-runner-prepare, deploy-api]
+    needs: [prepare, select-runner-placement, deploy-runner-prepare, deploy-api]
     # Normal starts should finish quickly; failures need enough room for the
     # bounded partial-start cleanup watchdog to run before GitHub kills the job.
     timeout-minutes: 8
@@ -2385,6 +2422,7 @@ jobs:
           RUNNER_GROUP: ${{ format('vm0/development-{0}', needs.prepare.outputs.job-ref) }}
           RUNNER_SERVICE_REF: ${{ needs.prepare.outputs.job-ref }}
           RUNNER_SHA_MAP: ${{ needs.deploy-runner-prepare.outputs.runner-sha-map }}
+          SELECTED_HOST: ${{ needs.select-runner-placement.outputs.host }}
           SNAPSHOT_HASH_MAP: ${{ needs.deploy-runner-prepare.outputs.snapshot-hash-map }}
           VERCEL_BYPASS: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
         run: |
@@ -3045,6 +3083,7 @@ jobs:
       - cli-e2e-03-runner-bootstrap
       - cli-e2e-03-runner
       - deploy-runner-prepare
+      - select-runner-placement
       - deploy-runner-start
     # Always run so the gate reports an explicit result (not "skipped").
     # Release-please PRs skip CI jobs — auto-pass the gate for them.
@@ -3192,6 +3231,7 @@ jobs:
           check_result "cli-e2e-03-runner-bootstrap" "${{ needs.cli-e2e-03-runner-bootstrap.result }}" "$RUNNER_E2E_SKIP_ALLOWED"
           check_result "cli-e2e-03-runner" "${{ needs.cli-e2e-03-runner.result }}" "$RUNNER_E2E_SKIP_ALLOWED"
           check_result "deploy-runner-prepare" "${{ needs.deploy-runner-prepare.result }}" "$RUNNER_DEPLOY_SKIP_ALLOWED"
+          check_result "select-runner-placement" "${{ needs.select-runner-placement.result }}" "$RUNNER_DEPLOY_SKIP_ALLOWED"
           check_result "deploy-runner-start" "${{ needs.deploy-runner-start.result }}" "$RUNNER_DEPLOY_SKIP_ALLOWED"
 
           echo "::endgroup::"

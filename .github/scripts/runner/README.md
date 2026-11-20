@@ -286,10 +286,11 @@ A running legacy unit without PR attribution leaves cleanup inventory unverified
 and prevents bulk removal. Expiry timers keep their separate
 `vm0-ci-image-DIGEST-expire` names and remain image-owned.
 
-Stripe replacement uses the host from the successful Runner deployment receipt.
-It opens SSH, takes the lifecycle lock, and runs both Ansible playbooks on
-that host. The closed-PR sweep still discovers and retires Stripe resources
-across configured hosts, including resources from earlier placements.
+Turbo selects the Runner and Stripe host in a shared placement job before
+deployment. Stripe opens SSH, takes the lifecycle lock, and runs both Ansible
+playbooks on that host. Runner readiness still publishes the deployment receipt
+for idle-sandbox cleanup. The closed-PR sweep discovers and retires Stripe
+resources across configured hosts, including resources from earlier placements.
 
 Preview startup runs the selected Runner's health checks as part of
 `runner service wait-running --check-health`. The command emits numeric
