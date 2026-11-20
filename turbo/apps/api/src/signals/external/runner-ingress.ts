@@ -2,7 +2,10 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import { channel } from "node:diagnostics_channel";
 import { runnerDispatchResponseSchema } from "@okouai/api-contracts/contracts/runner-dispatch";
-import { runnerVersionSchema } from "@okouai/api-contracts/contracts/runner-primitives";
+import {
+  OFFICIAL_RUNNER_TOKEN_PREFIX,
+  runnerVersionSchema,
+} from "@okouai/api-contracts/contracts/runner-primitives";
 import { number, object } from "zod";
 import { getBuildVersion, normalizeBuildCommitSha } from "../../lib/build-info";
 import { env } from "../../lib/env";
@@ -15,9 +18,8 @@ import { recordSandboxOperation } from "./sandbox-op-log";
 import {
   currentRunnerDispatchTransport,
   runnerDispatchPath,
-  type PreconnectedSocketUse,
-  type RunnerDispatchRequest,
-  type RunnerDispatchResponse,
+  type RunnerDispatchTiming,
+  type TakenRunnerDispatch,
 } from "./runner-dispatch-transport";
 
 type DispatchObservation =
@@ -33,15 +35,9 @@ const runnerDispatchTimingSchema = object({
   acceptanceMs: runnerElapsedMs,
 });
 
-interface DispatchTransportObservation {
+interface DispatchTransportObservation extends RunnerDispatchTiming {
   readonly origin: string;
   readonly path: string;
-  readonly startedAt: number;
-  sendCount: number;
-  connection?: "first_use" | "reused";
-  sendHeadersMs?: number;
-  requestFlushedMs?: number;
-  preconnectedSocketUse?: PreconnectedSocketUse;
 }
 
 function diagnosticRecord(value: unknown): value is Record<string, unknown> {
@@ -93,9 +89,7 @@ const dispatchTransport = singleton(() => {
   return scope;
 });
 
-function readRunnerDispatchTiming(
-  response: RunnerDispatchResponse | undefined,
-) {
+function readRunnerDispatchTiming(response: Response | undefined) {
   const header = response?.headers.get(dispatchTimingHeader);
   if (!header || header.length > 512) {
     return undefined;
@@ -123,20 +117,50 @@ function definitelyNotConnected(error: unknown): boolean {
   return error.cause instanceof Error && definitelyNotConnected(error.cause);
 }
 
-function dispatchRequestOptions(
-  body: string,
-  serviceToken: string,
-): RunnerDispatchRequest {
+function dispatchRequestOptions(serviceToken: string) {
   return {
     method: "POST",
-    redirect: "error",
-    cache: "no-store",
+    redirect: "error" as const,
+    cache: "no-store" as const,
     headers: {
       authorization: `Bearer ${serviceToken}`,
       "content-type": "application/json",
     },
-    body,
   };
+}
+
+export function reserveRunnerDispatch(
+  target: DirectRunTarget,
+  runId: string,
+  signal: AbortSignal,
+): void {
+  const transport = currentRunnerDispatchTransport();
+  if (!transport) {
+    return;
+  }
+  const origin = `https://${target.hostname}`;
+  const path = runnerDispatchPath(target.runnerId, runId);
+  const serviceToken = `${OFFICIAL_RUNNER_TOKEN_PREFIX}${env("OFFICIAL_RUNNER_SECRET")}`;
+  transport.reserve(
+    runId,
+    origin + path,
+    (body, connectionSignal) => {
+      const timing = { origin, path, sendCount: 0, startedAt: monotonicNow() };
+      const options: RequestInit = {
+        ...dispatchRequestOptions(serviceToken),
+        body,
+        duplex: "half",
+        signal: connectionSignal,
+      };
+      return {
+        response: dispatchTransport().run(timing, () => {
+          return fetch(origin + path, options);
+        }),
+        timing,
+      };
+    },
+    signal,
+  );
 }
 
 /** A failed response is never made into evidence against an earlier attempt. */
@@ -155,13 +179,13 @@ export async function postRunnerDispatch(
 ): Promise<DispatchObservation> {
   signal.throwIfAborted();
   const { target, runId, body, bodyBytes, serviceToken, timeoutMs } = args;
-  let response: RunnerDispatchResponse | undefined;
+  let response: Response | undefined;
   let responseHeadersMs: number | undefined;
   let observation: DispatchObservation | undefined;
   const startedAt = monotonicNow();
   const origin = `https://${target.hostname}`;
   const path = runnerDispatchPath(target.runnerId, runId);
-  const runnerTransport = currentRunnerDispatchTransport();
+  let reserved: TakenRunnerDispatch | undefined;
   const transport: DispatchTransportObservation = {
     origin,
     path,
@@ -169,33 +193,32 @@ export async function postRunnerDispatch(
     sendCount: 0,
   };
   return await (async () => {
-    const dispatch = () => {
-      const options = dispatchRequestOptions(body, serviceToken);
-      const deadline = AbortSignal.any([
-        signal,
-        AbortSignal.timeout(Math.max(1, Math.ceil(timeoutMs))),
-      ]);
-      const url = origin + path;
-      return runnerTransport
-        ? runnerTransport.fetch(
-            url,
-            options,
-            (connection, preconnection) => {
-              transport.sendCount = 1;
-              transport.connection = connection;
-              transport.preconnectedSocketUse = preconnection;
-              transport.requestFlushedMs = monotonicNow() - startedAt;
-            },
-            deadline,
-          )
-        : fetch(url, { ...options, signal: deadline });
-    };
-    // Worker-native fetch does not use Node's Undici diagnostic channels.
-    const fetched = await settleIncludingAbort(
-      currentRequestRuntime() || runnerTransport
-        ? dispatch()
-        : dispatchTransport().run(transport, dispatch),
+    const deadline = AbortSignal.any([
+      signal,
+      AbortSignal.timeout(Math.max(1, Math.ceil(timeoutMs))),
+    ]);
+    const url = origin + path;
+    reserved = currentRunnerDispatchTransport()?.take(
+      url,
+      body,
+      startedAt,
+      deadline,
     );
+    const dispatch = () => {
+      return fetch(url, {
+        ...dispatchRequestOptions(serviceToken),
+        body,
+        signal: deadline,
+      });
+    };
+    const fetched = await settleIncludingAbort(() => {
+      return (
+        reserved?.response ??
+        (currentRequestRuntime()
+          ? dispatch()
+          : dispatchTransport().run(transport, dispatch))
+      );
+    });
     if (fetched.ok) {
       response = fetched.value;
       responseHeadersMs = monotonicNow() - startedAt;
@@ -215,6 +238,8 @@ export async function postRunnerDispatch(
     }
     return observation;
   })().finally(() => {
+    reserved?.clearDeadline();
+    const timing = reserved?.timing ?? transport;
     const attemptElapsedMs = monotonicNow() - startedAt;
     // Telemetry is optional even after the Runner has taken custody.
     safeSync(() => {
@@ -239,16 +264,13 @@ export async function postRunnerDispatch(
               ? undefined
               : startedAt - args.firstCandidateReadyAt,
           api_socket_use:
-            transport.sendCount === 1
-              ? (transport.connection ?? "unknown")
+            timing.sendCount === 1
+              ? (timing.connection ?? "unknown")
               : "unknown",
           api_send_headers_ms:
-            transport.sendCount === 1 ? transport.sendHeadersMs : undefined,
-          api_request_flushed_ms: transport.requestFlushedMs,
-          api_preconnect_socket_use:
-            transport.sendCount === 1
-              ? transport.preconnectedSocketUse
-              : undefined,
+            timing.sendCount === 1 ? timing.sendHeadersMs : undefined,
+          api_preconnect_used:
+            reserved === undefined ? undefined : timing.sendCount === 1,
           response_headers_ms: responseHeadersMs,
           http_status: response?.status,
           dispatch_outcome:
@@ -266,7 +288,7 @@ export async function postRunnerDispatch(
 }
 
 async function observeRunnerDispatch(
-  response: RunnerDispatchResponse,
+  response: Response,
   target: DirectRunTarget,
   runId: string,
   signal: AbortSignal,

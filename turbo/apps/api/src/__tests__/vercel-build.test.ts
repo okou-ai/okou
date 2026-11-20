@@ -92,12 +92,7 @@ describe("Vercel build", () => {
   it("preserves dispatch socket ownership through the native Runner transport", async () => {
     const transportTests = spawn(
       process.execPath,
-      [
-        "--import",
-        "tsx",
-        "--test",
-        "scripts/runner-dispatch-transport.node-test.mjs",
-      ],
+      ["scripts/test-runner-dispatch-transport.mjs"],
       { cwd: apiRoot, signal: context.signal, stdio: "inherit" },
     );
     const [code] = await once(transportTests, "close");

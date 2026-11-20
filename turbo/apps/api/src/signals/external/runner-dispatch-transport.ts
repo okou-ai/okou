@@ -1,41 +1,42 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { singleton } from "../../lib/singleton";
 
-export type PreconnectedSocketUse = "pending" | "ready";
-export type RunnerDispatchSocketUse = "first_use" | "reused";
-
 export function runnerDispatchPath(runnerId: string, runId: string): string {
   return `/runners/${runnerId}/control/runs/${runId}/dispatch`;
 }
 
-export interface RunnerDispatchRequest {
-  readonly method: "POST";
-  readonly cache: "no-store";
-  readonly redirect: "error";
-  readonly headers: Record<string, string>;
-  readonly body: string;
+export interface RunnerDispatchTiming {
+  startedAt: number;
+  sendCount: number;
+  connection?: "first_use" | "reused";
+  sendHeadersMs?: number;
 }
 
-export interface RunnerDispatchResponse {
-  readonly status: number;
-  readonly headers: Pick<Headers, "get">;
-  readonly body: Pick<ReadableStream, "cancel"> | null;
-  json(): Promise<unknown>;
+export interface ReservedRunnerDispatch {
+  readonly response: Promise<Response>;
+  readonly timing: RunnerDispatchTiming;
+}
+
+export interface TakenRunnerDispatch extends ReservedRunnerDispatch {
+  readonly clearDeadline: () => void;
 }
 
 export interface RunnerDispatchTransport {
-  readonly reserve: (runId: string, url: string, signal: AbortSignal) => void;
-  readonly fetch: (
+  readonly reserve: (
+    runId: string,
     url: string,
-    options: RunnerDispatchRequest,
-    onSocketUse:
-      | ((
-          connection: RunnerDispatchSocketUse,
-          preconnection: PreconnectedSocketUse | undefined,
-        ) => void)
-      | undefined,
+    start: (
+      body: ReadableStream<Uint8Array>,
+      signal: AbortSignal,
+    ) => ReservedRunnerDispatch,
     signal: AbortSignal,
-  ) => Promise<RunnerDispatchResponse>;
+  ) => void;
+  readonly take: (
+    url: string,
+    body: string,
+    startedAt: number,
+    signal: AbortSignal,
+  ) => TakenRunnerDispatch | undefined;
 }
 
 // Only Vercel installs this context.

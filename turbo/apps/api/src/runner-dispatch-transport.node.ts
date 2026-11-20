@@ -1,27 +1,16 @@
-import { once } from "node:events";
-import {
-  IncomingMessage,
-  validateHeaderValue,
-  type ClientRequest,
-} from "node:http";
-import { Agent, request, type RequestOptions } from "node:https";
-import { json } from "node:stream/consumers";
-import type { ConnectionOptions } from "node:tls";
 import { monotonicNow } from "./lib/time";
 import type {
-  PreconnectedSocketUse,
-  RunnerDispatchResponse,
   RunnerDispatchTransport,
+  TakenRunnerDispatch,
 } from "./signals/external/runner-dispatch-transport";
 
 const MAX_PRECONNECTIONS = 4;
 const PRECONNECTION_LIFETIME_MS = 1000;
 
 type PreconnectionOutcome =
-  PreconnectedSocketUse | "failed" | "expired" | "cancelled" | "instance_cap";
+  "used" | "failed" | "expired" | "cancelled" | "instance_cap";
 
 interface TransportOptions {
-  readonly ca?: ConnectionOptions["ca"];
   readonly observe: (
     runId: string,
     outcome: PreconnectionOutcome,
@@ -29,169 +18,110 @@ interface TransportOptions {
   ) => void;
 }
 
-interface Reservation {
-  readonly take: () => PreconnectedSocketUse | undefined;
-  readonly request: ClientRequest;
-}
-
-function toDispatchResponse(incoming: IncomingMessage): RunnerDispatchResponse {
-  return {
-    status: incoming.statusCode ?? 0,
-    headers: {
-      get(name) {
-        const value = incoming.headers[name.toLowerCase()];
-        return Array.isArray(value) ? value.join(", ") : (value ?? null);
-      },
-    },
-    body: {
-      cancel() {
-        incoming.destroy();
-        return Promise.resolve();
-      },
-    },
-    json() {
-      return json(incoming);
-    },
-  };
-}
-
-function guardResponseErrors(incoming: IncomingMessage): void {
-  // Abort can destroy the response before the caller starts reading it.
-  incoming.on("error", () => {
-    incoming.destroy();
-  });
-}
+type TakeReservation = (
+  body: string,
+  startedAt: number,
+  signal: AbortSignal,
+) => TakenRunnerDispatch | undefined;
 
 export function createRunnerDispatchTransport({
-  ca,
   observe,
 }: TransportOptions): RunnerDispatchTransport {
-  const agent = new Agent({ keepAlive: true, ca });
-  const reservations = new Map<string, Reservation>();
+  const reservations = new Map<string, TakeReservation>();
   const reservedOrigins = new Set<string>();
 
-  function reserve(runId: string, url: string, signal: AbortSignal): void {
-    const target = new URL(url);
-    const origin = target.origin;
-    const socketOptions: RequestOptions = {
-      host: target.hostname,
-      port: target.port ? Number(target.port) : 443,
-      ca,
-    };
-    const agentKey = agent.getName(socketOptions);
-    if (
-      signal.aborted ||
-      reservedOrigins.has(origin) ||
-      agent.freeSockets[agentKey]?.length
-    ) {
-      return;
-    }
-    if (reservations.size >= MAX_PRECONNECTIONS) {
-      observe(runId, "instance_cap", 0);
-      return;
-    }
-
-    // Node assigns a socket before end() sends any HTTP bytes.
-    const startedAt = monotonicNow();
-    const pending = request(target, { agent, method: "POST" });
-    const expiry = AbortSignal.timeout(PRECONNECTION_LIFETIME_MS);
-    let ready = false;
-
-    const finish = (outcome: PreconnectionOutcome) => {
-      if (reservations.get(url) !== reservation) {
+  return {
+    reserve(runId, url, start, signal) {
+      const origin = new URL(url).origin;
+      if (signal.aborted || reservedOrigins.has(origin)) {
         return;
       }
-      reservations.delete(url);
-      reservedOrigins.delete(origin);
-      signal.removeEventListener("abort", onAbort);
-      expiry.removeEventListener("abort", onExpiry);
-      if (outcome === "ready" || outcome === "pending") {
-        pending.off("error", onFailure);
-        pending.off("close", onFailure);
-      } else {
-        pending.destroy();
+      if (reservations.size >= MAX_PRECONNECTIONS) {
+        observe(runId, "instance_cap", 0);
+        return;
       }
-      observe(runId, outcome, monotonicNow() - startedAt);
-    };
 
-    const onAbort = () => {
-      finish("cancelled");
-    };
-    const onExpiry = () => {
-      finish("expired");
-    };
-    const onFailure = () => {
-      finish("failed");
-    };
-    const reservation: Reservation = {
-      request: pending,
-      take() {
-        if (pending.destroyed) {
+      const startedAt = monotonicNow();
+      const connection = new AbortController();
+      const expiry = AbortSignal.timeout(PRECONNECTION_LIFETIME_MS);
+      let streamController:
+        ReadableStreamDefaultController<Uint8Array> | undefined;
+      let cancelled = false;
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          streamController = controller;
+        },
+        cancel() {
+          cancelled = true;
+        },
+      });
+      if (!streamController) {
+        throw new Error("Expected the Runner body stream to start immediately");
+      }
+      const controller = streamController;
+      const attempt = start(stream, connection.signal);
+
+      const finish = (outcome: PreconnectionOutcome) => {
+        if (reservations.get(url) !== take) {
+          return;
+        }
+        reservations.delete(url);
+        reservedOrigins.delete(origin);
+        signal.removeEventListener("abort", onAbort);
+        expiry.removeEventListener("abort", onExpiry);
+        if (outcome !== "used") {
+          connection.abort();
+          controller.error(connection.signal.reason);
+        }
+        observe(runId, outcome, monotonicNow() - startedAt);
+      };
+
+      const onAbort = () => {
+        finish("cancelled");
+      };
+      const onExpiry = () => {
+        finish("expired");
+      };
+      const take: TakeReservation = (body, dispatchStartedAt, deadline) => {
+        if (cancelled) {
           finish("failed");
           return undefined;
         }
-        const use = ready ? "ready" : "pending";
-        finish(use);
-        return use;
-      },
-    };
-    reservations.set(url, reservation);
-    reservedOrigins.add(origin);
-    pending.once("socket", (socket) => {
-      if (pending.reusedSocket) {
-        ready = true;
-        return;
-      }
-      socket.once("secureConnect", () => {
-        ready = true;
-      });
-    });
-    pending.once("error", onFailure);
-    pending.once("close", onFailure);
-    signal.addEventListener("abort", onAbort, { once: true });
-    expiry.addEventListener("abort", onExpiry, { once: true });
-  }
-
-  return {
-    reserve,
-    async fetch(url, options, onSocketUse, signal) {
-      signal.throwIfAborted();
-      for (const [name, value] of Object.entries(options.headers)) {
-        validateHeaderValue(name, value);
-      }
-      const reservation = reservations.get(url);
-      const preconnection = reservation?.take();
-      const outbound =
-        reservation && preconnection
-          ? reservation.request
-          : request(url, { agent, method: options.method });
-
-      const response = once(outbound, "response", { signal });
-      const onAbort = () => {
-        outbound.destroy();
+        attempt.timing.startedAt = dispatchStartedAt;
+        finish("used");
+        // Keep abort ownership until the response body is consumed as well.
+        const abortDispatch = () => {
+          connection.abort(deadline.reason);
+          controller.error(deadline.reason);
+        };
+        deadline.addEventListener("abort", abortDispatch, { once: true });
+        if (deadline.aborted) {
+          abortDispatch();
+        } else {
+          controller.enqueue(new TextEncoder().encode(body));
+          controller.close();
+        }
+        return {
+          ...attempt,
+          clearDeadline() {
+            deadline.removeEventListener("abort", abortDispatch);
+          },
+        };
       };
-      outbound.on("error", onAbort);
-      outbound.once("close", () => {
-        signal.removeEventListener("abort", onAbort);
-      });
+
+      reservations.set(url, take);
+      reservedOrigins.add(origin);
       signal.addEventListener("abort", onAbort, { once: true });
-      outbound.once("finish", () => {
-        onSocketUse?.(
-          outbound.reusedSocket ? "reused" : "first_use",
-          preconnection,
-        );
-      });
-      outbound.once("response", guardResponseErrors);
-      for (const [name, value] of Object.entries(options.headers)) {
-        outbound.setHeader(name, value);
-      }
-      outbound.setHeader("content-length", Buffer.byteLength(options.body));
-      outbound.end(options.body);
-      const [incoming]: unknown[] = await response;
-      if (!(incoming instanceof IncomingMessage)) {
-        throw new Error("Expected a Runner HTTP response");
-      }
-      return toDispatchResponse(incoming);
+      expiry.addEventListener("abort", onExpiry, { once: true });
+      // A failed speculative request can fall back before release. After
+      // release the normal dispatch path owns its outcome and retries.
+      void (async () => {
+        await Promise.allSettled([attempt.response]);
+        finish("failed");
+      })();
+    },
+    take(url, body, startedAt, signal) {
+      return reservations.get(url)?.(body, startedAt, signal);
     },
   };
 }

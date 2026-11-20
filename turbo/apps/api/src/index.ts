@@ -37,7 +37,7 @@ const runnerDispatchTransport = singleton(() => {
           actionType: "api_dispatch_runner_preconnect",
           runId,
           durationMs,
-          success: outcome === "ready" || outcome === "pending",
+          success: outcome === "used",
           dimensions: {
             preconnect_outcome: outcome,
             api_commit_sha:

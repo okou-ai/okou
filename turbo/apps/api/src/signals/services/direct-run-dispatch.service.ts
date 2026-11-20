@@ -14,11 +14,10 @@ import { env } from "../../lib/env";
 import { API_INVOCATION_MAX_DURATION_SECONDS } from "../../lib/invocation-budget";
 import { monotonicNow, now, nowDate } from "../../lib/time";
 import { apiStartTime$ } from "../context/hono";
-import { postRunnerDispatch } from "../external/runner-ingress";
 import {
-  currentRunnerDispatchTransport,
-  runnerDispatchPath,
-} from "../external/runner-dispatch-transport";
+  postRunnerDispatch,
+  reserveRunnerDispatch,
+} from "../external/runner-ingress";
 import { failUnacceptedRun$ } from "./agent-run-terminal-transition.service";
 import {
   prepareDirectRun$,
@@ -74,15 +73,10 @@ export const prepareDirectRunDispatch$ = command(
         (async () => {
           const candidates = await set(readDirectRunCandidates$, input, signal);
           const candidatesReadyAt = monotonicNow();
-          const dispatchTransport = currentRunnerDispatchTransport();
           const target = candidates[0];
-          if (dispatchTransport && target) {
+          if (target) {
             safeSync(() => {
-              dispatchTransport.reserve(
-                input.run.id,
-                `https://${target.hostname}${runnerDispatchPath(target.runnerId, input.run.id)}`,
-                signal,
-              );
+              reserveRunnerDispatch(target, input.run.id, signal);
             });
           }
           return { candidates, candidatesReadyAt };
