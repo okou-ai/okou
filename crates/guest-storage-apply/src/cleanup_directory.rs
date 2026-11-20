@@ -11,6 +11,10 @@ pub(super) struct CleanupDirectory(File);
 
 impl CleanupDirectory {
     pub(super) fn open(path: &Path) -> io::Result<Self> {
+        Self::open_path(path, false)
+    }
+
+    fn open_path(path: &Path, allow_file_obstruction: bool) -> io::Result<Self> {
         let anchor = if path.is_absolute() {
             Path::new("/")
         } else {
@@ -25,7 +29,20 @@ impl CleanupDirectory {
                     current = current.open_child(OsStr::new(".."))?;
                 }
                 Component::Normal(name) => {
-                    current = current.open_child(name)?;
+                    current = match current.open_child(name) {
+                        Err(error)
+                            if allow_file_obstruction
+                                && error.kind() == io::ErrorKind::NotADirectory =>
+                        {
+                            // The verified parent stays pinned while identifying the obstruction.
+                            // A regular file cannot contain an old package below it.
+                            if fs::symlink_metadata(current.proc_path().join(name))?.is_file() {
+                                return Err(io::ErrorKind::NotFound.into());
+                            }
+                            return Err(error);
+                        }
+                        result => result?,
+                    };
                 }
                 Component::Prefix(_) => {
                     return Err(io::Error::new(
@@ -40,6 +57,14 @@ impl CleanupDirectory {
     }
 
     pub(super) fn open_parent(path: &Path) -> io::Result<(Self, OsString)> {
+        Self::open_parent_path(path, false)
+    }
+
+    pub(super) fn open_optional_mount_parent(path: &Path) -> io::Result<(Self, OsString)> {
+        Self::open_parent_path(path, true)
+    }
+
+    fn open_parent_path(path: &Path, allow_file_obstruction: bool) -> io::Result<(Self, OsString)> {
         let name = path.file_name().ok_or_else(|| {
             io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -47,7 +72,10 @@ impl CleanupDirectory {
             )
         })?;
         let parent = path.parent().unwrap_or_else(|| Path::new("."));
-        Ok((Self::open(parent)?, name.to_os_string()))
+        Ok((
+            Self::open_path(parent, allow_file_obstruction)?,
+            name.to_os_string(),
+        ))
     }
 
     fn open_anchor(path: &Path) -> io::Result<Self> {

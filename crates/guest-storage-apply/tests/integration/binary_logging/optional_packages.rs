@@ -12,12 +12,15 @@ fn optional_archive_failures_clean_their_mounts_and_keep_the_framework_root() ->
     let partial = framework.join("skills/partial");
     let blocked = framework.join("skills/blocked");
     let missing_document = framework.join("skills/missing-document");
+    let blocked_parent = framework.join("blocked-skills");
+    let blocked_child = blocked_parent.join("optional");
     for target in [&missing, &partial] {
         fs::create_dir_all(target)?;
         fs::write(target.join("SKILL.md"), "stale")?;
     }
     fs::write(&blocked, "mount target is a file")?;
     fs::create_dir_all(&missing_document)?;
+    fs::write(&blocked_parent, "parent is a file")?;
     fs::write(framework.join("settings.json"), "keep")?;
 
     let server = MockServer::start();
@@ -38,22 +41,34 @@ fn optional_archive_failures_clean_their_mounts_and_keep_the_framework_root() ->
              "archiveUrl": server.url("/missing.tar.gz")},
             {"mountPath": partial, "name": "workflow", "optional": true, "archiveUrl": local},
             {"mountPath": blocked, "name": "workflow", "optional": true, "archiveUrl": local},
-            {"mountPath": missing_document, "name": "workflow", "optional": true, "cached": true}
+            {"mountPath": missing_document, "name": "workflow", "optional": true, "cached": true},
+            {"mountPath": blocked_child, "name": "workflow", "optional": true, "archiveUrl": local}
         ],
-        "cleanupPaths": [missing, partial]
+        "cleanupPaths": [missing, partial, blocked_child]
     }))?)?;
-    assert!(output.status.success(), "{:?}", output.stderr);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     assert_eq!(
         serde_json::from_slice::<StorageApplyReceipt>(&output.stdout)?.skipped_optional,
-        [1, 2, 3, 4]
+        [1, 2, 3, 4, 5]
     );
     unavailable.assert_calls(1);
     for target in [&missing, &partial, &blocked, &missing_document] {
         assert!(!target.exists(), "{}", target.display());
     }
     assert_eq!(fs::read(framework.join("settings.json"))?, b"keep");
+    assert_eq!(fs::read(&blocked_parent)?, b"parent is a file");
     let log = fixture.read_system_log()?;
-    for package in [&missing, &partial, &blocked, &missing_document] {
+    for package in [
+        &missing,
+        &partial,
+        &blocked,
+        &missing_document,
+        &blocked_child,
+    ] {
         assert!(
             log.lines().any(|line| {
                 line.contains("[ERROR]") && line.contains(package.to_str().unwrap())
@@ -74,18 +89,26 @@ fn optional_archive_failures_clean_their_mounts_and_keep_the_framework_root() ->
 
 #[test]
 fn unsafe_optional_mount_cleanup_stops_application() -> io::Result<()> {
-    for alias in [false, true] {
+    for layout in ["nested", "direct alias", "link chain"] {
         let fixture = BinaryLoggingFixture::new("unsafe-optional-archive")?;
         let optional = fixture.dir.path().join("skills/optional");
         let child = optional.join("required");
-        fs::create_dir_all(&child)?;
-        fs::write(child.join("keep"), "required")?;
-        let required = if alias {
+        if layout == "link chain" {
+            fs::create_dir_all(&optional)?;
+            let backing = fixture.dir.path().join("required-data");
+            fs::create_dir(&backing)?;
+            fs::write(backing.join("keep"), "required")?;
+            symlink(&backing, &child)?;
+        } else {
+            fs::create_dir_all(&child)?;
+            fs::write(child.join("keep"), "required")?;
+        }
+        let required = if layout == "nested" {
+            child
+        } else {
             let alias = fixture.dir.path().join("required-alias");
             symlink(&child, &alias)?;
-            alias
-        } else {
-            child.clone()
+            alias.join("")
         };
         let output = fixture.run_manifest_stdin(&serde_json::to_vec(&json!({
             "storageMounts": [
@@ -93,9 +116,29 @@ fn unsafe_optional_mount_cleanup_stops_application() -> io::Result<()> {
                 {"mountPath": required, "cached": true}
             ]
         }))?)?;
-        assert!(!output.status.success());
+        assert!(!output.status.success(), "{layout}");
         assert!(output.stdout.is_empty());
-        assert_eq!(fs::read(child.join("keep"))?, b"required");
+        assert_eq!(fs::read(required.join("keep"))?, b"required");
     }
+    Ok(())
+}
+
+#[test]
+fn optional_mount_under_an_aliased_parent_is_unsafe() -> io::Result<()> {
+    let fixture = BinaryLoggingFixture::new("optional-parent-alias")?;
+    let alias = fixture.dir.path().join("alias");
+    let backing = fixture.dir.path().join("backing");
+    let package = backing.join("package");
+    fs::create_dir_all(&package)?;
+    fs::write(package.join("keep"), "unaltered")?;
+    symlink(&backing, &alias)?;
+    let output = fixture.run_manifest_stdin(&serde_json::to_vec(&json!({
+        "storageMounts": [
+            {"mountPath": alias.join("package"), "name": "workflow", "optional": true}
+        ]
+    }))?)?;
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    assert_eq!(fs::read(package.join("keep"))?, b"unaltered");
     Ok(())
 }

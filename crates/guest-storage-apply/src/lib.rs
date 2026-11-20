@@ -422,27 +422,17 @@ fn clean_optional_mounts<'a>(
     paths: impl Iterator<Item = &'a String>,
     quarantine: Option<&quarantine::Quarantine>,
 ) -> bool {
-    for path in paths {
-        let others = manifest
-            .storages
-            .iter()
-            .map(|entry| entry.mount_path.as_str())
-            .chain(
-                manifest
-                    .artifacts
-                    .iter()
-                    .map(|entry| entry.mount_path.as_str()),
-            )
-            .filter(|other| *other != path);
-        if let Err(error) = cleanup::remove_optional_mount(Path::new(path), others, quarantine) {
-            log_error!(
-                LOG_TAG,
-                "Failed to safely clean optional package {path}: {error}"
-            );
-            return false;
-        }
-    }
-    true
+    let mounts = manifest
+        .storages
+        .iter()
+        .map(|entry| entry.mount_path.as_str())
+        .chain(
+            manifest
+                .artifacts
+                .iter()
+                .map(|entry| entry.mount_path.as_str()),
+        );
+    cleanup::cleanup_optional_mounts(paths.map(String::as_str), mounts, quarantine)
 }
 
 fn write_result(output: &mut dyn Write, result: &impl serde::Serialize) -> bool {
