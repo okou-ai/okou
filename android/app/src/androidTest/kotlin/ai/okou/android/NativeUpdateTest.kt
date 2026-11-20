@@ -34,15 +34,7 @@ import org.junit.runners.model.MultipleFailureException
 @RunWith(AndroidJUnit4::class)
 class NativeUpdateTest {
     @Test
-    fun updateSharesProgressWaitsForTheMenuAndKeepsTheRequiredGateAcrossRecreation() =
-        verifyJourney {
-            takeScreenshot().writeToTestStorage("android-update-$it")
-        }
-
-    internal fun verifyJourney(
-        continueInSystem: ((UiDevice, TestOkouApplication) -> Unit)? = null,
-        capture: (String) -> Unit,
-    ) {
+    fun updateSharesProgressWaitsForTheMenuAndKeepsTheRequiredGateAcrossRecreation() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val app = instrumentation.targetContext.applicationContext as TestOkouApplication
         val device = UiDevice.getInstance(instrumentation)
@@ -107,7 +99,7 @@ class NativeUpdateTest {
             fun exists(label: Int) = assertNotNull(text(app.getString(label)))
             fun captureState(name: String) {
                 device.waitForIdle()
-                capture(name)
+                takeScreenshot().writeToTestStorage("android-update-$name")
             }
             device.awaitChatList(app)
             val updateTarget = app.getString(R.string.updates_target, "99.0.0")
@@ -128,13 +120,13 @@ class NativeUpdateTest {
                 .click()
             click(R.string.updates_title)
             exists(R.string.updates_checking)
-            captureState("details-checking.png")
+            captureState("details-checking")
             gate.complete(Unit)
             exists(R.string.updates_error_check)
-            captureState("details-check-failed.png")
+            captureState("details-check-failed")
             click(R.string.retry)
             exists(R.string.updates_current)
-            captureState("details-up-to-date.png")
+            captureState("details-up-to-date")
             candidate.set(release)
             click(R.string.updates_check)
             assertNotNull(text(updateTarget))
@@ -143,7 +135,7 @@ class NativeUpdateTest {
 
             val updateAction = app.getString(R.string.updates_toolbar)
             val updateBounds = button(updateAction).visibleBounds
-            captureState("toolbar-available.png")
+            captureState("toolbar-available")
             assertTrue(
                 device.wait(Until.gone(By.desc(app.getString(R.string.chat_filter))), 10_000)
             )
@@ -202,36 +194,34 @@ class NativeUpdateTest {
             openOverflow()
             click(R.string.settings)
             exists(R.string.updates_new_version)
-            captureState("settings-available.png")
+            captureState("settings-available")
             click(R.string.updates_title)
             assertNotNull(text(updateTarget))
-            captureState("details-available.png")
+            captureState("details-available")
             closeDetails()
             backToChatList()
             requireNotNull(text(updateAction)).click()
             val percent = "50%"
             assertEquals(updateBounds, button(percent).visibleBounds)
             assertFalse(device.hasObject(By.pkg(app.packageName).text(updateTarget)))
-            captureState("toolbar-progress.png")
+            captureState("toolbar-progress")
             requireNotNull(text(percent)).click()
             assertNotNull(text(updateTarget))
             assertNotNull(text(app.getString(R.string.updates_downloading, percent)))
-            captureState("details-progress.png")
+            captureState("details-progress")
             click(R.string.updates_close)
             assertTrue(owner.state.value.transfer is UpdateTransfer.Downloading)
 
             openOverflow()
             click(R.string.settings)
             assertNotNull(text(app.getString(R.string.updates_downloading, percent)))
-            captureState("settings-progress.png")
+            captureState("settings-progress")
             backToChatList()
 
             openOverflow()
             assertNotNull(text(filter))
             check(file.parentFile!!.isDirectory || file.parentFile!!.mkdirs())
-            if (continueInSystem == null)
-                file.writeText("verified package from the service fixture")
-            else File(app.applicationInfo.sourceDir).copyTo(file, overwrite = true)
+            file.writeText("verified package from the service fixture")
             download.complete(file)
             assertTrue(
                 device.wait(
@@ -249,33 +239,32 @@ class NativeUpdateTest {
             )
             device.pressBack()
             exists(R.string.updates_open_settings)
-            captureState("install-permission.png")
-            if (continueInSystem == null) click(R.string.updates_later)
-            else continueInSystem(device, app)
+            captureState("install-permission")
+            click(R.string.updates_later)
             exists(R.string.updates_install_toolbar)
-            captureState("toolbar-ready.png")
+            captureState("toolbar-ready")
             openOverflow()
             click(R.string.settings)
             exists(R.string.updates_ready)
-            captureState("settings-ready.png")
+            captureState("settings-ready")
 
             val activeLocale = app.resources.configuration.locales.toLanguageTags()
             candidate.set(release.copy(version = "99.1.0"))
             owner.requireUpdate(RequiredUpdate("99.1.0"))
             exists(R.string.updates_required)
             exists(R.string.updates_toolbar)
-            captureState("update-required.png")
+            captureState("update-required")
             assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
             exists(R.string.updates_required)
             scenario.recreate()
             exists(R.string.updates_required)
             assertEquals(activeLocale, app.resources.configuration.locales.toLanguageTags())
             assertTrue(owner.state.value.required)
-            takeScreenshot().writeToTestStorage("android-update-required.png")
+            takeScreenshot().writeToTestStorage("android-update-required-restored")
         } catch (error: Throwable) {
             failures += error
             try {
-                takeScreenshot().writeToTestStorage("android-update-failure.png")
+                takeScreenshot().writeToTestStorage("android-update-failure")
             } catch (diagnostic: Throwable) {
                 error.addSuppressed(diagnostic)
             }
