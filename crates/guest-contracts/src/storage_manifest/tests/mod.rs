@@ -3,6 +3,33 @@ use serde_json::json;
 use super::{ArtifactEntry, InstructionCleanupEntry, Manifest, StorageEntry};
 
 #[test]
+fn optionality_is_bound_to_the_selected_read_only_package() {
+    let input = json!({
+        "storageMounts": [
+            {"mountPath": "/skills/optional", "name": "workflow", "optional": true},
+            {"mountPath": "/skills/required", "name": "workflow", "archiveUrl": "file:///archive"}
+        ]
+    });
+    let manifest: Manifest = serde_json::from_value(input.clone()).unwrap();
+    assert!(manifest.storages[0].optional);
+    assert!(!manifest.storages[1].optional);
+    let wire = serde_json::to_value(manifest).unwrap();
+    assert_eq!(wire["storageMounts"][0]["optional"], true);
+    assert!(wire["storageMounts"][1].get("optional").is_none());
+    for (field, value) in [
+        ("optional", json!("true")),
+        ("name", json!("instruction")),
+        ("writeback", json!(true)),
+        ("mountPath", json!("/skills/../unsafe")),
+        ("archiveUrl", json!("null")),
+    ] {
+        let mut invalid = input.clone();
+        invalid["storageMounts"][0][field] = value;
+        assert!(serde_json::from_value::<Manifest>(invalid).is_err());
+    }
+}
+
+#[test]
 fn explicit_archive_readiness_round_trips_and_rejects_invalid_bindings() {
     let id = uuid::Uuid::new_v4();
     let input = json!({
@@ -68,6 +95,7 @@ fn canonical_manifest_preserves_wire_shape() {
     let manifest = Manifest {
         archive_readiness: None,
         storages: vec![StorageEntry {
+            optional: false,
             template_guidance: None,
             mount_path: "/home/user/.codex".into(),
             archive_url: Some("https://example.com/storage.tar.gz".into()),
@@ -86,6 +114,7 @@ fn canonical_manifest_preserves_wire_shape() {
             missing_root_policy: Some("preserveParentVersion".into()),
         }],
         cleanup_paths: vec!["/data".into()],
+        removed_package_paths: Vec::new(),
         instruction_cleanups: vec![InstructionCleanupEntry {
             mount_path: "/home/user/.codex".into(),
             target_filename: Some("AGENTS.md".into()),

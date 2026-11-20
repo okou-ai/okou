@@ -135,6 +135,31 @@ fn decoded_input_records_one_size_and_ordered_phases_without_private_data() {
 }
 
 #[test]
+fn decoded_input_consumes_the_complete_manifest_from_the_current_runtime() {
+    use guest_contracts::runtime_paths::{staged_storage_manifest_file, write_private_new};
+
+    let fixture = BinaryLoggingFixture::new("staged-storage-manifest").unwrap();
+    let path = staged_storage_manifest_file(&fixture.logs.runtime_dir).unwrap();
+    let input = input_with_files(&fixture, b"").unwrap();
+    let target = fixture.dir.path().join("mount/private-filename");
+    let retired = fixture.dir.path().join("retired-package");
+    std::fs::create_dir(&retired).unwrap();
+    std::fs::write(retired.join("SKILL.md"), b"stale").unwrap();
+    let mut manifest: Value = serde_json::from_slice(&valid_manifest(&fixture).unwrap()).unwrap();
+    manifest["removedPackagePaths"] = serde_json::json!([retired]);
+
+    assert!(!run_decoded(&fixture, &input).unwrap().status.success());
+    assert!(!target.exists());
+    assert!(retired.is_dir());
+    write_private_new(&path, serde_json::to_vec(&manifest).unwrap()).unwrap();
+
+    assert!(run_decoded(&fixture, &input).unwrap().status.success());
+    assert_eq!(std::fs::read(target).unwrap(), b"private-content");
+    assert!(!retired.exists());
+    assert!(!path.exists());
+}
+
+#[test]
 fn invalid_frame_reports_unavailable_size_and_no_parse_or_write() {
     let fixture = BinaryLoggingFixture::new("input-attribution-invalid-frame").unwrap();
     let mut input = input_with_files(&fixture, &valid_manifest(&fixture).unwrap()).unwrap();

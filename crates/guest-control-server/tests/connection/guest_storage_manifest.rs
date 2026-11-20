@@ -288,12 +288,21 @@ fn decoded_storage_input_with_rpc_context_above_map_limit_uses_pipe() {
         "storageMounts": [
             {"mountPath":"/first","archiveUrl":"file:///tmp/unused-first"},
             {"mountPath":"/second","archiveUrl":"file:///tmp/unused-second"}
-        ]
+        ],
+        "removedPackagePaths": ["/retired"]
     }"#
     .to_vec();
-    manifest.resize(storage_files::MAX_MANIFEST_BYTES, b' ');
-    let input = storage_files::encode_input(&manifest, &[("/first", &first), ("/second", &second)])
-        .unwrap();
+    manifest.resize(
+        storage_files::MAX_COMPLETE_MANIFEST_BYTES - storage_files::MAX_PAYLOAD_BYTES,
+        b' ',
+    );
+    let (input, staged_manifest) = storage_files::PreparedInput::prepare_complete(
+        manifest,
+        vec![("/first", &first), ("/second", &second)],
+    )
+    .unwrap();
+    assert!(staged_manifest.is_none());
+    let input = input.into_bytes();
     // The RPC context puts the whole received file beyond this helper-input limit.
     assert_eq!(input.len(), storage_files::MAX_INPUT_BYTES);
     assert_storage_input_transport(&input, storage_files::STDIN_ARGUMENT, "-p");
@@ -345,12 +354,13 @@ fn truncated_large_storage_input_does_not_start_helper() {
 }
 
 #[test]
-fn guest_storage_manifest_returns_nonzero_exit_and_captured_diagnostic_output() {
+fn guest_storage_manifest_captures_stdout_and_stderr_on_failed_exit() {
     let (_directory, program) = create_program(
         r#"
 cat >/dev/null
+printf '{"skippedOptional":[1]}\n'
 printf 'manifest failed\n' >&2
-exit 7
+exit 1
 "#,
     );
     let (handle, mut host_stream) = start_guest_connection_with_storage_manifest_program(program);
@@ -358,8 +368,8 @@ exit 7
     send_request(&mut host_stream, 411, 1_000, "run", "/run", b"{}");
     let result = read_result(&mut host_stream, 411);
 
-    assert_eq!(result.termination, ExecTermination::Exited { exit_code: 7 });
-    assert!(result.stdout.is_empty());
+    assert_eq!(result.termination, ExecTermination::Exited { exit_code: 1 });
+    assert_eq!(result.stdout, b"{\"skippedOptional\":[1]}\n");
     assert_eq!(result.stderr, b"manifest failed\n");
     assert!(!result.stdout_truncated);
     assert!(!result.stderr_truncated);

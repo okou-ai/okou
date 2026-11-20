@@ -16,6 +16,7 @@ fn empty_manifest() -> Manifest {
         storages: Vec::new(),
         artifacts: Vec::new(),
         cleanup_paths: Vec::new(),
+        removed_package_paths: Vec::new(),
         instruction_cleanups: Vec::new(),
     }
 }
@@ -23,6 +24,7 @@ fn empty_manifest() -> Manifest {
 fn storage_manifest() -> Manifest {
     Manifest {
         storages: vec![StorageEntry {
+            optional: false,
             template_guidance: None,
             mount_path: "/data".into(),
             archive_url: Some("https://s3/archive.tar.gz".into()),
@@ -37,6 +39,7 @@ fn storage_manifest() -> Manifest {
 fn manifest_with_serialized_len(len: usize) -> Manifest {
     let mut manifest = Manifest {
         cleanup_paths: vec![String::new()],
+        removed_package_paths: Vec::new(),
         ..empty_manifest()
     };
     let empty_len = serde_json::to_vec(&manifest).unwrap().len();

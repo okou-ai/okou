@@ -937,6 +937,7 @@ fn background_fill_group(
         decoded_ready_observed: false,
         representative: CacheTarget {
             handle: ArchiveHandle::storage(0),
+            optional_mount: None,
             name: name.to_string(),
             version: version.to_string(),
             archive_url: url,
@@ -1895,6 +1896,7 @@ async fn fresh_delivery_cancellation_drains_started_publication() {
         slow_headers: 0,
         classification: JoinSet::new(),
         groups: None,
+        unavailable: Vec::new(),
         owned_keys: HashSet::new(),
         apply: Vec::new(),
         fetches: JoinSet::new(),
@@ -2213,6 +2215,7 @@ async fn fresh_delivery_expanded_misses_require_complete_admission() {
         "unknown",
         "oversized",
         "unkeyed",
+        "optional",
     ] {
         let temp = tempfile::tempdir().unwrap();
         let home = home_at(&temp);
@@ -2255,6 +2258,18 @@ async fn fresh_delivery_expanded_misses_require_complete_admission() {
                 "v1",
                 size,
             ));
+        }
+        let optional_url = server.url("/expanded-optional");
+        if case == "optional" {
+            let mut entry = storage_entry_with_archive_size(
+                "/home/user/.codex/skills/optional".into(),
+                optional_url.clone(),
+                runner_types::storage_manifest::WORKFLOW_STORAGE_NAME,
+                "v1",
+                Some(body.len() as u64),
+            );
+            entry.optional = true;
+            storages.push(entry);
         }
         let mut plan = plan_from_entries(storages, Vec::new(), None);
         let admission = FreshArchiveDeliveryAdmission::new();
@@ -2302,6 +2317,12 @@ async fn fresh_delivery_expanded_misses_require_complete_admission() {
         cold_get
             .assert_calls_async(if admitted { 4 } else { 0 })
             .await;
+        if case == "optional" {
+            assert_eq!(
+                storage_archive_url(&plan, 98 + cold_count),
+                Some(optional_url.as_str())
+            );
+        }
         for index in 0..cold_count {
             let expected = if admitted {
                 format!(

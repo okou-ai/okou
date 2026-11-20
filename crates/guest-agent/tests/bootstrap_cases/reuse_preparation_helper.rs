@@ -176,6 +176,8 @@ async fn prepare_for_reuse_preserves_generation_when_candidate_runtime_is_absent
     )?;
     std::fs::write(stale.join("agent.jsonl"), b"stale")?;
     std::fs::write(runs.join("stale-file"), b"stale")?;
+    let staged = guest_contracts::runtime_paths::staged_storage_manifest_file(&current)?;
+    guest_contracts::runtime_paths::write_private(&staged, b"interrupted stage")?;
     std::fs::write(outside.join("keep"), b"outside")?;
     symlink(&outside, runs.join("stale-link"))?;
     assert!(!unstarted_candidate.exists());
@@ -193,7 +195,7 @@ async fn prepare_for_reuse_preserves_generation_when_candidate_runtime_is_absent
         String::from_utf8_lossy(&output.stderr)
     );
     let report = serde_json::from_slice::<ReusePreparationReport>(&output.stdout)?;
-    assert_eq!(report.removed_entries, 3);
+    assert_eq!(report.removed_entries, 4);
     assert!(report.before.available_bytes > 0);
     assert!(report.after.available_bytes > 0);
     assert_eq!(
@@ -207,6 +209,7 @@ async fn prepare_for_reuse_preserves_generation_when_candidate_runtime_is_absent
     assert!(!runs.join("stale").exists());
     assert!(!runs.join("stale-file").exists());
     assert!(!runs.join("stale-link").exists());
+    assert!(!staged.parent().unwrap().exists());
     assert!(!unstarted_candidate.exists());
     assert_eq!(std::fs::read(outside.join("keep"))?, b"outside");
     Ok(())

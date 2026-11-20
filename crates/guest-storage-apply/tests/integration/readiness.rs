@@ -12,13 +12,13 @@ use std::process::Command;
 use std::time::{Duration, Instant};
 
 fn wait_for(path: &Path) {
+    wait_until(&path.display().to_string(), || path.exists());
+}
+
+fn wait_until(description: &str, mut observed: impl FnMut() -> bool) {
     let deadline = Instant::now() + Duration::from_secs(5);
-    while !path.exists() {
-        assert!(
-            Instant::now() < deadline,
-            "observable path did not appear: {}",
-            path.display()
-        );
+    while !observed() {
+        assert!(Instant::now() < deadline, "did not observe {description}");
         std::thread::sleep(Duration::from_millis(1));
     }
 }
@@ -58,6 +58,42 @@ fn spawn(manifest: &Manifest, runtime: &Path) -> std::io::Result<CommandExecutio
         .env(runtime_paths::CANONICAL_GUEST_RUNTIME_DIR_ENV, runtime);
     let bytes = serde_json::to_vec(manifest).map_err(std::io::Error::other)?;
     CommandExecution::spawn(&mut command, Some(&bytes))
+}
+
+#[test]
+fn unavailable_optional_source_cleans_the_mount_without_reading_an_old_archive() {
+    use guest_contracts::storage_manifest::{
+        StorageApplyReceipt, StorageEntry, WORKFLOW_STORAGE_NAME,
+    };
+
+    let dir = tempfile::tempdir().unwrap();
+    let runtime = dir.path().join("runtime");
+    let (mut manifest, descriptor) = manifest(dir.path()).unwrap();
+    let old = manifest.artifacts.pop().unwrap();
+    fs::create_dir(&old.mount_path).unwrap();
+    fs::write(Path::new(&old.mount_path).join("SKILL.md"), b"stale").unwrap();
+    manifest.storages.push(StorageEntry {
+        optional: true,
+        template_guidance: None,
+        mount_path: old.mount_path,
+        archive_url: old.archive_url,
+        cached: false,
+        vas_storage_name: Some(WORKFLOW_STORAGE_NAME.into()),
+        vas_version_id: Some("v1".into()),
+    });
+    let operation = spawn(&manifest, &runtime).unwrap();
+    wait_for(&dir.path().join("ready/.applied"));
+    runtime_paths::write_private_new(descriptor.unavailable_path(&runtime, 0), []).unwrap();
+    let result = operation.wait().unwrap();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let receipt: StorageApplyReceipt = serde_json::from_slice(&result.stdout).unwrap();
+    assert_eq!(receipt.skipped_optional, [1]);
+    assert!(!dir.path().join("pending").exists());
+    assert_eq!(fs::read(dir.path().join("ready/value")).unwrap(), b"ready");
 }
 
 fn unprivileged_command(dir: &Path, runtime: &Path) -> std::io::Result<Command> {
@@ -105,6 +141,7 @@ fn eligibility_leaves_inaccessible_reused_storage_to_ordinary_application() {
     manifest.storages.insert(
         0,
         StorageEntry {
+            optional: false,
             template_guidance: None,
             mount_path: kept.display().to_string(),
             archive_url: None,
@@ -378,14 +415,54 @@ fn ready_input_applies_while_another_archive_waits_for_this_operation() {
 }
 
 #[test]
-fn producer_failure_fails_the_real_helper_and_leaves_the_pending_input_unapplied() {
+fn producer_failure_reports_cleaned_optional_mounts_without_applying_pending_inputs() {
+    use guest_contracts::storage_manifest::{
+        StorageApplyReceipt, StorageEntry, WORKFLOW_STORAGE_NAME,
+    };
+    use httpmock::prelude::*;
+
     let dir = tempfile::tempdir().unwrap();
     let runtime = dir.path().join("runtime");
-    let (manifest, descriptor) = manifest(dir.path()).unwrap();
+    let (mut manifest, descriptor) = manifest(dir.path()).unwrap();
+    let optional = dir.path().join("missing-skill");
+    fs::create_dir(&optional).unwrap();
+    fs::write(optional.join("SKILL.md"), b"stale").unwrap();
+    let server = MockServer::start();
+    let missing = server.mock(|when, then| {
+        when.method(GET).path("/missing.tar.gz");
+        then.status(404);
+    });
+    manifest.storages.push(StorageEntry {
+        optional: true,
+        template_guidance: None,
+        mount_path: optional.to_str().unwrap().into(),
+        archive_url: Some(server.url("/missing.tar.gz")),
+        cached: false,
+        vas_storage_name: Some(WORKFLOW_STORAGE_NAME.into()),
+        vas_version_id: Some("v1".into()),
+    });
     let child = spawn(&manifest, &runtime).unwrap();
     wait_for(&dir.path().join("ready/.applied"));
+    let system_log = runtime_paths::system_log_file(&runtime);
+    wait_until("the optional package 404", || {
+        fs::read_to_string(&system_log)
+            .unwrap()
+            .lines()
+            .any(|line| {
+                line.contains("[ERROR]") && line.contains("missing-skill") && line.contains("404")
+            })
+    });
     runtime_paths::write_private_new(descriptor.failed_path(&runtime), []).unwrap();
-    assert!(!child.wait().unwrap().status.success());
+    let output = child.wait().unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(
+        serde_json::from_slice::<StorageApplyReceipt>(&output.stdout)
+            .unwrap()
+            .skipped_optional,
+        [1]
+    );
+    missing.assert_calls(1);
+    assert!(!optional.exists());
     assert!(!dir.path().join("pending/value").exists());
 }
 
