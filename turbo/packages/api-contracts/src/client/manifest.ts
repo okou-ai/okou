@@ -519,7 +519,15 @@ export const clientDescriptorManifest = [
   },
   {
     module: "mcp-chat-search",
-    contracts: ["mcpChatSearchContract"],
+    contracts: ["mcpChatSearchContract", "mcpProjectChatSearchContract"],
+  },
+  {
+    module: "mcp-chat-snapshots",
+    contracts: ["mcpThreadSnapshotContract"],
+  },
+  {
+    module: "mcp-chat-tools",
+    contracts: ["mcpChatCommandContract"],
   },
   {
     module: "mcp-connectors",

@@ -17,7 +17,7 @@ const orgScope = "user:org:read";
 const readScope = "okou:chat:read";
 const requiredScopes = `${orgScope} ${readScope}`;
 const defaultScopes =
-  "openid email profile user:org:read okou:chat:read okou:chat:send okou:chat:manage okou:run:cancel offline_access";
+  "openid email profile user:org:read okou:chat:read okou:project:read okou:chat:send okou:chat:manage okou:run:cancel offline_access";
 const modernVersion = "2026-07-28";
 function client() {
   return setupApp({ context, routes: mcpServerRoutes })(mcpServerContract);
@@ -120,11 +120,7 @@ describe("external MCP authentication and transport", () => {
     expect(metadata.body).toMatchObject({
       resource,
       authorization_servers: [issuer],
-      scopes_supported: [
-        ...defaultScopes.split(" "),
-        "okou:project:read",
-        "okou:voice:transcribe",
-      ],
+      scopes_supported: [...defaultScopes.split(" "), "okou:voice:transcribe"],
     });
     const unauthenticated = await accept(
       client().request({
@@ -198,7 +194,7 @@ describe("external MCP authentication and transport", () => {
       { method: "tools/list", name: "get_chat_thread_list", args: {} },
       { method: "tools/call", name: "get_chat_indicators", args: {} },
       { method: "tools/call", name: "get_chat_thread_list", args: {} },
-      { method: "tools/call", name: "list_agents", args: {} },
+      { method: "tools/call", name: "list_projects", args: {} },
       { method: "tools/call", name: "list_models", args: {} },
     ]) {
       const result = await accept(

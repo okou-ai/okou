@@ -513,8 +513,18 @@ import { marketingRewardNotificationContract as OriginalMarketingRewardNotificat
 import { marketingRewardNotificationContract } from "./marketing-reward-notification";
 import { marketingRewardSettlementContract as OriginalMarketingRewardSettlementContract } from "../contracts/marketing-reward-settlement";
 import { marketingRewardSettlementContract } from "./marketing-reward-settlement";
-import { mcpChatSearchContract as OriginalMcpChatSearchContract } from "../contracts/mcp-chat-search";
-import { mcpChatSearchContract } from "./mcp-chat-search";
+import {
+  mcpChatSearchContract as OriginalMcpChatSearchContract,
+  mcpProjectChatSearchContract as OriginalMcpProjectChatSearchContract,
+} from "../contracts/mcp-chat-search";
+import {
+  mcpChatSearchContract,
+  mcpProjectChatSearchContract,
+} from "./mcp-chat-search";
+import { mcpThreadSnapshotContract as OriginalMcpThreadSnapshotContract } from "../contracts/mcp-chat-snapshots";
+import { mcpThreadSnapshotContract } from "./mcp-chat-snapshots";
+import { mcpChatCommandContract as OriginalMcpChatCommandContract } from "../contracts/mcp-chat-tools";
+import { mcpChatCommandContract } from "./mcp-chat-tools";
 import { mcpConnectorsContract as OriginalMcpConnectorsContract } from "../contracts/mcp-connectors";
 import { mcpConnectorsContract } from "./mcp-connectors";
 import { mcpOAuthContract as OriginalMcpOAuthContract } from "../contracts/mcp-oauth";
@@ -1224,6 +1234,9 @@ export const clientDescriptorContracts: readonly (readonly [
     OriginalMarketingRewardSettlementContract,
   ],
   [mcpChatSearchContract, OriginalMcpChatSearchContract],
+  [mcpProjectChatSearchContract, OriginalMcpProjectChatSearchContract],
+  [mcpThreadSnapshotContract, OriginalMcpThreadSnapshotContract],
+  [mcpChatCommandContract, OriginalMcpChatCommandContract],
   [mcpConnectorsContract, OriginalMcpConnectorsContract],
   [mcpOAuthContract, OriginalMcpOAuthContract],
   [mcpServerContract, OriginalMcpServerContract],
