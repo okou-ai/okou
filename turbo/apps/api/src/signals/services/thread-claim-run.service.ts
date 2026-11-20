@@ -450,7 +450,7 @@ class QueuedPromptLaunchUnavailableError extends Error {
 }
 
 function queuedPromptRunInput(args: {
-  readonly input: CreateQueuedChatRunInputArgs;
+  readonly input: QueuedChatPromptData;
   readonly launch: QueuedLaunchMaterial;
   readonly prompt: string;
   readonly model: ThreadModelSelection;
@@ -503,6 +503,7 @@ type ChatQueueRunAssembly =
   | {
       readonly kind: "assembled";
       readonly run: ThreadRunCommand;
+      readonly promptContinuation?: ChatThreadContinuation;
       readonly officialWorkflow: OfficialWorkflowObservation | undefined;
       readonly promptAndSkills: PromptAndSkillVolumes;
       readonly producerBinding: ClaimProducerBinding;
@@ -733,11 +734,6 @@ type ClaimProducerBinding = {
 type ClaimRejectionContext =
   | { readonly kind: "prompt"; readonly runInput: CreateQueuedChatRunInput }
   | { readonly kind: "automation"; readonly userId: string };
-
-/** Queued prompt data with this preparation's timing. */
-interface CreateQueuedChatRunInputArgs extends QueuedChatPromptData {
-  readonly timing?: ChatCallbackPreCreateTimingCollector;
-}
 
 type ClaimLaunchRecord =
   | {
@@ -1212,22 +1208,19 @@ export function createThreadClaimRunObjects(
       };
     },
   );
-  const promptArgs$ = computed(
-    async (get): Promise<CreateQueuedChatRunInputArgs> => {
-      const { head, timing } = await get(promptInput$);
-      const queuedMessage = await get(promptMessage$);
-      if (!queuedMessage || queuedMessage.id !== head.id) {
-        throw new Error("Prompt preparation lost its selected head");
-      }
-      return {
-        threadId: head.chatThreadId,
-        userId: bootstrap.userId,
-        agent: { id: bootstrap.agentId, orgId: bootstrap.orgId },
-        queuedMessage,
-        timing,
-      };
-    },
-  );
+  const promptArgs$ = computed(async (get): Promise<QueuedChatPromptData> => {
+    const head = await get(head$);
+    const queuedMessage = await get(promptMessage$);
+    if (!queuedMessage || queuedMessage.id !== head.id) {
+      throw new Error("Prompt preparation lost its selected head");
+    }
+    return {
+      threadId: head.chatThreadId,
+      userId: bootstrap.userId,
+      agent: { id: bootstrap.agentId, orgId: bootstrap.orgId },
+      queuedMessage,
+    };
+  });
   const wechatPromptMaterial$ = computed(
     async (get): Promise<QueuedLaunchMaterial> => {
       const context = await get(threadContext.wechatContext$);
@@ -1393,6 +1386,7 @@ export function createThreadClaimRunObjects(
     ): Promise<
       | {
           readonly runInput: CreateQueuedChatRunInput;
+          readonly continuation: ChatThreadContinuation;
           readonly officialWorkflow: OfficialWorkflowObservation | undefined;
           readonly promptAndSkills: PromptAndSkillVolumes;
           readonly templateUsageIdentities: readonly TemplateUsageIdentity[];
@@ -1456,6 +1450,7 @@ export function createThreadClaimRunObjects(
           capture,
           features,
         }),
+        continuation: session,
         officialWorkflow,
         promptAndSkills,
         templateUsageIdentities: templates.templateUsageIdentities,
@@ -1544,6 +1539,7 @@ export function createThreadClaimRunObjects(
       return {
         kind: "assembled",
         run: promptRunCommand(runInput, head.apiStartTime),
+        promptContinuation: preparedInput.continuation,
         officialWorkflow: preparedInput.officialWorkflow,
         promptAndSkills: preparedInput.promptAndSkills,
         producerBinding: null,
@@ -1921,14 +1917,12 @@ export function createThreadClaimRunObjects(
         : get(promptCallbacks$);
     },
   );
-  const threadContinuation$ = computed(
-    async (get): Promise<ChatThreadContinuation | undefined> => {
-      if (!(await get(isAutomation$)) && (await get(earlyPromptAssembly$))) {
-        return undefined;
-      }
-      return (await get(threadContext.threadContinuation$)) ?? undefined;
-    },
-  );
+  const automationContinuation$ = computed(async (get) => {
+    if (await get(isAutomation$)) {
+      return get(threadContext.threadContinuation$);
+    }
+    return null;
+  });
   const selectedAgent$ = computed((get) => {
     return get(threadContext.dispatchTiming$).measure(
       "api_dispatch_pre_create_agent_load_agent",
@@ -1939,9 +1933,9 @@ export function createThreadClaimRunObjects(
     );
   });
   const preparedRunInput$ = computed(async (get) => {
-    const [model, resolution, assembly] = await Promise.all([
+    const [model, automationContinuation, assembly] = await Promise.all([
       get(threadContext.subscriptionSelection$),
-      get(threadContinuation$),
+      get(automationContinuation$),
       get(assembly$),
     ]);
     if (assembly.kind !== "assembled") {
@@ -1950,6 +1944,7 @@ export function createThreadClaimRunObjects(
     if ("status" in model) {
       return model;
     }
+    const resolution = assembly.promptContinuation ?? automationContinuation;
     if (!resolution) {
       throw new Error(
         "Prepared Thread input is missing its captured continuation",
@@ -3692,11 +3687,11 @@ interface ThreadRunCommand {
   readonly realAgentInPreview?: boolean;
   readonly captureNetworkBodies?: boolean;
   readonly apiStartTime: number;
-  readonly triggerSource?: TriggerSource;
+  readonly triggerSource: TriggerSource;
   readonly chatThreadId: string;
   readonly codexServiceTier?: CodexServiceTier;
   readonly reasoningEffort?: ReasoningEffort | null;
-  readonly agentRunMetadata?: AgentRunMetadata;
+  readonly agentRunMetadata: AgentRunMetadata;
 }
 
 // --- Thread-private implementation: launch input ---
@@ -3847,7 +3842,7 @@ function buildThreadRunArgs(
   prompt: Pick<PromptAndSkillVolumes, "userPrompt" | "appendedSystemPrompt">,
 ): ThreadRunArgs {
   const command = args.command;
-  const origin = command.agentRunMetadata?.workflowAutomationId
+  const origin = command.agentRunMetadata.workflowAutomationId
     ? "workflow_automation"
     : "direct";
   return {
@@ -3857,7 +3852,7 @@ function buildThreadRunArgs(
     prompt: prompt.userPrompt,
     realAgentInPreview: command.realAgentInPreview,
     captureNetworkBodies: command.captureNetworkBodies,
-    triggerSource: command.triggerSource ?? "web",
+    triggerSource: command.triggerSource,
     appendSystemPrompt: prompt.appendedSystemPrompt,
     apiStartTime: command.apiStartTime,
     chatThreadId: command.chatThreadId,
