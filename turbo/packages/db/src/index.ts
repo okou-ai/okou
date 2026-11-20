@@ -173,7 +173,6 @@ import * as browserOwnerSchema from "./schema/browser-owner";
 import * as browserChatSessionSchema from "./schema/browser-chat-session";
 import * as presentationTemplateSchema from "./schema/presentation-template";
 import * as userTemplateSchema from "./schema/user-template";
-import * as piResourceVersionIndexSchema from "./schema/pi-resource-version-index";
 import * as sshConnectionSchema from "./runtime/ssh-connection";
 import * as sshCredentialSchema from "./schema/ssh-credential";
 import * as vncCredentialSchema from "./schema/vnc-credential";
@@ -356,7 +355,6 @@ export const schema = {
   ...browserChatSessionSchema,
   ...presentationTemplateSchema,
   ...userTemplateSchema,
-  ...piResourceVersionIndexSchema,
   ...sshConnectionSchema,
   ...sshCredentialSchema,
   ...vncCredentialSchema,
