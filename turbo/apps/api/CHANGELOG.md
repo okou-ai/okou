@@ -10,6 +10,29 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.98.1](https://github.com/okou-ai/okou/compare/api-v2.98.0...api-v2.98.1) (2026-11-20)
+
+
+### Refactoring
+
+* **drive:** retire agent-scoped artifact exports ([#49545](https://github.com/okou-ai/okou/issues/49545)) ([8622b04](https://github.com/okou-ai/okou/commit/8622b04aa8c1c872e2dcb4fa52184072f6e6eda6))
+
+
+### Performance Improvements
+
+* **api:** prefetch run bundle urls and reuse initialized memory ([#49550](https://github.com/okou-ai/okou/issues/49550)) ([25140c0](https://github.com/okou-ai/okou/commit/25140c0f56ab3d512d9ea60580541b2e4e81d945))
+* **api:** read direct runner placement in one snapshot ([#49535](https://github.com/okou-ai/okou/issues/49535)) ([0b68bbb](https://github.com/okou-ai/okou/commit/0b68bbb942b6727ea14857e85d36ffaa6e18716d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.95.2
+    * @okouai/core bumped to 8.857.5
+    * @okouai/db bumped to 2.56.2
+    * @okouai/pi-agent-runtime bumped to 1.52.17
+
 ## [2.98.0](https://github.com/okou-ai/okou/compare/api-v2.97.4...api-v2.98.0) (2026-11-20)
 
 

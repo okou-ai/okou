@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.32.2](https://github.com/okou-ai/okou/compare/android-v0.32.1...android-v0.32.2) (2026-11-20)
+
+
+### Bug Fixes
+
+* **android:** match theme swatches to the design ([#49532](https://github.com/okou-ai/okou/issues/49532)) ([663342e](https://github.com/okou-ai/okou/commit/663342e61b05f2969cf4712c54cc55dd86ce1537))
+
+
+### Performance Improvements
+
+* **android:** coalesce chat list catch-up requests ([#49538](https://github.com/okou-ai/okou/issues/49538)) ([fa8e56c](https://github.com/okou-ai/okou/commit/fa8e56c291927a0576a024eaab69e811c96f2fd2))
+
 ## [0.32.1](https://github.com/okou-ai/okou/compare/android-v0.32.0...android-v0.32.1) (2026-11-20)
 
 
