@@ -15,12 +15,17 @@ import {
 import {
   pendingWorkflowScheduleTickCondition,
   type workflowAutomationQueueEventPlan,
+  type WorkflowRecurringScheduleClaim,
   type WorkflowScheduleClaimPlan,
 } from "./workflow-automation-enqueue.service";
-import type { WorkflowSourceAdmissionPlan } from "./workflow-input-queue.service";
+import type {
+  WorkflowAutomationBinding,
+  WorkflowSourceAdmissionPlan,
+} from "./workflow-input-queue.service";
 import type { threadModelReplacementWritePlan } from "./chat-input-model.service";
 import { chatThreadServiceTierFromCodex } from "./chat-thread-event.service";
 import {
+  consumeRecurringWorkflowScheduleCtes,
   consumeWorkflowScheduleAnchorSql,
   journalWorkflowScheduleClaimSql,
 } from "./workflow-schedule-queue.service";
@@ -150,6 +155,10 @@ export function workflowInputCommitSql(args: {
   readonly replacePendingTicks: boolean;
   readonly automationId: string;
   readonly currentTime: Date;
+  readonly recurringScheduleClaim?: {
+    readonly binding: WorkflowAutomationBinding;
+    readonly claim: WorkflowRecurringScheduleClaim;
+  };
   readonly scheduleClaim?: WorkflowScheduleClaimPlan;
   readonly queueStatement: SQL;
   readonly replacement?: {
@@ -198,7 +207,15 @@ export function workflowInputCommitSql(args: {
     FROM inserted ON CONFLICT DO NOTHING RETURNING id
   )`);
   const guards = [sql`WHEN NOT (${accepted}) THEN '__TX0333_V1_DUPLICATE__'`];
-  if (args.scheduleClaim) {
+  if (args.recurringScheduleClaim) {
+    const { binding, claim } = args.recurringScheduleClaim;
+    ctes.push(
+      ...consumeRecurringWorkflowScheduleCtes(binding, claim, accepted),
+    );
+    guards.push(
+      sql`WHEN NOT EXISTS (SELECT 1 FROM workflow_consumed_claim) THEN '__TX0333_V1_SCHEDULE__'`,
+    );
+  } else if (args.scheduleClaim) {
     ctes.push(
       sql`workflow_consumed_claim AS (${consumeWorkflowScheduleAnchorSql(args.scheduleClaim, currentTime, accepted)})`,
     );

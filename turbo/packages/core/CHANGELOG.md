@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.857.0](https://github.com/okou-ai/okou/compare/core-v8.856.2...core-v8.857.0) (2026-11-20)
+
+
+### Features
+
+* **platform:** consolidate proactive settings in my okou ([#49401](https://github.com/okou-ai/okou/issues/49401)) ([9d20531](https://github.com/okou-ai/okou/commit/9d20531a9ad041abf15a8e5c1697b06475b563df))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.94.0
+
 ## [8.856.2](https://github.com/okou-ai/okou/compare/core-v8.856.1...core-v8.856.2) (2026-11-20)
 
 

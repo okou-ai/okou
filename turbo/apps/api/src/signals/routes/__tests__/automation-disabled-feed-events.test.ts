@@ -601,6 +601,69 @@ describe("recurring automation auto-disable platform feed events", () => {
     await expect(inbox(scenario.actor)).resolves.toStrictEqual([]);
   });
 
+  it.each(["cron", "loop"] as const)(
+    "admits one %s occurrence when two scheduler ticks overlap",
+    async (scheduleType) => {
+      const app = await setupApp({
+        context,
+        routes: cronExecuteWorkflowAutomationsRoutes,
+        isolatePg: true,
+      });
+      mockEnv("CRON_SECRET", CRON_SECRET);
+      const scenario = await createScenario({ scheduleType });
+      const before = await readAutomation(scenario);
+      if (!before.nextRunAt) {
+        throw new Error("Expected the recurring schedule's next occurrence");
+      }
+      const dueAt = new Date(before.nextRunAt);
+      mockNow(dueAt);
+      await runs.registerDirectRunner(scenario.runnerGroup);
+      const cron = app(cronExecuteWorkflowAutomationsContract);
+      const tick = () => {
+        return accept(
+          cron.execute({ headers: { authorization: `Bearer ${CRON_SECRET}` } }),
+          [200],
+        );
+      };
+      const [first, second] = await Promise.all([tick(), tick()]);
+      expect(first.body.executed + second.body.executed).toBe(1);
+      await flushWaitUntilForTest();
+
+      const automation = await readAutomation(scenario);
+      if (!automation.chatThreadId) {
+        throw new Error("Expected the recurring schedule's destination thread");
+      }
+      authHeaders(scenario.actor);
+      const events = await workflows.readThreadEvents(automation.chatThreadId);
+      const inputs = events.filter((event) => {
+        return event.eventType === "input.prompt" && event.runId;
+      });
+      expect(inputs).toHaveLength(1);
+      const runId = inputs[0]?.runId;
+      if (!runId) {
+        throw new Error("Expected the admitted automation Run");
+      }
+      const owned = publicRuns.track(
+        scenario.actor,
+        runId,
+        scenario.runnerGroup,
+      );
+      const execution = await runs.executionInput(runId);
+      owned.sandboxToken = execution.sandboxToken;
+      await webhooks.requestAgentComplete(
+        { runId, exitCode: 0 },
+        { authorization: `Bearer ${execution.sandboxToken}` },
+        [200],
+      );
+      owned.acknowledged = true;
+      await flushWaitUntilForTest();
+      await expect(readAutomation(scenario)).resolves.toMatchObject({
+        enabled: true,
+        nextRunAt: new Date(dueAt.getTime() + 60_000).toISOString(),
+      });
+    },
+  );
+
   it("publishes a feed event after three run preparation failures", async () => {
     const app = await setupApp({
       context,

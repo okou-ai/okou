@@ -13,6 +13,28 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1155.0](https://github.com/okou-ai/okou/compare/app-v0.1154.2...app-v0.1155.0) (2026-11-20)
+
+
+### Features
+
+* **platform:** consolidate proactive settings in my okou ([#49401](https://github.com/okou-ai/okou/issues/49401)) ([9d20531](https://github.com/okou-ai/okou/commit/9d20531a9ad041abf15a8e5c1697b06475b563df))
+* **platform:** polish for you suggestion card layout ([#49397](https://github.com/okou-ai/okou/issues/49397)) ([a33c4ea](https://github.com/okou-ai/okou/commit/a33c4eace1e4ddc482559ee2bc6c2d28884689db))
+
+
+### Bug Fixes
+
+* **app:** preserve artifact file cards in message pdf exports ([#49389](https://github.com/okou-ai/okou/issues/49389)) ([ae05e27](https://github.com/okou-ai/okou/commit/ae05e279c6158a6e3d014dfdaafcdf539f0e9ffe))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.94.0
+    * @okouai/core bumped to 8.857.0
+    * @okouai/ui bumped to 1.21.69
+
 ## [0.1154.2](https://github.com/okou-ai/okou/compare/app-v0.1154.1...app-v0.1154.2) (2026-11-20)
 
 

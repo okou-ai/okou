@@ -10,6 +10,32 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.97.0](https://github.com/okou-ai/okou/compare/api-v2.96.0...api-v2.97.0) (2026-11-20)
+
+
+### Features
+
+* **platform:** consolidate proactive settings in my okou ([#49401](https://github.com/okou-ai/okou/issues/49401)) ([9d20531](https://github.com/okou-ai/okou/commit/9d20531a9ad041abf15a8e5c1697b06475b563df))
+
+
+### Refactoring
+
+* **api:** capture queued prompt delivery once ([#49420](https://github.com/okou-ai/okou/issues/49420)) ([3a14110](https://github.com/okou-ai/okou/commit/3a14110a3b066522c42361a57ceccb329aef907a))
+* **api:** make queued continuation explicit ([#49429](https://github.com/okou-ai/okou/issues/49429)) ([97d31fb](https://github.com/okou-ai/okou/commit/97d31fb66579a567eda930952acba611c23e75f0))
+* **api:** share run connector scope across account and skill resolution ([#49414](https://github.com/okou-ai/okou/issues/49414)) ([ae86233](https://github.com/okou-ai/okou/commit/ae86233b41a72b49c967fe580ea185bdf8c2ab9a))
+* **api:** simplify queued launch binding and callbacks ([#49432](https://github.com/okou-ai/okou/issues/49432)) ([3e70d86](https://github.com/okou-ai/okou/commit/3e70d865438fe987ea77468340793cafe8c26c30))
+* **api:** simplify queued prompt launch handoffs ([#49409](https://github.com/okou-ai/okou/issues/49409)) ([69c9055](https://github.com/okou-ai/okou/commit/69c905577283656d83a027e291a4b8a4a2601e22))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.94.0
+    * @okouai/core bumped to 8.857.0
+    * @okouai/db bumped to 2.54.2
+    * @okouai/pi-agent-runtime bumped to 1.52.12
+
 ## [2.96.0](https://github.com/okou-ai/okou/compare/api-v2.95.7...api-v2.96.0) (2026-11-20)
 
 

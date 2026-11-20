@@ -21,7 +21,11 @@ import {
 import { settleMorningBriefSchedulePreRunFailure$ } from "./morning-brief-schedule-claim.service";
 import { calculateNextRun } from "./time-automation";
 import { scheduleFailurePauseValues } from "./workflow-schedule-failure-policy";
-import type { AutomationRow } from "./workflow-automation-enqueue.service";
+import type {
+  AutomationRow,
+  WorkflowRecurringScheduleClaim,
+} from "./workflow-automation-enqueue.service";
+import { workflowAutomationSnapshotCondition } from "./workflow-automation-snapshot";
 
 const log = logger("WorkflowScheduleFailure");
 
@@ -82,6 +86,7 @@ interface PreRunFailureInput {
   readonly automation: AutomationRow;
   readonly failure: PreRunFailure;
   readonly stillDueAt?: Date;
+  readonly recurringScheduleClaim?: WorkflowRecurringScheduleClaim;
 }
 
 /** Count only the still-due Official row version; a winning concurrent writer remains authoritative. */
@@ -206,7 +211,7 @@ export const recordPreRunFailure$ = command(
     args: PreRunFailureInput,
     signal: AbortSignal,
   ): Promise<void> => {
-    const { automation, failure, stillDueAt } = args;
+    const { automation, failure, stillDueAt, recurringScheduleClaim } = args;
     if (await set(recordSelectedMorningBriefPreRunFailure$, args, signal)) {
       return;
     }
@@ -231,6 +236,7 @@ export const recordPreRunFailure$ = command(
           ...(failure.isCreditError
             ? { nextRunAt }
             : scheduleFailurePauseValues(threshold, nextRunAt)),
+          lastRunAt: recurringScheduleClaim?.claimedAt,
           updatedAt: failureTime,
         })
         .where(
@@ -246,6 +252,9 @@ export const recordPreRunFailure$ = command(
             stillDueAt
               ? eq(workflowAutomations.nextRunAt, stillDueAt)
               : undefined,
+            workflowAutomationSnapshotCondition(
+              recurringScheduleClaim?.automationSnapshot,
+            ),
           ),
         )
         .returning(automationDisableTransitionColumns()),
