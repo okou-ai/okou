@@ -176,6 +176,11 @@ export const forYouCoverTornEdge = platformStaticAssetUrl(
   "views/for-you/assets/cover-torn-edge-d189ebb4db4f.png",
 );
 
+// Shown once the last card is handled: Okou takes a breather with the user.
+export const forYouCompleteIllustration = platformStaticAssetUrl(
+  "views/for-you/assets/take-a-breather-1edc7a6640d4.webp",
+);
+
 export const forYouIllustrations = [
   platformStaticAssetUrl(
     "views/for-you/assets/unlock-opportunities-5dad4d002dd9.webp",

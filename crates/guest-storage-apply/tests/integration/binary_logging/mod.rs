@@ -14,6 +14,7 @@ mod empty_artifact;
 mod http_failure;
 mod input_attribution;
 mod manifest_input;
+mod optional_packages;
 mod redaction;
 mod runtime_paths;
 mod skipped_entries;

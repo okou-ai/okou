@@ -49,6 +49,27 @@ fn write_private_new_preserves_existing_file() {
 }
 
 #[test]
+fn taking_a_private_file_removes_it_after_a_successful_bounded_read() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("runtime/input.json");
+    write_private(&path, b"input").unwrap();
+
+    assert_eq!(
+        take_private_bounded(&path, 4).unwrap_err().kind(),
+        io::ErrorKind::InvalidData
+    );
+    assert_eq!(
+        read_private_bounded(&path, 5).unwrap(),
+        Some(b"input".to_vec())
+    );
+    assert_eq!(
+        take_private_bounded(&path, 5).unwrap(),
+        Some(b"input".to_vec())
+    );
+    assert_eq!(take_private_bounded(&path, 5).unwrap(), None);
+}
+
+#[test]
 fn rejects_unsafe_run_id_segments() {
     for run_id in ["", ".", "..", "a/b", "a\\b", "a\0b"] {
         assert!(run_dir_for_home("/home/user", run_id).is_err());

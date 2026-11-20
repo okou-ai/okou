@@ -4,12 +4,12 @@ use std::sync::Arc;
 use api_contracts::generated::types::runners::storage::ArtifactEntryMissingRootPolicy;
 use guest_contracts::storage_files;
 use guest_contracts::storage_manifest::{Manifest, StorageEntry};
-use sandbox::ExecResult;
+use sandbox::{ExecResult, Sandbox};
 use sandbox_mock::{MockLifecycleGate, MockSandbox, MockSandboxOverrides};
 use tracing::instrument::WithSubscriber;
 use tracing_subscriber::layer::SubscriberExt;
 
-use super::super::storage::download_storages_with_files;
+use super::super::storage;
 use super::super::{ExecutorConfig, RunnerResult};
 use super::support::{
     CapturedEvents, RUN_IN_SANDBOX_TEST_TIMEOUT, api_artifact, api_storage,
@@ -20,9 +20,28 @@ use crate::storage_cache::decoded::CachedFiles;
 use crate::storage_cache::{populate_cache_with_fresh_delivery, prepare_fresh_archive_delivery};
 use crate::storage_plan::build_storage_plan;
 use guest_contracts::runtime_paths::STORAGE_MANIFEST_PATH;
-use runner_types::storage_manifest::StorageManifest;
+use runner_types::{storage_manifest::StorageManifest, types::ExecutionContext};
 
 mod memory;
+
+async fn download_storages_with_files(
+    sandbox: &dyn Sandbox,
+    context: &ExecutionContext,
+    manifest: Manifest,
+    files: &[(String, Arc<CachedFiles>)],
+    telemetry: &mut super::super::JobTelemetry,
+) -> RunnerResult<()> {
+    storage::download_storages_with_files(
+        sandbox,
+        context,
+        manifest,
+        files,
+        telemetry,
+        &mut Default::default(),
+        None,
+    )
+    .await
+}
 
 struct DeliveryFixture {
     root: tempfile::TempDir,
@@ -505,6 +524,125 @@ async fn oversized_artifact_manifest_uses_preencoded_decoded_batches() {
 }
 
 #[tokio::test]
+async fn oversized_optional_manifest_keeps_all_mounts_in_one_decoded_application() {
+    let fixture = DeliveryFixture::new(2, 2, 35_000).await;
+    let sandbox = MockSandbox::new("decoded-large-optional");
+    let (mut manifest, files) = fixture.prepare(&sandbox).await;
+    assert_eq!(files.len(), 2);
+    manifest.storages[0].optional = true;
+    manifest.storages[0].vas_storage_name =
+        Some(guest_contracts::storage_manifest::WORKFLOW_STORAGE_NAME.into());
+    sandbox.push_exec_result(Ok(ExecResult::new(
+        0,
+        br#"{"skippedOptional":[]}"#.to_vec(),
+        Vec::new(),
+    )));
+
+    apply_with_telemetry(&fixture, &sandbox, manifest, &files)
+        .await
+        .unwrap();
+    let calls = sandbox.storage_manifest_calls();
+    assert_eq!(calls.len(), 1);
+    assert!(sandbox.write_file_calls().is_empty());
+    let (json, payload) = storage_files::split_input(&calls[0].manifest_json).unwrap();
+    assert!(json.len() > storage_files::MAX_MANIFEST_BYTES);
+    let manifest: Manifest = serde_json::from_slice(json).unwrap();
+    assert_eq!(manifest.storages.len(), 2);
+    assert!(manifest.storages[0].optional);
+    let groups = storage_files::decode(payload).unwrap();
+    assert_eq!(groups.len(), 2);
+    storage_files::validate_bindings(
+        &manifest,
+        groups.iter().map(|group| group.mount_path.as_str()),
+    )
+    .unwrap();
+    fixture.shutdown().await;
+}
+
+#[tokio::test]
+async fn complete_application_stages_only_the_manifest_when_the_frame_is_full() {
+    use super::support::sandbox_write_file_error;
+    use guest_contracts::runtime_paths::staged_storage_manifest_file;
+    use std::path::Path;
+
+    let archive = archive_with_content(&vec![b'x'; storage_files::MAX_FILE_BYTES - 256]);
+    let fixture = DeliveryFixture::with_archive(1, 1, 604, archive).await;
+    let sandbox = MockSandbox::new("decoded-staged-manifest");
+    let (mut manifest, mut files) = fixture.prepare(&sandbox).await;
+    let entry = manifest.storages.pop().unwrap();
+    let (_, cached) = files.pop().unwrap();
+    let query = "x".repeat(21 * 1024);
+    for index in 0..60 {
+        let mut mount = entry.clone();
+        mount.mount_path = fixture
+            .root
+            .path()
+            .join(format!("guest/entry-{index:03}"))
+            .to_str()
+            .unwrap()
+            .into();
+        mount.archive_url = Some(format!("https://storage.example/{index}?signature={query}"));
+        files.push((mount.mount_path.clone(), Arc::clone(&cached)));
+        manifest.storages.push(mount);
+    }
+    manifest.removed_package_paths.push(
+        fixture
+            .root
+            .path()
+            .join("guest/retired")
+            .to_str()
+            .unwrap()
+            .into(),
+    );
+
+    apply_with_telemetry(&fixture, &sandbox, manifest, &files)
+        .await
+        .unwrap();
+    assert!(sandbox.write_file_calls().is_empty());
+    let calls = sandbox.storage_manifest_calls();
+    let [call] = calls.as_slice() else {
+        panic!("expected one Guest application")
+    };
+    let writes = sandbox.private_write_file_calls();
+    let [write] = writes.as_slice() else {
+        panic!("expected one private manifest write")
+    };
+    assert_eq!(
+        Path::new(&write.path),
+        staged_storage_manifest_file(&call.runtime_dir).unwrap()
+    );
+    let staging_dir = Path::new(&write.path).parent().unwrap();
+    let runtime_dir = Path::new(&call.runtime_dir);
+    assert_eq!(staging_dir.parent(), runtime_dir.parent());
+    assert_ne!(staging_dir, runtime_dir);
+    let manifest: Manifest = serde_json::from_slice(&write.content).unwrap();
+    let (inline, payload) = storage_files::split_input(&call.manifest_json).unwrap();
+    assert!(inline.is_empty());
+    assert_eq!(manifest.storages.len(), files.len());
+    assert_eq!(manifest.removed_package_paths.len(), 1);
+    let groups = storage_files::decode(payload).unwrap();
+    assert_eq!(groups.len(), files.len());
+    storage_files::validate_bindings(
+        &manifest,
+        groups.iter().map(|group| group.mount_path.as_str()),
+    )
+    .unwrap();
+
+    let failed = MockSandbox::new("staged-manifest-write-failed");
+    failed.push_private_write_file_result(Err(sandbox_write_file_error("staging failed")));
+    assert!(
+        apply_with_telemetry(&fixture, &failed, manifest, &files)
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("staging failed")
+    );
+    assert!(failed.storage_manifest_calls().is_empty());
+    assert!(failed.exec_calls().is_empty());
+    fixture.shutdown().await;
+}
+
+#[tokio::test]
 async fn oversized_mixed_manifest_preserves_decoded_entry_kinds() {
     let fixture = DeliveryFixture::artifacts(2, 2, 35_000).await;
     let sandbox = MockSandbox::new("decoded-large-mixed");
@@ -512,6 +650,7 @@ async fn oversized_mixed_manifest_preserves_decoded_entry_kinds() {
     let storage_mount = fixture.root.path().join("guest/storage");
     let prefix = "http://127.0.0.1:9/storage?signature=";
     manifest.storages.push(StorageEntry {
+        optional: false,
         template_guidance: None,
         mount_path: storage_mount.to_str().unwrap().into(),
         archive_url: Some(format!("{prefix}{}", "x".repeat(35_000 - prefix.len()))),
@@ -549,6 +688,7 @@ async fn mixed_decoded_batch_uses_exact_per_array_comma_accounting() {
     let (mut manifest, mut files) = fixture.prepare(&sandbox).await;
     let storage_mount = fixture.root.path().join("guest/storage-boundary");
     let mut storage = StorageEntry {
+        optional: false,
         template_guidance: None,
         mount_path: storage_mount.to_str().unwrap().into(),
         archive_url: Some("https://archive.invalid/storage?signature=".into()),
@@ -561,6 +701,7 @@ async fn mixed_decoded_batch_uses_exact_per_array_comma_accounting() {
         storages: vec![storage],
         artifacts: manifest.artifacts.clone(),
         cleanup_paths: Vec::new(),
+        removed_package_paths: Vec::new(),
         instruction_cleanups: Vec::new(),
     };
     let base_len = serde_json::to_vec(&decoded_manifest(storage.clone()))
@@ -583,6 +724,7 @@ async fn mixed_decoded_batch_uses_exact_per_array_comma_accounting() {
         Arc::clone(&files[0].1),
     ));
     manifest.storages.push(StorageEntry {
+        optional: false,
         template_guidance: None,
         mount_path: fixture
             .root
@@ -738,6 +880,7 @@ async fn split_decoded_batches_clean_once_and_preserve_real_files_and_metadata()
         .cleanup_paths
         .push(guest_root.to_str().unwrap().into());
     manifest.storages.push(StorageEntry {
+        optional: false,
         template_guidance: None,
         mount_path: preserved.to_str().unwrap().into(),
         archive_url: None,
@@ -848,6 +991,7 @@ async fn split_delivery_rejects_cross_batch_ownership_conflicts_before_guest_wor
             }
             "duplicate" => manifest.storages.push(manifest.storages[0].clone()),
             _ => manifest.storages.push(StorageEntry {
+                optional: false,
                 template_guidance: None,
                 mount_path: mount,
                 archive_url: (conflict != "reused")
@@ -885,6 +1029,7 @@ async fn oversized_ordinary_manifest_keeps_file_transport_before_decoded_batches
     let sandbox = MockSandbox::new("decoded-large-ordinary");
     let (mut manifest, files) = fixture.prepare(&sandbox).await;
     manifest.storages.push(StorageEntry {
+        optional: false,
         template_guidance: None,
         mount_path: fixture
             .root

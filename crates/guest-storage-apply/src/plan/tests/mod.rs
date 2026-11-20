@@ -133,6 +133,7 @@ fn run_plan_skips_cached_artifact_when_mount_root_exists() {
             missing_root_policy: None,
         }],
         cleanup_paths: vec![],
+        removed_package_paths: Vec::new(),
         instruction_cleanups: Vec::new(),
     };
 
@@ -151,6 +152,7 @@ fn run_plan_downloads_cached_storage_when_mount_root_exists() {
     let manifest = Manifest {
         archive_readiness: None,
         storages: vec![StorageEntry {
+            optional: false,
             template_guidance: None,
             mount_path: mount_path.clone(),
             archive_url: Some("https://s3/storage.tar.gz".into()),
@@ -160,6 +162,7 @@ fn run_plan_downloads_cached_storage_when_mount_root_exists() {
         }],
         artifacts: vec![],
         cleanup_paths: vec![],
+        removed_package_paths: Vec::new(),
         instruction_cleanups: Vec::new(),
     };
 
@@ -201,6 +204,7 @@ fn run_plan_downloads_cached_artifact_when_mount_root_is_missing() {
             missing_root_policy: None,
         }],
         cleanup_paths: vec![],
+        removed_package_paths: Vec::new(),
         instruction_cleanups: Vec::new(),
     };
 

@@ -1645,8 +1645,7 @@
           "change": "カバーを変更",
           "default": "デフォルト",
           "gallery": "カバー",
-          "option": "カバー {{index}}",
-          "reset": "デフォルトに戻す"
+          "option": "カバー {{index}}"
         },
         "loading": "提案を読み込み中",
         "next": "次の提案",
@@ -1660,10 +1659,11 @@
           "title": "For you の配信元",
           "whatsNew": "新着情報"
         },
-        "subtitle": "ひとつずつ進めましょう",
+        "subtitle": "Okou が選んだ対応事項",
         "title": "あなたへ"
       },
       "homeCard": {
+        "completeDescription": "時間を割く価値のあることがあれば、Okou が次の一件をここに届けます。",
         "completeTitle": "すべて確認しました",
         "feedback": "提案への操作",
         "navigation": "提案を切り替える",

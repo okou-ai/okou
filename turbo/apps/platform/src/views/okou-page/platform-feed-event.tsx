@@ -70,7 +70,7 @@ export function PlatformFeedEvent({
           </Link>
         }
       />
-      <div className="mb-6 mt-6 space-y-3 rounded-3xl bg-nested-fill p-4">
+      <div className="mb-6 mt-5 space-y-3 rounded-3xl bg-nested-fill p-4">
         <p className="text-sm text-muted-foreground">
           {t(($) => {
             return $.feedEvents.automationDisabled.systemSource;

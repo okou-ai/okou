@@ -1645,8 +1645,7 @@
           "change": "更換封面",
           "default": "預設",
           "gallery": "封面",
-          "option": "封面 {{index}}",
-          "reset": "恢復預設"
+          "option": "封面 {{index}}"
         },
         "loading": "正在載入建議",
         "next": "下一則建議",
@@ -1660,10 +1659,11 @@
           "title": "為你推薦的來源",
           "whatsNew": "新功能"
         },
-        "subtitle": "一次處理一件事",
+        "subtitle": "Okou 為你挑出的待處理事項",
         "title": "為你推薦"
       },
       "homeCard": {
+        "completeDescription": "有值得你花時間的事時，Okou 會把下一件帶到這裡。",
         "completeTitle": "全部處理完了",
         "feedback": "建議操作",
         "navigation": "切換建議",

@@ -1,14 +1,16 @@
 use crate::LOG_TAG;
 use crate::cleanup_directory::CleanupDirectory;
 use guest_contracts::storage_paths::normalize_path;
-use guest_telemetry::{log_info, log_warn};
+use guest_telemetry::{log_error, log_info, log_warn};
 use std::cell::OnceCell;
 use std::collections::{HashMap, HashSet};
 use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::io;
 use std::os::unix::ffi::OsStringExt;
-use std::path::{Path, PathBuf};
+#[cfg(target_os = "linux")]
+use std::os::unix::fs::MetadataExt;
+use std::path::{Component, Path, PathBuf};
 
 /// Remove stale files from cleanup paths, preserving directories that belong
 /// to unchanged storages.
@@ -317,6 +319,220 @@ fn remove_directory_tree(path: &Path) -> io::Result<RemoveOutcome> {
     }
 }
 
+struct OptionalRoot {
+    // Own the descriptor used by the anchored path until access completes.
+    _parent: CleanupDirectory,
+    anchored: PathBuf,
+    metadata: fs::Metadata,
+}
+
+fn optional_root(path: &Path) -> io::Result<Option<OptionalRoot>> {
+    let (parent, name) = match CleanupDirectory::open_optional_mount_parent(path) {
+        Ok(parent) => parent,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error),
+    };
+    let anchored = parent.proc_path().join(name);
+    match fs::symlink_metadata(&anchored) {
+        Ok(metadata) => Ok(Some(OptionalRoot {
+            _parent: parent,
+            anchored,
+            metadata,
+        })),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error),
+    }
+}
+
+#[derive(PartialEq, Eq)]
+pub(crate) enum OptionalMountState {
+    Missing,
+    Directory,
+    Obstructed,
+}
+
+pub(crate) fn optional_mount_state(path: &Path) -> io::Result<OptionalMountState> {
+    #[cfg(target_os = "linux")]
+    {
+        use rustix::fs::{CWD, Mode, OFlags, ResolveFlags, openat2};
+        use rustix::io::Errno;
+
+        match openat2(
+            CWD,
+            path,
+            OFlags::PATH | OFlags::DIRECTORY | OFlags::CLOEXEC,
+            Mode::empty(),
+            ResolveFlags::NO_SYMLINKS,
+        ) {
+            Ok(_) => return Ok(OptionalMountState::Directory),
+            Err(Errno::NOENT) => return Ok(OptionalMountState::Missing),
+            // Classify an obstruction using the pinned parent. Older local
+            // kernels may lack openat2 and use the same component checks.
+            Err(Errno::NOTDIR | Errno::LOOP | Errno::NOSYS) => {}
+            Err(error) => return Err(error.into()),
+        }
+    }
+    Ok(match optional_root(path)? {
+        None => OptionalMountState::Missing,
+        Some(root) if root.metadata.is_dir() => OptionalMountState::Directory,
+        Some(_) => OptionalMountState::Obstructed,
+    })
+}
+
+/// Clear package roots while preserving every other declared mount.
+pub(crate) fn cleanup_package_mounts<'path, 'mount>(
+    paths: impl Iterator<Item = &'path str>,
+    mounts: impl Iterator<Item = (&'mount str, bool)>,
+    quarantine: Option<&crate::quarantine::Quarantine>,
+) -> bool {
+    cleanup_optional_mounts_with_detector(
+        paths,
+        mounts,
+        quarantine,
+        CleanupMountPointDetector::new(cleanup_mountinfo),
+    )
+}
+
+fn cleanup_optional_mounts_with_detector<'path, 'mount>(
+    paths: impl Iterator<Item = &'path str>,
+    mut mounts: impl Iterator<Item = (&'mount str, bool)>,
+    quarantine: Option<&crate::quarantine::Quarantine>,
+    detector: CleanupMountPointDetector<impl Fn() -> io::Result<Vec<u8>>>,
+) -> bool {
+    let mut protected = None;
+    for mount in paths {
+        let result = (|| {
+            let path = Path::new(mount);
+            let Some(root) = optional_root(path)? else {
+                return Ok(());
+            };
+            let logical = normalize_path(path);
+            // Keep one snapshot for the cleanup phase. Successful removals can
+            // only affect their own roots and cannot change another mount's path.
+            let protected = match &mut protected {
+                Some(protected) => protected,
+                None => protected.insert(protected_mount_paths(mounts.by_ref())?),
+            };
+            let start = protected.partition_point(|(path, _)| path < &logical);
+            if protected
+                .iter()
+                .skip(start)
+                .take_while(|(path, _)| path.starts_with(&logical))
+                .any(|(_, other)| *other != mount)
+            {
+                return Err(io::Error::other(
+                    "optional package cleanup overlaps another mount",
+                ));
+            }
+            if !detector.can_remove_optional_root(&logical, &root.metadata)? {
+                return Err(io::Error::other(
+                    "optional package cleanup overlaps a filesystem mount",
+                ));
+            }
+            if root.metadata.is_dir() {
+                if let Some(quarantine) = quarantine
+                    && quarantine.try_move(path, |logical, device| {
+                        detector.can_quarantine(logical, device)
+                    })?
+                {
+                    return Ok(());
+                }
+                fs::remove_dir_all(&root.anchored)
+            } else {
+                // Unlink only this entry, including a symlink at the package root.
+                fs::remove_file(&root.anchored)
+            }
+        })();
+        if let Err(error) = result {
+            log_error!(LOG_TAG, "Failed to safely clean package {mount}: {error}");
+            return false;
+        }
+    }
+    true
+}
+
+fn protected_mount_paths<'a>(
+    mounts: impl Iterator<Item = (&'a str, bool)>,
+) -> io::Result<Vec<(PathBuf, &'a str)>> {
+    let mut protected = Vec::new();
+    for (mount, optional) in mounts {
+        let path = std::path::absolute(mount)?;
+        let logical = normalize_path(&path);
+        // Optional packages are applied only through paths without symlinks.
+        // A link at their root is an obstruction and has no target to preserve.
+        if optional {
+            protected.push((logical, mount));
+            continue;
+        }
+        let trace = match path.canonicalize() {
+            Ok(resolved) if resolved == logical => {
+                path.components().any(|part| part == Component::ParentDir)
+            }
+            Ok(resolved) => {
+                protected.push((resolved, mount));
+                true
+            }
+            Err(error) if missing_or_obstructed(&error) => true,
+            Err(error) => return Err(error),
+        };
+        if trace {
+            trace_mount_dependencies(&path, |path| protected.push((path, mount)))?;
+        }
+        protected.push((logical, mount));
+    }
+    protected.sort_unstable_by(|(left, _), (right, _)| left.cmp(right));
+    Ok(protected)
+}
+
+fn missing_or_obstructed(error: &io::Error) -> bool {
+    matches!(
+        error.kind(),
+        io::ErrorKind::NotFound | io::ErrorKind::NotADirectory
+    )
+}
+
+// A mount may traverse a link inside a package while resolving outside it.
+// Keep those links even if the mount's destination has not been created yet.
+fn trace_mount_dependencies(path: &Path, mut protect: impl FnMut(PathBuf)) -> io::Result<()> {
+    let mut path: PathBuf = path.components().collect();
+    // Linux follows at most 40 links while resolving a path.
+    for _ in 0..=40 {
+        let traverses_parent = path.components().any(|part| part == Component::ParentDir);
+        let prefixes = path.ancestors().collect::<Vec<_>>();
+        let mut next = None;
+        for prefix in prefixes.into_iter().rev() {
+            match fs::read_link(prefix) {
+                Ok(target) => {
+                    protect(normalize_path(prefix));
+                    let parent = prefix
+                        .parent()
+                        .ok_or_else(|| io::Error::other("mount link has no parent"))?;
+                    let tail = path.strip_prefix(prefix).map_err(io::Error::other)?;
+                    next = Some(parent.join(target).join(tail));
+                    break;
+                }
+                Err(error) if error.kind() == io::ErrorKind::InvalidInput => {
+                    if traverses_parent {
+                        protect(normalize_path(prefix));
+                    }
+                }
+                Err(error) if missing_or_obstructed(&error) => {
+                    protect(normalize_path(prefix));
+                    return Ok(());
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        let Some(target) = next else {
+            return Ok(());
+        };
+        path = target.components().collect();
+    }
+    Err(io::Error::other(
+        "mount paths changed during optional cleanup",
+    ))
+}
+
 /// Index path relationships once per cleanup pass, so lookups depend on path
 /// depth rather than the number of unrelated preserved mounts.
 struct PreservedPaths {
@@ -374,26 +590,67 @@ where
 struct MountSnapshot {
     paths: HashSet<PathBuf>,
     #[cfg(target_os = "linux")]
-    device_mounts: HashMap<(u32, u32), usize>,
+    device_mounts: HashMap<(u32, u32), Vec<MountView>>,
+}
+
+#[cfg(target_os = "linux")]
+struct MountView {
+    target: PathBuf,
+    root: PathBuf,
 }
 
 impl MountSnapshot {
     fn parse(mountinfo: &[u8]) -> Self {
         let mut paths = HashSet::new();
         #[cfg(target_os = "linux")]
-        let mut device_mounts = HashMap::new();
+        let mut device_mounts: HashMap<_, Vec<_>> = HashMap::new();
         for mount in linux_mountinfo::parse(mountinfo).filter_map(Result::ok) {
-            paths.insert(PathBuf::from(OsString::from_vec(mount.target)));
+            let target = PathBuf::from(OsString::from_vec(mount.target));
             #[cfg(target_os = "linux")]
             {
-                *device_mounts.entry(mount.device).or_insert(0) += 1;
+                device_mounts
+                    .entry(mount.device)
+                    .or_default()
+                    .push(MountView {
+                        target: target.clone(),
+                        root: PathBuf::from(OsString::from_vec(mount.root)),
+                    });
             }
+            paths.insert(target);
         }
         Self {
             paths,
             #[cfg(target_os = "linux")]
             device_mounts,
         }
+    }
+
+    #[cfg(target_os = "linux")]
+    fn path_has_no_mount_alias(&self, path: &Path, device: (u32, u32)) -> bool {
+        let Some(views) = self.device_mounts.get(&device) else {
+            return false;
+        };
+        let Some((owner, relative)) = views
+            .iter()
+            .filter_map(|view| {
+                path.strip_prefix(&view.target)
+                    .ok()
+                    .map(|suffix| (view, suffix))
+            })
+            .min_by_key(|(_, suffix)| suffix.as_os_str().len())
+        else {
+            return false;
+        };
+        let source = owner.root.join(relative);
+        views.iter().all(|view| {
+            if view.target == owner.target {
+                // A stacked mount at the same target cannot identify the source
+                // unless both views map it to the same filesystem root.
+                view.root == owner.root
+            } else {
+                !source.starts_with(&view.root) && !view.root.starts_with(&source)
+            }
+        })
     }
 }
 
@@ -413,11 +670,31 @@ where
         Ok(self.mount_points()?.paths.contains(&path))
     }
 
+    fn can_remove_optional_root(&self, path: &Path, metadata: &fs::Metadata) -> io::Result<bool> {
+        let mounts = self.mount_points()?;
+        if mounts.paths.iter().any(|mount| mount.starts_with(path)) {
+            return Ok(false);
+        }
+        #[cfg(target_os = "linux")]
+        {
+            let device = metadata.dev();
+            Ok(mounts.path_has_no_mount_alias(path, (libc::major(device), libc::minor(device))))
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = metadata;
+            Ok(false)
+        }
+    }
+
     #[cfg(target_os = "linux")]
     fn can_quarantine(&self, path: &Path, device: u64) -> io::Result<bool> {
         let mounts = self.mount_points()?;
         let device = (libc::major(device), libc::minor(device));
-        Ok(mounts.device_mounts.get(&device) == Some(&1)
+        Ok(mounts
+            .device_mounts
+            .get(&device)
+            .is_some_and(|views| views.len() == 1)
             && !mounts.paths.iter().any(|mount| mount.starts_with(path)))
     }
 

@@ -1649,8 +1649,7 @@
           "change": "Change cover",
           "default": "Default",
           "gallery": "Covers",
-          "option": "Cover {{index}}",
-          "reset": "Reset to default"
+          "option": "Cover {{index}}"
         },
         "loading": "Loading suggestions",
         "next": "Next suggestion",
@@ -1664,10 +1663,11 @@
           "title": "For you sources",
           "whatsNew": "What’s new"
         },
-        "subtitle": "One thing at a time",
+        "subtitle": "Okou’s picks to handle",
         "title": "For you"
       },
       "homeCard": {
+        "completeDescription": "Okou will bring the next thing here when there is something worth your time.",
         "completeTitle": "All caught up",
         "feedback": "Suggestion actions",
         "navigation": "Browse suggestions",

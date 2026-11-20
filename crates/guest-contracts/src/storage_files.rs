@@ -24,10 +24,14 @@ pub const MAX_MOUNTS: usize = 1024;
 pub const MAX_TOTAL_FILES: usize = 32 * MAX_MOUNTS;
 /// Prefix identifying binary input to the fixed storage helper.
 pub const INPUT_MAGIC: &[u8; 8] = b"VM0FILE1";
-/// Manifest limit within binary input; generic exec stdin is unchanged.
+/// Preferred manifest size for inputs that can be batched independently.
 pub const MAX_MANIFEST_BYTES: usize = 64 * 1024;
-/// Maximum complete binary helper input.
-pub const MAX_INPUT_BYTES: usize = 16 + MAX_MANIFEST_BYTES + MAX_PAYLOAD_BYTES;
+const INPUT_HEADER_BYTES: usize = 16;
+/// Maximum inline binary input within the 16 MiB Guest-control frame.
+pub const MAX_INPUT_BYTES: usize = INPUT_HEADER_BYTES + 16 * 1024 * 1024 - 8 * 1024;
+/// A complete mount list may be staged separately to keep decoded files in the
+/// same Guest application when the combined input exceeds the inline budget.
+pub const MAX_COMPLETE_MANIFEST_BYTES: usize = MAX_INPUT_BYTES - INPUT_HEADER_BYTES;
 /// Fixed Guest helper argument for binary Storage input read from stdin.
 pub const STDIN_ARGUMENT: &str = "--storage-files-stdin";
 /// Fixed Guest helper argument for binary Storage input mapped from sealed stdin.
@@ -58,12 +62,44 @@ impl<'a> PreparedInput<'a> {
     /// Validate owned manifest/descriptors while borrowing immutable file data.
     pub fn new(manifest: Vec<u8>, groups: Vec<(&'a str, &'a [StorageFile])>) -> io::Result<Self> {
         let payload_len = input_payload_len(&manifest, &groups)?;
-        Ok(Self {
+        Ok(Self::with_validated_payload(manifest, groups, payload_len))
+    }
+
+    /// Prepare one complete application when package cleanup needs every mount.
+    /// A staged manifest is represented by an empty manifest slice in the
+    /// binary input. The producer must publish it in the captured Run runtime
+    /// before starting the dedicated operation that consumes it.
+    pub fn prepare_complete(
+        manifest: Vec<u8>,
+        groups: Vec<(&'a str, &'a [StorageFile])>,
+    ) -> io::Result<(Self, Option<Vec<u8>>)> {
+        if manifest.is_empty() || manifest.len() > MAX_COMPLETE_MANIFEST_BYTES {
+            return Err(invalid());
+        }
+        let payload_len = encoded_payload_len(&groups)?;
+        let (inline, staged) =
+            if INPUT_HEADER_BYTES + manifest.len() + payload_len <= MAX_INPUT_BYTES {
+                (manifest, None)
+            } else {
+                (Vec::new(), Some(manifest))
+            };
+        Ok((
+            Self::with_validated_payload(inline, groups, payload_len),
+            staged,
+        ))
+    }
+
+    fn with_validated_payload(
+        manifest: Vec<u8>,
+        groups: Vec<(&'a str, &'a [StorageFile])>,
+        payload_len: usize,
+    ) -> Self {
+        Self {
             // Do not retain serializer growth capacity for every future batch.
             manifest: manifest.into_boxed_slice(),
             groups,
             payload_len,
-        })
+        }
     }
 
     /// Exact canonical manifest byte length.
@@ -94,7 +130,7 @@ fn encode_validated_input(
     groups: &[(&str, &[StorageFile])],
     payload_len: usize,
 ) -> Vec<u8> {
-    let mut out = Vec::with_capacity(16 + manifest.len() + payload_len);
+    let mut out = Vec::with_capacity(INPUT_HEADER_BYTES + manifest.len() + payload_len);
     out.extend_from_slice(INPUT_MAGIC);
     put_bytes(&mut out, manifest);
     out.extend_from_slice(&(payload_len as u32).to_be_bytes());
@@ -102,12 +138,13 @@ fn encode_validated_input(
     out
 }
 
-/// Split bounded binary input without copying its content.
+/// Split bounded binary input without copying its content. An empty manifest
+/// slice indicates a manifest staged separately for this application.
 pub fn split_input(mut input: &[u8]) -> io::Result<(&[u8], &[u8])> {
     if number::<8>(&mut input)? != *INPUT_MAGIC || input.len() > MAX_INPUT_BYTES - 8 {
         return Err(invalid());
     }
-    let manifest = bytes(&mut input, MAX_MANIFEST_BYTES)?;
+    let manifest = bytes(&mut input, MAX_COMPLETE_MANIFEST_BYTES)?;
     let files = bytes(&mut input, MAX_PAYLOAD_BYTES)?;
     if !input.is_empty() || files.is_empty() {
         return Err(invalid());

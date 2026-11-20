@@ -58,6 +58,15 @@ impl StorageFingerprint {
         matches!(self.kind, StorageFingerprintKind::Tainted {})
     }
 
+    pub fn vas_storage_name(&self) -> Option<&str> {
+        match &self.kind {
+            StorageFingerprintKind::Known {
+                vas_storage_name, ..
+            } => Some(vas_storage_name),
+            StorageFingerprintKind::Tainted {} => None,
+        }
+    }
+
     pub fn matches(&self, name: &str, version: &str) -> bool {
         match &self.kind {
             StorageFingerprintKind::Known {

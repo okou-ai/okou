@@ -436,6 +436,7 @@ The member picks a For you cover, keeps it after reload and can reset it. [Regis
 - **Given** For you shows suggestion cards under the default cover.
 - **When** The member opens Change cover, picks another cover, reloads the page, then resets the cover and moves the selection with an arrow key.
 - **Then** The picker marks the current cover and disables Reset while the default is selected; the picked cover replaces the banner and survives a reload in this browser; Reset restores the default; arrow keys move the selection in the radio gallery.
+- **Upstream change** `b126e4ca` (#49508) drops Reset to default; the test is now `The member picks a For you cover, keeps it after reload and can return to the default` ([Registration](https://github.com/okou-ai/okou/blob/b126e4ca50/turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx#L2327)), which returns to the default by choosing Cover 1.
 - **Disposition** retain.
 - **Source** upstream `818414b2` (#49453), added to the rebuilt test file.
 

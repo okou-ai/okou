@@ -4,8 +4,7 @@ use api_contracts::generated::types::runners::storage::{
 use guest_contracts::storage_manifest::validate_unique_mount_paths;
 use serde::Deserialize;
 
-/// Business cache namespace for complete Workflow packages.
-pub const WORKFLOW_STORAGE_NAME: &str = "workflow";
+pub use guest_contracts::storage_manifest::WORKFLOW_STORAGE_NAME;
 /// Business cache namespace for complete Agent instruction packages.
 pub const INSTRUCTION_STORAGE_NAME: &str = "instruction";
 

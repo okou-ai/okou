@@ -47,7 +47,7 @@ use guest_contracts::storage_paths::normalize_path;
 use crate::error::{StorageError as RunnerError, StorageResult as RunnerResult};
 use crate::storage_fingerprints::{StorageFingerprint, StorageFingerprints};
 
-use runner_types::storage_manifest::StorageManifest;
+use runner_types::storage_manifest::{StorageManifest, validate_workflow_mount};
 
 /// The semantic actions required to apply one canonical storage manifest.
 ///
@@ -59,6 +59,7 @@ pub struct StoragePlan {
     storages: Vec<StoragePlanEntry>,
     artifacts: Vec<ArtifactPlanEntry>,
     cleanup_paths: Vec<String>,
+    removed_package_paths: Vec<String>,
     instruction_cleanups: Vec<InstructionCleanup>,
     reused_entries: usize,
     decoded_prepared: bool,
@@ -71,6 +72,7 @@ pub struct StoragePlan {
 
 #[derive(Debug, Clone)]
 struct StoragePlanEntry {
+    optional: bool,
     template_guidance: Option<wire::TemplateGuidanceReference>,
     mount_path: String,
     vas_storage_name: String,
@@ -90,8 +92,10 @@ impl StoragePlanEntry {
         let (archive_url, cached) = match self.action {
             StorageAction::Download { source } => (Some(source.wire_url()), false),
             StorageAction::ReuseExisting => (None, true),
+            StorageAction::Unavailable => (None, false),
         };
         wire::StorageEntry {
+            optional: self.optional,
             template_guidance: self.template_guidance,
             mount_path: self.mount_path,
             archive_url,
@@ -106,6 +110,7 @@ impl StoragePlanEntry {
 enum StorageAction {
     Download { source: ArchiveSource },
     ReuseExisting,
+    Unavailable,
 }
 
 #[derive(Debug, Clone)]
@@ -230,6 +235,7 @@ enum ArchiveKind {
 
 pub(crate) struct CacheArchiveCandidate {
     pub(crate) handle: ArchiveHandle,
+    pub(crate) optional_mount: Option<String>,
     pub(crate) name: String,
     pub(crate) version: String,
     pub(crate) archive_url: String,
@@ -252,6 +258,7 @@ pub fn build_storage_plan(
     previous: Option<&StorageFingerprints>,
 ) -> RunnerResult<StoragePlan> {
     let mut cleanup_paths = Vec::new();
+    let mut removed_package_paths = Vec::new();
     let mut instruction_cleanups = Vec::new();
     let mut reused_entries = 0;
     let storages = manifest
@@ -280,6 +287,7 @@ pub fn build_storage_plan(
             };
 
             StoragePlanEntry {
+                optional: storage.optional,
                 template_guidance: storage.template_guidance.clone(),
                 mount_path: storage.mount_path.clone(),
                 vas_storage_name: storage.vas_storage_name.clone(),
@@ -342,22 +350,12 @@ pub fn build_storage_plan(
         .collect::<RunnerResult<Vec<_>>>()?;
 
     if let Some(previous) = previous {
-        record_removed_storages(
+        record_removed_mounts(
             previous,
-            manifest
-                .storages
-                .iter()
-                .map(|entry| entry.mount_path.as_str()),
+            manifest,
             &mut cleanup_paths,
+            &mut removed_package_paths,
             &mut instruction_cleanups,
-        );
-        record_removed_artifacts(
-            previous,
-            manifest
-                .artifacts
-                .iter()
-                .map(|entry| entry.mount_path.as_str()),
-            &mut cleanup_paths,
         );
     }
 
@@ -365,6 +363,7 @@ pub fn build_storage_plan(
         storages,
         artifacts,
         cleanup_paths,
+        removed_package_paths,
         instruction_cleanups,
         reused_entries,
         decoded_prepared: false,
@@ -374,15 +373,16 @@ pub fn build_storage_plan(
 }
 
 impl StoragePlan {
-    /// Download roots retained by an unchanged cached ancestor during cleanup.
-    ///
-    /// Guest extraction resolves these roots after cleanup, so surviving symlinks
-    /// need a filesystem check before reusing a file outside their logical paths.
+    /// Download roots whose surviving symlinks need inspection before instruction reuse.
+    /// A cached ancestor can preserve an alias for ordinary storage or artifacts.
+    /// Guest checks optional package targets without following symlinks.
     pub fn preserved_download_mounts(&self) -> Vec<String> {
         let preserved = self.preserved_mounts().collect::<Vec<_>>();
         self.storages
             .iter()
-            .filter(|entry| matches!(&entry.action, StorageAction::Download { .. }))
+            .filter(|entry| {
+                !entry.optional && matches!(&entry.action, StorageAction::Download { .. })
+            })
             .map(|entry| &entry.mount_path)
             .chain(
                 self.artifacts
@@ -447,9 +447,13 @@ impl StoragePlan {
                 .iter()
                 .any(|mount| entry.starts_with(mount) || mount.starts_with(&entry))
         }) || self
-            .instruction_cleanups
+            .removed_package_paths
             .iter()
-            .any(|cleanup| contains(&cleanup.mount_path))
+            .any(|mount| contains(mount))
+            || self
+                .instruction_cleanups
+                .iter()
+                .any(|cleanup| contains(&cleanup.mount_path))
             || self.storages.iter().any(|entry| {
                 contains(&entry.mount_path)
                     && matches!(&entry.action, StorageAction::Download { .. })
@@ -501,6 +505,7 @@ impl StoragePlan {
                     storages: vec![entry.clone().into_guest_entry()],
                     artifacts: Vec::new(),
                     cleanup_paths: Vec::new(),
+                    removed_package_paths: Vec::new(),
                     instruction_cleanups: Vec::new(),
                 }
             }
@@ -516,6 +521,7 @@ impl StoragePlan {
                     storages: Vec::new(),
                     artifacts: vec![entry.clone().into_guest_entry()],
                     cleanup_paths: Vec::new(),
+                    removed_package_paths: Vec::new(),
                     instruction_cleanups: Vec::new(),
                 }
             }
@@ -593,7 +599,7 @@ impl StoragePlan {
         Some(mount_path)
     }
 
-    fn entry_mount(&self, handle: ArchiveHandle) -> Option<&str> {
+    pub(crate) fn entry_mount(&self, handle: ArchiveHandle) -> Option<&str> {
         match handle.kind {
             ArchiveKind::Storage => self
                 .storages
@@ -646,11 +652,11 @@ impl StoragePlan {
 
     /// Return whether applying this plan requires guest execution.
     ///
-    /// The result is `false` only when there is no cleanup, every storage is
-    /// `ReuseExisting`, and there are no artifacts. Artifact actions require the
-    /// guest even when their fingerprints match.
+    /// Matching fingerprints attest to previously applied storage. When other
+    /// work requires an application, Guest also checks reused optional mounts.
     pub fn requires_guest_work(&self) -> bool {
         !self.cleanup_paths.is_empty()
+            || !self.removed_package_paths.is_empty()
             || !self.instruction_cleanups.is_empty()
             || self
                 .storages
@@ -663,12 +669,16 @@ impl StoragePlan {
         self.reused_entries
     }
 
+    pub(crate) fn requires_complete_mount_list(&self) -> bool {
+        !self.removed_package_paths.is_empty() || self.storages.iter().any(|entry| entry.optional)
+    }
+
     pub fn entry_count(&self) -> usize {
         self.storages.len() + self.artifacts.len()
     }
 
     pub fn cleanup_path_count(&self) -> usize {
-        self.cleanup_paths.len()
+        self.cleanup_paths.len() + self.removed_package_paths.len()
     }
 
     pub fn instruction_cleanup_count(&self) -> usize {
@@ -688,13 +698,14 @@ impl StoragePlan {
             .filter_map(|(index, entry)| {
                 let source = match &entry.action {
                     StorageAction::Download { source } => source,
-                    StorageAction::ReuseExisting => return None,
+                    StorageAction::ReuseExisting | StorageAction::Unavailable => return None,
                 };
                 Some(CacheArchiveCandidate {
                     handle: ArchiveHandle {
                         kind: ArchiveKind::Storage,
                         index,
                     },
+                    optional_mount: entry.optional.then(|| entry.mount_path.clone()),
                     name: entry.vas_storage_name.clone(),
                     version: entry.vas_version_id.clone(),
                     archive_url: source.remote_url()?.to_string(),
@@ -714,6 +725,7 @@ impl StoragePlan {
                         kind: ArchiveKind::Artifact,
                         index,
                     },
+                    optional_mount: None,
                     name: entry.vas_storage_name.clone(),
                     version: entry.vas_version_id.clone(),
                     archive_url: source.remote_url()?.to_string(),
@@ -721,6 +733,48 @@ impl StoragePlan {
                 })
             });
         storage_candidates.chain(artifact_candidates).collect()
+    }
+
+    pub(crate) fn mark_optional_unavailable(&mut self, handle: ArchiveHandle) -> RunnerResult<()> {
+        let entry = (!handle.is_artifact())
+            .then(|| self.storages.get_mut(handle.index))
+            .flatten()
+            .filter(|entry| {
+                entry.optional && matches!(entry.action, StorageAction::Download { .. })
+            })
+            .ok_or_else(|| RunnerError::Internal("invalid unavailable optional archive".into()))?;
+        entry.action = StorageAction::Unavailable;
+        Ok(())
+    }
+
+    pub(crate) fn archive_unavailable(&self, handle: ArchiveHandle) -> bool {
+        !handle.is_artifact()
+            && self
+                .storages
+                .get(handle.index)
+                .is_some_and(|entry| matches!(entry.action, StorageAction::Unavailable))
+    }
+
+    /// Keep terminal package failures when rebuilding a plan for the same Run.
+    pub fn skip_optional_mounts(&mut self, skipped: &HashSet<String>) {
+        if skipped.is_empty() {
+            return;
+        }
+        for entry in &mut self.storages {
+            if entry.optional && skipped.contains(&entry.mount_path) {
+                self.reused_entries -=
+                    usize::from(matches!(entry.action, StorageAction::ReuseExisting));
+                entry.action = StorageAction::Unavailable;
+            }
+        }
+    }
+
+    /// Mounts whose package failures have been resolved in this plan.
+    pub fn unavailable_optional_mounts(&self) -> impl Iterator<Item = &str> {
+        self.storages
+            .iter()
+            .filter(|entry| matches!(entry.action, StorageAction::Unavailable))
+            .map(|entry| entry.mount_path.as_str())
     }
 
     /// Replace one eligible remote archive source with a guest-staged source.
@@ -743,7 +797,7 @@ impl StoragePlan {
                 };
                 let source = match &mut entry.action {
                     StorageAction::Download { source } => source,
-                    StorageAction::ReuseExisting => return false,
+                    StorageAction::ReuseExisting | StorageAction::Unavailable => return false,
                 };
                 (&entry.vas_storage_name, &entry.vas_version_id, source)
             }
@@ -774,12 +828,34 @@ impl StoragePlan {
     /// detection and cache source resolution; the wire value is transport state, not a second
     /// planning representation.
     pub fn into_guest_manifest(self) -> wire::Manifest {
+        self.into_guest_manifest_reporting_skips(|_| {})
+    }
+
+    /// Capture Runner-observed failures while transferring the plan to Guest.
+    pub fn into_guest_manifest_retaining_skips(
+        self,
+        skipped: &mut HashSet<String>,
+    ) -> wire::Manifest {
+        self.into_guest_manifest_reporting_skips(|mount| {
+            skipped.insert(mount.to_owned());
+        })
+    }
+
+    fn into_guest_manifest_reporting_skips(
+        self,
+        mut record_skip: impl FnMut(&str),
+    ) -> wire::Manifest {
         wire::Manifest {
             archive_readiness: None,
             storages: self
                 .storages
                 .into_iter()
-                .map(StoragePlanEntry::into_guest_entry)
+                .map(|entry| {
+                    if matches!(entry.action, StorageAction::Unavailable) {
+                        record_skip(&entry.mount_path);
+                    }
+                    entry.into_guest_entry()
+                })
                 .collect(),
             artifacts: self
                 .artifacts
@@ -787,6 +863,7 @@ impl StoragePlan {
                 .map(ArtifactPlanEntry::into_guest_entry)
                 .collect(),
             cleanup_paths: self.cleanup_paths,
+            removed_package_paths: self.removed_package_paths,
             instruction_cleanups: self
                 .instruction_cleanups
                 .into_iter()
@@ -805,7 +882,7 @@ impl StoragePlan {
                 let entry = self.storages.get(handle.index)?;
                 match &entry.action {
                     StorageAction::Download { source } => source,
-                    StorageAction::ReuseExisting => return None,
+                    StorageAction::ReuseExisting | StorageAction::Unavailable => return None,
                 }
             }
             ArchiveKind::Artifact => {
@@ -823,13 +900,23 @@ impl StoragePlan {
     }
 }
 
-fn record_removed_storages<'a>(
+fn record_removed_mounts(
     previous: &StorageFingerprints,
-    current_paths: impl IntoIterator<Item = &'a str>,
+    manifest: &StorageManifest,
     cleanup_paths: &mut Vec<String>,
+    removed_package_paths: &mut Vec<String>,
     instruction_cleanups: &mut Vec<InstructionCleanup>,
 ) {
-    let current_paths = current_paths.into_iter().collect::<HashSet<_>>();
+    let current_paths = manifest
+        .storages
+        .iter()
+        .map(|entry| entry.mount_path.as_str())
+        .collect::<HashSet<_>>();
+    let mut artifact_paths = manifest
+        .artifacts
+        .iter()
+        .map(|entry| entry.mount_path.as_str())
+        .collect::<HashSet<_>>();
     for (path, fingerprint) in &previous.storages {
         if current_paths.contains(path.as_str()) {
             continue;
@@ -839,23 +926,28 @@ fn record_removed_storages<'a>(
                 mount_path: path.clone(),
                 target_filename: None,
             });
+        } else if !artifact_paths.contains(path.as_str())
+            && validate_workflow_mount(path).is_ok()
+            && (fingerprint.is_tainted()
+                || fingerprint.vas_storage_name() == Some(wire::WORKFLOW_STORAGE_NAME))
+        {
+            // Tainted fingerprints still identify a previously managed path.
+            // The canonical package root identifies its cleanup scope after a partial apply.
+            removed_package_paths.push(path.clone());
         } else {
             cleanup_paths.push(path.clone());
         }
     }
-}
-
-fn record_removed_artifacts<'a>(
-    previous: &StorageFingerprints,
-    current_paths: impl IntoIterator<Item = &'a str>,
-    cleanup_paths: &mut Vec<String>,
-) {
-    let current_paths = current_paths.into_iter().collect::<HashSet<_>>();
-    for path in previous.artifacts.keys() {
-        if !current_paths.contains(path.as_str()) {
-            cleanup_paths.push(path.clone());
-        }
-    }
+    // A cancelled generation can carry the same path in both partitions.
+    // Keep the package cleanup as the sole owner of a removed package root.
+    artifact_paths.extend(removed_package_paths.iter().map(String::as_str));
+    cleanup_paths.extend(
+        previous
+            .artifacts
+            .keys()
+            .filter(|path| !artifact_paths.contains(path.as_str()))
+            .cloned(),
+    );
 }
 
 fn is_framework_home_path(path: &str) -> bool {
