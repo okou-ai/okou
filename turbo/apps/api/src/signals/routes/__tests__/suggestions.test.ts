@@ -1624,7 +1624,6 @@ describe("Suggestion custom follow-ups", () => {
       setupApp({ context, routes: chatEventsRoutes })(chatEventsContract).send({
         headers: humanHeaders,
         body: {
-          agentId: fixture.agentId,
           threadId: thread.body.id,
           clientEventId: randomUUID(),
           prompt: "My own direction",
@@ -1796,7 +1795,6 @@ describe("Suggestion custom follow-ups", () => {
       setupApp({ context, routes: chatEventsRoutes })(chatEventsContract).send({
         headers: humanHeaders,
         body: {
-          agentId: fixture.agentId,
           threadId: thread.body.id,
           clientEventId: randomUUID(),
           prompt: "What should I consider about this earlier decision?",
