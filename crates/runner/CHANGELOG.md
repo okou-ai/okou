@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.249.70](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.69...runner-rs-v0.249.70) (2026-11-20)
+
+
+### Refactoring
+
+* **runner:** unify openai input token partitioning ([#49376](https://github.com/okou-ai/okou/issues/49376)) ([5bfc801](https://github.com/okou-ai/okou/commit/5bfc801c90db38bc760cc1b8d28bfba81337a02f))
+
 ## [0.249.69](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.68...runner-rs-v0.249.69) (2026-11-20)
 
 ### Release Dependencies

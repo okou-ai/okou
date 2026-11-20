@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.53.129](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.128...sandbox-firecracker-v0.53.129) (2026-11-20)
+
+
+### Refactoring
+
+* **guest-control:** centralize owned exec capture extraction ([#49374](https://github.com/okou-ai/okou/issues/49374)) ([e6a35e4](https://github.com/okou-ai/okou/commit/e6a35e4e18c8270cc3e9a3f07515f4db8bb8cf5d))
+
 ## [0.53.128](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.127...sandbox-firecracker-v0.53.128) (2026-11-20)
 
 ## [0.53.127](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.126...sandbox-firecracker-v0.53.127) (2026-11-19)
