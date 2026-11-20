@@ -5,11 +5,11 @@ import hashlib
 import io
 import json
 import os
-from pathlib import Path
 import re
 import stat
 import sys
 import uuid
+from pathlib import Path
 
 from file_residency_report import (
     CLAIMS,
@@ -19,6 +19,9 @@ from file_residency_report import (
     identity,
     integer,
     observer,
+    open_original_evidence,
+    original_evidence_chunks,
+    original_evidence_unchanged,
     read_regular,
     require,
     sha256,
@@ -30,11 +33,7 @@ MAX_RECORD_BYTES = 32 * 1024 * 1024
 
 
 def original_hash(root, size):
-    fd = os.open(
-        root / "original.bin",
-        os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NONBLOCK,
-    )
-    try:
+    with open_original_evidence(root / "original.bin") as fd:
         before = os.fstat(fd)
         require(
             stat.S_ISREG(before.st_mode) and before.st_size == size,
@@ -42,34 +41,15 @@ def original_hash(root, size):
         )
         hash_ = hashlib.sha256()
         total = 0
-        while total <= size:
-            raw = os.read(fd, min(1024 * 1024, size + 1 - total))
-            if not raw:
-                break
+        for raw in original_evidence_chunks(fd, size, 1024 * 1024):
             total += len(raw)
             hash_.update(raw)
         after = os.fstat(fd)
         require(
-            total == size
-            and (
-                before.st_dev,
-                before.st_ino,
-                before.st_size,
-                before.st_mtime_ns,
-                before.st_ctime_ns,
-            )
-            == (
-                after.st_dev,
-                after.st_ino,
-                after.st_size,
-                after.st_mtime_ns,
-                after.st_ctime_ns,
-            ),
+            total == size and original_evidence_unchanged(before, after),
             "complete original payload changed during replay",
         )
         return hash_.hexdigest()
-    finally:
-        os.close(fd)
 
 
 def metadata(value, expected_identity, uid):
