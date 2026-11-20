@@ -250,7 +250,7 @@ class OkouAppTest {
 
     @Test
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
-    @Config(qualifiers = "de-rDE-w320dp-h640dp")
+    @Config(qualifiers = "de-rDE-w320dp-h640dp-420dpi")
     fun updateToolbarKeepsItsBoundsAcrossLocalizedActionsWithLargeText() {
         val update = mutableStateOf(availableUpdate.copy(transfer = UpdateTransfer.Failed))
         render(fontScale = 2f, updateState = { update.value })

@@ -177,7 +177,12 @@ internal fun UpdateToolbarButton(action: UpdateToolbarAction, stacked: Boolean) 
     val gap = if (stacked) 2.dp else 8.dp
     val horizontalPadding = 6.dp
     val verticalPadding = 4.dp
-    val textWidth = width - horizontalPadding * 2 - if (stacked) 0.dp else iconSize + gap
+    val density = LocalDensity.current
+    val textWidth =
+        with(density) {
+            val inlineIcon = if (stacked) 0 else iconSize.roundToPx() + gap.roundToPx()
+            (width.roundToPx() - horizontalPadding.roundToPx() * 2 - inlineIcon).toDp()
+        }
     val labels =
         listOf(
             stringResource(R.string.updates_toolbar),
@@ -188,14 +193,22 @@ internal fun UpdateToolbarButton(action: UpdateToolbarAction, stacked: Boolean) 
             updatePercent(1f),
         )
     val measurer = rememberTextMeasurer()
-    val labelHeight =
-        with(LocalDensity.current) {
+    // Layout rounds each edge separately, including both sides of the content padding.
+    val height =
+        with(density) {
             val constraints = Constraints(maxWidth = textWidth.roundToPx())
-            labels
-                .maxOf { measurer.measure(it, style, constraints = constraints).size.height }
+            val labelHeight =
+                labels.maxOf { measurer.measure(it, style, constraints = constraints).size.height }
+            val iconHeight = iconSize.roundToPx()
+            val contentHeight =
+                if (stacked) labelHeight + iconHeight + gap.roundToPx()
+                else maxOf(iconHeight, labelHeight)
+            maxOf(
+                    updateActionMinHeight.roundToPx(),
+                    contentHeight + verticalPadding.roundToPx() * 2,
+                )
                 .toDp()
         }
-    val contentHeight = if (stacked) labelHeight + iconSize + gap else maxOf(iconSize, labelHeight)
     val shape = RoundedCornerShape(12.dp)
     val colors = MaterialTheme.colorScheme
     val interactions = remember { MutableInteractionSource() }
@@ -221,7 +234,7 @@ internal fun UpdateToolbarButton(action: UpdateToolbarAction, stacked: Boolean) 
         enabled = action.activate != null,
         modifier =
             Modifier.width(width)
-                .heightIn(min = maxOf(updateActionMinHeight, contentHeight + verticalPadding * 2))
+                .height(height)
                 .then(focus.modifier)
                 .updateFocusOutline(shape, colors.inverseOnSurface)
                 .semantics { action.accessibilityLabel?.let { contentDescription = it } },
