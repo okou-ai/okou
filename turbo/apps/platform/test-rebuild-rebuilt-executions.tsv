@@ -2002,3 +2002,130 @@ pwa-navigation-009	turbo/apps/platform/src/views/okou-page/__tests__/pwa-navigat
 pwa-navigation-014	turbo/apps/platform/src/views/okou-page/__tests__/pwa-navigation.test.tsx	Point to unread chats in other agents from the tabs and the agent switcher	412	passed
 pwa-navigation-015	turbo/apps/platform/src/views/okou-page/__tests__/pwa-navigation.test.tsx	Keep a PWA home prompt handoff in the prepared chat composer	489	passed
 pwa-navigation-017	turbo/apps/platform/src/views/okou-page/__tests__/pwa-navigation.test.tsx	Switch the mobile browser chat list to another agent	515	passed
+org-members-tab-002	turbo/apps/platform/src/views/okou-page/__tests__/org-members-tab.test.tsx	Configure a member’s package from People	371	passed
+org-members-tab-003	turbo/apps/platform/src/views/okou-page/__tests__/org-members-tab.test.tsx	Configure an Atom plan before purchasing any packages	410	passed
+org-members-tab-004	turbo/apps/platform/src/views/okou-page/__tests__/org-members-tab.test.tsx	Hide People package controls when showUsagePack is false, even with a subscription	443	passed
+org-members-tab-005	turbo/apps/platform/src/views/okou-page/__tests__/org-members-tab.test.tsx	Keep People package controls restricted to administrators	459	passed
+org-members-tab-006	turbo/apps/platform/src/views/okou-page/__tests__/org-members-tab.test.tsx	Invite members on active limited-free-1 plans	477	passed
+org-members-tab-008	turbo/apps/platform/src/views/okou-page/__tests__/org-members-tab.test.tsx	shows an invitation refusal (409 INVITEE_ALREADY_MEMBER) and reports unexpected failures	524	passed
+org-members-tab-009	turbo/apps/platform/src/views/okou-page/__tests__/org-members-tab.test.tsx	shows an invitation refusal (409 INVITATION_ALREADY_EXISTS) and reports unexpected failures	524	passed
+org-members-tab-010	turbo/apps/platform/src/views/okou-page/__tests__/org-members-tab.test.tsx	shows an invitation refusal (500 INTERNAL_SERVER_ERROR) and reports unexpected failures	524	passed
+org-members-tab-017	turbo/apps/platform/src/views/okou-page/__tests__/org-members-tab.test.tsx	Block invitations on suspended plans	585	passed
+org-members-tab-018	turbo/apps/platform/src/views/okou-page/__tests__/org-members-tab.test.tsx	Accept and reject workspace membership requests	625	passed
+org-members-tab-019	turbo/apps/platform/src/views/okou-page/__tests__/org-members-tab.test.tsx	Promote a workspace member to administrator	656	passed
+org-members-tab-020	turbo/apps/platform/src/views/okou-page/__tests__/org-members-tab.test.tsx	Keep focus in People after dismissing actions for bob@example.com	676	passed
+org-members-tab-022	turbo/apps/platform/src/views/okou-page/__tests__/org-members-tab.test.tsx	Keep focus in People after dismissing actions for pending@example.com	676	passed
+org-members-tab-026	turbo/apps/platform/src/views/okou-page/__tests__/org-members-tab.test.tsx	Remove another member from the workspace	697	passed
+org-members-tab-027	turbo/apps/platform/src/views/okou-page/__tests__/org-members-tab.test.tsx	Demote yourself from workspace administrator	722	passed
+sidebar-chat-history-001	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.test.tsx	Browse a long sidebar chat history	55	passed
+sidebar-chat-history-002	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.test.tsx	Delete a chat after reviewing the impact	69	passed
+sidebar-chat-history-003	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.test.tsx	Deleting the last chat opens a new chat (My Okou: true)	129	passed
+sidebar-chat-history-005	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.test.tsx	Deleting another chat keeps the current chat open	165	passed
+sidebar-chat-history-008	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.test.tsx	Filter chats by Inbox, Unread, or Archived	191	passed
+sidebar-chat-history-009	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.test.tsx	Selecting a filter skips the chat open in the right pane	285	passed
+sidebar-chat-history-012	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.test.tsx	Mute an unread chat with feedback and undo it from the toast	329	passed
+sidebar-chat-history-018	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.test.tsx	Show an empty muted filter after unmuting its last chat	366	passed
+sidebar-chat-history-021	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.test.tsx	Archive and unarchive the current chat with the keyboard shortcut	398	passed
+sidebar-chat-history-022	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.test.tsx	Undo an archive from its toast and explain the muted exception	446	passed
+sidebar-chat-history-024	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.test.tsx	Find conversations by title in workspace search	474	passed
+sidebar-chat-history-025	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.test.tsx	Route New chat to the current agent and Chat to the default agent	535	passed
+sidebar-chat-history-026	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.test.tsx	My Okou's header holds the toggle, search, New Project and list menu while New chat leads the list	588	passed
+sidebar-chat-history-027	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.test.tsx	My Okou's Chat link and new chat shortcut open its chat page at /	659	passed
+sidebar-chat-history-028	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.test.tsx	My Okou's Chat link returns a filtered chat list to the inbox	699	passed
+project-chat-list-001	turbo/apps/platform/src/views/okou-page/__tests__/project-chat-list.test.tsx	Projects populate the inbox without chats outside them (mobile: false, archived outside: true)	153	passed
+project-chat-list-005	turbo/apps/platform/src/views/okou-page/__tests__/project-chat-list.test.tsx	An inbox without Projects or active chats leads to archived chats (mobile: false)	202	passed
+project-chat-list-007	turbo/apps/platform/src/views/okou-page/__tests__/project-chat-list.test.tsx	An unfolded Project without chats offers the archived ones it holds	235	passed
+project-chat-list-009	turbo/apps/platform/src/views/okou-page/__tests__/project-chat-list.test.tsx	Pinned chats in a Project move among themselves	259	passed
+project-chat-list-010	turbo/apps/platform/src/views/okou-page/__tests__/project-chat-list.test.tsx	A pinned chat moves past another Agent's pin in the same Project	327	passed
+project-chat-list-011	turbo/apps/platform/src/views/okou-page/__tests__/project-chat-list.test.tsx	Clicking an expanded, unselected Project title folds its chats and keeps the current conversation	361	passed
+sidebar-virtualization-001	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.test.tsx	Keep the chat viewport keyboard-focusable only while a conversation is open	164	passed
+sidebar-virtualization-002	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.test.tsx	Keyboard navigation reveals an adjacent conversation outside the virtual window	193	passed
+sidebar-virtualization-003	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.test.tsx	Collapse and expand a Project inside a scrolled virtual window	226	passed
+sidebar-virtualization-004	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.test.tsx	Project fold shares one CSS reveal length and completion (mobile: false)	471	passed
+sidebar-virtualization-006	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.test.tsx	A pointer reversal before the fold frame keeps children usable (mobile: false)	530	passed
+sidebar-virtualization-008	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.test.tsx	A running fold reverses from its displayed CSS length (mobile: false)	566	passed
+sidebar-virtualization-011	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.test.tsx	List touchmove cancels Project motion without undoing the click (mobile: true)	615	passed
+sidebar-virtualization-018	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.test.tsx	A 10,000-chat Project stays bounded while opening and cancelling its reveal	644	passed
+sidebar-virtualization-019	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.test.tsx	Navigating away from a mobile reveal cancels its viewport lifetime	696	passed
+sidebar-virtualization-020	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.test.tsx	A filtered desktop list excludes its external footer from the reveal height	719	passed
+sidebar-virtualization-022	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.test.tsx	The mobile unread footer shares the Project reveal's list height	761	passed
+sidebar-virtualization-023	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.test.tsx	A bottom-clamping Project collapse commits its smaller list immediately	799	passed
+sidebar-virtualization-024	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.test.tsx	Resize and navigate a loaded virtual viewport	826	passed
+sidebar-virtualization-026	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.test.tsx	Follow full-list wave positions across scrolling and pinning	881	passed
+sidebar-virtualization-027	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.test.tsx	Refresh virtualization after pinning adds a grid row and unpinning removes it	983	passed
+sidebar-virtualization-031	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.test.tsx	Remeasure the mobile chat list when a service notice arrives and is dismissed	1021	passed
+projects-003	turbo/apps/platform/src/views/okou-page/__tests__/projects.test.tsx	Projects stay visible when returning from a chat to My Okou during a refresh	233	passed
+projects-006	turbo/apps/platform/src/views/okou-page/__tests__/projects.test.tsx	Projects remember open and collapsed states after a page reload	318	passed
+projects-011	turbo/apps/platform/src/views/okou-page/__tests__/projects.test.tsx	Projects show cross-Agent chats inline and follow the list filter without leaving the current conversation	369	passed
+projects-012	turbo/apps/platform/src/views/okou-page/__tests__/projects.test.tsx	Chat navigation shortcuts move through expanded Projects and the chats outside them	461	passed
+projects-013	turbo/apps/platform/src/views/okou-page/__tests__/projects.test.tsx	A folded Project keeps the open chat's place: up selects the Project and down passes the fold	480	passed
+projects-014	turbo/apps/platform/src/views/okou-page/__tests__/projects.test.tsx	Project titles only fold chats, while the + link opens and selects their home	507	passed
+projects-015	turbo/apps/platform/src/views/okou-page/__tests__/projects.test.tsx	Project titles support Enter and Space, with Tab reaching the + home link	550	passed
+projects-020	turbo/apps/platform/src/views/okou-page/__tests__/projects.test.tsx	A Project page moves down into its chats when unfolded and past them when folded	572	passed
+projects-021	turbo/apps/platform/src/views/okou-page/__tests__/projects.test.tsx	Project fold shortcuts fold and unfold the open chat's Project unless the composer holds text	604	passed
+projects-025	turbo/apps/platform/src/views/okou-page/__tests__/projects.test.tsx	creates, renames and deletes a Project through the shared dialogs	628	passed
+projects-026	turbo/apps/platform/src/views/okou-page/__tests__/projects.test.tsx	Deleting a Project closes its dialog before its chats finish synchronizing	752	passed
+projects-027	turbo/apps/platform/src/views/okou-page/__tests__/projects.test.tsx	A rejected Project deletion stays open and can be retried	853	passed
+projects-028	turbo/apps/platform/src/views/okou-page/__tests__/projects.test.tsx	Creating a Project from a chat moves it immediately and survives navigation	925	passed
+projects-029	turbo/apps/platform/src/views/okou-page/__tests__/projects.test.tsx	A new Project's home accepts a message once its pending creation is confirmed	1061	passed
+projects-032	turbo/apps/platform/src/views/okou-page/__tests__/projects.test.tsx	Dropping over an existing Project chat moves immediately while the request is pending	1182	passed
+projects-033	turbo/apps/platform/src/views/okou-page/__tests__/projects.test.tsx	Dropping a Project chat onto the outer chat row removes it while preserving the open chat	1266	passed
+projects-035	turbo/apps/platform/src/views/okou-page/__tests__/projects.test.tsx	A cross-Agent Project chat can be dragged onto another collapsed Project	1344	passed
+projects-036	turbo/apps/platform/src/views/okou-page/__tests__/projects.test.tsx	Escape cancels a Project drag, and unrelated drags or the current Project are not accepted	1401	passed
+projects-040	turbo/apps/platform/src/views/okou-page/__tests__/projects.test.tsx	Home, Project, and conversation navigation preserves the correct draft and send destination	1456	passed
+projects-042	turbo/apps/platform/src/views/okou-page/__tests__/projects.test.tsx	A Project message keeps its membership in the conversation it opens	1525	passed
+projects-043	turbo/apps/platform/src/views/okou-page/__tests__/projects.test.tsx	The composer's + menu starts a new chat in a Project and keeps the message	1596	passed
+projects-044	turbo/apps/platform/src/views/okou-page/__tests__/projects.test.tsx	Removing the Project chip returns the message to a chat outside any Project	1677	passed
+projects-045	turbo/apps/platform/src/views/okou-page/__tests__/projects.test.tsx	The composer shows a Project name's emoji on its folder, as the sidebar does	1721	passed
+projects-046	turbo/apps/platform/src/views/okou-page/__tests__/projects.test.tsx	A Project named from the composer's + menu opens with the message and accepts it once created	1756	passed
+projects-048	turbo/apps/platform/src/views/okou-page/__tests__/projects.test.tsx	The Project home starts a conversation with the default Agent after visiting another Agent's chat	1870	passed
+projects-049	turbo/apps/platform/src/views/okou-page/__tests__/projects.test.tsx	Project rename closes immediately and yields to persisted events	2004	passed
+projects-055	turbo/apps/platform/src/views/okou-page/__tests__/projects.test.tsx	Deleting another Agent's Project chat removes it before confirmation	2080	passed
+projects-056	turbo/apps/platform/src/views/okou-page/__tests__/projects.test.tsx	PWA uses the same Projects and a bottom sheet for Thread membership	2129	passed
+projects-057	turbo/apps/platform/src/views/okou-page/__tests__/projects.test.tsx	A Project mention reveals a folded chat sidebar and keeps the current conversation	2189	passed
+org-billing-tab-001	turbo/apps/platform/src/views/okou-page/__tests__/org-billing-tab.test.tsx	The iOS billing management link opens Billing settings (My Okou=false)	276	passed
+org-billing-tab-002	turbo/apps/platform/src/views/okou-page/__tests__/org-billing-tab.test.tsx	The iOS billing management link opens Billing settings (My Okou=true)	276	passed
+org-billing-tab-003	turbo/apps/platform/src/views/okou-page/__tests__/org-billing-tab.test.tsx	Compare both usage-pack prices before choosing a plan	413	passed
+org-billing-tab-004	turbo/apps/platform/src/views/okou-page/__tests__/org-billing-tab.test.tsx	Default new 'pro' member packages through 'checkout preview'	445	passed
+org-billing-tab-006	turbo/apps/platform/src/views/okou-page/__tests__/org-billing-tab.test.tsx	Configure member packages for a new workspace plan	508	passed
+org-billing-tab-010	turbo/apps/platform/src/views/okou-page/__tests__/org-billing-tab.test.tsx	Manage member packages on an Atom-granted plan	575	passed
+org-billing-tab-011	turbo/apps/platform/src/views/okou-page/__tests__/org-billing-tab.test.tsx	Compare legacy Team packages and review conversion totals	922	passed
+org-billing-tab-012	turbo/apps/platform/src/views/okou-page/__tests__/org-billing-tab.test.tsx	Confirm a legacy Team conversion	1018	passed
+org-billing-tab-013	turbo/apps/platform/src/views/okou-page/__tests__/org-billing-tab.test.tsx	Review and revise an already scheduled legacy Team conversion	1039	passed
+org-billing-tab-015	turbo/apps/platform/src/views/okou-page/__tests__/org-billing-tab.test.tsx	Hide retained package records for people who left the workspace	1089	passed
+org-billing-tab-016	turbo/apps/platform/src/views/okou-page/__tests__/org-billing-tab.test.tsx	Restore a member package scheduled to downgrade to $50	1193	passed
+org-billing-tab-017	turbo/apps/platform/src/views/okou-page/__tests__/org-billing-tab.test.tsx	Validate a member package downgrade to 100 (replacing: true)	1377	passed
+org-billing-tab-022	turbo/apps/platform/src/views/okou-page/__tests__/org-billing-tab.test.tsx	Require a paid member package before previewing a Team-to-Pro downgrade	1662	passed
+org-billing-tab-023	turbo/apps/platform/src/views/okou-page/__tests__/org-billing-tab.test.tsx	Review and confirm a scheduled Team-to-Pro downgrade	1688	passed
+org-billing-tab-024	turbo/apps/platform/src/views/okou-page/__tests__/org-billing-tab.test.tsx	Replace a Team cancellation with a Pro downgrade	1739	passed
+org-billing-tab-028	turbo/apps/platform/src/views/okou-page/__tests__/org-billing-tab.test.tsx	Manage paid concurrency while the Team plan is ending	1836	passed
+org-billing-tab-031	turbo/apps/platform/src/views/okou-page/__tests__/org-billing-tab.test.tsx	Buy paid concurrency with an in-app review	1985	passed
+org-billing-tab-035	turbo/apps/platform/src/views/okou-page/__tests__/org-billing-tab.test.tsx	Confirm a plan cancellation in hosted checkout when required	2070	passed
+org-billing-tab-036	turbo/apps/platform/src/views/okou-page/__tests__/org-billing-tab.test.tsx	Confirm a scheduled cancellation after returning from hosted payment	2114	passed
+org-billing-tab-037	turbo/apps/platform/src/views/okou-page/__tests__/org-billing-tab.test.tsx	Restore a plan after hosted payment confirmation	2147	passed
+org-billing-tab-038	turbo/apps/platform/src/views/okou-page/__tests__/org-billing-tab.test.tsx	Confirm a restored plan after returning from hosted payment	2216	passed
+org-billing-tab-039	turbo/apps/platform/src/views/okou-page/__tests__/org-billing-tab.test.tsx	Hide Restore when an ending plan cannot be restored	2236	passed
+thread-mail-003	turbo/apps/platform/src/views/okou-page/__tests__/thread-mail.test.tsx	thread email manager > selects only filtered drafts and shows their bulk actions	421	passed
+thread-mail-004	turbo/apps/platform/src/views/okou-page/__tests__/thread-mail.test.tsx	thread email manager > preserves selection, search and scroll when returning from list details; chat details have no list navigation	463	passed
+thread-mail-007	turbo/apps/platform/src/views/okou-page/__tests__/thread-mail.test.tsx	thread email manager > restores the narrow transcript anchor once after two frames on each browser Back from mail detail	530	passed
+thread-mail-008	turbo/apps/platform/src/views/okou-page/__tests__/thread-mail.test.tsx	thread email manager > leaves modified email-link activation to the browser	597	passed
+thread-mail-009	turbo/apps/platform/src/views/okou-page/__tests__/thread-mail.test.tsx	thread email manager > restores the owning pane and clears its filters when opening another pane's manager	618	passed
+thread-mail-010	turbo/apps/platform/src/views/okou-page/__tests__/thread-mail.test.tsx	thread email manager > restores mail history ahead of another pane's utility sidebar	665	passed
+thread-mail-011	turbo/apps/platform/src/views/okou-page/__tests__/thread-mail.test.tsx	thread email manager > keeps a failed initial list read accessible	714	passed
+thread-mail-013	turbo/apps/platform/src/views/okou-page/__tests__/thread-mail.test.tsx	thread email manager > sends only drafts, retains failures for retry, and never resends successes	723	passed
+workflow-queue-001	turbo/apps/platform/src/views/okou-page/__tests__/workflow-queue.test.tsx	Active-run prompts stay in the conversation while automation events wait in the queue	227	passed
+workflow-queue-003	turbo/apps/platform/src/views/okou-page/__tests__/workflow-queue.test.tsx	Skip one pending automation event without removing the others	279	passed
+my-okou-001	turbo/apps/platform/src/views/__tests__/my-okou.test.tsx	An ordinary enabled member edits personal Instructions and deliberately clears them	49	passed
+my-okou-002	turbo/apps/platform/src/views/__tests__/my-okou.test.tsx	Discard restores the saved document and save failure retains the retryable local draft	81	passed
+my-okou-003	turbo/apps/platform/src/views/__tests__/my-okou.test.tsx	A concurrent CLI save cannot be overwritten without explicit reload	124	passed
+my-okou-005	turbo/apps/platform/src/views/__tests__/my-okou.test.tsx	A newer saved version keeps the local draft and offers reload before saving	152	passed
+my-okou-007	turbo/apps/platform/src/views/__tests__/my-okou.test.tsx	Settings navigation and dismissal retain the draft and its original version	184	passed
+my-okou-010	turbo/apps/platform/src/views/__tests__/my-okou.test.tsx	Workspace switching isolates drafts and restores the original workspace draft	207	passed
+my-okou-011	turbo/apps/platform/src/views/__tests__/my-okou.test.tsx	Default configuration profile opens personal Instructions	254	passed
+agent-instructions-005	turbo/apps/platform/src/views/okou-page/__tests__/agent-instructions.test.tsx	Undoing an instruction edit restores the saved state: Review release notes	73	passed
+agent-instructions-006	turbo/apps/platform/src/views/okou-page/__tests__/agent-instructions.test.tsx	Undoing an instruction edit restores the saved state: # Team\n\n* **Research lead**: verify sources	73	passed
+agent-instructions-007	turbo/apps/platform/src/views/okou-page/__tests__/agent-instructions.test.tsx	Discard restores saved instructions and exits editing	95	passed
+agent-instructions-009	turbo/apps/platform/src/views/okou-page/__tests__/agent-instructions.test.tsx	Agent drafts survive external changes and can reload the newer instructions	112	passed
+agent-instructions-011	turbo/apps/platform/src/views/okou-page/__tests__/agent-instructions.test.tsx	A legacy save conflict keeps the draft until discard reloads the latest instructions	149	passed
+agent-instructions-012	turbo/apps/platform/src/views/okou-page/__tests__/agent-instructions.test.tsx	Saving instructions disables both unsaved actions until the update completes	184	passed
+agent-instructions-013	turbo/apps/platform/src/views/okou-page/__tests__/agent-instructions.test.tsx	A user can format and save agent instructions	215	passed
