@@ -22,8 +22,21 @@ export interface PdfWorkerRequest {
   readonly emojiFont?: ArrayBuffer;
 }
 
+export type DocumentExportFormat = "pdf" | "docx";
+
+export type DocumentExportFailurePhase =
+  "bootstrap" | "native_error" | "message_decode" | "render_rejection";
+
+export interface DocumentExportWorkerReadyMessage {
+  readonly ready: true;
+}
+
 export type PdfWorkerResponse =
-  { readonly ok: true; readonly blob: Blob } | { readonly ok: false };
+  | { readonly ok: true; readonly blob: Blob }
+  | {
+      readonly ok: false;
+      readonly failure?: "message_decode" | "render_rejection";
+    };
 
 export interface PdfFormula {
   readonly svg: string;
