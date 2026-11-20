@@ -5,6 +5,7 @@ use std::os::fd::AsFd;
 
 use bytes::Bytes;
 use guest_contracts::sealed_input::SealedInput;
+use guest_contracts::storage_files::MAX_INPUT_BYTES;
 use guest_control_proto::{Decoder, IncompleteFrame};
 
 use crate::error::to_io_error;
@@ -16,10 +17,10 @@ use crate::sealed_input;
 // build a heap buffer for the whole payload.
 pub(super) const STREAMED_BATCH_MIN_BYTES: usize = 4 * 1024 * 1024;
 
-// Smaller inputs benefit from the decoder's reusable buffer. Above this
-// range, the 9.36 MB mixed replay regressed on three Guests during first use.
-pub(super) const OWNED_STORAGE_PAYLOAD_BYTES: RangeInclusive<usize> =
-    4 * 1024 * 1024..=8 * 1024 * 1024;
+// Keep small inputs in the decoder's reusable buffer. The sealed file holds
+// both the RPC context and the helper input and must fit the helper's map limit.
+pub(super) const STREAMED_STORAGE_PAYLOAD_BYTES: RangeInclusive<usize> =
+    4 * 1024 * 1024..=MAX_INPUT_BYTES;
 
 pub(super) fn receive_write(
     reader: &mut impl Read,
@@ -63,9 +64,8 @@ impl StorageBuffer {
         match self {
             Self::Heap(payload) => Ok(ReceivedStorage::Buffered(payload.into())),
             Self::File(mut file) => {
-                let mapping = sealed_input::seal(&file).and_then(|()| {
-                    SealedInput::map(file.as_fd(), *OWNED_STORAGE_PAYLOAD_BYTES.end())
-                });
+                let mapping = sealed_input::seal(&file)
+                    .and_then(|()| SealedInput::map(file.as_fd(), MAX_INPUT_BYTES));
                 match mapping {
                     Ok(mapping) => Ok(ReceivedStorage::Sealed { file, mapping }),
                     Err(error) => {
