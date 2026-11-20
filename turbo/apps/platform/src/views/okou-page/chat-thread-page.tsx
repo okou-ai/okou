@@ -3684,17 +3684,13 @@ function ChatThreadBottomBar({
       ) : (
         <div className="flex flex-col gap-3 composer-wide:flex-row composer-wide:items-center">
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-medium text-foreground">
-              {t(
-                ($) => {
-                  return $.chat.sharing.shareCount;
-                },
-                { count: selectedCount },
-              )}
-            </p>
-            <p className="mt-0.5 text-xs text-muted-foreground">
+            {/* The header carries the count. Until something is chosen this
+                says what to do; after that, who can change access. */}
+            <p className="text-sm text-muted-foreground">
               {t(($) => {
-                return $.chat.sharing.accessNote;
+                return selectedCount === 0
+                  ? $.chat.sharing.selectPrompt
+                  : $.chat.sharing.accessNote;
               })}
             </p>
             {createLoadable.state === "hasError" ? (

@@ -23,12 +23,19 @@ export function ChatShareSelectionControls({
         className="truncate text-sm font-medium text-foreground tabular-nums"
         role="status"
       >
-        {t(
-          ($) => {
-            return $.chat.sharing.selectedOfTotal;
-          },
-          { count: selectedCount, total: selectableCount },
-        )}
+        {phase === "created"
+          ? t(
+              ($) => {
+                return $.chat.sharing.linkCreated;
+              },
+              { count: selectedCount },
+            )
+          : t(
+              ($) => {
+                return $.chat.sharing.selectedOfTotal;
+              },
+              { count: selectedCount, total: selectableCount },
+            )}
       </span>
       {phase === "selecting" ? (
         <Button

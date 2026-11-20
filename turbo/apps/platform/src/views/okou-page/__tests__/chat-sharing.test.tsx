@@ -224,7 +224,7 @@ async function setupMessageSharing(
       0,
     );
     expect(
-      screen.getAllByText("Only you can change access.").length,
+      screen.getAllByText("Select the messages to share").length,
     ).toBeGreaterThan(0);
   });
   return {
@@ -461,7 +461,11 @@ test("Share selected message groups as a public conversation snapshot", async ()
   expect(shareLink).toHaveValue(
     `https://app.okou.ai/share/threads/${SHARED_THREAD_ID}`,
   );
-  await expect(screen.findByText("Link copied")).resolves.toBeInTheDocument();
+  await screen.findByText("Link created for 2 messages");
+  await waitFor(() => {
+    expect(buttonsNamed("Copied")).toHaveLength(1);
+  });
+  expect(screen.queryByText("Link copied")).not.toBeInTheDocument();
   expect(clipboard.writes).toStrictEqual([
     `https://app.okou.ai/share/threads/${SHARED_THREAD_ID}`,
   ]);

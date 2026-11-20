@@ -298,13 +298,21 @@ function createMessageSharingSignals(
   };
 }
 
-function createShareCommand(
-  threadId: string,
-  selectedGroups$: Computed<ReadonlyMap<string, SelectedGroup>>,
-  audience$: Computed<SharedThreadAudience>,
-  internalCreatedSharedThreadId$: State<string | null>,
-  internalPhase$: State<SharedThreadSelectionPhase>,
-): ChatThreadSharingSignals["create$"] {
+function createShareCommand({
+  threadId,
+  selectedGroups$,
+  audience$,
+  internalCreatedSharedThreadId$,
+  internalPhase$,
+  visibility$,
+}: {
+  readonly threadId: string;
+  readonly selectedGroups$: Computed<ReadonlyMap<string, SelectedGroup>>;
+  readonly audience$: Computed<SharedThreadAudience>;
+  readonly internalCreatedSharedThreadId$: State<string | null>;
+  readonly internalPhase$: State<SharedThreadSelectionPhase>;
+  readonly visibility$: Computed<SharedThreadVisibilitySignals | null>;
+}): ChatThreadSharingSignals["create$"] {
   return command(async ({ get, set }, signal: AbortSignal): Promise<void> => {
     const eventIds = [...get(selectedGroups$).values()].flatMap((group) => {
       return group.events.map((event) => {
@@ -328,22 +336,12 @@ function createShareCommand(
     }
     set(internalCreatedSharedThreadId$, result.body.id);
     set(internalPhase$, "created");
-    const copied = await writeToClipboard(
-      `${window.location.origin}/share/threads/${result.body.id}`,
-    );
-    signal.throwIfAborted();
-    if (copied) {
-      toast.success(
-        i18n.t(($) => {
-          return $.chat.sharing.linkCopied;
-        }),
-      );
-    } else {
-      toast.error(
-        i18n.t(($) => {
-          return $.chat.sharing.copyFailed;
-        }),
-      );
+    // Copy through the link's own Copy link action, so the confirmation is
+    // that button reading "Copied" rather than a toast over the header. A
+    // failed copy still toasts.
+    const session = get(visibility$);
+    if (session) {
+      await set(session.copy$, signal);
     }
   });
 }
@@ -538,13 +536,15 @@ export function createChatThreadSharingSignals(
     internalSelectedGroups$,
   );
 
-  const create$ = createShareCommand(
+  const visibility$ = createShareVisibility$(internalCreatedSharedThreadId$);
+  const create$ = createShareCommand({
     threadId,
     selectedGroups$,
     audience$,
     internalCreatedSharedThreadId$,
     internalPhase$,
-  );
+    visibility$,
+  });
 
   const { shareMessage$, copiedMessageEventId$ } = createMessageSharingSignals(
     threadId,
@@ -554,7 +554,7 @@ export function createChatThreadSharingSignals(
   return {
     audience$,
     changeAudience$,
-    visibility$: createShareVisibility$(internalCreatedSharedThreadId$),
+    visibility$,
     phase$: computed((get) => {
       return get(internalPhase$);
     }),
