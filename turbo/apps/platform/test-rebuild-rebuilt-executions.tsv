@@ -2617,3 +2617,37 @@ integrations-feishu-002	turbo/apps/platform/src/views/okou-page/__tests__/integr
 integrations-feishu-008	turbo/apps/platform/src/views/okou-page/__tests__/integrations-feishu.test.tsx	feishu integration UI > A connected Feishu user can disconnect only their own account	484	passed
 integrations-feishu-009	turbo/apps/platform/src/views/okou-page/__tests__/integrations-feishu.test.tsx	feishu integration UI > Direct Feishu settings require Feishu to be enabled	528	passed
 integrations-feishu-013	turbo/apps/platform/src/views/okou-page/__tests__/integrations-feishu.test.tsx	feishu integration UI > A Feishu App ID already registered in Okou cannot be reused	541	passed
+workflows-page-004	turbo/apps/platform/src/views/workflows-page/__tests__/workflows-page.test.tsx	Return to Workflows with a toast when a legacy detail link is inaccessible	1381	passed
+workflows-page-012	turbo/apps/platform/src/views/workflows-page/__tests__/workflows-page.test.tsx	Open and manage a deep-linked automation	1400	passed
+workflows-page-013	turbo/apps/platform/src/views/workflows-page/__tests__/workflows-page.test.tsx	Block workflow publishing without permission on the owning agent	1450	passed
+workflows-page-014	turbo/apps/platform/src/views/workflows-page/__tests__/workflows-page.test.tsx	Refine a workflow in its agent chat	1479	passed
+workflows-page-016	turbo/apps/platform/src/views/workflows-page/__tests__/workflows-page.test.tsx	Copy a workflow to another agent	1505	passed
+workflows-page-017	turbo/apps/platform/src/views/workflows-page/__tests__/workflows-page.test.tsx	Move a workflow to another agent	1574	passed
+workflows-page-020	turbo/apps/platform/src/views/workflows-page/__tests__/workflows-page.test.tsx	Delete a workflow only navigates after success and keeps the dialog available on failure	1660	passed
+workflows-page-021	turbo/apps/platform/src/views/workflows-page/__tests__/workflows-page.test.tsx	Edit workflow metadata	1696	passed
+workflows-page-022	turbo/apps/platform/src/views/workflows-page/__tests__/workflows-page.test.tsx	Navigate between workflow detail tabs	1739	passed
+workflows-page-024	turbo/apps/platform/src/views/workflows-page/__tests__/workflows-page.test.tsx	Recover when a stale Run now action receives the automatic-only policy rejection	1765	passed
+workflows-page-025	turbo/apps/platform/src/views/workflows-page/__tests__/workflows-page.test.tsx	Run a workflow automation now and promote it in the next composer overview	1781	passed
+workflows-page-026	turbo/apps/platform/src/views/workflows-page/__tests__/workflows-page.test.tsx	Create a Gmail new-message automation with match rules	1836	passed
+workflows-page-027	turbo/apps/platform/src/views/workflows-page/__tests__/workflows-page.test.tsx	Correct an unavailable Gmail label and create the automation	1896	passed
+workflows-page-028	turbo/apps/platform/src/views/workflows-page/__tests__/workflows-page.test.tsx	Keep Gmail provider failures visible while preserving the form	1961	passed
+workflows-page-030	turbo/apps/platform/src/views/workflows-page/__tests__/workflows-page.test.tsx	Create a filtered GitHub workflow-run automation	2002	passed
+workflows-page-031	turbo/apps/platform/src/views/workflows-page/__tests__/workflows-page.test.tsx	Offer GitHub App installation when GitHub is unavailable	2056	passed
+workflows-page-035	turbo/apps/platform/src/views/workflows-page/__tests__/workflows-page.test.tsx	Recover a missing Calendar for an event-created automation without changing its event contract	2082	passed
+workflows-page-036	turbo/apps/platform/src/views/workflows-page/__tests__/workflows-page.test.tsx	Show a Calendar warning without recovery mutations for another user's automation	2180	passed
+workflows-page-037	turbo/apps/platform/src/views/workflows-page/__tests__/workflows-page.test.tsx	Open a Calendar action-required workflow at the exact automation from the workflow list	2211	passed
+workflows-page-038	turbo/apps/platform/src/views/workflows-page/__tests__/workflows-page.test.tsx	Reconnect the selected Calendar account and reload the warning state	2396	passed
+workflows-page-039	turbo/apps/platform/src/views/workflows-page/__tests__/workflows-page.test.tsx	Create a Google Forms automation and surface its warning	2416	passed
+workflows-page-047	turbo/apps/platform/src/views/workflows-page/__tests__/workflows-page.test.tsx	Reveal an existing webhook secret on demand	2518	passed
+workflows-page-050	turbo/apps/platform/src/views/workflows-page/__tests__/workflows-page.test.tsx	Create a one-time automation	2562	passed
+workflows-page-051	turbo/apps/platform/src/views/workflows-page/__tests__/workflows-page.test.tsx	A completed automation update preserves a reopened editor draft	2599	passed
+workflows-page-056	turbo/apps/platform/src/views/workflows-page/__tests__/workflows-page.test.tsx	Correct an unavailable Gmail label while preserving the saved automation	2650	passed
+workflows-page-058	turbo/apps/platform/src/views/workflows-page/__tests__/workflows-page.test.tsx	Select workflow files with Enter and Space and preserve accessible current state	2717	passed
+workflows-page-060	turbo/apps/platform/src/views/workflows-page/__tests__/workflows-page.test.tsx	Reach workflow file actions with arrows and typeahead, then delete with Enter	2789	passed
+workflows-page-061	turbo/apps/platform/src/views/workflows-page/__tests__/workflows-page.test.tsx	Keep the selected workflow file and its content when upload fails	2831	passed
+workflows-page-063	turbo/apps/platform/src/views/workflows-page/__tests__/workflows-page.test.tsx	Upload after the file menu closes and reselect the same file after an empty selection	2875	passed
+workflows-page-064	turbo/apps/platform/src/views/workflows-page/__tests__/workflows-page.test.tsx	Replace an uploaded workflow file by path without dropping its siblings	2929	passed
+workflows-page-070	turbo/apps/platform/src/views/workflows-page/__tests__/workflows-page.test.tsx	A completed automation creation preserves a reopened creation draft	2960	passed
+workflows-page-072	turbo/apps/platform/src/views/workflows-page/__tests__/workflows-page.test.tsx	Workspace Workflows ignore stale Agent filters and identify the caller's private override	3011	passed
+workflows-page-073	turbo/apps/platform/src/views/workflows-page/__tests__/workflows-page.test.tsx	Make private copy opens the existing private definition without overwriting it	3051	passed
+workflows-page-075	turbo/apps/platform/src/views/workflows-page/__tests__/workflows-page.test.tsx	creates a workspace Workflow with the default Okou without choosing an Agent	3110	passed

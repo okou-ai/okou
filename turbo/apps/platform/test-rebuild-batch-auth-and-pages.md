@@ -203,3 +203,19 @@ Feishu and Lark block, and the five Feishu-only cases run in a Feishu block,
 where the credentials case keeps only its Enter row. The 13 expanded rows
 match the 13 selected IDs. An independent review covered all 39 items with no
 gaps.
+
+## Workflows page
+
+`workflows-page` is restored from current main. Upstream `d36b9aec`
+consolidated part of the selected inventory. `028` (400 BAD_REQUEST) maps to
+the consolidated Gmail provider failure case, and `058` (Enter) maps to the
+combined Enter and Space file picker case. The
+[disposition ledger](test-rebuild-upstream-dispositions.tsv) records the
+other four selected IDs: `029` and `068`/`069` are retired upstream, and
+`059` is merged into `058`'s registration. The other 32 selected rows are
+restored directly. All 34 rows pass, and an independent review covered all
+102 items with no gaps.
+
+With this file every frozen test file is complete: 2,652 of 5,111 frozen
+rows are accepted, a net reduction of 2,459 (48.1%), and 26 upstream rows
+are added.

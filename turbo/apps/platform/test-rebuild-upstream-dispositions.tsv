@@ -1,0 +1,5 @@
+frozen_id	frozen_selection	disposition	upstream_commit	evidence
+workflows-page-029	retain	retired-upstream	d36b9aec	The Gmail error matrix became one 400 BAD_REQUEST case; the 403 GMAIL_LABEL_NOT_FOUND input was dropped (test-rebuild-upstream-d36b9aec.md).
+workflows-page-059	retain	merged-upstream	d36b9aec	The Enter and Space file picker rows became one registration credited to workflows-page-058; Space selects examples/prompt.md in that row.
+workflows-page-068	retain	retired-upstream	d36b9aec	Standalone workspace browse rows were removed upstream.
+workflows-page-069	retain	retired-upstream	d36b9aec	Standalone workspace open rows were removed upstream.
