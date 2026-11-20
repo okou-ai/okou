@@ -667,7 +667,7 @@ fn template_installs_and_verifies_noto_fonts() {
 #[test]
 fn template_installs_and_verifies_pgvector() {
     assert!(
-        template_build_installs_apt_package("postgresql-18-pgvector"),
+        template_build_installs_apt_package("postgresql-19-pgvector"),
         "build-template.sh should install pgvector into sandbox templates"
     );
     assert!(

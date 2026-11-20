@@ -211,8 +211,7 @@ fn handle_request(
         Ok(response) => writer
             .write_frame_after_lock_unless_cancelled(&response, connection_cancel, || {
                 progress.mark(FileWriteStage::WritingResponse);
-                operation_guard.release();
-                drop(admission);
+                admission.finish_operation(&operation_guard);
             })
             .map(|sent| {
                 if sent {
@@ -221,8 +220,7 @@ fn handle_request(
             }),
         Err(error) => {
             writer.shutdown_after_lock(|| {
-                operation_guard.release();
-                drop(admission);
+                admission.finish_operation(&operation_guard);
             });
             Err(error)
         }

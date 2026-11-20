@@ -21,7 +21,7 @@ export type ChatConnectorExecutionOwner = {
   | { readonly kind: "chat"; readonly chatThreadId: string }
 );
 
-/** One owned Chat/account snapshot, without credential material or Agent grants. */
+/** Account metadata, access, and selection for an owned Chat. */
 export function chatConnectorExecutionReadPlan(
   owner: ChatConnectorExecutionOwner,
   connectorSlug?: string,

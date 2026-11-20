@@ -982,7 +982,7 @@ if ! git merge-base --is-ancestor "$seed_skill_bundle_only_api_commit" "$TARGET_
   fail "Rollback target predates the Seed Skill bundle-only publisher: ${seed_skill_bundle_only_api_commit}."
 fi
 
-# The preparation API follows the activated catalog even when its old mirror is stale.
+# The rollback API must publish to the independent catalog without the legacy skills mirror.
 if ! built_in_skill_catalog_api_commit=$(git show "origin/main:${BUILT_IN_SKILL_CATALOG_API_PATH}"); then
   fail "Cannot read the built-in Skill catalog API rollback floor from main."
 fi
@@ -993,7 +993,7 @@ if ! git merge-base --is-ancestor "$built_in_skill_catalog_api_commit" origin/ma
   fail "Built-in Skill catalog API rollback floor is not on main."
 fi
 if ! git merge-base --is-ancestor "$built_in_skill_catalog_api_commit" "$TARGET_COMMIT"; then
-  fail "Rollback target predates the built-in Skill catalog reader: ${built_in_skill_catalog_api_commit}."
+  fail "Rollback target predates the independent built-in Skill publisher: ${built_in_skill_catalog_api_commit}."
 fi
 
 # Captured Connector bundles must retain Workflow precedence, even after the

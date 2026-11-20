@@ -1,4 +1,8 @@
 import type { ContentBundle } from "@okouai/api-contracts/contracts/content-bundle";
+import {
+  connectorSlugSchema,
+  type ConnectorSlug,
+} from "@okouai/api-contracts/contracts/connector-identity";
 import type {
   CustomConnectorExecutionDefinitionRow,
   CustomConnectorExecutionDefinition,
@@ -6,10 +10,9 @@ import type {
 } from "./custom-connector-definition-selection";
 import { normaliseCustomConnectorConnectionDefinition } from "./custom-connector.service";
 
-export interface SelectedCustomConnector {
+interface SelectedCustomConnector {
   readonly customConnectorId: string;
   readonly connectorSlug: string;
-  readonly storageVersion: number;
   readonly skillStorageVersionId: string | null;
   readonly skillContentBundle: ContentBundle | null;
   readonly skillContentBundleSourceVersionId: string | null;
@@ -17,22 +20,32 @@ export interface SelectedCustomConnector {
   readonly isMcp: boolean;
 }
 
-export interface AgentConnectorSelection {
-  readonly builtinConnectorSlugs: readonly string[];
+export interface RunConnectorScope {
+  readonly allowedConnectorSlugs: readonly ConnectorSlug[];
+  readonly allowedCustomConnectorIds: readonly string[];
+}
+
+export interface ExecutionConnectorSelection {
+  readonly scope: RunConnectorScope;
   readonly customConnectors: readonly SelectedCustomConnector[];
   readonly customConnectorDefinitions: readonly CustomConnectorExecutionDefinition[];
 }
 
-export function agentConnectorSelectionFromRows(
+export function executionConnectorSelectionFromRows(
   builtinRows: readonly { readonly connectorSlug: string }[],
   customRows: readonly SelectedDefinitionRow[],
-): AgentConnectorSelection {
+): ExecutionConnectorSelection {
+  const allowedConnectorSlugs = builtinRows
+    .flatMap(({ connectorSlug }) => {
+      const parsed = connectorSlugSchema.safeParse(connectorSlug);
+      return parsed.success ? [parsed.data] : [];
+    })
+    .sort();
   const customConnectors = customRows
     .map((row): SelectedCustomConnector => {
       return {
         customConnectorId: row.connector.id,
         connectorSlug: row.connector.slug,
-        storageVersion: row.connector.storageVersion,
         skillStorageVersionId: row.connector.skillStorageVersionId,
         skillContentBundle: row.connector.skillContentBundle,
         skillContentBundleSourceVersionId:
@@ -45,11 +58,12 @@ export function agentConnectorSelectionFromRows(
       return a.customConnectorId.localeCompare(b.customConnectorId);
     });
   return {
-    builtinConnectorSlugs: builtinRows
-      .map((row) => {
-        return row.connectorSlug;
-      })
-      .sort(),
+    scope: {
+      allowedConnectorSlugs,
+      allowedCustomConnectorIds: customConnectors.map((connector) => {
+        return connector.customConnectorId;
+      }),
+    },
     customConnectors,
     customConnectorDefinitions: customRows.map(executionDefinitionFromRow),
   };

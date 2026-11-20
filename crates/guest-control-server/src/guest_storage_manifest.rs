@@ -40,7 +40,7 @@ const THREAD_STDOUT: &str = "gctl-store-out";
 const THREAD_STDERR: &str = "gctl-store-err";
 #[cfg(target_os = "linux")]
 const SEALED_STORAGE_MIN_BYTES: usize = 1024 * 1024;
-// Keep oversized decoded requests on the pipe used by the larger receive tier.
+// Bound the copy from owned bytes into the helper's sealed stdin.
 #[cfg(target_os = "linux")]
 const SEALED_STORAGE_MAX_BYTES: usize = 8 * 1024 * 1024;
 
@@ -321,8 +321,7 @@ fn handle_request(
 
     writer
         .write_frame_after_lock_unless_cancelled(&frame, connection_cancel, || {
-            operation_guard.release();
-            drop(admission);
+            admission.finish_operation(&operation_guard);
         })
         .map(|_| ())
 }

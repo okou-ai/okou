@@ -76,8 +76,8 @@ turbo = YAML.load_file(ARGV.fetch(2)).fetch("jobs")
 stripe_job = turbo.fetch("deploy-stripe-listener")
 stripe_steps = stripe_job.fetch("steps")
 stripe = stripe_steps.find { |step| step.fetch("run", "").include?("start-stripe-listener.sh") }
-raise "Stripe replacement must share the cleanup namespace lock" unless
-  stripe && stripe.fetch("run").include?("with-runner-lifecycle-lock.sh") && !stripe.key?("continue-on-error")
+raise "Stripe job must submit and wait for the host deployment result" unless
+  stripe && stripe.dig("env", "GH_TOKEN") == "${{ github.token }}" && !stripe.key?("continue-on-error")
 stripe_ssh = stripe_steps.find { |step| step["uses"] == "./.github/actions/setup-ssh-tunnel" }
 placement = turbo.fetch("select-runner-placement")
 selection = named_step(placement, "Select the shared Runner and Stripe host")

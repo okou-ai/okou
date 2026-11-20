@@ -115,8 +115,8 @@ CACHE_TMP_TAR=""
 NODE_VERSION="26.13.1"
 GO_VERSION="1.27.4"
 RUST_VERSION="1.100.0"
-CLAUDE_CODE_VERSION="2.1.328"
-CODEX_CLI_VERSION="0.170.0"
+CLAUDE_CODE_VERSION="2.1.329"
+CODEX_CLI_VERSION="0.171.0"
 GWS_CLI_VERSION="0.22.5"
 XURL_VERSION="1.3.4"
 AGENT_BROWSER_VERSION="0.39.4-vm0.1"
@@ -340,7 +340,7 @@ install_packages() {
   echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
     > /etc/apt/sources.list.d/github-cli.list
 
-  # PostgreSQL Global Development Group repository (PostgreSQL 18)
+  # PostgreSQL Global Development Group repository (PostgreSQL 19)
   curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
     | gpg --dearmor -o /usr/share/keyrings/postgresql.gpg
   echo "deb [signed-by=/usr/share/keyrings/postgresql.gpg] https://apt.postgresql.org/pub/repos/apt noble-pgdg main" \
@@ -363,7 +363,7 @@ install_packages() {
     php php-cli php-common php-curl php-mbstring php-xml php-zip \
     default-jdk maven gradle \
     gcc g++ clang make cmake \
-    postgresql-18 postgresql-contrib-18 postgresql-18-pgvector \
+    postgresql-19 postgresql-contrib-19 postgresql-19-pgvector \
     redis-server \
     gh
 

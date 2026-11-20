@@ -565,17 +565,21 @@ type ChatQueueRunAssembly =
   | { readonly kind: "rejected"; readonly rejection: ChatQueueHeadRejection }
   | { readonly kind: "not-ready" };
 
+function isQueuedPromptPreparationError(error: unknown) {
+  return (
+    error instanceof DiscordQueuedLaunchUnavailableError ||
+    error instanceof WechatLaunchUnavailableError ||
+    error instanceof QueuedPromptLaunchUnavailableError ||
+    error instanceof QueuedPromptInputInvalidError ||
+    error instanceof PromptAndSkillVolumesError
+  );
+}
+
 function queuedPromptPreparationRejection(
   error: unknown,
   head: ChatQueueHeadContext,
 ): ChatQueueRunAssembly {
-  if (
-    !(error instanceof DiscordQueuedLaunchUnavailableError) &&
-    !(error instanceof WechatLaunchUnavailableError) &&
-    !(error instanceof QueuedPromptLaunchUnavailableError) &&
-    !(error instanceof QueuedPromptInputInvalidError) &&
-    !(error instanceof PromptAndSkillVolumesError)
-  ) {
+  if (!isQueuedPromptPreparationError(error)) {
     throw error;
   }
   return {
@@ -938,24 +942,13 @@ function claimLaunchRecord(
   }
   const input = record.context.runInput;
   return {
-    kind: "prompt",
-    timing: record.timing,
-    templateUsageIdentities: record.templateUsageIdentities,
+    ...record,
     context: {
-      userId: record.context.userId,
+      ...record.context,
       integrationContext:
         input.triggerSource === "web" || input.triggerSource === "agent"
           ? undefined
           : integrationContext,
-      titled: record.context.titled,
-      runInput: {
-        orgId: input.orgId,
-        threadId: input.threadId,
-        prompt: input.prompt,
-        discordDelivery: input.discordDelivery,
-        wechatDelivery: input.wechatDelivery,
-        triggerSource: input.triggerSource,
-      },
     },
   };
 }
@@ -1582,20 +1575,36 @@ export function createThreadClaimRunObjects(
           context: {
             userId: head.userId,
             titled: threadTitled((await get(pickedEvent$))?.thread),
-            runInput,
+            runInput: {
+              orgId: runInput.orgId,
+              threadId: runInput.threadId,
+              prompt: runInput.prompt,
+              discordDelivery: runInput.discordDelivery,
+              wechatDelivery: runInput.wechatDelivery,
+              triggerSource: runInput.triggerSource,
+            },
           },
         },
       };
     },
   );
+  const availablePromptMaterial$ = computed(async (get) => {
+    const material = await settle(get(promptMaterial$));
+    if (!material.ok && isQueuedPromptPreparationError(material.error)) {
+      return null;
+    }
+    return material;
+  });
   const promptResourcesValid$ = computed(async (get) => {
     const [material, templates] = await Promise.all([
-      settle(get(promptMaterial$)),
+      get(availablePromptMaterial$),
       get(runTemplates$),
     ]);
-    if (!material.ok) {
-      queuedPromptPreparationRejection(material.error, await get(head$));
+    if (!material) {
       return false;
+    }
+    if (!material.ok) {
+      throw material.error;
     }
     return !("error" in templates);
   });
@@ -1620,17 +1629,6 @@ export function createThreadClaimRunObjects(
       !("status" in model) && args.queuedMessage.autonomyBudget.kind === "ok"
     );
   });
-  const availablePromptMaterial$ = computed(async (get) => {
-    if (await get(earlyPromptAssembly$)) {
-      return null;
-    }
-    const material = await settle(get(promptMaterial$));
-    if (!material.ok) {
-      queuedPromptPreparationRejection(material.error, await get(head$));
-      return null;
-    }
-    return material.value;
-  });
   const promptCallbacks$ = computed(async (get) => {
     if (await get(earlyPromptAssembly$)) {
       return undefined;
@@ -1642,11 +1640,14 @@ export function createThreadClaimRunObjects(
     if (!material) {
       return undefined;
     }
+    if (!material.ok) {
+      throw material.error;
+    }
     return queuedChatRunCallbackInputs({
       threadId: args.threadId,
       agentId: args.agent.id,
       queuedMessage: args.queuedMessage,
-      ...queuedIntegrationLaunchFields(material, args.agent.id),
+      ...queuedIntegrationLaunchFields(material.value, args.agent.id),
     });
   });
   const automationSource$ = computed(async (get) => {
