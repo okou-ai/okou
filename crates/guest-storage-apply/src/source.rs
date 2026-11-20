@@ -19,6 +19,9 @@ static HTTP_AGENT: LazyLock<ureq::Agent> = LazyLock::new(|| {
 
     let config = ureq::Agent::config_builder()
         .timeout_global(Some(TIMEOUT))
+        // Keep more connections from a completed wave for the next requests,
+        // within ureq's existing total idle budget.
+        .max_idle_connections_per_host(8)
         .http_status_as_error(false)
         .tls_config(
             TlsConfig::builder()

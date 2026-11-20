@@ -432,8 +432,9 @@ fn download_all_parallel_with_runner(
 fn download_concurrency(remote_count: usize, task_count: usize) -> usize {
     let limit = match remote_count {
         VERY_LARGE_REMOTE_BATCH.. => {
-            // Fit up to 160 independent remote requests into four windows.
-            remote_count.div_ceil(4).clamp(
+            // Three windows cover up to 120 independent remote requests.
+            // Keep the existing ceiling for larger batches.
+            remote_count.div_ceil(3).clamp(
                 VERY_LARGE_REMOTE_CONCURRENT,
                 VERY_LARGE_REMOTE_MAX_CONCURRENT,
             )
