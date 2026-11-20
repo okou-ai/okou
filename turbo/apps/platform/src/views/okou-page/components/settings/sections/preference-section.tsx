@@ -1,4 +1,5 @@
-import { useGet, useLoadable } from "ccstate-react";
+import { myOkouProactiveSettingsEnabled$ } from "../../../../../signals/single-agent.ts";
+import { useGet, useLoadable, useLastResolved } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { Sun, Moon, Monitor, Palette } from "lucide-react";
@@ -90,6 +91,7 @@ function AppearanceBlock() {
 }
 
 export function PreferenceSection() {
+  const proactiveInMyOkou = useLastResolved(myOkouProactiveSettingsEnabled$);
   const { t } = useTranslation();
 
   return (
@@ -123,7 +125,7 @@ export function PreferenceSection() {
         </div>
       </section>
 
-      <ProactiveSection />
+      {proactiveInMyOkou === false && <ProactiveSection />}
 
       <section className="flex flex-col gap-3">
         <SettingsSectionHeading

@@ -221,7 +221,7 @@ export const createSuggestion$ = command(
     signal.throwIfAborted();
     if (!sources.suggestions) {
       return resourceUnavailable(
-        "Suggestions are turned off in For you sources. Existing cards remain available.",
+        "New suggestion cards are turned off. Existing cards remain available.",
       );
     }
     for (const { threadId } of [

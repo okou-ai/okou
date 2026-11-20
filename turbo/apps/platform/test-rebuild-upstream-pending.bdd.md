@@ -185,3 +185,73 @@ Exported file cards retain their labels and durable links on a download-restrict
 - **Then** The PDF text includes the answer, "Budget workbook", "totals.csv", "Read the guide" and "End of answer.", and its links point to the durable artifact URLs of both files and to the guide.
 - **Disposition** retain.
 - **Source** upstream `ae05e279` (#49389), added to the copied test file after it was removed.
+
+## upstream-9d20531a-my-okou-327-03
+
+Default configuration profile opens personal Instructions with the Proactive layout true. [Registration](https://github.com/okou-ai/okou/blob/9d20531a9ad041abf15a8e5c1697b06475b563df/turbo/apps/platform/src/views/__tests__/my-okou.test.tsx#L327).
+
+- **Given** Single-agent mode and the My Okou Proactive settings are enabled, and the user has personal Instructions.
+- **When** The user opens the default agent's profile tab.
+- **Then** The app moves to My Okou settings at the home page and the Instructions editor shows the personal Instructions.
+- **Disposition** retain.
+- **Source** upstream `9d20531a` (#49401), added to the copied test file after it was removed. The rows with the Proactive layout off match the frozen scenarios of this registration.
+
+## upstream-9d20531a-my-okou-327-04
+
+Default configuration instructions opens personal Instructions with the Proactive layout true. [Registration](https://github.com/okou-ai/okou/blob/9d20531a9ad041abf15a8e5c1697b06475b563df/turbo/apps/platform/src/views/__tests__/my-okou.test.tsx#L327).
+
+- **Given** Single-agent mode and the My Okou Proactive settings are enabled, and the user has personal Instructions.
+- **When** The user opens the default agent's instructions tab.
+- **Then** The app moves to My Okou settings at the home page and the Instructions editor shows the personal Instructions.
+- **Disposition** retain.
+- **Source** upstream `9d20531a` (#49401), added to the copied test file after it was removed.
+
+## upstream-9d20531a-my-okou-397-01
+
+An Instructions link opens its editor and a later ordinary visit starts on Proactive. [Registration](https://github.com/okou-ai/okou/blob/9d20531a9ad041abf15a8e5c1697b06475b563df/turbo/apps/platform/src/views/__tests__/my-okou.test.tsx#L397).
+
+- **Given** The My Okou Proactive settings are enabled and the user follows a My Okou link focused on Instructions.
+- **When** The user reads the Instructions, goes to Chat, reopens My Okou, switches to Instructions, and closes Settings.
+- **Then** The link opens the Instructions tab with the saved text. The later ordinary visit starts on Proactive, switching to Instructions focuses that tab in the address, and closing Settings removes the dialog and the focus.
+- **Disposition** retain.
+- **Source** upstream `9d20531a` (#49401), added to the copied test file after it was removed.
+
+## upstream-9d20531a-my-okou-430-01
+
+My Okou opens Proactive first, unifies legacy Suggestions choices, and retains an Instructions draft across tabs. [Registration](https://github.com/okou-ai/okou/blob/9d20531a9ad041abf15a8e5c1697b06475b563df/turbo/apps/platform/src/views/__tests__/my-okou.test.tsx#L430).
+
+- **Given** The My Okou Proactive settings are enabled, new suggestion cards are on and hourly checks are off.
+- **When** The user turns both Suggestions settings off, turns Suggestions back on, turns Offers off, and drafts new Instructions before switching tabs.
+- **Then** Proactive opens first and explains the mixed Suggestions state; after the choice, one Suggestions switch reflects both settings while Learning, Offers and System updates keep their own states. The Proactive and Instructions tabs keep the Suggestions choice and the Instructions draft across switches.
+- **Disposition** retain.
+- **Source** upstream `9d20531a` (#49401), added to the copied test file after it was removed.
+
+## upstream-9d20531a-my-okou-496-01
+
+A member with only hourly checks can opt into new cards without showing a stale mixed state during refresh. [Registration](https://github.com/okou-ai/okou/blob/9d20531a9ad041abf15a8e5c1697b06475b563df/turbo/apps/platform/src/views/__tests__/my-okou.test.tsx#L496).
+
+- **Given** Hourly checks are on and new suggestion cards are off, and the next feed-source refresh is delayed.
+- **When** The user chooses to turn both Suggestions settings on.
+- **Then** The mixed state is explained first; while the refresh is pending, the single Suggestions switch is shown on and unavailable, and it becomes available once the refresh completes.
+- **Disposition** retain.
+- **Source** upstream `9d20531a` (#49401), added to the copied test file after it was removed.
+
+## upstream-9d20531a-my-okou-547-01
+
+Existing morning brief links open the Proactive tab in My Okou. [Registration](https://github.com/okou-ai/okou/blob/9d20531a9ad041abf15a8e5c1697b06475b563df/turbo/apps/platform/src/views/__tests__/my-okou.test.tsx#L547).
+
+- **Given** The My Okou Proactive settings are enabled and the user follows an existing Preference link focused on the morning brief.
+- **When** The settings open, and the user then switches to Preference.
+- **Then** The Proactive tab of My Okou shows an enabled Morning brief switch; Preference shows Appearance without the morning brief, and the focus is removed from the address.
+- **Disposition** retain.
+- **Source** upstream `9d20531a` (#49401), added to the copied test file after it was removed.
+
+## upstream-9d20531a-agent-suggestions-1734-01
+
+For you keeps deck navigation and moves source settings into My Okou. [Registration](https://github.com/okou-ai/okou/blob/9d20531a9ad041abf15a8e5c1697b06475b563df/turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx#L1734).
+
+- **Given** Single-agent mode and the My Okou Proactive settings are enabled and the For You deck has two suggestions.
+- **When** The user opens For You and moves to the second suggestion.
+- **Then** For You no longer offers its own source settings, and the second suggestion becomes the active, current step.
+- **Disposition** retain.
+- **Source** upstream `9d20531a` (#49401); the rebuilt suggestion tests are kept and this scenario is pending its rebuild.

@@ -28,17 +28,15 @@ export const setupAgentDetailPage$ = command(
     ) {
       signal.throwIfAborted();
       const tab = get(searchParams$).get("tab");
-      set(
-        detachedNavigateTo$,
-        tab === "authorization" || tab === null ? "/connectors" : "/",
-        {
-          searchParams:
-            tab === "authorization" || tab === null
-              ? undefined
-              : new URLSearchParams({ settings: "my-okou" }),
-          replace: true,
-        },
-      );
+      if (tab === "authorization" || tab === null) {
+        set(detachedNavigateTo$, "/connectors", { replace: true });
+        return;
+      }
+      const params = new URLSearchParams({ settings: "my-okou" });
+      if (tab === "instructions" || tab === "profile") {
+        params.set("focus", "instructions");
+      }
+      set(detachedNavigateTo$, "/", { searchParams: params, replace: true });
       return;
     }
     set(refreshSsh$);

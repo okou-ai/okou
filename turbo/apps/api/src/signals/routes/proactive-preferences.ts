@@ -7,6 +7,8 @@ import type {
   ProactiveWorkflowKind,
 } from "@okouai/api-contracts/contracts/proactive";
 import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
+import { feedPreferences } from "@okouai/db/schema/feed-preference";
+import { publishAgentSuggestionsChangedSafely } from "../external/realtime";
 import { workflows } from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { resourceUnavailable } from "../../lib/error";
@@ -91,12 +93,64 @@ const readProactivePreference$ = command(
   },
 );
 
+const savePreference$ = command(
+  async (
+    { set },
+    owner: ProactiveWorkflowOwner,
+    {
+      kind,
+      enabled,
+      withFeed,
+    }: {
+      readonly kind: ProactiveWorkflowKind;
+      readonly enabled: boolean;
+      readonly withFeed: boolean;
+    },
+    signal: AbortSignal,
+  ) => {
+    const db = set(writeDb$);
+    const choice = { [PREFERENCE_FIELDS[kind]]: enabled };
+    const saveWorkflowPreference = db
+      .insert(orgMembersMetadata)
+      .values({ ...owner, ...choice })
+      .onConflictDoUpdate({
+        target: [orgMembersMetadata.orgId, orgMembersMetadata.userId],
+        set: { ...choice, updatedAt: nowDate() },
+      });
+    if (withFeed) {
+      // Both upserts commit in one statement, including when either row is new.
+      const saved = db.$with("saved_hourly_preference").as(
+        saveWorkflowPreference.returning({
+          userId: orgMembersMetadata.userId,
+        }),
+      );
+      await db
+        .with(saved)
+        .insert(feedPreferences)
+        .values({ ...owner, suggestions: enabled })
+        .onConflictDoUpdate({
+          target: [feedPreferences.orgId, feedPreferences.userId],
+          set: { suggestions: enabled },
+        });
+      signal.throwIfAborted();
+      await publishAgentSuggestionsChangedSafely(owner);
+    } else {
+      await saveWorkflowPreference;
+    }
+    signal.throwIfAborted();
+  },
+);
+
 function createProactivePreferenceRoutes(
   kind: ProactiveWorkflowKind,
 ): readonly RouteEntry[] {
   const contract = PREFERENCE_CONTRACTS[kind];
   const preferenceRoute$ = command(
-    async ({ get, set }, update: boolean, signal: AbortSignal) => {
+    async (
+      { get, set },
+      operation: "read" | "update" | "withFeed",
+      signal: AbortSignal,
+    ) => {
       const auth = get(organizationAuthContext$);
       const owner = { orgId: auth.orgId, userId: auth.userId };
       const eligibility = await set(
@@ -107,24 +161,30 @@ function createProactivePreferenceRoutes(
       if (!eligibility[kind].available) {
         return resourceUnavailable("Proactive is not enabled.");
       }
-      if (update) {
-        const body = await get(bodyResultOf(contract.update));
+      if (operation !== "read") {
+        const withFeed = operation === "withFeed";
+        if (withFeed && !eligibility.myOkouProactiveSettings) {
+          return resourceUnavailable(
+            "My Okou proactive settings are not enabled.",
+          );
+        }
+        const body = await get(
+          bodyResultOf(
+            withFeed
+              ? proactiveSuggestionsContract.updateWithFeed
+              : contract.update,
+          ),
+        );
         signal.throwIfAborted();
         if (!body.ok) {
           return body.response;
         }
-        const choice = { [PREFERENCE_FIELDS[kind]]: body.data.enabled };
-        await set(writeDb$)
-          .insert(orgMembersMetadata)
-          .values({ ...owner, ...choice })
-          .onConflictDoUpdate({
-            target: [orgMembersMetadata.orgId, orgMembersMetadata.userId],
-            set: {
-              ...choice,
-              updatedAt: nowDate(),
-            },
-          });
-        signal.throwIfAborted();
+        await set(
+          savePreference$,
+          owner,
+          { kind, enabled: body.data.enabled, withFeed },
+          signal,
+        );
         const setup = await settle(
           set(ensureProactiveWorkflows$, owner, signal),
           signal,
@@ -162,19 +222,31 @@ function createProactivePreferenceRoutes(
   );
 
   const read$ = command(async ({ set }, signal: AbortSignal) => {
-    return await set(preferenceRoute$, false, signal);
+    return await set(preferenceRoute$, "read", signal);
   });
   const update$ = command(async ({ set }, signal: AbortSignal) => {
-    return await set(preferenceRoute$, true, signal);
+    return await set(preferenceRoute$, "update", signal);
   });
   const auth = { accept: ["session"], requireOrganization: true } as const;
-  return [
+  const routes: RouteEntry[] = [
     { route: contract.get, handler: authRoute(auth, read$) },
     {
       route: contract.update,
       handler: authRoute(auth, update$),
     },
   ];
+  if (kind === "suggestions") {
+    routes.push({
+      route: proactiveSuggestionsContract.updateWithFeed,
+      handler: authRoute(
+        auth,
+        command(async ({ set }, signal: AbortSignal) => {
+          return await set(preferenceRoute$, "withFeed", signal);
+        }),
+      ),
+    });
+  }
+  return routes;
 }
 
 export const proactiveSuggestionsRoutes =

@@ -31,6 +31,7 @@ import {
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
+import { myOkouProactiveSettingsEnabled$ } from "../../../../signals/single-agent.ts";
 import { featureSwitches$ } from "../../../../signals/external/feature-switch.ts";
 import { pageSignal$ } from "../../../../signals/page-signal.ts";
 import {
@@ -160,6 +161,7 @@ function SettingsDialog({
   const isAdmin =
     isAdminLoadable.state === "hasData" ? isAdminLoadable.data : false;
   const showDebug = features?.[FeatureSwitchKey.OkouDebug] ?? false;
+  const proactive = useLastResolved(myOkouProactiveSettingsEnabled$);
   const singleAgent = features?.[FeatureSwitchKey.SingleAgent] ?? false;
 
   const sectionMeta = {
@@ -168,7 +170,9 @@ function SettingsDialog({
         return $.myOkou.title;
       }),
       description: t(($) => {
-        return $.myOkou.description;
+        return proactive
+          ? $.myOkou.proactiveSettings.description
+          : $.myOkou.description;
       }),
     },
     preference: {
@@ -498,7 +502,14 @@ function SettingsDialog({
           <div className="relative flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden bg-background">
             {resolvedSection !== "model" && (
               <header className="shrink-0 px-4 sm:px-10 pt-6 sm:pt-8 pb-1">
-                <div className="flex min-h-7 items-center gap-2">
+                <div
+                  className={cn(
+                    "flex min-h-7 items-center gap-2",
+                    resolvedSection === "my-okou" &&
+                      proactive &&
+                      "max-sm:hidden",
+                  )}
+                >
                   <h2 className="hidden h-7 items-center text-xl font-semibold tracking-tight text-foreground sm:flex">
                     {meta.title}
                   </h2>
