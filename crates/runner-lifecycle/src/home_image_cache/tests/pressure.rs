@@ -99,6 +99,15 @@ async fn count_only_routine_collection_stops_at_the_independent_entry_cap_below_
     // the producer's directory repair and hardened path walks for every entry.
     let cache = f.cache.clone();
     tokio::task::spawn_blocking(move || {
+        #[derive(serde::Serialize)]
+        #[serde(rename_all = "camelCase")]
+        struct PhysicalMetadata<'a> {
+            image_generation: &'a str,
+            current_image: metadata::HomeImageFileIdentity,
+            logical_image_size_bytes: u64,
+            last_used_at: &'static str,
+        }
+
         std::fs::DirBuilder::new()
             .recursive(true)
             .mode(0o700)
@@ -109,10 +118,6 @@ async fn count_only_routine_collection_stops_at_the_independent_entry_cap_below_
             std::fs::Permissions::from_mode(0o700),
         )
         .unwrap();
-        let mut physical = serde_json::json!({
-            "imageGeneration": "", "currentImage": null,
-            "logicalImageSizeBytes": SIZE, "lastUsedAt": "2026-10-09T09:00:00Z"
-        });
         let mut metadata_bytes = Vec::new();
         for i in 0..=4096 {
             let key = format!("{i:064x}");
@@ -129,8 +134,12 @@ async fn count_only_routine_collection_stops_at_the_independent_entry_cap_below_
             drop(create_image(&image, b"home", SIZE));
             let identity =
                 metadata::HomeImageFileIdentity::from_metadata(&std::fs::metadata(image).unwrap());
-            physical["imageGeneration"] = generation.into();
-            physical["currentImage"] = serde_json::to_value(identity).unwrap();
+            let physical = PhysicalMetadata {
+                image_generation: &generation,
+                current_image: identity,
+                logical_image_size_bytes: SIZE,
+                last_used_at: "2026-10-09T09:00:00Z",
+            };
             metadata_bytes.clear();
             serde_json::to_writer(&mut metadata_bytes, &physical).unwrap();
             std::fs::write(paths.metadata(), &metadata_bytes).unwrap();
