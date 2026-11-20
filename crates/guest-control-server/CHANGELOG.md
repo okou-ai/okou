@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.134](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.133...guest-control-server-v0.24.134) (2026-11-20)
+
+
+### Performance Improvements
+
+* **guest-control:** stream large decoded storage into sealed stdin ([#49350](https://github.com/okou-ai/okou/issues/49350)) ([841df64](https://github.com/okou-ai/okou/commit/841df6479f1171967fa0d8a5c4109de01a1fe067))
+
 ## [0.24.133](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.132...guest-control-server-v0.24.133) (2026-11-20)
 
 

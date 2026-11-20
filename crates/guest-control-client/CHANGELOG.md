@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.117](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.116...guest-control-client-v0.23.117) (2026-11-20)
+
+
+### Refactoring
+
+* **guest-control:** centralize owned exec capture extraction ([#49374](https://github.com/okou-ai/okou/issues/49374)) ([e6a35e4](https://github.com/okou-ai/okou/commit/e6a35e4e18c8270cc3e9a3f07515f4db8bb8cf5d))
+
 ## [0.23.116](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.115...guest-control-client-v0.23.116) (2026-11-20)
 
 ## [0.23.115](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.114...guest-control-client-v0.23.115) (2026-11-19)

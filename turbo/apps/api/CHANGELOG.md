@@ -10,6 +10,20 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.95.6](https://github.com/okou-ai/okou/compare/api-v2.95.5...api-v2.95.6) (2026-11-20)
+
+
+### Refactoring
+
+* **api:** simplify terminal chat delivery receipts ([#49371](https://github.com/okou-ai/okou/issues/49371)) ([0069eac](https://github.com/okou-ai/okou/commit/0069eac69858cbfa960332b9c2607be583f3e4d2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/db bumped to 2.54.0
+
 ## [2.95.5](https://github.com/okou-ai/okou/compare/api-v2.95.4...api-v2.95.5) (2026-11-20)
 
 
