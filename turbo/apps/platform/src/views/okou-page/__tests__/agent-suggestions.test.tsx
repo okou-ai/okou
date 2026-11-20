@@ -2063,7 +2063,8 @@ async function openSourceSettings() {
   const menu = await screen.findByRole("menu");
   click(within(menu).getByText("Settings"));
   const dialog = await screen.findByRole("dialog", { name: "Settings" });
-  click(within(dialog).getByRole("button", { name: "My Okou" }));
+  const navigation = within(dialog).getByRole("navigation");
+  click(within(navigation).getByText("My Okou"));
   return dialog;
 }
 

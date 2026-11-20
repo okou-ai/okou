@@ -184,7 +184,7 @@ describe("personal Instructions CLI", () => {
     expect(stdout).not.toHaveBeenCalled();
   });
 
-  it("keeps captured enabled and legacy Run modes despite opposite live flags", async () => {
+  it("uses the signed Run mode without consulting live feature switches", async () => {
     let featureReads = 0;
     server.use(
       http.get("*/api/feature-switches", () => {

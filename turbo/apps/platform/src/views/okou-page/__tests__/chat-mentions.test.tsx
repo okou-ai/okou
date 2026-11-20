@@ -254,12 +254,12 @@ test("Special characters in a conversation title survive saving and restoring", 
     titleSnapshot: specialTitle,
   });
 
-  const agentsLink = await waitFor(() => {
-    return getLink("Agents");
+  const workflowsLink = await waitFor(() => {
+    return getLink("Workflows");
   });
-  click(agentsLink);
+  click(workflowsLink);
   await waitFor(() => {
-    expect(pathname()).toBe("/agents");
+    expect(pathname()).toBe("/workflows");
   });
   window.history.back();
   await waitFor(() => {

@@ -347,15 +347,12 @@
   },
   "appShell": {
     "pwaNavigation": {
-      "agentsUnavailable": "No se pudieron cargar los agentes",
       "back": "Volver",
       "backToChats": "Volver a los chats",
       "chatListUnavailable": "No se pudieron cargar los chats",
       "chats": "Chats",
       "me": "Yo",
-      "navigation": "Navegación principal",
-      "searchAgents": "Buscar agentes",
-      "switchAgent": "Cambiar agente"
+      "navigation": "Navegación principal"
     },
     "shortcutHelp": {
       "close": "Cerrar atajos de teclado",
@@ -372,10 +369,8 @@
         "collapseProject": "Contraer Project",
         "expandProject": "Expandir Project",
         "newChat": "Nuevo chat",
-        "nextAgent": "Siguiente agente",
         "nextThread": "Siguiente hilo",
         "openFirstThread": "Abrir primer hilo",
-        "previousAgent": "Agente anterior",
         "previousThread": "Hilo anterior",
         "renameChat": "Renombrar chat",
         "scrollBottom": "Desplázate hasta abajo",
@@ -2037,7 +2032,6 @@
     },
     "composer": {
       "add": "Añadir",
-      "agentSuggestions": "Agentes",
       "configureModel": "Configurar modelo",
       "create": {
         "addStyle": "Añadir estilo",
@@ -2263,16 +2257,7 @@
       "sent": "Nuevo chat creado"
     },
     "forward": {
-      "action": "Reenviar",
-      "agents": "Agentes",
-      "back": "Atrás",
       "composerPlaceholder": "Añadir un mensaje",
-      "content": "Contenido",
-      "description": "Envía el contenido seleccionado a un agente o una conversación para seguir trabajando en él.",
-      "noResults": "No se encontraron agentes ni conversaciones",
-      "search": "Buscar agentes y conversaciones...",
-      "sent": "Reenviado correctamente",
-      "threads": "Conversaciones",
       "title": "Reenviar a"
     },
     "mail": {
@@ -3154,8 +3139,6 @@
           "menu": "Ventas y Negocios"
         }
       },
-      "description": "Conecta servicios de terceros para que tus agentes los utilicen.",
-      "descriptionWithCount": "Conecta {{value}} servicios para que tus agentes los utilicen.",
       "directory": {
         "browse": "Explorar",
         "builtin": "Conectores integrados",
@@ -5444,7 +5427,6 @@
         "startFailed": "No se inició la exportación"
       },
       "scope": {
-        "agentInstructions": "Instrucciones de los agentes a los que tienes acceso",
         "chatMessages": "Tus mensajes de chat",
         "chatThreads": "Tus conversaciones de chat",
         "filesExcluded": "No se incluyen artefactos, archivos adjuntos ni archivos complementarios de los flujos de trabajo.",
@@ -6994,20 +6976,15 @@
       }
     },
     "common": {
-      "agents": "Agentes",
       "cancel": "Cancelar",
       "close": "Cerrar",
-      "copyWorkflow": "Copiar flujo de trabajo",
       "delete": "Eliminar",
       "deleteWorkflow": "Eliminar flujo de trabajo",
       "instructions": "Instrucciones",
       "manual": "Manual",
-      "others": "Otros",
-      "pinned": "Fijado",
       "private": "Privado",
       "public": "Público",
       "settings": "Configuración",
-      "view": "Ver",
       "workflow": "Flujo de trabajo",
       "workflows": "Flujos de trabajo"
     },
@@ -7024,30 +7001,9 @@
       "createInChat": "Crear en el chat",
       "createInChatDescription": "Empieza con una conversación cuando aún no encaja ningún flujo de trabajo.",
       "createWorkflow": "Crear flujo de trabajo",
-      "noAgents": "Todavía no hay agentes",
-      "noAgentsFound": "No se encontraron agentes",
       "noWorkflows": "Todavía no hay flujos de trabajo. Crea uno en el chat para continuar."
     },
     "detail": {
-      "copy": {
-        "agentFallback": "El agente",
-        "copied": "Copiado a {{agent}}",
-        "copyAndRemove": "Copiar y eliminar",
-        "description": "Copia este flujo de trabajo a otro agente como un nuevo flujo de trabajo privado.",
-        "moved": "Movido a {{agent}}",
-        "moveDescription": "Original eliminado de {{agent}}.",
-        "noAgents": "Aún no hay otros agentes",
-        "privateReady": "Una copia privada está lista.",
-        "removalAlert": "Esto elimina el original",
-        "removalNoAutomations": "Este flujo de trabajo se elimina de {{agent}}.",
-        "removalWithAutomations_one": "{{count}} automatización se pausa en {{agent}} y este flujo de trabajo se elimina.",
-        "removalWithAutomations_many": "{{count}} automatizaciones se pausan en {{agent}} y este flujo de trabajo se elimina.",
-        "removalWithAutomations_other": "{{count}} automatizaciones se pausan en {{agent}} y este flujo de trabajo se elimina.",
-        "removeOriginal": "Eliminar el original de {{agent}} después de copiar",
-        "selectAgent": "Elige un agente",
-        "title": "Copiar flujo de trabajo",
-        "to": "Copiar a"
-      },
       "delete": {
         "confirm": "{{title}} y todas las automatizaciones vinculadas serán eliminadas.",
         "dangerDescription": "Elimina este flujo de trabajo y sus automatizaciones. Esta acción no puede deshacerse.",
@@ -7069,10 +7025,6 @@
         "upload": "Subir archivos de texto",
         "uploadAria": "Subir archivos de flujo de trabajo"
       },
-      "info": {
-        "copyDescription": "Copia este flujo de trabajo a otro agente.",
-        "copyTitle": "Copiar flujo de trabajo"
-      },
       "metadata": {
         "agent": "Agente",
         "agentDescription": "Este flujo de trabajo pertenece a este agente.",
@@ -7093,10 +7045,6 @@
       "notFound": "Flujo de trabajo no encontrado.",
       "refineWith": "Refinar con {{agent}}",
       "sectionNavigation": "Sección de detalles del flujo de trabajo",
-      "shadow": {
-        "end": "Este flujo de trabajo queda reemplazado por la regla de prioridad de otro con el mismo slug.",
-        "resolvesTo": "actualmente se resuelve como"
-      },
       "visibility": {
         "adminRequired": "Publicar un flujo de trabajo para un agente que no es de tu propiedad requiere permisos de administrador de la organización.",
         "automationWarning": "Las automatizaciones se detendrán",
@@ -7126,9 +7074,7 @@
     },
     "list": {
       "actionRequired": "Acción necesaria",
-      "agentEmpty": "Todavía no se ha ejecutado ningún flujo de trabajo con este agente.",
       "all": "Todos",
-      "allAgents": "Todos los agentes",
       "automated": "Automatizado",
       "automations": "Automatizaciones",
       "createdBy": "Creado por",
@@ -7146,8 +7092,6 @@
       "openRecovery": "Abrir la recuperación de {{title}}",
       "ownerLoading": "Cargando autor…",
       "ownerUnavailable": "Autor no disponible",
-      "runsAs": "Se ejecuta como",
-      "runsAsAria": "Se ejecuta como {{agent}}",
       "section": {
         "event": "Por automatización",
         "later": "Más tarde",

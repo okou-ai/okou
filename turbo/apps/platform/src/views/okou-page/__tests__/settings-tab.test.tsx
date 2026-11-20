@@ -620,11 +620,14 @@ function prepareDeleteWorkflow(): WorkflowSummary {
   return workflow;
 }
 
-test("Refresh only owned workflow copy targets whenever the delete dropdown opens", async () => {
+test("Offer only the current workspace default when rescuing a retained Agent workflow", async () => {
   prepareAgentProfile();
   prepareDeleteWorkflow();
   const source = copyTarget(AGENT_ID, "Research Agent");
-  const shared = copyTarget(DEFAULT_AGENT_ID, "Shared Agent", "another-user");
+  const retired = copyTarget(
+    "a0000000-0000-4000-a000-000000000020",
+    "Retained Agent",
+  );
   const firstTarget = copyTarget(
     "a0000000-0000-4000-a000-000000000021",
     "New Personal Agent",
@@ -633,7 +636,7 @@ test("Refresh only owned workflow copy targets whenever the delete dropdown open
     "a0000000-0000-4000-a000-000000000022",
     "Latest Personal Agent",
   );
-  let availableAgents = [source, shared];
+  let availableAgents = [source, retired];
   context.mocks.api(agentsMainContract.list, ({ respond }) => {
     return respond(200, availableAgents);
   });
@@ -644,13 +647,17 @@ test("Refresh only owned workflow copy targets whenever the delete dropdown open
   const dialog = await screen.findByRole("dialog");
   const select = await within(dialog).findByRole("combobox");
 
-  availableAgents = [source, shared, firstTarget];
+  availableAgents = [
+    source,
+    retired,
+    { ...firstTarget, isDefaultAgent: true, ownerId: "another-user" },
+  ];
   click(select);
   const firstOption = await screen.findByRole("option", {
     name: "Copy to New Personal Agent",
   });
   expect(
-    screen.queryByRole("option", { name: "Copy to Shared Agent" }),
+    screen.queryByRole("option", { name: "Copy to Retained Agent" }),
   ).not.toBeInTheDocument();
   expect(
     screen.queryByRole("option", { name: "Copy to Research Agent" }),
@@ -658,7 +665,12 @@ test("Refresh only owned workflow copy targets whenever the delete dropdown open
   click(firstOption);
   expect(select).toHaveTextContent("Copy to New Personal Agent");
 
-  availableAgents = [source, shared, secondTarget];
+  availableAgents = [
+    source,
+    retired,
+    firstTarget,
+    { ...secondTarget, isDefaultAgent: true },
+  ];
   click(select);
   const secondOption = await screen.findByRole("option", {
     name: "Copy to Latest Personal Agent",
@@ -667,7 +679,7 @@ test("Refresh only owned workflow copy targets whenever the delete dropdown open
     screen.queryByRole("option", { name: "Copy to New Personal Agent" }),
   ).not.toBeInTheDocument();
   expect(
-    screen.queryByRole("option", { name: "Copy to Shared Agent" }),
+    screen.queryByRole("option", { name: "Copy to Retained Agent" }),
   ).not.toBeInTheDocument();
   click(secondOption);
   expect(select).toHaveTextContent("Copy to Latest Personal Agent");

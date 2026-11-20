@@ -333,15 +333,12 @@
   },
   "appShell": {
     "pwaNavigation": {
-      "agentsUnavailable": "エージェントを読み込めませんでした",
       "back": "戻る",
       "backToChats": "チャット一覧に戻る",
       "chatListUnavailable": "チャットを読み込めませんでした",
       "chats": "チャット",
       "me": "自分",
-      "navigation": "メインナビゲーション",
-      "searchAgents": "エージェントを検索",
-      "switchAgent": "エージェントを切り替え"
+      "navigation": "メインナビゲーション"
     },
     "shortcutHelp": {
       "close": "キーボードショートカットを閉じる",
@@ -358,10 +355,8 @@
         "collapseProject": "Project を折りたたむ",
         "expandProject": "Project を展開",
         "newChat": "新しいチャット",
-        "nextAgent": "次のエージェント",
         "nextThread": "次のスレッド",
         "openFirstThread": "最初のスレッドを開く",
-        "previousAgent": "前のエージェント",
         "previousThread": "前のスレッド",
         "renameChat": "チャットの名前を変更する",
         "scrollBottom": "一番下までスクロール",
@@ -2001,7 +1996,6 @@
     },
     "composer": {
       "add": "追加",
-      "agentSuggestions": "エージェント",
       "configureModel": "モデルの構成",
       "create": {
         "addStyle": "スタイルを追加",
@@ -2218,16 +2212,7 @@
       "sent": "新しいチャットを作成しました"
     },
     "forward": {
-      "action": "転送",
-      "agents": "エージェント",
-      "back": "戻る",
       "composerPlaceholder": "メッセージを追加",
-      "content": "内容",
-      "description": "選択した内容をエージェントまたはチャットに送り、そのまま作業を続けます。",
-      "noResults": "エージェントまたはチャットが見つかりません",
-      "search": "エージェントとチャットを検索...",
-      "sent": "転送しました",
-      "threads": "チャット",
       "title": "転送先"
     },
     "mail": {
@@ -3083,8 +3068,6 @@
           "menu": "販売と事業"
         }
       },
-      "description": "エージェントが使用できるようにサードパーティのサービスを接続します。",
-      "descriptionWithCount": "エージェントが使用できる{{value}}個のサービスを接続します。",
       "directory": {
         "browse": "参照",
         "builtin": "組み込みコネクター",
@@ -5353,7 +5336,6 @@
         "startFailed": "エクスポートの開始に失敗しました"
       },
       "scope": {
-        "agentInstructions": "アクセス可能なエージェントの指示",
         "chatMessages": "自分のチャットメッセージ",
         "chatThreads": "自分のチャットスレッド",
         "filesExcluded": "アーティファクト、添付ファイル、ワークフローの補助ファイルは含まれません。",
@@ -6885,20 +6867,15 @@
       }
     },
     "common": {
-      "agents": "エージェント",
       "cancel": "キャンセル",
       "close": "閉じる",
-      "copyWorkflow": "ワークフローをコピー",
       "delete": "削除",
       "deleteWorkflow": "ワークフローの削除",
       "instructions": "指示",
       "manual": "マニュアル",
-      "others": "その他",
-      "pinned": "ピン留め済み",
       "private": "非公開",
       "public": "公開",
       "settings": "設定",
-      "view": "見る",
       "workflow": "ワークフロー",
       "workflows": "ワークフロー"
     },
@@ -6915,29 +6892,9 @@
       "createInChat": "チャットで作成",
       "createInChatDescription": "ワークフローがまだ適合していない場合は、会話から始めます。",
       "createWorkflow": "ワークフローの作成",
-      "noAgents": "まだエージェントがいません",
-      "noAgentsFound": "エージェントが見つかりませんでした",
       "noWorkflows": "ワークフローはまだありません。続行するには、チャットで作成してください。"
     },
     "detail": {
-      "copy": {
-        "agentFallback": "エージェント",
-        "copied": "{{agent}} にコピーされました",
-        "copyAndRemove": "コピーして削除する",
-        "description": "このワークフローを新しいプライベート ワークフローとして別のエージェントにコピーします。",
-        "moved": "{{agent}} に移動",
-        "moveDescription": "オリジナルは {{agent}} から削除されました。",
-        "noAgents": "他にエージェントはまだいません",
-        "privateReady": "プライベートコピーが完成しました。",
-        "removalAlert": "これにより、オリジナルが削除されます",
-        "removalNoAutomations": "このワークフローは {{agent}} から削除されます。",
-        "removalWithAutomations_one": "{{count}} オートメーションは {{agent}} で一時停止され、このワークフローは削除されます。",
-        "removalWithAutomations_other": "{{count}} オートメーションは {{agent}} で一時停止され、このワークフローは削除されます。",
-        "removeOriginal": "コピー後、{{agent}} から元のファイルを削除します",
-        "selectAgent": "エージェントを選択してください",
-        "title": "ワークフローをコピー",
-        "to": "コピー先"
-      },
       "delete": {
         "confirm": "{{title}} とバインドされたすべてのオートメーションが削除されます。",
         "dangerDescription": "このワークフローとそのオートメーションを削除します。この操作は元に戻すことができません。",
@@ -6959,10 +6916,6 @@
         "upload": "テキストファイルをアップロードする",
         "uploadAria": "ワークフローファイルをアップロードする"
       },
-      "info": {
-        "copyDescription": "このワークフローを別のエージェントにコピーします。",
-        "copyTitle": "ワークフローをコピー"
-      },
       "metadata": {
         "agent": "エージェント",
         "agentDescription": "このワークフローはこのエージェントに属します。",
@@ -6983,10 +6936,6 @@
       "notFound": "ワークフローが見つかりません。",
       "refineWith": "{{agent}} で絞り込む",
       "sectionNavigation": "ワークフロー詳細セクション",
-      "shadow": {
-        "end": "あなたのために。このワークフローは、同じスラッグの優先順位ルールによってシャドウされます。",
-        "resolvesTo": "現在は次のように解決されます"
-      },
       "visibility": {
         "adminRequired": "所有していないエージェントの下でワークフローを公開するには、組織管理者権限が必要です。",
         "automationWarning": "オートメーションは停止します",
@@ -7016,9 +6965,7 @@
     },
     "list": {
       "actionRequired": "対応が必要",
-      "agentEmpty": "このエージェントとして実行されるワークフローはまだありません。",
       "all": "すべて",
-      "allAgents": "すべてのエージェント",
       "automated": "自動化",
       "automations": "オートメーション",
       "createdBy": "作成者",
@@ -7036,8 +6983,6 @@
       "openRecovery": "{{title}} の復旧を開く",
       "ownerLoading": "作成者を読み込み中…",
       "ownerUnavailable": "作成者情報を取得できません",
-      "runsAs": "として実行",
-      "runsAsAria": "{{agent}} として実行",
       "section": {
         "event": "オートメーションについて",
         "later": "後で",

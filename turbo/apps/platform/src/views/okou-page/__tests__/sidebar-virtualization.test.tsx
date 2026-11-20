@@ -181,7 +181,11 @@ test("Keep the chat viewport keyboard-focusable only while a conversation is ope
   viewport.focus();
   expect(viewport).toHaveFocus();
 
-  click(within(sidebar).getByRole("link", { name: /^New chat/ }));
+  const newChat = sidebar.querySelector<HTMLAnchorElement>('a[href="/"]');
+  if (!newChat) {
+    throw new Error("New chat link not found");
+  }
+  click(newChat);
   await waitFor(() => {
     expect(viewport).toHaveAttribute("tabindex", "-1");
   });

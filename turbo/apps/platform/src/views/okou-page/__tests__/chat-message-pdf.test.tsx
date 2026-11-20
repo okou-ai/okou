@@ -34,6 +34,7 @@ import type {
   PdfWorkerResponse,
 } from "../../../lib/message-pdf/types.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { findLink } from "./chat-run-test-fixtures.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
 
 const context = testContext();
@@ -165,7 +166,7 @@ test.each(["app.okou.ai", "pr-1-app.omby.ai"])(
     expect(fireEvent.click(link)).toBeTruthy();
     expect(browser.blobForUrl(url)).toBe(pdf);
 
-    click(screen.getByRole("link", { name: "Workflows" }));
+    click(await findLink("Workflows"));
     await waitFor(() => {
       expect(location.pathname).toBe("/workflows");
       expect(browser.blobForUrl(url)).toBeNull();

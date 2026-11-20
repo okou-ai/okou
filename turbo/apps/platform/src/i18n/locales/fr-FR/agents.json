@@ -3,7 +3,6 @@
     "cancel": "Annuler",
     "close": "Fermer",
     "copying": "Copie en cours…",
-    "create": "Créer",
     "delete": "Supprimer l'agent",
     "deleting": "Suppression en cours…",
     "discard": "Ignorer",
@@ -457,47 +456,6 @@
     "saved": "Instructions enregistrées"
   },
   "list": {
-    "actions": {
-      "new": "Nouvel agent"
-    },
-    "cards": {
-      "coreDescription": "Votre agent principal",
-      "createdBy": "Créé par {{creator}}",
-      "subagentDescription": "Sous-agent",
-      "unknownCreator": "Inconnu"
-    },
-    "create": {
-      "accessibilityDescription": "Nommez le nouvel agent, choisissez sa visibilité et personnalisez son avatar.",
-      "creating": "Création…",
-      "description": "Nommez votre agent et définissez qui peut l'utiliser.",
-      "namePlaceholder": "par ex. Assistant de recherche",
-      "newAgentAlt": "Nouvel agent",
-      "responsibilityLabel": "En quoi voulez-vous que cet agent vous aide ?",
-      "responsibilityPlaceholder": "par ex. chaque lundi, résumer le pipeline de la semaine dernière dans HubSpot et signaler les affaires qui demandent une attention particulière.",
-      "success": "{{agentName}} créé avec succès",
-      "title": "Créer un nouvel agent",
-      "visibility": {
-        "private": {
-          "description": "(seul vous pouvez le voir et l'utiliser)",
-          "label": "Privé"
-        },
-        "public": {
-          "description": "(toute personne dans cet espace de travail peut l'utiliser)",
-          "label": "Public"
-        }
-      },
-      "visibilityLabel": "Visibilité"
-    },
-    "description": "{{agentName}} et les sous-agents travaillent ensemble pour exécuter des workflows personnalisés pour vous et votre équipe.",
-    "documentTitle": "Agents",
-    "privateEmpty": {
-      "description": "Créez un agent que seul vous pouvez voir et utiliser. Les agents privés sont illimités.",
-      "title": "Pas encore d'agents privés"
-    },
-    "tabs": {
-      "private": "Privé",
-      "public": "Public"
-    },
     "title": "Agents"
   },
   "profile": {
@@ -563,35 +521,21 @@
     }
   },
   "sidebar": {
-    "addPin": "Épingler",
-    "clearSearch": "Effacer la recherche",
     "escapeShortcut": "Esc",
     "filterAll": "Tout",
     "markAllRead": "Tout marquer comme lu",
-    "noAgentsToPin": "Vous n'avez pas encore d'autres agents.",
     "noResults": "Aucun résultat trouvé",
-    "pin": "Épingler à la barre latérale",
-    "pinAgent": "Épingler un agent",
-    "pinAgentDescription": "Choisissez un agent à épingler à la barre latérale.",
-    "pinned": "Épinglé",
-    "pinnedAgents": "Agents épinglés",
-    "pinSuccess": "{{agentName}} épinglé",
     "resultCount_one": "{{count}} résultat",
     "resultCount_many": "{{count}} résultats",
     "resultCount_other": "{{count}} résultats",
-    "searchAgents": "Rechercher des agents...",
     "searching": "Recherche...",
     "searchWorkspace": "Rechercher dans l’espace de travail...",
     "sections": {
-      "agents": "Agents",
       "artifacts": "Artefacts",
       "chats": "Chats",
       "messages": "Messages",
-      "others": "Autres",
       "workflows": "Workflows"
-    },
-    "unpin": "Détacher",
-    "unpinSuccess": "{{agentName}} détaché"
+    }
   },
   "status": {
     "unread": "Non lu"

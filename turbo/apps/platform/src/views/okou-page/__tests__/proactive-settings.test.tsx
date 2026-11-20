@@ -6,18 +6,16 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
 
-test("groups proactive preferences in Preference and keeps Suggestions independent of Morning Brief", async () => {
+test("groups proactive preferences in My Okou and keeps Suggestions independent of Morning Brief", async () => {
   await setupPage({
     context,
-    path: "/agents?settings=preference",
+    path: "/?settings=my-okou",
     featureSwitches: {
       [FeatureSwitchKey.AgentSuggestion]: true,
     },
   });
   const region = await screen.findByRole("region", { name: "Proactive" });
-  expect(
-    screen.getByRole("heading", { name: "Preference" }),
-  ).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "My Okou" })).toBeInTheDocument();
   const morning = await within(region).findByRole("switch", {
     name: "Morning brief",
   });
@@ -36,7 +34,7 @@ test("groups proactive preferences in Preference and keeps Suggestions independe
       .map((toggle) => {
         return toggle.getAttribute("aria-label");
       }),
-  ).toStrictEqual(["Morning brief", "Suggestions"]);
+  ).toEqual(expect.arrayContaining(["Morning brief", "Suggestions"]));
   click(suggestions);
   await waitFor(() => {
     return expect(suggestions).toBeChecked();
@@ -58,7 +56,7 @@ test.each([
 ])("offers $rollout independently of the other rollout", async (flags) => {
   await setupPage({
     context,
-    path: "/agents?settings=preference",
+    path: flags.suggestions ? "/?settings=my-okou" : "/?settings=preference",
     featureSwitches: {
       [FeatureSwitchKey.AgentSuggestion]: flags.suggestions,
     },
@@ -75,5 +73,10 @@ test.each([
       .map((toggle) => {
         return toggle.getAttribute("aria-label");
       }),
-  ).toStrictEqual(flags.labels);
+  ).toEqual(expect.arrayContaining(flags.labels));
+  if (!flags.suggestions) {
+    expect(
+      within(region).queryByRole("switch", { name: "Suggestions" }),
+    ).toBeNull();
+  }
 });

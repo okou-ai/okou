@@ -219,10 +219,11 @@ test("Refresh the thread unread indicator", async () => {
       threadRowByTitle("Remote unread conversation", sidebar()),
     ).toBeInTheDocument();
   });
-  const unreadIndicator = () =>
-    within(
+  const unreadIndicator = () => {
+    return within(
       threadRowByTitle("Remote unread conversation", sidebar()),
     ).queryByText("Unread");
+  };
   await waitFor(() => {
     expect(unreadIndicator()).toBeNull();
   });

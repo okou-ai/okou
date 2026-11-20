@@ -593,7 +593,7 @@ test("A retained conversation links the reply name to its original Agent", async
   });
 
   context.mocks.data.onboardingStatus({
-    defaultAgentId: "c0000000-0000-4000-a000-000000000001",
+    defaultAgentId: "c0000000-0000-4000-a000-000000000009",
   });
   await setupPage({
     context,
@@ -637,7 +637,7 @@ test.each([
     });
 
     context.mocks.data.onboardingStatus({
-      defaultAgentId: "c0000000-0000-4000-a000-000000000001",
+      defaultAgentId: "c0000000-0000-4000-a000-000000000009",
     });
     await setupPage({
       context,
@@ -698,7 +698,7 @@ test.each(finalOutputDocuments)(
     });
 
     context.mocks.data.onboardingStatus({
-      defaultAgentId: "c0000000-0000-4000-a000-000000000001",
+      defaultAgentId: "c0000000-0000-4000-a000-000000000009",
     });
     await setupPage({
       context,

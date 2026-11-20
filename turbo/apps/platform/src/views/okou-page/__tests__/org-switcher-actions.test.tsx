@@ -25,7 +25,7 @@ async function setupCreatableWorkspace(limit: number | null = null) {
   context.mocks.data.org({ id: "org_current", name: "Acme", role: "admin" });
   await setupPage({
     context,
-    path: "/agents",
+    path: "/",
     auth: {
       user: {
         id: "test-user-123",
@@ -51,16 +51,16 @@ async function reopenWorkspaceMenu() {
   await screen.findByRole("menu");
 }
 
-async function navigateToConnectors() {
-  const connectorsLink = queryAllByRoleFast("link").find((candidate) => {
-    return candidate.getAttribute("href") === "/connectors";
+async function navigateToWorkflows() {
+  const workflowsLink = queryAllByRoleFast("link").find((candidate) => {
+    return candidate.getAttribute("href") === "/workflows";
   });
-  if (!connectorsLink) {
-    throw new Error("Connectors navigation link not found");
+  if (!workflowsLink) {
+    throw new Error("Workflows navigation link not found");
   }
-  click(connectorsLink);
+  click(workflowsLink);
   await waitFor(() => {
-    expect(location.pathname).toBe("/connectors");
+    expect(location.pathname).toBe("/workflows");
   });
 }
 
@@ -84,7 +84,7 @@ test("Leaving the page during workspace creation reconciles the quota without ac
     });
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   });
-  await navigateToConnectors();
+  await navigateToWorkflows();
   click(workspaceSwitcher());
 
   creation.resolve({ id: "org_created_after_navigation" });
@@ -96,7 +96,7 @@ test("Leaving the page during workspace creation reconciles the quota without ac
   await reopenWorkspaceMenu();
   expect(screen.queryByText("Create workspace")).not.toBeInTheDocument();
   expect(mockedClerk.setActive).not.toHaveBeenCalled();
-  expect(location.pathname).toBe("/connectors");
+  expect(location.pathname).toBe("/workflows");
 });
 
 test("Failed workspace activation still reconciles the committed creation quota", async () => {
@@ -126,7 +126,7 @@ test("Failed workspace activation still reconciles the committed creation quota"
   await waitFor(() => {
     expect(screen.queryByText("Create workspace")).not.toBeInTheDocument();
   });
-  expect(location.pathname).toBe("/agents");
+  expect(location.pathname).toBe("/");
 });
 
 test("Leaving the page during invitation acceptance removes the committed invitation without activation", async () => {
@@ -148,7 +148,7 @@ test("Leaving the page during invitation acceptance removes the committed invita
   context.mocks.data.org({ id: "org_current", name: "Acme", role: "admin" });
   await setupPage({
     context,
-    path: "/agents",
+    path: "/",
     auth: {
       user: { id: "test-user-123", fullName: "Test User" },
       organization: {
@@ -173,7 +173,7 @@ test("Leaving the page during invitation acceptance removes the committed invita
   await waitFor(() => {
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   });
-  await navigateToConnectors();
+  await navigateToWorkflows();
   click(workspaceSwitcher());
   await screen.findByText("Invited Org");
 
@@ -189,5 +189,5 @@ test("Leaving the page during invitation acceptance removes the committed invita
   await reopenWorkspaceMenu();
   expect(screen.queryByText("Invited Org")).not.toBeInTheDocument();
   expect(mockedClerk.setActive).not.toHaveBeenCalled();
-  expect(location.pathname).toBe("/connectors");
+  expect(location.pathname).toBe("/workflows");
 });

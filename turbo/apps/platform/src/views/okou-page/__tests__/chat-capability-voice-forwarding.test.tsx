@@ -43,7 +43,6 @@ const context = testContext();
 const { installCapabilityChat } = createChatCapabilityHelpers(context);
 // A replacement app has fresh app/worker stores under the same document owner.
 const refreshedContext = createTestRuntime(context);
-const FORWARD_TARGET_NAME = "Okou";
 
 test("Fork opens a quoted personal chat composer and preserves the source draft on dismissal", async () => {
   installVoiceBoundaries();
@@ -99,14 +98,11 @@ function installVoiceBoundaries() {
   });
 }
 
-async function openForwardComposer(name: string) {
+async function openForkComposer() {
   await selectPassage("launch plan has three careful stages");
-  click(await findEnabledButton("Forward"));
-  const dialog = await screen.findByRole("dialog", { name: "Forward to" });
-  click(await within(dialog).findByRole("option", { name }));
-  await expect(
-    within(dialog).findByRole("textbox", { name: "Add a message" }),
-  ).resolves.toBeInTheDocument();
+  click(await findEnabledButton("Fork"));
+  const dialog = await screen.findByRole("dialog", { name: "Okou" });
+  await within(dialog).findByRole("textbox", { name: "Message" });
   return dialog;
 }
 
@@ -119,7 +115,7 @@ async function uploadedAudio(request: Request) {
   return await file.arrayBuffer();
 }
 
-async function prepareForwardSuggestions() {
+async function prepareForkSuggestions() {
   installVoiceBoundaries();
   context.mocks.browser.matchMedia((query) => {
     return query === SIDEBAR_DESKTOP_MEDIA_QUERY;
@@ -132,11 +128,11 @@ async function prepareForwardSuggestions() {
   const originalComposer = await screen.findByRole("textbox", {
     name: "Message",
   });
-  const dialog = await openForwardComposer(FORWARD_TARGET_NAME);
+  const dialog = await openForkComposer();
   const editor = within(dialog).getByRole("textbox", {
     name: "Message",
   });
-  await fill(editor, "Forward draft /");
+  await fill(editor, "Fork draft /");
   const menu = await screen.findByTestId("slash-workflow-menu");
   const templates = queryAllByRoleFast("button", menu).find((candidate) => {
     return candidate.textContent
@@ -154,9 +150,9 @@ async function prepareForwardSuggestions() {
   return { originalComposer, dialog, editor, menu, templates, user };
 }
 
-test("Keep forwarding suggestions isolated during preview navigation", async () => {
+test("Keep Fork suggestions isolated during preview navigation", async () => {
   const { originalComposer, dialog, editor, menu, templates, user } =
-    await prepareForwardSuggestions();
+    await prepareForkSuggestions();
   await user.keyboard("{ArrowUp}");
   expect(templates).toHaveAttribute("data-active", "true");
   const pane = within(menu).getByRole("region", { name: "Templates" });
@@ -174,14 +170,14 @@ test("Keep forwarding suggestions isolated during preview navigation", async () 
   fireEvent.mouseMove(document);
   expect(document).toHaveAttribute("aria-pressed", "true");
   expect(dialog).toBeInTheDocument();
-  expect(editor).toHaveTextContent("Forward draft /");
+  expect(editor).toHaveTextContent("Fork draft /");
   expect(editor).toHaveFocus();
   expect(originalComposer).toHaveTextContent("Keep the existing notes.");
 });
 
-test("Keep forwarding suggestions isolated during IME composition", async () => {
+test("Keep Fork suggestions isolated during IME composition", async () => {
   const { originalComposer, dialog, editor, menu } =
-    await prepareForwardSuggestions();
+    await prepareForkSuggestions();
   fireEvent.compositionStart(editor, { data: "中文" });
   fireEvent.keyDown(editor, {
     key: "Enter",
@@ -189,28 +185,28 @@ test("Keep forwarding suggestions isolated during IME composition", async () => 
     keyCode: 229,
   });
   expect(menu).toBeInTheDocument();
-  expect(editor).toHaveTextContent("Forward draft /");
+  expect(editor).toHaveTextContent("Fork draft /");
   fireEvent.compositionEnd(editor, { data: "中文" });
   expect(dialog).toBeInTheDocument();
-  expect(editor).toHaveTextContent("Forward draft /");
+  expect(editor).toHaveTextContent("Fork draft /");
   expect(editor).toHaveFocus();
   expect(originalComposer).toHaveTextContent("Keep the existing notes.");
 });
 
-test("Keep forwarding suggestions isolated during dismissal", async () => {
+test("Keep Fork suggestions isolated during dismissal", async () => {
   const { originalComposer, dialog, editor, user } =
-    await prepareForwardSuggestions();
+    await prepareForkSuggestions();
   await user.keyboard("{Escape}");
   await waitFor(() => {
     expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
   });
   expect(dialog).toBeInTheDocument();
-  expect(editor).toHaveTextContent("Forward draft /");
+  expect(editor).toHaveTextContent("Fork draft /");
   expect(editor).toHaveFocus();
   expect(originalComposer).toHaveTextContent("Keep the existing notes.");
 });
 
-describe("reuse an unfinished agent recording in the forward dialog without replacing it", () => {
+describe("reuse an unfinished agent recording in the Fork dialog without replacing it", () => {
   async function prepareRecording() {
     const resetInitialPage$ = resetSignal();
     const initialPageSignal = context.store.set(
@@ -280,11 +276,11 @@ describe("reuse an unfinished agent recording in the forward dialog without repl
       return composer;
     });
     expect(originalComposer).toHaveAccessibleName("Message");
-    const dialog = await openForwardComposer(FORWARD_TARGET_NAME);
+    const dialog = await openForkComposer();
     await findEnabledButton("Use recording", dialog);
     return { dialog, originalComposer };
   }
-  it("uses the saved recording in the forward dialog without changing the original composer", async () => {
+  it("uses the saved recording in the Fork dialog without changing the original composer", async () => {
     const { uploads } = preparedRecording;
     const { dialog, originalComposer } = await openRestoredRecording();
     expect(queryButton("Voice input", dialog)).toBeNull();

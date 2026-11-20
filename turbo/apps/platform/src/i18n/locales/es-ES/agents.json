@@ -3,7 +3,6 @@
     "cancel": "Cancelar",
     "close": "Cerrar",
     "copying": "Copiando…",
-    "create": "Crear",
     "delete": "Eliminar agente",
     "deleting": "Eliminando…",
     "discard": "Descartar",
@@ -457,47 +456,6 @@
     "saved": "Instrucciones guardadas"
   },
   "list": {
-    "actions": {
-      "new": "Nuevo agente"
-    },
-    "cards": {
-      "coreDescription": "Tu agente principal",
-      "createdBy": "Creado por {{creator}}",
-      "subagentDescription": "Subagente",
-      "unknownCreator": "Desconocido"
-    },
-    "create": {
-      "accessibilityDescription": "Nombra al nuevo agente, elige su visibilidad y personaliza su avatar.",
-      "creating": "Creando…",
-      "description": "Ponle nombre a tu agente y decide quién puede usarlo.",
-      "namePlaceholder": "por ejemplo, Asistente de Investigación",
-      "newAgentAlt": "Nuevo agente",
-      "responsibilityLabel": "¿En qué quieres que te ayude este agente?",
-      "responsibilityPlaceholder": "por ejemplo, cada lunes, resumir el pipeline de la semana pasada en HubSpot y señalar las oportunidades que necesitan atención.",
-      "success": "{{agentName}} creado con éxito",
-      "title": "Crea un nuevo agente",
-      "visibility": {
-        "private": {
-          "description": "(solo tú puedes verlo y usarlo)",
-          "label": "Privado"
-        },
-        "public": {
-          "description": "(cualquiera en este espacio puede usarlo)",
-          "label": "Público"
-        }
-      },
-      "visibilityLabel": "Visibilidad"
-    },
-    "description": "{{agentName}} y subagentes trabajando juntos para ejecutar flujos de trabajo personalizados para ti y tu equipo.",
-    "documentTitle": "Agentes",
-    "privateEmpty": {
-      "description": "Crea un agente que solo tú puedas ver y usar. Los agentes privados son ilimitados.",
-      "title": "Todavía no hay agentes privados"
-    },
-    "tabs": {
-      "private": "Privado",
-      "public": "Público"
-    },
     "title": "Agentes"
   },
   "profile": {
@@ -563,35 +521,21 @@
     }
   },
   "sidebar": {
-    "addPin": "Fijar",
-    "clearSearch": "Borrar búsqueda",
     "escapeShortcut": "Esc",
     "filterAll": "Todos",
     "markAllRead": "Marcar todo como leído",
-    "noAgentsToPin": "Todavía no tienes otros agentes.",
     "noResults": "No se encontraron resultados",
-    "pin": "Fijar en la barra lateral",
-    "pinAgent": "Fijar un agente",
-    "pinAgentDescription": "Elige un agente para fijarlo en la barra lateral.",
-    "pinned": "Fijados",
-    "pinnedAgents": "Agentes fijados",
-    "pinSuccess": "{{agentName}} fijado",
     "resultCount_one": "{{count}} resultado",
     "resultCount_many": "{{count}} resultados",
     "resultCount_other": "{{count}} resultados",
-    "searchAgents": "Buscar agentes...",
     "searching": "Buscando...",
     "searchWorkspace": "Buscar en el espacio de trabajo...",
     "sections": {
-      "agents": "Agentes",
       "artifacts": "Artefactos",
       "chats": "Conversaciones",
       "messages": "Mensajes",
-      "others": "Otros",
       "workflows": "Flujos de trabajo"
-    },
-    "unpin": "Desfijar",
-    "unpinSuccess": "{{agentName}} desfijado"
+    }
   },
   "status": {
     "unread": "No leído"

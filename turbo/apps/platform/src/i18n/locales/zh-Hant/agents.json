@@ -3,7 +3,6 @@
     "cancel": "取消",
     "close": "關閉",
     "copying": "複製中…",
-    "create": "建立",
     "delete": "刪除智能體",
     "deleting": "刪除中…",
     "discard": "放棄更改",
@@ -457,47 +456,6 @@
     "saved": "指令已儲存"
   },
   "list": {
-    "actions": {
-      "new": "新建智能體"
-    },
-    "cards": {
-      "coreDescription": "你的核心智能體",
-      "createdBy": "由{{creator}}建立",
-      "subagentDescription": "子智能體",
-      "unknownCreator": "未知"
-    },
-    "create": {
-      "accessibilityDescription": "給新智能體命名、選擇可見範圍，並自定義它的頭像。",
-      "creating": "建立中…",
-      "description": "給智能體起個名字，並設定誰可以使用。",
-      "namePlaceholder": "例如：調研助理",
-      "newAgentAlt": "新建智能體",
-      "responsibilityLabel": "你想要這個智能體幫你做什麼？",
-      "responsibilityPlaceholder": "例如：每週一彙整 HubSpot 上週的銷售管道，並標出需要跟進的商機。",
-      "success": "{{agentName}}建立成功",
-      "title": "建立新智能體",
-      "visibility": {
-        "private": {
-          "description": "（只有你能看到和使用）",
-          "label": "私有"
-        },
-        "public": {
-          "description": "（這個工作區裡的任何人都能使用）",
-          "label": "公開"
-        }
-      },
-      "visibilityLabel": "可見範圍"
-    },
-    "description": "{{agentName}}和子智能體協同配合，為你和團隊執行量身定製的工作流。",
-    "documentTitle": "智能體",
-    "privateEmpty": {
-      "description": "建立一個只有你能看到和使用的智能體。私有智能體數量不限。",
-      "title": "還沒有私有智能體"
-    },
-    "tabs": {
-      "private": "私有",
-      "public": "公開"
-    },
     "title": "智能體"
   },
   "profile": {
@@ -563,33 +521,19 @@
     }
   },
   "sidebar": {
-    "addPin": "固定",
-    "clearSearch": "清除搜尋",
     "escapeShortcut": "Esc",
     "filterAll": "全部",
     "markAllRead": "全部標為已讀",
-    "noAgentsToPin": "你還沒有其他智能體。",
     "noResults": "沒有找到結果",
-    "pin": "固定到側邊欄",
-    "pinAgent": "固定一個智能體",
-    "pinAgentDescription": "選擇一個要固定到側邊欄的智能體。",
-    "pinned": "已固定",
-    "pinnedAgents": "已固定的智能體",
-    "pinSuccess": "已固定{{agentName}}",
     "resultCount_other": "{{count}} 條結果",
-    "searchAgents": "搜尋智能體…",
     "searching": "搜尋中…",
     "searchWorkspace": "搜尋工作區…",
     "sections": {
-      "agents": "智能體",
       "artifacts": "成果",
       "chats": "聊天",
       "messages": "訊息",
-      "others": "其他",
       "workflows": "工作流"
-    },
-    "unpin": "取消固定",
-    "unpinSuccess": "已取消固定{{agentName}}"
+    }
   },
   "status": {
     "unread": "未讀"

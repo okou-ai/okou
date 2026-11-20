@@ -267,7 +267,8 @@ test.each(["reopening Settings", "returning to My Okou"])(
       click(within(await screen.findByRole("menu")).getByText("Settings"));
     }
     const reopened = await screen.findByRole("dialog", { name: "Settings" });
-    click(within(reopened).getByRole("button", { name: "My Okou" }));
+    const navigation = within(reopened).getByRole("navigation");
+    click(within(navigation).getByText("My Okou"));
     await waitFor(() => {
       const refreshed = within(reopened).getByRole("switch", {
         name: "Suggestions",

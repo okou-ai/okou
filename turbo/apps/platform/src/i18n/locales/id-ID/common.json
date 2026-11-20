@@ -333,15 +333,12 @@
   },
   "appShell": {
     "pwaNavigation": {
-      "agentsUnavailable": "Tidak dapat memuat agen",
       "back": "Kembali",
       "backToChats": "Kembali ke obrolan",
       "chatListUnavailable": "Tidak dapat memuat obrolan",
       "chats": "Obrolan",
       "me": "Saya",
-      "navigation": "Navigasi utama",
-      "searchAgents": "Cari agen",
-      "switchAgent": "Ganti agen"
+      "navigation": "Navigasi utama"
     },
     "shortcutHelp": {
       "close": "Tutup pintasan keyboard",
@@ -358,10 +355,8 @@
         "collapseProject": "Ciutkan Project",
         "expandProject": "Luaskan Project",
         "newChat": "Chat baru",
-        "nextAgent": "Agen berikutnya",
         "nextThread": "Thread berikutnya",
         "openFirstThread": "Buka thread pertama",
-        "previousAgent": "Agen sebelumnya",
         "previousThread": "Thread sebelumnya",
         "renameChat": "Ganti nama chat",
         "scrollBottom": "Gulir ke bawah",
@@ -2001,7 +1996,6 @@
     },
     "composer": {
       "add": "Tambah",
-      "agentSuggestions": "Agen",
       "configureModel": "Konfigurasikan model",
       "create": {
         "addStyle": "Tambahkan gaya",
@@ -2218,16 +2212,7 @@
       "sent": "Obrolan baru dibuat"
     },
     "forward": {
-      "action": "Teruskan",
-      "agents": "Agen",
-      "back": "Kembali",
       "composerPlaceholder": "Tambahkan pesan",
-      "content": "Konten",
-      "description": "Kirim konten yang dipilih ke agen atau chat untuk melanjutkan pengerjaannya.",
-      "noResults": "Agen atau chat tidak ditemukan",
-      "search": "Cari agen dan chat...",
-      "sent": "Berhasil diteruskan",
-      "threads": "Chat",
       "title": "Teruskan ke"
     },
     "mail": {
@@ -3083,8 +3068,6 @@
           "menu": "Penjualan dan Bisnis"
         }
       },
-      "description": "Hubungkan layanan pihak ketiga agar agen Anda dapat menggunakannya.",
-      "descriptionWithCount": "Hubungkan {{value}} layanan agar agen Anda dapat menggunakannya.",
       "directory": {
         "browse": "Jelajahi",
         "builtin": "Konektor bawaan",
@@ -5353,7 +5336,6 @@
         "startFailed": "Gagal memulai ekspor"
       },
       "scope": {
-        "agentInstructions": "Instruksi agen yang dapat Anda akses",
         "chatMessages": "Pesan chat Anda",
         "chatThreads": "Percakapan chat Anda",
         "filesExcluded": "Artefak, lampiran, dan file pendukung alur kerja tidak disertakan.",
@@ -6885,20 +6867,15 @@
       }
     },
     "common": {
-      "agents": "Agen",
       "cancel": "Batal",
       "close": "Tutup",
-      "copyWorkflow": "Salin alur kerja",
       "delete": "Hapus",
       "deleteWorkflow": "Hapus alur kerja",
       "instructions": "Instruksi",
       "manual": "Manual",
-      "others": "Lainnya",
-      "pinned": "Disematkan",
       "private": "Pribadi",
       "public": "Publik",
       "settings": "Pengaturan",
-      "view": "Lihat",
       "workflow": "Alur kerja",
       "workflows": "Alur kerja"
     },
@@ -6915,29 +6892,9 @@
       "createInChat": "Buat di chat",
       "createInChatDescription": "Mulai dari percakapan saat belum ada alur kerja yang cocok.",
       "createWorkflow": "Buat alur kerja",
-      "noAgents": "Belum ada agen",
-      "noAgentsFound": "Agen tidak ditemukan",
       "noWorkflows": "Belum ada alur kerja. Buat satu di chat untuk melanjutkan."
     },
     "detail": {
-      "copy": {
-        "agentFallback": "agen tersebut",
-        "copied": "Disalin ke {{agent}}",
-        "copyAndRemove": "Salin dan hapus",
-        "description": "Salin alur kerja ini ke agen lain sebagai alur kerja pribadi baru.",
-        "moved": "Dipindahkan ke {{agent}}",
-        "moveDescription": "Asli dihapus dari {{agent}}.",
-        "noAgents": "Belum ada agen lain",
-        "privateReady": "Salinan pribadi sudah siap.",
-        "removalAlert": "Ini menghapus yang asli",
-        "removalNoAutomations": "Alur kerja ini dihapus dari {{agent}}.",
-        "removalWithAutomations_one": "{{count}} otomatisasi dijeda di {{agent}} dan alur kerja ini dihapus.",
-        "removalWithAutomations_other": "{{count}} otomatisasi dijeda di {{agent}} dan alur kerja ini dihapus.",
-        "removeOriginal": "Hapus yang asli dari {{agent}} setelah menyalin",
-        "selectAgent": "Pilih agen",
-        "title": "Salin alur kerja",
-        "to": "Salin ke"
-      },
       "delete": {
         "confirm": "{{title}} dan semua otomatisasi yang terikat akan dihapus.",
         "dangerDescription": "Hapus alur kerja ini dan otomatisasinya. Tindakan ini tidak dapat dibatalkan.",
@@ -6959,10 +6916,6 @@
         "upload": "Unggah berkas teks",
         "uploadAria": "Unggah berkas alur kerja"
       },
-      "info": {
-        "copyDescription": "Salin alur kerja ini ke agen lain.",
-        "copyTitle": "Salin alur kerja"
-      },
       "metadata": {
         "agent": "Agen",
         "agentDescription": "Alur kerja ini milik agen ini.",
@@ -6983,10 +6936,6 @@
       "notFound": "Alur kerja tidak ditemukan.",
       "refineWith": "Perhalus dengan {{agent}}",
       "sectionNavigation": "Bagian detail alur kerja",
-      "shadow": {
-        "end": "untuk Anda. Alur kerja ini dibayangi oleh aturan prioritas slug yang sama.",
-        "resolvesTo": "saat ini mengarah ke"
-      },
       "visibility": {
         "adminRequired": "Menerbitkan alur kerja di bawah agen yang tidak Anda miliki memerlukan izin admin org.",
         "automationWarning": "Otomatisasi akan berhenti",
@@ -7016,9 +6965,7 @@
     },
     "list": {
       "actionRequired": "Tindakan diperlukan",
-      "agentEmpty": "Belum ada alur kerja yang dijalankan sebagai agen ini.",
       "all": "Semua",
-      "allAgents": "Semua agen",
       "automated": "Otomatis",
       "automations": "Otomatisasi",
       "createdBy": "Dibuat oleh",
@@ -7036,8 +6983,6 @@
       "openRecovery": "Buka pemulihan {{title}}",
       "ownerLoading": "Memuat penulis…",
       "ownerUnavailable": "Penulis tidak tersedia",
-      "runsAs": "Dijalankan sebagai",
-      "runsAsAria": "Dijalankan sebagai {{agent}}",
       "section": {
         "event": "Saat otomatisasi",
         "later": "Nanti",

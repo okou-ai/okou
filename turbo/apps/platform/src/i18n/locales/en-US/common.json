@@ -333,15 +333,12 @@
   },
   "appShell": {
     "pwaNavigation": {
-      "agentsUnavailable": "Could not load agents",
       "back": "Back",
       "backToChats": "Back to chats",
       "chatListUnavailable": "Could not load chats",
       "chats": "Chats",
       "me": "Me",
-      "navigation": "Main navigation",
-      "searchAgents": "Search agents",
-      "switchAgent": "Switch agent"
+      "navigation": "Main navigation"
     },
     "shortcutHelp": {
       "close": "Close keyboard shortcuts",
@@ -358,10 +355,8 @@
         "collapseProject": "Collapse Project",
         "expandProject": "Expand Project",
         "newChat": "New chat",
-        "nextAgent": "Next agent",
         "nextThread": "Next thread",
         "openFirstThread": "Open first thread",
-        "previousAgent": "Previous agent",
         "previousThread": "Previous thread",
         "renameChat": "Rename chat",
         "scrollBottom": "Scroll to bottom",
@@ -2007,7 +2002,6 @@
     },
     "composer": {
       "add": "Add",
-      "agentSuggestions": "Agents",
       "configureModel": "Configure model",
       "create": {
         "addStyle": "Add style",
@@ -2227,16 +2221,7 @@
       "sent": "New chat created"
     },
     "forward": {
-      "action": "Forward",
-      "agents": "Agents",
-      "back": "Back",
       "composerPlaceholder": "Add a message",
-      "content": "Content",
-      "description": "Send selected content to an agent or chat to continue working on it.",
-      "noResults": "No agents or chats found",
-      "search": "Search agents and chats...",
-      "sent": "Forwarded successfully",
-      "threads": "Chats",
       "title": "Forward to"
     },
     "mail": {
@@ -3099,8 +3084,6 @@
           "menu": "Sales and business"
         }
       },
-      "description": "Connect third-party services for your agents to use.",
-      "descriptionWithCount": "Connect {{value}} services for your agents to use.",
       "directory": {
         "browse": "Browse",
         "builtin": "Built-in connectors",
@@ -5374,7 +5357,6 @@
         "startFailed": "Failed to start export"
       },
       "scope": {
-        "agentInstructions": "Instructions for agents you can access",
         "chatMessages": "Your chat messages",
         "chatThreads": "Your chat threads",
         "filesExcluded": "Artifact, attachment, and workflow supporting files are not included.",
@@ -6911,20 +6893,15 @@
       }
     },
     "common": {
-      "agents": "Agents",
       "cancel": "Cancel",
       "close": "Close",
-      "copyWorkflow": "Copy workflow",
       "delete": "Delete",
       "deleteWorkflow": "Delete workflow",
       "instructions": "Instructions",
       "manual": "Manual",
-      "others": "Others",
-      "pinned": "Pinned",
       "private": "Private",
       "public": "Public",
       "settings": "Settings",
-      "view": "View",
       "workflow": "Workflow",
       "workflows": "Workflows"
     },
@@ -6941,29 +6918,9 @@
       "createInChat": "Create in chat",
       "createInChatDescription": "Start from a chat when no workflow fits yet.",
       "createWorkflow": "Create workflow",
-      "noAgents": "No agents yet",
-      "noAgentsFound": "No agents found",
       "noWorkflows": "No workflows yet. Create one in chat to continue."
     },
     "detail": {
-      "copy": {
-        "agentFallback": "the agent",
-        "copied": "Copied to {{agent}}",
-        "copyAndRemove": "Copy and remove",
-        "description": "Copy this workflow to another agent as a new private workflow.",
-        "moved": "Moved to {{agent}}",
-        "moveDescription": "Original removed from {{agent}}.",
-        "noAgents": "No other agents yet",
-        "privateReady": "A private copy is ready.",
-        "removalAlert": "This deletes the original",
-        "removalNoAutomations": "This workflow is deleted from {{agent}}.",
-        "removalWithAutomations_one": "{{count}} automation is paused on {{agent}} and this workflow is deleted.",
-        "removalWithAutomations_other": "{{count}} automations are paused on {{agent}} and this workflow is deleted.",
-        "removeOriginal": "Remove the original from {{agent}} after copying",
-        "selectAgent": "Choose an agent",
-        "title": "Copy workflow",
-        "to": "Copy to"
-      },
       "delete": {
         "confirm": "{{title}} and all bound automations will be deleted.",
         "dangerDescription": "Delete this workflow and its automations. This action cannot be undone.",
@@ -6985,10 +6942,6 @@
         "upload": "Upload text files",
         "uploadAria": "Upload workflow files"
       },
-      "info": {
-        "copyDescription": "Copy this workflow to another agent.",
-        "copyTitle": "Copy workflow"
-      },
       "metadata": {
         "agent": "Agent",
         "agentDescription": "This workflow belongs to this agent.",
@@ -7009,10 +6962,6 @@
       "notFound": "Workflow not found.",
       "refineWith": "Refine with {{agent}}",
       "sectionNavigation": "Workflow details section",
-      "shadow": {
-        "end": "for you. This workflow is shadowed by the same-slug priority rule.",
-        "resolvesTo": "currently resolves to"
-      },
       "visibility": {
         "adminRequired": "Publishing a workflow under an agent you do not own requires org admin permissions.",
         "automationWarning": "Automations will stop",
@@ -7042,9 +6991,7 @@
     },
     "list": {
       "actionRequired": "Action required",
-      "agentEmpty": "No workflows run as this agent yet.",
       "all": "All",
-      "allAgents": "All agents",
       "automated": "Automated",
       "automations": "Automations",
       "createdBy": "Created by",
@@ -7062,8 +7009,6 @@
       "openRecovery": "Open {{title}} recovery",
       "ownerLoading": "Loading author…",
       "ownerUnavailable": "Author unavailable",
-      "runsAs": "Runs as",
-      "runsAsAria": "Runs as {{agent}}",
       "section": {
         "event": "On automation",
         "later": "Later",

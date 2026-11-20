@@ -1,8 +1,7 @@
-import { instructionsContract } from "@okouai/api-contracts/contracts/instructions";
-import { instructionsRoutes } from "../instructions";
 import { randomUUID } from "node:crypto";
 import { chatInputStatusContract } from "@okouai/api-contracts/contracts/chat-input-status";
 import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { instructionsContract } from "@okouai/api-contracts/contracts/instructions";
 import { personalModelProvidersByTypeContract } from "@okouai/api-contracts/contracts/personal-model-providers";
 import {
   workflowAutomationsContract,
@@ -20,6 +19,7 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import { clearAllDetached, settleIncludingAbort } from "../../utils";
 import { chatEventsRoutes } from "../chat-events";
 import { chatThreadRoutes } from "../chat-threads";
+import { instructionsRoutes } from "../instructions";
 import { chatInputStatusRoutes } from "../chat-input-status";
 import { meModelProvidersDeleteRoutes } from "../me-model-providers-delete";
 import { webhooksWorkflowAutomationsRoutes } from "../webhooks-workflow-automations";
