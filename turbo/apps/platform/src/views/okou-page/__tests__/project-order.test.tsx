@@ -1,7 +1,6 @@
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { projectsContract } from "@okouai/api-contracts/contracts/projects";
 import type { ProjectEvent } from "@okouai/api-contracts/validators/projects";
 import {
@@ -174,7 +173,6 @@ async function prepare(projectPage = false, configure?: () => void) {
     context,
     path: projectPage ? `/projects/${ids[1]}` : `/chats/${second.id}`,
     ...workspace.pageOptions,
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
   });
   await expectProjects(initialNames);
   return {

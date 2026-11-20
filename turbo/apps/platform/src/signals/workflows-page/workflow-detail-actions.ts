@@ -4,51 +4,13 @@ import type { WorkflowFileEntry } from "@okouai/api-contracts/contracts/workflow
 import { detachedNavigateTo$ } from "../route.ts";
 import { ROUTES } from "../route-paths.ts";
 import {
-  copyWorkflow$,
   deleteWorkflow$,
-  pauseWorkflowAutomations$,
   runWorkflowAutomationNow$,
   setSelectedWorkflowFilePath$,
   setWorkflowActionDialog$,
   setWorkflowFileDraft$,
   updateWorkflow$,
 } from "./workflows-signals.ts";
-
-export const copyOrMoveWorkflow$ = command(
-  async (
-    { set },
-    input: {
-      readonly workflowId: string;
-      readonly toAgentId: string;
-      readonly removeOriginal: boolean;
-      readonly enabledSourceAutomationIds: readonly string[];
-    },
-    signal: AbortSignal,
-  ) => {
-    const copied = await set(
-      copyWorkflow$,
-      { workflowId: input.workflowId, toAgentId: input.toAgentId },
-      signal,
-    );
-    if (input.removeOriginal) {
-      await set(
-        pauseWorkflowAutomations$,
-        input.enabledSourceAutomationIds,
-        signal,
-      );
-      await set(deleteWorkflow$, input.workflowId, signal);
-    }
-    set(setWorkflowActionDialog$, null);
-    if (input.removeOriginal) {
-      set(detachedNavigateTo$, ROUTES.workflowDetailAutomations, {
-        pathParams: { workflowId: copied.id },
-      });
-    }
-    // Navigation may abort the page owner. Return the committed result so the
-    // view can still present its success toast and browser navigation callback.
-    return { copied, removedOriginal: input.removeOriginal };
-  },
-);
 
 export const deleteWorkflowAndReturnToList$ = command(
   async ({ set }, workflowId: string, signal: AbortSignal) => {

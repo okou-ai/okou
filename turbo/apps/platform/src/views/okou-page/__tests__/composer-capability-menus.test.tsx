@@ -16,14 +16,13 @@ import {
   findComposerEditor,
 } from "./chat-composer-test-helpers.ts";
 import {
-  AGENT_ID,
   THREAD_ID,
   createTemplateGalleryHelpers,
 } from "./chat-composer-template-gallery-test-helpers.ts";
 
 const context = testContext();
 const { mockTemplateChat } = createTemplateGalleryHelpers(context);
-const HOME_PATH = `/agents/${AGENT_ID}/chat`;
+const HOME_PATH = "/";
 const CAPABILITIES = [
   { label: "Find people", role: "region", name: "Find people" },
   { label: "Research", role: "region", name: "Research" },
@@ -57,7 +56,6 @@ async function setupMenus({
     path: path === HOME_PATH ? `${path}?compose=1` : path,
     featureSwitches: {
       [FeatureSwitchKey.SlashActions]: slashActions,
-      [FeatureSwitchKey.SingleAgent]: false,
     },
   });
   return { editor: await findComposerEditor(), lifecycle: capture.lifecycle };
@@ -153,6 +151,7 @@ test("The add menu opens each home capability and restores its own trigger only 
   const menu = await openAddMenu(editor, user);
   expect(queryAllByRoleFast("menuitem", menu).map(controlLabel)).toStrictEqual([
     "Attach",
+    "Project",
     "Template",
     ...CAPABILITY_LABELS,
     "Import skills",

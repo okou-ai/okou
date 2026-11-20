@@ -1,9 +1,8 @@
 import { command, computed, type Command, type Computed } from "ccstate";
 import { defaultAgentId$ } from "../agent.ts";
-import { navigateToAgentChat$ } from "../okou-page/agent-chat-navigation.ts";
 import { detachedNavigateTo$ } from "../route.ts";
 import { ROUTES } from "../route-paths.ts";
-import { projectsEnabled$, unconfirmedProjectIds$ } from "./projects.ts";
+import { unconfirmedProjectIds$ } from "./projects.ts";
 
 /**
  * Which Project a new chat starts in, as the composer shows and changes it.
@@ -28,7 +27,7 @@ export interface ComposerProjectSignals {
    */
   readonly pending$: Computed<boolean>;
   /** Start this chat in another Project, or `null` for none. */
-  readonly select$: Command<Promise<void>, [string | null, AbortSignal]>;
+  readonly select$: Command<void, [string | null, AbortSignal]>;
 }
 
 export function createComposerProjectSignals(
@@ -38,29 +37,24 @@ export function createComposerProjectSignals(
   return {
     projectId,
     available$: computed(async (get) => {
-      if (!(await get(projectsEnabled$))) {
-        return false;
-      }
       return agentId === (await get(defaultAgentId$));
     }),
     pending$: computed((get) => {
       return projectId !== null && get(unconfirmedProjectIds$).has(projectId);
     }),
-    select$: command(
-      async ({ set }, next: string | null, signal: AbortSignal) => {
-        signal.throwIfAborted();
-        if (next === projectId) {
-          return;
-        }
-        if (next === null) {
-          await set(navigateToAgentChat$, agentId, undefined, signal);
-          return;
-        }
-        set(detachedNavigateTo$, ROUTES.project, {
-          pathParams: { projectId: next },
-        });
-      },
-    ),
+    select$: command(({ set }, next: string | null, signal: AbortSignal) => {
+      signal.throwIfAborted();
+      if (next === projectId) {
+        return;
+      }
+      if (next === null) {
+        set(detachedNavigateTo$, ROUTES.home);
+        return;
+      }
+      set(detachedNavigateTo$, ROUTES.project, {
+        pathParams: { projectId: next },
+      });
+    }),
   };
 }
 

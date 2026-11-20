@@ -1,12 +1,9 @@
 import { computed } from "ccstate";
 import { and, eq, inArray } from "drizzle-orm";
 import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { projects } from "@okouai/db/schema/project";
 import type { AuthContext } from "../../types/auth";
 import { db$ } from "../external/db";
-import { userFeatureSwitchContext } from "./feature-switches.service";
 
 function projectReferences(document: UserMessageDocument | null | undefined) {
   return (document?.parts ?? [])
@@ -30,12 +27,14 @@ export function projectReferencesAvailable(
       }),
     ),
   ];
-  const writesEnabled$ = projectReferenceWritesEnabled(auth, document);
   return computed(async (get) => {
     if (projectIds.length === 0) {
       return true;
     }
-    if (!auth.orgId || !(await get(writesEnabled$))) {
+    if (
+      !auth.orgId ||
+      (auth.tokenType === "agent" && auth.singleAgent !== true)
+    ) {
       return false;
     }
     const rows = await get(db$)
@@ -52,21 +51,12 @@ export function projectReferencesAvailable(
   });
 }
 
-export function projectReferenceWritesEnabled(
+export function canWriteProjectReferences(
   auth: AuthContext,
   document: UserMessageDocument | null | undefined,
 ) {
-  const references = projectReferences(document);
-  return computed(async (get) => {
-    if (references.length === 0) {
-      return true;
-    }
-    if (!auth.orgId) {
-      return false;
-    }
-    return isFeatureEnabled(
-      FeatureSwitchKey.SingleAgent,
-      await get(userFeatureSwitchContext(auth.orgId, auth.userId)),
-    );
-  });
+  return (
+    projectReferences(document).length === 0 ||
+    (!!auth.orgId && (auth.tokenType !== "agent" || auth.singleAgent === true))
+  );
 }

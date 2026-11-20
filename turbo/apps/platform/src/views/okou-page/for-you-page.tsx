@@ -45,7 +45,7 @@ import {
   SuggestionSentNotice,
 } from "./agent-suggestions.tsx";
 import { SuggestionsComplete } from "./suggestions-complete.tsx";
-import { proactiveSettingsInMyOkou$ } from "../../signals/single-agent.ts";
+import { proactiveSettingsInMyOkou$ } from "../../signals/proactive-settings.ts";
 import { ForYouSources } from "./for-you-sources.tsx";
 import { PlatformFeedEvent } from "./platform-feed-event.tsx";
 import {

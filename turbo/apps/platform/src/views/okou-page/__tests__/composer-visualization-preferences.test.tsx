@@ -1,5 +1,4 @@
 import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -148,7 +147,6 @@ async function setupCharts({
   await setupPage({
     context,
     path: path === HOME_PATH ? `${path}?compose=1` : path,
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: false },
   });
   const editor = await findComposerEditor();
   if (path !== HOME_PATH) {

@@ -234,9 +234,11 @@ export function createChatComposerHelpers(context: TestContext) {
   }
 
   function mockAgent(options?: { includeOtherAgent?: boolean }): void {
+    context.mocks.data.onboardingStatus({ defaultAgentId: AGENT_ID });
     const agents = [
       {
         agentId: AGENT_ID,
+        isDefaultAgent: true,
         displayName: "Scout",
         description: null,
         sound: null,
@@ -258,7 +260,7 @@ export function createChatComposerHelpers(context: TestContext) {
     context.mocks.api(agentsByIdContract.get, ({ params, respond }) => {
       const isOtherAgent = params.id === OTHER_AGENT_ID;
       return respond(200, {
-        isDefaultAgent: false,
+        isDefaultAgent: !isOtherAgent,
         agentId: params.id,
         ownerId: "test-user-123",
         displayName: isOtherAgent ? "Other Agent" : "Scout",

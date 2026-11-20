@@ -38,7 +38,6 @@ describe.each(["feishu", "lark"] as const)("%s integration UI", (platform) => {
   }
   const INSTALLATION_ID = "00000000-0000-4000-8000-000000000001";
   const AGENT_ID = "00000000-0000-4000-8000-000000000002";
-  const HOME_AGENT_ID = "c0000000-0000-4000-a000-000000000001";
 
   function completedInstallation(
     overrides: Partial<FeishuInstallationStatus> = {},
@@ -549,7 +548,7 @@ describe.each(["feishu", "lark"] as const)("%s integration UI", (platform) => {
     });
 
     await waitFor(() => {
-      expect(pathname()).toBe(`/agents/${HOME_AGENT_ID}/chat`);
+      expect(pathname()).toBe("/");
     });
     expect(screen.queryByText(`${provider.name} bots`)).not.toBeInTheDocument();
   });

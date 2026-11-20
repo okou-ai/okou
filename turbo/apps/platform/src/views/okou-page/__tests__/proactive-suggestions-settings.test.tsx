@@ -1,5 +1,6 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
+import { feedContract } from "@okouai/api-contracts/contracts/feed";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   proactiveSuggestionsContract,
@@ -15,11 +16,19 @@ test("starts off, enables hourly checks independently of Morning Brief, and pres
     status: "paused",
     unavailableReason: null,
   };
+  context.mocks.api(feedContract.sources, ({ respond }) => {
+    return respond(200, {
+      suggestions: preference.enabled,
+      whatsNew: true,
+      offers: true,
+      systemUpdates: true,
+    });
+  });
   context.mocks.api(proactiveSuggestionsContract.get, ({ respond }) => {
     return respond(200, preference);
   });
   context.mocks.api(
-    proactiveSuggestionsContract.update,
+    proactiveSuggestionsContract.updateWithFeed,
     ({ body, respond }) => {
       preference = {
         ...preference,
@@ -31,7 +40,7 @@ test("starts off, enables hourly checks independently of Morning Brief, and pres
   );
   await setupPage({
     context,
-    path: "/agents?settings=preference",
+    path: "/?settings=my-okou",
     featureSwitches: {
       [FeatureSwitchKey.AgentSuggestion]: true,
     },
@@ -62,11 +71,19 @@ test("keeps a pending opt-in cancellable when the primary Agent is unavailable",
     status: "preparing",
     unavailableReason: "missing-default-agent",
   };
+  context.mocks.api(feedContract.sources, ({ respond }) => {
+    return respond(200, {
+      suggestions: preference.enabled,
+      whatsNew: true,
+      offers: true,
+      systemUpdates: true,
+    });
+  });
   context.mocks.api(proactiveSuggestionsContract.get, ({ respond }) => {
     return respond(200, preference);
   });
   context.mocks.api(
-    proactiveSuggestionsContract.update,
+    proactiveSuggestionsContract.updateWithFeed,
     ({ body, respond }) => {
       preference = { ...preference, enabled: body.enabled, status: "paused" };
       return respond(200, preference);
@@ -74,7 +91,7 @@ test("keeps a pending opt-in cancellable when the primary Agent is unavailable",
   );
   await setupPage({
     context,
-    path: "/agents?settings=preference",
+    path: "/?settings=my-okou",
     featureSwitches: {
       [FeatureSwitchKey.AgentSuggestion]: true,
     },
@@ -103,11 +120,19 @@ test("a failed opt-out preserves the current preference", async () => {
     unavailableReason: null,
   };
   const choices: boolean[] = [];
+  context.mocks.api(feedContract.sources, ({ respond }) => {
+    return respond(200, {
+      suggestions: preference.enabled,
+      whatsNew: true,
+      offers: true,
+      systemUpdates: true,
+    });
+  });
   context.mocks.api(proactiveSuggestionsContract.get, ({ respond }) => {
     return respond(200, preference);
   });
   context.mocks.api(
-    proactiveSuggestionsContract.update,
+    proactiveSuggestionsContract.updateWithFeed,
     ({ body, respond }) => {
       choices.push(body.enabled);
       return respond(500, {
@@ -120,7 +145,7 @@ test("a failed opt-out preserves the current preference", async () => {
   );
   await setupPage({
     context,
-    path: "/agents?settings=preference",
+    path: "/?settings=my-okou",
     featureSwitches: {
       [FeatureSwitchKey.AgentSuggestion]: true,
     },
@@ -142,11 +167,19 @@ test("keeps suggestions opted in during platform recovery without asking the use
     status: "error",
     unavailableReason: null,
   };
+  context.mocks.api(feedContract.sources, ({ respond }) => {
+    return respond(200, {
+      suggestions: preference.enabled,
+      whatsNew: true,
+      offers: true,
+      systemUpdates: true,
+    });
+  });
   context.mocks.api(proactiveSuggestionsContract.get, ({ respond }) => {
     return respond(200, preference);
   });
   context.mocks.api(
-    proactiveSuggestionsContract.update,
+    proactiveSuggestionsContract.updateWithFeed,
     ({ body, respond }) => {
       preference = { ...preference, enabled: body.enabled, status: "paused" };
       return respond(200, preference);
@@ -154,7 +187,7 @@ test("keeps suggestions opted in during platform recovery without asking the use
   );
   await setupPage({
     context,
-    path: "/agents?settings=preference",
+    path: "/?settings=my-okou",
     featureSwitches: {
       [FeatureSwitchKey.AgentSuggestion]: true,
     },

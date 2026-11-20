@@ -1,7 +1,3 @@
-import {
-  agentsByIdContract,
-  type AgentResponse,
-} from "@okouai/api-contracts/contracts/agents";
 import { screen, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
@@ -10,33 +6,13 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
 
-const AGENT_ID = "c0000000-0000-4000-a000-000000000002";
 const COMPLIANCE_TITLE = "Okou’s compliance, built for your trust";
 
-function mountedAgent(): void {
-  const agent: AgentResponse = {
-    agentId: AGENT_ID,
-    isDefaultAgent: false,
-    ownerId: "test-user-123",
-    displayName: "Nova",
-    description: null,
-    sound: null,
-    avatarUrl: null,
-    visibility: "public",
-  };
-  context.mocks.data.agents([agent]);
-  context.mocks.api(agentsByIdContract.get, ({ respond }) => {
-    return respond(200, agent);
-  });
-}
-
 test("The chat home lists the compliance statuses", async () => {
-  mountedAgent();
-
   await setupPage({
     context,
     locale: "en-US",
-    path: `/agents/${AGENT_ID}/chat`,
+    path: "/",
   });
 
   const region = await screen.findByRole("region", { name: COMPLIANCE_TITLE });

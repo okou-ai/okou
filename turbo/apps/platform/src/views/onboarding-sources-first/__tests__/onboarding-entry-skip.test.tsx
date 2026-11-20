@@ -242,7 +242,7 @@ test.each([ROUTES.onboarding, ROUTES.onboardingReady])(
     await expect(
       screen.findByRole("textbox", { name: "Message" }),
     ).resolves.toBeInTheDocument();
-    expect(pathname()).toMatch(/^\/agents\/[^/]+\/chat$/u);
+    expect(pathname()).toBe("/");
   },
 );
 

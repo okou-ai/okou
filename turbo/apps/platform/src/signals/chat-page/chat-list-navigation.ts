@@ -4,7 +4,6 @@ import { suggestionsEnabled$ } from "../okou-page/agent-suggestion-session.ts";
 import { detachedNavigateTo$ } from "../route.ts";
 import { ROUTES } from "../route-paths.ts";
 import { rootSignal$ } from "../root-signal.ts";
-import { singleAgentEnabled$ } from "../single-agent.ts";
 import { currentLeftThread$ } from "./chat-thread-panes.ts";
 import {
   loadLeftThread$,
@@ -30,7 +29,7 @@ export const FOR_YOU_ENTRY_KEY = "entry:for-you";
  */
 const chatListEntryKeys$ = computed(async (get): Promise<readonly string[]> => {
   return [
-    ...((await get(singleAgentEnabled$)) ? [NEW_CHAT_ENTRY_KEY] : []),
+    NEW_CHAT_ENTRY_KEY,
     ...((await get(suggestionsEnabled$)) ? [FOR_YOU_ENTRY_KEY] : []),
   ];
 });

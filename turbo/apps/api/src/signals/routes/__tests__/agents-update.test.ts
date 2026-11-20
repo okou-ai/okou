@@ -6,7 +6,7 @@ import {
   agentsMainContract,
   type AgentRequest,
 } from "@okouai/api-contracts/contracts/agents";
-import { workflowsCollectionContract } from "@okouai/api-contracts/contracts/workflows";
+import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import {
   cliAuthApproveContract,
   cliAuthDeviceContract,
@@ -19,17 +19,16 @@ import { mockNow } from "../../../lib/time";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createRouteMocks } from "./helpers/route-test";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 import { cliAuthRoutes } from "../cli-auth";
 import { agentInstructionsRoutes } from "../agent-instructions";
 import { agentsRoutes } from "../agents";
 import { onboardingStatusRoutes } from "../onboarding-status";
-import { workflowsRoutes } from "../workflows";
 
 const context = testContext();
 const store = createStore();
 const mocks = createRouteMocks(context);
+const workflows = createWorkflowsBddApi(context);
 
 interface OrgUser {
   readonly orgId: string;
@@ -129,18 +128,8 @@ async function createWorkflowFor(
   agentId: string,
   name: string,
 ): Promise<void> {
-  // Agent metadata and instructions keep their retained Workflow bindings.
-  await updateFeatureSwitchesForUser(context, user, { singleAgent: false });
+  await workflows.createWorkflow(workflows.user(user), { agentId, name });
   mocks.clerk.session(user.userId, user.orgId);
-  await accept(
-    setupApp({ context, routes: workflowsRoutes })(
-      workflowsCollectionContract,
-    ).create({
-      headers: authHeaders(),
-      body: { agentId, name },
-    }),
-    [201],
-  );
 }
 
 describe("PUT /api/agents/:id", () => {

@@ -240,12 +240,6 @@ describe("captured personal CLI help and dispatch", () => {
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
     server.use(
-      http.get("*/api/feature-switches", () => {
-        return HttpResponse.json({
-          switches: {},
-          effectiveSwitches: { singleAgent: true },
-        });
-      }),
       http.get("*/api/auth/me", () => {
         return HttpResponse.json({
           userId: "outside-member",
@@ -285,14 +279,6 @@ describe("captured personal CLI help and dispatch", () => {
   it("uses authenticated mode outside a Run for help as well as dispatch", async () => {
     vi.stubEnv("OKOU_TOKEN", "authenticated-member-token");
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
-    server.use(
-      http.get("*/api/feature-switches", () => {
-        return HttpResponse.json({
-          switches: {},
-          effectiveSwitches: { singleAgent: true },
-        });
-      }),
-    );
     const { help } = await cli(["--help"]);
     expect(await help()).toContain("okou instructions view");
     expect(await help()).not.toContain("okou agent --help");

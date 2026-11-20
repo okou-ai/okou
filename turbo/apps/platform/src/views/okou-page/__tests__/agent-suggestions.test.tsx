@@ -1,3 +1,4 @@
+import { proactiveSuggestionsContract } from "@okouai/api-contracts/contracts/proactive-suggestions";
 import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import { suggestionFeedbacks } from "@okouai/api-contracts/contracts/suggestion-context";
 import {
@@ -9,7 +10,7 @@ import {
   within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import {
   feedContract,
   type Suggestion,
@@ -37,7 +38,11 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  createTestRuntime,
+  testContext,
+} from "../../../signals/__tests__/test-helpers.ts";
+import { resetSignal } from "../../../signals/utils.ts";
 import { pathname } from "../../../signals/location.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
 import {
@@ -47,6 +52,7 @@ import {
 import { nowDate } from "../../../lib/time.ts";
 import { forYouCovers } from "../../../lib/for-you-artwork.ts";
 const context = testContext();
+const reloadedContext = createTestRuntime(context);
 const agentId = "c0000000-0000-4000-a000-000000000001";
 const threadId = "b0000000-0000-4000-a000-000000000811";
 function makeSuggestion(): Suggestion {
@@ -194,6 +200,25 @@ function mockPool(initial: Suggestion[] = [makeSuggestion()]) {
     notifySuggestionsChanged();
     return respond(200, sources);
   });
+  context.mocks.api(proactiveSuggestionsContract.get, ({ respond }) => {
+    return respond(200, {
+      enabled: sources.suggestions,
+      status: sources.suggestions ? "enabled" : "paused",
+      unavailableReason: null,
+    });
+  });
+  context.mocks.api(
+    proactiveSuggestionsContract.updateWithFeed,
+    ({ body, respond }) => {
+      sources = { ...sources, suggestions: body.enabled };
+      notifySuggestionsChanged();
+      return respond(200, {
+        enabled: body.enabled,
+        status: body.enabled ? "enabled" : "paused",
+        unavailableReason: null,
+      });
+    },
+  );
   context.mocks.api(feedContract.summary, ({ respond }) => {
     return respond(200, {
       hasUnread:
@@ -296,7 +321,7 @@ const features = {
 } as const;
 // Suggestions live independently of the default Agent's new-chat draft.
 const suggestionPath = "/for-you";
-const homePath = `/agents/${agentId}/chat`;
+const homePath = "/";
 async function openSuggestions(): Promise<void> {
   await setupPage({ context, path: suggestionPath, featureSwitches: features });
 }
@@ -428,8 +453,8 @@ test.each(["notification", "reconnect"] as const)(
         context.mocks.ably.hasSubscription(SUGGESTIONS_TOPIC),
       ).toBeTruthy();
     });
-    click(link("/agents"));
-    await screen.findByRole("heading", { name: "Agents" });
+    click(link("/workflows"));
+    await screen.findByRole("heading", { name: "Workflows" });
     pool.publish(second);
     if (delivery === "notification") {
       notifySuggestionsChanged();
@@ -506,8 +531,8 @@ test.each(["account", "workspace"] as const)(
     mockPool([first]);
     await openSuggestions();
     await screen.findByRole("article", { name: first.content.title });
-    click(link("/agents"));
-    await screen.findByRole("heading", { name: "Agents" });
+    click(link("/workflows"));
+    await screen.findByRole("heading", { name: "Workflows" });
     mockPool([second]);
     const clerk = context.mocks.clerk();
     act(() => {
@@ -524,7 +549,7 @@ test.each(["account", "workspace"] as const)(
       }
       clerk.stateChanged();
     });
-    await screen.findByRole("heading", { name: "Agents" });
+    await screen.findByRole("heading", { name: "Workflows" });
     click(link(suggestionPath));
     const card = await screen.findByRole("article", {
       name: second.content.title,
@@ -1740,7 +1765,6 @@ test("For you keeps deck navigation and moves source settings into My Okou", asy
     path: suggestionPath,
     featureSwitches: {
       ...features,
-      [FeatureSwitchKey.SingleAgent]: true,
     },
   });
   await activeForYouCard("Suggested action 1");
@@ -2019,8 +2043,8 @@ test("A hidden For you page leaves its card unread until the member sees it", as
     featureSwitches: features,
   });
   await activeForYouCard("Review the pending decision");
-  click(link("/agents"));
-  await screen.findByRole("heading", { name: "Agents" });
+  click(link("/workflows"));
+  await screen.findByRole("heading", { name: "Workflows" });
   await within(link(suggestionPath)).findByText("Unread");
   click(link(suggestionPath));
   await activeForYouCard("Review the pending decision");
@@ -2032,6 +2056,17 @@ test("A hidden For you page leaves its card unread until the member sees it", as
   });
   expect(screen.getByText("1 to go")).toBeInTheDocument();
 });
+
+async function openSourceSettings() {
+  const rail = await screen.findByTestId("labeled-nav-rail");
+  click(within(rail).getByLabelText("Test User"));
+  const menu = await screen.findByRole("menu");
+  click(within(menu).getByText("Settings"));
+  const dialog = await screen.findByRole("dialog", { name: "Settings" });
+  const navigation = within(dialog).getByRole("navigation");
+  click(within(navigation).getByText("My Okou"));
+  return dialog;
+}
 
 test("A failed system update source change keeps the saved choice and allows an explicit retry", async () => {
   mockPool(numberedSuggestions(2));
@@ -2069,8 +2104,7 @@ test("A failed system update source change keeps the saved choice and allows an 
     featureSwitches: features,
   });
   await activeForYouCard("Suggested action 1");
-  click(button("For you sources"));
-  const dialog = await screen.findByRole("dialog", { name: "For you sources" });
+  const dialog = await openSourceSettings();
   const toggle = await within(dialog).findByRole("switch", {
     name: "System updates",
   });
@@ -2105,8 +2139,8 @@ test("For you marks only displayed cards as read and new deliveries restore its 
   });
   expect(screen.getByText("3 to go")).toBeInTheDocument();
   expect(pool.consumed).toStrictEqual([]);
-  click(link("/agents"));
-  await screen.findByRole("heading", { name: "Agents" });
+  click(link("/workflows"));
+  await screen.findByRole("heading", { name: "Workflows" });
   click(link(suggestionPath));
   await activeForYouCard("Suggested action 1");
   expect(
@@ -2127,8 +2161,7 @@ test("For you source choices persist without removing delivered cards and only e
   await activeForYouCard("Suggested action 1");
   let row = link(suggestionPath);
   await within(row).findByText("Unread");
-  click(button("For you sources"));
-  const dialog = await screen.findByRole("dialog", { name: "For you sources" });
+  const dialog = await openSourceSettings();
   const suggestions = await within(dialog).findByRole("switch", {
     name: "Suggestions",
   });
@@ -2167,15 +2200,12 @@ test("For you source choices persist without removing delivered cards and only e
   });
   click(button("Close", "button", dialog));
   await activeForYouCard("Suggested action 1");
-  click(link("/agents"));
-  await screen.findByRole("heading", { name: "Agents" });
+  click(link("/workflows"));
+  await screen.findByRole("heading", { name: "Workflows" });
   click(link(suggestionPath));
   await activeForYouCard("Suggested action 1");
   row = link(suggestionPath);
-  click(button("For you sources"));
-  const reopened = await screen.findByRole("dialog", {
-    name: "For you sources",
-  });
+  const reopened = await openSourceSettings();
   const toggle = await within(reopened).findByRole("switch", {
     name: "Suggestions",
   });
@@ -2230,8 +2260,7 @@ test("System updates remain unread with optional sources off until their card is
   });
   expect(screen.getByText(event.content.automationName)).toBeInTheDocument();
   expect(screen.getByText("1 to go")).toBeInTheDocument();
-  click(button("For you sources"));
-  const dialog = await screen.findByRole("dialog", { name: "For you sources" });
+  const dialog = await openSourceSettings();
   const suggestions = await within(dialog).findByRole("switch", {
     name: "Suggestions",
   });
@@ -2327,7 +2356,13 @@ test("Cover and card artwork stay fixed through browsing, feedback and Undo", as
 test("The member picks a For you cover, keeps it after reload and can return to the default", async () => {
   const items = numberedSuggestions(2);
   mockPool(items);
-  await openForYou();
+  const resetPage$ = resetSignal();
+  const signal = context.store.set(resetPage$, context.signal);
+  await setupPage({
+    context: { ...context, signal },
+    path: suggestionPath,
+    featureSwitches: features,
+  });
   await activeForYouCard(items[0].content.title);
   const cover = () => {
     return document
@@ -2351,9 +2386,18 @@ test("The member picks a For you cover, keeps it after reload and can return to 
     "true",
   );
 
-  // A fresh page reads the pick back from this browser.
+  // A fresh app store reads the cover back from browser storage.
+  context.store.set(resetPage$);
   cleanup();
-  await openForYou();
+  vi.mocked(window.history.pushState).mockRestore();
+  vi.mocked(window.history.replaceState).mockRestore();
+  vi.mocked(window.history.back).mockRestore();
+  vi.mocked(window.history.forward).mockRestore();
+  await setupPage({
+    context: reloadedContext,
+    path: suggestionPath,
+    featureSwitches: features,
+  });
   await activeForYouCard(items[0].content.title);
   expect(cover()).toBe(forYouCovers[7].src);
 

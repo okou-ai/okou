@@ -1,4 +1,4 @@
-import { singleAgentEnabled } from "../../lib/api/single-agent";
+import { isPersonalExecution } from "../../lib/personal-execution";
 import {
   personalCommandMode,
   personalExecutorId,
@@ -38,7 +38,7 @@ interface CreateOptions {
 async function resolveAgentId(
   flagAgentId: string | undefined,
 ): Promise<string> {
-  if (await singleAgentEnabled()) {
+  if (isPersonalExecution()) {
     if (flagAgentId !== undefined)
       throw new Error(
         "Agent selection is unavailable in My Okou. Remove --agent.",
@@ -97,8 +97,8 @@ Examples:
   okou chat create "Launch plan"
   okou chat create "Launch plan" --project-id <id> --model auto --json
 
-Creates an empty personal chat in this workspace. Send a self-contained first message
-with okou chat send; this does not start work or inherit conversation history.
+Creating a chat does not start a run or copy this conversation. The first message must be self-contained.
+Send it with okou chat send.
 Model, effort and priority use your existing preferences unless specified.
 `
       : `
@@ -204,7 +204,7 @@ Notes:
       const priority =
         thread.serviceTier === "priority" ? "enabled" : "disabled";
       console.log(chalk.dim(`  Priority: ${priority}`));
-      if (!(await singleAgentEnabled()))
+      if (!isPersonalExecution())
         console.log(chalk.dim(`  Agent:  ${agentId}`));
       console.log();
       console.log("Send the first message:");

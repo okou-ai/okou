@@ -3923,8 +3923,7 @@ export function createThreadComposerSignals(
 }
 
 /**
- * Builds the composer a forward is written in: a new agent chat, or an
- * existing thread whose events it catches up before the member writes.
+ * Forks a passage into a new Chat with the default executor.
  */
 const createChatForwardComposerSignals: ChatForwardComposerFactory = (
   target: ChatForwardTarget,
@@ -3932,38 +3931,17 @@ const createChatForwardComposerSignals: ChatForwardComposerFactory = (
   onOptimisticSend: () => void,
   projectId?: string,
 ) => {
-  if (target.kind === "agent") {
-    const composer = createForwardAgentComposerSignals(
-      target.id,
-      forward,
-      onOptimisticSend,
-      projectId,
-    );
-    const prepare$ = command(
-      ({ set }, signal: AbortSignal): ChatForwardComposerState => {
-        signal.throwIfAborted();
-        set(composer.setup$, signal);
-        set(composer.feedback.add$, forward);
-        return { target, composer };
-      },
-    );
-    return { prepare$ };
-  }
-  const chatEvents = createChatEventSignals(target.id);
-  const composer = createThreadComposerSignals(
+  const composer = createForwardAgentComposerSignals(
     target.id,
-    target.agentId,
-    chatEvents,
-    { forward, onOptimisticSend },
+    forward,
+    onOptimisticSend,
+    projectId,
   );
   const prepare$ = command(
-    async ({ set }, signal: AbortSignal): Promise<ChatForwardComposerState> => {
+    ({ set }, signal: AbortSignal): ChatForwardComposerState => {
       signal.throwIfAborted();
       set(composer.setup$, signal);
       set(composer.feedback.add$, forward);
-      await set(chatEvents.setup$, signal);
-      await set(chatEvents.catchUp$, signal);
-      signal.throwIfAborted();
       return { target, composer };
     },
   );

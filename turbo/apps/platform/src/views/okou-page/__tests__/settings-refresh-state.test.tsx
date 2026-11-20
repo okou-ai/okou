@@ -1,3 +1,4 @@
+import { feedContract } from "@okouai/api-contracts/contracts/feed";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -199,10 +200,18 @@ test("overlapping saves to one preference read back the committed value", async 
   });
 });
 
-test.each(["reopening Settings", "returning to Preference"])(
+test.each(["reopening Settings", "returning to My Okou"])(
   "%s refreshes a Suggestions preference changed elsewhere after a save",
   async (entry) => {
     let enabled = false;
+    context.mocks.api(feedContract.sources, ({ respond }) => {
+      return respond(200, {
+        suggestions: enabled,
+        whatsNew: true,
+        offers: true,
+        systemUpdates: true,
+      });
+    });
     context.mocks.api(proactiveSuggestionsContract.get, ({ respond }) => {
       return respond(200, {
         enabled,
@@ -211,7 +220,7 @@ test.each(["reopening Settings", "returning to Preference"])(
       });
     });
     context.mocks.api(
-      proactiveSuggestionsContract.update,
+      proactiveSuggestionsContract.updateWithFeed,
       ({ body, respond }) => {
         enabled = body.enabled;
         return respond(200, {
@@ -223,7 +232,7 @@ test.each(["reopening Settings", "returning to Preference"])(
     );
     await setupPage({
       context,
-      path: "/agents?settings=preference",
+      path: "/?settings=my-okou",
       featureSwitches: { [FeatureSwitchKey.AgentSuggestion]: true },
     });
     const suggestions = await screen.findByRole("switch", {
@@ -256,10 +265,10 @@ test.each(["reopening Settings", "returning to Preference"])(
       const rail = await screen.findByTestId("labeled-nav-rail");
       click(within(rail).getByLabelText("Test User"));
       click(within(await screen.findByRole("menu")).getByText("Settings"));
-    } else {
-      click(getSettingsButton("Preference"));
     }
     const reopened = await screen.findByRole("dialog", { name: "Settings" });
+    const navigation = within(reopened).getByRole("navigation");
+    click(within(navigation).getByText("My Okou"));
     await waitFor(() => {
       const refreshed = within(reopened).getByRole("switch", {
         name: "Suggestions",
@@ -305,7 +314,13 @@ test("saving time zone keeps enabled Morning brief unchanged", async () => {
 
 test.each([
   { name: "Morning brief", contract: morningBriefPreferenceContract },
-  { name: "Suggestions", contract: proactiveSuggestionsContract },
+  {
+    name: "Suggestions",
+    contract: {
+      get: proactiveSuggestionsContract.get,
+      update: proactiveSuggestionsContract.updateWithFeed,
+    },
+  },
 ])(
   "updates $name from the save response while leaving other preferences usable",
   async ({ name, contract }) => {
@@ -313,6 +328,35 @@ test.each([
     let reads = 0;
     const saving = context.mocks.deferred<void>();
     const release = context.mocks.deferred<void>();
+    let suggestionsEnabled = name === "Suggestions";
+    context.mocks.api(feedContract.sources, ({ respond }) => {
+      return respond(200, {
+        suggestions: suggestionsEnabled,
+        whatsNew: true,
+        offers: true,
+        systemUpdates: true,
+      });
+    });
+    if (name === "Morning brief") {
+      context.mocks.api(proactiveSuggestionsContract.get, ({ respond }) => {
+        return respond(200, {
+          enabled: suggestionsEnabled,
+          status: suggestionsEnabled ? "enabled" : "paused",
+          unavailableReason: null,
+        });
+      });
+      context.mocks.api(
+        proactiveSuggestionsContract.updateWithFeed,
+        ({ body, respond }) => {
+          suggestionsEnabled = body.enabled;
+          return respond(200, {
+            enabled: body.enabled,
+            status: body.enabled ? "enabled" : "paused",
+            unavailableReason: null,
+          });
+        },
+      );
+    }
     context.mocks.api(contract.get, ({ respond }) => {
       reads++;
       return respond(200, {
@@ -327,6 +371,9 @@ test.each([
         saving.resolve();
         await withSignal(release.promise);
         enabled = body.enabled;
+        if (name === "Suggestions") {
+          suggestionsEnabled = body.enabled;
+        }
         return respond(200, {
           enabled,
           status: enabled ? "enabled" : "paused",
@@ -336,7 +383,7 @@ test.each([
     );
     await setupPage({
       context,
-      path: "/agents?settings=preference",
+      path: "/?settings=my-okou",
       featureSwitches: {
         [FeatureSwitchKey.AgentSuggestion]: true,
       },
@@ -368,7 +415,7 @@ test.each([
       expect(toggle).not.toBeChecked();
       expect(toggle).toBeEnabled();
     });
-    expect(reads).toBe(initialReads);
+    expect(reads - initialReads).toBe(name === "Morning brief" ? 0 : 1);
   },
 );
 

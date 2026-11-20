@@ -56,15 +56,12 @@ async function readThreads(actor: ApiTestUser) {
 
 async function scenario() {
   const org = await workflows.setupWorkflowOrg({ tier: "team" });
-  const agent = await workflows.createAgent(org.actor, {
-    displayName: "Webhook lock test",
-  });
   const workflowId = await workflows.createWorkflow(org.actor, {
-    agentId: agent.agentId,
+    agentId: org.defaultAgentId,
     name: "webhook-lock-test",
   });
   const thread = await chat.createThread(org.actor, {
-    agentId: agent.agentId,
+    agentId: org.defaultAgentId,
     title: "Unrelated chat",
   });
   return { ...org, workflowId, thread };

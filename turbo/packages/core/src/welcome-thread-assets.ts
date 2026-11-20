@@ -22,7 +22,7 @@ export const WELCOME_THREAD_ASSETS = Object.freeze({
 });
 
 // Versioned My Okou publications. Keep the legacy guide and screenshots above
-// intact for existing messages and recipients with singleAgent disabled.
+// intact for existing messages.
 const MY_OKOU_GUIDE_BASE =
   "https://my-okou-quickstart-20261112-review.okou.app";
 

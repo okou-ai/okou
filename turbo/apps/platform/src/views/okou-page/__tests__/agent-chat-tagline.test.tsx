@@ -16,7 +16,7 @@ function mountedAgent(agentIds: string[]): void {
   const agents = agentIds.map((agentId): AgentResponse => {
     return {
       agentId,
-      isDefaultAgent: false,
+      isDefaultAgent: agentId === AGENT_ID,
       ownerId: "test-user-123",
       displayName: agentId === AGENT_ID ? "Nova" : "Orion",
       description: null,
@@ -25,6 +25,7 @@ function mountedAgent(agentIds: string[]): void {
       visibility: "public",
     };
   });
+  context.mocks.data.onboardingStatus({ defaultAgentId: AGENT_ID });
   context.mocks.data.agents(agents);
   context.mocks.api(agentsByIdContract.get, ({ params, respond }) => {
     const agent = agents.find((candidate) => {

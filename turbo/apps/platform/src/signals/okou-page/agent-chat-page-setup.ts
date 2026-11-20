@@ -16,8 +16,7 @@ import {
   detachedNavigateTo$,
 } from "../route.ts";
 import { ROUTES } from "../route-paths.ts";
-import { currentAgentId$, defaultAgentId$, agents$ } from "../agent.ts";
-import { singleAgentEnabled$ } from "../single-agent.ts";
+import { defaultAgentId$, agents$ } from "../agent.ts";
 import { setChatAgentId$ } from "../agent-chat.ts";
 import { setTalkDraft$, talkDraft$ } from "./chat-draft.ts";
 import { hideAppSkeleton$ } from "../app-skeleton.ts";
@@ -123,45 +122,9 @@ const setupChatPageForAgent$ = command(
       }
       // My Okou's only chat page is this one, so another agent's chat would
       // route straight back here; its settings page is the usable surface.
-      if (await get(singleAgentEnabled$)) {
-        set(detachedNavigateTo$, ROUTES.connectors, {
-          searchParams: new URLSearchParams({ settings: "my-okou" }),
-          replace: true,
-        });
-        return;
-      }
-      // The URL names an agent this user cannot reach: it was deleted, it
-      // belongs to another organization, or it is private to someone else.
-      // Recover onto a usable surface the way the home route already does,
-      // instead of leaving the user behind the bootstrap skeleton.
-      const defaultAgentId = await get(defaultAgentId$);
-      signal.throwIfAborted();
 
-      // The stored default is never validated against the visible agents, so
-      // trust it only when this already-loaded list contains it. A default
-      // equal to `agentId` fails the same check, because `agentId` is absent
-      // from the list. Otherwise fall back to any visible agent.
-      const defaultAgentIsVisible = agents.some((candidate) => {
-        return candidate.agentId === defaultAgentId;
-      });
-      const fallbackAgentId = defaultAgentIsVisible
-        ? defaultAgentId
-        : agents[0]?.agentId;
-
-      if (fallbackAgentId) {
-        set(detachedNavigateTo$, ROUTES.agentChat, {
-          pathParams: { agentId: fallbackAgentId },
-          searchParams: get(searchParams$),
-          replace: true,
-        });
-        return;
-      }
-
-      // No visible agent at all. Home degrades to the agents surface only when
-      // no default is recorded; while an unreachable default is still recorded
-      // it would navigate straight back here, so go to that surface directly.
-      set(detachedNavigateTo$, defaultAgentId ? ROUTES.agents : ROUTES.home, {
-        searchParams: get(searchParams$),
+      set(detachedNavigateTo$, ROUTES.connectors, {
+        searchParams: new URLSearchParams({ settings: "my-okou" }),
         replace: true,
       });
       return;
@@ -174,7 +137,7 @@ const setupChatPageForAgent$ = command(
           return $.chat.documentTitle;
         }),
     );
-    await set(setupAgentChatKeyboardShortcuts$, signal);
+    set(setupAgentChatKeyboardShortcuts$, signal);
     await set(hydrateProjects$, signal);
     await set(checkUnifiedSettingsParam$, signal);
 
@@ -216,26 +179,14 @@ const setupChatPageForAgent$ = command(
   },
 );
 
-export const setupAgentChatPage$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    if (await get(singleAgentEnabled$)) {
-      // My Okou has one chat page at `/`. Keep deep-link params such as
-      // `prompt` and `handoff` so the page there still applies them.
-      set(detachedNavigateTo$, ROUTES.home, {
-        searchParams: get(searchParams$),
-        replace: true,
-      });
-      return;
-    }
-    const agentId = get(currentAgentId$);
-
-    if (!agentId) {
-      throw new Error("Chat page requires an active agent, but none found");
-    }
-
-    await set(setupChatPageForAgent$, agentId, signal);
-  },
-);
+export const setupAgentChatPage$ = command(({ get, set }) => {
+  // My Okou has one chat page at `/`. Keep deep-link params such as
+  // `prompt` and `handoff` so the page there still applies them.
+  set(detachedNavigateTo$, ROUTES.home, {
+    searchParams: get(searchParams$),
+    replace: true,
+  });
+});
 
 /** My Okou's chat page lives at `/` and always chats with the default agent. */
 export const setupHomeChatPage$ = command(

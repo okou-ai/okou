@@ -1,5 +1,4 @@
 import { AUTO_RUN_MODEL } from "@okouai/core/auto-run-model";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   marketingHandoffsContract,
   type MarketingHandoffManifest,
@@ -156,7 +155,7 @@ test("A prompt link prefills a specific agent's chat", async () => {
   await user.type(composer, " for Friday");
 
   expect(composer).toHaveTextContent("Draft a launch brief for Friday");
-  expect(pathname()).toBe(`/agents/${DESIGN_AGENT_ID}/chat`);
+  expect(pathname()).toBe("/");
   expect(search()).toBe("");
   expect(capture.createdThreads).toHaveLength(0);
   expect(capture.sends).toHaveLength(0);
@@ -176,7 +175,7 @@ test("A prompt link prefills a new chat from Home", async () => {
   expect(composer).toHaveTextContent(
     "Outline the customer interview questions",
   );
-  expect(pathname()).toBe(`/agents/${DEFAULT_AGENT_ID}/chat`);
+  expect(pathname()).toBe("/");
   expect(search()).toBe("");
   expect(capture.createdThreads).toHaveLength(0);
   expect(capture.sends).toHaveLength(0);
@@ -187,7 +186,6 @@ test("My Okou prefills a prompt link on its chat page at Home", async () => {
   await setupPage({
     context,
     path: "/?prompt=Outline%20the%20customer%20interview",
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
   });
 
   await waitForDraft("Outline the customer interview");
@@ -207,7 +205,6 @@ test("My Okou moves an agent chat prompt link to Home", async () => {
   await setupPage({
     context,
     path: `/agents/${DESIGN_AGENT_ID}/chat?prompt=Draft%20a%20launch%20brief`,
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
   });
 
   await waitForDraft("Draft a launch brief");
@@ -427,7 +424,7 @@ test("A retired video template link keeps its brief as an editable draft", async
   expect(composer).toHaveTextContent(
     "Create a cinematic product film for launch",
   );
-  expect(pathname()).toBe(`/agents/${DEFAULT_AGENT_ID}/chat`);
+  expect(pathname()).toBe("/");
   expect(search()).toBe("");
   expect(document.querySelector("[data-composer-inline-template]")).toBeNull();
   expect(capture.createdThreads).toHaveLength(0);

@@ -1,23 +1,14 @@
 import {
   AGENT_ID,
-  agentRowByName,
   ARCHIVED_THREAD_ID,
   AUTOMATION_THREAD_ID,
   buttonByText,
-  commandItemByText,
   createSidebarHelpers,
-  createDataTransferStub,
   createThread,
-  dialogAgentOrder,
   EXISTING_THREAD_ID,
   INCIDENT_THREAD_ID,
   menuItemByText,
   openThreadMenu,
-  pinnedAgentLink,
-  pinnedAgentNames,
-  RESEARCH_AGENT_ID,
-  RESEARCH_THREAD_ID,
-  renderTailwindUtilities,
   setupSidebarPage,
   sidebar,
   SUPPORT_AGENT_ID,
@@ -30,11 +21,6 @@ import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
 import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
-import {
-  userPreferencesContract,
-  type UserPreferencesResponse,
-} from "@okouai/api-contracts/contracts/user-preferences";
-import { DEFAULT_AGENT_AVATAR_URL } from "@okouai/core/agent-avatar";
 import { click, fill } from "../../../__tests__/page-helper.ts";
 import { pathname } from "../../../signals/location.ts";
 import {
@@ -45,56 +31,8 @@ import { mockNow } from "../../../lib/time.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
-const {
-  mockChatThreadSnapshot,
-  mockSidebarThreadStory,
-  mockUnreadAgents,
-  prepareAgents,
-  prepareDefaultAgent,
-  prepareOverflowingPinnedAgents,
-} = createSidebarHelpers(context);
-
-test("Move to the next relevant agent with a shortcut", async () => {
-  prepareAgents();
-  context.mocks.data.userPreferences({
-    pinnedAgentIds: [RESEARCH_AGENT_ID],
-  });
-  mockSidebarThreadStory([
-    createThread(INCIDENT_THREAD_ID, "Support escalation", {
-      agent: { id: SUPPORT_AGENT_ID, avatarUrl: null },
-    }),
-  ]);
-  mockUnreadAgents(() => {
-    return [SUPPORT_AGENT_ID];
-  });
-
-  await setupSidebarPage({
-    context,
-    path: `/agents/${RESEARCH_AGENT_ID}/chat`,
-  });
-
-  const nav = await waitFor(() => {
-    const current = sidebar();
-    expect(within(current).getByText("Support Agent")).toBeInTheDocument();
-    return current;
-  });
-  expect(
-    within(agentRowByName(nav, "Support Agent")).getByLabelText("Unread"),
-  ).toBeInTheDocument();
-
-  fireEvent.keyDown(document.body, {
-    key: "}",
-    ctrlKey: true,
-    shiftKey: true,
-  });
-
-  await waitFor(() => {
-    expect(pathname()).toBe(`/agents/${SUPPORT_AGENT_ID}/chat`);
-    expect(
-      within(sidebar()).getByText("Support escalation"),
-    ).toBeInTheDocument();
-  });
-});
+const { mockSidebarThreadStory, prepareAgents, prepareDefaultAgent } =
+  createSidebarHelpers(context);
 
 test("Open and use workspace search with the keyboard", async () => {
   prepareAgents();
@@ -139,179 +77,6 @@ test("Open and use workspace search with the keyboard", async () => {
     ).not.toBeInTheDocument();
     expect(document.title).toBe("Support escalation | Okou");
   });
-});
-
-test("Pin and unpin agents without closing the pin manager", async () => {
-  prepareAgents();
-  context.mocks.data.userPreferences({ pinnedAgentIds: [RESEARCH_AGENT_ID] });
-
-  await setupSidebarPage({
-    context,
-    path: `/agents/${AGENT_ID}/chat`,
-  });
-
-  const grid = await screen.findByTestId("pinned-agents-grid");
-  await waitFor(() => {
-    expect(within(grid).getAllByTestId("pinned-agent-card")).toHaveLength(2);
-  });
-
-  click(screen.getByLabelText("Pin an agent"));
-
-  const dialogList = await screen.findByTestId("pin-agent-dialog-list");
-  click(
-    within(commandItemByText(dialogList, "Support Agent")).getByText("Pin"),
-  );
-
-  await waitFor(() => {
-    expect(pinnedAgentNames(grid)).toStrictEqual([
-      "Nova",
-      "Research Agent",
-      "Support Agent",
-    ]);
-  });
-  expect(dialogList).toBeInTheDocument();
-  await expect(
-    screen.findByText("Support Agent pinned"),
-  ).resolves.toBeInTheDocument();
-
-  click(
-    within(commandItemByText(dialogList, "Support Agent")).getByText("Unpin"),
-  );
-
-  await waitFor(() => {
-    expect(pinnedAgentNames(grid)).toStrictEqual(["Nova", "Research Agent"]);
-  });
-  expect(dialogList).toBeInTheDocument();
-  expect(
-    within(commandItemByText(dialogList, "Support Agent")).getByText("Pin"),
-  ).toBeInTheDocument();
-  await expect(
-    screen.findByText("Support Agent unpinned"),
-  ).resolves.toBeInTheDocument();
-});
-
-test("Keep a pending pin save owned while the manager closes and reopens", async () => {
-  prepareAgents();
-  const user = userEvent.setup({ delay: null });
-  let preferences: UserPreferencesResponse = {
-    timezone: "Asia/Shanghai",
-    locale: "en-US",
-    supportedLocales: ["en-US"],
-    pinnedAgentIds: [],
-    sendMode: "enter",
-    cloudBrowserEnabledByDefault: true,
-    chatResourcesEnabledByDefault: true,
-    theme: "system",
-    colorTheme: null,
-    captureNetworkBodiesRemaining: 0,
-    memoryInitialized: true,
-  };
-  context.mocks.data.userPreferences(preferences);
-  const saving = context.mocks.deferred<void>();
-  const releaseSave = context.mocks.deferred<void>();
-  context.mocks.api(
-    userPreferencesContract.update,
-    async ({ body, respond, withSignal }) => {
-      if (!saving.settled()) {
-        saving.resolve();
-        await withSignal(releaseSave.promise);
-      }
-      preferences = { ...preferences, ...body };
-      context.mocks.data.userPreferences(preferences);
-      return respond(200, preferences);
-    },
-  );
-  await setupSidebarPage({ context, path: `/agents/${AGENT_ID}/chat` });
-  const grid = await screen.findByTestId("pinned-agents-grid");
-  click(screen.getByLabelText("Pin an agent"));
-  const firstList = await screen.findByTestId("pin-agent-dialog-list");
-  click(
-    within(commandItemByText(firstList, "Research Agent")).getByText("Pin"),
-  );
-  await saving.promise;
-
-  await user.keyboard("{Escape}");
-  await waitFor(() => {
-    expect(
-      screen.queryByTestId("pin-agent-dialog-list"),
-    ).not.toBeInTheDocument();
-  });
-  click(screen.getByLabelText("Pin an agent"));
-  const reopenedList = await screen.findByTestId("pin-agent-dialog-list");
-  expect(commandItemByText(reopenedList, "Support Agent")).toHaveAttribute(
-    "aria-disabled",
-    "true",
-  );
-
-  releaseSave.resolve();
-  await waitFor(() => {
-    expect(pinnedAgentNames(grid)).toStrictEqual(["Nova", "Research Agent"]);
-    expect(
-      commandItemByText(reopenedList, "Support Agent"),
-    ).not.toHaveAttribute("aria-disabled", "true");
-  });
-  await user.click(commandItemByText(reopenedList, "Support Agent"));
-  await waitFor(() => {
-    expect(pinnedAgentNames(grid)).toStrictEqual([
-      "Nova",
-      "Research Agent",
-      "Support Agent",
-    ]);
-  });
-});
-
-test("Preserve the user’s pinned-agent order", async () => {
-  prepareAgents();
-  context.mocks.data.userPreferences({
-    pinnedAgentIds: [SUPPORT_AGENT_ID, RESEARCH_AGENT_ID],
-  });
-
-  await setupSidebarPage({
-    context,
-    path: `/agents/${AGENT_ID}/chat`,
-  });
-
-  const grid = await screen.findByTestId("pinned-agents-grid");
-  await waitFor(() => {
-    expect(pinnedAgentNames(grid)).toStrictEqual([
-      "Nova",
-      "Support Agent",
-      "Research Agent",
-    ]);
-  });
-
-  click(screen.getByLabelText("Pin an agent"));
-
-  const dialogList = await screen.findByTestId("pin-agent-dialog-list");
-  expect(
-    dialogAgentOrder(dialogList, ["Research Agent", "Support Agent"]),
-  ).toStrictEqual(["Support Agent", "Research Agent"]);
-});
-
-test("Highlight the current thread’s agent in the pinned grid", async () => {
-  prepareAgents();
-  context.mocks.data.userPreferences({
-    pinnedAgentIds: [RESEARCH_AGENT_ID],
-  });
-  mockSidebarThreadStory([
-    createThread(RESEARCH_THREAD_ID, "Research kickoff", {
-      agent: { id: RESEARCH_AGENT_ID, avatarUrl: null },
-    }),
-  ]);
-
-  await setupSidebarPage({
-    context,
-    path: `/chats/${RESEARCH_THREAD_ID}`,
-  });
-
-  const grid = await screen.findByTestId("pinned-agents-grid");
-  await waitFor(() => {
-    expect(pinnedAgentLink(grid, "Research Agent")).toHaveAttribute(
-      "aria-current",
-      "page",
-    );
-  });
-  expect(pinnedAgentLink(grid, "Nova")).not.toHaveAttribute("aria-current");
 });
 
 test("Recognize and pin sidebar conversation states", async () => {
@@ -423,68 +188,53 @@ test("Recognize and pin sidebar conversation states", async () => {
   expect(menuItemByText("Delete chat")).toBeInTheDocument();
 });
 
-test.each(["agent", "thread"] as const)(
-  "Refresh the %s unread indicator",
-  async (indicator) => {
-    // Both consumers observe Nova and its thread; unrelated agents add no coverage.
-    context.mocks.data.agents(
-      prepareAgents().filter((agent) => {
-        return agent.agentId === AGENT_ID;
-      }),
-    );
-    mockSidebarThreadStory([
-      createThread(EXISTING_THREAD_ID, "Remote unread conversation"),
-    ]);
-    let hasUnread = false;
-    context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
-      return respond(200, {
-        agents: hasUnread ? { [AGENT_ID]: "unread" } : {},
-        threads: hasUnread ? { [EXISTING_THREAD_ID]: "unread" } : {},
-        unreadAt: hasUnread
-          ? { [EXISTING_THREAD_ID]: "2026-03-10T00:05:00Z" }
-          : {},
-      });
+test("Refresh the thread unread indicator", async () => {
+  context.mocks.data.agents(
+    prepareAgents().filter((agent) => {
+      return agent.agentId === AGENT_ID;
+    }),
+  );
+  mockSidebarThreadStory([
+    createThread(EXISTING_THREAD_ID, "Remote unread conversation"),
+  ]);
+  let hasUnread = false;
+  context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
+    return respond(200, {
+      agents: hasUnread ? { [AGENT_ID]: "unread" } : {},
+      threads: hasUnread ? { [EXISTING_THREAD_ID]: "unread" } : {},
+      unreadAt: hasUnread
+        ? { [EXISTING_THREAD_ID]: "2026-03-10T00:05:00Z" }
+        : {},
     });
+  });
 
-    await setupSidebarPage({
-      context,
-      path: "/agents",
-      sharedWorkerTestTransport: "message-port",
-    });
+  await setupSidebarPage({
+    context,
+    path: "/",
+    sharedWorkerTestTransport: "message-port",
+  });
 
-    await waitFor(() => {
-      expect(
-        pinnedAgentLink(screen.getByTestId("pinned-agents-grid"), "Nova"),
-      ).toBeInTheDocument();
-    });
-    // Both indicator consumers must finish loading before the external refresh.
-    await waitFor(() => {
-      expect(
-        threadRowByTitle("Remote unread conversation", sidebar()),
-      ).toBeInTheDocument();
-    });
-    const indicatorRow = () => {
-      return indicator === "agent"
-        ? pinnedAgentLink(screen.getByTestId("pinned-agents-grid"), "Nova")
-        : threadRowByTitle("Remote unread conversation", sidebar());
-    };
-    const unreadIndicator = () => {
-      return indicator === "agent"
-        ? within(indicatorRow()).queryByLabelText("Unread")
-        : within(indicatorRow()).queryByText("Unread");
-    };
-    await waitFor(() => {
-      expect(unreadIndicator()).toBeNull();
-    });
+  await waitFor(() => {
+    expect(
+      threadRowByTitle("Remote unread conversation", sidebar()),
+    ).toBeInTheDocument();
+  });
+  const unreadIndicator = () => {
+    return within(
+      threadRowByTitle("Remote unread conversation", sidebar()),
+    ).queryByText("Unread");
+  };
+  await waitFor(() => {
+    expect(unreadIndicator()).toBeNull();
+  });
 
-    hasUnread = true;
-    changeChatIndicators();
+  hasUnread = true;
+  changeChatIndicators();
 
-    await waitFor(() => {
-      expect(unreadIndicator()).toBeInTheDocument();
-    });
-  },
-);
+  await waitFor(() => {
+    expect(unreadIndicator()).toBeInTheDocument();
+  });
+});
 
 test.each(["indicator", "read cursor"] as const)(
   "Refresh the running indicator after the %s notification without warming chats",
@@ -507,7 +257,7 @@ test.each(["indicator", "read cursor"] as const)(
 
     await setupSidebarPage({
       context,
-      path: "/agents",
+      path: "/",
       sharedWorkerTestTransport: "message-port",
     });
     const threadLink = () => {
@@ -585,7 +335,7 @@ test.each([false, true])(
     // so the entire burst is delivered before releasing the in-flight fetch.
     await setupSidebarPage({
       context,
-      path: "/agents",
+      path: "/",
     });
     const threadLink = () => {
       return threadLinkByTitle("Burst conversation", sidebar());
@@ -677,164 +427,4 @@ test("Open a conversation with double-click and rename it from the sidebar menu"
     "aria-current",
     "page",
   );
-});
-
-test("Reorder pinned agents while keeping Nova first", async () => {
-  const pinnedAgentIds = prepareOverflowingPinnedAgents();
-  context.mocks.data.userPreferences({ pinnedAgentIds });
-
-  await setupSidebarPage({
-    context,
-    path: `/agents/${AGENT_ID}/chat`,
-  });
-
-  const grid = await screen.findByTestId("pinned-agents-grid");
-  await waitFor(() => {
-    expect(within(grid).getAllByTestId("pinned-agent-card")).toHaveLength(6);
-  });
-  expect(pinnedAgentNames(grid)).toStrictEqual([
-    "Nova",
-    "Research Agent",
-    "Support Agent",
-    "Operations Agent",
-    "Analytics Agent",
-    "Billing Agent",
-  ]);
-
-  const dragged = pinnedAgentLink(grid, "Support Agent");
-  const target = pinnedAgentLink(grid, "Billing Agent");
-  const dataTransfer = createDataTransferStub({
-    "text/uri-list": dragged.href,
-    "text/plain": dragged.href,
-  });
-  fireEvent.dragStart(dragged, { dataTransfer });
-  expect(dataTransfer.getData("text/uri-list")).toBe("");
-  expect(dataTransfer.getData("text/plain")).toBe("");
-  expect(dataTransfer.getData("application/x-okou-pinned-agent")).toBe(
-    SUPPORT_AGENT_ID,
-  );
-  fireEvent.dragOver(target, { dataTransfer });
-  await waitFor(() => {
-    expect(
-      within(target).getByTestId("pinned-agent-drop-caret"),
-    ).toBeInTheDocument();
-  });
-  expect(
-    within(target).getByTestId("pinned-agent-drop-caret").className,
-  ).toContain("-right-");
-  fireEvent.drop(target, { dataTransfer });
-
-  await waitFor(() => {
-    expect(pinnedAgentNames(grid)).toStrictEqual([
-      "Nova",
-      "Research Agent",
-      "Operations Agent",
-      "Analytics Agent",
-      "Billing Agent",
-      "Support Agent",
-    ]);
-  });
-
-  const orderAfterReorder = pinnedAgentNames(grid);
-  const lead = pinnedAgentLink(grid, "Nova");
-  const leadDropTransfer = createDataTransferStub();
-  fireEvent.dragStart(pinnedAgentLink(grid, "Research Agent"), {
-    dataTransfer: leadDropTransfer,
-  });
-  expect(
-    fireEvent.dragOver(lead, { dataTransfer: leadDropTransfer }),
-  ).toBeFalsy();
-  expect(fireEvent.drop(lead, { dataTransfer: leadDropTransfer })).toBeFalsy();
-  fireEvent.dragEnd(pinnedAgentLink(grid, "Research Agent"), {
-    dataTransfer: leadDropTransfer,
-  });
-  expect(pinnedAgentNames(grid)).toStrictEqual(orderAfterReorder);
-  expect(pinnedAgentLink(grid, "Nova")).toBeInTheDocument();
-});
-
-test("Keep the default Okou sweater outside a circular mask", async () => {
-  prepareDefaultAgent(context, DEFAULT_AGENT_AVATAR_URL);
-
-  await setupSidebarPage({
-    context,
-    path: `/agents/${AGENT_ID}/chat`,
-  });
-
-  const grid = await screen.findByTestId("pinned-agents-grid");
-  const avatar = grid.querySelector(`img[src="${DEFAULT_AGENT_AVATAR_URL}"]`);
-  if (!(avatar instanceof HTMLImageElement)) {
-    throw new Error("Default Okou avatar not found");
-  }
-  await renderTailwindUtilities(context.signal, avatar);
-  expect(getComputedStyle(avatar).borderRadius).toBe("");
-});
-
-test("Search, pin, and open an agent from the pin manager", async () => {
-  prepareAgents();
-  const researchThread = createThread(RESEARCH_THREAD_ID, "Research kickoff", {
-    agent: { id: RESEARCH_AGENT_ID, avatarUrl: null },
-  });
-
-  mockChatThreadSnapshot(() => {
-    return [researchThread];
-  });
-
-  await setupSidebarPage({ context, path: `/agents/${AGENT_ID}/chat` });
-
-  const grid = await screen.findByTestId("pinned-agents-grid");
-  click(screen.getByLabelText("Pin an agent"));
-
-  const dialog = await screen.findByRole("dialog", { name: "Pin an agent" });
-  expect(within(dialog).getByText("Research Agent")).toBeInTheDocument();
-  expect(within(dialog).getByText("Support Agent")).toBeInTheDocument();
-
-  await fill(
-    within(dialog).getByPlaceholderText("Search agents..."),
-    "support",
-  );
-
-  await waitFor(() => {
-    expect(
-      within(dialog).queryByText("Research Agent"),
-    ).not.toBeInTheDocument();
-    expect(within(dialog).getByText("Support Agent")).toBeInTheDocument();
-  });
-
-  await fill(within(dialog).getByPlaceholderText("Search agents..."), "ops");
-
-  await waitFor(() => {
-    expect(within(dialog).getByText("No results found")).toBeInTheDocument();
-    expect(within(dialog).queryByText("Support Agent")).not.toBeInTheDocument();
-  });
-
-  click(within(dialog).getByLabelText("Clear search"));
-
-  await waitFor(() => {
-    expect(within(dialog).getByText("Research Agent")).toBeInTheDocument();
-  });
-
-  const researchRow = commandItemByText(dialog, "Research Agent");
-  click(researchRow);
-
-  await waitFor(() => {
-    expect(
-      within(commandItemByText(dialog, "Research Agent")).getByText("Unpin"),
-    ).toBeInTheDocument();
-    expect(pinnedAgentNames(grid)).toContain("Research Agent");
-  });
-
-  click(within(dialog).getByLabelText("Close"));
-  await waitFor(() => {
-    expect(
-      screen.queryByRole("dialog", { name: "Pin an agent" }),
-    ).not.toBeInTheDocument();
-  });
-  click(pinnedAgentLink(grid, "Research Agent"));
-
-  await waitFor(() => {
-    expect(
-      within(sidebar()).getByText("Chats with Research Agent"),
-    ).toBeInTheDocument();
-    expect(within(sidebar()).getByText("Research kickoff")).toBeInTheDocument();
-  });
 });

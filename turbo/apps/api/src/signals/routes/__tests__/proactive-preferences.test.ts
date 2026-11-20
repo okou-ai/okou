@@ -61,7 +61,6 @@ async function preferenceRun(suggestions = true) {
       context,
       { ...actor, orgId: actor.orgId },
       {
-        [FeatureSwitchKey.SingleAgent]: true,
         [FeatureSwitchKey.AgentSuggestion]: suggestions,
       },
     );

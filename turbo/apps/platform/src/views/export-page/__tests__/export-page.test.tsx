@@ -107,9 +107,7 @@ test("A completed export shows its contents, expiry, and cooldown", async () => 
   ).resolves.toBeInTheDocument();
   expect(screen.getByText("Your chat threads")).toBeInTheDocument();
   expect(screen.getByText("Your chat messages")).toBeInTheDocument();
-  expect(
-    screen.getByText("Instructions for agents you can access"),
-  ).toBeInTheDocument();
+  expect(screen.getByText("Instructions")).toBeInTheDocument();
   expect(
     screen.getByText("Instructions for workflows you can access"),
   ).toBeInTheDocument();

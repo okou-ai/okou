@@ -1,9 +1,3 @@
-export interface ComposerAgentSuggestion {
-  readonly id: string;
-  readonly name: string;
-  readonly avatarUrl: string | null;
-}
-
 interface AgentMentionTextSegment {
   readonly type: "text";
   readonly text: string;

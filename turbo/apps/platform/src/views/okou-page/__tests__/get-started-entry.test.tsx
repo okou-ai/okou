@@ -3,7 +3,6 @@ import {
   requireConnectorFixtureAccount,
 } from "../../../mocks/handlers/connector-account-fixtures.ts";
 import { friendReferralsContract } from "@okouai/api-contracts/contracts/friend-referrals";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   GET_STARTED_REWARDS,
   GET_STARTED_REWARDS_CHANGED_EVENT,
@@ -161,9 +160,6 @@ async function setupInvitationPage() {
   await setupPage({
     context,
     path: questChatPath(),
-    featureSwitches: {
-      [FeatureSwitchKey.SingleAgent]: false,
-    },
     auth: {
       user: { id: "test-user-123", fullName: "Referral User" },
       organization: {
@@ -198,9 +194,6 @@ test("Referral link failures can be retried in the same dialog", async () => {
   await setupPage({
     context,
     path: questChatPath(),
-    featureSwitches: {
-      [FeatureSwitchKey.SingleAgent]: false,
-    },
     auth: {
       user: { id: "test-user-123", fullName: "Referral User" },
       organization: {
@@ -232,9 +225,6 @@ test("The corner's icon buttons lead into the labelled Get started entry", async
   await setupPage({
     context,
     path: questChatPath(),
-    featureSwitches: {
-      [FeatureSwitchKey.SingleAgent]: false,
-    },
     auth: {
       user: { id: "test-user-123", fullName: "Corner User" },
       organization: {
@@ -411,6 +401,7 @@ function configureQuestPage(
     name: "Quest Workspace",
     role,
   });
+  context.mocks.data.onboardingStatus({ defaultAgentId: QUEST_AGENT_ID });
   context.mocks.data.agents([
     {
       agentId: QUEST_AGENT_ID,
@@ -499,7 +490,7 @@ function makeCheckinGrant(serverNow: string): GetStartedClaim {
 }
 
 function questChatPath(): string {
-  return `/agents/${QUEST_AGENT_ID}/chat`;
+  return "/";
 }
 
 async function openQuestPanel(): Promise<HTMLElement> {

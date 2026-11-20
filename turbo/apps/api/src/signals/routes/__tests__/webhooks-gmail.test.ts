@@ -571,11 +571,6 @@ async function setupFixture(
   }
 
   // Gmail automations in this fixture belong to a retained named Agent.
-  await updateFeatureSwitchesForUser(
-    context,
-    { ...actor, orgId: actor.orgId },
-    { singleAgent: false },
-  );
   bdd.acceptAgentStorageWrites();
   await bdd.readOnboardingStatus(actor);
   await bdd.bootstrapLimitedFreeOnboarding(actor, {

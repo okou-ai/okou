@@ -122,14 +122,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
     restrictOverridesToAudience: true,
   },
-  [FeatureSwitchKey.SingleAgent]: {
-    maintainer: "lancy@okou.ai",
-    displayName: "My Okou",
-    description:
-      "Use personal Instructions, workspace Workflows, and private Projects with one Okou experience.",
-    enabled: true,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.ProjectThreadDeletion]: {
     maintainer: "ethan@okou.ai",
     displayName: "Delete Project threads",

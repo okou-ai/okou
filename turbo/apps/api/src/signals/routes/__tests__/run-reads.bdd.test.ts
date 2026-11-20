@@ -2682,10 +2682,11 @@ describe("RUN-04/OPS-01: agent run logs", () => {
       description: "Member isolation.",
       visibility: "private",
     });
-    const automationCompose = await bdd.createAgent(actor, {
-      displayName: "BDD logs automation agent",
-      visibility: "private",
-    });
+    const { defaultAgentId } = await bdd.readOnboardingStatus(actor);
+    if (!defaultAgentId) {
+      throw new Error("Expected a default executor for the automation");
+    }
+    const automationCompose = await bdd.readAgent(actor, defaultAgentId);
     // Public creation names an Agent by its canonical id.
     const agentOneName = agentOne.agentId;
 
@@ -2760,7 +2761,7 @@ describe("RUN-04/OPS-01: agent run logs", () => {
     });
     expect(automationEntry).toMatchObject({
       agentId: automationCompose.agentId,
-      displayName: "BDD logs automation agent",
+      displayName: automationCompose.displayName,
       triggerSource: "automation-event",
     });
     expect(listed.body.filters.statuses).toContain("cancelled");

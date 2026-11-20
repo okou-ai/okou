@@ -1301,7 +1301,7 @@ test("An onboarded visitor can redeem without bringing a prompt", async () => {
   });
 
   await waitFor(() => {
-    expect(pathname()).toMatch(/^\/agents\/[^/]+\/chat$/u);
+    expect(pathname()).toBe("/");
   });
   expect(redeemedCode).toBe("PRO-CAMPAIGN");
   expect(new URLSearchParams(search()).has("redeemCode")).toBeFalsy();

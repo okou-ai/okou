@@ -51,7 +51,7 @@ test("An Okou production user can view and dismiss an active incident", async ()
   mockDesktopLayout();
   mockActiveIncident();
 
-  await setupPage({ context, host: "app.okou.ai", path: "/agents" });
+  await setupPage({ context, host: "app.okou.ai", path: "/workflows" });
 
   const statusRegion = await screen.findByRole("region", {
     name: "Service status updates",
@@ -81,10 +81,10 @@ test("A lookalike production hostname does not request service status", async ()
   await setupPage({
     context,
     host: "app.okou.ai.evil.example",
-    path: "/agents",
+    path: "/workflows",
   });
 
-  await screen.findByRole("heading", { name: "Agents" });
+  await screen.findByRole("heading", { name: "Workflows" });
   expect(statusRequested).toBeFalsy();
   expect(
     screen.queryByRole("region", { name: "Service status updates" }),

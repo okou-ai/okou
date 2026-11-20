@@ -327,6 +327,9 @@ test("Use the appropriate Enter behavior on touch devices", async () => {
 test("Treat whitespace as an empty message", async () => {
   const sentPrompts: string[] = [];
   installComposerChat(sentPrompts, "enter");
+  context.mocks.data.onboardingStatus({
+    defaultAgentId: MESSAGE_EXPERIENCE_AGENT_ID,
+  });
   context.mocks.data.agents([
     {
       agentId: MESSAGE_EXPERIENCE_AGENT_ID,

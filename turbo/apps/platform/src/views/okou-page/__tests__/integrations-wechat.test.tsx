@@ -319,9 +319,7 @@ test.each([
     expect(
       screen.getByText("WeChat Workspace", { selector: "dd" }),
     ).toBeInTheDocument();
-    expect(
-      screen.getByText("Workspace Assistant", { selector: "dd" }),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Okou", { selector: "dd" })).toBeInTheDocument();
     expect(screen.queryByTestId("wechat-connect-qr")).not.toBeInTheDocument();
     const confirm = getAction("button", "Reconnect");
     expect(confirm).toBeEnabled();

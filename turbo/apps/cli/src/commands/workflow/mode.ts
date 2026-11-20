@@ -1,10 +1,10 @@
 import { listAgents } from "../../lib/api/domains/agents";
-import { singleAgentEnabled } from "../../lib/api/single-agent";
+import { isPersonalExecution } from "../../lib/personal-execution";
 
 export async function workflowAgentScope(
   agent?: string,
 ): Promise<string | undefined> {
-  if (!(await singleAgentEnabled())) return agent;
+  if (!isPersonalExecution()) return agent;
   if (agent)
     throw new Error(
       "Workflow Agent targets are unavailable in My Okou. Use the current workspace or an explicit Workflow ID",

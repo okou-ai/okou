@@ -5,7 +5,6 @@ import {
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import { projectsContract } from "@okouai/api-contracts/contracts/projects";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { computerUseHostsContract } from "@okouai/api-contracts/contracts/computer-use";
 import {
   act,
@@ -45,6 +44,7 @@ function mockThreads(
   projectMemberCount = 2,
   archived = false,
 ): void {
+  context.mocks.data.onboardingStatus({ defaultAgentId: AGENT_ID });
   context.mocks.data.agents([
     {
       agentId: AGENT_ID,
@@ -181,11 +181,11 @@ test("Keep the chat viewport keyboard-focusable only while a conversation is ope
   viewport.focus();
   expect(viewport).toHaveFocus();
 
-  click(
-    within(sidebar).getByLabelText("New chat", {
-      selector: "button[aria-keyshortcuts]",
-    }),
-  );
+  const newChat = sidebar.querySelector<HTMLAnchorElement>('a[href="/"]');
+  if (!newChat) {
+    throw new Error("New chat link not found");
+  }
+  click(newChat);
   await waitFor(() => {
     expect(viewport).toHaveAttribute("tabindex", "-1");
   });
@@ -250,7 +250,6 @@ test("Collapse and expand a Project inside a scrolled virtual window", async () 
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
   });
   const sidebar = await screen.findByTestId("chat-list-column");
   const viewport = await within(sidebar).findByTestId("sidebar-scroll-area");
@@ -366,7 +365,6 @@ async function openFoldList({
   await setupPage({
     context,
     path: activeChat ? `/chats/${threadId(0)}` : `/agents/${AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
   });
   if (unread || archived) {
     await screen.findByLabelText("Open chat list menu");
@@ -1108,69 +1106,6 @@ test("Follow full-list wave positions across scrolling and pinning", async () =>
     "href",
     `/chats/${threadId(2)}`,
   );
-});
-
-function mockPinnedGrid(): string {
-  const agents = Array.from({ length: 5 }, (_, index) => {
-    return {
-      agentId: `c0000000-0000-4000-a000-${String(index + 1).padStart(12, "0")}`,
-      ownerId: "test-user-123",
-      displayName: index === 0 ? "Nova" : `Agent ${index + 1}`,
-      description: null,
-      sound: null,
-      avatarUrl: null,
-      visibility: "public" as const,
-    };
-  });
-  context.mocks.data.agents(agents);
-  context.mocks.data.userPreferences({
-    pinnedAgentIds: agents.slice(1, 4).map((agent) => {
-      return agent.agentId;
-    }),
-  });
-  return "c0000000-0000-4000-a000-000000000005";
-}
-
-function pinToggle(container: HTMLElement, name: "Pin" | "Unpin"): HTMLElement {
-  return within(container).getByRole("option", { name: `Agent 5 ${name}` });
-}
-
-test("Refresh virtualization after pinning adds a grid row and unpinning removes it", async () => {
-  mockThreads(120);
-  mockPinnedGrid();
-  mockViewportHeight(() => {
-    const cards = document.querySelectorAll(
-      '[data-testid="pinned-agent-card"]',
-    );
-    return cards.length > 4 ? 360 : 612;
-  });
-  await setupPage({ context, path: `/chats/${threadId(0)}` });
-  const sidebar = screen.getByTestId("chat-list-column");
-  const rows = () => {
-    return within(sidebar).getAllByTestId("sidebar-chat-thread-virtual-row");
-  };
-  await waitFor(() => {
-    return expect(rows()).toHaveLength(25);
-  });
-
-  click(screen.getByLabelText("Pin an agent"));
-  const dialog = await screen.findByTestId("pin-agent-dialog-list");
-  click(pinToggle(dialog, "Pin"));
-  await waitFor(() => {
-    expect(within(sidebar).getAllByTestId("pinned-agent-card")).toHaveLength(5);
-    expect(rows()).toHaveLength(18);
-  });
-  await waitFor(() => {
-    return expect(pinToggle(dialog, "Unpin")).not.toHaveAttribute(
-      "aria-disabled",
-      "true",
-    );
-  });
-  click(pinToggle(dialog, "Unpin"));
-  await waitFor(() => {
-    expect(within(sidebar).getAllByTestId("pinned-agent-card")).toHaveLength(4);
-    expect(rows()).toHaveLength(25);
-  });
 });
 
 test("Measure the mobile chat list only after the main stylesheet bounds it", async () => {

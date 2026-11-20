@@ -24,13 +24,12 @@ export function createOkouTokenInputSignals(
   threadContext: ThreadContext,
 ) {
   return computed(async (get): Promise<OkouTokenInput> => {
-    const [event, features, hostGrant, snapshot, agent, phoneGrant] =
+    const [event, features, hostGrant, snapshot, phoneGrant] =
       await Promise.all([
         get(pickedEvent$),
         get(bootstrap.featureSwitches$),
         get(threadContext.computerUseHostGrant$),
         get(threadContext.connectorSnapshot$),
-        get(bootstrap.agent$),
         get(threadContext.phoneUseGrant$),
       ]);
     if (!event) {
@@ -61,7 +60,7 @@ export function createOkouTokenInputSignals(
       email: features.email,
       featureOverrides: features.overrides,
       options: {
-        isDefaultAgent: agent !== null && agent.id === agent.defaultAgentId,
+        isDefaultAgent: features.personalExecution,
         ...(phoneGrant
           ? {
               phoneUseDeviceId: phoneGrant.deviceId,

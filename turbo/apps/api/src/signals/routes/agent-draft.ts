@@ -1,5 +1,5 @@
 import { projectChatContract } from "@okouai/api-contracts/contracts/project-chat";
-import { projectAccess$ } from "./projects";
+import { personalProjectAccess$ } from "./projects";
 import { command, computed } from "ccstate";
 import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import { agentDrafts } from "@okouai/db/schema/agent-draft";
@@ -13,7 +13,7 @@ import { db$, writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
 import { notFound } from "../../lib/error";
 import { visibleAgentIdentityCondition } from "../services/agent-data.service";
-import { projectReferenceWritesEnabled } from "../services/project-reference.service";
+import { canWriteProjectReferences } from "../services/project-reference.service";
 import type { RouteEntry } from "../route-entry";
 
 const agentReadAuth = {
@@ -37,7 +37,7 @@ function createAgentDraftReader(
   projectEndpoint: boolean,
 ) {
   const getAgentDraftInner$ = computed(async (get) => {
-    if (projectEndpoint && !(await get(projectAccess$))) {
+    if (projectEndpoint && !get(personalProjectAccess$)) {
       return notFound("Projects unavailable");
     }
     const auth = get(organizationAuthContext$);
@@ -91,7 +91,7 @@ function createAgentDraftRoutes(
   const getAgentDraftInner$ = createAgentDraftReader(contract, projectEndpoint);
   const patchAgentDraftInner$ = command(
     async ({ get, set }, signal: AbortSignal) => {
-      if (projectEndpoint && !(await get(projectAccess$))) {
+      if (projectEndpoint && !get(personalProjectAccess$)) {
         return notFound("Projects unavailable");
       }
       const auth = get(organizationAuthContext$);
@@ -102,11 +102,7 @@ function createAgentDraftRoutes(
       if (!bodyResult.ok) {
         return bodyResult.response;
       }
-      if (
-        !(await get(
-          projectReferenceWritesEnabled(auth, bodyResult.data.draftUserMessage),
-        ))
-      ) {
+      if (!canWriteProjectReferences(auth, bodyResult.data.draftUserMessage)) {
         return notFound("Projects unavailable");
       }
       signal.throwIfAborted();

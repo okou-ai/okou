@@ -3,9 +3,9 @@ import userEvent from "@testing-library/user-event";
 import {
   agentInstructionsContract,
   agentsByIdContract,
+  agentsMainContract,
 } from "@okouai/api-contracts/contracts/agents";
 import { expect, test } from "vitest";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import {
   click,
@@ -15,7 +15,7 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
-const AGENT_ID = "c0000000-0000-4000-a000-000000000001";
+const AGENT_ID = "c0000000-0000-4000-a000-000000000037";
 const context = testContext();
 
 function researchAgent() {
@@ -37,6 +37,9 @@ function setupInstructionsPage(
   tab: "profile" | "instructions" = "instructions",
 ): Promise<void> {
   let savedContent = initialContent;
+  context.mocks.api(agentsMainContract.list, ({ respond }) => {
+    return respond(200, [researchAgent()]);
+  });
   context.mocks.api(agentsByIdContract.get, ({ respond }) => {
     return respond(200, researchAgent());
   });
@@ -58,7 +61,6 @@ function setupInstructionsPage(
   return setupPage({
     context,
     path: `/agents/${AGENT_ID}?tab=${tab}`,
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: false },
   });
 }
 
@@ -136,7 +138,7 @@ test("Discard restores saved instructions and exits editing", async () => {
   expect(screen.queryByTestId("unsaved-bar")).not.toBeInTheDocument();
 });
 
-test("Agent instructions receive external updates with SingleAgent disabled", async () => {
+test("Agent instructions receive external updates on a retained agent", async () => {
   await setupInstructionsPage("Original instructions");
   await instructionsEditor();
   context.mocks.api(agentInstructionsContract.get, ({ respond }) => {

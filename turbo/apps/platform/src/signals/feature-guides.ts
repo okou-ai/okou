@@ -87,13 +87,13 @@ export const featureGuide$ = computed(
   },
 );
 
-export const featureGuideReady$ = computed(async (get) => {
+export const featureGuideReady$ = computed((get) => {
   if (!get(appContentReady$)) {
     return false;
   }
   const draft = get(talkDraft$);
   return (
-    (await get(agentChatPageActive$)) &&
+    get(agentChatPageActive$) &&
     !get(settingsDialogOpen$) &&
     !get(forceUpgradeDialogOpen$) &&
     !get(draft.input$).trim() &&

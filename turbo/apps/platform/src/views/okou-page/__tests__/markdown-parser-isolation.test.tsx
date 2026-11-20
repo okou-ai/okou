@@ -1,11 +1,8 @@
-import {
-  agentInstructionsContract,
-  agentsByIdContract,
-} from "@okouai/api-contracts/contracts/agents";
+import { instructionsContract } from "@okouai/api-contracts/contracts/instructions";
 import { logsByIdContract } from "@okouai/api-contracts/contracts/logs";
 import { runAgentEventsContract } from "@okouai/api-contracts/contracts/run-routes";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import {
@@ -42,33 +39,24 @@ function markdownFrameFor(element: Element): HTMLElement {
 }
 
 async function openInstructionsThenChat(): Promise<void> {
-  context.mocks.api(agentsByIdContract.get, ({ respond }) => {
-    return respond(200, {
-      isDefaultAgent: false,
-      agentId: AGENT_ID,
-      avatarUrl: null,
-      description: null,
-      displayName: "Markdown Agent",
-      ownerId: "test-user-123",
-      sound: null,
-      visibility: "private",
-    });
-  });
-  context.mocks.api(agentInstructionsContract.get, ({ respond }) => {
+  context.mocks.api(instructionsContract.get, ({ respond }) => {
     return respond(200, {
       content: "<u>Editor underline</u>",
-      filename: "AGENTS.md",
+      orgId: "org_current",
+      userId: "test-user-123",
+      updatedAt: "2026-08-01T10:00:00.000Z",
+      version: "first",
     });
   });
-
   await setupPage({
     context,
-    path: `/agents/${AGENT_ID}?tab=instructions`,
+    path: "/?settings=my-okou&focus=instructions",
     featureSwitches: { [FeatureSwitchKey.OkouDebug]: true },
   });
-
-  const editor = await screen.findByLabelText("Instructions editor");
+  const settings = await screen.findByRole("dialog", { name: "Settings" });
+  const editor = await within(settings).findByLabelText("Instructions");
   expect(editor.querySelector("u")).toHaveTextContent("Editor underline");
+  click(within(settings).getByLabelText("Close", { selector: "button" }));
   const chatLink = await waitFor(() => {
     return getLink("Rich content");
   });

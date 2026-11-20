@@ -25,6 +25,7 @@ const TEMPLATE_NAME = "Sunburst playroom";
 const PREVIEW_TITLE = `${TEMPLATE_NAME} HTML preview`;
 
 function arrangePresentation(html: string): void {
+  context.mocks.data.onboardingStatus({ defaultAgentId: AGENT_ID });
   context.mocks.data.agents([
     {
       agentId: AGENT_ID,

@@ -52,33 +52,8 @@ async function switches(actor: ApiTestUser) {
 }
 
 describe("Single Agent membership lifecycle", () => {
-  it("defaults a new workspace to Single Agent for an existing account and retains its original choice", async () => {
-    const existing = member(org.user());
-    await initialize(existing);
-    await updateFeatureSwitchesForUser(context, existing, {
-      [FeatureSwitchKey.SingleAgent]: false,
-    });
-    // Retrying initialization must not erase an active member's choice.
-    await initialize(existing);
-    expect(
-      (await switches(existing)).effectiveSwitches.singleAgent,
-    ).toBeFalsy();
-
-    const elsewhere = org.user({
-      userId: existing.userId,
-      email: existing.email,
-    });
-    await initialize(elsewhere);
-    expect(
-      (await switches(elsewhere)).effectiveSwitches.singleAgent,
-    ).toBeTruthy();
-    expect(
-      (await switches(existing)).effectiveSwitches.singleAgent,
-    ).toBeFalsy();
-  });
-
   it.each(["leave", "remove", "webhook"] as const)(
-    "uses the new default after %s and reinitialization while preserving other settings and memberships",
+    "preserves member settings after %s and reinitialization",
     async (departure) => {
       const departing = member(org.user({ orgRole: "org:member" }));
       const admin = member(org.user({ orgId: departing.orgId }));
@@ -88,7 +63,6 @@ describe("Single Agent membership lifecycle", () => {
       await initialize(departing);
       for (const actor of [departing, admin, elsewhere]) {
         await updateFeatureSwitchesForUser(context, actor, {
-          [FeatureSwitchKey.SingleAgent]: false,
           [FeatureSwitchKey.Dummy]: false,
         });
       }
@@ -122,10 +96,8 @@ describe("Single Agent membership lifecycle", () => {
       expect(rejoined.switches).toStrictEqual({
         [FeatureSwitchKey.Dummy]: false,
       });
-      expect(rejoined.effectiveSwitches.singleAgent).toBeTruthy();
       for (const actor of [admin, elsewhere]) {
         expect((await switches(actor)).switches).toStrictEqual({
-          [FeatureSwitchKey.SingleAgent]: false,
           [FeatureSwitchKey.Dummy]: false,
         });
       }

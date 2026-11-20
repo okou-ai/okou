@@ -1,3 +1,4 @@
+import { retainedWorkflowCaller } from "./retained-workflow-caller";
 import {
   chatThreadMetadataContract,
   type ChatEvent,
@@ -30,7 +31,6 @@ import { computeHmacSignature } from "../../../../lib/event-consumer/hmac";
 import { now } from "../../../../lib/time";
 import { webhooksWorkflowAutomationsRoutes } from "../../webhooks-workflow-automations";
 import { workflowsRoutes } from "../../workflows";
-import { updateFeatureSwitchesForUser } from "./feature-switches";
 
 const GOOGLE_OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token";
 const GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo";
@@ -121,6 +121,7 @@ export function mockNotionConnectorOAuth(
 }
 
 export function createWorkflowsBddApi(context: TestContext) {
+  const retainedHeaders = retainedWorkflowCaller(context);
   const bdd = createBddApi(context);
   const runs = createRunsApi(context);
   const connectors = createConnectorBddApi(context);
@@ -153,7 +154,6 @@ export function createWorkflowsBddApi(context: TestContext) {
         readonly tier?: "pro" | "team";
         readonly model?: RunModel;
         readonly maxAutonomyBudget?: number;
-        readonly singleAgent?: boolean;
       } = {},
     ): Promise<{
       readonly actor: ApiTestUser;
@@ -172,15 +172,6 @@ export function createWorkflowsBddApi(context: TestContext) {
       const entitlement = await runs.grantProEntitlement(actor, {
         tier: options.tier,
       });
-      if (!actor.orgId) {
-        throw new Error("Expected a workflow workspace");
-      }
-      // Existing workflow fixtures model the retained multi-Agent cohort.
-      await updateFeatureSwitchesForUser(
-        context,
-        { ...actor, orgId: actor.orgId },
-        { singleAgent: options.singleAgent ?? false },
-      );
       if (options.timezone) {
         await bdd.updateUserTimezone(actor, options.timezone);
       }
@@ -198,14 +189,6 @@ export function createWorkflowsBddApi(context: TestContext) {
         readonly visibility?: "public" | "private";
       } = {},
     ): Promise<{ readonly agentId: string }> {
-      if (!actor.orgId) {
-        throw new Error("Expected a legacy Agent workspace");
-      }
-      await updateFeatureSwitchesForUser(
-        context,
-        { ...actor, orgId: actor.orgId },
-        { singleAgent: false },
-      );
       bdd.acceptAgentStorageWrites();
       const agent = await bdd.createAgent(actor, {
         displayName: options.displayName ?? "Workflow Automation Agent",
@@ -226,22 +209,17 @@ export function createWorkflowsBddApi(context: TestContext) {
         readonly instruction?: string;
       },
     ): Promise<string> {
-      if (!actor.orgId) {
-        throw new Error("Expected a retained Agent workspace");
-      }
-      // This helper creates named-Agent Workflows, including callers that
-      // prepare their Agent without setupWorkflowOrg or createAgent above.
-      await updateFeatureSwitchesForUser(
-        context,
-        { ...actor, orgId: actor.orgId },
-        { singleAgent: false },
-      );
+      const { defaultAgentId } = await bdd.readOnboardingStatus(actor);
+      const headers =
+        options.agentId === defaultAgentId
+          ? authenticate(actor)
+          : await retainedHeaders(actor);
       const client = setupApp({ context, routes: workflowsRoutes })(
         workflowsCollectionContract,
       );
       const response = await accept(
         client.create({
-          headers: authenticate(actor),
+          headers,
           body: {
             agentId: options.agentId,
             name: options.name,

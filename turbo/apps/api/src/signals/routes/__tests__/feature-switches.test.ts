@@ -25,43 +25,35 @@ function client() {
 }
 
 describe("/api/feature-switches", () => {
-  it("keeps Projects availability with My Okou for each workspace membership", async () => {
+  it("returns the published My Okou and Projects capabilities to installed clients", async () => {
     const clerk = createRouteMocks(context).clerk;
     const headers = { authorization: "Bearer clerk-session" };
-    const userId = `user_${randomUUID()}`;
-    const retainedOrg = `org_${randomUUID()}`;
-    const newOrg = `org_${randomUUID()}`;
-    clerk.session(userId, retainedOrg, "org:member");
-    const retained = await accept(
-      client().update({
-        headers,
-        body: { switches: { [FeatureSwitchKey.SingleAgent]: false } },
-      }),
-      [200],
-    );
-    expect(retained.body.effectiveSwitches).toMatchObject({
-      singleAgent: false,
-      projects: false,
-    });
-
-    clerk.session(userId, newOrg, "org:member");
-    const initialized = await accept(client().get({ headers }), [200]);
-    expect(initialized.body.effectiveSwitches).toMatchObject({
+    clerk.session("user_" + randomUUID(), "org_" + randomUUID(), "org:member");
+    const current = await accept(client().get({ headers }), [200]);
+    expect(current.body.effectiveSwitches).toMatchObject({
       singleAgent: true,
       projects: true,
     });
-
-    clerk.session(userId, retainedOrg, "org:member");
-    const optedIn = await accept(
+    const updated = await accept(
       client().update({
         headers,
-        body: { switches: { [FeatureSwitchKey.SingleAgent]: true } },
+        body: {
+          switches: {
+            singleAgent: false,
+            projects: false,
+            [FeatureSwitchKey.Dummy]: false,
+          },
+        },
       }),
       [200],
     );
-    expect(optedIn.body.effectiveSwitches).toMatchObject({
+    expect(updated.body.switches).toStrictEqual({
+      [FeatureSwitchKey.Dummy]: false,
+    });
+    expect(updated.body.effectiveSwitches).toMatchObject({
       singleAgent: true,
       projects: true,
+      [FeatureSwitchKey.Dummy]: false,
     });
   });
 
@@ -351,7 +343,7 @@ describe("/api/feature-switches", () => {
       expect(updated.body.switches).toStrictEqual(expected);
       expect(updated.body.effectiveSwitches).toMatchObject(expected);
       expect(Object.keys(updated.body.effectiveSwitches).sort()).toStrictEqual(
-        [...Object.values(FeatureSwitchKey), "projects"].sort(),
+        [...Object.values(FeatureSwitchKey), "projects", "singleAgent"].sort(),
       );
       const current = await accept(client().get({ headers }), [200]);
       expect(current.body.switches).toStrictEqual(expected);

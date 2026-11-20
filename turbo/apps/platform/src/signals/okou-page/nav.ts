@@ -1,28 +1,18 @@
-import { singleAgentEnabled$ } from "../single-agent.ts";
 import { command, computed } from "ccstate";
-import { detachedNavigateTo$, pathParams$ } from "../route.ts";
-import { activeRoute$ } from "../active-route.ts";
+import { detachedNavigateTo$ } from "../route.ts";
 import { ROUTES, type RouteKey } from "../route-paths.ts";
 import { setupGlobalShortcut } from "../../lib/setup-global-shortcut.ts";
 import { GLOBAL_KEYBOARD_SHORTCUTS } from "../../lib/global-keyboard-shortcuts.ts";
-import { currentChatAgentId$, newChatAgentId$ } from "../agent-chat.ts";
+import { newChatAgentId$ } from "../agent-chat.ts";
 import { setChatShortcutHelpOpen$ } from "../chat-page/chat-shortcut-help.ts";
 import { openThreeColumnSearchDialog$ } from "./sidebar-state.ts";
-import { displayedPinnedAgents$ } from "./pinned-agents.ts";
 import { writeToClipboard } from "./clipboard.ts";
 import { isStandaloneMode } from "./settings/connectors.ts";
-import {
-  setChatThreadUnreadFilter$,
-  toggleChatThreadUnreadFilter$,
-} from "./chat-thread-filter.ts";
 import { mobileChatViewport$ } from "./pwa-navigation.ts";
-import { navigateToAgentChat$ } from "./agent-chat-navigation.ts";
 import {
   setStoredChatListHidden$,
   storedChatListHidden$,
 } from "./unified-chat-workspace.ts";
-
-type PinnedAgentShortcutDirection = "prev" | "next";
 
 export const navigateToChat$ = command(({ set }, chatThreadId: string) => {
   set(detachedNavigateTo$, "/chats/:threadId", {
@@ -39,90 +29,13 @@ export const navigateToNewChat$ = command(
     if (!agentId) {
       return;
     }
-    await set(
-      navigateToAgentChat$,
-      agentId,
+    set(
+      detachedNavigateTo$,
+      ROUTES.home,
       get(mobileChatViewport$)
         ? { searchParams: new URLSearchParams({ compose: "1" }) }
         : undefined,
-      signal,
     );
-  },
-);
-
-function adjacentPinnedAgentId(
-  pinnedAgents: readonly { readonly agentId: string }[],
-  currentAgentId: string | null,
-  direction: PinnedAgentShortcutDirection,
-): string | null {
-  if (pinnedAgents.length === 0) {
-    return null;
-  }
-  const currentIndex = currentAgentId
-    ? pinnedAgents.findIndex((agent) => {
-        return agent.agentId === currentAgentId;
-      })
-    : -1;
-  if (currentIndex === -1) {
-    return direction === "next"
-      ? pinnedAgents[0]!.agentId
-      : pinnedAgents[pinnedAgents.length - 1]!.agentId;
-  }
-  const offset = direction === "next" ? 1 : -1;
-  return pinnedAgents[
-    (currentIndex + offset + pinnedAgents.length) % pinnedAgents.length
-  ]!.agentId;
-}
-
-const navigateAdjacentPinnedAgent$ = command(
-  async (
-    { get, set },
-    direction: PinnedAgentShortcutDirection,
-    signal: AbortSignal,
-  ) => {
-    if (await get(singleAgentEnabled$)) {
-      return;
-    }
-    const currentAgentId = await get(currentChatAgentId$);
-    signal.throwIfAborted();
-    const targetAgentId = adjacentPinnedAgentId(
-      await get(displayedPinnedAgents$),
-      currentAgentId,
-      direction,
-    );
-    signal.throwIfAborted();
-    if (!targetAgentId) {
-      return;
-    }
-    set(detachedNavigateTo$, "/agents/:agentId/chat", {
-      pathParams: { agentId: targetAgentId },
-    });
-  },
-);
-
-export const selectPinnedAgent$ = command(
-  (
-    { get, set },
-    selection: { readonly agentId: string; readonly hasUnread: boolean },
-  ) => {
-    const routeAgentId = get(pathParams$)?.agentId;
-    if (
-      get(activeRoute$) === "agentChat" &&
-      typeof routeAgentId === "string" &&
-      routeAgentId === selection.agentId
-    ) {
-      if (selection.hasUnread) {
-        set(toggleChatThreadUnreadFilter$);
-      } else {
-        set(setChatThreadUnreadFilter$, false);
-      }
-      return;
-    }
-
-    set(setChatThreadUnreadFilter$, false);
-    set(detachedNavigateTo$, ROUTES.agentChat, {
-      pathParams: { agentId: selection.agentId },
-    });
   },
 );
 
@@ -140,7 +53,7 @@ export function shouldHandleShortcutPress(event: KeyboardEvent): boolean {
 }
 
 export const setupGlobalKeyboardShortcuts$ = command(
-  ({ set }, singleAgent: boolean | undefined, signal: AbortSignal) => {
+  ({ set }, signal: AbortSignal) => {
     return setupGlobalShortcut(
       {
         [GLOBAL_KEYBOARD_SHORTCUTS.toggleChatList.binding]: {
@@ -169,24 +82,6 @@ export const setupGlobalKeyboardShortcuts$ = command(
           shouldHandle: shouldHandleShortcutPress,
           run: () => {
             set(openThreeColumnSearchDialog$);
-          },
-        },
-        "ctrl+shift+[": {
-          allowInEditableTarget: true,
-          shouldHandle: () => {
-            return singleAgent === false;
-          },
-          run: async () => {
-            await set(navigateAdjacentPinnedAgent$, "prev", signal);
-          },
-        },
-        "ctrl+shift+]": {
-          allowInEditableTarget: true,
-          shouldHandle: () => {
-            return singleAgent === false;
-          },
-          run: async () => {
-            await set(navigateAdjacentPinnedAgent$, "next", signal);
           },
         },
         [GLOBAL_KEYBOARD_SHORTCUTS.showShortcuts.binding]: {

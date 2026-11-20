@@ -14,8 +14,8 @@ export const selectedProjectId$ = computed((get) => {
 });
 
 export const locateProject$ = command(
-  async ({ get, set }, projectId: string, signal: AbortSignal) => {
-    const projects = await get(projects$);
+  ({ get, set }, projectId: string, signal: AbortSignal) => {
+    const projects = get(projects$);
     signal.throwIfAborted();
     if (
       !projects.some((project) => {

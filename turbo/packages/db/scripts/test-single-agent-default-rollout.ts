@@ -3,8 +3,6 @@ import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import postgres from "postgres";
 import { array, boolean, number, object, record, string } from "zod";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { applyPendingMigrations } from "./migration-runner";
 
 // Exercise the real release migration on an owned disposable local database.
@@ -138,25 +136,6 @@ try {
       await sql`SELECT * FROM org_members_metadata ORDER BY org_id,user_id`,
     ),
     membersBefore,
-  );
-
-  // The same account in a freshly initialized workspace is outside the retained cohort.
-  const nextOrg = `org_${randomUUID()}`;
-  await sql`INSERT INTO org_members_metadata(org_id,user_id) VALUES(${nextOrg},'missing-row')`;
-  assert.equal(
-    isFeatureEnabled(FeatureSwitchKey.SingleAgent, {
-      orgId: external,
-      userId: "missing-row",
-      overrides: value(external, "missing-row"),
-    }),
-    false,
-  );
-  assert.equal(
-    isFeatureEnabled(FeatureSwitchKey.SingleAgent, {
-      orgId: nextOrg,
-      userId: "missing-row",
-    }),
-    true,
   );
 
   // Release retry skips the committed cohort and preserves a later user selection.

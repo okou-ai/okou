@@ -1,7 +1,6 @@
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { projectsContract } from "@okouai/api-contracts/contracts/projects";
 import {
   chatThreadByIdContract,
@@ -143,7 +142,6 @@ async function openChatList(
     context,
     path,
     ...workspace.pageOptions,
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
   });
   await waitFor(() => {
     expect(projectToggle("Launch")).toBeInTheDocument();
@@ -224,7 +222,6 @@ test.each([false, true])(
       context,
       path: "/",
       ...workspace.pageOptions,
-      featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
     });
 
     await expect(

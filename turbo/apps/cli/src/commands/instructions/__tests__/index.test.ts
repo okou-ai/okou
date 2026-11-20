@@ -184,7 +184,7 @@ describe("personal Instructions CLI", () => {
     expect(stdout).not.toHaveBeenCalled();
   });
 
-  it("keeps captured enabled and legacy Run modes despite opposite live flags", async () => {
+  it("uses the signed Run mode without consulting live feature switches", async () => {
     let featureReads = 0;
     server.use(
       http.get("*/api/feature-switches", () => {
@@ -205,12 +205,6 @@ describe("personal Instructions CLI", () => {
   it("uses authenticated member mode outside a Run and surfaces API authorization failure", async () => {
     vi.stubEnv("OKOU_TOKEN", "member-token");
     server.use(
-      http.get("*/api/feature-switches", () => {
-        return HttpResponse.json({
-          switches: {},
-          effectiveSwitches: { singleAgent: true },
-        });
-      }),
       http.get("*/api/instructions", () => {
         return HttpResponse.json(
           { error: { code: "FORBIDDEN", message: "Membership revoked" } },

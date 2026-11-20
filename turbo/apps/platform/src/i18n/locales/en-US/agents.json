@@ -3,7 +3,6 @@
     "cancel": "Cancel",
     "close": "Close",
     "copying": "Copying…",
-    "create": "Create",
     "delete": "Delete agent",
     "deleting": "Deleting…",
     "discard": "Discard",
@@ -63,8 +62,7 @@
     "tabs": {
       "instructions": "Instructions",
       "profile": "Profile"
-    },
-    "viewProfile": "View agent profile"
+    }
   },
   "errors": {
     "unknown": "Unknown error"
@@ -457,47 +455,6 @@
     "saved": "Instructions saved"
   },
   "list": {
-    "actions": {
-      "new": "New agent"
-    },
-    "cards": {
-      "coreDescription": "Your core agent",
-      "createdBy": "Created by {{creator}}",
-      "subagentDescription": "Sub-agent",
-      "unknownCreator": "Unknown"
-    },
-    "create": {
-      "accessibilityDescription": "Name the new agent, choose its visibility, and customize its avatar.",
-      "creating": "Creating…",
-      "description": "Name your agent and set who can use it.",
-      "namePlaceholder": "e.g. Research Assistant",
-      "newAgentAlt": "New agent",
-      "responsibilityLabel": "What do you want this agent to help you do?",
-      "responsibilityPlaceholder": "e.g. Every Monday, summarize last week's pipeline from HubSpot and flag deals that need attention.",
-      "success": "{{agentName}} created successfully",
-      "title": "Create a new agent",
-      "visibility": {
-        "private": {
-          "description": "(only you can see and use it)",
-          "label": "Private"
-        },
-        "public": {
-          "description": "(anyone in this workspace can use it)",
-          "label": "Public"
-        }
-      },
-      "visibilityLabel": "Visibility"
-    },
-    "description": "{{agentName}} and sub-agents working together to run tailored workflows for you and your team.",
-    "documentTitle": "Agents",
-    "privateEmpty": {
-      "description": "Create an agent only you can see and use. Private agents are unlimited.",
-      "title": "No private agents yet"
-    },
-    "tabs": {
-      "private": "Private",
-      "public": "Public"
-    },
     "title": "Agents"
   },
   "profile": {
@@ -563,34 +520,20 @@
     }
   },
   "sidebar": {
-    "addPin": "Pin",
-    "clearSearch": "Clear search",
     "escapeShortcut": "Esc",
     "filterAll": "All",
     "markAllRead": "Mark all read",
-    "noAgentsToPin": "You do not have any other agents yet.",
     "noResults": "No results found",
-    "pin": "Pin to sidebar",
-    "pinAgent": "Pin an agent",
-    "pinAgentDescription": "Choose an agent to pin to the sidebar.",
-    "pinned": "Pinned",
-    "pinnedAgents": "Pinned agents",
-    "pinSuccess": "{{agentName}} pinned",
     "resultCount_one": "{{count}} result",
     "resultCount_other": "{{count}} results",
-    "searchAgents": "Search agents...",
     "searching": "Searching...",
     "searchWorkspace": "Search workspace...",
     "sections": {
-      "agents": "Agents",
       "artifacts": "Artifacts",
       "chats": "Chats",
       "messages": "Messages",
-      "others": "Others",
       "workflows": "Workflows"
-    },
-    "unpin": "Unpin",
-    "unpinSuccess": "{{agentName}} unpinned"
+    }
   },
   "status": {
     "unread": "Unread"

@@ -35,10 +35,7 @@ import {
 import type { Project } from "@okouai/api-contracts/validators/projects";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitches$ } from "../../signals/external/feature-switch.ts";
-import {
-  projects$,
-  projectsEnabled$,
-} from "../../signals/projects/projects.ts";
+import { projects$ } from "../../signals/projects/projects.ts";
 import {
   projectReorderEnabled$,
   stepProject$,
@@ -117,8 +114,8 @@ function ProjectFoldMenuItem({
 
 function ProjectMoveMenuItems({ project }: { project: Project }) {
   const { t } = useTranslation();
-  const enabled = useLastResolved(projectReorderEnabled$) ?? false;
-  const projects = useLastResolved(projects$) ?? [];
+  const enabled = useGet(projectReorderEnabled$);
+  const projects = useGet(projects$);
   const [moving, move] = useLoadableSet(stepProject$);
   const signal = useGet(pageSignal$);
   if (!enabled) {
@@ -522,11 +519,9 @@ export function ProjectStatusRow({
 
 export function ProjectCreateButton({ touch = false }: { touch?: boolean }) {
   const { t } = useTranslation();
-  const enabled = useLastResolved(projectsEnabled$) ?? false;
+
   const open = useSet(openProjectEditor$);
-  if (!enabled) {
-    return null;
-  }
+
   const label = t(($) => {
     return $.projects.create;
   });

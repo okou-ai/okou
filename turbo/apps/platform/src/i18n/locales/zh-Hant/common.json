@@ -333,15 +333,12 @@
   },
   "appShell": {
     "pwaNavigation": {
-      "agentsUnavailable": "無法載入智慧體",
       "back": "返回",
       "backToChats": "返回聊天列表",
       "chatListUnavailable": "無法載入聊天",
       "chats": "聊天",
       "me": "我",
-      "navigation": "主導覽",
-      "searchAgents": "搜尋智慧體",
-      "switchAgent": "切換智慧體"
+      "navigation": "主導覽"
     },
     "shortcutHelp": {
       "close": "關閉快捷鍵面板",
@@ -358,10 +355,8 @@
         "collapseProject": "收合 Project",
         "expandProject": "展開 Project",
         "newChat": "新建聊天",
-        "nextAgent": "下一個智能體",
         "nextThread": "下一個會話",
         "openFirstThread": "開啟第一個會話",
-        "previousAgent": "上一個智能體",
         "previousThread": "上一個會話",
         "renameChat": "重新命名聊天",
         "scrollBottom": "滾動到底部",
@@ -2001,7 +1996,6 @@
     },
     "composer": {
       "add": "新增",
-      "agentSuggestions": "智能體",
       "configureModel": "配置模型",
       "create": {
         "addStyle": "新增風格",
@@ -2013,7 +2007,7 @@
         "slideCountAuto": "自動",
         "slideCountRange": "{{range}} 頁"
       },
-      "mentionHint": "搜尋智慧體或聊天…",
+      "mentionHint": "搜尋聊天或專案…",
       "message": "訊息",
       "modelForThisChat": "本次對話使用的模型",
       "placeholder": "讓我自動化工作流、管理任務…",
@@ -2218,16 +2212,7 @@
       "sent": "已建立新聊天"
     },
     "forward": {
-      "action": "轉發",
-      "agents": "智能體",
-      "back": "返回",
       "composerPlaceholder": "新增留言",
-      "content": "內容",
-      "description": "把選中的內容發給某個智能體或聊天，繼續處理。",
-      "noResults": "未找到智能體或聊天",
-      "search": "搜尋智能體和聊天…",
-      "sent": "轉發成功",
-      "threads": "聊天",
       "title": "轉發到"
     },
     "mail": {
@@ -3083,8 +3068,6 @@
           "menu": "銷售與業務"
         }
       },
-      "description": "連線第三方服務，供你的智能體使用。",
-      "descriptionWithCount": "連線 {{value}} 個服務，供你的智能體使用。",
       "directory": {
         "browse": "瀏覽",
         "builtin": "內建連接器",
@@ -5353,7 +5336,6 @@
         "startFailed": "匯出啟動失敗"
       },
       "scope": {
-        "agentInstructions": "你可訪問的智能體指令",
         "chatMessages": "你的聊天訊息",
         "chatThreads": "你的聊天會話",
         "filesExcluded": "不包含成果、附件和工作流的相關檔案。",
@@ -6885,20 +6867,15 @@
       }
     },
     "common": {
-      "agents": "智能體",
       "cancel": "取消",
       "close": "關閉",
-      "copyWorkflow": "複製工作流",
       "delete": "刪除",
       "deleteWorkflow": "刪除工作流",
       "instructions": "指令",
       "manual": "手動",
-      "others": "其他",
-      "pinned": "已置頂",
       "private": "私有",
       "public": "公開",
       "settings": "設定",
-      "view": "檢視",
       "workflow": "工作流",
       "workflows": "工作流"
     },
@@ -6915,29 +6892,9 @@
       "createInChat": "在對話中建立",
       "createInChatDescription": "還沒有合適的工作流時，從一段對話開始。",
       "createWorkflow": "建立工作流",
-      "noAgents": "還沒有智能體",
-      "noAgentsFound": "未找到智能體",
       "noWorkflows": "還沒有工作流。在對話中建立一個即可繼續。"
     },
     "detail": {
-      "copy": {
-        "agentFallback": "該智能體",
-        "copied": "已複製到{{agent}}",
-        "copyAndRemove": "複製並移除",
-        "description": "把這個工作流複製給另一個智能體，作為新的私有工作流。",
-        "moved": "已移動到{{agent}}",
-        "moveDescription": "原工作流已從{{agent}}移除。",
-        "noAgents": "還沒有其他智能體",
-        "privateReady": "私有副本已建立。",
-        "removalAlert": "原工作流會被刪除",
-        "removalNoAutomations": "這個工作流會從{{agent}}刪除。",
-        "removalWithAutomations_one": "{{agent}}上的 {{count}} 個自動化會暫停，這個工作流會被刪除。",
-        "removalWithAutomations_other": "{{agent}}上的 {{count}} 個自動化會暫停，這個工作流會被刪除。",
-        "removeOriginal": "複製後從{{agent}}移除原工作流",
-        "selectAgent": "選擇智能體",
-        "title": "複製工作流",
-        "to": "複製到"
-      },
       "delete": {
         "confirm": "{{title}}及其綁定的所有自動化都會被刪除。",
         "dangerDescription": "刪除這個工作流及其自動化。此操作無法撤銷。",
@@ -6959,10 +6916,6 @@
         "upload": "上傳文字檔案",
         "uploadAria": "上傳工作流檔案"
       },
-      "info": {
-        "copyDescription": "把這個工作流複製給另一個智能體。",
-        "copyTitle": "複製工作流"
-      },
       "metadata": {
         "agent": "智能體",
         "agentDescription": "這個工作流屬於該智能體。",
@@ -6983,12 +6936,7 @@
       "notFound": "未找到該工作流。",
       "refineWith": "用{{agent}}最佳化",
       "sectionNavigation": "工作流詳情欄目",
-      "shadow": {
-        "end": "（對你生效）。這個工作流因識別符號相同的優先順序規則被遮蔽。",
-        "resolvesTo": "當前指向"
-      },
       "visibility": {
-        "adminRequired": "在不屬於你的智能體下發布工作流，需要組織管理員權限。",
         "automationWarning": "自動化將停止",
         "confirmDescription": "這是危險操作。工作流設為私有後，其他成員基於它建立的自動化會停止執行。",
         "confirmTitle": "把這個工作流設為私有？",
@@ -7016,9 +6964,7 @@
     },
     "list": {
       "actionRequired": "需要處理",
-      "agentEmpty": "還沒有以這個智能體身份執行的工作流。",
       "all": "全部",
-      "allAgents": "全部智能體",
       "automated": "已自動化",
       "automations": "自動化",
       "createdBy": "建立者",
@@ -7036,8 +6982,6 @@
       "openRecovery": "開啟{{title}}的恢復",
       "ownerLoading": "正在載入作者…",
       "ownerUnavailable": "無法獲取作者",
-      "runsAs": "執行身份",
-      "runsAsAria": "以{{agent}}身份執行",
       "section": {
         "event": "由自動化觸發",
         "later": "更久以後",

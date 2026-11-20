@@ -5,7 +5,6 @@ import {
   chatEventsContract,
   type ChatEventSendBody,
 } from "@okouai/api-contracts/contracts/chat-event-send";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createProjectOperationId } from "@okouai/core/project-operation-id";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -17,7 +16,6 @@ import {
   createChatEventsFixture,
   userMessages,
 } from "./helpers/chat-events-fixture";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const context = testContext();
 const fixture = createChatEventsFixture(context);
@@ -38,11 +36,6 @@ test("prepares queued inputs from current membership while preserving an already
   if (!actor.orgId) {
     throw new Error("Missing organization");
   }
-  await updateFeatureSwitchesForUser(
-    context,
-    { ...actor, orgId: actor.orgId },
-    { [FeatureSwitchKey.SingleAgent]: true },
-  );
   const first = await fixture.sendChatRun(actor, {
     agentId,
     prompt: "Start the work",
@@ -88,23 +81,6 @@ test("prepares queued inputs from current membership while preserving an already
       ],
     },
   };
-  await updateFeatureSwitchesForUser(
-    context,
-    { ...actor, orgId: actor.orgId },
-    {
-      [FeatureSwitchKey.SingleAgent]: false,
-    },
-  );
-  expect(
-    (await send.send({ headers: fixture.sessionHeaders(actor), body })).status,
-  ).toBe(404);
-  await updateFeatureSwitchesForUser(
-    context,
-    { ...actor, orgId: actor.orgId },
-    {
-      [FeatureSwitchKey.SingleAgent]: true,
-    },
-  );
   expect(
     (
       await send.send({

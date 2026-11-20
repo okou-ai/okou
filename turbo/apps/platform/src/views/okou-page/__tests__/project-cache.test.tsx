@@ -1,6 +1,5 @@
 import { cleanup, screen, within } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { projectsContract } from "@okouai/api-contracts/contracts/projects";
 import { platformRealtimeTokenContract } from "@okouai/api-contracts/contracts/realtime";
 import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
@@ -43,7 +42,6 @@ function installWorkspace() {
   return {
     ...workspace.pageOptions,
     path: `/chats/${thread.id}`,
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
     sharedWorkerTestTransport: "message-port" as const,
   };
 }

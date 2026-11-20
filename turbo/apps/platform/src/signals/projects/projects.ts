@@ -17,10 +17,8 @@ import {
   lastProjectSortOrder,
   moveProjectSortOrder,
 } from "@okouai/core/project-sort-order";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { infer as zInfer } from "zod";
 import { installedSharedDatabaseBridge$ } from "../shared-database-bridge-state.ts";
-import { featureSwitches$ } from "../external/feature-switch.ts";
 import { apiClient$ } from "../api-client.ts";
 import { authenticatedSessionKey$ } from "../auth.ts";
 import { rootVersion$ } from "../root-signal.ts";
@@ -33,9 +31,6 @@ import {
   registerOptimisticChatThreadEvent$,
 } from "../chat-page/chat-thread-event-sourcing.ts";
 
-export const projectsEnabled$ = computed(async (get) => {
-  return (await get(featureSwitches$))[FeatureSwitchKey.SingleAgent];
-});
 type OptimisticProjectRename = Pick<
   ProjectEvent,
   "id" | "projectId" | "createdAt"
@@ -93,10 +88,7 @@ function unsettledMoves(
   }
   return moves.slice(settledThrough + 1);
 }
-export const projects$ = computed(async (get) => {
-  if (!(await get(projectsEnabled$))) {
-    return [];
-  }
+export const projects$ = computed((get) => {
   const owner = get(projectState$);
   const value = get(owner.events$);
   const persistedIds = new Set(
@@ -166,10 +158,7 @@ export const unconfirmedProjectIds$ = computed((get) => {
 export const syncProjects$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const owner = get(projectState$);
-    if (!(await get(projectsEnabled$))) {
-      set(owner.events$, null);
-      return;
-    }
+
     const result = await get(installedSharedDatabaseBridge$).query(
       {
         dataKey: { kind: "project-event" },
@@ -201,10 +190,7 @@ export const syncProjects$ = command(
 export const hydrateProjectCache$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const owner = get(projectState$);
-    if (!(await get(projectsEnabled$))) {
-      set(owner.events$, null);
-      return;
-    }
+
     await set(restoreProjectExpansion$, signal);
     signal.throwIfAborted();
     // Cache hydration belongs to the session, not each route. Keep the current
@@ -226,11 +212,9 @@ export const hydrateProjectCache$ = command(
   },
 );
 export const hydrateProjects$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
+  async ({ set }, signal: AbortSignal) => {
     await set(hydrateProjectCache$, signal);
-    if (!(await get(projectsEnabled$))) {
-      return;
-    }
+
     await set(syncProjects$, signal);
   },
 );
@@ -283,7 +267,7 @@ export const createProject$ = command(
     signal: AbortSignal,
   ) => {
     signal.throwIfAborted();
-    const projects = await get(projects$);
+    const projects = get(projects$);
     signal.throwIfAborted();
     const owner = get(projectState$);
     const eventId = operation();
@@ -388,7 +372,7 @@ export const reorderProject$ = command(
   ) => {
     signal.throwIfAborted();
     const updates = moveProjectSortOrder(
-      await get(projects$),
+      get(projects$),
       projectId,
       targetId,
       side,

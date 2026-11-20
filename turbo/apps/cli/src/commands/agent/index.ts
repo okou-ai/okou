@@ -1,4 +1,4 @@
-import { singleAgentEnabled } from "../../lib/api/single-agent";
+import { isPersonalExecution } from "../../lib/personal-execution";
 import { AGENT_UNAVAILABLE } from "../../lib/command/single-agent";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { Command } from "commander";
@@ -13,7 +13,7 @@ export const agentCommand = new Command("agent")
   .hook(
     "preAction",
     withErrorHandler(async () => {
-      if (await singleAgentEnabled()) throw new Error(AGENT_UNAVAILABLE);
+      if (isPersonalExecution()) throw new Error(AGENT_UNAVAILABLE);
     }),
   )
   .addCommand(createCommand)

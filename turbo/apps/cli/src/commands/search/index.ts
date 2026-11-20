@@ -1,4 +1,4 @@
-import { singleAgentEnabled } from "../../lib/api/single-agent";
+import { isPersonalExecution } from "../../lib/personal-execution";
 import { personalExecutorId } from "../../lib/command/single-agent";
 import { Command } from "commander";
 import chalk from "chalk";
@@ -95,7 +95,7 @@ async function runChatSource(
   query: string,
   options: SearchOptions,
 ): Promise<void> {
-  const personal = await singleAgentEnabled();
+  const personal = isPersonalExecution();
   if (personal && options.agent !== undefined)
     throw new Error(
       "Agent selection is unavailable in My Okou. Remove --agent.",

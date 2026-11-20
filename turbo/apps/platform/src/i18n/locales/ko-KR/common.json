@@ -333,15 +333,12 @@
   },
   "appShell": {
     "pwaNavigation": {
-      "agentsUnavailable": "에이전트를 불러올 수 없습니다",
       "back": "뒤로",
       "backToChats": "채팅 목록으로 돌아가기",
       "chatListUnavailable": "채팅을 불러올 수 없습니다",
       "chats": "채팅",
       "me": "나",
-      "navigation": "기본 탐색",
-      "searchAgents": "에이전트 검색",
-      "switchAgent": "에이전트 전환"
+      "navigation": "기본 탐색"
     },
     "shortcutHelp": {
       "close": "단축키 닫기",
@@ -358,10 +355,8 @@
         "collapseProject": "Project 접기",
         "expandProject": "Project 펼치기",
         "newChat": "새 채팅",
-        "nextAgent": "다음 에이전트",
         "nextThread": "다음 스레드",
         "openFirstThread": "첫 번째 스레드 열기",
-        "previousAgent": "이전 에이전트",
         "previousThread": "이전 스레드",
         "renameChat": "채팅 이름 변경",
         "scrollBottom": "맨 아래로 스크롤",
@@ -2001,7 +1996,6 @@
     },
     "composer": {
       "add": "추가",
-      "agentSuggestions": "에이전트",
       "configureModel": "모델 구성",
       "create": {
         "addStyle": "스타일 추가",
@@ -2013,7 +2007,7 @@
         "slideCountAuto": "자동",
         "slideCountRange": "{{range}}장"
       },
-      "mentionHint": "에이전트 또는 채팅 검색…",
+      "mentionHint": "채팅 또는 프로젝트 검색…",
       "message": "메시지",
       "modelForThisChat": "이 채팅의 모델",
       "placeholder": "워크플로 자동화, 작업 관리 등을 요청하세요...",
@@ -2218,16 +2212,7 @@
       "sent": "새 채팅이 생성되었습니다"
     },
     "forward": {
-      "action": "전달",
-      "agents": "에이전트",
-      "back": "뒤로",
       "composerPlaceholder": "메시지 추가",
-      "content": "내용",
-      "description": "선택한 내용을 에이전트 또는 채팅으로 보내 계속 작업하세요.",
-      "noResults": "에이전트 또는 채팅을 찾을 수 없습니다",
-      "search": "에이전트 및 채팅 검색...",
-      "sent": "전달했습니다",
-      "threads": "채팅",
       "title": "전달 대상"
     },
     "mail": {
@@ -3083,8 +3068,6 @@
           "menu": "영업 및 비즈니스"
         }
       },
-      "description": "에이전트가 사용할 수 있도록 타사 서비스를 연결하세요.",
-      "descriptionWithCount": "에이전트가 사용할 수 있도록 {{value}}개의 서비스를 연결하세요.",
       "directory": {
         "browse": "둘러보기",
         "builtin": "기본 제공 커넥터",
@@ -5353,7 +5336,6 @@
         "startFailed": "내보내기 시작 실패"
       },
       "scope": {
-        "agentInstructions": "접근할 수 있는 에이전트의 지침",
         "chatMessages": "내 채팅 메시지",
         "chatThreads": "내 채팅 스레드",
         "filesExcluded": "아티팩트, 첨부 파일 및 워크플로 보조 파일은 포함되지 않습니다.",
@@ -6885,20 +6867,15 @@
       }
     },
     "common": {
-      "agents": "에이전트",
       "cancel": "취소",
       "close": "닫기",
-      "copyWorkflow": "워크플로 복사",
       "delete": "삭제",
       "deleteWorkflow": "워크플로 삭제",
       "instructions": "지침",
       "manual": "수동",
-      "others": "기타",
-      "pinned": "고정됨",
       "private": "비공개",
       "public": "공개",
       "settings": "설정",
-      "view": "보기",
       "workflow": "워크플로",
       "workflows": "워크플로"
     },
@@ -6915,29 +6892,9 @@
       "createInChat": "채팅에서 생성",
       "createInChatDescription": "아직 적합한 워크플로가 없을 때 대화에서 시작하세요.",
       "createWorkflow": "워크플로 생성",
-      "noAgents": "에이전트가 없습니다",
-      "noAgentsFound": "에이전트를 찾을 수 없습니다",
       "noWorkflows": "아직 워크플로가 없습니다. 계속하려면 채팅에서 만드세요."
     },
     "detail": {
-      "copy": {
-        "agentFallback": "에이전트",
-        "copied": "{{agent}}에 복사됨",
-        "copyAndRemove": "복사 후 제거",
-        "description": "이 워크플로를 다른 에이전트에 새 비공개 워크플로로 복사하세요.",
-        "moved": "{{agent}}로 이동됨",
-        "moveDescription": "원본이 {{agent}}에서 제거되었습니다.",
-        "noAgents": "다른 에이전트가 없습니다",
-        "privateReady": "비공개 복사본이 준비되었습니다.",
-        "removalAlert": "이 작업은 원본을 삭제합니다",
-        "removalNoAutomations": "이 워크플로가 {{agent}}에서 삭제되었습니다.",
-        "removalWithAutomations_one": "{{count}}개의 자동화가 {{agent}}에서 일시 중지되고 이 워크플로가 삭제됩니다.",
-        "removalWithAutomations_other": "{{count}}개의 자동화가 {{agent}}에서 일시 중지되고 이 워크플로가 삭제됩니다.",
-        "removeOriginal": "복사 후 {{agent}}에서 원본 제거",
-        "selectAgent": "에이전트 선택",
-        "title": "워크플로 복사",
-        "to": "복사 대상"
-      },
       "delete": {
         "confirm": "{{title}} 및 모든 연결된 자동화가 삭제됩니다.",
         "dangerDescription": "이 워크플로와 자동화를 삭제합니다. 이 작업은 되돌릴 수 없습니다.",
@@ -6959,10 +6916,6 @@
         "upload": "텍스트 파일 업로드",
         "uploadAria": "워크플로 파일 업로드"
       },
-      "info": {
-        "copyDescription": "이 워크플로를 다른 에이전트에 복사하세요.",
-        "copyTitle": "워크플로 복사"
-      },
       "metadata": {
         "agent": "에이전트",
         "agentDescription": "이 워크플로는 이 에이전트에 속합니다.",
@@ -6983,12 +6936,7 @@
       "notFound": "워크플로를 찾을 수 없습니다.",
       "refineWith": "{{agent}}와 함께 다듬기",
       "sectionNavigation": "워크플로 상세 섹션",
-      "shadow": {
-        "end": "사용자용입니다. 이 워크플로는 동일 슬러그 우선순위 규칙에 의해 그림자 처리됩니다.",
-        "resolvesTo": "현재 다음으로 해결됩니다"
-      },
       "visibility": {
-        "adminRequired": "소유하지 않은 에이전트 아래에 워크플로를 게시하려면 조직 관리자 권한이 필요합니다.",
         "automationWarning": "자동화가 중지됩니다",
         "confirmDescription": "이 작업은 위험합니다. 이 워크플로가 비공개인 동안 다른 멤버가 만든 자동화가 중지됩니다.",
         "confirmTitle": "이 워크플로를 비공개로 전환하시겠습니까?",
@@ -7016,9 +6964,7 @@
     },
     "list": {
       "actionRequired": "조치 필요",
-      "agentEmpty": "이 에이전트로 실행된 워크플로가 없습니다.",
       "all": "전체",
-      "allAgents": "모든 에이전트",
       "automated": "자동화됨",
       "automations": "자동화",
       "createdBy": "작성자",
@@ -7036,8 +6982,6 @@
       "openRecovery": "{{title}} 복구 열기",
       "ownerLoading": "작성자 불러오는 중…",
       "ownerUnavailable": "작성자 정보를 사용할 수 없습니다",
-      "runsAs": "다음 에이전트로 실행됨",
-      "runsAsAria": "{{agent}}로 실행됨",
       "section": {
         "event": "자동화 시",
         "later": "나중에",

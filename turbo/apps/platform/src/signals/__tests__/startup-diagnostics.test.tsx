@@ -71,17 +71,17 @@ test("A failed stylesheet keeps Loading visible without reporting completed star
   // startPage owns that pending promise; synchronize on the rendered route.
   await startPage({
     context,
-    path: "/agents",
+    path: "/workflows",
     host: "app.okou.ai",
     env: PAGE_ENV,
   });
 
   await expect(
-    screen.findByRole("heading", { name: "Agents" }),
+    screen.findByRole("heading", { name: "Workflows" }),
   ).resolves.toBeInTheDocument();
   expect(screen.getByRole("status", { name: "Loading" })).toBeVisible();
   expect(
-    screen.getByRole("heading", { name: "Agents" }).closest("[inert]"),
+    screen.getByRole("heading", { name: "Workflows" }).closest("[inert]"),
   ).toBeInTheDocument();
   expect(capturedEvents("app_first_skeleton_hide")).toStrictEqual([]);
   expect(capturedEvents(BOOTSTRAP_PHASE_TIMING_EVENT)).toStrictEqual([]);
@@ -105,10 +105,10 @@ test("Startup releases keyboard isolation with the skeleton fade, without waitin
 
   const page = await startPage({
     context,
-    path: "/agents",
+    path: "/workflows",
     host: "app.okou.ai",
   });
-  const heading = await screen.findByRole("heading", { name: "Agents" });
+  const heading = await screen.findByRole("heading", { name: "Workflows" });
   expect(heading.closest("[inert]")).toBeInTheDocument();
   expect(bootstrapSkeleton()).not.toHaveAttribute("aria-hidden", "true");
 

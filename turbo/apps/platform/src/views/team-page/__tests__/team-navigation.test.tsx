@@ -175,7 +175,7 @@ test("A user starts a chat from an agent's detail page", async () => {
   click(chatLink);
 
   await waitFor(() => {
-    expect(window.location.pathname).toBe(`/agents/${RESEARCH_AGENT_ID}/chat`);
+    expect(window.location.pathname).toBe("/");
     expect(
       screen.getByText("Ask me to automate workflows, manage tasks..."),
     ).toBeVisible();

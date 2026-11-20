@@ -1,4 +1,3 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   agentsByIdContract,
   agentsMainContract,
@@ -71,30 +70,24 @@ test("Home opens the current organization's default agent", async () => {
 
   await screen.findByRole("textbox", { name: "Message" });
   await waitFor(() => {
-    expect(pathname()).toBe(`/agents/${CURRENT_ORG_AGENT_ID}/chat`);
+    expect(pathname()).toBe("/");
     expect(document.title).toContain("Current organization agent");
   });
 });
 
-test.each([false, true])(
-  "Home preserves a prompt handoff (My Okou=%s)",
-  async (singleAgent) => {
-    mockCurrentOrganizationAgents();
+test("Home preserves a prompt handoff", async () => {
+  mockCurrentOrganizationAgents();
 
-    await setupPage({
-      context,
-      path: "/?prompt=Draft%20a%20launch%20plan",
-      featureSwitches: { [FeatureSwitchKey.SingleAgent]: singleAgent },
-    });
+  await setupPage({
+    context,
+    path: "/?prompt=Draft%20a%20launch%20plan",
+  });
 
-    await screen.findByRole("textbox", { name: "Message" });
-    await waitFor(() => {
-      expect(pathname()).toBe(
-        singleAgent ? "/" : `/agents/${CURRENT_ORG_AGENT_ID}/chat`,
-      );
-      expect(
-        screen.getByRole("textbox", { name: "Message" }),
-      ).toHaveTextContent("Draft a launch plan");
-    });
-  },
-);
+  await screen.findByRole("textbox", { name: "Message" });
+  await waitFor(() => {
+    expect(pathname()).toBe("/");
+    expect(screen.getByRole("textbox", { name: "Message" })).toHaveTextContent(
+      "Draft a launch plan",
+    );
+  });
+});

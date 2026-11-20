@@ -1,5 +1,5 @@
 import { workflowHelp, workspaceWorkflowAgentId } from "./mode";
-import { singleAgentEnabled } from "../../lib/api/single-agent";
+import { isPersonalExecution } from "../../lib/personal-execution";
 import { ApiRequestError } from "../../lib/api/core/client-factory";
 import { Command } from "commander";
 import chalk from "chalk";
@@ -35,7 +35,7 @@ Examples:
         workflowRef: string,
         options: { toAgent?: string } & WorkflowRefOptions,
       ) => {
-        const singleAgent = await singleAgentEnabled();
+        const singleAgent = isPersonalExecution();
         if (singleAgent && options.toAgent)
           throw new Error(
             "Use workflow copy <workflow> to make your private copy in this workspace",

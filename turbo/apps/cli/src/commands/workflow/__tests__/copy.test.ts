@@ -1,3 +1,4 @@
+import { capturedRunToken } from "../../../test/fixtures/captured-run-token";
 /**
  * Tests for okou workflow copy command
  *
@@ -67,7 +68,7 @@ describe("okou workflow copy command", () => {
   beforeEach(() => {
     chalk.level = 0;
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
-    vi.stubEnv("OKOU_TOKEN", "test-token");
+    vi.stubEnv("OKOU_TOKEN", capturedRunToken(["agent:write"]));
   });
 
   afterEach(() => {

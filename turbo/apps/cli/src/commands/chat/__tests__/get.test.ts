@@ -65,7 +65,6 @@ describe("okou chat get command", () => {
     expect(output).toContain(
       `URL:    [Open chat](http://localhost:3000/chats/${THREAD_ID})`,
     );
-    expect(output).toContain(`Agent:  ${AGENT_ID}`);
     expect(output).toContain("Title:  Launch plan");
     expect(output).toContain(
       "Model:  Claude Sonnet 5 (claude-sonnet-5) · effort extra",

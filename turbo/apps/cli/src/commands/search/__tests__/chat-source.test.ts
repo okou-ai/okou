@@ -1,3 +1,4 @@
+import { capturedRunToken } from "../../../test/fixtures/captured-run-token";
 /**
  * Tests for `okou search --source chat`.
  *
@@ -41,7 +42,10 @@ describe("okou search --source chat", () => {
     // see calls made by the current case.
     vi.clearAllMocks();
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
-    vi.stubEnv("OKOU_TOKEN", "test-token");
+    vi.stubEnv(
+      "OKOU_TOKEN",
+      capturedRunToken(["agent:read", "chat-thread:read"]),
+    );
     // Commander retains collector state across parseAsync calls on the
     // same command instance. Reset before each case.
     searchCommand.setOptionValue("source", []);

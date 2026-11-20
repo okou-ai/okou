@@ -743,7 +743,7 @@ describe("okou chat list command", () => {
   });
 
   it("reports invalid chat cache scope errors", async () => {
-    vi.stubEnv("OKOU_TOKEN", "invalid-token");
+    vi.stubEnv("OKOU_TOKEN", "vm0_sandbox_malformed");
 
     await expect(async () => {
       await chatCommand.parseAsync(["node", "cli", "list"]);

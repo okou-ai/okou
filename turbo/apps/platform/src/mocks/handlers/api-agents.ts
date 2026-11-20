@@ -26,7 +26,7 @@ import { mockApi } from "../msw-contract.ts";
 const DEFAULT_AGENTS: AgentResponse[] = [
   {
     agentId: "c0000000-0000-4000-a000-000000000001",
-    isDefaultAgent: false,
+    isDefaultAgent: true,
     ownerId: "user_mock",
     displayName: null,
     description: null,

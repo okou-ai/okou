@@ -1,5 +1,5 @@
 import { workflowHelp, workflowAgentScope } from "./mode";
-import { singleAgentEnabled } from "../../lib/api/single-agent";
+import { isPersonalExecution } from "../../lib/personal-execution";
 import { Command } from "commander";
 import chalk from "chalk";
 import { listWorkflows } from "../../lib/api/domains/workflows";
@@ -19,7 +19,7 @@ Examples:
   })
   .action(
     withErrorHandler(async (options: { agent?: string }) => {
-      const singleAgent = await singleAgentEnabled();
+      const singleAgent = isPersonalExecution();
       const agentId = await workflowAgentScope(options.agent);
       // Official Workflows are system-managed and never listed as user Workflows.
       const workflows = (await listWorkflows({ agentId })).filter(

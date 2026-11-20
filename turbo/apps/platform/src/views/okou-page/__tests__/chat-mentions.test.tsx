@@ -57,6 +57,7 @@ function configureAgentDraft(
   draft: UserMessageInputDocument,
   referencedThreads: readonly ChatThreadSnapshotProjection[],
 ): void {
+  context.mocks.data.onboardingStatus({ defaultAgentId: AGENT_ID });
   context.mocks.data.agents([{ agentId: AGENT_ID }]);
   context.mocks.data.userModelPreference({
     selectedModel: "claude-sonnet-5",
@@ -253,16 +254,16 @@ test("Special characters in a conversation title survive saving and restoring", 
     titleSnapshot: specialTitle,
   });
 
-  const agentsLink = await waitFor(() => {
-    return getLink("Agents");
+  const workflowsLink = await waitFor(() => {
+    return getLink("Workflows");
   });
-  click(agentsLink);
+  click(workflowsLink);
   await waitFor(() => {
-    expect(pathname()).toBe("/agents");
+    expect(pathname()).toBe("/workflows");
   });
   window.history.back();
   await waitFor(() => {
-    expect(pathname()).toBe(`/agents/${AGENT_ID}/chat`);
+    expect(pathname()).toBe("/");
   });
 
   const restoredComposer = await screen.findByRole("textbox", {

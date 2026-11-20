@@ -21,7 +21,6 @@ import {
 import { Check, Folder, Plus } from "lucide-react";
 import {
   projects$,
-  projectsEnabled$,
   createProject$,
   renameProject$,
   deleteProject$,
@@ -335,7 +334,7 @@ function ProjectMembershipPicker({
   dialog: Extract<ProjectDialog, { kind: "membership" }>;
 }) {
   const { t } = useTranslation();
-  const projects = useLastResolved(projects$) ?? [];
+  const projects = useGet(projects$);
   const search = useGet(projectSearch$);
   const setSearch = useSet(setProjectSearch$);
   const current = useGet(eventDrivenChatThreads$).find((thread) => {
@@ -721,9 +720,8 @@ function DeleteProjectDialog({
   );
 }
 export function ProjectDialogs() {
-  const enabled = useLastResolved(projectsEnabled$) ?? false;
   const dialog = useGet(projectDialogSession$);
-  if (!enabled || !dialog) {
+  if (!dialog) {
     return null;
   }
   if (dialog.kind === "editor") {

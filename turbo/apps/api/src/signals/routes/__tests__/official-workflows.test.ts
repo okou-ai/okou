@@ -172,7 +172,7 @@ async function listMorningBriefInstallations(actor: ApiTestUser) {
 }
 
 async function ordinaryDelegationScenario() {
-  const owned = await publicChatActor(context);
+  const owned = await publicChatActor(context, { useDefaultAgent: true });
   return await owned.run(async () => {
     await runs.updateUserModelPreference(owned.actor, "claude-fable-5-1");
     const workflowId = await workflowBdd.createWorkflow(owned.actor, {
@@ -209,21 +209,14 @@ describe("My Okou proactive settings", () => {
     const headers = authHeaders(actor);
     const hourly = app(proactiveSuggestionsContract);
     const feed = app(feedContract);
-    for (const flags of [
-      { suggestions: false, singleAgent: true },
-      { suggestions: true, singleAgent: false },
-    ]) {
-      await updateFeatureSwitchesForUser(context, owner, {
-        [FeatureSwitchKey.AgentSuggestion]: flags.suggestions,
-        [FeatureSwitchKey.SingleAgent]: flags.singleAgent,
-      });
-      await accept(
-        hourly.updateWithFeed({ headers, body: { enabled: false } }),
-        [403],
-      );
-    }
     await updateFeatureSwitchesForUser(context, owner, {
-      [FeatureSwitchKey.SingleAgent]: true,
+      [FeatureSwitchKey.AgentSuggestion]: false,
+    });
+    await accept(
+      hourly.updateWithFeed({ headers, body: { enabled: false } }),
+      [403],
+    );
+    await updateFeatureSwitchesForUser(context, owner, {
       [FeatureSwitchKey.AgentSuggestion]: true,
     });
     expect(
@@ -670,7 +663,7 @@ describe("Debug Morning Brief", () => {
 
 describe("Workflow Run admission", () => {
   it("captures ordinary Workflows at dispatch and applies edits to later Runs", async () => {
-    const owned = await publicChatActor(context);
+    const owned = await publicChatActor(context, { useDefaultAgent: true });
     const fixture = createChatEventsFixture(context);
     const s3 = installWorkflowVolumeS3Fixture(context);
     await owned.run(() => {

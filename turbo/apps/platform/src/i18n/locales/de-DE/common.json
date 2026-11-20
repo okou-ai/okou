@@ -333,15 +333,12 @@
   },
   "appShell": {
     "pwaNavigation": {
-      "agentsUnavailable": "Agents konnten nicht geladen werden",
       "back": "Zurück",
       "backToChats": "Zurück zu Chats",
       "chatListUnavailable": "Chats konnten nicht geladen werden",
       "chats": "Chats",
       "me": "Ich",
-      "navigation": "Hauptnavigation",
-      "searchAgents": "Agents suchen",
-      "switchAgent": "Agent wechseln"
+      "navigation": "Hauptnavigation"
     },
     "shortcutHelp": {
       "close": "Tastaturkürzel schließen",
@@ -358,10 +355,8 @@
         "collapseProject": "Project einklappen",
         "expandProject": "Project ausklappen",
         "newChat": "Neuer Chat",
-        "nextAgent": "Nächster Agent",
         "nextThread": "Nächster Thread",
         "openFirstThread": "Ersten Thread öffnen",
-        "previousAgent": "Vorheriger Agent",
         "previousThread": "Vorheriger Thread",
         "renameChat": "Chat umbenennen",
         "scrollBottom": "Nach unten scrollen",
@@ -2007,7 +2002,6 @@
     },
     "composer": {
       "add": "Hinzufügen",
-      "agentSuggestions": "Agenten",
       "configureModel": "Modell konfigurieren",
       "create": {
         "addStyle": "Stil hinzufügen",
@@ -2019,7 +2013,7 @@
         "slideCountAuto": "Automatisch",
         "slideCountRange": "{{range}} Folien"
       },
-      "mentionHint": "Agenten oder Chats suchen…",
+      "mentionHint": "Chats oder Projekte suchen…",
       "message": "Nachricht",
       "modelForThisChat": "Modell für diesen Chat",
       "placeholder": "Bitten Sie mich, Workflows zu automatisieren und Aufgaben zu verwalten...",
@@ -2227,16 +2221,7 @@
       "sent": "Neuer Chat erstellt"
     },
     "forward": {
-      "action": "Weiterleiten",
-      "agents": "Agenten",
-      "back": "Zurück",
       "composerPlaceholder": "Nachricht hinzufügen",
-      "content": "Inhalt",
-      "description": "Sende ausgewählte Inhalte an einen Agenten oder Chat, um daran weiterzuarbeiten.",
-      "noResults": "Keine Agenten oder Chats gefunden",
-      "search": "Agenten und Chats suchen...",
-      "sent": "Erfolgreich weitergeleitet",
-      "threads": "Chats",
       "title": "Weiterleiten an"
     },
     "mail": {
@@ -3101,8 +3086,6 @@
           "menu": "Vertrieb und Geschäft"
         }
       },
-      "description": "Verbinden Sie Dienste von Drittanbietern, damit Ihre Agenten sie nutzen können.",
-      "descriptionWithCount": "Verbinden Sie {{value}} Dienste, damit Ihre Agenten sie nutzen können.",
       "directory": {
         "browse": "Durchsuchen",
         "builtin": "Integrierte Konnektoren",
@@ -5376,7 +5359,6 @@
         "startFailed": "Der Export konnte nicht gestartet werden"
       },
       "scope": {
-        "agentInstructions": "Anweisungen der Agenten, auf die Sie zugreifen können",
         "chatMessages": "Ihre Chatnachrichten",
         "chatThreads": "Ihre Chatverläufe",
         "filesExcluded": "Artefakte, Anhänge und zusätzliche Workflow-Dateien sind nicht enthalten.",
@@ -6913,20 +6895,15 @@
       }
     },
     "common": {
-      "agents": "Agenten",
       "cancel": "Abbrechen",
       "close": "Schließen",
-      "copyWorkflow": "Workflow kopieren",
       "delete": "Löschen",
       "deleteWorkflow": "Workflow löschen",
       "instructions": "Anweisungen",
       "manual": "Manuell",
-      "others": "Andere",
-      "pinned": "Angepinnt",
       "private": "Privat",
       "public": "Öffentlich",
       "settings": "Einstellungen",
-      "view": "Anzeigen",
       "workflow": "Workflow",
       "workflows": "Workflows"
     },
@@ -6943,29 +6920,9 @@
       "createInChat": "Im Chat erstellen",
       "createInChatDescription": "Beginnen Sie mit einem Gespräch, wenn noch kein Workflow passt.",
       "createWorkflow": "Workflow erstellen",
-      "noAgents": "Noch keine Agenten",
-      "noAgentsFound": "Keine Agenten gefunden",
       "noWorkflows": "Noch keine Workflows. Erstellen Sie eine im Chat, um fortzufahren."
     },
     "detail": {
-      "copy": {
-        "agentFallback": "der Agent",
-        "copied": "Kopiert nach {{agent}}",
-        "copyAndRemove": "Kopieren und entfernen",
-        "description": "Kopieren Sie diesen Workflow als neuen privaten Workflow auf einen anderen Agenten.",
-        "moved": "Verschoben nach {{agent}}",
-        "moveDescription": "Original aus {{agent}} entfernt.",
-        "noAgents": "Noch keine anderen Agenten",
-        "privateReady": "Eine Privatkopie ist fertig.",
-        "removalAlert": "Dadurch wird das Original gelöscht",
-        "removalNoAutomations": "Dieser Workflow wird aus {{agent}} gelöscht.",
-        "removalWithAutomations_one": "{{count}} Automatisierung wird bei {{agent}} pausiert und dieser Workflow gelöscht.",
-        "removalWithAutomations_other": "{{count}} Automatisierungen werden bei {{agent}} pausiert und dieser Workflow gelöscht.",
-        "removeOriginal": "Entfernen Sie nach dem Kopieren das Original aus {{agent}}",
-        "selectAgent": "Wählen Sie einen Agenten",
-        "title": "Workflow kopieren",
-        "to": "Kopieren nach"
-      },
       "delete": {
         "confirm": "{{title}} und alle gebundenen Automatisierungen werden gelöscht.",
         "dangerDescription": "Löschen Sie diesen Workflow und seine Automatisierungen. Diese Aktion kann nicht rückgängig gemacht werden.",
@@ -6987,10 +6944,6 @@
         "upload": "Laden Sie Textdateien hoch",
         "uploadAria": "Laden Sie Workflow-Dateien hoch"
       },
-      "info": {
-        "copyDescription": "Kopieren Sie diesen Workflow auf einen anderen Agenten.",
-        "copyTitle": "Workflow kopieren"
-      },
       "metadata": {
         "agent": "Agent",
         "agentDescription": "Dieser Workflow gehört zu diesem Agenten.",
@@ -7011,12 +6964,7 @@
       "notFound": "Workflow nicht gefunden.",
       "refineWith": "Verfeinern mit {{agent}}",
       "sectionNavigation": "Bereich der Workflow-Details",
-      "shadow": {
-        "end": "für Sie. Dieser Workflow wird durch die Prioritätsregel für identische Slugs überschattet.",
-        "resolvesTo": "beschließt derzeit,"
-      },
       "visibility": {
-        "adminRequired": "Für die Veröffentlichung eines Workflows unter einem Agenten, der Ihnen nicht gehört, sind Organisationsadministratorberechtigungen erforderlich.",
         "automationWarning": "Automatisierungen werden gestoppt",
         "confirmDescription": "Dies ist eine gefährliche Operation. Während dieser Workflow privat ist, werden darauf basierende Automatisierungen anderer Mitglieder nicht mehr ausgeführt.",
         "confirmTitle": "Diesen Workflow privat machen?",
@@ -7044,9 +6992,7 @@
     },
     "list": {
       "actionRequired": "Aktion erforderlich",
-      "agentEmpty": "Es werden noch keine Workflows als dieser Agent ausgeführt.",
       "all": "Alle",
-      "allAgents": "Alle Agenten",
       "automated": "Automatisiert",
       "automations": "Automatisierungen",
       "createdBy": "Erstellt von",
@@ -7064,8 +7010,6 @@
       "openRecovery": "Wiederherstellung für {{title}} öffnen",
       "ownerLoading": "Autor wird geladen…",
       "ownerUnavailable": "Autor nicht verfügbar",
-      "runsAs": "Läuft als",
-      "runsAsAria": "Läuft als {{agent}}",
       "section": {
         "event": "Über Automatisierung",
         "later": "Später",

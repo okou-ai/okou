@@ -3,7 +3,6 @@
     "cancel": "Batal",
     "close": "Tutup",
     "copying": "Menyalin…",
-    "create": "Buat",
     "delete": "Hapus agen",
     "deleting": "Menghapus…",
     "discard": "Buang",
@@ -63,8 +62,7 @@
     "tabs": {
       "instructions": "Instruksi",
       "profile": "Profil"
-    },
-    "viewProfile": "Lihat profil agen"
+    }
   },
   "errors": {
     "unknown": "Kesalahan tidak dikenal"
@@ -457,47 +455,6 @@
     "saved": "Instruksi disimpan"
   },
   "list": {
-    "actions": {
-      "new": "Agen baru"
-    },
-    "cards": {
-      "coreDescription": "Agen utama Anda",
-      "createdBy": "Dibuat oleh {{creator}}",
-      "subagentDescription": "Subagen",
-      "unknownCreator": "Tidak diketahui"
-    },
-    "create": {
-      "accessibilityDescription": "Beri nama agen baru, pilih visibilitasnya, dan sesuaikan avatarnya.",
-      "creating": "Membuat…",
-      "description": "Beri nama agen Anda dan tentukan siapa yang dapat menggunakannya.",
-      "namePlaceholder": "mis. Asisten Riset",
-      "newAgentAlt": "Agen baru",
-      "responsibilityLabel": "Apa yang ingin Anda kerjakan dengan bantuan agen ini?",
-      "responsibilityPlaceholder": "mis. setiap Senin, rangkum pipeline minggu lalu dari HubSpot dan tandai deal yang perlu ditindaklanjuti.",
-      "success": "{{agentName}} berhasil dibuat",
-      "title": "Buat agen baru",
-      "visibility": {
-        "private": {
-          "description": "(hanya Anda yang bisa melihat dan menggunakannya)",
-          "label": "Pribadi"
-        },
-        "public": {
-          "description": "(siapa pun di ruang kerja ini bisa menggunakannya)",
-          "label": "Publik"
-        }
-      },
-      "visibilityLabel": "Visibilitas"
-    },
-    "description": "{{agentName}} dan subagen bekerja sama untuk menjalankan alur kerja yang disesuaikan untuk Anda dan tim Anda.",
-    "documentTitle": "Agen",
-    "privateEmpty": {
-      "description": "Buat agen yang hanya bisa Anda lihat dan gunakan. Agen pribadi tidak dibatasi.",
-      "title": "Belum ada agen pribadi"
-    },
-    "tabs": {
-      "private": "Pribadi",
-      "public": "Publik"
-    },
     "title": "Agen"
   },
   "profile": {
@@ -563,33 +520,19 @@
     }
   },
   "sidebar": {
-    "addPin": "Sematkan",
-    "clearSearch": "Hapus pencarian",
     "escapeShortcut": "Esc",
     "filterAll": "Semua",
     "markAllRead": "Tandai semua sudah dibaca",
-    "noAgentsToPin": "Kamu belum memiliki agen lain.",
     "noResults": "Tidak ada hasil ditemukan",
-    "pin": "Sematkan ke sidebar",
-    "pinAgent": "Sematkan agen",
-    "pinAgentDescription": "Pilih agen untuk disematkan ke sidebar.",
-    "pinned": "Disematkan",
-    "pinnedAgents": "Agen yang disematkan",
-    "pinSuccess": "{{agentName}} disematkan",
     "resultCount_other": "{{count}} hasil",
-    "searchAgents": "Cari agen...",
     "searching": "Mencari...",
     "searchWorkspace": "Cari di ruang kerja...",
     "sections": {
-      "agents": "Agen",
       "artifacts": "Artefak",
       "chats": "Chat",
       "messages": "Pesan",
-      "others": "Lainnya",
       "workflows": "Alur kerja"
-    },
-    "unpin": "Lepaskan sematan",
-    "unpinSuccess": "Sematan {{agentName}} dilepas"
+    }
   },
   "status": {
     "unread": "Belum dibaca"

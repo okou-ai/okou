@@ -4,7 +4,7 @@ import {
 } from "@okouai/api-contracts/client-transforms/chat-ultrafast";
 import { settle } from "../utils";
 import { isForeignKeyViolation } from "../../lib/pg-errors";
-import { projectAccess$ } from "./projects";
+import { personalProjectAccess$ } from "./projects";
 import { projectById } from "../services/project.service";
 import { command, computed } from "ccstate";
 import { and, eq } from "drizzle-orm";
@@ -347,7 +347,7 @@ const createWithProject$ = command(
     }
     if (
       body.data.projectId !== undefined &&
-      (!(await get(projectAccess$)) ||
+      (!get(personalProjectAccess$) ||
         !(await get(projectById(auth, body.data.projectId))))
     ) {
       return notFound("Project not found");

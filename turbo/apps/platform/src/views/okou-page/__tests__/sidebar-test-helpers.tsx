@@ -1,5 +1,4 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { compile } from "tailwindcss";
 import { expect, vi } from "vitest";
 
 import {
@@ -112,6 +111,7 @@ export function prepareDefaultAgent(
   targetContext: TestContext,
   avatarUrl: string | null = null,
 ): void {
+  targetContext.mocks.data.onboardingStatus({ defaultAgentId: AGENT_ID });
   targetContext.mocks.data.agents([
     {
       agentId: AGENT_ID,
@@ -126,9 +126,10 @@ export function prepareDefaultAgent(
 }
 
 export function prepareAgents(targetContext: TestContext): AgentResponse[] {
+  targetContext.mocks.data.onboardingStatus({ defaultAgentId: AGENT_ID });
   const agents: AgentResponse[] = [
     {
-      isDefaultAgent: false,
+      isDefaultAgent: true,
       agentId: AGENT_ID,
       ownerId: "test-user-123",
       displayName: "Nova",
@@ -166,7 +167,7 @@ export function prepareAgents(targetContext: TestContext): AgentResponse[] {
       [SUPPORT_AGENT_ID]: "Support Agent",
     };
     return respond(200, {
-      isDefaultAgent: false,
+      isDefaultAgent: params.id === AGENT_ID,
       agentId: params.id,
       ownerId: "test-user-123",
       description: null,
@@ -387,66 +388,10 @@ export function sidebar(): HTMLElement {
   return screen.getByTestId("chat-list-column");
 }
 
-export function pinnedAgentLink(
-  container: HTMLElement,
-  name: string,
-): HTMLAnchorElement {
-  const link = queryAllByRoleFast("link", container).find((candidate) => {
-    return candidate.textContent?.trim() === name;
-  });
-  if (!(link instanceof HTMLAnchorElement)) {
-    throw new Error(`${name} pinned agent link not found`);
-  }
-  return link;
-}
-
 export function setupSidebarPage(
   options: Parameters<typeof setupPage>[0],
 ): Promise<void> {
   return setupPage(options);
-}
-
-export function pinnedAgentNames(container: HTMLElement): string[] {
-  return within(container)
-    .getAllByTestId("pinned-agent-card")
-    .map((card) => {
-      return card.textContent?.trim() ?? "";
-    });
-}
-
-/** Names of the given agents as the dialog lists them, in rendered order. */
-export function dialogAgentOrder(
-  dialog: HTMLElement,
-  names: readonly string[],
-): string[] {
-  return within(dialog)
-    .getAllByRole("option")
-    .map((option) => {
-      return names.find((name) => {
-        return option.textContent?.replace(/\s+/g, " ").trim().startsWith(name);
-      });
-    })
-    .filter((name): name is string => {
-      return name !== undefined;
-    });
-}
-
-export function commandItemByText(
-  container: HTMLElement,
-  text: string,
-): HTMLElement {
-  const item = within(container)
-    .getAllByRole("option")
-    .find((candidate) => {
-      return candidate.textContent
-        ?.replace(/\s+/g, " ")
-        .trim()
-        .startsWith(text);
-    });
-  if (!item) {
-    throw new Error(`${text} command item not found`);
-  }
-  return item;
 }
 
 /**
@@ -512,42 +457,6 @@ export function createDataTransferStub(
       };
     },
   } as unknown as DataTransferStub;
-}
-
-export async function renderTailwindUtilities(
-  signal: AbortSignal,
-  ...elements: readonly HTMLElement[]
-): Promise<void> {
-  const compiler = await compile(`
-    @theme {
-      --spacing: 0.25rem;
-    }
-    @tailwind utilities;
-  `);
-  const classNames = new Set<string>();
-  for (const element of elements) {
-    for (const candidate of [
-      element,
-      ...element.querySelectorAll<HTMLElement>("[class]"),
-    ]) {
-      for (const className of candidate.classList) {
-        classNames.add(className);
-      }
-    }
-  }
-  const styleElement = document.createElement("style");
-  styleElement.textContent = compiler
-    .build([...classNames])
-    .replaceAll("calc(var(--spacing) * 9)", "36px")
-    .replaceAll("calc(infinity * 1px)", "9999px");
-  document.head.append(styleElement);
-  signal.addEventListener(
-    "abort",
-    () => {
-      styleElement.remove();
-    },
-    { once: true },
-  );
 }
 
 /** Supplies explicit pixel geometry for title intent in layout-free happy-dom. */
@@ -626,18 +535,6 @@ export function visibleThreadTitles(
       .trim();
     return title && expected.has(title) ? [title] : [];
   });
-}
-
-export function agentRowByName(
-  container: HTMLElement,
-  name: string,
-): HTMLElement {
-  const text = within(container).getByText(name);
-  const row = text.closest(".group");
-  if (!(row instanceof HTMLElement)) {
-    throw new Error(`${name} agent row not found`);
-  }
-  return row;
 }
 
 export function openThreadMenu(title: string): void {

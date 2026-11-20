@@ -66,13 +66,13 @@ test("Offer passage actions only for a valid assistant selection", async () => {
 
   expect(queryToolbarButton("Copy")).toBeVisible();
   expect(queryToolbarButton("Quote")).toBeVisible();
-  expect(queryToolbarButton("Forward")).toBeVisible();
+  expect(queryToolbarButton("Fork")).toBeVisible();
 
   await selectAcrossPassages("launch plan", "separate decision");
 
   expect(queryToolbarButton("Copy")).not.toBeInTheDocument();
   expect(queryToolbarButton("Quote")).not.toBeInTheDocument();
-  expect(queryToolbarButton("Forward")).not.toBeInTheDocument();
+  expect(queryToolbarButton("Fork")).not.toBeInTheDocument();
 
   await selectPassage("launch plan has three careful stages");
   fireEvent.keyDown(document, { key: "q" });

@@ -1,6 +1,5 @@
 import { act, screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { projectsContract } from "@okouai/api-contracts/contracts/projects";
 import { chatThreadByIdContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { setupPage, startPage } from "../../../__tests__/page-helper.ts";
@@ -92,7 +91,6 @@ function fixture() {
     },
     pageOptions: {
       ...workspace.pageOptions,
-      featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
       sharedWorkerTestTransport: "message-port" as const,
     },
   };

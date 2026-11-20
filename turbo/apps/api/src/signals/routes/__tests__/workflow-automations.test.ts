@@ -586,7 +586,12 @@ describe("okou workflow automations", () => {
     options: { readonly maxAutonomyBudget?: number } = {},
   ): Promise<AutomationScenario> {
     // Fable keeps automation runs on the native Runner execution route.
-    const { actor, customerId, subscriptionId } = await wf.setupWorkflowOrg({
+    const {
+      actor,
+      defaultAgentId: agentId,
+      customerId,
+      subscriptionId,
+    } = await wf.setupWorkflowOrg({
       tier,
       model: "claude-fable-5-1",
       ...options,
@@ -594,11 +599,8 @@ describe("okou workflow automations", () => {
     if (!actor.orgId) {
       throw new Error("Expected an org-scoped workflow actor");
     }
-    const agent = await wf.createAgent(actor, {
-      displayName: "Automation Agent",
-    });
     const workflowId = await wf.createWorkflow(actor, {
-      agentId: agent.agentId,
+      agentId,
       name: WORKFLOW_NAME,
     });
     const fixture = { orgId: actor.orgId, userId: actor.userId };
@@ -607,7 +609,7 @@ describe("okou workflow automations", () => {
     return {
       fixture,
       actor,
-      agentId: agent.agentId,
+      agentId,
       workflowId,
       customerId,
       subscriptionId,
@@ -1181,10 +1183,11 @@ describe("okou workflow automations", () => {
   it("lists owned workflow automations across visible workflows", async () => {
     const scenario = await setupFixture();
     const { agentId, workflowId } = scenario;
-    const { agentId: secondAgentId, workflowId: secondWorkflowId } =
-      await createAgentWithWorkflow(scenario, {
-        agentDisplayName: "Second Automation Agent",
-      });
+    const secondWorkflowName = "second-workspace-automation";
+    const secondWorkflowId = await wf.createWorkflow(scenario.actor, {
+      agentId,
+      name: secondWorkflowName,
+    });
 
     const first = await accept(
       automationsClient().create({
@@ -1234,8 +1237,8 @@ describe("okou workflow automations", () => {
         {
           automationId: second.body.id,
           workflowId: secondWorkflowId,
-          workflowName: WORKFLOW_NAME,
-          agentId: secondAgentId,
+          workflowName: secondWorkflowName,
+          agentId,
         },
       ]),
     );
@@ -3650,7 +3653,9 @@ describe("okou workflow automations", () => {
     );
     expect(stop.calls).toBe(0);
 
-    const agentScenario = await setupFixture();
+    const ownerScenario = await setupFixture();
+    const target = await createAgentWithWorkflow(ownerScenario);
+    const agentScenario = { ...ownerScenario, ...target };
     await connectGmail(
       agentScenario,
       `agent-cascade-${agentScenario.fixture.userId}@example.com`,
@@ -4322,7 +4327,7 @@ describe("okou workflow automations", () => {
         2,
       ),
     );
-    expect(execution.appendSystemPrompt).toContain("# Agent Identity");
+    expect(execution.appendSystemPrompt).toContain("Your name is Okou.");
 
     const automation = await wf.readAutomation(created.body.id);
     expect(automation).toMatchObject({
@@ -4350,7 +4355,10 @@ describe("okou workflow automations", () => {
 
   it("shares one lazy destination across concurrent and repeated Run now requests", async () => {
     const requestedAt = Date.UTC(2026, 7, 1, 12, 34, 56, 123);
-    const owned = await publicChatActor(context, { clockTime: requestedAt });
+    const owned = await publicChatActor(context, {
+      clockTime: requestedAt,
+      useDefaultAgent: true,
+    });
     await owned.run(async () => {
       const workflowId = await wf.createWorkflow(owned.actor, {
         agentId: owned.agentId,
@@ -4426,7 +4434,7 @@ describe("okou workflow automations", () => {
       await runs.heartbeatRunner(owned.runnerGroup);
       const execution = await owned.executionInput(active.runId);
       expect(execution.prompt).toContain(`/${WORKFLOW_NAME}`);
-      expect(execution.appendSystemPrompt).toContain("# Agent Identity");
+      expect(execution.appendSystemPrompt).toContain("Your name is Okou.");
     });
   });
 
@@ -4513,17 +4521,17 @@ describe("okou workflow automations", () => {
   });
 
   it("keeps lazy destinations distinct for workflows and owners of one public workflow", async () => {
-    const owned = await publicChatActor(context, { tier: "team" });
+    const owned = await publicChatActor(context, {
+      tier: "team",
+      useDefaultAgent: true,
+    });
     await owned.run(async () => {
-      const sharedAgent = await wf.createAgent(owned.actor, {
-        visibility: "public",
-      });
       const workflowId = await wf.createWorkflow(owned.actor, {
-        agentId: sharedAgent.agentId,
+        agentId: owned.agentId,
         name: WORKFLOW_NAME,
       });
       const secondWorkflowId = await wf.createWorkflow(owned.actor, {
-        agentId: sharedAgent.agentId,
+        agentId: owned.agentId,
         name: "second-lazy-workflow",
       });
       const createAndRun = async (id: string) => {
@@ -4610,7 +4618,7 @@ describe("okou workflow automations", () => {
     // 2, each agent-created Automation spends exactly one hop, and the third
     // derivation is refused.
     const runnerGroup = await runs.configureRunnerGroup();
-    const { actor, workflowId } = await setupFixture("pro", {
+    const { actor, agentId, workflowId } = await setupFixture("pro", {
       maxAutonomyBudget: 2,
     });
 
@@ -4709,32 +4717,27 @@ describe("okou workflow automations", () => {
       enabled: false,
     });
 
-    const target = await wf.createAgent(actor, {
-      displayName: "Exhausted Copy Target Agent",
-    });
+    const workspaceWorkflows = setupApp({ context, routes: workflowsRoutes })(
+      workflowsCollectionContract,
+    );
+    const beforeCopy = await accept(
+      workspaceWorkflows.list({ headers: authHeaders(), query: {} }),
+      [200],
+    );
     const blockedCopy = await accept(
       detailClient().copy({
         headers: { authorization: exhausted },
         params: { workflowId },
-        body: { toAgentId: target.agentId },
+        body: { toAgentId: agentId },
       }),
       [409],
     );
     expect(blockedCopy.body.error.code).toBe("AUTONOMY_BUDGET_EXHAUSTED");
-    const targetWorkflows = await accept(
-      setupApp({ context, routes: workflowsRoutes })(
-        workflowsCollectionContract,
-      ).list({
-        headers: authHeaders(),
-        query: { agentId: target.agentId },
-      }),
+    const afterCopy = await accept(
+      workspaceWorkflows.list({ headers: authHeaders(), query: {} }),
       [200],
     );
-    expect(
-      targetWorkflows.body.map((workflow) => {
-        return workflow.name;
-      }),
-    ).not.toContain(WORKFLOW_NAME);
+    expect(afterCopy.body).toStrictEqual(beforeCopy.body);
 
     // The exhausted request is accepted; once the shared workflow Automation
     // thread is idle its rejection appears there and no child run is linked.

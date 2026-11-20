@@ -12,7 +12,6 @@ import {
   mockSidebarViewport,
   openChatListMenu,
   openThreadMenu,
-  pinnedAgentLink,
   queryMenuItemByText,
   RESEARCH_AGENT_ID,
   RESEARCH_THREAD_ID,
@@ -101,7 +100,6 @@ test("Delete a chat after reviewing the impact", async () => {
   await setupSidebarPage({
     context,
     path: `/chats/${EXISTING_THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
   });
 
   await waitFor(() => {
@@ -151,41 +149,35 @@ test("Delete a chat after reviewing the impact", async () => {
   });
 });
 
-test.each([true, false])(
-  "Deleting the last chat opens a new chat (My Okou: %s)",
-  async (singleAgent) => {
-    prepareDefaultAgent();
-    mockSidebarThreadStory([createThread(EXISTING_THREAD_ID, "Release plan")]);
+test("Deleting the last chat opens a new chat", async () => {
+  prepareDefaultAgent();
+  mockSidebarThreadStory([createThread(EXISTING_THREAD_ID, "Release plan")]);
 
-    await setupSidebarPage({
-      context,
-      path: `/chats/${EXISTING_THREAD_ID}`,
-      featureSwitches: { [FeatureSwitchKey.SingleAgent]: singleAgent },
-    });
+  await setupSidebarPage({
+    context,
+    path: `/chats/${EXISTING_THREAD_ID}`,
+  });
 
-    await screen.findByRole("textbox", { name: "Message" });
-    await waitFor(() => {
-      expect(within(sidebar()).getByText("Release plan")).toBeInTheDocument();
-    });
-    openThreadMenu("Release plan");
-    click(menuItemByText("Delete chat"));
-    const dialog = await screen.findByRole("dialog", {
-      name: "Delete chat?",
-    });
-    click(buttonByText("Delete", dialog));
+  await screen.findByRole("textbox", { name: "Message" });
+  await waitFor(() => {
+    expect(within(sidebar()).getByText("Release plan")).toBeInTheDocument();
+  });
+  openThreadMenu("Release plan");
+  click(menuItemByText("Delete chat"));
+  const dialog = await screen.findByRole("dialog", {
+    name: "Delete chat?",
+  });
+  click(buttonByText("Delete", dialog));
 
-    await expect(
-      screen.findByText("Chat deleted"),
-    ).resolves.toBeInTheDocument();
-    await waitFor(() => {
-      expect(pathname()).toBe(singleAgent ? "/" : `/agents/${AGENT_ID}/chat`);
-    });
-    await expect(
-      screen.findByRole("textbox", { name: "Message" }),
-    ).resolves.toBeInTheDocument();
-    expect(screen.queryByText("Chat thread not found")).not.toBeInTheDocument();
-  },
-);
+  await expect(screen.findByText("Chat deleted")).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(pathname()).toBe("/");
+  });
+  await expect(
+    screen.findByRole("textbox", { name: "Message" }),
+  ).resolves.toBeInTheDocument();
+  expect(screen.queryByText("Chat thread not found")).not.toBeInTheDocument();
+});
 
 test("Deleting another chat keeps the current chat open", async () => {
   prepareDefaultAgent();
@@ -545,7 +537,7 @@ function mockUnreadThreads(threadIds: readonly string[]): void {
   });
 }
 
-test("Archive an unread chat without retaining its agent reminder or changing reading state", async () => {
+test("Archive an unread chat without changing reading state", async () => {
   prepareAgents();
   context.mocks.data.userPreferences({ pinnedAgentIds: [AGENT_ID] });
   mockSidebarThreadStory([
@@ -561,12 +553,6 @@ test("Archive an unread chat without retaining its agent reminder or changing re
       "Review later Unread",
     );
   });
-  const agentLink = () => {
-    return pinnedAgentLink(screen.getByTestId("pinned-agents-grid"), "Nova");
-  };
-  await waitFor(() => {
-    expect(within(agentLink()).getByLabelText("Unread")).toBeInTheDocument();
-  });
   openChatListMenu();
   expect(menuItemByText("Mark all read")).not.toHaveAttribute(
     "aria-disabled",
@@ -579,11 +565,6 @@ test("Archive an unread chat without retaining its agent reminder or changing re
   await expect(
     screen.findByText("Chat archived."),
   ).resolves.toBeInTheDocument();
-  await waitFor(() => {
-    expect(
-      within(agentLink()).queryByLabelText("Unread"),
-    ).not.toBeInTheDocument();
-  });
   openChatListMenu();
   await waitFor(() => {
     expect(menuItemByText("Mark all read")).not.toHaveAttribute(
@@ -597,7 +578,6 @@ test("Archive an unread chat without retaining its agent reminder or changing re
     expect(threadLinkByTitle("Review later", list)).toHaveAccessibleName(
       "Review later Unread",
     );
-    expect(within(agentLink()).getByLabelText("Unread")).toBeInTheDocument();
   });
   openChatListMenu();
   await waitFor(() => {
@@ -837,7 +817,7 @@ test("Hide the current chat after archiving it without changing its title", asyn
   });
 
   await waitFor(() => {
-    expect(within(sidebar()).getByText("New chat")).toBeInTheDocument();
+    expect(threadLinkByTitle("New chat", sidebar())).toBeInTheDocument();
   });
   openThreadMenu("New chat");
   click(menuItemByText("Archive chat"));
@@ -846,7 +826,9 @@ test("Hide the current chat after archiving it without changing its title", asyn
     expect(
       within(sidebar()).getByText("Your inbox is empty"),
     ).toBeInTheDocument();
-    expect(within(sidebar()).queryByText("New chat")).not.toBeInTheDocument();
+    expect(
+      sidebar().querySelector('a[href="/chats/' + EXISTING_THREAD_ID + '"]'),
+    ).not.toBeInTheDocument();
   });
   expect(pathname()).toBe(`/chats/${EXISTING_THREAD_ID}`);
   await expect(
@@ -855,11 +837,9 @@ test("Hide the current chat after archiving it without changing its title", asyn
   click(buttonByText("Show archived chats", sidebar()));
 
   await waitFor(() => {
-    expect(within(sidebar()).getByText("New chat")).toBeInTheDocument();
+    expect(threadLinkByTitle("New chat", sidebar())).toBeInTheDocument();
   });
-  expect(
-    within(sidebar()).getByText("Archived · Chats with Okou"),
-  ).toBeInTheDocument();
+  expect(within(sidebar()).getByText("Archived")).toBeInTheDocument();
   openThreadMenu("New chat");
   click(menuItemByText("Unarchive chat"));
 
@@ -867,7 +847,9 @@ test("Hide the current chat after archiving it without changing its title", asyn
     expect(
       within(sidebar()).getByText("No archived chats"),
     ).toBeInTheDocument();
-    expect(within(sidebar()).queryByText("New chat")).not.toBeInTheDocument();
+    expect(
+      sidebar().querySelector('a[href="/chats/' + EXISTING_THREAD_ID + '"]'),
+    ).not.toBeInTheDocument();
   });
 
   click(buttonByText("Show all chats", sidebar()));
@@ -1059,7 +1041,7 @@ test("Find conversations by title in workspace search", async () => {
   });
 });
 
-test("Route New chat to the current agent and Chat to the default agent", async () => {
+test("Open a new My Okou Chat from a retained conversation", async () => {
   prepareAgents();
   mockSidebarThreadStory([
     createThread(RESEARCH_THREAD_ID, "Research conversation", {
@@ -1079,25 +1061,19 @@ test("Route New chat to the current agent and Chat to the default agent", async 
       "Research conversation",
     ),
   ).toBeInTheDocument();
-  await screen.findByText("Chats with Research Agent");
 
   const list = screen.getByTestId("chat-list-column");
-  const searchButton = within(list).getByLabelText("Search workspace");
-  if (!searchButton.parentElement) {
-    throw new Error("Chat header not found");
-  }
-  click(within(searchButton.parentElement).getByLabelText("New chat"));
-
+  click(newChatRow(list));
   await waitFor(() => {
-    expect(pathname()).toBe(`/agents/${RESEARCH_AGENT_ID}/chat`);
+    expect(pathname()).toBe("/");
   });
 
   const chatLink = within(rail).getByLabelText("Chat");
-  expect(chatLink).toHaveAttribute("href", `/agents/${AGENT_ID}/chat`);
+  expect(chatLink).toHaveAttribute("href", "/");
   click(chatLink);
 
   await waitFor(() => {
-    expect(pathname()).toBe(`/agents/${AGENT_ID}/chat`);
+    expect(pathname()).toBe("/");
     expect(screen.getByPlaceholderText(PLACEHOLDER)).toBeInTheDocument();
   });
 });
@@ -1119,9 +1095,6 @@ test("My Okou's header holds the toggle, search, New Project and list menu while
   await setupSidebarPage({
     context,
     path: "/",
-    featureSwitches: {
-      [FeatureSwitchKey.SingleAgent]: true,
-    },
   });
 
   const list = await screen.findByTestId("chat-list-column");
@@ -1192,7 +1165,6 @@ test("My Okou's Chat link and new chat shortcut open its chat page at /", async 
   await setupSidebarPage({
     context,
     path: `/chats/${EXISTING_THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
   });
 
   const rail = await screen.findByTestId("labeled-nav-rail");
@@ -1233,7 +1205,6 @@ test("My Okou's Chat link returns a filtered chat list to the inbox", async () =
   await setupSidebarPage({
     context,
     path: `/chats/${EXISTING_THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
   });
 
   const rail = await screen.findByTestId("labeled-nav-rail");
@@ -1274,7 +1245,6 @@ test("The Okou rail entry opens My Okou's chat page at /", async () => {
     context,
     path: `/chats/${EXISTING_THREAD_ID}`,
     featureSwitches: {
-      [FeatureSwitchKey.SingleAgent]: true,
       [FeatureSwitchKey.OkouRailEntry]: true,
     },
   });
