@@ -3,7 +3,6 @@ package ai.okou.android
 import ai.okou.android.auth.SessionModel
 import ai.okou.android.chat.ChatRowAction
 import android.os.Looper
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.MouseButton
@@ -24,7 +23,6 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performMouseInput
 import androidx.compose.ui.test.performScrollToIndex
@@ -33,7 +31,6 @@ import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextInputSelection
 import androidx.compose.ui.test.performTouchInput
-import androidx.compose.ui.test.swipe
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.unit.dp
@@ -421,15 +418,13 @@ class ChatListRootTest {
         app.responseGate.countDown()
         compose.waitUntil(10_000) {
             compose
-                .onAllNodesWithText("Could not load chats. Check your connection and try again.")
+                .onAllNodesWithText("Temporarily unable to load")
                 .fetchSemanticsNodes()
                 .isNotEmpty()
         }
         compose.onNodeWithContentDescription("Chats").assertExists()
         app.fixture.archive = { jsonResponse("""{"chatThreads":[]}""") }
-        val retry = compose.activity.getString(R.string.retry)
-        compose.onNodeWithTag("chat_list").performScrollToNode(hasText(retry))
-        compose.onNodeWithText(retry).performClick()
+        reconnectList(app)
         awaitListAndNames()
         compose.onNodeWithTag("chat_list").performScrollToNode(hasText("Project chat"))
         compose.onNodeWithText("Project chat").assertExists()
@@ -440,7 +435,8 @@ class ChatListRootTest {
     @Test
     fun heldTransportKeepsNavigationAndRestoresTheListWithProjectStatus() {
         compose.onNodeWithContentDescription("Chats").assertExists()
-        compose.onNodeWithText("Loading chats…").assertExists()
+        compose.mainClock.advanceTimeBy(120)
+        compose.onNodeWithContentDescription("Loading chats…").assertExists()
         compose.onNodeWithContentDescription("Switch workspace").performClick()
         compose.onNodeWithText("Workspace B").assertExists()
         compose.onNodeWithText("Back").performClick()
@@ -477,7 +473,7 @@ class ChatListRootTest {
 
     @Test
     @Config(qualifiers = "en-rUS-w400dp-h800dp")
-    fun pullingBelowTheEmptyFilteredListRefreshesChats() {
+    fun aFailedRefreshAfterReconnectKeepsAnEmptyFilterVisible() {
         val app = compose.activity.application as ChatListApplication
         app.responseGate.countDown()
         awaitListAndNames()
@@ -486,16 +482,14 @@ class ChatListRootTest {
         compose.onNodeWithText("No chats in this view.").assertExists()
 
         app.fixture.events = { okhttp3.mockwebserver.MockResponse().setResponseCode(503) }
-        compose.onRoot().performTouchInput {
-            swipe(Offset(centerX, height * 0.6f), Offset(centerX, height * 0.9f))
-        }
+        reconnectList(app)
 
-        val failure = app.getString(R.string.chat_refresh_failed)
         compose.waitUntil(10_000) {
-            compose.onAllNodesWithText(failure).fetchSemanticsNodes().isNotEmpty()
+            currentList()?.listPhase == ai.okou.android.chat.ChatReadPhase.Failed
         }
         compose.onNodeWithText("Filter · Archived").assertExists()
-        compose.onNodeWithText(app.getString(R.string.retry)).assertExists()
+        compose.onNodeWithText("No chats in this view.").assertExists()
+        compose.onNodeWithTag("chat_list_bottom_status").assertDoesNotExist()
     }
 
     @Test
@@ -866,10 +860,11 @@ class ChatListRootTest {
             compose.onAllNodes(target.and(!muted).and(available)).fetchSemanticsNodes().isNotEmpty()
         }
         row.assert(!unreadBadge)
-        val refreshStatus = app.getString(R.string.chat_refresh_status)
         indicatorsUnavailable.set(false)
-        compose.onNodeWithTag("chat_list").performScrollToNode(hasText(refreshStatus))
-        compose.onNodeWithText(refreshStatus).performClick()
+        reconnectList(app)
+        compose.waitUntil(10_000) {
+            currentList()?.indicatorsPhase == ai.okou.android.chat.ChatReadPhase.Ready
+        }
         compose.onNodeWithTag("chat_list").performScrollToNode(target)
         row.performSemanticsAction(SemanticsActions.OnLongClick)
         compose.onNodeWithText("Mark as unread").assertExists()
@@ -1281,13 +1276,60 @@ class ChatListRootTest {
 
     private fun awaitListAndNames() {
         compose.waitUntil(10_000) {
-            listOf(R.string.chat_loading, R.string.chat_refreshing, R.string.chat_metadata_loading)
-                .all { label ->
-                    compose
-                        .onAllNodesWithText(compose.activity.getString(label))
-                        .fetchSemanticsNodes()
-                        .isEmpty()
-                }
+            val state = currentList() ?: return@waitUntil false
+            state.confirmedAt != null &&
+                state.agentsPhase != ai.okou.android.chat.ChatReadPhase.Loading &&
+                state.projectsSettingsPhase != ai.okou.android.chat.ChatReadPhase.Loading &&
+                state.projectsPhase != ai.okou.android.chat.ChatReadPhase.Loading &&
+                state.indicatorsPhase != ai.okou.android.chat.ChatReadPhase.Loading
         }
+    }
+
+    private fun currentList() =
+        compose.runOnIdle {
+            ViewModelProvider(compose.activity)[SessionModel::class.java]
+                .uiState
+                .value
+                .ready
+                ?.chats
+                ?.uiState
+                ?.value
+        }
+
+    private fun reconnectList(app: ChatListApplication) {
+        compose.runOnIdle { app.connectivity.value = false }
+        compose.waitUntil(10_000) { currentList()?.offline == true }
+        compose.runOnIdle { app.connectivity.value = true }
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w320dp-h270dp")
+    fun aShortPaneScrollsNewChatAndOfflineStatusWithTheRows() {
+        val app = compose.activity.application as ChatListApplication
+        val rows =
+            (1..14).joinToString(",") { index ->
+                val suffix = index.toString().padStart(12, '0')
+                chatEventWire(
+                    id = "61000000-0000-4000-8000-$suffix",
+                    seq = index.toLong(),
+                    thread = "62000000-0000-4000-8000-$suffix",
+                    title = "Short pane chat $index",
+                )
+            }
+        app.fixture.events = { request ->
+            val events = if (request.requestUrl?.queryParameter("sinceSeqId") == null) rows else ""
+            jsonResponse("""{"events":[$events],"hasMore":false}""")
+        }
+        app.responseGate.countDown()
+        awaitListAndNames()
+        compose.runOnIdle { app.connectivity.value = false }
+        compose.onNodeWithTag("chat_list_bottom_status").assertIsDisplayed()
+        compose.onNodeWithText("New chat").assertIsDisplayed()
+        compose.onNodeWithTag("chat_list").performScrollToNode(hasText("Short pane chat 1"))
+        compose.onNodeWithText("Short pane chat 1").assertIsDisplayed()
+        compose.onNodeWithText("New chat").assertDoesNotExist()
+        compose.onNodeWithTag("chat_list").performScrollToIndex(0)
+        compose.onNodeWithText("New chat").assertIsDisplayed()
+        compose.onNodeWithTag("chat_list_bottom_status").assertIsDisplayed()
     }
 }

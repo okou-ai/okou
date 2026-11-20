@@ -38,6 +38,8 @@ import kotlinx.serialization.json.Json
 open class TestOkouApplication : OkouApplication() {
     override fun startCrashReporting() = Unit
 
+    override val connectivity = MutableStateFlow(true)
+
     var updateService: UpdateService? = null
     var updateOwner: AppUpdates? = null
     override val updates

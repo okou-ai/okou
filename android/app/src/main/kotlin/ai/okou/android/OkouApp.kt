@@ -139,6 +139,10 @@ internal fun OkouApp(
     }
     val showList = listWidth != null || searchActive || target == WorkspaceTarget.List
     val showChatList = settings == null && showList && !searchActive
+    DisposableEffect(chats, showChatList) {
+        chats?.listVisibilityChanged(showChatList)
+        onDispose { chats?.listVisibilityChanged(false) }
+    }
     val showWorkspaceBack = listWidth == null && !searchActive && target != WorkspaceTarget.List
     val listPositions =
         ChatListFilter.entries.map { filter -> key(filter) { rememberLazyListState() } }
@@ -495,7 +499,6 @@ internal fun OkouApp(
                     }
                 }
             } else {
-                if (chats != null && composer != null) RealtimeNotice(chats.updates)
                 if (!showChatList && startupRecovery != null) {
                     Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) { startupRecovery() }
                 }
@@ -520,10 +523,7 @@ internal fun OkouApp(
                                 if (listWidth != null) listToolbar()
                                 ChatListScreen(
                                     list,
-                                    { chats?.refresh(userInitiated = true) },
-                                    { chats?.reloadAfterRowActionFailure() },
                                     { chats?.refreshMetadata() },
-                                    { chats?.refreshIndicators() },
                                     ::openChat,
                                     { id, action -> chats?.performRowAction(id, action) },
                                     { id, title -> chats?.renameThread(id, title) },
@@ -535,16 +535,11 @@ internal fun OkouApp(
                                     selectedChatId = if (listWidth != null) thread?.id else null,
                                     wide = listWidth != null,
                                     newChatEnabled = composer != null,
-                                    refreshEnabled = chats != null,
                                     startupRecovery = startupRecovery,
                                     feedback = {
                                         WorkspaceFeedbackHost(
                                             snackbar,
-                                            Modifier.padding(
-                                                    start = 16.dp,
-                                                    end = 16.dp,
-                                                    bottom = 8.dp,
-                                                )
+                                            Modifier.padding(horizontal = 16.dp)
                                                 .testTag("chat_list_feedback"),
                                         )
                                     },
@@ -575,6 +570,8 @@ internal fun OkouApp(
                                 HorizontalDivider(color = MaterialTheme.colorScheme.outline)
                             }
                             Column(Modifier.widthIn(max = 768.dp).fillMaxWidth().weight(1f)) {
+                                if (target != WorkspaceTarget.List && composer != null)
+                                    RealtimeNotice(chats.updates)
                                 when (target) {
                                     WorkspaceTarget.List -> {
                                         if (composer != null) {

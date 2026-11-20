@@ -1,4 +1,8 @@
 <resources>
+    <string name="chat_list_offline">Offline</string>
+    <string name="chat_list_refresh_failed">Aggiornamento della lista chat non riuscito</string>
+    <string name="chat_list_first_load_failed">Caricamento temporaneamente non disponibile</string>
+    <string name="chat_list_load_when_online">Le chat verranno caricate quando tornerai online.</string>
     <string name="chat_list_title">Chat</string>
     <string name="chat_refresh">Aggiorna chat</string>
     <string name="chat_loading">Caricamento delle chat…</string>

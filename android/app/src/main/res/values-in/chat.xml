@@ -1,4 +1,8 @@
 <resources>
+    <string name="chat_list_offline">Offline</string>
+    <string name="chat_list_refresh_failed">Daftar chat gagal diperbarui</string>
+    <string name="chat_list_first_load_failed">Untuk sementara tidak dapat dimuat</string>
+    <string name="chat_list_load_when_online">Chat akan dimuat saat Anda kembali online.</string>
     <string name="chat_list_title">Chat</string>
     <string name="chat_refresh">Muat ulang chat</string>
     <string name="chat_loading">Memuat chat…</string>
