@@ -275,7 +275,9 @@ test("Save and retain an existing chat's Computer Use host before sending", asyn
     within(await findHosts(menu)).getByRole("switch", { name: "Studio Mac" }),
   );
   await closeConnectors();
-  // Connecting finishes once the thread's choice reaches the server.
+  // Covers the saved path only: the choice reaches the server before the
+  // user sends. A send while the save is still pending carries the explicit
+  // choice instead, and is not covered here.
   await waitFor(() => {
     expect(server.saved).toStrictEqual({
       computerUseHostId: STUDIO_MAC,
@@ -314,7 +316,8 @@ test("Save an existing chat's Computer Use disconnection before sending", async 
   });
   await toggle(studio);
   await closeConnectors();
-  // Disconnecting finishes once the thread's choice reaches the server.
+  // Covers the saved path only; a send during a pending save carries the
+  // explicit choice instead, and is not covered here.
   await waitFor(() => {
     expect(server.saved).toStrictEqual({
       computerUseHostId: null,
