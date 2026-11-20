@@ -126,13 +126,19 @@ impl GuestStorageManifestProgram {
     }
 }
 
+pub(crate) enum StorageInput {
+    Bytes(Bytes),
+    #[cfg(target_os = "linux")]
+    Sealed(std::fs::File),
+}
+
 struct GuestStorageManifestRequest {
     instruction_operation: Option<InstructionOperation>,
     seq: u32,
     timeout_ms: u32,
     run_id: String,
     runtime_dir: String,
-    manifest_json: Bytes,
+    input: StorageInput,
     request_ownership_us: Option<u64>,
     enqueue_ready: Instant,
     operation_guard: OperationGuard,
@@ -181,7 +187,7 @@ impl GuestStorageManifestWorker {
     pub(crate) fn submit(
         &self,
         submission: GuestStorageManifestSubmission<'_>,
-        retain_manifest: impl FnOnce(&[u8]) -> Bytes,
+        retain_manifest: impl FnOnce(&[u8]) -> StorageInput,
         operation_guard: OperationGuard,
         admission: SingleActivePermit,
     ) -> Result<(), GuestStorageManifestSubmitError> {
@@ -193,7 +199,7 @@ impl GuestStorageManifestWorker {
                 timeout_ms: submission.timeout_ms,
                 run_id: submission.run_id.to_owned(),
                 runtime_dir: submission.runtime_dir.to_owned(),
-                manifest_json: retain_manifest(submission.manifest_json),
+                input: retain_manifest(submission.manifest_json),
                 operation_guard,
                 admission,
                 request_ownership_us: None,
@@ -250,7 +256,7 @@ fn handle_request(
         timeout_ms,
         run_id,
         runtime_dir,
-        manifest_json,
+        input,
         operation_guard,
         admission,
         request_ownership_us,
@@ -264,7 +270,7 @@ fn handle_request(
         timeout_ms,
         run_id: &run_id,
         runtime_dir: &runtime_dir,
-        manifest_json,
+        input,
         connection_cancel,
         process_containment_mode,
         drain_deadline,
@@ -361,7 +367,7 @@ struct RunManifestInput<'a> {
     timeout_ms: u32,
     run_id: &'a str,
     runtime_dir: &'a str,
-    manifest_json: Bytes,
+    input: StorageInput,
     connection_cancel: &'a AtomicBool,
     process_containment_mode: ProcessContainmentMode,
     drain_deadline: Duration,
@@ -370,8 +376,18 @@ struct RunManifestInput<'a> {
 fn configure_helper_stdin(
     command: &mut Command,
     instruction_operation: Option<InstructionOperation>,
-    input: Bytes,
+    input: StorageInput,
 ) -> Option<Bytes> {
+    let input = match input {
+        StorageInput::Bytes(bytes) => bytes,
+        #[cfg(target_os = "linux")]
+        StorageInput::Sealed(file) => {
+            command
+                .arg(storage_files::SEALED_STDIN_ARGUMENT)
+                .stdin(CommandStdio::Owned(file.into()));
+            return None;
+        }
+    };
     let argument = match instruction_operation {
         Some(operation) => operation.helper_argument(),
         None if input.starts_with(storage_files::INPUT_MAGIC) => storage_files::STDIN_ARGUMENT,
@@ -414,7 +430,7 @@ fn run_manifest(input: RunManifestInput<'_>) -> CapturedHelperOutput {
         timeout_ms,
         run_id,
         runtime_dir,
-        manifest_json,
+        input,
         connection_cancel,
         process_containment_mode,
         drain_deadline,
@@ -447,7 +463,7 @@ fn run_manifest(input: RunManifestInput<'_>) -> CapturedHelperOutput {
         }
     };
     let mut command = Command::new(program.path());
-    let stdin_payload = configure_helper_stdin(&mut command, instruction_operation, manifest_json);
+    let stdin_payload = configure_helper_stdin(&mut command, instruction_operation, input);
     let output_limit = if instruction_operation.is_some() {
         guest_control_proto::GUEST_AGENT_INSTRUCTIONS_OUTPUT_LIMIT_BYTES
     } else {

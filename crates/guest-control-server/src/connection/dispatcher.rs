@@ -34,6 +34,7 @@ use crate::guest_state_restore::{
 };
 use crate::guest_storage_manifest::{
     GuestStorageManifestSubmission, GuestStorageManifestSubmitError, GuestStorageManifestWorker,
+    StorageInput,
 };
 use crate::handlers::{MessageOutcome, handle_basic_message};
 use crate::home_drive_mount::{HomeDriveMountSubmitError, HomeDriveMountWorker};
@@ -283,9 +284,10 @@ impl ConnectionDispatcher {
             MSG_WRITE_PRIVATE_FILES => self.handle_file_write(msg, FileWriteKind::PrivateFiles)?,
             MSG_GUEST_DNS_READINESS => self.handle_guest_dns_readiness(msg)?,
             MSG_GUEST_STATE_RESTORE => self.handle_guest_state_restore(msg)?,
-            MSG_GUEST_STORAGE_MANIFEST | guest_control_proto::MSG_GUEST_AGENT_INSTRUCTIONS => {
-                self.handle_guest_storage_manifest(msg, Bytes::copy_from_slice)?
-            }
+            MSG_GUEST_STORAGE_MANIFEST | guest_control_proto::MSG_GUEST_AGENT_INSTRUCTIONS => self
+                .handle_guest_storage_manifest(msg, |manifest| {
+                    StorageInput::Bytes(Bytes::copy_from_slice(manifest))
+                })?,
             MSG_HOME_DRIVE_MOUNT => self.handle_home_drive_mount(msg)?,
             MSG_QUIESCE_OPERATIONS => self.handle_quiesce_operations(msg)?,
             MSG_RESUME_OPERATIONS => self.handle_resume_operations(msg)?,
@@ -570,13 +572,47 @@ impl ConnectionDispatcher {
             payload: &payload,
         };
         // The decoded manifest input is a subslice of this same payload.
-        self.handle_guest_storage_manifest(msg, |manifest| payload.slice_ref(manifest))
+        self.handle_guest_storage_manifest(msg, |manifest| {
+            StorageInput::Bytes(payload.slice_ref(manifest))
+        })
+    }
+
+    #[cfg(target_os = "linux")]
+    pub(super) fn dispatch_streamed_storage(
+        &self,
+        seq: u32,
+        mut file: std::fs::File,
+        mapping: guest_contracts::sealed_input::SealedInput,
+    ) -> io::Result<()> {
+        use std::io::{Seek, SeekFrom};
+
+        let payload = mapping.as_bytes();
+        let msg = BorrowedRawMessage {
+            msg_type: MSG_GUEST_STORAGE_MANIFEST,
+            seq,
+            payload,
+        };
+        // The decoded input is a subslice of the sealed frame. The valid
+        // JSON limit is below the streamed frame window.
+        self.handle_guest_storage_manifest(msg, |manifest| {
+            let offset = manifest.as_ptr().addr() - payload.as_ptr().addr();
+            match file.seek(SeekFrom::Start(offset as u64)) {
+                Ok(_) => StorageInput::Sealed(file),
+                Err(error) => {
+                    crate::log::log(
+                        "WARN",
+                        &format!("Could not position streamed Storage input: {error}"),
+                    );
+                    StorageInput::Bytes(Bytes::copy_from_slice(manifest))
+                }
+            }
+        })
     }
 
     fn handle_guest_storage_manifest(
         &self,
         msg: BorrowedRawMessage<'_>,
-        retain_manifest: impl FnOnce(&[u8]) -> Bytes,
+        retain_manifest: impl FnOnce(&[u8]) -> StorageInput,
     ) -> io::Result<()> {
         if !require_non_zero_sequence(msg.seq, "guest storage manifest", &self.writer)? {
             return Ok(());
