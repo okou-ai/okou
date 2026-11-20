@@ -2266,3 +2266,66 @@ color-themes-011	turbo/apps/platform/src/views/css/__tests__/color-themes.test.t
 color-themes-012	turbo/apps/platform/src/views/css/__tests__/color-themes.test.ts	color theme palettes > gives blue-horizon an ambient strength in both themes	126	passed
 chat-capability-voice-isolation-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-voice-isolation.test.tsx	Release a VAD session initialized after the old composer was cancelled	29	passed
 chat-capability-voice-isolation-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-voice-isolation.test.tsx	keep local recordings isolated when the composer changes user > preserves the complete scenario	113	passed
+shared-worker-failure-002	turbo/apps/platform/src/__tests__/shared-worker-failure.test.tsx	Block the page after a connected worker fails and report it once	103	passed
+shared-worker-failure-003	turbo/apps/platform/src/__tests__/shared-worker-failure.test.tsx	Ignore worker errors after the page owner has been cancelled	124	passed
+shared-worker-preload-002	turbo/apps/platform/src/__tests__/shared-worker-preload.test.tsx	Report a preloaded Worker failure that happened before the app started	71	passed
+shared-worker-preload-003	turbo/apps/platform/src/__tests__/shared-worker-preload.test.tsx	Start the page's own Worker when the preloaded URL differs	86	passed
+chat-thread-link-001	turbo/apps/platform/src/lib/__tests__/chat-thread-link.test.ts	A link to a chat in this App or the production App names its thread	8	passed
+chat-thread-link-002	turbo/apps/platform/src/lib/__tests__/chat-thread-link.test.ts	A chat link keeps its query and hash	28	passed
+preview-bypass-cookie-001	turbo/apps/platform/src/lib/__tests__/preview-bypass-cookie.test.ts	A protected preview link creates a secure cookie on its preview host	8	passed
+preview-bypass-cookie-004	turbo/apps/platform/src/lib/__tests__/preview-bypass-cookie.test.ts	A preview credential reaches its matching API host	20	passed
+preview-bypass-cookie-005	turbo/apps/platform/src/lib/__tests__/preview-bypass-cookie.test.ts	A preview credential does not reach a lookalike API host	36	passed
+preview-bypass-cookie-006	turbo/apps/platform/src/lib/__tests__/preview-bypass-cookie.test.ts	A preview credential does not reach another preview API host	54	passed
+preview-bypass-cookie-007	turbo/apps/platform/src/lib/__tests__/preview-bypass-cookie.test.ts	A preview credential does not reach the matching WWW host	72	passed
+sentry-reporting-003	turbo/apps/platform/src/lib/__tests__/sentry-reporting.test.ts	redacts OAuth callback credentials before Sentry reporting (/connectors/slack/callback)	9	passed
+sentry-reporting-004	turbo/apps/platform/src/lib/__tests__/sentry-reporting.test.ts	redacts OAuth callback credentials before Sentry reporting (/connectors/microsoft-365/callback)	9	passed
+sentry-reporting-005	turbo/apps/platform/src/lib/__tests__/sentry-reporting.test.ts	redacts OAuth callback credentials before Sentry reporting (/connectors/github/callback)	9	passed
+sentry-reporting-007	turbo/apps/platform/src/lib/__tests__/sentry-reporting.test.ts	redacts OAuth callback credentials before Sentry reporting (/api/integrations/teams/oauth/callback)	9	passed
+sentry-reporting-008	turbo/apps/platform/src/lib/__tests__/sentry-reporting.test.ts	redacts OAuth callback credentials before Sentry reporting (/api/github/app/setup/callback)	9	passed
+visual-viewport-keyboard-001	turbo/apps/platform/src/lib/__tests__/visual-viewport-keyboard.test.ts	Repeated mobile keyboard sessions keep an existing-chat composer visible	169	passed
+visual-viewport-keyboard-002	turbo/apps/platform/src/lib/__tests__/visual-viewport-keyboard.test.ts	An ordinary mobile browser does not force-scroll the page for the keyboard	219	passed
+platform-direct-bridge-001	turbo/apps/platform/src/shared-database/__tests__/platform-direct-bridge.test.ts	Preserve exact UTF-8 snapshot bytes across the worker protocol	87	passed
+platform-direct-bridge-002	turbo/apps/platform/src/shared-database/__tests__/platform-direct-bridge.test.ts	Show cached chat data before catching up live	151	passed
+platform-direct-bridge-006	turbo/apps/platform/src/shared-database/__tests__/platform-direct-bridge.test.ts	Keep the chat list current with realtime thread changes	273	passed
+single-connection-client-001	turbo/apps/platform/src/shared-database/__tests__/single-connection-client.test.ts	Reports production shared worker queries without entity identifiers	134	passed
+single-connection-client-002	turbo/apps/platform/src/shared-database/__tests__/single-connection-client.test.ts	Does not report preview shared worker queries	176	passed
+worker-runtime-001	turbo/apps/platform/src/shared-database/__tests__/worker-runtime.test.ts	treat a headerless 426 from chat event rows as an upgrade request	165	passed
+worker-runtime-002	turbo/apps/platform/src/shared-database/__tests__/worker-runtime.test.ts	Keep cached chat data isolated by user and workspace	198	passed
+worker-runtime-005	turbo/apps/platform/src/shared-database/__tests__/worker-runtime.test.ts	Load a chat thread snapshot from its presigned object URL	249	passed
+worker-runtime-007	turbo/apps/platform/src/shared-database/__tests__/worker-runtime.test.ts	Rebuild chat data after its saved cursor expires	287	passed
+worker-runtime-008	turbo/apps/platform/src/shared-database/__tests__/worker-runtime.test.ts	Report only non-empty tails from a batched chat catch-up	430	passed
+worker-runtime-012	turbo/apps/platform/src/shared-database/__tests__/worker-runtime.test.ts	Project metadata recovers an expired cursor, reopens offline and stays owner scoped	471	passed
+api-client-bootstrap-001	turbo/apps/platform/src/signals/__tests__/api-client-bootstrap.test.ts	uses a matching bootstrap response once before falling back to the network	10	passed
+auth-oauth-consent-001	turbo/apps/platform/src/signals/__tests__/auth-oauth-consent.test.ts	Accept the exact local development app origin for OAuth consent	7	passed
+auth-oauth-consent-003	turbo/apps/platform/src/signals/__tests__/auth-oauth-consent.test.ts	Reject a consent continuation on the Marketing origin	22	passed
+clerk-user-003	turbo/apps/platform/src/signals/__tests__/clerk-user.test.ts	The transitive state defers the value instead of reporting a sign-out	31	passed
+clerk-user-005	turbo/apps/platform/src/signals/__tests__/clerk-user.test.ts	A repeated emit for the same user keeps the settled promise identity	53	passed
+clerk-user-006	turbo/apps/platform/src/signals/__tests__/clerk-user.test.ts	An owner claims the signal before it resolves the Clerk runtime	62	passed
+clerk-user-007	turbo/apps/platform/src/signals/__tests__/clerk-user.test.ts	Aborting the owner keeps the last published value and stops listening	76	passed
+command-scheduling-001	turbo/apps/platform/src/signals/__tests__/command-scheduling.test.ts	Debounced commands preserve arguments and return only the latest result	11	passed
+command-scheduling-002	turbo/apps/platform/src/signals/__tests__/command-scheduling.test.ts	New debounced work cancels an active command cooperatively	36	passed
+command-scheduling-003	turbo/apps/platform/src/signals/__tests__/command-scheduling.test.ts	A cancelled debounce can be reused without running the discarded command	60	passed
+command-scheduling-004	turbo/apps/platform/src/signals/__tests__/command-scheduling.test.ts	Throttled commands serialize a leading call and share the latest trailing result	85	passed
+command-scheduling-006	turbo/apps/platform/src/signals/__tests__/command-scheduling.test.ts	debounce scheduling is isolated between Stores	119	passed
+fetch-002	turbo/apps/platform/src/signals/__tests__/fetch.test.ts	An empty service error still gives the user a useful status	23	passed
+fetch-003	turbo/apps/platform/src/signals/__tests__/fetch.test.ts	The update dialog appears only when an update is required	41	passed
+realtime-001	turbo/apps/platform/src/signals/__tests__/realtime.test.ts	A session output channel detaches after its final subscriber and can be reacquired	111	passed
+realtime-002	turbo/apps/platform/src/signals/__tests__/realtime.test.ts	Route app subscriptions through the SharedWorker without an App Ably client	237	passed
+realtime-004	turbo/apps/platform/src/signals/__tests__/realtime.test.ts	Workspace live updates stay in the active workspace	266	passed
+realtime-005	turbo/apps/platform/src/signals/__tests__/realtime.test.ts	Realtime authentication failure does not leave stale live updates	300	passed
+realtime-006	turbo/apps/platform/src/signals/__tests__/realtime.test.ts	Cancelling a subscriber releases its pending channel attach wait	337	passed
+realtime-008	turbo/apps/platform/src/signals/__tests__/realtime.test.ts	A subscription created while the connection is suspended still starts	357	passed
+realtime-010	turbo/apps/platform/src/signals/__tests__/realtime.test.ts	A background subscription reports a terminal channel failure after returning	393	passed
+realtime-011	turbo/apps/platform/src/signals/__tests__/realtime.test.ts	Payload initialization with runOnSubscribe=undefined retains events and gap recovery	418	passed
+realtime-019	turbo/apps/platform/src/signals/__tests__/realtime.test.ts	Chat thread notifications invalidate their matching resources	468	passed
+realtime-020	turbo/apps/platform/src/signals/__tests__/realtime.test.ts	An initial refresh failure does not destroy live subscriptions	527	passed
+shared-database-browser-001	turbo/apps/platform/src/signals/__tests__/shared-database-browser.test.ts	Pass the page identity through the Vite shared worker URL	149	passed
+shared-database-browser-002	turbo/apps/platform/src/signals/__tests__/shared-database-browser.test.ts	Return Clerk's cached token when the shared worker requests it	168	passed
+shared-database-browser-005	turbo/apps/platform/src/signals/__tests__/shared-database-browser.test.ts	Open the force-upgrade dialog when the worker requires an upgrade	190	passed
+shared-database-browser-006	turbo/apps/platform/src/signals/__tests__/shared-database-browser.test.ts	Expose worker construction failures to bridge consumers	207	passed
+startup-diagnostics-001	turbo/apps/platform/src/signals/__tests__/startup-diagnostics.test.tsx	A failed stylesheet keeps Loading visible without reporting completed startup	54	passed
+startup-diagnostics-003	turbo/apps/platform/src/signals/__tests__/startup-diagnostics.test.tsx	Startup timing is bounded and anonymous	90	passed
+user-timezone-initialization-001	turbo/apps/platform/src/signals/bootstrap/__tests__/user-timezone-initialization.test.tsx	A member's first organization visit stores the browser timezone	95	passed
+user-timezone-initialization-003	turbo/apps/platform/src/signals/bootstrap/__tests__/user-timezone-initialization.test.tsx	A stored organization timezone is not replaced on a later visit	114	passed
+session-output-stream-002	turbo/apps/platform/src/signals/chat-page/__tests__/session-output-stream.test.ts	Cancelling an obsolete viewer cannot stop its replacement subscription	104	passed
+unread-through-at-001	turbo/apps/platform/src/signals/chat-page/__tests__/unread-through-at.test.ts	unread-through instant for an open thread > keeps the Run terminal marker when it is the newer of the two	6	passed

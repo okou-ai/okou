@@ -81,3 +81,26 @@ pending file does, so it is removed. The remaining Platform Knip findings are
 used by pending files: `rail-browser-layout` by `composer-task-chips`,
 `mockClerkSessionTransitioning` by `clerk-user`, the two Ably wait helpers by
 `realtime`, and `buttonByLabel` by `chat-scroll`.
+
+## Signals, library and shared database files
+
+The second batch accepted 63 of 113 frozen rows across 20 files:
+`shared-worker-failure`, `shared-worker-preload`, `chat-thread-link`,
+`preview-bypass-cookie`, `sentry-reporting`, `visual-viewport-keyboard`,
+`platform-direct-bridge`, `single-connection-client`, `worker-runtime`,
+`api-client-bootstrap`, `auth-oauth-consent`, `clerk-user`,
+`command-scheduling`, `fetch`, `realtime`, `shared-database-browser`,
+`startup-diagnostics`, `user-timezone-initialization`,
+`session-output-stream` and `unread-through-at`.
+
+The review found no premise or outcome gaps. Three cases now assert more of
+their stated Then: `api-client-bootstrap-001` checks the exact token call
+count, `realtime-002` re-checks the token history after completion, and
+`startup-diagnostics-001` asserts the inert Agents heading is visible. A
+comment describing an unselected `sentry-reporting` case was removed.
+
+`realtime-010` asserts the channel subscription is gone after a failure. The
+Ably fixture also clears subscriptions when a channel fails, so that check
+cannot tell app cleanup from fixture cleanup. The checklist records this
+limit for review. The rebuilt `clerk-user` and `realtime` files use
+`mockClerkSessionTransitioning` and the two Ably wait helpers again.

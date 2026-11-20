@@ -1,0 +1,557 @@
+import { command } from "ccstate";
+import { waitFor } from "@testing-library/react";
+import { platformRealtimeTokenContract } from "@okouai/api-contracts/contracts/realtime";
+import { beforeEach, expect, test, vi } from "vitest";
+
+import {
+  setupRealtime$,
+  setAblyLoop$,
+  setAblyPayloadLoop$,
+  waitAblyLoopUntil$,
+  waitAblyPayloadLoopUntil$,
+  waitAblyInvalidationLoopUntil$,
+  setSharedWorkerRealtimeBridge$,
+} from "../realtime.ts";
+import { clerk$, setupClerk$ } from "../auth.ts";
+import { installMockedClerkBootstrap } from "../../__tests__/mock-auth.ts";
+import { initializeAppVersion$ } from "../app-version.ts";
+import { readClerkToken } from "../clerk-token.ts";
+import { setRootSignal$ } from "../root-signal.ts";
+import { setApiClientRuntime$ } from "../api-client-runtime.ts";
+import { setAuthenticatedIdentity$ } from "../auth-context.ts";
+import { subscribeChatThreadRealtime$ } from "../chat-page/chat-thread-remote-signals.ts";
+import { testContext } from "./test-helpers.ts";
+import { hasRealtimeChannel } from "../../mocks/ably.ts";
+import { resetSignal } from "../utils.ts";
+import type { SharedDatabaseBridge } from "../../shared-database/bridge.ts";
+import type {
+  ComputedKey,
+  ComputedValue,
+} from "../../shared-database/computed-key.ts";
+import type {
+  SharedDatabaseDataKey,
+  SharedDatabaseQuery,
+  SharedDatabaseQueryResult,
+} from "../../shared-database/data-key.ts";
+import type {
+  SharedDatabaseRealtimeMessage,
+  SharedDatabaseRealtimeScope,
+} from "../../shared-database/protocol.ts";
+
+const context = testContext();
+
+beforeEach(() => {
+  context.mocks.clerk();
+  installMockedClerkBootstrap(context.signal);
+  context.store.set(initializeAppVersion$, __OKOU_APP_VERSION__);
+  context.store.set(setRootSignal$, context.signal);
+  const clerk = context.store.get(clerk$);
+  context.store.set(setApiClientRuntime$, {
+    apiBaseUrl: location.origin,
+    oauthApiBaseUrl: location.origin,
+    getToken: async (signal) => {
+      const resolvedClerk = await clerk;
+      signal?.throwIfAborted();
+      return await readClerkToken(resolvedClerk, signal);
+    },
+  });
+});
+
+const finishLoop$ = command((_ctx, _signal: AbortSignal) => {
+  return true;
+});
+
+const keepAliveLoop$ = command((_ctx, _signal: AbortSignal) => {
+  return Promise.resolve(false);
+});
+
+const noopInvalidation$ = command((): void => {});
+
+const keepAlivePayloadLoop$ = command(
+  (_ctx, _payload: unknown, _signal: AbortSignal) => {
+    return Promise.resolve(false);
+  },
+);
+
+const failSubscriptionInitialization$ = command(
+  (_ctx, _signal: AbortSignal) => {
+    throw new Error("subscription initialization failed");
+  },
+);
+
+function mockSignedInUser(): void {
+  const clerk = context.mocks.clerk();
+  clerk.user(
+    {
+      id: "test-user-123",
+      fullName: "Test User",
+      email: "test@example.com",
+    },
+    { token: "test-token" },
+  );
+  clerk.organization({
+    activeOrg: { id: "test-org-123", name: "Test Organization" },
+    memberships: [{ id: "test-org-123" }],
+  });
+  context.store.set(
+    setAuthenticatedIdentity$,
+    Promise.resolve({
+      userId: "test-user-123",
+      orgId: "test-org-123",
+      email: "test@example.com",
+    }),
+  );
+}
+
+async function setupAuthAndRealtime(): Promise<void> {
+  await context.store.set(setupClerk$, context.signal);
+  await context.store.set(setupRealtime$, context.signal);
+}
+
+test("A session output channel detaches after its final subscriber and can be reacquired", async () => {
+  const resetFirstSubscriber$ = resetSignal();
+  const resetSecondSubscriber$ = resetSignal();
+  const payloads: unknown[] = [];
+  const receivePayload$ = command(
+    (_ctx, payload: unknown, _signal: AbortSignal) => {
+      payloads.push(payload);
+      return false;
+    },
+  );
+  mockSignedInUser();
+  await setupAuthAndRealtime();
+  const topic = "d0000000-0000-4000-a000-000000000851";
+  const channel = `run-output:test-user-123:test-org-123:${topic}`;
+  const firstSignal = context.store.set(resetFirstSubscriber$, context.signal);
+  const secondSignal = context.store.set(
+    resetSecondSubscriber$,
+    context.signal,
+  );
+  const firstOperation = context.store.set(
+    waitAblyPayloadLoopUntil$,
+    { scope: "run-output", topic, loopCommand$: keepAlivePayloadLoop$ },
+    firstSignal,
+  );
+  const secondOperation = context.store.set(
+    waitAblyPayloadLoopUntil$,
+    { scope: "run-output", topic, loopCommand$: receivePayload$ },
+    secondSignal,
+  );
+  await waitFor(() => {
+    expect(
+      context.mocks.ably.hasSubscriptionOnChannel(channel, topic),
+    ).toBeTruthy();
+  });
+  context.store.set(resetFirstSubscriber$);
+  await expect(firstOperation).rejects.toBe(firstSignal.reason);
+  expect(
+    context.mocks.ably.hasSubscriptionOnChannel(channel, topic),
+  ).toBeTruthy();
+  context.mocks.ably.triggerOnChannel(channel, topic, { text: "still live" });
+  await waitFor(() => {
+    expect(payloads).toStrictEqual([{ text: "still live" }]);
+  });
+  context.store.set(resetSecondSubscriber$);
+  await expect(secondOperation).rejects.toBe(secondSignal.reason);
+  expect(hasRealtimeChannel(channel)).toBeFalsy();
+  const nextSignal = context.store.set(resetFirstSubscriber$, context.signal);
+  const nextOperation = context.store.set(
+    waitAblyPayloadLoopUntil$,
+    { scope: "run-output", topic, loopCommand$: receivePayload$ },
+    nextSignal,
+  );
+  await waitFor(() => {
+    expect(
+      context.mocks.ably.hasSubscriptionOnChannel(channel, topic),
+    ).toBeTruthy();
+  });
+  context.mocks.ably.triggerOnChannel(channel, topic, { text: "reacquired" });
+  await waitFor(() => {
+    expect(payloads).toStrictEqual([
+      { text: "still live" },
+      { text: "reacquired" },
+    ]);
+  });
+  context.store.set(resetFirstSubscriber$);
+  await expect(nextOperation).rejects.toBe(nextSignal.reason);
+  expect(hasRealtimeChannel(channel)).toBeFalsy();
+});
+
+interface SharedWorkerRealtimeSubscription {
+  readonly listener: (message: SharedDatabaseRealtimeMessage) => void;
+  readonly scope: SharedDatabaseRealtimeScope;
+  readonly topic: string;
+}
+
+class TestSharedWorkerRealtimeBridge implements SharedDatabaseBridge {
+  readonly subscriptions = new Map<string, SharedWorkerRealtimeSubscription>();
+
+  registerTab(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  setTabVisibility(_visibility: DocumentVisibilityState): void {}
+
+  subscribeRealtime(
+    subscriptionId: string,
+    scope: SharedDatabaseRealtimeScope,
+    topic: string,
+    listener: (message: SharedDatabaseRealtimeMessage) => void,
+  ): Promise<void> {
+    this.subscriptions.set(subscriptionId, { listener, scope, topic });
+    return Promise.resolve();
+  }
+
+  unsubscribeRealtime(subscriptionId: string): void {
+    this.subscriptions.delete(subscriptionId);
+  }
+
+  getComputed<TKey extends ComputedKey>(
+    _computedKey: TKey,
+  ): Promise<ComputedValue<TKey>> {
+    return Promise.reject(new Error("Computed data is not configured"));
+  }
+
+  query<TKey extends SharedDatabaseDataKey>(
+    _query: SharedDatabaseQuery<TKey>,
+    _signal: AbortSignal,
+  ): Promise<SharedDatabaseQueryResult<TKey>> {
+    return Promise.reject(
+      new Error("Shared database queries are not configured"),
+    );
+  }
+
+  publish(
+    scope: SharedDatabaseRealtimeScope,
+    topic: string,
+    data: unknown,
+  ): void {
+    for (const subscription of this.subscriptions.values()) {
+      if (subscription.scope === scope && subscription.topic === topic) {
+        subscription.listener({ name: topic, data });
+      }
+    }
+  }
+}
+
+test("Route app subscriptions through the SharedWorker without an App Ably client", async () => {
+  mockSignedInUser();
+  const bridge = new TestSharedWorkerRealtimeBridge();
+  let runs = 0;
+  const loop$ = command((_ctx, _signal: AbortSignal) => {
+    runs += 1;
+    return true;
+  });
+
+  context.store.set(setSharedWorkerRealtimeBridge$, bridge);
+  await context.store.set(setupRealtime$, context.signal);
+  const loopPromise = context.store.set(
+    waitAblyLoopUntil$,
+    { topic: "connectorPermissionUpdated", loopCommand$: loop$ },
+    context.signal,
+  );
+
+  await vi.waitFor(() => {
+    expect(bridge.subscriptions).toHaveLength(1);
+  });
+  expect(context.mocks.ably.getAuthTokenHistory()).toHaveLength(0);
+
+  bridge.publish("user", "connectorPermissionUpdated", { revision: 1 });
+  await expect(loopPromise).resolves.toBeUndefined();
+  expect(runs).toBe(1);
+  expect(bridge.subscriptions).toHaveLength(0);
+  expect(context.mocks.ably.getAuthTokenHistory()).toHaveLength(0);
+});
+
+test("Workspace live updates stay in the active workspace", async () => {
+  mockSignedInUser();
+  const topic = "runQueueChanged";
+  let runs = 0;
+  const loop$ = command((_ctx, _signal: AbortSignal) => {
+    runs += 1;
+    return true;
+  });
+
+  const loopPromise = context.store.set(
+    waitAblyLoopUntil$,
+    {
+      scope: "org",
+      topic,
+      loopCommand$: loop$,
+    },
+    context.signal,
+  );
+  await context.store.set(setupRealtime$, context.signal);
+
+  await waitFor(() => {
+    expect(
+      context.mocks.ably.hasSubscriptionOnChannel("org:test-org-123", topic),
+    ).toBeTruthy();
+  });
+  expect(
+    context.mocks.ably.hasSubscriptionOnChannel("user:test-user-123", topic),
+  ).toBeFalsy();
+  context.mocks.ably.triggerOnChannel("org:test-org-123", topic);
+
+  await expect(loopPromise).resolves.toBeUndefined();
+  expect(runs).toBe(1);
+});
+
+test("Realtime authentication failure does not leave stale live updates", async () => {
+  mockSignedInUser();
+  context.mocks.api(platformRealtimeTokenContract.create, ({ respond }) => {
+    return respond(500, {
+      error: {
+        message: "realtime token unavailable",
+        code: "INTERNAL_SERVER_ERROR",
+      },
+    });
+  });
+
+  const topic = "connectorPermissionUpdated";
+  const loopPromise = context.store.set(
+    waitAblyLoopUntil$,
+    {
+      topic,
+      loopCommand$: finishLoop$,
+    },
+    context.signal,
+  );
+  const setupPromise = context.store.set(setupRealtime$, context.signal);
+
+  await expect(setupPromise).rejects.toThrow(/Ably connection failed/);
+  await expect(loopPromise).rejects.toThrow(/Ably connection failed/);
+  expect(context.mocks.ably.hasSubscription(topic)).toBeFalsy();
+  await expect(
+    context.store.set(
+      waitAblyLoopUntil$,
+      { topic: "composerAgentConnectorsChanged", loopCommand$: finishLoop$ },
+      context.signal,
+    ),
+  ).rejects.toThrow(/Ably connection failed/);
+});
+
+// These transport failures have no page action for controlling one subscriber's
+// lifetime or the registration/attach gap. Exercise the real realtime setup and
+// external Ably boundary here; template loading/recovery has page coverage.
+test("Cancelling a subscriber releases its pending channel attach wait", async () => {
+  const resetSubscriber$ = resetSignal();
+  const subscriberSignal = context.store.set(resetSubscriber$, context.signal);
+  mockSignedInUser();
+  await setupAuthAndRealtime();
+  context.mocks.ably.triggerConnectionState("suspended");
+  const topic = "connectorPermissionUpdated";
+  const operation = context.store.set(
+    waitAblyInvalidationLoopUntil$,
+    { topic, invalidations: [noopInvalidation$] },
+    subscriberSignal,
+  );
+  await waitFor(() => {
+    expect(context.mocks.ably.hasSubscription(topic)).toBeTruthy();
+  });
+  context.store.set(resetSubscriber$);
+  await expect(operation).rejects.toBe(subscriberSignal.reason);
+  expect(context.mocks.ably.hasSubscription(topic)).toBeFalsy();
+});
+
+test("A subscription created while the connection is suspended still starts", async () => {
+  mockSignedInUser();
+  const topic = "connectorPermissionUpdated";
+  let runs = 0;
+  const loop$ = command((_ctx, _signal: AbortSignal) => {
+    runs += 1;
+    return false;
+  });
+
+  await setupAuthAndRealtime();
+  // Ably refuses to attach while suspended, so this subscription cannot go
+  // live yet — but it must survive until the connection can carry it.
+  context.mocks.ably.triggerConnectionState("suspended", {
+    code: 80_003,
+    message: "Unable to connect (network unreachable)",
+  });
+
+  context.store.set(
+    setAblyLoop$,
+    { topic, loopCommand$: loop$ },
+    context.signal,
+  );
+
+  // The listener has to survive the whole offline episode; asserting it before
+  // the reconnect is what keeps this test honest about the recovery.
+  await vi.waitFor(() => {
+    expect(context.mocks.ably.hasSubscription(topic)).toBeTruthy();
+  });
+
+  context.mocks.ably.triggerConnectionState("connected");
+  context.mocks.ably.trigger(topic);
+  await waitFor(() => {
+    expect(runs).toBe(1);
+  });
+});
+
+test("A background subscription reports a terminal channel failure after returning", async () => {
+  mockSignedInUser();
+  const topic = "connectorPermissionUpdated";
+  const failed = context.mocks.deferred<unknown>();
+  await setupAuthAndRealtime();
+  context.mocks.ably.triggerConnectionState("suspended");
+  context.store.set(
+    setAblyLoop$,
+    {
+      topic,
+      loopCommand$: keepAliveLoop$,
+      options: { onError: failed.resolve },
+    },
+    context.signal,
+  );
+  await waitFor(() => {
+    expect(context.mocks.ably.hasSubscription(topic)).toBeTruthy();
+  });
+  context.mocks.ably.triggerFailure("connection failed");
+  await expect(failed.promise).resolves.toMatchObject({
+    message: "connection failed",
+  });
+  expect(context.mocks.ably.hasSubscription(topic)).toBeFalsy();
+});
+
+test.each([undefined])(
+  "Payload initialization with runOnSubscribe=%s retains events and gap recovery",
+  async (runOnSubscribe) => {
+    mockSignedInUser();
+    const topic = "connectorPermissionUpdated";
+    const subscribed = context.mocks.deferred<void>();
+    const handled = context.mocks.deferred<void>();
+    let baselineReads = 0;
+    const initialize$ = command((_ctx, _signal: AbortSignal) => {
+      baselineReads += 1;
+      return false;
+    });
+    const loop$ = command((_ctx, _payload: unknown, _signal: AbortSignal) => {
+      handled.resolve();
+      return false;
+    });
+
+    await setupAuthAndRealtime();
+    context.store.set(
+      setAblyPayloadLoop$,
+      {
+        topic,
+        loopCommand$: loop$,
+        initializeCommand$: initialize$,
+        options: {
+          onSubscribed: subscribed.resolve,
+          ...(runOnSubscribe === undefined ? {} : { runOnSubscribe }),
+        },
+      },
+      context.signal,
+    );
+    await subscribed.promise;
+    context.mocks.ably.trigger(topic, { connectorSlug: "gmail" });
+    await handled.promise;
+    const initialReads = runOnSubscribe === false ? 0 : 1;
+    expect(baselineReads).toBe(initialReads);
+
+    // Opting out of attach-time work must not skip continuity-gap recovery.
+    context.mocks.ably.triggerConnectionState("suspended", {
+      code: 80_003,
+      message: "Unable to connect (network unreachable)",
+    });
+    context.mocks.ably.triggerConnectionState("connected");
+
+    await waitFor(() => {
+      expect(baselineReads).toBe(initialReads + 1);
+    });
+  },
+);
+
+test("Chat thread notifications invalidate their matching resources", async () => {
+  mockSignedInUser();
+  const threadId = "test-thread-invalidations";
+  const invalidated: string[] = [];
+  const recordInvalidation = (name: string) => {
+    return command((): void => {
+      invalidated.push(name);
+    });
+  };
+
+  await context.store.set(setupRealtime$, context.signal);
+  await context.store.set(
+    subscribeChatThreadRealtime$,
+    {
+      threadId,
+      invalidations: {
+        threadDetail: [
+          recordInvalidation("thread-detail"),
+          recordInvalidation("connector-preference"),
+        ],
+        automations: [recordInvalidation("automations")],
+        artifactCatalog: [noopInvalidation$],
+        artifacts: [noopInvalidation$],
+      },
+      handlers: { onWorkflowsChanged$: keepAliveLoop$ },
+    },
+    context.signal,
+  );
+
+  await waitFor(() => {
+    for (const topic of [
+      "chatThreadDetailChanged",
+      "chatThreadAutomationsChanged",
+      "chatThreadWorkflowsChanged",
+    ]) {
+      expect(
+        context.mocks.ably.hasSubscription(`${topic}:${threadId}`),
+      ).toBeTruthy();
+    }
+  });
+
+  const notifications = [
+    {
+      topic: `chatThreadDetailChanged:${threadId}`,
+      expected: ["thread-detail", "connector-preference"],
+    },
+    {
+      topic: `chatThreadAutomationsChanged:${threadId}`,
+      expected: ["thread-detail", "connector-preference", "automations"],
+    },
+  ] as const;
+  for (const notification of notifications) {
+    context.mocks.ably.trigger(notification.topic);
+    await waitFor(() => {
+      expect(invalidated).toStrictEqual(notification.expected);
+    });
+  }
+});
+
+test("An initial refresh failure does not destroy live subscriptions", async () => {
+  mockSignedInUser();
+  const threadId = "test-thread-initialization-failure";
+  await context.store.set(setupRealtime$, context.signal);
+
+  await expect(
+    context.store.set(
+      subscribeChatThreadRealtime$,
+      {
+        threadId,
+        invalidations: {
+          threadDetail: [noopInvalidation$],
+          automations: [noopInvalidation$],
+          artifactCatalog: [noopInvalidation$],
+          artifacts: [noopInvalidation$],
+        },
+        handlers: {
+          onWorkflowsChanged$: keepAliveLoop$,
+          onSubscribed$: failSubscriptionInitialization$,
+        },
+      },
+      context.signal,
+    ),
+  ).rejects.toThrow("subscription initialization failed");
+
+  expect(
+    context.mocks.ably.hasSubscription(
+      `chatThreadAutomationsChanged:${threadId}`,
+    ),
+  ).toBeTruthy();
+});
