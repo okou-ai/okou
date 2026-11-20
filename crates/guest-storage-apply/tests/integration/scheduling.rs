@@ -18,6 +18,7 @@ use crate::process::ChildExecution;
 use crate::support::{TcpTestServer, create_tar_gz, read_http_request_path, write_manifest};
 use httpmock::prelude::*;
 use httpmock::{HttpMockRequest, HttpMockResponse, Mock};
+use std::collections::HashMap;
 use std::io::{self, Write as _};
 use std::path::Path;
 use std::sync::{Arc, Condvar, Mutex, mpsc};
@@ -767,16 +768,9 @@ fn mixed_batch_sizes_the_initial_window_by_remote_archives() {
     const REMOTE_ARCHIVES: usize = 34;
     let scenario = stringify!(mixed_batch_sizes_the_initial_window_by_remote_archives);
     let dir = tempfile::tempdir().unwrap();
-    let archive = create_tar_gz(&[("result.txt", b"remote contents")]).unwrap();
     let staged = dir.path().join("staged.tar.gz");
     let local_archive = create_tar_gz(&[("result.txt", b"local contents")]).unwrap();
     std::fs::write(&staged, local_archive).unwrap();
-    let mut response = format!(
-        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-        archive.len()
-    )
-    .into_bytes();
-    response.extend(archive);
     let (request_tx, request_rx) = mpsc::channel();
     let server = TcpTestServer::start(move |server| {
         for _ in 0..REMOTE_ARCHIVES {
@@ -791,26 +785,30 @@ fn mixed_batch_sizes_the_initial_window_by_remote_archives() {
         Ok(())
     })
     .unwrap();
-    let mut expected_requests = (0..REMOTE_ARCHIVES)
-        .map(|index| format!("/archive-{index}"))
-        .collect::<Vec<_>>();
-    let mut storages = expected_requests
-        .iter()
-        .enumerate()
-        .map(|(index, path)| {
-            (
-                path_to_string(&dir.path().join(format!("mount-{index}"))).unwrap(),
-                format!("{}{path}", server.base_url()),
-            )
-        })
-        .collect::<Vec<_>>();
+    let mut responses = HashMap::with_capacity(REMOTE_ARCHIVES);
+    let mut storages = Vec::with_capacity(REMOTE_ARCHIVES + 1);
+    for index in 0..REMOTE_ARCHIVES {
+        let path = format!("/archive-{index}");
+        let archive = create_tar_gz(&[("result.txt", path.as_bytes())]).unwrap();
+        let mut response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            archive.len()
+        )
+        .into_bytes();
+        response.extend(archive);
+        let mount = dir.path().join(format!("mount-{index}"));
+        storages.push((
+            path_to_string(&mount).unwrap(),
+            format!("{}{path}", server.base_url()),
+        ));
+        responses.insert(path, response);
+    }
     let local_mount = dir.path().join("local");
     storages.push((
         path_to_string(&local_mount).unwrap(),
         format!("file://{}", staged.display()),
     ));
     let mut execution = spawn_guest_storage_apply(scenario, &dir, &storages).unwrap();
-    let mut requests = Vec::with_capacity(REMOTE_ARCHIVES);
     for wave in 0..REMOTE_ARCHIVES / WINDOW_SIZE {
         let held = wait_for_events(&request_rx, WINDOW_SIZE, REQUEST_START_TIMEOUT).unwrap();
         if wave == 0 {
@@ -822,7 +820,9 @@ fn mixed_batch_sizes_the_initial_window_by_remote_archives() {
             );
         }
         for (path, mut stream) in held {
-            requests.push(path);
+            let response = responses
+                .remove(&path)
+                .unwrap_or_else(|| panic!("unexpected or repeated request for {path}"));
             stream.write_all(&response).unwrap();
         }
     }
@@ -835,13 +835,14 @@ fn mixed_batch_sizes_the_initial_window_by_remote_archives() {
             .success()
     );
     server.finish().unwrap();
-    requests.sort_unstable();
-    expected_requests.sort_unstable();
-    assert_eq!(requests, expected_requests);
-    for (mount, _) in storages.iter().take(REMOTE_ARCHIVES) {
+    assert!(responses.is_empty());
+    for index in 0..REMOTE_ARCHIVES {
+        let result = dir.path().join(format!("mount-{index}/result.txt"));
         assert_eq!(
-            std::fs::read(Path::new(mount).join("result.txt")).unwrap(),
-            b"remote contents"
+            std::fs::read_to_string(&result).unwrap(),
+            format!("/archive-{index}"),
+            "archive written to the wrong mount at {}",
+            result.display()
         );
     }
     assert_eq!(
