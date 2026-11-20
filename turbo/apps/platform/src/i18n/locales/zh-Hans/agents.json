@@ -62,8 +62,7 @@
     "tabs": {
       "instructions": "指令",
       "profile": "资料"
-    },
-    "viewProfile": "查看智能体资料"
+    }
   },
   "errors": {
     "unknown": "未知错误"

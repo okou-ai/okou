@@ -415,9 +415,7 @@ test.each([
       expect(toggle).not.toBeChecked();
       expect(toggle).toBeEnabled();
     });
-    if (name === "Morning brief") {
-      expect(reads).toBe(initialReads);
-    }
+    expect(reads - initialReads).toBe(name === "Morning brief" ? 0 : 1);
   },
 );
 

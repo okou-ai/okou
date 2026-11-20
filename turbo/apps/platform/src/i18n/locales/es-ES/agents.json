@@ -62,8 +62,7 @@
     "tabs": {
       "instructions": "Instrucciones",
       "profile": "Perfil"
-    },
-    "viewProfile": "Ver perfil del agente"
+    }
   },
   "errors": {
     "unknown": "Error desconocido"

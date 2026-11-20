@@ -1,15 +1,8 @@
 import { CapabilityHomePage } from "./capability-home-page.tsx";
-import { defaultAgentId$ } from "../../signals/agent.ts";
 import { useGet, useSet, useLastResolved } from "ccstate-react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { user$ } from "../../signals/auth.ts";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@okouai/ui";
 import { cn } from "@okouai/ui/lib/utils";
 import { currentChatAgentId$ } from "../../signals/agent-chat.ts";
 
@@ -19,8 +12,6 @@ import {
   finishChatGreetingEntrance$,
 } from "../../signals/okou-page/chat-page.ts";
 import { agentChatComposerSignals$ } from "../../signals/okou-page/agent-composer-signals.ts";
-import { AgentAvatarImg, useAgentAvatarTexture } from "./sidebar-shared.tsx";
-import { Link } from "../router/link.tsx";
 import { pwaChatListVisible$ } from "../../signals/okou-page/pwa-navigation.ts";
 import { PwaChatListPage } from "./pwa-chat-list-page.tsx";
 import { MyOkouAvatarButton } from "./my-okou-avatar-button.tsx";
@@ -238,127 +229,6 @@ function GreetingTokens({
 }
 
 /**
- * The frame owns the shape, and it is the only shape.
- *
- * This box already existed as the profile link's hover target, but it carried
- * no border, so the only edge anyone could see was the image's own
- * `rounded-full`. The agent artwork is a half figure drawn to the bottom of its
- * canvas, and a circle is at its narrowest exactly where the collar lands, so
- * the bottom of the sweater was pinched into a point by a mask with nothing
- * visible to attribute it to. `rounded-xl` is 14px, so it leaves 28px of
- * straight bottom under a collar that renders 14.7px wide, and the border makes
- * the frame answerable for the crop. `surface-border` is the registered token
- * for a four-sided hairline; `--border` is a stop lighter and would disagree
- * with the chips on the same screen.
- *
- * The size stays on the step the mobile layout already used rather than gaining
- * a breakpoint: against a single line of tagline, 64px is 1.78x the line box and
- * reads as a standee beside the text.
- *
- * With a brand texture behind the artwork, the hairline comes back off. It was
- * added so that something visible would be answerable for the crop; an opaque
- * texture fills the frame edge to edge and is answerable for it by itself,
- * which leaves the border as a second, weaker edge just inside the first.
- */
-const AGENT_AVATAR_FRAME =
-  "h-14 w-14 shrink-0 flex items-center justify-center overflow-hidden rounded-xl";
-const AGENT_AVATAR_BORDER = "border border-surface-border";
-/**
- * Fills the frame's content box. Restating the frame's own `h-14 w-14` here
- * would overflow it by the border on every side and be silently clipped, since
- * the border box is what the frame sizes. Dropping the border therefore gives
- * this 2px more to fill, which is the intent and not a second size step.
- */
-const AGENT_AVATAR_IMAGE = "h-full w-full object-cover object-top";
-
-function ChatAgentAvatar({ agentId }: { agentId: string | null | undefined }) {
-  const defaultId = useLastResolved(defaultAgentId$);
-  return agentId === defaultId ? (
-    // My Okou's greeting is the one place Okou is shown large and alone, so it
-    // is the one place the avatar moves. The shared avatar owns its frame and
-    // texture, and holds still for reduced-motion users.
-    <MyOkouAvatarButton size={56} />
-  ) : (
-    <LegacyChatAgentAvatar agentId={agentId} />
-  );
-}
-
-function LegacyChatAgentAvatar({
-  agentId,
-}: {
-  agentId: string | null | undefined;
-}) {
-  const { t } = useTranslation("agents");
-  // Not every agent can take a texture: uploaded images and the flat default
-  // avatar have no sweater or hair colour to clear. The frame follows that
-  // answer, so those keep the hairline that is still their only edge.
-  const textureUrl = useAgentAvatarTexture(agentId ?? null);
-  const hoverLayer = (
-    <span
-      aria-hidden="true"
-      className="pointer-events-none absolute inset-0 bg-state-hover opacity-0 transition-opacity duration-150 group-hover:opacity-100"
-    />
-  );
-
-  return (
-    <div className="relative shrink-0">
-      {agentId ? (
-        <TooltipProvider delay={200}>
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Link
-                  pathname="/agents/:agentId"
-                  options={{
-                    pathParams: { agentId },
-                  }}
-                  aria-label={t(($) => {
-                    return $.detail.viewProfile;
-                  })}
-                  className={cn(
-                    AGENT_AVATAR_FRAME,
-                    textureUrl
-                      ? // The frame's background is behind the texture and a
-                        // textured frame has no border to recolour, so hover
-                        // needs a layer of its own above the artwork. Same token
-                        // and the same 150ms, so hover does not change how it
-                        // feels.
-                        "group relative"
-                      : cn(
-                          AGENT_AVATAR_BORDER,
-                          "transition-colors duration-150 hover:bg-state-hover",
-                        ),
-                  )}
-                >
-                  <AgentAvatarImg
-                    name={agentId}
-                    alt=""
-                    className={AGENT_AVATAR_IMAGE}
-                    textureUrl={textureUrl ?? undefined}
-                  />
-                  {textureUrl ? hoverLayer : null}
-                </Link>
-              }
-            />
-            <TooltipContent side="bottom">
-              <p className="text-xs">
-                {t(($) => {
-                  return $.detail.viewProfile;
-                })}
-              </p>
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-      ) : (
-        <div className={cn(AGENT_AVATAR_FRAME, AGENT_AVATAR_BORDER)}>
-          <AgentAvatarImg name="" alt="" className={AGENT_AVATAR_IMAGE} />
-        </div>
-      )}
-    </div>
-  );
-}
-
-/**
  * The new-chat page of an Agent, and of a Project. A Project's page is the
  * same page: it keeps the greeting, because the conversation is still with
  * Okou, and the composer's toolbar names the Project the chat starts in.
@@ -408,7 +278,7 @@ export function AgentComposerPage() {
             animateGreeting && "motion-safe:animate-chat-greeting-avatar",
           )}
         >
-          <ChatAgentAvatar agentId={currentChatAgentId} />
+          <MyOkouAvatarButton size={56} />
         </span>
         {taglineHeading}
       </div>

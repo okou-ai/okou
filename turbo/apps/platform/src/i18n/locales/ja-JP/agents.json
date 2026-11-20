@@ -62,8 +62,7 @@
     "tabs": {
       "instructions": "指示",
       "profile": "プロフィール"
-    },
-    "viewProfile": "エージェントのプロフィールを表示する"
+    }
   },
   "errors": {
     "unknown": "不明なエラー"

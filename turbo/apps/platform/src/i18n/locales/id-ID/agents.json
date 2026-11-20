@@ -62,8 +62,7 @@
     "tabs": {
       "instructions": "Instruksi",
       "profile": "Profil"
-    },
-    "viewProfile": "Lihat profil agen"
+    }
   },
   "errors": {
     "unknown": "Kesalahan tidak dikenal"

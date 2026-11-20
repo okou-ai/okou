@@ -62,8 +62,7 @@
     "tabs": {
       "instructions": "지침",
       "profile": "프로필"
-    },
-    "viewProfile": "에이전트 프로필 보기"
+    }
   },
   "errors": {
     "unknown": "알 수 없는 오류"

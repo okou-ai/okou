@@ -636,9 +636,6 @@ test.each([
       ],
     });
 
-    context.mocks.data.onboardingStatus({
-      defaultAgentId: "c0000000-0000-4000-a000-000000000009",
-    });
     await setupPage({
       context,
       path: RUN_PATH,
@@ -697,9 +694,6 @@ test.each(finalOutputDocuments)(
       ],
     });
 
-    context.mocks.data.onboardingStatus({
-      defaultAgentId: "c0000000-0000-4000-a000-000000000009",
-    });
     await setupPage({
       context,
       path: RUN_PATH,

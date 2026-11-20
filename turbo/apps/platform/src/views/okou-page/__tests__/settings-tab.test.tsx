@@ -96,6 +96,7 @@ function prepareAgentProfile(
   context.mocks.data.agents([
     {
       agentId: DEFAULT_AGENT_ID,
+      isDefaultAgent: true,
       ownerId: "test-user-123",
       displayName: "Nova",
       description: null,
