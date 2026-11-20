@@ -1798,3 +1798,40 @@ discord-oauth-compatibility-005	turbo/apps/platform/src/views/okou-page/__tests_
 discord-oauth-compatibility-007	turbo/apps/platform/src/views/okou-page/__tests__/discord-oauth-compatibility.test.tsx	A closes after approval opener reports authorization interruption without retaining proof	199	passed
 discord-oauth-compatibility-008	turbo/apps/platform/src/views/okou-page/__tests__/discord-oauth-compatibility.test.tsx	The first completion result wins over a duplicate result	233	passed
 discord-oauth-compatibility-014	turbo/apps/platform/src/views/okou-page/__tests__/discord-oauth-compatibility.test.tsx	A failed attempt keeps its consent popup until route abort closes it	262	passed
+discord-source-presentation-001	turbo/apps/platform/src/views/okou-page/__tests__/discord-source-presentation.test.tsx	Discord source links preserve guild and bot-DM destinations	20	passed
+discord-source-presentation-003	turbo/apps/platform/src/views/okou-page/__tests__/discord-source-presentation.test.tsx	Activity identifies a Discord run as its source	110	passed
+integration-oauth-callback-001	turbo/apps/platform/src/views/okou-page/__tests__/integration-oauth-callback.test.tsx	slack callback signs in before submitting provider credentials	13	passed
+integration-oauth-callback-002	turbo/apps/platform/src/views/okou-page/__tests__/integration-oauth-callback.test.tsx	teams callback signs in before submitting provider credentials	13	passed
+integration-oauth-callback-004	turbo/apps/platform/src/views/okou-page/__tests__/integration-oauth-callback.test.tsx	slack callback completes with the active session and follows the API continuation	26	passed
+integration-uninstall-lifecycle-001	turbo/apps/platform/src/views/okou-page/__tests__/integration-uninstall-lifecycle.test.tsx	slack uninstall keeps confirmation while pending and recovers after failure	18	passed
+integrations-lark-001	turbo/apps/platform/src/views/okou-page/__tests__/integrations-lark.test.tsx	Lark has an independent integration card and guided setup	30	passed
+integrations-lark-003	turbo/apps/platform/src/views/okou-page/__tests__/integrations-lark.test.tsx	the Lark settings page reads only Lark installations	72	passed
+lark-official-004	turbo/apps/platform/src/views/okou-page/__tests__/lark-official.test.tsx	official Lark connection disconnects the current Official account through its options menu	39	passed
+lark-official-005	turbo/apps/platform/src/views/okou-page/__tests__/lark-official.test.tsx	official Lark connection offers Official Connect independently of custom bot setup	76	passed
+lark-official-006	turbo/apps/platform/src/views/okou-page/__tests__/lark-official.test.tsx	official Lark connection explains how to continue when the browser blocks the authorization tab	93	passed
+teams-connect-page-001	turbo/apps/platform/src/views/okou-page/__tests__/teams-connect-page.test.tsx	Every bare entry reads actual status	62	passed
+teams-connect-page-005	turbo/apps/platform/src/views/okou-page/__tests__/teams-connect-page.test.tsx	A connected boolean cannot certify another Teams user	93	passed
+teams-connect-page-008	turbo/apps/platform/src/views/okou-page/__tests__/teams-connect-page.test.tsx	Bare setup opts in without treating a blocked window as connection or cancellation	114	passed
+teams-connect-page-009	turbo/apps/platform/src/views/okou-page/__tests__/teams-connect-page.test.tsx	Prepared installation stays pending and reconciles on visibility return	131	passed
+teams-connect-page-010	turbo/apps/platform/src/views/okou-page/__tests__/teams-connect-page.test.tsx	Subscription catch-up sees installation completed before attachment	173	passed
+teams-connect-page-011	turbo/apps/platform/src/views/okou-page/__tests__/teams-connect-page.test.tsx	Reinstall remains explicit and returns to Teams	187	passed
+teams-connect-page-012	turbo/apps/platform/src/views/okou-page/__tests__/teams-connect-page.test.tsx	Route departure cancels a pending read and keeps the next page	218	passed
+teams-connect-page-013	turbo/apps/platform/src/views/okou-page/__tests__/teams-connect-page.test.tsx	Login and organization choice retain all Teams context: false	249	passed
+teams-connect-page-017	turbo/apps/platform/src/views/okou-page/__tests__/teams-connect-page.test.tsx	An OAuth identity connects independently of the receiving bot's organization	292	passed
+telegram-callback-v2-001	turbo/apps/platform/src/views/okou-page/__tests__/telegram-callback-v2.test.tsx	The v2 tab waits for one real binding, acknowledges duplicates and leaves Works visible	147	passed
+telegram-callback-v2-004	turbo/apps/platform/src/views/okou-page/__tests__/telegram-callback-v2.test.tsx	Changing the initiating organization stops identity delivery and never binds under the next org	203	passed
+telegram-callback-v2-005	turbo/apps/platform/src/views/okou-page/__tests__/telegram-callback-v2.test.tsx	A suspended expired operation rejects late identity and releases its controls	225	passed
+telegram-callback-v2-006	turbo/apps/platform/src/views/okou-page/__tests__/telegram-callback-v2.test.tsx	Denial reports cancelled and permits retry without a binding request	242	passed
+telegram-callback-v2-007	turbo/apps/platform/src/views/okou-page/__tests__/telegram-callback-v2.test.tsx	An unacknowledged result is repeated on readiness and stops after its correlated result ACK	268	passed
+telegram-connect-routes-001	turbo/apps/platform/src/views/okou-page/__tests__/telegram-connect-routes.test.tsx	/settings/telegram keeps the standalone connection page and complete URL context	28	passed
+telegram-connect-routes-003	turbo/apps/platform/src/views/okou-page/__tests__/telegram-connect-routes.test.tsx	/settings/telegram requires sign-in with the full connection URL as its return destination	59	passed
+telegram-connect-routes-005	turbo/apps/platform/src/views/okou-page/__tests__/telegram-connect-routes.test.tsx	/settings/telegram keeps the signed link while setup opens separately	74	passed
+telegram-oauth-connect-001	turbo/apps/platform/src/views/okou-page/__tests__/telegram-oauth-connect.test.tsx	Works refreshes Telegram connections in realtime and disconnects the displayed account	130	passed
+telegram-oauth-connect-002	turbo/apps/platform/src/views/okou-page/__tests__/telegram-oauth-connect.test.tsx	Works disables Telegram Connect when the official bot is not configured	160	passed
+telegram-oauth-connect-003	turbo/apps/platform/src/views/okou-page/__tests__/telegram-oauth-connect.test.tsx	The official bot connects from its new OAuth tab and ignores other windows and origins	185	passed
+telegram-oauth-connect-004	turbo/apps/platform/src/views/okou-page/__tests__/telegram-oauth-connect.test.tsx	A blocked authorization tab shows an error and leaves Connect available	239	passed
+telegram-oauth-connect-012	turbo/apps/platform/src/views/okou-page/__tests__/telegram-oauth-connect.test.tsx	Closing the OAuth tab cancels the attempt and restores Connect	257	passed
+telegram-oauth-connect-013	turbo/apps/platform/src/views/okou-page/__tests__/telegram-oauth-connect.test.tsx	Leaving Works cancels authorization and ignores a later tab result	277	passed
+telegram-oauth-connect-014	turbo/apps/platform/src/views/okou-page/__tests__/telegram-oauth-connect.test.tsx	Works refreshes after the Telegram subscription attaches past its first status read	307	passed
+whatsapp-001	turbo/apps/platform/src/views/okou-page/__tests__/whatsapp.test.tsx	WhatsApp connects with the same shared number and a prefilled code, updates in realtime and disconnects	24	passed
+whatsapp-003	turbo/apps/platform/src/views/okou-page/__tests__/whatsapp.test.tsx	WhatsApp opens from the keyboard and returns focus after Escape	96	passed
