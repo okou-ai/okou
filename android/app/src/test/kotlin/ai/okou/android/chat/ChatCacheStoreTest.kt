@@ -80,8 +80,7 @@ class ChatCacheStoreTest {
                         null,
                         AgentsItemVisibility.PRIVATE,
                     )
-                ),
-            projectsEnabled = true,
+                )
         )
 
     @Test

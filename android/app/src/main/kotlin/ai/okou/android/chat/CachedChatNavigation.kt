@@ -2,7 +2,7 @@ package ai.okou.android.chat
 
 import ai.okou.android.api.generated.Agents
 
-data class CachedChatNavigation(val agents: Agents? = null, val projectsEnabled: Boolean = false) {
+data class CachedChatNavigation(val agents: Agents? = null) {
     fun validate() {
         agents?.let { records ->
             requireChatWire(

@@ -123,10 +123,6 @@ class ChatListApiFixture : Closeable {
         )
     }
     @Volatile
-    var flags: () -> MockResponse = {
-        jsonResponse("""{"switches":{},"effectiveSwitches":{"projects":true}}""")
-    }
-    @Volatile
     var snapshot: () -> MockResponse = {
         jsonResponse("""{"chatThreads":[],"latestEventId":null,"latestSeqId":null}""")
     }
@@ -216,7 +212,6 @@ class ChatListApiFixture : Closeable {
                     }
                     return when (request.requestUrl?.encodedPath) {
                         "/api/chat/events/catch-up" -> historyCatchUp(request)
-                        "/api/feature-switches" -> flags()
                         "/api/chat-threads/snapshot" -> snapshot()
                         "/api/chat-threads/events" -> events(request)
                         "/api/indicators" -> indicators()
