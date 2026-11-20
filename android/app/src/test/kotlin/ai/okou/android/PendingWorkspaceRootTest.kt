@@ -28,7 +28,6 @@ import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
-import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -98,18 +97,14 @@ class PendingWorkspaceApplication : TestOkouApplication() {
                         )
                     )
 
-                override suspend fun renameThread(
-                    threadId: String,
-                    title: String,
-                    eventId: String,
-                ) =
+                override suspend fun setMuted(threadId: String, muted: Boolean, eventId: String) =
                     recordEdit(
                         chatEventWire(
                             id = eventId,
                             seq = 18,
                             thread = threadId,
-                            kind = "renamed",
-                            title = title,
+                            kind = "sort_touched",
+                            extra = ",\"muted\":$muted",
                         )
                     )
 
@@ -197,13 +192,14 @@ class PendingWorkspaceRootTest {
     @After
     fun close() {
         val application = app
-        compose.runOnIdle {
+        try {
+            compose.activityRule.scenario.close()
+        } finally {
             application.organizationResponse.complete(Unit)
             application.preferencesResponse.complete(Unit)
             application.listResponse.complete(Unit)
+            runBlocking { application.chatCache.close() }
         }
-        compose.activityRule.scenario.close()
-        runBlocking { application.chatCache.close() }
     }
 
     @Test
@@ -254,18 +250,18 @@ class PendingWorkspaceRootTest {
         val list = compose.onNodeWithTag("chat_list")
         list.performScrollToNode(hasText("Try again"))
         list.performScrollToNode(hasText(CACHED_CHAT))
-        compose
-            .onNodeWithTag("chat_$CHAT_PERSONAL")
-            .assertIsEnabled()
-            .performSemanticsAction(SemanticsActions.OnLongClick)
-        compose.onNodeWithText("Rename chat").performClick()
-        val renamed = "Updated startup chat"
-        compose.onNode(hasSetTextAction()).performTextReplacement(renamed)
-        compose.onNodeWithText("Rename").performClick()
-        compose.onNodeWithTag("chat_$CHAT_PERSONAL").assert(hasText(renamed))
+        val row = compose.onNodeWithTag("chat_$CHAT_PERSONAL")
+        row.assertIsEnabled().performSemanticsAction(SemanticsActions.OnLongClick)
+        compose.onNodeWithText("Mute chat").performClick()
+        row.assert(
+            SemanticsMatcher.expectValue(
+                SemanticsProperties.StateDescription,
+                "Muted, Updating chat…",
+            )
+        )
         compose.onNodeWithContentDescription("Settings").assertDoesNotExist()
         compose.onNodeWithContentDescription("Search").performClick()
-        compose.onNodeWithText(renamed).assertExists()
+        compose.onNodeWithText(CACHED_CHAT).assertExists()
         compose.onNodeWithContentDescription("Back").performClick()
         list.performScrollToNode(hasText("Try again"))
         compose.runOnIdle {
@@ -273,8 +269,8 @@ class PendingWorkspaceRootTest {
             app.preferencesResponse = CompletableDeferred()
         }
         compose.onNodeWithText("Try again").performClick()
-        list.performScrollToNode(hasText(renamed))
-        compose.onNodeWithText(renamed).assertExists()
+        list.performScrollToNode(hasText(CACHED_CHAT))
+        row.assertExists()
         compose.onNodeWithText("New chat").assertIsNotEnabled()
         compose.runOnIdle { app.preferencesResponse.complete(Unit) }
         compose.onNodeWithContentDescription("Settings").assertExists()
