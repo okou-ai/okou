@@ -49,6 +49,14 @@ enum class ChatListSource {
 
 data class ChatMarkAllReadResult(val confirmed: Int, val requested: Int)
 
+class ChatReadIntent
+internal constructor(internal val action: ChatRowAction, internal val through: String?) {
+    // Indicators use the server's fixed-width UTC ISO timestamps.
+    internal fun isUnread(serverUnreadAt: String?): Boolean =
+        action == ChatRowAction.MarkUnread ||
+            (serverUnreadAt != null && (through == null || serverUnreadAt > through))
+}
+
 enum class ChatRowAction(
     internal val updatesChat: Boolean = true,
     internal val updatesIndicators: Boolean = true,
@@ -90,8 +98,24 @@ data class ChatListUiState(
     val failedRowAction: ChatRowAction? = null,
     val markingAllRead: Boolean = false,
     val markAllReadResult: ChatMarkAllReadResult? = null,
+    internal val readIntents: Map<String, ChatReadIntent> = emptyMap(),
     internal val threadsByRecency: List<ConfirmedChat> = emptyList(),
 )
+
+internal fun ChatListUiState.isUnread(threadId: String): Boolean {
+    val serverUnreadAt = indicators?.unreadAt?.get(threadId)
+    return readIntents[threadId]?.isUnread(serverUnreadAt) ?: (serverUnreadAt != null)
+}
+
+internal fun ChatListUiState.unreadChatIds(): Set<String> {
+    val serverUnread = indicators?.unreadAt.orEmpty().keys
+    if (readIntents.isEmpty()) return serverUnread
+    return serverUnread.toMutableSet().apply {
+        for (id in readIntents.keys) {
+            if (isUnread(id)) add(id) else remove(id)
+        }
+    }
+}
 
 internal fun ChatListUiState.rowActions(
     thread: ConfirmedChat,
@@ -100,7 +124,7 @@ internal fun ChatListUiState.rowActions(
 ): List<ChatRowAction> = buildList {
     val unreadAt = indicators?.unreadAt
     if (unreadAt != null && indicatorsPhase != ChatReadPhase.Failed && thread.muted != true) {
-        add(if (thread.id in unreadAt) ChatRowAction.MarkRead else ChatRowAction.MarkUnread)
+        add(if (isUnread(thread.id)) ChatRowAction.MarkRead else ChatRowAction.MarkUnread)
     }
     if (listPhase != ChatReadPhase.Failed) {
         add(ChatRowAction.Rename)
@@ -182,6 +206,7 @@ class ChatListModel(
     private var projectsJob: Job? = null
     private var indicatorsJob: Job? = null
     private val indicatorReadReceipts = mutableMapOf<String, ChatTimestamp>()
+    private val readConfirmations = mutableMapOf<String, ReadConfirmation>()
     private val writes = Mutex()
     private val projectSync = ProjectSync(service, dispatcher)
 
@@ -195,6 +220,16 @@ class ChatListModel(
         val edits: List<ChatRowEdit>,
         val done: CompletableDeferred<Unit>,
     )
+
+    private class ReadConfirmation(
+        val intent: ChatReadIntent,
+        val receiptCoversIntent: Boolean,
+        val single: Boolean,
+    ) {
+        var observed = false
+        val confirmed
+            get() = receiptCoversIntent || observed
+    }
 
     private class PreparedListRebase(
         val baseline: ChatCheckpoint,
@@ -361,42 +396,53 @@ class ChatListModel(
         val state = mutable.value
         val targets = state.markAllReadTargets()
         if (targets.isEmpty()) return
+        val intents =
+            targets.mapValues { (_, time) -> ChatReadIntent(ChatRowAction.MarkRead, time) }
 
         val write = CompletableDeferred<Unit>()
-        targets.keys.forEach { readWrites[it] = write }
+        intents.keys.forEach { readWrites[it] = write }
         mutable.value =
             state.copy(
                 pendingRowActions =
                     state.pendingRowActions + targets.keys.associateWith { ChatRowAction.MarkRead },
                 markingAllRead = true,
                 markAllReadResult = null,
+                readIntents = state.readIntents + intents,
             )
         viewModelScope.launch {
             var result: ChatMarkAllReadResult? = null
             try {
-                val confirmed =
+                val confirmations =
                     try {
                         coroutineScope {
-                            targets
-                                .map { (id, unreadAt) -> async { acknowledgeUnread(id, unreadAt) } }
+                            intents
+                                .map { (id, intent) ->
+                                    async { writeReadIntent(id, intent, single = false) }
+                                }
                                 .awaitAll()
-                                .count { it }
                         }
                     } finally {
                         targets.keys.forEach { readWrites.remove(it) }
                         write.complete(Unit)
+                        if (current()) {
+                            val state = mutable.value
+                            mutable.value =
+                                state.copy(
+                                    pendingRowActions = state.pendingRowActions - targets.keys
+                                )
+                        }
                     }
                 readIndicatorsAfterWrite()
                 requireCurrent()
-                result = ChatMarkAllReadResult(confirmed, targets.size)
+                result =
+                    ChatMarkAllReadResult(
+                        confirmations.count { it?.confirmed == true },
+                        targets.size,
+                    )
             } finally {
                 if (current()) {
                     mutable.value =
-                        mutable.value.copy(
-                            pendingRowActions = mutable.value.pendingRowActions - targets.keys,
-                            markingAllRead = false,
-                            markAllReadResult = result,
-                        )
+                        mutable.value.copy(markingAllRead = false, markAllReadResult = result)
                 }
             }
         }
@@ -408,18 +454,44 @@ class ChatListModel(
         }
     }
 
-    private suspend fun acknowledgeUnread(threadId: String, unreadAt: String): Boolean {
-        return try {
-            requireCurrent()
-            val observed = chatTimestamp(unreadAt)
-            markReadWithReceipt(threadId)?.let { it >= observed } == true
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (error: Exception) {
-            requireCurrent()
-            if (error !is ApiFailure.Http || error.status != 404) onFailure(error)
-            false
-        }
+    private suspend fun writeReadIntent(
+        threadId: String,
+        intent: ChatReadIntent,
+        single: Boolean,
+    ): ReadConfirmation? {
+        val received =
+            try {
+                requireCurrent()
+                if (intent.action == ChatRowAction.MarkUnread) {
+                    service.markUnread(threadId).lastReadAt == null
+                } else {
+                    service.markRead(threadId).lastReadAt?.let(::chatTimestamp)?.let {
+                        intent.through == null || it >= chatTimestamp(intent.through)
+                    } == true
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                requireCurrent()
+                if (error !is ApiFailure.Http || error.status != 404) onFailure(error)
+                requireCurrent()
+                if (error is ApiFailure.Http && error.status in 400..499 && error.status != 408) {
+                    val state = mutable.value
+                    // A preceding write can still be awaiting its readback.
+                    val earlier = readConfirmations[threadId]?.intent
+                    mutable.value =
+                        state.copy(
+                            readIntents =
+                                if (earlier == null) state.readIntents - threadId
+                                else state.readIntents + (threadId to earlier),
+                            failedRowAction = if (single) intent.action else state.failedRowAction,
+                        )
+                    return null
+                }
+                false
+            }
+        requireCurrent()
+        return ReadConfirmation(intent, received, single).also { readConfirmations[threadId] = it }
     }
 
     internal fun performRowAction(threadId: String, action: ChatRowAction) =
@@ -445,12 +517,21 @@ class ChatListModel(
         if (action !in state.rowActions(thread, pinGroup, index)) return
         val acknowledgement =
             if (action == ChatRowAction.MarkUnread) history.stopAutomaticRead(threadId) else null
+        val intent =
+            if (!action.updatesChat) {
+                ChatReadIntent(action, state.indicators?.unreadAt?.get(threadId))
+            } else null
         val write =
             if (!action.updatesChat || action == ChatRowAction.Unmute) {
                 CompletableDeferred<Unit>().also { readWrites[threadId] = it }
             } else null
         mutable.value =
-            state.copy(pendingRowActions = state.pendingRowActions + (threadId to action))
+            state.copy(
+                pendingRowActions = state.pendingRowActions + (threadId to action),
+                readIntents =
+                    if (intent == null) state.readIntents
+                    else state.readIntents + (threadId to intent),
+            )
         viewModelScope.launch {
             try {
                 val pinOrders =
@@ -500,12 +581,15 @@ class ChatListModel(
                     rowEdits = rowEdits + edits
                     publishRows()
                 }
+                var confirmation: ReadConfirmation? = null
                 try {
                     acknowledgement?.join()
                     requireCurrent()
                     when (action) {
-                        ChatRowAction.MarkRead -> markReadWithReceipt(threadId)
-                        ChatRowAction.MarkUnread -> service.markUnread(threadId)
+                        ChatRowAction.MarkRead,
+                        ChatRowAction.MarkUnread ->
+                            confirmation =
+                                writeReadIntent(threadId, checkNotNull(intent), single = true)
                         ChatRowAction.Mute,
                         ChatRowAction.Unmute -> {
                             // Acknowledge replies that arrived while this chat was muted.
@@ -563,13 +647,27 @@ class ChatListModel(
                         readWrites.remove(threadId)
                         write.complete(Unit)
                     }
+                    if (intent != null && current()) {
+                        val state = mutable.value
+                        mutable.value =
+                            state.copy(pendingRowActions = state.pendingRowActions - threadId)
+                    }
                 }
                 coroutineScope {
                     if (action.updatesIndicators) launch { readIndicatorsAfterWrite() }
                     if (action.updatesChat) confirmRowEdits(action, edits)
                 }
+                if (
+                    confirmation?.confirmed == false &&
+                        current() &&
+                        readConfirmations[threadId] === confirmation &&
+                        mutable.value.readIntents[threadId] === confirmation.intent &&
+                        mutable.value.indicatorsPhase == ChatReadPhase.Failed
+                ) {
+                    mutable.value = mutable.value.copy(failedRowAction = action)
+                }
             } finally {
-                if (current()) {
+                if (intent == null && current()) {
                     mutable.value =
                         mutable.value.copy(
                             pendingRowActions = mutable.value.pendingRowActions - threadId
@@ -1030,16 +1128,37 @@ class ChatListModel(
         indicatorsJob =
             viewModelScope.launch {
                 try {
+                    // Responses can only settle writes that finished before this request.
+                    val eligible = readConfirmations.toMap()
                     val result = service.indicators()
                     requireCurrent()
                     val reconciled =
                         indicatorReadReceipts.entries.fold(result) { status, (id, watermark) ->
                             status.acknowledgeUnread(id, watermark)
                         }
+                    val state = mutable.value
+                    val settledVisible = mutableSetOf<String>()
+                    var failed = state.failedRowAction
+                    for ((id, confirmation) in eligible) {
+                        if (readConfirmations[id] !== confirmation) continue
+                        val unread = id in result.unreadAt
+                        confirmation.observed =
+                            if (confirmation.intent.action == ChatRowAction.MarkUnread) unread
+                            else !unread && result.threads[id] != IndicatorsThreadsValue.ACTIVE
+                        if (state.readIntents[id] === confirmation.intent) {
+                            settledVisible.add(id)
+                            if (confirmation.single && !confirmation.confirmed) {
+                                failed = confirmation.intent.action
+                            }
+                        }
+                        readConfirmations.remove(id)
+                    }
                     mutable.value =
-                        mutable.value.copy(
+                        state.copy(
                             indicators = reconciled,
                             indicatorsPhase = ChatReadPhase.Ready,
+                            readIntents = state.readIntents - settledVisible,
+                            failedRowAction = failed,
                         )
                 } catch (cancelled: CancellationException) {
                     throw cancelled

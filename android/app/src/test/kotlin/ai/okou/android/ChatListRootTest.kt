@@ -623,6 +623,7 @@ class ChatListRootTest {
         val projectUnread = AtomicBoolean(true)
         val rejectProject = AtomicBoolean(true)
         val marked = CopyOnWriteArrayList<String>()
+        val releaseWrites = CountDownLatch(1)
         val events =
             listOf(
                 chatEventWire(),
@@ -673,6 +674,7 @@ class ChatListRootTest {
             } else {
                 val id = path[2]
                 marked.add(id)
+                releaseWrites.await()
                 when (id) {
                     CHAT_PERSONAL -> {
                         // A newer reply finishes before the client receives the first receipt.
@@ -731,7 +733,14 @@ class ChatListRootTest {
                 compose.onAllNodesWithText(message).fetchSemanticsNodes().isNotEmpty()
             }
         }
-        markAll()
+        try {
+            markAll()
+            compose.waitUntil(10_000) { marked.size == 2 }
+            compose.onNodeWithText("Personal chat").assertDoesNotExist()
+            compose.onNodeWithText("Research").assertDoesNotExist()
+        } finally {
+            releaseWrites.countDown()
+        }
         awaitMessage("Some chats may still be unread.")
         assertEquals(setOf(CHAT_PERSONAL, CHAT_IN_PROJECT), marked.toSet())
         assertEquals(2, marked.size)

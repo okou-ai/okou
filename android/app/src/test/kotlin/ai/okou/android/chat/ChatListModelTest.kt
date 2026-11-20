@@ -9,6 +9,7 @@ import ai.okou.android.CHAT_PROJECT
 import ai.okou.android.TestChatService
 import ai.okou.android.TestOkouApplication
 import ai.okou.android.TestRealtimeService
+import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.generated.Agents
 import ai.okou.android.api.generated.AgentsItem
 import ai.okou.android.api.generated.AgentsItemVisibility
@@ -94,7 +95,7 @@ class ChatListModelTest {
             """{"events":[${events.joinToString(",")}],"hasMore":false}"""
         )
 
-    private inner class Service : TestChatService() {
+    private open inner class Service : TestChatService() {
         var flagsRead: suspend () -> FeatureSwitches = { FeatureSwitches(emptyMap(), emptyMap()) }
         var agentRead: suspend () -> Agents = {
             listOf(
@@ -164,6 +165,179 @@ class ChatListModelTest {
             store.clear()
             runCurrent()
             Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun anEarlierReadbackCannotSettleTheNextIntent() = runTest {
+        val commitRead = CompletableDeferred<ReadState>()
+        val stale = CompletableDeferred<Indicators>()
+        val commitUnread = CompletableDeferred<ReadState>()
+        fun status(time: String) =
+            Indicators(
+                emptyMap(),
+                mapOf(CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD),
+                mapOf(CHAT_PERSONAL to time),
+            )
+        val read = Indicators(emptyMap(), emptyMap(), emptyMap())
+        val source =
+            object : Service() {
+                    override suspend fun markRead(threadId: String) = commitRead.await()
+
+                    override suspend fun markUnread(threadId: String) = commitUnread.await()
+                }
+                .apply { statusRead = { status(CHAT_DATE) } }
+        withCatchUpModel(source) { model ->
+            model.refresh()
+            advanceUntilIdle()
+            model.performRowAction(CHAT_PERSONAL, ChatRowAction.MarkRead)
+            runCurrent()
+            assertFalse(model.uiState.value.isUnread(CHAT_PERSONAL))
+            assertTrue(
+                chatListGroups(model.uiState.value, ChatListFilter.Unread).all {
+                    it.threads.isEmpty()
+                }
+            )
+
+            source.statusRead = { stale.await() }
+            commitRead.complete(ReadState(CHAT_DATE))
+            runCurrent()
+            assertFalse(model.uiState.value.isUnread(CHAT_PERSONAL))
+
+            model.performRowAction(CHAT_PERSONAL, ChatRowAction.MarkUnread)
+            runCurrent()
+            assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
+            stale.complete(read)
+            runCurrent()
+            assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
+            source.statusRead = { read }
+            commitUnread.completeExceptionally(ApiFailure.Http(404, null, null, null))
+            advanceUntilIdle()
+            assertFalse(model.uiState.value.isUnread(CHAT_PERSONAL))
+            assertEquals(ChatRowAction.MarkUnread, model.uiState.value.failedRowAction)
+        }
+    }
+
+    @Test
+    fun rejectedUnreadKeepsAnEarlierReadReceiptWhileIndicatorsArePending() = runTest {
+        val readback = CompletableDeferred<Indicators>()
+        val source =
+            object : Service() {
+                    override suspend fun markRead(threadId: String) = ReadState(CHAT_DATE)
+
+                    override suspend fun markUnread(threadId: String): ReadState =
+                        throw ApiFailure.Http(404, null, null, null)
+                }
+                .apply {
+                    statusRead = {
+                        Indicators(
+                            emptyMap(),
+                            mapOf(CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD),
+                            mapOf(CHAT_PERSONAL to CHAT_DATE),
+                        )
+                    }
+                }
+        withCatchUpModel(source) { model ->
+            model.refresh()
+            advanceUntilIdle()
+            source.statusRead = { readback.await() }
+            model.performRowAction(CHAT_PERSONAL, ChatRowAction.MarkRead)
+            runCurrent()
+            assertFalse(model.uiState.value.isUnread(CHAT_PERSONAL))
+
+            model.performRowAction(CHAT_PERSONAL, ChatRowAction.MarkUnread)
+            assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
+            runCurrent()
+            assertFalse(model.uiState.value.isUnread(CHAT_PERSONAL))
+            assertEquals(ChatRowAction.MarkUnread, model.uiState.value.failedRowAction)
+
+            model.dismissRowActionFailure(ChatRowAction.MarkUnread)
+            readback.completeExceptionally(IOException("status unavailable"))
+            advanceUntilIdle()
+            assertEquals(ChatReadPhase.Failed, model.uiState.value.indicatorsPhase)
+            assertNull(model.uiState.value.failedRowAction)
+            assertFalse(model.uiState.value.isUnread(CHAT_PERSONAL))
+
+            source.statusRead = { Indicators(emptyMap(), emptyMap(), emptyMap()) }
+            model.refreshIndicators()
+            advanceUntilIdle()
+            assertFalse(model.uiState.value.isUnread(CHAT_PERSONAL))
+        }
+    }
+
+    @Test
+    fun bulkReadShowsNewerUnreadActivityWhileWriteAndReadbackArePending() = runTest {
+        val write = CompletableDeferred<ReadState>()
+        val readback = CompletableDeferred<Indicators>()
+        fun unread(time: String) =
+            Indicators(
+                emptyMap(),
+                mapOf(CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD),
+                mapOf(CHAT_PERSONAL to time),
+            )
+        val newer = unread("2026-11-13T00:01:00.000Z")
+        val source =
+            object : Service() {
+                    override suspend fun markRead(threadId: String) = write.await()
+                }
+                .apply { statusRead = { unread(CHAT_DATE) } }
+        withCatchUpModel(source) { model ->
+            model.refresh()
+            advanceUntilIdle()
+            model.markAllRead()
+            runCurrent()
+            assertFalse(model.uiState.value.isUnread(CHAT_PERSONAL))
+
+            source.statusRead = { newer }
+            model.refreshIndicators()
+            runCurrent()
+            assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
+
+            source.statusRead = { readback.await() }
+            write.complete(ReadState(CHAT_DATE))
+            runCurrent()
+            assertTrue(model.uiState.value.markingAllRead)
+            assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
+
+            readback.complete(newer)
+            advanceUntilIdle()
+            assertEquals(ChatMarkAllReadResult(1, 1), model.uiState.value.markAllReadResult)
+            assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
+        }
+    }
+
+    @Test
+    fun ambiguousUnreadWriteKeepsTheProjectionOfflineAndReconcilesAfterReconnect() = runTest {
+        val response = CompletableDeferred<ReadState>()
+        val source =
+            object : Service() {
+                    override suspend fun markUnread(threadId: String) = response.await()
+                }
+                .apply { statusRead = { Indicators(emptyMap(), emptyMap(), emptyMap()) } }
+        withCatchUpModel(source) { model ->
+            model.refresh()
+            advanceUntilIdle()
+            model.performRowAction(CHAT_PERSONAL, ChatRowAction.MarkUnread)
+            runCurrent()
+            assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
+            source.statusRead = { throw IOException("offline") }
+            response.completeExceptionally(IOException("response lost"))
+            advanceUntilIdle()
+            assertEquals(ChatReadPhase.Failed, model.uiState.value.indicatorsPhase)
+            assertEquals(ChatRowAction.MarkUnread, model.uiState.value.failedRowAction)
+            assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
+
+            source.statusRead = {
+                Indicators(
+                    emptyMap(),
+                    mapOf(CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD),
+                    mapOf(CHAT_PERSONAL to CHAT_DATE),
+                )
+            }
+            model.refreshIndicators()
+            advanceUntilIdle()
+            assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
+            assertTrue(model.uiState.value.readIntents.isEmpty())
         }
     }
 
