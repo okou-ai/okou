@@ -2416,7 +2416,7 @@ for expectation in \
   "MOCK_BUILT_IN_SKILL_CATALOG_API_AVAILABLE=0|Cannot read the built-in Skill catalog API rollback floor" \
   "MOCK_BUILT_IN_SKILL_CATALOG_API_COMMIT=invalid|Missing or invalid built-in Skill catalog API rollback floor" \
   "MOCK_BUILT_IN_SKILL_CATALOG_API_ON_MAIN=0|Built-in Skill catalog API rollback floor is not on main" \
-  "MOCK_BUILT_IN_SKILL_CATALOG_API_VALID=0|Rollback target predates the built-in Skill catalog reader"; do
+  "MOCK_BUILT_IN_SKILL_CATALOG_API_VALID=0|Rollback target predates the independent built-in Skill publisher"; do
   : >"${tmp_dir}/boundaries.log"
   setting=${expectation%%|*}
   message=${expectation#*|}
