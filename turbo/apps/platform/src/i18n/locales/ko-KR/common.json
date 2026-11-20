@@ -1522,7 +1522,6 @@
           "action": "출석하기",
           "description": "하루에 한 번 출석하세요. UTC 00:00에 초기화됩니다.",
           "name": "매일 출석하기",
-          "pendingDescription": "체크인이 저장되었습니다. 확인 후 크레딧이 반영됩니다.",
           "unit": "하루당"
         },
         "connector": {
@@ -1539,12 +1538,6 @@
         },
         "inReview": "검토 중",
         "intro": {
-          "checkin": {
-            "amount": "+{{amount}} 크레딧",
-            "confirm": "일하러 가기",
-            "description": "크레딧은 일 자체에 쓰입니다. 실행 한 번, 결과물 하나, 일정에 따라 도는 워크플로 모두에요.",
-            "title": "오늘 몫은 끝났습니다"
-          },
           "connector": {
             "confirm": "모든 커넥터 보기",
             "connected": "연결됨",

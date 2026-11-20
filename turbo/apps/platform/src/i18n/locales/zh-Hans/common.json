@@ -1522,7 +1522,6 @@
           "action": "签到",
           "description": "每天签到一次，UTC 00:00 重置。",
           "name": "每日签到",
-          "pendingDescription": "签到已保存，确认后积分会自动更新。",
           "unit": "每天"
         },
         "connector": {
@@ -1539,12 +1538,6 @@
         },
         "inReview": "审核中",
         "intro": {
-          "checkin": {
-            "amount": "+{{amount}} 积分",
-            "confirm": "回去干活",
-            "description": "积分用来支付真正的工作：每一次运行、每一份成果、每一个按时间运行的工作流。",
-            "title": "今天这一步完成了"
-          },
           "connector": {
             "confirm": "浏览全部连接器",
             "connected": "已连接",

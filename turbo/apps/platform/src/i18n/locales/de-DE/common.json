@@ -1526,7 +1526,6 @@
           "action": "Einchecken",
           "description": "Einmal täglich einchecken. Neuer Tag um 00:00 UTC.",
           "name": "Täglich einchecken",
-          "pendingDescription": "Dein Check-in wurde gespeichert. Die Credits werden nach der Bestätigung aktualisiert.",
           "unit": "pro Tag"
         },
         "connector": {
@@ -1543,12 +1542,6 @@
         },
         "inReview": "In Prüfung",
         "intro": {
-          "checkin": {
-            "amount": "+{{amount}} Credits",
-            "confirm": "Zurück an die Arbeit",
-            "description": "Credits bezahlen die Arbeit selbst: jeden Durchlauf, jedes Artefakt, jeden Workflow, der nach Zeitplan läuft.",
-            "title": "Für heute erledigt"
-          },
           "connector": {
             "confirm": "Alle Konnektoren ansehen",
             "connected": "Verbunden",

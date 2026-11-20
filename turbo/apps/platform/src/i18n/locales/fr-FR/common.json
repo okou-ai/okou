@@ -1551,7 +1551,6 @@
           "action": "Valider ma présence",
           "description": "Validez votre présence une fois par jour. Réinitialisation à 00:00 UTC.",
           "name": "Se connecter chaque jour",
-          "pendingDescription": "Votre pointage quotidien a été enregistré. Les crédits seront mis à jour après confirmation.",
           "unit": "par jour"
         },
         "connector": {
@@ -1568,12 +1567,6 @@
         },
         "inReview": "En cours d'examen",
         "intro": {
-          "checkin": {
-            "amount": "+{{amount}} crédits",
-            "confirm": "Retour au travail",
-            "description": "Les crédits paient le travail lui-même : chaque exécution, chaque artefact, chaque workflow qui tourne à l'heure dite.",
-            "title": "C'est fait pour aujourd'hui"
-          },
           "connector": {
             "confirm": "Voir tous les connecteurs",
             "connected": "Connecté",

@@ -21,14 +21,11 @@ import { ROUTES } from "../../signals/route-paths.ts";
 import { Link } from "../router/link.tsx";
 import { shouldHandleLinkClick } from "../router/link-click.ts";
 import {
-  checkinClaimedOpen$,
   getStartedQuests$,
   questIntroKey$,
   questIntroLastKey$,
-  setCheckinClaimedOpen$,
   setQuestIntroKey$,
 } from "../../signals/okou-page/get-started.ts";
-import { formatLocalizedNumber } from "../../i18n/format.ts";
 import type { PlatformConnectorCatalogConnectItem } from "../../signals/connector-domain.ts";
 import {
   selectedBuiltinConnectorCatalogItem$,
@@ -53,7 +50,7 @@ import {
  * A quest earns a dialog only when it carries something its row cannot: what a
  * connector may read and how to take it back, that Slack turns a personal
  * account into an organization one, and which workflows an invited teammate
- * inherits. `checkin` confirms afterwards, so it is not introduced here.
+ * inherits. `checkin` reports its result in the menu, so it is not introduced here.
  */
 const INTRODUCED_QUESTS = Object.freeze([
   "connector",
@@ -540,84 +537,5 @@ function SelectedQuestConnectModal({
       }}
       origin={{ kind: "selected-connector", captureOnboardingSource: false }}
     />
-  );
-}
-
-/** Confirms the daily check-in that already succeeded. */
-export function GetStartedCheckinDialog({
-  reward,
-  streak,
-}: {
-  reward: number;
-  /** Consecutive days, named here because it is the reason to come back. */
-  streak: number;
-}) {
-  const { t } = useTranslation();
-  const open = useGet(checkinClaimedOpen$);
-  const setOpen = useSet(setCheckinClaimedOpen$);
-
-  return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent smMaxWidth={680}>
-        {/* The confirmation joins the same two panels as every other quest
-            screen. The amount takes display size so the reward is clear. */}
-        <div className="-m-6 flex min-h-72 items-stretch">
-          {/* On a narrow viewport the copy needs the full width. */}
-          <div className="hidden sm:contents">
-            <QuestFigure art="checkinWeek" />
-          </div>
-          <div className="flex min-w-0 flex-1 flex-col gap-3 p-6">
-            <DialogHeader>
-              <DialogTitle className="pr-7">
-                {t(($) => {
-                  return $.chat.agentPage.getStarted.intro.checkin.title;
-                })}
-              </DialogTitle>
-              {/* The streak names the habit that brings someone back tomorrow.
-                  The title remains the dialog's accessible name even if the
-                  refreshed status reports a zero streak. */}
-              {streak > 0 && (
-                <p className="text-sm text-muted-foreground">
-                  {t(
-                    ($) => {
-                      return $.chat.agentPage.getStarted.streak;
-                    },
-                    { amount: formatLocalizedNumber(streak) },
-                  )}
-                </p>
-              )}
-            </DialogHeader>
-            <p className="text-2xl font-semibold tabular-nums tracking-tight text-brand-text">
-              {t(
-                ($) => {
-                  return $.chat.agentPage.getStarted.intro.checkin.amount;
-                },
-                { amount: formatLocalizedNumber(reward) },
-              )}
-            </p>
-            {/* The component rather than a hand-written paragraph, so this
-                screen's body prose takes the same leading as the other six
-                instead of its own. */}
-            <DialogDescription>
-              {t(($) => {
-                return $.chat.agentPage.getStarted.intro.checkin.description;
-              })}
-            </DialogDescription>
-            <DialogFooter className="mt-auto">
-              <Button
-                type="button"
-                onClick={() => {
-                  setOpen(false);
-                }}
-              >
-                {t(($) => {
-                  return $.chat.agentPage.getStarted.intro.checkin.confirm;
-                })}
-              </Button>
-            </DialogFooter>
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
   );
 }
