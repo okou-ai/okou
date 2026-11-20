@@ -73,7 +73,7 @@ use tokio::task::JoinHandle;
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::{TaskTracker, task_tracker::TaskTrackerToken};
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 use crate::archive_connection_attempt::{
     ArchiveConnectionAttempt, ConnectionAttemptLayer, ConnectionAttemptObserver,
@@ -211,6 +211,7 @@ fn guest_archive_path(name: &str, version: &str) -> String {
 #[derive(Clone)]
 struct CacheTarget {
     handle: ArchiveHandle,
+    optional_mount: Option<String>,
     name: String,
     version: String,
     archive_url: String,
@@ -237,6 +238,22 @@ impl CacheTargetGroup {
             self.representative.name.clone(),
             self.representative.version.clone(),
         )
+    }
+
+    fn optional_only(&self) -> bool {
+        self.targets().all(|target| target.optional_mount.is_some())
+    }
+
+    fn log_optional_preparation_failure(&self, step: &'static str, error: &io::Error) {
+        for target in self.targets() {
+            error!(
+                mount_path = target.optional_mount.as_deref(),
+                version_id = %target.version,
+                step,
+                %error,
+                "optional package cache preparation failed"
+            );
+        }
     }
 }
 
@@ -1117,27 +1134,57 @@ async fn prepare_decoded_storage(
     if plan.decoded_prepared() {
         return Ok(());
     }
+    if groups.is_empty() {
+        plan.finish_decoded_preparation();
+        return Ok(());
+    }
+    // Keep the complete mount list in Guest when optional cleanup can remove
+    // a root. A split would hide physical aliases owned by another batch.
+    if plan.has_optional_mounts() && !optional_manifest_fits_decoded_input(plan)? {
+        plan.finish_decoded_preparation();
+        return Ok(());
+    }
     for batch in groups.chunks_mut(decoded::LOOKUP_BATCH_SIZE) {
         let keys = batch
             .iter()
             .map(|group| {
                 let target = &group.representative;
-                has_decoded_download_target(group, plan)
-                    .then_some((target.name.as_str(), target.version.as_str()))
+                has_decoded_download_target(group, plan).then(|| {
+                    (
+                        target.name.as_str(),
+                        target.version.as_str(),
+                        group.optional_only(),
+                    )
+                })
             })
             .collect::<Vec<_>>();
         let started = Instant::now();
-        let result = cache.get_ready_batch(&keys).await;
+        let result = cache.lookup_ready_batch(&keys).await;
         telemetry.record(
             "storage_cache_decode_lookup",
             started.elapsed(),
-            result.is_ok(),
+            result.as_ref().is_ok_and(|lookups| {
+                lookups
+                    .iter()
+                    .all(|lookup| !matches!(lookup, decoded::DecodedLookup::Unavailable(_)))
+            }),
             None,
         );
         let ready = result.map_err(|error| {
             RunnerError::Internal(format!("lookup extracted storage cache: {error}"))
         })?;
-        for (group, files) in batch.iter_mut().zip(ready) {
+        for (group, lookup) in batch.iter_mut().zip(ready) {
+            let files = match lookup {
+                decoded::DecodedLookup::Miss => None,
+                decoded::DecodedLookup::Ready(files) => Some(files),
+                decoded::DecodedLookup::Unavailable(error) => {
+                    group.log_optional_preparation_failure("decoded lookup", &error);
+                    for target in group.targets() {
+                        plan.mark_optional_unavailable(target.handle)?;
+                    }
+                    continue;
+                }
+            };
             group.decoded_ready_observed = files.is_some();
             let decoded_reused = reuse_decoded(plan, group, files)?;
             if group.targets().any(|target| {
@@ -1157,6 +1204,30 @@ async fn prepare_decoded_storage(
     }
     plan.finish_decoded_preparation();
     Ok(())
+}
+
+fn optional_manifest_fits_decoded_input(plan: &StoragePlan) -> RunnerResult<bool> {
+    let manifest = plan.clone().into_guest_manifest();
+    let staged_url_len = "file://".len() + guest_archive_path("", "").len();
+    // Cache hits may replace a short source URL with the fixed staging URL.
+    // Escape expansion can only make the original serialized length larger.
+    let staged_growth: usize = manifest
+        .storages
+        .iter()
+        .filter_map(|entry| entry.archive_url.as_deref())
+        .chain(
+            manifest
+                .artifacts
+                .iter()
+                .filter_map(|entry| entry.archive_url.as_deref()),
+        )
+        .map(|url| staged_url_len.saturating_sub(url.len()))
+        .sum();
+    let json = serde_json::to_vec(&manifest).map_err(|error| {
+        RunnerError::Internal(format!("optional storage manifest sizing: {error}"))
+    })?;
+    Ok(json.len().saturating_add(staged_growth)
+        <= guest_contracts::storage_files::MAX_MANIFEST_BYTES)
 }
 
 fn reuse_decoded(
@@ -1219,6 +1290,7 @@ type ProcessedGroupTaskResult = ProcessedGroupTask;
 enum TargetOutcome {
     Hit,
     Decoded,
+    Unavailable,
     MissPassthrough { reason: &'static str },
     LockBusyPassthrough,
 }
@@ -1689,6 +1761,7 @@ async fn populate_cache_inner(
     let target_groups = target_groups
         .into_iter()
         .filter(|group| !owned_keys.contains(&group.key()))
+        .filter(|group| !plan.archive_unavailable(group.representative.handle))
         .filter_map(|group| {
             if group_has_decoded(&group, plan) {
                 decoded_outcomes.push((group, TargetOutcome::Decoded));
@@ -1774,7 +1847,7 @@ async fn populate_cache_inner(
         expand_queue,
     );
     for (group, outcome) in outcomes {
-        apply_group_outcome(plan, &group, &outcome, telemetry);
+        apply_group_outcome(plan, &group, &outcome, telemetry)?;
     }
     Ok(deferred)
 }
@@ -1896,15 +1969,7 @@ fn reconcile_archive_size<'a>(targets: impl Iterator<Item = &'a CacheTarget>) ->
 fn collect_targets(candidates: Vec<CacheArchiveCandidate>) -> Vec<CacheTarget> {
     candidates
         .into_iter()
-        .filter_map(|candidate| {
-            cache_target_from_entry(
-                candidate.handle,
-                &candidate.archive_url,
-                &candidate.name,
-                &candidate.version,
-                candidate.archive_size,
-            )
-        })
+        .filter_map(cache_target_from_entry)
         .collect()
 }
 
@@ -1951,7 +2016,9 @@ pub async fn prepare_fresh_archive_delivery(
     }
     let candidates = groups
         .iter()
-        .map(|group| !group_has_decoded(group, plan))
+        // Guest owns optional-only cold downloads. The shared Runner readiness
+        // gate publishes complete sources and aborts as a whole after a failure.
+        .map(|group| !group.optional_only() && !group_has_decoded(group, plan))
         .collect::<Vec<_>>();
     let owner_cancel = cancel.child_token();
     let phase_records = FreshArchivePhaseRecords::default();
@@ -2513,13 +2580,15 @@ async fn fetch_fresh_archive_once(
     body
 }
 
-fn cache_target_from_entry(
-    handle: ArchiveHandle,
-    archive_url: &str,
-    name: &str,
-    version: &str,
-    archive_size: Option<u64>,
-) -> Option<CacheTarget> {
+fn cache_target_from_entry(candidate: CacheArchiveCandidate) -> Option<CacheTarget> {
+    let CacheArchiveCandidate {
+        handle,
+        optional_mount,
+        name,
+        version,
+        archive_url,
+        archive_size,
+    } = candidate;
     // Empty identity components collapse distinct entries into one cache slot.
     // Guest treats the literal "null" source as absent; neither it nor an
     // empty source may be replaced by cached content.
@@ -2528,9 +2597,10 @@ fn cache_target_from_entry(
     }
     Some(CacheTarget {
         handle,
-        name: name.to_string(),
-        version: version.to_string(),
-        archive_url: archive_url.to_string(),
+        optional_mount,
+        name,
+        version,
+        archive_url,
         archive_size: archive_size.filter(|size| *size > 0),
     })
 }
@@ -2553,15 +2623,26 @@ async fn process_group_hit_or_passthrough(
     metrics: &mut CacheProcessMetrics,
 ) -> RunnerResult<ProcessedGroup> {
     let target = &group.representative;
-    let ProcessedTarget {
-        outcome,
-        stage_write,
-    } = process_one_hit_or_passthrough(target, home, metrics).await?;
-
-    Ok(ProcessedGroup {
-        outcome,
-        stage_write,
-    })
+    let optional_only = group.optional_only();
+    match process_one_hit_or_passthrough(target, home, metrics, optional_only).await {
+        Ok(ProcessedTarget {
+            outcome,
+            stage_write,
+        }) => Ok(ProcessedGroup {
+            outcome,
+            stage_write,
+        }),
+        Err(RunnerError::Io(error))
+            if optional_only && error.kind() != io::ErrorKind::Interrupted =>
+        {
+            group.log_optional_preparation_failure("archive lookup", &error);
+            Ok(ProcessedGroup {
+                outcome: TargetOutcome::Unavailable,
+                stage_write: None,
+            })
+        }
+        Err(error) => Err(error),
+    }
 }
 
 async fn process_one_background_fill(
@@ -2724,6 +2805,7 @@ async fn process_one_hit_or_passthrough(
     target: &CacheTarget,
     home: &HomePaths,
     metrics: &mut CacheProcessMetrics,
+    optional: bool,
 ) -> RunnerResult<ProcessedTarget> {
     let lock_path = home.storage_lock(&target.name, &target.version);
     let cache_dir = home.storage_cache_dir(&target.name, &target.version);
@@ -2792,6 +2874,11 @@ async fn process_one_hit_or_passthrough(
                 stage_write: None,
             })
         }
+        CachedArchive::Empty if optional => Err(cache_io_error(
+            "read",
+            &archive_path,
+            io::Error::new(io::ErrorKind::InvalidData, "empty archive"),
+        )),
         CachedArchive::Empty => Ok(ProcessedTarget {
             outcome: TargetOutcome::MissPassthrough { reason: "empty" },
             stage_write: None,
@@ -2840,10 +2927,7 @@ async fn cached_archive_exists(archive_path: &Path) -> RunnerResult<bool> {
     match fs::metadata(archive_path).await {
         Ok(_) => Ok(true),
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(false),
-        Err(e) => Err(RunnerError::Internal(format!(
-            "stat cached {}: {e}",
-            archive_path.display()
-        ))),
+        Err(e) => Err(cache_io_error("stat", archive_path, e)),
     }
 }
 
@@ -2872,10 +2956,7 @@ async fn read_cache_entry(
             observed_size: metadata.len(),
         }),
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(CachedArchive::Missing),
-        Err(e) => Err(RunnerError::Internal(format!(
-            "stat cached {}: {e}",
-            archive_path.display()
-        ))),
+        Err(e) => Err(cache_io_error("stat", archive_path, e)),
     }
 }
 
@@ -3159,7 +3240,7 @@ async fn read_cached_archive(
 ) -> RunnerResult<DownloadBody> {
     let mut file = fs::File::open(path)
         .await
-        .map_err(|e| RunnerError::Internal(format!("open cached {}: {e}", path.display())))?;
+        .map_err(|e| cache_io_error("open", path, e))?;
     let capacity = initial_body_capacity(None, expected_size, max_size);
     let mut body = BoundedArchiveBody::new(capacity, max_size);
     // Keep the scratch space out of every spawned archive task's future. Small
@@ -3171,7 +3252,7 @@ async fn read_cached_archive(
         let n = file
             .read(&mut buf)
             .await
-            .map_err(|e| RunnerError::Internal(format!("read cached {}: {e}", path.display())))?;
+            .map_err(|e| cache_io_error("read", path, e))?;
         if n == 0 {
             break;
         }
@@ -3192,6 +3273,14 @@ async fn read_cached_archive(
     }
 
     Ok(DownloadBody::Complete(bytes))
+}
+
+fn cache_io_error(operation: &str, path: &Path, error: io::Error) -> RunnerError {
+    io::Error::new(
+        error.kind(),
+        format!("{operation} cached {}: {error}", path.display()),
+    )
+    .into()
 }
 
 fn initial_body_capacity(
@@ -3375,14 +3464,17 @@ fn apply_group_outcome(
     group: &CacheTargetGroup,
     outcome: &TargetOutcome,
     telemetry: &mut JobTelemetry,
-) {
+) -> RunnerResult<()> {
     for target in group.targets() {
-        if plan.has_decoded(target.handle) {
+        if matches!(outcome, TargetOutcome::Unavailable) {
+            plan.mark_optional_unavailable(target.handle)?;
+        } else if plan.has_decoded(target.handle) {
             apply_outcome(plan, target, &TargetOutcome::Decoded, telemetry);
         } else {
             apply_outcome(plan, target, outcome, telemetry);
         }
     }
+    Ok(())
 }
 
 fn apply_outcome(
@@ -3443,6 +3535,7 @@ fn apply_outcome(
                 );
             }
         }
+        TargetOutcome::Unavailable => {}
     }
 }
 
@@ -3498,6 +3591,7 @@ fn add_passthrough_summary(
         TargetOutcome::Hit | TargetOutcome::Decoded => summary.hit_targets += target_count,
         TargetOutcome::MissPassthrough { .. } => summary.miss_targets += target_count,
         TargetOutcome::LockBusyPassthrough => summary.lock_busy_targets += target_count,
+        TargetOutcome::Unavailable => {}
     }
 }
 

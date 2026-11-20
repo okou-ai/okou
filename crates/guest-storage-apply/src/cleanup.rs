@@ -317,6 +317,92 @@ fn remove_directory_tree(path: &Path) -> io::Result<RemoveOutcome> {
     }
 }
 
+struct OptionalRoot {
+    // Own the descriptor used by the anchored path until access completes.
+    _parent: CleanupDirectory,
+    anchored: PathBuf,
+    is_dir: bool,
+}
+
+fn optional_root(path: &Path) -> io::Result<Option<OptionalRoot>> {
+    let (parent, name) = match CleanupDirectory::open_parent(path) {
+        Ok(parent) => parent,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error),
+    };
+    let anchored = parent.proc_path().join(name);
+    match fs::symlink_metadata(&anchored) {
+        Ok(metadata) if metadata.is_dir() || metadata.is_file() => Ok(Some(OptionalRoot {
+            _parent: parent,
+            anchored,
+            is_dir: metadata.is_dir(),
+        })),
+        Ok(_) => Err(io::Error::other(
+            "optional package target is not a directory or regular file",
+        )),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error),
+    }
+}
+
+pub(crate) fn optional_mount_is_dir(path: &Path) -> io::Result<bool> {
+    Ok(optional_root(path)?.is_some_and(|root| root.is_dir))
+}
+
+/// Clear the exact package mount, including a file that prevented mkdir.
+/// A framework parent can keep its other contents. A child mount or alias
+/// would lose its own inputs, so application must fail in that case.
+pub(crate) fn remove_optional_mount<'a>(
+    path: &Path,
+    others: impl Iterator<Item = &'a str>,
+    quarantine: Option<&crate::quarantine::Quarantine>,
+) -> io::Result<()> {
+    let Some(root) = optional_root(path)? else {
+        return Ok(());
+    };
+    let logical = normalize_path(path);
+    for other in others.map(Path::new) {
+        if normalize_path(other).starts_with(&logical) {
+            return Err(io::Error::other(
+                "optional package cleanup overlaps another mount",
+            ));
+        }
+        match other.canonicalize() {
+            Ok(other) if other.starts_with(&logical) => {
+                return Err(io::Error::other(
+                    "optional package cleanup aliases another mount",
+                ));
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error),
+        }
+    }
+    let detector = CleanupMountPointDetector::new(cleanup_mountinfo);
+    if detector
+        .mount_points()?
+        .paths
+        .iter()
+        .any(|mount| mount.starts_with(&logical))
+    {
+        return Err(io::Error::other(
+            "optional package cleanup crosses a filesystem mount",
+        ));
+    }
+    if root.is_dir {
+        if let Some(quarantine) = quarantine
+            && quarantine.try_move(path, |logical, device| {
+                detector.can_quarantine(logical, device)
+            })?
+        {
+            return Ok(());
+        }
+        fs::remove_dir_all(&root.anchored)
+    } else {
+        fs::remove_file(&root.anchored)
+    }
+}
+
 /// Index path relationships once per cleanup pass, so lookups depend on path
 /// depth rather than the number of unrelated preserved mounts.
 struct PreservedPaths {

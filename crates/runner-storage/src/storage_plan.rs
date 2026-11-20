@@ -71,6 +71,7 @@ pub struct StoragePlan {
 
 #[derive(Debug, Clone)]
 struct StoragePlanEntry {
+    optional: bool,
     template_guidance: Option<wire::TemplateGuidanceReference>,
     mount_path: String,
     vas_storage_name: String,
@@ -90,8 +91,10 @@ impl StoragePlanEntry {
         let (archive_url, cached) = match self.action {
             StorageAction::Download { source } => (Some(source.wire_url()), false),
             StorageAction::ReuseExisting => (None, true),
+            StorageAction::Unavailable => (None, false),
         };
         wire::StorageEntry {
+            optional: self.optional,
             template_guidance: self.template_guidance,
             mount_path: self.mount_path,
             archive_url,
@@ -106,6 +109,7 @@ impl StoragePlanEntry {
 enum StorageAction {
     Download { source: ArchiveSource },
     ReuseExisting,
+    Unavailable,
 }
 
 #[derive(Debug, Clone)]
@@ -230,6 +234,7 @@ enum ArchiveKind {
 
 pub(crate) struct CacheArchiveCandidate {
     pub(crate) handle: ArchiveHandle,
+    pub(crate) optional_mount: Option<String>,
     pub(crate) name: String,
     pub(crate) version: String,
     pub(crate) archive_url: String,
@@ -280,6 +285,7 @@ pub fn build_storage_plan(
             };
 
             StoragePlanEntry {
+                optional: storage.optional,
                 template_guidance: storage.template_guidance.clone(),
                 mount_path: storage.mount_path.clone(),
                 vas_storage_name: storage.vas_storage_name.clone(),
@@ -647,20 +653,23 @@ impl StoragePlan {
     /// Return whether applying this plan requires guest execution.
     ///
     /// The result is `false` only when there is no cleanup, every storage is
-    /// `ReuseExisting`, and there are no artifacts. Artifact actions require the
-    /// guest even when their fingerprints match.
+    /// required and reused, and there are no artifacts. Optional mounts need
+    /// Guest confirmation even when their fingerprints match.
     pub fn requires_guest_work(&self) -> bool {
         !self.cleanup_paths.is_empty()
             || !self.instruction_cleanups.is_empty()
-            || self
-                .storages
-                .iter()
-                .any(|entry| !matches!(entry.action, StorageAction::ReuseExisting))
+            || self.storages.iter().any(|entry| {
+                entry.optional || !matches!(entry.action, StorageAction::ReuseExisting)
+            })
             || !self.artifacts.is_empty()
     }
 
     pub fn reused_entries(&self) -> usize {
         self.reused_entries
+    }
+
+    pub(crate) fn has_optional_mounts(&self) -> bool {
+        self.storages.iter().any(|entry| entry.optional)
     }
 
     pub fn entry_count(&self) -> usize {
@@ -688,13 +697,14 @@ impl StoragePlan {
             .filter_map(|(index, entry)| {
                 let source = match &entry.action {
                     StorageAction::Download { source } => source,
-                    StorageAction::ReuseExisting => return None,
+                    StorageAction::ReuseExisting | StorageAction::Unavailable => return None,
                 };
                 Some(CacheArchiveCandidate {
                     handle: ArchiveHandle {
                         kind: ArchiveKind::Storage,
                         index,
                     },
+                    optional_mount: entry.optional.then(|| entry.mount_path.clone()),
                     name: entry.vas_storage_name.clone(),
                     version: entry.vas_version_id.clone(),
                     archive_url: source.remote_url()?.to_string(),
@@ -714,6 +724,7 @@ impl StoragePlan {
                         kind: ArchiveKind::Artifact,
                         index,
                     },
+                    optional_mount: None,
                     name: entry.vas_storage_name.clone(),
                     version: entry.vas_version_id.clone(),
                     archive_url: source.remote_url()?.to_string(),
@@ -721,6 +732,26 @@ impl StoragePlan {
                 })
             });
         storage_candidates.chain(artifact_candidates).collect()
+    }
+
+    pub(crate) fn mark_optional_unavailable(&mut self, handle: ArchiveHandle) -> RunnerResult<()> {
+        let entry = (!handle.is_artifact())
+            .then(|| self.storages.get_mut(handle.index))
+            .flatten()
+            .filter(|entry| {
+                entry.optional && matches!(entry.action, StorageAction::Download { .. })
+            })
+            .ok_or_else(|| RunnerError::Internal("invalid unavailable optional archive".into()))?;
+        entry.action = StorageAction::Unavailable;
+        Ok(())
+    }
+
+    pub(crate) fn archive_unavailable(&self, handle: ArchiveHandle) -> bool {
+        !handle.is_artifact()
+            && self
+                .storages
+                .get(handle.index)
+                .is_some_and(|entry| matches!(entry.action, StorageAction::Unavailable))
     }
 
     /// Replace one eligible remote archive source with a guest-staged source.
@@ -743,7 +774,7 @@ impl StoragePlan {
                 };
                 let source = match &mut entry.action {
                     StorageAction::Download { source } => source,
-                    StorageAction::ReuseExisting => return false,
+                    StorageAction::ReuseExisting | StorageAction::Unavailable => return false,
                 };
                 (&entry.vas_storage_name, &entry.vas_version_id, source)
             }
@@ -805,7 +836,7 @@ impl StoragePlan {
                 let entry = self.storages.get(handle.index)?;
                 match &entry.action {
                     StorageAction::Download { source } => source,
-                    StorageAction::ReuseExisting => return None,
+                    StorageAction::ReuseExisting | StorageAction::Unavailable => return None,
                 }
             }
             ArchiveKind::Artifact => {

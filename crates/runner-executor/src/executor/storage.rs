@@ -1,12 +1,12 @@
 //! Guest storage-manifest transport.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::{self, Write};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use guest_contracts::storage_files::{self, StorageFile};
-use guest_contracts::storage_manifest::Manifest;
+use guest_contracts::storage_manifest::{Manifest, StorageApplyReceipt};
 use sandbox::{
     EXEC_OUTPUT_LIMIT_1_MIB, EXEC_OUTPUT_LIMIT_64_KIB, ExecRequest, Sandbox,
     StorageManifestRequest, StorageManifestTiming,
@@ -125,10 +125,12 @@ pub(super) async fn download_storages(
         sandbox,
         context,
         &input,
+        &optional_mounts(manifest),
         &mut guest_duration_ms,
         &mut host_timing,
     )
     .await
+    .map(|_| ())
 }
 
 pub(super) async fn download_storages_with_files(
@@ -137,7 +139,7 @@ pub(super) async fn download_storages_with_files(
     manifest: Manifest,
     files: &[(String, Arc<CachedFiles>)],
     telemetry: &mut JobTelemetry,
-) -> RunnerResult<()> {
+) -> RunnerResult<HashSet<String>> {
     download_storages_with_files_inner(sandbox, context, manifest, files, telemetry, None).await
 }
 
@@ -149,7 +151,7 @@ pub(super) async fn download_storages_with_files_until_cancelled(
     files: &[(String, Arc<CachedFiles>)],
     telemetry: &mut JobTelemetry,
     cancel: &tokio_util::sync::CancellationToken,
-) -> RunnerResult<()> {
+) -> RunnerResult<HashSet<String>> {
     download_storages_with_files_inner(sandbox, context, manifest, files, telemetry, Some(cancel))
         .await
 }
@@ -161,7 +163,7 @@ async fn download_storages_with_files_inner(
     files: &[(String, Arc<CachedFiles>)],
     telemetry: &mut JobTelemetry,
     cancel: Option<&tokio_util::sync::CancellationToken>,
-) -> RunnerResult<()> {
+) -> RunnerResult<HashSet<String>> {
     // Complete all fallible preparation before the first Guest mutation.
     let prepare_started = Instant::now();
     let inputs = storage_inputs(manifest, files);
@@ -183,18 +185,20 @@ async fn download_storages_with_files_inner(
         None,
     );
     // Only the current transport buffer is materialized across Guest IO.
+    let mut skipped = HashSet::new();
     for (index, prepared) in inputs.into_iter().enumerate() {
         if cancel.is_some_and(tokio_util::sync::CancellationToken::is_cancelled) {
             return Err(RunnerError::Cancelled);
         }
         let started = Instant::now();
-        let input = prepared.into_input();
+        let input = prepared.transport.into_input();
         let mut guest_duration_ms = None;
         let mut host_timing = StorageManifestTiming::default();
         let result = apply_storage_input(
             sandbox,
             context,
             &input,
+            &prepared.optional_mounts,
             &mut guest_duration_ms,
             &mut host_timing,
         )
@@ -214,9 +218,53 @@ async fn download_storages_with_files_inner(
                 },
             );
         }
-        result?;
+        skipped.extend(result?);
     }
-    Ok(())
+    Ok(skipped)
+}
+
+struct OptionalMount {
+    path: String,
+    unavailable: bool,
+}
+
+fn optional_mounts(manifest: &Manifest) -> HashMap<usize, OptionalMount> {
+    manifest
+        .storages
+        .iter()
+        .enumerate()
+        .filter(|(_, entry)| entry.optional)
+        .map(|(index, entry)| {
+            (
+                index,
+                OptionalMount {
+                    path: entry.mount_path.clone(),
+                    unavailable: !entry.cached && entry.archive_url.is_none(),
+                },
+            )
+        })
+        .collect()
+}
+
+struct PreparedStorageBatch<'a> {
+    transport: PreparedStorageInput<'a>,
+    optional_mounts: HashMap<usize, OptionalMount>,
+}
+
+impl<'a> PreparedStorageBatch<'a> {
+    fn new(manifest: &Manifest, transport: PreparedStorageInput<'a>) -> Self {
+        Self {
+            transport,
+            optional_mounts: optional_mounts(manifest),
+        }
+    }
+
+    fn json(manifest: &Manifest) -> RunnerResult<Self> {
+        Ok(Self::new(
+            manifest,
+            PreparedStorageInput::Json(manifest_json(manifest)?),
+        ))
+    }
 }
 
 enum PreparedStorageInput<'a> {
@@ -396,9 +444,9 @@ fn empty_storage_manifest() -> Manifest {
 fn storage_inputs(
     mut manifest: Manifest,
     files: &[(String, Arc<CachedFiles>)],
-) -> RunnerResult<Vec<PreparedStorageInput<'_>>> {
+) -> RunnerResult<Vec<PreparedStorageBatch<'_>>> {
     if files.is_empty() {
-        return Ok(vec![PreparedStorageInput::Json(manifest_json(&manifest)?)]);
+        return Ok(vec![PreparedStorageBatch::json(&manifest)?]);
     }
     let groups = files
         .iter()
@@ -407,7 +455,13 @@ fn storage_inputs(
     storage_files::validate_bindings(&manifest, groups.iter().map(|(mount, _)| *mount))
         .map_err(|e| RunnerError::Internal(format!("storage files bindings: {e}")))?;
     if manifest_json_size(&manifest)? <= storage_files::MAX_MANIFEST_BYTES {
-        return Ok(vec![files_input(manifest_json(&manifest)?, groups)?]);
+        let input = files_input(manifest_json(&manifest)?, groups)?;
+        return Ok(vec![PreparedStorageBatch::new(&manifest, input)]);
+    }
+    if manifest.has_optional_mounts() {
+        return Err(RunnerError::Internal(
+            "optional mount cleanup requires the complete Guest storage manifest".into(),
+        ));
     }
     // A split request alone cannot see conflicts with entries in another batch.
     // Validate the aggregate selected-file and mount budget without copying the
@@ -432,7 +486,7 @@ fn storage_inputs(
         || !manifest.cleanup_paths.is_empty()
         || !manifest.instruction_cleanups.is_empty()
     {
-        inputs.push(PreparedStorageInput::Json(manifest_json(&manifest)?));
+        inputs.push(PreparedStorageBatch::json(&manifest)?);
     }
     let mut batch = empty_storage_manifest();
     let empty_bytes = manifest_json_size(&batch)?;
@@ -499,7 +553,7 @@ fn manifest_entry_count(manifest: &Manifest) -> usize {
 fn prepare_decoded_batch<'a>(
     manifest: &Manifest,
     files: &HashMap<&'a str, &'a [StorageFile]>,
-) -> RunnerResult<PreparedStorageInput<'a>> {
+) -> RunnerResult<PreparedStorageBatch<'a>> {
     let groups = manifest
         .storages
         .iter()
@@ -517,16 +571,18 @@ fn prepare_decoded_batch<'a>(
                 .ok_or_else(|| RunnerError::Internal("decoded files absent".into()))
         })
         .collect::<RunnerResult<Vec<_>>>()?;
-    files_input(manifest_json(manifest)?, groups)
+    let input = files_input(manifest_json(manifest)?, groups)?;
+    Ok(PreparedStorageBatch::new(manifest, input))
 }
 
 async fn apply_storage_input(
     sandbox: &dyn Sandbox,
     context: &ExecutionContext,
     input: &StorageInput,
+    optional_mounts: &HashMap<usize, OptionalMount>,
     guest_duration_ms: &mut Option<u32>,
     host_timing: &mut StorageManifestTiming,
-) -> RunnerResult<()> {
+) -> RunnerResult<HashSet<String>> {
     let manifest_json = match input {
         StorageInput::Json(bytes) => bytes,
         StorageInput::Files { bytes, .. } => bytes,
@@ -550,7 +606,7 @@ async fn apply_storage_input(
     if !use_dedicated {
         remove_fallback_storage_manifest(sandbox).await?;
     }
-    let result: RunnerResult<()> = async {
+    let result = async {
         let result = if use_dedicated {
             sandbox
                 .apply_storage_manifest_with_timing(
@@ -592,13 +648,42 @@ async fn apply_storage_input(
                 &result,
             )));
         }
-        Ok(())
+        read_storage_receipt(&result, optional_mounts)
     }
     .await;
     if !use_dedicated && result.is_err() {
         cleanup_fallback_storage_manifest_after_failure(sandbox, context).await;
     }
     result
+}
+
+fn read_storage_receipt(
+    result: &sandbox::ExecResult,
+    optional_mounts: &HashMap<usize, OptionalMount>,
+) -> RunnerResult<HashSet<String>> {
+    if optional_mounts.is_empty() {
+        return Ok(HashSet::new());
+    }
+    let invalid_receipt = || RunnerError::Internal("invalid Guest storage apply receipt".into());
+    if result.stdout_truncated {
+        return Err(invalid_receipt());
+    }
+    let receipt: StorageApplyReceipt =
+        serde_json::from_slice(&result.stdout).map_err(|_| invalid_receipt())?;
+    let mut skipped = HashSet::with_capacity(receipt.skipped_optional.len());
+    for index in receipt.skipped_optional {
+        let mount = optional_mounts.get(&index).ok_or_else(invalid_receipt)?;
+        if !skipped.insert(mount.path.clone()) {
+            return Err(invalid_receipt());
+        }
+    }
+    if optional_mounts
+        .values()
+        .any(|mount| mount.unavailable && !skipped.contains(&mount.path))
+    {
+        return Err(invalid_receipt());
+    }
+    Ok(skipped)
 }
 
 async fn cleanup_fallback_storage_manifest_after_failure(

@@ -937,6 +937,7 @@ fn background_fill_group(
         decoded_ready_observed: false,
         representative: CacheTarget {
             handle: ArchiveHandle::storage(0),
+            optional_mount: None,
             name: name.to_string(),
             version: version.to_string(),
             archive_url: url,

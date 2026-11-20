@@ -160,7 +160,8 @@ fn invalid_markers_and_runtime_aliases_fail_before_input_cleanup() {
         assert!(
             !crate::run_manifest_bytes_in_runtime(
                 &serde_json::to_vec(&manifest).unwrap(),
-                &runtime
+                &runtime,
+                &mut std::io::sink(),
             ),
             "{kind}"
         );

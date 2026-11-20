@@ -42,7 +42,7 @@ impl GuestStorageInput {
         if query.len() <= guest_contracts::storage_files::MAX_MANIFEST_BYTES {
             return Ok(Some((self, query)));
         }
-        if self.initial.files.is_empty() {
+        if self.initial.files.is_empty() || self.initial.manifest.has_optional_mounts() {
             return Ok(None);
         }
 
@@ -178,10 +178,10 @@ impl GuestApplication {
         // bindings. It never becomes another independently mutable plan.
         let mut snapshot = plan.clone();
         for (group, outcome) in ordinary {
-            if matches!(outcome, TargetOutcome::Hit) {
-                for target in group
-                    .targets()
-                    .filter(|target| !plan.has_decoded(target.handle))
+            for target in group.targets() {
+                if matches!(outcome, TargetOutcome::Unavailable) {
+                    snapshot.mark_optional_unavailable(target.handle)?;
+                } else if matches!(outcome, TargetOutcome::Hit) && !plan.has_decoded(target.handle)
                 {
                     rewrite_url(&mut snapshot, target);
                 }

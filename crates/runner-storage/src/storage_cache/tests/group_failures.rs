@@ -1,6 +1,67 @@
 use super::*;
 
 #[tokio::test]
+async fn optional_decoded_lookup_error_skips_its_group_unless_shared_with_required_mount() {
+    let temp = tempfile::tempdir().unwrap();
+    let home = home_at(&temp);
+    let name = runner_types::storage_manifest::WORKFLOW_STORAGE_NAME;
+    let version = "v1";
+    let decoded_path = home
+        .storages_dir()
+        .join(short_digest(name))
+        .join(format!("decoded-v2-{}", short_digest(version)));
+    std::fs::create_dir_all(decoded_path.parent().unwrap()).unwrap();
+    std::fs::write(&decoded_path, "bad decoded entry").unwrap();
+    write_cached_archive(&home, name, version, &tarball_bytes());
+    let cache = decoded::DecodedCache::new(home.clone());
+    let sandbox = MockSandbox::new("optional-decoded-error");
+    let url = "https://r2.example.com/optional.tar.gz";
+    for shared in [false, true] {
+        let mut optional = storage_entry("/skills/optional".into(), url.into(), name, version);
+        optional.optional = true;
+        let mut entries = vec![optional];
+        if shared {
+            entries.push(storage_entry(
+                "/skills/required".into(),
+                url.into(),
+                name,
+                version,
+            ));
+        }
+        let mut plan = plan_from_entries(entries, Vec::new(), None);
+        let mut telemetry = new_telemetry();
+        let result = populate_cache_with_fresh_delivery(
+            &mut plan,
+            &sandbox,
+            &home,
+            &mut telemetry,
+            None,
+            Some(&cache),
+        )
+        .await;
+        if shared {
+            let error = result.err().expect("required consumer of a failed group");
+            assert!(
+                error
+                    .to_string()
+                    .contains("decoded cache target is not a directory")
+            );
+        } else {
+            assert!(result.unwrap().is_none());
+            let manifest = plan.into_guest_manifest();
+            assert!(manifest.storages[0].optional);
+            assert!(!manifest.storages[0].cached);
+            assert!(manifest.storages[0].archive_url.is_none());
+        }
+        assert!(
+            sandbox.write_file_calls().is_empty(),
+            "do not retry via the compressed cache"
+        );
+    }
+    cache.shutdown().await;
+}
+
+#[tokio::test]
 async fn group_processing_lock_error_preserves_source_and_cache() {
     let temp = tempfile::tempdir().unwrap();
     let home = home_at(&temp);

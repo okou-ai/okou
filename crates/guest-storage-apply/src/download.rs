@@ -9,6 +9,7 @@ use crate::telemetry::{
 use guest_contracts::storage_paths::normalize_path;
 use guest_telemetry::{log_error, log_info};
 use std::any::Any;
+use std::collections::HashSet;
 use std::collections::VecDeque;
 use std::fs;
 use std::panic::AssertUnwindSafe;
@@ -30,6 +31,7 @@ type AttemptRunner = fn(&mut StartedDownload<'_>) -> Result<(), DownloadError>;
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct DownloadTask<'input> {
     label: String,
+    optional: bool,
     url: String,
     mount_path: String,
     normalized_mount_path: PathBuf,
@@ -39,6 +41,14 @@ pub(crate) struct DownloadTask<'input> {
 }
 
 impl<'input> DownloadTask<'input> {
+    pub(crate) fn with_optional(mut self, optional: bool) -> Self {
+        self.optional = optional;
+        if optional {
+            self.label.push_str(" optional=true");
+        }
+        self
+    }
+
     pub(crate) fn with_template_guidance(
         mut self,
         reference: Option<guest_contracts::storage_manifest::TemplateGuidanceReference>,
@@ -71,6 +81,7 @@ impl<'input> DownloadTask<'input> {
             DownloadTaskTelemetry::storage(&url, &normalized_mount_path, has_instructions_target);
         Self {
             label,
+            optional: false,
             url,
             mount_path,
             normalized_mount_path,
@@ -85,6 +96,7 @@ impl<'input> DownloadTask<'input> {
         let telemetry = DownloadTaskTelemetry::artifact(&url, &normalized_mount_path);
         Self {
             label,
+            optional: false,
             url,
             mount_path,
             normalized_mount_path,
@@ -94,24 +106,18 @@ impl<'input> DownloadTask<'input> {
         }
     }
 
-    fn prepare(self) -> Result<PreparedDownloadTask<'input>, String> {
+    fn prepare(&self) -> Result<PathBuf, String> {
         fs::create_dir_all(&self.mount_path).map_err(|e| {
             format!(
                 "{} target preparation failed: failed to create directory {}: {e}",
                 self.label, self.mount_path
             )
         })?;
-        let effective_mount_path = Path::new(&self.mount_path).canonicalize().map_err(|e| {
+        Path::new(&self.mount_path).canonicalize().map_err(|e| {
             format!(
                 "{} target preparation failed: failed to resolve directory {}: {e}",
                 self.label, self.mount_path
             )
-        })?;
-
-        Ok(PreparedDownloadTask {
-            task: self,
-            effective_mount_path,
-            source_ready: None,
         })
     }
 }
@@ -317,14 +323,23 @@ impl<'input> DownloadScheduler<'input> {
         true
     }
 
-    fn record_completion(&mut self, completion: DownloadCompletion<'input>) {
+    fn record_completion(
+        &mut self,
+        completion: DownloadCompletion<'input>,
+        skipped: &mut HashSet<String>,
+    ) {
         self.active_attempts -= 1;
 
         match completion.outcome {
             AttemptOutcome::Finished(result) => {
                 self.reservations
                     .retain(|reserved| reserved.id != completion.download.id);
-                if !completion.download.finish(result) {
+                let task = &completion.download.task.task;
+                let optional_failure = task.optional && result.is_err();
+                if optional_failure {
+                    skipped.insert(task.mount_path.clone());
+                }
+                if !completion.download.finish(result) && !optional_failure {
                     self.all_success = false;
                 }
             }
@@ -339,10 +354,30 @@ impl<'input> DownloadScheduler<'input> {
 }
 
 /// Prepare download targets before any archive worker can start.
-pub(crate) fn prepare_download_tasks(
-    tasks: Vec<DownloadTask<'_>>,
-) -> Result<Vec<PreparedDownloadTask<'_>>, String> {
-    tasks.into_iter().map(DownloadTask::prepare).collect()
+pub(crate) fn prepare_download_tasks<'input>(
+    tasks: Vec<DownloadTask<'input>>,
+    skipped: &mut HashSet<String>,
+) -> Result<Vec<PreparedDownloadTask<'input>>, String> {
+    let mut prepared = Vec::with_capacity(tasks.len());
+    for task in tasks {
+        if task.optional {
+            crate::cleanup::optional_mount_is_dir(Path::new(task.mount_path()))
+                .map_err(|error| format!("{} unsafe package target: {error}", task.label))?;
+        }
+        match task.prepare() {
+            Ok(effective_mount_path) => prepared.push(PreparedDownloadTask {
+                task,
+                effective_mount_path,
+                source_ready: None,
+            }),
+            Err(error) if task.optional => {
+                log_error!(LOG_TAG, "{error}");
+                skipped.insert(task.mount_path);
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(prepared)
 }
 
 /// Download all prepared tasks in parallel using std::thread.
@@ -352,8 +387,9 @@ pub(crate) fn prepare_download_tasks(
 pub(crate) fn download_all_parallel(
     tasks: Vec<PreparedDownloadTask<'_>>,
     readiness: Option<Readiness>,
+    skipped: &mut HashSet<String>,
 ) -> bool {
-    download_with_readiness(tasks, readiness, run_download_attempt)
+    download_with_readiness(tasks, readiness, run_download_attempt, skipped)
 }
 
 #[cfg(test)]
@@ -361,7 +397,7 @@ fn download_all_parallel_with_runner(
     tasks: Vec<PreparedDownloadTask<'_>>,
     attempt_runner: AttemptRunner,
 ) -> bool {
-    download_with_readiness(tasks, None, attempt_runner)
+    download_with_readiness(tasks, None, attempt_runner, &mut HashSet::new())
 }
 
 fn download_concurrency(remote_count: usize, task_count: usize) -> usize {
@@ -383,6 +419,7 @@ fn download_with_readiness(
     mut tasks: Vec<PreparedDownloadTask<'_>>,
     readiness: Option<Readiness>,
     attempt_runner: AttemptRunner,
+    skipped: &mut HashSet<String>,
 ) -> bool {
     if let Some(readiness) = &readiness {
         for task in &mut tasks {
@@ -524,7 +561,7 @@ fn download_with_readiness(
                     return false;
                 }
             };
-            scheduler.record_completion(completion);
+            scheduler.record_completion(completion, skipped);
         }
 
         let sources_finished = watcher.as_mut().map(|watcher| watcher.finish()).transpose();
@@ -626,6 +663,12 @@ fn panic_message(payload: &(dyn Any + Send)) -> String {
 
 /// Download and extract one archive. Files written before an error remain in place.
 fn run_download_attempt(download: &mut StartedDownload<'_>) -> Result<(), DownloadError> {
+    // An overlapping ancestor archive can change target state after plan
+    // preparation. Recheck before writing through the retained identity.
+    if download.task.task.optional {
+        crate::cleanup::optional_mount_is_dir(download.task.logical_mount_path())
+            .map_err(|error| DownloadError::new(format!("Unsafe package target: {error}")))?;
+    }
     if let Some(files) = &download.task.task.files {
         if download.task.task.template_guidance.is_some() {
             return Err(DownloadError::new(

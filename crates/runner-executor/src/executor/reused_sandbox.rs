@@ -89,6 +89,7 @@ pub(super) async fn execute_reused_sandbox(
                         Some("blank_home_rebind_failed"),
                     );
                     return ExecuteOutcome::reused_sandbox_failure(
+                        context,
                         ExecutionFailure::from_error(error),
                         run.sandbox,
                         run.source_ip,
@@ -124,6 +125,7 @@ pub(super) async fn execute_reused_sandbox(
                 Some(&error.to_string()),
             );
             let outcome = ExecuteOutcome::reused_sandbox_failure(
+                context,
                 ExecutionFailure::from_error(error.to_string()),
                 run.sandbox,
                 run.source_ip.clone(),
@@ -288,7 +290,7 @@ async fn replace_unusable_blank(
         );
         warn!(run_id = %context.run_id, %sandbox_id,
             "blank Codex prefetch replacement suppressed after uncertain cleanup");
-        return ExecuteOutcome::preparation_failure(error);
+        return ExecuteOutcome::preparation_failure(context, error);
     }
     if inputs.controls.cancel.is_cancelled() {
         telemetry.record(
@@ -297,7 +299,7 @@ async fn replace_unusable_blank(
             false,
             Some("cancelled"),
         );
-        let mut outcome = ExecuteOutcome::preparation_failure(RunnerError::Cancelled);
+        let mut outcome = ExecuteOutcome::preparation_failure(context, RunnerError::Cancelled);
         outcome.mark_cancelled();
         return outcome;
     }
@@ -305,7 +307,7 @@ async fn replace_unusable_blank(
         && let Some(source) = inputs.controls.sandbox_recovery.as_ref()
         && let Err(error) = source.retired(context.run_id, sandbox_id).await
     {
-        return ExecuteOutcome::preparation_failure(error);
+        return ExecuteOutcome::preparation_failure(context, error);
     }
     // Like the fresh retry action, this records admission to the replacement
     // attempt. Fresh preparation and Agent execution retain their own outcomes.
@@ -340,7 +342,8 @@ async fn replace_unusable_blank(
         },
     )
     .await;
-    let mut outcome = result.unwrap_or_else(ExecuteOutcome::preparation_failure);
+    let mut outcome =
+        result.unwrap_or_else(|error| ExecuteOutcome::preparation_failure(context, error));
     if cancel.is_cancelled() {
         outcome.mark_cancelled();
     }

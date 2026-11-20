@@ -59,6 +59,7 @@ fn scheduler_front_loads_one_archive_then_dispatches_original_order() {
         )
     }));
     let mut scheduler = DownloadScheduler::new(pending, 4);
+    let mut skipped = HashSet::new();
     let (send, receive) = mpsc::sync_channel(4);
     assert!(scheduler.start_ready_attempts(&send, &mut telemetry));
     let first = (0..4)
@@ -69,19 +70,25 @@ fn scheduler_front_loads_one_archive_then_dispatches_original_order() {
         [3, 0, 1, 2]
     );
     for download in first {
-        scheduler.record_completion(DownloadCompletion {
-            download,
-            outcome: AttemptOutcome::Finished(Ok(())),
-        });
+        scheduler.record_completion(
+            DownloadCompletion {
+                download,
+                outcome: AttemptOutcome::Finished(Ok(())),
+            },
+            &mut skipped,
+        );
     }
     assert!(scheduler.start_ready_attempts(&send, &mut telemetry));
     for expected in [4, 5] {
         let download = receive.try_recv().unwrap();
         assert_eq!(download.id, expected);
-        scheduler.record_completion(DownloadCompletion {
-            download,
-            outcome: AttemptOutcome::Finished(Ok(())),
-        });
+        scheduler.record_completion(
+            DownloadCompletion {
+                download,
+                outcome: AttemptOutcome::Finished(Ok(())),
+            },
+            &mut skipped,
+        );
     }
     assert!(!scheduler.has_work());
     telemetry.finish();

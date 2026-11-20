@@ -105,6 +105,7 @@ fn eligibility_leaves_inaccessible_reused_storage_to_ordinary_application() {
     manifest.storages.insert(
         0,
         StorageEntry {
+            optional: false,
             template_guidance: None,
             mount_path: kept.display().to_string(),
             archive_url: None,

@@ -38,6 +38,7 @@
 //! is not an input requirement of this decoder.
 
 use std::collections::HashSet;
+use std::path::{Component, Path};
 
 use serde::{Deserialize, Serialize};
 
@@ -45,6 +46,20 @@ mod readiness;
 mod template_guidance;
 pub use readiness::ArchiveReadiness;
 pub use template_guidance::*;
+
+/// Cache namespace for complete Skill and Workflow packages.
+pub const WORKFLOW_STORAGE_NAME: &str = "workflow";
+
+/// Successful application of a batch containing optional packages.
+///
+/// Each index identifies a read-only entry in the batch's `Manifest::storages`
+/// whose mount was skipped and cleaned. Required-only batches omit the receipt.
+#[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StorageApplyReceipt {
+    /// Read-only mount indexes that were skipped and cleaned.
+    pub skipped_optional: Vec<usize>,
+}
 
 /// In-memory execution projection behind the canonical storage manifest wire contract.
 ///
@@ -156,6 +171,11 @@ impl<'de> Deserialize<'de> for Manifest {
 }
 
 impl Manifest {
+    /// Whether this application can skip a package and remove its mount.
+    pub fn has_optional_mounts(&self) -> bool {
+        self.storages.iter().any(|entry| entry.optional)
+    }
+
     fn from_storage_mounts(
         storage_mounts: Vec<StorageMountEntry>,
         cleanup_paths: Vec<String>,
@@ -168,6 +188,9 @@ impl Manifest {
 
         for mount in storage_mounts {
             if mount.writeback {
+                if mount.optional {
+                    return Err("Writable storage cannot be optional".into());
+                }
                 if mount.template_guidance.is_some() {
                     return Err("Template guidance cannot be writable".into());
                 }
@@ -193,7 +216,27 @@ impl Manifest {
             if let Some(reference) = &mount.template_guidance {
                 reference.validate()?;
             }
+            if mount.optional {
+                let path = Path::new(&mount.mount_path);
+                if mount.name.as_deref() != Some(WORKFLOW_STORAGE_NAME)
+                    || mount.template_guidance.is_some()
+                    || !path.is_absolute()
+                    || path.file_name().is_none()
+                    || mount.mount_path.contains('\0')
+                    || path.components().any(|part| part == Component::ParentDir)
+                {
+                    return Err("Invalid optional package mount".into());
+                }
+                if mount
+                    .archive_url
+                    .as_deref()
+                    .is_some_and(|url| mount.cached || url.is_empty() || url == "null")
+                {
+                    return Err("Invalid optional package source".into());
+                }
+            }
             storages.push(StorageEntry {
+                optional: mount.optional,
                 template_guidance: mount.template_guidance,
                 mount_path: mount.mount_path,
                 archive_url: mount.archive_url,
@@ -237,12 +280,16 @@ pub fn validate_unique_mount_paths<'a>(
 pub struct StorageEntry {
     /// Guest filesystem path where the storage is mounted.
     pub mount_path: String,
-    /// Archive URL, or `None` when existing contents are reused.
+    /// Archive URL, absent when existing contents are reused or a package is unavailable.
     #[serde(default)]
     pub archive_url: Option<String>,
     /// Whether existing contents match the current fingerprint.
     #[serde(default)]
     pub cached: bool,
+    /// Isolate failure of this Skill or Workflow. For an uncached optional
+    /// mount, an absent URL means Runner preparation found it unavailable.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub optional: bool,
     /// VAS storage name used for diagnostics and cache identity.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vas_storage_name: Option<String>,
@@ -311,6 +358,9 @@ pub struct StorageMountEntry {
     /// Whether existing contents match the current fingerprint.
     #[serde(default)]
     pub cached: bool,
+    /// Whether the consumer can continue when this package is unavailable.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub optional: bool,
     /// Whether the resolved Storage version is explicitly empty.
     #[serde(default, skip_serializing_if = "is_false")]
     pub empty: bool,
@@ -340,6 +390,8 @@ struct BorrowedStorageMountEntry<'a> {
     archive_url: Option<&'a str>,
     cached: bool,
     #[serde(skip_serializing_if = "is_false")]
+    optional: bool,
+    #[serde(skip_serializing_if = "is_false")]
     empty: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     missing_root_policy: Option<&'a str>,
@@ -357,6 +409,7 @@ impl<'a> BorrowedStorageMountEntry<'a> {
             mount_path: &entry.mount_path,
             archive_url: entry.archive_url.as_deref(),
             cached: entry.cached,
+            optional: entry.optional,
             empty: false,
             missing_root_policy: None,
             writeback: false,
@@ -372,6 +425,7 @@ impl<'a> BorrowedStorageMountEntry<'a> {
             mount_path: &entry.mount_path,
             archive_url: entry.archive_url.as_deref(),
             cached: entry.cached,
+            optional: false,
             empty: entry.empty,
             missing_root_policy: entry.missing_root_policy.as_deref(),
             writeback: true,

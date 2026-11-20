@@ -1552,7 +1552,7 @@ pub(super) async fn replace_disk_full_sandbox(
     if let Some(source) = inputs.controls.sandbox_recovery.as_ref()
         && let Err(error) = source.retired(context.run_id, dispatch.id).await
     {
-        return ExecuteOutcome::preparation_failure(error);
+        return ExecuteOutcome::preparation_failure(context, error);
     }
     telemetry.set_home_startup_source(None);
     let try_blank = !inputs.controls.disk_recovery;
@@ -1627,7 +1627,7 @@ pub(super) async fn replace_disk_full_sandbox(
                     None,
                     Some("activation_unsafe"),
                 );
-                let mut outcome = ExecuteOutcome::preparation_failure(error);
+                let mut outcome = ExecuteOutcome::preparation_failure(context, error);
                 if cancel.is_cancelled() {
                     outcome.mark_cancelled();
                 }
@@ -1655,7 +1655,7 @@ pub(super) async fn replace_disk_full_sandbox(
         },
     )
     .await
-    .unwrap_or_else(ExecuteOutcome::preparation_failure);
+    .unwrap_or_else(|error| ExecuteOutcome::preparation_failure(context, error));
     if cancel.is_cancelled() {
         outcome.mark_cancelled();
     }
@@ -1848,8 +1848,11 @@ async fn execute_prepared_sandbox_attempt_with_process_cancel_timeouts(
             None
         };
 
-    let current_inputs = context.storage_fingerprints();
-    let mut storage_fingerprints = if lifecycle.storage_preparation_complete {
+    let mut current_inputs = context.storage_fingerprints();
+    let mut storage_fingerprints = if let Some(skipped) = &lifecycle.skipped_optional_storage {
+        for mount in skipped {
+            current_inputs.storages.remove(mount);
+        }
         current_inputs
     } else {
         // Cancellation may precede reconciliation, or interrupt a partial apply.

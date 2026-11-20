@@ -27,6 +27,8 @@
 //! Required cleanup, target preparation, or download failure returns `false`,
 //! preventing launch with incomplete inputs. Earlier filesystem effects are not
 //! rolled back. Missing stale paths count as already cleaned.
+//! Failed optional packages are logged and removed before a batch can report
+//! success. The runtime receipt identifies the skipped mounts.
 //!
 //! Cached storages and artifacts preserve their mount roots. Empty artifacts
 //! retain root identity and ownership while clearing stale contents, including
@@ -76,11 +78,13 @@ mod telemetry;
 mod template_guidance;
 mod workflow_document;
 
-use guest_contracts::storage_manifest::Manifest;
+use guest_contracts::storage_manifest::{Manifest, StorageApplyReceipt};
 use guest_telemetry::{log_error, log_info, telemetry::record_sandbox_op};
 use manifest::ManifestLoadError;
 use plan::{EmptyArtifactPreparation, RunPlan};
+use std::collections::HashSet;
 use std::fs;
+use std::io::{self, Write};
 use std::path::Path;
 use std::time::Instant;
 
@@ -95,16 +99,20 @@ const LOG_TAG: &str = "sandbox:guest-storage-apply";
 /// starts, `false` does not roll back completed filesystem changes. See the
 /// manifest application section in the [`crate`] documentation for details.
 pub fn run(manifest_path: &str) -> bool {
-    run_path_in_runtime(manifest_path, None)
+    run_path_in_runtime(manifest_path, None, &mut io::sink())
 }
 
 /// Apply a manifest with discarded inputs owned by the existing runtime cleanup.
 /// Noncanonical runtime layouts retain synchronous cleanup.
-pub fn run_in_runtime(manifest_path: &str, runtime_dir: &Path) -> bool {
-    run_path_in_runtime(manifest_path, Some(runtime_dir))
+pub fn run_in_runtime(manifest_path: &str, runtime_dir: &Path, output: &mut dyn Write) -> bool {
+    run_path_in_runtime(manifest_path, Some(runtime_dir), output)
 }
 
-fn run_path_in_runtime(manifest_path: &str, runtime_dir: Option<&Path>) -> bool {
+fn run_path_in_runtime(
+    manifest_path: &str,
+    runtime_dir: Option<&Path>,
+    output: &mut dyn Write,
+) -> bool {
     let manifest = match manifest::load(manifest_path) {
         Ok(manifest) => manifest,
         Err(ManifestLoadError::Read(e)) => {
@@ -117,7 +125,7 @@ fn run_path_in_runtime(manifest_path: &str, runtime_dir: Option<&Path>) -> bool 
         }
     };
 
-    run_manifest_with_files_in_runtime(manifest, Vec::new(), runtime_dir)
+    run_manifest_with_files_in_runtime(manifest, Vec::new(), runtime_dir, output)
 }
 
 /// Apply a manifest supplied as JSON bytes.
@@ -129,15 +137,23 @@ fn run_path_in_runtime(manifest_path: &str, runtime_dir: Option<&Path>) -> bool 
 /// back completed filesystem changes. See the manifest application section in
 /// the [`crate`] documentation for details.
 pub fn run_manifest_bytes(manifest_json: &[u8]) -> bool {
-    run_manifest_bytes_in_context(manifest_json, None)
+    run_manifest_bytes_in_context(manifest_json, None, &mut io::sink())
 }
 
 /// Apply canonical manifest bytes with the captured per-Run cleanup lifetime.
-pub fn run_manifest_bytes_in_runtime(manifest_json: &[u8], runtime_dir: &Path) -> bool {
-    run_manifest_bytes_in_context(manifest_json, Some(runtime_dir))
+pub fn run_manifest_bytes_in_runtime(
+    manifest_json: &[u8],
+    runtime_dir: &Path,
+    output: &mut dyn Write,
+) -> bool {
+    run_manifest_bytes_in_context(manifest_json, Some(runtime_dir), output)
 }
 
-fn run_manifest_bytes_in_context(manifest_json: &[u8], runtime_dir: Option<&Path>) -> bool {
+fn run_manifest_bytes_in_context(
+    manifest_json: &[u8],
+    runtime_dir: Option<&Path>,
+    output: &mut dyn Write,
+) -> bool {
     let manifest = match manifest::parse(manifest_json) {
         Ok(manifest) => manifest,
         Err(e) => {
@@ -146,20 +162,28 @@ fn run_manifest_bytes_in_context(manifest_json: &[u8], runtime_dir: Option<&Path
         }
     };
 
-    run_manifest_with_files_in_runtime(manifest, Vec::new(), runtime_dir)
+    run_manifest_with_files_in_runtime(manifest, Vec::new(), runtime_dir, output)
 }
 
 /// Apply bounded binary storage input after validating all mount bindings and files.
 pub fn run_storage_files_bytes(input: &[u8]) -> bool {
-    run_storage_files_in_context(input, None)
+    run_storage_files_in_context(input, None, &mut io::sink())
 }
 
 /// Apply validated decoded files with the captured per-Run cleanup lifetime.
-pub fn run_storage_files_bytes_in_runtime(input: &[u8], runtime_dir: &Path) -> bool {
-    run_storage_files_in_context(input, Some(runtime_dir))
+pub fn run_storage_files_bytes_in_runtime(
+    input: &[u8],
+    runtime_dir: &Path,
+    output: &mut dyn Write,
+) -> bool {
+    run_storage_files_in_context(input, Some(runtime_dir), output)
 }
 
-fn run_storage_files_in_context(input: &[u8], runtime_dir: Option<&Path>) -> bool {
+fn run_storage_files_in_context(
+    input: &[u8],
+    runtime_dir: Option<&Path>,
+    output: &mut dyn Write,
+) -> bool {
     use input_telemetry::{InputPhase, measure_phase, record_payload_size};
 
     let parsed = (|| {
@@ -186,7 +210,9 @@ fn run_storage_files_in_context(input: &[u8], runtime_dir: Option<&Path>) -> boo
         Ok::<_, std::io::Error>((manifest, files))
     })();
     match parsed {
-        Ok((manifest, files)) => run_manifest_with_files_in_runtime(manifest, files, runtime_dir),
+        Ok((manifest, files)) => {
+            run_manifest_with_files_in_runtime(manifest, files, runtime_dir, output)
+        }
         Err(error) => {
             log_error!(LOG_TAG, "Invalid decoded storage input: {error}");
             false
@@ -198,6 +224,7 @@ fn run_manifest_with_files_in_runtime(
     manifest: Manifest,
     files: Vec<guest_contracts::storage_files::StorageFiles<&[u8]>>,
     runtime_dir: Option<&Path>,
+    output: &mut dyn Write,
 ) -> bool {
     if manifest
         .archive_readiness
@@ -205,10 +232,7 @@ fn run_manifest_with_files_in_runtime(
         .is_some_and(|value| value.check_only)
     {
         return match readiness::Readiness::eligible(&manifest, runtime_dir) {
-            Ok(eligible) => {
-                println!("{eligible}");
-                true
-            }
+            Ok(eligible) => write_result(output, &eligible),
             Err(error) => {
                 log_error!(LOG_TAG, "Archive readiness eligibility failed: {error}");
                 false
@@ -263,6 +287,20 @@ fn run_manifest_with_files_in_runtime(
         empty_artifacts,
         download_tasks,
     } = plan;
+    let optional_mounts: HashSet<_> = manifest
+        .storages
+        .iter()
+        .filter(|entry| entry.optional)
+        .map(|entry| entry.mount_path.as_str())
+        .collect();
+    let (optional_replacements, cleanup_paths) = if optional_mounts.is_empty() {
+        (Vec::new(), cleanup_paths)
+    } else {
+        cleanup_paths
+            .into_iter()
+            .partition(|path| optional_mounts.contains(path.as_str()))
+    };
+    let mut skipped = HashSet::new();
 
     // Clean stale files from changed/removed storages before downloading.
     // This must run before parallel downloads to avoid race conditions with
@@ -274,17 +312,28 @@ fn run_manifest_with_files_in_runtime(
         .iter()
         .map(|entry| entry.mount_path.clone())
         .collect::<Vec<_>>();
-    let stale_cleanup = telemetry::CleanupPhase::StalePaths.measure(cleanup_paths.len(), || {
-        match quarantine.as_ref() {
-            Some(quarantine) => cleanup::cleanup_stale_paths_with_quarantine(
-                &cleanup_paths,
-                &preserved_paths,
-                &retained_roots,
-                quarantine,
-            ),
-            None => cleanup::cleanup_stale_paths(&cleanup_paths, &preserved_paths, &retained_roots),
-        }
-    });
+    let stale_cleanup = telemetry::CleanupPhase::StalePaths.measure(
+        cleanup_paths.len() + optional_replacements.len(),
+        || {
+            let cleaned = match quarantine.as_ref() {
+                Some(quarantine) => cleanup::cleanup_stale_paths_with_quarantine(
+                    &cleanup_paths,
+                    &preserved_paths,
+                    &retained_roots,
+                    quarantine,
+                ),
+                None => {
+                    cleanup::cleanup_stale_paths(&cleanup_paths, &preserved_paths, &retained_roots)
+                }
+            };
+            cleaned
+                && clean_optional_mounts(
+                    &manifest,
+                    optional_replacements.iter(),
+                    quarantine.as_ref(),
+                )
+        },
+    );
     let instruction_cleanup = stale_cleanup.success().then(|| {
         telemetry::CleanupPhase::Instructions.measure(instruction_cleanups.len(), || {
             instructions::cleanup_instruction_files(&instruction_cleanups)
@@ -312,7 +361,7 @@ fn run_manifest_with_files_in_runtime(
     // Resolve all logical and physical target identities before downloads.
     // The scheduler uses both identities to serialize overlapping extraction.
     let target_prepare_start = Instant::now();
-    let download_tasks = match download::prepare_download_tasks(download_tasks) {
+    let download_tasks = match download::prepare_download_tasks(download_tasks, &mut skipped) {
         Ok(download_tasks) => {
             record_sandbox_op(
                 "guest_storage_apply_target_prepare",
@@ -338,23 +387,74 @@ fn run_manifest_with_files_in_runtime(
     }
 
     let scheduler_start = Instant::now();
-    let success = download::download_all_parallel(download_tasks, readiness);
+    let success = download::download_all_parallel(download_tasks, readiness, &mut skipped);
     record_sandbox_op(
         "guest_storage_apply_archive_scheduler",
         scheduler_start.elapsed(),
         success,
         None,
     );
-    if !success {
-        return false;
-    }
     // Temporary migration reader: shared immutable packages retain their source
     // names/layout. Normalize only the materialized Workflow, never the cache.
     // Retire after copied Workflows have canonical packages and old readers drain.
-    match workflow_document::apply(&manifest.storages) {
+    let applied = success && workflow_document::apply_all(&manifest.storages, &mut skipped);
+    let cleaned = clean_optional_mounts(&manifest, skipped.iter(), quarantine.as_ref());
+    if !applied || !cleaned {
+        return false;
+    }
+    if optional_mounts.is_empty() {
+        return true;
+    }
+    let receipt = StorageApplyReceipt {
+        skipped_optional: manifest
+            .storages
+            .iter()
+            .enumerate()
+            .filter_map(|(index, entry)| skipped.contains(&entry.mount_path).then_some(index))
+            .collect(),
+    };
+    write_result(output, &receipt)
+}
+
+fn clean_optional_mounts<'a>(
+    manifest: &Manifest,
+    paths: impl Iterator<Item = &'a String>,
+    quarantine: Option<&quarantine::Quarantine>,
+) -> bool {
+    for path in paths {
+        let others = manifest
+            .storages
+            .iter()
+            .map(|entry| entry.mount_path.as_str())
+            .chain(
+                manifest
+                    .artifacts
+                    .iter()
+                    .map(|entry| entry.mount_path.as_str()),
+            )
+            .filter(|other| *other != path);
+        if let Err(error) = cleanup::remove_optional_mount(Path::new(path), others, quarantine) {
+            log_error!(
+                LOG_TAG,
+                "Failed to safely clean optional package {path}: {error}"
+            );
+            return false;
+        }
+    }
+    true
+}
+
+fn write_result(output: &mut dyn Write, result: &impl serde::Serialize) -> bool {
+    match serde_json::to_writer(&mut *output, result)
+        .map_err(io::Error::other)
+        .and_then(|()| output.write_all(b"\n"))
+    {
         Ok(()) => true,
         Err(error) => {
-            log_error!(LOG_TAG, "Workflow document materialization failed: {error}");
+            log_error!(
+                LOG_TAG,
+                "Failed to report storage application result: {error}"
+            );
             false
         }
     }

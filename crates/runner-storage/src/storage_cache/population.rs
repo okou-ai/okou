@@ -167,7 +167,9 @@ pub(super) async fn prepare_ordinary(
                 let mut metrics = CacheProcessMetrics::default();
                 let started = Instant::now();
                 let processed = process_group_hit_or_passthrough(&group, &home, &mut metrics).await;
-                let success = processed.is_ok();
+                let success = processed
+                    .as_ref()
+                    .is_ok_and(|value| !matches!(value.outcome, TargetOutcome::Unavailable));
                 metrics.record(
                     STORAGE_CACHE_PROCESS_GROUP,
                     started.elapsed(),

@@ -1,6 +1,46 @@
 use super::*;
 
 #[test]
+fn receipt_must_account_for_unavailable_sources_and_only_reference_optional_mounts() {
+    let mounts = [
+        (
+            1,
+            OptionalMount {
+                path: "/skills/optional".into(),
+                unavailable: false,
+            },
+        ),
+        (
+            2,
+            OptionalMount {
+                path: "/skills/unavailable".into(),
+                unavailable: true,
+            },
+        ),
+    ]
+    .into_iter()
+    .collect();
+    let parsed = |stdout: &[u8]| {
+        read_storage_receipt(
+            &sandbox::ExecResult::new(0, stdout.to_vec(), Vec::new()),
+            &mounts,
+        )
+    };
+    assert_eq!(
+        parsed(br#"{"skippedOptional":[2]}"#).unwrap(),
+        HashSet::from(["/skills/unavailable".into()])
+    );
+    for invalid in [
+        b"".as_slice(),
+        br#"{"skippedOptional":[]}"#,
+        br#"{"skippedOptional":[0,2]}"#,
+        br#"{"skippedOptional":[1,2,2]}"#,
+    ] {
+        assert!(parsed(invalid).is_err());
+    }
+}
+
+#[test]
 fn payload_buckets_use_binary_framing_instead_of_manifest_json() {
     let files = [StorageFile {
         path: "private-name".to_string(),

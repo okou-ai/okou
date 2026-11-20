@@ -1,6 +1,6 @@
 //! Runner-wide ownership of deferred storage-cache work and its terminal reports.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -793,6 +793,20 @@ pub struct DeferredBackgroundFill {
 }
 
 impl DeferredBackgroundFill {
+    /// Discard fills whose only consumers were skipped during Guest application.
+    pub fn remove_skipped_mounts(&mut self, skipped: &HashSet<String>) {
+        if !skipped.is_empty() {
+            self.groups.retain(|(group, _)| {
+                group.targets().any(|target| {
+                    target
+                        .optional_mount
+                        .as_ref()
+                        .is_none_or(|path| !skipped.contains(path))
+                })
+            });
+        }
+    }
+
     #[cfg(test)]
     pub(super) async fn run(self) -> Vec<SandboxOpRecord> {
         run_background_fill_groups(self.groups, self.home).await

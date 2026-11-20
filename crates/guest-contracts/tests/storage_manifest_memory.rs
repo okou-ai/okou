@@ -107,6 +107,7 @@ fn storage_manifest_preserves_complete_wire_without_input_sized_projection()
         &Manifest {
             archive_readiness: None,
             storages: vec![StorageEntry {
+                optional: false,
                 template_guidance: None,
                 mount_path: "/data/引号\"\\\n".into(),
                 archive_url: Some("https://example.test/archive?key=\"\\".into()),
@@ -173,6 +174,7 @@ fn storage_manifest_preserves_complete_wire_without_input_sized_projection()
     let manifest = Manifest {
         archive_readiness: None,
         storages: vec![StorageEntry {
+            optional: false,
             template_guidance: None,
             mount_path: "/data".into(),
             archive_url: Some(archive_url),

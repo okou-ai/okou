@@ -1,5 +1,6 @@
 use std::{
     fs,
+    future::Future,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -75,6 +76,21 @@ fn apply_guest_storage(
     first_call: usize,
     remote: Option<&str>,
 ) {
+    for result in guest_storage_results(overrides, root, first_call, remote) {
+        assert_eq!(
+            result.termination,
+            sandbox::ExecTermination::Exited { exit_code: 0 },
+            "Guest must apply the actual resolved content package Storage input"
+        );
+    }
+}
+
+fn guest_storage_results(
+    overrides: &MockSandboxOverrides,
+    root: &Path,
+    first_call: usize,
+    remote: Option<&str>,
+) -> Vec<sandbox::ExecResult> {
     for file in overrides.write_file_calls() {
         if file.path.starts_with("/tmp/vm0-storage-cache/") {
             let path = guest_path(root, &file.path);
@@ -82,6 +98,8 @@ fn apply_guest_storage(
             fs::write(path, file.content).unwrap();
         }
     }
+    let runtime = root.join("helper-runtime");
+    let mut results = Vec::new();
     for call in overrides.storage_manifest_calls().iter().skip(first_call) {
         let (json, mut files) = if call.manifest_json.starts_with(storage_files::INPUT_MAGIC) {
             let (json, payload) = storage_files::split_input(&call.manifest_json).unwrap();
@@ -132,22 +150,49 @@ fn apply_guest_storage(
             group.mount_path = guest_path(root, &group.mount_path).to_str().unwrap().into();
         }
         let json = serde_json::to_vec(&manifest).unwrap();
+        let mut receipt = Vec::new();
         let success = if files.is_empty() {
-            guest_storage_apply::run_manifest_bytes(&json)
+            guest_storage_apply::run_manifest_bytes_in_runtime(&json, &runtime, &mut receipt)
         } else {
             let groups = files
                 .iter()
                 .map(|group| (group.mount_path.as_str(), group.files.as_slice()))
                 .collect::<Vec<_>>();
-            guest_storage_apply::run_storage_files_bytes(
+            guest_storage_apply::run_storage_files_bytes_in_runtime(
                 &storage_files::encode_input(&json, &groups).unwrap(),
+                &runtime,
+                &mut receipt,
             )
         };
-        assert!(
-            success,
-            "Guest must apply the actual resolved content package Storage input"
-        );
+        results.push(sandbox::ExecResult::new(
+            i32::from(!success),
+            receipt,
+            Vec::new(),
+        ));
     }
+    results
+}
+
+async fn complete_guest_storage<T>(
+    execution: impl Future<Output = T>,
+    overrides: &MockSandboxOverrides,
+    root: &Path,
+) -> T {
+    let gate = MockLifecycleGate::new();
+    overrides.set_storage_manifest_lifecycle_gate(gate.clone());
+    let first_call = overrides.storage_manifest_calls().len();
+    tokio::pin!(execution);
+    tokio::select! {
+        _ = &mut execution => panic!("Run completed before Guest storage application"),
+        entered = gate.wait_entered(1, RUN_IN_SANDBOX_TEST_TIMEOUT) => entered.unwrap(),
+    };
+    let mut results = guest_storage_results(overrides, root, first_call, None);
+    assert_eq!(results.len(), 1);
+    overrides.push_storage_manifest_result(Ok(results.pop().unwrap()));
+    gate.release_one();
+    tokio::time::timeout(RUN_IN_SANDBOX_TEST_TIMEOUT, execution)
+        .await
+        .unwrap()
 }
 
 fn apply_guest_instructions(overrides: &MockSandboxOverrides, root: &Path, first_exec: usize) {
@@ -887,6 +932,148 @@ async fn workflow_storage_reuses_local_changes_and_reconciles_versions_names_and
     }
 }
 
+#[tokio::test]
+async fn optional_workflow_reuse_tracks_only_packages_that_guest_applied() {
+    let directory = tempfile::tempdir().unwrap();
+    let (config, _api) = test_executor_config_with_startup_api(directory.path()).await;
+    let guest = tempfile::tempdir().unwrap();
+    let mount = "/home/user/.codex/skills/example--wf-shared";
+    let required_mount = "/home/user/.codex/skills/required";
+    let target = guest_path(guest.path(), mount);
+    let required_target = guest_path(guest.path(), required_mount);
+    let good_document = b"---\nname: example\ndescription: Workflow\n---\n\nRun it.\n";
+    let bytes = archive(&[("SKILL.md", good_document)]);
+    let hash = hex::encode(Sha256::digest(&bytes));
+    let required_bytes = archive(&[("SKILL.md", b"required")]);
+    let required_hash = hex::encode(Sha256::digest(&required_bytes));
+    let required_cache = config
+        .home
+        .storage_cache_dir(WORKFLOW_STORAGE_NAME, &required_hash);
+    fs::create_dir_all(&required_cache).unwrap();
+    fs::write(required_cache.join("archive.tar.gz"), &required_bytes).unwrap();
+
+    let context_for_run = || {
+        let mut current = context(&hash, bytes.len() as u64, mount, "optional");
+        current.run_id = runner_types::ids::RunId::new_v4();
+        let storages = &mut current.storage_manifest.as_mut().unwrap().storages;
+        storages[0].optional = true;
+        storages[0].archive_url = "file:///tmp/missing-optional.tar.gz".into();
+        storages.push(api_storage(
+            WORKFLOW_STORAGE_NAME,
+            required_mount,
+            &required_hash,
+            "https://unreachable.invalid/required",
+        ));
+        current
+    };
+    let overrides = Arc::new(MockSandboxOverrides::new());
+    let factory = MockSandboxFactory::with_overrides(Arc::clone(&overrides));
+    let params = default_params();
+
+    let (mut outcome, _) = complete_guest_storage(
+        execute_job(
+            &factory,
+            context_for_run(),
+            NewSandboxDispatch {
+                id: SandboxId::new_v4(),
+                reuse_result: SandboxReuseResult::NoReuseKey,
+            },
+            &config,
+            &params,
+            CancellationToken::new(),
+        ),
+        &overrides,
+        guest.path(),
+    )
+    .await;
+    assert_eq!(outcome.exit_code(), 0, "{:?}", outcome.error());
+    assert!(!outcome.storage_fingerprints.storages.contains_key(mount));
+    assert!(
+        outcome.storage_fingerprints.storages[required_mount]
+            .matches(WORKFLOW_STORAGE_NAME, &required_hash)
+    );
+    assert!(!target.exists());
+    assert_eq!(
+        fs::read(required_target.join("SKILL.md")).unwrap(),
+        b"required"
+    );
+
+    // A later run tries the same selected version again, since its earlier
+    // failure left no successful fingerprint.
+    let cache = config.home.storage_cache_dir(WORKFLOW_STORAGE_NAME, &hash);
+    fs::create_dir_all(&cache).unwrap();
+    fs::write(cache.join("archive.tar.gz"), &bytes).unwrap();
+    drop(
+        runner_host::lock::open_lock_file(&config.home.storage_lock(WORKFLOW_STORAGE_NAME, &hash))
+            .unwrap(),
+    );
+    config
+        .decoded_cache
+        .warm_from_archive(WORKFLOW_STORAGE_NAME, &hash)
+        .await
+        .unwrap();
+    let mut leases = Vec::new();
+    for reused_package in [false, true] {
+        if let Some(report) = outcome.startup_report.take() {
+            report.finish().await;
+        }
+        if reused_package {
+            fs::write(target.join("SKILL.md"), b"invalid local Workflow document").unwrap();
+            fs::write(target.join("other.txt"), b"stale").unwrap();
+        }
+        let (idle, lease) = make_reusable_idle_sandbox_with_fingerprints(
+            outcome.sandbox.take().unwrap(),
+            outcome.source_ip.clone(),
+            "optional-workflow",
+            outcome.storage_fingerprints,
+        )
+        .await;
+        leases.push(lease);
+        (outcome, _) = complete_guest_storage(
+            execute_job_reuse(
+                idle,
+                context_for_run(),
+                &config,
+                &params,
+                CancellationToken::new(),
+            ),
+            &overrides,
+            guest.path(),
+        )
+        .await;
+        assert_eq!(outcome.exit_code(), 0, "{:?}", outcome.error());
+        let calls = overrides.storage_manifest_calls();
+        let request = &calls.last().unwrap().manifest_json;
+        let manifest_json = if reused_package {
+            request.as_slice()
+        } else {
+            storage_files::split_input(request).unwrap().0
+        };
+        let manifest: Manifest = serde_json::from_slice(manifest_json).unwrap();
+        assert_eq!(manifest.storages[0].cached, reused_package);
+        assert_eq!(
+            outcome.storage_fingerprints.storages.contains_key(mount),
+            !reused_package
+        );
+        if reused_package {
+            assert!(!target.exists());
+        } else {
+            let applied = fs::read_to_string(target.join("SKILL.md")).unwrap();
+            assert!(applied.contains("name: example--wf-shared"));
+        }
+        assert_eq!(
+            fs::read(required_target.join("SKILL.md")).unwrap(),
+            b"required"
+        );
+    }
+    assert_eq!(overrides.start_agent_process_calls().len(), 3);
+    if let Some(report) = outcome.startup_report.take() {
+        report.finish().await;
+    }
+    config.background_fill.shutdown().await;
+    config.decoded_cache.shutdown().await;
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn large_workflow_archive_downloads_through_ordinary_guest_passthrough() {
     let directory = tempfile::tempdir().unwrap();
@@ -1543,6 +1730,87 @@ async fn home_restored_workflow_storage_preserves_matching_local_content() {
     if let Some(report) = outcome.startup_report.take() {
         report.finish().await;
     }
+}
+
+#[tokio::test]
+async fn optional_cache_failure_cleans_stale_workflow_from_retained_home() {
+    use crate::home_image_cache::HomeImageCache;
+    use runner_host::paths::RunnerPaths;
+
+    let directory = tempfile::tempdir().unwrap();
+    let (mut config, _api) = test_executor_config_with_startup_api(directory.path()).await;
+    let paths = RunnerPaths::new(directory.path().join("runner"));
+    let home = HomeImageCache::new(paths.clone());
+    config.home_cache = Some(home.clone());
+    let guest = tempfile::tempdir().unwrap();
+    let mount = "/home/user/.claude/skills/example";
+    let hash = "a".repeat(64);
+    let mut current = context(&hash, 10, mount, "cache-error");
+    current.storage_manifest.as_mut().unwrap().storages[0].optional = true;
+    let session = "optional-workflow-home";
+    current.reuse_key = Some(format!("thread:home-cache-{session}"));
+    current.native_continuation = Some(guest_contracts::env::NativeContinuation {
+        session_id: Some(session.into()),
+        generation_run_id: Some(current.run_id.to_string()),
+        recovery_prompt: None,
+    });
+    let mut previous = StorageFingerprints::default();
+    previous.storages.insert(
+        mount.into(),
+        StorageFingerprint::new(WORKFLOW_STORAGE_NAME, "old-version"),
+    );
+    seed_home_image_cache_with_fingerprints(&home, &paths, session, 16, &previous).await;
+    let target = guest_path(guest.path(), mount);
+    fs::create_dir_all(&target).unwrap();
+    fs::write(target.join("SKILL.md"), "stale").unwrap();
+    let nearby = target.parent().unwrap().join("nearby");
+    fs::write(&nearby, "keep").unwrap();
+
+    let cache = config.home.storage_cache_dir(WORKFLOW_STORAGE_NAME, &hash);
+    fs::create_dir_all(&cache).unwrap();
+    fs::write(cache.join("archive.tar.gz"), []).unwrap();
+    let overrides = Arc::new(MockSandboxOverrides::new());
+    let factory = MockSandboxFactory::with_overrides(Arc::clone(&overrides));
+    let params = super::super::JobParams {
+        home_disk_mb: 16,
+        ..default_params()
+    };
+    let (mut outcome, _) = complete_guest_storage(
+        execute_job(
+            &factory,
+            current,
+            NewSandboxDispatch {
+                id: SandboxId::new_v4(),
+                reuse_result: SandboxReuseResult::PoolMiss,
+            },
+            &config,
+            &params,
+            CancellationToken::new(),
+        ),
+        &overrides,
+        guest.path(),
+    )
+    .await;
+    assert_eq!(outcome.exit_code(), 0, "{:?}", outcome.error());
+    assert_eq!(
+        outcome.home_reuse_result,
+        Some(runner_types::types::HomeReuseResult::Reused)
+    );
+    let calls = overrides.storage_manifest_calls();
+    let manifest: Manifest = serde_json::from_slice(&calls[0].manifest_json).unwrap();
+    assert!(manifest.storages[0].optional);
+    assert!(!manifest.storages[0].cached);
+    assert!(manifest.storages[0].archive_url.is_none());
+    assert_eq!(manifest.cleanup_paths, [mount]);
+    assert!(!target.exists());
+    assert_eq!(fs::read(nearby).unwrap(), b"keep");
+    assert!(!outcome.storage_fingerprints.storages.contains_key(mount));
+    assert_eq!(overrides.start_agent_process_calls().len(), 1);
+    if let Some(report) = outcome.startup_report.take() {
+        report.finish().await;
+    }
+    config.background_fill.shutdown().await;
+    config.decoded_cache.shutdown().await;
 }
 
 #[tokio::test]

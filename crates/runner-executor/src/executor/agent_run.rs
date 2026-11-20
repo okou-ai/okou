@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::pin::Pin;
 use std::time::{Duration, Instant};
@@ -1357,7 +1357,7 @@ async fn apply_prepared_storage(
     prepared: &mut crate::storage_cache::PreparedStorage,
     telemetry: &mut JobTelemetry,
     cache_started: Instant,
-) -> RunnerResult<Option<crate::storage_cache::DeferredBackgroundFill>> {
+) -> RunnerResult<AppliedStorage> {
     use std::sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -1407,15 +1407,16 @@ async fn apply_prepared_storage(
             };
             let started = Instant::now();
             let result = async {
-                super::storage::download_storages_with_files_until_cancelled(
-                    sandbox,
-                    context,
-                    initial.manifest,
-                    &initial.files,
-                    guest_telemetry,
-                    &cancel,
-                )
-                .await?;
+                let mut skipped_mounts =
+                    super::storage::download_storages_with_files_until_cancelled(
+                        sandbox,
+                        context,
+                        initial.manifest,
+                        &initial.files,
+                        guest_telemetry,
+                        &cancel,
+                    )
+                    .await?;
                 if let Some(tail) = decoded_tail {
                     let populated = wait_population.await.map_err(|_| {
                         RunnerError::Internal("storage population completion was lost".into())
@@ -1423,17 +1424,19 @@ async fn apply_prepared_storage(
                     if !populated {
                         return Err(RunnerError::Cancelled);
                     }
-                    super::storage::download_storages_with_files_until_cancelled(
-                        sandbox,
-                        context,
-                        tail.manifest,
-                        &tail.files,
-                        guest_telemetry,
-                        &cancel,
-                    )
-                    .await?;
+                    skipped_mounts.extend(
+                        super::storage::download_storages_with_files_until_cancelled(
+                            sandbox,
+                            context,
+                            tail.manifest,
+                            &tail.files,
+                            guest_telemetry,
+                            &cancel,
+                        )
+                        .await?,
+                    );
                 }
-                Ok(())
+                Ok(skipped_mounts)
             }
             .await;
             guest_telemetry.record(
@@ -1462,7 +1465,10 @@ async fn apply_prepared_storage(
             (Ok(_), Ok(None)) => Err(RunnerError::Internal(
                 "Guest storage handoff was lost".into(),
             )),
-            (Ok(deferred), Ok(Some(()))) => Ok(deferred),
+            (Ok(background_fill), Ok(Some(skipped_mounts))) => Ok(AppliedStorage {
+                background_fill,
+                skipped_mounts,
+            }),
         }
     }
 }
@@ -1523,8 +1529,14 @@ async fn prepare_guest_runtime_state_phase(
     }
 }
 
-struct GuestStoragePreparation {
+#[derive(Default)]
+struct AppliedStorage {
     background_fill: Option<crate::storage_cache::DeferredBackgroundFill>,
+    skipped_mounts: HashSet<String>,
+}
+
+struct GuestStoragePreparation {
+    storage: AppliedStorage,
     apply_instructions: bool,
 }
 
@@ -1562,7 +1574,7 @@ async fn prepare_guest_storage(
     let apply_started = Instant::now();
     let planning_started = Instant::now();
 
-    let result: RunnerResult<Option<crate::storage_cache::DeferredBackgroundFill>> = async {
+    let result: RunnerResult<AppliedStorage> = async {
         if let Some(prepared) = prepared_storage.as_mut() {
             record_storage_plan_state(
                 &prepared.plan,
@@ -1581,7 +1593,7 @@ async fn prepare_guest_storage(
                 info!(run_id = %context.run_id, "storage manifest has no download work, skipping download");
                 prepared.delivery.cancel_and_drain(telemetry).await;
                 let _ = prepared_storage.take();
-                Ok(None)
+                Ok(AppliedStorage::default())
             } else {
                 let cache_started = Instant::now();
                 let owned_sources = prepared.delivery.has_owned_sources(telemetry).await;
@@ -1632,7 +1644,10 @@ async fn prepare_guest_storage(
                     download_result.is_ok(),
                     download_result.is_err().then_some(STORAGE_DOWNLOAD_FAILED),
                 );
-                download_result.map(|_| deferred)
+                download_result.map(|skipped_mounts| AppliedStorage {
+                    background_fill: deferred,
+                    skipped_mounts,
+                })
             }
         } else {
             let mut plan = build_storage_plan(manifest, previous)?;
@@ -1651,7 +1666,7 @@ async fn prepare_guest_storage(
             );
             if !has_work {
                 info!(run_id = %context.run_id, "storage manifest has no download work, skipping download");
-                Ok(None)
+                Ok(AppliedStorage::default())
             } else {
                 let deferred =
                     populate_storage_plan(&mut plan, None, sandbox, config, telemetry, None).await?;
@@ -1672,7 +1687,10 @@ async fn prepare_guest_storage(
                     download_result.is_ok(),
                     download_result.is_err().then_some(STORAGE_DOWNLOAD_FAILED),
                 );
-                download_result.map(|_| deferred)
+                download_result.map(|skipped_mounts| AppliedStorage {
+                    background_fill: deferred,
+                    skipped_mounts,
+                })
             }
         }
     }
@@ -1685,9 +1703,14 @@ async fn prepare_guest_storage(
         result.is_ok(),
         error.as_deref(),
     );
-    result.map(|background_fill| GuestStoragePreparation {
-        background_fill,
-        apply_instructions,
+    result.map(|mut storage| {
+        if let Some(fill) = storage.background_fill.as_mut() {
+            fill.remove_skipped_mounts(&storage.skipped_mounts);
+        }
+        GuestStoragePreparation {
+            storage,
+            apply_instructions,
+        }
     })
 }
 
@@ -1746,7 +1769,8 @@ pub(super) async fn run_in_sandbox(
 
 /// Preparation progress, owned startup delivery and cancellation policy for one Agent attempt.
 pub(super) struct AgentRunLifecycle {
-    pub(super) storage_preparation_complete: bool,
+    /// Present after all storage application and cleanup have completed.
+    pub(super) skipped_optional_storage: Option<HashSet<String>>,
     pub(super) instruction_preparation_complete: bool,
     pub(super) startup_report: Option<super::StartupReport>,
     process_cancel_timeouts: ProcessCancelTimeouts,
@@ -1783,7 +1807,7 @@ fn pre_agent_preparation_failure(
 impl AgentRunLifecycle {
     pub(super) fn new(process_cancel_timeouts: ProcessCancelTimeouts) -> Self {
         Self {
-            storage_preparation_complete: false,
+            skipped_optional_storage: None,
             instruction_preparation_complete: false,
             startup_report: None,
             process_cancel_timeouts,
@@ -1912,7 +1936,13 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
             None => Err(None),
         };
         match storage_preparation {
-            Ok(prepared) => (prepared.background_fill, prepared.apply_instructions),
+            Ok(prepared) => {
+                lifecycle.skipped_optional_storage = Some(prepared.storage.skipped_mounts);
+                (
+                    prepared.storage.background_fill,
+                    prepared.apply_instructions,
+                )
+            }
             Err(error) => {
                 if let Some(prepared) = controls.prepared_storage.as_mut() {
                     prepared.delivery.cancel_and_drain(telemetry).await;
@@ -1937,7 +1967,6 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
             }
         }
     };
-    lifecycle.storage_preparation_complete = true;
     lifecycle.instruction_preparation_complete = !apply_instructions;
     let RunControls {
         sandbox_recovery,

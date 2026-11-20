@@ -90,7 +90,6 @@ impl RunPlan<'_> {
         // Build unified task list: storages + artifact + memory, all downloaded in parallel.
         let mut download_tasks = Vec::new();
 
-        // Storages: 404 is fatal.
         append_storage_download_tasks(&mut download_tasks, &manifest.storages);
 
         // Artifacts with archives must download successfully; explicit empty
@@ -147,6 +146,7 @@ fn append_storage_download_tasks(tasks: &mut Vec<DownloadTask<'_>>, entries: &[S
                 entry.mount_path.clone(),
                 false,
             )
+            .with_optional(entry.optional)
             .with_template_guidance(entry.template_guidance.clone()),
         );
     }

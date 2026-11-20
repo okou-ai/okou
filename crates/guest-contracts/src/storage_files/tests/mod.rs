@@ -18,6 +18,7 @@ fn assert_files(actual: &[StorageFile<&[u8]>], expected: &[StorageFile]) {
 
 fn storage_entry(mount_path: &str) -> StorageEntry {
     StorageEntry {
+        optional: false,
         template_guidance: None,
         mount_path: mount_path.into(),
         archive_url: Some("file:///storage.tar.gz".into()),

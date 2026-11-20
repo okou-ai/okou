@@ -477,11 +477,11 @@ pub struct ExecuteOutcome {
 }
 
 impl ExecuteOutcome {
-    fn preparation_failure(error: impl ToString) -> Self {
+    fn preparation_failure(context: &ExecutionContext, error: impl ToString) -> Self {
         Self {
             failure: Some(ExecutionFailure::from_error(error.to_string())),
             sandbox_reuse_disposition: SandboxReuseDisposition::default(),
-            storage_fingerprints: StorageFingerprints::default(),
+            storage_fingerprints: context.storage_fingerprints(),
             sandbox: None,
             source_ip: String::new(),
             network_log_session: None,
@@ -494,6 +494,7 @@ impl ExecuteOutcome {
     }
 
     fn reused_sandbox_failure(
+        context: &ExecutionContext,
         failure: ExecutionFailure,
         sandbox: Box<dyn Sandbox>,
         source_ip: String,
@@ -502,7 +503,7 @@ impl ExecuteOutcome {
         Self {
             failure: Some(failure),
             sandbox_reuse_disposition: SandboxReuseDisposition::default(),
-            storage_fingerprints: StorageFingerprints::default(),
+            storage_fingerprints: context.storage_fingerprints(),
             sandbox: Some(sandbox),
             source_ip,
             network_log_session: None,
@@ -526,16 +527,6 @@ impl ExecuteOutcome {
 
     pub fn mark_cancelled(&mut self) {
         self.failure = Some(ExecutionFailure::cancelled());
-    }
-
-    fn with_storage_context(mut self, context: &ExecutionContext) -> Self {
-        let mut inputs = context.storage_fingerprints();
-        // Observed reconciliation state takes precedence over requested inputs,
-        // including tainted paths retained from the previous filesystem state.
-        inputs.storages.extend(self.storage_fingerprints.storages);
-        inputs.artifacts.extend(self.storage_fingerprints.artifacts);
-        self.storage_fingerprints = inputs;
-        self
     }
 }
 
@@ -787,12 +778,14 @@ pub async fn execute_job_with_prepared_notifier(
     let outcome =
         match prepare_execution_context(&context, config, &sandbox_id, &cancellation.any()) {
             Err(RunnerError::Cancelled) => {
-                let mut outcome = ExecuteOutcome::preparation_failure("cancelled");
+                let mut outcome = ExecuteOutcome::preparation_failure(&context, "cancelled");
                 outcome.mark_cancelled();
                 outcome
             }
-            Err(RunnerError::Internal(message)) => ExecuteOutcome::preparation_failure(message),
-            Err(error) => ExecuteOutcome::preparation_failure(error),
+            Err(RunnerError::Internal(message)) => {
+                ExecuteOutcome::preparation_failure(&context, message)
+            }
+            Err(error) => ExecuteOutcome::preparation_failure(&context, error),
             Ok(prepared_run_payload) => match execute_new_sandbox_with_prepared_notifier(
                 factory,
                 &context,
@@ -812,11 +805,11 @@ pub async fn execute_job_with_prepared_notifier(
             .await
             {
                 Ok(outcome) => outcome,
-                Err(e) => ExecuteOutcome::preparation_failure(e),
+                Err(e) => ExecuteOutcome::preparation_failure(&context, e),
             },
         };
 
-    (outcome.with_storage_context(&context), telemetry)
+    (outcome, telemetry)
 }
 
 /// Execute a single job inside a **reused** (kept-alive) sandbox.
@@ -898,12 +891,12 @@ pub async fn execute_job_reuse_with_hooks(
             .await;
         return (
             ExecuteOutcome::reused_sandbox_failure(
+                &context,
                 ExecutionFailure::from_error("retained sandbox rootfs identity mismatch"),
                 sandbox,
                 source_ip,
                 None,
-            )
-            .with_storage_context(&context),
+            ),
             telemetry,
         );
     }
@@ -930,8 +923,9 @@ pub async fn execute_job_reuse_with_hooks(
         Ok(home_image) => home_image,
         Err(failure) => {
             return (
-                ExecuteOutcome::reused_sandbox_failure(*failure, sandbox, source_ip, None)
-                    .with_storage_context(&context),
+                ExecuteOutcome::reused_sandbox_failure(
+                    &context, *failure, sandbox, source_ip, None,
+                ),
                 telemetry,
             );
         }
@@ -941,12 +935,12 @@ pub async fn execute_job_reuse_with_hooks(
     if let Some(error) = resume_session_error {
         return (
             ExecuteOutcome::reused_sandbox_failure(
+                &context,
                 ExecutionFailure::from_error(error),
                 sandbox,
                 source_ip,
                 home_image,
-            )
-            .with_storage_context(&context),
+            ),
             telemetry,
         );
     }
@@ -1009,6 +1003,7 @@ pub async fn execute_job_reuse_with_hooks(
         &cancellation.any(),
     ) {
         Err(error) => ExecuteOutcome::reused_sandbox_failure(
+            &context,
             match error {
                 RunnerError::Cancelled => ExecutionFailure::cancelled(),
                 RunnerError::Internal(message) => ExecutionFailure::from_error(message),
@@ -1066,7 +1061,7 @@ pub async fn execute_job_reuse_with_hooks(
         }
     };
 
-    (outcome.with_storage_context(&context), telemetry)
+    (outcome, telemetry)
 }
 
 async fn resolve_reused_home_promotion(
