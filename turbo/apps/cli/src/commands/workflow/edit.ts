@@ -1,20 +1,16 @@
-import { workflowHelp } from "./mode";
 import { Command } from "commander";
 import chalk from "chalk";
 import { readFileSync } from "node:fs";
 import { updateWorkflow } from "../../lib/api/domains/workflows";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { readSupplementaryFiles } from "../../lib/skill-directory";
-import {
-  resolveWorkflowRef,
-  type WorkflowRefOptions,
-} from "./resolve-workflow-ref";
+import { resolveWorkflowRef } from "./resolve-workflow-ref";
 
 export const editCommand = new Command()
   .name("edit")
   .description("Update a workflow's instruction, files, or metadata")
   .argument("<workflow>", "Workflow ID or name")
-  .option("--agent <id>", "Agent ID for resolving workflow names")
+
   .option("--instruction <text>", "New instruction text")
   .option(
     "--instruction-file <path>",
@@ -26,10 +22,11 @@ export const editCommand = new Command()
   )
   .option("--display-name <name>", "New display name")
   .option("--description <text>", "New description")
-  .addHelpText("after", () => {
-    return workflowHelp(`
+  .addHelpText(
+    "after",
+    `
 Examples:
-  okou workflow edit tell-a-joke --agent <agent-id> --instruction "New steps"
+  okou workflow edit tell-a-joke --instruction "New steps"
   okou workflow edit <workflow-id> --instruction "New steps"
   okou workflow edit <workflow-id> --instruction-file ./instruction.md
   okou workflow edit <workflow-id> --dir ./workflows/my-workflow/files/
@@ -38,8 +35,8 @@ Examples:
 Notes:
   - SKILL.md is synthesized automatically; --dir uploads supplementary files only and rejects SKILL.md
   - This command persists the update through the API. Editing /home/user/.codex/skills or /home/user/.claude/skills is runtime-only and will not sync back
-  - At least one of --instruction, --instruction-file, --dir, --display-name, or --description is required`);
-  })
+  - At least one of --instruction, --instruction-file, --dir, --display-name, or --description is required`,
+  )
   .action(
     withErrorHandler(
       async (
@@ -50,7 +47,7 @@ Notes:
           dir?: string;
           displayName?: string;
           description?: string;
-        } & WorkflowRefOptions,
+        },
       ) => {
         if (options.instruction && options.instructionFile) {
           console.error(
@@ -83,7 +80,7 @@ Notes:
           process.exit(1);
         }
 
-        const workflowId = await resolveWorkflowRef(workflowRef, options);
+        const workflowId = await resolveWorkflowRef(workflowRef);
         const workflow = await updateWorkflow(workflowId, {
           instruction,
           files,

@@ -246,7 +246,7 @@ describe("okou whoami command", () => {
       expect(output).toContain("shared across Chats and accounts");
     });
 
-    it("should show agent ID, run context, and capabilities with full JWT", async () => {
+    it("should show user ID, run context, and capabilities with full JWT", async () => {
       const token = buildOkouToken({
         userId: "user-1",
         runId: "run-abc",
@@ -266,12 +266,12 @@ describe("okou whoami command", () => {
         output.some((line) => {
           return line.includes("Agent ID:");
         }),
-      ).toBe(true);
+      ).toBe(false);
       expect(
         output.some((line) => {
           return line.includes("agent-123");
         }),
-      ).toBe(true);
+      ).toBe(false);
       expect(
         output.some((line) => {
           return line.includes("Run ID:");
@@ -371,7 +371,7 @@ describe("okou whoami command", () => {
         output.some((line) => {
           return line.includes("agent-123");
         }),
-      ).toBe(true);
+      ).toBe(false);
       expect(
         output.some((line) => {
           return line.includes("Capabilities:");
@@ -389,12 +389,12 @@ describe("okou whoami command", () => {
         output.some((line) => {
           return line.includes("Agent ID:");
         }),
-      ).toBe(true);
+      ).toBe(false);
       expect(
         output.some((line) => {
           return line.includes("agent-no-token");
         }),
-      ).toBe(true);
+      ).toBe(false);
       expect(
         output.some((line) => {
           return line.includes("Run ID:");
@@ -423,7 +423,7 @@ describe("okou whoami command", () => {
         output.some((line) => {
           return line.includes("agent-bad-token");
         }),
-      ).toBe(true);
+      ).toBe(false);
       expect(
         output.some((line) => {
           return line.includes("unavailable");
@@ -641,7 +641,7 @@ describe("okou whoami command", () => {
         output.some((line) => {
           return line.includes("Agent ID:");
         }),
-      ).toBe(true);
+      ).toBe(false);
       expect(
         output.some((line) => {
           return line.includes("run-abc");
@@ -675,7 +675,7 @@ describe("okou whoami command", () => {
         output.some((line) => {
           return line.includes("Agent ID:");
         }),
-      ).toBe(true);
+      ).toBe(false);
       expect(
         output.some((line) => {
           return line.includes("Connectors:");
@@ -920,17 +920,26 @@ describe("okou whoami command", () => {
         }),
       );
 
+      server.use(
+        http.get("*/api/auth/me", () =>
+          HttpResponse.json({
+            userId: "user-1",
+            email: "test@example.com",
+            orgId: "test-org-slug",
+          }),
+        ),
+      );
       await runWhoami();
 
       const output = getAllOutput();
       expect(
         output.some((line) => {
-          return line.includes("Authenticated");
+          return line.includes("User ID:");
         }),
       ).toBe(true);
       expect(
         output.some((line) => {
-          return line.includes("OKOU_TOKEN env var");
+          return line.includes("test@example.com");
         }),
       ).toBe(true);
     });
@@ -1020,12 +1029,21 @@ describe("okou whoami command", () => {
       });
       vi.stubEnv("OKOU_TOKEN", okouToken);
 
+      server.use(
+        http.get("*/api/auth/me", () =>
+          HttpResponse.json({
+            userId: "user-1",
+            email: "test@example.com",
+            orgId: "test-org-slug",
+          }),
+        ),
+      );
       await runWhoami();
 
       const output = getAllOutput();
       expect(
         output.some((line) => {
-          return line.includes("Org:");
+          return line.includes("Org ID:");
         }),
       ).toBe(true);
       expect(

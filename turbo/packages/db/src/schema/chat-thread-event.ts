@@ -34,6 +34,7 @@ export const chatThreadEventKind = pgEnum("chat_thread_event_kind", [
   "archived",
   "unarchived",
   "project_updated",
+  "agent_reassigned",
 ]);
 
 export type ChatThreadEventKind =
@@ -66,8 +67,6 @@ export const chatThreadEvents = pgTable(
     projectId: uuid("project_id"),
     kind: chatThreadEventKind("kind").notNull(),
     agentId: uuid("agent_id"),
-    /** Only canonical agent reassignment carries this identity update. */
-    reassignedAgentId: uuid("reassigned_agent_id"),
     title: text("title"),
     pinOrder: text("pin_order"),
     /** Metadata-only sort_touched payload; NULL means no mute change. */

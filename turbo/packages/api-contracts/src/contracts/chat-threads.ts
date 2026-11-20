@@ -1091,6 +1091,7 @@ export const chatSearchContract = c.router({
     headers: authHeadersSchema,
     query: object({
       keyword: string().trim().min(1),
+      // Accepted for older clients. Search is scoped to the member, not the executor.
       agentId: uuid().optional(),
     }),
     responses: {

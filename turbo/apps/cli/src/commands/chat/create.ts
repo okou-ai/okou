@@ -1,16 +1,8 @@
-import { isPersonalExecution } from "../../lib/personal-execution";
-import {
-  personalCommandMode,
-  personalExecutorId,
-} from "../../lib/command/single-agent";
+import { workspaceExecutorId } from "../../lib/command/workspace-executor";
 import chalk from "chalk";
 import { Command } from "commander";
 
-import {
-  createChatThread,
-  getChatThread,
-  getChatThreadAgentId,
-} from "../../lib/api/domains/chat";
+import { createChatThread, getChatThread } from "../../lib/api/domains/chat";
 import { getModelCatalog } from "../../lib/api/domains/model-catalog";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import {
@@ -18,63 +10,21 @@ import {
   parseModelSelectionArgument,
 } from "../../lib/domain/model-catalog-display";
 import { isUuid } from "../../lib/utils/uuid";
-import { getOkouChatThreadId } from "../../lib/okou-env";
 import { ApiRequestError } from "../../lib/api/core/client-factory";
 import { parseChatEffort, printChatUsageError } from "./shared";
 
 interface CreateOptions {
   readonly projectId?: string;
-  readonly agent?: string;
   readonly json?: boolean;
   readonly model?: string;
   readonly effort?: string;
   readonly priority?: boolean;
 }
 
-/**
- * Agent that owns the new thread: an explicit `--agent`, otherwise the agent of
- * the chat the command runs in.
- */
-async function resolveAgentId(
-  flagAgentId: string | undefined,
-): Promise<string> {
-  if (isPersonalExecution()) {
-    if (flagAgentId !== undefined)
-      throw new Error(
-        "Agent selection is unavailable in My Okou. Remove --agent.",
-      );
-    return personalExecutorId();
-  }
-  const agentId = flagAgentId?.trim();
-  if (agentId) {
-    return agentId;
-  }
-
-  const currentThreadId = getOkouChatThreadId()?.trim();
-  if (!currentThreadId) {
-    printChatUsageError(
-      "OKOU_CHAT_THREAD_ID is not set",
-      "Pass --agent <agent-id> or run inside a web chat thread.",
-    );
-  }
-  if (!isUuid(currentThreadId)) {
-    printChatUsageError(
-      `Invalid thread ID "${currentThreadId}" — expected a UUID`,
-      "Pass --agent <agent-id> to choose the agent explicitly.",
-    );
-  }
-
-  return await getChatThreadAgentId({ threadId: currentThreadId });
-}
-
 export const createCommand = new Command()
   .name("create")
   .description("Create a new web chat thread")
   .argument("<title...>", "Chat title")
-  .option(
-    "--agent <id>",
-    "Agent ID that owns the thread (defaults to this chat's agent)",
-  )
   .option(
     "--model <id>",
     "Model id for the thread, or auto for Auto (defaults to your model preference, then Auto)",
@@ -90,9 +40,9 @@ export const createCommand = new Command()
   )
   .option("--project-id <id>", "Create inside this Project")
   .option("--json", "Print machine-readable JSON")
-  .addHelpText("after", ({ command }) => {
-    return personalCommandMode(command)
-      ? `
+  .addHelpText(
+    "after",
+    `
 Examples:
   okou chat create "Launch plan"
   okou chat create "Launch plan" --project-id <id> --model auto --json
@@ -100,29 +50,8 @@ Examples:
 Creating a chat does not start a run or copy this conversation. The first message must be self-contained.
 Send it with okou chat send.
 Model, effort and priority use your existing preferences unless specified.
-`
-      : `
-Examples:
-  Create a chat:     okou chat create "Launch plan"
-  Pick the model:    okou chat create "Launch plan" --model claude-sonnet-5
-  Use Auto:          okou chat create "Launch plan" --model auto
-  Set effort:       okou chat create "Launch plan" --model claude-opus-5-5 --effort extra
-  Enable priority:   okou chat create "Launch plan" --priority
-  Use standard:      okou chat create "Launch plan" --no-priority
-  Pick the agent:    okou chat create "Launch plan" --agent <agent-id>
-  Print JSON:        okou chat create "Launch plan" --json
-
-Notes:
-  - Creates an empty thread and does not start a run; send its first self-contained message with okou chat send
-  - Defaults --agent to the agent of OKOU_CHAT_THREAD_ID
-  - Defaults --model to your model preference, then Auto
-  - Effort levels depend on the model; Claude uses extra where Codex uses xhigh
-  - See okou chat model --help for the effort levels supported by each model
-  - Pass --model to choose a different model for the new thread
-  - Defaults priority to your initial model preference
-  - The new thread never inherits this chat's history, so the first message must be self-contained
-  - Authenticates via OKOU_TOKEN (requires chat-thread:write, and chat-thread:read to default --agent or show effective effort)`;
-  })
+`,
+  )
   .action(
     withErrorHandler(async (titleParts: string[], options: CreateOptions) => {
       const title = titleParts.join(" ").trim();
@@ -149,7 +78,7 @@ Notes:
                 ? undefined
                 : { catalog: await getModelCatalog(), model },
             );
-      const agentId = await resolveAgentId(options.agent);
+      const agentId = await workspaceExecutorId();
       let thread;
       try {
         thread = await createChatThread({
@@ -183,7 +112,6 @@ Notes:
             title: thread.title,
             selectedModel: thread.selectedModel,
             serviceTier: thread.serviceTier,
-            agentId,
           }),
         );
         return;
@@ -204,8 +132,6 @@ Notes:
       const priority =
         thread.serviceTier === "priority" ? "enabled" : "disabled";
       console.log(chalk.dim(`  Priority: ${priority}`));
-      if (!isPersonalExecution())
-        console.log(chalk.dim(`  Agent:  ${agentId}`));
       console.log();
       console.log("Send the first message:");
       console.log(

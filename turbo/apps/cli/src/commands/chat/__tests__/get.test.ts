@@ -115,7 +115,6 @@ describe("okou chat get command", () => {
     expect(JSON.parse(String(mockConsoleLog.mock.calls[0]?.[0]))).toStrictEqual(
       {
         id: THREAD_ID,
-        agentId: AGENT_ID,
         title: "Launch plan",
         selectedModel: "claude-sonnet-5",
         hidden: true,

@@ -3655,6 +3655,20 @@
       "when": 1795208704447,
       "tag": "1600_chat_thread_org_ownership",
       "breakpoints": true
+    },
+    {
+      "idx": 1601,
+      "version": "7",
+      "when": 1795210327730,
+      "tag": "1601_preserve_chat_thread_reassignment_kind",
+      "breakpoints": true
+    },
+    {
+      "idx": 1602,
+      "version": "7",
+      "when": 1795210374026,
+      "tag": "1602_retire_chat_thread_reassigned_agent_id",
+      "breakpoints": true
     }
   ]
 }

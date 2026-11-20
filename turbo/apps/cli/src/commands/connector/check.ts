@@ -1,6 +1,5 @@
 import { connectorAccountTargetKey } from "@okouai/api-contracts/contracts/connector-accounts";
 import { getOkouAgentId } from "../../lib/okou-env";
-import { modeHelp } from "../../lib/command/single-agent";
 import { Command, Option } from "commander";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type { ConnectorRuntimeTarget } from "@okouai/api-contracts/contracts/runners";
@@ -609,8 +608,7 @@ export const checkConnectorCommand = addAwsDiagnosticOptions(
 )
   .addHelpText(
     "after",
-    modeHelp(
-      `
+    `
 Scope:
   --env-name diagnoses a builtin environment binding; --check-permission can
   select a permission in this mode. Custom HTTP/MCP routes use --url; this checks
@@ -666,27 +664,6 @@ Permission recovery:
   Use a callback for a single supported action in the current Web Chat. For
   multiple access actions, use ordinary links and wait for all confirmations.
   Return every action URL verbatim. Use Connectors settings for custom permissions.`,
-      `
-Diagnose the exact failed URL and method, or a builtin environment name.
-Examples:
-  okou connector check --url https://api.example.com/items --method GET
-  okou connector check --env-name GITHUB_TOKEN
-  okou connector check --connector custom:<uuid> --url https://api.example.com/items
-
-Your current workspace execution context supplies accounts and grants automatically.
-Inspect okou whoami --permissions for grants. For diagnostic URLs, omit query strings and fragments
-when they may contain secrets. Provider errors such as missing_scope or needed describe OAuth scopes.
-A connection is not a permission grant. Missing admitted accounts remain unavailable.
-For AWS SigV4, include the observed non-secret service/action/target/query/header
-selectors required by the diagnostic; URL and method alone can be insufficient.
-Use only a permission-request command printed for a deny/ask outcome. Provider OAuth
-scopes are not Okou permissions. Custom permissions use Connectors settings.
-For a single supported access action, use the printed callback command/URL; keep
-its prompt concise and free of secrets. Return every action URL verbatim and end
-the turn. Multiple access actions require ordinary links and no callback.
-Use --json for the existing structured diagnostic result.
-`,
-    ),
   )
   .action(
     withErrorHandler(async (opts: CheckConnectorOptions, command: Command) => {
