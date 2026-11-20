@@ -10,6 +10,30 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.95.5](https://github.com/okou-ai/okou/compare/api-v2.95.4...api-v2.95.5) (2026-11-20)
+
+
+### Bug Fixes
+
+* **api:** retry gmail events after workflow rebinding ([#49295](https://github.com/okou-ai/okou/issues/49295)) ([dad3f2b](https://github.com/okou-ai/okou/commit/dad3f2b0fc6e9a2e3767f3ba4187d46a06db7ac3))
+
+
+### Refactoring
+
+* **api:** carry checked queued launch facts into planning ([#49305](https://github.com/okou-ai/okou/issues/49305)) ([062650e](https://github.com/okou-ai/okou/commit/062650e5cea55d69082220865f0b6c5ceaab3ea9))
+* **api:** retire agent connector execution grants ([#49268](https://github.com/okou-ai/okou/issues/49268)) ([596e8ca](https://github.com/okou-ai/okou/commit/596e8ca5d65c2ba7d7b447816042a9bc48fa8b44))
+* **api:** simplify queued launch handoff ([#49267](https://github.com/okou-ai/okou/issues/49267)) ([3e6a8a9](https://github.com/okou-ai/okou/commit/3e6a8a9d5049f746c1e490899ba7f1e624f77713))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.93.2
+    * @okouai/core bumped to 8.856.2
+    * @okouai/db bumped to 2.53.3
+    * @okouai/pi-agent-runtime bumped to 1.52.11
+
 ## [2.95.4](https://github.com/okou-ai/okou/compare/api-v2.95.3...api-v2.95.4) (2026-11-19)
 
 

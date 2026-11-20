@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.32.33](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.32...guest-storage-apply-v0.32.33) (2026-11-20)
+
+
+### Performance Improvements
+
+* **guest-storage:** pass large decoded inputs in sealed descriptors ([#49206](https://github.com/okou-ai/okou/issues/49206)) ([b48b19f](https://github.com/okou-ai/okou/commit/b48b19f606fe851dc9faa04995c2d1fdaef7203a))
+
 ## [0.32.32](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.31...guest-storage-apply-v0.32.32) (2026-11-19)
 
 ## [0.32.31](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.30...guest-storage-apply-v0.32.31) (2026-11-19)

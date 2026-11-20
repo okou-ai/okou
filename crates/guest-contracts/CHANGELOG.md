@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.32.28](https://github.com/okou-ai/okou/compare/guest-contracts-v0.32.27...guest-contracts-v0.32.28) (2026-11-20)
+
+
+### Performance Improvements
+
+* **guest-storage:** pass large decoded inputs in sealed descriptors ([#49206](https://github.com/okou-ai/okou/issues/49206)) ([b48b19f](https://github.com/okou-ai/okou/commit/b48b19f606fe851dc9faa04995c2d1fdaef7203a))
+
 ## [0.32.27](https://github.com/okou-ai/okou/compare/guest-contracts-v0.32.26...guest-contracts-v0.32.27) (2026-11-19)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.0](https://github.com/okou-ai/okou/compare/runner-types-v0.18.22...runner-types-v0.19.0) (2026-11-20)
+
+
+### Features
+
+* **runner:** accept optionality on execution Skill bundles ([#49266](https://github.com/okou-ai/okou/issues/49266)) ([64bd508](https://github.com/okou-ai/okou/commit/64bd508da7156eac1672d135fdca8fe9437501ec))
+
 ## [0.18.22](https://github.com/okou-ai/okou/compare/runner-types-v0.18.21...runner-types-v0.18.22) (2026-11-19)
 
 ## [0.18.21](https://github.com/okou-ai/okou/compare/runner-types-v0.18.20...runner-types-v0.18.21) (2026-11-19)
