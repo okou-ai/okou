@@ -35,6 +35,8 @@ Original test `Signed-out pages do not sync private conversations`. [Registratio
 - **When** The page loads.
 - **Then** The sign-in page remains at /sign-in, and no private conversation snapshot, events, indicators, or agent-list requests are made.
 
+**Batch 28, unverified.** The signed-out Router rendered the Clerk sign-in surface at `/sign-in`. Neither observation establishes that snapshot, event, indicator and agent-list reads were absent. Recording those requests would measure the synchronization protocol. The two cached-list cases (001 and 002) passed; 004 remains open. [Batch 28 evidence](../../../../test-rebuild-rework-checkpoint.md#batch-28-evidence).
+
 ## chat-list-cache-005
 
 Original test `The unread filter applies to cached conversations`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/chat-list-cache.test.tsx#L192).
