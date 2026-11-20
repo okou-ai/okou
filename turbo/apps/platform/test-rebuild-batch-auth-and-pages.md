@@ -141,13 +141,24 @@ workspace name is absent. At the reward limit, the `get-started-entry-006`
 row shows the quest name Connect a connector rather than the catalog
 description. The checklist note records this wording difference.
 
-## Deferred files
+## Deferred files resolved
 
-These files keep their BDD and are not counted as accepted.
+The files deferred by the fourth batch were completed after the main
+596e8ca5 sync. They accepted 78 of 155 frozen rows across five files.
 
-| File                   | Evidence                                                                                                                                                                                                                                                           | Next step                                                                                               |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- |
-| `auth-v1-oauth`        | All 15 selected rows pass. The Given of `025`, `027` and `030` says the user is signed out, but each case uses the signed-in default. `030` needs a session for the Clerk continuation it asserts. `025` and `027` check that an active session is not redirected. | Decide whether the scenarios describe a signed-in session or whether the cases should start signed out. |
-| `integrations-discord` | All 24 selected rows pass. For the connected row of `016`, the case requires a Connect action, while the Then says none appears. `023` does not assert that the connected state is absent. `033` opens the menu with a pointer click rather than the keyboard.     | Confirm the connected-row behavior on the current page, then align `016` and close `023` and `033`.     |
-| `chat-run-models`      | One selected parameter list iterates a derived constant, which the restore script cannot prune.                                                                                                                                                                    | Write the selected rows out by hand, as for `color-themes`.                                             |
-| `integrations-feishu`  | Some registrations use template-literal titles, which the restore script cannot match.                                                                                                                                                                             | Map those registrations by hand.                                                                        |
+- `auth-v1-oauth`: the original test at `b0a10287` runs `025`, `027` and
+  `030` with the signed-in default session, so the Given wording "signed out"
+  was a transcription error. The checklist records the revision.
+- `integrations-discord`: the original test requires the Connect action for
+  the connected indicator in `016`, so "no Connect action" applies only to the
+  pending and error rows. `023` now asserts that no Connected state appears,
+  and `033` opens the menu with Enter on the focused More options button.
+- `chat-run-models`: the structured failure list names its ten selected
+  reasons instead of iterating every expectation.
+- `bootstrap-feature-switch`: upstream `60b272ce` dropped the feature guides
+  request from `002`. Its When and Then are marked
+  `covered-with-retired-premise`.
+- `composer-custom-template-recommendations`: `009` offers the PDF through the
+  image-only import field, as the original test does, and now asserts the PDF
+  is not attached. A fully selected shelf list stays as on main, and the single
+  Presentation row uses `SHELVES[0]` to keep its type.

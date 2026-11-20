@@ -2513,3 +2513,81 @@ slack-connect-page-019	turbo/apps/platform/src/views/okou-page/__tests__/slack-c
 slack-connect-page-023	turbo/apps/platform/src/views/okou-page/__tests__/slack-connect-page.test.tsx	A retained Slack result survives login and organization selection (signed in: false): /?tab=works&updated=1	257	passed
 slack-connect-page-024	turbo/apps/platform/src/views/okou-page/__tests__/slack-connect-page.test.tsx	A retained Slack result survives login and organization selection (signed in: true): /?tab=works&updated=1	257	passed
 slack-connect-page-025	turbo/apps/platform/src/views/okou-page/__tests__/slack-connect-page.test.tsx	A retained Slack result survives login and organization selection (signed in: false): /slack/failed?error=access_denied&w=T12…	257	passed
+bootstrap-feature-switch-001	turbo/apps/platform/src/signals/__tests__/bootstrap-feature-switch.test.tsx	A signed-out page does not load workspace features	12	passed
+bootstrap-feature-switch-002	turbo/apps/platform/src/signals/__tests__/bootstrap-feature-switch.test.tsx	The app waits for authoritative workspace features before mounting	34	passed
+auth-v1-oauth-001	turbo/apps/platform/src/views/auth-v1/__tests__/auth-v1-oauth.test.tsx	app.vm7.ai preserves its own app consent return in both validation layers	23	passed
+auth-v1-oauth-002	turbo/apps/platform/src/views/auth-v1/__tests__/auth-v1-oauth.test.tsx	app.okou.ai preserves its own app consent return in both validation layers	23	passed
+auth-v1-oauth-003	turbo/apps/platform/src/views/auth-v1/__tests__/auth-v1-oauth.test.tsx	Sign-in preserves the consent query when Clerk moves the return into its hash	58	passed
+auth-v1-oauth-004	turbo/apps/platform/src/views/auth-v1/__tests__/auth-v1-oauth.test.tsx	Hosted signup preserves the consent return and sign-in navigation from its hash	76	passed
+auth-v1-oauth-015	turbo/apps/platform/src/views/auth-v1/__tests__/auth-v1-oauth.test.tsx	A non-consent app return cannot bypass login: https://app.vm7.ai/oauth-consent/other	97	passed
+auth-v1-oauth-017	turbo/apps/platform/src/views/auth-v1/__tests__/auth-v1-oauth.test.tsx	An active session on sign-in continues through Clerk's authenticated navigation	115	passed
+auth-v1-oauth-018	turbo/apps/platform/src/views/auth-v1/__tests__/auth-v1-oauth.test.tsx	An active session on sign-up continues through Clerk's authenticated navigation	115	passed
+auth-v1-oauth-019	turbo/apps/platform/src/views/auth-v1/__tests__/auth-v1-oauth.test.tsx	An existing session preserves explicit auth steps: /sign-in/tasks/choose-organization  	139	passed
+auth-v1-oauth-020	turbo/apps/platform/src/views/auth-v1/__tests__/auth-v1-oauth.test.tsx	An existing session preserves explicit auth steps: /sign-in/factor-two  	139	passed
+auth-v1-oauth-022	turbo/apps/platform/src/views/auth-v1/__tests__/auth-v1-oauth.test.tsx	An existing session preserves explicit auth steps: /sign-in &__clerk_ticket=invitation 	139	passed
+auth-v1-oauth-023	turbo/apps/platform/src/views/auth-v1/__tests__/auth-v1-oauth.test.tsx	An existing session preserves explicit auth steps: /sign-in &prompt=login 	139	passed
+auth-v1-oauth-025	turbo/apps/platform/src/views/auth-v1/__tests__/auth-v1-oauth.test.tsx	A consent request requiring user interaction stays on the form: prompt=login	159	passed
+auth-v1-oauth-027	turbo/apps/platform/src/views/auth-v1/__tests__/auth-v1-oauth.test.tsx	A consent request requiring user interaction stays on the form: max_age=0	159	passed
+auth-v1-oauth-029	turbo/apps/platform/src/views/auth-v1/__tests__/auth-v1-oauth.test.tsx	An incomplete Clerk session finishes its task before OAuth consent	173	passed
+auth-v1-oauth-030	turbo/apps/platform/src/views/auth-v1/__tests__/auth-v1-oauth.test.tsx	A failed OAuth continuation offers visible recovery	198	passed
+chat-run-models-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-models.test.tsx	Render structured failure unknown with its available recovery actions	359	passed
+chat-run-models-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-models.test.tsx	Render structured failure guest_root_filesystem_full with its available recovery actions	359	passed
+chat-run-models-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-models.test.tsx	Render structured failure execution_timeout with its available recovery actions	359	passed
+chat-run-models-007	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-models.test.tsx	Render structured failure insufficient_credits with its available recovery actions	359	passed
+chat-run-models-009	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-models.test.tsx	Render structured failure invalid_api_key with its available recovery actions	359	passed
+chat-run-models-011	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-models.test.tsx	Render structured failure terms_acceptance_required with its available recovery actions	359	passed
+chat-run-models-012	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-models.test.tsx	Render structured failure account_verification_required with its available recovery actions	359	passed
+chat-run-models-017	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-models.test.tsx	Render structured failure provider_rate_limited with its available recovery actions	359	passed
+chat-run-models-022	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-models.test.tsx	Render structured failure codex_access_program_unavailable with its available recovery actions	359	passed
+chat-run-models-030	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-models.test.tsx	Render structured failure provider_model_restricted with its available recovery actions	359	passed
+chat-run-models-032	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-models.test.tsx	Offer Auto once, ahead of subscription models	418	passed
+chat-run-models-033	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-models.test.tsx	Keep a next-run model choice through active-run steering (normal delivery)	444	passed
+chat-run-models-034	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-models.test.tsx	Keep a next-run model choice through active-run steering (completion before steering delivery)	444	passed
+chat-run-models-035	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-models.test.tsx	Preserve the current execution mode for an active-run follow-up	544	passed
+chat-run-models-036	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-models.test.tsx	Preserve which model a message was sent with	594	passed
+chat-run-models-039	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-models.test.tsx	Mark model and speed transitions between runs	624	passed
+chat-run-models-040	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-models.test.tsx	A structured capacity failure offers recovery despite generic provider text	711	passed
+chat-run-models-041	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-models.test.tsx	A structured provider failure (Provider balance) shows concise inline recovery	735	passed
+chat-run-models-042	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-models.test.tsx	Keep the error card's rows during delayed structured limit classification	763	passed
+chat-run-models-043	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-models.test.tsx	Recover from a personal model account limit	811	passed
+chat-run-models-044	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-models.test.tsx	Show the reset time for a limit reached while the thread is open	901	passed
+chat-run-models-047	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-models.test.tsx	Reset the current route's active subscription account	945	passed
+chat-run-models-048	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-models.test.tsx	Show a disconnected subscription on the current route	992	passed
+chat-run-models-049	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-models.test.tsx	Leave a usage limit neutral once the thread leaves the subscription	1019	passed
+chat-run-models-050	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-models.test.tsx	A failed subscription reset keeps the thread idle	1043	passed
+chat-run-models-051	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-models.test.tsx	Continue a run that reached its execution time limit	1084	passed
+chat-run-models-052	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-models.test.tsx	Confirm continuation after an automatic run limit (AUTONOMY_BUDGET_EXHAUSTED)	1135	passed
+chat-run-models-054	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-models.test.tsx	Continue on a replacement model after an unsupported model	1201	passed
+chat-run-models-055	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-models.test.tsx	Continue on a replacement model after an opaque provider rejection	1201	passed
+composer-custom-template-recommendations-001	turbo/apps/platform/src/views/okou-page/__tests__/composer-custom-template-recommendations.test.tsx	The Presentation homepage shelf orders import, custom templates and built-ins and uses the selected custom template	141	passed
+composer-custom-template-recommendations-002	turbo/apps/platform/src/views/okou-page/__tests__/composer-custom-template-recommendations.test.tsx	The Image homepage shelf orders import, custom templates and built-ins and uses the selected custom template	141	passed
+composer-custom-template-recommendations-003	turbo/apps/platform/src/views/okou-page/__tests__/composer-custom-template-recommendations.test.tsx	The Document homepage shelf orders import, custom templates and built-ins and uses the selected custom template	141	passed
+composer-custom-template-recommendations-004	turbo/apps/platform/src/views/okou-page/__tests__/composer-custom-template-recommendations.test.tsx	Presentation shows accessible custom templates only of its kind	186	passed
+composer-custom-template-recommendations-006	turbo/apps/platform/src/views/okou-page/__tests__/composer-custom-template-recommendations.test.tsx	Selecting a custom presentation template from another catalog updates the creation task	213	passed
+composer-custom-template-recommendations-007	turbo/apps/platform/src/views/okou-page/__tests__/composer-custom-template-recommendations.test.tsx	Selecting a custom illustration template from another catalog updates the creation task	213	passed
+composer-custom-template-recommendations-008	turbo/apps/platform/src/views/okou-page/__tests__/composer-custom-template-recommendations.test.tsx	Selecting a custom document template from another catalog updates the creation task	213	passed
+composer-custom-template-recommendations-009	turbo/apps/platform/src/views/okou-page/__tests__/composer-custom-template-recommendations.test.tsx	The Image shelf imports a reusable style without requesting image generation	295	passed
+integrations-discord-002	turbo/apps/platform/src/views/okou-page/__tests__/integrations-discord.test.tsx	Discord explains setup to a configured admin without a server	57	passed
+integrations-discord-005	turbo/apps/platform/src/views/okou-page/__tests__/integrations-discord.test.tsx	Discord updates Works and notifies the separate authorization tab of success (admin: true)	124	passed
+integrations-discord-006	turbo/apps/platform/src/views/okou-page/__tests__/integrations-discord.test.tsx	Discord updates Works and notifies the separate authorization tab of success (admin: false)	124	passed
+integrations-discord-007	turbo/apps/platform/src/views/okou-page/__tests__/integrations-discord.test.tsx	Discord starts at the canonical API host from app.okou.ai, not an App proxy or web host	247	passed
+integrations-discord-008	turbo/apps/platform/src/views/okou-page/__tests__/integrations-discord.test.tsx	Discord starts at the canonical API host from pr-37968-app.omby.ai, not an App proxy or web host	247	passed
+integrations-discord-009	turbo/apps/platform/src/views/okou-page/__tests__/integrations-discord.test.tsx	Discord starts at the canonical API host from pr-37968-app-okou-app-preview.vm0.worke…, not an App proxy or web host	247	passed
+integrations-discord-010	turbo/apps/platform/src/views/okou-page/__tests__/integrations-discord.test.tsx	A failed authorization start closes its tab, reports the error, without claiming success	325	passed
+integrations-discord-013	turbo/apps/platform/src/views/okou-page/__tests__/integrations-discord.test.tsx	Leaving Works after consent opens cancels the retained opener proof without completing	357	passed
+integrations-discord-016	turbo/apps/platform/src/views/okou-page/__tests__/integrations-discord.test.tsx	A Discord callback indicator connected is not proof of a verified connection	405	passed
+integrations-discord-017	turbo/apps/platform/src/views/okou-page/__tests__/integrations-discord.test.tsx	A Discord callback indicator pending is not proof of a verified connection	405	passed
+integrations-discord-019	turbo/apps/platform/src/views/okou-page/__tests__/integrations-discord.test.tsx	Consent browser at /works?discord=pending verifies the current account and stays open while completion is pending	449	passed
+integrations-discord-021	turbo/apps/platform/src/views/okou-page/__tests__/integrations-discord.test.tsx	Malformed approval fragment  is cleared and cannot authorize from callback markers	496	passed
+integrations-discord-023	turbo/apps/platform/src/views/okou-page/__tests__/integrations-discord.test.tsx	A rejected consent-browser owner or proof shows restart guidance without connected state	520	passed
+integrations-discord-024	turbo/apps/platform/src/views/okou-page/__tests__/integrations-discord.test.tsx	Leaving the consent route cancels automatic verification and destroys its proof	551	passed
+integrations-discord-029	turbo/apps/platform/src/views/okou-page/__tests__/integrations-discord.test.tsx	A terminal completion error FORBIDDEN shows the result in the authorization tab	612	passed
+integrations-discord-033	turbo/apps/platform/src/views/okou-page/__tests__/integrations-discord.test.tsx	A connected admin can open and dismiss their account menu with the keyboard	668	passed
+integrations-discord-036	turbo/apps/platform/src/views/okou-page/__tests__/integrations-discord.test.tsx	Discord status converges after a connection change from another surface	692	passed
+integrations-discord-037	turbo/apps/platform/src/views/okou-page/__tests__/integrations-discord.test.tsx	Returning to Works preserves Discord status while refreshing (connected: false)	738	passed
+integrations-discord-038	turbo/apps/platform/src/views/okou-page/__tests__/integrations-discord.test.tsx	Returning to Works preserves Discord status while refreshing (connected: true)	738	passed
+integrations-discord-039	turbo/apps/platform/src/views/okou-page/__tests__/integrations-discord.test.tsx	Works keeps its startup screen until Discord and Slack status are ready	794	passed
+integrations-discord-040	turbo/apps/platform/src/views/okou-page/__tests__/integrations-discord.test.tsx	A status error hides stale controls and recovers when returning to Works	834	passed
+integrations-discord-044	turbo/apps/platform/src/views/okou-page/__tests__/integrations-discord.test.tsx	A missing bot configuration shows one unavailable state to an installed admin	885	passed
+integrations-discord-046	turbo/apps/platform/src/views/okou-page/__tests__/integrations-discord.test.tsx	A missing bot configuration shows one unavailable state to an installed member without a connection	885	passed
+integrations-discord-048	turbo/apps/platform/src/views/okou-page/__tests__/integrations-discord.test.tsx	Disconnecting stays pending until the refreshed status arrives	941	passed

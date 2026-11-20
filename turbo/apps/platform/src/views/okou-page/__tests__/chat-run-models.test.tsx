@@ -1,0 +1,1271 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { installConnectedPersonalSubscriptions } from "./personal-subscription-fixtures.ts";
+import {
+  billingStatusContract,
+  type BillingStatusResponse,
+} from "@okouai/api-contracts/contracts/billing";
+import { chatThreadModelSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { CHAT_RUN_EXECUTION_TIMEOUT_MESSAGE } from "@okouai/api-contracts/contracts/errors";
+import type { ModelProviderResponse } from "@okouai/api-contracts/contracts/model-providers";
+import { thirdPartySubscriptionsMainContract } from "@okouai/api-contracts/contracts/third-party-subscriptions";
+import { chatEventRowSchema } from "@okouai/api-contracts/contracts/chat-event-rows";
+import { personalModelProviderAccountsByIdContract } from "@okouai/api-contracts/contracts/personal-model-providers";
+import type { KnownRunFailureReason } from "@okouai/api-contracts/contracts/run-failure-reasons";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { expect, test, vi } from "vitest";
+
+import {
+  click,
+  queryAllByRoleFast,
+  startPage,
+} from "../../../__tests__/page-helper.ts";
+import { mockNow } from "../../../lib/time.ts";
+import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
+import { SharedDatabaseMessagePortServer } from "../../../shared-database/message-port-server.ts";
+import { sharedDatabaseWorkerMessageSchema } from "../../../shared-database/protocol.ts";
+import { composerModelTrigger } from "./chat-composer-test-helpers.ts";
+import { buildRunModel } from "./chat-model-builders.ts";
+import { openModelPanel } from "./chat-model-panel-test-helpers.ts";
+import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
+import { setupPage } from "./chat-lifecycle-test-helpers.ts";
+import {
+  assistantEvent,
+  completedEvent,
+  findButton,
+  findEnabledButton,
+  NEW_CHAT_PATH,
+  promptEvent,
+  queryButton,
+  readyChat,
+  RUN_PATH,
+  sendText,
+  createChatRunFixtures,
+} from "./chat-run-test-fixtures.ts";
+
+const context = testContext();
+const { installRunChat } = createChatRunFixtures(context);
+
+const RUN_A = "a0000000-0000-4000-a000-000000000301";
+const RUN_B = "a0000000-0000-4000-a000-000000000302";
+const RUN_C = "a0000000-0000-4000-a000-000000000303";
+const RUN_D = "a0000000-0000-4000-a000-000000000304";
+const PROVIDER_ID = "e0000000-0000-4000-a000-000000000301";
+
+function holdSteeringWorkerReply(
+  eventId: () => string | undefined,
+): Promise<void> {
+  // Delay the browser's delivery of a persisted steering result until the
+  // refresh triggered by run completion replies. Both use the real worker
+  // and IndexedDB; only MessagePort delivery order is controlled.
+  const replyHeld = context.mocks.deferred<void>();
+  let heldReply: unknown;
+  let released = false;
+  class SharedWorkerMock extends EventTarget {
+    readonly port: MessagePort;
+
+    constructor() {
+      super();
+      const channel = new MessageChannel();
+      this.port = channel.port1;
+      const postMessage = channel.port2.postMessage.bind(channel.port2);
+      vi.spyOn(channel.port2, "postMessage").mockImplementation(
+        (value: unknown) => {
+          const message = sharedDatabaseWorkerMessageSchema.safeParse(value);
+          const rows =
+            message.success && message.data.type === "result"
+              ? chatEventRowSchema.array().safeParse(message.data.value)
+              : null;
+          if (
+            !released &&
+            rows?.success &&
+            rows.data.some((row) => {
+              return row.id === eventId();
+            })
+          ) {
+            if (heldReply === undefined) {
+              heldReply = value;
+              replyHeld.resolve();
+              return;
+            }
+            released = true;
+            postMessage(heldReply);
+          }
+          postMessage(value);
+        },
+      );
+      new SharedDatabaseMessagePortServer(
+        context.workerStore,
+        channel.port2,
+        context.signal,
+      );
+    }
+  }
+  vi.stubGlobal("SharedWorker", SharedWorkerMock);
+  return replyHeld.promise;
+}
+
+function configureCodexSubscriptionPolicies(models: readonly string[]): void {
+  configureRunModels(models, {
+    providerType: "codex-oauth-token",
+    modelProviderId: PROVIDER_ID,
+  });
+}
+
+function codexSubscriptionAccount(
+  overrides: Partial<ModelProviderResponse> = {},
+): ModelProviderResponse {
+  return {
+    id: PROVIDER_ID,
+    type: "codex-oauth-token",
+    framework: "codex",
+    subscriptionResetCredits: 1,
+    needsReconnect: false,
+    lastRefreshErrorCode: null,
+    createdAt: "2026-08-01T09:00:00.000Z",
+    updatedAt: "2026-08-01T09:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function recoveryCard(): Promise<HTMLElement> {
+  return screen.findByTestId("assistant-error-recovery");
+}
+
+function configureRunModels(
+  models: readonly string[],
+  options: {
+    readonly providerType?: "codex-oauth-token";
+    readonly modelProviderId?: string | null;
+  } = {},
+): void {
+  const routes = models.map((model) => {
+    return buildRunModel({ model, ...options });
+  });
+  context.mocks.data.availableRunModels(routes);
+}
+
+function configureConnectedRunModels(models: readonly string[]): void {
+  installConnectedPersonalSubscriptions(context);
+  configureRunModels(models);
+}
+
+function limitedFreeBillingStatus(): BillingStatusResponse {
+  return {
+    showUsagePack: false,
+    tier: "limited-free-1",
+    ...billingPlanCapabilities("limited-free-1"),
+    restrictedBuiltInModels: true,
+    credits: 0,
+    onboardingPaymentPending: false,
+    subscriptionStatus: null,
+    currentPeriodEnd: null,
+    cancelAtPeriodEnd: false,
+    scheduledChange: null,
+    hasSubscription: false,
+    autoRecharge: { enabled: false, threshold: null, amount: null },
+    creditExpiry: { expiringNextCycle: 0, nextExpiryDate: null },
+    creditBreakdown: [],
+    creditGrants: [],
+    concurrencyLimit: 2,
+    concurrencySubscriptions: [],
+  };
+}
+
+function failedRunEvents(
+  error: string,
+  model: string,
+  failureReason?: MockChatEventInput["failureReason"],
+): MockChatEventInput[] {
+  return [
+    promptEvent({
+      id: "failed-user",
+      runId: RUN_A,
+      seqId: 1,
+      text: "Continue the analysis",
+      model,
+    }),
+    {
+      id: "failed-error",
+      eventType: "run.failed",
+      role: "assistant",
+      content: null,
+      runId: RUN_A,
+      error,
+      ...(failureReason === undefined ? {} : { failureReason }),
+      runLifecycleEvent: "failed",
+      seqId: 2,
+      createdAt: "2026-08-01T10:00:02.000Z",
+    },
+  ];
+}
+
+interface StructuredFailureExpectation {
+  readonly title: string;
+  readonly description?: string;
+  readonly action?: string;
+  readonly picker?: boolean;
+}
+
+const STRUCTURED_FAILURE_EXPECTATIONS = {
+  unknown: { title: "This run couldn't finish" },
+  session_history_limit: {
+    title: "This chat has reached its limit",
+    action: "New chat",
+  },
+  guest_root_filesystem_full: {
+    title: "This run ran out of space",
+    action: "Try again",
+  },
+  guest_home_filesystem_full: {
+    title: "This run ran out of space",
+    action: "Try again",
+  },
+  execution_timeout: { title: "Time limit reached", action: "Continue" },
+  guest_memory_oom_killed: {
+    title: "This run couldn't finish",
+    action: "Try again",
+  },
+  insufficient_credits: {
+    title: "Upgrade to Pro to run",
+    action: "Upgrade to Pro",
+  },
+  provider_insufficient_credits: {
+    title: "Your subscription account needs more credit",
+    action: "Open model settings",
+  },
+  invalid_api_key: {
+    title: "Your subscription sign-in needs updating",
+    action: "Open model settings",
+  },
+  invalid_credentials: {
+    title: "Your model connection needs attention",
+    action: "Open model settings",
+  },
+  terms_acceptance_required: {
+    title: "Claude terms need acceptance",
+    action: "Open Claude",
+  },
+  account_verification_required: {
+    title: "Claude account verification required",
+    description:
+      "Your Claude account can't receive replies right now. Check the Anthropic Verification Portal for the next step.",
+  },
+  context_window_exceeded: {
+    title: "This chat is too long",
+    action: "New chat",
+  },
+  input_too_large: { title: "Your message is too large" },
+  provider_image_too_large: { title: "Your message is too large" },
+  output_token_limit: {
+    title: "The response reached its length limit",
+    action: "Continue",
+  },
+  provider_rate_limited: {
+    title: "Too many model requests right now",
+    action: "Try again",
+    picker: true,
+  },
+  provider_overloaded: {
+    title: "This model is busy right now",
+    action: "Try again",
+    picker: true,
+  },
+  provider_stream_timeout: {
+    title: "The model response timed out",
+    action: "Try again",
+    picker: true,
+  },
+  provider_request_timeout: {
+    title: "The model response timed out",
+    action: "Try again",
+    picker: true,
+  },
+  provider_queue_timeout: {
+    title: "The model didn't start in time",
+    action: "Try again",
+    picker: true,
+  },
+  codex_access_program_unavailable: {
+    title: "Codex access is temporarily unavailable",
+    action: "Try again",
+  },
+  provider_server_error: {
+    title: "The model provider had a temporary error",
+    action: "Try again",
+    picker: true,
+  },
+  provider_bad_request: {
+    title: "The model provider returned an error",
+    description: "Try again, or switch to another model to continue.",
+    action: "Try again",
+    picker: true,
+  },
+  firewall_auth_failed: {
+    title: "This run couldn't finish",
+    description: "Oops, something went wrong.",
+  },
+  response_connection_lost: {
+    title: "The response was interrupted",
+    action: "Try again",
+    picker: true,
+  },
+  safety_policy_refusal: {
+    title: "The model couldn't help with this request",
+    action: "Try again",
+    picker: true,
+  },
+  reconnect_required: {
+    title: "Reconnect your model account",
+    action: "Open model settings",
+  },
+  unsupported_model: {
+    title: "Selected model isn't available",
+    action: "Try again",
+    picker: true,
+  },
+  provider_model_restricted: {
+    title: "Selected model isn't available",
+    description: "The current model is unavailable.",
+    action: "Try again",
+    picker: true,
+  },
+  usage_limit: {
+    title: "Model provider limit reached",
+    action: "Try again",
+    picker: true,
+  },
+} satisfies Record<KnownRunFailureReason, StructuredFailureExpectation>;
+
+const STRUCTURED_FAILURE_CASES = (
+  [
+    "unknown",
+    "guest_root_filesystem_full",
+    "execution_timeout",
+    "insufficient_credits",
+    "invalid_api_key",
+    "terms_acceptance_required",
+    "account_verification_required",
+    "provider_rate_limited",
+    "codex_access_program_unavailable",
+    "provider_model_restricted",
+  ] as const
+).map((reason): [KnownRunFailureReason, StructuredFailureExpectation] => {
+  return [reason, STRUCTURED_FAILURE_EXPECTATIONS[reason]];
+});
+
+/** Every backend-owned failure gets concise copy and recovery on the card. */
+test.each(STRUCTURED_FAILURE_CASES)(
+  "Render structured failure %s with its available recovery actions",
+  async (failureReason, expected) => {
+    configureConnectedRunModels(["gpt-5.6-sol", "gpt-5.6-luna"]);
+    if (failureReason === "insufficient_credits") {
+      context.mocks.data.org({
+        id: "org_structured_failure",
+        name: "Structured Failure Workspace",
+        role: "admin",
+      });
+      context.mocks.api(billingStatusContract.get, ({ respond }) => {
+        return respond(200, limitedFreeBillingStatus());
+      });
+    }
+    const providerMessage = `Raw provider diagnostic for ${failureReason}`;
+    const selectedModel =
+      failureReason === "provider_model_restricted" ? "auto" : "gpt-5.6-sol";
+    installRunChat({
+      selectedModel,
+      chatEvents: failedRunEvents(
+        providerMessage,
+        selectedModel,
+        failureReason,
+      ),
+    });
+
+    await setupPage({ context, path: RUN_PATH });
+    await readyChat();
+    await screen.findByText((text) => {
+      return text.includes(expected.title);
+    });
+    const card = screen.getByTestId("assistant-error-card-shell");
+
+    expect(card).toHaveTextContent(expected.description ?? expected.title);
+    expect(card).not.toHaveTextContent(providerMessage);
+    const actionLabels = [
+      ...queryAllByRoleFast("button", card).filter((control) => {
+        return control.getAttribute("role") !== "combobox";
+      }),
+      ...queryAllByRoleFast("link", card),
+    ].map((control) => {
+      return control.textContent?.replace(/\s+/gu, " ").trim();
+    });
+    expect(actionLabels).toStrictEqual([
+      ...(expected.action === undefined ? [] : [expected.action]),
+      ...(failureReason === "usage_limit" ? ["View details"] : []),
+    ]);
+    expect(within(card).queryByRole("combobox") !== null).toBe(
+      expected.picker === true,
+    );
+    const description = within(card).queryByTestId(
+      "assistant-error-description",
+    );
+    expect(Boolean(description?.textContent?.trim())).toBe(
+      failureReason !== "insufficient_credits",
+    );
+  },
+);
+
+test("Offer Auto once, ahead of subscription models", async () => {
+  configureConnectedRunModels(["gpt-5.6-luna"]);
+  installRunChat({ selectedModel: "gpt-5.6-luna" });
+  await setupPage({
+    context,
+    path: RUN_PATH,
+  });
+  await readyChat();
+
+  const chatModels = await openModelPanel("GPT 5.6 Luna");
+  const optionNames = queryAllByRoleFast("radio", chatModels).map((option) => {
+    return option.textContent ?? "";
+  });
+  expect(optionNames[0]).toBe("Auto");
+  expect(
+    optionNames.filter((name) => {
+      return name.includes("Auto");
+    }),
+  ).toHaveLength(1);
+  expect(
+    optionNames.some((name) => {
+      return name.includes("GPT 5.6 Luna");
+    }),
+  ).toBeTruthy();
+});
+
+test.each(["normal delivery", "completion before steering delivery"] as const)(
+  "Keep a next-run model choice through active-run steering (%s)",
+  async (delivery) => {
+    const steeringQueued = context.mocks.deferred<void>();
+    let steeringEventId: string | undefined;
+    const runModels: (string | undefined)[] = [];
+    configureConnectedRunModels(["gpt-5.6-sol", "gpt-5.6-luna"]);
+    const lifecycle = installRunChat({
+      selectedModel: "gpt-5.6-luna",
+      activeRunIds: [RUN_A],
+      chatEvents: [
+        promptEvent({
+          id: "steering-active-user",
+          runId: RUN_A,
+          seqId: 1,
+          text: "Active Sol request",
+          model: "gpt-5.6-sol",
+        }),
+        assistantEvent({
+          id: "steering-active-progress",
+          runId: RUN_A,
+          seqId: 2,
+          text: "Sol is still working.",
+        }),
+      ],
+      onQueuedEventAppend: ({ clientEventId }) => {
+        steeringEventId = clientEventId;
+        steeringQueued.resolve();
+      },
+      onRunCreate: (body) => {
+        const model = body.userMessage?.parts.find((part) => {
+          return part.type === "model";
+        });
+        runModels.push(
+          model?.type === "model" ? model.selectedModel : undefined,
+        );
+      },
+    });
+    const steeringReplyHeld =
+      delivery === "completion before steering delivery"
+        ? holdSteeringWorkerReply(() => {
+            return steeringEventId;
+          })
+        : null;
+
+    await setupPage({
+      context,
+      path: RUN_PATH,
+      ...(steeringReplyHeld
+        ? { sharedWorkerTestTransport: "browser" as const }
+        : {}),
+    });
+
+    await readyChat();
+    expect(screen.getByText("Sol is still working.")).toBeInTheDocument();
+    await expect(findButton("Stop")).resolves.toBeVisible();
+    await expect(
+      screen.findByText("Next run will use GPT 5.6 Luna"),
+    ).resolves.toBeInTheDocument();
+
+    await sendText("Steer the current Sol work");
+
+    await expect(
+      screen.findByText("Steer the current Sol work"),
+    ).resolves.toBeInTheDocument();
+    expect(
+      screen.getByText("Next run will use GPT 5.6 Luna"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("Model changed to GPT 5.6 Luna"),
+    ).not.toBeInTheDocument();
+
+    // Clearing the draft and showing the optimistic input do not prove that
+    // the server accepted steering while Sol was active. With no appendGate,
+    // queued persistence finishes in the same turn as this fixture callback.
+    await steeringQueued.promise;
+    if (steeringReplyHeld) {
+      await steeringReplyHeld;
+    }
+    lifecycle.completeRun("Sol finished the current task.");
+    await expect(
+      screen.findByText("Sol finished the current task."),
+    ).resolves.toBeInTheDocument();
+    await waitFor(() => {
+      expect(queryButton("Stop")).toBeNull();
+    });
+    await sendText("Start the next task");
+
+    await expect(
+      screen.findByText("Start the next task"),
+    ).resolves.toBeInTheDocument();
+    await expect(
+      screen.findByText("Model changed to GPT 5.6 Luna"),
+    ).resolves.toBeInTheDocument();
+    await waitFor(() => {
+      expect(runModels.at(-1)).toBe("gpt-5.6-luna");
+    });
+  },
+);
+
+test("Preserve the current execution mode for an active-run follow-up", async () => {
+  let followupFastMode: string | undefined;
+  let followupModelChoice: string | null | undefined;
+  configureConnectedRunModels(["gpt-5.6-sol"]);
+  installRunChat({
+    selectedModel: "gpt-5.6-sol",
+    codexServiceTier: "fast",
+    activeRunIds: [RUN_A],
+    chatEvents: [
+      promptEvent({
+        id: "fast-active-user",
+        runId: RUN_A,
+        seqId: 1,
+        text: "Active fast request",
+        model: "gpt-5.6-sol",
+        serviceTier: "priority",
+      }),
+      assistantEvent({
+        id: "fast-active-progress",
+        runId: RUN_A,
+        seqId: 2,
+        text: "Fast work is underway.",
+      }),
+    ],
+    onQueuedEventAppend: (body) => {
+      followupFastMode = body.runOptions?.codexServiceTier;
+      followupModelChoice = body.modelSelection?.selectedModel;
+    },
+  });
+
+  await setupPage({
+    context,
+    path: RUN_PATH,
+  });
+
+  await readyChat();
+  await sendText("Follow up in the same mode");
+
+  await expect(
+    screen.findByText("Follow up in the same mode"),
+  ).resolves.toBeVisible();
+  await waitFor(() => {
+    expect(followupFastMode).toBe("fast");
+  });
+  expect(followupModelChoice).toBeUndefined();
+  expect(
+    screen.queryByText("Model changed to GPT 5.6 Sol"),
+  ).not.toBeInTheDocument();
+});
+
+test("Preserve which model a message was sent with", async () => {
+  let sentDocument: MockChatEventInput["userMessage"];
+  configureConnectedRunModels(["claude-sonnet-5"]);
+  installRunChat({
+    selectedModel: "claude-sonnet-5",
+    onRunCreate: (body) => {
+      sentDocument = body.userMessage;
+    },
+  });
+
+  await setupPage({
+    context,
+    path: NEW_CHAT_PATH,
+  });
+
+  await readyChat();
+  await expect(
+    composerModelTrigger("Claude Sonnet 5"),
+  ).resolves.toHaveTextContent("Claude Sonnet 5");
+  await sendText("Preserve this model attribution");
+  await expect(
+    screen.findByText("Preserve this model attribution"),
+  ).resolves.toBeVisible();
+  expect(
+    sentDocument?.parts.some((part) => {
+      return part.type === "model" && part.selectedModel === "claude-sonnet-5";
+    }),
+  ).toBeTruthy();
+});
+
+test("Mark model and speed transitions between runs", async () => {
+  configureConnectedRunModels(["gpt-5.6-sol", "gpt-5.6-luna"]);
+  installRunChat({
+    selectedModel: "gpt-5.6-luna",
+    chatEvents: [
+      promptEvent({
+        id: "transition-a-user",
+        runId: RUN_A,
+        seqId: 1,
+        text: "Run A",
+        model: "gpt-5.6-sol",
+      }),
+      assistantEvent({
+        id: "transition-a-answer",
+        runId: RUN_A,
+        seqId: 2,
+        text: "Answer A",
+      }),
+      completedEvent({ id: "transition-a-complete", runId: RUN_A, seqId: 3 }),
+      promptEvent({
+        id: "transition-b-user",
+        runId: RUN_B,
+        seqId: 4,
+        text: "Run B",
+        model: "gpt-5.6-luna",
+      }),
+      assistantEvent({
+        id: "transition-b-answer",
+        runId: RUN_B,
+        seqId: 5,
+        text: "Answer B",
+      }),
+      completedEvent({ id: "transition-b-complete", runId: RUN_B, seqId: 6 }),
+      promptEvent({
+        id: "transition-c-user",
+        runId: RUN_C,
+        seqId: 7,
+        text: "Run C",
+        model: "gpt-5.6-luna",
+        serviceTier: "priority",
+      }),
+      assistantEvent({
+        id: "transition-c-answer",
+        runId: RUN_C,
+        seqId: 8,
+        text: "Answer C",
+      }),
+      completedEvent({ id: "transition-c-complete", runId: RUN_C, seqId: 9 }),
+      promptEvent({
+        id: "transition-d-user",
+        runId: RUN_D,
+        seqId: 10,
+        text: "Run D",
+        model: "gpt-5.6-luna",
+      }),
+      assistantEvent({
+        id: "transition-d-answer",
+        runId: RUN_D,
+        seqId: 11,
+        text: "Answer D",
+      }),
+      completedEvent({ id: "transition-d-complete", runId: RUN_D, seqId: 12 }),
+    ],
+  });
+
+  await setupPage({
+    context,
+    path: RUN_PATH,
+  });
+
+  await readyChat();
+  const viewport = screen
+    .getByText("Answer D")
+    .closest("[data-scroll-container]");
+  if (!(viewport instanceof HTMLElement)) {
+    throw new Error("Chat scroll viewport not found");
+  }
+  fireEvent.scroll(viewport, { target: { scrollTop: 0 } });
+  await screen.findByText("Run A");
+  expect(screen.getByText("Model changed to GPT 5.6 Luna")).toBeVisible();
+  expect(screen.getByText("Fast mode on")).toBeVisible();
+  expect(screen.getByText("Fast mode off")).toBeVisible();
+  expect(
+    screen.getAllByText(/Model changed to|Fast mode (?:on|off)/u),
+  ).toHaveLength(3);
+});
+
+test("A structured capacity failure offers recovery despite generic provider text", async () => {
+  const providerError = "The provider could not complete this run.";
+  configureConnectedRunModels(["gpt-5.6-sol", "gpt-5.6-luna"]);
+  installRunChat({
+    selectedModel: "gpt-5.6-sol",
+    chatEvents: failedRunEvents(
+      providerError,
+      "gpt-5.6-sol",
+      "provider_overloaded",
+    ),
+  });
+
+  await setupPage({
+    context,
+    path: RUN_PATH,
+  });
+
+  await readyChat();
+  const recovery = await recoveryCard();
+  expect(recovery).toHaveTextContent("This model is busy right now");
+  expect(queryButton("Try again", recovery)).toBeVisible();
+  expect(recovery).not.toHaveTextContent(providerError);
+});
+
+test.each([
+  [
+    "Provider balance",
+    "provider_insufficient_credits",
+    "Your connected subscription account has insufficient balance.",
+    "Your subscription account needs more credit",
+    "Open model settings",
+  ],
+] as const)(
+  "A structured provider failure (%s) shows concise inline recovery",
+  async (_owner, failureReason, message, title, action) => {
+    configureConnectedRunModels(["gpt-5.6-sol"]);
+    installRunChat({
+      selectedModel: "gpt-5.6-sol",
+      chatEvents: failedRunEvents(message, "gpt-5.6-sol", failureReason),
+    });
+
+    await setupPage({ context, path: RUN_PATH });
+
+    await readyChat();
+    const card = await screen.findByRole("status");
+    expect(card).toHaveTextContent(title);
+    expect(queryButton(action, card)).toBeVisible();
+    expect(queryButton("View details", card)).not.toBeInTheDocument();
+    expect(queryButton("Upgrade to Pro")).not.toBeInTheDocument();
+  },
+);
+
+test.each([{ label: "structured", failureReason: "usage_limit" as const }])(
+  "Keep the error card's rows during delayed $label limit classification",
+  async ({ failureReason }) => {
+    const accountsReady = context.mocks.deferred<void>();
+    configureCodexSubscriptionPolicies(["gpt-5.6-sol"]);
+    installRunChat({
+      selectedModel: "gpt-5.6-sol",
+      chatEvents: failedRunEvents(
+        "You've hit your usage limit.",
+        "gpt-5.6-sol",
+        failureReason,
+      ),
+    });
+    context.mocks.api(
+      thirdPartySubscriptionsMainContract.list,
+      async ({ respond }) => {
+        await accountsReady.promise;
+        return respond(200, {
+          subscriptions: [
+            codexSubscriptionAccount({ accountEmail: "current@example.com" }),
+          ],
+        });
+      },
+    );
+
+    const page = await startPage({ context, path: RUN_PATH });
+    await page.content;
+    const pending = await screen.findByTestId("assistant-error-card-loading");
+    // Each direct child is a flex row below the card's 640px breakpoint.
+    // Inspect the real page's row structure: jsdom cannot measure CSS layout.
+    // The action row is reserved before classification, so the recovery
+    // controls that land with it cannot add a row afterward.
+    expect(pending.children).toHaveLength(2);
+
+    accountsReady.resolve();
+    await page.ready;
+    const settled = await recoveryCard();
+    expect(settled).toHaveTextContent("Model provider limit reached");
+    expect(settled).toHaveTextContent(
+      "Personal subscription current@example.com",
+    );
+    expect(queryButton("Try again", settled)).toBeInTheDocument();
+    // Card-frame continuity is itself the transcript's geometry contract.
+    expect(settled).toBe(pending);
+    expect(settled.children).toHaveLength(2);
+  },
+);
+
+test("Recover from a personal model account limit", async () => {
+  const user = userEvent.setup({ delay: null });
+  mockNow(new Date("2026-08-01T10:00:00.000Z"), context.signal);
+  configureCodexSubscriptionPolicies(["gpt-5.6-sol", "gpt-5.6-luna"]);
+  context.mocks.data.personalModelProviders([
+    codexSubscriptionAccount({
+      accountEmail: "long.subscription.account.for.recovery@example.com",
+      subscriptionUsage: {
+        fiveHour: {
+          usedPercent: 100,
+          remainingPercent: 0,
+          resetAt: "2026-08-02T12:00:00.000Z",
+          windowSeconds: 18_000,
+        },
+        weekly: {
+          usedPercent: 100,
+          remainingPercent: 0,
+          resetAt: "2026-08-08T12:00:00.000Z",
+          windowSeconds: 604_800,
+        },
+      },
+      subscriptionResetCredits: 2,
+    }),
+  ]);
+  installRunChat({
+    selectedModel: "gpt-5.6-sol",
+    chatEvents: failedRunEvents(
+      "You've hit your usage limit. Try again at tomorrow noon.",
+      "gpt-5.6-sol",
+      "usage_limit",
+    ),
+  });
+
+  await setupPage({
+    context,
+    path: RUN_PATH,
+  });
+
+  await readyChat();
+  const recovery = await recoveryCard();
+  expect(recovery).toHaveTextContent("Model provider limit reached");
+  expect(recovery).toHaveTextContent(/5h resets/iu);
+  expect(recovery).toHaveTextContent(/Week resets/iu);
+  const description = within(recovery).getByTestId(
+    "assistant-error-description",
+  );
+  expect(within(description).getByText(/5h resets/iu)).toBeVisible();
+  expect(within(description).getByText(/Week resets/iu)).toBeVisible();
+
+  const detailsButton = await findButton("View details");
+  click(detailsButton);
+  const details = await screen.findByRole("dialog", {
+    name: "Model provider limit reached",
+  });
+  expect(details).toHaveTextContent(
+    "Personal subscription long.subscription.account.for.recovery@example.com",
+  );
+  expect(details).toHaveTextContent(/5h resets/iu);
+  expect(details).toHaveTextContent(/Week resets/iu);
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(detailsButton).toHaveFocus();
+  });
+  // Dismissal restores the actual trigger, so keyboard users can reopen it.
+  await user.keyboard("{Enter}");
+  await screen.findByRole("dialog", { name: "Model provider limit reached" });
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(detailsButton).toHaveFocus();
+  });
+
+  const picker = within(recovery).getByRole("combobox");
+  expect(picker).toBeVisible();
+
+  // A usage limit keeps its retry whichever model is selected: another model on
+  // the same exhausted account would hit the same limit, so the card cannot
+  // treat a model switch as the way out.
+  await expect(findEnabledButton("Try again", recovery)).resolves.toBeVisible();
+  await user.click(picker);
+  await user.click(await screen.findByRole("option", { name: "GPT 5.6 Luna" }));
+  await expect(findEnabledButton("Try again", recovery)).resolves.toBeVisible();
+
+  click(await findButton("Reset · 2 left"));
+
+  await expect(screen.findByText("continue")).resolves.toBeVisible();
+  await expect(findButton("Stop")).resolves.toBeVisible();
+});
+
+// Opening the thread reads the subscription before the limit exists. The card
+// reports the usage the account has once the limit arrives, not that read.
+test("Show the reset time for a limit reached while the thread is open", async () => {
+  mockNow(new Date("2026-08-01T10:00:00.000Z"), context.signal);
+  const runCreated = context.mocks.deferred<void>();
+  configureCodexSubscriptionPolicies(["gpt-5.6-sol"]);
+  context.mocks.data.personalModelProviders([
+    codexSubscriptionAccount({ accountEmail: "current@example.com" }),
+  ]);
+  const lifecycle = installRunChat({
+    selectedModel: "gpt-5.6-sol",
+    onRunCreate: () => {
+      runCreated.resolve();
+    },
+  });
+
+  await setupPage({ context, path: RUN_PATH });
+  await readyChat();
+  await sendText("Keep analysing");
+  await runCreated.promise;
+
+  context.mocks.data.personalModelProviders([
+    codexSubscriptionAccount({
+      accountEmail: "current@example.com",
+      subscriptionUsage: {
+        fiveHour: {
+          usedPercent: 100,
+          remainingPercent: 0,
+          resetAt: "2026-08-01T12:00:00.000Z",
+          windowSeconds: 18_000,
+        },
+        weekly: null,
+      },
+    }),
+  ]);
+  lifecycle.failRun("You've hit your usage limit.", "usage_limit");
+
+  const recovery = await recoveryCard();
+  await expect(
+    within(recovery).findByText(/^resets /iu),
+  ).resolves.toBeInTheDocument();
+  expect(recovery).toHaveTextContent(
+    "Personal subscription current@example.com",
+  );
+});
+
+test("Reset the current route's active subscription account", async () => {
+  const resets: string[] = [];
+  const sent: unknown[] = [];
+  installRunChat({
+    selectedModel: "gpt-5.6-sol",
+    chatEvents: failedRunEvents(
+      "You've hit your usage limit.",
+      "gpt-5.6-sol",
+      "usage_limit",
+    ),
+    onRunCreate: (body) => {
+      sent.push(body);
+    },
+  });
+  configureCodexSubscriptionPolicies(["gpt-5.6-sol"]);
+  context.mocks.data.personalModelProviders([
+    codexSubscriptionAccount({
+      isActive: true,
+      accountEmail: "current@example.com",
+    }),
+  ]);
+  context.mocks.api(
+    personalModelProviderAccountsByIdContract.resetSubscriptionUsage,
+    ({ params, respond }) => {
+      resets.push(params.id);
+      return respond(200, { outcome: "reset" });
+    },
+  );
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    featureSwitches: { [FeatureSwitchKey.OkouDebug]: false },
+  });
+  await readyChat();
+  await recoveryCard();
+  await expect(
+    screen.findByText("Personal subscription current@example.com"),
+  ).resolves.toBeInTheDocument();
+  expect(sent).toStrictEqual([]);
+  click(await findButton("Reset · 1 left"));
+  await expect(screen.findByText("continue")).resolves.toBeInTheDocument();
+  expect(resets).toStrictEqual([PROVIDER_ID]);
+  await waitFor(() => {
+    expect(sent).toHaveLength(1);
+  });
+});
+
+test("Show a disconnected subscription on the current route", async () => {
+  installRunChat({
+    selectedModel: "gpt-5.6-sol",
+    chatEvents: failedRunEvents(
+      "You've hit your usage limit.",
+      "gpt-5.6-sol",
+      "usage_limit",
+    ),
+  });
+  configureCodexSubscriptionPolicies(["gpt-5.6-sol"]);
+  context.mocks.data.personalModelProviders([
+    codexSubscriptionAccount({ needsReconnect: true }),
+  ]);
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    featureSwitches: { [FeatureSwitchKey.OkouDebug]: false },
+  });
+  await readyChat();
+  await recoveryCard();
+  await expect(
+    screen.findByText("Personal subscription disconnected"),
+  ).resolves.toBeInTheDocument();
+  expect(queryButton("Reset · 1 left")).toBeNull();
+  await expect(findButton("Try again")).resolves.toBeEnabled();
+});
+
+test("Leave a usage limit neutral once the thread leaves the subscription", async () => {
+  installRunChat({
+    selectedModel: null,
+    chatEvents: failedRunEvents(
+      "You've hit your usage limit.",
+      "gpt-5.6-sol",
+      "usage_limit",
+    ),
+  });
+  configureConnectedRunModels(["gpt-5.6-sol"]);
+  context.mocks.data.personalModelProviders([codexSubscriptionAccount()]);
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    featureSwitches: { [FeatureSwitchKey.OkouDebug]: false },
+  });
+  await readyChat();
+  const recovery = await recoveryCard();
+  expect(recovery).toHaveTextContent("Model provider limit reached");
+  expect(recovery).not.toHaveTextContent(/Personal subscription/iu);
+  expect(queryButton("Reset · 1 left")).toBeNull();
+  await expect(findButton("Try again")).resolves.toBeEnabled();
+});
+
+test("A failed subscription reset keeps the thread idle", async () => {
+  const sent: unknown[] = [];
+  installRunChat({
+    selectedModel: "gpt-5.6-sol",
+    chatEvents: failedRunEvents(
+      "You've hit your usage limit.",
+      "gpt-5.6-sol",
+      "usage_limit",
+    ),
+    onRunCreate: (body) => {
+      sent.push(body);
+    },
+  });
+  configureCodexSubscriptionPolicies(["gpt-5.6-sol"]);
+  context.mocks.data.personalModelProviders([codexSubscriptionAccount()]);
+  context.mocks.api(
+    personalModelProviderAccountsByIdContract.resetSubscriptionUsage,
+    ({ respond }) => {
+      return respond(404, {
+        error: {
+          code: "NOT_FOUND",
+          message: "This subscription account is unavailable.",
+        },
+      });
+    },
+  );
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    featureSwitches: { [FeatureSwitchKey.OkouDebug]: false },
+  });
+  await readyChat();
+  await recoveryCard();
+  click(await findButton("Reset · 1 left"));
+  await expect(
+    screen.findByText("This subscription account is unavailable."),
+  ).resolves.toBeInTheDocument();
+  expect(sent).toStrictEqual([]);
+  expect(screen.getByRole("textbox", { name: "Message" })).toBeEnabled();
+});
+
+test("Continue a run that reached its execution time limit", async () => {
+  const retriedPrompts: (string | undefined)[] = [];
+  const retriedMessages: unknown[] = [];
+  configureConnectedRunModels(["gpt-5.6-sol"]);
+  installRunChat({
+    selectedModel: "gpt-5.6-sol",
+    chatEvents: failedRunEvents(
+      CHAT_RUN_EXECUTION_TIMEOUT_MESSAGE,
+      "gpt-5.6-sol",
+      "execution_timeout",
+    ),
+    onRunCreate: (body) => {
+      retriedPrompts.push(body.prompt);
+      retriedMessages.push(body.userMessage);
+    },
+  });
+
+  await setupPage({
+    context,
+    path: RUN_PATH,
+  });
+
+  await readyChat();
+  const recovery = await recoveryCard();
+  expect(recovery).toHaveTextContent("Time limit reached");
+  expect(within(recovery).queryByRole("combobox")).toBeNull();
+  expect(queryButton("Reset · 1 left", recovery)).toBeNull();
+
+  const continueButton = queryButton("Continue", recovery);
+  if (!continueButton) {
+    throw new Error("Continue button was not visible");
+  }
+  click(continueButton);
+
+  await waitFor(() => {
+    expect(retriedPrompts).toStrictEqual(["continue"]);
+    // The continue run carries the thread's model the same way a composer
+    // message does, so the transcript can place it against the run history
+    // without waiting for the server's copy of the event.
+    expect(retriedMessages).toStrictEqual([
+      expect.objectContaining({
+        version: 1,
+        parts: [
+          { type: "text", text: "continue" },
+          { type: "model", selectedModel: "gpt-5.6-sol" },
+        ],
+      }),
+    ]);
+  });
+});
+
+test.each(["AUTONOMY_BUDGET_EXHAUSTED"])(
+  "Confirm continuation after an automatic run limit (%s)",
+  async (error) => {
+    const sentMessages: unknown[] = [];
+    configureConnectedRunModels(["gpt-5.6-sol"]);
+    installRunChat({
+      selectedModel: "gpt-5.6-sol",
+      chatEvents: [
+        {
+          id: "autonomy-error",
+          eventType: "output.error",
+          role: "assistant",
+          content:
+            "Maximum autonomous delegation depth reached. Send a new human message or confirm a permission request to continue.",
+          error,
+          seqId: 1,
+          createdAt: "2026-08-01T10:00:01.000Z",
+        },
+      ],
+      onRunCreate: (body) => {
+        sentMessages.push(body.userMessage);
+      },
+    });
+
+    await setupPage({ context, path: RUN_PATH });
+
+    await readyChat();
+    const recovery = await recoveryCard();
+    expect(recovery).toHaveTextContent("Automatic run limit reached");
+    expect(within(recovery).queryByRole("combobox")).toBeNull();
+    expect(queryButton("Reset · 1 left", recovery)).toBeNull();
+
+    const continueButton = queryButton("Continue", recovery);
+    if (!continueButton) {
+      throw new Error("Continue button was not visible");
+    }
+    click(continueButton);
+
+    await expect(screen.findByText("continue")).resolves.toBeInTheDocument();
+    await waitFor(() => {
+      expect(sentMessages).toStrictEqual([
+        {
+          version: 1,
+          parts: [
+            { type: "text", text: "continue" },
+            { type: "model", selectedModel: "gpt-5.6-sol" },
+          ],
+        },
+      ]);
+    });
+  },
+);
+
+const UNSUPPORTED_MODEL_ERROR = JSON.stringify({
+  type: "error",
+  status: 400,
+  error: {
+    type: "invalid_request_error",
+    message:
+      "The 'gpt-5.6-sol' model is not supported when using Codex with a ChatGPT account.",
+  },
+});
+
+// The card does not track which model failed. It offers the picker and a
+// retry on whatever the thread selects, and holds the retry back while a model
+// switch is still being written, because the retry runs on the persisted model.
+test.each([
+  {
+    label: "an unsupported model",
+    error: UNSUPPORTED_MODEL_ERROR,
+    failureReason: "unsupported_model",
+    title: "Selected model isn't available",
+  },
+  {
+    label: "an opaque provider rejection",
+    error: '{"detail":"Bad Request"}',
+    failureReason: "provider_bad_request",
+    title: "The model provider returned an error",
+  },
+] as const)(
+  "Continue on a replacement model after $label",
+  async ({ error, failureReason, title }) => {
+    const user = userEvent.setup({ delay: null });
+    const sentModels: (string | undefined)[] = [];
+    const selectionWritten = context.mocks.deferred<void>();
+    configureConnectedRunModels(["gpt-5.6-sol", "gpt-5.6-luna"]);
+    installRunChat({
+      selectedModel: "gpt-5.6-sol",
+      chatEvents: failedRunEvents(error, "gpt-5.6-sol", failureReason),
+      onRunCreate: (body) => {
+        const model = body.userMessage?.parts.find((part) => {
+          return part.type === "model";
+        });
+        sentModels.push(
+          model?.type === "model" ? model.selectedModel : undefined,
+        );
+      },
+    });
+    context.mocks.api(
+      chatThreadModelSelectionContract.update,
+      async ({ respond }) => {
+        await selectionWritten.promise;
+        return respond(204);
+      },
+    );
+
+    await setupPage({ context, path: RUN_PATH });
+
+    await readyChat();
+    await expect(screen.findByText(title)).resolves.toBeVisible();
+    expect(queryButton("Reset · 1 left")).toBeNull();
+    const recovery = await recoveryCard();
+    await expect(
+      findEnabledButton("Try again", recovery),
+    ).resolves.toBeVisible();
+
+    const picker = within(recovery).getByRole("combobox");
+    await user.click(picker);
+    await user.click(
+      await screen.findByRole("option", { name: "GPT 5.6 Luna" }),
+    );
+
+    expect(picker).toHaveTextContent("GPT 5.6 Luna");
+    await waitFor(() => {
+      expect(queryButton("Try again", recovery)).toBeDisabled();
+    });
+    expect(sentModels).toHaveLength(0);
+
+    selectionWritten.resolve();
+    click(await findEnabledButton("Try again", recovery));
+
+    await expect(screen.findByText("continue")).resolves.toBeInTheDocument();
+    await waitFor(() => {
+      expect(sentModels).toStrictEqual(["gpt-5.6-luna"]);
+    });
+  },
+);
