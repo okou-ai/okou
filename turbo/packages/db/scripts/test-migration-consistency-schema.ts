@@ -3082,14 +3082,6 @@ async function main(): Promise<void> {
       }),
     );
 
-    console.log("=== Frozen template guidance backfill CLI ===");
-    console.log(
-      execCommand(
-        "node --import tsx scripts/migrations/029-template-guidance-bundles/test-backfill.ts",
-        { cwd: PACKAGE_DIR, env: { DATABASE_URL: dbUrl1 } },
-      ),
-    );
-
     await validateCanonicalIntegrationIdentitySchema(dbUrl1);
     await validatePermanentTriggerAndFunctionInventory(dbUrl1);
     await validateCanonicalBillingSources(dbUrl1);
