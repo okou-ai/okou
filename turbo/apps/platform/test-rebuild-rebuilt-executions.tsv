@@ -1619,3 +1619,23 @@ composer-capability-menus-001	turbo/apps/platform/src/views/okou-page/__tests__/
 composer-capability-menus-002	turbo/apps/platform/src/views/okou-page/__tests__/composer-capability-menus.test.tsx	Slash capabilities preserve the draft with SlashActions=false and desktop=true	182	passed
 composer-capability-menus-004	turbo/apps/platform/src/views/okou-page/__tests__/composer-capability-menus.test.tsx	The Templates browser preserves the draft when opening its picker	230	passed
 composer-capability-menus-008	turbo/apps/platform/src/views/okou-page/__tests__/composer-capability-menus.test.tsx	A successful send dismisses menu discovery in an existing conversation	257	passed
+chat-activity-summary-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-activity-summary.test.tsx	A chat event starts demand for the newly active run	53	passed
+chat-activity-summary-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-activity-summary.test.tsx	A completed run cannot revive the previous indicator	79	passed
+chat-core-behavior-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-core-behavior.test.tsx	A new message keeps its attachment, text, and selected model together	38	passed
+chat-expected-failures-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-expected-failures.test.tsx	show the upgrade dialog for headerless event-row 426 using direct transport	17	passed
+chat-expected-failures-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-expected-failures.test.tsx	keep microphone guidance and retry after permission denial	45	passed
+chat-heic-preview-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-heic-preview.test.tsx	an iPhone photo opens at full resolution and downloads its original (image/heic, sidebar first=false)	22	passed
+chat-heic-preview-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-heic-preview.test.tsx	an inaccessible HEIC artifact keeps its access error in the image viewer	134	passed
+chat-history-message-resources-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-history-message-resources.test.tsx	Loading older messages restores agent references and attachment navigation	20	passed
+chat-home-compliance-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-home-compliance.test.tsx	The chat home lists the compliance statuses	33	passed
+chat-localization-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-localization.test.tsx	Closing translated Settings preserves the conversation and unsent draft	236	passed
+chat-navigation-conversation-state-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-navigation-conversation-state.test.tsx	Explain unavailable email cards in a conversation	95	passed
+chat-offline-cache-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-offline-cache.test.tsx	A stale remembered thread is replaced by its current availability	258	passed
+chat-offline-cache-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-offline-cache.test.tsx	Saved messages appear without an empty-state flash	310	passed
+chat-plan-upgrade-card-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-plan-upgrade-card.test.tsx	Keep the general plans action for an existing paid workspace	24	passed
+chat-project-reading-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-project-reading.test.tsx	future Project references remain readable in a restored conversation and feedback	16	passed
+chat-run-mobile-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-mobile.test.tsx	Keep mobile chat gestures predictable in the standalone app	78	passed
+chat-runless-delivery-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-runless-delivery.test.tsx	renders a thread whose only message carries no run identity	119	passed
+chat-runless-delivery-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-runless-delivery.test.tsx	keeps run work history off a delivery that has no Run	136	passed
+chat-thinking-brand-motion-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-thinking-brand-motion.test.tsx	Show the brand thinking artwork during a run	18	passed
+chat-unsupported-image-previews-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-unsupported-image-previews.test.tsx	assistant BMP images display the original in the thread and lightbox	27	passed
