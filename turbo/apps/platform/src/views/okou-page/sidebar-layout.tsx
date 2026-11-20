@@ -2,7 +2,6 @@ import {
   ChatShareHeaderControls,
   useChatShareRefresh,
 } from "./chat-share-selection-controls.tsx";
-import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
 import { ProjectDialogs } from "../projects/project-dialogs.tsx";
 import { PersonalSubscriptionDialogs } from "./subscription-linking.tsx";
 import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
@@ -65,7 +64,6 @@ import { AttachmentLightbox } from "./attachment-chips.tsx";
 import { MarkdownTableConnectionDialog } from "../components/markdown-table.tsx";
 import { skillImportDialogOpen$ } from "../../signals/skill-import/skill-import-dialog.ts";
 import { SkillImportDialog } from "../skill-import/skill-import-dialog.tsx";
-import { CreateAgentDialogContainer } from "../agents-page/create-agent-dialog.tsx";
 import { paletteColorTheme$ } from "../../signals/theme.ts";
 import {
   SHEET_PANE_LEADING_CORNERS,
@@ -434,13 +432,8 @@ function SidebarWorkspace({
 }) {
   const chatListVisible = useGet(pwaChatListVisible$);
   const activeRoute = useGet(activeRoute$);
-  const singleAgent = useLastResolved(singleAgentEnabled$);
-  const agentChatPage =
-    activeRoute === "agentChat" || (activeRoute === "home" && singleAgent);
 
-  if (activeRoute === "home" && singleAgent === undefined) {
-    return null;
-  }
+  const agentChatPage = activeRoute === "agentChat" || activeRoute === "home";
 
   const workspaceHeader = (
     <>
@@ -544,7 +537,7 @@ function SidebarLayoutInner({ children }: { children: ReactNode }) {
       <AttachmentLightboxMount />
       <MarkdownTableConnectionDialog />
       <SkillImportDialogMount />
-      <CreateAgentDialogContainer />
+
       <QueueDrawer />
       {/* Keep in-flight remote permission actions with the workspace owner. */}
       <ThreadComposerDialogsMount />

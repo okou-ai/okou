@@ -5,7 +5,6 @@ import { navigateToChat$ } from "../okou-page/nav.ts";
 import { rootSignal$ } from "../root-signal.ts";
 import { navigateTo$ } from "../route.ts";
 import { ROUTES } from "../route-paths.ts";
-import { singleAgentEnabled$ } from "../single-agent.ts";
 import { onDomEventFn } from "../utils.ts";
 import { setChatThreadArchived$ } from "./chat-event.ts";
 import { chatThreadMetaMap$ } from "./chat-thread-event-sourcing.ts";
@@ -57,16 +56,7 @@ export const setChatThreadArchivedWithFeedback$ = command(
     // aborts the current page signal.
     await Promise.all([
       set(setChatThreadArchived$, { threadId, archived }, signal),
-      leaving
-        ? (await get(singleAgentEnabled$))
-          ? set(navigateTo$, ROUTES.home, undefined, signal)
-          : set(
-              navigateTo$,
-              "/agents/:agentId/chat",
-              { pathParams: { agentId: leaveToAgentId } },
-              signal,
-            )
-        : undefined,
+      leaving ? set(navigateTo$, ROUTES.home, undefined, signal) : undefined,
     ]);
     signal.throwIfAborted();
 

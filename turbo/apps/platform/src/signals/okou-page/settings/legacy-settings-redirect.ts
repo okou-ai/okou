@@ -2,7 +2,6 @@ import { command } from "ccstate";
 
 import { detachedNavigateTo$, searchParams$ } from "../../route.ts";
 import { ROUTES } from "../../route-paths.ts";
-import { singleAgentEnabled$ } from "../../single-agent.ts";
 import type { SettingsSection } from "./settings-dialog.ts";
 
 function sectionForLegacyTab(tab: string | null): SettingsSection {
@@ -32,13 +31,12 @@ export const setupLegacySettingsRedirect$ = command(({ get, set }) => {
 });
 
 export const setupBillingSettingsRedirect$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    const singleAgent = await get(singleAgentEnabled$);
+  ({ get, set }, signal: AbortSignal) => {
     signal.throwIfAborted();
     const params = new URLSearchParams(get(searchParams$));
     params.delete("tab");
     params.set("settings", "billing");
-    set(detachedNavigateTo$, singleAgent ? ROUTES.home : ROUTES.agents, {
+    set(detachedNavigateTo$, ROUTES.home, {
       searchParams: params,
       replace: true,
     });

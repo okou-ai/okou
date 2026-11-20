@@ -44,7 +44,6 @@ async function setupPersonal(content = "Use concise updates") {
     context,
     path: "/?settings=my-okou",
     featureSwitches: {
-      [FeatureSwitchKey.SingleAgent]: true,
       [FeatureSwitchKey.AgentSuggestion]: false,
     },
   });
@@ -252,7 +251,6 @@ test("Fetch failure offers retry without fabricating shared Instructions", async
   await setupPage({
     context,
     path: "/?settings=my-okou",
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
   });
   await screen.findByText("Couldn’t load your instructions. Try again.");
   context.mocks.api(instructionsContract.get, ({ respond }) => {
@@ -264,20 +262,6 @@ test("Fetch failure offers retry without fabricating shared Instructions", async
       "Personal retry",
     );
   });
-});
-
-test("A disabled member retains Agents navigation and the legacy management page", async () => {
-  await setupPage({
-    context,
-    path: "/agents",
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: false },
-  });
-  await screen.findByRole("heading", { name: "Agents" });
-  expect(
-    queryAllByRoleFast("link").some((link) => {
-      return link.textContent?.trim() === "Agents";
-    }),
-  ).toBeTruthy();
 });
 
 test("Workspace switching isolates drafts and restores the original workspace draft", async () => {
@@ -342,7 +326,6 @@ test.each([
       context,
       path: `/agents/c0000000-0000-4000-a000-000000000001?tab=${tab}`,
       featureSwitches: {
-        [FeatureSwitchKey.SingleAgent]: true,
         [FeatureSwitchKey.AgentSuggestion]: suggestions,
       },
     });
@@ -359,7 +342,6 @@ test("The default authorization link still opens account and permission controls
   await setupPage({
     context,
     path: "/agents/c0000000-0000-4000-a000-000000000001?tab=authorization",
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
   });
   await waitFor(() => {
     expect(location.pathname).toBe("/connectors");
@@ -367,34 +349,7 @@ test("The default authorization link still opens account and permission controls
   await screen.findByRole("heading", { name: "Connectors" });
 });
 
-test("My Okou settings are unavailable when SingleAgent is disabled", async () => {
-  await setupPage({
-    context,
-    path: "/?settings=my-okou",
-    featureSwitches: {
-      [FeatureSwitchKey.SingleAgent]: false,
-      [FeatureSwitchKey.AgentSuggestion]: true,
-    },
-  });
-  const dialog = await screen.findByRole("dialog", { name: "Settings" });
-  expect(
-    within(dialog).getByRole("heading", { name: "Preference" }),
-  ).toBeInTheDocument();
-  expect(
-    queryAllByRoleFast("button", dialog).find((element) => {
-      return element.textContent?.trim() === "My Okou";
-    }),
-  ).toBeUndefined();
-  expect(screen.queryByLabelText("Instructions")).not.toBeInTheDocument();
-  await waitFor(() => {
-    expect(new URLSearchParams(location.search).get("settings")).toBe(
-      "preference",
-    );
-  });
-});
-
 const proactiveFeatures = {
-  [FeatureSwitchKey.SingleAgent]: true,
   [FeatureSwitchKey.AgentSuggestion]: true,
 } as const;
 
@@ -567,7 +522,6 @@ test("the morning brief link opens Preference when the Suggestions feature switc
     context,
     path: "/agents?settings=preference&focus=morning-brief",
     featureSwitches: {
-      [FeatureSwitchKey.SingleAgent]: true,
       [FeatureSwitchKey.AgentSuggestion]: false,
     },
   });

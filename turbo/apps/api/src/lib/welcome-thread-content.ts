@@ -6,19 +6,6 @@ import {
   MY_OKOU_WELCOME_THREAD_ASSETS,
 } from "@okouai/core/welcome-thread-assets";
 
-import de from "./welcome-thread-content/de-DE.json";
-import en from "./welcome-thread-content/en-US.json";
-import es from "./welcome-thread-content/es-ES.json";
-import fr from "./welcome-thread-content/fr-FR.json";
-import hi from "./welcome-thread-content/hi-IN.json";
-import id from "./welcome-thread-content/id-ID.json";
-import it from "./welcome-thread-content/it-IT.json";
-import ja from "./welcome-thread-content/ja-JP.json";
-import ko from "./welcome-thread-content/ko-KR.json";
-import pt from "./welcome-thread-content/pt-BR.json";
-import zhHans from "./welcome-thread-content/zh-Hans.json";
-import zhHant from "./welcome-thread-content/zh-Hant.json";
-
 import myOkouDe from "./welcome-thread-content/my-okou/de-DE.json";
 import myOkouEn from "./welcome-thread-content/my-okou/en-US.json";
 import myOkouEs from "./welcome-thread-content/my-okou/es-ES.json";
@@ -43,24 +30,6 @@ interface WelcomeContent {
  * identity must remain independent of this version and localized text.
  */
 const WELCOME_THREAD_TEMPLATE = Object.freeze({
-  version: 2,
-  locales: {
-    "en-US": en,
-    "pt-BR": pt,
-    "ja-JP": ja,
-    "ko-KR": ko,
-    "id-ID": id,
-    "de-DE": de,
-    "es-ES": es,
-    "it-IT": it,
-    "fr-FR": fr,
-    "hi-IN": hi,
-    "zh-Hans": zhHans,
-    "zh-Hant": zhHant,
-  } satisfies Record<UserLocale, WelcomeContent>,
-});
-
-const MY_OKOU_WELCOME_THREAD_TEMPLATE = Object.freeze({
   version: 3,
   locales: {
     "en-US": myOkouEn,
@@ -81,17 +50,14 @@ const MY_OKOU_WELCOME_THREAD_TEMPLATE = Object.freeze({
 export function welcomeThreadContent(args: {
   readonly locale: UserLocale;
   readonly appUrl: string;
-  readonly singleAgent: boolean;
 }): WelcomeContent {
-  const template = (
-    args.singleAgent ? MY_OKOU_WELCOME_THREAD_TEMPLATE : WELCOME_THREAD_TEMPLATE
-  ).locales[args.locale];
+  const template = WELCOME_THREAD_TEMPLATE.locales[args.locale];
   const origin = new URL(args.appUrl).origin;
   const wwwUrl = derivePlatformServiceOrigin(origin, "www");
   const values: Readonly<Record<string, string>> = {
     // The official examples and scene shots are shared by every recipient.
     ...WELCOME_THREAD_ASSETS,
-    ...(args.singleAgent ? MY_OKOU_WELCOME_THREAD_ASSETS : {}),
+    ...MY_OKOU_WELCOME_THREAD_ASSETS,
     assistantName: BRAND_PRESENTATION.assistantName,
     origin,
     worksUrl: `${origin}/works`,

@@ -103,12 +103,10 @@ import { useTranslation } from "react-i18next";
 import { currentLocale, i18n } from "../../i18n/index.ts";
 import { ApiError } from "../../lib/api-error.ts";
 import { currentOrgInfo$, user$ } from "../../signals/auth.ts";
-import { agents$ } from "../../signals/agent.ts";
 import { brandName$ } from "../../signals/branding.ts";
 import {
   changeWorkflowVisibility$,
   createNotionPageContentUpdatedScope$,
-  singleAgentWorkflows$,
   makePrivateWorkflowCopy$,
   allVisibleWorkflows$,
   createWorkflowChatRunFinishedAutomation$,
@@ -162,7 +160,6 @@ import {
   discardWorkflowFileDraft$,
   setWorkflowFileInput$,
   showWorkflowFilePicker$,
-  setWorkflowCopyForm$,
   setWorkflowAutomationCreateDialog$,
   setWorkflowAutomationEnabled$,
   scrollTargetedWorkflowAutomationIntoViewRef$,
@@ -175,7 +172,6 @@ import {
   setWorkflowAutomationPickerOpen$,
   setWorkflowWebhookUpgradeDialogOpen$,
   workflowWebhookUpgradeDialogSource$,
-  workflowCopyForm$,
   workflowDetailActiveTab$,
   workflowAutomationCreateDialog$,
   workflowAutomationPickerCategory$,
@@ -183,7 +179,6 @@ import {
   workflowFileDraft$,
   workflowFileEditorRevision$,
   currentWorkflowDetail$,
-  type WorkflowCopyFormState,
   type WorkflowCronFields,
   type WorkflowCronFrequency,
   type WorkflowDetailTab,
@@ -198,7 +193,6 @@ import {
   targetedWorkflowAutomationId$,
 } from "../../signals/workflows-page/workflows-signals.ts";
 import {
-  copyOrMoveWorkflow$,
   deleteWorkflowAndReturnToList$,
   deleteWorkflowFile$,
   runWorkflowAutomationAndOpenThread$,
@@ -207,7 +201,6 @@ import {
 } from "../../signals/workflows-page/workflow-detail-actions.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
-import { detachedNavigateTo$ } from "../../signals/route.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { writeToClipboard } from "../../signals/okou-page/clipboard.ts";
 import { orgPlanCapabilities$ } from "../../signals/okou-page/org-plan-capabilities.ts";
@@ -240,7 +233,6 @@ import {
   AlertTitle,
 } from "@okouai/ui/components/ui/alert";
 import {
-  agentLabel,
   buildGmailLabelAppliedEventConfig,
   buildGmailNewMessageEventConfig,
   chatRunFinishedStatusLabel,
@@ -1399,12 +1391,12 @@ function WorkflowChatButton({
   const pageSignal = useGet(pageSignal$);
   const [openLoadable, openWorkflowChat] = useLoadableSet(openWorkflowChat$);
   const opening = openLoadable.state === "loading";
-  const singleAgent = useLastResolved(singleAgentWorkflows$);
+
   const chatLabel = i18n.t(
     ($) => {
       return $.workflows.detail.refineWith;
     },
-    { agent: singleAgent ? "Okou" : agentLabel(detail) },
+    { agent: "Okou" },
   );
 
   return (
@@ -1467,7 +1459,6 @@ function WorkflowInfoTab({
 }: {
   readonly detail: WorkflowDetailResponse;
 }) {
-  const singleAgent = useLastResolved(singleAgentWorkflows$);
   const actionDialog = useGet(workflowActionDialog$);
   const setActionDialog = useSet(setWorkflowActionDialog$);
   return (
@@ -1476,24 +1467,12 @@ function WorkflowInfoTab({
       <div className={surfaceVariants({ className: "overflow-hidden" })}>
         <div className="p-4 sm:p-5">
           <InlineSettingsRow
-            label={
-              singleAgent
-                ? i18n.t(($) => {
-                    return $.workflows.workspace.makePrivateCopy;
-                  })
-                : i18n.t(($) => {
-                    return $.workflows.detail.info.copyTitle;
-                  })
-            }
-            description={
-              singleAgent
-                ? i18n.t(($) => {
-                    return $.workflows.workspace.copyDescription;
-                  })
-                : i18n.t(($) => {
-                    return $.workflows.detail.info.copyDescription;
-                  })
-            }
+            label={i18n.t(($) => {
+              return $.workflows.workspace.makePrivateCopy;
+            })}
+            description={i18n.t(($) => {
+              return $.workflows.workspace.copyDescription;
+            })}
             alignControls="center"
           >
             <Button
@@ -1506,13 +1485,9 @@ function WorkflowInfoTab({
               }}
             >
               <Copy size={14} />
-              {singleAgent
-                ? i18n.t(($) => {
-                    return $.workflows.workspace.makePrivateCopy;
-                  })
-                : i18n.t(($) => {
-                    return $.workflows.common.copyWorkflow;
-                  })}
+              {i18n.t(($) => {
+                return $.workflows.workspace.makePrivateCopy;
+              })}
             </Button>
           </InlineSettingsRow>
         </div>
@@ -1604,22 +1579,9 @@ function WorkflowMetadataFields({
 }) {
   const copy = workflowMetadataCopy();
   const slugCommand = `/${values.name.trim() || "slug"}`;
-  const singleAgent = useLastResolved(singleAgentWorkflows$);
-  const ownerAgentLabel = agentLabel(detail);
 
   return (
     <div className="p-4 sm:p-5">
-      {!singleAgent && (
-        <InlineSettingsRow
-          label={copy.agent}
-          description={copy.agentDescription}
-          wideControls
-        >
-          <div className="flex h-9 w-full items-center rounded-lg border border-[hsl(var(--gray-400))] bg-gray-50 px-3 text-sm text-muted-foreground">
-            <span className="truncate">{ownerAgentLabel}</span>
-          </div>
-        </InlineSettingsRow>
-      )}
       <InlineSettingsRow
         label={copy.name}
         description={copy.nameHelp}
@@ -1642,7 +1604,7 @@ function WorkflowMetadataFields({
       <InlineSettingsRow
         label={copy.slug}
         description={
-          singleAgent && detail.shadowedBy
+          detail.shadowedBy
             ? i18n.t(
                 ($) => {
                   return $.workflows.workspace.overrideHelp;
@@ -1683,13 +1645,9 @@ function WorkflowMetadataFields({
       </InlineSettingsRow>
       <InlineSettingsRow
         label={copy.description}
-        description={
-          singleAgent
-            ? i18n.t(($) => {
-                return $.workflows.workspace.descriptionHelp;
-              })
-            : copy.descriptionHelp
-        }
+        description={i18n.t(($) => {
+          return $.workflows.workspace.descriptionHelp;
+        })}
         wideControls
       >
         <Textarea
@@ -1825,48 +1783,30 @@ function ShadowWarning({
 }: {
   readonly detail: WorkflowDetailResponse;
 }) {
-  const singleAgent = useLastResolved(singleAgentWorkflows$);
   if (!detail.shadowedBy) {
     return null;
   }
-  if (singleAgent) {
-    return (
-      <div className="mb-4 flex flex-wrap items-center gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">
-        <AlertTriangle size={16} className="shrink-0" />
-        <span>
-          {i18n.t(
-            ($) => {
-              return $.workflows.workspace.overrideHelp;
-            },
-            { name: detail.name },
-          )}
-        </span>
-        <Link
-          pathname={ROUTES.workflowDetailInstructions}
-          options={{ pathParams: { workflowId: detail.shadowedBy.id } }}
-          className="font-medium underline hover:text-foreground"
-        >
-          {i18n.t(($) => {
-            return $.workflows.workspace.openPrivateCopy;
-          })}
-        </Link>
-      </div>
-    );
-  }
 
   return (
-    <div className="mb-4 flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">
-      <AlertTriangle size={16} className="mt-0.5 shrink-0" />
-      <p className="min-w-0">
-        <span className="font-medium">/{detail.name}</span>{" "}
+    <div className="mb-4 flex flex-wrap items-center gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">
+      <AlertTriangle size={16} className="shrink-0" />
+      <span>
+        {i18n.t(
+          ($) => {
+            return $.workflows.workspace.overrideHelp;
+          },
+          { name: detail.name },
+        )}
+      </span>
+      <Link
+        pathname={ROUTES.workflowDetailInstructions}
+        options={{ pathParams: { workflowId: detail.shadowedBy.id } }}
+        className="font-medium underline hover:text-foreground"
+      >
         {i18n.t(($) => {
-          return $.workflows.detail.shadow.resolvesTo;
-        })}{" "}
-        <span className="font-medium">{workflowTitle(detail.shadowedBy)}</span>{" "}
-        {i18n.t(($) => {
-          return $.workflows.detail.shadow.end;
+          return $.workflows.workspace.openPrivateCopy;
         })}
-      </p>
+      </Link>
     </div>
   );
 }
@@ -1885,19 +1825,18 @@ function WorkflowPublicToggle({
   const setDemoteConfirmOpen = useSet(setWorkflowDemoteConfirmOpen$);
   const busy = changeLoadable.state === "loading";
   const isPublic = detail.visibility === "public";
-  const singleAgent = useLastResolved(singleAgentWorkflows$);
+
   const org = useLastResolved(currentOrgInfo$);
-  const statusLabel =
-    isPublic && singleAgent
-      ? i18n.t(
-          ($) => {
-            return $.workflows.workspace.sharedWith;
-          },
-          { workspace: org?.name ?? "" },
-        )
-      : isPublic
-        ? copy.public
-        : copy.private;
+  const statusLabel = isPublic
+    ? i18n.t(
+        ($) => {
+          return $.workflows.workspace.sharedWith;
+        },
+        { workspace: org?.name ?? "" },
+      )
+    : isPublic
+      ? copy.public
+      : copy.private;
   const publishBlocked =
     detail.visibility === "private" && detail.canManage && !detail.canPublish;
   const toggleAction: Parameters<typeof changeVisibility>[0]["action"] | null =
@@ -1940,11 +1879,9 @@ function WorkflowPublicToggle({
       </div>
       {publishBlocked ? (
         <p className="text-xs leading-5 text-muted-foreground">
-          {singleAgent
-            ? i18n.t(($) => {
-                return $.workflows.workspace.publicationPermissionRequired;
-              })
-            : copy.adminRequired}
+          {i18n.t(($) => {
+            return $.workflows.workspace.publicationPermissionRequired;
+          })}
         </p>
       ) : null}
       <Dialog open={demoteConfirmOpen} onOpenChange={setDemoteConfirmOpen}>
@@ -1982,343 +1919,6 @@ function WorkflowPublicToggle({
       </Dialog>
     </div>
   );
-}
-
-interface WorkflowCopyAgent {
-  readonly agentId: string;
-  readonly displayName: string | null;
-}
-
-function workflowCopyRemovalDescription({
-  enabledSourceAutomationCount,
-  sourceAgentName,
-}: {
-  readonly enabledSourceAutomationCount: number;
-  readonly sourceAgentName: string;
-}): string {
-  if (enabledSourceAutomationCount === 0) {
-    return i18n.t(
-      ($) => {
-        return $.workflows.detail.copy.removalNoAutomations;
-      },
-      { agent: sourceAgentName },
-    );
-  }
-  return i18n.t(
-    ($) => {
-      return $.workflows.detail.copy.removalWithAutomations;
-    },
-    {
-      count: enabledSourceAutomationCount,
-      agent: sourceAgentName,
-    },
-  );
-}
-
-function notifyWorkflowCopySuccess({
-  agentName,
-  sourceAgentName,
-  removedOriginal,
-  onView,
-}: {
-  readonly agentName: string;
-  readonly sourceAgentName: string;
-  readonly removedOriginal: boolean;
-  readonly onView: () => void;
-}): void {
-  if (removedOriginal) {
-    toast.success(
-      i18n.t(
-        ($) => {
-          return $.workflows.detail.copy.moved;
-        },
-        { agent: agentName },
-      ),
-      {
-        description: i18n.t(
-          ($) => {
-            return $.workflows.detail.copy.moveDescription;
-          },
-          { agent: sourceAgentName },
-        ),
-      },
-    );
-    return;
-  }
-  toast.success(
-    i18n.t(
-      ($) => {
-        return $.workflows.detail.copy.copied;
-      },
-      { agent: agentName },
-    ),
-    {
-      description: i18n.t(($) => {
-        return $.workflows.detail.copy.privateReady;
-      }),
-      action: {
-        label: i18n.t(($) => {
-          return $.workflows.common.view;
-        }),
-        onClick: onView,
-      },
-    },
-  );
-}
-
-function WorkflowCopyForm({
-  agents,
-  agentsLoaded,
-  form,
-  onChange,
-  sourceAgentName,
-  enabledSourceAutomationCount,
-}: {
-  readonly agents: readonly WorkflowCopyAgent[];
-  readonly agentsLoaded: boolean;
-  readonly form: WorkflowCopyFormState;
-  readonly onChange: (form: WorkflowCopyFormState) => void;
-  readonly sourceAgentName: string;
-  readonly enabledSourceAutomationCount: number;
-}) {
-  const noAgents = agentsLoaded && agents.length === 0;
-  const agentItems = agents.map((agent) => {
-    return { value: agent.agentId, label: agent.displayName ?? agent.agentId };
-  });
-
-  return (
-    <div className="space-y-4">
-      <div className="space-y-1.5">
-        <span className="text-sm font-medium text-foreground">
-          {i18n.t(($) => {
-            return $.workflows.detail.copy.to;
-          })}
-        </span>
-        {noAgents ? (
-          <p className="text-sm text-muted-foreground">
-            {i18n.t(($) => {
-              return $.workflows.detail.copy.noAgents;
-            })}
-          </p>
-        ) : (
-          <Select
-            items={agentItems}
-            value={form.selectedAgentId}
-            disabled={!agentsLoaded}
-            onValueChange={(value, details) => {
-              if (value === null) {
-                details.cancel();
-                return;
-              }
-              if (value !== form.selectedAgentId) {
-                onChange({ ...form, selectedAgentId: value });
-              }
-            }}
-          >
-            <SelectTrigger
-              className="h-9 w-full"
-              aria-label={i18n.t(($) => {
-                return $.workflows.detail.copy.to;
-              })}
-            >
-              <SelectValue
-                placeholder={i18n.t(($) => {
-                  return $.workflows.detail.copy.selectAgent;
-                })}
-              />
-            </SelectTrigger>
-            <SelectContent>
-              {agentItems.map((item) => {
-                return (
-                  <SelectItem key={item.value} value={item.value}>
-                    {item.label}
-                  </SelectItem>
-                );
-              })}
-            </SelectContent>
-          </Select>
-        )}
-      </div>
-      <label className="flex items-start gap-2">
-        <Checkbox
-          checked={form.removeOriginal}
-          className="mt-0.5"
-          onCheckedChange={(checked) => {
-            onChange({ ...form, removeOriginal: checked });
-          }}
-        />
-        <span className="text-sm text-foreground">
-          {i18n.t(
-            ($) => {
-              return $.workflows.detail.copy.removeOriginal;
-            },
-            { agent: sourceAgentName },
-          )}
-        </span>
-      </label>
-      {form.removeOriginal ? (
-        <Alert variant="destructive">
-          <AlertTriangle size={16} />
-          <AlertTitle>
-            {i18n.t(($) => {
-              return $.workflows.detail.copy.removalAlert;
-            })}
-          </AlertTitle>
-          <AlertDescription>
-            {workflowCopyRemovalDescription({
-              enabledSourceAutomationCount,
-              sourceAgentName,
-            })}
-          </AlertDescription>
-        </Alert>
-      ) : null}
-    </div>
-  );
-}
-
-function LegacyWorkflowCopyDialog({
-  detail,
-  open,
-  onOpenChange,
-}: {
-  readonly detail: WorkflowDetailResponse;
-  readonly open: boolean;
-  readonly onOpenChange: (open: boolean) => void;
-}) {
-  const form = useGet(workflowCopyForm$);
-  const setForm = useSet(setWorkflowCopyForm$);
-  const agentsLoadable = useLoadable(agents$);
-  const agentsLoaded = agentsLoadable.state === "hasData";
-  const agents = agentsLoaded
-    ? agentsLoadable.data.filter((agent) => {
-        return agent.agentId !== detail.agentId;
-      })
-    : [];
-  const sourceAgentName = agentLabel(detail);
-  const enabledSourceAutomationIds = detail.automations
-    .filter((automation) => {
-      return automation.enabled;
-    })
-    .map((automation) => {
-      return automation.id;
-    });
-  const selectedAgent = agents.find((agent) => {
-    return agent.agentId === form.selectedAgentId;
-  });
-  const agentName =
-    selectedAgent?.displayName ??
-    form.selectedAgentId ??
-    i18n.t(($) => {
-      return $.workflows.detail.copy.agentFallback;
-    });
-  const { submit, submitting } = useWorkflowCopySubmission({
-    agentName,
-    detail,
-    enabledSourceAutomationIds,
-    form,
-    sourceAgentName,
-  });
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent smMaxWidth={560}>
-        <DialogHeader>
-          <DialogTitle>
-            {i18n.t(($) => {
-              return $.workflows.detail.copy.title;
-            })}
-          </DialogTitle>
-          <DialogDescription>
-            {i18n.t(($) => {
-              return $.workflows.detail.copy.description;
-            })}
-          </DialogDescription>
-        </DialogHeader>
-        <WorkflowCopyForm
-          agents={agents}
-          agentsLoaded={agentsLoaded}
-          form={form}
-          onChange={setForm}
-          sourceAgentName={sourceAgentName}
-          enabledSourceAutomationCount={enabledSourceAutomationIds.length}
-        />
-        <WorkflowDialogFooter
-          busy={submitting}
-          disabled={!form.selectedAgentId || submitting || agents.length === 0}
-          cancelLabel={i18n.t(($) => {
-            return $.workflows.common.cancel;
-          })}
-          label={
-            form.removeOriginal
-              ? i18n.t(($) => {
-                  return $.workflows.detail.copy.copyAndRemove;
-                })
-              : i18n.t(($) => {
-                  return $.workflows.common.copyWorkflow;
-                })
-          }
-          onCancel={() => {
-            onOpenChange(false);
-          }}
-          onConfirm={submit}
-        />
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function useWorkflowCopySubmission({
-  agentName,
-  detail,
-  enabledSourceAutomationIds,
-  form,
-  sourceAgentName,
-}: {
-  readonly agentName: string;
-  readonly detail: WorkflowDetailResponse;
-  readonly enabledSourceAutomationIds: readonly string[];
-  readonly form: WorkflowCopyFormState;
-  readonly sourceAgentName: string;
-}): { readonly submit: () => void; readonly submitting: boolean } {
-  const pageSignal = useGet(pageSignal$);
-  const navigate = useSet(detachedNavigateTo$);
-  const [copyLoadable, copyOrMoveWorkflow] =
-    useLoadableSet(copyOrMoveWorkflow$);
-  const submitting = copyLoadable.state === "loading";
-  const navigateToCopy = (workflowId: string) => {
-    navigate(ROUTES.workflowDetailAutomations, {
-      pathParams: { workflowId },
-    });
-  };
-  const submit = () => {
-    const toAgentId = form.selectedAgentId;
-    if (!toAgentId) {
-      return;
-    }
-    detach(
-      (async () => {
-        const { copied, removedOriginal } = await copyOrMoveWorkflow(
-          {
-            workflowId: detail.id,
-            toAgentId,
-            removeOriginal: form.removeOriginal,
-            enabledSourceAutomationIds,
-          },
-          pageSignal,
-        );
-        notifyWorkflowCopySuccess({
-          agentName,
-          sourceAgentName,
-          removedOriginal,
-          onView: () => {
-            navigateToCopy(copied.id);
-          },
-        });
-      })(),
-      Reason.DomCallback,
-    );
-  };
-  return { submit, submitting };
 }
 
 function WorkflowDeleteDialog({
@@ -9248,12 +8848,7 @@ function WorkflowCopyDialog(props: {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
 }) {
-  const singleAgent = useLastResolved(singleAgentWorkflows$);
-  return singleAgent ? (
-    <PrivateWorkflowCopyDialog {...props} />
-  ) : (
-    <LegacyWorkflowCopyDialog {...props} />
-  );
+  return <PrivateWorkflowCopyDialog {...props} />;
 }
 
 function PrivateWorkflowCopyDialog({

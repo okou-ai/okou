@@ -2019,7 +2019,7 @@
         "slideCountAuto": "Automatisch",
         "slideCountRange": "{{range}} Folien"
       },
-      "mentionHint": "Agenten oder Chats suchen…",
+      "mentionHint": "Chats oder Projekte suchen…",
       "message": "Nachricht",
       "modelForThisChat": "Modell für diesen Chat",
       "placeholder": "Bitten Sie mich, Workflows zu automatisieren und Aufgaben zu verwalten...",

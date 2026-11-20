@@ -1,4 +1,3 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { instructionsContract } from "@okouai/api-contracts/contracts/instructions";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -50,9 +49,6 @@ test.each([
   await setupPage({
     context,
     path,
-    featureSwitches: {
-      [FeatureSwitchKey.SingleAgent]: true,
-    },
   });
 
   const avatar = await waitFor(() => {

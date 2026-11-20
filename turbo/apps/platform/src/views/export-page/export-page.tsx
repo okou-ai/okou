@@ -1,4 +1,3 @@
-import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
 import { useGet, useLastResolved, useLoadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import {
@@ -353,7 +352,6 @@ function ExportActions({
 }
 
 function ExportScopeList() {
-  const singleAgent = useLastResolved(singleAgentEnabled$) ?? false;
   const { t } = useTranslation();
   const items = [
     t(($) => {
@@ -362,13 +360,9 @@ function ExportScopeList() {
     t(($) => {
       return $.settings.export.scope.chatMessages;
     }),
-    singleAgent
-      ? t(($) => {
-          return $.myOkou.instructions;
-        })
-      : t(($) => {
-          return $.settings.export.scope.agentInstructions;
-        }),
+    t(($) => {
+      return $.myOkou.instructions;
+    }),
     t(($) => {
       return $.settings.export.scope.workflowInstructions;
     }),

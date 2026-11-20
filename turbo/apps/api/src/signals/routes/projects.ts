@@ -3,14 +3,11 @@ import { and, asc, eq, gt } from "drizzle-orm";
 import { projectsContract } from "@okouai/api-contracts/contracts/projects";
 import { chatThreadSnapshotProjectionSchema } from "@okouai/api-contracts/validators/chat-threads";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
 import { db$ } from "../external/db";
 import { publishThreadListChanged } from "../external/realtime";
-import { userFeatureSwitchContext } from "../services/feature-switches.service";
 import {
   projectList,
   projectById,
@@ -26,12 +23,9 @@ import { chatThreadOrganizationPredicate } from "../services/chat-thread-organiz
 import { notFound } from "../../lib/error";
 import type { RouteEntry } from "../route-entry";
 
-export const projectAccess$ = computed(async (get) => {
+export const personalProjectAccess$ = computed((get) => {
   const auth = get(organizationAuthContext$);
-  return isFeatureEnabled(
-    FeatureSwitchKey.SingleAgent,
-    await get(userFeatureSwitchContext(auth.orgId, auth.userId)),
-  );
+  return auth.tokenType !== "agent" || auth.singleAgent === true;
 });
 const unavailable = notFound("Project not found");
 const conflict = Object.freeze({
@@ -45,7 +39,7 @@ const conflict = Object.freeze({
   },
 });
 const list$ = computed(async (get) => {
-  if (!(await get(projectAccess$))) {
+  if (!get(personalProjectAccess$)) {
     return unavailable;
   }
   return {
@@ -54,7 +48,7 @@ const list$ = computed(async (get) => {
   };
 });
 const read$ = computed(async (get) => {
-  if (!(await get(projectAccess$))) {
+  if (!get(personalProjectAccess$)) {
     return unavailable;
   }
   const project = await get(
@@ -66,7 +60,7 @@ const read$ = computed(async (get) => {
   return project ? { status: 200 as const, body: project } : unavailable;
 });
 const create$ = command(async ({ get, set }, signal: AbortSignal) => {
-  if (!(await get(projectAccess$))) {
+  if (!get(personalProjectAccess$)) {
     return unavailable;
   }
   const body = await get(bodyResultOf(projectsContract.create));
@@ -94,7 +88,7 @@ const create$ = command(async ({ get, set }, signal: AbortSignal) => {
   return { status: 201 as const, body: project };
 });
 const update$ = command(async ({ get, set }, signal: AbortSignal) => {
-  if (!(await get(projectAccess$))) {
+  if (!get(personalProjectAccess$)) {
     return unavailable;
   }
   const body = await get(bodyResultOf(projectsContract.update));
@@ -123,7 +117,7 @@ const update$ = command(async ({ get, set }, signal: AbortSignal) => {
   return { status: 200 as const, body: project };
 });
 const reorder$ = command(async ({ get, set }, signal: AbortSignal) => {
-  if (!(await get(projectAccess$))) {
+  if (!get(personalProjectAccess$)) {
     return unavailable;
   }
   const body = await get(bodyResultOf(projectsContract.reorder));
@@ -147,7 +141,7 @@ const reorder$ = command(async ({ get, set }, signal: AbortSignal) => {
   return { status: 204 as const, body: undefined };
 });
 const remove$ = command(async ({ get, set }, signal: AbortSignal) => {
-  if (!(await get(projectAccess$))) {
+  if (!get(personalProjectAccess$)) {
     return unavailable;
   }
   const body = await get(bodyResultOf(projectsContract.delete));
@@ -174,7 +168,7 @@ const remove$ = command(async ({ get, set }, signal: AbortSignal) => {
   return { status: 204 as const, body: undefined };
 });
 const membership$ = command(async ({ get, set }, signal: AbortSignal) => {
-  if (!(await get(projectAccess$))) {
+  if (!get(personalProjectAccess$)) {
     return unavailable;
   }
   const body = await get(bodyResultOf(projectsContract.membership));
@@ -201,7 +195,7 @@ const membership$ = command(async ({ get, set }, signal: AbortSignal) => {
   };
 });
 const threads$ = computed(async (get) => {
-  if (!(await get(projectAccess$))) {
+  if (!get(personalProjectAccess$)) {
     return unavailable;
   }
   const owner = get(organizationAuthContext$);
@@ -249,7 +243,7 @@ const threads$ = computed(async (get) => {
   };
 });
 const snapshot$ = command(async ({ get, set }, signal: AbortSignal) => {
-  if (!(await get(projectAccess$))) {
+  if (!get(personalProjectAccess$)) {
     return unavailable;
   }
   return {
@@ -262,7 +256,7 @@ const snapshot$ = command(async ({ get, set }, signal: AbortSignal) => {
   };
 });
 const events$ = computed(async (get) => {
-  if (!(await get(projectAccess$))) {
+  if (!get(personalProjectAccess$)) {
     return unavailable;
   }
   const owner = get(organizationAuthContext$);

@@ -1,6 +1,6 @@
+import { createBddApi } from "./helpers/api-bdd";
 import { instructionsContract } from "@okouai/api-contracts/contracts/instructions";
 import { instructionsRoutes } from "../instructions";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createHash, randomUUID } from "node:crypto";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 
@@ -284,9 +284,16 @@ test("publishes an owned ZIP, deduplicates concurrent requests and excludes peer
   const outsider = actor();
   const app = setupApp({ context, routes });
   const fixture = initialize(app, [owner, peer, outsider]);
-  // This export includes a retained named Agent and its private Workflow.
-  await updateFeatureSwitchesForUser(context, owner, { singleAgent: false });
   const agentId = await ownedAgent(fixture, owner);
+  const { defaultAgentId } = await createBddApi(context).readOnboardingStatus({
+    ...owner,
+    orgRole: "org:admin",
+  });
+  if (!defaultAgentId)
+    throw new Error(
+      "Expected the workspace executor for the exported Workflow",
+    );
+  authenticate(owner);
   const rawInstructions =
     "[AGENT_PROFILE]\nLegacy display metadata\n[/AGENT_PROFILE]\nExported current instructions";
   await accept(
@@ -301,7 +308,7 @@ test("publishes an owned ZIP, deduplicates concurrent requests and excludes peer
     fixture.app(workflowsCollectionContract).create({
       headers,
       body: {
-        agentId,
+        agentId: defaultAgentId,
         name: "exported-workflow",
         instruction: "Use the exported instruction",
         visibility: "private",
@@ -623,7 +630,6 @@ test("recovers the owner's private Instructions export after an S3 failure witho
   });
   const initial = initialize(app, [owner, peer]);
   for (const user of [owner, peer]) {
-    await updateFeatureSwitchesForUser(context, user, { singleAgent: true });
     authenticate(user);
     await accept(
       app(instructionsContract).update({

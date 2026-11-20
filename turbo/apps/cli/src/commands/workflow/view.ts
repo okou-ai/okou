@@ -1,5 +1,5 @@
 import { workflowHelp } from "./mode";
-import { singleAgentEnabled } from "../../lib/api/single-agent";
+import { isPersonalExecution } from "../../lib/personal-execution";
 import { Command } from "commander";
 import chalk from "chalk";
 import { getWorkflow } from "../../lib/api/domains/workflows";
@@ -33,7 +33,7 @@ Examples:
         console.log(`ID:           ${workflow.id}`);
         console.log(`Name:         ${workflow.name}`);
         console.log(`Visibility:   ${workflow.visibility}`);
-        if (!(await singleAgentEnabled())) {
+        if (!isPersonalExecution()) {
           console.log(`Agent Name:   ${formatWorkflowAgentName(workflow)}`);
           console.log(`Agent ID:     ${workflow.agentId}`);
         }

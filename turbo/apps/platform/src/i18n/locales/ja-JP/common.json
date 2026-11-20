@@ -2013,7 +2013,7 @@
         "slideCountAuto": "自動",
         "slideCountRange": "{{range}}枚"
       },
-      "mentionHint": "エージェントやチャットを検索…",
+      "mentionHint": "チャットやプロジェクトを検索…",
       "message": "メッセージ",
       "modelForThisChat": "このチャットのモデル",
       "placeholder": "ワークフローの自動化、タスクの管理を依頼してください...",

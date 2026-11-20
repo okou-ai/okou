@@ -137,7 +137,6 @@ describe("Connector Skill bundle delivery", () => {
           { ...owner.actor, orgId: owner.actor.orgId },
           {
             [FeatureSwitchKey.CodexExecution]: framework === "codex",
-            [FeatureSwitchKey.SingleAgent]: false,
           },
         );
         const s3 = installWorkflowVolumeS3Fixture(context);

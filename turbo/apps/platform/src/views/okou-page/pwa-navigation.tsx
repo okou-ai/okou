@@ -2,9 +2,7 @@ import { useGet, useLastResolved } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { ArrowLeft, MessageCircle, Package, Plug, User } from "lucide-react";
 import { cn } from "@okouai/ui";
-import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
 import { activeRoute$ } from "../../signals/active-route.ts";
-import { currentChatAgentId$ } from "../../signals/agent-chat.ts";
 import { isChatRoute } from "../../signals/okou-page/nav.ts";
 import { pwaHasUnreadChats$ } from "../../signals/okou-page/pwa-chat-list.ts";
 import {
@@ -40,19 +38,13 @@ function PwaBackLink({
 }
 
 // My Okou's chats tab is `/`; otherwise it opens the current agent's chat.
-function useChatsTabAgentId(): string | null {
-  const singleAgent = useLastResolved(singleAgentEnabled$) ?? false;
-  const agentId = useLastResolved(currentChatAgentId$) ?? null;
-  return singleAgent ? null : agentId;
-}
 
 export function PwaBackToChats() {
   const { t } = useTranslation();
-  const agentId = useChatsTabAgentId();
+
   return (
     <PwaBackLink
-      pathname={agentId ? ROUTES.agentChat : ROUTES.home}
-      options={agentId ? { pathParams: { agentId } } : undefined}
+      pathname={ROUTES.home}
       label={t(($) => {
         return $.appShell.pwaNavigation.backToChats;
       })}
@@ -107,11 +99,10 @@ function PwaTabUnreadIndicator() {
 export function PwaBottomNavigation() {
   const { t } = useTranslation();
   const route = useGet(activeRoute$);
-  const agentId = useChatsTabAgentId();
+
   const tabs = [
     {
-      pathname: agentId ? ROUTES.agentChat : ROUTES.home,
-      options: agentId ? { pathParams: { agentId } } : undefined,
+      pathname: ROUTES.home,
       label: t(($) => {
         return $.appShell.pwaNavigation.chats;
       }),
@@ -162,40 +153,37 @@ export function PwaBottomNavigation() {
       })}
       className="grid shrink-0 grid-cols-4 gap-1 border-t border-border/50 bg-background px-2 pt-1 pb-safe [view-transition-name:pwa-tab-bar] [[data-keyboard-open=true]_&]:hidden"
     >
-      {tabs.map(
-        ({ pathname, options, label, Icon, filledPath, active, unread }) => {
-          return (
-            <Link
-              key={pathname}
-              pathname={pathname}
-              options={options}
-              aria-current={active ? "page" : undefined}
-              className={cn(
-                "flex min-h-14 min-w-0 flex-col items-center justify-center gap-1 rounded-lg px-1 text-xs font-medium transition-colors",
-                active
-                  ? "text-brand-text hover:text-brand-text-hover"
-                  : "text-muted-foreground hover:text-foreground",
+      {tabs.map(({ pathname, label, Icon, filledPath, active, unread }) => {
+        return (
+          <Link
+            key={pathname}
+            pathname={pathname}
+            aria-current={active ? "page" : undefined}
+            className={cn(
+              "flex min-h-14 min-w-0 flex-col items-center justify-center gap-1 rounded-lg px-1 text-xs font-medium transition-colors",
+              active
+                ? "text-brand-text hover:text-brand-text-hover"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            <span className="relative flex">
+              {active ? (
+                <svg
+                  viewBox="0 0 24 24"
+                  className="size-5 fill-current"
+                  aria-hidden="true"
+                >
+                  <path d={filledPath} fillRule="evenodd" />
+                </svg>
+              ) : (
+                <Icon className="size-5" aria-hidden="true" />
               )}
-            >
-              <span className="relative flex">
-                {active ? (
-                  <svg
-                    viewBox="0 0 24 24"
-                    className="size-5 fill-current"
-                    aria-hidden="true"
-                  >
-                    <path d={filledPath} fillRule="evenodd" />
-                  </svg>
-                ) : (
-                  <Icon className="size-5" aria-hidden="true" />
-                )}
-                {unread && <PwaTabUnreadIndicator />}
-              </span>
-              <span className="max-w-full truncate">{label}</span>
-            </Link>
-          );
-        },
-      )}
+              {unread && <PwaTabUnreadIndicator />}
+            </span>
+            <span className="max-w-full truncate">{label}</span>
+          </Link>
+        );
+      })}
     </nav>
   );
 }

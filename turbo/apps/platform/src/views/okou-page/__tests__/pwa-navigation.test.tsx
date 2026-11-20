@@ -11,7 +11,6 @@ import {
   chatThreadByIdContract,
   chatThreadsContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import {
   click,
@@ -27,7 +26,7 @@ import {
 import { CHAT_LIST_AGENT_ID, fastButton } from "./chat-list-test-helpers.ts";
 
 const context = testContext();
-const CHAT_LIST_PATH = `/agents/${CHAT_LIST_AGENT_ID}/chat`;
+const CHAT_LIST_PATH = "/";
 
 function mockDisplayMode({
   standalone,
@@ -148,12 +147,7 @@ test.each([false, true])(
       queryAllByRoleFast("button", header).map((button) => {
         return button.getAttribute("aria-label");
       }),
-    ).toStrictEqual([
-      "Switch agent",
-      "Search workspace",
-      "New chat",
-      "Open chat list menu",
-    ]);
+    ).toStrictEqual(["Search workspace", "New chat", "Open chat list menu"]);
 
     click(search);
     const dialog = await screen.findByRole("dialog", {
@@ -283,7 +277,6 @@ test("Browse and filter mobile browser chats before opening a conversation and r
   await waitFor(() => {
     expect(window.location.pathname).toBe(CHAT_LIST_PATH);
   });
-  expect(screen.getByLabelText("Switch agent")).toHaveTextContent("List agent");
 
   click(screen.getByLabelText("New chat"));
 
@@ -400,9 +393,6 @@ test("My Okou's chats tab is its chat list at / and composes a new chat there", 
   await setupPage({
     context,
     path: "/",
-    featureSwitches: {
-      [FeatureSwitchKey.SingleAgent]: true,
-    },
     ...workspace.pageOptions,
   });
 
@@ -598,7 +588,7 @@ test("Step back to Me from the pages it opens", async () => {
   expect(window.location.pathname).toBe("/me");
 });
 
-test("Point to unread chats in other agents from the tabs and the agent switcher", async () => {
+test("Show the Chats tab unread indicator across all Chats", async () => {
   mockDisplayMode({ standalone: false, desktop: false });
   const researchAgentId = "c7000000-0000-4000-a000-000000000003";
   const workspace = installContinuityWorkspace(context, {
@@ -654,24 +644,9 @@ test("Point to unread chats in other agents from the tabs and the agent switcher
     expect(
       within(linkTo(CHAT_LIST_PATH, navigation)).getByLabelText("Unread"),
     ).toBeInTheDocument();
-    expect(
-      within(fastButton("Switch agent")).getByLabelText("Unread"),
-    ).toBeInTheDocument();
   });
   expect(
     within(linkTo("/me", navigation)).queryByLabelText("Unread"),
-  ).not.toBeInTheDocument();
-
-  click(fastButton("Switch agent"));
-
-  const researchOption = await screen.findByRole("option", {
-    name: "Research agent",
-  });
-  expect(within(researchOption).getByLabelText("Unread")).toBeInTheDocument();
-  expect(
-    within(screen.getByRole("option", { name: "List agent" })).queryByLabelText(
-      "Unread",
-    ),
   ).not.toBeInTheDocument();
 });
 
@@ -784,79 +759,4 @@ test("Remove a disconnected subscription from Me without reopening the page", as
     screen.queryByRole("heading", { name: "ChatGPT" }),
   ).not.toBeInTheDocument();
   expect(window.location.pathname).toBe("/me");
-});
-
-test("Switch the mobile browser chat list to another agent", async () => {
-  mockDisplayMode({ standalone: false, desktop: false });
-  const researchAgentId = "c7000000-0000-4000-a000-000000000002";
-  const workspace = installContinuityWorkspace(context, {
-    caseId: 78,
-    threads: [
-      continuityThread(78, 1, "Launch planning"),
-      {
-        ...continuityThread(78, 2, "Research brief"),
-        agentId: researchAgentId,
-      },
-    ],
-  });
-  const listAgent: AgentResponse = {
-    agentId: CHAT_LIST_AGENT_ID,
-    isDefaultAgent: false,
-    ownerId: "chat-list-owner",
-    displayName: "List agent",
-    description: null,
-    sound: null,
-    avatarUrl: null,
-    visibility: "private",
-  };
-  const agents = [
-    listAgent,
-    {
-      ...listAgent,
-      agentId: researchAgentId,
-      displayName: "Research agent",
-    },
-  ];
-  context.mocks.api(agentsMainContract.list, ({ respond }) => {
-    return respond(200, agents);
-  });
-  context.mocks.api(agentsByIdContract.get, ({ params, respond }) => {
-    const agent = agents.find((candidate) => {
-      return candidate.agentId === params.id;
-    });
-    return agent
-      ? respond(200, agent)
-      : respond(404, {
-          error: { code: "NOT_FOUND", message: "Agent not found" },
-        });
-  });
-
-  await setupPage({
-    context,
-    path: CHAT_LIST_PATH,
-    ...workspace.pageOptions,
-  });
-
-  await screen.findByText("Launch planning");
-  expect(screen.queryByText("Research brief")).not.toBeInTheDocument();
-
-  click(fastButton("Switch agent"));
-  const researchOption = await screen.findByRole("option", {
-    name: "Research agent",
-  });
-  click(researchOption);
-
-  await screen.findByText("Research brief");
-  await waitFor(() => {
-    expect(fastButton("Switch agent")).toHaveTextContent("Research agent");
-  });
-  expect(window.location.pathname).toBe(`/agents/${researchAgentId}/chat`);
-  expect(screen.queryByText("Launch planning")).not.toBeInTheDocument();
-  const navigation = screen.getByRole("navigation", {
-    name: "Main navigation",
-  });
-  expect(linkTo(`/agents/${researchAgentId}/chat`, navigation)).toHaveAttribute(
-    "aria-current",
-    "page",
-  );
 });

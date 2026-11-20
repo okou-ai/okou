@@ -117,11 +117,9 @@ function installResources({
 function openPage({
   callback = false,
   malformed = false,
-  singleAgent = false,
 }: {
   callback?: boolean;
   malformed?: boolean;
-  singleAgent?: boolean;
 } = {}) {
   const params = new URLSearchParams({
     items: malformed ? "not-json" : JSON.stringify(items),
@@ -137,7 +135,6 @@ function openPage({
     path: `/agents/${AGENT_ID}/permissions/batch?${params}`,
     featureSwitches: {
       [FeatureSwitchKey.BatchConnectorPermissions]: true,
-      [FeatureSwitchKey.SingleAgent]: singleAgent,
     },
   });
 }
@@ -146,17 +143,14 @@ test.each([
   {
     outcome: "success",
     message: "The chat has continued.",
-    singleAgent: false,
   },
   {
     outcome: "failure",
     message: /^Permissions allowed, but could not continue\./u,
-    singleAgent: false,
   },
-  { outcome: "success", message: "The chat has continued.", singleAgent: true },
 ] as const)(
-  "Grouped permissions remain allowed after continuation $outcome (My Okou=$singleAgent)",
-  async ({ outcome, message, singleAgent }) => {
+  "Grouped permissions remain allowed after continuation $outcome",
+  async ({ outcome, message }) => {
     installResources();
     const applied: string[] = [];
     const durations: string[] = [];
@@ -210,11 +204,10 @@ test.each([
             },
           });
     });
-    await openPage({ callback: true, singleAgent });
+    await openPage({ callback: true });
     await screen.findByText("Description for chat:write");
-    const scope = singleAgent
-      ? "Applies to this connector across your chats in this workspace. Your teammates have their own permissions."
-      : "Applies to this connector across all your chats and agents.";
+    const scope =
+      "Applies to this connector across your chats in this workspace. Your teammates have their own permissions.";
     expect(screen.getByText(scope)).toBeInTheDocument();
     expect(screen.getByText("GitHub")).toBeInTheDocument();
     expect(screen.getByText("Description for issues:read")).toBeInTheDocument();

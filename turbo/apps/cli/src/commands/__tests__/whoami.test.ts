@@ -948,6 +948,14 @@ describe("okou whoami command", () => {
 
     it("should identify an invalid OKOU_TOKEN", async () => {
       vi.stubEnv("OKOU_TOKEN", "not-an-okou-token");
+      server.use(
+        http.get("*/api/auth/me", () =>
+          HttpResponse.json(
+            { error: { code: "UNAUTHORIZED", message: "Invalid token" } },
+            { status: 401 },
+          ),
+        ),
+      );
 
       await runWhoami();
 

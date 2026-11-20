@@ -1,4 +1,3 @@
-import { projectsEnabled$ } from "../../signals/projects/projects.ts";
 import {
   draggingProjectThread$,
   endProjectThreadDrag$,
@@ -478,7 +477,7 @@ function ChatThreadMenuItems({
 }: Pick<ChatThreadMenuProps, "signals">) {
   const { t } = useTranslation();
   const requestDelete = useSet(signals.requestDelete$);
-  const projectsEnabled = useLastResolved(projectsEnabled$) ?? false;
+
   const move = useSet(openProjectMembership$);
 
   return (
@@ -488,18 +487,16 @@ function ChatThreadMenuItems({
       <ChatThreadMuteMenuItem signals={signals} />
       <ChatThreadArchiveMenuSection signals={signals} />
       <ChatThreadRenameMenuItem signals={signals} />
-      {projectsEnabled && (
-        <DropdownMenuItem
-          onClick={() => {
-            move(signals.threadId);
-          }}
-        >
-          <FolderInput size={16} className="mr-2" />
-          {t(($) => {
-            return $.projects.move;
-          })}
-        </DropdownMenuItem>
-      )}
+      <DropdownMenuItem
+        onClick={() => {
+          move(signals.threadId);
+        }}
+      >
+        <FolderInput size={16} className="mr-2" />
+        {t(($) => {
+          return $.projects.move;
+        })}
+      </DropdownMenuItem>
       <DropdownMenuItem
         onClick={() => {
           requestDelete();
@@ -521,15 +518,13 @@ function ChatThreadMenu({
   touch = false,
 }: ChatThreadMenuProps) {
   const projectDialog = useGet(projectDialog$);
-  const projectsEnabled = useLastResolved(projectsEnabled$) ?? false;
+
   const menuOpenChanged = useSet(projectThreadMenuOpenChanged$);
   return (
     <TooltipProvider delay={200}>
       <DropdownMenu
         onOpenChange={(open, details) => {
-          if (projectsEnabled) {
-            menuOpenChanged(signals.threadId, open, details.trigger);
-          }
+          menuOpenChanged(signals.threadId, open, details.trigger);
         }}
       >
         <ChatThreadMenuTrigger
@@ -582,11 +577,11 @@ function ChatThreadItemLink({
   const select = useSet(signals.select$);
   const renaming = useGet(signals.inlineRenaming$);
   const startInlineRename = useSet(signals.startInlineRename$);
-  const projectsEnabled = useLastResolved(projectsEnabled$) ?? false;
+
   const draggingThread = useGet(draggingProjectThread$);
   const startDrag = useSet(startProjectThreadDrag$);
   const endDrag = useSet(endProjectThreadDrag$);
-  const draggable = projectsEnabled && !touch && !renaming;
+  const draggable = !touch && !renaming;
   const titleReveal = useTitleReveal();
 
   return (

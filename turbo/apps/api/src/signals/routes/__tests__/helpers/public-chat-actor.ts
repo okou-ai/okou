@@ -15,6 +15,7 @@ export async function publicChatActor(
   context: TestContext,
   options: {
     readonly actor?: ApiTestUser;
+    readonly useDefaultAgent?: boolean;
     readonly beforeRuns?: (actor: ApiTestUser) => Promise<void>;
     readonly tier?: "pro" | "team";
     readonly stripeTransport?: "http";
@@ -112,7 +113,7 @@ export async function publicChatActor(
   mockOptionalEnv("OPENROUTER_API_KEY", undefined);
   fixture.chatCallbacks.disableVapid();
   const runnerGroup = await fixture.api.configureRunnerGroup(options.runner);
-  const { customerId } = await run(() => {
+  const { customerId, defaultAgentId } = await run(() => {
     return fixture.api.grantProEntitlement(actor, {
       tier: options.tier,
       stripeTransport: options.stripeTransport,
@@ -125,13 +126,15 @@ export async function publicChatActor(
   const { providerId, model } = await run(() => {
     return fixture.api.ensurePersonalSubscriptionModel(actor);
   });
-  const agent = await run(() => {
-    return fixture.bdd.createAgent(actor, {
-      displayName: "BDD chat messages agent",
-      description: "Exercises the web chat send route.",
-      visibility: "private",
-    });
-  });
+  const agent = options.useDefaultAgent
+    ? { agentId: defaultAgentId }
+    : await run(() => {
+        return fixture.bdd.createAgent(actor, {
+          displayName: "BDD chat messages agent",
+          description: "Exercises the web chat send route.",
+          visibility: "private",
+        });
+      });
   const entitled = {
     actor,
     customerId,

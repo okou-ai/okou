@@ -1,11 +1,6 @@
-import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { describe, expect, it } from "vitest";
 
-import { accept, testContext } from "../../../__tests__/test-context";
-import { setupApp } from "../../../__tests__/test-helpers";
-import { featureSwitchesRoutes } from "../feature-switches";
-import { createRouteMocks } from "./helpers/route-test";
+import { testContext } from "../../../__tests__/test-context";
 import { now } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
@@ -16,23 +11,6 @@ const context = testContext();
 const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
 const webhooks = createWebhookCallbackApi(context);
-
-async function setMyOkou(actor: ApiTestUser, enabled: boolean) {
-  createRouteMocks(context).clerk.session(
-    actor.userId,
-    actor.orgId,
-    actor.orgRole,
-  );
-  await accept(
-    setupApp({ context, routes: featureSwitchesRoutes })(
-      featureSwitchesContract,
-    ).update({
-      headers: { authorization: "Bearer clerk-session" },
-      body: { switches: { [FeatureSwitchKey.SingleAgent]: enabled } },
-    }),
-    [200],
-  );
-}
 
 async function createdThreadIds(
   actor: ApiTestUser,
@@ -125,16 +103,14 @@ describe("automatic welcome thread delivery", () => {
     ]);
   });
 
-  it("selects each recipient's mode independently of their workspace admin", async () => {
+  it("delivers personal Instructions guidance to each invited member", async () => {
     const admin = await establishedWorkspace();
     const firstMember = bdd.user({ orgId: admin.orgId, orgRole: "org:member" });
     const secondMember = bdd.user({
       orgId: admin.orgId,
       orgRole: "org:member",
     });
-    await setMyOkou(admin, true);
-    await setMyOkou(firstMember, false);
-    await setMyOkou(secondMember, true);
+
     await deliverMembershipCreated(firstMember);
     await deliverMembershipCreated(secondMember);
 
@@ -149,7 +125,7 @@ describe("automatic welcome thread delivery", () => {
     ).resolves.toHaveLength(1);
     expect(
       (await welcomeEvents(firstMember, firstThreadId))[0]?.payload?.content,
-    ).toContain("**Give a job its own agent.**");
+    ).toContain("**Your preferences belong in personal Instructions.**");
     expect(
       (await welcomeEvents(secondMember, secondThreadId))[0]?.payload?.content,
     ).toContain("**Your preferences belong in personal Instructions.**");
@@ -167,8 +143,7 @@ describe("automatic welcome thread delivery", () => {
       orgId: secondAdmin.orgId,
       orgRole: "org:member",
     });
-    await setMyOkou(firstMembership, true);
-    await setMyOkou(secondMembership, false);
+
     await deliverMembershipCreated(firstMembership);
     await deliverMembershipCreated(secondMembership);
 
@@ -182,7 +157,7 @@ describe("automatic welcome thread delivery", () => {
     expect(
       (await welcomeEvents(secondMembership, secondThreadId))[0]?.payload
         ?.content,
-    ).toContain("**Give a job its own agent.**");
+    ).toContain("**Your preferences belong in personal Instructions.**");
     await expect(
       welcomeEvents(firstMembership, firstThreadId),
     ).resolves.toHaveLength(1);
@@ -238,7 +213,7 @@ describe("automatic welcome thread delivery", () => {
 
     // A mode/locale change must not change delivery identity or persisted copy.
     const rows = await welcomeEvents(member, threadId);
-    await setMyOkou(member, true);
+
     await bdd.updateUserLocale(member, "zh-Hans");
     await deliverMembershipCreated(member);
     await expect(welcomeEvents(member, threadId)).resolves.toStrictEqual(rows);

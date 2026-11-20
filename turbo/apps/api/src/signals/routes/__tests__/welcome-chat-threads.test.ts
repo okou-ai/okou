@@ -1,5 +1,3 @@
-import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   chatThreadConnectorSelectionContract,
   chatThreadMetadataContract,
@@ -16,7 +14,6 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
-import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
 import { chatThreadRoutes } from "../chat-threads";
 import { chatThreadGetRoutes } from "../chat-threads-get";
 import { meModelProvidersDeleteRoutes } from "../me-model-providers-delete";
@@ -25,14 +22,12 @@ import { meModelProvidersResetSubscriptionRoutes } from "../me-model-providers-r
 import { meModelProvidersUpsertRoutes } from "../me-model-providers-upsert";
 import { userModelPreferenceRoutes } from "../user-model-preference";
 import { welcomeChatThreadRoutes } from "../welcome-chat-threads";
-import { featureSwitchesRoutes } from "../feature-switches";
 import { createRunExecutionCredentials } from "./helpers/run-execution-credentials";
 
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRouteMocks } from "./helpers/route-test";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const personalModelProviderTestRoutes = Object.freeze([
   ...meModelProvidersListRoutes,
@@ -80,20 +75,9 @@ function metadataClient() {
 async function fixture(
   options: {
     readonly orgId?: string;
-    readonly singleAgent?: boolean;
   } = {},
 ) {
   const actor = bdd.user({ orgId: options.orgId });
-  if (options.singleAgent !== undefined) {
-    if (!actor.orgId) {
-      throw new Error("Expected a welcome workspace");
-    }
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId: actor.orgId },
-      { singleAgent: options.singleAgent },
-    );
-  }
   bdd.acceptAgentStorageWrites();
   await runs.grantProEntitlement(actor, {
     periodEndUnix: Math.floor(now() / 1000) - 90 * 86_400,
@@ -190,8 +174,8 @@ describe("POST /api/welcome-chat-threads", () => {
     );
   });
 
-  it("creates a retained multi-Agent runless welcome with default model/media and connector state", async () => {
-    const { actor, agentId } = await fixture({ singleAgent: false });
+  it("creates a runless personal welcome with the default model and connector state", async () => {
+    const { actor, agentId } = await fixture();
     await runs.ensurePersonalSubscriptionModel(actor);
     context.mocks.ably.publish.mockRejectedValue(
       new Error("Notification unavailable"),
@@ -223,36 +207,9 @@ describe("POST /api/welcome-chat-threads", () => {
     });
     expect(rows[0]?.payload?.content).toContain("# 👋 Hi, I'm Okou");
     const content = rows[0]?.payload?.content ?? "";
-    const sections = [
-      "## 🎨 Making things is the easy end of my work",
-      "## 🔍 Data most assistants cannot reach",
-      "## ⚙️ Workflows other teams have already built here",
-      "## 🛠️ Make it yours",
-      "## 💬 I can work where your team already talks",
-      "## 📸 A walkthrough in real screenshots",
-      "[invite your teammates]",
-      "[read the docs]",
-    ];
-    let previous = -1;
-    for (const section of sections) {
-      const index = content.indexOf(section);
-      expect(index).toBeGreaterThan(previous);
-      previous = index;
-    }
-    for (const expected of [
-      "**strongest employee**",
-      "**the job keeps running in the cloud**",
-      "**[Social research]",
-      "- [Weekly growth report]",
-      "Open **Template** in the chat composer",
-      "**Give a job its own agent.**",
-      // Prompts are copyable blocks rather than links, because an inline link
-      // collapses into a chip.
-      "```\nFind the creators talking about",
-      "```\nCreate an agent for customer support",
-    ]) {
-      expect(content).toContain(expected);
-    }
+    expect(content).toContain(
+      "**Your preferences belong in personal Instructions.**",
+    );
     await expect(createdEvents(actor, body.id)).resolves.toHaveLength(1);
     // The only retry a client performs is a new deliberate action with a new
     // id, which creates its own thread.
@@ -322,54 +279,6 @@ describe("POST /api/welcome-chat-threads", () => {
     ).resolves.toMatchObject([{ eventType: "output.message", runId: null }]);
   });
 
-  it.each(["en-US"] as const)(
-    "persists the retained multi-Agent %s copy and deployment-aware links",
-    async (locale) => {
-      const { actor } = await fixture({ singleAgent: false });
-      await bdd.updateUserLocale(actor, locale);
-      mockEnv("APP_URL", "https://pr-33252-app.omby.ai");
-      const { body } = await create(actor);
-      const rows = await chat.listThreadEventRows(actor, body.id);
-      const content = rows[0]?.payload?.content;
-      expect(content).toBeDefined();
-      expect(content).toContain("Okou");
-      expect(content).not.toContain("{{");
-      expect(content).not.toContain("Editable agent name");
-      // Artifacts use image syntax so the app frames them as previews.
-      expect(content).toContain(
-        "![campaign-visual.jpg](<https://static.vm0.io/vm0/welcome-thread/2026-09-17-1e76170cef99/campaign-visual.jpg>)",
-      );
-      expect(content).toContain(
-        "![sproutpop-launch-deck](<https://sproutpop-launch-deck-p9jk.okou.app>)",
-      );
-      expect(content).toContain(
-        "![coastal-hotel-example](<https://coastal-hotel-example.okou.app>)",
-      );
-      for (const filename of ["slack-scene.png", "telegram-scene.png"]) {
-        expect(content).toContain(`${WELCOME_SCENE_BASE}/${filename}`);
-      }
-      for (const filename of [
-        "workflow-template-picker.png",
-        "new-agent.png",
-      ]) {
-        expect(content).toContain(`${WELCOME_STEP_BASE}/${filename}`);
-      }
-      // The deck and the quick start render their own previews, so the copy
-      // carries no hand-made screenshots of them.
-      // The alt text is localized, so assert the artifact reference itself.
-      expect(content).toContain("](<https://4nnp6iwpss.okou.app>)");
-      expect(content).toContain(
-        "https://pr-33252-www.omby.ai/en/workflow-automation-examples",
-      );
-      expect(content).toContain("https://pr-33252-www.omby.ai/en/web-services");
-      expect(content).toContain("https://pr-33252-app.omby.ai/works");
-      expect(content).toContain(
-        "https://pr-33252-app.omby.ai/?settings=people",
-      );
-      expect(content).toContain("https://pr-33252-www.omby.ai/docs");
-    },
-  );
-
   it.each([
     "en-US",
     "pt-BR",
@@ -419,54 +328,6 @@ describe("POST /api/welcome-chat-threads", () => {
       }
       expect(content).not.toContain("new-agent.png");
       expect(content).not.toContain("https://4nnp6iwpss.okou.app");
-    },
-  );
-
-  it.each([undefined, false] as const)(
-    "respects staff defaults and an explicit %s override without rewriting an existing welcome",
-    async (override) => {
-      const { actor } = await fixture({
-        orgId: createUniqueStaffOrgIdFixture(),
-      });
-      const switches = setupApp({ context, routes: featureSwitchesRoutes })(
-        featureSwitchesContract,
-      );
-      if (override !== undefined) {
-        await accept(
-          switches.update({
-            headers: headers(actor),
-            body: { switches: { [FeatureSwitchKey.SingleAgent]: override } },
-          }),
-          [200],
-        );
-      }
-      const { body } = await create(actor);
-      const rows = await chat.listThreadEventRows(actor, body.id);
-      const content = rows[0]?.payload?.content ?? "";
-      expect(content).toContain(
-        override === false
-          ? "**Give a job its own agent.**"
-          : "**Your preferences belong in personal Instructions.**",
-      );
-      await accept(
-        switches.update({
-          headers: headers(actor),
-          body: {
-            switches: { [FeatureSwitchKey.SingleAgent]: override === false },
-          },
-        }),
-        [200],
-      );
-      await accept(
-        welcomeClient().create({
-          headers: headers(actor),
-          body: { clientThreadId: body.id },
-        }),
-        [404],
-      );
-      await expect(
-        chat.listThreadEventRows(actor, body.id),
-      ).resolves.toStrictEqual(rows);
     },
   );
 

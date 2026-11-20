@@ -6,7 +6,6 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
 import { instructionsRoutes } from "../instructions";
 import { createRouteMocks } from "./helpers/route-test";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { flushWaitUntilForTest } from "../../context/wait-until";
@@ -25,8 +24,7 @@ const actor = (
 ) => {
   return { orgId, userId };
 };
-async function enable(user: ReturnType<typeof actor>) {
-  await updateFeatureSwitchesForUser(context, user, { singleAgent: true });
+function signIn(user: ReturnType<typeof actor>) {
   mocks.clerk.session(user.userId, user.orgId, "org:member");
 }
 async function read() {
@@ -42,7 +40,7 @@ async function save(content: string, ifVersion?: string) {
 describe("Personal Instructions", () => {
   it("notifies the owner after publishing new personal Instructions", async () => {
     const owner = actor();
-    await enable(owner);
+    signIn(owner);
     await save("Updated personal instructions");
     await flushWaitUntilForTest();
     expect(context.mocks.ably.channelGet).toHaveBeenCalledWith(
@@ -63,33 +61,33 @@ describe("Personal Instructions", () => {
     const alice = actor();
     const bob = actor(alice.orgId);
     const elsewhere = actor(undefined, alice.userId);
-    await enable(alice);
+    signIn(alice);
     await expect(read()).resolves.toMatchObject({
       ...alice,
       content: SINGLE_AGENT_SEED_INSTRUCTIONS,
     });
     const raw = "\uFEFF  Alice\r\n中文\n\n  ";
     await save(raw);
-    await enable(bob);
+    signIn(bob);
     await expect(read()).resolves.toMatchObject({
       ...bob,
       content: SINGLE_AGENT_SEED_INSTRUCTIONS,
     });
     await save("Bob");
-    await enable(elsewhere);
+    signIn(elsewhere);
     await expect(read()).resolves.toMatchObject({
       ...elsewhere,
       content: SINGLE_AGENT_SEED_INSTRUCTIONS,
     });
     await save("Alice elsewhere");
-    await enable(alice);
+    signIn(alice);
     await expect(read()).resolves.toMatchObject({ ...alice, content: raw });
     await save("");
     expect((await read()).content).toBe("");
   });
 
   it("protects newer saves with a version while allowing an explicit unconditional replace", async () => {
-    await enable(actor());
+    signIn(actor());
     const original = await read();
     const attempts = await Promise.all(
       ["one", "two"].map((content) => {
@@ -127,9 +125,9 @@ describe("Personal Instructions", () => {
   it("does not let a peer or admin choose another personal owner", async () => {
     const alice = actor();
     const admin = actor(alice.orgId);
-    await enable(alice);
+    signIn(alice);
     const { body: aliceSaved } = await save("Alice private");
-    await enable(admin);
+    signIn(admin);
     mocks.clerk.session(admin.userId, admin.orgId, "org:admin");
     await accept(
       client().update({
@@ -149,7 +147,7 @@ describe("Personal Instructions", () => {
       ...admin,
       content: SINGLE_AGENT_SEED_INSTRUCTIONS,
     });
-    await enable(alice);
+    signIn(alice);
     expect((await read()).content).toBe("Alice private");
   });
 
@@ -157,7 +155,7 @@ describe("Personal Instructions", () => {
     "keeps the saved value when publication fails at %s and permits a later retry",
     async (command) => {
       installWorkflowVolumeS3Fixture(context);
-      await enable(actor());
+      signIn(actor());
       await save("published");
       const before = await read();
       const send = context.mocks.s3.send.getMockImplementation()!;
@@ -185,7 +183,7 @@ describe("Personal Instructions", () => {
 
   it("retains personal content across departure and rejoin", async () => {
     const alice = actor();
-    await enable(alice);
+    signIn(alice);
     await save("retained across rejoin");
     const before = await read();
     const webhooks = createWebhookCallbackApi(context);
@@ -200,19 +198,7 @@ describe("Personal Instructions", () => {
     });
     await webhooks.requestClerkWebhook("{}", {}, [200]);
     await flushWaitUntilForTest();
-    await enable(alice);
+    signIn(alice);
     await expect(read()).resolves.toStrictEqual(before);
-  });
-
-  it("leaves disabled member access gated", async () => {
-    const user = actor();
-    await updateFeatureSwitchesForUser(context, user, { singleAgent: false });
-    mocks.clerk.session(user.userId, user.orgId);
-    const denied = await accept(client().get({ headers }), [403]);
-    expect(denied.body.error.code).toBe("FORBIDDEN");
-    await accept(
-      client().update({ headers, body: { content: "disabled" } }),
-      [403],
-    );
   });
 });

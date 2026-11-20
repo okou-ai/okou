@@ -1,6 +1,5 @@
 import { permissionGrantsToFirewallPolicies } from "@okouai/connectors/firewall-metadata/policy";
 import type { FirewallPolicies } from "@okouai/connectors/firewall-types";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { isImageModelId } from "@okouai/api-contracts/contracts/image-models";
 import {
@@ -104,6 +103,7 @@ import {
 import { createRunTemplateSources } from "./run-template-sources.service";
 
 export interface BootstrapFeatureSwitchContext {
+  readonly personalExecution: boolean;
   readonly userId: string;
   readonly orgId: string;
   readonly email?: string;
@@ -356,21 +356,16 @@ function capturedFeatureSwitchContext(
   overrides: BootstrapFeatureSwitchContext["overrides"],
   agent: BootstrapAgent | null,
 ): BootstrapFeatureSwitchContext {
-  const context = {
+  return {
     ...scope,
     email: member.profile?.email ?? undefined,
     overrides,
-  };
-  // Retained non-default executions are explicitly legacy, even for enabled members.
-  const singleAgent =
-    isFeatureEnabled(FeatureSwitchKey.SingleAgent, context) &&
-    agent !== null &&
-    agent.id === agent.defaultAgentId &&
-    agent.orgId === scope.orgId &&
-    (agent.visibility === "public" || agent.owner === scope.userId);
-  return {
-    ...context,
-    overrides: { ...overrides, [FeatureSwitchKey.SingleAgent]: singleAgent },
+    // Only the member's accessible default executor can use personal resources.
+    personalExecution:
+      agent !== null &&
+      agent.id === agent.defaultAgentId &&
+      agent.orgId === scope.orgId &&
+      (agent.visibility === "public" || agent.owner === scope.userId),
   };
 }
 

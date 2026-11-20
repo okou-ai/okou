@@ -1,4 +1,3 @@
-import { singleAgentEnabled$ } from "./single-agent.ts";
 /**
  * Fundamental agent signals used across the platform.
  *
@@ -63,13 +62,7 @@ export const reloadAgentById$ = command(({ set }) => {
   });
 });
 
-export const defaultAgentName$ = computed(async (get) => {
-  if (await get(singleAgentEnabled$)) {
-    return get(assistantName$);
-  }
-  const defaultAgent = await get(defaultAgent$);
-  return defaultAgent?.displayName ?? get(assistantName$);
-});
+export const defaultAgentName$ = assistantName$;
 
 export const currentAgentId$ = computed((get) => {
   const route = get(activeRoute$);
@@ -94,7 +87,7 @@ export const currentAgentId$ = computed((get) => {
 export const defaultAgentChatPageActive$ = computed(async (get) => {
   const route = get(activeRoute$);
   if (route === "home") {
-    return await get(singleAgentEnabled$);
+    return true;
   }
   const agentId = get(currentAgentId$);
   if (route !== "agentChat" || agentId === null) {

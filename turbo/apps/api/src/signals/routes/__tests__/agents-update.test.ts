@@ -19,7 +19,6 @@ import { mockNow } from "../../../lib/time";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createRouteMocks } from "./helpers/route-test";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 import { cliAuthRoutes } from "../cli-auth";
 import { agentInstructionsRoutes } from "../agent-instructions";
@@ -130,7 +129,6 @@ async function createWorkflowFor(
   name: string,
 ): Promise<void> {
   // Agent metadata and instructions keep their retained Workflow bindings.
-  await updateFeatureSwitchesForUser(context, user, { singleAgent: false });
   mocks.clerk.session(user.userId, user.orgId);
   await accept(
     setupApp({ context, routes: workflowsRoutes })(

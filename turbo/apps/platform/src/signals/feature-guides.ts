@@ -93,7 +93,7 @@ export const featureGuideReady$ = computed(async (get) => {
   }
   const draft = get(talkDraft$);
   return (
-    (await get(agentChatPageActive$)) &&
+    get(agentChatPageActive$) &&
     !get(settingsDialogOpen$) &&
     !get(forceUpgradeDialogOpen$) &&
     !get(draft.input$).trim() &&

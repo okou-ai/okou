@@ -1,4 +1,4 @@
-import { singleAgentEnabled } from "../../lib/api/single-agent";
+import { isPersonalExecution } from "../../lib/personal-execution";
 import {
   personalCommandMode,
   personalExecutorId,
@@ -72,7 +72,7 @@ function compareUnreadThreads(
 }
 
 async function listScope(options: ListOptions) {
-  const personal = await singleAgentEnabled();
+  const personal = isPersonalExecution();
   if (
     personal &&
     (options.agent !== undefined || options.allAgents !== undefined)

@@ -67,10 +67,7 @@ import {
   type ChatThreadSuggestionRange,
   type ComposerChatThreadSuggestion,
 } from "./chat-thread-suggestion-domain.ts";
-import {
-  splitAgentMentionSegments,
-  type ComposerAgentSuggestion,
-} from "./composer-agent-suggestion-domain.ts";
+import { splitAgentMentionSegments } from "./composer-agent-suggestion-domain.ts";
 import {
   agentMentionText,
   createAgentMentionAvatarRuntime,
@@ -277,7 +274,6 @@ export interface WorkflowComposerSignals {
   /** Drops the typed `/token` for a row that does not insert one itself. */
   readonly clearSlashRange$: Command<void, []>;
   readonly insertWorkflow$: Command<void, [ComposerSlashWorkflow]>;
-  readonly insertAgent$: Command<void, [ComposerAgentSuggestion]>;
   readonly insertChatThread$: Command<void, [ComposerChatThreadSuggestion]>;
   readonly insertPromptMarkdown$: Command<void, [string]>;
   readonly insertUserMessage$: Command<void, [UserMessageDocument]>;
@@ -2649,43 +2645,6 @@ function createClearSlashRangeCommand(
   });
 }
 
-function createInsertAgentCommand(
-  editor: Editor,
-  activeRange$: Computed<ChatThreadSuggestionRange | null>,
-) {
-  return command(({ get }, agent: ComposerAgentSuggestion) => {
-    const range = get(activeRange$);
-    if (!range) {
-      return;
-    }
-    const textblock = activeTextblock(editor);
-    if (!textblock) {
-      return;
-    }
-    const head = editor.state.selection.head;
-    const from = head - (range.end - range.start);
-    const content: JSONContent[] = [
-      {
-        type: AGENT_MENTION_NODE_NAME,
-        attrs: {
-          agentId: agent.id,
-          name: agent.name,
-          avatarUrl: agent.avatarUrl,
-        },
-      },
-    ];
-    if (!textblock.value.slice(range.end).startsWith(" ")) {
-      content.push({ type: "text", text: " " });
-    }
-    editor
-      .chain()
-      .focus()
-      .insertContentAt({ from, to: head }, content)
-      .setTextSelection(from + 2)
-      .run();
-  });
-}
-
 function createInsertChatThreadCommand(
   editor: Editor,
   activeRange$: Computed<ChatThreadSuggestionRange | null>,
@@ -2733,7 +2692,6 @@ function createSuggestionInsertionCommands(
   return {
     clearSlashRange$: createClearSlashRangeCommand(editor, activeSlashRange$),
     insertWorkflow$: createInsertWorkflowCommand(editor, activeSlashRange$),
-    insertAgent$: createInsertAgentCommand(editor, activeMentionRange$),
     insertChatThread$: createInsertChatThreadCommand(
       editor,
       activeMentionRange$,

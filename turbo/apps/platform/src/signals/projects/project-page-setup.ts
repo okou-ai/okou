@@ -1,3 +1,5 @@
+import { detachedNavigateTo$ } from "../route.ts";
+import { ROUTES } from "../route-paths.ts";
 import { command } from "ccstate";
 import { createElement } from "react";
 import { toast } from "@okouai/ui/components/ui/sonner";
@@ -14,7 +16,6 @@ import {
 } from "../okou-page/agent-composer-signals.ts";
 import { setupProjectPageKeyboardShortcuts$ } from "../okou-page/agent-chat-keyboard.ts";
 import { setTalkDraft$ } from "../okou-page/chat-draft.ts";
-import { navigateToAgentChat$ } from "../okou-page/agent-chat-navigation.ts";
 import { resetChatPageModelSelection$ } from "../okou-page/chat-page.ts";
 import { updatePage$ } from "../react-router.ts";
 import { selectedProjectId$ } from "./project-navigation.ts";
@@ -50,7 +51,7 @@ export const setupProjectPage$ = command(
 
     await set(hydrateProjects$, signal);
     signal.throwIfAborted();
-    const project = (await get(projects$)).find((item) => {
+    const project = get(projects$).find((item) => {
       return item.id === projectId;
     });
     if (!project) {
@@ -59,7 +60,7 @@ export const setupProjectPage$ = command(
           return $.projects.unavailable;
         }),
       );
-      await set(navigateToAgentChat$, agentId, { replace: true }, signal);
+      set(detachedNavigateTo$, ROUTES.home, { replace: true });
       return;
     }
     set(updateDocumentTitle$, project.name);

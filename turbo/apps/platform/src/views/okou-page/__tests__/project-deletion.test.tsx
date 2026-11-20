@@ -204,7 +204,6 @@ async function openDeletion() {
 }
 function switches() {
   return {
-    [FeatureSwitchKey.SingleAgent]: true,
     [FeatureSwitchKey.ProjectThreadDeletion]: true,
   };
 }

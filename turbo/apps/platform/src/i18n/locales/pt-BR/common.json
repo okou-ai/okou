@@ -2049,7 +2049,7 @@
         "slideCountAuto": "Automático",
         "slideCountRange": "{{range}} slides"
       },
-      "mentionHint": "Pesquise agentes ou conversas…",
+      "mentionHint": "Pesquise conversas ou projetos…",
       "message": "Mensagem",
       "modelForThisChat": "Modelo para este chat",
       "placeholder": "Peça para automatizar fluxos de trabalho, gerenciar tarefas...",

@@ -1,3 +1,4 @@
+import { isPersonalExecution } from "./lib/personal-execution.js";
 // Okou CLI entry point - standalone binary for Okou platform commands
 // (no-op CLI release marker refreshed for production delivery at 2026-11-06T21:06:45+08:00)
 // Sentry must be initialized before any other imports
@@ -20,7 +21,6 @@ import {
 import {
   AGENT_UNAVAILABLE,
   configureCommandMode,
-  resolveCommandMode,
 } from "./lib/command/single-agent.js";
 import { withErrorHandler } from "./lib/command/with-error-handler.js";
 
@@ -529,7 +529,7 @@ function buildDefaultCommands(): Command[] {
 function shouldHideCommand(
   name: string,
   payload: SandboxTokenPayload | undefined,
-  singleAgent = payload?.singleAgent === true,
+  singleAgent = payload === undefined || payload.singleAgent === true,
 ): boolean {
   if (name === "agent" && singleAgent) return true;
   if (name === "instructions" && !singleAgent) return true;
@@ -603,7 +603,7 @@ export async function registerRequestedCommand(
   argv: string[] = process.argv,
 ): Promise<void> {
   const requestedCommandName = getRequestedCommandName(argv);
-  const singleAgent = await resolveCommandMode();
+  const singleAgent = isPersonalExecution();
   const finishImport = startPiCliObservation("cli_command_import");
   let importOutcome: "success" | "error" = "error";
   let requestedCommand: Command | undefined;
@@ -658,7 +658,7 @@ function commandExampleIfVisible(
 
 export function buildHelpText(
   payload: SandboxTokenPayload | undefined = decodeSandboxTokenPayload(),
-  singleAgent = payload?.singleAgent === true,
+  singleAgent = payload === undefined || payload.singleAgent === true,
 ): string {
   const canReadHost = !payload || payload.capabilities.includes("host:read");
   const canWriteHost = !payload || payload.capabilities.includes("host:write");
@@ -798,7 +798,7 @@ export function buildHelpText(
 export function registerCommands(
   prog: Command,
   commands?: Command[],
-  singleAgent = decodeSandboxTokenPayload()?.singleAgent === true,
+  singleAgent = isPersonalExecution(),
 ): void {
   instrumentCommand(prog);
   const token = getOkouToken();

@@ -6,10 +6,7 @@ import {
 import { command, computed, state } from "ccstate";
 import { isOrgAdmin$ } from "../../org.ts";
 import { MORNING_BRIEF_PREFERENCES_FOCUS } from "@okouai/api-contracts/validators/morning-brief-preference";
-import {
-  proactiveSettingsInMyOkou$,
-  singleAgentEnabled$,
-} from "../../single-agent.ts";
+import { proactiveSettingsInMyOkou$ } from "../../proactive-settings.ts";
 import {
   hash$,
   historyState$,
@@ -79,15 +76,9 @@ function isAdminOnlySettingsSection(section: SettingsSection): boolean {
 
 export function resolveAvailableSettingsSection(
   section: SettingsSection,
-  options: {
-    readonly isAdmin: boolean;
-    readonly singleAgent: boolean;
-  },
+  isAdmin: boolean,
 ): SettingsSection {
-  if (section === "my-okou" && !options.singleAgent) {
-    return "preference";
-  }
-  if (!options.isAdmin && isAdminOnlySettingsSection(section)) {
+  if (!isAdmin && isAdminOnlySettingsSection(section)) {
     return "preference";
   }
   return section;
@@ -422,10 +413,7 @@ export const checkUnifiedSettingsParam$ = command(
       return;
     }
 
-    const resolved = resolveAvailableSettingsSection(section, {
-      isAdmin,
-      singleAgent: await get(singleAgentEnabled$),
-    });
+    const resolved = resolveAvailableSettingsSection(section, isAdmin);
     set(internalActiveSection$, resolved);
     set(setBillingSubPage$, opensBillingPlans && resolved === "billing");
     if (opensBuyCredits && resolved === "billing") {

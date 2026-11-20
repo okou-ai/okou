@@ -1,15 +1,10 @@
 import { CapabilityHomePage } from "./capability-home-page.tsx";
 import { defaultAgentId$ } from "../../signals/agent.ts";
-import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
 import { useGet, useSet, useLastResolved } from "ccstate-react";
-import { useLoadableSet } from "ccstate-react/experimental";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
-import { pageSignal$ } from "../../signals/page-signal.ts";
 import { user$ } from "../../signals/auth.ts";
-import { Pin } from "lucide-react";
 import {
-  Button,
   Tooltip,
   TooltipContent,
   TooltipProvider,
@@ -17,12 +12,7 @@ import {
 } from "@okouai/ui";
 import { cn } from "@okouai/ui/lib/utils";
 import { currentChatAgentId$ } from "../../signals/agent-chat.ts";
-import {
-  setAgentPinned$,
-  currentChatAgentPinned$,
-} from "../../signals/okou-page/pinned-agents.ts";
 
-import { detach, Reason } from "../../signals/utils.ts";
 import {
   chatGreetingShouldAnimate$,
   chatPageTaglineIndex$,
@@ -247,62 +237,6 @@ function GreetingTokens({
   );
 }
 
-function PinPill() {
-  const singleAgent = useLastResolved(singleAgentEnabled$) ?? false;
-  return singleAgent ? null : <LegacyPinPill />;
-}
-
-function LegacyPinPill() {
-  const { t } = useTranslation("agents");
-  const currentChatAgentId = useLastResolved(currentChatAgentId$);
-  const pinnedStatus = useLastResolved(currentChatAgentPinned$);
-  const [pinLoadable, saveAgentPinned] = useLoadableSet(setAgentPinned$);
-  const pinSaving = pinLoadable.state === "loading";
-  const pageSignal = useGet(pageSignal$);
-  if (pinnedStatus !== false || !currentChatAgentId) {
-    return null;
-  }
-  const handlePin = () => {
-    detach(
-      saveAgentPinned(
-        { agentId: currentChatAgentId, pinned: true },
-        pageSignal,
-      ),
-      Reason.DomCallback,
-    );
-  };
-  return (
-    <TooltipProvider delay={200}>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <Button
-              type="button"
-              onClick={handlePin}
-              disabled={pinSaving}
-              variant="quiet"
-              size="icon-2xs"
-              className="absolute -top-0.5 -right-0.5 rounded-full border border-surface-border bg-background shadow-sm hover:shadow-md disabled:opacity-50"
-              aria-label={t(($) => {
-                return $.sidebar.pin;
-              })}
-            >
-              <Pin size={12} />
-            </Button>
-          }
-        />
-        <TooltipContent side="bottom">
-          <p className="text-xs">
-            {t(($) => {
-              return $.sidebar.pin;
-            })}
-          </p>
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
-  );
-}
-
 /**
  * The frame owns the shape, and it is the only shape.
  *
@@ -338,9 +272,8 @@ const AGENT_AVATAR_BORDER = "border border-surface-border";
 const AGENT_AVATAR_IMAGE = "h-full w-full object-cover object-top";
 
 function ChatAgentAvatar({ agentId }: { agentId: string | null | undefined }) {
-  const singleAgent = useLastResolved(singleAgentEnabled$) ?? false;
   const defaultId = useLastResolved(defaultAgentId$);
-  return singleAgent && agentId === defaultId ? (
+  return agentId === defaultId ? (
     // My Okou's greeting is the one place Okou is shown large and alone, so it
     // is the one place the avatar moves. The shared avatar owns its frame and
     // texture, and holds still for reduced-motion users.
@@ -421,7 +354,6 @@ function LegacyChatAgentAvatar({
           <AgentAvatarImg name="" alt="" className={AGENT_AVATAR_IMAGE} />
         </div>
       )}
-      <PinPill />
     </div>
   );
 }

@@ -19,8 +19,6 @@ import { writeToClipboard } from "../okou-page/clipboard.ts";
 import { clearChatListQuery$ } from "../okou-page/sidebar-state.ts";
 import { defaultAgentId$ } from "../agent.ts";
 import { ASSISTANT_NAME } from "../branding.ts";
-import { singleAgentEnabled$ } from "../single-agent.ts";
-import { projectsEnabled$ } from "../projects/projects.ts";
 import {
   chatThreadMetaMap$,
   eventDrivenChatThreads$,
@@ -661,31 +659,28 @@ function createStartForward(
           : {}),
         ...(selection.source ? { source: selection.source } : {}),
       };
-      if (await get(singleAgentEnabled$)) {
-        const agentId = await get(defaultAgentId$);
-        signal.throwIfAborted();
-        const source = get(chatThreadMetaMap$).get(captured.threadId);
-        if (!agentId || !source) {
-          throw new Error("Fork source or default Okou is unavailable");
-        }
-        set(forward.openForward$, captured);
-        await set(
-          forward.prepareRequest$,
-          {
-            target: { kind: "agent", id: agentId, title: ASSISTANT_NAME },
-            forward: forwardContextFrom(captured, source),
-            fork: true,
-            projectId: (await get(projectsEnabled$))
-              ? (get(eventDrivenChatThreads$).find((thread) => {
-                  return thread.id === captured.threadId;
-                })?.projectId ?? undefined)
-              : undefined,
-          },
-          signal,
-        );
-      } else {
-        set(forward.openForward$, captured);
+
+      const agentId = await get(defaultAgentId$);
+      signal.throwIfAborted();
+      const source = get(chatThreadMetaMap$).get(captured.threadId);
+      if (!agentId || !source) {
+        throw new Error("Fork source or default Okou is unavailable");
       }
+      set(forward.openForward$, captured);
+      await set(
+        forward.prepareRequest$,
+        {
+          target: { kind: "agent", id: agentId, title: ASSISTANT_NAME },
+          forward: forwardContextFrom(captured, source),
+          fork: true,
+          projectId:
+            get(eventDrivenChatThreads$).find((thread) => {
+              return thread.id === captured.threadId;
+            })?.projectId ?? undefined,
+        },
+        signal,
+      );
+
       return true;
     },
   );

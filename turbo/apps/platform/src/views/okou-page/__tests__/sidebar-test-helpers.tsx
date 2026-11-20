@@ -112,6 +112,7 @@ export function prepareDefaultAgent(
   targetContext: TestContext,
   avatarUrl: string | null = null,
 ): void {
+  targetContext.mocks.data.onboardingStatus({ defaultAgentId: AGENT_ID });
   targetContext.mocks.data.agents([
     {
       agentId: AGENT_ID,
@@ -126,9 +127,10 @@ export function prepareDefaultAgent(
 }
 
 export function prepareAgents(targetContext: TestContext): AgentResponse[] {
+  targetContext.mocks.data.onboardingStatus({ defaultAgentId: AGENT_ID });
   const agents: AgentResponse[] = [
     {
-      isDefaultAgent: false,
+      isDefaultAgent: true,
       agentId: AGENT_ID,
       ownerId: "test-user-123",
       displayName: "Nova",
@@ -166,7 +168,7 @@ export function prepareAgents(targetContext: TestContext): AgentResponse[] {
       [SUPPORT_AGENT_ID]: "Support Agent",
     };
     return respond(200, {
-      isDefaultAgent: false,
+      isDefaultAgent: params.id === AGENT_ID,
       agentId: params.id,
       ownerId: "test-user-123",
       description: null,

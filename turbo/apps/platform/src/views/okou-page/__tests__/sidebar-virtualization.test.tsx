@@ -5,7 +5,6 @@ import {
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import { projectsContract } from "@okouai/api-contracts/contracts/projects";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { computerUseHostsContract } from "@okouai/api-contracts/contracts/computer-use";
 import {
   act,
@@ -250,7 +249,6 @@ test("Collapse and expand a Project inside a scrolled virtual window", async () 
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
   });
   const sidebar = await screen.findByTestId("chat-list-column");
   const viewport = await within(sidebar).findByTestId("sidebar-scroll-area");
@@ -366,7 +364,6 @@ async function openFoldList({
   await setupPage({
     context,
     path: activeChat ? `/chats/${threadId(0)}` : `/agents/${AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
   });
   if (unread || archived) {
     await screen.findByLabelText("Open chat list menu");
@@ -1134,44 +1131,6 @@ function mockPinnedGrid(): string {
 function pinToggle(container: HTMLElement, name: "Pin" | "Unpin"): HTMLElement {
   return within(container).getByRole("option", { name: `Agent 5 ${name}` });
 }
-
-test("Refresh virtualization after pinning adds a grid row and unpinning removes it", async () => {
-  mockThreads(120);
-  mockPinnedGrid();
-  mockViewportHeight(() => {
-    const cards = document.querySelectorAll(
-      '[data-testid="pinned-agent-card"]',
-    );
-    return cards.length > 4 ? 360 : 612;
-  });
-  await setupPage({ context, path: `/chats/${threadId(0)}` });
-  const sidebar = screen.getByTestId("chat-list-column");
-  const rows = () => {
-    return within(sidebar).getAllByTestId("sidebar-chat-thread-virtual-row");
-  };
-  await waitFor(() => {
-    return expect(rows()).toHaveLength(25);
-  });
-
-  click(screen.getByLabelText("Pin an agent"));
-  const dialog = await screen.findByTestId("pin-agent-dialog-list");
-  click(pinToggle(dialog, "Pin"));
-  await waitFor(() => {
-    expect(within(sidebar).getAllByTestId("pinned-agent-card")).toHaveLength(5);
-    expect(rows()).toHaveLength(18);
-  });
-  await waitFor(() => {
-    return expect(pinToggle(dialog, "Unpin")).not.toHaveAttribute(
-      "aria-disabled",
-      "true",
-    );
-  });
-  click(pinToggle(dialog, "Unpin"));
-  await waitFor(() => {
-    expect(within(sidebar).getAllByTestId("pinned-agent-card")).toHaveLength(4);
-    expect(rows()).toHaveLength(25);
-  });
-});
 
 test("Measure the mobile chat list only after the main stylesheet bounds it", async () => {
   const pwaRowHeight = 60;

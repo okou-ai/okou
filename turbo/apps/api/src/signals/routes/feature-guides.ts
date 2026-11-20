@@ -37,7 +37,12 @@ const deliverableEdition$ = computed(async (get) => {
   const switches: Readonly<Record<string, boolean | undefined>> =
     getAllFeatureStates(await get(switchContext$));
   const items = edition.content.items.filter((item) => {
-    return !item.featureSwitch || switches[item.featureSwitch] === true;
+    // Published guide revisions keep their original item bindings and receipt identity.
+    return (
+      !item.featureSwitch ||
+      item.featureSwitch === "singleAgent" ||
+      switches[item.featureSwitch] === true
+    );
   });
   return items.length > 0
     ? { ...edition, content: { ...edition.content, items } }

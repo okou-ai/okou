@@ -8,7 +8,6 @@ export interface ComposerChatThreadSuggestion {
   readonly project?: true;
   readonly id: string;
   readonly title: string;
-  readonly avatarUrl: string | null;
 }
 
 interface ChatThreadMentionTextSegment {

@@ -39,9 +39,7 @@ test("The app waits for authoritative workspace features before mounting", async
     async ({ respond, withSignal }) => {
       requestStarted.resolve(undefined);
       await withSignal(releaseResponse.promise);
-      const switches = {
-        [FeatureSwitchKey.SingleAgent]: false,
-      };
+      const switches = {};
       return respond(200, { switches, effectiveSwitches: switches });
     },
   );

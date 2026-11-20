@@ -158,11 +158,6 @@ const preferenceRoute$ = command(
     }
     if (operation !== "read") {
       const withFeed = operation === "withFeed";
-      if (withFeed && !eligibility.singleAgent) {
-        return resourceUnavailable(
-          "My Okou proactive settings are not enabled.",
-        );
-      }
       const body = await get(
         bodyResultOf(
           withFeed

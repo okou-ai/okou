@@ -1,5 +1,5 @@
 import { workflowHelp, workflowAgentScope } from "./mode";
-import { singleAgentEnabled } from "../../lib/api/single-agent";
+import { isPersonalExecution } from "../../lib/personal-execution";
 import { Command } from "commander";
 import chalk from "chalk";
 import { readFileSync } from "node:fs";
@@ -59,7 +59,7 @@ Notes:
           public?: boolean;
         },
       ) => {
-        const singleAgent = await singleAgentEnabled();
+        const singleAgent = isPersonalExecution();
         const agentId =
           (await workflowAgentScope(options.agent)) ?? getOkouAgentId();
         if (!agentId) {

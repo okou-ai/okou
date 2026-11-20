@@ -65,8 +65,6 @@ import {
   setupAgentChatPage$,
   setupHomeChatPage$,
 } from "./okou-page/agent-chat-page-setup.ts";
-import { setupHomePage$ } from "./okou-page/home-page-setup.ts";
-import { singleAgentEnabled$ } from "./single-agent.ts";
 import { setupProjectPage$ } from "./projects/project-page-setup.ts";
 import {
   hydrateProjects$,
@@ -210,14 +208,8 @@ const setupAuthenticatedPwaMePage$ =
 
 // My Okou renders its chat page at `/`, which applies its own settings param;
 // otherwise `/` forwards to the default agent's chat.
-const setupLegacyHomePage$ = setupSettingsParamAfterStableRoute(setupHomePage$);
-const setupHomeRoute$ = command(async ({ get, set }, signal: AbortSignal) => {
-  await set(
-    (await get(singleAgentEnabled$))
-      ? setupHomeChatPage$
-      : setupLegacyHomePage$,
-    signal,
-  );
+const setupHomeRoute$ = command(async ({ set }, signal: AbortSignal) => {
+  await set(setupHomeChatPage$, signal);
 });
 
 const setupPwaMeRoute$ = command(async ({ get, set }, signal: AbortSignal) => {

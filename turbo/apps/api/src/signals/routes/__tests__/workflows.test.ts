@@ -1,3 +1,4 @@
+import { retainedWorkflowCaller } from "./helpers/retained-workflow-caller";
 import {
   contentBundleDigest,
   readContentBundle,
@@ -101,18 +102,25 @@ function user(options: ApiTestUserOptions = {}): ApiTestUser {
   return bdd.user(options);
 }
 
-async function authHeaders(actor: ApiTestUser) {
-  if (!actor.orgId) {
-    throw new Error("Expected a legacy workflow workspace");
-  }
-  // This suite exercises retained named-Agent Workflow permissions.
-  await updateFeatureSwitchesForUser(
-    context,
-    { ...actor, orgId: actor.orgId },
-    { singleAgent: false },
-  );
+const retainedHeaders = retainedWorkflowCaller(context);
+
+function authHeaders(actor: ApiTestUser) {
   mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
   return { authorization: "Bearer clerk-session" };
+}
+
+async function workspaceExecutor(actor: ApiTestUser) {
+  const { defaultAgentId } = await bdd.readOnboardingStatus(actor);
+  if (!defaultAgentId) throw new Error("Expected a workspace executor");
+  installVolumeS3Fixture(workflowObjects());
+  return { agentId: defaultAgentId };
+}
+
+async function workflowCreationHeaders(actor: ApiTestUser, agentId: string) {
+  const { defaultAgentId } = await bdd.readOnboardingStatus(actor);
+  return agentId === defaultAgentId
+    ? authHeaders(actor)
+    : await retainedHeaders(actor);
 }
 
 function collectionClient() {
@@ -160,7 +168,7 @@ async function runWorkflowAndLaunch(
 ): Promise<{ readonly chatThreadId: string; readonly runId: string }> {
   const sent = await accept(
     detailClient().run({
-      headers: await authHeaders(actor),
+      headers: authHeaders(actor),
       params: { workflowId },
     }),
     [200],
@@ -224,7 +232,7 @@ async function createAgent(
 async function createWorkflow(actor: ApiTestUser, body: WorkflowCreateRequest) {
   const workflow = await accept(
     collectionClient().create({
-      headers: await authHeaders(actor),
+      headers: await workflowCreationHeaders(actor, body.agentId),
       body,
     }),
     [201],
@@ -299,7 +307,7 @@ async function requestCreateWorkflow<
 ) {
   return await accept(
     collectionClient().create({
-      headers: await authHeaders(actor),
+      headers: await workflowCreationHeaders(actor, body.agentId),
       body,
     }),
     statuses,
@@ -313,7 +321,7 @@ async function updateWorkflow(
 ) {
   return await accept(
     detailClient().update({
-      headers: await authHeaders(actor),
+      headers: authHeaders(actor),
       params: { workflowId },
       body,
     }),
@@ -331,7 +339,7 @@ async function requestUpdateWorkflow<
 ) {
   return await accept(
     detailClient().update({
-      headers: await authHeaders(actor),
+      headers: authHeaders(actor),
       params: { workflowId },
       body,
     }),
@@ -371,13 +379,13 @@ describe("workflows", () => {
     });
 
     const ownerList = await accept(
-      collectionClient().list({ headers: await authHeaders(owner) }),
+      collectionClient().list({ headers: await retainedHeaders(owner) }),
       [200],
     );
     expect(names(ownerList.body)).toContain(created.body.name);
 
     const memberList = await accept(
-      collectionClient().list({ headers: await authHeaders(otherMember) }),
+      collectionClient().list({ headers: await retainedHeaders(otherMember) }),
       [200],
     );
     expect(names(memberList.body)).not.toContain(created.body.name);
@@ -391,10 +399,7 @@ describe("workflows", () => {
       actor,
     );
     await api.updateUserModelPreference(actor, "gpt-6-astra");
-    const agent = await createAgent(actor, {
-      displayName: "Workflow Runner Agent",
-      visibility: "private",
-    });
+    const agent = await workspaceExecutor(actor);
     const runnerGroup = await api.configureRunnerGroup();
 
     const created = await createWorkflow(actor, {
@@ -405,7 +410,7 @@ describe("workflows", () => {
     });
     const prepared = await accept(
       detailClient().chatThread({
-        headers: await authHeaders(actor),
+        headers: authHeaders(actor),
         params: { workflowId: created.body.id },
       }),
       [200],
@@ -416,7 +421,7 @@ describe("workflows", () => {
 
     const queued = await accept(
       detailClient().run({
-        headers: await authHeaders(actor),
+        headers: authHeaders(actor),
         params: { workflowId: created.body.id },
       }),
       [200],
@@ -441,10 +446,7 @@ describe("workflows", () => {
   it("resolves concurrent first workflow runs to one automation thread", async () => {
     const actor = user({ orgRole: "org:admin" });
     await enableWorkflowRuns(actor);
-    const agent = await createAgent(actor, {
-      displayName: "Concurrent Workflow Agent",
-      visibility: "private",
-    });
+    const agent = await workspaceExecutor(actor);
     const created = await createWorkflow(actor, {
       agentId: agent.agentId,
       name: `concurrent-run-workflow-${randomUUID().slice(0, 8)}`,
@@ -452,7 +454,7 @@ describe("workflows", () => {
       instruction: "# concurrent run workflow",
     });
     const client = detailClient();
-    const headers = await authHeaders(actor);
+    const headers = authHeaders(actor);
 
     const runs = await Promise.all([
       accept(
@@ -503,10 +505,7 @@ describe("workflows", () => {
       model: "claude-fable-5-1",
     });
 
-    const publicAgent = await createAgent(owner, {
-      displayName: "Public Workflow Agent",
-      visibility: "public",
-    });
+    const publicAgent = await workspaceExecutor(owner);
     const publicWorkflow = await createWorkflow(owner, {
       agentId: publicAgent.agentId,
       name: `public-run-workflow-${randomUUID().slice(0, 8)}`,
@@ -531,7 +530,7 @@ describe("workflows", () => {
     });
     const hidden = await accept(
       detailClient().run({
-        headers: await authHeaders(member),
+        headers: authHeaders(member),
         params: { workflowId: privateWorkflow.body.id },
       }),
       [404],
@@ -582,7 +581,7 @@ describe("workflows", () => {
     });
 
     const memberList = await accept(
-      collectionClient().list({ headers: await authHeaders(member) }),
+      collectionClient().list({ headers: await retainedHeaders(member) }),
       [200],
     );
     expect(memberList.body).toContainEqual(
@@ -602,21 +601,21 @@ describe("workflows", () => {
     );
     await accept(
       detailClient().delete({
-        headers: await authHeaders(member),
+        headers: authHeaders(member),
         params: { workflowId: created.body.id },
       }),
       [403],
     );
     await accept(
       visibilityClient().demote({
-        headers: await authHeaders(member),
+        headers: authHeaders(member),
         params: { workflowId: created.body.id },
       }),
       [403],
     );
     const retained = await accept(
       detailClient().get({
-        headers: await authHeaders(owner),
+        headers: authHeaders(owner),
         params: { workflowId: created.body.id },
       }),
       [200],
@@ -647,7 +646,7 @@ describe("workflows", () => {
       };
       const actor = maintainers[maintainer];
       const listed = await accept(
-        collectionClient().list({ headers: await authHeaders(actor) }),
+        collectionClient().list({ headers: await retainedHeaders(actor) }),
         [200],
       );
       expect(listed.body).toContainEqual(
@@ -655,7 +654,7 @@ describe("workflows", () => {
       );
       const detail = await accept(
         detailClient().get({
-          headers: await authHeaders(actor),
+          headers: authHeaders(actor),
           params: { workflowId: workflow.body.id },
         }),
         [200],
@@ -672,7 +671,7 @@ describe("workflows", () => {
       });
       const updated = await accept(
         detailClient().get({
-          headers: await authHeaders(actor),
+          headers: authHeaders(actor),
           params: { workflowId: workflow.body.id },
         }),
         [200],
@@ -684,14 +683,14 @@ describe("workflows", () => {
       });
       await accept(
         detailClient().delete({
-          headers: await authHeaders(actor),
+          headers: authHeaders(actor),
           params: { workflowId: workflow.body.id },
         }),
         [204],
       );
       await accept(
         detailClient().get({
-          headers: await authHeaders(actor),
+          headers: authHeaders(actor),
           params: { workflowId: workflow.body.id },
         }),
         [404],
@@ -715,7 +714,7 @@ describe("workflows", () => {
     const member: ApiTestUser = { ...author, orgRole: "org:member" };
     const demoted = await accept(
       visibilityClient().demote({
-        headers: await authHeaders(member),
+        headers: authHeaders(member),
         params: { workflowId: workflow.body.id },
       }),
       [200],
@@ -728,14 +727,14 @@ describe("workflows", () => {
     });
     await accept(
       visibilityClient().publish({
-        headers: await authHeaders(member),
+        headers: authHeaders(member),
         params: { workflowId: workflow.body.id },
       }),
       [403],
     );
     await accept(
       detailClient().get({
-        headers: await authHeaders(agentOwner),
+        headers: authHeaders(agentOwner),
         params: { workflowId: workflow.body.id },
       }),
       [404],
@@ -785,7 +784,7 @@ describe("workflows", () => {
 
     await accept(
       visibilityClient().publish({
-        headers: await authHeaders(member),
+        headers: authHeaders(member),
         params: { workflowId: created.body.id },
       }),
       [403],
@@ -799,14 +798,14 @@ describe("workflows", () => {
     );
     await accept(
       detailClient().delete({
-        headers: await authHeaders(agentOwner),
+        headers: authHeaders(agentOwner),
         params: { workflowId: created.body.id },
       }),
       [404],
     );
 
     const memberList = await accept(
-      collectionClient().list({ headers: await authHeaders(member) }),
+      collectionClient().list({ headers: await retainedHeaders(member) }),
       [200],
     );
     expect(memberList.body).toContainEqual(
@@ -818,13 +817,13 @@ describe("workflows", () => {
     );
 
     const agentOwnerList = await accept(
-      collectionClient().list({ headers: await authHeaders(agentOwner) }),
+      collectionClient().list({ headers: await retainedHeaders(agentOwner) }),
       [200],
     );
     expect(names(agentOwnerList.body)).not.toContain(workflowName);
 
     const otherMemberList = await accept(
-      collectionClient().list({ headers: await authHeaders(otherMember) }),
+      collectionClient().list({ headers: await retainedHeaders(otherMember) }),
       [200],
     );
     expect(names(otherMemberList.body)).not.toContain(workflowName);
@@ -854,7 +853,7 @@ describe("workflows", () => {
     });
     const preparedSource = await accept(
       detailClient().chatThread({
-        headers: await authHeaders(actor),
+        headers: authHeaders(actor),
         params: { workflowId: sourceWorkflow.body.id },
       }),
       [200],
@@ -864,9 +863,7 @@ describe("workflows", () => {
       null,
     );
     expect(preparedSource.body.chatThreadId).toBe(sourceThread.id);
-    expect(preparedSource.body.prompt).toBe(
-      `help me refine the workflow /${sourceWorkflow.body.name}`,
-    );
+    expect(preparedSource.body.prompt).toContain(sourceWorkflow.body.id);
 
     context.mocks.ably.publish.mockClear();
     const targetWorkflow = await createWorkflow(actor, {
@@ -877,7 +874,7 @@ describe("workflows", () => {
     });
     const preparedTarget = await accept(
       detailClient().chatThread({
-        headers: await authHeaders(actor),
+        headers: authHeaders(actor),
         params: { workflowId: targetWorkflow.body.id },
       }),
       [200],
@@ -967,7 +964,7 @@ describe("workflows", () => {
 
     const scopedList = await accept(
       collectionClient().list({
-        headers: await authHeaders(actor),
+        headers: await retainedHeaders(actor),
         query: { agentId: agent.agentId },
       }),
       [200],
@@ -1024,7 +1021,7 @@ describe("workflows", () => {
 
     const composerList = await accept(
       collectionClient().composer({
-        headers: await authHeaders(actor),
+        headers: await retainedHeaders(actor),
         query: { agentId: agent.agentId },
       }),
       [200],
@@ -1094,7 +1091,7 @@ describe("workflows", () => {
         ["First", "Second"].map(async (instruction) => {
           return accept(
             collectionClient().create({
-              headers: await authHeaders(actor),
+              headers: await retainedHeaders(actor),
               body: {
                 agentId: agent.agentId,
                 name: workflowName,
@@ -1115,7 +1112,7 @@ describe("workflows", () => {
       ).toStrictEqual([201, 409]);
       const listed = await accept(
         collectionClient().list({
-          headers: await authHeaders(actor),
+          headers: await retainedHeaders(actor),
           query: { agentId: agent.agentId },
         }),
         [200],
@@ -1142,10 +1139,10 @@ describe("workflows", () => {
         }),
       );
       const results = await Promise.all(
-        sources.map(async (source) => {
+        sources.map((source) => {
           return accept(
             detailClient().update({
-              headers: await authHeaders(actor),
+              headers: authHeaders(actor),
               params: { workflowId: source.body.id },
               body: { name: workflowName },
             }),
@@ -1163,7 +1160,7 @@ describe("workflows", () => {
       for (const [index, source] of sources.entries()) {
         const detail = await accept(
           detailClient().get({
-            headers: await authHeaders(actor),
+            headers: authHeaders(actor),
             params: { workflowId: source.body.id },
           }),
           [200],
@@ -1199,14 +1196,14 @@ describe("workflows", () => {
     })(workflowsDetailContract);
     await expect(
       client.copy({
-        headers: await authHeaders(actor),
+        headers: await retainedHeaders(actor),
         params: { workflowId: workflow.body.id },
         body: { toAgentId: destination.agentId },
       }),
     ).rejects.toThrow("Workflow attachment source is unavailable");
     await expect(
       client.update({
-        headers: await authHeaders(actor),
+        headers: authHeaders(actor),
         params: { workflowId: workflow.body.id },
         body: { instruction: "Updated instruction" },
       }),
@@ -1217,7 +1214,7 @@ describe("workflows", () => {
     }
     const preserved = await accept(
       client.get({
-        headers: await authHeaders(actor),
+        headers: authHeaders(actor),
         params: { workflowId: workflow.body.id },
       }),
       [200],
@@ -1230,7 +1227,7 @@ describe("workflows", () => {
     // An explicit replacement remains recoverable without guessing old content.
     await accept(
       client.update({
-        headers: await authHeaders(actor),
+        headers: authHeaders(actor),
         params: { workflowId: workflow.body.id },
         body: { files: [], instruction: "Explicitly cleared" },
       }),
@@ -1238,7 +1235,7 @@ describe("workflows", () => {
     );
     const detail = await accept(
       client.get({
-        headers: await authHeaders(actor),
+        headers: authHeaders(actor),
         params: { workflowId: workflow.body.id },
       }),
       [200],
@@ -1341,7 +1338,7 @@ describe("workflows", () => {
 
     const response = await accept(
       visibilityClient().publish({
-        headers: await authHeaders(actor),
+        headers: authHeaders(actor),
         params: { workflowId: privateWorkflow.body.id },
       }),
       [409],
@@ -1383,7 +1380,7 @@ describe("workflows", () => {
     await uploadEntered.promise;
     await accept(
       visibilityClient().publish({
-        headers: await authHeaders(actor),
+        headers: authHeaders(actor),
         params: { workflowId: workflow.body.id },
       }),
       [200],
@@ -1393,7 +1390,7 @@ describe("workflows", () => {
     await expect(
       accept(
         visibilityClient().publish({
-          headers: await authHeaders(actor),
+          headers: authHeaders(actor),
           params: { workflowId: workflow.body.id },
         }),
         [200],
@@ -1401,7 +1398,7 @@ describe("workflows", () => {
     ).resolves.toMatchObject({ body: { visibility: "public" } });
     const retained = await accept(
       detailClient().get({
-        headers: await authHeaders(actor),
+        headers: authHeaders(actor),
         params: { workflowId: workflow.body.id },
       }),
       [200],
@@ -1423,7 +1420,7 @@ describe("workflows", () => {
       );
       const createdAgent = await accept(
         client.create({
-          headers: await authHeaders(actor),
+          headers: authHeaders(actor),
           body: {
             displayName: "Superseded Workflow Agent",
             visibility: "public",
@@ -1480,7 +1477,7 @@ describe("workflows", () => {
       );
       const current = await accept(
         detailClient().get({
-          headers: await authHeaders(actor),
+          headers: authHeaders(actor),
           params: { workflowId: workflow.body.id },
         }),
         [200],
@@ -1514,7 +1511,7 @@ describe("workflows", () => {
     });
     const older = accept(
       detailClient().update({
-        headers: await authHeaders(actor),
+        headers: authHeaders(actor),
         params: { workflowId: workflow.body.id },
         body: {
           displayName: "Older label",
@@ -1539,7 +1536,7 @@ describe("workflows", () => {
     expect((await older).status).toBe(409);
     const current = await accept(
       detailClient().get({
-        headers: await authHeaders(actor),
+        headers: authHeaders(actor),
         params: { workflowId: workflow.body.id },
       }),
       [200],
@@ -1553,10 +1550,7 @@ describe("workflows", () => {
 
   it("keeps concurrent Workflow instruction updates on the same Agent", async () => {
     const actor = user();
-    const agent = await createAgent(actor, {
-      displayName: "Concurrent Workflow Agent",
-      visibility: "public",
-    });
+    const agent = await workspaceExecutor(actor);
     installVolumeS3Fixture();
     const first = await createWorkflow(actor, {
       agentId: agent.agentId,
@@ -1582,7 +1576,7 @@ describe("workflows", () => {
     ] as const) {
       const current = await accept(
         detailClient().get({
-          headers: await authHeaders(actor),
+          headers: authHeaders(actor),
           params: { workflowId },
         }),
         [200],
@@ -1605,7 +1599,7 @@ describe("workflows", () => {
     });
     const current = await accept(
       detailClient().get({
-        headers: await authHeaders(actor),
+        headers: authHeaders(actor),
         params: { workflowId: workflow.body.id },
       }),
       [200],
@@ -1618,7 +1612,7 @@ describe("workflows", () => {
 
     const missing = await accept(
       detailClient().get({
-        headers: await authHeaders(actor),
+        headers: authHeaders(actor),
         params: { workflowId: workflow.body.id },
       }),
       [404],
@@ -1632,7 +1626,7 @@ describe("workflows", () => {
     );
     await accept(
       visibilityClient().publish({
-        headers: await authHeaders(actor),
+        headers: authHeaders(actor),
         params: { workflowId: workflow.body.id },
       }),
       [404],
@@ -1663,7 +1657,7 @@ describe("workflows", () => {
 
     const duplicate = await accept(
       detailClient().copy({
-        headers: await authHeaders(actor),
+        headers: await retainedHeaders(actor),
         params: { workflowId: source.body.id },
         body: { toAgentId: targetAgent.agentId },
       }),
@@ -1706,7 +1700,7 @@ describe("workflows", () => {
       sources.map(async (source) => {
         const response = await accept(
           detailClient().copy({
-            headers: await authHeaders(actor),
+            headers: await retainedHeaders(actor),
             params: { workflowId: source.workflowId },
             body: { toAgentId: targetAgent.agentId },
           }),
@@ -1737,7 +1731,7 @@ describe("workflows", () => {
 
     const targetWorkflows = await accept(
       collectionClient().list({
-        headers: await authHeaders(actor),
+        headers: await retainedHeaders(actor),
         query: { agentId: targetAgent.agentId },
       }),
       [200],
@@ -1757,7 +1751,7 @@ describe("workflows", () => {
     ]) {
       const current = await accept(
         detailClient().get({
-          headers: await authHeaders(actor),
+          headers: authHeaders(actor),
           params: { workflowId: workflow.workflowId },
         }),
         [200],
@@ -1791,7 +1785,7 @@ describe("workflows", () => {
 
     const duplicate = await accept(
       visibilityClient().demote({
-        headers: await authHeaders(actor),
+        headers: authHeaders(actor),
         params: { workflowId: publicWorkflow.body.id },
       }),
       [409],
@@ -1826,7 +1820,7 @@ describe("workflows", () => {
     });
     const automation = await accept(
       automationsClient().create({
-        headers: await authHeaders(actor),
+        headers: authHeaders(actor),
         params: { workflowId: workflow.body.id },
         body: {
           kind: "schedule",
@@ -1837,7 +1831,7 @@ describe("workflows", () => {
     );
     const webhookAutomation = await accept(
       automationsClient().create({
-        headers: await authHeaders(actor),
+        headers: authHeaders(actor),
         params: { workflowId: workflow.body.id },
         body: {
           kind: "event",
@@ -1869,7 +1863,7 @@ describe("workflows", () => {
     });
     const copied = await accept(
       detailClient().copy({
-        headers: await authHeaders(actor),
+        headers: await retainedHeaders(actor),
         params: { workflowId: workflow.body.id },
         body: { toAgentId: targetAgent.agentId },
       }),
@@ -1884,7 +1878,7 @@ describe("workflows", () => {
 
     const copiedAutomations = await accept(
       automationsClient().list({
-        headers: await authHeaders(actor),
+        headers: authHeaders(actor),
         params: { workflowId: copied.body.id },
       }),
       [200],
@@ -1937,7 +1931,7 @@ describe("workflows", () => {
     });
     const automation = await accept(
       automationsClient().create({
-        headers: await authHeaders(actor),
+        headers: authHeaders(actor),
         params: { workflowId: workflow.body.id },
         body: {
           kind: "schedule",
@@ -1950,7 +1944,7 @@ describe("workflows", () => {
 
     const copied = await accept(
       detailClient().copy({
-        headers: await authHeaders(actor),
+        headers: await retainedHeaders(actor),
         params: { workflowId: workflow.body.id },
         body: { toAgentId: targetAgent.agentId },
       }),
@@ -1958,7 +1952,7 @@ describe("workflows", () => {
     );
     const copiedAutomations = await accept(
       automationsClient().list({
-        headers: await authHeaders(actor),
+        headers: authHeaders(actor),
         params: { workflowId: copied.body.id },
       }),
       [200],
@@ -2072,7 +2066,7 @@ describe("workflows", () => {
 
     const automation = await accept(
       automationsClient().create({
-        headers: await authHeaders(actor),
+        headers: authHeaders(actor),
         params: { workflowId: workflow.body.id },
         body: {
           kind: "event",
@@ -2087,7 +2081,7 @@ describe("workflows", () => {
     }
     await accept(
       chatThreadConnectorSelectionsClient().update({
-        headers: await authHeaders(actor),
+        headers: authHeaders(actor),
         params: { id: automation.body.chatThreadId },
         body: {
           connectionId: secondAccount.id,
@@ -2103,7 +2097,7 @@ describe("workflows", () => {
 
     await accept(
       detailClient().copy({
-        headers: await authHeaders(actor),
+        headers: await retainedHeaders(actor),
         params: { workflowId: workflow.body.id },
         body: { toAgentId: targetAgent.agentId },
       }),
@@ -2192,7 +2186,7 @@ describe("workflows", () => {
     );
     const automation = await accept(
       automationsClient().create({
-        headers: await authHeaders(actor),
+        headers: authHeaders(actor),
         params: { workflowId: workflow.body.id },
         body: {
           kind: "event",
@@ -2206,7 +2200,7 @@ describe("workflows", () => {
     }
     await accept(
       chatThreadConnectorSelectionsClient().update({
-        headers: await authHeaders(actor),
+        headers: authHeaders(actor),
         params: { id: automation.body.chatThreadId },
         body: {
           connectionId: secondAccount.id,
@@ -2222,7 +2216,7 @@ describe("workflows", () => {
 
     await accept(
       detailClient().copy({
-        headers: await authHeaders(actor),
+        headers: await retainedHeaders(actor),
         params: { workflowId: workflow.body.id },
         body: { toAgentId: targetAgent.agentId },
       }),
@@ -2345,7 +2339,7 @@ describe("workflows", () => {
 
     const sourceAutomation = await accept(
       automationsClient().create({
-        headers: await authHeaders(actor),
+        headers: authHeaders(actor),
         params: { workflowId: workflow.body.id },
         body: {
           kind: "event",
@@ -2368,7 +2362,7 @@ describe("workflows", () => {
     }
     await accept(
       chatThreadConnectorSelectionsClient().update({
-        headers: await authHeaders(actor),
+        headers: authHeaders(actor),
         params: { id: sourceAutomation.body.chatThreadId },
         body: {
           connectionId: selectedAccount.id,
@@ -2380,7 +2374,7 @@ describe("workflows", () => {
 
     const copied = await accept(
       detailClient().copy({
-        headers: await authHeaders(actor),
+        headers: await retainedHeaders(actor),
         params: { workflowId: workflow.body.id },
         body: { toAgentId: targetAgent.agentId },
       }),
@@ -2388,7 +2382,7 @@ describe("workflows", () => {
     );
     const copiedAutomations = await accept(
       automationsClient().list({
-        headers: await authHeaders(actor),
+        headers: authHeaders(actor),
         params: { workflowId: copied.body.id },
       }),
       [200],
@@ -2413,7 +2407,7 @@ describe("workflows", () => {
     });
     const copiedSelections = await accept(
       chatThreadConnectorSelectionsClient().get({
-        headers: await authHeaders(actor),
+        headers: authHeaders(actor),
         params: { id: copiedAutomation.chatThreadId },
       }),
       [200],
@@ -2422,7 +2416,7 @@ describe("workflows", () => {
 
     const sourceAutomations = await accept(
       automationsClient().list({
-        headers: await authHeaders(actor),
+        headers: authHeaders(actor),
         params: { workflowId: workflow.body.id },
       }),
       [200],
@@ -2579,7 +2573,7 @@ describe("workflows", () => {
 
     const automation = await accept(
       automationsClient().create({
-        headers: await authHeaders(actor),
+        headers: authHeaders(actor),
         params: { workflowId: workflow.body.id },
         body: {
           kind: "event",
@@ -2598,7 +2592,7 @@ describe("workflows", () => {
     }
     await accept(
       chatThreadConnectorSelectionsClient().update({
-        headers: await authHeaders(actor),
+        headers: authHeaders(actor),
         params: { id: automation.body.chatThreadId },
         body: {
           connectionId: secondAccount.id,
@@ -2614,7 +2608,7 @@ describe("workflows", () => {
 
     const copied = await accept(
       detailClient().copy({
-        headers: await authHeaders(actor),
+        headers: await retainedHeaders(actor),
         params: { workflowId: workflow.body.id },
         body: { toAgentId: targetAgent.agentId },
       }),
@@ -2627,7 +2621,7 @@ describe("workflows", () => {
     ]);
     const copiedAutomations = await accept(
       automationsClient().list({
-        headers: await authHeaders(actor),
+        headers: authHeaders(actor),
         params: { workflowId: copied.body.id },
       }),
       [200],
@@ -2737,7 +2731,7 @@ describe("workflows", () => {
     ).not.toBe(first.key);
     const detail = await accept(
       detailClient().get({
-        headers: await authHeaders(actor),
+        headers: authHeaders(actor),
         params: { workflowId: workflow.body.id },
       }),
       [200],
@@ -2764,7 +2758,7 @@ describe("workflows", () => {
     });
     const first = await accept(
       detailClient().get({
-        headers: await authHeaders(actor),
+        headers: authHeaders(actor),
         params: { workflowId: workflow.body.id },
       }),
       [200],
@@ -2801,7 +2795,7 @@ describe("workflows", () => {
     expect(s3.writes).toHaveLength(0);
     const second = await accept(
       detailClient().get({
-        headers: await authHeaders(actor),
+        headers: authHeaders(actor),
         params: { workflowId: workflow.body.id },
       }),
       [200],
@@ -2827,7 +2821,7 @@ describe("workflows", () => {
 
     const initial = await accept(
       detailClient().get({
-        headers: await authHeaders(creator),
+        headers: authHeaders(creator),
         params: { workflowId: workflow.body.id },
       }),
       [200],
@@ -2855,14 +2849,14 @@ describe("workflows", () => {
 
     await accept(
       detailClient().delete({
-        headers: await authHeaders(updater),
+        headers: authHeaders(updater),
         params: { workflowId: workflow.body.id },
       }),
       [204],
     );
     const missing = await accept(
       detailClient().get({
-        headers: await authHeaders(creator),
+        headers: authHeaders(creator),
         params: { workflowId: workflow.body.id },
       }),
       [404],
@@ -2903,9 +2897,9 @@ async function ownerProfileFixture(
   return { owner, agent, workflow: workflow.body };
 }
 
-async function readOwnerProfile(actor: ApiTestUser, workflowId: string) {
+function readOwnerProfile(actor: ApiTestUser, workflowId: string) {
   return detailClient().ownerProfile({
-    headers: await authHeaders(actor),
+    headers: authHeaders(actor),
     params: { workflowId },
   });
 }
@@ -2919,12 +2913,12 @@ describe("workflow owner profiles", () => {
       new Error("Profiles are offline"),
     );
     const listed = await accept(
-      collectionClient().list({ headers: await authHeaders(owner) }),
+      collectionClient().list({ headers: await retainedHeaders(owner) }),
       [200],
     );
     const detail = await accept(
       detailClient().get({
-        headers: await authHeaders(owner),
+        headers: authHeaders(owner),
         params: { workflowId: workflow.id },
       }),
       [200],
@@ -3119,7 +3113,7 @@ describe("workflow owner profile cancellation", () => {
       routes: workflowsRoutes,
       signal: controller.signal,
     })(workflowsDetailContract).ownerProfile({
-      headers: await authHeaders(owner),
+      headers: authHeaders(owner),
       params: { workflowId: workflow.id },
     });
     await started.promise;
@@ -3142,10 +3136,7 @@ test("promotes a queued workflow after failure and completes it with a real Runn
   const actor = user({ orgRole: "org:admin" });
   await enableWorkflowRuns(actor);
   const runnerGroup = await api.configureRunnerGroup();
-  const agent = await createAgent(actor, {
-    displayName: "Reward Workflow Agent",
-    visibility: "private",
-  });
+  const agent = await workspaceExecutor(actor);
   const workflow = await createWorkflow(actor, {
     agentId: agent.agentId,
     name: `reward-${randomUUID().slice(0, 8)}`,
@@ -3157,7 +3148,7 @@ test("promotes a queued workflow after failure and completes it with a real Runn
   const first = await runWorkflowAndLaunch(actor, workflow.body.id);
   const queued = await accept(
     detailClient().run({
-      headers: await authHeaders(actor),
+      headers: authHeaders(actor),
       params: { workflowId: workflow.body.id },
     }),
     [200],

@@ -8,7 +8,6 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { test, expect, vi } from "vitest";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { projectsContract } from "@okouai/api-contracts/contracts/projects";
 import type { ProjectEvent } from "@okouai/api-contracts/validators/projects";
 import {
@@ -242,9 +241,6 @@ test("My Okou's Project rows expose title folding and a home link before their m
     context,
     path: `/chats/${thread.id}`,
     ...workspace.pageOptions,
-    featureSwitches: {
-      [FeatureSwitchKey.SingleAgent]: true,
-    },
   });
   await waitFor(() => {
     expect(projectToggle("Launch")).toBeInTheDocument();
@@ -274,7 +270,6 @@ test("Cached Projects appear before chat setup and remote synchronization finish
   const options = {
     path: `/chats/${thread.id}`,
     ...workspace.pageOptions,
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
     sharedWorkerTestTransport: "message-port" as const,
   };
   await setupPage({ context: { ...context, signal }, ...options });
@@ -373,7 +368,6 @@ test("Projects stay visible when returning from a chat to My Okou during a refre
     context,
     path: `/chats/${ordinary.id}`,
     ...workspace.pageOptions,
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
     sharedWorkerTestTransport: "message-port",
   });
   await act(() => {
@@ -430,7 +424,6 @@ test.each(["account", "workspace"] as const)(
       context,
       path: `/chats/${ordinary.id}`,
       ...workspace.pageOptions,
-      featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
     });
     expect(projectToggle("Launch")).toBeInTheDocument();
 
@@ -475,7 +468,6 @@ test("Projects remember open and collapsed states after a page reload", async ()
   const options = {
     path: `/chats/${member.id}`,
     ...workspace.pageOptions,
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
   };
   await setupPage({ context: { ...context, signal }, ...options });
   expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "true");
@@ -520,7 +512,6 @@ test.each(["account", "workspace"] as const)(
     const options = {
       path: `/chats/${ordinary.id}`,
       ...workspace.pageOptions,
-      featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
     };
     await setupPage({ context: { ...context, signal }, ...options });
     await act(() => {
@@ -575,7 +566,6 @@ test.each(["not json", '{"invalid":"true"}'])(
       context,
       path: `/chats/${ordinary.id}`,
       ...workspace.pageOptions,
-      featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
     });
 
     expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "false");
@@ -615,9 +605,6 @@ test("Projects show cross-Agent chats inline and follow the list filter without 
     context,
     path: `/chats/${ordinary.id}`,
     ...workspace.pageOptions,
-    featureSwitches: {
-      [FeatureSwitchKey.SingleAgent]: true,
-    },
   });
   const user = userEvent.setup({ delay: null });
   await user.click(projectToggle("Launch"));
@@ -676,7 +663,6 @@ async function setupProjectNavigation(
       .replace(":a2", a2.id)
       .replace(":a", a.id),
     ...workspace.pageOptions,
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
   });
   return { a1, a, a2, b };
 }
@@ -935,7 +921,6 @@ test("A folded Project prioritizes unread over running chats, and an unfolded on
     context,
     path: `/chats/${ordinary.id}`,
     ...workspace.pageOptions,
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
   });
 
   // A Project reports unread chats before running ones, regardless of their order.
@@ -1127,7 +1112,6 @@ test("ordinary lists hide assigned chats and @Project inserts captured identity 
     context,
     path: `/chats/${ordinary.id}`,
     ...workspace.pageOptions,
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
   });
   await waitFor(() => {
     return expect(
@@ -1227,7 +1211,6 @@ test("creates, renames and deletes a Project through the shared dialogs", async 
     context,
     path: `/chats/${ordinary.id}`,
     ...workspace.pageOptions,
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
   });
   const user = userEvent.setup({ delay: null });
   await user.click(button("Create Project"));
@@ -1344,7 +1327,6 @@ test("Deleting a Project closes its dialog before its chats finish synchronizing
     context,
     path: `/chats/${ordinary.id}`,
     ...workspace.pageOptions,
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
   });
   const user = userEvent.setup({ delay: null });
   await user.click(button("Options for Launch", projectRow()));
@@ -1422,7 +1404,6 @@ test("A rejected Project deletion stays open and can be retried", async () => {
     context,
     path: `/chats/${ordinary.id}`,
     ...workspace.pageOptions,
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
   });
   const user = userEvent.setup({ delay: null });
   await user.click(button("Options for Launch", projectRow()));
@@ -1523,7 +1504,6 @@ test("Creating a Project from a chat moves it immediately and survives navigatio
     context,
     path: `/chats/${ordinary.id}`,
     ...workspace.pageOptions,
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
   });
   const user = userEvent.setup({ delay: null });
   const row = threadLink(ordinary.id).closest<HTMLElement>(
@@ -1670,7 +1650,6 @@ test("A new Project's home accepts a message once its pending creation is confir
     context,
     path: `/chats/${ordinary.id}`,
     ...workspace.pageOptions,
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
   });
   const user = userEvent.setup({ delay: null });
   await user.click(button("Create Project"));
@@ -1749,7 +1728,6 @@ test("Thread menu searches and changes Project membership while preserving the o
     context,
     path: `/chats/${ordinary.id}`,
     ...workspace.pageOptions,
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
   });
   const user = userEvent.setup({ delay: null });
   function rowMenu() {
@@ -1882,7 +1860,6 @@ test("A rejected Project move does not replace a later confirmed move", async ()
     context,
     path: `/chats/${ordinary.id}`,
     ...workspace.pageOptions,
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
   });
   const user = userEvent.setup({ delay: null });
   async function moveTo(project: string) {
@@ -1962,7 +1939,6 @@ test("Dropping over an existing Project chat moves immediately while the request
     context,
     path: `/chats/${ordinary.id}`,
     ...workspace.pageOptions,
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
   });
   await act(() => {
     click(projectToggle("Launch"));
@@ -2048,7 +2024,6 @@ test.each(["chat row", "empty list space"] as const)(
       context,
       path: `/chats/${member.id}`,
       ...workspace.pageOptions,
-      featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
     });
     expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "true");
     const target =
@@ -2098,7 +2073,6 @@ test("A cross-Agent Project chat can be dragged onto another collapsed Project",
     context,
     path: `/chats/${ordinary.id}`,
     ...workspace.pageOptions,
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
   });
   await act(() => {
     click(projectToggle("Launch"));
@@ -2147,7 +2121,6 @@ test("Escape cancels a Project drag, and unrelated drags or the current Project 
     context,
     path: `/chats/${ordinary.id}`,
     ...workspace.pageOptions,
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
   });
   await act(() => {
     click(projectToggle("Launch"));
@@ -2203,7 +2176,6 @@ test("A failed drag move shows an error beside its destination", async () => {
     context,
     path: `/chats/${ordinary.id}`,
     ...workspace.pageOptions,
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
   });
   const dataTransfer = createDataTransferStub();
   fireEvent.dragStart(threadLink(ordinary.id), { dataTransfer });
@@ -2230,7 +2202,6 @@ test("Project deep links open the Project page with its composer", async () => {
     context,
     path: `/projects/${id}`,
     ...workspace.pageOptions,
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
   });
   // The page keeps Okou's greeting; the composer names the Project.
   await waitFor(() => {
@@ -2258,7 +2229,6 @@ test("A Project page shares the capability home and its compliance block under t
     context,
     path: `/projects/${id}`,
     ...workspace.pageOptions,
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
   });
   await waitFor(() => {
     expect(projectChip("Launch")).toBeInTheDocument();
@@ -2307,9 +2277,6 @@ test("Home, Project, and conversation navigation preserves the correct draft and
     context,
     path: `/agents/${ordinary.agentId}/chat`,
     ...workspace.pageOptions,
-    featureSwitches: {
-      [FeatureSwitchKey.SingleAgent]: true,
-    },
   });
   const editor = () => {
     return screen.getByRole("textbox", { name: "Message" });
@@ -2366,7 +2333,6 @@ test("A mobile Project opens the capability composer instead of the home chat li
     context,
     path: `/projects/${id}`,
     ...workspace.pageOptions,
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
   });
   const editor = await screen.findByRole("textbox", { name: "Message" });
   expect(
@@ -2413,7 +2379,6 @@ test("A Project message keeps its membership in the conversation it opens", asyn
     context,
     path: `/projects/${id}`,
     ...workspace.pageOptions,
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
   });
   await waitFor(() => {
     expect(projectChip("Launch")).toBeInTheDocument();
@@ -2462,7 +2427,6 @@ test("The composer's + menu starts a new chat in a Project and keeps the message
     context,
     path: `/agents/${ordinary.agentId}/chat`,
     ...workspace.pageOptions,
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
   });
   await fill(
     await screen.findByRole("textbox", { name: "Message" }),
@@ -2540,7 +2504,6 @@ test("Removing the Project chip returns the message to a chat outside any Projec
     context,
     path: `/projects/${id}`,
     ...workspace.pageOptions,
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
   });
   await fill(
     await screen.findByRole("textbox", { name: "Message" }),
@@ -2583,7 +2546,6 @@ test("The composer shows a Project name's emoji on its folder, as the sidebar do
     context,
     path: `/projects/${coffee}`,
     ...workspace.pageOptions,
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
   });
 
   // The chip's folder wears the emoji and its label shows the rest.
@@ -2671,7 +2633,6 @@ test("A Project named from the composer's + menu opens with the message and acce
     context,
     path: `/agents/${ordinary.agentId}/chat`,
     ...workspace.pageOptions,
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
   });
   await fill(
     await screen.findByRole("textbox", { name: "Message" }),
@@ -2731,7 +2692,6 @@ test("Without Projects the new chat's add menu keeps capabilities available", as
     context,
     path: `/agents/${ordinary.agentId}/chat`,
     ...workspace.pageOptions,
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: false },
   });
   await screen.findByRole("textbox", { name: "Message" });
   const menu = await openComposerProjectMenu();
@@ -2836,7 +2796,6 @@ test("The Project home starts a conversation with the default Agent after visiti
     context,
     path: `/chats/${ordinary.id}`,
     ...workspace.pageOptions,
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
   });
   const user = userEvent.setup({ delay: null });
   await user.click(projectToggle("Launch"));
@@ -2935,7 +2894,6 @@ test("Project rename closes immediately and yields to persisted events", async (
     context,
     path: `/chats/${ordinary.id}`,
     ...workspace.pageOptions,
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
   });
   click(button("Options for Launch", projectRows()));
   click(await findMenuItem("Rename"));
@@ -3009,7 +2967,6 @@ test("A rejected Project name does not replace the confirmed name of a later sav
     context,
     path: `/chats/${ordinary.id}`,
     ...workspace.pageOptions,
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
   });
   click(button("Options for Launch", projectRows()));
   click(await findMenuItem("Rename"));
@@ -3123,9 +3080,6 @@ test.each([
       context,
       path: initialPath,
       ...workspace.pageOptions,
-      featureSwitches: {
-        [FeatureSwitchKey.SingleAgent]: true,
-      },
     });
     const row = await waitFor(() => {
       const candidate = document.querySelector<HTMLElement>(
@@ -3193,7 +3147,6 @@ test("Deleting another Agent's Project chat removes it before confirmation", asy
     context,
     path: `/chats/${ordinary.id}`,
     ...workspace.pageOptions,
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
   });
   await act(() => {
     click(projectToggle("Launch"));
@@ -3238,9 +3191,6 @@ test("PWA uses the same Projects and a bottom sheet for Thread membership", asyn
     context,
     path: "/",
     ...workspace.pageOptions,
-    featureSwitches: {
-      [FeatureSwitchKey.SingleAgent]: true,
-    },
   });
   const user = userEvent.setup({ delay: null });
   await waitFor(() => {
@@ -3309,9 +3259,6 @@ test("A Project mention reveals a folded chat sidebar and keeps the current conv
     context,
     path: `/chats/${ordinary.id}`,
     ...workspace.pageOptions,
-    featureSwitches: {
-      [FeatureSwitchKey.SingleAgent]: true,
-    },
   });
   const user = userEvent.setup({ delay: null });
   await user.click(button("Hide chat list"));

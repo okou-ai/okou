@@ -30,12 +30,11 @@ export interface AdmittedExecutionFacts {
   /** Same member observation as the admission Prompt; later edits affect later Runs. */
   readonly userTimezone: string | undefined;
   readonly nativeContinuation: NativeContinuation;
-  readonly featureFlags: Readonly<
-    Record<
-      FeatureSwitchKey.ArtifactThreePointTiming | FeatureSwitchKey.SingleAgent,
-      boolean
-    >
-  >;
+  readonly featureFlags: {
+    readonly [FeatureSwitchKey.ArtifactThreePointTiming]: boolean;
+    /** Execution mode consumed by released Runners. */
+    readonly singleAgent: boolean;
+  };
   readonly okouToken: string;
   readonly disabledPaidTools: readonly PaidToolId[];
   readonly realAgentInPreview: boolean | undefined;

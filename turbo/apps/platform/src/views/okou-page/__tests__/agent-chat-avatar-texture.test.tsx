@@ -268,7 +268,6 @@ test("Greet with Okou's own animated avatar under My Okou", async () => {
   await setupPage({
     context,
     path: `/agents/${DEFAULT_AGENT_ID}/chat?compose=1`,
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
   });
   const greeting = await screen.findByTestId("chat-greeting");
 

@@ -1,13 +1,10 @@
 import { EventEmitter } from "node:events";
 import { Command } from "commander";
-import { singleAgentEnabled } from "../api/single-agent";
-import { decodeSandboxTokenPayload } from "../api/sandbox-token";
-import { getOkouToken } from "../okou-env";
+import { isPersonalExecution } from "../personal-execution";
 import { listAgents } from "../api/domains/agents";
 import { withErrorHandler } from "./with-error-handler";
 
-// One invocation's resolved context, shared by its help and dispatch. This does
-// not cache feature API responses across commands, users or workspaces.
+// Help and dispatch share the captured Run mode for this invocation.
 const contexts = new WeakMap<Command, boolean>();
 const guarded = new WeakSet<Command>();
 
@@ -20,11 +17,7 @@ export function personalCommandMode(command: Command): boolean {
     const mode = contexts.get(current);
     if (mode !== undefined) return mode;
   }
-  return decodeSandboxTokenPayload()?.singleAgent === true;
-}
-
-export async function resolveCommandMode(): Promise<boolean> {
-  return getOkouToken() ? singleAgentEnabled() : false;
+  return isPersonalExecution();
 }
 
 export async function personalExecutorId(): Promise<string> {

@@ -2049,7 +2049,7 @@
         "slideCountAuto": "Automatico",
         "slideCountRange": "{{range}} diapositive"
       },
-      "mentionHint": "Cerca agenti o chat…",
+      "mentionHint": "Cerca chat o progetti…",
       "message": "Messaggio",
       "modelForThisChat": "Modello per questa chat",
       "placeholder": "Chiedimi di automatizzare i flussi di lavoro, gestire le attività...",

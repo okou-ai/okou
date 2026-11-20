@@ -2,7 +2,6 @@ import {
   BuiltinConnectorAccountDialogs,
   useBuiltinConnectorConnectHandlers,
 } from "./builtin-connector-account-dialogs.tsx";
-import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
 import {
   remoteResource$,
   remoteNetworkPage$,
@@ -968,7 +967,7 @@ interface SettingsConnectorCardProps {
 
 function ConnectorCatalogHeader() {
   const { t } = useTranslation();
-  const singleAgent = useLastResolved(singleAgentEnabled$) ?? false;
+
   const count = useLastLoadable(connectorDirectoryPageSignals.catalogCount$);
   const connectorCatalogCount = count.state === "hasData" ? count.data : null;
   const scope = useGet(connectorsScope$);
@@ -980,16 +979,12 @@ function ConnectorCatalogHeader() {
       : connectorCatalogCount !== null
         ? t(
             ($) => {
-              return singleAgent
-                ? $.connectors.catalog.myOkouDescriptionWithCount
-                : $.connectors.catalog.descriptionWithCount;
+              return $.connectors.catalog.myOkouDescriptionWithCount;
             },
             { value: formatLocalizedNumber(connectorCatalogCount) },
           )
         : t(($) => {
-            return singleAgent
-              ? $.connectors.catalog.myOkouDescription
-              : $.connectors.catalog.description;
+            return $.connectors.catalog.myOkouDescription;
           });
   return (
     <header className="shrink-0 bg-transparent px-4 sm:px-6 pt-0 md:pt-10 pb-0">

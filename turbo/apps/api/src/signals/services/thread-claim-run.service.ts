@@ -97,7 +97,10 @@ import {
   selectExecutionPackages,
 } from "./execution-workflow-selection";
 import { dispatchCompleteSideEffects$ } from "./agent-run-lifecycle.service";
-import type { AgentRunContextSignals } from "./agent-run-context.signals";
+import type {
+  AgentRunContextSignals,
+  BootstrapFeatureSwitchContext,
+} from "./agent-run-context.signals";
 import type { ResolvedModelProviderEnvironment } from "./agent-run-contracts";
 import {
   type AdmissionAttemptOutcome,
@@ -185,10 +188,7 @@ import { OFFICIAL_TELEGRAM_BOT_ID } from "@okouai/api-contracts/contracts/integr
 import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
 import { getFrameworkForType } from "@okouai/api-contracts/contracts/model-providers";
 import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
-import {
-  type FeatureSwitchContext,
-  isFeatureEnabled,
-} from "@okouai/core/feature-switch";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import type { SupportedFramework } from "@okouai/core/frameworks";
@@ -2260,10 +2260,7 @@ export function createThreadClaimRunObjects(
           ...args.protectedMountPaths,
           ...officialMountPaths,
         ],
-        singleAgent: isFeatureEnabled(
-          FeatureSwitchKey.SingleAgent,
-          args.featureSwitchContext,
-        ),
+        singleAgent: args.featureSwitchContext.personalExecution,
         ordinaryAutomation,
       });
       if ("error" in executionPackages) {
@@ -3534,7 +3531,7 @@ interface ThreadRunnerFacts {
   readonly profile: string;
   readonly apiStartTime: number | undefined;
   readonly chatThreadId: string;
-  readonly featureSwitchContext: FeatureSwitchContext;
+  readonly featureSwitchContext: BootstrapFeatureSwitchContext;
 }
 
 /** Capture selectors and request receipts; admitted preparation assembles runtime input. */
@@ -3558,10 +3555,7 @@ function prepareRunnerLaunch(input: {
         FeatureSwitchKey.ArtifactThreePointTiming,
         args.featureSwitchContext,
       ),
-      [FeatureSwitchKey.SingleAgent]: isFeatureEnabled(
-        FeatureSwitchKey.SingleAgent,
-        args.featureSwitchContext,
-      ),
+      singleAgent: args.featureSwitchContext.personalExecution,
     },
   };
   return {

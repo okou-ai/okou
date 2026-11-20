@@ -91,7 +91,7 @@ export const setupProjectFoldShortcuts$ = command(
           shouldHandle,
           run: async (event) => {
             const projectId = listedProjectId(event);
-            const projects = await get(projects$);
+            const projects = get(projects$);
             signal.throwIfAborted();
             if (
               !projectId ||
@@ -115,7 +115,7 @@ export const setupProjectFoldShortcuts$ = command(
           shouldHandle,
           run: async (event) => {
             const projectId = listedProjectId(event);
-            const projects = await get(projects$);
+            const projects = get(projects$);
             signal.throwIfAborted();
             if (
               projectId &&

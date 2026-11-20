@@ -97,7 +97,6 @@ async function setupEntryNavigation(
       : `/chats/${newest.id}`,
     ...workspace.pageOptions,
     featureSwitches: {
-      [FeatureSwitchKey.SingleAgent]: true,
       [FeatureSwitchKey.AgentSuggestion]: options.suggestions,
     },
   });

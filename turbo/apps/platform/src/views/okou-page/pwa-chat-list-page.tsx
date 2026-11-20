@@ -26,7 +26,7 @@ import { openThreeColumnSearchDialog$ } from "../../signals/okou-page/sidebar-st
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { InstatusStatusNotice } from "../components/instatus-status-notice.tsx";
-import { PwaAgentSwitcher } from "./pwa-agent-switcher.tsx";
+import { PwaChatTitle } from "./pwa-chat-title.tsx";
 import { ForYouChatListRow } from "./sidebar-okou-row.tsx";
 import { OverlayScrollArea } from "./sidebar-scroll.tsx";
 import { ChatThreadListRows, ChatThreadsListMenu } from "./sidebar-threads.tsx";
@@ -60,7 +60,7 @@ function PwaChatListHeader() {
     <header className="shrink-0 px-3 pt-2">
       <div className="flex min-w-0 items-center gap-1">
         <div className="min-w-0 flex-1">
-          <PwaAgentSwitcher />
+          <PwaChatTitle />
         </div>
         <Button
           type="button"

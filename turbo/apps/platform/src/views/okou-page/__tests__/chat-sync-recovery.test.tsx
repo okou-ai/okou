@@ -4,7 +4,6 @@ import {
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { projectsContract } from "@okouai/api-contracts/contracts/projects";
 import type { ProjectEvent } from "@okouai/api-contracts/validators/projects";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { act, screen, waitFor } from "@testing-library/react";
 import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
@@ -214,7 +213,6 @@ test.each([
       context,
       path,
       sharedWorkerTestTransport: "message-port",
-      featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
     });
     await expect(
       screen.findByText("Earlier Project"),

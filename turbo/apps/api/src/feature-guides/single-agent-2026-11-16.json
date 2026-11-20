@@ -22,8 +22,7 @@
             "backTitle": "Writing",
             "conversations": ["Market overview", "Customer insights"]
           }
-        },
-        "featureSwitch": "singleAgent"
+        }
       },
       {
         "featureId": "personal-instructions",
@@ -44,8 +43,7 @@
               "End with next steps."
             ]
           }
-        },
-        "featureSwitch": "singleAgent"
+        }
       },
       {
         "featureId": "workspace-workflows",
@@ -71,8 +69,7 @@
             "backCommand": "/research-brief",
             "sharedLabel": "Shared"
           }
-        },
-        "featureSwitch": "singleAgent"
+        }
       }
     ]
   }

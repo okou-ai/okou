@@ -1,3 +1,4 @@
+import { capturedRunToken } from "../../../test/fixtures/captured-run-token";
 import chalk from "chalk";
 import { HttpResponse, http } from "msw";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -27,7 +28,7 @@ describe("okou chat create command", () => {
   beforeEach(() => {
     chalk.level = 0;
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
-    vi.stubEnv("OKOU_TOKEN", "test-token");
+    vi.stubEnv("OKOU_TOKEN", capturedRunToken(["chat-thread:write"]));
     vi.stubEnv("OKOU_CHAT_THREAD_ID", CURRENT_THREAD_ID);
   });
 
@@ -50,7 +51,9 @@ describe("okou chat create command", () => {
         });
       }),
       http.post(CREATE_URL, async ({ request }) => {
-        expect(request.headers.get("authorization")).toBe("Bearer test-token");
+        expect(request.headers.get("authorization")).toBe(
+          "Bearer " + capturedRunToken(["chat-thread:write"]),
+        );
         const body = (await request.json()) as Record<string, unknown>;
         expect(body).toStrictEqual({
           agentId: AGENT_ID,

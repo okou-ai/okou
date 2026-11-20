@@ -57,7 +57,6 @@ async function setupMenus({
     path: path === HOME_PATH ? `${path}?compose=1` : path,
     featureSwitches: {
       [FeatureSwitchKey.SlashActions]: slashActions,
-      [FeatureSwitchKey.SingleAgent]: false,
     },
   });
   return { editor: await findComposerEditor(), lifecycle: capture.lifecycle };

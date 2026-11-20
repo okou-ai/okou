@@ -1,4 +1,3 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { CLIENT_FORCE_UPGRADE_STATUS } from "@okouai/api-contracts/contracts/client-headers";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
@@ -33,32 +32,24 @@ import {
 
 const context = testContext();
 
-test.each([false, true])(
-  "Connector catalog describes the current experience (My Okou=%s)",
-  async (singleAgent) => {
-    mockConnectors(context, []);
-    const metadata = publicStatusItem({
-      connectorSlug: "github",
-      label: "GitHub",
-      authMethods: [oauthMethod()],
-    });
-    context.mocks.api(connectorCatalogContract.discovery, ({ respond }) => {
-      return respond(200, { connectors: [metadata], totalConnectorCount: 42 });
-    });
-    await setupPage({
-      context,
-      path: "/connectors",
-      featureSwitches: { [FeatureSwitchKey.SingleAgent]: singleAgent },
-    });
-    await expect(
-      screen.findByText(
-        singleAgent
-          ? "Connect 42 services for your Okou to use."
-          : "Connect 42 services for your agents to use.",
-      ),
-    ).resolves.toBeInTheDocument();
-  },
-);
+test("Connector catalog describes the current experience", async () => {
+  mockConnectors(context, []);
+  const metadata = publicStatusItem({
+    connectorSlug: "github",
+    label: "GitHub",
+    authMethods: [oauthMethod()],
+  });
+  context.mocks.api(connectorCatalogContract.discovery, ({ respond }) => {
+    return respond(200, { connectors: [metadata], totalConnectorCount: 42 });
+  });
+  await setupPage({
+    context,
+    path: "/connectors",
+  });
+  await expect(
+    screen.findByText("Connect 42 services for your Okou to use."),
+  ).resolves.toBeInTheDocument();
+});
 
 test("Show saved membership without loading accounts when catalog projections have been retired", async () => {
   const [account] = mockConnectors(context, [

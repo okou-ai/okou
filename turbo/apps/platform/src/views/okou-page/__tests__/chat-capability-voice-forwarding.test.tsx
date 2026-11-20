@@ -50,7 +50,6 @@ test("Fork opens a quoted personal chat composer and preserves the source draft 
   await setupPage({
     context,
     path: RUN_PATH,
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
   });
   const originalComposer = await screen.findByRole("textbox", {
     name: "Message",

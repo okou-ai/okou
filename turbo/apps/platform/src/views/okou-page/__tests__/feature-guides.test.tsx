@@ -5,7 +5,6 @@ import {
   featureGuidesContract,
   type FeatureGuideEdition,
 } from "@okouai/api-contracts/contracts/feature-guides";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   click,
   queryAllByRoleFast,
@@ -604,9 +603,6 @@ test("renders an illustrated selected preview without recording a view", async (
   await setupPage({
     context,
     path: `/?featureGuidePreview=1&featureGuideEdition=${singleEdition.id}`,
-    featureSwitches: {
-      [FeatureSwitchKey.SingleAgent]: true,
-    },
   });
   const dialog = await screen.findByRole("dialog", {
     name: "One Okou. Your subagents, now projects",
@@ -639,9 +635,6 @@ test("cycles the illustrated project, instructions and workflow preview with but
   await setupPage({
     context,
     path: `/?featureGuidePreview=1&featureGuideEdition=${illustrationEdition.id}`,
-    featureSwitches: {
-      [FeatureSwitchKey.SingleAgent]: true,
-    },
   });
   const dialog = await screen.findByRole("dialog", {
     name: "One Okou. Your subagents, now projects",

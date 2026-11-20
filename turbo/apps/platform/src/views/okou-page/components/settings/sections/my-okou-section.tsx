@@ -31,7 +31,7 @@ import { TiptapInstructionsEditor } from "../../../tiptap-instructions-editor.ts
 import { UnsavedBar } from "../../../unsaved-bar.tsx";
 import { InstructionsConflict } from "../../../instructions-conflict.tsx";
 
-import { proactiveSettingsInMyOkou$ } from "../../../../../signals/single-agent.ts";
+import { proactiveSettingsInMyOkou$ } from "../../../../../signals/proactive-settings.ts";
 import { ProactiveSection } from "./proactive-section.tsx";
 
 export function MyOkouSection() {

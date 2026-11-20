@@ -1,3 +1,4 @@
+import { retainedWorkflowCaller } from "./retained-workflow-caller";
 import { installWorkflowVolumeS3Fixture } from "./workflow-volume-s3";
 import { createHash } from "node:crypto";
 
@@ -24,9 +25,8 @@ import {
 } from "@okouai/api-contracts/contracts/user-preferences";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
-import type { ApiTestUser } from "./api-bdd";
+import { createBddApi, type ApiTestUser } from "./api-bdd";
 import { createRouteMocks } from "./route-test";
-import { updateFeatureSwitchesForUser } from "./feature-switches";
 
 import { emailUnsubscribeRoutes } from "../../email-unsubscribe";
 import { userExportRoutes } from "../../user-export";
@@ -176,6 +176,8 @@ async function requestLogsList<TStatus extends 200 | 400 | 401 | 403>(
 }
 
 export function createMiscRoutesApi(context: TestContext) {
+  const bdd = createBddApi(context);
+  const retainedHeaders = retainedWorkflowCaller(context);
   const s3Objects = new Map<string, Buffer>();
   installWorkflowVolumeS3Fixture(context, s3Objects);
   const multipartTransport = context.mocks.s3.send.getMockImplementation();
@@ -396,20 +398,16 @@ export function createMiscRoutesApi(context: TestContext) {
       },
       statuses: readonly (201 | 400 | 401 | 403 | 409)[],
     ) {
-      if (!actor.orgId) {
-        throw new Error("Expected a retained Agent workspace");
-      }
-      // These fixtures bind Workflows to retained named Agents.
-      await updateFeatureSwitchesForUser(
-        context,
-        { ...actor, orgId: actor.orgId },
-        { singleAgent: false },
-      );
+      const { defaultAgentId } = await bdd.readOnboardingStatus(actor);
+      const headers =
+        agentId === defaultAgentId
+          ? authenticate(context, actor)
+          : await retainedHeaders(actor);
       return await accept(
         setupApp({ context, routes: workflowsRoutes })(
           workflowsCollectionContract,
         ).create({
-          headers: authenticate(context, actor),
+          headers,
           body: {
             agentId,
             name,

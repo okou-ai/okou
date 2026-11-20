@@ -1,4 +1,3 @@
-import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
 import type { ReactNode } from "react";
 import {
   useGet,
@@ -29,7 +28,6 @@ import {
   Plus,
   Route,
   Settings,
-  Users,
   type LucideIcon,
 } from "lucide-react";
 import { defaultAgentName$ } from "../../signals/agent.ts";
@@ -216,7 +214,7 @@ function MeNavigation({
 }) {
   const { t } = useTranslation();
   const assistantName = useGet(assistantName$);
-  const singleAgent = useLastResolved(singleAgentEnabled$) ?? false;
+
   const subscriptionEntry = useSubscriptionLinkingEntry();
   const slackScopeMismatch = useLastResolved(slackOrgScopeMismatch$) ?? false;
   const defaultDisplayName =
@@ -238,13 +236,7 @@ function MeNavigation({
           return $.settings.accountMenu.settings;
         })}
       </MeAction>
-      {!singleAgent && (
-        <MeLink icon={Users} pathname={ROUTES.agents}>
-          {t(($) => {
-            return $.appShell.sidebar.navigation.agents;
-          })}
-        </MeLink>
-      )}
+
       <MeLink icon={Route} pathname={ROUTES.workflows}>
         {t(($) => {
           return $.appShell.sidebar.navigation.workflows;

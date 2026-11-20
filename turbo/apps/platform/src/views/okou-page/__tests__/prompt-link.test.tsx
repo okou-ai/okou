@@ -1,5 +1,4 @@
 import { AUTO_RUN_MODEL } from "@okouai/core/auto-run-model";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   marketingHandoffsContract,
   type MarketingHandoffManifest,
@@ -187,7 +186,6 @@ test("My Okou prefills a prompt link on its chat page at Home", async () => {
   await setupPage({
     context,
     path: "/?prompt=Outline%20the%20customer%20interview",
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
   });
 
   await waitForDraft("Outline the customer interview");
@@ -207,7 +205,6 @@ test("My Okou moves an agent chat prompt link to Home", async () => {
   await setupPage({
     context,
     path: `/agents/${DESIGN_AGENT_ID}/chat?prompt=Draft%20a%20launch%20brief`,
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
   });
 
   await waitForDraft("Draft a launch brief");

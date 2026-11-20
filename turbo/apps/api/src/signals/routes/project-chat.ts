@@ -6,7 +6,7 @@ import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf } from "../context/request";
 import { db$ } from "../external/db";
-import { projectAccess$ } from "./projects";
+import { personalProjectAccess$ } from "./projects";
 import { sendValidatedChatEvent$ } from "./chat-events";
 import {
   chatThreadDraft,
@@ -40,7 +40,7 @@ function ownedThread(id: string) {
   });
 }
 const send$ = command(async ({ get, set }, signal: AbortSignal) => {
-  if (!(await get(projectAccess$))) {
+  if (!get(personalProjectAccess$)) {
     return missing;
   }
   const body = await get(bodyResultOf(projectChatContract.send));
@@ -51,7 +51,7 @@ const send$ = command(async ({ get, set }, signal: AbortSignal) => {
   return await set(sendValidatedChatEvent$, body.data, signal);
 });
 const draft$ = computed(async (get) => {
-  if (!(await get(projectAccess$))) {
+  if (!get(personalProjectAccess$)) {
     return missing;
   }
   const id = get(pathParamsOf(projectChatContract.draft)).id;
@@ -69,7 +69,7 @@ const draft$ = computed(async (get) => {
   };
 });
 const saveDraft$ = command(async ({ get, set }, signal: AbortSignal) => {
-  if (!(await get(projectAccess$))) {
+  if (!get(personalProjectAccess$)) {
     return missing;
   }
   const id = get(pathParamsOf(projectChatContract.saveDraft)).id;

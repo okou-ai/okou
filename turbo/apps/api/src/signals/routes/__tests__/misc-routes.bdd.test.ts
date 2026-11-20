@@ -6,7 +6,6 @@ import { env, mockEnv } from "../../../lib/env";
 import { testContext } from "../../../__tests__/test-context";
 import { createBddApi, expectApiError } from "./helpers/api-bdd";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const context = testContext();
 
@@ -195,11 +194,6 @@ describe("MISC-03: workflows lifecycle through public API", () => {
       if (!actor.orgId) {
         throw new Error("Expected a retained Agent workspace");
       }
-      await updateFeatureSwitchesForUser(
-        context,
-        { ...actor, orgId: actor.orgId },
-        { singleAgent: false },
-      );
     }
     const memberWorkflowName = `bdd-member-workflow-${randomUUID().slice(0, 8)}`;
     const workflowName = `bdd-workflow-${randomUUID().slice(0, 8)}`;
