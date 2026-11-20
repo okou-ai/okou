@@ -14,6 +14,7 @@ import native_unpark_report as native
 import report
 import report_test
 import speculative_fault_report_test as callback
+from progress_report_fixture import foreground_heartbeat
 
 
 class NativeUnparkReportTests(unittest.TestCase):
@@ -76,10 +77,7 @@ class NativeUnparkReportTests(unittest.TestCase):
                 {"pool_held_ns":at(23),"heartbeat_pending_ns":at(24),"pool_released_ns":at(27),
                  "observer":{"started_ns":at(25),"completed_ns":at(26),"available_bytes":32*1024**3,
                      "age_ns":2,"read_duration_ns":1,"joined":True},
-                 "heartbeat":{"receipt":{"received_ns":at(28),"acknowledgement_status":204,
-                     "state":{"runnerId":runner,"snapshotGeneration":1,"snapshotSequence":1,
-                         "group":"native-foreground","mode":"running","allocatedVcpu":2,"allocatedMemoryMb":4096}},
-                     "send_joined":True,"completed_ns":at(29)},
+                 "heartbeat":foreground_heartbeat(runner, 1, at(28), at(29), (2, 4096)),
                  "terminal_unpark_polled_pending":True,"response_delivery_withheld":True,
                  "additional_full_profile_refused":True,"original_full_lease_active":True,"allocated":[2,4096,1]},
                 {"response_released_ns":at(36),"producer_joined_ns":at(38),"producer_joined":True,

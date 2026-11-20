@@ -14,6 +14,7 @@ import cleanup_report as cleanup
 import report
 import report_test
 import status_failure_report as failure
+from progress_report_fixture import foreground_heartbeat
 
 
 class StatusFailureReportTests(unittest.TestCase):
@@ -54,11 +55,6 @@ class StatusFailureReportTests(unittest.TestCase):
             first = copy.deepcopy(covered)
             first["accounting"]["closed"] = False
             runner = str(uuid.uuid4())
-            def heartbeat(sequence, received, finished, allocated):
-                return {"receipt": {"received_ns": at(received), "acknowledgement_status": 204,
-                    "state": {"runnerId": runner, "snapshotGeneration": 1, "snapshotSequence": sequence,
-                        "group": "native-foreground", "mode": "running", "allocatedVcpu": allocated[0],
-                        "allocatedMemoryMb": allocated[1]}}, "send_joined": True, "completed_ns": at(finished)}
             baseline = {"mode": "starting", "max_concurrent": 1, "active_runs": [],
                 "started_at": "2026-10-18T16:00:00Z", "updated_at": "2026-10-18T16:00:10Z",
                 "idle_sandboxes": [{"reuse_key": "thread:native-guarded-"+str(uuid.uuid4()),
@@ -75,12 +71,13 @@ class StatusFailureReportTests(unittest.TestCase):
                         "read_duration_ns": 1, "joined": True}, "tracker_shutdown_pending": True,
                     "accounting_shutdown_pending": True, "coverage": covered},
                 {"pool_released_ns": at(13), "status_held_ns": at(7),
-                    "heartbeat": heartbeat(1,14,15,(2,4096)), "receiver_polled_pending": True,
+                    "heartbeat": foreground_heartbeat(runner, 1, at(14), at(15), (2, 4096)),
+                    "receiver_polled_pending": True,
                     "tracker_shutdown_pending": True, "accounting_shutdown_pending": True, "coverage": covered},
                 {"io_released_ns": at(17), "status_held_ns": at(7), "status_wait_polled_ns": at(21),
                     "status_waits_before": 0, "status_waits_after": 1, "receiver_polled_pending": True,
                     "tracker_shutdown_pending": True, "accounting_joined": True, "accounting": accounts,
-                    "allocated": [0,0,0], "heartbeat": heartbeat(2,22,23,(0,0)),
+                    "allocated": [0,0,0], "heartbeat": foreground_heartbeat(runner, 2, at(22), at(23), (0, 0)),
                     "fault_injected_ns": at(24), "status_destination_directory": True},
                 {"status_released_ns": at(26), "batch_joined_ns": at(27), "selected": 1, "completed": 1,
                     "uncertain": 0, "not_started": 0, "is_complete": False, "status_error_kind": "write",

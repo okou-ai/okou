@@ -15,6 +15,7 @@ import cleanup_report as cleanup
 import report
 import report_test
 import status_failure_report_test as failure_test
+from progress_report_fixture import foreground_heartbeat
 
 
 class ReplacementReportTests(unittest.TestCase):
@@ -52,11 +53,6 @@ class ReplacementReportTests(unittest.TestCase):
                            idle_sandboxes=[{"reuse_key":reuse,"sandbox_id":new}])
             empty = {k:v for k,v in current.items() if k != "idle_sandboxes"}
             empty["updated_at"] = "2026-10-19T01:00:03Z"
-            def heartbeat(sequence,begin,end,allocated):
-                return {"receipt":{"received_ns":at(begin),"acknowledgement_status":204,
-                    "state":{"runnerId":runner,"snapshotGeneration":1,"snapshotSequence":sequence,
-                        "group":"native-foreground","mode":"running","allocatedVcpu":allocated[0],
-                        "allocatedMemoryMb":allocated[1]}},"send_joined":True,"completed_ns":at(end)}
             reads = [{"started_ns":at(offset),"finished_ns":at(offset)+1000,
                 "read_start_offset_ns":offset*1_000_000,"available_bytes":32*1024**3,
                 "age_ns":2,"read_duration_ns":1} for offset in (7,8,33)]
@@ -74,13 +70,14 @@ class ReplacementReportTests(unittest.TestCase):
                 {"pool_held_ns":at(13),"heartbeat_pending_ns":at(14),"heartbeat_polled_pending":True,
                  "observer":{"started_ns":at(15),"completed_ns":at(16),"available_bytes":32*1024**3,
                     "age_ns":2,"read_duration_ns":1,"joined":True},"coverage":coverage},
-                {"pool_released_ns":at(19),"heartbeat":heartbeat(1,20,21,(4,8192)),
+                {"pool_released_ns":at(19),"heartbeat":foreground_heartbeat(runner, 1, at(20), at(21), (4, 8192)),
                  "receiver_polled_pending":True,"coverage":coverage},
                 {"io_released_ns":at(24),"retirement_joined_ns":at(27),"home_cache_promoted":True,
                  "original_exit_confirmed":True,"original_lease_released":True,"incoming_exit_polled_pending":True,
                  "receiver_polled_pending":True,"allocated":[2,4096,1]},
                 {"status_held_ns":at(31),"source_resumed_ns":at(32),"status_wait_polled_ns":at(34),
-                 "status_waits_before":0,"status_waits_after":1,"heartbeat":heartbeat(2,35,36,(2,4096)),
+                 "status_waits_before":0,"status_waits_after":1,
+                 "heartbeat":foreground_heartbeat(runner, 2, at(35), at(36), (2, 4096)),
                  "accounting":zero,"samples":reads,"receiver_polled_pending":True,"allocated":[2,4096,1]},
                 {"status_released_ns":at(39),"batch_joined_ns":at(40),"selected":1,"completed":0,"uncertain":0,
                  "not_started":1,"status_error":False,"is_complete":False,"refused_sandbox_id":old,
