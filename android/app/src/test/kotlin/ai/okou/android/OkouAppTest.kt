@@ -508,7 +508,7 @@ class OkouAppTest {
     @Test
     @Config(qualifiers = "en-rUS-w400dp-h240dp")
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
-    fun newChatKeepsSendVisibleWhenTheAvailableHeightShrinks() {
+    fun newChatKeepsSendAndRetryReachableWhenTheAvailableHeightShrinks() {
         val density = compose.activity.resources.displayMetrics.density
         // Model a tall application window whose content has less room after IME insets.
         compose.runOnIdle {
@@ -522,10 +522,17 @@ class OkouAppTest {
         val bounds = input.getUnclippedBoundsInRoot()
         val editorHeight = bounds.bottom - bounds.top
         assertTrue(editorHeight > 48.dp && editorHeight < 156.dp)
-        val send = compose.onNodeWithContentDescription("Send").assertIsDisplayed()
+        val send =
+            compose.onNodeWithContentDescription("Send").assertIsDisplayed().assertIsNotEnabled()
         send.assertHeightIsEqualTo(48.dp)
         val visible = send.fetchSemanticsNode().boundsInRoot
         assertEquals(48 * density, visible.height, 0.5f)
+
+        val retry = compose.onNodeWithText("Try again").performScrollTo().assertIsEnabled()
+        val recovery = retry.assertIsDisplayed().fetchSemanticsNode()
+        assertEquals(recovery.size.height.toFloat(), recovery.boundsInRoot.height, 0.5f)
+        send.performScrollTo().assertIsDisplayed()
+        assertEquals(48 * density, send.fetchSemanticsNode().boundsInRoot.height, 0.5f)
     }
 
     @Test

@@ -8,6 +8,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
@@ -108,7 +109,8 @@ fun ChatComposerField(
         open()
         onDispose { lifecycle.removeObserver(observer) }
     }
-    Column(
+    val cardVerticalPadding = 5.dp
+    BoxWithConstraints(
         modifier
             .fillMaxWidth()
             .imePadding()
@@ -120,179 +122,175 @@ fun ChatComposerField(
             )
             .testTag("chat_composer")
     ) {
-        // Measure the editor first so feedback cannot push Send behind the keyboard.
-        Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) {
-            if (state.persistence == ComposerPersistence.Failed) {
-                Text(stringResource(R.string.composer_local_failed))
-                TextButton(
-                    onClick = {
-                        if (state.journal == null) model.open(target) else model.retryLocal()
-                    }
-                ) {
-                    Text(stringResource(R.string.retry))
-                }
-            }
-            when (state.sync(target)) {
-                ComposerSync.Loading -> Text(stringResource(R.string.composer_sync_loading))
-                ComposerSync.Saving -> Text(stringResource(R.string.composer_sync_saving))
-                ComposerSync.Failed,
-                ComposerSync.Unsupported -> {
-                    Text(
-                        stringResource(
-                            if (state.sync(target) == ComposerSync.Unsupported)
-                                R.string.composer_sync_unsupported
-                            else R.string.composer_sync_failed
-                        )
+        val availableTextHeight =
+            minOf(maximumTextHeight, maxHeight - cardVerticalPadding * 2)
+                .coerceAtLeast(minimumTextHeight)
+        // Start at the editor and let the user scroll to feedback when space is tight.
+        Column(Modifier.verticalScroll(rememberScrollState(), reverseScrolling = true)) {
+            ComposerFeedback(model, target, state, entry)
+            Row(
+                Modifier.fillMaxWidth()
+                    .background(colors.surface, cardShape)
+                    .border(
+                        width = if (inputFocused) 2.dp else 1.dp,
+                        color =
+                            if (inputFocused) LocalActivityStatusColor.current else colors.outline,
+                        shape = cardShape,
                     )
-                    TextButton(onClick = { model.retrySync(target) }) {
-                        Text(stringResource(R.string.composer_sync_retry))
-                    }
-                }
-                else -> Unit
-            }
-            state.journal?.retainedDrafts?.forEach { (key, text) ->
-                Text(text, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                TextButton(
-                    onClick = { model.restoreDraft(target, key) },
-                    enabled = entry.text.isEmpty(),
-                ) {
-                    Text(stringResource(R.string.composer_restore_draft))
-                }
-            }
-            if (target.threadId == null && state.context != ComposerContext.Ready) {
-                Text(
-                    stringResource(
-                        if (state.context == ComposerContext.Loading)
-                            R.string.composer_target_loading
-                        else R.string.composer_target_unavailable
-                    )
-                )
-                if (state.context != ComposerContext.Loading)
-                    TextButton(onClick = { model.open(target) }) {
-                        Text(stringResource(R.string.retry))
-                    }
-            }
-            entry.pending?.let { pending ->
-                Text(
-                    stringResource(R.string.composer_unconfirmed),
-                    style = MaterialTheme.typography.labelLarge,
-                )
-                Text(pending.send.prompt, maxLines = 3, overflow = TextOverflow.Ellipsis)
-                FlowRow {
-                    TextButton(
-                        onClick = { model.observe(target) },
-                        enabled = target.key !in state.busy,
-                    ) {
-                        Text(stringResource(R.string.composer_check))
-                    }
-                    TextButton(
-                        onClick = { model.retry(target) },
-                        enabled = target.key !in state.busy,
-                    ) {
-                        Text(stringResource(R.string.composer_retry))
-                    }
-                }
-            }
-            entry.receipt?.let {
-                Text(
-                    stringResource(it.disposition.label()),
-                    modifier = Modifier.testTag("send_receipt"),
-                )
-                TextButton(
-                    onClick = { model.observe(target) },
-                    enabled = target.key !in state.busy,
-                ) {
-                    Text(stringResource(R.string.composer_check))
-                }
-            }
-            if (target.key in state.unobserved) Text(stringResource(R.string.composer_not_observed))
-            if (target.key in state.failed) Text(stringResource(R.string.composer_request_failed))
-            if (state.persistence == ComposerPersistence.Pending)
-                Text(
-                    stringResource(R.string.composer_saving),
-                    style = MaterialTheme.typography.labelSmall,
-                )
-        }
-        Row(
-            Modifier.fillMaxWidth()
-                .background(colors.surface, cardShape)
-                .border(
-                    width = if (inputFocused) 2.dp else 1.dp,
-                    color = if (inputFocused) LocalActivityStatusColor.current else colors.outline,
-                    shape = cardShape,
-                )
-                .padding(start = 8.dp, top = 5.dp, end = 6.dp, bottom = 5.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalAlignment = Alignment.Bottom,
-        ) {
-            BasicTextField(
-                value = input.value,
-                onValueChange = {
-                    input.edit(it)
-                    model.edit(target, it.text)
-                },
-                modifier =
-                    Modifier.weight(1f)
-                        .heightIn(min = minimumTextHeight, max = maximumTextHeight)
-                        .onFocusChanged {
-                            inputFocused = it.isFocused
-                            onInputFocusChanged(it.isFocused)
-                        }
-                        .testTag("message_input")
-                        .semantics { contentDescription = label },
-                enabled = state.journal != null,
-                textStyle = textStyle,
-                cursorBrush = SolidColor(colors.onSurface),
-                maxLines = if (shortWindow) 1 else Int.MAX_VALUE,
-                decorationBox = { editor ->
-                    Box(
-                        Modifier.fillMaxWidth()
-                            .padding(
-                                start = 2.dp,
-                                top = textPadding,
-                                end = 10.dp,
-                                bottom = textPadding,
-                            ),
-                        contentAlignment = Alignment.CenterStart,
-                    ) {
-                        if (input.value.text.isEmpty()) {
-                            Text(
-                                label,
-                                modifier = Modifier.clearAndSetSemantics {},
-                                color = colors.onSurfaceVariant,
-                                style = textStyle,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                        editor()
-                    }
-                },
-            )
-            FilledIconButton(
-                onClick = {
-                    focus.clearFocus()
-                    model.send(target)
-                },
-                modifier = Modifier.size(48.dp).semantics { contentDescription = sendLabel },
-                enabled = state.canSend(target),
-                shape = CircleShape,
-                colors =
-                    IconButtonDefaults.filledIconButtonColors(
-                        containerColor = colors.primary,
-                        contentColor = colors.onPrimary,
-                        disabledContainerColor = colors.surfaceVariant,
-                        disabledContentColor = colors.onSurfaceVariant,
+                    .padding(
+                        start = 8.dp,
+                        top = cardVerticalPadding,
+                        end = 6.dp,
+                        bottom = cardVerticalPadding,
                     ),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.Bottom,
             ) {
-                Icon(
-                    painterResource(R.drawable.ic_arrow_upward),
-                    contentDescription = null,
-                    modifier = Modifier.size(20.dp),
+                BasicTextField(
+                    value = input.value,
+                    onValueChange = {
+                        input.edit(it)
+                        model.edit(target, it.text)
+                    },
+                    modifier =
+                        Modifier.weight(1f)
+                            .heightIn(min = minimumTextHeight, max = availableTextHeight)
+                            .onFocusChanged {
+                                inputFocused = it.isFocused
+                                onInputFocusChanged(it.isFocused)
+                            }
+                            .testTag("message_input")
+                            .semantics { contentDescription = label },
+                    enabled = state.journal != null,
+                    textStyle = textStyle,
+                    cursorBrush = SolidColor(colors.onSurface),
+                    maxLines = if (shortWindow) 1 else Int.MAX_VALUE,
+                    decorationBox = { editor ->
+                        Box(
+                            Modifier.fillMaxWidth()
+                                .padding(
+                                    start = 2.dp,
+                                    top = textPadding,
+                                    end = 10.dp,
+                                    bottom = textPadding,
+                                ),
+                            contentAlignment = Alignment.CenterStart,
+                        ) {
+                            if (input.value.text.isEmpty()) {
+                                Text(
+                                    label,
+                                    modifier = Modifier.clearAndSetSemantics {},
+                                    color = colors.onSurfaceVariant,
+                                    style = textStyle,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                            editor()
+                        }
+                    },
                 )
+                FilledIconButton(
+                    onClick = {
+                        focus.clearFocus()
+                        model.send(target)
+                    },
+                    modifier = Modifier.size(48.dp).semantics { contentDescription = sendLabel },
+                    enabled = state.canSend(target),
+                    shape = CircleShape,
+                    colors =
+                        IconButtonDefaults.filledIconButtonColors(
+                            containerColor = colors.primary,
+                            contentColor = colors.onPrimary,
+                            disabledContainerColor = colors.surfaceVariant,
+                            disabledContentColor = colors.onSurfaceVariant,
+                        ),
+                ) {
+                    Icon(
+                        painterResource(R.drawable.ic_arrow_upward),
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
             }
         }
     }
+}
+
+@Composable
+private fun ComposerFeedback(
+    model: ChatComposerModel,
+    target: ComposerTarget,
+    state: ComposerState,
+    entry: ComposerEntry,
+) {
+    if (state.persistence == ComposerPersistence.Failed) {
+        Text(stringResource(R.string.composer_local_failed))
+        TextButton(
+            onClick = { if (state.journal == null) model.open(target) else model.retryLocal() }
+        ) {
+            Text(stringResource(R.string.retry))
+        }
+    }
+    when (state.sync(target)) {
+        ComposerSync.Loading -> Text(stringResource(R.string.composer_sync_loading))
+        ComposerSync.Saving -> Text(stringResource(R.string.composer_sync_saving))
+        ComposerSync.Failed,
+        ComposerSync.Unsupported -> {
+            Text(
+                stringResource(
+                    if (state.sync(target) == ComposerSync.Unsupported)
+                        R.string.composer_sync_unsupported
+                    else R.string.composer_sync_failed
+                )
+            )
+            TextButton(onClick = { model.retrySync(target) }) {
+                Text(stringResource(R.string.composer_sync_retry))
+            }
+        }
+        else -> Unit
+    }
+    state.journal?.retainedDrafts?.forEach { (key, text) ->
+        Text(text, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        TextButton(onClick = { model.restoreDraft(target, key) }, enabled = entry.text.isEmpty()) {
+            Text(stringResource(R.string.composer_restore_draft))
+        }
+    }
+    if (target.threadId == null && state.context != ComposerContext.Ready) {
+        Text(
+            stringResource(
+                if (state.context == ComposerContext.Loading) R.string.composer_target_loading
+                else R.string.composer_target_unavailable
+            )
+        )
+        if (state.context != ComposerContext.Loading)
+            TextButton(onClick = { model.open(target) }) { Text(stringResource(R.string.retry)) }
+    }
+    entry.pending?.let { pending ->
+        Text(
+            stringResource(R.string.composer_unconfirmed),
+            style = MaterialTheme.typography.labelLarge,
+        )
+        Text(pending.send.prompt, maxLines = 3, overflow = TextOverflow.Ellipsis)
+        FlowRow {
+            TextButton(onClick = { model.observe(target) }, enabled = target.key !in state.busy) {
+                Text(stringResource(R.string.composer_check))
+            }
+            TextButton(onClick = { model.retry(target) }, enabled = target.key !in state.busy) {
+                Text(stringResource(R.string.composer_retry))
+            }
+        }
+    }
+    entry.receipt?.let {
+        Text(stringResource(it.disposition.label()), modifier = Modifier.testTag("send_receipt"))
+        TextButton(onClick = { model.observe(target) }, enabled = target.key !in state.busy) {
+            Text(stringResource(R.string.composer_check))
+        }
+    }
+    if (target.key in state.unobserved) Text(stringResource(R.string.composer_not_observed))
+    if (target.key in state.failed) Text(stringResource(R.string.composer_request_failed))
+    if (state.persistence == ComposerPersistence.Pending)
+        Text(stringResource(R.string.composer_saving), style = MaterialTheme.typography.labelSmall)
 }
 
 private fun TextDisposition.label() =
