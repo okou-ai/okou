@@ -1,4 +1,3 @@
-import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { command } from "ccstate";
 import { and, eq, isNotNull, ne, sql } from "drizzle-orm";
@@ -54,7 +53,6 @@ export interface DirectRunCachePublication {
 }
 
 const executionPublicationFactsSchema = object({
-  pending: boolean(),
   isFirstRun: boolean(),
   cachedBundleUrls: array(cachedContentBundleUrlSchema),
 });
@@ -79,16 +77,13 @@ const readExecutionPackages$ = command(
     ];
     const timestamp = nowDate().toISOString();
     const startedAt = monotonicNow();
-    const rows = await db.execute(sql`SELECT EXISTS(
-      SELECT 1 FROM ${agentRuns}
-      WHERE ${and(eq(agentRuns.id, input.run.id), eq(agentRuns.userId, input.run.userId), eq(agentRuns.orgId, input.run.orgId), eq(agentRuns.status, "pending"))}
-    ) AS pending,
+    const rows = await db.execute(sql`SELECT
       NOT EXISTS(SELECT 1 FROM ${chatEvents} WHERE ${and(eq(chatEvents.chatThreadId, input.run.chatThreadId), isNotNull(chatEvents.runId), ne(chatEvents.runId, input.run.id))}) AS "isFirstRun",
       ${contentBundleUrlCacheSnapshotSql(cache, bundleHashes)} AS "cachedBundleUrls"`);
     signal.throwIfAborted();
     const [row] = parseRawRows(executionPublicationFactsSchema, rows);
-    if (!row?.pending) {
-      throw new Error("Run is no longer pending for execution publication");
+    if (!row) {
+      throw new Error("Execution package query returned no row");
     }
     const readyAt = monotonicNow();
     return {

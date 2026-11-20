@@ -1,8 +1,10 @@
 import { randomUUID } from "node:crypto";
+import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { http, HttpResponse } from "msw";
 import { expect, onTestFinished, test } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { apiTestS3PresignedUrl } from "../../../__tests__/mocks";
 import { chatEventsRoutes } from "../chat-events";
 import { createBddApi } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -655,6 +657,72 @@ test("preserves a concurrent cancellation after the process proves it did not ac
     prompt: "cancel before acceptance",
   });
   expect(run.status).toBe("cancelled");
+  expect((await f.api.readRunQueue(f.actor)).body.concurrency.active).toBe(0);
+});
+
+test("does not offer a Run cancelled while its execution bundle is being signed", async () => {
+  const f = await launchFixture();
+  let offers = 0;
+  await f.api.registerDirectRunner(f.group, {
+    reply: (envelope) => {
+      offers += 1;
+      return HttpResponse.json({
+        runnerId: envelope.runnerId,
+        heartbeatGeneration: envelope.heartbeatGeneration,
+        runId: envelope.executionContext.runId,
+        disposition: "accepted",
+      });
+    },
+  });
+  await createBddApi(context).updateAgentInstructions(
+    f.actor,
+    f.agentId,
+    `# Uncached execution bundle ${randomUUID()}`,
+  );
+  const signing = createDeferredPromise<void>(context.signal);
+  const resumeSigning = createDeferredPromise<void>(context.signal);
+  context.mocks.s3.getSignedUrl.mockImplementation(async (_client, command) => {
+    if (
+      !signing.settled() &&
+      command instanceof GetObjectCommand &&
+      command.input.Key?.startsWith("bundles/v1/")
+    ) {
+      signing.resolve();
+      await resumeSigning.promise;
+    }
+    return apiTestS3PresignedUrl(command);
+  });
+  const chat = createChatFilesBddApi(context);
+  const clientEventId = randomUUID();
+  const sent = await chat.requestSendEvent(
+    f.actor,
+    { agentId: f.agentId, prompt: "cancel during signing", clientEventId },
+    [201],
+  );
+  if (sent.status !== 201) {
+    throw new Error("Expected admission to enqueue");
+  }
+  const runId = await (async () => {
+    await signing.promise;
+    const { events } = await chat.listThreadEvents(f.actor, sent.body.threadId);
+    const admitted = events.find((event) => {
+      return event.revokesEventId === clientEventId;
+    });
+    if (!admitted?.runId) {
+      throw new Error("Expected a durable admitted Run");
+    }
+    await f.api.requestCancelRun(f.actor, admitted.runId, [200]);
+    return admitted.runId;
+  })().finally(() => {
+    if (!resumeSigning.settled()) {
+      resumeSigning.resolve();
+    }
+  });
+  await flushWaitUntilForTest();
+  expect(offers).toBe(0);
+  await expect(f.api.readRun(f.actor, runId)).resolves.toMatchObject({
+    status: "cancelled",
+  });
   expect((await f.api.readRunQueue(f.actor)).body.concurrency.active).toBe(0);
 });
 

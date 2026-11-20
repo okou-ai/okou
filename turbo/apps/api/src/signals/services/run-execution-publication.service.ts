@@ -10,6 +10,7 @@ import {
 import { command } from "ccstate";
 import { nowDate } from "../../lib/time";
 import { generateFirewallToken, generateSandboxToken } from "../auth/tokens";
+import { joinAllInOrder } from "../utils";
 import type { ExecutionContextRun } from "./execution-runtime-context";
 import type { ExecutionNetworkPolicyInputs } from "./admitted-execution-facts";
 import {
@@ -274,21 +275,21 @@ export const prepareExecutionPublication$ = command(
     // Fallible preparation must finish before durable direct dispatch ownership.
     const secretValues = secretValuesForRunner(args.preparedContext);
     signal.throwIfAborted();
-    const refreshedPolicies = await set(
-      prepareExecutionNetworkPolicyRefreshes$,
-      {
-        preparedContext: args.preparedContext,
-        networkPolicyInputs: args.networkPolicyInputs,
-      },
+    const [refreshedPolicies, signed] = await joinAllInOrder(
+      [
+        set(prepareExecutionNetworkPolicyRefreshes$, {
+          preparedContext: args.preparedContext,
+          networkPolicyInputs: args.networkPolicyInputs,
+        }),
+        set(signExecutionContentBundles$, args, signal),
+      ],
+      signal,
     );
-    signal.throwIfAborted();
     const sandboxToken = generateSandboxToken(
       args.run.userId,
       args.run.id,
       args.run.orgId,
     );
-    const signed = await set(signExecutionContentBundles$, args, signal);
-    signal.throwIfAborted();
     return {
       executionContext: executionContextBody({
         run: args.run,
