@@ -33,11 +33,35 @@ import kotlinx.coroutines.withTimeoutOrNull
 
 private val listRefreshRetryDelays = listOf(5_000L, 10_000L, 20_000L, 40_000L, 60_000L)
 
+private fun listRetryAfterMillis(error: Exception): Long? {
+    val seconds =
+        when (error) {
+            is ApiFailure.Network -> 0L
+            is ApiFailure.Http ->
+                if (retryableListReadStatus(error.status)) error.retryAfterSeconds ?: 0L else null
+            // A fresh descriptor can replace an expired signed URL on the next read.
+            is ChatSnapshotUnavailable ->
+                if (error.status == 403 || retryableListReadStatus(error.status))
+                    error.retryAfterSeconds ?: 0L
+                else null
+            else -> null
+        }
+    return seconds?.coerceIn(0, Long.MAX_VALUE / 1_000)?.times(1_000)
+}
+
+private fun retryableListReadStatus(status: Int) =
+    status == 408 || status == 429 || status in 500..599
+
 enum class ChatReadPhase {
     Idle,
     Loading,
     Ready,
     Failed,
+}
+
+enum class ChatListReadFailure {
+    Retrying,
+    NeedsRetry,
 }
 
 enum class ChatListFilter {
@@ -88,7 +112,7 @@ data class ChatListUiState(
     val threads: List<ConfirmedChat> = emptyList(),
     val listPhase: ChatReadPhase = ChatReadPhase.Idle,
     val offline: Boolean = false,
-    val listReadFailed: Boolean = false,
+    val listReadFailure: ChatListReadFailure? = null,
     val sustainedRefreshFailure: Boolean = false,
     val confirmedAt: Long? = null,
     val source: ChatListSource? = null,
@@ -222,7 +246,7 @@ class ChatListModel(
 
     private class ListReadBatch {
         var refresh = false
-        var automatic = false
+        var userRequested = false
         val discardOnSuccess = mutableSetOf<String>()
         val confirmations = mutableListOf<ListConfirmation>()
     }
@@ -247,12 +271,15 @@ class ChatListModel(
     private var pendingListRead: ListReadBatch? = null
     private var listRetry: Job? = null
     private var listRetryAt: Long? = null
+    private var refreshOnReconnect = false
     private var listFailureNotice: Job? = null
     private var firstListFailureAt: Long? = null
     private var filterListFailures = 0
     private var listFailures = 0
     private var connectivityGeneration = 0
     private var listIsVisible = true
+    private var filterIsVisible = true
+    private var filterGeneration = 0
     private var listInForeground = true
     private var listRebaseJob: Job? = null
     private var readyListRebase: PreparedListRebase? = null
@@ -326,13 +353,11 @@ class ChatListModel(
                 mutable.value =
                     mutable.value.copy(
                         offline = !online,
-                        listReadFailed = false,
+                        listReadFailure = null,
                         sustainedRefreshFailure = false,
                     )
-                if (online) {
-                    listRetryAt = monotonicMillis()
-                    updateListRetryVisibility()
-                }
+                refreshOnReconnect = online
+                updateListRetryVisibility()
             }
         }
         viewModelScope.launch { for (ignored in listReadRequests) readPendingListBatch() }
@@ -427,6 +452,7 @@ class ChatListModel(
     fun selectFilter(value: ChatListFilter) {
         val state = mutable.value
         if (!current() || state.filter == value) return
+        filterGeneration++
         resetListFailureNotice()
         mutable.value = state.copy(filter = value, sustainedRefreshFailure = false)
         if (value == ChatListFilter.Unread && state.indicators == null) refreshIndicators()
@@ -724,7 +750,7 @@ class ChatListModel(
     }
 
     internal fun reloadAfterRowActionFailure() {
-        requestListRead(unconfirmedRowEvents, automatic = false)
+        requestListRead(unconfirmedRowEvents, userRequested = true)
     }
 
     internal fun dismissRowActionFailure(action: ChatRowAction) {
@@ -773,8 +799,9 @@ class ChatListModel(
         refreshIndicators()
     }
 
-    internal fun listVisibilityChanged(visible: Boolean) {
+    internal fun listVisibilityChanged(visible: Boolean, showingFilter: Boolean = visible) {
         listIsVisible = visible
+        filterIsVisible = showingFilter
         updateListRetryVisibility()
     }
 
@@ -785,19 +812,23 @@ class ChatListModel(
             listRetry = null
             return
         }
+        if (refreshOnReconnect) {
+            refreshOnReconnect = false
+            refresh()
+        }
         val retryAt = listRetryAt ?: return
         if (listRetry != null) return
         val remaining = retryAt - monotonicMillis()
         if (remaining <= 0) {
             listRetryAt = null
-            refresh()
+            refreshList()
         } else {
             listRetry =
                 viewModelScope.launch {
                     delay(remaining)
                     listRetry = null
                     listRetryAt = null
-                    refresh()
+                    refreshList()
                 }
         }
     }
@@ -911,13 +942,20 @@ class ChatListModel(
     private fun listReadBatch(): ListReadBatch =
         pendingListRead ?: ListReadBatch().also { pendingListRead = it }
 
-    fun refreshList() = requestListRead(emptySet(), automatic = true)
+    fun refreshList() = requestListRead()
 
-    private fun requestListRead(discardOnSuccess: Set<String>, automatic: Boolean) {
-        if (!current() || automatic && (mutable.value.offline || listRetryAt != null)) return
+    internal fun retryList() = requestListRead(userRequested = true)
+
+    private fun canRefreshList() = !mutable.value.offline && listRetryAt == null
+
+    private fun requestListRead(
+        discardOnSuccess: Set<String> = emptySet(),
+        userRequested: Boolean = false,
+    ) {
+        if (!current() || (discardOnSuccess.isEmpty() && !canRefreshList())) return
         val batch = listReadBatch()
         batch.refresh = true
-        batch.automatic = batch.automatic || automatic
+        batch.userRequested = batch.userRequested || userRequested
         batch.discardOnSuccess.addAll(discardOnSuccess)
         listReadRequests.trySend(Unit)
     }
@@ -953,13 +991,11 @@ class ChatListModel(
         // earlier read settled its event IDs; cursorless refresh signals still need a read.
         if (batch != null && (batch.refresh || unconfirmed.isNotEmpty())) {
             val hasWriteReadback = unconfirmed.isNotEmpty() || batch.discardOnSuccess.isNotEmpty()
-            val automatic = batch.automatic && !hasWriteReadback
-            if (!hasWriteReadback && (mutable.value.offline || automatic && listRetryAt != null))
-                return
+            if (!hasWriteReadback && !canRefreshList()) return
             listRebaseJob?.cancel()
             readyListRebase = null
             try {
-                readList(batch.discardOnSuccess, automatic)
+                readList(batch, hasWriteReadback)
                 unconfirmed.forEach { it.done.complete(Unit) }
             } finally {
                 unconfirmed.forEach { it.done.cancel() }
@@ -987,37 +1023,44 @@ class ChatListModel(
         }
     }
 
-    private suspend fun readList(discardOnSuccess: Set<String>, automatic: Boolean) {
-        requireCurrent()
+    private suspend fun readList(batch: ListReadBatch, hasWriteReadback: Boolean) {
         val generation = connectivityGeneration
-        val reportingFilter = mutable.value.filter.takeIf { listIsVisible && listInForeground }
+        restoreJob?.join()
+        requireCurrent()
+        if (!hasWriteReadback && (mutable.value.offline || generation != connectivityGeneration))
+            return
+        val reportingFilterGeneration =
+            filterGeneration.takeIf { !batch.userRequested && filterIsVisible && listInForeground }
         mutable.value = mutable.value.copy(listPhase = ChatReadPhase.Loading)
         try {
-            restoreJob?.join()
-            requireCurrent()
-            if (automatic && mutable.value.offline && discardOnSuccess.isEmpty()) return
             val result = sync.synchronize(confirmed?.checkpoint)
-            publishList(result, discardOnSuccess)
+            val retrying = mutable.value.listReadFailure == ChatListReadFailure.Retrying
+            publishList(result, batch.discardOnSuccess)
+            if (retrying) refreshFailedListDependencies()
             if (result.shouldRebase && confirmed?.checkpoint === result.checkpoint) {
                 startListRebase(result.checkpoint)
             }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
+            val retryAfter = if (hasWriteReadback) null else listRetryAfterMillis(error)
             fail(error) {
                 it.copy(
                     listPhase = ChatReadPhase.Failed,
-                    listReadFailed =
-                        it.listReadFailed || !it.offline && generation == connectivityGeneration,
+                    listReadFailure =
+                        if (it.offline || generation != connectivityGeneration) it.listReadFailure
+                        else if (retryAfter != null || listRetryAt != null)
+                            ChatListReadFailure.Retrying
+                        else ChatListReadFailure.NeedsRetry,
                 )
             }
             if (
-                automatic &&
+                !hasWriteReadback &&
                     current() &&
                     !mutable.value.offline &&
                     generation == connectivityGeneration
             ) {
-                recordListReadFailure(error, reportingFilter)
+                recordListReadFailure(retryAfter, reportingFilterGeneration)
             }
         }
     }
@@ -1037,9 +1080,9 @@ class ChatListModel(
         filterListFailures = 0
     }
 
-    private fun recordListReadFailure(error: Exception, reportingFilter: ChatListFilter?) {
+    private fun recordListReadFailure(retryAfter: Long?, reportingFilterGeneration: Int?) {
         val now = monotonicMillis()
-        if (reportingFilter == mutable.value.filter && filterListFailures < 3) {
+        if (reportingFilterGeneration == filterGeneration && filterListFailures < 3) {
             val firstFailure = firstListFailureAt ?: now.also { firstListFailureAt = it }
             filterListFailures++
             if (filterListFailures == 3) {
@@ -1052,20 +1095,23 @@ class ChatListModel(
                     }
             }
         }
-        val retryAfter =
-            when (error) {
-                is ApiFailure.Network -> 0L
-                is ApiFailure.Http -> {
-                    if (error.status !in 500..599 && error.status != 408 && error.status != 429)
-                        return
-                    (error.retryAfterSeconds ?: 0).coerceIn(0, Long.MAX_VALUE / 1_000) * 1_000
-                }
-                else -> return
-            }
+        if (retryAfter == null) return
         listFailures = (listFailures + 1).coerceAtMost(listRefreshRetryDelays.size)
         val delay = maxOf(listRefreshRetryDelays[listFailures - 1], retryAfter)
         listRetryAt = now + minOf(delay, Long.MAX_VALUE - now.coerceAtLeast(0L))
         updateListRetryVisibility()
+    }
+
+    private fun refreshFailedListDependencies() {
+        val state = mutable.value
+        if (
+            state.agentsPhase == ChatReadPhase.Failed ||
+                state.projectsSettingsPhase == ChatReadPhase.Failed ||
+                (state.projectsEnabled && state.projectsPhase == ChatReadPhase.Failed)
+        ) {
+            refreshMetadata()
+        }
+        if (state.indicatorsPhase == ChatReadPhase.Failed) refreshIndicators()
     }
 
     private fun startListRebase(checkpoint: ChatCheckpoint) {
@@ -1133,7 +1179,7 @@ class ChatListModel(
                 confirmedAt = saved.confirmedAt,
                 source = ChatListSource.Network,
                 listPhase = ChatReadPhase.Ready,
-                listReadFailed = false,
+                listReadFailure = null,
                 sustainedRefreshFailure = false,
             )
         resetListReadFailures()
@@ -1262,12 +1308,16 @@ class ChatListModel(
         // A read already in flight may have started before the write.
         awaitIndicatorRead()
         requireCurrent()
-        refreshIndicators()
+        readIndicators()
         indicatorsJob?.join()
     }
 
     fun refreshIndicators() {
-        if (!current() || mutable.value.offline || indicatorsJob?.isActive == true) return
+        if (!mutable.value.offline) readIndicators()
+    }
+
+    private fun readIndicators() {
+        if (!current() || indicatorsJob?.isActive == true) return
         indicatorsStartedAt = monotonicMillis()
         mutable.value = mutable.value.copy(indicatorsPhase = ChatReadPhase.Loading)
         indicatorsJob =

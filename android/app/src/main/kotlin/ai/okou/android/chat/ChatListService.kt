@@ -12,7 +12,8 @@ import ai.okou.android.api.generated.ProjectSnapshot
 import ai.okou.android.api.generated.ReadState
 
 /** A signed-storage rejection does not revoke the first-party workspace session. */
-class ChatSnapshotUnavailable(val status: Int) : Exception("Chat snapshot could not be downloaded")
+class ChatSnapshotUnavailable(val status: Int, val retryAfterSeconds: Long? = null) :
+    Exception("Chat snapshot could not be downloaded")
 
 /** The workspace list reads and explicit row commands. */
 interface ChatListService : ConversationHistoryService {

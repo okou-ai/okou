@@ -89,6 +89,7 @@ import kotlinx.coroutines.delay
 @Composable
 internal fun ChatListScreen(
     state: ChatListUiState,
+    retryList: () -> Unit,
     retryMetadata: () -> Unit,
     retryIndicators: () -> Unit,
     open: (ConfirmedChat) -> Unit,
@@ -204,10 +205,15 @@ internal fun ChatListScreen(
             state.filter == ChatListFilter.Unread &&
             state.indicators == null &&
             groups.all { it.threads.isEmpty() }
-    val firstLoadFailed =
-        if (missingUnread) state.indicatorsPhase == ChatReadPhase.Failed else state.listReadFailed
+    val firstLoadFailure =
+        if (missingUnread)
+            ChatListReadFailure.NeedsRetry.takeIf { state.indicatorsPhase == ChatReadPhase.Failed }
+        else state.listReadFailure
     val awaitingFirstList =
-        (state.confirmedAt == null || missingUnread) && !state.offline && !firstLoadFailed
+        (state.confirmedAt == null || missingUnread) &&
+            !state.offline &&
+            firstLoadFailure == null &&
+            (startupRecovery == null || state.listPhase != ChatReadPhase.Idle)
     var skeletonVisible by remember(awaitingFirstList) { mutableStateOf(false) }
     LaunchedEffect(awaitingFirstList) {
         if (awaitingFirstList) {
@@ -242,10 +248,16 @@ internal fun ChatListScreen(
                 when {
                     state.offline ->
                         item { ChatListLoadNotice(R.string.chat_list_load_when_online) }
-                    firstLoadFailed ->
+                    firstLoadFailure != null ->
                         item {
                             ChatListLoadNotice(R.string.chat_list_first_load_failed)
-                            if (missingUnread) ChatAction(R.string.retry, retryIndicators)
+                            if (firstLoadFailure == ChatListReadFailure.NeedsRetry)
+                                ChatAction(
+                                    R.string.retry,
+                                    if (missingUnread) retryIndicators else retryList,
+                                    enabled =
+                                        missingUnread || state.listPhase != ChatReadPhase.Loading,
+                                )
                         }
                     skeletonVisible -> item { ChatListSkeleton() }
                 }

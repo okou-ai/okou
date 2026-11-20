@@ -6,16 +6,10 @@
     <string name="chat_list_title">Chats</string>
     <string name="chat_refresh">Refresh chats</string>
     <string name="chat_loading">Loading chats…</string>
-    <string name="chat_refreshing">Refreshing chats…</string>
-    <string name="chat_load_failed">Could not load chats. Check your connection and try again.</string>
     <string name="chat_refresh_failed">Could not refresh. Showing the last loaded chats.</string>
     <string name="chat_cached">Showing saved chats.</string>
     <string name="chat_cache_unavailable">Offline storage is unavailable. These chats may not be available after restarting.</string>
-    <string name="chat_metadata_loading">Loading Okou and Project names…</string>
     <string name="chat_metadata_unavailable">Some Okou or Project information is unavailable.</string>
-    <string name="chat_status_unavailable">Could not refresh status. Previous indicators may be out of date.</string>
-    <string name="chat_status_loading">Checking activity and unread status…</string>
-    <string name="chat_refresh_status">Refresh status</string>
     <string name="chat_inbox">Inbox</string>
     <string name="chat_mark_all_read">Mark all as read</string>
     <string name="chat_mark_all_read_unconfirmed">Some chats may still be unread.</string>
@@ -36,7 +30,6 @@
     <string name="chat_agent_identity">Okou · %1$s</string>
     <string name="chat_pinned">Pinned</string>
     <string name="chat_active">Active</string>
-    <string name="chat_metadata_cached">Showing saved Okou and Project names.</string>
     <string name="chat_actions">Chat actions</string>
     <string name="chat_mark_read">Mark as read</string>
     <string name="chat_mark_unread">Mark as unread</string>
