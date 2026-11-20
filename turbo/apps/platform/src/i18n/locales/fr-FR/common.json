@@ -1689,10 +1689,11 @@
           "title": "Sources pour vous",
           "whatsNew": "Nouveautés"
         },
-        "subtitle": "Une chose à la fois",
+        "subtitle": "La sélection d’Okou à traiter",
         "title": "Pour vous"
       },
       "homeCard": {
+        "completeDescription": "Okou apportera ici la suite dès qu’il y aura quelque chose qui mérite votre temps.",
         "completeTitle": "Tout est à jour",
         "feedback": "Actions de la suggestion",
         "navigation": "Parcourir les suggestions",

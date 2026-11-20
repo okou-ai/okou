@@ -1689,10 +1689,11 @@
           "title": "Fuentes para ti",
           "whatsNew": "Novedades"
         },
-        "subtitle": "Una cosa a la vez",
+        "subtitle": "Lo que Okou elige para ti",
         "title": "Para ti"
       },
       "homeCard": {
+        "completeDescription": "Okou traerá aquí lo siguiente cuando haya algo que merezca tu tiempo.",
         "completeTitle": "Todo al día",
         "feedback": "Acciones de sugerencia",
         "navigation": "Explorar sugerencias",

@@ -1664,10 +1664,11 @@
           "title": "Quellen für dich",
           "whatsNew": "Neuigkeiten"
         },
-        "subtitle": "Eins nach dem anderen",
+        "subtitle": "Okous Auswahl zum Erledigen",
         "title": "Für dich"
       },
       "homeCard": {
+        "completeDescription": "Okou bringt das Nächste hierher, sobald etwas deine Zeit wert ist.",
         "completeTitle": "Alles erledigt",
         "feedback": "Vorschlagsaktionen",
         "navigation": "Vorschläge durchsehen",

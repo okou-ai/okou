@@ -1664,10 +1664,11 @@
           "title": "For you sources",
           "whatsNew": "What’s new"
         },
-        "subtitle": "One thing at a time",
+        "subtitle": "Okou’s picks to handle",
         "title": "For you"
       },
       "homeCard": {
+        "completeDescription": "Okou will bring the next thing here when there is something worth your time.",
         "completeTitle": "All caught up",
         "feedback": "Suggestion actions",
         "navigation": "Browse suggestions",

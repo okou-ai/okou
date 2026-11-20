@@ -1664,10 +1664,11 @@
           "title": "आपके लिए स्रोत",
           "whatsNew": "नया क्या है"
         },
-        "subtitle": "एक बार में एक काम",
+        "subtitle": "Okou के चुने काम",
         "title": "आपके लिए"
       },
       "homeCard": {
+        "completeDescription": "जब कुछ आपके समय के लायक होगा, Okou अगली चीज़ यहाँ ले आएगा।",
         "completeTitle": "सब पूरा हो गया",
         "feedback": "सुझाव के विकल्प",
         "navigation": "सुझाव देखें",
