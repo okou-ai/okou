@@ -41,6 +41,7 @@
     "src/**/*.test.ts",
     "src/test-fixtures/**/*",
     "src/index.ts",
+    "src/index-runner-dispatch-preview.ts",
     "src/worker.ts",
     "src/worker-runtime.d.ts",
     "src/worker-unsupported-*.ts",

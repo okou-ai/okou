@@ -261,6 +261,7 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
+      "env": ["OKOU_BUILD_RUNNER_DISPATCH_PREVIEW"],
       "inputs": [
         "$TURBO_DEFAULT$",
         ".env*",

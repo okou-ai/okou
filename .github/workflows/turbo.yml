@@ -1400,6 +1400,8 @@ jobs:
       - name: Deploy API to Vercel
         id: api-deploy
         uses: ./.github/actions/vercel-deploy
+        env:
+          OKOU_BUILD_RUNNER_DISPATCH_PREVIEW: ${{ github.event_name == 'pull_request' && '1' || '0' }}
         with:
           vercel-token: ${{ secrets.VERCEL_TOKEN }}
           vercel-org-id: ${{ vars.VERCEL_TEAM_ID }}
