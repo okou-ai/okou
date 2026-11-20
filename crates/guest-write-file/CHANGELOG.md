@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.318](https://github.com/okou-ai/okou/compare/guest-write-file-v0.1.317...guest-write-file-v0.1.318) (2026-11-20)
+
+
+### Performance Improvements
+
+* **guest-write-file:** copy sealed batch ranges in the kernel ([#49581](https://github.com/okou-ai/okou/issues/49581)) ([6b6f161](https://github.com/okou-ai/okou/commit/6b6f161ef2f54cf0cdecc25fe241edb6091cc902))
+
 ## [0.1.317](https://github.com/okou-ai/okou/compare/guest-write-file-v0.1.316...guest-write-file-v0.1.317) (2026-11-20)
 
 

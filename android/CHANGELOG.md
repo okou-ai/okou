@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.32.3](https://github.com/okou-ai/okou/compare/android-v0.32.2...android-v0.32.3) (2026-11-20)
+
+
+### Bug Fixes
+
+* **android:** align the chat composer with the current design ([#49523](https://github.com/okou-ai/okou/issues/49523)) ([4d5c851](https://github.com/okou-ai/okou/commit/4d5c851335ef8a3a9bc4569160519c8863f8d783))
+
+
+### Refactoring
+
+* **android:** retire my okou feature gates ([#49579](https://github.com/okou-ai/okou/issues/49579)) ([579c32b](https://github.com/okou-ai/okou/commit/579c32b870d1ec776fe619b04210b07825f9c051))
+
+
+### Performance Improvements
+
+* **android:** reduce chat list replay and readback ([#49554](https://github.com/okou-ai/okou/issues/49554)) ([f30bc38](https://github.com/okou-ai/okou/commit/f30bc38d0801794f4e34a96e0cc0f96c0547fa0e))
+* **android:** show pending chat messages immediately ([#49585](https://github.com/okou-ai/okou/issues/49585)) ([af686ab](https://github.com/okou-ai/okou/commit/af686ab2ac5ba89b84a5b82c47cce1c8fab3eee3))
+* **android:** update chat read state optimistically ([#49565](https://github.com/okou-ai/okou/issues/49565)) ([a69066c](https://github.com/okou-ai/okou/commit/a69066cefdc34f71bb935619b1a7816dea5b7905))
+
 ## [0.32.2](https://github.com/okou-ai/okou/compare/android-v0.32.1...android-v0.32.2) (2026-11-20)
 
 

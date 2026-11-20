@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.7](https://github.com/okou-ai/okou/compare/runner-executor-v0.23.6...runner-executor-v0.23.7) (2026-11-20)
+
+
+### Refactoring
+
+* **runner:** retire optional execution package handling ([#49568](https://github.com/okou-ai/okou/issues/49568)) ([3ec3a12](https://github.com/okou-ai/okou/commit/3ec3a12f234394a2594d07852747fe45f1c08433))
+
 ## [0.23.6](https://github.com/okou-ai/okou/compare/runner-executor-v0.23.5...runner-executor-v0.23.6) (2026-11-20)
 
 

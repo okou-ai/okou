@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.249.79](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.78...runner-rs-v0.249.79) (2026-11-20)
+
+
+### Refactoring
+
+* **runner:** centralize state file identity construction ([#49600](https://github.com/okou-ai/okou/issues/49600)) ([175dfb3](https://github.com/okou-ai/okou/commit/175dfb37e2fca0f6a9c2f5c84c7bb5a90c955f90))
+* **runner:** share bounded json lexical rules ([#49562](https://github.com/okou-ai/okou/issues/49562)) ([e0ed341](https://github.com/okou-ai/okou/commit/e0ed341b3fdb76a76c04a625a1eba5861292b722))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.249.78](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.77...runner-rs-v0.249.78) (2026-11-20)
 
 
