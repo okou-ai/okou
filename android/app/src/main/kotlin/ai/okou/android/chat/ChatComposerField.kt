@@ -1,36 +1,52 @@
 package ai.okou.android.chat
 
+import ai.okou.android.LocalActivityStatusColor
 import ai.okou.android.R
 import ai.okou.android.currentWindowSizeDp
 import ai.okou.android.state.rememberJournalEditor
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -47,7 +63,36 @@ fun ChatComposerField(
     val focus = LocalFocusManager.current
     val entry = state.entry(target)
     val input = rememberJournalEditor(state.journal?.let { entry.text }, target.key)
-    val maxVisibleLines = if (currentWindowSizeDp().height < 480) 1 else 6
+    val window = currentWindowSizeDp()
+    val shortWindow = window.height < 480
+    val horizontalInset =
+        when {
+            shortWindow -> 12.dp
+            window.width >= 600 -> 24.dp
+            else -> 20.dp
+        }
+    val bottomInset =
+        when {
+            shortWindow -> 8.dp
+            window.width >= 840 -> 24.dp
+            else -> 14.dp
+        }
+    val colors = MaterialTheme.colorScheme
+    val cardShape = RoundedCornerShape(20.dp)
+    val label = stringResource(R.string.composer_message)
+    val textStyle =
+        MaterialTheme.typography.bodyLarge.copy(
+            color = colors.onSurface,
+            fontSize = 16.sp,
+            lineHeight = 26.sp,
+        )
+    val lineHeight = with(LocalDensity.current) { textStyle.lineHeight.toDp() }
+    val textPadding = if (shortWindow) 8.dp else 11.dp
+    val minimumTextHeight = maxOf(48.dp, lineHeight + textPadding * 2)
+    val maximumTextHeight =
+        if (shortWindow) minimumTextHeight
+        else maxOf(minimumTextHeight, (window.height * 0.3f).dp.coerceIn(48.dp, 160.dp))
+    var inputFocused by remember { mutableStateOf(false) }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     DisposableEffect(model, target, lifecycle) {
         fun open() {
@@ -66,7 +111,12 @@ fun ChatComposerField(
             .fillMaxWidth()
             .imePadding()
             .verticalScroll(rememberScrollState())
-            .padding(12.dp)
+            .padding(
+                start = horizontalInset,
+                top = 4.dp,
+                end = horizontalInset,
+                bottom = bottomInset,
+            )
             .testTag("chat_composer")
     ) {
         if (state.persistence == ComposerPersistence.Failed) {
@@ -139,46 +189,89 @@ fun ChatComposerField(
                 stringResource(it.disposition.label()),
                 modifier = Modifier.testTag("send_receipt"),
             )
+            TextButton(onClick = { model.observe(target) }, enabled = target.key !in state.busy) {
+                Text(stringResource(R.string.composer_check))
+            }
         }
         if (target.key in state.unobserved) Text(stringResource(R.string.composer_not_observed))
         if (target.key in state.failed) Text(stringResource(R.string.composer_request_failed))
-        OutlinedTextField(
-            value = input.value,
-            onValueChange = {
-                input.edit(it)
-                model.edit(target, it.text)
-            },
-            modifier =
-                Modifier.fillMaxWidth()
-                    .onFocusChanged { onInputFocusChanged(it.isFocused) }
-                    .testTag("message_input"),
-            enabled = state.journal != null,
-            label = { Text(stringResource(R.string.composer_message)) },
-            maxLines = maxVisibleLines,
-        )
-        FlowRow {
-            Button(
+        Row(
+            Modifier.fillMaxWidth()
+                .background(colors.surface, cardShape)
+                .border(
+                    width = if (inputFocused) 2.dp else 1.dp,
+                    color = if (inputFocused) LocalActivityStatusColor.current else colors.outline,
+                    shape = cardShape,
+                )
+                .padding(start = 8.dp, top = 5.dp, end = 6.dp, bottom = 5.dp),
+            verticalAlignment = Alignment.Bottom,
+        ) {
+            BasicTextField(
+                value = input.value,
+                onValueChange = {
+                    input.edit(it)
+                    model.edit(target, it.text)
+                },
+                modifier =
+                    Modifier.weight(1f)
+                        .heightIn(min = minimumTextHeight, max = maximumTextHeight)
+                        .onFocusChanged {
+                            inputFocused = it.isFocused
+                            onInputFocusChanged(it.isFocused)
+                        }
+                        .testTag("message_input")
+                        .semantics { contentDescription = label },
+                enabled = state.journal != null,
+                textStyle = textStyle,
+                cursorBrush = SolidColor(colors.onSurface),
+                maxLines = if (shortWindow) 1 else Int.MAX_VALUE,
+                decorationBox = { editor ->
+                    Box(
+                        Modifier.fillMaxWidth()
+                            .padding(
+                                start = 2.dp,
+                                top = textPadding,
+                                end = 10.dp,
+                                bottom = textPadding,
+                            ),
+                        contentAlignment = Alignment.CenterStart,
+                    ) {
+                        if (input.value.text.isEmpty()) {
+                            Text(
+                                label,
+                                modifier = Modifier.clearAndSetSemantics {},
+                                color = colors.onSurfaceVariant,
+                                style = textStyle,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        editor()
+                    }
+                },
+            )
+            FilledIconButton(
                 onClick = {
                     focus.clearFocus()
                     model.send(target)
                 },
+                modifier = Modifier.size(48.dp),
                 enabled = state.canSend(target),
+                shape = CircleShape,
+                colors =
+                    IconButtonDefaults.filledIconButtonColors(
+                        containerColor = colors.primary,
+                        contentColor = colors.onPrimary,
+                        disabledContainerColor = colors.surfaceVariant,
+                        disabledContentColor = colors.onSurfaceVariant,
+                    ),
             ) {
                 Icon(
                     painterResource(R.drawable.ic_arrow_upward),
-                    contentDescription = null,
-                    modifier = Modifier.size(ButtonDefaults.IconSize),
+                    contentDescription = stringResource(R.string.composer_send),
+                    modifier = Modifier.size(20.dp),
                 )
-                Spacer(Modifier.width(ButtonDefaults.IconSpacing))
-                Text(stringResource(R.string.composer_send))
             }
-            if (entry.receipt != null)
-                TextButton(
-                    onClick = { model.observe(target) },
-                    enabled = target.key !in state.busy,
-                ) {
-                    Text(stringResource(R.string.composer_check))
-                }
         }
         if (state.persistence == ComposerPersistence.Pending)
             Text(

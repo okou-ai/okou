@@ -57,6 +57,7 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -453,13 +454,12 @@ class OkouAppTest {
         render()
         compose.onNodeWithText("New chat").performClick()
         val input = compose.onNodeWithTag("message_input").assertIsDisplayed().assertIsEnabled()
-        fun editorHeight() = input.getUnclippedBoundsInRoot().let { it.bottom - it.top }
         fun resize(heightDp: Int) =
             compose.runOnIdle {
                 val density = compose.activity.resources.displayMetrics.density
                 windowSize.value = IntSize((400 * density).toInt(), (heightDp * density).toInt())
             }
-        val draft = "First line\nSecond line\nThird line\nFinal line"
+        val draft = (1..20).joinToString("\n") { "Draft line $it" }
         val selection = TextRange(12)
         fun assertDraftAndSelection() {
             val semantics = input.fetchSemanticsNode().config
@@ -467,20 +467,42 @@ class OkouAppTest {
             assertEquals(selection, semantics[SemanticsProperties.TextSelectionRange])
         }
 
-        val singleLineHeight = editorHeight()
         input.performTextReplacement(draft)
         input.performTextInputSelection(selection)
-        val expandedHeight = editorHeight()
-        assertTrue(expandedHeight > singleLineHeight)
+        input.assertHeightIsEqualTo(160.dp)
 
         resize(479)
-        assertEquals(singleLineHeight, editorHeight())
-        compose.onNodeWithText("Send").assertIsDisplayed()
+        input.assertHeightIsEqualTo(48.dp)
+        compose
+            .onNodeWithContentDescription("Send")
+            .assertIsDisplayed()
+            .assertWidthIsEqualTo(48.dp)
+            .assertHeightIsEqualTo(48.dp)
         assertDraftAndSelection()
 
         resize(480)
-        assertEquals(expandedHeight, editorHeight())
+        input.assertHeightIsEqualTo(144.dp)
         assertDraftAndSelection()
+
+        resize(520)
+        input.assertHeightIsEqualTo(156.dp)
+    }
+
+    @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun shortNewChatEditorFitsOneLineAtLargeFontScale() {
+        val density = compose.activity.resources.displayMetrics.density
+        compose.runOnIdle {
+            windowSize.value = IntSize((540 * density).toInt(), (320 * density).toInt())
+        }
+        render(fontScale = 2f)
+        compose.onNodeWithText("New chat").performClick()
+        val input = compose.onNodeWithTag("message_input").assertIsDisplayed()
+        input.performTextReplacement("First line\nSecond line")
+
+        val scaledLineHeight = with(Density(density, fontScale = 2f)) { 26.sp.toDp() }
+        input.assertHeightIsEqualTo(scaledLineHeight + 16.dp)
+        compose.onNodeWithContentDescription("Send").assertIsDisplayed()
     }
 
     @Test

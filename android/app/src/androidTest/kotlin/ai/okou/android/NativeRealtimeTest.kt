@@ -504,7 +504,15 @@ class NativeRealtimeTest {
                     device.findObject(By.pkg(app.packageName).clazz("android.widget.EditText"))
                 )
             followupEditor.setText("Native follow-up")
-            text("Send").click()
+            checkNotNull(
+                    device.wait(
+                        Until.findObject(
+                            By.pkg(app.packageName).desc(app.getString(R.string.composer_send))
+                        ),
+                        10_000,
+                    )
+                )
+                .click()
             condition { followup.get() != null }
             condition {
                 chats?.history?.uiState?.value?.transcript?.messages?.any {

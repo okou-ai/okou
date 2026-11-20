@@ -125,7 +125,7 @@ class ChatComposerRootTest {
                 .onNodeWithText("Draft changes could not be saved on this device.")
                 .assertExists()
             compose.onNodeWithTag("message_input").assertIsNotEnabled()
-            compose.onNodeWithText("Send").assertIsNotEnabled()
+            compose.onNodeWithContentDescription("Send").assertIsNotEnabled()
         }
         assertStorageFailure()
         compose.onNodeWithText("Try again").performClick()
@@ -152,7 +152,7 @@ class ChatComposerRootTest {
         }
         compose.onNodeWithText("No messages yet.").assertExists()
         compose.onNodeWithTag("message_input").assertIsNotEnabled()
-        compose.onNodeWithText("Send").assertIsNotEnabled()
+        compose.onNodeWithContentDescription("Send").assertIsNotEnabled()
         compose.onNodeWithContentDescription("Back").performClick()
         compose.onNodeWithContentDescription("Chats").assertExists()
         assertEquals("{}", file.readText())
@@ -193,7 +193,7 @@ class ChatComposerRootTest {
             draft,
             input.fetchSemanticsNode().config[SemanticsProperties.EditableText].text,
         )
-        compose.onNodeWithText("Send").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Send").assertIsDisplayed().assertIsEnabled()
     }
 
     @Test
@@ -235,7 +235,7 @@ class ChatComposerRootTest {
             .onNodeWithTag("message_input")
             .assertIsEnabled()
             .performTextInput("Original **message** 👋")
-        compose.onNodeWithText("Send").assertIsNotEnabled()
+        compose.onNodeWithContentDescription("Send").assertIsNotEnabled()
         captureOwners()
         compose.onNodeWithContentDescription("Back").performClick()
         compose.onNodeWithContentDescription("Chats").assertExists()
@@ -246,7 +246,7 @@ class ChatComposerRootTest {
             compose.onAllNodesWithText("Loading chat availability…").fetchSemanticsNodes().isEmpty()
         }
         app.fixture.disconnectSend = true
-        compose.onNodeWithText("Send").assertIsEnabled().performClick()
+        compose.onNodeWithContentDescription("Send").assertIsEnabled().performClick()
         compose.waitUntil(10_000) {
             // Drain the actual native owner as journal/HTTP completions return to Main.
             compose.onNodeWithTag("message_input").fetchSemanticsNode()
@@ -280,7 +280,7 @@ class ChatComposerRootTest {
             compose.onAllNodesWithText("New conversation").fetchSemanticsNodes().isNotEmpty()
         }
         compose.onNodeWithTag("message_input").assertTextContains("Newer draft 你好")
-        compose.onNodeWithText("Send").assertIsEnabled()
+        compose.onNodeWithContentDescription("Send").assertIsEnabled()
         assertEquals(1, app.fixture.inputs.size)
         assertEquals(1, app.fixture.created.size)
         assertEquals(
