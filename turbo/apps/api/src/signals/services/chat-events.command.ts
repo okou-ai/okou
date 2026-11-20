@@ -162,6 +162,7 @@ import {
   officialWorkflowThreadCondition,
   OFFICIAL_WORKFLOW_THREAD_READ_ONLY_MESSAGE,
 } from "./official-workflow-policy.service";
+import { isForeignKeyViolation } from "../../lib/pg-errors";
 import { chatThreadOrganizationCondition } from "./chat-thread-organization.service";
 import { pgBooleanDecoder } from "../../lib/db-structured-result";
 import {
@@ -254,6 +255,7 @@ type OrganizationAuthContext = AuthContext & {
 };
 interface NormalSendArgs {
   readonly enqueueTiming?: ChatEnqueueTimingCollector;
+  readonly projectId?: string;
   readonly body: NormalSendBody;
   readonly auth: OrganizationAuthContext;
   readonly userId: string;
@@ -1102,7 +1104,7 @@ function normalSendRequestFacts(
     orgId: args.orgId,
     thread: {
       id: thread.threadId,
-      projectId: previousBinding?.projectId ?? null,
+      projectId: previousBinding?.projectId ?? args.projectId ?? null,
       userId: args.userId,
       agentId: args.body.agentId,
       ...thread.runSettings,
@@ -1608,6 +1610,7 @@ function newSendThreadInsertPlan(args: NormalSendArgs, thread: NewSendThread) {
     userId: args.userId,
     agentId: args.body.agentId,
     title: null,
+    projectId: args.projectId,
     selectedModel: thread.runSettings.selectedModel,
     codexServiceTier: thread.runSettings.codexServiceTier,
     modelSettings: thread.runSettings.modelSettings,
@@ -1794,6 +1797,7 @@ function normalSendCreatedListEvent(
     chatThreadId: thread.threadId,
     agentId: args.body.agentId,
     eventId: args.body.chatThreadEventId,
+    projectId: args.projectId,
     title: null,
     hidden: values.hidden,
     selectedModel: values.selectedModel,
@@ -2712,6 +2716,12 @@ const resolveFailedNormalSend$ = command(
         signal,
       );
     }
+    if (
+      args.projectId &&
+      isForeignKeyViolation(error, "chat_threads_project_owner_fk")
+    ) {
+      return notFound("Project not found");
+    }
     throw error;
   },
 );
@@ -3228,21 +3238,18 @@ const assertOwnedThread$ = command(
     return undefined;
   },
 );
-const handleRecallSend$ = command(
+export const recallChatEvent$ = command(
   async (
-    { set },
-    args: {
-      readonly body: RecallSendBody;
-      readonly userId: string;
-      readonly orgId: string;
-    },
+    { get, set },
+    body: Omit<RecallSendBody, "agentId">,
     signal: AbortSignal,
   ) => {
+    const { userId, orgId } = get(organizationAuthContext$);
     const ownership = await set(
       assertOwnedThread$,
-      args.body.threadId,
-      args.userId,
-      args.orgId,
+      body.threadId,
+      userId,
+      orgId,
       signal,
     );
     signal.throwIfAborted();
@@ -3252,9 +3259,9 @@ const handleRecallSend$ = command(
     const result = await set(
       appendRecallChatEvent$,
       {
-        threadId: args.body.threadId,
-        revokesEventId: args.body.revokesEventId,
-        clientEventId: args.body.clientEventId,
+        threadId: body.threadId,
+        revokesEventId: body.revokesEventId,
+        clientEventId: body.clientEventId,
       },
       signal,
     );
@@ -3266,9 +3273,9 @@ const handleRecallSend$ = command(
       set(
         projectCommittedChatThreadSearch$,
         {
-          userId: args.userId,
-          orgId: args.orgId,
-          threadId: args.body.threadId,
+          userId,
+          orgId,
+          threadId: body.threadId,
         },
         signal,
       ),
@@ -3276,9 +3283,9 @@ const handleRecallSend$ = command(
     await set(
       publishChatThreadMessageCreated$,
       {
-        userId: args.userId,
-        orgId: args.orgId,
-        threadId: args.body.threadId,
+        userId,
+        orgId,
+        threadId: body.threadId,
       },
       signal,
     );
@@ -3286,7 +3293,7 @@ const handleRecallSend$ = command(
     return {
       status: 201 as const,
       body: {
-        threadId: args.body.threadId,
+        threadId: body.threadId,
         createdAt: result.createdAt.toISOString(),
       },
     };
@@ -3380,14 +3387,15 @@ const handleInterruptSend$ = command(
   },
 );
 export const handleSendChatEvent$ = command(
-  async ({ get, set }, body: SendBody, signal: AbortSignal) => {
+  async (
+    { get, set },
+    body: SendBody,
+    signal: AbortSignal,
+    projectId?: string,
+  ) => {
     const auth = get(organizationAuthContext$);
     if (isRecallSendBody(body)) {
-      return await set(
-        handleRecallSend$,
-        { body, userId: auth.userId, orgId: auth.orgId },
-        signal,
-      );
+      return await set(recallChatEvent$, body, signal);
     }
     if (isInterruptSendBody(body)) {
       return await set(
@@ -3415,6 +3423,7 @@ export const handleSendChatEvent$ = command(
       sendNormalEvent$,
       {
         enqueueTiming: timing,
+        projectId,
         body,
         auth: auth.tokenType === "oauth" ? { ...auth, clientName } : auth,
         userId: auth.userId,

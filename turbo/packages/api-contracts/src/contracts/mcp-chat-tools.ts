@@ -1,4 +1,4 @@
-import { object, record } from "zod";
+import { object, record, uuid } from "zod";
 import { chatThreadActivitySummaryContract } from "./chat-thread-activity-summary";
 import {
   chatEventsContract,
@@ -12,18 +12,28 @@ import {
   mcpRunIdSchema,
   mcpThreadIdSchema,
 } from "./mcp-identifiers";
+import { initContract } from "./base";
 import { runsCancelContract } from "./run-routes";
 
 const normal = chatEventNormalSendBodySchema.shape;
 export const mcpSendChatMessageInputSchema = object({
-  agentId: normal.agentId,
   prompt: normal.prompt,
   threadId: mcpThreadIdSchema.optional(),
+  projectId: uuid().toLowerCase().optional(),
   model: normal.model,
-}).strict();
+})
+  .strict()
+  .refine(
+    (input) => {
+      return input.threadId === undefined || input.projectId === undefined;
+    },
+    {
+      message: "projectId is only allowed when starting a new Chat",
+      path: ["projectId"],
+    },
+  );
 
 export const mcpRevokeQueuedMessageInputSchema = object({
-  agentId: chatEventsContract.send.body.options[1].shape.agentId,
   threadId: mcpThreadIdSchema,
   eventId: mcpEventIdSchema,
 }).strict();
@@ -33,6 +43,24 @@ export const mcpSendChatMessageOutputSchema =
     threadId: mcpThreadIdSchema,
     eventId: mcpEventIdSchema,
   });
+
+// Dispatched only inside the authenticated MCP route slice.
+export const mcpChatCommandContract = initContract().router({
+  send: {
+    ...chatEventsContract.send,
+    path: "/internal/mcp/chat/send",
+    body: mcpSendChatMessageInputSchema,
+    responses: {
+      ...chatEventsContract.send.responses,
+      201: mcpSendChatMessageOutputSchema,
+    },
+  },
+  revoke: {
+    ...chatEventsContract.send,
+    path: "/internal/mcp/chat/revoke",
+    body: mcpRevokeQueuedMessageInputSchema,
+  },
+});
 
 // The published MCP output keeps its always-null runId; the Web send response
 // no longer carries one.

@@ -1,4 +1,4 @@
-import { array, object, type infer as zInfer } from "zod";
+import { array, object, string, uuid, type infer as zInfer } from "zod";
 
 import { agentResponseSchema } from "../validators/agents";
 import { initContract } from "./base";
@@ -35,7 +35,7 @@ const mcpChatSearchResultSchema = nativeResult
       }),
   });
 
-/** Used only by the MCP in-process route slice, not the public Web search API. */
+/** Published search descriptor retained for the iOS runtime API inventory. */
 export const mcpChatSearchContract = c.router({
   search: {
     ...nativeSearch,
@@ -54,10 +54,38 @@ export const mcpChatSearchContract = c.router({
   },
 });
 
+// Only the MCP route slice serves this contract.
+export const mcpProjectChatSearchContract = c.router({
+  search: {
+    ...mcpChatSearchContract.search,
+    path: "/internal/mcp/chat/search",
+    query: mcpChatSearchContract.search.query
+      .omit({ agentId: true })
+      .extend({
+        projectId: uuid().toLowerCase().optional(),
+      })
+      .strict(),
+    responses: {
+      ...mcpChatSearchContract.search.responses,
+      200: object({
+        results: array(
+          mcpChatSearchResultSchema
+            .omit({ agentId: true, displayName: true })
+            .extend({
+              projectId: uuid().nullable(),
+              projectName: string().nullable(),
+            }),
+        ).max(CHAT_SEARCH_RESULT_LIMIT),
+      }),
+    },
+    summary: "Search chat messages with current Project membership",
+  },
+});
+
 export type McpChatSearchQuery = zInfer<
-  typeof mcpChatSearchContract.search.query
+  typeof mcpProjectChatSearchContract.search.query
 >;
 export type McpChatSearchResult = zInfer<typeof mcpChatSearchResultSchema>;
 export type McpChatSearchResponse = zInfer<
-  (typeof mcpChatSearchContract.search.responses)[200]
+  (typeof mcpProjectChatSearchContract.search.responses)[200]
 >;

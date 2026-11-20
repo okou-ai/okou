@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import {
   createMcpHandler,
   McpServer,
@@ -6,7 +5,7 @@ import {
   type StandardSchemaWithJSON,
   type ToolAnnotations,
 } from "@modelcontextprotocol/server";
-import { agentsMainContract } from "@okouai/api-contracts/contracts/agents";
+import { projectsContract } from "@okouai/api-contracts/contracts/projects";
 import { chatInputStatusContract } from "@okouai/api-contracts/contracts/chat-input-status";
 import { chatThreadActivitySummaryContract } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
 import {
@@ -16,8 +15,9 @@ import {
   chatThreadRenameContract,
   chatThreadsContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { mcpChatSearchContract } from "@okouai/api-contracts/contracts/mcp-chat-search";
+import { mcpProjectChatSearchContract } from "@okouai/api-contracts/contracts/mcp-chat-search";
 import {
+  mcpChatCommandContract,
   mcpCancelRunInputSchema,
   mcpCancelRunOutputSchema,
   mcpGetChatActivitySummaryInputSchema,
@@ -567,28 +567,66 @@ function registerInputStatusTool(
   );
 }
 
+function registerProjectTools(
+  server: McpServer,
+  access: McpChatAccess,
+  requestSignal: AbortSignal,
+): void {
+  registerWebTool(
+    server,
+    access,
+    {
+      name: "list_projects",
+      scope: "okou:project:read",
+      description: "List your private Projects in the authorized workspace.",
+      inputSchema: emptyInput,
+      outputSchema: projectsContract.list.responses[200],
+      annotations: readAnnotations,
+      operation: (_input, signal) => {
+        return requestWebApi(access, projectsContract.list, {}, signal);
+      },
+    },
+    requestSignal,
+  );
+  registerWebTool(
+    server,
+    access,
+    {
+      name: "list_project_threads",
+      scope: "okou:project:read",
+      description:
+        "List Chats currently in your Project. Pass nextAfter as after to read the next page.",
+      inputSchema: projectsContract.threads.query
+        .omit({ agentId: true })
+        .extend({
+          projectId: projectsContract.threads.pathParams.shape.id,
+        })
+        .strict(),
+      outputSchema: projectsContract.threads.responses[200],
+      annotations: readAnnotations,
+      operation: ({ projectId, ...query }, signal) => {
+        return requestWebApi(
+          access,
+          projectsContract.threads,
+          {
+            pathParams: { id: projectId },
+            query,
+          },
+          signal,
+        );
+      },
+    },
+    requestSignal,
+  );
+}
+
 function registerReadTools(
   server: McpServer,
   access: McpChatAccess,
   requestSignal: AbortSignal,
 ): void {
   registerInputStatusTool(server, access, requestSignal);
-  registerWebTool(
-    server,
-    access,
-    {
-      name: "list_agents",
-      scope: "okou:chat:read",
-      description:
-        "List agents using GET /api/agents. The JSON text is the unmodified Web response array.",
-      inputSchema: emptyInput,
-      annotations: readAnnotations,
-      operation: (_input, signal) => {
-        return requestWebApi(access, agentsMainContract.list, {}, signal);
-      },
-    },
-    requestSignal,
-  );
+  registerProjectTools(server, access, requestSignal);
   registerWebTool(
     server,
     access,
@@ -646,14 +684,14 @@ function registerReadTools(
       name: "search_chat_messages",
       scope: "okou:chat:read",
       description:
-        "Search using keyword and optional agentId. Selects up to 500 scoped keyword candidates without ordering, then sorts only those candidates by time and returns at most 100 messages. It does not guarantee the newest matches across all history. Pagination is not supported, and no continuation cursor or completeness signal is returned. Fewer than 100 results do not prove that all matches have been found. Hits and matchedMessage expose threadId; matchedMessage.runId is nullable. Hits expose stable agentId and nullable canonical displayName matching list_agents, for currently visible Agents. The index updates asynchronously: recent messages may be missing even after a Run completes, and an empty result does not prove absence. No index freshness signal or lag bound is returned. To confirm a recent send, use get_chat_messages with its known threadId and inspect the snapshot and event pages; do not resend solely because search is empty.",
-      inputSchema: mcpChatSearchContract.search.query,
-      outputSchema: mcpChatSearchContract.search.responses[200],
+        "Search using keyword and optional projectId. Selects up to 500 scoped keyword candidates without ordering, then sorts only those candidates by time and returns at most 100 messages. It does not guarantee the newest matches across all history. Pagination is not supported, and no continuation cursor or completeness signal is returned. Fewer than 100 results do not prove that all matches have been found. Hits and matchedMessage expose threadId; matchedMessage.runId is nullable. Hits expose the current projectId and projectName, or null when the Chat has no Project. The index updates asynchronously: recent messages may be missing even after a Run completes, and an empty result does not prove absence. No index freshness signal or lag bound is returned. To confirm a recent send, use get_chat_messages with its known threadId and inspect the snapshot and event pages; do not resend solely because search is empty.",
+      inputSchema: mcpProjectChatSearchContract.search.query,
+      outputSchema: mcpProjectChatSearchContract.search.responses[200],
       annotations: readAnnotations,
       operation: (query, signal) => {
         return requestWebApi(
           access,
-          mcpChatSearchContract.search,
+          mcpProjectChatSearchContract.search,
           { query },
           signal,
         );
@@ -768,36 +806,16 @@ function registerMutationTools(
       name: "send_chat_message",
       scope: "okou:chat:send",
       description:
-        "Send plain text through POST /api/chat/events using Web validation and enqueue semantics. Generates and returns the accepted input's eventId with threadId and createdAt. Use eventId with revoke_queued_message to recall it while queued. Use get_chat_input_status with threadId and eventId for a bounded read of its retained Chat disposition and matching terminal event. Consumption alone does not prove completion. Does not wait for execution or provide safe retries after a lost acknowledgement.",
+        "Send plain text to a new Chat with optional projectId, or continue a Chat by threadId. Generates and returns the accepted input's eventId with threadId and createdAt. Use eventId with revoke_queued_message to recall it while queued. Use get_chat_input_status with threadId and eventId for a bounded read of its retained Chat disposition and matching terminal event. Consumption alone does not prove completion. Does not wait for execution or provide safe retries after a lost acknowledgement.",
       inputSchema: mcpSendChatMessageInputSchema,
       outputSchema: mcpSendChatMessageOutputSchema,
       annotations: writeAnnotations,
-      operation: async (input, signal) => {
-        const eventId = randomUUID();
-        const response = await requestWebApi(
+      operation: (input, signal) => {
+        return requestWebApi(
           access,
-          chatEventsContract.send,
-          {
-            body: {
-              ...input,
-              clientEventId: eventId,
-              userMessage: {
-                version: 1,
-                parts: [{ type: "text", text: input.prompt }],
-              },
-              hasTextContent: true,
-            },
-          },
+          mcpChatCommandContract.send,
+          { body: input },
           signal,
-        );
-        if (!response.ok) {
-          return await toolResponse(response);
-        }
-        const body: unknown = await response.json();
-        signal.throwIfAborted();
-        const accepted = chatEventsContract.send.responses[201].parse(body);
-        return toolBody(
-          mcpSendChatMessageOutputSchema.parse({ ...accepted, eventId }),
         );
       },
     },
@@ -814,11 +832,11 @@ function registerMutationTools(
       inputSchema: mcpRevokeQueuedMessageInputSchema,
       outputSchema: mcpRevokeQueuedMessageOutputSchema,
       annotations: { ...writeAnnotations, destructiveHint: true },
-      operation: async ({ eventId, ...body }, signal) => {
+      operation: async (input, signal) => {
         const response = await requestWebApi(
           access,
-          chatEventsContract.send,
-          { body: { ...body, revokesEventId: eventId } },
+          mcpChatCommandContract.revoke,
+          { body: input },
           signal,
         );
         if (!response.ok) {
