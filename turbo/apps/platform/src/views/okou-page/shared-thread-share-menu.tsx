@@ -130,7 +130,13 @@ function audienceIcon(audience: SharedThreadAudience): LucideIcon {
   return audience === "public" ? Globe : Users;
 }
 
-function audienceLabel(t: TFunction, audience: SharedThreadAudience): string {
+// Names the audience the way the menu's options do, so the trigger and the
+// checked option read the same.
+function audienceLabel(
+  t: TFunction,
+  audience: SharedThreadAudience,
+  organizationName: string | null,
+): string {
   if (audience === "private") {
     return t(($) => {
       return $.artifacts.sharing.onlyMeOption;
@@ -141,24 +147,34 @@ function audienceLabel(t: TFunction, audience: SharedThreadAudience): string {
       return $.artifacts.sharing.publicOption;
     });
   }
-  return t(($) => {
-    return $.artifacts.sharing.organizationOptionUnnamed;
-  });
+  if (organizationName === null) {
+    return t(($) => {
+      return $.artifacts.sharing.organizationOptionUnnamed;
+    });
+  }
+  return t(
+    ($) => {
+      return $.artifacts.sharing.organizationOption;
+    },
+    { organization: organizationName },
+  );
 }
 
 /** The neutral trigger content for a chosen audience: its icon, its name and
  * the disclosure chevron. */
 function AudienceTriggerContent({
   audience,
+  organizationName,
 }: {
   readonly audience: SharedThreadAudience;
+  readonly organizationName: string | null;
 }) {
   const { t } = useTranslation();
   const Icon = audienceIcon(audience);
   return (
     <>
       <Icon className="text-muted-foreground" />
-      {audienceLabel(t, audience)}
+      {audienceLabel(t, audience, organizationName)}
       {/* Pushed to the trailing edge when the trigger fills its row. */}
       <ChevronDown className="ml-auto text-muted-foreground" />
     </>
@@ -190,7 +206,10 @@ export function SharedThreadAudiencePicker({
           />
         }
       >
-        <AudienceTriggerContent audience={audience} />
+        <AudienceTriggerContent
+          audience={audience}
+          organizationName={organization?.name ?? null}
+        />
       </PopoverTrigger>
       <ShareMenuContent
         label={t(($) => {
@@ -237,7 +256,10 @@ export function SharedThreadShareMenu({
         }
       >
         {showLabel && details ? (
-          <AudienceTriggerContent audience={details.audience} />
+          <AudienceTriggerContent
+            audience={details.audience}
+            organizationName={details.organization.name}
+          />
         ) : (
           <Share2 size={showLabel ? 16 : 18} />
         )}
@@ -263,13 +285,19 @@ export function SharedThreadShareMenu({
         onChange={(audience) => {
           detach(change(audience, signal), Reason.DomCallback);
         }}
-        copy={{
-          copied,
-          disabled: !details && !recipient,
-          onCopy: () => {
-            detach(copy(signal), Reason.DomCallback);
-          },
-        }}
+        // The labelled trigger sits beside its own Copy link action, so its
+        // menu carries only the access choice.
+        copy={
+          showLabel
+            ? undefined
+            : {
+                copied,
+                disabled: !details && !recipient,
+                onCopy: () => {
+                  detach(copy(signal), Reason.DomCallback);
+                },
+              }
+        }
       />
     </Popover>
   );
