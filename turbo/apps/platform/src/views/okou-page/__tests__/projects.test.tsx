@@ -1360,6 +1360,9 @@ test("A rejected Project deletion stays open and can be retried", async () => {
     threads: [ordinary],
   });
   metadata();
+  context.mocks.api(projectsContract.threads, ({ respond }) => {
+    return respond(200, { threads: [], nextAfter: null });
+  });
   const events: ProjectEvent[] = [];
   let canDelete = false;
   context.mocks.api(projectsContract.events, ({ query, respond }) => {
