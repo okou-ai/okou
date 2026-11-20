@@ -202,11 +202,12 @@ internal fun OkouApp(
                 showChatList &&
                     snackbar.showSnackbar(
                         message,
-                        actionLabel = refreshLabel.takeIf { action.updatesChat },
+                        actionLabel = refreshLabel,
                         duration = SnackbarDuration.Indefinite,
                     ) == SnackbarResult.ActionPerformed
             ) {
-                chats?.reloadAfterRowActionFailure()
+                if (action.updatesChat) chats?.reloadAfterRowActionFailure()
+                else chats?.refreshIndicators()
             }
             chats?.dismissRowActionFailure(action)
         }
