@@ -87,24 +87,37 @@ class ScreenshotScenario {
                 val y = bounds.centerY().toFloat()
                 val x = (bounds.right - 45).toFloat()
                 val down = SystemClock.uptimeMillis()
+                val finger = MotionEvent.PointerProperties().apply {
+                    id = 0
+                    toolType = MotionEvent.TOOL_TYPE_FINGER
+                }
                 fun pointer(action: Int, at: Float) {
-                    MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, at, y, 0).also {
-                        it.source = InputDevice.SOURCE_TOUCHSCREEN
-                        try {
-                            instrumentation.sendPointerSync(it)
-                        } finally {
-                            it.recycle()
-                        }
+                    val coordinates = MotionEvent.PointerCoords().also {
+                        it.x = at
+                        it.y = y
+                        it.pressure = 1f
+                        it.size = 1f
+                    }
+                    val event = MotionEvent.obtain(
+                        down, SystemClock.uptimeMillis(), action, 1, arrayOf(finger), arrayOf(coordinates),
+                        0, 0, 1f, 1f, 0, 0, InputDevice.SOURCE_TOUCHSCREEN, 0,
+                    )
+                    try {
+                        instrumentation.sendPointerSync(event)
+                    } finally {
+                        event.recycle()
                     }
                 }
                 pointer(MotionEvent.ACTION_DOWN, x)
                 try {
                     pointer(MotionEvent.ACTION_MOVE, x - 55)
                     pointer(MotionEvent.ACTION_MOVE, x - 116)
-                    assertTrue(device.wait(object : Condition<UiDevice, Boolean> {
+                    val moved = device.wait(object : Condition<UiDevice, Boolean> {
                         override fun apply(device: UiDevice) =
                             (row()?.visibleBounds?.right ?: bounds.right) <= bounds.right - 72
-                    }, 5_000))
+                    }, 5_000)
+                    if (!moved) ScreenshotCapture.capture("list-swipe-diagnostic.png")
+                    assertTrue("Expected $bounds to shift left, observed ${row()?.visibleBounds}, commands $requests", moved)
                     assertTrue(requests.isEmpty())
                     ScreenshotCapture.capture("list-swipe.png")
                 } finally {
