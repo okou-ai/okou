@@ -19,9 +19,13 @@ import {
 const context = testContext();
 const AGENT_ID = "00000000-0000-0000-0000-000000000001";
 
-test.each(["feishu", "lark"] as const)(
-  "Preserve the %s managed default connection lifecycle",
-  async (brand) => {
+test.each([
+  { brand: "feishu", mismatched: false },
+  { brand: "lark", mismatched: false },
+  { brand: "feishu", mismatched: true },
+])(
+  "Verify the $brand managed default connection (mismatched projection: $mismatched)",
+  async ({ brand, mismatched }) => {
     const connectionId = crypto.randomUUID();
     const connector = customConnector({
       slug: `_${brand}`,
@@ -75,8 +79,10 @@ test.each(["feishu", "lark"] as const)(
         mutations.push(body.account);
         return respond(200, {
           result: "connected",
-          connector,
-          connectionId: connectionId,
+          connector: mismatched
+            ? { ...connector, connectedAccountId: crypto.randomUUID() }
+            : connector,
+          connectionId,
         });
       },
     );
@@ -92,11 +98,18 @@ test.each(["feishu", "lark"] as const)(
       name: "Connect Managed workspace",
     });
     click(getConnectorAction("button", "Continue", dialog));
-    await waitFor(() => {
+    if (mismatched) {
       expect(
-        screen.queryByRole("dialog", { name: "Connect Managed workspace" }),
-      ).toBeNull();
-    });
+        await screen.findByText(/Connector account response identity mismatch/u),
+      ).toBeInTheDocument();
+      expect(dialog).toBeInTheDocument();
+    } else {
+      await waitFor(() => {
+        expect(
+          screen.queryByRole("dialog", { name: "Connect Managed workspace" }),
+        ).toBeNull();
+      });
+    }
     expect(mutations).toStrictEqual([{ intent: "reconnect", connectionId }]);
     expect(authWindow.closed).toBeTruthy();
     expect(screen.getByText("Managed workspace connected")).toBeInTheDocument();

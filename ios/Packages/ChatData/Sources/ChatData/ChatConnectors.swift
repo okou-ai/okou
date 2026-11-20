@@ -59,6 +59,7 @@ public struct ChatCustomConnector: Decodable, Sendable {
   public let authMode: String
   public let permissionBundleRef: String?
   public let connected: Bool?
+  public let connectedAccountId: String?
   public let oauthConfig: OAuthConfig?
   public struct OAuthConfig: Decodable, Sendable { public let providerAdapter: String }
   public struct Field: Decodable, Sendable, Identifiable {
@@ -80,6 +81,12 @@ public struct ChatConnectorStatus: Sendable {
   public let account: ChatConnectorAccount?
   public let selected: Bool
   public var label: String { builtin?.label ?? custom?.displayName ?? "Connector" }
+  public var mutationConnectionID: String? {
+    if let custom, custom.managed {
+      return custom.connected == true ? custom.connectedAccountId : nil
+    }
+    return account?.id
+  }
   public var connected: Bool {
     custom?.managed == true ? custom?.connected == true : account?.ready == true
   }
@@ -131,13 +138,22 @@ public struct ChatConnectorService: Sendable {
 
   private func statusAccount(
     for action: ChatConnectorAction, target: ChatConnectorTarget, exactID: String?,
-    managed: Bool
+    custom: ChatCustomConnector?
   ) async throws -> ChatConnectorAccount? {
+    if let custom, custom.managed {
+      switch action.kind {
+      case .connect: return nil
+      case .configuration:
+        if let exactID, exactID.lowercased() != custom.connectedAccountId?.lowercased() {
+          throw APIClientError.invalidResponse
+        }
+        return nil
+      default: break
+      }
+    }
     if let exactID {
       return try await self.account(id: exactID, target: target)
     } else if case .configuration = action.kind {
-      return nil
-    } else if managed {
       return nil
     } else {
       return try await defaultAccount(target: target)
@@ -182,7 +198,7 @@ public struct ChatConnectorService: Sendable {
       guard custom?.id.lowercased() == id.lowercased() else { throw APIClientError.invalidResponse }
     }
     let account = try await statusAccount(
-      for: action, target: target, exactID: exactID, managed: custom?.managed == true)
+      for: action, target: target, exactID: exactID, custom: custom)
     if case .reconnect = action.kind {
       guard let account,
         builtin?.authMethods.contains(where: {
@@ -268,8 +284,9 @@ public struct ChatConnectorService: Sendable {
       var values: [String: String]?
       var options: [String: String]?
     }
+    let connectionID = status.mutationConnectionID
     let account = Account(
-      intent: status.account == nil ? "add" : "reconnect", connectionId: status.account?.id)
+      intent: connectionID == nil ? "add" : "reconnect", connectionId: connectionID)
     if let slug = status.target.connectorSlug, let method {
       guard status.builtin?.authMethods.contains(method) == true,
         status.account == nil || status.account?.authMethod == method.id,
@@ -307,6 +324,9 @@ public struct ChatConnectorService: Sendable {
       }
     }
     guard let custom = status.custom else { throw APIClientError.invalidResponse }
+    if custom.managed && status.connected, connectionID.flatMap(UUID.init(uuidString:)) == nil {
+      throw APIClientError.incompatibleData
+    }
     guard custom.canSubmit(values: values, account: status.account) else {
       throw ChatConnectorInputError.settingsChanged
     }
@@ -318,7 +338,7 @@ public struct ChatConnectorService: Sendable {
         "/api/custom-connectors/\(custom.id)/oauth2/start", method: "POST",
         body: JSONEncoder().encode(Body(account: account)))
     }
-    return try await configureCustom(custom, connectionID: status.account?.id, values: values)
+    return try await configureCustom(custom, connectionID: connectionID, values: values)
   }
   private func configureCustom(
     _ custom: ChatCustomConnector, connectionID: String?, values: [String: String]
