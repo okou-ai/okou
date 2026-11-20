@@ -338,7 +338,8 @@ diagnostics.
 
 The Linux SwiftLint job restores or builds the pinned binary, runs the CLI rule
 fixtures, checks lint scope and failure handling, and scans the owned Swift
-sources in one digest-pinned container. Only `main` saves the tool cache.
+sources in one digest-pinned container. `main` and pull requests save the tool
+cache; a merge group does not, because nothing reads its queue ref again.
 Update the source revision, version and relevant toolchain pins together.
 Validate with the commands above, `bash ios/scripts/test-lint.sh`, and
 `python3 ios/scripts/install-swiftlint.test.py`.

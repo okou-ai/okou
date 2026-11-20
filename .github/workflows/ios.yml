@@ -207,9 +207,10 @@ jobs:
         run: swift-format lint --strict --recursive ios/Tools/SwiftLint/Rules
       - name: Verify native rules through the real CLI
         run: python3 ios/Tools/SwiftLint/Tests/rules.test.py
-      # Pull request and queue refs cannot share entries; they would only evict main's.
+      # A queue ref is used once, so an entry saved there is never read. A pull
+      # request reads its own entry on its next push; main's entry serves every ref.
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        if: github.ref == 'refs/heads/main' && steps.tool-cache.outputs.cache-hit != 'true'
+        if: github.event_name != 'merge_group' && steps.tool-cache.outputs.cache-hit != 'true'
         with:
           path: ios/.tools/swiftlint
           key: ${{ steps.tool-cache.outputs.cache-primary-key }}
