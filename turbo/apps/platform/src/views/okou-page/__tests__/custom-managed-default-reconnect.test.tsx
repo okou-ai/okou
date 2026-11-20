@@ -100,7 +100,9 @@ test.each([
     click(getConnectorAction("button", "Continue", dialog));
     if (mismatched) {
       expect(
-        await screen.findByText(/Connector account response identity mismatch/u),
+        await screen.findByText(
+          /Connector account response identity mismatch/u,
+        ),
       ).toBeInTheDocument();
       expect(dialog).toBeInTheDocument();
     } else {
