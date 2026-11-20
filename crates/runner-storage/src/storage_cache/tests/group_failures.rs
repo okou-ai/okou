@@ -66,8 +66,7 @@ async fn group_processing_lock_error_preserves_source_and_cache() {
     let temp = tempfile::tempdir().unwrap();
     let home = home_at(&temp);
     let sandbox = MockSandbox::new("group-lock-error");
-    let mut telemetry = new_telemetry();
-    let name = "rejected-lock";
+    let name = runner_types::storage_manifest::WORKFLOW_STORAGE_NAME;
     let body = tarball_bytes();
     write_cached_archive(&home, name, "v1", &body);
 
@@ -77,19 +76,47 @@ async fn group_processing_lock_error_preserves_source_and_cache() {
     std::fs::create_dir_all(lock_path.parent().unwrap()).unwrap();
     std::os::unix::fs::symlink(&retained, &lock_path).unwrap();
     let original = "https://r2.example.com/rejected-lock.tar.gz";
-    let mut plan = fresh_storage_plan(original.into(), name, "v1");
+    for shared in [false, true] {
+        let mut optional = storage_entry("/skills/optional".into(), original.into(), name, "v1");
+        optional.optional = true;
+        let mut entries = vec![optional];
+        if shared {
+            entries.push(storage_entry(
+                "/skills/required".into(),
+                original.into(),
+                name,
+                "v1",
+            ));
+        }
+        let mut plan = plan_from_entries(entries, Vec::new(), None);
+        let mut telemetry = new_telemetry();
+        let result = populate_cache_with_fresh_delivery(
+            &mut plan,
+            &sandbox,
+            &home,
+            &mut telemetry,
+            None,
+            None,
+        )
+        .await;
 
-    let error =
-        populate_cache_with_fresh_delivery(&mut plan, &sandbox, &home, &mut telemetry, None, None)
-            .await
-            .err()
-            .expect("an unsafe cache lock must fail population");
-
-    assert!(
-        matches!(&error, RunnerError::Internal(message) if message.contains("open lock") && message.contains(&lock_path.display().to_string())),
-        "got: {error}"
-    );
-    assert_eq!(storage_archive_url(&plan, 0), Some(original));
+        if shared {
+            let error = result.err().expect("required consumer of a failed group");
+            assert!(matches!(&error, RunnerError::Io(_)), "got: {error}");
+            let message = error.to_string();
+            assert!(message.contains("open lock"), "{message}");
+            assert!(
+                message.contains(&lock_path.display().to_string()),
+                "{message}"
+            );
+            assert_eq!(storage_archive_url(&plan, 0), Some(original));
+            assert_eq!(storage_archive_url(&plan, 1), Some(original));
+        } else {
+            assert!(result.unwrap().is_none());
+            assert_eq!(storage_archive_url(&plan, 0), None);
+        }
+        assert!(sandbox.write_file_calls().is_empty());
+    }
     assert_eq!(std::fs::read(&retained).unwrap(), b"unrelated contents");
     assert_eq!(std::fs::read_link(&lock_path).unwrap(), retained);
     assert_eq!(

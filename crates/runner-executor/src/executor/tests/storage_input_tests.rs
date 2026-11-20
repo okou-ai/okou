@@ -1401,6 +1401,88 @@ async fn instruction_reuse_repairs_preserved_symlink_alias_writes() {
 }
 
 #[tokio::test]
+async fn optional_package_obstruction_does_not_block_instruction_reuse() {
+    let directory = tempfile::tempdir().unwrap();
+    let (config, _api) = test_executor_config_with_startup_api(directory.path()).await;
+    let guest = tempfile::tempdir().unwrap();
+    let home = guest_path(guest.path(), "/home/user");
+    let framework = home.join(".codex");
+    let target = framework.join("AGENTS.md");
+    let obstruction = framework.join("skills");
+    fs::create_dir_all(&framework).unwrap();
+    fs::write(&target, b"retained instructions").unwrap();
+    fs::write(&obstruction, b"retained file").unwrap();
+
+    let mut current = instruction_context(&"a".repeat(64), 10, "codex", "instructions");
+    current
+        .storage_manifest
+        .as_mut()
+        .unwrap()
+        .storages
+        .push(api_storage(
+            "framework-settings",
+            "/home/user/.codex",
+            "v1",
+            "https://unreachable.invalid/settings",
+        ));
+    let previous = current.storage_fingerprints();
+    let mount = "/home/user/.codex/skills/optional";
+    let mut optional = api_storage(
+        WORKFLOW_STORAGE_NAME,
+        mount,
+        "v1",
+        "file:///tmp/missing-optional.tar.gz",
+    );
+    optional.optional = true;
+    current
+        .storage_manifest
+        .as_mut()
+        .unwrap()
+        .storages
+        .push(optional);
+
+    let overrides = Arc::new(MockSandboxOverrides::new());
+    let sandbox = create_overridden_sandbox(Arc::clone(&overrides)).await;
+    let (idle, _lease) = make_reusable_idle_sandbox_with_fingerprints(
+        sandbox,
+        "172.16.0.2".into(),
+        "optional-package-instruction-reuse",
+        previous,
+    )
+    .await;
+    instruction_check(&overrides, guest.path(), "codex");
+    let params = default_params();
+    let (mut outcome, _) = complete_guest_storage(
+        execute_job_reuse(idle, current, &config, &params, CancellationToken::new()),
+        &overrides,
+        guest.path(),
+    )
+    .await;
+    assert_eq!(outcome.exit_code(), 0, "{:?}", outcome.error());
+    if let Some(report) = outcome.startup_report.take() {
+        report.finish().await;
+    }
+
+    let calls = overrides.agent_instructions_calls();
+    let [check] = calls.as_slice() else {
+        panic!("expected one instruction reuse check");
+    };
+    assert_eq!(check.operation, InstructionOperation::Check);
+    let mut input: InstructionCheck = serde_json::from_slice(&check.metadata).unwrap();
+    for path in &mut input.preserved_download_mounts {
+        *path = guest_path(guest.path(), path).to_str().unwrap().into();
+    }
+    let metadata = serde_json::to_vec(&input).unwrap();
+    assert!(guest_storage_apply::check_agent_instructions(&home, &metadata).unwrap());
+    assert_eq!(fs::read(&target).unwrap(), b"retained instructions");
+    assert_eq!(fs::read(&obstruction).unwrap(), b"retained file");
+    assert!(!outcome.storage_fingerprints.storages.contains_key(mount));
+    assert_eq!(overrides.start_agent_process_calls().len(), 1);
+    config.background_fill.shutdown().await;
+    config.decoded_cache.shutdown().await;
+}
+
+#[tokio::test]
 async fn instruction_reuse_checks_all_preserved_mounts_in_bounded_guest_requests() {
     let directory = tempfile::tempdir().unwrap();
     let (config, _api) = test_executor_config_with_startup_api(directory.path()).await;
