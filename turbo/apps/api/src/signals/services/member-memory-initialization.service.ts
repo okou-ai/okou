@@ -5,11 +5,22 @@ import {
 } from "@okouai/db/schema/member-memory";
 import { command } from "ccstate";
 import { isNull, sql } from "drizzle-orm";
+import { int, object, string, uuid } from "zod";
 
+import { parseRawRows, pgInt8ToSafeIntegerSchema } from "../../lib/db-raw-rows";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import type { MemberMemoryOwner } from "./member-memory";
+import type { MemberMemoryHead } from "./member-memory-head.service";
 import { newStorageS3Location } from "./storage-s3-prefix.utils";
+
+const initializedMemorySchema = object({
+  storageId: uuid(),
+  versionId: string(),
+  s3Key: string(),
+  archiveSize: pgInt8ToSafeIntegerSchema,
+  fileCount: int(),
+});
 
 /** Establish the member's Memory and empty revision in one statement. */
 export const initializeMemberMemory$ = command(
@@ -17,7 +28,7 @@ export const initializeMemberMemory$ = command(
     { set },
     identity: MemberMemoryOwner,
     signal: AbortSignal,
-  ): Promise<void> => {
+  ): Promise<MemberMemoryHead | null> => {
     signal.throwIfAborted();
     const db = set(writeDb$);
     const location = newStorageS3Location(identity.orgId);
@@ -57,9 +68,16 @@ export const initializeMemberMemory$ = command(
         initialized.object_prefix || '/' || initialized.head_version_id,0,0,0,
         ${sql.param("Initial empty artifact", memoryVersions.message)},
         ${sql.param(identity.userId, memoryVersions.createdBy)} FROM initialized
-      ON CONFLICT (id) DO UPDATE SET id=excluded.id`;
+      ON CONFLICT (id) DO UPDATE SET id=excluded.id
+      RETURNING memory_id AS "storageId", id AS "versionId",
+        object_prefix AS "s3Key", archive_size AS "archiveSize",
+        file_count AS "fileCount"`;
     signal.throwIfAborted();
-    await db.execute(statement);
+    const [head] = parseRawRows(
+      initializedMemorySchema,
+      await db.execute(statement),
+    );
     signal.throwIfAborted();
+    return head ? { ...head, archiveCache: null } : null;
   },
 );

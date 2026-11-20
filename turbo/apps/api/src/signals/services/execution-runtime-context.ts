@@ -9,7 +9,7 @@ import type { AdmittedExecutionFacts } from "./admitted-execution-facts";
 import { NATIVE_CONTEXT_RECOVERY_PROMPT } from "./chat-session-continuity.service";
 import { dataRouterEnvironment } from "./data-router-environment";
 import {
-  prepareAcceptedExecutionStorage$,
+  prepareExecutionMemoryMount$,
   type AcceptedMemoryMount,
 } from "./execution-storage.service";
 import type { ModelFirstPin } from "./model-selection.service";
@@ -50,15 +50,15 @@ export type ExecutionContextRun = Pick<
 type ExecutionInput = {
   readonly run: ExecutionContextRun;
   readonly facts: AdmittedExecutionFacts;
-  readonly memoryMounts: readonly AcceptedMemoryMount[];
+  readonly memoryMount: AcceptedMemoryMount;
 };
 
-export function executionPackages({ facts, memoryMounts }: ExecutionInput) {
+export function executionPackages({
+  facts,
+  memoryMount,
+}: Pick<ExecutionInput, "facts" | "memoryMount">) {
   const { skillRoot, skillMounts, officialWorkflowBundles } = facts;
-  const storageMounts = memoryMounts.map(({ mount }) => {
-    return mount;
-  });
-  const winners = normalizeMountOverlay([...skillMounts, ...storageMounts]);
+  const winners = normalizeMountOverlay([...skillMounts, memoryMount.mount]);
   const seedSkillBundles = winners.flatMap((volume) => {
     return "contentBundle" in volume
       ? [{ ...volume.contentBundle, mountPath: volume.mountPath }]
@@ -149,9 +149,9 @@ export const prepareExecutionRuntimeContext$ = command(
       piModelConfig: facts.modelProvider.piModelConfig,
     };
     const { environment, untrustedEnvironment } = executionEnvironment(input);
-    const storage = await set(
-      prepareAcceptedExecutionStorage$,
-      input.memoryMounts,
+    const memory = await set(
+      prepareExecutionMemoryMount$,
+      input.memoryMount,
       signal,
     );
     signal.throwIfAborted();
@@ -164,7 +164,7 @@ export const prepareExecutionRuntimeContext$ = command(
       featureFlags: facts.featureFlags,
       realAgentInPreview: facts.realAgentInPreview,
       apiStartTime: facts.apiStartTime,
-      storageMounts: storage.storageMounts,
+      storageMounts: [memory.mount],
       nativeContinuation: {
         ...facts.nativeContinuation,
         recoveryPrompt:
@@ -197,7 +197,7 @@ export const prepareExecutionRuntimeContext$ = command(
     };
     return {
       context: preparedExecutionContextSchema.parse(prepared),
-      storageCacheWrites: storage.cacheWrites,
+      storageCacheWrites: memory.cacheWrites,
       networkPolicyInputs: facts.connectorNetworkPolicyInputs,
     };
   },
