@@ -507,10 +507,7 @@ describe("live chat SSH Run inventory", () => {
     expect((await accept(runner.resolve(request), [200])).body.outcome).toBe(
       "resolved",
     );
-    const verified = await accept(
-      runner.pin({ ...pin, body: { ...pin.body, expectedGeneration: 2 } }),
-      [200],
-    );
+    const verified = await accept(runner.pin(pin), [200]);
     expect(verified.body.outcome).toBe("matched");
   });
 
