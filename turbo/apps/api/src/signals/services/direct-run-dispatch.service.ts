@@ -12,8 +12,19 @@ import type {
   RunnerPreference,
 } from "@okouai/api-contracts/contracts/runners";
 import { runnerState } from "@okouai/db/runtime/runner-state";
+import { chatEvents } from "@okouai/db/schema/chat-event";
 import { command, type Command } from "ccstate";
-import { and, arrayContains, eq, gt } from "drizzle-orm";
+import {
+  and,
+  arrayContains,
+  eq,
+  getTableColumns,
+  gt,
+  isNotNull,
+  ne,
+  notExists,
+} from "drizzle-orm";
+import { pgBooleanDecoder } from "../../lib/db-structured-result";
 import { delay } from "signal-timers";
 import type { output } from "zod";
 import { env } from "../../lib/env";
@@ -27,6 +38,7 @@ import {
   prepareDirectRun$,
   type AdmittedRunLaunch,
   type DirectRunCachePublication,
+  type PrefetchedExecutionBundles,
 } from "./direct-run-preparation.service";
 import {
   selectDirectRunOwner$,
@@ -45,8 +57,23 @@ const readDirectRunCandidates$ = command(
     if (input.profile !== DEFAULT_RUNNER_PROFILE) {
       throw new Error("Unsupported direct Run profile");
     }
-    const rows = await get(db$)
-      .select()
+    const database = get(db$);
+    const rows = await database
+      .select({
+        candidate: getTableColumns(runnerState),
+        isFirstRun: notExists(
+          database
+            .select({ id: chatEvents.id })
+            .from(chatEvents)
+            .where(
+              and(
+                eq(chatEvents.chatThreadId, input.run.chatThreadId),
+                isNotNull(chatEvents.runId),
+                ne(chatEvents.runId, input.run.id),
+              ),
+            ),
+        ).mapWith(pgBooleanDecoder),
+      })
       .from(runnerState)
       .where(
         and(
@@ -63,7 +90,7 @@ const readDirectRunCandidates$ = command(
       input.reusePreparation,
       input.createdAt,
     );
-    const candidates = rows.flatMap((row) => {
+    const candidates = rows.flatMap(({ candidate: row }) => {
       if (
         row.runnerHostname === null ||
         !isCanonicalRunnerHostname(row.runnerHostname) ||
@@ -108,17 +135,18 @@ const readDirectRunCandidates$ = command(
         candidates[j] = a;
       }
     }
-    return candidates.sort((a, b) => {
+    candidates.sort((a, b) => {
       const priority =
         Number(b.preference !== undefined) - Number(a.preference !== undefined);
       return priority || b.score - a.score;
     });
+    return { candidates, isFirstRun: rows[0]?.isFirstRun };
   },
 );
 
 type DirectRunCandidates = Awaited<
   ReturnType<(typeof readDirectRunCandidates$)["write"]>
->;
+>["candidates"];
 const MAX_HOME_DEFERRAL_MS = 1000;
 const FINAL_HOME_DELIVERY_MARGIN_MS = 1000;
 type UnacceptedRunResult =
@@ -145,16 +173,22 @@ export const prepareDirectRunDispatch$ = command(
   async (
     { set },
     input: AdmittedRunLaunch,
+    bundles: PrefetchedExecutionBundles,
     signal: AbortSignal,
   ): Promise<DirectRunDispatchPreparation> => {
     signal.throwIfAborted();
     const prepared = await settleIncludingAbort(async () => {
-      const [publication, candidates] = await joinAll([
-        set(prepareDirectRun$, input, signal),
+      const [publication, { candidates, isFirstRun }] = await joinAll([
+        set(prepareDirectRun$, input, bundles, signal),
         set(readDirectRunCandidates$, input, signal),
       ]);
       signal.throwIfAborted();
-      return { input, ...publication, candidates };
+      return {
+        input,
+        ...publication,
+        executionContext: { ...publication.executionContext, isFirstRun },
+        candidates,
+      };
     });
     signal.throwIfAborted();
     if (!prepared.ok) {

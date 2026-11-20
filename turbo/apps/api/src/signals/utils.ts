@@ -262,7 +262,7 @@ export async function onRejection<T>(
   }
 }
 
-type Settled<T> =
+export type Settled<T> =
   | { readonly ok: true; readonly value: T }
   | { readonly ok: false; readonly error: unknown };
 

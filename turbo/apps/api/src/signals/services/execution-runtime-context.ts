@@ -53,14 +53,28 @@ type ExecutionInput = {
   readonly memoryMounts: readonly AcceptedMemoryMount[];
 };
 
-export function executionPackages({ facts, memoryMounts }: ExecutionInput) {
-  const { skillRoot, skillMounts, officialWorkflowBundles } = facts;
+export function executionPackages({
+  facts,
+  memoryMounts,
+}: Pick<ExecutionInput, "facts" | "memoryMounts">) {
+  const {
+    skillRoot,
+    skillMounts,
+    officialWorkflowBundles,
+    executionPackages: selectedPackages,
+  } = facts;
+  const workflowMountPaths = new Set(
+    selectedPackages.workflows.map(({ name }) => {
+      return `${skillRoot}/${name}`;
+    }),
+  );
   const storageMounts = memoryMounts.map(({ mount }) => {
     return mount;
   });
   const winners = normalizeMountOverlay([...skillMounts, ...storageMounts]);
   const seedSkillBundles = winners.flatMap((volume) => {
-    return "contentBundle" in volume
+    return "contentBundle" in volume &&
+      !workflowMountPaths.has(volume.mountPath)
       ? [{ ...volume.contentBundle, mountPath: volume.mountPath }]
       : [];
   });
@@ -78,6 +92,7 @@ export function executionPackages({ facts, memoryMounts }: ExecutionInput) {
   });
   return {
     skillRoot,
+    ...selectedPackages,
     officialWorkflowBundles,
     seedSkillBundles,
     templateGuidanceBundles,

@@ -74,6 +74,7 @@ import { recordTemplateUsage } from "../../lib/template-usage-log";
 
 import { monotonicNow, now, nowDate, nowDateSql } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
+import { waitUntil } from "../context/wait-until";
 import {
   publishChatIndicatorsChangedSafely,
   publishDesktopShellAuthorizationChangedSafely,
@@ -81,9 +82,20 @@ import {
 } from "../external/realtime";
 
 import { getOfficialTelegramBotConfig } from "../external/telegram-official";
-import { joinAllInOrder, safeSync, settle, tapError } from "../utils";
+import {
+  joinAllInOrder,
+  safeSync,
+  settle,
+  settleIncludingAbort,
+  tapError,
+} from "../utils";
 import type { DirectRunDispatchResult } from "./direct-run-dispatch.service";
-import type { AdmittedRunLaunch } from "./direct-run-preparation.service";
+import {
+  readExecutionBundleUrls$,
+  type AdmittedRunLaunch,
+  type PrefetchedExecutionBundles,
+} from "./direct-run-preparation.service";
+import { executionPackages } from "./execution-runtime-context";
 import {
   prepareRunPackageMounts,
   selectExecutionPackages,
@@ -899,6 +911,7 @@ function claimLaunchRecord(
 
 type PendingClaimRun = {
   readonly admittedLaunch: AdmittedRunLaunch;
+  readonly bundles: PrefetchedExecutionBundles;
   readonly kind: "pending";
   readonly marketingRewardEventId: string | null;
   readonly apiStartTime: number;
@@ -2809,7 +2822,13 @@ export function createThreadClaimRunObjects(
     (
       _store,
       context: ThreadRunContext,
-      committed: AtomicLaunchCommitCompletion,
+      {
+        committed,
+        bundles,
+      }: {
+        readonly committed: AtomicLaunchCommitCompletion;
+        readonly bundles: PrefetchedExecutionBundles;
+      },
       timing: ClaimRunTiming,
       signal: AbortSignal,
     ): ClaimRunCommit => {
@@ -2838,6 +2857,7 @@ export function createThreadClaimRunObjects(
       return {
         kind: "pending",
         admittedLaunch: committed.result.admittedLaunch,
+        bundles,
         marketingRewardEventId: committed.result.marketingRewardEventId,
         apiStartTime: input.args.apiStartTime,
         head: context.head,
@@ -2885,8 +2905,9 @@ export function createThreadClaimRunObjects(
         admissionTiming,
       };
       const commitTiming = timing.run;
+      const packages = executionPackages(launch);
       const commitStartedAt = performance.now();
-      const committed: AtomicLaunchCommitCompletion = await (async () => {
+      const publication = (async (): Promise<AtomicLaunchCommitCompletion> => {
         const result = await withPgPoolAcquisitionCapture(
           poolCapture,
           async () => {
@@ -2940,8 +2961,22 @@ export function createThreadClaimRunObjects(
           now(),
         );
       });
+      // Submit the guarded write first. The independent read shares the pool
+      // but stays outside admission's acquisition and query timing captures.
+      const urls = settleIncludingAbort(() => {
+        return set(readExecutionBundleUrls$, packages, signal);
+      });
+      // A lost claim, failed commit, or abort has no execution consumer.
+      waitUntil(urls);
+      const committed = await publication;
       signal.throwIfAborted();
-      return set(recordRunCommit$, context, committed, timing, signal);
+      return set(
+        recordRunCommit$,
+        context,
+        { committed, bundles: { packages, urls } },
+        timing,
+        signal,
+      );
     },
   );
 

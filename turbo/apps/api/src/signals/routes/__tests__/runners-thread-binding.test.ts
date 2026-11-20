@@ -38,6 +38,56 @@ async function initializedPredecessor() {
 }
 
 describe("Runner first-start Thread binding", () => {
+  it("reports a later Run after the first pending Run was cancelled before binding", async () => {
+    const owned = await publicChatActor(context);
+    await owned.run(async () => {
+      await createBddApi(context).updateAgentInstructions(
+        owned.actor,
+        owned.agentId,
+        `First Run instructions ${randomUUID()}`,
+      );
+      const chat = createChatFilesBddApi(context);
+      const thread = await chat.createThread(owned.actor, {
+        agentId: owned.agentId,
+      });
+      const signing = holdDownloadSigning(context);
+      const clientEventId = randomUUID();
+      await chat.requestSendEvent(
+        owned.actor,
+        {
+          agentId: owned.agentId,
+          threadId: thread.id,
+          clientEventId,
+          prompt: "Cancel the first Run during bundle signing",
+        },
+        [201],
+      );
+      await signing.entered;
+      const page = await chat.listThreadEvents(owned.actor, thread.id);
+      const pending = page.events.find((event) => {
+        return event.revokesEventId === clientEventId;
+      });
+      if (!pending?.runId) {
+        throw new Error("Expected a durable pending Run");
+      }
+      await api.requestCancelRun(owned.actor, pending.runId, [200]);
+      signing.release();
+      await flushWaitUntilForTest();
+      const cancelled = await api.readRun(owned.actor, pending.runId);
+      expect(cancelled.status).toBe("cancelled");
+      expect(cancelled.startedAt).toBeUndefined();
+
+      const next = await api.createThreadRun(owned.actor, {
+        agentId: owned.agentId,
+        threadId: thread.id,
+        prompt: "Continue after cancelling the first pending Run",
+      });
+      await expect(owned.executionInput(next.runId)).resolves.toMatchObject({
+        isFirstRun: false,
+      });
+    });
+  });
+
   it("preserves native context when cancellation wins during execution preparation", async () => {
     const { owned, first } = await initializedPredecessor();
     await owned.run(async () => {

@@ -1,19 +1,17 @@
-import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { chatEvents } from "@okouai/db/schema/chat-event";
 import { command } from "ccstate";
-import { and, eq, isNotNull, ne, sql } from "drizzle-orm";
-import { array, boolean, object } from "zod";
+import { sql } from "drizzle-orm";
+import { array, object } from "zod";
 import { normalizeBuildCommitSha } from "../../lib/build-info";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { env } from "../../lib/env";
 import { monotonicNow, nowDate } from "../../lib/time";
 import { rawSqlReadDb$ } from "../external/db";
 import { recordSandboxOperations } from "../external/sandbox-op-log";
-import { joinAll } from "../utils";
+import { joinAll, type Settled } from "../utils";
 import type { AdmittedExecutionFacts } from "./admitted-execution-facts";
 import type { AcceptedMemoryMount } from "./execution-storage.service";
 import {
-  executionPackages,
+  type executionPackages,
   prepareExecutionRuntimeContext$,
 } from "./execution-runtime-context";
 import {
@@ -23,7 +21,6 @@ import {
 } from "./content-bundle-presigned-url-cache";
 import {
   prepareExecutionPublication$,
-  executionBundleHashes,
   type ExecutionPublicationRun,
 } from "./run-execution-publication.service";
 import type { RunnerReusePreparation } from "./runner-reuse-preference";
@@ -34,7 +31,7 @@ import {
 
 /** Receipt from durable Thread Run admission, before first-run classification. */
 export interface AdmittedRunLaunch {
-  readonly run: Omit<ExecutionPublicationRun, "isFirstRun">;
+  readonly run: ExecutionPublicationRun;
   readonly memoryMounts: readonly AcceptedMemoryMount[];
   readonly facts: AdmittedExecutionFacts;
   readonly runnerGroup: string;
@@ -51,81 +48,91 @@ export interface DirectRunCachePublication {
     readonly durationMs: number;
     readonly consumerWaitMs: number;
   };
+  readonly bundleSigning: {
+    readonly bundleCount: number;
+    readonly missCount: number;
+    readonly durationMs: number;
+  };
 }
 
-const executionPublicationFactsSchema = object({
-  pending: boolean(),
-  isFirstRun: boolean(),
+const bundleUrlSnapshotSchema = object({
   cachedBundleUrls: array(cachedContentBundleUrlSchema),
 });
 
-const readExecutionPackages$ = command(
-  async (
-    { get },
-    input: AdmittedRunLaunch,
-    packageContext: ReturnType<typeof executionPackages>,
-    signal: AbortSignal,
-  ) => {
+type ExecutionPackages = ReturnType<typeof executionPackages>;
+
+export const readExecutionBundleUrls$ = command(
+  async ({ get }, packages: ExecutionPackages, signal: AbortSignal) => {
     signal.throwIfAborted();
     const db = get(rawSqlReadDb$);
     const cache = get(contentBundleUrlCacheContext$);
-    const { instructionsBundle, workflows } = input.facts.executionPackages;
     const bundleHashes = [
-      instructionsBundle.sha256,
-      ...workflows.map((workflow) => {
+      packages.instructionsBundle.sha256,
+      ...packages.workflows.map((workflow) => {
         return workflow.contentBundle.sha256;
       }),
-      ...executionBundleHashes(packageContext),
+      ...[
+        ...packages.officialWorkflowBundles,
+        ...packages.seedSkillBundles,
+        ...packages.templateGuidanceBundles,
+      ].map(({ sha256 }) => {
+        return sha256;
+      }),
     ];
     const timestamp = nowDate().toISOString();
     const startedAt = monotonicNow();
-    const rows = await db.execute(sql`SELECT EXISTS(
-      SELECT 1 FROM ${agentRuns}
-      WHERE ${and(eq(agentRuns.id, input.run.id), eq(agentRuns.userId, input.run.userId), eq(agentRuns.orgId, input.run.orgId), eq(agentRuns.status, "pending"))}
-    ) AS pending,
-      NOT EXISTS(SELECT 1 FROM ${chatEvents} WHERE ${and(eq(chatEvents.chatThreadId, input.run.chatThreadId), isNotNull(chatEvents.runId), ne(chatEvents.runId, input.run.id))}) AS "isFirstRun",
-      ${contentBundleUrlCacheSnapshotSql(cache, bundleHashes)} AS "cachedBundleUrls"`);
+    const rows = await db.execute(
+      sql`SELECT ${contentBundleUrlCacheSnapshotSql(cache, bundleHashes)} AS "cachedBundleUrls"`,
+    );
     signal.throwIfAborted();
-    const [row] = parseRawRows(executionPublicationFactsSchema, rows);
-    if (!row?.pending) {
-      throw new Error("Run is no longer pending for execution publication");
+    const [row] = parseRawRows(bundleUrlSnapshotSchema, rows);
+    if (!row) {
+      throw new Error("Execution bundle URL query returned no row");
     }
     const readyAt = monotonicNow();
     return {
-      row: { ...input.facts.executionPackages, ...row },
-      skillRoot: packageContext.skillRoot,
+      cachedBundleUrls: row.cachedBundleUrls,
       cache,
       timing: { timestamp, startedAt, readyAt },
     };
   },
 );
 
+export interface PrefetchedExecutionBundles {
+  readonly packages: ExecutionPackages;
+  readonly urls: Promise<
+    Settled<Awaited<ReturnType<typeof readExecutionBundleUrls$.write>>>
+  >;
+}
+
 export const prepareDirectRun$ = command(
-  async ({ set }, input: AdmittedRunLaunch, signal: AbortSignal) => {
+  async (
+    { set },
+    input: AdmittedRunLaunch,
+    bundles: PrefetchedExecutionBundles,
+    signal: AbortSignal,
+  ) => {
     signal.throwIfAborted();
-    const packageContext = executionPackages(input);
-    const [runtime, packages] = await joinAll([
+    const [runtime, urls] = await joinAll([
       (async () => {
         const prepared = await set(
           prepareExecutionRuntimeContext$,
           input,
-          packageContext,
+          bundles.packages,
           signal,
         );
         return { prepared, readyAt: monotonicNow() };
       })(),
-      set(readExecutionPackages$, input, packageContext, signal),
+      bundles.urls,
     ]);
     signal.throwIfAborted();
+    if (!urls.ok) {
+      throw urls.error;
+    }
+    const { cache, cachedBundleUrls, timing } = urls.value;
     const { prepared } = runtime;
-    const bundleCacheWaitMs = Math.max(
-      0,
-      packages.timing.readyAt - runtime.readyAt,
-    );
-    const run = {
-      ...input.run,
-      isFirstRun: packages.row.isFirstRun,
-    };
+    const bundleCacheWaitMs = Math.max(0, timing.readyAt - runtime.readyAt);
+    const run = input.run;
     const context = prepared.context;
     const publication = await set(
       prepareExecutionPublication$,
@@ -134,9 +141,8 @@ export const prepareDirectRun$ = command(
         reuseKey: input.reuseKey,
         preparedContext: context,
         networkPolicyInputs: prepared.networkPolicyInputs,
-        packages: packages.row,
-        skillRoot: packages.skillRoot,
-        bundleUrlCache: packages.cache,
+        packages: { ...bundles.packages, cachedBundleUrls },
+        bundleUrlCache: cache,
       },
       signal,
     );
@@ -148,10 +154,11 @@ export const prepareDirectRun$ = command(
           ...publication.cacheWrites,
         ],
         bundleCacheRead: {
-          startedAt: packages.timing.timestamp,
-          durationMs: packages.timing.readyAt - packages.timing.startedAt,
+          startedAt: timing.timestamp,
+          durationMs: timing.readyAt - timing.startedAt,
           consumerWaitMs: bundleCacheWaitMs,
         },
+        bundleSigning: publication.bundleSigning,
       } satisfies DirectRunCachePublication,
       executionContext: publication.executionContext,
       contextSnapshot: {
@@ -205,6 +212,9 @@ export const publishDirectRunCache$ = command(
           ...dimensions,
           span_kind: "nested",
           bundle_cache_consumer_wait_ms: args.bundleCacheRead.consumerWaitMs,
+          bundle_count: args.bundleSigning.bundleCount,
+          bundle_cache_miss_count: args.bundleSigning.missCount,
+          bundle_signing_ms: args.bundleSigning.durationMs,
         },
       },
       {

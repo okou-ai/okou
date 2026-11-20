@@ -8,7 +8,7 @@ import {
   type TemplateGuidanceBundle,
 } from "@okouai/api-contracts/contracts/template-guidance-bundle";
 import { command } from "ccstate";
-import { nowDate } from "../../lib/time";
+import { monotonicNow, nowDate } from "../../lib/time";
 import { generateFirewallToken, generateSandboxToken } from "../auth/tokens";
 import type { ExecutionContextRun } from "./execution-runtime-context";
 import type { ExecutionNetworkPolicyInputs } from "./admitted-execution-facts";
@@ -28,10 +28,10 @@ import {
 export interface ExecutionPublicationRun extends ExecutionContextRun {
   readonly prompt: string;
   readonly appendSystemPrompt: string | null;
-  readonly isFirstRun: boolean;
 }
 
 interface ExecutionPackageSelection extends CapturedExecutionPackages {
+  readonly skillRoot: string;
   readonly cachedBundleUrls: readonly {
     readonly sha256: string;
     readonly url: string;
@@ -45,7 +45,6 @@ interface ExecutionPublicationInput {
   readonly preparedContext: PreparedExecutionContext;
   readonly networkPolicyInputs: ExecutionNetworkPolicyInputs | null;
   readonly packages: ExecutionPackageSelection;
-  readonly skillRoot: string;
   readonly bundleUrlCache: ContentBundleUrlCacheContext;
 }
 
@@ -54,12 +53,13 @@ const signExecutionContentBundles$ = command(
     { set },
     args: Pick<
       ExecutionPublicationInput,
-      "preparedContext" | "packages" | "skillRoot" | "bundleUrlCache"
+      "preparedContext" | "packages" | "bundleUrlCache"
     >,
     signal: AbortSignal,
   ): Promise<{
     readonly contentBundles: ExecutionContext["contentBundles"];
     readonly cacheWrites: readonly StoragePresignedUrlCacheWrite[];
+    readonly bundleCount: number;
   }> => {
     const cachedUrls = new Map(
       args.packages.cachedBundleUrls.map((row) => {
@@ -94,25 +94,17 @@ const signExecutionContentBundles$ = command(
       args.packages.instructionsBundle,
     );
     signal.throwIfAborted();
-    const workflowMountPaths = new Set(
-      args.packages.workflows.map((workflow) => {
-        return `${args.skillRoot}/${workflow.name}`;
-      }),
-    );
     const skills = await Promise.all(
       [
         ...args.packages.workflows.map((workflow) => {
           return {
             contentBundle: workflow.contentBundle,
-            mountPath: `${args.skillRoot}/${workflow.name}`,
+            mountPath: `${args.packages.skillRoot}/${workflow.name}`,
           };
         }),
         ...[
           ...args.preparedContext.officialWorkflowBundles,
-          // Selected Workflows take precedence over seed skills at the same path.
-          ...args.preparedContext.seedSkillBundles.filter((bundle) => {
-            return !workflowMountPaths.has(bundle.mountPath);
-          }),
+          ...args.preparedContext.seedSkillBundles,
         ].map((bundle) => {
           return {
             contentBundle: bundle,
@@ -153,6 +145,7 @@ const signExecutionContentBundles$ = command(
         ...(templates.length ? { templates } : {}),
       },
       cacheWrites,
+      bundleCount: signatures.size,
     };
   },
 );
@@ -243,7 +236,6 @@ function executionContextBody(args: {
   return {
     ...runnerContext,
     contentBundles: args.contentBundles,
-    isFirstRun: args.run.isFirstRun,
     runId: args.run.id,
     reuseKey: args.reuseKey,
     prompt: args.run.prompt,
@@ -287,7 +279,9 @@ export const prepareExecutionPublication$ = command(
       args.run.id,
       args.run.orgId,
     );
+    const signingStartedAt = monotonicNow();
     const signed = await set(signExecutionContentBundles$, args, signal);
+    const signingDurationMs = monotonicNow() - signingStartedAt;
     signal.throwIfAborted();
     return {
       executionContext: executionContextBody({
@@ -305,21 +299,11 @@ export const prepareExecutionPublication$ = command(
         ),
       }),
       cacheWrites: signed.cacheWrites,
+      bundleSigning: {
+        bundleCount: signed.bundleCount,
+        missCount: signed.cacheWrites.length,
+        durationMs: signingDurationMs,
+      },
     };
   },
 );
-
-export function executionBundleHashes(
-  context: Pick<
-    PreparedExecutionContext,
-    "officialWorkflowBundles" | "seedSkillBundles" | "templateGuidanceBundles"
-  >,
-): string[] {
-  return [
-    ...context.officialWorkflowBundles,
-    ...context.seedSkillBundles,
-    ...context.templateGuidanceBundles,
-  ].map((bundle) => {
-    return bundle.sha256;
-  });
-}

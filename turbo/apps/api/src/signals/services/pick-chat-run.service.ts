@@ -490,7 +490,12 @@ function createPickObjects() {
       const [, preparation] = await joinAllInOrder(
         [
           set(claimed.publishPendingRun$, pending, signal),
-          set(prepareDirectRunDispatch$, pending.admittedLaunch, signal),
+          set(
+            prepareDirectRunDispatch$,
+            pending.admittedLaunch,
+            pending.bundles,
+            signal,
+          ),
         ],
         signal,
       );
