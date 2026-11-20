@@ -10,11 +10,14 @@
 //! deadlines, and diagnostics. In particular, frame-builder callers must keep
 //! their encoded buffer inside the builder gate for the entire write.
 
-use std::io;
+use std::borrow::Cow;
+use std::io::{self, IoSlice};
 use std::time::Duration;
 
+use guest_control_proto::WriteFilesFrame;
 use sandbox::OperationCancellationContext;
 use tokio::io::AsyncWriteExt;
+use tokio::net::unix::OwnedWriteHalf;
 use tokio::time::Instant;
 
 use crate::{RequestWriteError, RequestWriteStage};
@@ -31,6 +34,53 @@ pub(crate) enum FrameWriteDecision {
 pub(crate) struct FrameWriteTiming {
     pub(crate) wait: Duration,
     pub(crate) write: Duration,
+}
+
+pub(crate) enum OutboundFrame<'a> {
+    Bytes {
+        prefix: Cow<'a, [u8]>,
+        suffix: &'a [u8],
+    },
+    WriteFiles(WriteFilesFrame<'a>),
+}
+
+impl<'a> OutboundFrame<'a> {
+    pub(crate) fn bytes(prefix: impl Into<Cow<'a, [u8]>>, suffix: &'a [u8]) -> Self {
+        Self::Bytes {
+            prefix: prefix.into(),
+            suffix,
+        }
+    }
+
+    async fn write_to(&self, writer: &mut OwnedWriteHalf) -> io::Result<()> {
+        match self {
+            Self::Bytes { prefix, suffix } => {
+                writer.write_all(prefix).await?;
+                if !suffix.is_empty() {
+                    writer.write_all(suffix).await?;
+                }
+            }
+            Self::WriteFiles(frame) => {
+                let mut slices: Vec<_> = frame
+                    .slices()
+                    .filter(|slice| !slice.is_empty())
+                    .map(IoSlice::new)
+                    .collect();
+                let mut remaining = slices.as_mut_slice();
+                while !remaining.is_empty() {
+                    let written = writer.write_vectored(remaining).await?;
+                    if written == 0 {
+                        return Err(io::Error::new(
+                            io::ErrorKind::WriteZero,
+                            "failed to finish writing file batch frame",
+                        ));
+                    }
+                    IoSlice::advance_slices(&mut remaining, written);
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 /// Exists only inside the possible partial-write window, while holding the writer.
@@ -69,15 +119,14 @@ impl Shared {
         pre_write: impl FnOnce() -> io::Result<FrameWriteDecision>,
         write_finished: impl FnOnce(FrameWriteTiming, &io::Result<()>),
     ) -> io::Result<FrameWriteDecision> {
-        self.write_frame_parts(data, &[], pre_write, write_finished)
+        self.write_outbound_frame(OutboundFrame::bytes(data, &[]), pre_write, write_finished)
             .await
     }
 
-    /// Write both parts as a single frame under one admission and writer guard.
-    pub(crate) async fn write_frame_parts(
+    /// Write all parts of one frame under one admission and writer guard.
+    pub(crate) async fn write_outbound_frame(
         &self,
-        prefix: &[u8],
-        suffix: &[u8],
+        frame: OutboundFrame<'_>,
         pre_write: impl FnOnce() -> io::Result<FrameWriteDecision>,
         write_finished: impl FnOnce(FrameWriteTiming, &io::Result<()>),
     ) -> io::Result<FrameWriteDecision> {
@@ -98,14 +147,7 @@ impl Shared {
             owner: OperationCancellationContext::current(),
         };
         let write_started_at = Instant::now();
-        let result = async {
-            writer.write_all(prefix).await?;
-            if !suffix.is_empty() {
-                writer.write_all(suffix).await?;
-            }
-            Ok::<(), io::Error>(())
-        }
-        .await;
+        let result = frame.write_to(&mut writer).await;
         let write = write_started_at.elapsed();
         guard.progress = match &result {
             Ok(()) => FrameWriteProgress::Complete,
