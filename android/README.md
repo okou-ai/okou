@@ -116,7 +116,8 @@ unread activity through its observed server watermark. The existing read
 endpoint still chooses the receipt watermark. Definitive write failures remove
 the local intent. A successful indicators read started after the write settles
 the current intent, including when the write response was lost. If both fail,
-the list keeps the projection until the next successful refresh.
+the list keeps the projection until the next successful refresh. Bulk feedback
+counts receipts that cover the captured unread watermarks.
 
 Conversation history shares this cache and its workspace authorization lease.
 Room schema v2 adds `history_scopes` (thread, authorization, canonical event format,

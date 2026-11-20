@@ -225,11 +225,7 @@ class ChatListModel(
         val intent: ChatReadIntent,
         val receiptCoversIntent: Boolean,
         val single: Boolean,
-    ) {
-        var observed = false
-        val confirmed
-            get() = receiptCoversIntent || observed
-    }
+    )
 
     private class PreparedListRebase(
         val baseline: ChatCheckpoint,
@@ -436,7 +432,7 @@ class ChatListModel(
                 requireCurrent()
                 result =
                     ChatMarkAllReadResult(
-                        confirmations.count { it?.confirmed == true },
+                        confirmations.count { it?.receiptCoversIntent == true },
                         targets.size,
                     )
             } finally {
@@ -658,7 +654,7 @@ class ChatListModel(
                     if (action.updatesChat) confirmRowEdits(action, edits)
                 }
                 if (
-                    confirmation?.confirmed == false &&
+                    confirmation?.receiptCoversIntent == false &&
                         current() &&
                         readConfirmations[threadId] === confirmation &&
                         mutable.value.readIntents[threadId] === confirmation.intent &&
@@ -1141,13 +1137,17 @@ class ChatListModel(
                     var failed = state.failedRowAction
                     for ((id, confirmation) in eligible) {
                         if (readConfirmations[id] !== confirmation) continue
-                        val unread = id in result.unreadAt
-                        confirmation.observed =
-                            if (confirmation.intent.action == ChatRowAction.MarkUnread) unread
-                            else !unread && result.threads[id] != IndicatorsThreadsValue.ACTIVE
                         if (state.readIntents[id] === confirmation.intent) {
                             settledVisible.add(id)
-                            if (confirmation.single && !confirmation.confirmed) {
+                            // The unread list is bounded, so absence cannot prove a read write.
+                            val observedUnread =
+                                confirmation.intent.action == ChatRowAction.MarkUnread &&
+                                    id in result.unreadAt
+                            if (
+                                confirmation.single &&
+                                    !confirmation.receiptCoversIntent &&
+                                    !observedUnread
+                            ) {
                                 failed = confirmation.intent.action
                             }
                         }

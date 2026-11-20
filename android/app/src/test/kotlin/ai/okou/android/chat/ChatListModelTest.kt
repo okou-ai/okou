@@ -307,6 +307,35 @@ class ChatListModelTest {
     }
 
     @Test
+    fun missingIndicatorDoesNotConfirmAnAmbiguousBulkWrite() = runTest {
+        val source =
+            object : Service() {
+                    override suspend fun markRead(threadId: String): ReadState {
+                        statusRead = { Indicators(emptyMap(), emptyMap(), emptyMap()) }
+                        throw IOException("response lost")
+                    }
+                }
+                .apply {
+                    statusRead = {
+                        Indicators(
+                            emptyMap(),
+                            mapOf(CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD),
+                            mapOf(CHAT_PERSONAL to CHAT_DATE),
+                        )
+                    }
+                }
+        withCatchUpModel(source) { model ->
+            model.refresh()
+            advanceUntilIdle()
+            model.markAllRead()
+            advanceUntilIdle()
+            val state = model.uiState.value
+            assertFalse(state.isUnread(CHAT_PERSONAL))
+            assertEquals(ChatMarkAllReadResult(0, 1), state.markAllReadResult)
+        }
+    }
+
+    @Test
     fun ambiguousUnreadWriteKeepsTheProjectionOfflineAndReconcilesAfterReconnect() = runTest {
         val response = CompletableDeferred<ReadState>()
         val source =
