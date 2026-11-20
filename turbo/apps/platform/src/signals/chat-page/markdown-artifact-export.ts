@@ -167,7 +167,7 @@ export const downloadMarkdownArtifact$ = command(
     signal.throwIfAborted();
     const blob =
       input.format === "pdf"
-        ? await generateMessagePdfBlob([source], imageUrls, signal, baseUrl)
+        ? await generateMessagePdfBlob([source], { imageUrls }, signal, baseUrl)
         : await generateMarkdownDocxBlob(
             source,
             await preparePdfAssets(tree, imageUrls, signal),
