@@ -94,7 +94,7 @@ test("Send one touch click at the release point despite compatibility mouse even
   });
 
   await waitFor(() => {
-    expect(cdp.input).toEqual(clickAt(124, 153));
+    expect(cdp.input).toStrictEqual(clickAt(124, 153));
     expect(screen.getByLabelText("Remote browser input")).toHaveFocus();
   });
 });
@@ -108,7 +108,7 @@ test("Pointer cancellation drops the active gesture and leaves the next tap usab
   tap(surface, 300, 400, 2);
 
   await waitFor(() => {
-    expect(cdp.input).toEqual(clickAt(300, 400));
+    expect(cdp.input).toStrictEqual(clickAt(300, 400));
   });
 });
 
@@ -119,7 +119,7 @@ test("Ignore letterbox taps and map touches within the image", async () => {
   tap(surface, 800, 450, 2);
 
   await waitFor(() => {
-    expect(cdp.input).toEqual(clickAt(720, 450));
+    expect(cdp.input).toStrictEqual(clickAt(720, 450));
   });
 });
 
@@ -134,7 +134,7 @@ test("Discard the old tab touch and send the new tap only to the selected tab", 
 
   const session = cdp.pageSession("other-page");
   await waitFor(() => {
-    expect(cdp.input).toEqual(clickAt(300, 400));
+    expect(cdp.input).toStrictEqual(clickAt(300, 400));
     expect(
       cdp.input.every((item) => {
         return item.sessionId === session;
@@ -173,7 +173,7 @@ test("Forward a desktop mouse click and wheel movement in order", async () => {
   });
 
   await waitFor(() => {
-    expect(cdp.input).toEqual([
+    expect(cdp.input).toStrictEqual([
       ...clickAt(300, 400),
       expect.objectContaining({
         method: "Input.dispatchMouseEvent",

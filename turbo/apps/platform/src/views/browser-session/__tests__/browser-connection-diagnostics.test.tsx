@@ -35,7 +35,7 @@ async function submitAddress(url: string) {
 test("Report only safe native startup facts when the bridge cannot bind", async () => {
   const reports = observeExceptions();
   const { cdp, openPage } = arrangeNativePage(context);
-  cdp.failNext("Runtime.addBinding", privateProviderDetail, -32001);
+  cdp.failNext("Runtime.addBinding", privateProviderDetail, -32_001);
 
   await openPage();
 
@@ -54,7 +54,7 @@ test("Report only safe native startup facts when the bridge cannot bind", async 
         browser_bridge: {
           stage: "bind-events",
           reason: "cdp-protocol-failed",
-          request: { method: "Runtime.addBinding", code: -32001 },
+          request: { method: "Runtime.addBinding", code: -32_001 },
         },
       },
     },
@@ -125,7 +125,7 @@ test.each([
   if (method === "native") {
     cdp.rejectNextNavigation(`net::ERR_ABORTED ${privateProviderDetail}`);
   } else {
-    cdp.failNext("Page.navigate", privateProviderDetail, -32001);
+    cdp.failNext("Page.navigate", privateProviderDetail, -32_001);
   }
 
   await submitAddress("https://rejected.example.test/");
@@ -136,24 +136,30 @@ test.each([
     expect(reports()).toHaveLength(1);
   });
   const [report] = reports();
-  if (method === "native") {
-    expect(report?.context).toMatchObject({
-      contexts: {
-        browser_navigation: { method: "Page.navigate", reason: "unknown" },
-      },
-    });
-  } else {
-    expect(report?.error).toMatchObject({
-      cause: {
-        kind: "protocol",
-        request: { method: "Page.navigate", code: -32001 },
-      },
-    });
-  }
+  expect(report).toMatchObject(
+    method === "native"
+      ? {
+          context: {
+            contexts: {
+              browser_navigation: {
+                method: "Page.navigate",
+                reason: "unknown",
+              },
+            },
+          },
+        }
+      : {
+          error: {
+            cause: {
+              kind: "protocol",
+              request: { method: "Page.navigate", code: -32_001 },
+            },
+          },
+        },
+  );
   expect(String(report?.error)).not.toContain(privateProviderDetail);
-  if (report?.error instanceof Error) {
-    expect(String(report.error.cause)).not.toContain(privateProviderDetail);
-  }
+  const cause = report?.error instanceof Error ? report.error.cause : undefined;
+  expect(String(cause)).not.toContain(privateProviderDetail);
   expect(JSON.stringify(report)).not.toContain(privateProviderDetail);
   expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
   await submitAddress(destination);

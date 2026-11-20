@@ -91,3 +91,21 @@ passed the same checks before BDD removal.
 `chat-scroll` and `unified-chat-workspace` were not selected for this round.
 `chat-scroll` already has accepted rows in the branch, and
 `unified-chat-workspace-001` was renamed upstream. Both keep their BDD.
+
+## Lint repair in earlier rebuilt files
+
+Whole-app Oxlint reported 23 errors and 5 warnings in eight files accepted
+in earlier batches. Seven browser-session files and `agent-suggestions` now
+use `toStrictEqual`, `await expect(...).resolves`, numeric separators and
+`dataset`. Expectations no longer sit in test conditionals. The stalled RTT
+probe case asserts its single version request directly. The eight files pass
+70 of 70 Vitest rows, and both whole-app Oxlint configurations pass.
+Registration lines that moved are updated in the ledgers. Two
+`agent-suggestions` upstream rows had stale lines from an earlier batch.
+They now point at their registrations.
+
+`eslint .` still reports a parse error for every temporary BDD file under
+`src/views` and `src/signals`. The configuration generated from the Oxlint
+overrides matches `src/views/**/*.*` and `src/signals/**/*.*`. Those parse
+errors were the only ESLint findings. They clear when the remaining BDD files
+are removed, without a lint configuration change.

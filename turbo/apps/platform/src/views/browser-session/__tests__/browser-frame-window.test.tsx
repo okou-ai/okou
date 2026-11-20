@@ -62,6 +62,11 @@ test("Keep the three-frame window while the optional RTT probe is stalled", asyn
   await probe.received;
 
   await expectStreamingAt("https://example.com");
+  expect(
+    cdp.requests.filter((request) => {
+      return request.method === "Browser.getVersion";
+    }),
+  ).toHaveLength(1);
   await expectPaintWindow(cdp, 3);
 });
 

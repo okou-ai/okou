@@ -1204,7 +1204,7 @@ test("A custom direction starts a new chat when its named chat is gone", async (
     expect(sends).toHaveLength(1);
   });
   expect(creates).toHaveLength(1);
-  expect(creates[0]?.clientThreadId).toEqual(expect.any(String));
+  expect(creates[0]?.clientThreadId).toStrictEqual(expect.any(String));
   expect(creates[0]?.clientThreadId).not.toBe(TARGET_THREAD_ID);
   expect(sends[0]).toMatchObject({ threadId: creates[0]?.clientThreadId });
   expect(sentDocument(sends[0])?.parts).toContainEqual(

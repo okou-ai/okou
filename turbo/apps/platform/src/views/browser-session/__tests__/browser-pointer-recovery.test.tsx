@@ -78,7 +78,7 @@ test("Recover on the sibling when the hovered tab is destroyed before acknowledg
     method: "Input.dispatchMouseEvent",
     params: expect.objectContaining({ type: "mouseMoved", x: 120, y: 130 }),
   });
-  expect(cdp.input).toEqual([move]);
+  expect(cdp.input).toStrictEqual([move]);
   expect(cdp.input[0]?.sessionId).toBe(session);
 
   cdp.event("Target.targetDestroyed", { targetId: "example-page" });
@@ -97,7 +97,7 @@ test("Recover on the sibling when the hovered tab is destroyed before acknowledg
     cdp.input.filter((item) => {
       return item.method === "Input.dispatchMouseEvent";
     }),
-  ).toEqual([move]);
+  ).toStrictEqual([move]);
 });
 
 test("Keep the original drag failure and fence the detached tab", async () => {
@@ -186,7 +186,7 @@ test("Preserve the failed release of a held key when neutral hover is interrupte
 
 test("Retain an earlier native hover rejection when the next hover detaches", async () => {
   const { cdp, surface, session, sentry } = await openPointerFixture();
-  cdp.failNext("Input.dispatchMouseEvent", "Original hover rejected", -32001);
+  cdp.failNext("Input.dispatchMouseEvent", "Original hover rejected", -32_001);
   const rejected = cdp.holdNext("Input.dispatchMouseEvent");
   fireEvent.pointerMove(surface, mouse(120, 130));
   await rejected.received;
@@ -203,7 +203,7 @@ test("Retain an earlier native hover rejection when the next hover detaches", as
       expect.objectContaining({
         type: "exception",
         error: expect.objectContaining({
-          request: { method: "Input.dispatchMouseEvent", code: -32001 },
+          request: { method: "Input.dispatchMouseEvent", code: -32_001 },
         }),
       }),
     );

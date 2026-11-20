@@ -119,9 +119,9 @@ test("Window size settings retain each selected mode when reopened", async () =>
     click(await screen.findByText("Window size"));
   };
   await openWindowSize();
-  expect(
-    await findViewerControl("menuitemradio", "Follow panel"),
-  ).toBeChecked();
+  await expect(
+    findViewerControl("menuitemradio", "Follow panel"),
+  ).resolves.toBeChecked();
 
   for (const label of ["On connection", "Follow panel", "Off"]) {
     const option = await findViewerControl("menuitemradio", label);
@@ -133,7 +133,9 @@ test("Window size settings retain each selected mode when reopened", async () =>
       expect(viewerControl("menuitemradio", label)).toBeUndefined();
     });
     await openWindowSize();
-    expect(await findViewerControl("menuitemradio", label)).toBeChecked();
+    await expect(
+      findViewerControl("menuitemradio", label),
+    ).resolves.toBeChecked();
   }
 });
 
@@ -204,7 +206,9 @@ test("Apply numeric quality on Enter and blur while preserving IME editing", asy
 test("Apply quality presets and slider keys while preserving Escape focus", async () => {
   const { captures } = await openViewer();
   const input = await openQualityInput();
-  expect(await findViewerControl("menuitemradio", "Balanced")).toBeChecked();
+  await expect(
+    findViewerControl("menuitemradio", "Balanced"),
+  ).resolves.toBeChecked();
   expect(captures.at(-1)).toMatchObject({ quality: 70 });
 
   for (const [label, quality] of [
@@ -280,7 +284,9 @@ test("Preserve a chosen quality preset through lossless PNG and JPEG", async () 
     expect(captures.at(-1)).toMatchObject({ format: "jpeg", quality: 90 });
   });
   await openFormat();
-  expect(await findViewerControl("menuitemradio", "JPEG")).toBeChecked();
+  await expect(
+    findViewerControl("menuitemradio", "JPEG"),
+  ).resolves.toBeChecked();
 });
 
 function qualityDrag() {
@@ -358,9 +364,9 @@ test("Ignore queued drag events when Escape dismisses image quality", async () =
     "true",
   );
   click(item);
-  expect(
-    await screen.findByRole("textbox", { name: "Image quality" }),
-  ).toHaveValue("70");
+  await expect(
+    screen.findByRole("textbox", { name: "Image quality" }),
+  ).resolves.toHaveValue("70");
   expect(captures.at(-1)).toMatchObject({ quality: 70 });
 });
 
@@ -580,7 +586,7 @@ test("Synchronize the replacement display measured while the viewer is concealed
   const fallback = HTMLElement.prototype.getBoundingClientRect;
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
     function (this: HTMLElement) {
-      return this.hasAttribute("data-browser-canvas")
+      return Object.hasOwn(this.dataset, "browserCanvas")
         ? size
         : fallback.call(this);
     },
@@ -886,7 +892,9 @@ test("Switch to the reopened native window and keep renewing its viewer", async 
     expect(screen.getByLabelText("Address")).toHaveValue("https://example.com");
     expect(renewals).toBe(1);
   });
-  expect(await findViewerControl("tab", "Current chat")).toBeInTheDocument();
+  await expect(
+    findViewerControl("tab", "Current chat"),
+  ).resolves.toBeInTheDocument();
 
   viewer = initial;
   firstRenewal.resolve();

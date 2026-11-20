@@ -202,7 +202,7 @@ test.each([
     context.mocks.api(browserContract.open, ({ body, query, respond }) => {
       counts.opens += 1;
       expect(query?.viewer).toBe("native");
-      expect(body.operationId).toEqual(expect.any(String));
+      expect(body.operationId).toStrictEqual(expect.any(String));
       if (echo) {
         publish(body.operationId);
       }

@@ -97,6 +97,14 @@ async function separateImageOption() {
   });
 }
 
+async function untilSocketOpening(cdp: {
+  connections: () => number;
+}): Promise<void> {
+  await waitFor(() => {
+    expect(cdp.connections()).toBeGreaterThan(0);
+  });
+}
+
 test.each([{ phase: "socket opening" }, { phase: "native attachment" }])(
   "Switch to a separate image connection while $phase is pending",
   async ({ phase }) => {
@@ -108,13 +116,7 @@ test.each([{ phase: "socket opening" }, { phase: "native attachment" }])(
         ? cdp.holdNext("Target.attachToTarget")
         : undefined;
     await openPage();
-    if (attachment) {
-      await attachment.received;
-    } else {
-      await waitFor(() => {
-        expect(cdp.connections()).toBeGreaterThan(0);
-      });
-    }
+    await (attachment?.received ?? untilSocketOpening(cdp));
     expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
     click(await separateImageOption());
     if (attachment) {
@@ -126,6 +128,6 @@ test.each([{ phase: "socket opening" }, { phase: "native attachment" }])(
 
     await expectStreamingAt("https://example.com");
     expect(cdp.targets).toHaveLength(1);
-    expect(await separateImageOption()).toBeChecked();
+    await expect(separateImageOption()).resolves.toBeChecked();
   },
 );
