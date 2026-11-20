@@ -1254,10 +1254,11 @@ class ChatListRootTest {
     }
 
     private fun awaitRowActionSettled(id: String) {
-        val model =
-            ViewModelProvider(compose.activity)[SessionModel::class.java].uiState.value.ready?.chats
-        checkNotNull(model)
-        compose.waitUntil(10_000) { id !in model.uiState.value.pendingRowActions }
+        val menuAvailable =
+            hasTestTag("chat_$id").and(SemanticsMatcher.keyIsDefined(SemanticsActions.OnLongClick))
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(menuAvailable).fetchSemanticsNodes().isNotEmpty()
+        }
     }
 
     private fun RecordedRequest.jsonCommandBody() =
