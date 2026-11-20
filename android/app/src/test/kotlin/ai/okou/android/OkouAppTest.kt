@@ -47,6 +47,7 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertWidthIsEqualTo
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isSelectable
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -618,7 +619,10 @@ class OkouAppTest {
         initialListResponse.complete(Unit)
 
         compose.waitUntil(10_000) {
-            compose.onAllNodes(hasText("Personal chat")).fetchSemanticsNodes().isNotEmpty()
+            compose
+                .onAllNodes(hasContentDescription("Chats werden geladen…"))
+                .fetchSemanticsNodes()
+                .isEmpty()
         }
         compose.onNodeWithContentDescription("Filter").assertIsDisplayed().performClick()
         compose.onNodeWithText("Archiviert").assertIsDisplayed().performClick()
