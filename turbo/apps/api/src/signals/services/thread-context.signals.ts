@@ -173,13 +173,9 @@ export function createThreadContext(
     dispatchTiming$,
     threadConnectorSources$,
   );
-  const connectorAccounts$ = computed(async (get) => {
-    return (await get(bootstrap.connectors$)).connectorAccounts;
-  });
   const emailMailboxConnections$ = createEmailMailboxConnections(
     pickedEvent$,
-    connectedAccounts.selectedStoredConnectorSources$,
-    connectorAccounts$,
+    connectedAccounts.selectedStoredConnectorAccounts$,
   );
   const inputSources = {
     connectorSelection$: connectedAccounts.connectorSelection$,

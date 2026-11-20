@@ -229,6 +229,7 @@ import {
   DrizzleQueryError,
   isNotNull,
   ne,
+  notExists,
   sql,
   type SQL,
   type SQLWrapper,
@@ -3968,6 +3969,16 @@ function pendingAtomicLaunchPlan(
     attribution,
     pendingLaunchBarrier(names),
   );
+  const earlierRunEvents = new QueryBuilder()
+    .select({ id: chatEvents.id })
+    .from(chatEvents)
+    .where(
+      and(
+        eq(chatEvents.chatThreadId, args.commit.createArgs.chatThreadId),
+        isNotNull(chatEvents.runId),
+        ne(chatEvents.runId, context.rowsArgs.identity.runId),
+      ),
+    );
   return sql`WITH ${pendingLaunchPublicationCtes(args)},
     ${sql.join(planned, sql`, `)},
     launch_active AS (${active})
@@ -3979,14 +3990,7 @@ function pendingAtomicLaunchPlan(
       (SELECT ${returnedCteColumn(context.insertedRun, "id")} FROM ${context.insertedRun}) AS "runId",
       (SELECT ${returnedCteColumn(context.insertedRun, "created_at")} FROM ${context.insertedRun})::text AS "createdAt",
       CASE WHEN EXISTS (SELECT 1 FROM ${context.insertedRun}) THEN
-        NOT EXISTS (
-          SELECT 1 FROM ${chatEvents}
-          WHERE ${and(
-            eq(chatEvents.chatThreadId, args.commit.createArgs.chatThreadId),
-            isNotNull(chatEvents.runId),
-            ne(chatEvents.runId, context.rowsArgs.identity.runId),
-          )}
-        )
+        ${notExists(earlierRunEvents)}
       END AS "isFirstRun",
       ${returnedCteId(context.updatedThread)} AS "boundThreadId"
     WHERE (SELECT ${count()} FROM launch_active) >= 0`;

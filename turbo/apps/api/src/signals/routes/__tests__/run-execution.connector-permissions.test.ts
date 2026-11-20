@@ -18,7 +18,7 @@ import { API_TEST_CONNECTOR_CATALOG_ARTIFACT } from "../../../test-fixtures/conn
 import baselineSkillBundle from "../../../test-fixtures/connector-skill-bundle.json";
 import { connectorPermissionsRoutes } from "../connector-permissions";
 import { cronConnectorCatalogRoutes } from "../cron-connector-catalog";
-import type { ApiTestUser } from "./helpers/api-bdd";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import {
   mockGitHubConnectorOAuth,
   mockSlackConnectorOAuth,
@@ -294,7 +294,8 @@ describe("Execution connector permissions", () => {
   it.each([
     "active",
     "expired-before-preparation",
-    "expired-during-preparation",
+    "expired-during-memory-signing",
+    "expired-during-bundle-signing",
   ] as const)(
     "evaluates the captured permission source and temporary deadline: %s",
     async (expiry) => {
@@ -326,7 +327,7 @@ describe("Execution connector permissions", () => {
       const prompt =
         "use the current Slack write grant and its original expiry";
       let run: Awaited<ReturnType<typeof sendChatRun>>;
-      if (expiry === "expired-during-preparation") {
+      if (expiry === "expired-during-memory-signing") {
         const memory = createPublicRunnerMemory(context, actor);
         run = await memory.run(async () => {
           memory.installObjects();
@@ -368,6 +369,32 @@ describe("Execution connector permissions", () => {
           expect(now()).toBe(expiresAt);
           return hydrated.run;
         });
+      } else if (expiry === "expired-during-bundle-signing") {
+        await createBddApi(context).updateAgentInstructions(
+          actor,
+          agentId,
+          `Instructions for a fresh bundle: ${randomUUID()}`,
+        );
+        mockNow(expiresAt - 1);
+        await runs.registerDirectRunner(runnerGroup);
+        const presigner = context.mocks.s3.getSignedUrl;
+        const sign = presigner.getMockImplementation();
+        if (!sign) {
+          throw new Error("Expected the bundle presigner fixture");
+        }
+        presigner.mockImplementation((...args) => {
+          const command = args[1];
+          if (
+            command instanceof GetObjectCommand &&
+            command.input.Key?.startsWith("bundles/v1/")
+          ) {
+            mockNow(expiresAt);
+            presigner.mockImplementation(sign);
+          }
+          return sign(...args);
+        });
+        run = await sendChatRun(actor, { agentId, prompt });
+        expect(now()).toBe(expiresAt);
       } else {
         await executeAndCancel(actor, agentId);
         const queued = await queueChatRun(actor, { agentId, prompt });

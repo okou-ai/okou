@@ -9,9 +9,11 @@ import { generateFirewallToken, generateSandboxToken } from "../auth/tokens";
 import type { ExecutionContextRun } from "./execution-runtime-context";
 import type { ExecutionNetworkPolicyInputs } from "./admitted-execution-facts";
 import {
-  activeNetworkPolicyRefreshesFromGrants,
+  activeNetworkPolicyRefreshesAt,
   mergeNetworkPolicyRefreshes,
   networkPolicyRefreshesRecord,
+  prepareNetworkPolicyRefreshInputs,
+  type PreparedNetworkPolicyRefreshInputs,
 } from "./connector-network-policy-refresh.service";
 
 export interface ExecutionPublicationRun extends ExecutionContextRun {
@@ -30,52 +32,31 @@ function secretValuesForRunner(
   return [token];
 }
 
-type RefreshedExecutionPolicies = Pick<
-  PreparedExecutionContext,
-  "networkPolicies"
-> &
-  Pick<ExecutionContext, "networkPolicyRefreshes">;
-
-export const prepareExecutionNetworkPolicyRefreshes$ = command(
+export const prepareExecutionNetworkPolicy$ = command(
   async (
     _context,
     args: {
-      readonly preparedContext: PreparedExecutionContext;
+      readonly connectorRuntimeTargets: PreparedExecutionContext["connectorRuntimeTargets"];
       readonly networkPolicyInputs: ExecutionNetworkPolicyInputs | null;
     },
-  ): Promise<RefreshedExecutionPolicies> => {
-    const builtinConnectorSlugs = [
-      ...new Set(
-        args.preparedContext.connectorRuntimeTargets.flatMap((target) => {
-          return target.kind === "builtin" ? [target.connectorSlug] : [];
-        }),
-      ),
-    ];
+  ): Promise<PreparedNetworkPolicyRefreshInputs | null> => {
+    const builtinConnectorSlugs = args.connectorRuntimeTargets.flatMap(
+      (target) => {
+        return target.kind === "builtin" ? [target.connectorSlug] : [];
+      },
+    );
     if (builtinConnectorSlugs.length === 0) {
-      return {
-        networkPolicies: args.preparedContext.networkPolicies,
-        networkPolicyRefreshes: undefined,
-      };
+      return null;
     }
     if (args.networkPolicyInputs === null) {
       throw new Error(
         "Connector network policy refresh requires execution inputs",
       );
     }
-    const refreshes = await activeNetworkPolicyRefreshesFromGrants(
-      {
-        ...args.networkPolicyInputs,
-        connectorSlugs: builtinConnectorSlugs,
-      },
-      nowDate(),
-    );
-    return {
-      networkPolicies: mergeNetworkPolicyRefreshes(
-        args.preparedContext.networkPolicies,
-        refreshes,
-      ),
-      networkPolicyRefreshes: networkPolicyRefreshesRecord(refreshes),
-    };
+    return await prepareNetworkPolicyRefreshInputs({
+      ...args.networkPolicyInputs,
+      connectorSlugs: builtinConnectorSlugs,
+    });
   },
 );
 
@@ -83,9 +64,12 @@ export function buildExecutionContext(args: {
   readonly run: ExecutionPublicationRun;
   readonly reuseKey: string;
   readonly preparedContext: PreparedExecutionContext;
-  readonly refreshedPolicies: RefreshedExecutionPolicies;
+  readonly networkPolicyInputs: PreparedNetworkPolicyRefreshInputs | null;
   readonly contentBundles: ExecutionContext["contentBundles"];
 }) {
+  const refreshes = args.networkPolicyInputs
+    ? activeNetworkPolicyRefreshesAt(args.networkPolicyInputs, nowDate())
+    : [];
   const {
     officialWorkflowBundles: _officialWorkflowBundles,
     seedSkillBundles: _seedSkillBundles,
@@ -131,7 +115,13 @@ export function buildExecutionContext(args: {
     ),
     secretValues: secretValuesForRunner(args.preparedContext),
     connectorRuntimeTargets: args.preparedContext.connectorRuntimeTargets,
-    networkPolicies: args.refreshedPolicies.networkPolicies,
-    networkPolicyRefreshes: args.refreshedPolicies.networkPolicyRefreshes,
+    networkPolicies:
+      refreshes.length === 0
+        ? args.preparedContext.networkPolicies
+        : mergeNetworkPolicyRefreshes(
+            args.preparedContext.networkPolicies,
+            refreshes,
+          ),
+    networkPolicyRefreshes: networkPolicyRefreshesRecord(refreshes),
   } satisfies ExecutionContext;
 }

@@ -25,7 +25,7 @@ import {
 } from "./content-bundle-presigned-url-cache";
 import {
   buildExecutionContext,
-  prepareExecutionNetworkPolicyRefreshes$,
+  prepareExecutionNetworkPolicy$,
   type ExecutionPublicationRun,
 } from "./run-execution-publication.service";
 import type { RunnerReusePreparation } from "./runner-reuse-preference";
@@ -99,14 +99,11 @@ export const prepareDirectRun$ = command(
         );
         signal.throwIfAborted();
         const readyAt = monotonicNow();
-        const refreshedPolicies = await set(
-          prepareExecutionNetworkPolicyRefreshes$,
-          {
-            preparedContext: prepared.context,
-            networkPolicyInputs: prepared.networkPolicyInputs,
-          },
-        );
-        return { prepared, readyAt, refreshedPolicies };
+        const networkPolicyInputs = await set(prepareExecutionNetworkPolicy$, {
+          connectorRuntimeTargets: prepared.context.connectorRuntimeTargets,
+          networkPolicyInputs: prepared.networkPolicyInputs,
+        });
+        return { prepared, readyAt, networkPolicyInputs };
       })(),
       (async () => {
         const cache = await set(
@@ -135,7 +132,7 @@ export const prepareDirectRun$ = command(
       run,
       reuseKey: input.reuseKey,
       preparedContext: context,
-      refreshedPolicies: runtime.refreshedPolicies,
+      networkPolicyInputs: runtime.networkPolicyInputs,
       contentBundles: publication.signed.contentBundles,
     });
     return {

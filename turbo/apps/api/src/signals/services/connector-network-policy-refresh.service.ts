@@ -32,6 +32,11 @@ interface ConnectorPermissionPolicyBaseline {
   readonly defaultPolicy: FirewallPolicy;
 }
 
+export interface PreparedNetworkPolicyRefreshInputs {
+  readonly baselines: readonly ConnectorPermissionPolicyBaseline[];
+  readonly grants: readonly ResolvedPermissionGrant[];
+}
+
 function earliestTemporaryAllowExpiresAt(
   grants: readonly ResolvedPermissionGrant[],
   connectorSlug: string,
@@ -88,34 +93,20 @@ export const readActiveNetworkPolicyRefreshes$ = command(
       return [];
     }
 
-    const uniqueConnectorSlugs = networkPolicyRefreshConnectorSlugs(
-      snapshot.serverFirewalls,
+    const inputs = await prepareNetworkPolicyRefreshInputs({
+      catalog: snapshot.serverFirewalls,
       connectorSlugs,
-    );
-    if (uniqueConnectorSlugs.length === 0) {
-      return [];
-    }
-
-    return await activeNetworkPolicyRefreshesFromGrants(
-      {
-        catalog: snapshot.serverFirewalls,
-        connectorSlugs: uniqueConnectorSlugs,
-        grants: args.memberRules,
-      },
-      checkedAt,
-    );
+      grants: args.memberRules,
+    });
+    return activeNetworkPolicyRefreshesAt(inputs, checkedAt);
   },
 );
 
-/** Captured sources can outlive a temporary grant while a Run is prepared. */
-export async function activeNetworkPolicyRefreshesFromGrants(
-  args: {
-    readonly catalog: ConnectorServerFirewallMetadataCatalog;
-    readonly connectorSlugs: readonly string[];
-    readonly grants: readonly ResolvedPermissionGrant[];
-  },
-  checkedAt: Date,
-): Promise<readonly ActiveNetworkPolicyRefresh[]> {
+export async function prepareNetworkPolicyRefreshInputs(args: {
+  readonly catalog: ConnectorServerFirewallMetadataCatalog;
+  readonly connectorSlugs: readonly string[];
+  readonly grants: readonly ResolvedPermissionGrant[];
+}): Promise<PreparedNetworkPolicyRefreshInputs> {
   const indexes = await Promise.all(
     networkPolicyRefreshConnectorSlugs(args.catalog, args.connectorSlugs).map(
       async (connectorSlug) => {
@@ -126,8 +117,8 @@ export async function activeNetworkPolicyRefreshesFromGrants(
       },
     ),
   );
-  return activeNetworkPolicyRefreshesForPermissionBaselines(
-    indexes.flatMap(({ connectorSlug, index }) => {
+  return {
+    baselines: indexes.flatMap(({ connectorSlug, index }) => {
       return index
         ? [
             {
@@ -138,16 +129,22 @@ export async function activeNetworkPolicyRefreshesFromGrants(
           ]
         : [];
     }),
-    args.grants.filter((grant) => {
-      return grant.expiresAt === null || grant.expiresAt > checkedAt;
-    }),
-  );
+    grants: args.grants,
+  };
 }
 
-function activeNetworkPolicyRefreshesForPermissionBaselines(
-  baselines: readonly ConnectorPermissionPolicyBaseline[],
-  grants: readonly ResolvedPermissionGrant[],
+/** Evaluate captured grants at the caller's decision time. */
+export function activeNetworkPolicyRefreshesAt(
+  inputs: PreparedNetworkPolicyRefreshInputs,
+  checkedAt: Date,
 ): readonly ActiveNetworkPolicyRefresh[] {
+  const { baselines } = inputs;
+  if (baselines.length === 0) {
+    return [];
+  }
+  const grants = inputs.grants.filter((grant) => {
+    return grant.expiresAt === null || grant.expiresAt > checkedAt;
+  });
   const policies = resolvedConnectorFirewallPolicies(grants);
   return baselines.map((baseline) => {
     const defaultPolicy = baseline.defaultPolicy;
