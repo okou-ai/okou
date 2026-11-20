@@ -1674,8 +1674,7 @@
           "change": "Alterar capa",
           "default": "Padrão",
           "gallery": "Capas",
-          "option": "Capa {{index}}",
-          "reset": "Restaurar padrão"
+          "option": "Capa {{index}}"
         },
         "loading": "Carregando sugestões",
         "next": "Próxima sugestão",

@@ -1645,8 +1645,7 @@
           "change": "Ganti sampul",
           "default": "Default",
           "gallery": "Sampul",
-          "option": "Sampul {{index}}",
-          "reset": "Kembalikan ke default"
+          "option": "Sampul {{index}}"
         },
         "loading": "Memuat saran",
         "next": "Saran berikutnya",

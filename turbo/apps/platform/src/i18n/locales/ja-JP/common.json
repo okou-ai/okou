@@ -1645,8 +1645,7 @@
           "change": "カバーを変更",
           "default": "デフォルト",
           "gallery": "カバー",
-          "option": "カバー {{index}}",
-          "reset": "デフォルトに戻す"
+          "option": "カバー {{index}}"
         },
         "loading": "提案を読み込み中",
         "next": "次の提案",

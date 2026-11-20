@@ -1649,8 +1649,7 @@
           "change": "Change cover",
           "default": "Default",
           "gallery": "Covers",
-          "option": "Cover {{index}}",
-          "reset": "Reset to default"
+          "option": "Cover {{index}}"
         },
         "loading": "Loading suggestions",
         "next": "Next suggestion",

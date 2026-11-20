@@ -1674,8 +1674,7 @@
           "change": "Cambia copertina",
           "default": "Predefinita",
           "gallery": "Copertine",
-          "option": "Copertina {{index}}",
-          "reset": "Ripristina predefinita"
+          "option": "Copertina {{index}}"
         },
         "loading": "Caricamento dei suggerimenti",
         "next": "Suggerimento successivo",
