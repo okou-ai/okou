@@ -2162,3 +2162,31 @@ debug-morning-brief-005	turbo/apps/platform/src/views/okou-page/__tests__/debug-
 debug-openrouter-preset-001	turbo/apps/platform/src/views/okou-page/__tests__/debug-openrouter-preset.test.tsx	lets the administrator select a preset, restore the system default, and select another preset	21	passed
 debug-openrouter-preset-002	turbo/apps/platform/src/views/okou-page/__tests__/debug-openrouter-preset.test.tsx	hides the preset control for role member with Debug true	64	passed
 debug-openrouter-preset-006	turbo/apps/platform/src/views/okou-page/__tests__/debug-openrouter-preset.test.tsx	displays an existing operator preset without adding it to the selectable allowlist	79	passed
+activity-capture-actions-001	turbo/apps/platform/src/views/activity-page/__tests__/activity-capture-actions.test.tsx	Copy each capture section without opening its disclosure	64	passed
+activity-detail-retained-data-001	turbo/apps/platform/src/views/activity-page/__tests__/activity-detail-retained-data.test.tsx	An unavailable activity shows a clear not-found page	99	passed
+activity-detail-retained-data-002	turbo/apps/platform/src/views/activity-page/__tests__/activity-detail-retained-data.test.tsx	A user can download all retained diagnostics for an older activity	113	passed
+activity-inspect-page-001	turbo/apps/platform/src/views/activity-page/__tests__/activity-inspect-page.test.tsx	A user can inspect steps, context, and network details from an exported log	287	passed
+activity-inspect-page-002	turbo/apps/platform/src/views/activity-page/__tests__/activity-inspect-page.test.tsx	Selecting and copying a network URL preserves its request details	447	passed
+activity-inspect-page-003	turbo/apps/platform/src/views/activity-page/__tests__/activity-inspect-page.test.tsx	An imported log does not expose debug diagnostics when debug access is disabled	493	passed
+activity-inspect-page-005	turbo/apps/platform/src/views/activity-page/__tests__/activity-inspect-page.test.tsx	The inspector presents exported Codex events as readable activity steps	522	passed
+activity-log-001	turbo/apps/platform/src/views/activity-page/__tests__/activity-log.test.tsx	Failed activities accept old and new responses without displaying diagnostics: Oops, something went wrong.	93	passed
+activity-log-002	turbo/apps/platform/src/views/activity-page/__tests__/activity-log.test.tsx	Failed activities accept old and new responses without displaying diagnostics: Your model provider's usage allowance h…	93	passed
+activity-log-003	turbo/apps/platform/src/views/activity-page/__tests__/activity-log.test.tsx	Large plans and file-change lists remain readable	138	passed
+activity-log-008	turbo/apps/platform/src/views/activity-page/__tests__/activity-log.test.tsx	Activity search finds content inside nested work	177	passed
+activity-log-009	turbo/apps/platform/src/views/activity-page/__tests__/activity-log.test.tsx	Activity logs show useful reasoning without progress noise	265	passed
+activity-network-filter-002	turbo/apps/platform/src/views/activity-page/__tests__/activity-network-filter.test.tsx	Enter and Space each toggle a network type once, and Escape restores trigger focus	128	passed
+activity-paged-events-001	turbo/apps/platform/src/views/activity-page/__tests__/activity-paged-events.test.tsx	A completed activity appears only after its full event history is ready	55	passed
+activity-runner-attribution-001	turbo/apps/platform/src/views/activity-page/__tests__/activity-runner-attribution.test.tsx	Runner diagnostics identify the exact environment used for an activity	124	passed
+activity-runner-attribution-002	turbo/apps/platform/src/views/activity-page/__tests__/activity-runner-attribution.test.tsx	Runner diagnostics display each persisted startup path	194	passed
+activity-runner-attribution-003	turbo/apps/platform/src/views/activity-page/__tests__/activity-runner-attribution.test.tsx	Runner metadata remains visible when the startup path is unreported	257	passed
+agents-page-002	turbo/apps/platform/src/views/agents-page/__tests__/agents-page.test.tsx	Unread indicators update after an indicator change (message-port)	91	passed
+agents-page-003	turbo/apps/platform/src/views/agents-page/__tests__/agents-page.test.tsx	Agent visibility tabs show public creators without management data	153	passed
+agents-page-avatar-framing-001	turbo/apps/platform/src/views/agents-page/__tests__/agents-page-avatar-framing.test.tsx	Center each composer avatar and pull the cast toward one size	129	passed
+agents-page-avatar-framing-003	turbo/apps/platform/src/views/agents-page/__tests__/agents-page-avatar-framing.test.tsx	Move the head to the chin baseline instead of resizing it	179	passed
+agents-management-001	turbo/apps/platform/src/views/agents-page/__tests__/agents-management.test.tsx	Pressing Enter defaults to a private agent from Private with 1 public agents	283	passed
+agents-management-004	turbo/apps/platform/src/views/agents-page/__tests__/agents-management.test.tsx	Confirming an IME candidate (composing) keeps agent creation open	324	passed
+agents-management-006	turbo/apps/platform/src/views/agents-page/__tests__/agents-management.test.tsx	Blank Enter and cancelling a named draft do not create an agent	373	passed
+agents-management-007	turbo/apps/platform/src/views/agents-page/__tests__/agents-management.test.tsx	A pending create disables submission and adds only one agent card	409	passed
+agents-management-009	turbo/apps/platform/src/views/agents-page/__tests__/agents-management.test.tsx	Creating an agent requires a multi-line responsibility	444	passed
+agents-management-012	turbo/apps/platform/src/views/agents-page/__tests__/agents-management.test.tsx	Open an agent's management page from its card	476	passed
+agents-management-013	turbo/apps/platform/src/views/agents-page/__tests__/agents-management.test.tsx	Review an agent's profile and instructions	493	passed

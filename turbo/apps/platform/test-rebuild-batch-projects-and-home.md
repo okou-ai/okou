@@ -109,3 +109,17 @@ They now point at their registrations.
 overrides matches `src/views/**/*.*` and `src/signals/**/*.*`. Those parse
 errors were the only ESLint findings. They clear when the remaining BDD files
 are removed, without a lint configuration change.
+
+## Activity and Agents pages
+
+The third batch accepted 28 of 48 frozen rows across ten files:
+`activity-capture-actions`, `activity-detail-retained-data`,
+`activity-inspect-page`, `activity-log`, `activity-network-filter`,
+`activity-paged-events`, `activity-runner-attribution`, `agents-page`,
+`agents-page-avatar-framing` and `agents-management`.
+
+The review found one premise gap. The `activity-log-001` row for the old
+response shape still received the newer `failureReason` field from the shared
+detail fixture. The row now omits it. `activity-log-009` now rejects the
+event type and the token count anywhere in the page text, including formatted
+digits. The other items are covered as written, with notes in the checklist.
