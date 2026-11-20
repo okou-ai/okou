@@ -1,3 +1,4 @@
+import type { UserPermissionGrantExpiresIn } from "@okouai/api-contracts/validators/user-permission-grants";
 import type { ApplyConnectorPermissions } from "@okouai/api-contracts/contracts/connector-permissions";
 import { connectors } from "@okouai/db/schema/connector";
 import { connectorPermissionGrants } from "@okouai/db/schema/connector-permission-grant";
@@ -7,7 +8,29 @@ import {
   connectorAccessAccountOwner,
   type ConnectorAccessOwner,
 } from "./connector-access-owner";
-import { resolveGrantExpiresAt } from "./permission-grant-apply-plan";
+const HOUR_MS = 60 * 60 * 1000;
+const DAY_MS = 24 * HOUR_MS;
+
+function resolveGrantExpiresAt(
+  expiresIn: UserPermissionGrantExpiresIn | undefined,
+  timestamp: Date,
+): Date | null {
+  switch (expiresIn) {
+    case "1h": {
+      return new Date(timestamp.getTime() + HOUR_MS);
+    }
+    case "24h": {
+      return new Date(timestamp.getTime() + DAY_MS);
+    }
+    case "7d": {
+      return new Date(timestamp.getTime() + 7 * DAY_MS);
+    }
+    case "always":
+    case undefined: {
+      return null;
+    }
+  }
+}
 
 export function connectorPermissionGrantOwner(owner: ConnectorAccessOwner) {
   return and(

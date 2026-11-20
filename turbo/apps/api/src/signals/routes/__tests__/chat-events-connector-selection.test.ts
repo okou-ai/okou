@@ -42,7 +42,6 @@ describe("thread connector selection", () => {
         "openai",
         "api-token",
         { apiKey: "thread-selected-openai-key" },
-        undefined,
         { intent: "add", displayName: "Selected sibling" },
       );
     });
@@ -207,7 +206,6 @@ describe("thread connector selection", () => {
         "runtime",
         "api-token",
         { apiKey: "thread-runtime-key-updated" },
-        undefined,
         { intent: "reconnect", connectionId: runtimeConnection.id },
       );
     });

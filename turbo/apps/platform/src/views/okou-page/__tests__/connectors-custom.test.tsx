@@ -6,10 +6,6 @@ import {
   requireConnectorFixtureAccount,
 } from "../../../mocks/handlers/connector-account-fixtures.ts";
 import {
-  type AgentCustomConnectorGrant,
-  agentCustomConnectorsContract,
-} from "@okouai/api-contracts/contracts/agent-custom-connectors";
-import {
   type ConnectorAccountConnection,
   connectorAccountsContract,
 } from "@okouai/api-contracts/contracts/connector-accounts";
@@ -139,43 +135,6 @@ function accountAction(container: ParentNode): HTMLElement {
   return action;
 }
 
-function mockCustomAgentAccess(
-  initialGrants: readonly (readonly [
-    string,
-    AgentCustomConnectorGrant[],
-  ])[] = [],
-): void {
-  const grantsByAgent = new Map(initialGrants);
-  context.mocks.api(
-    agentCustomConnectorsContract.get,
-    ({ params, respond }) => {
-      return respond(200, { grants: grantsByAgent.get(params.id) ?? [] });
-    },
-  );
-  context.mocks.api(
-    agentCustomConnectorsContract.update,
-    ({ params, body, respond }) => {
-      const previous = grantsByAgent.get(params.id) ?? [];
-      const retained = previous.filter((grant) => {
-        return !body.grants.some((updated) => {
-          return updated.customConnectorId === grant.customConnectorId;
-        });
-      });
-      const grants =
-        body.operation === "remove"
-          ? retained
-          : body.operation === "add"
-            ? [...retained, ...body.grants]
-            : body.grants;
-      grantsByAgent.set(params.id, grants);
-      context.mocks.ably.trigger("composerAgentConnectorsChanged", {
-        agentId: params.id,
-      });
-      return respond(200, { grants });
-    },
-  );
-}
-
 test.each([
   {
     label: "required configuration is incomplete",
@@ -196,7 +155,6 @@ test.each([
     const connectionId = crypto.randomUUID();
     let account: ConnectorAccountConnection | undefined;
     context.mocks.data.agents([listAgent(RESEARCH_ID, "Research")]);
-    mockCustomAgentAccess();
     context.mocks.api(customConnectorsContract.list, ({ respond }) => {
       return respond(200, { connectors: [connector] });
     });
@@ -331,7 +289,6 @@ test("Add and optionally name a custom connector account", async () => {
   context.mocks.api(customConnectorsContract.list, ({ respond }) => {
     return respond(200, { connectors });
   });
-  mockCustomAgentAccess();
   mockSavedConnectorAccounts(context, () => {
     return [...accounts.values()];
   });
@@ -974,10 +931,6 @@ test("Manage custom HTTP OAuth through configuration update and connection", asy
 
 test("Manage a manual MCP connector through its lifecycle", async () => {
   let connector: CustomConnectorMcpResponse | null = null;
-  const grants = new Map<string, AgentCustomConnectorGrant[]>([
-    [RESEARCH_ID, []],
-    [SUPPORT_ID, []],
-  ]);
   const updates: UpdateCustomConnectorBody[] = [];
   context.mocks.data.agents([
     listAgent(RESEARCH_ID, "Research"),
@@ -1019,23 +972,6 @@ test("Manage a manual MCP connector through its lifecycle", async () => {
       connectionId: requireConnectorFixtureAccount(connector).id,
     });
   });
-  context.mocks.api(
-    agentCustomConnectorsContract.get,
-    ({ params, respond }) => {
-      return respond(200, { grants: grants.get(params.id) ?? [] });
-    },
-  );
-  context.mocks.api(
-    agentCustomConnectorsContract.update,
-    ({ params, body, respond }) => {
-      const next = body.operation === "remove" ? [] : body.grants;
-      grants.set(params.id, next);
-      context.mocks.ably.trigger("composerAgentConnectorsChanged", {
-        agentId: params.id,
-      });
-      return respond(200, { grants: next });
-    },
-  );
   context.mocks.api(customConnectorByIdContract.update, ({ body, respond }) => {
     if (!connector || body.kind !== "mcp") {
       throw new Error("Expected MCP update");
@@ -1142,7 +1078,6 @@ test("Create and connect an MCP server through automatic authorization", async (
     listAgent("c0000000-0000-4000-a000-000000000001", "Default"),
     listAgent(RESEARCH_ID, "Research"),
   ]);
-  mockCustomAgentAccess();
   context.mocks.api(customConnectorsContract.list, ({ respond }) => {
     return respond(200, { connectors: connector ? [connector] : [] });
   });
@@ -1293,7 +1228,6 @@ test("Keep saved custom accounts manageable when only the default needs reconnec
     }),
   ];
   context.mocks.data.agents([listAgent(RESEARCH_ID, "Research")]);
-  mockCustomAgentAccess();
   context.mocks.api(customConnectorsContract.list, ({ respond }) => {
     return respond(200, { connectors: [connector, empty] });
   });
@@ -1383,7 +1317,6 @@ test("Reconnect an OAuth account after cancelled consent and metadata changes", 
     listAgent("c0000000-0000-4000-a000-000000000001", "Default"),
     listAgent(RESEARCH_ID, "Research"),
   ]);
-  mockCustomAgentAccess();
   context.mocks.api(customConnectorsContract.list, ({ respond }) => {
     return respond(200, { connectors: [connector] });
   });
@@ -1646,7 +1579,6 @@ test("Add and optionally name a custom OAuth account", async () => {
   context.mocks.api(customConnectorsContract.list, ({ respond }) => {
     return respond(200, { connectors: [connector] });
   });
-  mockCustomAgentAccess();
   mockSavedConnectorAccounts(context, () => {
     return account ? [account] : [];
   });
@@ -1780,7 +1712,6 @@ test("Do not grant access after an unsuccessful custom connection", async () => 
   let writeAvailable = false;
   let account: ConnectorAccountConnection | null = null;
   context.mocks.data.agents([listAgent(RESEARCH_ID, "Research")]);
-  mockCustomAgentAccess();
   mockSavedConnectorAccounts(context, () => {
     return account ? [account] : [];
   });
@@ -1866,9 +1797,6 @@ test("Hide integration-managed connectors from custom settings", async () => {
   context.mocks.api(customConnectorsContract.list, ({ respond }) => {
     return respond(200, { connectors: [feishu] });
   });
-  context.mocks.api(agentCustomConnectorsContract.get, ({ respond }) => {
-    return respond(200, { grants: [] });
-  });
   await setupCustomPage();
 
   await expect(
@@ -1887,9 +1815,6 @@ test("Manage a custom connector before it is connected", async () => {
   ]);
   context.mocks.api(customConnectorsContract.list, ({ respond }) => {
     return respond(200, { connectors: [connector] });
-  });
-  context.mocks.api(agentCustomConnectorsContract.get, ({ respond }) => {
-    return respond(200, { grants: [] });
   });
   await setupCustomPage();
   const card = await waitFor(() => {

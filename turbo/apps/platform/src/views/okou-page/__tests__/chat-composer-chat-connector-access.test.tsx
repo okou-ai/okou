@@ -11,7 +11,6 @@ import { connectorAccountsContract } from "@okouai/api-contracts/contracts/conne
 import { customConnectorByIdContract } from "@okouai/api-contracts/contracts/custom-connectors";
 import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
-import { agentCustomConnectorsContract } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import { remotesContract } from "@okouai/api-contracts/contracts/remotes";
 import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
 import {
@@ -531,14 +530,6 @@ test.each([false, true])(
         },
       });
     });
-    context.mocks.api(agentCustomConnectorsContract.update, ({ respond }) => {
-      return respond(403, {
-        error: {
-          code: "FORBIDDEN",
-          message: "Agent connector settings unavailable",
-        },
-      });
-    });
     await setup(`/agents/${SCOUT_AGENT_ID}/chat`);
     const directory = await openDirectory(user);
     if (custom) {
@@ -568,8 +559,6 @@ test.each([false, true])(
             {
               connectorSlug: "public-tools",
               authMethod: "public",
-              agentId: undefined,
-              authorizeAgent: undefined,
             },
           ],
     );

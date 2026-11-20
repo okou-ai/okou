@@ -116,7 +116,6 @@ test.each([false, true])(
     const accounts = githubAccounts();
     installComposerConnectorFixture({
       catalog: [builtinConnector({ slug: GITHUB_SLUG, label: "GitHub" })],
-      builtinAuthorizations: { [SCOUT_AGENT_ID]: [GITHUB_SLUG] },
       accounts,
     });
     const started = context.mocks.deferred<void>();
@@ -262,7 +261,6 @@ test("Resending an unconfirmed creation reuses its chat and event identities", a
   const accounts = githubAccounts();
   installComposerConnectorFixture({
     catalog: [builtinConnector({ slug: GITHUB_SLUG, label: "GitHub" })],
-    builtinAuthorizations: { [SCOUT_AGENT_ID]: [GITHUB_SLUG] },
     accounts,
   });
   context.mocks.api(

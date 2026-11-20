@@ -62,7 +62,6 @@ async function selectedThreadConnectorFixture(
     "openai",
     "api-token",
     { apiKey: `thread-runtime-overlap-${randomUUID()}` },
-    entitled.agentId,
   );
   const thread = await chat.createThread(entitled.actor, {
     agentId: entitled.agentId,
@@ -102,15 +101,10 @@ describe("chat connector credential placeholders", () => {
       "figma",
       "api-token",
       { accessToken: "firewall-figma" },
-      agentId,
     );
-    await connectors.connectManualGrant(
-      actor,
-      "gitlab",
-      "api-token",
-      { accessToken: "firewall-gitlab" },
-      agentId,
-    );
+    await connectors.connectManualGrant(actor, "gitlab", "api-token", {
+      accessToken: "firewall-gitlab",
+    });
     const kms = useSecretKmsProbe();
     const run = await sendChatRun(actor, {
       agentId,
@@ -136,15 +130,10 @@ describe("chat connector credential placeholders", () => {
       "openai",
       "api-token",
       { apiKey: "request-time-openai-token" },
-      agentId,
     );
-    await connectors.connectManualGrant(
-      actor,
-      "figma",
-      "api-token",
-      { accessToken: "deferred-figma-token" },
-      agentId,
-    );
+    await connectors.connectManualGrant(actor, "figma", "api-token", {
+      accessToken: "deferred-figma-token",
+    });
     const kms = useSecretKmsProbe();
     const run = await sendChatRun(actor, {
       agentId,
@@ -216,20 +205,15 @@ describe("chat connector credential placeholders", () => {
           : undefined;
       },
     );
-    await connectors.connectManualGrant(
-      actor,
-      "openai",
-      "api-token",
-      { apiKey: "bad-account-token" },
-      agentId,
-    );
+    await connectors.connectManualGrant(actor, "openai", "api-token", {
+      apiKey: "bad-account-token",
+    });
     badAccount = false;
     const good = await connectors.connectManualGrant(
       actor,
       "openai",
       "api-token",
       { apiKey: "good-account-token" },
-      agentId,
     );
     const thread = await chat.createThread(actor, {
       agentId,
@@ -404,7 +388,6 @@ describe("CHAT-02: thread connector account selection", () => {
         "openai",
         "api-token",
         { apiKey: "thread-selected-openai-key" },
-        agentId,
       );
 
       let threadId: string;
@@ -562,10 +545,6 @@ describe("CHAT-02: thread connector account selection", () => {
       mcpConnector.id,
       "thread-mcp-runtime-secret",
     );
-    await connectors.updateAgentCustomConnectors(actor, agentId, [
-      httpConnector.id,
-      mcpConnector.id,
-    ]);
     const httpAccounts = await connectors.listCustomConnectorAccounts(
       actor,
       httpConnector.id,
@@ -707,11 +686,6 @@ describe("CHAT-02: thread connector account selection", () => {
         { intent: "add", displayName: "Preferred account" },
       );
     });
-    await own(() => {
-      return connectors.updateAgentCustomConnectors(actor, agentId, [
-        custom.id,
-      ]);
-    });
     const thread = await own(() => {
       return chat.createThread(actor, { agentId });
     });
@@ -735,11 +709,6 @@ describe("CHAT-02: thread connector account selection", () => {
           "https://{{variables.tenant}}.fallback.example.test/",
         ],
       });
-    });
-    await own(() => {
-      return connectors.updateAgentCustomConnectors(actor, agentId, [
-        custom.id,
-      ]);
     });
     const run = await fixture.sendChatRun(actor, {
       agentId,
@@ -777,11 +746,6 @@ describe("CHAT-02: thread connector account selection", () => {
         customConnector.id,
         "thread-runtime-secret",
       );
-    });
-    await own(() => {
-      return connectors.updateAgentCustomConnectors(actor, agentId, [
-        customConnector.id,
-      ]);
     });
     const [connection] = await own(() => {
       return connectors.listCustomConnectorAccounts(actor, customConnector.id);

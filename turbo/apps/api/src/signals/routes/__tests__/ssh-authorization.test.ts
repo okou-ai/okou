@@ -4,9 +4,7 @@ import { sshHostsContract } from "@okouai/api-contracts/contracts/ssh-access";
 import { sshAccessRoutes } from "../ssh-access";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { connectorPermissionsContract } from "@okouai/api-contracts/contracts/connector-permissions";
-import { userPermissionGrantsContract } from "@okouai/api-contracts/contracts/user-permission-grants";
 import { connectorPermissionsRoutes } from "../connector-permissions";
-import { userPermissionGrantsRoutes } from "../user-permission-grants";
 import {
   createConnectorBddApi,
   mockSlackConnectorOAuth,
@@ -418,12 +416,7 @@ describe("SSH chat authorization", () => {
 
     const connectors = createConnectorBddApi(context);
     mockSlackConnectorOAuth();
-    const oauth = await connectors.startOauth(
-      s.run.actor,
-      "slack",
-      "oauth",
-      s.run.agentId,
-    );
+    const oauth = await connectors.startOauth(s.run.actor, "slack", "oauth");
     const state = new URL(oauth.authorizationUrl).searchParams.get("state");
     if (!state) {
       throw new Error("Expected Slack OAuth state");
@@ -449,27 +442,6 @@ describe("SSH chat authorization", () => {
     await end(s.run);
     const waiting = await accept(api().get({ headers, params }), [200]);
     expect(waiting.body.approvalBlockedReason).toBe("permissions_required");
-    const legacy = setupApp({ context, routes: userPermissionGrantsRoutes })(
-      userPermissionGrantsContract,
-    );
-    await accept(
-      legacy.apply({
-        headers,
-        body: {
-          agentId: s.run.agentId,
-          connectorSlug: "slack",
-          mode: "patch",
-          grants: [
-            { permission: "chat:write", action: "allow", expiresIn: "1h" },
-          ],
-        },
-      }),
-      [200],
-    );
-    const stillWaiting = await accept(api().get({ headers, params }), [200]);
-    expect(stillWaiting.body.approvalBlockedReason).toBe(
-      "permissions_required",
-    );
     await accept(
       setupApp({ context, routes: connectorPermissionsRoutes })(
         connectorPermissionsContract,

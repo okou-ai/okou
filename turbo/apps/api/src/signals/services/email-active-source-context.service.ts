@@ -25,7 +25,7 @@ import {
   activeMemberConnectorPermissionCondition,
   memberConnectorPermissionColumns,
 } from "./member-connector-selection";
-import { readActiveNetworkPolicyRefreshes$ } from "./user-permission-grants.service";
+import { readActiveNetworkPolicyRefreshes$ } from "./connector-network-policy-refresh.service";
 
 interface ActiveEmailScope {
   readonly runId: string;

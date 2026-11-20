@@ -58,8 +58,6 @@ async function connectAutomaticRuntime(args: {
       params: { connectorSlug: args.slug },
       body: {
         authMethod: args.methodId,
-        agentId: args.agentId,
-        authorizeAgent: true,
         account: args.connectionId
           ? { intent: "reconnect", connectionId: args.connectionId }
           : { intent: "add" },

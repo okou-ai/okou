@@ -25,7 +25,6 @@ import { bodyResultOf } from "../context/request";
 import { publishThreadListChanged } from "../external/realtime";
 import {
   badRequestMessage,
-  connectorAccountUnavailable,
   notFound,
   resourceUnavailable,
 } from "../../lib/error";
@@ -311,19 +310,12 @@ const createInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       modelSettings: effort.modelSettings,
       cloudBrowserEnabled: defaults.cloudBrowserEnabled,
       codexServiceTier,
-      connectorSelections: body.data.connectorSelections ?? [],
       committedThread: await get(committedClientThread$),
       initialRemoteAccessOverrides,
     },
     signal,
   );
   signal.throwIfAborted();
-  if (thread.kind === "connector_account_unavailable") {
-    return connectorAccountUnavailable();
-  }
-  if (thread.kind === "invalid_connector_selection") {
-    return badRequestMessage(thread.message);
-  }
   if (thread.kind === "invalid_remote_access_selection") {
     return badRequestMessage(thread.message);
   }

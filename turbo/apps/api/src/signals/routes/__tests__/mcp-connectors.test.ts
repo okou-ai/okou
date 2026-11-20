@@ -610,7 +610,6 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
       const firstAuthorization = await connectors.startCustomConnectorOAuth2(
         actor,
         connector.id,
-        undefined,
         { intent: "add", displayName: "Pinned account" },
       );
       const firstState = stateFromAuthorizationUrl(firstAuthorization);
@@ -630,7 +629,6 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
       const secondAuthorization = await connectors.startCustomConnectorOAuth2(
         actor,
         connector.id,
-        undefined,
         { intent: "add", displayName: "Sibling account" },
       );
       await connectors.completeCustomConnectorOAuth2Callback({
@@ -651,9 +649,6 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
       if (!pinnedAccount || !siblingAccount) {
         throw new Error("Expected default and sibling MCP accounts");
       }
-      await connectors.updateAgentCustomConnectors(actor, agent.agentId, [
-        connector.id,
-      ]);
       const run = await runs.createThreadRun(actor, {
         agentId: agent.agentId,
         prompt: "Use the MCP connector with incremental scope",
@@ -810,7 +805,6 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
         changedAuthorizationUrl = await connectors.startCustomConnectorOAuth2(
           actor,
           connector.id,
-          undefined,
           { intent: "reconnect", connectionId: pinnedAccount.id },
         );
         expect(replacementProvider.registrationBodies).toHaveLength(1);
@@ -897,14 +891,10 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
       actor,
       connector.id,
       [200],
-      agent.agentId,
     );
     if ("error" in connected.body || connected.body.result !== "connected") {
       throw new Error("Expected Automatic MCP no-auth connection");
     }
-    await connectors.updateAgentCustomConnectors(actor, agent.agentId, [
-      connector.id,
-    ]);
     const run = await runs.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "Use the no-auth MCP connector",

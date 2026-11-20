@@ -71,7 +71,7 @@ type AuthorizedConnector =
 
 export type AuthorizedConnectors = readonly AuthorizedConnector[];
 
-/** Agent authorization and catalog capability, independent of connected accounts. */
+/** Build authorized connector skill bundles from member selection and catalog metadata. */
 export function createAuthorizedConnectors(
   selection$: Computed<
     Promise<

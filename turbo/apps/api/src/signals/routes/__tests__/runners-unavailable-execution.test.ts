@@ -15,13 +15,9 @@ describe("Runner dispatch permissions", () => {
   it("delivers authorized connector permissions to its bound process", async () => {
     const owned = await publicChatActor(context);
     await owned.run(async () => {
-      await connectors.connectManualGrant(
-        owned.actor,
-        "figma",
-        "api-token",
-        { accessToken: "dispatch-figma-token" },
-        owned.agentId,
-      );
+      await connectors.connectManualGrant(owned.actor, "figma", "api-token", {
+        accessToken: "dispatch-figma-token",
+      });
 
       const run = await api.createThreadRun(owned.actor, {
         agentId: owned.agentId,
@@ -56,13 +52,9 @@ describe("Runner dispatch permissions", () => {
   it("releases cancelled execution before dispatching a later Run with retained permissions", async () => {
     const owned = await publicChatActor(context);
     await owned.run(async () => {
-      await connectors.connectManualGrant(
-        owned.actor,
-        "figma",
-        "api-token",
-        { accessToken: "cancelled-dispatch-figma-token" },
-        owned.agentId,
-      );
+      await connectors.connectManualGrant(owned.actor, "figma", "api-token", {
+        accessToken: "cancelled-dispatch-figma-token",
+      });
 
       const cancelled = await api.createThreadRun(owned.actor, {
         agentId: owned.agentId,

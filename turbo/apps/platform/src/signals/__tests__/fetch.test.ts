@@ -6,7 +6,7 @@ import {
   CLIENT_TYPE_HEADER,
   CLIENT_VERSION_HEADER,
 } from "@okouai/api-contracts/contracts/client-headers";
-import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
+import { agentsByIdContract } from "@okouai/api-contracts/contracts/agents";
 import { expect, test } from "vitest";
 
 import { setupPage } from "../../__tests__/page-helper.ts";
@@ -42,18 +42,24 @@ async function waitForReadyPage(): Promise<void> {
 }
 
 function client() {
-  return context.store.get(apiClient$)(userBuiltinConnectorsContract);
+  return context.store.get(apiClient$)(agentsByIdContract);
 }
 
 test("Service requests carry stable client context and a unique trace", async () => {
   const observedHeaders: ObservedClientHeaders[] = [];
-  context.mocks.api(
-    userBuiltinConnectorsContract.get,
-    ({ request, respond }) => {
-      observedHeaders.push(observedClientHeaders(request));
-      return respond(200, { enabledConnectorSlugs: [] });
-    },
-  );
+  context.mocks.api(agentsByIdContract.get, ({ request, respond }) => {
+    observedHeaders.push(observedClientHeaders(request));
+    return respond(200, {
+      agentId: AGENT_ID,
+      isDefaultAgent: false,
+      ownerId: "test-user-123",
+      description: null,
+      displayName: null,
+      sound: null,
+      avatarUrl: null,
+      visibility: "public",
+    });
+  });
 
   await setupPage({
     appVersion: APP_VERSION,
@@ -96,7 +102,7 @@ test("Service requests carry stable client context and a unique trace", async ()
 });
 
 test("An empty service error still gives the user a useful status", async () => {
-  context.mocks.api(userBuiltinConnectorsContract.get, ({ respond }) => {
+  context.mocks.api(agentsByIdContract.get, ({ respond }) => {
     return respond(403, {
       error: { code: "FORBIDDEN", message: "" },
     });
@@ -114,7 +120,7 @@ test("An empty service error still gives the user a useful status", async () => 
 });
 
 test("The update dialog appears only when an update is required", async () => {
-  context.mocks.http.get("*/api/agents/:id/user-connectors", () => {
+  context.mocks.http.get("*/api/agents/:id", () => {
     return Response.json(
       { error: "Client update required" },
       { status: CLIENT_FORCE_UPGRADE_STATUS },

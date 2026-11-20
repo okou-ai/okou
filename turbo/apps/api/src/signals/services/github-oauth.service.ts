@@ -26,7 +26,7 @@ import type { ConnectorAuthMethodId } from "@okouai/api-contracts/contracts/conn
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { agents } from "@okouai/db/schema/agent";
 import { connectors } from "@okouai/db/schema/connector";
-import { connectorOauthStates } from "@okouai/db/schema/connector-oauth-state";
+import { connectorOauthStates } from "@okouai/db/runtime/connector-oauth-state";
 import { githubInstallations } from "@okouai/db/schema/github-installation";
 import { githubUserLinks } from "@okouai/db/schema/github-user-link";
 import { array, number, object, string } from "zod";

@@ -115,8 +115,6 @@ describe("builtin Automatic firewall credential destinations", () => {
         body: {
           authMethod: catalog.methodId,
           account: { intent: "add" },
-          agentId: agent.agentId,
-          authorizeAgent: true,
         },
       }),
       [200],
@@ -275,8 +273,6 @@ describe("builtin Automatic firewall credential destinations", () => {
         body: {
           authMethod: catalog.methodId,
           account: { intent: "add" },
-          agentId: agent.agentId,
-          authorizeAgent: true,
         },
       }),
       [200],
@@ -515,8 +511,6 @@ describe("builtin Automatic firewall credential destinations", () => {
           body: {
             authMethod: catalog.methodId,
             account: { intent: "add" },
-            agentId: agent.agentId,
-            authorizeAgent: true,
           },
         }),
         [200],
@@ -818,8 +812,6 @@ describe("builtin Automatic firewall credential destinations", () => {
         body: {
           authMethod: catalog.methodId,
           account: { intent: "add" },
-          agentId: agent.agentId,
-          authorizeAgent: true,
         },
       }),
       [200],

@@ -7,7 +7,7 @@ import {
 } from "./connector-connection-write.service";
 import type { ConnectorAccountMutationIntent } from "@okouai/api-contracts/contracts/connector-accounts";
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
-import { connectorOauthStates } from "@okouai/db/schema/connector-oauth-state";
+import { connectorOauthStates } from "@okouai/db/runtime/connector-oauth-state";
 import { boolean, object, uuid } from "zod";
 import { connectors } from "@okouai/db/schema/connector";
 import { secrets } from "@okouai/db/schema/secret";
@@ -44,7 +44,6 @@ interface CustomOAuthStart {
   readonly allowSiblings: boolean;
   readonly account: ConnectorAccountMutationIntent;
   readonly state: string;
-  readonly agentId: string | undefined;
   readonly redirectUri: string;
   readonly authorizationUrl: string;
   readonly oauthRequestedScopes: string | null;
@@ -110,13 +109,12 @@ export function customConnectorOAuthStartSql(args: CustomOAuthStart) {
       oauth_start_inserted AS (
         INSERT INTO ${connectorOauthStates} (
           state, custom_connector_id, storage_version, auth_method, user_id,
-          org_id, agent_id, authorize_agent, redirect_uri, authorization_url,
+          org_id, redirect_uri, authorization_url,
           oauth_requested_scopes, code_verifier, oauth_context, account_mutation,
           expires_at
         )
         SELECT ${args.state}, ${definition.id}, ${definition.storageVersion}, 'oauth',
-          ${args.userId}, ${args.orgId}, ${args.agentId ?? null}::uuid,
-          ${args.agentId !== undefined}, ${args.redirectUri}, ${args.authorizationUrl},
+          ${args.userId}, ${args.orgId}, ${args.redirectUri}, ${args.authorizationUrl},
           ${args.oauthRequestedScopes ?? null}, ${args.codeVerifier ?? null},
           ${args.oauthContext}, ${JSON.stringify(args.account)}::jsonb,
           ${args.expiresAt.toISOString()}::timestamp

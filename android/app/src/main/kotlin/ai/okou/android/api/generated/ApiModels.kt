@@ -3728,110 +3728,6 @@ data class AndroidUpdates(
     val `release`: AndroidUpdatesRelease,
 )
 
-@Serializable(with = CreateThreadRequestConnectorSelectionsItemTargetSerializer::class)
-sealed interface CreateThreadRequestConnectorSelectionsItemTarget
-
-@Serializable
-enum class CreateThreadRequestConnectorSelectionsItemTargetVariant1Kind {
-    @SerialName("builtin") BUILTIN
-}
-
-@Serializable
-data class CreateThreadRequestConnectorSelectionsItemTargetVariant1(
-    val `kind`: CreateThreadRequestConnectorSelectionsItemTargetVariant1Kind,
-    val `connectorSlug`: String,
-) : CreateThreadRequestConnectorSelectionsItemTarget
-
-@Serializable
-enum class CreateThreadRequestConnectorSelectionsItemTargetVariant2Kind {
-    @SerialName("custom") CUSTOM
-}
-
-@Serializable
-data class CreateThreadRequestConnectorSelectionsItemTargetVariant2(
-    val `kind`: CreateThreadRequestConnectorSelectionsItemTargetVariant2Kind,
-    val `customConnectorId`: String,
-) : CreateThreadRequestConnectorSelectionsItemTarget
-
-object CreateThreadRequestConnectorSelectionsItemTargetSerializer :
-    KSerializer<CreateThreadRequestConnectorSelectionsItemTarget> {
-    override val descriptor =
-        buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.CreateThreadRequestConnectorSelectionsItemTarget"
-        )
-
-    override fun deserialize(decoder: Decoder): CreateThreadRequestConnectorSelectionsItemTarget {
-        val input =
-            decoder as? JsonDecoder
-                ?: throw SerializationException(
-                    "Expected JSON object for CreateThreadRequestConnectorSelectionsItemTarget"
-                )
-        val value =
-            input.decodeJsonElement() as? JsonObject
-                ?: throw SerializationException(
-                    "Expected object for CreateThreadRequestConnectorSelectionsItemTarget"
-                )
-        val matches =
-            listOf(
-                (value["kind"] as? JsonPrimitive)?.let {
-                    it.isString && it.content in setOf("builtin")
-                } == true,
-                (value["kind"] as? JsonPrimitive)?.let {
-                    it.isString && it.content in setOf("custom")
-                } == true,
-            )
-        if (matches.count { it } != 1)
-            throw SerializationException(
-                "Unknown or ambiguous CreateThreadRequestConnectorSelectionsItemTarget variant"
-            )
-        return when (matches.indexOf(true)) {
-            0 ->
-                input.json.decodeFromJsonElement(
-                    CreateThreadRequestConnectorSelectionsItemTargetVariant1.serializer(),
-                    value,
-                )
-            1 ->
-                input.json.decodeFromJsonElement(
-                    CreateThreadRequestConnectorSelectionsItemTargetVariant2.serializer(),
-                    value,
-                )
-            else ->
-                throw SerializationException(
-                    "Unknown CreateThreadRequestConnectorSelectionsItemTarget variant"
-                )
-        }
-    }
-
-    override fun serialize(
-        encoder: Encoder,
-        value: CreateThreadRequestConnectorSelectionsItemTarget,
-    ) {
-        when (value) {
-            is CreateThreadRequestConnectorSelectionsItemTargetVariant1 ->
-                encoder.encodeSerializableValue(
-                    CreateThreadRequestConnectorSelectionsItemTargetVariant1.serializer(),
-                    value,
-                )
-            is CreateThreadRequestConnectorSelectionsItemTargetVariant2 ->
-                encoder.encodeSerializableValue(
-                    CreateThreadRequestConnectorSelectionsItemTargetVariant2.serializer(),
-                    value,
-                )
-        }
-    }
-}
-
-@Serializable
-data class CreateThreadRequestConnectorSelectionsItem(
-    val `connectionId`: String,
-    val `target`: CreateThreadRequestConnectorSelectionsItemTarget,
-)
-
-@Serializable
-enum class CreateThreadRequestConnectorSelectionPolicy {
-    @SerialName("required") REQUIRED
-}
-
 @Serializable
 enum class CreateThreadRequestInitialRemoteAccessOverridesItemProtocol {
     @SerialName("ssh") SSH,
@@ -3869,8 +3765,6 @@ data class CreateThreadRequest(
     val `agentId`: String,
     val `clientThreadId`: String? = null,
     val `eventId`: String? = null,
-    val `connectorSelections`: List<CreateThreadRequestConnectorSelectionsItem>? = null,
-    val `connectorSelectionPolicy`: CreateThreadRequestConnectorSelectionPolicy? = null,
     val `initialRemoteAccessOverrides`: List<CreateThreadRequestInitialRemoteAccessOverridesItem>? =
         null,
     val `model`: CanonicalOptional<String?> = CanonicalOptional.Absent,

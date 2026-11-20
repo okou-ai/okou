@@ -267,7 +267,6 @@ async function connectGoogleCalendarAccount(
     actor,
     "google-calendar",
     "oauth",
-    agentId,
     args.account,
   );
   const state = new URL(start.authorizationUrl).searchParams.get("state");
@@ -2028,12 +2027,7 @@ describe("workflows", () => {
       email: firstEmail,
       subject: `gmail-copy-first-${randomUUID()}`,
     });
-    const firstStart = await connectorApi.startOauth(
-      actor,
-      "gmail",
-      "oauth",
-      sourceAgent.agentId,
-    );
+    const firstStart = await connectorApi.startOauth(actor, "gmail", "oauth");
     const firstState = new URL(firstStart.authorizationUrl).searchParams.get(
       "state",
     );
@@ -2051,13 +2045,10 @@ describe("workflows", () => {
       email: secondEmail,
       subject: `gmail-copy-second-${randomUUID()}`,
     });
-    const secondStart = await connectorApi.startOauth(
-      actor,
-      "gmail",
-      "oauth",
-      sourceAgent.agentId,
-      { intent: "add", displayName: "Gmail Copy Second" },
-    );
+    const secondStart = await connectorApi.startOauth(actor, "gmail", "oauth", {
+      intent: "add",
+      displayName: "Gmail Copy Second",
+    });
     const secondState = new URL(secondStart.authorizationUrl).searchParams.get(
       "state",
     );
@@ -2305,7 +2296,6 @@ describe("workflows", () => {
       actor,
       "notion",
       "oauth",
-      sourceAgent.agentId,
     );
     const defaultState = new URL(
       defaultStart.authorizationUrl,
@@ -2327,7 +2317,6 @@ describe("workflows", () => {
       actor,
       "notion",
       "oauth",
-      sourceAgent.agentId,
       { intent: "add", displayName: "Notion Copy Selected" },
     );
     const selectedState = new URL(
@@ -2540,7 +2529,6 @@ describe("workflows", () => {
       actor,
       "google-forms",
       "oauth",
-      sourceAgent.agentId,
     );
     const firstState = new URL(firstStart.authorizationUrl).searchParams.get(
       "state",
@@ -2566,7 +2554,6 @@ describe("workflows", () => {
       actor,
       "google-forms",
       "oauth",
-      sourceAgent.agentId,
       { intent: "add", displayName: "Google Forms Copy Second" },
     );
     const secondState = new URL(secondStart.authorizationUrl).searchParams.get(

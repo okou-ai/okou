@@ -11,15 +11,10 @@ import {
 } from "../../../mocks/handlers/connector-account-fixtures.ts";
 import { mockOAuthCompletions } from "./connector-page-test-helpers.ts";
 import {
-  agentCustomConnectorsContract,
-  type AgentCustomConnectorGrant,
-} from "@okouai/api-contracts/contracts/agent-custom-connectors";
-import {
   connectorAccountsContract,
   connectorAccountTargetKey,
   type ConnectorAccountConnection,
   type ConnectorAccountMutationIntent,
-  type ConnectorAccountSelection,
   type ConnectorAccountTarget,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
@@ -47,7 +42,6 @@ import type {
   ConnectorSlug,
 } from "@okouai/api-contracts/contracts/connector-identity";
 import type { ChatThreadServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
-import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 
 import {
   MESSAGE_EXPERIENCE_AGENT_ID,
@@ -79,13 +73,6 @@ interface ConnectorFixtureOptions {
   /** Category totals discovery reports, so a shelf can close on a real count. */
   readonly categoryConnectorCounts?: Readonly<Record<string, number>>;
   readonly customConnectors?: readonly CustomConnectorResponse[];
-  readonly builtinAuthorizations?: Readonly<
-    Record<string, readonly ConnectorSlug[]>
-  >;
-  readonly customAuthorizations?: Readonly<
-    Record<string, readonly AgentCustomConnectorGrant[]>
-  >;
-  readonly authorizationGates?: Readonly<Record<string, Promise<void>>>;
   readonly accounts?: readonly ConnectorAccountConnection[];
   readonly permissionDetails?: ReadonlyMap<
     ConnectorSlug,
@@ -95,21 +82,7 @@ interface ConnectorFixtureOptions {
   readonly threadId?: string;
 }
 
-interface BuiltinAuthorizationUpdate {
-  readonly agentId: string;
-  readonly connectorSlugs: readonly ConnectorSlug[];
-  readonly operation: "replace" | "add" | "remove" | undefined;
-}
-
-interface CustomAuthorizationUpdate {
-  readonly agentId: string;
-  readonly grants: readonly AgentCustomConnectorGrant[];
-  readonly operation: "replace" | "add" | "remove" | undefined;
-}
-
 interface BuiltinConnectionRequest {
-  readonly agentId: string | undefined;
-  readonly authorizeAgent: true | undefined;
   readonly authMethod: ConnectorAuthMethodId;
   readonly connectorSlug: ConnectorSlug;
 }
@@ -119,8 +92,6 @@ interface OAuthConnectionRequest extends BuiltinConnectionRequest {
 }
 
 interface ComposerConnectorFixture {
-  readonly builtinAuthorizationUpdates: readonly BuiltinAuthorizationUpdate[];
-  readonly customAuthorizationUpdates: readonly CustomAuthorizationUpdate[];
   readonly customValueRequests: readonly {
     readonly connectorId: string;
     readonly account: ConnectorAccountMutationIntent;
@@ -132,7 +103,6 @@ interface ComposerConnectorFixture {
   readonly completeOAuth: (connectionId: string) => void;
   readonly createdThreadRequests: readonly {
     readonly threadId: string | undefined;
-    readonly connectorSelections: readonly ConnectorAccountSelection[];
     readonly initialRemoteAccessOverrides?: readonly {
       protocol: "ssh" | "vnc";
       connectionId: string;
@@ -144,42 +114,6 @@ interface ComposerConnectorFixture {
       typeof createMessageExperienceHelpers
     >["installMessageExperienceChat"]
   >;
-}
-
-function copyAuthorizationRecord<T>(
-  source: Readonly<Record<string, readonly T[]>> | undefined,
-): Map<string, T[]> {
-  return new Map(
-    Object.entries(source ?? {}).map(([key, values]) => {
-      return [key, [...values]];
-    }),
-  );
-}
-
-function updateList<T>(
-  current: readonly T[],
-  requested: readonly T[],
-  operation: "replace" | "add" | "remove" | undefined,
-  key: (value: T) => string,
-): T[] {
-  if (operation === "add") {
-    const values = new Map(
-      current.map((value) => {
-        return [key(value), value] as const;
-      }),
-    );
-    for (const value of requested) {
-      values.set(key(value), value);
-    }
-    return [...values.values()];
-  }
-  if (operation === "remove") {
-    const removed = new Set(requested.map(key));
-    return current.filter((value) => {
-      return !removed.has(key(value));
-    });
-  }
-  return [...requested];
 }
 
 function targetMatches(
@@ -550,12 +484,6 @@ export function createComposerConnectorHelpers(context: TestContext) {
     const fixtureThreadId = options.threadId ?? SCOUT_THREAD_ID;
     let catalog = [...(options.catalog ?? [])];
     const customConnectors = [...(options.customConnectors ?? [])];
-    const builtinAuthorizations = copyAuthorizationRecord(
-      options.builtinAuthorizations,
-    );
-    const customAuthorizations = copyAuthorizationRecord(
-      options.customAuthorizations,
-    );
     const accounts = [
       ...(options.accounts ??
         savedConnectorAccounts(catalog, customConnectors)),
@@ -599,8 +527,6 @@ export function createComposerConnectorHelpers(context: TestContext) {
       }
       return account;
     };
-    const builtinAuthorizationUpdates: BuiltinAuthorizationUpdate[] = [];
-    const customAuthorizationUpdates: CustomAuthorizationUpdate[] = [];
     const customValueRequests: {
       connectorId: string;
       account: ConnectorAccountMutationIntent;
@@ -613,7 +539,6 @@ export function createComposerConnectorHelpers(context: TestContext) {
     let oauthAttemptId = crypto.randomUUID();
     const createdThreadRequests: {
       threadId: string | undefined;
-      connectorSelections: ConnectorAccountSelection[];
       initialRemoteAccessOverrides?: readonly {
         protocol: "ssh" | "vnc";
         connectionId: string;
@@ -622,14 +547,9 @@ export function createComposerConnectorHelpers(context: TestContext) {
     }[] = [];
     const lifecycle = installMessageExperienceChat({
       threadId: fixtureThreadId,
-      onThreadCreate: ({
-        clientThreadId,
-        connectorSelections,
-        initialRemoteAccessOverrides,
-      }) => {
+      onThreadCreate: ({ clientThreadId, initialRemoteAccessOverrides }) => {
         createdThreadRequests.push({
           threadId: clientThreadId,
-          connectorSelections: [...(connectorSelections ?? [])],
           ...(initialRemoteAccessOverrides === undefined
             ? {}
             : { initialRemoteAccessOverrides }),
@@ -816,68 +736,6 @@ export function createComposerConnectorHelpers(context: TestContext) {
       });
     });
     context.mocks.api(
-      userBuiltinConnectorsContract.get,
-      async ({ params, respond }) => {
-        await options.authorizationGates?.[params.id];
-        return respond(200, {
-          enabledConnectorSlugs: builtinAuthorizations.get(params.id) ?? [],
-        });
-      },
-    );
-    context.mocks.api(
-      userBuiltinConnectorsContract.update,
-      ({ body, params, respond }) => {
-        const connectorSlugs = [...body.enabledConnectorSlugs];
-        builtinAuthorizationUpdates.push({
-          agentId: params.id,
-          connectorSlugs,
-          operation: body.operation,
-        });
-        const next = updateList(
-          builtinAuthorizations.get(params.id) ?? [],
-          connectorSlugs,
-          body.operation,
-          (connectorSlug) => {
-            return connectorSlug;
-          },
-        );
-        builtinAuthorizations.set(params.id, next);
-        return respond(200, { enabledConnectorSlugs: next });
-      },
-    );
-    context.mocks.api(
-      agentCustomConnectorsContract.get,
-      async ({ params, respond }) => {
-        await options.authorizationGates?.[params.id];
-        return respond(200, {
-          grants: customAuthorizations.get(params.id) ?? [],
-        });
-      },
-    );
-    context.mocks.api(
-      agentCustomConnectorsContract.update,
-      ({ body, params, respond }) => {
-        const grants = body.grants.map((grant) => {
-          return { ...grant, permissionNames: [...grant.permissionNames] };
-        });
-        customAuthorizationUpdates.push({
-          agentId: params.id,
-          grants,
-          operation: body.operation,
-        });
-        const next = updateList(
-          customAuthorizations.get(params.id) ?? [],
-          grants,
-          body.operation,
-          (grant) => {
-            return grant.customConnectorId;
-          },
-        );
-        customAuthorizations.set(params.id, next);
-        return respond(200, { grants: next });
-      },
-    );
-    context.mocks.api(
       connectorAccountsContract.connection,
       ({ params, query, respond }) => {
         const account = accounts.find((candidate) => {
@@ -993,15 +851,6 @@ export function createComposerConnectorHelpers(context: TestContext) {
           ? connectedCatalogItem(connector, connectionId, request.authMethod)
           : connector;
       });
-      if (request.agentId && request.authorizeAgent) {
-        const current = builtinAuthorizations.get(request.agentId) ?? [];
-        builtinAuthorizations.set(request.agentId, [
-          ...new Set([...current, request.connectorSlug]),
-        ]);
-        context.mocks.ably.trigger("composerAgentConnectorsChanged", {
-          agentId: request.agentId,
-        });
-      }
       context.mocks.ably.trigger("connector:changed", {
         connectorSlug: request.connectorSlug,
       });
@@ -1018,8 +867,6 @@ export function createComposerConnectorHelpers(context: TestContext) {
       builtinConnectorManualGrantContract.connect,
       ({ body, params, respond }) => {
         const request = {
-          agentId: body.agentId,
-          authorizeAgent: body.authorizeAgent,
           authMethod: body.authMethod,
           connectorSlug: params.connectorSlug,
         };
@@ -1039,8 +886,6 @@ export function createComposerConnectorHelpers(context: TestContext) {
       builtinConnectorNoAuthGrantContract.connect,
       ({ body, params, respond }) => {
         const request = {
-          agentId: body.agentId,
-          authorizeAgent: body.authorizeAgent,
           authMethod: body.authMethod,
           connectorSlug: params.connectorSlug,
         };
@@ -1060,8 +905,6 @@ export function createComposerConnectorHelpers(context: TestContext) {
       ({ body, params, respond }) => {
         oauthAttemptId = crypto.randomUUID();
         oauthConnectionRequests.push({
-          agentId: body.agentId,
-          authorizeAgent: body.authorizeAgent,
           authMethod: body.authMethod,
           callbackTarget: body.callbackTarget,
           connectorSlug: params.connectorSlug,
@@ -1077,8 +920,6 @@ export function createComposerConnectorHelpers(context: TestContext) {
     );
 
     return {
-      builtinAuthorizationUpdates,
-      customAuthorizationUpdates,
       customValueRequests,
       manualConnectionRequests,
       noAuthConnectionRequests,

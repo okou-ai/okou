@@ -32,7 +32,7 @@ async function grant(t, error) {
       "bash",
       [
         "-c",
-        'source "$1"; source "$2"; runner_e2e_connect_manual_connector zendesk api-token agent \'{"apiToken":"private-input-value"}\'',
+        'source "$1"; source "$2"; runner_e2e_connect_manual_connector zendesk api-token \'{"apiToken":"private-input-value"}\'',
         "test-grant",
         transport,
         helper,

@@ -59,8 +59,6 @@ export const builtinConnectorOauthStartContract = c.router({
     pathParams: object({ connectorSlug: connectorSlugSchema }),
     body: object({
       authMethod: connectorAuthMethodIdSchema,
-      agentId: uuid().optional(),
-      authorizeAgent: literal(true).optional(),
       callbackTarget: literal("app").optional(),
       account: connectorAccountMutationIntentSchema,
     }),
@@ -85,8 +83,6 @@ export const builtinConnectorAutomaticContract = c.router({
     pathParams: object({ connectorSlug: connectorSlugSchema }),
     body: object({
       authMethod: connectorAuthMethodIdSchema,
-      agentId: uuid().optional(),
-      authorizeAgent: literal(true).optional(),
       account: connectorAccountMutationIntentSchema,
     }),
     responses: {
@@ -128,8 +124,6 @@ export const builtinConnectorOpenIdStartContract = c.router({
     pathParams: object({ connectorSlug: connectorSlugSchema }),
     body: object({
       authMethod: connectorAuthMethodIdSchema,
-      agentId: uuid().optional(),
-      authorizeAgent: literal(true).optional(),
       account: connectorAccountMutationIntentSchema,
     }),
     responses: {
@@ -153,8 +147,6 @@ export const builtinConnectorManualGrantContract = c.router({
     pathParams: object({ connectorSlug: connectorSlugSchema }),
     body: object({
       authMethod: connectorAuthMethodIdSchema,
-      agentId: uuid().optional(),
-      authorizeAgent: literal(true).optional(),
       account: connectorAccountMutationIntentSchema,
       values: record(string(), string()),
     }),
@@ -179,8 +171,6 @@ export const builtinConnectorNoAuthGrantContract = c.router({
     pathParams: object({ connectorSlug: connectorSlugSchema }),
     body: object({
       authMethod: connectorAuthMethodIdSchema,
-      agentId: uuid().optional(),
-      authorizeAgent: literal(true).optional(),
       account: connectorAccountMutationIntentSchema,
     }),
     responses: {
@@ -204,8 +194,6 @@ export const builtinConnectorOauthDeviceAuthSessionContract = c.router({
     pathParams: object({ connectorSlug: connectorSlugSchema }),
     body: object({
       authMethod: connectorAuthMethodIdSchema,
-      agentId: uuid().optional(),
-      authorizeAgent: literal(true).optional(),
       account: connectorAccountMutationIntentSchema,
       options: record(string(), string()).optional(),
     }),
@@ -249,8 +237,6 @@ export const builtinConnectorExternalCodeSessionContract = c.router({
     pathParams: object({ connectorSlug: connectorSlugSchema }),
     body: object({
       authMethod: connectorAuthMethodIdSchema,
-      agentId: uuid().optional(),
-      authorizeAgent: literal(true).optional(),
       account: connectorAccountMutationIntentSchema,
     }),
     responses: {

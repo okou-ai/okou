@@ -107,7 +107,6 @@ test("Saved connectors with unavailable defaults stay visible for account repair
     findFastControl("button", "Connect Acme Search", dialog),
   ).resolves.toBeVisible();
   expect(fixture.customValueRequests).toStrictEqual([]);
-  expect(fixture.customAuthorizationUpdates).toStrictEqual([]);
   expect(fixture.manualConnectionRequests).toStrictEqual([]);
 });
 
@@ -225,7 +224,7 @@ test("Connected inventory failure leaves managed Feishu in its own lifecycle", a
     customConnectorId: ACME_CONNECTOR_ID,
   } as const;
   const accounts = savedAccounts(target);
-  const fixture = installComposerConnectorFixture({
+  installComposerConnectorFixture({
     customConnectors: [
       acme(),
       httpConnector({
@@ -255,7 +254,6 @@ test("Connected inventory failure leaves managed Feishu in its own lifecycle", a
   await findFastControl("button", "Connect Feishu", dialog);
   expect(queryFastControl("button", "Connect Acme Search", dialog)).toBeNull();
   expect(within(dialog).queryByText("No accounts")).toBeNull();
-  expect(fixture.customAuthorizationUpdates).toStrictEqual([]);
 });
 
 test("Custom definition failure keeps the unavailable directory explicit", async () => {

@@ -335,7 +335,6 @@ const publishUpdateInvalidation$ = command(
         reportConnectorRuntimeWakeupDiscoveryFailure({
           orgId: args.actor.orgId,
           scopedToUser: false,
-          scopedToAgent: false,
           targetCount: 0,
           error: dependents.error,
         });

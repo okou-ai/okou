@@ -23,7 +23,7 @@ import {
   activeNetworkPolicyRefreshesFromGrants,
   mergeNetworkPolicyRefreshes,
   networkPolicyRefreshesRecord,
-} from "./user-permission-grants.service";
+} from "./connector-network-policy-refresh.service";
 
 export interface ExecutionPublicationRun extends ExecutionContextRun {
   readonly prompt: string;
