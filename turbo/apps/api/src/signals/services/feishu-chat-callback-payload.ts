@@ -1,6 +1,6 @@
 import { array, boolean, object, string, type infer as zInfer } from "zod";
 
-import { feishuOrgCallbackFileSchema } from "./feishu-org-callback-payload";
+import { feishuRunFileSchema } from "./feishu-run-file-index";
 
 export const feishuDeliveryTargetSchema = object({
   installationId: string(),
@@ -10,7 +10,7 @@ export const feishuDeliveryTargetSchema = object({
   threadId: string(),
   replyInThread: boolean(),
   reactionId: string().optional(),
-  files: array(feishuOrgCallbackFileSchema).optional(),
+  files: array(feishuRunFileSchema).optional(),
 });
 
 export type FeishuDeliveryTarget = zInfer<typeof feishuDeliveryTargetSchema>;
