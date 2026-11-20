@@ -1675,3 +1675,34 @@ chat-image-navigation-shortcuts-001	turbo/apps/platform/src/views/okou-page/__te
 chat-image-navigation-shortcuts-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-image-navigation-shortcuts.test.tsx	An inaccessible gallery image still lets the user reach the next image	129	passed
 chat-image-navigation-shortcuts-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-image-navigation-shortcuts.test.tsx	Sidebar navigation decodes a resolved private URL without replacing its focus owner	157	passed
 chat-image-navigation-shortcuts-007	turbo/apps/platform/src/views/okou-page/__tests__/chat-image-navigation-shortcuts.test.tsx	Image shortcuts yield to modifiers and toolbar menus in both fullscreen modes	214	passed
+chat-member-model-route-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-member-model-route.test.tsx	Uses the effective subscription for reasoning and Fast guidance	35	passed
+chat-member-model-route-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-member-model-route.test.tsx	Reconnects the personal subscription used by the selected model	61	passed
+chat-member-model-route-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-member-model-route.test.tsx	Refreshes the account target on explicit reconnect after a remote account switch	116	passed
+chat-mentions-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-mentions.test.tsx	A conversation reference renders as a recognizable chip	115	passed
+chat-mentions-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-mentions.test.tsx	Special characters in a conversation title survive saving and restoring	153	passed
+chat-navigation-position-restoration-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-navigation-position-restoration.test.tsx	with a measurable thread viewport restore the reading position during keyboard thread navigation	472	passed
+chat-navigation-position-restoration-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-navigation-position-restoration.test.tsx	Restore the reading position after switching threads from the sidebar	560	passed
+chat-navigation-position-restoration-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-navigation-position-restoration.test.tsx	Return to the latest message in a thread opened from the sidebar	635	passed
+chat-navigation-position-restoration-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-navigation-position-restoration.test.tsx	Open a conversation at a linked event	681	passed
+chat-navigation-position-restoration-007	turbo/apps/platform/src/views/okou-page/__tests__/chat-navigation-position-restoration.test.tsx	Follow the Resources origin link to its parent run	720	passed
+chat-navigation-position-restoration-010	turbo/apps/platform/src/views/okou-page/__tests__/chat-navigation-position-restoration.test.tsx	Return to the latest message after sending from history	792	passed
+chat-rename-focus-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-rename-focus.test.tsx	Do not focus the emoji button after Rename closes with Enter	66	passed
+chat-rename-focus-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-rename-focus.test.tsx	Do not focus the emoji button after Rename closes with Escape	66	passed
+chat-rename-focus-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-rename-focus.test.tsx	Leave focus unforced after Rename opens from the main composer	106	passed
+chat-rename-focus-007	turbo/apps/platform/src/views/okou-page/__tests__/chat-rename-focus.test.tsx	Do not focus the emoji button after title double-click Rename	126	passed
+chat-run-usage-localization-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-usage-localization.test.tsx	Return to the conversation that started a chat message	29	passed
+chat-run-usage-localization-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-usage-localization.test.tsx	Show the canonical Lark source with a chat link	171	passed
+chat-run-usage-localization-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-usage-localization.test.tsx	Show the current usage settlement on the correct run	220	passed
+chat-search-debounce-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-search-debounce.test.tsx	Search messages only after the latest input settles	56	passed
+chat-search-debounce-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-search-debounce.test.tsx	Clearing or closing search discards a pending message search	84	passed
+chat-selection-actions-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-selection-actions.test.tsx	Keep the draft and passage actions available after renaming the conversation	57	passed
+chat-selection-actions-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-selection-actions.test.tsx	Copy the captured passage when pointerup clears its native selection	91	passed
+chat-selection-actions-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-selection-actions.test.tsx	Forward the captured passage after the native selection collapses	104	passed
+chat-send-read-status-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-send-read-status.test.tsx	Send in an existing conversation while unread indicators are unauthorized	27	passed
+chat-send-read-status-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-send-read-status.test.tsx	Forwarding dismisses its composer before unread refresh or POST completes	97	passed
+chat-send-read-status-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-send-read-status.test.tsx	A failed read mark does not prevent sending to the agent	175	passed
+chat-upload-diagnostics-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-upload-diagnostics.test.tsx	reports one exhausted upload with safe terminal diagnostics	72	passed
+chat-upload-diagnostics-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-upload-diagnostics.test.tsx	does not report an upload error when a transient network failure recovers	144	passed
+chat-whitespace-drafts-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-whitespace-drafts.test.tsx	A blank agent draft stays empty after whitespace-only input	57	passed
+chat-whitespace-drafts-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-whitespace-drafts.test.tsx	Whitespace-only agent drafts clear saved content without trimming meaningful text	69	passed
+chat-whitespace-drafts-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-whitespace-drafts.test.tsx	Whitespace text preserves a draft's attachment and inline reference	92	passed
