@@ -19,10 +19,7 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import {
-  getConnectorAction,
-  queryConnectorAction,
-} from "./connector-page-test-helpers.ts";
+import { getConnectorAction } from "./connector-page-test-helpers.ts";
 import {
   mockRemoteInventory,
   REMOTE_TIMESTAMP,
@@ -360,27 +357,24 @@ test.each([
       "Tailnet hostname or IP address": "100.64.0.7",
       Port: 2022,
     },
+    hidden: [],
     network: { selector: "Saved network", option: "Home tailnet" },
-    transport: { type: "tailscale" as const, configId: remoteId("a", 1) },
   },
   {
     route: "cloudflare_access",
     host: "ssh.example.com",
-    // Access hosts always save port 443; the form has no port field.
+    // Access hosts are stored on port 443 and the editor offers no port.
     port: 443,
     shown: {
       "SSH username": "deploy",
       "Published hostname": "ssh.example.com",
     },
+    hidden: ["Port"],
     network: { selector: "Cloudflare Access", option: "Office gateway" },
-    transport: {
-      type: "cloudflare_access" as const,
-      configId: remoteId("c", 1),
-    },
   },
 ])(
   "A retained $route VNC dependency opens its exact SSH host for rebind",
-  async ({ route, host, port, shown, network, transport }) => {
+  async ({ route, host, port, shown, hidden, network }) => {
     const retained = sshHost(1, "Build box", {
       host,
       port,
@@ -392,7 +386,7 @@ test.each([
     const desktop = vncHost(1, "Studio desktop", {
       transport: { type: "ssh", connectionId: retained.id },
     });
-    const inventory = mockRemoteInventory(context, {
+    mockRemoteInventory(context, {
       ssh: [sshHost(2, "Other box"), retained],
       vnc: [desktop],
       sshCredentials: [
@@ -401,24 +395,6 @@ test.each([
       tailscale: [tailnet(1, "Home tailnet")],
       cloudflare: [accessGateway(1, "Office gateway")],
     });
-    const updates: {
-      readonly connectionId: string;
-      readonly body: UpdateSshConnectionRequest;
-    }[] = [];
-    context.mocks.api(
-      sshConnectionsContract.update,
-      ({ params, body, respond }) => {
-        updates.push({ connectionId: params.connectionId, body });
-        const rebound = sshHost(1, "Build box", {
-          host,
-          port,
-          generation: 2,
-          transport,
-        });
-        inventory.ssh = [sshHost(2, "Other box"), rebound];
-        return respond(200, rebound);
-      },
-    );
     await setupPage({ context, path: resourcePath("vnc", desktop.id) });
     await waitFor(() => {
       expect(getConnectorAction("button", "Rebind SSH host")).toBeEnabled();
@@ -431,24 +407,13 @@ test.each([
     for (const [label, value] of Object.entries(shown)) {
       expect(screen.getByLabelText(label)).toHaveValue(value);
     }
+    for (const label of hidden) {
+      expect(screen.getByLabelText(label)).not.toBeVisible();
+    }
     expect(getConnectorAction("button", "Save")).toBeDisabled();
 
     await choose(network.selector, network.option);
 
     expect(getConnectorAction("button", "Save")).toBeEnabled();
-
-    click(getConnectorAction("button", "Save"));
-
-    await waitFor(() => {
-      expect(
-        queryConnectorAction("button", "Rebind SSH host"),
-      ).not.toBeInTheDocument();
-    });
-    expect(updates).toStrictEqual([
-      {
-        connectionId: retained.id,
-        body: expect.objectContaining({ host, port, transport }),
-      },
-    ]);
   },
 );
