@@ -32,10 +32,10 @@ behavior, and visible network refresh behavior.
 The Feishu icon tests register only the three selected platform and activation
 combinations. Both preserved successful download scenarios share the same
 original byte and filename assertions. The unreadable-icon scenario retains
-its error and navigation checks. The additional feishu-connect-flow candidate
-remains pending. Its nested Feishu and Lark suite registers frozen IDs 001
-and 008 at the same source line with different selection decisions. Keep its
-BDD while the nested suite is separated by provider.
+its error and navigation checks. The nested Feishu and Lark suite originally
+registered frozen IDs 001 and 008 at the same source line. The
+[provider account batch](test-rebuild-batch-provider-account-billing.md)
+records the completed provider split and its selected rows.
 
 The execution ledger maps actual Vitest expansions to selected IDs in both
 directions. The GWT checklist records each scenario in volume 3. Targeted

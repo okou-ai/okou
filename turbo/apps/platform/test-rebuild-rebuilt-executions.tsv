@@ -1835,3 +1835,68 @@ telegram-oauth-connect-013	turbo/apps/platform/src/views/okou-page/__tests__/tel
 telegram-oauth-connect-014	turbo/apps/platform/src/views/okou-page/__tests__/telegram-oauth-connect.test.tsx	Works refreshes after the Telegram subscription attaches past its first status read	307	passed
 whatsapp-001	turbo/apps/platform/src/views/okou-page/__tests__/whatsapp.test.tsx	WhatsApp connects with the same shared number and a prefilled code, updates in realtime and disconnects	24	passed
 whatsapp-003	turbo/apps/platform/src/views/okou-page/__tests__/whatsapp.test.tsx	WhatsApp opens from the keyboard and returns focus after Escape	96	passed
+feishu-connect-flow-001	turbo/apps/platform/src/views/okou-page/__tests__/feishu-connect-flow.test.tsx	feishu account connection signed connection links require login and retain the complete return URL	74	passed
+feishu-connect-flow-002	turbo/apps/platform/src/views/okou-page/__tests__/feishu-connect-flow.test.tsx	feishu account connection authenticated message links pass their signed identity to account connection	88	passed
+feishu-connect-flow-003	turbo/apps/platform/src/views/okou-page/__tests__/feishu-connect-flow.test.tsx	feishu account connection shows recovery guidance when a signed connection link is rejected	94	passed
+feishu-connect-flow-004	turbo/apps/platform/src/views/okou-page/__tests__/feishu-connect-flow.test.tsx	feishu account connection shows the same recovery guidance for an incomplete connection link	130	passed
+feishu-connect-flow-007	turbo/apps/platform/src/views/okou-page/__tests__/feishu-connect-flow.test.tsx	feishu account connection shows the provider on OAuth callbacks and returns to its bot	136	passed
+feishu-connect-flow-009	turbo/apps/platform/src/views/okou-page/__tests__/feishu-connect-flow.test.tsx	lark account connection authenticated message links pass their signed identity to account connection	174	passed
+feishu-connect-flow-011	turbo/apps/platform/src/views/okou-page/__tests__/feishu-connect-flow.test.tsx	lark account connection shows the same recovery guidance for an incomplete connection link	180	passed
+auto-model-accounts-001	turbo/apps/platform/src/views/okou-page/__tests__/auto-model-accounts.test.tsx	Offer a direct connection action in each empty provider section and keep it after cancelling authorization	96	passed
+auto-model-accounts-002	turbo/apps/platform/src/views/okou-page/__tests__/auto-model-accounts.test.tsx	Show a connected account in its provider section only after authorization is confirmed by the account list	136	passed
+auto-model-accounts-005	turbo/apps/platform/src/views/okou-page/__tests__/auto-model-accounts.test.tsx	Connect ChatGPT directly without selecting a provider from a menu	195	passed
+auto-model-accounts-006	turbo/apps/platform/src/views/okou-page/__tests__/auto-model-accounts.test.tsx	Disable only the provider that has reached the ten-account limit	226	passed
+personal-providers-tab-006	turbo/apps/platform/src/views/okou-page/__tests__/personal-providers-tab.test.tsx	Organize personal subscriptions in accessible provider tables	255	passed
+personal-providers-tab-008	turbo/apps/platform/src/views/okou-page/__tests__/personal-providers-tab.test.tsx	Disconnect an active personal subscription account	284	passed
+personal-providers-tab-009	turbo/apps/platform/src/views/okou-page/__tests__/personal-providers-tab.test.tsx	Keep a failed disconnect open and finish a successful retry	333	passed
+personal-providers-tab-010	turbo/apps/platform/src/views/okou-page/__tests__/personal-providers-tab.test.tsx	Review personal subscriptions through account switching	395	passed
+personal-providers-tab-011	turbo/apps/platform/src/views/okou-page/__tests__/personal-providers-tab.test.tsx	View personal account groups by default in an external workspace	432	passed
+personal-providers-tab-012	turbo/apps/platform/src/views/okou-page/__tests__/personal-providers-tab.test.tsx	Start and close personal Claude login directly from its account group	468	passed
+personal-providers-tab-013	turbo/apps/platform/src/views/okou-page/__tests__/personal-providers-tab.test.tsx	Connect a personal Claude subscription	522	passed
+subscription-linking-001	turbo/apps/platform/src/views/okou-page/__tests__/subscription-linking.test.tsx	An unlinked member finds the subscriptions in the composer's model slot	135	passed
+subscription-linking-002	turbo/apps/platform/src/views/okou-page/__tests__/subscription-linking.test.tsx	Codex opens its authorization from the composer and the slot becomes the model picker after confirmation	158	passed
+subscription-linking-003	turbo/apps/platform/src/views/okou-page/__tests__/subscription-linking.test.tsx	Linking one subscription keeps the other one connectable from the model panel	209	passed
+subscription-linking-004	turbo/apps/platform/src/views/okou-page/__tests__/subscription-linking.test.tsx	Manage plans in the model panel opens Models	233	passed
+subscription-linking-005	turbo/apps/platform/src/views/okou-page/__tests__/subscription-linking.test.tsx	Claude opens its authorization from the account menu and cancelling keeps both entries	243	passed
+subscription-linking-007	turbo/apps/platform/src/views/okou-page/__tests__/subscription-linking.test.tsx	Linked members get the model picker and no linking entry (needsReconnect=true)	284	passed
+subscription-linking-008	turbo/apps/platform/src/views/okou-page/__tests__/subscription-linking.test.tsx	The subscription linking switch keeps capability discovery available	307	passed
+subscription-reset-card-001	turbo/apps/platform/src/views/okou-page/__tests__/subscription-reset-card.test.tsx	a reset link displays exact-account usage and never resets before a click	109	passed
+subscription-reset-card-002	turbo/apps/platform/src/views/okou-page/__tests__/subscription-reset-card.test.tsx	repeated cards submit the same idempotency key and share refreshed remaining credits	147	passed
+subscription-reset-card-003	turbo/apps/platform/src/views/okou-page/__tests__/subscription-reset-card.test.tsx	the direct URL opens an authenticated reset page and still requires a click	187	passed
+subscription-reset-card-004	turbo/apps/platform/src/views/okou-page/__tests__/subscription-reset-card.test.tsx	the standalone Claude Code page exposes natural recovery without manual-credit confirmation	215	passed
+subscription-reset-card-006	turbo/apps/platform/src/views/okou-page/__tests__/subscription-reset-card.test.tsx	the no credit state cannot submit a reset	255	passed
+subscription-reset-card-007	turbo/apps/platform/src/views/okou-page/__tests__/subscription-reset-card.test.tsx	the reconnect state cannot submit a reset	255	passed
+subscription-reset-card-008	turbo/apps/platform/src/views/okou-page/__tests__/subscription-reset-card.test.tsx	Claude Code recovery details never advertise manual reset credits or confirmation	285	passed
+subscription-reset-card-010	turbo/apps/platform/src/views/okou-page/__tests__/subscription-reset-card.test.tsx	usage rings open accessible recovery and expiry details outside the fixed frame	305	passed
+subscription-reset-card-013	turbo/apps/platform/src/views/okou-page/__tests__/subscription-reset-card.test.tsx	0 resets is the only reset action	326	passed
+personal-usage-tab-001	turbo/apps/platform/src/views/okou-page/__tests__/personal-usage-tab.test.tsx	Review your member-package credit balance and grant rows	307	passed
+personal-usage-tab-006	turbo/apps/platform/src/views/okou-page/__tests__/personal-usage-tab.test.tsx	Start package configuration from an empty Atom balance	336	passed
+personal-usage-tab-007	turbo/apps/platform/src/views/okou-page/__tests__/personal-usage-tab.test.tsx	Show one-time bonus credits without an active package	356	passed
+personal-usage-tab-008	turbo/apps/platform/src/views/okou-page/__tests__/personal-usage-tab.test.tsx	Configure member packages from personal Credit balance	387	passed
+personal-usage-tab-009	turbo/apps/platform/src/views/okou-page/__tests__/personal-usage-tab.test.tsx	Review every workspace member’s package balance	471	passed
+personal-usage-tab-010	turbo/apps/platform/src/views/okou-page/__tests__/personal-usage-tab.test.tsx	Review personal credit-usage records by date range	609	passed
+personal-usage-tab-011	turbo/apps/platform/src/views/okou-page/__tests__/personal-usage-tab.test.tsx	Usage links keep Settings open for browser activations and close on click	653	passed
+personal-usage-tab-012	turbo/apps/platform/src/views/okou-page/__tests__/personal-usage-tab.test.tsx	Usage links keep Settings open for browser activations and close on Enter	653	passed
+sidebar-subscription-usage-001	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-subscription-usage.test.tsx	Open subscriptions by clicking the rail and open Models in Settings	40	passed
+sidebar-subscription-usage-004	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-subscription-usage.test.tsx	Show zero provider credits when weekly usage is exhausted	142	passed
+sidebar-subscription-usage-006	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-subscription-usage.test.tsx	Show unlimited provider credits when weekly usage is exhausted	142	passed
+sidebar-subscription-usage-007	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-subscription-usage.test.tsx	Show small positive provider credits when weekly usage is exhausted	142	passed
+sidebar-subscription-usage-012	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-subscription-usage.test.tsx	Keep Codex reset pending until refreshed sidebar usage is ready	194	passed
+sidebar-subscription-usage-015	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-subscription-usage.test.tsx	Keep an active session open when provider loading remains unauthorized (saved locale: null)	293	passed
+sidebar-subscription-usage-016	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-subscription-usage.test.tsx	Warn when codex-oauth-token weekly has little remaining usage	339	passed
+sidebar-subscription-usage-017	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-subscription-usage.test.tsx	Warn when claude-code-oauth-token fiveHour has little remaining usage	339	passed
+sidebar-subscription-usage-019	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-subscription-usage.test.tsx	Keep the account menu available without connected subscriptions	403	passed
+sidebar-subscription-usage-020	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-subscription-usage.test.tsx	Describe connected usage with an unknown percentage without treating it as empty	417	passed
+sidebar-subscription-usage-021	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-subscription-usage.test.tsx	Show exhausted Claude usage with Resets in 4h 12m	444	passed
+sidebar-account-credits-001	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-account-credits.test.tsx	Show a member’s latest package credits in the account menu	26	passed
+sidebar-account-credits-003	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-account-credits.test.tsx	Organization debt -23000 does not cancel 50000 prepaid member credits	105	passed
+sidebar-account-credits-006	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-account-credits.test.tsx	Open workspace Credit balance from the account menu	139	passed
+sidebar-account-menu-001	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-account-menu.test.tsx	Switch accounts: success	20	passed
+sidebar-account-menu-004	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-account-menu.test.tsx	Add account opens the hosted Clerk account switcher with the shared appearance	127	passed
+sidebar-account-menu-006	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-account-menu.test.tsx	Help opens shortcuts and links to the docs	160	passed
+credit-usage-display-001	turbo/apps/platform/src/views/okou-page/__tests__/credit-usage-display.test.tsx	Historical run usage appears when scrolling reveals its answer	130	passed
+credit-usage-display-002	turbo/apps/platform/src/views/okou-page/__tests__/credit-usage-display.test.tsx	A run shows settled usage only after its first usage hint arrives	204	passed
+credit-usage-display-007	turbo/apps/platform/src/views/okou-page/__tests__/credit-usage-display.test.tsx	Credit usage merges historical data services and new enrichment while preserving model and connector rows	242	passed
+credit-usage-display-008	turbo/apps/platform/src/views/okou-page/__tests__/credit-usage-display.test.tsx	Chat stays usable and shows no hint amount when settled usage cannot be read	357	passed
+credit-usage-display-010	turbo/apps/platform/src/views/okou-page/__tests__/credit-usage-display.test.tsx	Credit usage shows managed labels and merges catalog aliases and Auto presets in en-US	406	passed
+credit-usage-display-011	turbo/apps/platform/src/views/okou-page/__tests__/credit-usage-display.test.tsx	Credit usage preserves ambiguous upstream identifiers and uncataloged historical models	478	passed

@@ -1,0 +1,348 @@
+import { screen, waitFor, within } from "@testing-library/react";
+import { expect, test } from "vitest";
+import type { ModelProviderResponse } from "@okouai/api-contracts/contracts/model-providers";
+import {
+  personalModelProviderAccountsByIdContract,
+  personalSubscriptionsContract,
+} from "@okouai/api-contracts/contracts/personal-model-providers";
+
+import {
+  click,
+  queryAllByRoleFast,
+  setupPage,
+} from "../../../__tests__/page-helper.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { mockChatLifecycle } from "./chat-test-helpers.ts";
+
+const context = testContext();
+const ACCOUNT_ID = "10000000-0000-4000-8000-000000000001";
+const REQUEST_ID = "20000000-0000-4000-8000-000000000001";
+const THREAD_ID = "30000000-0000-4000-8000-000000000001";
+const PATH = `/subscriptions/${ACCOUNT_ID}/reset?idempotencyKey=${REQUEST_ID}`;
+const URL = `https://app.okou.ai${PATH}`;
+
+function subscription(
+  overrides: Partial<ModelProviderResponse> = {},
+): ModelProviderResponse {
+  return {
+    id: ACCOUNT_ID,
+    type: "codex-oauth-token",
+    framework: "codex",
+    createdAt: "2026-10-01T00:00:00.000Z",
+    updatedAt: "2026-10-01T00:00:00.000Z",
+    accountEmail: "original@example.test",
+    planType: "pro",
+    isActive: false,
+    needsReconnect: false,
+    lastRefreshErrorCode: null,
+    subscriptionResetSupported: true,
+    subscriptionResetCredits: 3,
+    subscriptionUsage: {
+      fiveHour: {
+        usedPercent: 100,
+        remainingPercent: 0,
+        resetAt: "2026-10-05T22:00:00.000Z",
+        windowSeconds: 18_000,
+      },
+      weekly: {
+        usedPercent: 40,
+        remainingPercent: 60,
+        resetAt: "2026-10-10T00:00:00.000Z",
+        windowSeconds: 604_800,
+      },
+    },
+    ...overrides,
+  };
+}
+
+function button(
+  name: string,
+  container: ParentNode = document.body,
+): HTMLElement {
+  const found = queryAllByRoleFast("button", container).find((candidate) => {
+    return (
+      candidate.getAttribute("aria-label") === name ||
+      candidate.textContent?.trim() === name
+    );
+  });
+  if (!found) {
+    throw new Error(`Missing button ${name}`);
+  }
+  return found;
+}
+
+async function setupChat(content: string) {
+  mockChatLifecycle(context, {
+    threadId: THREAD_ID,
+    threadTitle: "Subscription actions",
+    chatEvents: [
+      {
+        id: "reset-request",
+        role: "assistant",
+        runId: "run-reset-request",
+        content,
+        createdAt: "2026-10-05T12:00:00.000Z",
+      },
+    ],
+  });
+  await setupPage({
+    context,
+    path: `/chats/${THREAD_ID}`,
+    host: "app.okou.ai",
+  });
+}
+
+function mockRead(account = subscription()) {
+  context.mocks.api(
+    personalSubscriptionsContract.get,
+    ({ params, respond }) => {
+      expect(params.id).toBe(ACCOUNT_ID);
+      return respond(200, account);
+    },
+  );
+}
+
+function frame() {
+  return screen.getByTestId("subscription-reset-card-shell");
+}
+
+test("a reset link displays exact-account usage and never resets before a click", async () => {
+  mockRead();
+  let submitted = false;
+  context.mocks.api(
+    personalModelProviderAccountsByIdContract.resetSubscriptionUsage,
+    ({ params, body, respond }) => {
+      expect(params.id).toBe(ACCOUNT_ID);
+      expect(body.idempotencyKey).toBe(REQUEST_ID);
+      submitted = true;
+      return respond(200, { outcome: "reset" });
+    },
+  );
+  await setupChat(`Before reset\n\n[Review reset](${URL})\n\nAfter reset`);
+  await expect(
+    screen.findByRole("progressbar", {
+      name: "original@example.test 5h remaining",
+    }),
+  ).resolves.toHaveAttribute("aria-valuenow", "0");
+  expect(
+    screen.getByRole("progressbar", {
+      name: "original@example.test Week remaining",
+    }),
+  ).toHaveAttribute("aria-valuenow", "60");
+  expect(button("3 resets")).toHaveAccessibleDescription(
+    expect.stringContaining("Remaining resets: 3"),
+  );
+  expect(screen.getByText(/Codex · original@example.test/)).toBeInTheDocument();
+  expect(submitted).toBeFalsy();
+  const originalFrame = frame();
+  click(button("3 resets"));
+  await expect(
+    screen.findByText("Usage reset successfully."),
+  ).resolves.toBeInTheDocument();
+  expect(submitted).toBeTruthy();
+  expect(button("3 resets")).toBeDisabled();
+  expect(frame()).toBe(originalFrame);
+});
+
+test("repeated cards submit the same idempotency key and share refreshed remaining credits", async () => {
+  let redeemed = false;
+  let submissions = 0;
+  const gate = context.mocks.deferred<void>();
+  context.mocks.api(personalSubscriptionsContract.get, ({ respond }) => {
+    return respond(
+      200,
+      subscription({ subscriptionResetCredits: redeemed ? 2 : 3 }),
+    );
+  });
+  context.mocks.api(
+    personalModelProviderAccountsByIdContract.resetSubscriptionUsage,
+    async ({ body, respond, withSignal }) => {
+      expect(body.idempotencyKey).toBe(REQUEST_ID);
+      submissions += 1;
+      await withSignal(gate.promise);
+      redeemed = true;
+      return respond(200, { outcome: "reset" });
+    },
+  );
+  await setupChat(`${URL}\n\nThe same request:\n\n${URL}`);
+  await waitFor(() => {
+    expect(screen.getAllByText("Remaining resets: 3")).toHaveLength(2);
+  });
+  const buttons = queryAllByRoleFast("button").filter((candidate) => {
+    return candidate.getAttribute("aria-label") === "3 resets";
+  });
+  click(buttons[0]);
+  click(buttons[1]);
+  await waitFor(() => {
+    expect(submissions).toBe(2);
+  });
+  gate.resolve();
+  await waitFor(() => {
+    expect(screen.getAllByText("Remaining resets: 2")).toHaveLength(2);
+  });
+  expect(submissions).toBe(2);
+  expect(screen.getAllByText("Usage reset successfully.")).toHaveLength(2);
+});
+
+test("the direct URL opens an authenticated reset page and still requires a click", async () => {
+  mockRead();
+  let submitted = false;
+  context.mocks.api(
+    personalModelProviderAccountsByIdContract.resetSubscriptionUsage,
+    ({ params, respond }) => {
+      expect(params.id).toBe(ACCOUNT_ID);
+      submitted = true;
+      return respond(200, { outcome: "alreadyRedeemed" });
+    },
+  );
+  await setupPage({
+    context,
+    path: PATH,
+    host: "app.okou.ai",
+  });
+  await screen.findByText("Remaining resets: 3");
+  expect(submitted).toBeFalsy();
+  expect(button("3 resets")).toHaveAccessibleDescription(
+    expect.stringContaining("Reset uses one reset credit."),
+  );
+  click(button("3 resets"));
+  await expect(
+    screen.findByText("This reset request has already been redeemed."),
+  ).resolves.toBeInTheDocument();
+  expect(submitted).toBeTruthy();
+});
+
+test("the standalone Claude Code page exposes natural recovery without manual-credit confirmation", async () => {
+  mockRead(
+    subscription({
+      type: "claude-code-oauth-token",
+      framework: "claude-code",
+      subscriptionResetSupported: false,
+    }),
+  );
+  await setupPage({
+    context,
+    path: PATH,
+    host: "app.okou.ai",
+  });
+  await expect(
+    screen.findByText(
+      "Manual reset is not supported; usage recovers naturally.",
+    ),
+  ).resolves.toBeInTheDocument();
+  expect(
+    queryAllByRoleFast("button").filter((candidate) => {
+      return candidate.getAttribute("aria-label")?.match(/^\d+ resets?$/);
+    }),
+  ).toHaveLength(0);
+  expect(screen.queryByText("Remaining resets: 3")).not.toBeInTheDocument();
+  expect(
+    screen.queryByText(/Only clicking Reset submits the request/),
+  ).not.toBeInTheDocument();
+  click(button("original@example.test 5h remaining"));
+  const details = within(await screen.findByRole("dialog"));
+  expect(details.getByText("0% left")).toBeInTheDocument();
+  expect(
+    details.getByText(
+      "Manual reset is not supported; usage recovers naturally.",
+    ),
+  ).toBeInTheDocument();
+  expect(
+    screen.queryByText(/Only clicking Reset submits the request/),
+  ).not.toBeInTheDocument();
+});
+
+test.each([
+  {
+    name: "no credit",
+    overrides: { subscriptionResetCredits: 0 },
+    notice: "No reset credits are available.",
+    hasButton: true,
+  },
+  {
+    name: "reconnect",
+    overrides: { needsReconnect: true },
+    notice: "Reconnect this subscription in Settings > Models.",
+    hasButton: true,
+  },
+])(
+  "the $name state cannot submit a reset",
+  async ({ overrides, notice, hasButton }) => {
+    mockRead(subscription(overrides));
+    await setupChat(URL);
+    await expect(screen.findByText(notice)).resolves.toBeInTheDocument();
+    const resets = queryAllByRoleFast("button").filter((candidate) => {
+      return candidate.getAttribute("aria-label")?.match(/^\d+ resets?$/);
+    });
+    expect(
+      resets.map((candidate) => {
+        return candidate.hasAttribute("disabled");
+      }),
+    ).toStrictEqual(hasButton ? [true] : []);
+  },
+);
+
+test("Claude Code recovery details never advertise manual reset credits or confirmation", async () => {
+  mockRead(
+    subscription({
+      type: "claude-code-oauth-token",
+      framework: "claude-code",
+      subscriptionResetSupported: false,
+    }),
+  );
+  await setupChat(URL);
+  const notice = "Manual reset is not supported; usage recovers naturally.";
+  await screen.findByText(notice);
+  click(button("original@example.test 5h remaining"));
+  const details = within(await screen.findByRole("dialog"));
+  expect(details.queryByText("Remaining resets: 3")).not.toBeInTheDocument();
+  expect(
+    details.queryByText(/Only clicking Reset submits the request/),
+  ).not.toBeInTheDocument();
+  expect(details.getByText(notice)).toBeInTheDocument();
+});
+
+test("usage rings open accessible recovery and expiry details outside the fixed frame", async () => {
+  mockRead(
+    subscription({
+      subscriptionResetCreditsNextExpiresAt: "2030-10-12T00:00:00.000Z",
+    }),
+  );
+  await setupChat(URL);
+  await screen.findByText("Remaining resets: 3");
+  const originalFrame = frame();
+  click(button("original@example.test 5h remaining"));
+  await screen.findByText("0% left");
+  expect(screen.getByText(/Credits expire:/)).toBeInTheDocument();
+  expect(
+    within(screen.getByRole("dialog")).getByText(
+      /Only clicking Reset submits the request/,
+    ),
+  ).toBeInTheDocument();
+  expect(originalFrame.contains(screen.getByText("0% left"))).toBeFalsy();
+  expect(frame()).toBe(originalFrame);
+});
+
+test.each([{ credits: 0, label: "0 resets", disabled: true }])(
+  "$label is the only reset action",
+  async ({ credits, label, disabled }) => {
+    mockRead(subscription({ subscriptionResetCredits: credits }));
+    await setupChat(URL);
+    await screen.findByText(label);
+    const reset = button(label);
+    expect(reset).toHaveTextContent(label);
+    expect(reset.hasAttribute("disabled")).toBe(disabled);
+    expect(
+      queryAllByRoleFast(
+        "button",
+        screen.getByTestId("subscription-reset-card"),
+      ).map((candidate) => {
+        return candidate.getAttribute("aria-label");
+      }),
+    ).toStrictEqual([
+      "original@example.test 5h remaining",
+      "original@example.test Week remaining",
+      label,
+    ]);
+  },
+);
