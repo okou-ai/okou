@@ -20,11 +20,14 @@ import ai.okou.android.updates.updateToolbarAction
 import android.content.res.Configuration
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
@@ -36,6 +39,7 @@ import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertHeightIsEqualTo
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertWidthIsEqualTo
@@ -55,6 +59,7 @@ import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -86,6 +91,7 @@ class OkouAppTest {
     private var background: Color? = null
     private val deviceConfiguration = mutableStateOf<Configuration?>(null)
     private val windowSize = mutableStateOf<IntSize?>(null)
+    private val contentHeight = mutableStateOf(Dp.Infinity)
     private val release = updateRelease("99.0.0")
     private val availableUpdate =
         UpdateUiState(
@@ -217,26 +223,32 @@ class OkouAppTest {
                 OkouTheme(dark) {
                     val color = MaterialTheme.colorScheme.background
                     SideEffect { background = color }
-                    OkouApp(
-                        models.first.first,
-                        models.first.second,
-                        controls,
-                        settingsContent = { _, _ ->
-                            SettingsScreen(
-                                workspacePreferences = { MemberPreferencesSettings(models.second) }
+                    Box {
+                        Box(Modifier.heightIn(max = contentHeight.value)) {
+                            OkouApp(
+                                models.first.first,
+                                models.first.second,
+                                controls,
+                                settingsContent = { _, _ ->
+                                    SettingsScreen(
+                                        workspacePreferences = {
+                                            MemberPreferencesSettings(models.second)
+                                        }
+                                    )
+                                },
+                                updateToolbarAction =
+                                    updateState()?.let {
+                                        updateToolbarAction(
+                                            it,
+                                            download = {},
+                                            install = {},
+                                            installProgress = null,
+                                            openDetails = {},
+                                        )
+                                    },
                             )
-                        },
-                        updateToolbarAction =
-                            updateState()?.let {
-                                updateToolbarAction(
-                                    it,
-                                    download = {},
-                                    install = {},
-                                    installProgress = null,
-                                    openDetails = {},
-                                )
-                            },
-                    )
+                        }
+                    }
                 }
             }
         }
@@ -506,18 +518,25 @@ class OkouAppTest {
     }
 
     @Test
-    @Config(qualifiers = "en-rUS-w400dp-h240dp")
+    @Config(qualifiers = "en-rUS-w400dp-h520dp")
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun newChatKeepsSendAndRetryReachableWhenTheAvailableHeightShrinks() {
         val density = compose.activity.resources.displayMetrics.density
-        // Model a tall application window whose content has less room after IME insets.
         compose.runOnIdle {
             windowSize.value = IntSize((400 * density).toInt(), (520 * density).toInt())
         }
         render()
         compose.onNodeWithText("New chat").performClick()
         val input = compose.onNodeWithTag("message_input").assertIsEnabled()
-        input.performTextReplacement((1..20).joinToString("\n") { "Draft line $it" })
+        val draft = (1..20).joinToString("\n") { "Draft line $it" }
+        input.performTextReplacement(draft)
+        input.performClick().assertIsFocused()
+        input.assertHeightIsEqualTo(156.dp)
+
+        // Model the space lost to the IME while the editor stays focused.
+        for (height in listOf(300.dp, 270.dp, 240.dp, 210.dp)) {
+            compose.runOnIdle { contentHeight.value = height }
+        }
 
         val bounds = input.getUnclippedBoundsInRoot()
         val editorHeight = bounds.bottom - bounds.top
@@ -533,6 +552,14 @@ class OkouAppTest {
         assertEquals(recovery.size.height.toFloat(), recovery.boundsInRoot.height, 0.5f)
         send.performScrollTo().assertIsDisplayed()
         assertEquals(48 * density, send.fetchSemanticsNode().boundsInRoot.height, 0.5f)
+        assertEquals(
+            draft,
+            input
+                .assertIsFocused()
+                .fetchSemanticsNode()
+                .config[SemanticsProperties.EditableText]
+                .text,
+        )
     }
 
     @Test

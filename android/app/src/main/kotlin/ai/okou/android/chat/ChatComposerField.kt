@@ -4,8 +4,11 @@ import ai.okou.android.LocalActivityStatusColor
 import ai.okou.android.R
 import ai.okou.android.currentWindowSizeDp
 import ai.okou.android.state.rememberJournalEditor
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.BringIntoViewSpec
+import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -29,10 +32,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -125,8 +130,10 @@ fun ChatComposerField(
         val availableTextHeight =
             minOf(maximumTextHeight, maxHeight - cardVerticalPadding * 2)
                 .coerceAtLeast(minimumTextHeight)
-        // Start at the editor and let the user scroll to feedback when space is tight.
-        Column(Modifier.verticalScroll(rememberScrollState(), reverseScrolling = true)) {
+        ComposerScroll(
+            keepEditorAnchored =
+                inputFocused && maxHeight >= minimumTextHeight + cardVerticalPadding * 2
+        ) {
             ComposerFeedback(model, target, state, entry)
             Row(
                 Modifier.fillMaxWidth()
@@ -213,6 +220,33 @@ fun ChatComposerField(
                     )
                 }
             }
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun ComposerScroll(keepEditorAnchored: Boolean, content: @Composable () -> Unit) {
+    val scroll = rememberScrollState()
+    val anchor = rememberUpdatedState(keepEditorAnchored)
+    val defaultSpec = LocalBringIntoViewSpec.current
+    val composerSpec =
+        remember(scroll, defaultSpec) {
+            object : BringIntoViewSpec by defaultSpec {
+                override fun calculateScrollDistance(
+                    offset: Float,
+                    size: Float,
+                    containerSize: Float,
+                ): Float {
+                    // A fitted editor is already visible at the bottom as the IME resizes the pane.
+                    if (anchor.value && scroll.value == 0) return 0f
+                    return defaultSpec.calculateScrollDistance(offset, size, containerSize)
+                }
+            }
+        }
+    CompositionLocalProvider(LocalBringIntoViewSpec provides composerSpec) {
+        Column(Modifier.verticalScroll(scroll, reverseScrolling = true)) {
+            CompositionLocalProvider(LocalBringIntoViewSpec provides defaultSpec, content = content)
         }
     }
 }
