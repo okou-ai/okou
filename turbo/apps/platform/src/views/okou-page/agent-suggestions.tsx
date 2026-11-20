@@ -284,10 +284,10 @@ function SuggestionDirectionComposer({
       aria-labelledby={headingId}
       className="min-w-0 rounded-3xl bg-nested-fill"
     >
-      <div className="flex min-h-12 min-w-0 items-center gap-2 pr-2 pl-4">
+      <div className="flex min-h-12 min-w-0 items-center gap-2 pr-3 pl-5">
         <h3
           id={headingId}
-          className="min-w-0 flex-1 truncate text-base leading-6 font-normal text-foreground"
+          className="min-w-0 flex-1 truncate text-sm leading-6 font-normal text-foreground"
         >
           {target.kind === "thread"
             ? (target.title ?? newChatTitle)
