@@ -91,7 +91,9 @@ describe("okou workflow copy command", () => {
         http.get("*/api/workflows/:workflowId", () => {
           return HttpResponse.json(workflowSummary());
         }),
-        http.get("*/api/workflows", () => HttpResponse.json([])),
+        http.get("*/api/workflows", () => {
+          return HttpResponse.json([]);
+        }),
       );
     });
 

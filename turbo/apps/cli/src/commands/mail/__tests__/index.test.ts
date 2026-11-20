@@ -79,7 +79,7 @@ describe("okou mail", () => {
         mailCommand.parseAsync(["node", "okou", ...args]),
       ).rejects.toThrow("command exited");
       expect(error.mock.calls.flat().join("\n")).toContain(
-        "OKOU_AGENT_ID is not set",
+        "The current Run execution context is unavailable",
       );
       expect(error.mock.calls.flat().join("\n")).toContain(
         "Run this command from an active agent run",

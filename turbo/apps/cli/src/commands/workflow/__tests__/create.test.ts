@@ -152,7 +152,11 @@ describe("okou workflow create command", () => {
 
   describe("error handling", () => {
     it("should fail when the workspace has no executor", async () => {
-      server.use(http.get("*/api/agents", () => HttpResponse.json([])));
+      server.use(
+        http.get("*/api/agents", () => {
+          return HttpResponse.json([]);
+        }),
+      );
       await expect(async () => {
         await createCommand.parseAsync([
           "node",

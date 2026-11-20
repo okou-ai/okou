@@ -921,13 +921,13 @@ describe("okou whoami command", () => {
       );
 
       server.use(
-        http.get("*/api/auth/me", () =>
-          HttpResponse.json({
+        http.get("*/api/auth/me", () => {
+          return HttpResponse.json({
             userId: "user-1",
             email: "test@example.com",
             orgId: "test-org-slug",
-          }),
-        ),
+          });
+        }),
       );
       await runWhoami();
 
@@ -1030,13 +1030,13 @@ describe("okou whoami command", () => {
       vi.stubEnv("OKOU_TOKEN", okouToken);
 
       server.use(
-        http.get("*/api/auth/me", () =>
-          HttpResponse.json({
+        http.get("*/api/auth/me", () => {
+          return HttpResponse.json({
             userId: "user-1",
             email: "test@example.com",
             orgId: "test-org-slug",
-          }),
-        ),
+          });
+        }),
       );
       await runWhoami();
 

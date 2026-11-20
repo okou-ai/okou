@@ -1,4 +1,3 @@
-import { capturedRunToken } from "../../../test/fixtures/captured-run-token";
 /**
  * Tests for okou connector permission-request command.
  *

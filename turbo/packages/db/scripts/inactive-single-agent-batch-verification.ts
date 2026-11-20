@@ -277,7 +277,7 @@ export async function verifyInactiveBatch(sql: postgres.Sql) {
     WHERE (SELECT count(*) FROM chat_thread_events e LEFT JOIN batch_chat_events b USING(id)
       WHERE b.id IS NULL AND e.chat_thread_id=r.id AND e.user_id=r.user_id AND e.org_id=r.org_id AND e.agent_id=r.target_agent_id
         AND ((e.kind='project_updated' AND e.project_id=r.project_id)
-          OR (e.kind='sort_touched' AND e.reassigned_agent_id=r.target_agent_id AND e.pin_order IS NOT DISTINCT FROM c.pin_order
+          OR (e.kind='agent_reassigned' AND e.agent_id=r.target_agent_id AND e.pin_order IS NOT DISTINCT FROM c.pin_order
             AND e.created_at IS NOT DISTINCT FROM c.last_message_at)))<>2`,
   );
   await check(
