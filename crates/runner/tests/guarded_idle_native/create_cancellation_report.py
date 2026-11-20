@@ -48,8 +48,8 @@ def validate(directory):
         report.validate_witness_phases(
             events, PHASES, "missing duplicate or unordered actual create phases",
         )
-        identity = terminal[1]["sandbox_id"], terminal[1]["backing_generation"]
-        if any((e["sandbox_id"],e["backing_generation"]) != identity for e in events):
+        identity = report.witness_identity(terminal[1])
+        if report.witness_identity_changed(events, identity):
             raise ValueError("actual create lost original generation")
         ordered([terminal[1]["monotonic_ns"], *(e["monotonic_ns"] for e in events[:5]), terminal[2]["monotonic_ns"]])
         ordered([terminal[4]["monotonic_ns"], events[-1]["monotonic_ns"], terminal[-1]["monotonic_ns"]])

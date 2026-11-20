@@ -45,8 +45,8 @@ def validate(directory, *, cases=None, policy_key="native_batch_aba_policy_json"
         report.validate_witness_phases(
             events, PHASES, "missing duplicate or unordered batch ABA phases",
         )
-        identity = terminal[1]["sandbox_id"], terminal[1]["backing_generation"]
-        if any((e["sandbox_id"], e["backing_generation"]) != identity for e in events):
+        identity = report.witness_identity(terminal[1])
+        if report.witness_identity_changed(events, identity):
             raise ValueError("batch ABA changed its original physical owner")
         ordered = [terminal[1], *events[:5], terminal[2], terminal[3], events[5], terminal[4],
                    events[6], events[7], terminal[5]]

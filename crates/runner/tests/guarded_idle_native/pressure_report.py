@@ -142,9 +142,9 @@ def validate(directory):
             seen, phases, "missing, duplicate or unordered native pressure witnesses",
         )
         previous = events[2]["monotonic_ns"]
-        identity = (result["cases"][case]["sandbox_id"], result["cases"][case]["backing_generation"])
+        identity = report.witness_identity(result["cases"][case])
         for witness in seen:
-            if ((witness["sandbox_id"], witness["backing_generation"]) != identity
+            if (report.witness_identity(witness) != identity
                     or not previous < witness["monotonic_ns"] < events[-1]["monotonic_ns"]):
                 raise ValueError("native pressure witness lost its original identity/ordering")
             previous = witness["monotonic_ns"]
