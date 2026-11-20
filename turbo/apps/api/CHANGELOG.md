@@ -10,6 +10,33 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.99.0](https://github.com/okou-ai/okou/compare/api-v2.98.2...api-v2.99.0) (2026-11-20)
+
+
+### Features
+
+* **mcp:** use projects for chat discovery and sends ([#49620](https://github.com/okou-ai/okou/issues/49620)) ([1e5b4d1](https://github.com/okou-ai/okou/commit/1e5b4d1546a109198b96874acad169221dad8ae7))
+
+
+### Bug Fixes
+
+* **api:** avoid syncing the temporary export restore index ([#49612](https://github.com/okou-ai/okou/issues/49612)) ([1af0084](https://github.com/okou-ai/okou/commit/1af00846322840ce2ea1a78d7c39af08052c5597))
+
+
+### Performance Improvements
+
+* **api:** align chat pick snapshots and prefetch package urls sooner ([#49586](https://github.com/okou-ai/okou/issues/49586)) ([422db13](https://github.com/okou-ai/okou/commit/422db135d5dd610491dbe5d4e3f8891d5d0fedf3))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.96.0
+    * @okouai/core bumped to 8.858.0
+    * @okouai/db bumped to 2.56.4
+    * @okouai/pi-agent-runtime bumped to 1.52.19
+
 ## [2.98.2](https://github.com/okou-ai/okou/compare/api-v2.98.1...api-v2.98.2) (2026-11-20)
 
 
