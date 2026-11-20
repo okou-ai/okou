@@ -30,7 +30,6 @@ interface AuthorizedBankingAccess {
   readonly connectionId: string;
   readonly providerCustomerId: string;
   readonly runId: string;
-  readonly agentId: string;
   readonly accounts: readonly BankingAccountRow[];
   readonly account?: BankingAccountRow;
 }
@@ -76,7 +75,6 @@ export const recordBankingAudit$ = command(
       readonly runId: string;
       readonly action: BankingOperationScope;
       readonly status: "allowed" | "denied";
-      readonly agentId?: string;
       readonly connectionId?: string;
       readonly providerAccountId?: string;
       readonly failureCode?: string;
@@ -88,7 +86,6 @@ export const recordBankingAudit$ = command(
       orgId: args.orgId,
       userId: args.userId,
       runId: args.runId,
-      agentId: args.agentId ?? null,
       connectionId: args.connectionId ?? null,
       providerAccountId: args.providerAccountId ?? null,
       action: args.action,
@@ -160,7 +157,6 @@ const denyBankingAccess$ = command(
     args: {
       readonly failureCode: string;
       readonly message: string;
-      readonly agentId?: string;
       readonly connectionId?: string;
     },
   ): Promise<BankingAccessResult> => {
@@ -170,7 +166,6 @@ const denyBankingAccess$ = command(
       runId: auth.runId,
       action,
       status: "denied",
-      agentId: args.agentId,
       connectionId: args.connectionId,
       providerAccountId,
       failureCode: args.failureCode,
@@ -232,7 +227,6 @@ export const authorizeBankingAccess$ = command(
     const grant: BankingGrantContext | null = grantRow ?? null;
     if (!grant) {
       return await set(denyBankingAccess$, auth, action, providerAccountId, {
-        agentId: run.agentId,
         failureCode: "NO_ACTIVE_GRANT",
         message: "Banking is not enabled for this agent",
       });
@@ -240,7 +234,6 @@ export const authorizeBankingAccess$ = command(
 
     if (!grant.operationScopes.includes(action)) {
       return await set(denyBankingAccess$, auth, action, providerAccountId, {
-        agentId: run.agentId,
         connectionId: grant.connectionId,
         failureCode: "SCOPE_NOT_ALLOWED",
         message: `Banking operation is not enabled: ${action}`,
@@ -254,7 +247,6 @@ export const authorizeBankingAccess$ = command(
       // Historical audit rows persist the former "SCHEDULE_NOT_ALLOWED" code;
       // nothing filters on the literal, so new denials emit the automation name.
       return await set(denyBankingAccess$, auth, action, providerAccountId, {
-        agentId: run.agentId,
         connectionId: grant.connectionId,
         failureCode: "AUTOMATION_NOT_ALLOWED",
         message: "Banking is not enabled for automation runs",
@@ -266,7 +258,6 @@ export const authorizeBankingAccess$ = command(
       !grant.accountProviderIds.includes(providerAccountId)
     ) {
       return await set(denyBankingAccess$, auth, action, providerAccountId, {
-        agentId: run.agentId,
         connectionId: grant.connectionId,
         failureCode: "ACCOUNT_NOT_ALLOWED",
         message: "Banking account is not enabled for this agent",
@@ -280,7 +271,6 @@ export const authorizeBankingAccess$ = command(
           connectionId: grant.connectionId,
           providerCustomerId: grant.providerCustomerId,
           runId: run.runId,
-          agentId: run.agentId,
           accounts: [],
         },
       };
@@ -297,7 +287,6 @@ export const authorizeBankingAccess$ = command(
       : undefined;
     if (providerAccountId && !account) {
       return await set(denyBankingAccess$, auth, action, providerAccountId, {
-        agentId: run.agentId,
         connectionId: grant.connectionId,
         failureCode: "ACCOUNT_NOT_ACTIVE",
         message: "Banking account is not active",
@@ -310,7 +299,6 @@ export const authorizeBankingAccess$ = command(
         connectionId: grant.connectionId,
         providerCustomerId: grant.providerCustomerId,
         runId: run.runId,
-        agentId: run.agentId,
         accounts,
         account,
       },

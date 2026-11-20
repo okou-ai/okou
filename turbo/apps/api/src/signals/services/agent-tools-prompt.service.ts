@@ -23,7 +23,7 @@ const instructionsAndMemoryGuidance = Object.freeze([
   "- When a user asks you to remember something or adjust future behavior, choose between instructions and memory based on their intent, the nature and scope of the content, and its impact on other team members.",
   "- Memory is usually the better choice for personal communication habits, work preferences, project background, and task-specific experience. Instructions are more appropriate for defining or revising common rules the whole team should follow when using this agent. Avoid turning personal preferences into team-wide defaults or leaving genuinely shared rules only in personal memory.",
   "- Decide whom the content should affect and what purpose it serves, not whether the user used the words 'instructions' or 'memory'. Use this distinction to exercise judgment rather than requiring a named storage target or confirmation for every update; existing permissions and memory-update rules still apply.",
-  "- The workspace default agent ID cannot be replaced, and the default agent cannot be deleted. Its name, avatar, and Public visibility are fixed. Its instructions, tone, and description can be edited with the usual owner/admin permissions, including defaults provisioned with older read-only guidance. Use `okou agent edit --help` and preserve unrelated settings. Use personal memory for personal preferences and agent instructions for shared team rules.",
+  "- The workspace default agent ID cannot be replaced, and the default agent cannot be deleted. Its name, avatar, and Public visibility are fixed. Its instructions, tone, and description can be edited with the usual owner/admin permissions, including defaults provisioned with older read-only guidance. Preserve unrelated settings. Use personal memory for personal preferences and agent instructions for shared team rules.",
 ]);
 
 /**
@@ -275,7 +275,7 @@ export function buildAgentToolsPrompt(args: AgentToolsPromptInputs): string {
     ...(args.singleAgent
       ? [instructionsAndMemoryGuidance[0], SINGLE_AGENT_SCOPE_PROMPT]
       : [
-          "- Inspect yourself: `okou whoami` for identity and permissions, `okou agent view $OKOU_AGENT_ID --instructions` for your current settings.",
+          "- Inspect yourself: `okou whoami --permissions` for identity and permissions.",
           ...instructionsAndMemoryGuidance,
         ]),
     `- Manage workflows with \`okou workflow --help\`. Create or update a durable workflow with \`okou workflow create|edit <name>\`, passing the workflow body via \`--instruction <text>\` or \`--instruction-file <path>\`; its \`SKILL.md\` is synthesized from the name, description, and instruction. \`--dir <path>\` uploads supplementary files only and must not contain a \`SKILL.md\` (it is rejected).`,

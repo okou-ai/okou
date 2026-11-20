@@ -53,7 +53,6 @@ describe("Okou CLI program", () => {
       "feed",
       "proactive",
       "model",
-      "agent",
       "connector",
       "remote-control",
       "mcp",

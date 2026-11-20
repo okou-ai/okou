@@ -315,6 +315,11 @@ describe("okou workflow automation commands", () => {
   const tempDirs: string[] = [];
 
   beforeEach(() => {
+    server.use(
+      http.get("*/api/agents", () => {
+        return HttpResponse.json([{ agentId: AGENT_ID, isDefaultAgent: true }]);
+      }),
+    );
     vi.clearAllMocks();
     chalk.level = 0;
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
@@ -513,7 +518,7 @@ describe("okou workflow automation commands", () => {
       );
     });
 
-    it("should resolve a workflow name under OKOU_AGENT_ID", async () => {
+    it("should resolve a workflow name in the workspace", async () => {
       vi.stubEnv("OKOU_AGENT_ID", AGENT_ID);
       const workflows = mockWorkflowList();
       const captured = captureCreateAutomation(loopAutomation);
@@ -1479,10 +1484,10 @@ describe("okou workflow automation commands", () => {
       expect(helpOutput).toContain("google-meet-transcript-generated");
       expect(helpOutput).toContain("--form-url <url>");
       expect(helpOutput).toContain(
-        "okou workflow trigger add triage --agent <agent-id> google-forms-response-submitted",
+        "okou workflow trigger add triage google-forms-response-submitted",
       );
       expect(helpOutput).toContain(
-        "okou workflow automation add meeting-notes --agent <agent-id> google-meet-transcript-generated",
+        "okou workflow automation add meeting-notes google-meet-transcript-generated",
       );
     });
   });

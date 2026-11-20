@@ -177,7 +177,7 @@ test("renders workspace examples and nested help without Agent targets", async (
   });
   workflowCommand.outputHelp();
   expect(help.join("\n")).toContain("publish");
-  expect(help.join("\n")).toContain("Make private copy");
+  expect(help.join("\n")).toContain("Make a private copy");
   expect(help.join("\n")).not.toContain("--to-agent");
   help.length = 0;
   const copy = workflowCommand.commands.find((cmd) => {

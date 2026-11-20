@@ -231,25 +231,6 @@ describe("okou connector permission-request --batch-file", () => {
     expect(output()).not.toContain("action=allow");
   });
 
-  it("requires an Agent and rejects an explicit Agent conflicting with the run", async () => {
-    await expect(run([slack], ["--agent", "other-agent"])).rejects.toThrow(
-      "exit",
-    );
-    expect(errors()).toContain("conflicts with the current run");
-    vi.stubEnv("OKOU_AGENT_ID", "");
-    await expect(run([slack])).rejects.toThrow("exit");
-    expect(errors()).toContain("require a current workspace execution context");
-    expect(output()).not.toContain("action=allow");
-  });
-
-  it("resolves an explicit Agent with a retained Run credential", async () => {
-    vi.stubEnv("OKOU_AGENT_ID", "");
-    await run([slack], ["--agent", "agent-explicit"]);
-    expect(actionUrl().pathname).toBe(
-      "/agents/agent-explicit/permissions/batch",
-    );
-  });
-
   it("enforces the final encoded URL byte limit including callback", async () => {
     vi.stubEnv("OKOU_AGENT_ID", "a".repeat(7500));
     await expect(

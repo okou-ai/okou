@@ -29,7 +29,6 @@ export const chatEventSearchMessages = pgTable(
     runId: uuid("run_id"),
     userId: text("user_id").notNull(),
     orgId: text("org_id").notNull(),
-    agentId: uuid("agent_id"),
     role: text("role").$type<"user" | "assistant">().notNull(),
     createdAt: timestamp("created_at").notNull(),
     text: text("text").notNull(),

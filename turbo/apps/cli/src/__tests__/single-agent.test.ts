@@ -144,10 +144,7 @@ describe("captured personal CLI help and dispatch", () => {
           ["agent", "edit", executorId, "--description", "shared role"],
           { from: "user" },
         ),
-      ).rejects.toThrow("exit");
-      expect(error.mock.calls.flat().join("\n")).toContain(
-        "Explicit Agent writes are not redirected",
-      );
+      ).rejects.toThrow("unknown command 'agent'");
       expect(writes).toBe(0);
     } finally {
       error.mockRestore();
@@ -203,9 +200,9 @@ describe("captured personal CLI help and dispatch", () => {
         agentId: executorId,
         title: "Personal plan",
       });
-      expect(JSON.parse(log.mock.calls[0]![0] as string)).toMatchObject({
-        agentId: executorId,
-      });
+      expect(JSON.parse(log.mock.calls[0]![0] as string)).not.toHaveProperty(
+        "agentId",
+      );
     } finally {
       log.mockRestore();
     }
@@ -263,17 +260,17 @@ describe("captured personal CLI help and dispatch", () => {
     }
   });
 
-  it("preserves legacy help when the Run snapshot has no marker", async () => {
+  it("keeps workspace help when the Run snapshot has no marker", async () => {
     vi.stubEnv("OKOU_TOKEN", token(false));
     const { help } = await cli(["--help"]);
-    expect(await help()).toContain("okou agent --help");
-    expect(await help()).not.toContain("Personal Instructions?");
+    expect(await help()).not.toContain("okou agent --help");
+    expect(await help()).toContain("Personal Instructions?");
     const { command } = await cli(["chat", "create"]);
     expect(
       command.commands[0]!.commands.find((child) => {
         return child.name() === "create";
       })!.helpInformation(),
-    ).toContain("--agent");
+    ).not.toContain("--agent");
   });
 
   it("uses authenticated mode outside a Run for help as well as dispatch", async () => {

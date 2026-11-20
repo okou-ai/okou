@@ -46,6 +46,11 @@ describe("okou workflow create command", () => {
   let workflowDir: string;
 
   beforeEach(() => {
+    server.use(
+      http.get("*/api/agents", () => {
+        return HttpResponse.json([{ agentId: AGENT_ID, isDefaultAgent: true }]);
+      }),
+    );
     chalk.level = 0;
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_TOKEN", capturedRunToken(["agent:write"]));
@@ -86,8 +91,6 @@ describe("okou workflow create command", () => {
         "node",
         "cli",
         "my-workflow",
-        "--agent",
-        AGENT_ID,
         "--instruction",
         "Summarize the inbox",
         "--dir",
@@ -114,34 +117,9 @@ describe("okou workflow create command", () => {
       const logCalls = mockConsoleLog.mock.calls.flat().join("\n");
       expect(logCalls).toContain("my-workflow");
       expect(logCalls).toContain("created");
-      expect(logCalls).toContain("Agent Name:   My Agent");
-      expect(logCalls).toContain(`Agent ID:     ${AGENT_ID}`);
+      expect(logCalls).not.toContain("Agent Name:   My Agent");
+      expect(logCalls).not.toContain(`Agent ID:     ${AGENT_ID}`);
       expect(logCalls).toContain("1 file(s)");
-    });
-
-    it("should resolve agent from OKOU_AGENT_ID env var", async () => {
-      vi.stubEnv("OKOU_AGENT_ID", AGENT_ID);
-
-      let capturedBody: Record<string, unknown> | undefined;
-      server.use(
-        http.post(
-          "http://localhost:3000/api/workflows",
-          async ({ request }) => {
-            capturedBody = (await request.json()) as Record<string, unknown>;
-            return HttpResponse.json(mockWorkflow, { status: 201 });
-          },
-        ),
-      );
-
-      await createCommand.parseAsync([
-        "node",
-        "cli",
-        "my-workflow",
-        "--instruction",
-        "Do things",
-      ]);
-
-      expect(capturedBody?.agentId).toBe(AGENT_ID);
     });
 
     it("should forward OKOU_CHAT_THREAD_ID when creating from a chat thread", async () => {
@@ -173,7 +151,12 @@ describe("okou workflow create command", () => {
   });
 
   describe("error handling", () => {
-    it("should fail when no agent is provided", async () => {
+    it("should fail when the workspace has no executor", async () => {
+      server.use(
+        http.get("*/api/agents", () => {
+          return HttpResponse.json([]);
+        }),
+      );
       await expect(async () => {
         await createCommand.parseAsync([
           "node",
@@ -185,7 +168,7 @@ describe("okou workflow create command", () => {
       }).rejects.toThrow("process.exit called");
 
       expect(mockConsoleError).toHaveBeenCalledWith(
-        expect.stringContaining("--agent is required"),
+        expect.stringContaining("no available Okou executor"),
       );
     });
 
@@ -197,8 +180,6 @@ describe("okou workflow create command", () => {
           "node",
           "cli",
           "my-workflow",
-          "--agent",
-          AGENT_ID,
           "--instruction",
           "Do things",
           "--dir",
@@ -226,8 +207,6 @@ describe("okou workflow create command", () => {
           "node",
           "cli",
           "my-workflow",
-          "--agent",
-          AGENT_ID,
           "--instruction",
           "Do things",
         ]);

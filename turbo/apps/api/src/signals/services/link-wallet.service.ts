@@ -391,7 +391,8 @@ export const startWalletOAuth$ = command(
     const authorizationId = randomUUID();
     await db.insert(linkWalletOAuthAttempts).values({
       id: authorizationId,
-      ...owner,
+      orgId: owner.orgId,
+      userId: owner.userId,
       scope: "workspace_user",
       oauthRequestedScopes: JSON.stringify([...scopes].sort()),
       stateHash: hash(state),

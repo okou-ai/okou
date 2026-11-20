@@ -1169,7 +1169,6 @@ const claimGithubInstallationCallback$ = command(
       claimed.state.authMethod !== "github-app-install" ||
       claimed.state.userId !== args.state.userId ||
       claimed.state.orgId !== args.state.orgId ||
-      claimed.state.agentId !== args.state.composeId ||
       claimed.state.redirectUri !== args.state.callbackRedirectUri
     ) {
       return {

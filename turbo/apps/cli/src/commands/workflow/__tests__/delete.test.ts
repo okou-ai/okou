@@ -67,6 +67,11 @@ describe("okou workflow delete command", () => {
     .mockImplementation(() => {});
 
   beforeEach(() => {
+    server.use(
+      http.get("*/api/agents", () => {
+        return HttpResponse.json([{ agentId: AGENT_ID, isDefaultAgent: true }]);
+      }),
+    );
     chalk.level = 0;
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_TOKEN", capturedRunToken(["agent:write"]));
@@ -127,14 +132,7 @@ describe("okou workflow delete command", () => {
         ),
       );
 
-      await deleteCommand.parseAsync([
-        "node",
-        "cli",
-        "tell-a-joke",
-        "--agent",
-        AGENT_ID,
-        "--yes",
-      ]);
+      await deleteCommand.parseAsync(["node", "cli", "tell-a-joke", "--yes"]);
 
       expect(deletedWorkflowId).toBe(RESOLVED_WORKFLOW_ID);
     });
