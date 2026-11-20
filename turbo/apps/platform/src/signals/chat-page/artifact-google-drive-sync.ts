@@ -11,7 +11,7 @@ import type { artifactGoogleDriveContract as SourceArtifactGoogleDriveContract }
 import type { ChatThreadArtifactGoogleDriveRecovery } from "@okouai/api-contracts/contracts/chat-threads";
 import { accept } from "../../lib/accept.ts";
 import { i18n } from "../../i18n/index.ts";
-import { apiClient$, type ApiClientFactory } from "../api-client.ts";
+import { apiClient$ } from "../api-client.ts";
 import { pageVersion$ } from "../page-signal.ts";
 import type { infer as zInfer } from "zod";
 
@@ -19,17 +19,17 @@ type GoogleDriveUploadedFile = zInfer<
   (typeof SourceArtifactGoogleDriveContract.uploadFromChat.responses)[200]
 >;
 
-type ArtifactGoogleDriveSyncParams = {
-  readonly threadId: string;
-  readonly recoveryAtStart?: ChatThreadArtifactGoogleDriveRecovery | undefined;
-  readonly connectionId?: string;
-  readonly successMessage?: string;
-} & ArtifactGoogleDriveSyncFile;
-
-type ArtifactGoogleDriveSyncFile = {
+type ArtifactGoogleDriveUploadParams = {
   readonly artifactId: string;
   readonly filename?: string | undefined;
   readonly mode: GoogleDriveUploadMode;
+  readonly threadId: string;
+  readonly connectionId?: string;
+  readonly successMessage?: string;
+};
+
+type ArtifactGoogleDriveSyncParams = ArtifactGoogleDriveUploadParams & {
+  readonly recoveryAtStart?: ChatThreadArtifactGoogleDriveRecovery | undefined;
 };
 
 type GoogleDriveUploadDenied = {
@@ -48,91 +48,88 @@ type ArtifactGoogleDriveSyncResult =
       >;
     }
   | { readonly kind: "uploaded"; readonly file: GoogleDriveUploadedFile }
-  | {
-      readonly kind: "conversion-unconfirmed";
-      readonly file: GoogleDriveUploadedFile;
-    };
+  | { readonly kind: "conversion-unconfirmed" };
 
-async function syncArtifactFileToGoogleDrive(
-  params: ArtifactGoogleDriveSyncParams & {
-    readonly createClient: ApiClientFactory;
-  },
-  signal: AbortSignal,
-): Promise<ArtifactGoogleDriveSyncResult> {
-  signal.throwIfAborted();
-  const client = params.createClient(artifactGoogleDriveContract);
-  const attempted = await accept(
-    client.uploadFromChat({
-      params: { artifactId: params.artifactId },
-      body: {
-        chatThreadId: params.threadId,
-        mode: params.mode,
-        ...(params.connectionId ? { connectionId: params.connectionId } : {}),
-      },
-      fetchOptions: { signal },
-    }),
-    [200, 403],
-    signal,
-  );
-  signal.throwIfAborted();
-  if (
-    attempted.status === 403 &&
-    attempted.body.error.code === "GOOGLE_DRIVE_SCOPE_REQUIRED" &&
-    attempted.body.recovery
-  ) {
-    return {
-      kind: "scope-required",
-      response: attempted,
-      recovery: attempted.body.recovery,
-    };
-  }
-  // Preserve normal error presentation for unrelated denials, without sending
-  // another request or treating a generic 403 as a consent problem.
-  const response = await accept(Promise.resolve(attempted), [200], signal);
-  const target = googleWorkspaceTarget(params.filename ?? "");
-  if (
-    params.mode === "google" &&
-    (!target || response.body.mimeType !== GOOGLE_WORKSPACE_MIME_TYPES[target])
-  ) {
-    toast.warning(
-      i18n.t(($) => {
-        return $.artifacts.googleDrive.conversionUnconfirmed;
-      }),
-    );
-    return { kind: "conversion-unconfirmed", file: response.body };
-  }
-  toast.success(
-    params.successMessage ??
-      i18n.t(
-        ($) => {
-          return $.artifacts.googleDrive.syncedFiles;
+export const uploadArtifactToGoogleDrive$ = command(
+  async (
+    { get },
+    params: ArtifactGoogleDriveUploadParams,
+    signal: AbortSignal,
+  ): Promise<ArtifactGoogleDriveSyncResult> => {
+    signal.throwIfAborted();
+    const client = get(apiClient$)(artifactGoogleDriveContract);
+    const attempted = await accept(
+      client.uploadFromChat({
+        params: { artifactId: params.artifactId },
+        body: {
+          chatThreadId: params.threadId,
+          mode: params.mode,
+          ...(params.connectionId ? { connectionId: params.connectionId } : {}),
         },
-        { count: 1 },
-      ),
-    {
-      action: response.body.webViewLink
-        ? createElement(
-            "a",
-            {
-              href: response.body.webViewLink,
-              target: "_blank",
-              rel: "noopener noreferrer",
-              className:
-                "ml-4 shrink-0 underline underline-offset-4 hover:opacity-80",
-            },
-            i18n.t(($) => {
-              return $.artifacts.googleDrive.viewIt;
-            }),
-          )
-        : undefined,
-    },
-  );
-  return { kind: "uploaded", file: response.body };
-}
+        fetchOptions: { signal },
+      }),
+      [200, 403],
+      signal,
+    );
+    signal.throwIfAborted();
+    if (
+      attempted.status === 403 &&
+      attempted.body.error.code === "GOOGLE_DRIVE_SCOPE_REQUIRED" &&
+      attempted.body.recovery
+    ) {
+      return {
+        kind: "scope-required",
+        response: attempted,
+        recovery: attempted.body.recovery,
+      };
+    }
+    // Preserve normal error presentation for unrelated denials, without sending
+    // another request or treating a generic 403 as a consent problem.
+    const response = await accept(Promise.resolve(attempted), [200], signal);
+    const target = googleWorkspaceTarget(params.filename ?? "");
+    if (
+      params.mode === "google" &&
+      (!target ||
+        response.body.mimeType !== GOOGLE_WORKSPACE_MIME_TYPES[target])
+    ) {
+      toast.warning(
+        i18n.t(($) => {
+          return $.artifacts.googleDrive.conversionUnconfirmed;
+        }),
+      );
+      return { kind: "conversion-unconfirmed" };
+    }
+    toast.success(
+      params.successMessage ??
+        i18n.t(
+          ($) => {
+            return $.artifacts.googleDrive.syncedFiles;
+          },
+          { count: 1 },
+        ),
+      {
+        action: response.body.webViewLink
+          ? createElement(
+              "a",
+              {
+                href: response.body.webViewLink,
+                target: "_blank",
+                rel: "noopener noreferrer",
+                className:
+                  "ml-4 shrink-0 underline underline-offset-4 hover:opacity-80",
+              },
+              i18n.t(($) => {
+                return $.artifacts.googleDrive.viewIt;
+              }),
+            )
+          : undefined,
+      },
+    );
+    return { kind: "uploaded", file: response.body };
+  },
+);
 
-type GoogleDriveSyncAccount = {
-  readonly artifactId: string;
-  readonly threadId: string;
+type GoogleDriveArtifactOperation = {
   readonly connectionId: string | undefined;
   readonly ready: boolean;
   readonly recoveryAtStart?: ChatThreadArtifactGoogleDriveRecovery | undefined;
@@ -140,19 +137,20 @@ type GoogleDriveSyncAccount = {
   readonly googleImport?: GoogleDriveUploadedFile | undefined;
 };
 
-function createGoogleDriveSyncAccount() {
-  return state<GoogleDriveSyncAccount | undefined>(undefined);
+function driveOperationKey(target: { threadId: string; artifactId: string }) {
+  return `${target.threadId}:${target.artifactId}`;
 }
 
-// Keep only the latest successful operation in the current page's graph.
-// A new page version replaces the graph rather than retaining artifact keys.
-const pageGoogleDriveSyncAccount$ = computed((get) => {
+const pageGoogleDriveOperations$ = computed((get) => {
   get(pageVersion$);
-  return createGoogleDriveSyncAccount();
+  return state<ReadonlyMap<string, GoogleDriveArtifactOperation>>(new Map());
 });
 
-export const googleDriveSyncAccount$ = computed((get) => {
-  return get(get(pageGoogleDriveSyncAccount$));
+export const googleDriveArtifactOperation$ = computed((get) => {
+  const operations = get(get(pageGoogleDriveOperations$));
+  return (target: { threadId: string; artifactId: string }) => {
+    return operations.get(driveOperationKey(target));
+  };
 });
 
 // Retain the selected account and acknowledged native import for menu state.
@@ -166,52 +164,53 @@ export const syncArtifactAndRefresh$ = command(
     signal.throwIfAborted();
     // Capture this page's state before any await; old work cannot write into
     // a replacement page's graph even if its completion races navigation.
-    const account$ = get(pageGoogleDriveSyncAccount$);
-    const createClient = get(apiClient$);
-    const result = await syncArtifactFileToGoogleDrive(
-      { ...params, createClient },
-      signal,
-    );
+    const operations$ = get(pageGoogleDriveOperations$);
+    const key = driveOperationKey(params);
+    const result = await set(uploadArtifactToGoogleDrive$, params, signal);
     signal.throwIfAborted();
     // Another upload mode may have completed while this request was pending.
-    const account = get(account$);
+    const operations = get(operations$);
+    const account = operations.get(key);
     const sameCurrentAccount =
-      account?.artifactId === params.artifactId &&
-      account.threadId === params.threadId &&
-      account.connectionId === params.connectionId;
+      account !== undefined && account.connectionId === params.connectionId;
     if (result.kind === "scope-required") {
       // This lookup failed before any file upload. Offer exact-account OAuth
       // only on the user's next action; never replay this request here.
-      set(account$, {
-        artifactId: params.artifactId,
-        threadId: params.threadId,
-        connectionId: result.recovery.connectionId,
-        recoveryAtStart: params.recoveryAtStart,
-        ready: false,
-        recovery: result.recovery,
-        googleImport: sameCurrentAccount ? account.googleImport : undefined,
-      });
+      set(
+        operations$,
+        new Map(operations).set(key, {
+          connectionId: result.recovery.connectionId,
+          recoveryAtStart: params.recoveryAtStart,
+          ready: false,
+          recovery: result.recovery,
+          googleImport: sameCurrentAccount ? account.googleImport : undefined,
+        }),
+      );
       await accept(Promise.resolve(result.response), [200], signal, {
         expectedErrors: { 403: ["GOOGLE_DRIVE_SCOPE_REQUIRED"] },
       });
       return;
     }
     if (result.kind === "uploaded") {
-      set(account$, {
-        artifactId: params.artifactId,
-        threadId: params.threadId,
-        connectionId: params.connectionId,
-        recoveryAtStart: params.recoveryAtStart,
-        ready: true,
-        googleImport:
-          params.mode === "google"
-            ? result.file
-            : sameCurrentAccount
-              ? account.googleImport
-              : undefined,
-      });
+      set(
+        operations$,
+        new Map(operations).set(key, {
+          connectionId: params.connectionId,
+          recoveryAtStart: params.recoveryAtStart,
+          ready: true,
+          googleImport:
+            params.mode === "google"
+              ? result.file
+              : sameCurrentAccount
+                ? account.googleImport
+                : undefined,
+        }),
+      );
     } else if (sameCurrentAccount) {
-      set(account$, { ...account, ready: false });
+      set(
+        operations$,
+        new Map(operations).set(key, { ...account, ready: false }),
+      );
     }
   },
 );
@@ -228,22 +227,21 @@ export const finishArtifactDriveReconnect$ = command(
     signal: AbortSignal,
   ): void => {
     signal.throwIfAborted();
-    const account$ = get(pageGoogleDriveSyncAccount$);
-    const account = get(account$);
-    if (
-      account?.artifactId !== params.artifactId ||
-      account.threadId !== params.threadId ||
-      account.recovery?.connectionId !== params.connectionId
-    ) {
+    const operations$ = get(pageGoogleDriveOperations$);
+    const operations = get(operations$);
+    const key = driveOperationKey(params);
+    const account = operations.get(key);
+    if (account?.recovery?.connectionId !== params.connectionId) {
       return;
     }
-    set(account$, {
-      artifactId: account.artifactId,
-      threadId: account.threadId,
-      connectionId: params.connectionId,
-      ready: true,
-      recoveryAtStart: account.recoveryAtStart,
-      googleImport: account.googleImport,
-    });
+    set(
+      operations$,
+      new Map(operations).set(key, {
+        connectionId: params.connectionId,
+        ready: true,
+        recoveryAtStart: account.recoveryAtStart,
+        googleImport: account.googleImport,
+      }),
+    );
   },
 );

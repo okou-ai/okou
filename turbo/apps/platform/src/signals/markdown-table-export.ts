@@ -21,8 +21,9 @@ import { triggerBlobDownload } from "../views/okou-page/attachment-url.ts";
 import { i18n } from "../i18n/index.ts";
 import { apiClient$ } from "./api-client.ts";
 import { pageVersion$ } from "./page-signal.ts";
-import { syncArtifactAndRefresh$ } from "./chat-page/artifact-google-drive-sync.ts";
+import { uploadArtifactToGoogleDrive$ } from "./chat-page/artifact-google-drive-sync.ts";
 import {
+  cancelBuiltinConnectorConnection$,
   connectBuiltinConnectorOAuthAuthCodeAndSettle$,
   getOnlyAvailableCatalogBrowserAuthMethodDetail,
 } from "./okou-page/settings/connectors.ts";
@@ -111,13 +112,14 @@ interface TableGoogleSave {
   readonly mode: GoogleDriveUploadMode;
 }
 
-interface TableGoogleConnection {
+export interface TableGoogleConnection {
   readonly params: TableGoogleSave;
   readonly connector: PublicConnectorCatalogDetail;
   readonly method: PublicConnectorCatalogAuthMethodDetail;
   readonly account:
     | { readonly intent: "add" }
     | { readonly intent: "reconnect"; readonly connectionId: string };
+  readonly retryManually: boolean;
 }
 
 const saveTableFile$ = command(
@@ -126,10 +128,11 @@ const saveTableFile$ = command(
     params: TableGoogleSave & {
       readonly connectionId?: string;
     },
+    connection: TableGoogleConnection | null,
     signal: AbortSignal,
   ) => {
-    await set(
-      syncArtifactAndRefresh$,
+    const result = await set(
+      uploadArtifactToGoogleDrive$,
       {
         ...params,
         successMessage:
@@ -143,6 +146,21 @@ const saveTableFile$ = command(
       },
       signal,
     );
+    if (result.kind === "scope-required") {
+      await set(
+        offerTableConnection$,
+        {
+          params,
+          account: {
+            intent: "reconnect",
+            connectionId: result.recovery.connectionId,
+          },
+          retryManually: true,
+        },
+        connection,
+        signal,
+      );
+    }
   },
 );
 
@@ -155,13 +173,26 @@ export const markdownTableConnection$ = computed((get) => {
   return get(get(pageTableConnection$));
 });
 
-export const closeMarkdownTableConnection$ = command(({ get, set }) => {
-  set(get(pageTableConnection$), null);
-});
+export const closeMarkdownTableConnection$ = command(
+  ({ get, set }, request: TableGoogleConnection, connecting: boolean) => {
+    const connection$ = get(pageTableConnection$);
+    if (get(connection$) !== request) {
+      return;
+    }
+    if (connecting) {
+      set(cancelBuiltinConnectorConnection$);
+    }
+    set(connection$, null);
+  },
+);
 
 // The dialog's Connect click owns the fresh user gesture needed by Safari.
 export const connectMarkdownTable$ = command(
-  async ({ set }, request: TableGoogleConnection, signal: AbortSignal) => {
+  async ({ get, set }, request: TableGoogleConnection, signal: AbortSignal) => {
+    const connection$ = get(pageTableConnection$);
+    if (get(connection$) !== request) {
+      return;
+    }
     await set(
       connectBuiltinConnectorOAuthAuthCodeAndSettle$,
       {
@@ -173,19 +204,66 @@ export const connectMarkdownTable$ = command(
           connectorLabel: request.connector.label,
         },
         onSuccess: async (connectedAccountId, ownerSignal) => {
-          await set(
-            saveTableFile$,
-            {
-              ...request.params,
-              connectionId: connectedAccountId,
-            },
-            ownerSignal,
-          );
-          set(closeMarkdownTableConnection$);
+          ownerSignal.throwIfAborted();
+          if (get(connection$) !== request) {
+            return;
+          }
+          if (!request.retryManually) {
+            await set(
+              saveTableFile$,
+              { ...request.params, connectionId: connectedAccountId },
+              request,
+              ownerSignal,
+            );
+          }
+          if (get(connection$) === request) {
+            set(connection$, null);
+          }
         },
       },
       signal,
     );
+  },
+);
+
+const offerTableConnection$ = command(
+  async (
+    { get, set },
+    request: Pick<
+      TableGoogleConnection,
+      "params" | "account" | "retryManually"
+    >,
+    previous: TableGoogleConnection | null,
+    signal: AbortSignal,
+  ) => {
+    const connection$ = get(pageTableConnection$);
+    const catalog = await accept(
+      get(apiClient$)(connectorCatalogContract).get({
+        params: { connectorSlug: "google-drive" },
+        fetchOptions: { signal },
+      }),
+      [200],
+      signal,
+    );
+    const method = getOnlyAvailableCatalogBrowserAuthMethodDetail(
+      catalog.body.connector,
+    );
+    signal.throwIfAborted();
+    if (!method || get(connection$) !== previous) {
+      toast.error(
+        i18n.t(($) => {
+          return $.markdown.tableExport.googleUnavailable;
+        }),
+      );
+      return;
+    }
+    // Uploads and metadata requests can outlive browser user activation.
+    // Ask for a fresh Connect click before opening provider authorization.
+    set(connection$, {
+      ...request,
+      connector: catalog.body.connector,
+      method,
+    });
   },
 );
 
@@ -203,9 +281,13 @@ const saveTableToGoogle$ = command(
     const status = detail.body.googleDriveSync;
     const recovery =
       status?.status === "disconnected" ? status.recovery : undefined;
-    const connectionId = detail.body.googleDriveConnectionId;
     if (status && status.status !== "disconnected") {
-      await set(saveTableFile$, { ...params, connectionId }, signal);
+      await set(
+        saveTableFile$,
+        { ...params, connectionId: detail.body.googleDriveConnectionId },
+        null,
+        signal,
+      );
       return;
     }
     if (recovery?.action !== "connect" && recovery?.action !== "reconnect") {
@@ -216,36 +298,19 @@ const saveTableToGoogle$ = command(
       );
       return;
     }
-    const catalog = await accept(
-      get(apiClient$)(connectorCatalogContract).get({
-        params: { connectorSlug: "google-drive" },
-        fetchOptions: { signal },
-      }),
-      [200],
+    await set(
+      offerTableConnection$,
+      {
+        params,
+        account:
+          recovery.action === "reconnect"
+            ? { intent: "reconnect", connectionId: recovery.connectionId }
+            : { intent: "add" },
+        retryManually: false,
+      },
+      null,
       signal,
     );
-    const method = getOnlyAvailableCatalogBrowserAuthMethodDetail(
-      catalog.body.connector,
-    );
-    if (!method) {
-      toast.error(
-        i18n.t(($) => {
-          return $.markdown.tableExport.googleUnavailable;
-        }),
-      );
-      return;
-    }
-    // Uploads and metadata requests can outlive browser user activation.
-    // Ask for a fresh Connect click before opening provider authorization.
-    set(get(pageTableConnection$), {
-      params,
-      connector: catalog.body.connector,
-      method,
-      account:
-        recovery.action === "reconnect"
-          ? { intent: "reconnect", connectionId: recovery.connectionId }
-          : { intent: "add" },
-    });
   },
 );
 

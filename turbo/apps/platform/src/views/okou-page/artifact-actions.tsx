@@ -67,7 +67,7 @@ import { lightboxUrl$ } from "../../signals/okou-page/attachment-chips.ts";
 import { detach, isAbortError, Reason } from "../../signals/utils.ts";
 import {
   syncArtifactAndRefresh$,
-  googleDriveSyncAccount$,
+  googleDriveArtifactOperation$,
 } from "../../signals/chat-page/artifact-google-drive-sync.ts";
 import { getOnlyAvailableCatalogBrowserAuthMethodDetail } from "../../signals/okou-page/settings/connectors.ts";
 import { connectBuiltinConnectorOAuthAuthCodeAndContinue$ } from "../../signals/okou-page/settings/connector-connect-continuation.ts";
@@ -238,12 +238,12 @@ export function ArtifactShareButton({
 function useGoogleDriveCompletedOperation(
   syncTarget: ArtifactDownloadSyncTarget | undefined,
 ) {
-  const operation = useGet(googleDriveSyncAccount$);
-  if (
-    !operation ||
-    operation.artifactId !== syncTarget?.artifactId ||
-    operation.threadId !== syncTarget.threadId
-  ) {
+  const operationFor = useGet(googleDriveArtifactOperation$);
+  if (!syncTarget) {
+    return undefined;
+  }
+  const operation = operationFor(syncTarget);
+  if (!operation) {
     return undefined;
   }
   const { connectionId, recovery } = syncTarget;

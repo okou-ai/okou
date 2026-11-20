@@ -486,7 +486,7 @@ test("Each table exports its own real workbook with literal values and source UR
   ]);
 });
 
-test.each(["ready", "connect", "reconnect"] as const)(
+test.each(["ready", "connect", "reconnect", "scope-required"] as const)(
   "Cloud exports preserve the selected account and upload mode (%s)",
   async (accountState) => {
     const telemetry = context.mocks.posthog();
@@ -494,8 +494,11 @@ test.each(["ready", "connect", "reconnect"] as const)(
     const beforeConnectPopupCounts: number[] = [];
     const saves: { artifactId: string; connectionId?: string; mode: string }[] =
       [];
+    let scopeReconnect:
+      { dialogClosed: boolean; automaticUploads: number } | undefined;
     let needsConnection =
       accountState === "connect" || accountState === "reconnect";
+    let missingScope = accountState === "scope-required";
     const authorizationWindow = context.mocks.browser.authWindow();
     Object.defineProperty(authorizationWindow, "location", {
       configurable: true,
@@ -515,11 +518,12 @@ test.each(["ready", "connect", "reconnect"] as const)(
       builtinConnectorOauthStartContract.start,
       ({ body, respond }) => {
         expect(body.account).toStrictEqual(
-          accountState === "reconnect"
+          accountState === "reconnect" || accountState === "scope-required"
             ? { intent: "reconnect", connectionId: CONNECTION_ID }
             : { intent: "add" },
         );
         needsConnection = false;
+        missingScope = false;
         completedAttempts.set(oauthAttemptId, CONNECTION_ID);
         return respond(200, {
           authorizationUrl: "https://accounts.google.test/table-export",
@@ -576,6 +580,15 @@ test.each(["ready", "connect", "reconnect"] as const)(
           connectionId: body.connectionId,
           mode: body.mode,
         });
+        if (missingScope) {
+          return respond(403, {
+            error: {
+              code: "GOOGLE_DRIVE_SCOPE_REQUIRED",
+              message: "Reconnect Google Drive",
+            },
+            recovery: { action: "reconnect", connectionId: CONNECTION_ID },
+          });
+        }
         return respond(
           200,
           googleFile(body.mode, `https://drive.google.test/${body.mode}`),
@@ -590,6 +603,19 @@ test.each(["ready", "connect", "reconnect"] as const)(
         const dialog = await screen.findByRole("dialog");
         beforeConnectPopupCounts.push(popup.calls.length);
         click(buttonNamed("Connect", dialog));
+      } else if (missingScope) {
+        const dialog = await screen.findByRole("dialog", {
+          name: "Reconnect Google Drive",
+        });
+        const savedCount = saves.length;
+        beforeConnectPopupCounts.push(popup.calls.length);
+        click(buttonNamed("Connect", dialog));
+        const retryMenu = await openExportMenu();
+        scopeReconnect = {
+          dialogClosed: !dialog.isConnected,
+          automaticUploads: saves.length - savedCount,
+        };
+        click(await findNamedMenuItem(action, retryMenu));
       }
       await expectSavedToast(saved, `https://drive.google.test/${mode}`);
       expect(saves).toContainEqual({
@@ -601,15 +627,28 @@ test.each(["ready", "connect", "reconnect"] as const)(
       await closeExportMenu();
     }
     expect(beforeConnectPopupCounts).toStrictEqual(
-      accountState === "connect" || accountState === "reconnect" ? [0] : [],
+      accountState === "ready" ? [] : [0],
     );
-    expect(popup.calls).toHaveLength(
-      accountState === "connect" || accountState === "reconnect" ? 1 : 0,
+    expect(popup.calls).toHaveLength(accountState === "ready" ? 0 : 1);
+    expect(scopeReconnect).toStrictEqual(
+      accountState === "scope-required"
+        ? { dialogClosed: true, automaticUploads: 0 }
+        : undefined,
     );
+    expect(storedFiles).toHaveLength(1);
     expect(sheet(storedFiles[0]!).querySelector('c[r="A2"]')?.textContent).toBe(
       "张敏",
     );
     expect(artifactActions(telemetry)).toStrictEqual([
+      ...(accountState === "scope-required"
+        ? [
+            {
+              action: "google_drive_sync",
+              surface: "inline_table",
+              target: "file",
+            },
+          ]
+        : []),
       { action: "google_drive_sync", surface: "inline_table", target: "file" },
       {
         action: "google_drive_sync",
@@ -648,6 +687,66 @@ test.each(CLOUD_EXPORTS)(
     await openExportMenu();
   },
 );
+
+test("Offer Drive reconnection after closing the document preview that started the save", async () => {
+  const documentUrl = publicArtifactUrl("table-report.md");
+  context.mocks.http.get(documentUrl, () => {
+    return HttpResponse.text(SOURCE, {
+      headers: { "Content-Type": "text/markdown" },
+    });
+  });
+  const chat = createMarkdownChatFixture(context);
+  chat.install({
+    rows: () => {
+      return [
+        chat.outputMessage(`[Table report](${documentUrl})`, { seqId: 1 }),
+        chat.runCompleted({ seqId: 2 }),
+      ];
+    },
+  });
+  mockTableCloudFiles();
+  context.mocks.api(connectorCatalogContract.get, ({ respond }) => {
+    return respond(200, { connector: googleDriveCatalogItem("connected") });
+  });
+  const uploadStarted = context.mocks.deferred<void>();
+  const releaseUpload = context.mocks.deferred<void>();
+  context.mocks.api(
+    artifactGoogleDriveContract.uploadFromChat,
+    async ({ respond }) => {
+      uploadStarted.resolve();
+      await releaseUpload.promise;
+      return respond(403, {
+        error: {
+          code: "GOOGLE_DRIVE_SCOPE_REQUIRED",
+          message: "Reconnect Google Drive",
+        },
+        recovery: { action: "reconnect", connectionId: CONNECTION_ID },
+      });
+    },
+  );
+  await setupPage({
+    context,
+    path: chat.path,
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.ArtifactSidebarPreview]: false },
+  });
+  click(await findNamedLink("Table report"));
+  const preview = await screen.findByRole("dialog", {
+    name: "table-report.md preview",
+  });
+  await screen.findAllByRole("table");
+  const menu = await openExportMenu();
+  click(await findNamedMenuItem("Save to Google Drive", menu));
+  await uploadStarted.promise;
+  click(buttonNamed("Close", preview));
+  await waitFor(() => {
+    expect(preview).not.toBeInTheDocument();
+  });
+  releaseUpload.resolve();
+  await expect(
+    screen.findByRole("dialog", { name: "Reconnect Google Drive" }),
+  ).resolves.toBeVisible();
+});
 
 test("Interleaving two tables and Google destinations shows the matching success links", async () => {
   const firstLinks = {

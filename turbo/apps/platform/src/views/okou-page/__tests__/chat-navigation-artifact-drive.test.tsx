@@ -899,6 +899,104 @@ test("Recover missing Drive scope for a native upload only after explicit exact-
   );
 });
 
+test("Keep an artifact's Google editor link after uploading another artifact", async () => {
+  mockWideScreen();
+  const notesArtifactId = "a0000000-0000-4000-a000-000000000948";
+  const files = [
+    {
+      artifactId: DRIVE_ARTIFACT_ID,
+      fileId: DRIVE_FILE_ID,
+      name: "report.txt",
+    },
+    {
+      artifactId: notesArtifactId,
+      fileId: "f0000000-0000-4000-a000-000000000948",
+      name: "notes.txt",
+    },
+  ];
+  const catalog: ReturnType<typeof artifactSummary>[] = [];
+  const details = new Map<string, ArtifactDetail>();
+  for (const { artifactId, fileId, name } of files) {
+    const summary = artifactSummary(artifactId, "file", name);
+    catalog.push(summary);
+    const url = publicArtifactUrl(name);
+    context.mocks.http.get(url, () => {
+      return HttpResponse.text(name, {
+        headers: { "Content-Type": "text/plain" },
+      });
+    });
+    details.set(artifactId, {
+      ...fileArtifactDetail(summary, {
+        contentType: "text/plain",
+        fileId,
+        filename: name,
+        url,
+      }),
+      googleDriveConnectionId: SELECTED_DRIVE_CONNECTION_ID,
+      googleDriveSync: { status: "not_synced", accountReady: true },
+    });
+  }
+  mockArtifactConversation(context, { catalog, details });
+  const uploadedUrl = (artifactId: string) => {
+    return `https://docs.google.test/document/d/${artifactId}/edit`;
+  };
+  // The catalog can still be waiting for the Drive status refresh when the
+  // upload response has already supplied a usable editor link.
+  context.mocks.api(
+    artifactGoogleDriveContract.uploadFromChat,
+    ({ params, respond }) => {
+      return respond(200, {
+        id: params.artifactId,
+        name: "Converted document",
+        mimeType: GOOGLE_WORKSPACE_MIME_TYPES.document,
+        webViewLink: uploadedUrl(params.artifactId),
+      });
+    },
+  );
+  await setupPage({
+    context,
+    path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
+    host: "app.okou.ai",
+  });
+
+  const openMenuFromList = async (name: string) => {
+    const item = await waitFor(() => {
+      return buttonNamed(`Preview ${name}`);
+    });
+    click(item);
+    const preview = await screen.findByTestId("artifact-sidebar");
+    await waitFor(() => {
+      expect(buttonNamed("Download artifact", preview)).toBeEnabled();
+    });
+    click(buttonNamed("Download artifact", preview));
+  };
+  const uploadToDocs = async (artifactId: string) => {
+    const upload = await waitFor(() => {
+      return roleItemNamed("menuitem", "Upload to Google Docs");
+    });
+    click(upload);
+    await expectSyncCompletedPreview("Upload to Google Drive");
+    expect(roleItemNamed("menuitem", "Open in Google Docs")).toHaveAttribute(
+      "href",
+      uploadedUrl(artifactId),
+    );
+    await userEvent.keyboard("{Escape}");
+    click(buttonNamed("Back to all artifacts", artifactPreview()));
+  };
+
+  await openDriveArtifactMenu("Upload to Google Docs", "report.txt");
+  await uploadToDocs(DRIVE_ARTIFACT_ID);
+  await openMenuFromList("notes.txt");
+  await uploadToDocs(notesArtifactId);
+  await openMenuFromList("report.txt");
+  await waitFor(() => {
+    expect(roleItemNamed("menuitem", "Open in Google Docs")).toHaveAttribute(
+      "href",
+      uploadedUrl(DRIVE_ARTIFACT_ID),
+    );
+  });
+});
+
 test("Keep one scope reconnect action beside an existing native import", async () => {
   mockWideScreen();
   const popup = installAuthorizationPopup();
