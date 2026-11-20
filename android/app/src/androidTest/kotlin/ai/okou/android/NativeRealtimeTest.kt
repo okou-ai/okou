@@ -507,7 +507,10 @@ class NativeRealtimeTest {
             checkNotNull(
                     device.wait(
                         Until.findObject(
-                            By.pkg(app.packageName).desc(app.getString(R.string.composer_send))
+                            By.pkg(app.packageName)
+                                .desc(app.getString(R.string.composer_send))
+                                .clickable(true)
+                                .enabled(true)
                         ),
                         10_000,
                     )

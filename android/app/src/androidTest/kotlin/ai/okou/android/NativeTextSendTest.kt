@@ -68,7 +68,8 @@ class NativeTextSendTest {
                     .findObject(UiSelector().packageName(app.packageName).text(app.getString(id)))
                     .click()
             }
-            val send = By.pkg(app.packageName).desc(app.getString(R.string.composer_send))
+            val send =
+                By.pkg(app.packageName).desc(app.getString(R.string.composer_send)).clickable(true)
             fun editor() =
                 checkNotNull(
                     device.wait(

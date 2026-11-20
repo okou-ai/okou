@@ -81,6 +81,7 @@ fun ChatComposerField(
     val colors = MaterialTheme.colorScheme
     val cardShape = RoundedCornerShape(20.dp)
     val label = stringResource(R.string.composer_message)
+    val sendLabel = stringResource(R.string.composer_send)
     val textStyle =
         MaterialTheme.typography.bodyLarge.copy(
             color = colors.onSurface,
@@ -273,7 +274,7 @@ fun ChatComposerField(
                     focus.clearFocus()
                     model.send(target)
                 },
-                modifier = Modifier.size(48.dp),
+                modifier = Modifier.size(48.dp).semantics { contentDescription = sendLabel },
                 enabled = state.canSend(target),
                 shape = CircleShape,
                 colors =
@@ -286,7 +287,7 @@ fun ChatComposerField(
             ) {
                 Icon(
                     painterResource(R.drawable.ic_arrow_upward),
-                    contentDescription = stringResource(R.string.composer_send),
+                    contentDescription = null,
                     modifier = Modifier.size(20.dp),
                 )
             }
