@@ -31,6 +31,7 @@ export const proactiveLearningContract = c.router({
     headers: authHeadersSchema,
     body,
     responses,
-    summary: "Enable nightly review and consolidation of your personal memory",
+    summary:
+      "Enable daily updates to your user profile and team responsibilities",
   },
 });

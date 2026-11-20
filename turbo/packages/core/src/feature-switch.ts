@@ -275,7 +275,8 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.ProactiveLearning]: {
     maintainer: "lancy@okou.ai",
     displayName: "Proactive learning",
-    description: "Review activity overnight and improve personal memory.",
+    description:
+      "Update your user profile and team responsibilities overnight.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },

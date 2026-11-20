@@ -204,7 +204,7 @@ function nightlyLearningDefinition(): OfficialWorkflowSourceDefinition {
     workflow: {
       displayName: "Proactive Learning",
       description:
-        "Review your activity overnight and improve personal memory and understanding.",
+        "Update your user profile overnight with your role, responsibilities, goals and working preferences.",
       instruction: PROACTIVE_LEARNING_INSTRUCTION,
       files: [],
     },
