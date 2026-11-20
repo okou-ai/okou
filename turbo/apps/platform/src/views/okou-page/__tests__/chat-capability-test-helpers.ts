@@ -249,12 +249,6 @@ export async function quoteSelectedPassage(): Promise<HTMLElement> {
   });
 }
 
-export function feedbackNotes(): HTMLElement[] {
-  return screen.getAllByRole("textbox", {
-    name: "Ask or comment on this quote",
-  });
-}
-
 export function feedbackItems(): HTMLElement[] {
   return Array.from(
     document.querySelectorAll<HTMLElement>("[data-feedback-item]"),

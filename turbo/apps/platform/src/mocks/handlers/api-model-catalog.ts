@@ -174,15 +174,6 @@ export function getMockModelCatalog(): ModelCatalogResponse {
   return mockModelCatalog;
 }
 
-/** Test lookups against the current mock catalog. */
-export function mockCatalogDisplayName(model: string): string {
-  return (
-    mockModelCatalog.models.find((entry) => {
-      return entry.model === model;
-    })?.displayName ?? model
-  );
-}
-
 export function mockCatalogHasModel(model: string | null | undefined) {
   return mockModelCatalog.models.some((entry) => {
     return entry.model === model;

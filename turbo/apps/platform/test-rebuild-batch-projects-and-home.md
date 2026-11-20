@@ -123,3 +123,14 @@ response shape still received the newer `failureReason` field from the shared
 detail fixture. The row now omits it. `activity-log-009` now rejects the
 event type and the token count anywhere in the page text, including formatted
 digits. The other items are covered as written, with notes in the checklist.
+
+## Shared fixture cleanup
+
+Knip reported ten helper exports whose last consumers were screened out of
+completed files. No pending file uses any of them on `main`, so they are
+removed: `mockCatalogDisplayName`, `arrowAnnotation`, `queryNamedButtons`,
+`feedbackNotes`, `mockGithubAccounts`, `dialogAgentOrder`,
+`renderTailwindUtilities`, `mockSidebarTitleLayout`, `titleRevealClip` and
+`permissionGrantFixture`. The other Platform Knip findings are still used by
+pending files: `clerk-user`, `realtime`, `chat-scroll`, `auth-v1-page`,
+`composer-task-chips` and `queue`.

@@ -1,5 +1,5 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { compile } from "tailwindcss";
+
 import { expect, vi } from "vitest";
 
 import {
@@ -414,23 +414,6 @@ export function pinnedAgentNames(container: HTMLElement): string[] {
     });
 }
 
-/** Names of the given agents as the dialog lists them, in rendered order. */
-export function dialogAgentOrder(
-  dialog: HTMLElement,
-  names: readonly string[],
-): string[] {
-  return within(dialog)
-    .getAllByRole("option")
-    .map((option) => {
-      return names.find((name) => {
-        return option.textContent?.replace(/\s+/g, " ").trim().startsWith(name);
-      });
-    })
-    .filter((name): name is string => {
-      return name !== undefined;
-    });
-}
-
 export function commandItemByText(
   container: HTMLElement,
   text: string,
@@ -512,77 +495,6 @@ export function createDataTransferStub(
       };
     },
   } as unknown as DataTransferStub;
-}
-
-export async function renderTailwindUtilities(
-  signal: AbortSignal,
-  ...elements: readonly HTMLElement[]
-): Promise<void> {
-  const compiler = await compile(`
-    @theme {
-      --spacing: 0.25rem;
-    }
-    @tailwind utilities;
-  `);
-  const classNames = new Set<string>();
-  for (const element of elements) {
-    for (const candidate of [
-      element,
-      ...element.querySelectorAll<HTMLElement>("[class]"),
-    ]) {
-      for (const className of candidate.classList) {
-        classNames.add(className);
-      }
-    }
-  }
-  const styleElement = document.createElement("style");
-  styleElement.textContent = compiler
-    .build([...classNames])
-    .replaceAll("calc(var(--spacing) * 9)", "36px")
-    .replaceAll("calc(infinity * 1px)", "9999px");
-  document.head.append(styleElement);
-  signal.addEventListener(
-    "abort",
-    () => {
-      styleElement.remove();
-    },
-    { once: true },
-  );
-}
-
-/** Supplies explicit pixel geometry for title intent in layout-free happy-dom. */
-export function mockSidebarTitleLayout(
-  layouts: Readonly<
-    Record<string, { readonly textWidth: number; readonly clipWidth: number }>
-  >,
-): void {
-  const original = HTMLElement.prototype.getBoundingClientRect;
-  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
-    function (this: HTMLElement): DOMRect {
-      const clip = this.closest<HTMLElement>(
-        '[data-slot="sidebar-thread-title"]',
-      );
-      const layout = layouts[clip?.textContent ?? ""];
-      if (clip && layout) {
-        if (this === clip) {
-          return new DOMRect(0, 0, layout.clipWidth, 20);
-        }
-        if (this === clip.firstElementChild) {
-          return new DOMRect(0, 0, layout.textWidth, 20);
-        }
-      }
-      return original.call(this);
-    },
-  );
-}
-
-/** The DOM-to-CSS reveal boundary inside the semantic thread link. */
-export function titleRevealClip(link: HTMLElement): HTMLElement {
-  const clip = link.querySelector<HTMLElement>("[data-title-reveal]");
-  if (!clip) {
-    throw new Error("Thread title reveal clip not found");
-  }
-  return clip;
 }
 
 export function threadRowByTitle(
