@@ -21,6 +21,7 @@ import androidx.sqlite.SQLiteConnection
 import androidx.sqlite.SQLiteDriver
 import androidx.sqlite.SQLiteStatement
 import androidx.sqlite.driver.bundled.BundledSQLiteDriver
+import androidx.sqlite.execSQL
 import androidx.test.core.app.ApplicationProvider
 import java.io.File
 import java.io.IOException
@@ -82,6 +83,59 @@ class ChatCacheStoreTest {
                     )
                 )
         )
+
+    @Test
+    fun upgradingVersionTwoPreservesChatAndProjectCache() = runTest {
+        val root = temporary.newFolder()
+        val original = checkpoint()
+        val agents = navigation()
+        val projects =
+            ProjectCheckpoint(
+                ProjectArchive(
+                    listOf(ConfirmedProject(CHAT_PROJECT, "Example", CHAT_DATE, CHAT_DATE)),
+                    null,
+                    0,
+                )
+            )
+        val store = cache(root)
+        store
+            .open(identity) { true }
+            .use {
+                it.save(original, 1234, agents)
+                it.saveProjects(projects, 2345)
+            }
+        store.close()
+
+        val database = root.resolve("chats.db")
+        val driver = BundledSQLiteDriver()
+        driver.open(database.path).use {
+            it.execSQL(
+                "ALTER TABLE chat_scopes ADD COLUMN projectsEnabled INTEGER NOT NULL DEFAULT 0"
+            )
+            it.execSQL("PRAGMA user_version = 2")
+        }
+
+        val upgraded = cache(root)
+        upgraded
+            .open(identity) { true }
+            .use {
+                val chats = checkNotNull(it.load())
+                assertEquals(original, chats.checkpoint)
+                assertEquals(agents, chats.navigation)
+                assertEquals(1234L, chats.confirmedAt)
+                val savedProjects = checkNotNull(it.loadProjects())
+                assertEquals(projects, savedProjects.checkpoint)
+                assertEquals(2345L, savedProjects.confirmedAt)
+            }
+        upgraded.close()
+        driver.open(database.path).use { connection ->
+            connection
+                .prepare(
+                    "SELECT name FROM pragma_table_info('chat_scopes') WHERE name = 'projectsEnabled'"
+                )
+                .use { assertFalse(it.step()) }
+        }
+    }
 
     @Test
     fun projectDatasetReopensWithoutAChatCacheAndRejectsStaleOrUnauthorizedWrites() = runTest {

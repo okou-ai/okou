@@ -10,6 +10,9 @@ import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.RoomDatabase
 import androidx.room.Upsert
+import androidx.room.migration.Migration
+import androidx.sqlite.SQLiteConnection
+import androidx.sqlite.execSQL
 
 /** Only server-confirmed cache data belongs here; drafts and credentials have other owners. */
 @Entity(tableName = "chat_scopes")
@@ -20,7 +23,6 @@ internal data class ChatScopeRecord(
     val snapshotEventId: String?,
     val snapshotSeqId: Long,
     val hasAgents: Boolean,
-    val projectsEnabled: Boolean,
 )
 
 @Entity(
@@ -261,9 +263,16 @@ internal interface ChatCacheDao {
             HistoryScopeRecord::class,
             HistoryEventRecord::class,
         ],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 internal abstract class ChatCacheDatabase : RoomDatabase() {
     abstract fun chats(): ChatCacheDao
 }
+
+internal val chatCacheMigration2To3 =
+    object : Migration(2, 3) {
+        override fun migrate(connection: SQLiteConnection) {
+            connection.execSQL("ALTER TABLE chat_scopes DROP COLUMN projectsEnabled")
+        }
+    }

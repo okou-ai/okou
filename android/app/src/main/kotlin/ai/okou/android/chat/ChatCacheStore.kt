@@ -464,7 +464,6 @@ internal constructor(
                             checkpoint.snapshotCursor.eventId,
                             checkpoint.snapshotCursor.seqId,
                             navigation.agents != null,
-                            projectsEnabled = true,
                         )
                     )
                     if (replacement) {
@@ -600,6 +599,7 @@ private fun chatDatabaseFactory(
         // Native statements avoid CursorWindow's per-row limit for canonical metadata.
         .setDriver(BundledSQLiteDriver())
         .setQueryCoroutineContext(dispatcher)
+        .addMigrations(chatCacheMigration2To3)
         // Only rebuildable server data belongs here, never drafts or credentials.
         .fallbackToDestructiveMigration(dropAllTables = true)
         .build()
