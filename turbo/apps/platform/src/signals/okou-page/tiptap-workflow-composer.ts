@@ -635,21 +635,19 @@ function createComposerIcon(
   return icon;
 }
 
-interface FeedbackQuoteChip {
-  readonly quoteDom: HTMLDivElement;
-  readonly quoteText: HTMLSpanElement;
-  readonly removeButton: HTMLButtonElement;
-}
-
-function createFeedbackQuoteChip(): FeedbackQuoteChip {
+function buildFeedbackItemChrome(
+  quote: string,
+  onRemove?: () => void,
+): HTMLElement {
   const quoteDom = document.createElement("div");
   quoteDom.className = "flex";
   quoteDom.contentEditable = "false";
   const quoteChip = document.createElement("div");
   quoteChip.className =
     "inline-flex h-8 max-w-full items-center gap-2 rounded-lg border " +
-    "border-border/80 bg-background/90 pl-1.5 pr-1 text-foreground " +
-    "shadow-[0_1px_2px_rgba(15,23,42,0.05)]";
+    "border-border/80 bg-background/90 pl-1.5 text-foreground " +
+    "shadow-[0_1px_2px_rgba(15,23,42,0.05)] " +
+    (onRemove ? "pr-1" : "pr-2");
   const quoteIconContainer = document.createElement("span");
   quoteIconContainer.className =
     "flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-muted";
@@ -661,19 +659,30 @@ function createFeedbackQuoteChip(): FeedbackQuoteChip {
   quoteIconContainer.append(quoteIcon);
   const quoteText = document.createElement("span");
   quoteText.className = "min-w-0 truncate text-xs font-medium";
-  const removeButton = document.createElement("button");
-  removeButton.type = "button";
-  removeButton.className =
-    "flex h-6 w-6 shrink-0 items-center justify-center rounded-md " +
-    "text-muted-foreground/70 transition-colors hover:bg-muted " +
-    "hover:text-foreground focus-visible:outline-none focus-visible:ring-2 " +
-    "focus-visible:ring-ring";
-  removeButton.append(
-    createComposerIcon(14, 1.8, ["M18 6l-12 12", "M6 6l12 12"]),
-  );
-  quoteChip.append(quoteIconContainer, quoteText, removeButton);
+  quoteText.textContent = quote;
+  quoteChip.append(quoteIconContainer, quoteText);
+  if (onRemove) {
+    const removeButton = document.createElement("button");
+    removeButton.type = "button";
+    removeButton.className =
+      "flex h-6 w-6 shrink-0 items-center justify-center rounded-md " +
+      "text-muted-foreground/70 transition-colors hover:bg-muted " +
+      "hover:text-foreground focus-visible:outline-none focus-visible:ring-2 " +
+      "focus-visible:ring-ring";
+    removeButton.append(
+      createComposerIcon(14, 1.8, ["M18 6l-12 12", "M6 6l12 12"]),
+    );
+    removeButton.setAttribute(
+      "aria-label",
+      i18n.t(($) => {
+        return $.chat.feedback.remove;
+      }),
+    );
+    removeButton.addEventListener("click", onRemove);
+    quoteChip.append(removeButton);
+  }
   quoteDom.append(quoteChip);
-  return { quoteDom, quoteText, removeButton };
+  return quoteDom;
 }
 
 /**
@@ -740,20 +749,6 @@ function createFeedbackItemNodeView(
   };
 }
 
-function buildFeedbackItemChrome(
-  quote: string,
-  onRemove: () => void,
-): HTMLElement {
-  const { quoteDom, quoteText, removeButton } = createFeedbackQuoteChip();
-  quoteText.textContent = quote;
-  const removeLabel = i18n.t(($) => {
-    return $.chat.feedback.remove;
-  });
-  removeButton.setAttribute("aria-label", removeLabel);
-  removeButton.addEventListener("click", onRemove);
-  return quoteDom;
-}
-
 // Rendered through ::before so an empty note never gains or loses real DOM
 // nodes: the placeholder text lives in an attribute and appears via CSS.
 const FEEDBACK_PLACEHOLDER_PARAGRAPH_CLASS =
@@ -782,9 +777,11 @@ function buildFeedbackChromeDecorations(
         () => {
           return buildFeedbackItemChrome(
             suggestionContext?.titleSnapshot ?? quote,
-            () => {
-              runtime.removeFeedback(feedbackId);
-            },
+            suggestionContext
+              ? undefined
+              : () => {
+                  runtime.removeFeedback(feedbackId);
+                },
           );
         },
         {
