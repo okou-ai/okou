@@ -27,32 +27,34 @@ test.each([
   "Verify the $brand managed default connection (mismatched projection: $mismatched)",
   async ({ brand, mismatched }) => {
     const connectionId = crypto.randomUUID();
-    const connector = customConnector({
-      slug: `_${brand}`,
-      displayName: "Managed workspace",
-      authMode: "oauth",
-      connected: true,
-      connectedAccountId: connectionId,
-      fields: [],
-      headerInjections: [
-        {
-          name: "Authorization",
-          valueTemplate: "Bearer {{oauth.access_token}}",
+    const managedConnector = (connectedAccountId: string) =>
+      customConnector({
+        slug: `_${brand}`,
+        displayName: "Managed workspace",
+        authMode: "oauth",
+        connected: true,
+        connectedAccountId,
+        fields: [],
+        headerInjections: [
+          {
+            name: "Authorization",
+            valueTemplate: "Bearer {{oauth.access_token}}",
+          },
+        ],
+        missingRequiredFields: [],
+        configuredFieldKeys: [],
+        oauthConfig: {
+          providerAdapter: "feishu",
+          clientId: "managed-client",
+          authorizationUrl: "https://managed.example.test/oauth/authorize",
+          tokenUrl: "https://managed.example.test/oauth/token",
+          tokenEndpointAuthMethod: "client_secret_post",
+          pkceMethod: "S256",
+          scopes: [],
+          authorizationParams: {},
         },
-      ],
-      missingRequiredFields: [],
-      configuredFieldKeys: [],
-      oauthConfig: {
-        providerAdapter: "feishu",
-        clientId: "managed-client",
-        authorizationUrl: "https://managed.example.test/oauth/authorize",
-        tokenUrl: "https://managed.example.test/oauth/token",
-        tokenEndpointAuthMethod: "client_secret_post",
-        pkceMethod: "S256",
-        scopes: [],
-        authorizationParams: {},
-      },
-    });
+      });
+    const connector = managedConnector(connectionId);
     context.mocks.api(customConnectorsContract.list, ({ respond }) => {
       return respond(200, { connectors: [connector] });
     });
@@ -80,7 +82,7 @@ test.each([
         return respond(200, {
           result: "connected",
           connector: mismatched
-            ? { ...connector, connectedAccountId: crypto.randomUUID() }
+            ? managedConnector(crypto.randomUUID())
             : connector,
           connectionId,
         });
