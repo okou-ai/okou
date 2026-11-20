@@ -3951,6 +3951,7 @@ async function browserUseResponse(
     );
   }
 
+  let upstreamHttpStatus: number | undefined;
   const result = await settle(
     (async (): Promise<{ response: Response; body: unknown }> => {
       const acceptedResponse = await settle(
@@ -3977,6 +3978,7 @@ async function browserUseResponse(
       } else {
         throw acceptedResponse.error;
       }
+      upstreamHttpStatus = response.status;
       const text = await readBoundedResponseText(
         response,
         MAX_BROWSER_USE_RESPONSE_BYTES,
@@ -4005,6 +4007,9 @@ async function browserUseResponse(
       502,
       "BROWSER_USE_ERROR",
       "Managed browser provider request failed",
+      result.error instanceof HttpStatusError
+        ? result.error.status
+        : upstreamHttpStatus,
     );
   }
 

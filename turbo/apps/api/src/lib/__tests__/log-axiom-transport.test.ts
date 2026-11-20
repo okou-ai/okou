@@ -270,11 +270,17 @@ test.each([
     upstreamHttpStatus: 403,
     mappedHttpStatus: 502,
     errorCode: "BROWSER_USE_OUTPUT_TOO_LARGE",
-    oversized: true,
+    bodyFailure: "oversized",
+  },
+  {
+    upstreamHttpStatus: 403,
+    mappedHttpStatus: 502,
+    errorCode: "BROWSER_USE_ERROR",
+    bodyFailure: "interrupted",
   },
 ])(
   "records upstream HTTP $upstreamHttpStatus for $errorCode alongside the mapped status",
-  async ({ upstreamHttpStatus, mappedHttpStatus, errorCode, oversized }) => {
+  async ({ upstreamHttpStatus, mappedHttpStatus, errorCode, bodyFailure }) => {
     const { fixture, open, view } = createBrowserFixtures(context);
     const f = await fixture();
     await f.owned.run(async () => {
@@ -290,13 +296,24 @@ test.each([
         model: f.owned.model,
       });
       const privateDetail = "private-provider-auth-detail";
-      const detail = oversized
-        ? privateDetail.padEnd(513 * 1024, "x")
-        : privateDetail;
+      const detail =
+        bodyFailure === "oversized"
+          ? privateDetail.padEnd(513 * 1024, "x")
+          : privateDetail;
       server.use(
         http.get(
           `${PROVIDER_URL}/browsers/${providerSessionId}`,
           () => {
+            if (bodyFailure === "interrupted") {
+              return new HttpResponse(
+                new ReadableStream({
+                  pull(controller) {
+                    controller.error(new TypeError(privateDetail));
+                  },
+                }),
+                { status: upstreamHttpStatus },
+              );
+            }
             return HttpResponse.json(
               { detail },
               { status: upstreamHttpStatus },
