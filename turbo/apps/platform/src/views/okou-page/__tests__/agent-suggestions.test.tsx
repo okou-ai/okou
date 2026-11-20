@@ -857,7 +857,11 @@ test("Custom direction opens a full composer for a new chat without touching the
   expect(composer).not.toHaveTextContent("My saved draft");
   expect(control("button", "Send", composer)).toBeDisabled();
   await typeDirection(composer, "Start with the press list");
-  expect(control("button", "Send", composer)).toBeEnabled();
+  // Send follows the composer's async primary action, not the editor text, so
+  // wait for it and query the remounted enabled button on each attempt.
+  await waitFor(() => {
+    expect(control("button", "Send", composer)).toBeEnabled();
+  });
   click(control("button", "Close", card));
 
   await waitFor(() => {
