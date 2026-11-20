@@ -12,6 +12,14 @@ pub(super) struct MixedPreparation {
     pub(super) ordinary: Vec<(CacheTargetGroup, TargetOutcome)>,
 }
 
+enum OrdinaryPreparation {
+    Staged(Vec<(CacheTargetGroup, TargetOutcome)>),
+    Unread {
+        groups: Vec<CacheTargetGroup>,
+        absent: bool,
+    },
+}
+
 /// Both futures stay borrowed by the population call. An error cancels the
 /// sibling but never drops an accepted Guest write or atomic publication.
 pub(super) async fn prepare_mixed(
@@ -31,8 +39,24 @@ pub(super) async fn prepare_mixed(
         let mut early = early;
         async {
             let ordinary = {
-                let ordinary =
-                    prepare_ordinary(groups, home, concurrency, Some(&cancel_ordinary), stage);
+                let ordinary = async {
+                    if concurrency > 0 {
+                        return prepare_ordinary(
+                            groups,
+                            home,
+                            concurrency,
+                            Some(&cancel_ordinary),
+                            stage,
+                        )
+                        .await
+                        .map(OrdinaryPreparation::Staged);
+                    }
+
+                    // All body slots are claimed. Only inspect metadata until
+                    // the existing owners have staged their archive bodies.
+                    let absent = ordinary_cache_absent(&groups, home, &cancel_ordinary).await;
+                    Ok(OrdinaryPreparation::Unread { groups, absent })
+                };
                 tokio::pin!(ordinary);
                 loop {
                     tokio::select! {
@@ -53,9 +77,33 @@ pub(super) async fn prepare_mixed(
                 }
             };
             collect_ready(delivery, home, &mut metrics, &mut ready, &mut complete).await?;
-            // This owner requires ordinary inputs and spare body admission.
-            // All-miss preparation retains complete collection and staging.
-            let incremental = if !complete && let Some(early) = early.as_mut() {
+            if matches!(&ordinary, OrdinaryPreparation::Unread { absent: true, .. })
+                && !complete
+                && ready.is_empty()
+            {
+                if let Some(archive) = delivery.next_resolved(home, &mut metrics).await? {
+                    ready.push(archive);
+                } else {
+                    complete = true;
+                }
+                collect_ready(delivery, home, &mut metrics, &mut ready, &mut complete).await?;
+            }
+            // A saturated delivery uses direct URLs only while there is still
+            // a fetch after the first publication. Draining completed bodies
+            // avoids an eligibility RPC and extra stage writes for fast origins.
+            let early_ordinary = match &ordinary {
+                OrdinaryPreparation::Staged(outcomes) => Some(outcomes.as_slice()),
+                OrdinaryPreparation::Unread { absent: true, .. }
+                    if !delivery.fetches.is_empty() =>
+                {
+                    Some(&[][..])
+                }
+                OrdinaryPreparation::Unread { .. } => None,
+            };
+            let incremental = if !complete
+                && let Some(early) = early.as_mut()
+                && let Some(outcomes) = early_ordinary
+            {
                 early
                     .application
                     .start_if_useful(
@@ -63,7 +111,7 @@ pub(super) async fn prepare_mixed(
                         early.plan,
                         early.owned_groups,
                         early.decoded_outcomes,
-                        &ordinary,
+                        outcomes,
                     )
                     .await?
             } else {
@@ -101,6 +149,19 @@ pub(super) async fn prepare_mixed(
                     fresh.extend(staged);
                 }
                 if complete {
+                    let ordinary = match ordinary {
+                        OrdinaryPreparation::Staged(outcomes) => outcomes,
+                        OrdinaryPreparation::Unread { groups, .. } if incremental => groups
+                            .into_iter()
+                            .map(|group| {
+                                (group, TargetOutcome::MissPassthrough { reason: "missing" })
+                            })
+                            .collect(),
+                        OrdinaryPreparation::Unread { groups, .. } => {
+                            prepare_ordinary(groups, home, CONCURRENCY, Some(&cancel_fresh), stage)
+                                .await?
+                        }
+                    };
                     return Ok(MixedPreparation { fresh, ordinary });
                 }
                 match delivery.next_resolved(home, &mut metrics).await? {
@@ -117,6 +178,45 @@ pub(super) async fn prepare_mixed(
     metrics.record_to(stage.telemetry);
     delivery.record_phases(stage.telemetry);
     result
+}
+
+/// Check for untouched cache slots without acquiring or creating locks. A
+/// cache entry, lock, or metadata error leaves the ordinary reader in charge.
+async fn ordinary_cache_absent(
+    groups: &[CacheTargetGroup],
+    home: &HomePaths,
+    cancel: &CancellationToken,
+) -> bool {
+    let paths = groups
+        .iter()
+        .map(|group| {
+            let target = &group.representative;
+            let archive = home
+                .storage_cache_dir(&target.name, &target.version)
+                .join("archive.tar.gz");
+            let lock = home.storage_lock(&target.name, &target.version);
+            (archive, lock)
+        })
+        .collect::<Vec<_>>();
+    let absent =
+        futures_util::stream::iter(paths)
+            .map(|(archive, lock)| async move {
+                path_missing(&archive).await && path_missing(&lock).await
+            })
+            .buffer_unordered(CONCURRENCY)
+            .all(std::future::ready);
+    tokio::select! {
+        biased;
+        () = cancel.cancelled() => false,
+        absent = absent => absent,
+    }
+}
+
+async fn path_missing(path: &Path) -> bool {
+    matches!(
+        fs::symlink_metadata(path).await,
+        Err(error) if error.kind() == io::ErrorKind::NotFound
+    )
 }
 
 /// Poll only immediately available progress. Bodies/publications remain in the
