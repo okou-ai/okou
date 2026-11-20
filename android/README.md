@@ -404,9 +404,9 @@ Tracing includes incoming virtual overrides and SAM callbacks as well as outgoin
 calls. Its library path contains only the SDK and compile-only annotations;
 compile API stubs would shadow the runtime targets and hide their virtual methods.
 This follows [Keeper's runtime-classpath approach](https://github.com/usefulness/keeper).
-`native-fixtures.keep` additionally preserves the coroutine probe name used by
-R8's generated test calls. Both apply unchanged
-to published Release builds; unrelated code remains eligible for optimization.
+`native-fixtures.keep` preserves names that the test APK cannot recover from
+the app mapping, including the generated coroutine probe and MockWebServer's
+TLS call. Both files also apply to published Release builds.
 
 After changing native tests or dependencies, regenerate and review the ABI:
 
