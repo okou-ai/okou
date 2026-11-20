@@ -38,6 +38,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 
 internal enum class ChatListStatus {
     Offline,
@@ -66,7 +67,9 @@ internal fun ChatListViewport(
         val gap = 8.dp.roundToPx()
         val loose = bounds.copy(minWidth = 0, minHeight = 0)
         val feedbackLayer =
-            subcompose(ListLayer.Feedback) { Box { feedback() } }.single().measure(loose)
+            subcompose(ListLayer.Feedback) { Box(Modifier.zIndex(2f)) { feedback() } }
+                .single()
+                .measure(loose)
         val visibleStatus =
             status.takeUnless { it == ChatListStatus.RefreshFailed && feedbackLayer.height > 0 }
         val floating =
@@ -74,7 +77,7 @@ internal fun ChatListViewport(
             else
                 subcompose(ListLayer.Controls) {
                         ListControls(
-                            Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                            Modifier.zIndex(1f).fillMaxWidth().padding(horizontal = 16.dp),
                             visibleStatus,
                             newChatEnabled,
                             newChat,
