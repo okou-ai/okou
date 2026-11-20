@@ -38,6 +38,8 @@
 //! Keying on both name and version gives same-version entries with different
 //! storage names separate collision-resistant staged filenames in normal
 //! operation, so they do not clobber each other on the guest tmpfs.
+//! Guest owns cold downloads for groups used only by optional packages. Warm
+//! archive and decoded-file hits use the same cache delivery paths.
 //!
 //! Entries above `CACHE_MAX_SIZE`, entries without a content key, and
 //! reuse/repair actions pass through untouched.

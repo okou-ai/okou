@@ -383,7 +383,8 @@ pub(crate) fn prepare_download_tasks<'input>(
 /// Download all prepared tasks in parallel using std::thread.
 /// Allows additional overlap for remote header waits while keeping local-only
 /// extraction bounded. Serializes logically or physically overlapping mounts.
-/// Returns true if all downloads succeeded, false if any failed.
+/// Returns false for required download and scheduler failures. Failed optional
+/// mounts are recorded for cleanup after the workers settle.
 pub(crate) fn download_all_parallel(
     tasks: Vec<PreparedDownloadTask<'_>>,
     readiness: Option<Readiness>,

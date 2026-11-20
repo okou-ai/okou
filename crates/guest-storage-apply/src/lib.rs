@@ -30,7 +30,7 @@
 //! Failed optional packages are logged and removed before a batch can report
 //! success. The runtime receipt identifies the skipped mounts.
 //!
-//! Cached storages and artifacts preserve their mount roots. Empty artifacts
+//! Cached storages and artifacts preserve their mount roots during stale cleanup. Empty artifacts
 //! retain root identity and ownership while clearing stale contents, including
 //! when a containing directory is also cleaned. Instruction packages use the same
 //! Storage delivery before managed instruction-file application.
@@ -104,6 +104,7 @@ pub fn run(manifest_path: &str) -> bool {
 
 /// Apply a manifest with discarded inputs owned by the existing runtime cleanup.
 /// Noncanonical runtime layouts retain synchronous cleanup.
+/// An optional-package batch writes its cleanup receipt to `output` on success.
 pub fn run_in_runtime(manifest_path: &str, runtime_dir: &Path, output: &mut dyn Write) -> bool {
     run_path_in_runtime(manifest_path, Some(runtime_dir), output)
 }
