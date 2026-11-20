@@ -130,6 +130,7 @@ import {
 import {
   handleUsagePackMigrationInvoicePaid$,
   handleUsagePackMigrationSubscriptionUpdated$,
+  retireCanceledUsagePackMigrations$,
 } from "./usage-pack-subscription-migration.service";
 
 import { concurrencySubscriptionUpdatedAt } from "./concurrency-subscription-write";
@@ -4226,6 +4227,7 @@ const handleSubscriptionScheduleEnded$ = command(
   async (
     { set },
     schedule: SubscriptionScheduleInput,
+    canceled: boolean,
   ): Promise<readonly string[]> => {
     const db = set(writeDb$);
     const rows = await db
@@ -4233,7 +4235,14 @@ const handleSubscriptionScheduleEnded$ = command(
       .set(endedScheduleUpdateValues())
       .where(eq(orgMetadata.pendingSubscriptionScheduleId, schedule.id))
       .returning({ orgId: orgMetadata.orgId });
-    return endedScheduleOrgIds(schedule, rows);
+    const migrationOrgIds = canceled
+      ? await set(retireCanceledUsagePackMigrations$, {
+          scheduleId: schedule.id,
+        })
+      : [];
+    return [
+      ...new Set([...endedScheduleOrgIds(schedule, rows), ...migrationOrgIds]),
+    ];
   },
 );
 
@@ -4375,9 +4384,13 @@ const handleSubscriptionDeleted$ = command(
       subscription,
     );
     const orgIds = await set(handleSubscriptionDeletedLegacy$, subscription);
+    const migrationOrgIds = await set(retireCanceledUsagePackMigrations$, {
+      subscriptionId: subscription.id,
+    });
     return [
       ...new Set([
         ...orgIds,
+        ...migrationOrgIds,
         ...(usagePackOutcome.orgId ? [usagePackOutcome.orgId] : []),
       ]),
     ];
@@ -4745,6 +4758,7 @@ export const handleStripeWebhookEvent$ = command(
         const orgIds = await set(
           handleSubscriptionScheduleEnded$,
           event.object,
+          event.type === "subscription_schedule.canceled",
         );
         signal.throwIfAborted();
         addBillingChangedOrgIds(billingChangedOrgIds, orgIds);
