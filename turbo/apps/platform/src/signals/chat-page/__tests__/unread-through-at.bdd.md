@@ -10,6 +10,7 @@ Original test `unread-through instant for an open thread > keeps the Run termina
 - **Given** An open thread has a Run terminal marker at 00:07 UTC and another marker at 00:06 UTC.
 - **When** The unread-through instant is calculated.
 - **Then** The result is the newer Run terminal marker, 2026-03-10T00:07:00Z.
+- **Rebuild note** Not accepted in batch 15 (replaced by `default-error-boundary-002`). The calculated instant only decides whether an open thread sends another mark-read request (`createMarkThreadReadIfNeeded` in `create-chat-thread.ts`). The unread dot is already hidden by the optimistic read mark the first mark-read records, so choosing 00:07 over 00:06 changes no rendered state; the only difference is whether a second mark-read request is sent, which the testing guide does not accept as page evidence. Reaching the case also needs the worker's unread indicator to lag behind a newer local Run terminal marker, an intermediate state with no page construction. Decide whether to retire it under "Cases Without Public Construction".
 
 ## unread-through-at-002
 
