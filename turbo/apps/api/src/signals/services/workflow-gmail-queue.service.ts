@@ -5,7 +5,6 @@ import {
 } from "@okouai/db/schema/gmail-event";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { and, eq, inArray, sql } from "drizzle-orm";
-import type { WorkflowSourceAdmissionPlan } from "./workflow-input-queue.service";
 
 export interface GmailQueueSource {
   readonly orgId: string;
@@ -80,9 +79,7 @@ function gmailQueueAdmissionSql(source: GmailQueueSource) {
     )`;
 }
 
-export function gmailQueueAdmissionPlan(
-  source: GmailQueueSource,
-): WorkflowSourceAdmissionPlan {
+export function gmailQueueAdmissionPlan(source: GmailQueueSource) {
   const receipt = and(
     eq(gmailProcessedEvents.watchStateId, source.watchStateId),
     eq(gmailProcessedEvents.automationId, source.automationId),
@@ -124,5 +121,5 @@ export function gmailQueueAdmissionPlan(
       },
     ],
     gmailDuplicateSql: sql`SELECT id FROM ${gmailProcessedEvents} WHERE ${receipt} LIMIT 1`,
-  };
+  } as const;
 }
