@@ -1929,3 +1929,39 @@ org-usage-tab-009	turbo/apps/platform/src/views/okou-page/__tests__/org-usage-ta
 org-switcher-001	turbo/apps/platform/src/views/okou-page/__tests__/org-switcher.test.tsx	Join an invited workspace from the workspace switcher	44	passed
 org-switcher-002	turbo/apps/platform/src/views/okou-page/__tests__/org-switcher.test.tsx	Show the brand default for workspaces that never uploaded a logo	151	passed
 organization-refresh-001	turbo/apps/platform/src/views/okou-page/__tests__/organization-refresh.test.tsx	A temporary authentication refresh keeps the active workspace	34	passed
+org-general-tab-004	turbo/apps/platform/src/views/okou-page/__tests__/org-general-tab.test.tsx	Show a saved upload while the initial logo load is pending and refresh on reopening	57	passed
+org-general-tab-005	turbo/apps/platform/src/views/okou-page/__tests__/org-general-tab.test.tsx	Edit, save, and discard workspace profile details	121	passed
+org-general-tab-006	turbo/apps/platform/src/views/okou-page/__tests__/org-general-tab.test.tsx	Show a workspace profile update failure without losing the edit	172	passed
+org-general-tab-008	turbo/apps/platform/src/views/okou-page/__tests__/org-general-tab.test.tsx	Reject invalid workspace logo files	200	passed
+org-general-tab-010	turbo/apps/platform/src/views/okou-page/__tests__/org-general-tab.test.tsx	Require fresh workspace confirmation after cancelling	275	passed
+org-general-tab-011	turbo/apps/platform/src/views/okou-page/__tests__/org-general-tab.test.tsx	Enable workspace deletion only for the exact confirmation and keep the success flow	300	passed
+org-switcher-actions-001	turbo/apps/platform/src/views/okou-page/__tests__/org-switcher-actions.test.tsx	Leaving the page during workspace creation reconciles the quota without activating its SDK result	67	passed
+org-switcher-actions-003	turbo/apps/platform/src/views/okou-page/__tests__/org-switcher-actions.test.tsx	Leaving the page during invitation acceptance removes the committed invitation without activation	102	passed
+workspace-invitations-001	turbo/apps/platform/src/views/okou-page/__tests__/workspace-invitations.test.tsx	An invitation accepted for another account offers account switching	66	passed
+sidebar-workspace-003	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-workspace.test.tsx	Filter workspace search to chats and navigate	116	passed
+sidebar-workspace-004	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-workspace.test.tsx	Show useful search-result ages and an illustrated empty state	136	passed
+sidebar-workspace-005	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-workspace.test.tsx	Toggle unread chats by reselecting an unread pinned agent	215	passed
+workspace-agent-search-002	turbo/apps/platform/src/views/okou-page/__tests__/workspace-agent-search.test.tsx	Navigate workspace search filters without changing the query or clearing selection	78	passed
+workspace-agent-search-003	turbo/apps/platform/src/views/okou-page/__tests__/workspace-agent-search.test.tsx	Selecting a workspace agent search result opens its chat	147	passed
+sidebar-command-interactions-002	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-command-interactions.test.tsx	Hand off from the pin manager to the create-agent dialog and back	16	passed
+sidebar-command-interactions-003	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-command-interactions.test.tsx	Create the first agent from an empty pin manager with Enter	46	passed
+sidebar-controls-001	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-controls.test.tsx	Move to the next relevant agent with a shortcut	55	passed
+sidebar-controls-002	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-controls.test.tsx	Open and use workspace search with the keyboard	97	passed
+sidebar-controls-004	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-controls.test.tsx	Keep a pending pin save owned while the manager closes and reopens	142	passed
+sidebar-controls-007	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-controls.test.tsx	Recognize and pin sidebar conversation states	212	passed
+sidebar-controls-010	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-controls.test.tsx	Refresh the running indicator after the indicator notification without warming chats	321	passed
+sidebar-controls-012	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-controls.test.tsx	Refresh the latest unread state after an indicator burst with a failed leading fetch: false	384	passed
+sidebar-controls-014	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-controls.test.tsx	Open a conversation with double-click and rename it from the sidebar menu	447	passed
+sidebar-controls-015	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-controls.test.tsx	Reorder pinned agents while keeping Nova first	514	passed
+sidebar-controls-017	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-controls.test.tsx	Search, pin, and open an agent from the pin manager	587	passed
+sidebar-inline-rename-002	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-inline-rename.test.tsx	Opening another chat from the field still sends its title	50	passed
+sidebar-inline-rename-004	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-inline-rename.test.tsx	Escape or an emptied field keeps the title	95	passed
+sidebar-inline-rename-006	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-inline-rename.test.tsx	A modified double-click keeps its browser behavior instead of renaming	118	passed
+sidebar-pin-order-003	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-pin-order.test.tsx	Move up skips a hidden archived pin	97	passed
+sidebar-pin-order-005	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-pin-order.test.tsx	an unconfirmed optimistic pin move cannot undo an agent reassignment	143	passed
+sidebar-pin-order-006	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-pin-order.test.tsx	new pins receive a rank ahead of all existing pins	186	passed
+sidebar-pinned-links-001	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-pinned-links.test.tsx	Pinned links preserve the current agent and unread filter for Alt activation	72	passed
+sidebar-pinned-links-005	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-pinned-links.test.tsx	Pinned links preserve the current agent and unread filter for [MouseMiddle] activation	89	passed
+sidebar-pinned-links-006	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-pinned-links.test.tsx	Pinned links preserve the current agent and unread filter for [MouseRight] activation	89	passed
+sidebar-pinned-links-008	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-pinned-links.test.tsx	Pinned links preserve the current agent and unread filter for keyboard activation	104	passed
+sidebar-pinned-links-010	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-pinned-links.test.tsx	Alt-click still opens a thread in the sidebar pane	117	passed

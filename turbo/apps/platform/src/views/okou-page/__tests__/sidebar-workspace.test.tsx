@@ -1,0 +1,298 @@
+import {
+  AGENT_ID,
+  ARCHIVED_THREAD_ID,
+  AUTOMATION_THREAD_ID,
+  buttonByText,
+  createSidebarHelpers,
+  createThread,
+  EXISTING_THREAD_ID,
+  INCIDENT_THREAD_ID,
+  menuItemByText,
+  openChatListMenu,
+  pinnedAgentLink,
+  RESEARCH_AGENT_ID,
+  RESEARCH_THREAD_ID,
+  setupSidebarPage,
+  sidebar,
+  SUPPORT_AGENT_ID,
+} from "./sidebar-test-helpers.tsx";
+
+import { screen, waitFor, within } from "@testing-library/react";
+import { expect, test, vi } from "vitest";
+
+import {
+  chatSearchContract,
+  chatThreadsContract,
+} from "@okouai/api-contracts/contracts/chat-threads";
+import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
+import { click, fill } from "../../../__tests__/page-helper.ts";
+import { mockNow } from "../../../__tests__/time.ts";
+import { emptySearchImg } from "../platform-assets.ts";
+import { pathname } from "../../../signals/location.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+
+const context = testContext();
+const { mockSidebarThreadStory, prepareAgents } = createSidebarHelpers(context);
+
+async function setupWorkspaceSearch({
+  runningThreadIds = [],
+  unreadThreadIds = [],
+}: {
+  readonly runningThreadIds?: readonly string[];
+  readonly unreadThreadIds?: readonly string[];
+} = {}) {
+  prepareAgents();
+  mockSidebarThreadStory([
+    createThread(RESEARCH_THREAD_ID, "Deployment notes", {
+      agent: { id: RESEARCH_AGENT_ID, avatarUrl: null },
+    }),
+    createThread(INCIDENT_THREAD_ID, "Incident response", {
+      agent: { id: SUPPORT_AGENT_ID, avatarUrl: null },
+    }),
+  ]);
+  context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
+    return respond(200, {
+      agents: {},
+      threads: Object.fromEntries([
+        ...runningThreadIds.map((threadId) => {
+          return [threadId, "active" as const];
+        }),
+        ...unreadThreadIds.map((threadId) => {
+          return [threadId, "unread" as const];
+        }),
+      ]),
+      unreadAt: Object.fromEntries(
+        unreadThreadIds.map((threadId) => {
+          return [threadId, "2026-03-10T00:05:00Z"];
+        }),
+      ),
+    });
+  });
+  context.mocks.api(chatSearchContract.search, ({ query, respond }) => {
+    return respond(200, {
+      results:
+        query.keyword === "deploy"
+          ? [
+              {
+                chatThreadId: INCIDENT_THREAD_ID,
+                agentName: "Support Agent",
+                matchedMessage: {
+                  chatThreadId: INCIDENT_THREAD_ID,
+                  role: "user" as const,
+                  content: "Production deploy completed successfully",
+                  createdAt: "2026-03-10T00:10:00Z",
+                  seqId: 1,
+                  runId: null,
+                },
+                matchedRanges: [{ start: 11, end: 17 }],
+              },
+            ]
+          : [],
+    });
+  });
+  context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
+    return respond(200, { artifacts: [], nextCursor: null });
+  });
+
+  await setupSidebarPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+  });
+
+  const list = await screen.findByTestId("chat-list-column");
+  click(within(list).getByLabelText("Search workspace"));
+
+  const dialog = await screen.findByRole("dialog", {
+    name: "Search workspace...",
+  });
+  await fill(
+    within(dialog).getByPlaceholderText("Search workspace..."),
+    "deploy",
+  );
+
+  return dialog;
+}
+
+test("Filter workspace search to chats and navigate", async () => {
+  const dialog = await setupWorkspaceSearch();
+  click(buttonByText("Chats", dialog));
+  await waitFor(() => {
+    expect(within(dialog).getByText("Deployment notes")).toBeInTheDocument();
+    expect(
+      within(dialog).queryByText("Incident response"),
+    ).not.toBeInTheDocument();
+  });
+  click(within(dialog).getByText("Deployment notes"));
+  await waitFor(() => {
+    expect(pathname()).toBe(`/chats/${RESEARCH_THREAD_ID}`);
+    expect(
+      screen.queryByRole("dialog", {
+        name: "Search workspace...",
+      }),
+    ).not.toBeInTheDocument();
+  });
+});
+
+test("Show useful search-result ages and an illustrated empty state", async () => {
+  const now = Date.parse("2026-03-10T12:00:00.000Z");
+  mockNow(now, context.signal);
+  prepareAgents();
+  mockSidebarThreadStory([
+    createThread(RESEARCH_THREAD_ID, "Minutes old", {
+      sortAt: new Date(now - 5 * 60 * 1000).toISOString(),
+    }),
+    createThread(INCIDENT_THREAD_ID, "Hours old", {
+      sortAt: new Date(now - 3 * 60 * 60 * 1000).toISOString(),
+    }),
+    createThread(AUTOMATION_THREAD_ID, "Days old", {
+      sortAt: new Date(now - 2 * 24 * 60 * 60 * 1000).toISOString(),
+    }),
+    createThread(ARCHIVED_THREAD_ID, "Older than a month", {
+      sortAt: new Date(now - 60 * 24 * 60 * 60 * 1000).toISOString(),
+    }),
+  ]);
+  context.mocks.api(chatSearchContract.search, ({ respond }) => {
+    return respond(200, { results: [] });
+  });
+  context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
+    return respond(200, { artifacts: [], nextCursor: null });
+  });
+
+  await setupSidebarPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+  });
+
+  const list = await screen.findByTestId("chat-list-column");
+  click(within(list).getByLabelText("Search workspace"));
+
+  const dialog = await screen.findByRole("dialog", {
+    name: "Search workspace...",
+  });
+
+  const rowFor = async (title: string): Promise<HTMLElement> => {
+    const row = (await within(dialog).findByText(title)).closest(
+      '[role="option"]',
+    );
+    if (!(row instanceof HTMLElement)) {
+      throw new Error(`no spotlight row for ${title}`);
+    }
+    return row;
+  };
+
+  const minutesRow = await rowFor("Minutes old");
+  expect(minutesRow).toHaveTextContent("5 minutes ago");
+  const hoursRow = await rowFor("Hours old");
+  expect(hoursRow).toHaveTextContent("3 hours ago");
+  const daysRow = await rowFor("Days old");
+  expect(daysRow).toHaveTextContent("2 days ago");
+
+  // Past a month a relative phrase stops helping, so the row shows the
+  // absolute date instead. Assert the shape rather than an exact string so
+  // the expectation does not depend on the runner's timezone.
+  const archived = await rowFor("Older than a month");
+  expect(archived).not.toHaveTextContent("ago");
+  expect(archived).toHaveTextContent(/[A-Z][a-z]{2} \d{1,2},/u);
+
+  await fill(
+    within(dialog).getByPlaceholderText("Search workspace..."),
+    "nothing matches this",
+  );
+
+  await waitFor(() => {
+    expect(within(dialog).getByText("No results found")).toBeInTheDocument();
+  });
+  expect(within(dialog).queryByText("Minutes old")).not.toBeInTheDocument();
+  const emptyState = within(dialog)
+    .getByText("No results found")
+    .closest("div");
+  expect(emptyState?.querySelector("img")).toHaveAttribute(
+    "src",
+    emptySearchImg,
+  );
+});
+
+test("Toggle unread chats by reselecting an unread pinned agent", async () => {
+  prepareAgents();
+  context.mocks.data.userPreferences({
+    pinnedAgentIds: [RESEARCH_AGENT_ID, SUPPORT_AGENT_ID],
+  });
+  mockSidebarThreadStory([
+    createThread(EXISTING_THREAD_ID, "Default unread"),
+    createThread(RESEARCH_THREAD_ID, "Default read"),
+    createThread(INCIDENT_THREAD_ID, "Support unread", {
+      agent: { id: SUPPORT_AGENT_ID, avatarUrl: null },
+    }),
+    createThread(AUTOMATION_THREAD_ID, "Support read", {
+      agent: { id: SUPPORT_AGENT_ID, avatarUrl: null },
+    }),
+  ]);
+  context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
+    return respond(200, {
+      agents: {
+        [AGENT_ID]: "unread",
+        [SUPPORT_AGENT_ID]: "unread",
+      },
+      threads: {
+        [EXISTING_THREAD_ID]: "unread",
+        [INCIDENT_THREAD_ID]: "unread",
+      },
+      unreadAt: {
+        [EXISTING_THREAD_ID]: "2026-03-10T00:05:00Z",
+        [INCIDENT_THREAD_ID]: "2026-03-10T00:05:00Z",
+      },
+    });
+  });
+
+  await setupSidebarPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+  });
+
+  await waitFor(() => {
+    expect(within(sidebar()).getByText("Default unread")).toBeInTheDocument();
+    expect(within(sidebar()).getByText("Default read")).toBeInTheDocument();
+  });
+  openChatListMenu();
+  click(menuItemByText("Unread"));
+  await waitFor(() => {
+    expect(within(sidebar()).getByText("Default unread")).toBeInTheDocument();
+    expect(
+      within(sidebar()).queryByText("Default read"),
+    ).not.toBeInTheDocument();
+  });
+
+  const pinnedAgent = (name: string): HTMLAnchorElement => {
+    return pinnedAgentLink(screen.getByTestId("pinned-agents-grid"), name);
+  };
+
+  click(pinnedAgent("Support Agent"));
+  await waitFor(() => {
+    expect(pathname()).toBe(`/agents/${SUPPORT_AGENT_ID}/chat`);
+    expect(within(sidebar()).getByText("Support unread")).toBeInTheDocument();
+    expect(within(sidebar()).getByText("Support read")).toBeInTheDocument();
+  });
+
+  const navigationCount = vi.mocked(window.history.pushState).mock.calls.length;
+  click(pinnedAgent("Support Agent"));
+  await waitFor(() => {
+    expect(within(sidebar()).getByText("Support unread")).toBeInTheDocument();
+    expect(
+      within(sidebar()).queryByText("Support read"),
+    ).not.toBeInTheDocument();
+  });
+  expect(pathname()).toBe(`/agents/${SUPPORT_AGENT_ID}/chat`);
+  expect(vi.mocked(window.history.pushState)).toHaveBeenCalledTimes(
+    navigationCount,
+  );
+
+  click(pinnedAgent("Support Agent"));
+  await waitFor(() => {
+    expect(within(sidebar()).getByText("Support unread")).toBeInTheDocument();
+    expect(within(sidebar()).getByText("Support read")).toBeInTheDocument();
+  });
+  expect(pathname()).toBe(`/agents/${SUPPORT_AGENT_ID}/chat`);
+  expect(vi.mocked(window.history.pushState)).toHaveBeenCalledTimes(
+    navigationCount,
+  );
+});
