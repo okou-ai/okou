@@ -43,10 +43,18 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.drawOutline
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.inset
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -216,6 +224,11 @@ internal fun AppUpdateSettings(state: UpdateUiState, open: () -> Unit) {
         leading = {
             SettingsIcon(if (state.canInstall) R.drawable.ic_refresh else R.drawable.ic_download)
         },
+        modifier =
+            Modifier.updateFocusOutline(
+                RoundedCornerShape(12.dp),
+                LocalActivityStatusColor.current,
+            ),
         value = summary,
         onClick = open,
         valueLeading =
@@ -541,7 +554,8 @@ private fun UpdateAction(
     Button(
         onClick = { action?.invoke() },
         enabled = action != null,
-        modifier = modifier.heightIn(min = 48.dp),
+        modifier =
+            modifier.heightIn(min = 48.dp).updateFocusOutline(shape, colors.inverseOnSurface),
         shape = shape,
         colors =
             ButtonDefaults.buttonColors(
@@ -559,7 +573,10 @@ private fun UpdateAction(
 private fun ActionText(label: String, action: () -> Unit, modifier: Modifier = Modifier) {
     TextButton(
         onClick = action,
-        modifier = modifier.heightIn(min = 48.dp),
+        modifier =
+            modifier
+                .heightIn(min = 48.dp)
+                .updateFocusOutline(ButtonDefaults.shape, LocalActivityStatusColor.current),
         colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
     ) {
         Text(label, style = updateActionLabelStyle())
@@ -569,3 +586,22 @@ private fun ActionText(label: String, action: () -> Unit, modifier: Modifier = M
 @Composable
 private fun updateActionLabelStyle() =
     MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp, fontWeight = FontWeight(550))
+
+@Composable
+internal fun Modifier.updateFocusOutline(shape: Shape, color: Color): Modifier {
+    val focused = remember { mutableStateOf(false) }
+    return onFocusChanged { focused.value = it.isFocused }
+        .drawWithContent {
+            drawContent()
+            if (focused.value) {
+                val width = 2.dp.toPx()
+                inset(width) {
+                    drawOutline(
+                        shape.createOutline(size, layoutDirection, this),
+                        color,
+                        style = Stroke(width),
+                    )
+                }
+            }
+        }
+}

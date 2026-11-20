@@ -12,6 +12,7 @@ import ai.okou.android.state.SavedStatePolicy
 import ai.okou.android.updates.AppUpdateSettings
 import ai.okou.android.updates.AppUpdates
 import ai.okou.android.updates.UpdateHost
+import ai.okou.android.updates.updateFocusOutline
 import ai.okou.android.updates.updateToolbarAction
 import android.content.ActivityNotFoundException
 import android.content.Intent
@@ -41,6 +42,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -247,9 +249,15 @@ class MainActivity : AppCompatActivity() {
                                 )
                             },
                             confirmButton = {
+                                val buttonShape = RoundedCornerShape(12.dp)
                                 Button(
                                     onClick = { authorizeUpdate(explanation) },
-                                    shape = RoundedCornerShape(12.dp),
+                                    modifier =
+                                        Modifier.updateFocusOutline(
+                                            buttonShape,
+                                            MaterialTheme.colorScheme.inverseOnSurface,
+                                        ),
+                                    shape = buttonShape,
                                     colors =
                                         ButtonDefaults.buttonColors(
                                             containerColor =
@@ -264,6 +272,11 @@ class MainActivity : AppCompatActivity() {
                             dismissButton = {
                                 TextButton(
                                     onClick = { updateInstall.dismissExplanation(explanation) },
+                                    modifier =
+                                        Modifier.updateFocusOutline(
+                                            ButtonDefaults.shape,
+                                            LocalActivityStatusColor.current,
+                                        ),
                                     colors =
                                         ButtonDefaults.textButtonColors(
                                             contentColor = MaterialTheme.colorScheme.onSurface

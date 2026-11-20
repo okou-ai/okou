@@ -5,6 +5,7 @@ import ai.okou.android.chat.ChatListUiState
 import ai.okou.android.chat.label
 import ai.okou.android.chat.markAllReadTargets
 import ai.okou.android.updates.UpdateToolbarAction
+import ai.okou.android.updates.updateFocusOutline
 import android.os.Build
 import android.window.OnBackInvokedCallback
 import android.window.OnBackInvokedDispatcher
@@ -279,14 +280,16 @@ internal fun WorkspaceToolbarActions(
     } else {
         val interactions = remember { MutableInteractionSource() }
         val pressed by interactions.collectIsPressedAsState()
+        val shape = RoundedCornerShape(12.dp)
         TextButton(
             onClick = { update.activate?.invoke() },
             enabled = update.activate != null,
             modifier =
-                Modifier.width(104.dp).heightIn(min = 48.dp).semantics {
-                    update.accessibilityLabel?.let { contentDescription = it }
-                },
-            shape = RoundedCornerShape(12.dp),
+                Modifier.width(104.dp)
+                    .heightIn(min = 48.dp)
+                    .updateFocusOutline(shape, colors.inverseOnSurface)
+                    .semantics { update.accessibilityLabel?.let { contentDescription = it } },
+            shape = shape,
             contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
             interactionSource = interactions,
             colors =

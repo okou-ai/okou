@@ -28,6 +28,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertWidthIsEqualTo
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isSelectable
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -49,6 +50,7 @@ import java.io.IOException
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -220,6 +222,20 @@ class OkouAppTest {
         compose.onNodeWithContentDescription("Settings").performClick()
         compose.onNodeWithText("Language").performScrollTo().performClick()
         compose.onNodeWithText("繁體中文").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w240dp-h450dp")
+    fun compactSettingsShowTheValueBelowTheTitle() {
+        render()
+        compose.onNodeWithContentDescription("Settings").performClick()
+        compose.onNodeWithText("Appearance").performScrollTo().assertIsDisplayed()
+        val title = compose.onNodeWithText("Appearance", useUnmergedTree = true)
+        val value = compose.onNodeWithText("Follow system", useUnmergedTree = true)
+        assertTrue(
+            value.assertIsDisplayed().getUnclippedBoundsInRoot().top >=
+                title.getUnclippedBoundsInRoot().bottom
+        )
     }
 
     @Test
