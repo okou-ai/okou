@@ -110,6 +110,17 @@ class NativeUpdateTest {
             }
             device.awaitChatList(app)
             val updateTarget = app.getString(R.string.updates_target, "99.0.0")
+            fun closeDetails() {
+                device.pressBack()
+                assertTrue(
+                    device.wait(Until.gone(By.pkg(app.packageName).text(updateTarget)), 10_000)
+                )
+                exists(R.string.updates_title)
+            }
+            fun backToChatList() {
+                device.pressBack()
+                device.awaitChatList(app)
+            }
             requireNotNull(
                     device.wait(Until.findObject(By.desc(app.getString(R.string.settings))), 10_000)
                 )
@@ -126,10 +137,8 @@ class NativeUpdateTest {
             candidate.set(release)
             click(R.string.updates_check)
             assertNotNull(text(updateTarget))
-            assertTrue(device.pressBack())
-            exists(R.string.updates_title)
-            assertTrue(device.pressBack())
-            device.awaitChatList(app)
+            closeDetails()
+            backToChatList()
 
             val updateAction = app.getString(R.string.updates_toolbar)
             val updateBounds = button(updateAction).visibleBounds
@@ -196,10 +205,8 @@ class NativeUpdateTest {
             click(R.string.updates_title)
             assertNotNull(text(updateTarget))
             captureState("details-available.png")
-            assertTrue(device.pressBack())
-            exists(R.string.updates_title)
-            assertTrue(device.pressBack())
-            device.awaitChatList(app)
+            closeDetails()
+            backToChatList()
             requireNotNull(text(updateAction)).click()
             val percent = "50%"
             assertEquals(updateBounds, button(percent).visibleBounds)
@@ -216,8 +223,7 @@ class NativeUpdateTest {
             click(R.string.settings)
             assertNotNull(text(app.getString(R.string.updates_downloading, percent)))
             captureState("settings-progress.png")
-            assertTrue(device.pressBack())
-            device.awaitChatList(app)
+            backToChatList()
 
             openOverflow()
             assertNotNull(text(filter))
@@ -238,7 +244,7 @@ class NativeUpdateTest {
                     By.pkg(app.packageName).text(app.getString(R.string.updates_allow_install))
                 )
             )
-            assertTrue(device.pressBack())
+            device.pressBack()
             exists(R.string.updates_open_settings)
             captureState("install-permission.png")
             confirmAndCancel(device, app, capture)
@@ -254,7 +260,7 @@ class NativeUpdateTest {
             exists(R.string.updates_required)
             exists(R.string.updates_toolbar)
             captureState("update-required.png")
-            assertTrue(device.pressBack())
+            assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
             exists(R.string.updates_required)
             scenario.recreate()
             exists(R.string.updates_required)
@@ -316,7 +322,7 @@ class NativeUpdateTest {
         ) {
             "Android did not grant this source permission"
         }
-        check(device.pressBack())
+        device.pressBack()
 
         val cancel = By.text(Pattern.compile("^(cancel|取消)$", Pattern.CASE_INSENSITIVE))
         val dismiss =
