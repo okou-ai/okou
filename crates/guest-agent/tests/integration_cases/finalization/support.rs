@@ -1,4 +1,5 @@
 use crate::support::*;
+use guest_agent::paths::CANONICAL_GUEST_HOME_DIR;
 
 pub(super) fn finalization_runtime() -> Result<guest_agent::run_context::GuestRuntime, String> {
     Ok(guest_agent::run_context::GuestRuntime {
@@ -152,13 +153,14 @@ pub(super) fn session_id_file() -> String {
     shared_guest_paths().session_id_file().to_string()
 }
 
-pub(super) fn write_literal_session_history(
+pub(super) fn write_retained_session_history(
     runtime: &mut guest_agent::run_context::GuestRuntime,
     session_id: &str,
     history: &[u8],
 ) -> Result<tempfile::TempDir, String> {
     let session_id_file = session_id_file();
-    let dir = tempfile::tempdir().map_err(|e| format!("create temp history dir: {e}"))?;
+    let dir = tempfile::tempdir_in(CANONICAL_GUEST_HOME_DIR)
+        .map_err(|e| format!("create retained history directory: {e}"))?;
     runtime.config.claude_config_dir = dir.path().to_string_lossy().into_owned();
     let history_path = claude_history_path(dir.path(), session_id);
     let history_parent = history_path
