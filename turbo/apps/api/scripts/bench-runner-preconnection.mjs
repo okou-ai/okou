@@ -5,6 +5,9 @@ import assert from "node:assert/strict";
 import { once } from "node:events";
 import { readFileSync } from "node:fs";
 import { createServer } from "node:https";
+import { performance } from "node:perf_hooks";
+import process from "node:process";
+import { setTimeout as scheduleTlsCallback } from "node:timers";
 import { connect, createSecureContext } from "node:tls";
 import { setImmediate, setTimeout } from "node:timers/promises";
 
@@ -29,7 +32,9 @@ async function withPeer(run) {
       SNICallback(_name, callback) {
         // Inject a deterministic delay into new TLS connections. Reused
         // sockets bypass it. This delay represents a scenario, not CI network.
-        setTimeout(setupDelayMs).then(() => callback(null, tlsContext));
+        scheduleTlsCallback(() => {
+          return callback(null, tlsContext);
+        }, setupDelayMs);
       },
     },
     (request, response) => {
@@ -39,7 +44,9 @@ async function withPeer(run) {
       });
     },
   );
-  server.on("secureConnection", (socket) => sockets.set(socket, ++connections));
+  server.on("secureConnection", (socket) => {
+    return sockets.set(socket, ++connections);
+  });
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
   const { port } = server.address();
@@ -48,13 +55,16 @@ async function withPeer(run) {
       port,
       async request(method) {
         const startedAt = performance.now();
-        const response = await fetch(`https://localhost:${port}/fixture`, {
-          method,
-          ...(method === "POST" ? { body: "{}" } : {}),
-          redirect: "error",
-          cache: "no-store",
-          signal: AbortSignal.timeout(5000),
-        });
+        const response = await globalThis.fetch(
+          `https://localhost:${port}/fixture`,
+          {
+            method,
+            ...(method === "POST" ? { body: "{}" } : {}),
+            redirect: "error",
+            cache: "no-store",
+            signal: globalThis.AbortSignal.timeout(5000),
+          },
+        );
         const elapsedMs = performance.now() - startedAt;
         assert.equal(response.status, 200);
         const { socket } = await response.json();
@@ -78,7 +88,9 @@ const rawTlsPost = await withPeer(async ({ port, request }) => {
     ca: cert,
   });
   try {
-    await once(socket, "secureConnect", { signal: AbortSignal.timeout(5000) });
+    await once(socket, "secureConnect", {
+      signal: globalThis.AbortSignal.timeout(5000),
+    });
     return await request("POST");
   } finally {
     socket.destroy();
@@ -103,7 +115,9 @@ await withPeer(async ({ request }) => {
 });
 
 function percentiles(values) {
-  const sorted = values.toSorted((left, right) => left - right);
+  const sorted = values.toSorted((left, right) => {
+    return left - right;
+  });
   return Object.fromEntries(
     [50, 90].map((p) => {
       return [
@@ -120,20 +134,24 @@ for (const leadMs of [25, 75]) {
   const warmed = [];
   const pairedSavings = [];
   let reused = 0;
-  const baseline = () =>
-    withPeer(async ({ request }) => {
+  const baseline = () => {
+    return withPeer(async ({ request }) => {
       await setTimeout(leadMs);
       return await request("POST");
     });
-  const prewarmed = () =>
-    withPeer(async ({ request }) => {
+  };
+  const prewarmed = () => {
+    return withPeer(async ({ request }) => {
       const [warmup, dispatch] = await Promise.all([
         request("GET"),
-        setTimeout(leadMs).then(() => request("POST")),
+        setTimeout(leadMs).then(() => {
+          return request("POST");
+        }),
       ]);
       reused += Number(warmup.socket === dispatch.socket);
       return dispatch;
     });
+  };
 
   for (let sample = 0; sample < sampleCount; sample++) {
     let control;
@@ -159,6 +177,7 @@ for (const leadMs of [25, 75]) {
   });
 }
 
-console.log(
-  JSON.stringify({ node: process.version, setupDelayMs, windows }, null, 2),
+process.stdout.write(
+  JSON.stringify({ node: process.version, setupDelayMs, windows }, null, 2) +
+    "\n",
 );
