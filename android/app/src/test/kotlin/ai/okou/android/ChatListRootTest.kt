@@ -1043,6 +1043,7 @@ class ChatListRootTest {
             }
             row.assertIsDisplayed()
             compose.onNodeWithText("Undo").assertDoesNotExist()
+            awaitRowActionSettled(CHAT_PERSONAL)
 
             row.performTouchInput { swipe(center.copy(x = width * 0.8f), center) }
             compose.waitUntil(10_000) {
