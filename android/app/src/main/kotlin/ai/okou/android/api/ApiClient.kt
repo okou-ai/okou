@@ -36,9 +36,6 @@ import ai.okou.android.chat.plainDraftDocument
 import ai.okou.android.updates.isAndroidVersion
 import java.io.Closeable
 import java.io.IOException
-import java.text.SimpleDateFormat
-import java.util.Locale
-import java.util.TimeZone
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.Duration
@@ -360,22 +357,5 @@ class ApiClient(
         } catch (_: SerializationException) {
             null
         }
-    }
-}
-
-private fun retryAfter(value: String?): Long? {
-    if (value == null) return null
-    value.toLongOrNull()?.let {
-        return it.coerceAtLeast(0)
-    }
-    val formatter = SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss zzz", Locale.US)
-    formatter.timeZone = TimeZone.getTimeZone("GMT")
-    formatter.isLenient = false
-    return try {
-        ((formatter.parse(value)?.time ?: return null) - System.currentTimeMillis()).coerceAtLeast(
-            0
-        ) / 1000
-    } catch (_: java.text.ParseException) {
-        null
     }
 }

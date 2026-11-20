@@ -3,6 +3,10 @@ package ai.okou.android.api
 import ai.okou.android.BuildConfig
 import java.io.IOException
 import java.io.InterruptedIOException
+import java.text.ParseException
+import java.text.SimpleDateFormat
+import java.util.Locale
+import java.util.TimeZone
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resumeWithException
 import kotlin.time.Duration
@@ -26,6 +30,23 @@ internal class ResponseLimitExceeded : IOException("Response exceeds the support
 
 internal class HttpRejection(val status: Int, val retryAfter: String?, val envelope: String?) :
     IOException("HTTP $status")
+
+internal fun retryAfter(value: String?): Long? {
+    if (value == null) return null
+    value.toLongOrNull()?.let {
+        return it.coerceAtLeast(0)
+    }
+    val formatter = SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss zzz", Locale.US)
+    formatter.timeZone = TimeZone.getTimeZone("GMT")
+    formatter.isLenient = false
+    return try {
+        ((formatter.parse(value)?.time ?: return null) - System.currentTimeMillis()).coerceAtLeast(
+            0
+        ) / 1000
+    } catch (_: ParseException) {
+        null
+    }
+}
 
 internal fun IOException.httpRejection(): HttpRejection? =
     when (this) {

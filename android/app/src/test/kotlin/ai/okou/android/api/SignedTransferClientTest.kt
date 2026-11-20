@@ -14,6 +14,21 @@ import org.junit.Test
 
 class SignedTransferClientTest {
     @Test
+    fun streamedSignedReadPreservesTheServerRetryDeadline() = runTest {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setResponseCode(429).setHeader("Retry-After", "20"))
+            SignedTransferClient().use { transfers ->
+                val failure =
+                    failure<ApiFailure.Http> {
+                        transfers.download(server.url("/signed")) { it.readBytes() }
+                    }
+                assertEquals(429, failure.status)
+                assertEquals(20L, failure.retryAfterSeconds)
+            }
+        }
+    }
+
+    @Test
     fun signedCallCancellationClosesItsOwnedHttpCall() = runTest {
         val received = CompletableDeferred<Unit>()
         val release = CountDownLatch(1)

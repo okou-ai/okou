@@ -98,7 +98,9 @@ class NativeChatListTest {
                         .viewModelScope
                         .coroutineContext[Job]
             }
-            text(app.getString(R.string.chat_loading))
+            assertNotNull(
+                device.wait(Until.findObject(By.desc(app.getString(R.string.chat_loading))), 10_000)
+            )
             click(UiSelector().description(app.getString(R.string.settings)))
             text(app.getString(R.string.appearance))
             gate.countDown()

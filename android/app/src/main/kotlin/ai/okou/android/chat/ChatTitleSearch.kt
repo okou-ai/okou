@@ -157,12 +157,20 @@ internal fun ChatTitleSearch(
                 },
             )
         }
-        val failed = state.listPhase == ChatReadPhase.Failed
+        val failure = state.listReadFailure
+        val retryFailedRead =
+            retry.takeIf { !state.offline && failure == ChatListReadFailure.NeedsRetry }
+        val retryEnabled = state.listPhase != ChatReadPhase.Loading
         if (state.confirmedAt == null) {
             // Let the restored list position apply to the result rows once data is available.
             SearchNotice(
-                if (failed) R.string.chat_load_failed else R.string.chat_loading,
-                retry.takeIf { failed },
+                when {
+                    state.offline -> R.string.chat_list_load_when_online
+                    failure != null -> R.string.chat_list_first_load_failed
+                    else -> R.string.chat_loading
+                },
+                retryFailedRead,
+                retryEnabled,
             )
             return@Column
         }
@@ -184,14 +192,14 @@ internal fun ChatTitleSearch(
         ) {
             // Keep result indices stable when the cache or refresh notice changes.
             item {
-                if (failed) {
-                    SearchNotice(R.string.chat_refresh_failed, retry)
+                if (failure != null && !state.offline) {
+                    SearchNotice(R.string.chat_refresh_failed, retryFailedRead, retryEnabled)
                 } else if (state.source == ChatListSource.Cache) {
                     SearchNotice(R.string.chat_cached)
                 }
-                if (results.isEmpty() && !failed) {
+                if (results.isEmpty()) {
                     SearchNotice(R.string.chat_search_empty)
-                } else if (results.isNotEmpty()) {
+                } else {
                     Text(
                         stringResource(
                             if (keyword.isEmpty()) R.string.chat_search_recent
@@ -243,9 +251,16 @@ private fun ConfirmedChat.searchTitle(untitled: String): String =
     title?.takeIf(String::isNotBlank) ?: untitled
 
 @Composable
-private fun SearchNotice(@StringRes label: Int, retry: (() -> Unit)? = null) {
+private fun SearchNotice(
+    @StringRes label: Int,
+    retry: (() -> Unit)? = null,
+    retryEnabled: Boolean = true,
+) {
     Column(Modifier.padding(12.dp)) {
         Text(stringResource(label))
-        if (retry != null) TextButton(onClick = retry) { Text(stringResource(R.string.retry)) }
+        if (retry != null)
+            TextButton(onClick = retry, enabled = retryEnabled) {
+                Text(stringResource(R.string.retry))
+            }
     }
 }
