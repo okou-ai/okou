@@ -33,20 +33,8 @@ type StoragePresignedUrlCacheScope =
   | "private_artifact_preview"
   | "content_bundle";
 
-export type StorageManifestPresignedUrlCacheScope = Exclude<
-  StoragePresignedUrlCacheScope,
-  | "presentation_template_preview"
-  | "private_artifact_preview"
-  | "content_bundle"
->;
-
-export const SYSTEM_STORAGE_PRESIGNED_URL_TTL_SECONDS =
-  PRESIGNED_URL_TTL_SECONDS;
-const SYSTEM_STORAGE_PRESIGNED_URL_CACHE_POLICY = "system-storage-url-v1";
 export const SYSTEM_STORAGE_PRESIGNED_URL_PRUNE_LIMIT = 100;
 
-export const READ_ONLY_STORAGE_PRESIGNED_URL_TTL_SECONDS =
-  PRESIGNED_URL_TTL_SECONDS;
 const READ_ONLY_STORAGE_PRESIGNED_URL_CACHE_POLICY = "readonly-storage-url-v1";
 export const READ_ONLY_STORAGE_PRESIGNED_URL_PRUNE_LIMIT = 256;
 const PRESENTATION_TEMPLATE_PREVIEW_PRESIGNED_URL_CACHE_POLICY =
@@ -63,19 +51,11 @@ const deletedCacheRowSchema = object({ cacheKey: string() });
 
 type StoragePresignedUrlCacheStatus = "hit" | "miss";
 
-export interface SystemStoragePresignedUrlRequest {
-  readonly bucket: string;
-  readonly objectKey: string;
-  readonly storageVersionId: string;
-  readonly publicEndpoint: boolean;
-}
-
-export interface ReadOnlyStoragePresignedUrlRequest {
+interface ReadOnlyStoragePresignedUrlRequest {
   readonly bucket: string;
   readonly objectKey: string;
   readonly storageVersionId: string;
   readonly resolvedOrgId: string;
-  readonly publicEndpoint: boolean;
 }
 
 export interface PresentationTemplatePreviewPresignedUrlRequest {
@@ -129,59 +109,29 @@ export interface StoragePresignedUrlCachePublication {
   readonly status: "skipped" | "written" | "error";
 }
 
-/** The same canonical JSON key as the JS signer's key, for index/cache JOINs. */
-export function storagePresignedUrlCacheKeySql(
-  scope: StorageManifestPresignedUrlCacheScope,
-  request: {
-    readonly bucket: string;
-    readonly objectKey: SQL;
-    readonly storageVersionId: SQL;
-    readonly resolvedOrgId: SQL;
-  },
-): SQL {
-  const policy =
-    scope === "system_storage"
-      ? SYSTEM_STORAGE_PRESIGNED_URL_CACHE_POLICY
-      : READ_ONLY_STORAGE_PRESIGNED_URL_CACHE_POLICY;
-  const ttl =
-    scope === "system_storage"
-      ? SYSTEM_STORAGE_PRESIGNED_URL_TTL_SECONDS
-      : READ_ONLY_STORAGE_PRESIGNED_URL_TTL_SECONDS;
+/** Match the signer's key so the cache can be joined to the captured archive. */
+export function readOnlyStoragePresignedUrlCacheKeySql(request: {
+  readonly bucket: string;
+  readonly objectKey: SQL;
+  readonly storageVersionId: SQL;
+  readonly resolvedOrgId: SQL;
+}): SQL {
   const values = [
-    sql`to_json(${policy}::text)::text`,
+    sql`to_json(${READ_ONLY_STORAGE_PRESIGNED_URL_CACHE_POLICY}::text)::text`,
     sql`to_json(${request.bucket}::text)::text`,
     sql`to_json(${request.objectKey}::text)::text`,
     sql`to_json(${request.storageVersionId}::text)::text`,
-    ...(scope === "system_storage"
-      ? []
-      : [sql`to_json(${request.resolvedOrgId}::text)::text`]),
+    sql`to_json(${request.resolvedOrgId}::text)::text`,
     sql`to_json(${"public"}::text)::text`,
-    sql`to_json(${ttl}::integer)::text`,
+    sql`to_json(${PRESIGNED_URL_TTL_SECONDS}::integer)::text`,
   ];
   return sql`encode(sha256(convert_to('[' || ${sql.join(values, sql` || ',' || `)} || ']', 'UTF8')), 'hex')`;
 }
 
-export function systemStoragePresignedUrlCacheKey(
-  request: SystemStoragePresignedUrlRequest,
-): string {
-  return createHash("sha256")
-    .update(
-      JSON.stringify([
-        SYSTEM_STORAGE_PRESIGNED_URL_CACHE_POLICY,
-        request.bucket,
-        request.objectKey,
-        request.storageVersionId,
-        request.publicEndpoint ? "public" : "private",
-        SYSTEM_STORAGE_PRESIGNED_URL_TTL_SECONDS,
-      ]),
-    )
-    .digest("hex");
-}
-
-export function readOnlyStoragePresignedUrlCacheKey(
+export function readOnlyStorageSigningRequest(
   request: ReadOnlyStoragePresignedUrlRequest,
-): string {
-  return createHash("sha256")
+): StoragePresignedUrlSigningRequest {
+  const cacheKey = createHash("sha256")
     .update(
       JSON.stringify([
         READ_ONLY_STORAGE_PRESIGNED_URL_CACHE_POLICY,
@@ -189,11 +139,16 @@ export function readOnlyStoragePresignedUrlCacheKey(
         request.objectKey,
         request.storageVersionId,
         request.resolvedOrgId,
-        request.publicEndpoint ? "public" : "private",
-        READ_ONLY_STORAGE_PRESIGNED_URL_TTL_SECONDS,
+        "public",
+        PRESIGNED_URL_TTL_SECONDS,
       ]),
     )
     .digest("hex");
+  return {
+    cacheKey,
+    request: { ...request, scope: "readonly_storage", publicEndpoint: true },
+    ttlSeconds: PRESIGNED_URL_TTL_SECONDS,
+  };
 }
 
 export function presentationTemplatePreviewPresignedUrlCacheKey(
@@ -234,32 +189,6 @@ export function privateArtifactPreviewPresignedUrlCacheKey(
       ]),
     )
     .digest("hex");
-}
-
-function systemStorageRequest(
-  request: SystemStoragePresignedUrlRequest,
-): StoragePresignedUrlRequest {
-  return {
-    scope: "system_storage",
-    bucket: request.bucket,
-    objectKey: request.objectKey,
-    storageVersionId: request.storageVersionId,
-    resolvedOrgId: null,
-    publicEndpoint: request.publicEndpoint,
-  };
-}
-
-function readOnlyStorageRequest(
-  request: ReadOnlyStoragePresignedUrlRequest,
-): StoragePresignedUrlRequest {
-  return {
-    scope: "readonly_storage",
-    bucket: request.bucket,
-    objectKey: request.objectKey,
-    storageVersionId: request.storageVersionId,
-    resolvedOrgId: request.resolvedOrgId,
-    publicEndpoint: request.publicEndpoint,
-  };
 }
 
 function presentationTemplatePreviewRequest(
@@ -473,18 +402,6 @@ export interface SelectedStoragePresignedUrlCacheRow {
   readonly expiresAt: Date;
 }
 
-export interface StorageManifestPresignedUrlCacheSnapshot {
-  readonly rowsByScope: ReadonlyMap<
-    StorageManifestPresignedUrlCacheScope,
-    ReadonlyMap<string, SelectedStoragePresignedUrlCacheRow>
-  >;
-}
-
-export interface StorageManifestPresignedUrlCachePrefetchInput {
-  readonly systemRequests: readonly SystemStoragePresignedUrlRequest[];
-  readonly readOnlyRequests: readonly ReadOnlyStoragePresignedUrlRequest[];
-}
-
 interface StoragePresignedUrlFreshRequest {
   readonly cacheKey: string;
   readonly request: StoragePresignedUrlRequest;
@@ -582,38 +499,6 @@ interface PreparedStoragePresignedUrlRequests {
   readonly issuedAt: Date;
 }
 
-interface ManifestSigningSnapshot {
-  readonly input: StorageManifestPresignedUrlCachePrefetchInput;
-  readonly prefetchedRows: StorageManifestPresignedUrlCacheSnapshot;
-}
-
-/** Classify only captured values; this plan performs no signing or database reads. */
-function storageManifestSigningRequests(
-  input: StorageManifestPresignedUrlCachePrefetchInput,
-) {
-  const requests = [
-    ...input.systemRequests.map((request) => {
-      return {
-        cacheKey: systemStoragePresignedUrlCacheKey(request),
-        request: systemStorageRequest(request),
-        ttlSeconds: SYSTEM_STORAGE_PRESIGNED_URL_TTL_SECONDS,
-      };
-    }),
-    ...input.readOnlyRequests.map((request) => {
-      return {
-        cacheKey: readOnlyStoragePresignedUrlCacheKey(request),
-        request: readOnlyStorageRequest(request),
-        ttlSeconds: READ_ONLY_STORAGE_PRESIGNED_URL_TTL_SECONDS,
-      };
-    }),
-  ];
-  return new Map(
-    requests.map((entry) => {
-      return [entry.cacheKey, entry];
-    }),
-  );
-}
-
 /** Classify the captured cache snapshot at the owner's signing clock. */
 function storagePresignedUrlSigningPlan(
   unique: ReadonlyMap<string, StoragePresignedUrlSigningRequest>,
@@ -684,21 +569,6 @@ export async function signStoragePresignedUrls(args: {
     freshValues,
   });
   return { results, freshValues };
-}
-
-/** Preserve manifest adapters and key identities on the shared signing engine. */
-export async function signStorageManifestPresignedUrls(
-  args: ManifestSigningSnapshot & {
-    readonly sign: PresignedGetUrlSigner;
-  },
-) {
-  return await signStoragePresignedUrls({
-    requests: [...storageManifestSigningRequests(args.input).values()],
-    rows: [...args.prefetchedRows.rowsByScope.values()].flatMap((rows) => {
-      return [...rows.values()];
-    }),
-    sign: args.sign,
-  });
 }
 
 /** Callers observe cancellation after this complete finite lookup/sign/write stage. */

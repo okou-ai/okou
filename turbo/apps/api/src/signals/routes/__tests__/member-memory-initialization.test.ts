@@ -1,4 +1,6 @@
+import { randomUUID } from "node:crypto";
 import { gunzipSync } from "node:zlib";
+import { HeadObjectCommand } from "@aws-sdk/client-s3";
 import { computeContentHashFromHashes } from "@okouai/api-contracts/contracts/storage-content-hash";
 import {
   createPublicRunnerMemory,
@@ -9,12 +11,15 @@ import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { buildArtifactKeyV2 } from "../../../lib/file-url";
 import { now } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { createDeferredPromise, joinAll, onRejection } from "../../utils";
 import { onboardingCompleteRoutes } from "../onboarding-complete";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { storageTextFile } from "./helpers/api-bdd-storage-files";
 import { createPublicComputerUseScenario } from "./helpers/public-computer-use-scenario";
+import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import {
   createRunsApi,
   expectCanonicalStorageManifest,
@@ -127,6 +132,111 @@ async function observeMemory(
 }
 
 describe("member memory account initialization", () => {
+  it("mounts the same Memory in first Runs that both observed an uninitialized member", async () => {
+    const owner = createPublicComputerUseScenario(context);
+    const admin = owner.user({ orgRole: "org:admin" });
+    const actor = owner.user({ orgId: admin.orgId, orgRole: "org:member" });
+    await owner.run(async () => {
+      await owner.prepareActor(admin);
+      const runs = createRunsApi(context);
+      await runs.ensurePersonalSubscriptionModel(actor);
+      const { agentId } = await api.createAgent(actor, {
+        visibility: "private",
+      });
+      await prepareReadablePreferences(actor);
+
+      const { sendChatRun } = createChatEventsFixture(context);
+      const fileId = randomUUID();
+      const filename = "first-run.txt";
+      const key = buildArtifactKeyV2(fileId, filename);
+      const entered = createDeferredPromise<void>(context.signal);
+      const release = createDeferredPromise<void>(context.signal);
+      const originalSend = context.mocks.s3.send.getMockImplementation();
+      context.mocks.s3.send.mockImplementation(async (command: unknown) => {
+        if (command instanceof HeadObjectCommand && command.input.Key === key) {
+          entered.resolve(undefined);
+          await release.promise;
+          return {
+            ContentLength: 42,
+            ContentType: "text/plain",
+            LastModified: new Date(0),
+            Metadata: {
+              "artifact-id": fileId,
+              filename: encodeURIComponent(filename),
+              "user-id": encodeURIComponent(actor.userId),
+            },
+          };
+        }
+        return await originalSend?.(command);
+      });
+      const prompt = "Start my first Run with an attachment";
+      const sending = onRejection(
+        sendChatRun(actor, {
+          agentId,
+          prompt,
+          userMessage: {
+            version: 1,
+            parts: [
+              {
+                type: "file",
+                fileId,
+                filenameSnapshot: filename,
+                contentType: "text/plain",
+              },
+              { type: "text", text: prompt },
+            ],
+          },
+        }),
+        (error) => {
+          if (!entered.settled()) {
+            entered.reject(error);
+          }
+        },
+      );
+      const [waitingRun, firstMounts] = await joinAll([
+        sending,
+        (async () => {
+          await entered.promise;
+          // Drain the early reads while attachment verification holds the
+          // send before enqueue. The other Run can initialize Memory first.
+          await flushWaitUntilForTest();
+          const run = await runs.createThreadRun(actor, {
+            agentId,
+            prompt: "Start my first Run without an attachment",
+          });
+          const execution = await owner.executionInput(actor, run.runId);
+          await owner.cancelRun(actor, run.runId);
+          return expectCanonicalStorageManifest(execution.storageManifest)
+            ?.storageMounts;
+        })().finally(() => {
+          if (!release.settled()) {
+            release.resolve(undefined);
+          }
+        }),
+      ]);
+      const execution = await owner.executionInput(actor, waitingRun.runId);
+      const mounts = expectCanonicalStorageManifest(
+        execution.storageManifest,
+      )?.storageMounts;
+      expect(mounts).toStrictEqual(firstMounts);
+      expect(mounts).toHaveLength(1);
+      const memory = mounts?.[0];
+      expect(memory).toMatchObject({
+        name: "memory",
+        empty: true,
+        writeback: true,
+        missingRootPolicy: "preserveParentVersion",
+      });
+      if (!memory?.storageId) {
+        throw new Error("Expected the initialized Memory");
+      }
+      expect(memory.versionId).toBe(
+        computeContentHashFromHashes(memory.storageId, []),
+      );
+      await expect(memoryInitialized(actor)).resolves.toBeTruthy();
+    });
+  });
+
   it.each(["org:admin", "org:member"] as const)(
     "initializes and replays memory through authenticated %s preferences",
     async (orgRole) => {
