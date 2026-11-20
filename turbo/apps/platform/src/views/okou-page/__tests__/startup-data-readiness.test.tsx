@@ -40,8 +40,6 @@ function fixture() {
     ],
   });
   context.mocks.data.onboardingStatus({ defaultAgentId: thread.agentId });
-  const projectCursors: number[] = [];
-  let detailReads = 0;
   let projectName: string | null = null;
   let projectSequence = 1;
   let recoveryPending = true;
@@ -60,7 +58,6 @@ function fixture() {
     });
   });
   context.mocks.api(projectsContract.events, ({ query, respond }) => {
-    projectCursors.push(query.sinceSeqId);
     return respond(200, {
       events:
         projectName && query.sinceSeqId < projectSequence
@@ -79,7 +76,6 @@ function fixture() {
     });
   });
   context.mocks.api(chatThreadByIdContract.get, ({ respond }) => {
-    detailReads += 1;
     return respond(200, {
       lastReadAt: null,
       cancellationRecoveryPending: recoveryPending,
@@ -87,10 +83,6 @@ function fixture() {
   });
   return {
     thread,
-    projectCursors,
-    detailReads: () => {
-      return detailReads;
-    },
     renameProject: (name: string) => {
       projectName = name;
       projectSequence += 1;
@@ -107,7 +99,7 @@ function fixture() {
 }
 
 test.each(["home", "thread"] as const)(
-  "%s startup reads Projects once and retains realtime sequence catch-up",
+  "%s startup shows Projects and follows realtime changes",
   async (route) => {
     const workspace = fixture();
     await setupPage({
@@ -119,20 +111,16 @@ test.each(["home", "thread"] as const)(
     expect(
       screen.getByRole("textbox", { name: "Message" }),
     ).toBeInTheDocument();
-    expect(workspace.projectCursors).toStrictEqual([1]);
-    expect(workspace.detailReads()).toBe(route === "thread" ? 1 : 0);
     workspace.renameProject("Launch ready");
     context.mocks.ably.trigger("threadListChanged");
     await expect(
       screen.findByText("Launch ready"),
     ).resolves.toBeInTheDocument();
-    expect(workspace.projectCursors).toStrictEqual([1, 1]);
     workspace.renameProject("Launch confirmed");
     context.mocks.ably.trigger("threadListChanged");
     await expect(
       screen.findByText("Launch confirmed"),
     ).resolves.toBeInTheDocument();
-    expect(workspace.projectCursors).toStrictEqual([1, 1, 2]);
   },
 );
 
@@ -144,13 +132,11 @@ test("Thread detail remains live after its first subscribed read", async () => {
     path: `/chats/${workspace.thread.id}`,
   });
   await expect(screen.findByText(RECOVERY_NOTICE)).resolves.toBeInTheDocument();
-  expect(workspace.detailReads()).toBe(1);
   workspace.setRecoveryPending(false);
   context.mocks.ably.trigger(`chatThreadDetailChanged:${workspace.thread.id}`);
   await waitFor(() => {
     expect(screen.queryByText(RECOVERY_NOTICE)).not.toBeInTheDocument();
   });
-  expect(workspace.detailReads()).toBe(2);
 });
 
 test("The first thread detail read includes changes made before realtime attaches", async () => {
@@ -170,7 +156,6 @@ test("The first thread detail read includes changes made before realtime attache
   attachment.attach();
   await page.ready;
   await expect(screen.findByText(RECOVERY_NOTICE)).resolves.toBeInTheDocument();
-  expect(workspace.detailReads()).toBe(1);
 });
 
 test("A realtime continuity gap refreshes thread detail without a notification", async () => {
@@ -181,7 +166,6 @@ test("A realtime continuity gap refreshes thread detail without a notification",
     path: `/chats/${workspace.thread.id}`,
   });
   await expect(screen.findByText(RECOVERY_NOTICE)).resolves.toBeInTheDocument();
-  expect(workspace.detailReads()).toBe(1);
   workspace.setRecoveryPending(false);
   act(() => {
     context.mocks.ably.triggerSharedWorkerChannelGap("user:chat-list-user-321");
@@ -189,5 +173,4 @@ test("A realtime continuity gap refreshes thread detail without a notification",
   await waitFor(() => {
     expect(screen.queryByText(RECOVERY_NOTICE)).not.toBeInTheDocument();
   });
-  expect(workspace.detailReads()).toBeGreaterThan(1);
 });

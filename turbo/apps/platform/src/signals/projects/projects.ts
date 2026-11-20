@@ -232,20 +232,22 @@ export const hydrateProjects$ = command(
       return;
     }
     await set(syncProjects$, signal);
-    // An open chat reveals its Project the first time; a Project page leaves
-    // the Project folded the way its member left it.
-    const threadId = get(pathParams$)?.threadId;
-    const projectId =
-      typeof threadId === "string"
-        ? get(eventDrivenChatThreads$).find((thread) => {
-            return thread.id === threadId;
-          })?.projectId
-        : null;
-    if (projectId) {
-      set(expandProject$, projectId, { ifUnset: true });
-    }
   },
 );
+export const revealCurrentThreadProject$ = command(({ get, set }) => {
+  // An open chat reveals its Project the first time; a Project page leaves
+  // the Project folded the way its member left it.
+  const threadId = get(pathParams$)?.threadId;
+  const projectId =
+    typeof threadId === "string"
+      ? get(eventDrivenChatThreads$).find((thread) => {
+          return thread.id === threadId;
+        })?.projectId
+      : null;
+  if (projectId) {
+    set(expandProject$, projectId, { ifUnset: true });
+  }
+});
 function operation() {
   return createProjectOperationId(now(), crypto.randomUUID());
 }
