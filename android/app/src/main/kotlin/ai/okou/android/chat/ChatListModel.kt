@@ -196,7 +196,15 @@ class ChatListModel(
         val done: CompletableDeferred<Unit>,
     )
 
+    private class PreparedListRebase(
+        val baseline: ChatCheckpoint,
+        val result: ChatListSync.Result,
+        val projection: ReplayedChats,
+    )
+
     private var pendingListRead: ListReadBatch? = null
+    private var listRebaseJob: Job? = null
+    private var readyListRebase: PreparedListRebase? = null
     private val listReadRequests = Channel<Unit>(Channel.CONFLATED)
     private val projectInvalidations = Channel<Unit>(Channel.CONFLATED)
     private val indicatorInvalidations = Channel<Unit>(Channel.CONFLATED)
@@ -298,15 +306,15 @@ class ChatListModel(
             )
         }
 
-    /** Await commit and readback before a new network list becomes visible, as on Web. */
-    private suspend fun persistChats(readBack: Boolean = false): CachedChats? =
+    /** The commit identifies when a newer checkpoint already on disk needs to be loaded. */
+    private suspend fun persistChats(adoptNewerCheckpoint: Boolean = false): CachedChats? =
         writes.withLock {
             val saved = confirmed ?: return@withLock null
             requireCurrent()
             val refs = navigation()
             try {
-                cache.save(saved.checkpoint, saved.confirmedAt, refs)
-                val disk = if (readBack) cache.load() else null
+                val written = cache.save(saved.checkpoint, saved.confirmedAt, refs)
+                val disk = if (!written && adoptNewerCheckpoint) cache.load() else null
                 requireCurrent()
                 mutable.value = mutable.value.copy(cacheUnavailable = false)
                 if (disk != null && disk.checkpoint.cursor.seqId > saved.checkpoint.cursor.seqId)
@@ -763,10 +771,10 @@ class ChatListModel(
     }
 
     private suspend fun readPendingListBatch() {
-        val batch = pendingListRead ?: return
+        val batch = pendingListRead
         pendingListRead = null
         val unconfirmed =
-            batch.confirmations.filter { confirmation ->
+            batch?.confirmations.orEmpty().filter { confirmation ->
                 if (confirmation.edits.any { it in rowEdits }) true
                 else {
                     confirmation.done.complete(Unit)
@@ -775,13 +783,35 @@ class ChatListModel(
             }
         // Signals received during a read share the next batch. A write can skip it if an
         // earlier read settled its event IDs; cursorless refresh signals still need a read.
-        if (batch.refresh || unconfirmed.isNotEmpty()) {
+        if (batch != null && (batch.refresh || unconfirmed.isNotEmpty())) {
+            listRebaseJob?.cancel()
+            readyListRebase = null
             try {
                 readList(batch.discardOnSuccess)
                 unconfirmed.forEach { it.done.complete(Unit) }
             } finally {
                 unconfirmed.forEach { it.done.cancel() }
             }
+            return
+        }
+
+        // The same worker publishes both results, with pending refreshes taking priority.
+        val rebased = readyListRebase ?: return
+        readyListRebase = null
+        if (confirmed?.checkpoint !== rebased.baseline) return
+        // Keep unseen mutation IDs available to the next incremental confirmation read.
+        if (
+            rowEdits.isNotEmpty() &&
+                rebased.result.checkpoint.snapshotCursor.seqId > rebased.baseline.cursor.seqId
+        )
+            return
+        try {
+            publishList(rebased.result, emptySet(), rebased.projection)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            requireCurrent()
+            onFailure(error)
         }
     }
 
@@ -791,41 +821,11 @@ class ChatListModel(
         try {
             restoreJob?.join()
             requireCurrent()
-            val previous = confirmed
-            val result = sync.synchronize(previous?.checkpoint)
-            val checkpoint = result.checkpoint
-            val replayed = withContext(dispatcher) { replayChatList(checkpoint) }
-            requireCurrent()
-            val saved =
-                if (!result.changed && previous != null && !mutable.value.cacheUnavailable) previous
-                else {
-                    confirmed = CachedChats(checkpoint, System.currentTimeMillis(), navigation())
-                    checkNotNull(persistChats(readBack = true))
-                }
-            val projection =
-                if (saved.checkpoint === checkpoint) replayed
-                else withContext(dispatcher) { replayChatList(saved.checkpoint) }
-            requireCurrent()
-            confirmed = saved
-            confirmedRows = projection
-            if (rowEdits.isNotEmpty()) {
-                val observed = buildSet {
-                    addAll(discardOnSuccess)
-                    saved.checkpoint.snapshotCursor.eventId?.let(::add)
-                    checkpoint.snapshotCursor.eventId?.let(::add)
-                    saved.checkpoint.events.forEach { it.cursor().eventId?.let(::add) }
-                    checkpoint.events.forEach { it.cursor().eventId?.let(::add) }
-                    addAll(result.eventIdsBeforeRebase)
-                }
-                settleRowEdits(observed)
+            val result = sync.synchronize(confirmed?.checkpoint)
+            publishList(result, discardOnSuccess)
+            if (result.shouldRebase && confirmed?.checkpoint === result.checkpoint) {
+                startListRebase(result.checkpoint)
             }
-            publishRows(
-                mutable.value.copy(
-                    confirmedAt = saved.confirmedAt,
-                    source = ChatListSource.Network,
-                    listPhase = ChatReadPhase.Ready,
-                )
-            )
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
@@ -833,11 +833,83 @@ class ChatListModel(
         }
     }
 
+    private fun startListRebase(checkpoint: ChatCheckpoint) {
+        listRebaseJob =
+            viewModelScope.launch {
+                try {
+                    val rebased = sync.rebase(checkpoint) ?: return@launch
+                    val projection = withContext(dispatcher) { replayChatList(rebased.checkpoint) }
+                    requireCurrent()
+                    readyListRebase = PreparedListRebase(checkpoint, rebased, projection)
+                    listReadRequests.trySend(Unit)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    requireCurrent()
+                    onFailure(error)
+                }
+            }
+    }
+
+    private suspend fun publishList(
+        result: ChatListSync.Result,
+        discardOnSuccess: Set<String>,
+        preparedProjection: ReplayedChats? = null,
+    ) {
+        requireCurrent()
+        val previous = confirmed
+        val checkpoint = result.checkpoint
+        val replayed =
+            preparedProjection
+                ?: if (checkpoint === previous?.checkpoint) confirmedRows
+                else withContext(dispatcher) { replayChatList(checkpoint) }
+        requireCurrent()
+        val saved =
+            if (!result.changed && previous != null && !mutable.value.cacheUnavailable) previous
+            else {
+                val confirmedAt =
+                    previous?.confirmedAt?.takeUnless { result.changed }
+                        ?: System.currentTimeMillis()
+                confirmed = CachedChats(checkpoint, confirmedAt, navigation())
+                checkNotNull(persistChats(adoptNewerCheckpoint = true))
+            }
+        val projection =
+            if (saved.checkpoint === checkpoint) replayed
+            else withContext(dispatcher) { replayChatList(saved.checkpoint) }
+        requireCurrent()
+        confirmed = saved
+        confirmedRows = projection
+        val editsAtPublish = rowEdits
+        if (editsAtPublish.isNotEmpty()) {
+            val observed = buildSet {
+                addAll(discardOnSuccess)
+                checkpoint.snapshotCursor.eventId?.let(::add)
+                checkpoint.events.forEach { it.cursor().eventId?.let(::add) }
+                if (saved.checkpoint !== checkpoint) {
+                    saved.checkpoint.snapshotCursor.eventId?.let(::add)
+                    saved.checkpoint.events.forEach { it.cursor().eventId?.let(::add) }
+                }
+                addAll(result.eventIdsBeforeRebase)
+            }
+            settleRowEdits(observed)
+        }
+        val state =
+            mutable.value.copy(
+                confirmedAt = saved.confirmedAt,
+                source = ChatListSource.Network,
+                listPhase = ChatReadPhase.Ready,
+            )
+        if (saved.checkpoint === previous?.checkpoint && rowEdits === editsAtPublish)
+            mutable.value = state
+        else publishRows(state)
+    }
+
     private fun settleRowEdits(observed: Set<String>) {
         val settledThrough = mutableMapOf<Pair<String, ChatRowField>, Int>()
         rowEdits.forEachIndexed { index, edit ->
             if (edit.eventId in observed) settledThrough[edit.threadId to edit.field] = index
         }
+        if (settledThrough.isEmpty()) return
         rowEdits =
             rowEdits.filterIndexed { index, edit ->
                 val settled = index <= (settledThrough[edit.threadId to edit.field] ?: -1)
@@ -991,6 +1063,7 @@ class ChatListModel(
         warming.close()
         listReadRequests.close()
         pendingListRead = null
+        readyListRebase = null
         projectInvalidations.close()
         indicatorInvalidations.close()
         history.close()

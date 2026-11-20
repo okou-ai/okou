@@ -1,11 +1,17 @@
 use super::*;
 
 #[test]
-fn only_large_remote_batches_get_the_wider_download_window() {
+fn download_concurrency_scales_with_remote_batch_size() {
     assert_eq!(download_concurrency(0, 2), 2);
     assert_eq!(download_concurrency(0, 128), 4);
     assert_eq!(download_concurrency(17, 128), 16);
-    assert_eq!(download_concurrency(63, 128), 16);
+    assert_eq!(download_concurrency(32, 128), 16);
+    assert_eq!(download_concurrency(33, 128), 17);
+    assert_eq!(download_concurrency(34, 39), 17);
+    assert_eq!(download_concurrency(38, 128), 19);
+    assert_eq!(download_concurrency(39, 128), 20);
+    assert_eq!(download_concurrency(41, 128), 20);
+    assert_eq!(download_concurrency(63, 128), 20);
     assert_eq!(download_concurrency(64, 128), 24);
     assert_eq!(download_concurrency(95, 128), 24);
     assert_eq!(download_concurrency(96, 128), 32);

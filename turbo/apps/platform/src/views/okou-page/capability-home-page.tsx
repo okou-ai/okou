@@ -201,7 +201,7 @@ function WorkflowCapabilityCard({
   const swap = useHomeSwap(signals);
   return (
     <section
-      className={cn(CAPABILITY_CARD, "min-h-46 @2xl:col-span-8")}
+      className={cn(CAPABILITY_CARD, "min-h-48 @2xl:col-span-8")}
       aria-label={title}
     >
       <CapabilityCardCover
@@ -279,7 +279,7 @@ function CapabilityCards({
       <ExploreCapabilityCard signals={signals} kind="search" />
       <ExploreCapabilityCard signals={signals} kind="research" />
       <section
-        className={cn(CAPABILITY_CARD, "min-h-46 @2xl:col-span-10")}
+        className={cn(CAPABILITY_CARD, "min-h-48 @2xl:col-span-10")}
         aria-label={createTitle}
       >
         <CapabilityCardCover

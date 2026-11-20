@@ -72,17 +72,23 @@ application-owned Room/SQLite database under `noBackupFilesDir/chat-list`, exclu
 from backups. AndroidX's bundled SQLite driver avoids CursorWindow's single-row
 limit. Chat threads and Projects have independent snapshots, event tails and
 cursors. Snapshots are stored per entity, and confirmed tail events append through
-transactions with their synchronization position. Changed network datasets await
-persistence and readback before publication. Unchanged catch-up reuses the confirmed
-dataset without another disk transaction; changed Agent/settings references still
-persist independently. A storage failure leaves the network result usable with a
-visible cache warning, and a later refresh retries unsaved data.
+transactions with their synchronization position. Changed chat lists await the
+write transaction before publication and read back from disk if it kept a newer
+checkpoint. Changed Projects await persistence and readback. Unchanged catch-up
+reuses the confirmed chat rows without another disk transaction when the cache is
+current. Changed Agent/settings references still persist independently. A storage
+failure leaves the network result usable with a visible cache warning, and a later
+refresh retries unsaved data.
 Data is scoped to API origin/user/workspace and the current authorization snapshot;
 an older synchronization cannot replace a newer persisted tail. Last-confirmed
 Agent/Project references keep the scoped list usable after a process restart while
 their network reads are unavailable. Cache display precedes network catch-up;
-chat tails over 100 events attempt a server-snapshot rebase after catch-up, with
-optional rebase server failures preserving the synchronized result, as on Web.
+chat tails over 100 events check the server's snapshot cursor in the background
+after publishing the incremental result. An advancing cursor triggers a download
+and replay. The workspace list worker applies that snapshot and its tail if a newer
+read has not superseded the operation. A pending local edit defers a snapshot
+that would cover events Android has yet to read. Server errors during the
+optional rebase leave the synchronized result usable.
 Project tails retain their event identities. Chat's absent cursor refreshes its
 snapshot; Project's valid zero cursor continues through events. An expired cursor
 rebuilds from the server and resumes catch-up. A freshly loaded
