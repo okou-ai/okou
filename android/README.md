@@ -156,9 +156,9 @@ run-finish watermark; it does not accept a displayed event cursor.
 
 Use JDK 21, Python 3.9+, curl and unzip on Linux/macOS. The build targets JVM 17.
 Versions are pinned in `gradle/libs.versions.toml` and
-`gradle/wrapper/gradle-wrapper.properties`: Gradle 9.8.2, Kotlin/Compose compiler
-2.4.21, AGP 9.5.0 with built-in Kotlin, Compose BOM 2026.06.01 and Clerk 1.4.1.
-Compile SDK/build tools are 36; targetSdk remains 35 and minSdk remains 24
+`gradle/wrapper/gradle-wrapper.properties`: Gradle 9.9.2, Kotlin/Compose compiler
+2.4.21, AGP 9.5.2 with built-in Kotlin, Compose BOM 2026.11.01 and Clerk 1.5.0.
+Compile SDK is 37.2 and build tools are 37.0.0. The app targets API 37 and supports API 24
 (Android 7.0). Java 21 runs the build; app bytecode targets JVM 17.
 These pins align with the Clerk SDK release and are validated together.
 
@@ -173,7 +173,7 @@ bash android/scripts/setup-sdk.sh --accept-licenses
 ```
 
 The script downloads checksum-verified command-line tools `13114758` and installs
-`platforms;android-36`, `build-tools;36.0.0`, and platform-tools. It installs no
+`platforms;android-37.2`, `build-tools;37.0.0`, and platform-tools. It installs no
 emulator, system image, NDK, IDE, Java, or global shell-profile changes. Set
 `ANDROID_HOME` for an existing/custom SDK; otherwise setup/check default to
 `${XDG_DATA_HOME:-$HOME/.local/share}/android-sdk`.
@@ -200,8 +200,9 @@ bash android/scripts/check.sh
 
 This audits source-manifest entry points, generated colors, Kotlin/Gradle formatting,
 state-holder tests, Robolectric Compose/lifecycle interactions, Android lint, and debug APK
-assembly. It uses two Gradle workers, a 1536 MB build heap and in-process Kotlin
-compilation by default for small sandboxes.
+assembly. Android Lint treats warnings as errors. Verification uses two Gradle
+workers, a 1536 MB build heap and in-process Kotlin compilation by default for
+small sandboxes.
 
 Run the app's local JVM tests through Android Gradle Plugin with the configured
 Android SDK; no emulator is needed:

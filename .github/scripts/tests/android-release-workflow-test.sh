@@ -305,7 +305,7 @@ else:
     subprocess.run(['git', '-C', str(source), '-c', 'user.name=Release Fixture',
                     '-c', 'user.email=release-fixture@example.com', 'commit', '-m', 'fixture'],
                    check=True, capture_output=True)
-    tools = work / 'sdk/build-tools/36.0.0'
+    tools = work / 'sdk/build-tools/37.0.0'
     tools.mkdir(parents=True)
     for name in ['apksigner', 'aapt2']:
         tool = tools / name

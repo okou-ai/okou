@@ -17,6 +17,7 @@
     <string name="chat_mark_all_read_unconfirmed">Alcune chat potrebbero essere ancora da leggere.</string>
     <plurals name="chat_mark_all_read_success">
         <item quantity="one">%1$d chat segnata come letta.</item>
+        <item quantity="many">%1$d chat segnate come lette.</item>
         <item quantity="other">%1$d chat segnate come lette.</item>
     </plurals>
     <string name="chat_filter">Filtra</string>
