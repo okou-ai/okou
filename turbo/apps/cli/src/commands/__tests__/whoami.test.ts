@@ -962,6 +962,35 @@ describe("okou whoami command", () => {
       expect(getAllOutput()).toContain("  Status:     Invalid OKOU_TOKEN");
     });
 
+    it("reports a rejected personal Run token as invalid outside the Run", async () => {
+      vi.stubEnv(
+        "OKOU_TOKEN",
+        buildOkouToken({
+          scope: "okou",
+          orgId: "rejected-org",
+          userId: "user-1",
+          runId: "run-1",
+          capabilities: [],
+          singleAgent: true,
+          exp: Math.floor(Date.now() / 1000) + 3600,
+        }),
+      );
+      server.use(
+        http.get("*/api/auth/me", () => {
+          return HttpResponse.json(
+            { error: { code: "UNAUTHORIZED", message: "Invalid token" } },
+            { status: 401 },
+          );
+        }),
+      );
+
+      await runWhoami();
+
+      const output = getAllOutput();
+      expect(output).toContain("  Status:     Invalid OKOU_TOKEN");
+      expect(output).not.toContain("Org:");
+    });
+
     it("should identify an expired OKOU_TOKEN", async () => {
       vi.stubEnv(
         "OKOU_TOKEN",

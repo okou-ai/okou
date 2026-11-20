@@ -6,7 +6,6 @@ import { Command } from "commander";
 import chalk from "chalk";
 import {
   getApiUrl,
-  getActiveOrg,
   getToken,
   decodeSandboxTokenPayload,
 } from "../lib/api/config";
@@ -230,7 +229,9 @@ async function showSandboxInfo(showPermissions: boolean): Promise<void> {
 
 async function showLocalInfo(): Promise<void> {
   const token = await getToken();
-  if (token && isPersonalExecution()) {
+  let payload = token ? decodeSandboxTokenPayload(token) : undefined;
+  const isExpired = payload ? payload.exp * 1000 <= Date.now() : false;
+  if (token && !isExpired && isPersonalExecution()) {
     const member = await getCurrentMember().catch((error: unknown) => {
       if (error instanceof ApiRequestError && error.status === 401)
         return undefined;
@@ -244,11 +245,11 @@ async function showLocalInfo(): Promise<void> {
       await printWorkspace();
       return;
     }
+    // A 401 from the member endpoint invalidates even locally readable claims.
+    payload = undefined;
   }
   const apiUrl = await getApiUrl();
-  const payload = token ? decodeSandboxTokenPayload(token) : undefined;
-  const isExpired = payload ? payload.exp * 1000 <= Date.now() : false;
-  const activeOrg = !isExpired ? await getActiveOrg() : undefined;
+  const activeOrg = !isExpired ? payload?.orgId : undefined;
 
   // Auth section
   console.log(chalk.bold("Auth:"));

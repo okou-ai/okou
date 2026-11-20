@@ -35,7 +35,7 @@ function featureSwitchResponseBody(params: {
     switches: params.switches,
     effectiveSwitches: {
       ...effectiveSwitches,
-      // Published clients read these capability names when opening My Okou and Projects.
+      // Keep these names until supported Android and CLI releases no longer read them (#49547).
       singleAgent: true,
       projects: true,
     },
