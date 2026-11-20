@@ -2329,3 +2329,119 @@ user-timezone-initialization-001	turbo/apps/platform/src/signals/bootstrap/__tes
 user-timezone-initialization-003	turbo/apps/platform/src/signals/bootstrap/__tests__/user-timezone-initialization.test.tsx	A stored organization timezone is not replaced on a later visit	114	passed
 session-output-stream-002	turbo/apps/platform/src/signals/chat-page/__tests__/session-output-stream.test.ts	Cancelling an obsolete viewer cannot stop its replacement subscription	104	passed
 unread-through-at-001	turbo/apps/platform/src/signals/chat-page/__tests__/unread-through-at.test.ts	unread-through instant for an open thread > keeps the Run terminal marker when it is the newer of the two	6	passed
+clerk-bootstrap-001	turbo/apps/platform/src/__tests__/clerk-bootstrap.test.ts	Okou production uses its own authentication URLs	10	passed
+clerk-bootstrap-003	turbo/apps/platform/src/__tests__/clerk-bootstrap.test.ts	App-started Clerk keeps browser navigation until a route owns it	29	passed
+clerk-bootstrap-004	turbo/apps/platform/src/__tests__/clerk-bootstrap.test.ts	The inline bootstrap owns the Clerk runtime	191	passed
+clerk-bootstrap-005	turbo/apps/platform/src/__tests__/clerk-bootstrap.test.ts	The inline Clerk bootstrap uses the current page sign-in URL	203	passed
+chat-idb-002	turbo/apps/platform/src/signals/external/__tests__/chat-idb.test.ts	A local chat-cache upgrade closes the old connection and notifies its owner	28	passed
+indexeddb-client-001	turbo/apps/platform/src/signals/external/__tests__/indexeddb-client.test.ts	Reports a physical chat database open without credential identifiers	95	passed
+indexeddb-client-002	turbo/apps/platform/src/signals/external/__tests__/indexeddb-client.test.ts	Reports a failed chat database open without hiding its error	124	passed
+indexeddb-client-003	turbo/apps/platform/src/signals/external/__tests__/indexeddb-client.test.ts	Reports separate creation and execution events for an IndexedDB transaction	157	passed
+indexeddb-client-006	turbo/apps/platform/src/signals/external/__tests__/indexeddb-client.test.ts	Reports typed API requests with route templates and no parameters	231	passed
+user-message-document-003	turbo/apps/platform/src/signals/okou-page/__tests__/user-message-document.test.ts	Complex composer content survives saving and restoring	137	passed
+user-message-document-006	turbo/apps/platform/src/signals/okou-page/__tests__/user-message-document.test.ts	Forwarded mail feedback keeps common source identifiers	205	passed
+user-message-document-007	turbo/apps/platform/src/signals/okou-page/__tests__/user-message-document.test.ts	A file-only message keeps its attachment without invented text	309	passed
+user-message-document-008	turbo/apps/platform/src/signals/okou-page/__tests__/user-message-document.test.ts	An annotated attachment keeps its editable marks on the file part	334	passed
+user-message-document-011	turbo/apps/platform/src/signals/okou-page/__tests__/user-message-document.test.ts	Multiple inline templates survive feedback editing	378	passed
+user-message-document-012	turbo/apps/platform/src/signals/okou-page/__tests__/user-message-document.test.ts	Paragraphs, line breaks, and intentional spaces are preserved	417	passed
+user-message-document-014	turbo/apps/platform/src/signals/okou-page/__tests__/user-message-document.test.ts	Routing metadata is not shown as user text	450	passed
+user-message-document-016	turbo/apps/platform/src/signals/okou-page/__tests__/user-message-document.test.ts	Suggestion quote and typed direction round-trip through the saved editor document	481	passed
+user-message-document-017	turbo/apps/platform/src/signals/okou-page/__tests__/user-message-document.test.ts	Project mentions preserve captured identity through drafts, feedback, text and display	518	passed
+voice-draft-audio-001	turbo/apps/platform/src/signals/voice-io/__tests__/voice-draft-audio.test.ts	voice draft segment boundaries > slice 239999 samples after 0 (finished: false)	8	passed
+voice-draft-audio-002	turbo/apps/platform/src/signals/voice-io/__tests__/voice-draft-audio.test.ts	voice draft segment boundaries > slice 240000 samples after 0 (finished: false)	8	passed
+voice-draft-audio-003	turbo/apps/platform/src/signals/voice-io/__tests__/voice-draft-audio.test.ts	voice draft segment boundaries > slice 447999 samples after 240000 (finished: false)	8	passed
+voice-draft-audio-007	turbo/apps/platform/src/signals/voice-io/__tests__/voice-draft-audio.test.ts	voice draft segment boundaries > slice 448000 samples after 240000 (finished: true)	8	passed
+voice-draft-audio-010	turbo/apps/platform/src/signals/voice-io/__tests__/voice-draft-audio.test.ts	voice draft segment boundaries > slice 0 samples after 0 (finished: true)	8	passed
+voice-draft-audio-013	turbo/apps/platform/src/signals/voice-io/__tests__/voice-draft-audio.test.ts	voice draft segment boundaries > slice 1168000 samples after 960000 (finished: false)	8	passed
+voice-draft-audio-014	turbo/apps/platform/src/signals/voice-io/__tests__/voice-draft-audio.test.ts	voice draft segment boundaries > drains full windows and a stopped tail with two-second overlap	44	passed
+voice-draft-audio-015	turbo/apps/platform/src/signals/voice-io/__tests__/voice-draft-audio.test.ts	voice draft PCM WAV > round-trips the AudioWorklet sample format	71	passed
+authentication-startup-001	turbo/apps/platform/src/__tests__/authentication-startup.test.tsx	Authentication is ready before Platform content becomes interactive	60	passed
+authentication-startup-003	turbo/apps/platform/src/__tests__/authentication-startup.test.tsx	Foreground presence follows tab visibility without stopping realtime	85	passed
+authentication-startup-011	turbo/apps/platform/src/__tests__/authentication-startup.test.tsx	Authentication startup is reused without a duplicate load	123	passed
+authentication-startup-012	turbo/apps/platform/src/__tests__/authentication-startup.test.tsx	A Clerk core failure reports the error without initializing an auth form	149	passed
+authentication-startup-013	turbo/apps/platform/src/__tests__/authentication-startup.test.tsx	Startup onboarding follows the current account and workspace	180	passed
+authentication-startup-014	turbo/apps/platform/src/__tests__/authentication-startup.test.tsx	Okou production uses production authentication	222	passed
+authentication-startup-015	turbo/apps/platform/src/__tests__/authentication-startup.test.tsx	Authorized preview hosts use preview authentication	242	passed
+authentication-startup-016	turbo/apps/platform/src/__tests__/authentication-startup.test.tsx	Okou lookalike host okou.ai.evil.example does not use production authentication	256	passed
+authentication-startup-018	turbo/apps/platform/src/__tests__/authentication-startup.test.tsx	Workspace switching navigates home when the active organization changes	273	passed
+platform-entrypoint-001	turbo/apps/platform/src/__tests__/platform-entrypoint.test.ts	platform entrypoint > does not start with an aborted root signal	29	passed
+platform-entrypoint-002	turbo/apps/platform/src/__tests__/platform-entrypoint.test.ts	platform entrypoint > starts at the supported browser boundary: Mozilla/5.0 Chrome/138.0.0.0 Safari/537.36	43	passed
+platform-entrypoint-012	turbo/apps/platform/src/__tests__/platform-entrypoint.test.ts	platform entrypoint > shows accurate upgrade guidance: Mozilla/5.0 Chrome/137.0.0.0 Safari/537…	57	passed
+platform-entrypoint-013	turbo/apps/platform/src/__tests__/platform-entrypoint.test.ts	platform entrypoint > shows accurate upgrade guidance: Mozilla/5.0 Chromium/137.0.0.0 Safari/5…	57	passed
+platform-entrypoint-014	turbo/apps/platform/src/__tests__/platform-entrypoint.test.ts	platform entrypoint > shows accurate upgrade guidance: Mozilla/5.0 Chrome/137.0.0.0 Safari/537…	57	passed
+platform-entrypoint-015	turbo/apps/platform/src/__tests__/platform-entrypoint.test.ts	platform entrypoint > shows accurate upgrade guidance: Mozilla/5.0 (Android 14) Chrome/147.0.0…	57	passed
+platform-entrypoint-016	turbo/apps/platform/src/__tests__/platform-entrypoint.test.ts	platform entrypoint > shows accurate upgrade guidance: Mozilla/5.0 Chrome/137.0.0.0 Safari/537…	57	passed
+platform-entrypoint-020	turbo/apps/platform/src/__tests__/platform-entrypoint.test.ts	platform entrypoint > shows accurate upgrade guidance: Mozilla/5.0 (X11; Linux x86_64; rv:127.…	57	passed
+platform-entrypoint-021	turbo/apps/platform/src/__tests__/platform-entrypoint.test.ts	platform entrypoint > shows accurate upgrade guidance: Mozilla/5.0 (Macintosh) Version/18.1 Sa…	57	passed
+platform-entrypoint-022	turbo/apps/platform/src/__tests__/platform-entrypoint.test.ts	platform entrypoint > shows accurate upgrade guidance: Mozilla/5.0 (iPhone; CPU iPhone OS 18_1…	57	passed
+platform-entrypoint-023	turbo/apps/platform/src/__tests__/platform-entrypoint.test.ts	platform entrypoint > strips Discord approval fragments synchronously before analytics initialize	115	passed
+platform-entrypoint-024	turbo/apps/platform/src/__tests__/platform-entrypoint.test.ts	platform entrypoint > shows browser guidance before bootstrap when SharedWorker is unavailable	145	passed
+message-port-002	turbo/apps/platform/src/shared-database/__tests__/message-port.test.ts	Correlate token bridge failures without reporting raw error text	301	passed
+message-port-010	turbo/apps/platform/src/shared-database/__tests__/message-port.test.ts	Keep foreground presence until the last visible tab hides or disconnects	319	passed
+message-port-011	turbo/apps/platform/src/shared-database/__tests__/message-port.test.ts	Forward new user events without registering their names and keep chat reads available	357	passed
+message-port-014	turbo/apps/platform/src/shared-database/__tests__/message-port.test.ts	share one Worker realtime subscription until tabs disconnect	416	passed
+message-port-015	turbo/apps/platform/src/shared-database/__tests__/message-port.test.ts	route workspace realtime subscriptions through the organization channel	500	passed
+message-port-017	turbo/apps/platform/src/shared-database/__tests__/message-port.test.ts	preserve upgrade status on query errors across MessagePort	531	passed
+message-port-018	turbo/apps/platform/src/shared-database/__tests__/message-port.test.ts	preserve API error classification for computed upgrade errors across MessagePort	553	passed
+message-port-019	turbo/apps/platform/src/shared-database/__tests__/message-port.test.ts	Keep concurrent shared chat loads independent	571	passed
+message-port-020	turbo/apps/platform/src/shared-database/__tests__/message-port.test.ts	Authenticate a shared read with the first successful tab without waiting for its sibling	639	passed
+message-port-022	turbo/apps/platform/src/shared-database/__tests__/message-port.test.ts	Authenticate a shared read when another token provider disconnects first	680	passed
+message-port-023	turbo/apps/platform/src/shared-database/__tests__/message-port.test.ts	Reject a shared read with AggregateError when every tab's token provider fails	756	passed
+message-port-027	turbo/apps/platform/src/shared-database/__tests__/message-port.test.ts	Disconnect one tab without interrupting another tab	800	passed
+message-port-030	turbo/apps/platform/src/shared-database/__tests__/message-port.test.ts	Reject shared-data access before the tab is registered	832	passed
+message-port-032	turbo/apps/platform/src/shared-database/__tests__/message-port.test.ts	Refresh unread indicators after an indicator change without warming messages	928	passed
+message-port-033	turbo/apps/platform/src/shared-database/__tests__/message-port.test.ts	Warm unread chats only after chat message notifications	980	passed
+message-port-034	turbo/apps/platform/src/shared-database/__tests__/message-port.test.ts	Keep indicators readable when message-triggered chat warming fails	1060	passed
+message-port-036	turbo/apps/platform/src/shared-database/__tests__/message-port.test.ts	Keep scopes, topics, and subscriber releases independent on one port	1136	passed
+message-port-037	turbo/apps/platform/src/shared-database/__tests__/message-port.test.ts	Ignore a stale subscription attach after cancellation and reacquisition	1206	passed
+message-port-038	turbo/apps/platform/src/shared-database/__tests__/message-port.test.ts	Deliver an attach failure to every subscriber and permit reacquisition	1270	passed
+message-port-039	turbo/apps/platform/src/shared-database/__tests__/message-port.test.ts	Keep identical subscription keys in separate worker Stores independent	1322	passed
+chat-session-output-stream-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-session-output-stream.test.tsx	Reconcile live text with the durable assistant event	99	passed
+chat-session-output-stream-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-session-output-stream.test.tsx	A growing action URL becomes a card as soon as a boundary arrives	115	passed
+chat-session-output-stream-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-session-output-stream.test.tsx	A completed URL card stays mounted while the message continues and finalizes	171	passed
+chat-session-output-stream-006	turbo/apps/platform/src/views/okou-page/__tests__/chat-session-output-stream.test.tsx	A closed Markdown action link becomes a card before the run finishes	205	passed
+chat-session-output-stream-009	turbo/apps/platform/src/views/okou-page/__tests__/chat-session-output-stream.test.tsx	A wallet signature tail becomes a card after a streamed URL boundary	216	passed
+chat-session-output-stream-010	turbo/apps/platform/src/views/okou-page/__tests__/chat-session-output-stream.test.tsx	An explicit artifact preview appears when its Markdown link closes	233	passed
+chat-session-output-stream-011	turbo/apps/platform/src/views/okou-page/__tests__/chat-session-output-stream.test.tsx	Unsubscribe from output after the durable run completes	265	passed
+composer-task-chips-001	turbo/apps/platform/src/views/okou-page/__tests__/composer-task-chips.test.tsx	A creation type can be removed without losing the draft	90	passed
+composer-task-chips-002	turbo/apps/platform/src/views/okou-page/__tests__/composer-task-chips.test.tsx	A send carries the task and its slide count into the thread it opens	104	passed
+composer-task-chips-006	turbo/apps/platform/src/views/okou-page/__tests__/composer-task-chips.test.tsx	Toggling a task off sends the ordinary draft and uploaded file	169	passed
+composer-task-chips-007	turbo/apps/platform/src/views/okou-page/__tests__/composer-task-chips.test.tsx	Selecting Image from the Presentation catalog updates the task and generation settings	184	passed
+composer-task-chips-011	turbo/apps/platform/src/views/okou-page/__tests__/composer-task-chips.test.tsx	Browsing the catalog opens the existing library in the matching category	234	passed
+composer-task-chips-012	turbo/apps/platform/src/views/okou-page/__tests__/composer-task-chips.test.tsx	Website shows its whole catalog and attaches a template	249	passed
+composer-task-chips-015	turbo/apps/platform/src/views/okou-page/__tests__/composer-task-chips.test.tsx	Advanced workflows carries every recommendation without changing the draft	285	passed
+composer-task-chips-017	turbo/apps/platform/src/views/okou-page/__tests__/composer-task-chips.test.tsx	View all opens the Workflow template picker and preserves the draft	311	passed
+composer-task-chips-018	turbo/apps/platform/src/views/okou-page/__tests__/composer-task-chips.test.tsx	Choosing a workflow prepares an editable request until the user sends	329	passed
+composer-task-chips-019	turbo/apps/platform/src/views/okou-page/__tests__/composer-task-chips.test.tsx	Reply tracking prepares a custom workflow request without an unrelated template	352	passed
+tailscale-parity-001	turbo/apps/platform/src/views/okou-page/__tests__/tailscale-parity.test.tsx	A common SSH notice refreshes network usage and restores deletion after unbinding	57	passed
+tailscale-parity-002	turbo/apps/platform/src/views/okou-page/__tests__/tailscale-parity.test.tsx	Saving unchanged normalized metadata returns to details even when writes are unavailable	87	passed
+tailscale-parity-003	turbo/apps/platform/src/views/okou-page/__tests__/tailscale-parity.test.tsx	An intentional tag-order edit is saved against the current revision	102	passed
+marketing-handoff-recovery-001	turbo/apps/platform/src/views/okou-page/__tests__/marketing-handoff-recovery.test.tsx	A failed handoff at /prompt (404) keeps the App usable and the draft intact	54	passed
+marketing-handoff-recovery-007	turbo/apps/platform/src/views/okou-page/__tests__/marketing-handoff-recovery.test.tsx	A network failure restoring a task keeps the App and the existing draft usable	73	passed
+marketing-handoff-recovery-008	turbo/apps/platform/src/views/okou-page/__tests__/marketing-handoff-recovery.test.tsx	An attachment import failure at /prompt preserves the existing draft	87	passed
+marketing-handoff-recovery-010	turbo/apps/platform/src/views/okou-page/__tests__/marketing-handoff-recovery.test.tsx	An unavailable task resumes ordinary onboarding (admin: true)	121	passed
+marketing-handoff-recovery-012	turbo/apps/platform/src/views/okou-page/__tests__/marketing-handoff-recovery.test.tsx	An unavailable task resumes the saved onboarding step and edited request	149	passed
+marketing-handoff-recovery-015	turbo/apps/platform/src/views/okou-page/__tests__/marketing-handoff-recovery.test.tsx	An imported attachment that cannot resolve (network) keeps the saved draft and shows one notice	193	passed
+marketing-handoff-recovery-016	turbo/apps/platform/src/views/okou-page/__tests__/marketing-handoff-recovery.test.tsx	Authentication and upgrade failures (401) keep their existing handling	267	passed
+marketing-handoff-recovery-017	turbo/apps/platform/src/views/okou-page/__tests__/marketing-handoff-recovery.test.tsx	Authentication and upgrade failures (426) keep their existing handling	267	passed
+marketing-handoff-recovery-018	turbo/apps/platform/src/views/okou-page/__tests__/marketing-handoff-recovery.test.tsx	A valid task restores its text and attachments into the agent composer	290	passed
+prompt-link-001	turbo/apps/platform/src/views/okou-page/__tests__/prompt-link.test.tsx	A prompt link prefills a specific agent's chat	142	passed
+prompt-link-002	turbo/apps/platform/src/views/okou-page/__tests__/prompt-link.test.tsx	A prompt link prefills a new chat from Home	164	passed
+prompt-link-003	turbo/apps/platform/src/views/okou-page/__tests__/prompt-link.test.tsx	My Okou prefills a prompt link on its chat page at Home	184	passed
+prompt-link-005	turbo/apps/platform/src/views/okou-page/__tests__/prompt-link.test.tsx	A prompt route starts a chat with its selected personal subscription model	200	passed
+prompt-link-008	turbo/apps/platform/src/views/okou-page/__tests__/prompt-link.test.tsx	Completing a prompt link preserves a model chosen in a later composer	248	passed
+prompt-link-009	turbo/apps/platform/src/views/okou-page/__tests__/prompt-link.test.tsx	A prompt link starts an illustration chat with its selected style	312	passed
+prompt-link-010	turbo/apps/platform/src/views/okou-page/__tests__/prompt-link.test.tsx	A prompt link starts a presentation chat with its selected template	334	passed
+prompt-link-012	turbo/apps/platform/src/views/okou-page/__tests__/prompt-link.test.tsx	A prompt link starts a website chat with its selected template	363	passed
+prompt-link-013	turbo/apps/platform/src/views/okou-page/__tests__/prompt-link.test.tsx	An unavailable model leaves a prompt link recoverable	385	passed
+prompt-link-018	turbo/apps/platform/src/views/okou-page/__tests__/prompt-link.test.tsx	A file-only hash handoff sends its imported private attachment	424	passed
+wallet-action-card-001	turbo/apps/platform/src/views/okou-page/__tests__/wallet-action-card.test.tsx	a workspace notification completes wallet consent and continues the owning chat once	113	passed
+wallet-action-card-002	turbo/apps/platform/src/views/okou-page/__tests__/wallet-action-card.test.tsx	wallet consent completed before the user's click continues from the current authorization	167	passed
+wallet-action-card-005	turbo/apps/platform/src/views/okou-page/__tests__/wallet-action-card.test.tsx	a failed consent stops waiting without sending a message even when its notification claims authorization	188	passed
+wallet-action-card-007	turbo/apps/platform/src/views/okou-page/__tests__/wallet-action-card.test.tsx	an authorized wallet card reports continuation success after confirmation	208	passed
+wallet-action-card-009	turbo/apps/platform/src/views/okou-page/__tests__/wallet-action-card.test.tsx	a expired authorization cannot continue the chat	244	passed
+wallet-action-card-012	turbo/apps/platform/src/views/okou-page/__tests__/wallet-action-card.test.tsx	wallet authorization and purchase links show cards with the exact provider destinations	262	passed
+wallet-action-card-015	turbo/apps/platform/src/views/okou-page/__tests__/wallet-action-card.test.tsx	both purchase approval URL formats render review actions	284	passed
+wallet-action-card-017	turbo/apps/platform/src/views/okou-page/__tests__/wallet-action-card.test.tsx	ordinary provider links and untrusted wallet lookalikes stay ordinary links	310	passed
+wallet-action-card-019	turbo/apps/platform/src/views/okou-page/__tests__/wallet-action-card.test.tsx	purchase approval cards show approval and continuation after notifications and connection gaps	338	passed
+wallet-action-card-020	turbo/apps/platform/src/views/okou-page/__tests__/wallet-action-card.test.tsx	a stopped approval watch shows its terminal status	380	passed

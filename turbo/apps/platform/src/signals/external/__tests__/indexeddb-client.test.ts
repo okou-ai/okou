@@ -1,0 +1,278 @@
+// @vitest-environment-options {"url":"https://app.okou.ai/"}
+
+import { openDB, type DBSchema } from "idb";
+
+import { chatThreadEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { beforeEach, expect, test, vi } from "vitest";
+
+import {
+  chatEventRowsResponse,
+  testContext,
+} from "../../__tests__/test-helpers.ts";
+import { createAuthedContractClient } from "../../api-client-base.ts";
+import { createChatIdbOpener } from "../chat-idb-opener.ts";
+import { runIndexedDbTransaction } from "../indexeddb-client.ts";
+
+const axiomTelemetry = vi.hoisted(() => {
+  return {
+    ingest:
+      vi.fn<
+        (dataset: string, events: readonly Record<string, unknown>[]) => void
+      >(),
+  };
+});
+
+vi.mock("@axiomhq/js", () => {
+  return {
+    Axiom: class {
+      ingest(
+        dataset: string,
+        events: readonly Record<string, unknown>[],
+      ): void {
+        axiomTelemetry.ingest(dataset, events);
+      }
+    },
+  };
+});
+
+interface TelemetryTestDatabase extends DBSchema {
+  readonly records: {
+    readonly key: string;
+    readonly value: { readonly secret: string };
+  };
+}
+
+// Client telemetry has no page-visible surface, so these integration tests use
+// real IndexedDB behavior and observe the external Axiom payload boundary.
+const context = testContext();
+
+beforeEach(() => {
+  vi.stubEnv("VITE_AXIOM_CLIENT_TELEMETRY_TOKEN", "xaat-test-ingest-token");
+  context.signal.addEventListener(
+    "abort",
+    () => {
+      vi.unstubAllEnvs();
+    },
+    { once: true },
+  );
+  axiomTelemetry.ingest.mockClear();
+});
+
+async function openTelemetryTestDatabase() {
+  return await openDB<TelemetryTestDatabase>(crypto.randomUUID(), 1, {
+    upgrade(database) {
+      database.createObjectStore("records");
+    },
+  });
+}
+
+async function capturedEvents(
+  expectedCount: number,
+  name?: string,
+): Promise<readonly Record<string, unknown>[]> {
+  const observed = () => {
+    return axiomTelemetry.ingest.mock.calls
+      .map(([dataset, events]) => {
+        expect(dataset).toBe("vm0-client-telemetry-prod");
+        expect(events).toHaveLength(1);
+        return events[0]!;
+      })
+      .filter((event) => {
+        return name === undefined || event.name === name;
+      });
+  };
+  await vi.waitFor(() => {
+    expect(observed()).toHaveLength(expectedCount);
+  });
+  return observed();
+}
+
+async function capturedEvent(name?: string): Promise<Record<string, unknown>> {
+  const events = await capturedEvents(1, name);
+  return events[0]!;
+}
+
+test("Reports a physical chat database open without credential identifiers", async () => {
+  const sensitiveUserId = `private-user-${crypto.randomUUID()}`;
+  const sensitiveOrgId = `private-org-${crypto.randomUUID()}`;
+  const database = await createChatIdbOpener({
+    onVersionChange: vi.fn<() => void>(),
+  }).openChatIdb(sensitiveUserId, sensitiveOrgId);
+  database.close();
+
+  const event = await capturedEvent();
+  expect(event).toMatchObject({
+    "attributes.custom": {
+      "db.namespace": "chat",
+      "db.system": "indexeddb",
+      "okou.client.outcome": "success",
+      "okou.client.runtime": "window",
+    },
+    kind: "client",
+    name: "chat.open",
+    "resource.deployment.environment.name": "production",
+    "scope.name": "okou-app/indexeddb",
+    "service.name": "Okou-app",
+    "service.version": "0.540.0",
+    "status.code": "OK",
+  });
+  expect(event.duration).toStrictEqual(expect.any(Number));
+  expect(JSON.stringify(event)).not.toContain(sensitiveUserId);
+  expect(JSON.stringify(event)).not.toContain(sensitiveOrgId);
+});
+
+test("Reports a failed chat database open without hiding its error", async () => {
+  const openError = new DOMException(
+    "private open failure",
+    "InvalidStateError",
+  );
+  const opener = createChatIdbOpener({
+    openDatabase: () => {
+      return Promise.reject(openError);
+    },
+    onVersionChange: vi.fn<() => void>(),
+  });
+
+  await expect(opener.openChatIdb("private-user", "private-org")).rejects.toBe(
+    openError,
+  );
+
+  const event = await capturedEvent();
+  expect(event).toMatchObject({
+    "attributes.custom": {
+      "db.namespace": "chat",
+      "db.system": "indexeddb",
+      "okou.client.outcome": "error",
+    },
+    name: "chat.open",
+    "scope.name": "okou-app/indexeddb",
+    "status.code": "ERROR",
+  });
+  expect(event.duration).toStrictEqual(expect.any(Number));
+  expect(JSON.stringify(event)).not.toContain(openError.message);
+  expect(JSON.stringify(event)).not.toContain("private-user");
+  expect(JSON.stringify(event)).not.toContain("private-org");
+});
+
+test("Reports separate creation and execution events for an IndexedDB transaction", async () => {
+  const database = await openTelemetryTestDatabase();
+  const sensitiveKey = `private-key-${crypto.randomUUID()}`;
+  const sensitiveValue = `private-value-${crypto.randomUUID()}`;
+
+  try {
+    vi.stubGlobal("window", undefined);
+    await expect(
+      runIndexedDbTransaction(
+        {
+          database: "chat",
+          template: "records.put+get",
+          transaction_mode: "readwrite",
+        },
+        () => {
+          return database.transaction("records", "readwrite");
+        },
+        async (transaction, trackRequest) => {
+          await trackRequest(
+            transaction.store.put({ secret: sensitiveValue }, sensitiveKey),
+          );
+          return await trackRequest(transaction.store.get(sensitiveKey));
+        },
+      ),
+    ).resolves.toStrictEqual({ secret: sensitiveValue });
+  } finally {
+    database.close();
+  }
+
+  const events = await capturedEvents(2);
+  const creationEvent = events[0]!;
+  const event = events[1]!;
+  expect(creationEvent).toMatchObject({
+    "attributes.custom": {
+      "db.namespace": "chat",
+      "db.system": "indexeddb",
+      "okou.client.outcome": "success",
+      "okou.client.runtime": "shared_worker",
+      "okou.db.transaction.mode": "readwrite",
+    },
+    kind: "client",
+    name: "records.put+get.transaction.create",
+    "resource.deployment.environment.name": "production",
+    "scope.name": "okou-app/indexeddb",
+    "service.name": "Okou-app",
+    "service.version": "0.540.0",
+    "status.code": "OK",
+  });
+  expect(creationEvent.duration).toStrictEqual(expect.any(Number));
+  expect(JSON.stringify(creationEvent)).not.toContain(sensitiveKey);
+  expect(JSON.stringify(creationEvent)).not.toContain(sensitiveValue);
+  expect(event).toMatchObject({
+    "attributes.custom": {
+      "db.namespace": "chat",
+      "db.system": "indexeddb",
+      "okou.client.outcome": "success",
+      "okou.client.runtime": "shared_worker",
+      "okou.db.request.count": 2,
+      "okou.db.transaction.mode": "readwrite",
+    },
+    kind: "client",
+    name: "records.put+get",
+    "resource.deployment.environment.name": "production",
+    "scope.name": "okou-app/indexeddb",
+    "service.name": "Okou-app",
+    "service.version": "0.540.0",
+    "status.code": "OK",
+  });
+  expect(event.duration).toStrictEqual(expect.any(Number));
+  expect(event).not.toHaveProperty("resource.custom");
+  expect(JSON.stringify(event)).not.toContain(sensitiveKey);
+  expect(JSON.stringify(event)).not.toContain(sensitiveValue);
+});
+
+test("Reports typed API requests with route templates and no parameters", async () => {
+  const sensitiveThreadId = crypto.randomUUID();
+  const sensitiveToken = `private-token-${crypto.randomUUID()}`;
+  context.mocks.api(chatThreadEventsContract.rows, ({ query, respond }) => {
+    return respond(200, chatEventRowsResponse([], query));
+  });
+  const client = createAuthedContractClient(chatThreadEventsContract, {
+    baseUrl: location.origin,
+    clientVersion: "test-version",
+    getToken: () => {
+      return Promise.resolve(sensitiveToken);
+    },
+    getVercelProtectionBypass: () => {
+      return undefined;
+    },
+  });
+
+  await expect(
+    client.rows({
+      params: { threadId: sensitiveThreadId },
+      query: { limit: 50, sinceSeqId: 0 },
+    }),
+  ).resolves.toMatchObject({ status: 200 });
+
+  // Auth lifecycle point records coexist with the unchanged HTTP RED record.
+  const event = await capturedEvent(
+    "GET /api/chat-threads/:threadId/event-rows",
+  );
+  expect(event).toMatchObject({
+    "attributes.custom": {
+      "okou.client.outcome": "success",
+      "okou.client.runtime": "window",
+    },
+    "attributes.http.request.method": "GET",
+    "attributes.http.response.status_code": 200,
+    "attributes.http.route": "/api/chat-threads/:threadId/event-rows",
+    kind: "client",
+    name: "GET /api/chat-threads/:threadId/event-rows",
+    "resource.deployment.environment.name": "production",
+    "scope.name": "okou-app/http",
+    "service.name": "Okou-app",
+    "service.version": "0.540.0",
+    "status.code": "OK",
+  });
+  expect(JSON.stringify(event)).not.toContain(sensitiveThreadId);
+  expect(JSON.stringify(event)).not.toContain(sensitiveToken);
+  expect(JSON.stringify(event)).not.toContain("sinceSeqId");
+});

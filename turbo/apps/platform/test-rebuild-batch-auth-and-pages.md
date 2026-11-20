@@ -104,3 +104,27 @@ Ably fixture also clears subscriptions when a channel fails, so that check
 cannot tell app cleanup from fixture cleanup. The checklist records this
 limit for review. The rebuilt `clerk-user` and `realtime` files use
 `mockClerkSessionTransitioning` and the two Ably wait helpers again.
+
+## Startup, storage, composer and connector files
+
+The third batch accepted 116 of 224 frozen rows across 14 files:
+`clerk-bootstrap`, `chat-idb`, `indexeddb-client`, `user-message-document`,
+`voice-draft-audio`, `authentication-startup`, `platform-entrypoint`,
+`message-port`, `chat-session-output-stream`, `composer-task-chips`,
+`tailscale-parity`, `marketing-handoff-recovery`, `prompt-link` and
+`wallet-action-card`.
+
+The review found three gaps, now closed. No case was added.
+
+| ID                               | Part  | Change                                                                  |
+| -------------------------------- | ----- | ----------------------------------------------------------------------- |
+| `indexeddb-client-003`           | Then  | The creation event also leaves out the key and value.                   |
+| `message-port-032`               | Then  | Catch-up requests are counted, and none follow the indicator change.    |
+| `chat-session-output-stream-006` | Given | The run opens on app.okou.ai, as the scenario states.                   |
+| `wallet-action-card-002`         | Then  | No continuation is sent once Continue appears and before it is clicked. |
+
+`message-port` and `marketing-handoff-recovery` each narrow one parameter
+list to its selected row. Explicit type arguments keep the original unions.
+The other review points are wording or timing limits, recorded as checklist
+notes. The selected `composer-task-chips` cases do not use
+`rail-browser-layout`, and no pending file does, so it is removed.
