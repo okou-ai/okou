@@ -276,7 +276,7 @@ export const bootstrapWorker$ = command(
   },
 );
 
-export const handleSharedDatabaseRealtimeMessage$ = command(
+const handleSharedDatabaseRealtimeMessage$ = command(
   ({ set }, payload: unknown, signal: AbortSignal): boolean => {
     signal.throwIfAborted();
     if (!isInboundMessage(payload)) {
