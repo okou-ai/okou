@@ -13,11 +13,6 @@
     {
       "file": "turbo/packages/db/src/index.ts",
       "uses": 2,
-      "dependency": "module:turbo/packages/db/src/schema/skill"
-    },
-    {
-      "file": "turbo/packages/db/src/index.ts",
-      "uses": 2,
       "dependency": "module:turbo/packages/db/src/schema/storage"
     },
     {
@@ -27,11 +22,6 @@
     },
     {
       "file": "turbo/packages/db/src/schema/pi-resource-version-index.ts",
-      "uses": 2,
-      "dependency": "module:turbo/packages/db/src/schema/storage"
-    },
-    {
-      "file": "turbo/packages/db/src/schema/skill.ts",
       "uses": 2,
       "dependency": "module:turbo/packages/db/src/schema/storage"
     },
