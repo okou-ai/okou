@@ -40,6 +40,7 @@ const {
   connectors,
   entitledChatActor: createEntitledChatActor,
   sendChatRun,
+  queueChatRun,
   runExecution,
   waitForThreadMessages,
   waitForRunStatus,
@@ -1074,5 +1075,18 @@ describe("CHAT-02: network body capture", () => {
     const plainExecution = await runExecution(plain.runId);
     expect(plainExecution.execution.captureNetworkBodies).toBeFalsy();
     await cancelChatRun(actor, plain.runId, plainExecution.sandboxHeaders);
+  });
+
+  it("carries a queued input's network body capture into a later pick", async () => {
+    const { actor, agentId } = await entitledChatActor();
+    const queued = await queueChatRun(actor, {
+      agentId,
+      prompt: "capture this queued run's network bodies",
+      captureNetworkBodies: true,
+    });
+    const { runId } = await queued.launch();
+    const { execution, sandboxHeaders } = await runExecution(runId);
+    expect(execution.captureNetworkBodies).toBeTruthy();
+    await cancelChatRun(actor, runId, sandboxHeaders);
   });
 });

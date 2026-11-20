@@ -11,7 +11,6 @@ export function createWechatThreadPrompt(
           systemPromptVariables: {
             integrationContext: context.appendSystemPrompt,
           },
-          skillVolumes: [],
         }
       : null;
   });

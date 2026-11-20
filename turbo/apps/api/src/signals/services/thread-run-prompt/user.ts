@@ -1,11 +1,11 @@
 import { computed, type Computed } from "ccstate";
 import type { ExecutionMemberMetadata } from "../execution-member-metadata.service";
-import type { RunPromptAndSkills } from "../run-prompt-and-skills";
+import type { RunPrompt } from "../run-prompt-and-skills";
 
 export function createUserPrompt(
   memberMetadata$: Computed<Promise<ExecutionMemberMetadata>>,
-): Computed<Promise<RunPromptAndSkills>> {
-  return computed(async (get): Promise<RunPromptAndSkills> => {
+): Computed<Promise<RunPrompt>> {
+  return computed(async (get): Promise<RunPrompt> => {
     const member = await get(memberMetadata$);
     const lines = ["# Current User Info"];
     if (member.profile?.name) {
@@ -18,7 +18,6 @@ export function createUserPrompt(
     return {
       systemPromptVariables: { userIdentity: lines.join("\n") },
       userPromptVariables: {},
-      skillVolumes: [],
     };
   });
 }

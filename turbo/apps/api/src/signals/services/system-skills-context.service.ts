@@ -8,7 +8,7 @@ import type { SeedSkillVolume } from "./run-prompt-and-skills";
 
 const log = logger("api:system-skills");
 
-export function createSystemSkillsContext(
+export function createSystemSkillVolumes(
   disabledPaidTools$: Computed<Promise<readonly string[]>>,
   seedSkills$: AgentRunContextSignals["seedSkills$"],
 ) {
@@ -27,30 +27,23 @@ export function createSystemSkillsContext(
         return [skill.url, skill];
       }),
     );
-    const skillVolumes = skills.flatMap(
-      (skillName): readonly SeedSkillVolume[] => {
-        // Only a usable bundle matters; the run keeps this pointer whatever the
-        // catalog's source version is when the Runner starts.
-        const bundle = contentBundleSchema.safeParse(
-          byUrl.get(resolveSkillRef(skillName))?.contentBundle,
-        );
-        if (!bundle.success) {
-          log.warn("Seed Skill bundle is unavailable", { skillName });
-          return [];
-        }
-        return [
-          {
-            skillName,
-            source: "system_skill",
-            contentBundle: bundle.data,
-          },
-        ];
-      },
-    );
-    return {
-      systemPromptVariables: {},
-      userPromptVariables: {},
-      skillVolumes,
-    };
+    return skills.flatMap((skillName): readonly SeedSkillVolume[] => {
+      // Only a usable bundle matters; the run keeps this pointer whatever the
+      // catalog's source version is when the Runner starts.
+      const bundle = contentBundleSchema.safeParse(
+        byUrl.get(resolveSkillRef(skillName))?.contentBundle,
+      );
+      if (!bundle.success) {
+        log.warn("Seed Skill bundle is unavailable", { skillName });
+        return [];
+      }
+      return [
+        {
+          skillName,
+          source: "system_skill",
+          contentBundle: bundle.data,
+        },
+      ];
+    });
   });
 }

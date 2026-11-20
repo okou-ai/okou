@@ -4,7 +4,7 @@ import {
   workflowAutomationAgentPrompt,
   workflowAutomationEventTypeSchema,
 } from "../workflow-automation-context.service";
-import type { RunPromptAndSkills } from "../run-prompt-and-skills";
+import type { RunPrompt } from "../run-prompt-and-skills";
 import type { ThreadContext } from "../thread-context.signals";
 import { STAFF_SINGLE_AGENT_ORG_ID } from "@okouai/core/single-agent-migration";
 
@@ -12,7 +12,7 @@ export function createAutomationThreadPrompt(
   snapshot$: ThreadContext["automationSnapshot$"],
   payload$: ThreadContext["automationPayload$"],
   singleAgent$: Computed<Promise<boolean>>,
-): Computed<Promise<RunPromptAndSkills | null>> {
+): Computed<Promise<RunPrompt | null>> {
   return computed(async (get) => {
     const snapshot = await get(snapshot$);
     if (!snapshot) {
@@ -70,7 +70,6 @@ export function createAutomationThreadPrompt(
           "- Use integration-specific messaging or file commands only when the task names an explicit delivery target or the current surface provides one.",
         ].join("\n"),
       },
-      skillVolumes: [],
     };
   });
 }
