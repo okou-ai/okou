@@ -331,6 +331,24 @@ pub struct OrphanReapState {
 }
 
 impl OrphanReapState {
+    async fn finish_joined_job(
+        &self,
+        result: Option<Result<JobResult, tokio::task::JoinError>>,
+        orphans: &OrphanedActiveRuns,
+        shared: &RunnerSharedState,
+    ) {
+        handle_job_result(result).await;
+        if !orphans.is_empty() {
+            self.reap(
+                orphans,
+                &shared.idle_pool,
+                &shared.status,
+                OrphanReapMode::Immediate,
+            )
+            .await;
+        }
+    }
+
     async fn reap(
         &self,
         orphans: &OrphanedActiveRuns,
@@ -1501,15 +1519,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
             // stale cancellation registrations until drain, budget exhaustion,
             // or shutdown.
             result = jobs.join_next(), if !jobs.is_empty() => {
-                handle_job_result(result).await;
-                if !orphaned_active_runs.is_empty() {
-                    orphan_reap.reap(
-                        &orphaned_active_runs,
-                        &shared.idle_pool,
-                        &shared.status,
-                        OrphanReapMode::Immediate,
-                    ).await;
-                }
+                orphan_reap.finish_joined_job(result, &orphaned_active_runs, &shared).await;
             }
             Some(()) = usage_flush_rx.recv() => {
                 #[cfg(test)]
@@ -1710,15 +1720,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
 
             tokio::select! {
                 result = jobs.join_next() => {
-                    handle_job_result(result).await;
-                    if !orphaned_active_runs.is_empty() {
-                        orphan_reap.reap(
-                            &orphaned_active_runs,
-                            &shared.idle_pool,
-                            &shared.status,
-                            OrphanReapMode::Immediate,
-                        ).await;
-                    }
+                    orphan_reap.finish_joined_job(result, &orphaned_active_runs, &shared).await;
                 }
                 Some(()) = usage_flush_rx.recv() => {
                     #[cfg(test)]
