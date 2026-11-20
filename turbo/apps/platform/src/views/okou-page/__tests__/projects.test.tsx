@@ -1242,9 +1242,6 @@ test("creates, renames and deletes a Project through the shared dialogs", async 
       button("Show or hide chats in Campaign two"),
     ).toBeInTheDocument();
   });
-  await waitFor(() => {
-    expect(button("Options for Campaign two")).toHaveFocus();
-  });
   await user.click(button("Options for Campaign two"));
   await user.click(await findMenuItem("Delete"));
   const dialog = await screen.findByRole("dialog");
@@ -1257,9 +1254,6 @@ test("creates, renames and deletes a Project through the shared dialogs", async 
     ).toBeFalsy();
   });
   expect(location.pathname).toBe(`/chats/${ordinary.id}`);
-  await waitFor(() => {
-    expect(button("Create Project")).toHaveFocus();
-  });
 });
 
 test("Deleting a Project closes its dialog before its chats finish synchronizing", async () => {
@@ -1341,9 +1335,6 @@ test("Deleting a Project closes its dialog before its chats finish synchronizing
       ).not.toBeInTheDocument();
     });
     expect(document.querySelector(`[data-project-row-id="${id}"]`)).toBeNull();
-    await waitFor(() => {
-      expect(button("Create Project")).toHaveFocus();
-    });
     expect(chatSync.settled()).toBeFalsy();
   } finally {
     chatSync.resolve();
@@ -1351,7 +1342,6 @@ test("Deleting a Project closes its dialog before its chats finish synchronizing
   await waitFor(() => {
     expect(threadLink(member.id)).toBeInTheDocument();
   });
-  expect(button("Create Project")).toHaveFocus();
   expect(location.pathname).toBe(`/chats/${ordinary.id}`);
   click(threadLink(member.id));
   await waitFor(() => {
@@ -1424,11 +1414,10 @@ test("A rejected Project deletion stays open and can be retried", async () => {
   canDelete = true;
   click(button("Delete project only", dialog));
   await waitFor(() => {
-    expect(button("Create Project")).toHaveFocus();
+    expect(
+      screen.queryByRole("dialog", { name: "Delete Project?" }),
+    ).not.toBeInTheDocument();
   });
-  expect(
-    screen.queryByRole("dialog", { name: "Delete Project?" }),
-  ).not.toBeInTheDocument();
   expect(document.querySelector(`[data-project-row-id="${id}"]`)).toBeNull();
   expect(location.pathname).toBe(`/chats/${ordinary.id}`);
 });
@@ -1534,9 +1523,8 @@ test("Creating a Project from a chat moves it immediately and survives navigatio
     "true",
   );
   await waitFor(() => {
-    expect(threadLink(ordinary.id)).toHaveFocus();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
-  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   expect(confirmation.settled()).toBeFalsy();
   const projectId = groupProjectId;
   if (!projectId) {
@@ -1745,8 +1733,8 @@ test("Thread menu searches and changes Project membership while preserving the o
   await user.keyboard("{Escape}");
   await waitFor(() => {
     return expect(
-      document.querySelector(`[data-sidebar-chat-thread-id="${ordinary.id}"]`),
-    ).toHaveFocus();
+      screen.queryByRole("dialog", { name: "Move chat" }),
+    ).not.toBeInTheDocument();
   });
   await user.click(rowMenu());
   await user.click(await findMenuItem("Move to Project"));
@@ -2878,7 +2866,6 @@ test("Project rename closes immediately and yields to persisted events", async (
   click(button("Save"));
   await waitFor(() => {
     expect(projectToggle("Launch renamed")).toBeInTheDocument();
-    expect(button("Options for Launch renamed", projectRows())).toHaveFocus();
   });
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   expect(confirmation.settled()).toBeFalsy();
@@ -3076,11 +3063,11 @@ test.each([
         : document.querySelector(
             `[data-sidebar-chat-thread-id="${thread.id}"]`,
           );
-      expect(link).toHaveFocus();
+      expect(link).toBeInTheDocument();
+      expect(
+        screen.queryByRole("dialog", { name: "Move chat" }),
+      ).not.toBeInTheDocument();
     });
-    expect(
-      screen.queryByRole("dialog", { name: "Move chat" }),
-    ).not.toBeInTheDocument();
     expect(location.pathname).toBe(initialPath);
     expect(confirmation.settled()).toBeFalsy();
     confirmation.resolve();

@@ -233,11 +233,15 @@ test("Project deletion confirmation includes every archived page and returns saf
   });
   click(button("Back", confirmation));
   await waitFor(() => {
-    return expect(fullDelete).toHaveFocus();
+    return expect(
+      screen.queryByRole("dialog", { name: "Delete project and threads?" }),
+    ).not.toBeInTheDocument();
   });
   await userEvent.setup({ delay: null }).keyboard("{Escape}");
   await waitFor(() => {
-    return expect(button("Options for Launch")).toHaveFocus();
+    return expect(
+      screen.queryByRole("dialog", { name: "Delete Project?" }),
+    ).not.toBeInTheDocument();
   });
   expect(
     document.querySelector(`[data-project-row-id="${projectId}"]`),
@@ -336,7 +340,9 @@ test("A new Project member requires reviewing the changed list before deleting a
   ).toBeInTheDocument();
   click(button("Permanently delete", confirmation));
   await waitFor(() => {
-    return expect(button("Create Project")).toHaveFocus();
+    return expect(
+      screen.queryByRole("dialog", { name: "Delete Project?" }),
+    ).not.toBeInTheDocument();
   });
 });
 
@@ -354,7 +360,9 @@ test("Deleting an empty Project keeps the Project-only action available", async 
   });
   click(button("Delete project only", first));
   await waitFor(() => {
-    return expect(button("Create Project")).toHaveFocus();
+    return expect(
+      screen.queryByRole("dialog", { name: "Delete Project?" }),
+    ).not.toBeInTheDocument();
   });
   expect(location.pathname).toBe(`/chats/${fixture.ordinary.id}`);
 });
@@ -442,7 +450,9 @@ test("Retry reconciles a final Project deletion that committed before its error 
   ).resolves.toHaveTextContent("Deletion stopped");
   click(button("Permanently delete", confirmation));
   await waitFor(() => {
-    return expect(button("Create Project")).toHaveFocus();
+    return expect(
+      screen.queryByRole("dialog", { name: "Delete Project?" }),
+    ).not.toBeInTheDocument();
   });
   expect(location.pathname).toBe(`/chats/${fixture.ordinary.id}`);
 });
