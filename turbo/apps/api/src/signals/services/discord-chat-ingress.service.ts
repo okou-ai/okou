@@ -305,10 +305,10 @@ function canonicalRouteCreationWrites(): SQL {
       destination_channel_id, created_at
   ), inserted_thread AS (
     INSERT INTO ${t} (
-      id, user_id, agent_id, selected_model, codex_service_tier, model_settings,
+      id, user_id, org_id, agent_id, selected_model, codex_service_tier, model_settings,
       cloud_browser_enabled, title, last_read_at, last_message_at, created_at, updated_at
     )
-    SELECT inserted_route.chat_thread_id, inserted_route.user_id, creation_input.agent_id,
+    SELECT inserted_route.chat_thread_id, inserted_route.user_id, creation_input.org_id, creation_input.agent_id,
       creation_input.selected_model, creation_input.codex_service_tier, creation_input.model_settings,
       creation_input.cloud_browser_enabled, NULL, creation_input.current_time,
       creation_input.current_time, creation_input.current_time, creation_input.current_time
