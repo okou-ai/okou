@@ -238,12 +238,14 @@ class TestNdjsonExtractor:
         parse, state = self._cooperative_stream_parser(real_flow)
         prefix = b'{"data":{"id":"1"},"discarded":"'
         suffix = b'"}'
-        line = repeat_bytes(
-            prefix, b"x", LARGE_RESPONSE_DECOMPRESS_LIMIT - len(prefix) - len(suffix), suffix
+        body = repeat_bytes(
+            prefix,
+            b"x",
+            LARGE_RESPONSE_DECOMPRESS_LIMIT - len(prefix) - len(suffix),
+            suffix + b"\n",
         )
-        body = line + b"\n"
 
-        assert len(line) == LARGE_RESPONSE_DECOMPRESS_LIMIT
+        assert len(body) == LARGE_RESPONSE_DECOMPRESS_LIMIT + 1
         assert await parse(body) == body
         assert state["lines_failed"] == 0
         assert state["lines_parsed"] == 1
