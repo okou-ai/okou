@@ -185,6 +185,9 @@ class TestAuthentication(initial: AuthenticationState = testAuthenticationState(
             WorkspaceMembership("org-b", "Workspace B", "org:member"),
         )
     var refreshAction: suspend (NativeSession) -> Unit = {}
+    var refreshedMembership: (NativeSession) -> MembershipAccess? = { expected ->
+        state.value.membershipAccess?.firstOrNull { it.workspaceId == expected.workspaceId }
+    }
     var membershipsAction: suspend () -> List<WorkspaceMembership> = { available }
     var tokenAction: suspend (NativeSession) -> String? = { "test-token" }
     var selectAction: suspend (NativeSession, String) -> Unit = { session, id ->
@@ -202,7 +205,7 @@ class TestAuthentication(initial: AuthenticationState = testAuthenticationState(
 
     override suspend fun refresh(expected: NativeSession): MembershipAccess? {
         refreshAction(expected)
-        return state.value.membershipAccess?.firstOrNull { it.workspaceId == expected.workspaceId }
+        return refreshedMembership(expected)
     }
 
     override suspend fun memberships(expected: NativeSession) = membershipsAction()

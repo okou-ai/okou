@@ -215,7 +215,7 @@ class SessionModel(
                             authorizationScope =
                                 chatScopeHash(
                                     listOf(role) +
-                                        access
+                                        refreshedAccess
                                             ?.let {
                                                 listOf(
                                                     it.role,
