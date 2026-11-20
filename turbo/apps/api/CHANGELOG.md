@@ -10,6 +10,28 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.97.1](https://github.com/okou-ai/okou/compare/api-v2.97.0...api-v2.97.1) (2026-11-20)
+
+
+### Bug Fixes
+
+* **platform:** use the suggestions switch for my okou proactive settings ([#49439](https://github.com/okou-ai/okou/issues/49439)) ([1d42e69](https://github.com/okou-ai/okou/commit/1d42e6994ad6d82a6678d34b955335765fc560b5))
+
+
+### Refactoring
+
+* remove feature guides feature switch ([#49441](https://github.com/okou-ai/okou/issues/49441)) ([e5642ea](https://github.com/okou-ai/okou/commit/e5642ea2ef0ea2ba7a6cd451d395c8329a855c88))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.94.1
+    * @okouai/core bumped to 8.857.1
+    * @okouai/db bumped to 2.54.3
+    * @okouai/pi-agent-runtime bumped to 1.52.13
+
 ## [2.97.0](https://github.com/okou-ai/okou/compare/api-v2.96.0...api-v2.97.0) (2026-11-20)
 
 

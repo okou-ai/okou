@@ -1,5 +1,24 @@
 # Changelog
 
+## [8.857.1](https://github.com/okou-ai/okou/compare/core-v8.857.0...core-v8.857.1) (2026-11-20)
+
+
+### Bug Fixes
+
+* **platform:** use the suggestions switch for my okou proactive settings ([#49439](https://github.com/okou-ai/okou/issues/49439)) ([1d42e69](https://github.com/okou-ai/okou/commit/1d42e6994ad6d82a6678d34b955335765fc560b5))
+
+
+### Refactoring
+
+* remove feature guides feature switch ([#49441](https://github.com/okou-ai/okou/issues/49441)) ([e5642ea](https://github.com/okou-ai/okou/commit/e5642ea2ef0ea2ba7a6cd451d395c8329a855c88))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.94.1
+
 ## [8.857.0](https://github.com/okou-ai/okou/compare/core-v8.856.2...core-v8.857.0) (2026-11-20)
 
 
