@@ -96,7 +96,9 @@ class ChatListModelTest {
         )
 
     private open inner class Service : TestChatService() {
-        var flagsRead: suspend () -> FeatureSwitches = { FeatureSwitches(emptyMap(), emptyMap()) }
+        var flagsRead: suspend () -> FeatureSwitches = {
+            FeatureSwitches(emptyMap(), mapOf("projects" to false))
+        }
         var agentRead: suspend () -> Agents = {
             listOf(
                 AgentsItem(
@@ -1186,6 +1188,32 @@ class ChatListModelTest {
             store.clear()
             runCurrent()
             Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun retiredProjectsKeyLoadsProjectsAndExplicitFalseStillDisablesThem() = runTest {
+        var flags = FeatureSwitches(emptyMap(), emptyMap())
+        val service =
+            object : TestChatService() {
+                override suspend fun featureSwitches() = flags
+
+                override suspend fun projectSnapshot() =
+                    json.decodeFromString<ProjectSnapshot>(
+                        """{"projects":[{"id":"$CHAT_PROJECT","name":"Example","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE"}],"latestEventId":null,"latestSeqId":0}"""
+                    )
+            }
+        withCatchUpModel(service) { model ->
+            model.refreshMetadata()
+            advanceUntilIdle()
+            assertTrue(model.uiState.value.projectsEnabled)
+            assertEquals(CHAT_PROJECT, model.uiState.value.projects.single().id)
+
+            flags = FeatureSwitches(emptyMap(), mapOf("projects" to false))
+            model.refreshMetadata()
+            advanceUntilIdle()
+            assertFalse(model.uiState.value.projectsEnabled)
+            assertTrue(model.uiState.value.projects.isEmpty())
         }
     }
 

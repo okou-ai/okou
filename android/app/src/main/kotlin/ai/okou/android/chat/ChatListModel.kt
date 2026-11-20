@@ -739,7 +739,8 @@ class ChatListModel(
                     val flags = service.featureSwitches().effectiveSwitches
                     currentCoroutineContext().ensureActive()
                     if (!current()) return@launch
-                    val projects = flags["projects"] == true
+                    // Retired responses can omit the key. Honor false on pre-retirement APIs.
+                    val projects = flags["projects"] != false
                     val changed = projects != mutable.value.projectsEnabled
                     if (!projects) projectsJob?.cancel()
                     mutable.value =

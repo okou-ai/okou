@@ -150,7 +150,7 @@ class CanonicalWorkspaceSession(
     override suspend fun agents() = api.agents()
 
     override suspend fun newChatAgent(): String? {
-        if (api.featureSwitches().effectiveSwitches["singleAgent"] != true) return null
+        if (!myOkouEnabled()) return null
         val status = api.onboardingStatus()
         return status.defaultAgentId?.takeIf {
             status.hasOrg && status.hasDefaultAgent && status.onboardingComplete
@@ -218,8 +218,11 @@ class CanonicalWorkspaceSession(
 
     override suspend fun featureSwitches() = api.featureSwitches()
 
-    override suspend fun personalInstructionsEnabled() =
-        api.featureSwitches().effectiveSwitches["singleAgent"] == true
+    override suspend fun personalInstructionsEnabled() = myOkouEnabled()
+
+    // Retired responses can omit the key. Keep honoring false while pre-retirement APIs can serve.
+    private suspend fun myOkouEnabled() =
+        api.featureSwitches().effectiveSwitches["singleAgent"] != false
 
     override suspend fun personalInstructions() = api.personalInstructions().owned()
 

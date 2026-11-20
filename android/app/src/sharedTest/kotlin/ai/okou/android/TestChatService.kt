@@ -57,7 +57,7 @@ open class TestChatService : ChatListService {
         eventId: String,
     ): Unit = error("Unexpected pin reorder")
 
-    override suspend fun featureSwitches() = FeatureSwitches(emptyMap(), emptyMap())
+    override suspend fun featureSwitches() = FeatureSwitches(emptyMap(), mapOf("projects" to false))
 
     override suspend fun chatSnapshot() =
         Json.decodeFromString<ChatSnapshot>(
