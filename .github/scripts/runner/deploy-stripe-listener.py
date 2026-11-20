@@ -232,7 +232,6 @@ def install_listener(resources, host, stage, ref, settings, lock_fd):
             "systemctl", *args, allow_failure=allow_failure, pass_fds=(lock_fd,)
         )
 
-    manager("disable", "--no-reload", unit, allow_failure=True)
     host.remove(directory)
     directory.mkdir(parents=True)
     subprocess.run(
@@ -253,9 +252,7 @@ def install_listener(resources, host, stage, ref, settings, lock_fd):
         f"STRIPE_API_KEY={settings['apiKey']}\nSTRIPE_FORWARD_URL={forward_url}\n",
     )
     log.touch(mode=0o600)
-    atomic_write(
-        unit_path,
-        f"""[Unit]
+    definition = f"""[Unit]
 Description=Okou Stripe CLI listener for {ref}
 After=network-online.target
 Wants=network-online.target
@@ -272,11 +269,11 @@ StandardError=append:{log}
 
 [Install]
 WantedBy=multi-user.target
-""",
-        0o644,
-    )
-    with host.reload_lock():
-        manager("daemon-reload")
+"""
+    with host.unit_file_changes():
+        manager("disable", "--no-reload", unit, allow_failure=True)
+        atomic_write(unit_path, definition, 0o644)
+    host.reload_systemd(unit_path, lock_fd=lock_fd)
     manager("reset-failed", unit, allow_failure=True)
     try:
         manager("start", "--no-block", unit)

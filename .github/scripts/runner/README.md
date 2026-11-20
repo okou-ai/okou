@@ -102,6 +102,12 @@ installed listener's deployment marker. The host keeps the current receipt in
 after execution, successors retire superseded staging, and closed-PR cleanup
 removes the namespace. A host restart clears operation state.
 
+Stripe unit publication and fleet cleanup mark their unit-file changes under
+the shared host reload lock. An acknowledged reload clears the pending marker
+and covers every change already published under that lock. A failed reload or
+interrupted publisher leaves work pending. Before startup, the Stripe worker
+checks that the manager loaded the expected fragment and reports it current.
+
 ## Image operation recovery
 
 `python3 runner-image-operation.py claim|cancel HOST`,

@@ -47,6 +47,7 @@ UNIT_ROOTS = ("/etc/systemd/system", "/run/systemd/system", "/run/systemd/transi
 BIN_ROOT = "/var/lib/vm0-runner/bin"
 STRIPE_ROOT = "/var/lib/vm0-runner/stripe"
 STRIPE_OPERATIONS = "/run/vm0-ci-stripe-deployments"
+RELOAD_PENDING = "/var/lib/vm0-runner/locks/systemd-daemon-reload.pending"
 DATA_ROOTS = (
     BIN_ROOT,
     "/var/lib/vm0-runner/runners",
@@ -312,7 +313,47 @@ class Host:
                     if time.monotonic() >= deadline:
                         raise TimeoutError("systemd reload lock deadline exceeded")
                     time.sleep(0.1)
+            yield handle.fileno()
+
+    @contextlib.contextmanager
+    def unit_file_changes(self):
+        with self.reload_lock():
+            # Record intent before touching files. An interrupted publisher
+            # must leave its changes visible to the next reloader.
+            self.path(RELOAD_PENDING).touch()
             yield
+
+    def reload_systemd(self, unit_path=None, *, lock_fd=None):
+        pending = self.path(RELOAD_PENDING)
+        if unit_path is None and not pending.exists():
+            return
+        with self.reload_lock() as reload_fd:
+            if pending.exists():
+                fds = (reload_fd,) if lock_fd is None else (reload_fd, lock_fd)
+                command("systemctl", "daemon-reload", pass_fds=fds)
+                pending.unlink()
+            if unit_path is not None:
+                result = command(
+                    "systemctl",
+                    "show",
+                    "--all",
+                    "--no-pager",
+                    "--property=LoadState,FragmentPath,NeedDaemonReload",
+                    unit_path.name,
+                )
+                properties = dict(
+                    line.split("=", 1)
+                    for line in result.stdout.splitlines()
+                    if "=" in line
+                )
+                if properties != {
+                    "LoadState": "loaded",
+                    "FragmentPath": str(unit_path),
+                    "NeedDaemonReload": "no",
+                }:
+                    raise RuntimeError(
+                        "systemd has not loaded the current Stripe listener unit"
+                    )
 
     @contextlib.contextmanager
     def stripe_submission_lock(self):
@@ -379,7 +420,6 @@ class Host:
             }
         outcomes = {}
         command_errors = {pr: [] for pr in selected}
-        dirty = False
 
         def teardown(pr, operation, *args):
             result = command("systemctl", operation, *args, allow_failure=True)
@@ -423,14 +463,14 @@ class Host:
                         if time.monotonic() >= deadline:
                             raise TimeoutError("service execution remains after stop")
                         time.sleep(0.5)
-                    teardown(pr, "disable", "--no-reload", *names)
+                    with self.unit_file_changes():
+                        teardown(pr, "disable", "--no-reload", *names)
+                        for unit in resource["units"]:
+                            for path in unit["paths"]:
+                                self.remove(path)
                     # Clearing failed metadata allows systemd to collect units
                     # whose files were already removed by a previous teardown.
                     teardown(pr, "reset-failed", *names)
-                for unit in resource["units"]:
-                    for path in unit["paths"]:
-                        dirty = True
-                        self.remove(path)
                 for path in resource["directories"]:
                     if Path(path).parent == self.path(STRIPE_OPERATIONS):
                         with self.stripe_submission_lock():
@@ -466,9 +506,7 @@ class Host:
             ) as error:
                 outcomes[pr] = {"outcome": "failed", "error": str(error)}
         try:
-            if dirty:
-                with self.reload_lock():
-                    command("systemctl", "daemon-reload")
+            self.reload_systemd()
             remaining = self.inventory(selected)
         except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as error:
             outcomes = {
