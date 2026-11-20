@@ -28,7 +28,6 @@ final class ConnectorAuthorizationFlow: Identifiable {
     methodID =
       status.account?.authMethod ?? status.builtin?.authMethods.first { $0.grantKind != "managed" }?
       .id ?? ""
-    for option in method?.startOptions ?? [] { options[option.id] = option.defaultValue }
   }
   var method: ChatConnectorMethod? { status.builtin?.authMethods.first { $0.id == methodID } }
   var waiting: Bool { session != nil }
@@ -44,16 +43,13 @@ final class ConnectorAuthorizationFlow: Identifiable {
     if operatedID != nil { return !busy }
     guard !busy, !waiting else {
       return isExternalCode && !busy
-        && !code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        && !code.trimmingCharacters(in: .ecmaScriptWhitespace).isEmpty
     }
     if !needsConnection { return true }
     if let method {
-      return method.manualFields.allSatisfy { !$0.required || values[$0.id]?.isEmpty == false }
-        && method.startOptions.allSatisfy { !$0.required || options[$0.id]?.isEmpty == false }
+      return method.hasRequiredInputs(values: values, options: options)
     }
-    if status.custom?.usesBrowserAuthorization == true { return true }
-    return status.custom?.fields.allSatisfy { !$0.required || values[$0.key]?.isEmpty == false }
-      ?? false
+    return status.custom?.canSubmit(values: values, account: status.account) == true
   }
 }
 
@@ -166,7 +162,7 @@ final class ConnectorActionStore {
           }
           let result = try await service.completeSession(
             slug: slug, receipt: receipt,
-            code: flow.code.trimmingCharacters(in: .whitespacesAndNewlines))
+            code: flow.code.trimmingCharacters(in: .ecmaScriptWhitespace))
           flow.code = ""
           try check(flow)
           try await accept(result.operatedID, flow: flow)

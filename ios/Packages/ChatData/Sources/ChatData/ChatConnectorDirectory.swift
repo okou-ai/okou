@@ -1,3 +1,4 @@
+import ChatDomain
 import Foundation
 
 public struct ChatCatalogConnector: Decodable, Identifiable, Sendable {
@@ -60,8 +61,12 @@ extension ChatComposerAccess {
     -> ChatConnectorDiscovery
   {
     var query: [URLQueryItem] = []
-    if !keyword.isEmpty { query.append(URLQueryItem(name: "keyword", value: keyword)) }
-    if let category { query.append(URLQueryItem(name: "category", value: category)) }
+    let search = keyword.trimmingCharacters(in: .ecmaScriptWhitespace)
+    if !search.isEmpty {
+      query.append(URLQueryItem(name: "keyword", value: search))
+    } else if let category, !category.isEmpty {
+      query.append(URLQueryItem(name: "category", value: category))
+    }
     return try await client.request("/api/connector-catalog/discovery", query: query)
   }
 

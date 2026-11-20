@@ -10,6 +10,7 @@ public struct ChatConnectorAccount: Decodable, Equatable, Sendable, Identifiable
   public let externalId: String?
   public let connectionStatus: String
   public let reconnectReason: String?
+  public let missingRequiredFields: [String]?
   public var label: String {
     displayName ?? externalEmail ?? externalUsername ?? externalId ?? "Account"
   }
@@ -222,6 +223,8 @@ public struct ChatConnectorService: Sendable {
       guard account.target == target, UUID(uuidString: account.id) != nil else {
         throw APIClientError.invalidResponse
       }
+    } else if !response.connections.isEmpty {
+      throw ChatConnectorInputError.noDefaultAccount
     }
     return account
   }
@@ -260,17 +263,23 @@ public struct ChatConnectorService: Sendable {
     }
     struct Body: Encodable {
       let account: Account
-      var authMethod: String?
+      let authMethod: String
+      var callbackTarget: String?
       var values: [String: String]?
       var options: [String: String]?
     }
     let account = Account(
       intent: status.account == nil ? "add" : "reconnect", connectionId: status.account?.id)
     if let slug = status.target.connectorSlug, let method {
+      guard status.builtin?.authMethods.contains(method) == true,
+        status.account == nil || status.account?.authMethod == method.id,
+        method.hasRequiredInputs(values: values, options: options)
+      else { throw ChatConnectorInputError.settingsChanged }
       let body = Body(
         account: account, authMethod: method.id,
-        values: method.grantKind == "manual" ? values : nil,
-        options: method.grantKind == "device-auth" ? options : nil)
+        callbackTarget: method.grantKind == "auth-code" ? "app" : nil,
+        values: method.grantKind == "manual" ? method.manualValues(values) : nil,
+        options: method.grantKind == "device-auth" ? method.deviceOptions(options) : nil)
       let data = try JSONEncoder().encode(body)
       switch method.grantKind {
       case "auth-code":
@@ -298,6 +307,9 @@ public struct ChatConnectorService: Sendable {
       }
     }
     guard let custom = status.custom else { throw APIClientError.invalidResponse }
+    guard custom.canSubmit(values: values, account: status.account) else {
+      throw ChatConnectorInputError.settingsChanged
+    }
     if custom.usesBrowserAuthorization {
       struct Body: Encodable {
         let account: Account
@@ -315,22 +327,14 @@ public struct ChatConnectorService: Sendable {
       let intent: String
       let connectionId: String?
     }
-    struct Value: Encodable {
-      let key: String
-      let kind: String
-      let value: String
-    }
     struct Body: Encodable {
       let account: Account
-      let values: [Value]
+      let values: [ChatCustomConnector.Value]
     }
     let body = Body(
       account: Account(
         intent: connectionID == nil ? "add" : "reconnect", connectionId: connectionID),
-      values: custom.fields.compactMap { field in
-        guard let value = values[field.key], !value.isEmpty else { return nil }
-        return Value(key: field.key, kind: field.kind, value: value)
-      })
+      values: custom.submittedValues(values))
     return try await client.request(
       "/api/custom-connectors/\(custom.id)/values", method: "PUT", body: JSONEncoder().encode(body))
   }
