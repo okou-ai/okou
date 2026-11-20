@@ -1,53 +1,6 @@
 use super::*;
 
 #[test]
-fn receipt_must_account_for_unavailable_sources_and_only_reference_optional_mounts() {
-    let mounts = [
-        (
-            1,
-            OptionalMount {
-                path: "/skills/optional".into(),
-                unavailable: false,
-            },
-        ),
-        (
-            2,
-            OptionalMount {
-                path: "/skills/unavailable".into(),
-                unavailable: true,
-            },
-        ),
-    ]
-    .into_iter()
-    .collect();
-    let parsed = |applied: bool, stdout: &[u8]| {
-        let result = sandbox::ExecResult::new(i32::from(!applied), stdout.to_vec(), Vec::new());
-        read_storage_receipt(&result, &mounts, applied)
-    };
-    assert_eq!(
-        parsed(true, br#"{"skippedOptional":[2]}"#).unwrap(),
-        HashSet::from(["/skills/unavailable".into()])
-    );
-    let partial = br#"{"skippedOptional":[1]}"#;
-    assert!(parsed(true, partial).is_err());
-    assert_eq!(
-        parsed(false, partial).unwrap(),
-        HashSet::from(["/skills/optional".into()])
-    );
-    let mut truncated = sandbox::ExecResult::new(1, partial.to_vec(), Vec::new());
-    truncated.stdout_truncated = true;
-    assert!(read_storage_receipt(&truncated, &mounts, false).is_err());
-    for invalid in [
-        b"".as_slice(),
-        br#"{"skippedOptional":[0,2]}"#,
-        br#"{"skippedOptional":[1,2,2]}"#,
-    ] {
-        assert!(parsed(true, invalid).is_err());
-        assert!(parsed(false, invalid).is_err());
-    }
-}
-
-#[test]
 fn payload_buckets_use_binary_framing_instead_of_manifest_json() {
     let files = [StorageFile {
         path: "private-name".to_string(),

@@ -11,7 +11,6 @@ use runner_types::storage_manifest::{ArtifactEntry, StorageEntry, StorageManifes
 fn storage(mount_path: &Path, name: &str, version: &str, archive_url: String) -> StorageEntry {
     StorageEntry {
         template_guidance: None,
-        optional: false,
         name: name.into(),
         mount_path: mount_path.to_string_lossy().into_owned(),
         vas_storage_name: name.into(),
@@ -277,94 +276,4 @@ fn omitted_mount_prunes_managed_skill_and_preserves_nested_user_skills() {
         fs::read_to_string(retained.join("custom/removed-skill/SKILL.md")).unwrap(),
         "user-owned nested skill"
     );
-}
-
-#[test]
-fn removed_package_cleans_its_owned_root_on_reused_home() {
-    let canonical_parent = Path::new("/home/user/.codex");
-    let canonical_package = canonical_parent.join("skills/retired");
-    for case in ["directory", "file", "tainted", "active descendant"] {
-        let dir = tempfile::tempdir().unwrap();
-        let package = dir.path().join("skills/retired");
-        if case == "file" {
-            fs::create_dir_all(package.parent().unwrap()).unwrap();
-            fs::write(&package, "old obstruction").unwrap();
-        } else {
-            fs::create_dir_all(&package).unwrap();
-            fs::write(package.join("SKILL.md"), "old package").unwrap();
-        }
-        let settings = dir.path().join("settings.json");
-        fs::write(&settings, "keep").unwrap();
-
-        let mut current = StorageManifest::default();
-        if matches!(case, "directory" | "tainted") {
-            current.storages.push(storage(
-                canonical_parent,
-                "framework-settings",
-                "v1",
-                String::new(),
-            ));
-        }
-        let descendant = package.join("required");
-        if case == "active descendant" {
-            fs::create_dir(&descendant).unwrap();
-            fs::write(descendant.join("data"), "required").unwrap();
-            current.storages.push(storage(
-                &canonical_package.join("required"),
-                "required",
-                "v1",
-                String::new(),
-            ));
-        }
-        let mut previous = StorageFingerprints::from_manifest(&current);
-        let old_mount = canonical_package.to_string_lossy().into_owned();
-        if case == "file" {
-            // A cancelled generation may retain the same path in both partitions.
-            previous
-                .artifacts
-                .insert(old_mount.clone(), StorageFingerprint::tainted());
-        }
-        previous.storages.insert(
-            old_mount,
-            if matches!(case, "tainted" | "file") {
-                StorageFingerprint::tainted()
-            } else {
-                StorageFingerprint::new("workflow", "v1")
-            },
-        );
-        let plan = build_storage_plan(&current, Some(&previous)).unwrap();
-        assert!(plan.requires_guest_work());
-        let mut guest = plan.into_guest_manifest();
-        let local = |path: &str| {
-            dir.path()
-                .join(Path::new(path).strip_prefix(canonical_parent).unwrap())
-                .to_string_lossy()
-                .into_owned()
-        };
-        for entry in &mut guest.storages {
-            entry.mount_path = local(&entry.mount_path);
-        }
-        for path in guest
-            .cleanup_paths
-            .iter_mut()
-            .chain(&mut guest.removed_package_paths)
-        {
-            *path = local(path);
-        }
-        let success = guest_storage_apply::run_manifest_bytes(&serde_json::to_vec(&guest).unwrap());
-        if case == "active descendant" {
-            assert!(!success);
-            assert_eq!(
-                fs::read_to_string(descendant.join("data")).unwrap(),
-                "required"
-            );
-        } else {
-            assert!(success, "{case}");
-            assert!(
-                !package.exists(),
-                "retired package root survived for {case}"
-            );
-        }
-        assert_eq!(fs::read_to_string(settings).unwrap(), "keep");
-    }
 }

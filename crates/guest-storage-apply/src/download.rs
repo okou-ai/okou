@@ -1,8 +1,7 @@
 use crate::LOG_TAG;
 use crate::archive;
-use crate::cleanup::{OptionalMountState, optional_mount_state};
 use crate::error::DownloadError;
-use crate::readiness::{Readiness, SourceGate};
+use crate::readiness::Readiness;
 use crate::source;
 use crate::telemetry::{
     DownloadRunTelemetry, DownloadTaskTelemetry, LocalArchiveTaskMetrics, RemoteArchiveTaskMetrics,
@@ -10,11 +9,11 @@ use crate::telemetry::{
 use guest_contracts::storage_paths::normalize_path;
 use guest_telemetry::{log_error, log_info};
 use std::any::Any;
-use std::collections::HashSet;
 use std::collections::VecDeque;
 use std::fs;
 use std::panic::AssertUnwindSafe;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -32,7 +31,6 @@ type AttemptRunner = fn(&mut StartedDownload<'_>) -> Result<(), DownloadError>;
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct DownloadTask<'input> {
     label: String,
-    optional: bool,
     url: String,
     mount_path: String,
     normalized_mount_path: PathBuf,
@@ -42,14 +40,6 @@ pub(crate) struct DownloadTask<'input> {
 }
 
 impl<'input> DownloadTask<'input> {
-    pub(crate) fn with_optional(mut self, optional: bool) -> Self {
-        self.optional = optional;
-        if optional {
-            self.label.push_str(" optional=true");
-        }
-        self
-    }
-
     pub(crate) fn with_template_guidance(
         mut self,
         reference: Option<guest_contracts::storage_manifest::TemplateGuidanceReference>,
@@ -82,7 +72,6 @@ impl<'input> DownloadTask<'input> {
             DownloadTaskTelemetry::storage(&url, &normalized_mount_path, has_instructions_target);
         Self {
             label,
-            optional: false,
             url,
             mount_path,
             normalized_mount_path,
@@ -97,7 +86,6 @@ impl<'input> DownloadTask<'input> {
         let telemetry = DownloadTaskTelemetry::artifact(&url, &normalized_mount_path);
         Self {
             label,
-            optional: false,
             url,
             mount_path,
             normalized_mount_path,
@@ -107,22 +95,24 @@ impl<'input> DownloadTask<'input> {
         }
     }
 
-    fn create_mount_directory(&self) -> Result<(), String> {
+    fn prepare(self) -> Result<PreparedDownloadTask<'input>, String> {
         fs::create_dir_all(&self.mount_path).map_err(|e| {
             format!(
                 "{} target preparation failed: failed to create directory {}: {e}",
                 self.label, self.mount_path
             )
-        })
-    }
-
-    fn prepare(&self) -> Result<PathBuf, String> {
-        self.create_mount_directory()?;
-        Path::new(&self.mount_path).canonicalize().map_err(|e| {
+        })?;
+        let effective_mount_path = Path::new(&self.mount_path).canonicalize().map_err(|e| {
             format!(
                 "{} target preparation failed: failed to resolve directory {}: {e}",
                 self.label, self.mount_path
             )
+        })?;
+
+        Ok(PreparedDownloadTask {
+            task: self,
+            effective_mount_path,
+            source_ready: None,
         })
     }
 }
@@ -130,7 +120,7 @@ impl<'input> DownloadTask<'input> {
 pub(crate) struct PreparedDownloadTask<'input> {
     task: DownloadTask<'input>,
     effective_mount_path: PathBuf,
-    source_ready: Option<Arc<SourceGate>>,
+    source_ready: Option<Arc<AtomicBool>>,
 }
 
 impl PreparedDownloadTask<'_> {
@@ -295,7 +285,6 @@ impl<'input> DownloadScheduler<'input> {
         &mut self,
         work_tx: &mpsc::SyncSender<StartedDownload<'input>>,
         telemetry: &mut DownloadRunTelemetry,
-        skipped: &mut HashSet<String>,
     ) -> bool {
         while self.active_attempts < self.concurrency {
             let Some((index, _)) = find_startable_download(
@@ -312,15 +301,6 @@ impl<'input> DownloadScheduler<'input> {
                 log_error!(LOG_TAG, "Download scheduler selected a missing task");
                 return false;
             };
-            if download
-                .task
-                .source_ready
-                .as_ref()
-                .is_some_and(|gate| gate.unavailable())
-            {
-                skipped.insert(download.task.task.mount_path);
-                continue;
-            }
             // Front-load one long ready archive, then retain FIFO so subsequent
             // CPU-heavy work does not crowd that task throughout its execution.
             if download.estimated_work > 0 {
@@ -338,23 +318,14 @@ impl<'input> DownloadScheduler<'input> {
         true
     }
 
-    fn record_completion(
-        &mut self,
-        completion: DownloadCompletion<'input>,
-        skipped: &mut HashSet<String>,
-    ) {
+    fn record_completion(&mut self, completion: DownloadCompletion<'input>) {
         self.active_attempts -= 1;
 
         match completion.outcome {
             AttemptOutcome::Finished(result) => {
                 self.reservations
                     .retain(|reserved| reserved.id != completion.download.id);
-                let task = &completion.download.task.task;
-                let optional_failure = task.optional && result.is_err();
-                if optional_failure {
-                    skipped.insert(task.mount_path.clone());
-                }
-                if !completion.download.finish(result) && !optional_failure {
+                if !completion.download.finish(result) {
                     self.all_success = false;
                 }
             }
@@ -369,57 +340,21 @@ impl<'input> DownloadScheduler<'input> {
 }
 
 /// Prepare download targets before any archive worker can start.
-pub(crate) fn prepare_download_tasks<'input>(
-    tasks: Vec<DownloadTask<'input>>,
-    skipped: &mut HashSet<String>,
-) -> Result<Vec<PreparedDownloadTask<'input>>, String> {
-    let mut prepared = Vec::with_capacity(tasks.len());
-    for task in tasks {
-        let target = if task.optional {
-            match optional_mount_state(Path::new(task.mount_path()))
-                .map_err(|error| format!("{} unsafe package target: {error}", task.label))?
-            {
-                // No archive worker can mutate the path during preparation,
-                // and the no-symlink lookup already resolved its identity.
-                OptionalMountState::Directory => Ok(task.normalized_mount_path.clone()),
-                OptionalMountState::Missing => task
-                    .create_mount_directory()
-                    .map(|()| task.normalized_mount_path.clone()),
-                OptionalMountState::Obstructed => Err(format!(
-                    "{} target preparation failed: package root is not a directory",
-                    task.label
-                )),
-            }
-        } else {
-            task.prepare()
-        };
-        match target {
-            Ok(effective_mount_path) => prepared.push(PreparedDownloadTask {
-                task,
-                effective_mount_path,
-                source_ready: None,
-            }),
-            Err(error) if task.optional => {
-                log_error!(LOG_TAG, "{error}");
-                skipped.insert(task.mount_path);
-            }
-            Err(error) => return Err(error),
-        }
-    }
-    Ok(prepared)
+pub(crate) fn prepare_download_tasks(
+    tasks: Vec<DownloadTask<'_>>,
+) -> Result<Vec<PreparedDownloadTask<'_>>, String> {
+    tasks.into_iter().map(DownloadTask::prepare).collect()
 }
 
 /// Download all prepared tasks in parallel using std::thread.
 /// Allows additional overlap for remote header waits while keeping local-only
 /// extraction bounded. Serializes logically or physically overlapping mounts.
-/// Returns false for required download and scheduler failures. Failed optional
-/// mounts are recorded for cleanup after the workers settle.
+/// Returns true if all downloads succeeded, false if any failed.
 pub(crate) fn download_all_parallel(
     tasks: Vec<PreparedDownloadTask<'_>>,
     readiness: Option<Readiness>,
-    skipped: &mut HashSet<String>,
 ) -> bool {
-    download_with_readiness(tasks, readiness, run_download_attempt, skipped)
+    download_with_readiness(tasks, readiness, run_download_attempt)
 }
 
 #[cfg(test)]
@@ -427,7 +362,7 @@ fn download_all_parallel_with_runner(
     tasks: Vec<PreparedDownloadTask<'_>>,
     attempt_runner: AttemptRunner,
 ) -> bool {
-    download_with_readiness(tasks, None, attempt_runner, &mut HashSet::new())
+    download_with_readiness(tasks, None, attempt_runner)
 }
 
 fn download_concurrency(remote_count: usize, task_count: usize) -> usize {
@@ -453,7 +388,6 @@ fn download_with_readiness(
     mut tasks: Vec<PreparedDownloadTask<'_>>,
     readiness: Option<Readiness>,
     attempt_runner: AttemptRunner,
-    skipped: &mut HashSet<String>,
 ) -> bool {
     if let Some(readiness) = &readiness {
         for task in &mut tasks {
@@ -568,11 +502,8 @@ fn download_with_readiness(
         let mut scheduler = DownloadScheduler::new(pending, concurrency);
 
         while scheduler.has_work() {
-            if !scheduler.start_ready_attempts(&work_tx, &mut telemetry, skipped) {
+            if !scheduler.start_ready_attempts(&work_tx, &mut telemetry) {
                 return false;
-            }
-            if !scheduler.has_work() {
-                break;
             }
 
             if !scheduler.can_make_progress() && watcher.is_none() {
@@ -598,7 +529,7 @@ fn download_with_readiness(
                     return false;
                 }
             };
-            scheduler.record_completion(completion, skipped);
+            scheduler.record_completion(completion);
         }
 
         let sources_finished = watcher.as_mut().map(|watcher| watcher.finish()).transpose();
@@ -634,7 +565,7 @@ fn find_startable_download(
             .task
             .source_ready
             .as_ref()
-            .is_some_and(|gate| gate.pending())
+            .is_some_and(|gate| !gate.load(Ordering::Acquire))
         {
             continue;
         }
@@ -700,21 +631,6 @@ fn panic_message(payload: &(dyn Any + Send)) -> String {
 
 /// Download and extract one archive. Files written before an error remain in place.
 fn run_download_attempt(download: &mut StartedDownload<'_>) -> Result<(), DownloadError> {
-    // An overlapping ancestor archive can change target state after plan
-    // preparation. Recheck before writing through the retained identity.
-    let create_directory = if download.task.task.optional {
-        match optional_mount_state(download.task.logical_mount_path())
-            .map_err(|error| DownloadError::new(format!("Unsafe package target: {error}")))?
-        {
-            OptionalMountState::Directory => false,
-            OptionalMountState::Missing => true,
-            OptionalMountState::Obstructed => {
-                return Err(DownloadError::new("Package root is not a directory"));
-            }
-        }
-    } else {
-        true
-    };
     if let Some(files) = &download.task.task.files {
         if download.task.task.template_guidance.is_some() {
             return Err(DownloadError::new(
@@ -728,18 +644,9 @@ fn run_download_attempt(download: &mut StartedDownload<'_>) -> Result<(), Downlo
         )
         .map_err(|error| DownloadError::new(format!("Decoded storage write failed: {error}")));
     }
-    let target_path = download.task.effective_mount_path();
-    if create_directory {
-        fs::create_dir_all(target_path).map_err(|error| {
-            DownloadError::new(format!(
-                "Failed to create directory {}: {error}",
-                target_path.display()
-            ))
-        })?;
-    }
     download_and_extract(
         &download.task.task.url,
-        target_path,
+        download.task.effective_mount_path(),
         &mut download.opened_file_compressed_bytes,
         download.remote_metrics.as_mut(),
         download.local_metrics.as_mut(),
@@ -757,6 +664,13 @@ fn download_and_extract(
     concurrency: usize,
     template_guidance: Option<&guest_contracts::storage_manifest::TemplateGuidanceReference>,
 ) -> Result<(), DownloadError> {
+    fs::create_dir_all(target_path).map_err(|e| {
+        DownloadError::new(format!(
+            "Failed to create directory {}: {e}",
+            target_path.display()
+        ))
+    })?;
+
     let attempt_metrics = remote_metrics
         .is_some()
         .then(source::RemoteArchiveAttemptMetrics::default);

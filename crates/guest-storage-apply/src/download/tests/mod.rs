@@ -69,9 +69,8 @@ fn scheduler_front_loads_one_archive_then_dispatches_original_order() {
         )
     }));
     let mut scheduler = DownloadScheduler::new(pending, 4);
-    let mut skipped = HashSet::new();
     let (send, receive) = mpsc::sync_channel(4);
-    assert!(scheduler.start_ready_attempts(&send, &mut telemetry, &mut HashSet::new()));
+    assert!(scheduler.start_ready_attempts(&send, &mut telemetry));
     let first = (0..4)
         .map(|_| receive.try_recv().unwrap())
         .collect::<Vec<_>>();
@@ -80,25 +79,19 @@ fn scheduler_front_loads_one_archive_then_dispatches_original_order() {
         [3, 0, 1, 2]
     );
     for download in first {
-        scheduler.record_completion(
-            DownloadCompletion {
-                download,
-                outcome: AttemptOutcome::Finished(Ok(())),
-            },
-            &mut skipped,
-        );
+        scheduler.record_completion(DownloadCompletion {
+            download,
+            outcome: AttemptOutcome::Finished(Ok(())),
+        });
     }
-    assert!(scheduler.start_ready_attempts(&send, &mut telemetry, &mut HashSet::new()));
+    assert!(scheduler.start_ready_attempts(&send, &mut telemetry));
     for expected in [4, 5] {
         let download = receive.try_recv().unwrap();
         assert_eq!(download.id, expected);
-        scheduler.record_completion(
-            DownloadCompletion {
-                download,
-                outcome: AttemptOutcome::Finished(Ok(())),
-            },
-            &mut skipped,
-        );
+        scheduler.record_completion(DownloadCompletion {
+            download,
+            outcome: AttemptOutcome::Finished(Ok(())),
+        });
     }
     assert!(!scheduler.has_work());
     telemetry.finish();
@@ -121,7 +114,7 @@ fn ready_archive_priority_preserves_fifo_ties_and_source_gates() {
                 let mut download = pending_at(id, &format!("/independent-{id}"));
                 download.estimated_work = hint;
                 if gated && id == 1 {
-                    download.task.source_ready = Some(Arc::new(SourceGate::new()));
+                    download.task.source_ready = Some(Arc::new(AtomicBool::new(false)));
                 }
                 download
             })
@@ -169,7 +162,7 @@ fn large_archive_priority_respects_logical_and_physical_reservations() {
 #[test]
 fn unpublished_predecessor_blocks_conflicting_ready_work_but_not_independent_work() {
     for physical_alias in [false, true] {
-        let gate = Arc::new(SourceGate::new());
+        let gate = Arc::new(AtomicBool::new(false));
         let mut first = pending_at(0, "/data/parent");
         first.task.source_ready = Some(gate.clone());
         let mut child = pending_at(
@@ -189,7 +182,7 @@ fn unpublished_predecessor_blocks_conflicting_ready_work_but_not_independent_wor
             find_startable_download(&pending, &[], true, &mut |_, _, _, _| {}),
             Some((2, 2))
         );
-        gate.publish(crate::readiness::SourceStatus::Ready);
+        gate.store(true, Ordering::Release);
         assert_eq!(
             find_startable_download(&pending, &[], true, &mut |_, _, _, _| {}),
             Some((0, 0))

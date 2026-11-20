@@ -62,7 +62,6 @@ pub(in crate::executor::tests) fn api_storage(
 ) -> StorageEntry {
     StorageEntry {
         template_guidance: None,
-        optional: false,
         name: name.into(),
         mount_path: mount_path.into(),
         archive_url: archive_url.into(),

@@ -45,11 +45,6 @@ impl GuestStorageInput {
         if self.initial.files.is_empty() {
             return Ok(None);
         }
-        if self.initial.manifest.requires_complete_mount_list() {
-            return Ok((query.len()
-                <= guest_contracts::storage_files::MAX_COMPLETE_MANIFEST_BYTES)
-                .then_some((self, query)));
-        }
 
         // An early ordinary operation cannot validate the decoded continuation.
         // Check complete bindings and aggregate budgets before any Guest mutation.
@@ -87,7 +82,6 @@ impl GuestStorageInput {
                 storages: decoded_storages,
                 artifacts: decoded_artifacts,
                 cleanup_paths: Vec::new(),
-                removed_package_paths: Vec::new(),
                 instruction_cleanups: Vec::new(),
                 archive_readiness: None,
             },
@@ -184,10 +178,10 @@ impl GuestApplication {
         // bindings. It never becomes another independently mutable plan.
         let mut snapshot = plan.clone();
         for (group, outcome) in ordinary {
-            for target in group.targets() {
-                if matches!(outcome, TargetOutcome::Unavailable(_)) {
-                    snapshot.mark_optional_unavailable(target.handle)?;
-                } else if matches!(outcome, TargetOutcome::Hit) && !plan.has_decoded(target.handle)
+            if matches!(outcome, TargetOutcome::Hit) {
+                for target in group
+                    .targets()
+                    .filter(|target| !plan.has_decoded(target.handle))
                 {
                     rewrite_url(&mut snapshot, target);
                 }
@@ -268,8 +262,8 @@ impl GuestApplication {
         let Some(readiness) = &self.pending else {
             return Ok(());
         };
-        let mut publications = Vec::new();
-        for (group, outcome) in staged {
+        let mut indices = Vec::new();
+        for (group, _) in staged {
             let target = &group.representative;
             let url = format!(
                 "file://{}",
@@ -282,22 +276,17 @@ impl GuestApplication {
                 .ok_or_else(|| {
                     RunnerError::Internal("staged source lost its readiness binding".into())
                 })?;
-            if !self.published.contains(&index)
-                && !publications
-                    .iter()
-                    .any(|(published, _)| *published == index)
-            {
-                let path = if matches!(outcome, TargetOutcome::Unavailable(_)) {
-                    readiness.unavailable_path(&self.runtime, index)
-                } else {
-                    readiness.ready_path(&self.runtime, index)
-                };
-                publications.push((index, path));
+            if !self.published.contains(&index) && !indices.contains(&index) {
+                indices.push(index);
             }
         }
-        let writes = publications
+        let paths = indices
             .iter()
-            .map(|(_, path)| {
+            .map(|index| readiness.ready_path(&self.runtime, *index))
+            .collect::<Vec<_>>();
+        let writes = paths
+            .iter()
+            .map(|path| {
                 Ok(WriteFileEntry {
                     path: path.to_str().ok_or_else(|| {
                         RunnerError::Internal("invalid Guest readiness path".into())
@@ -308,8 +297,7 @@ impl GuestApplication {
             .collect::<RunnerResult<Vec<_>>>()?;
         if !writes.is_empty() {
             sandbox.write_private_files(&writes).await?;
-            self.published
-                .extend(publications.into_iter().map(|(index, _)| index));
+            self.published.extend(indices);
         }
         Ok(())
     }
@@ -352,15 +340,33 @@ pub async fn populate_cache_for_guest(
         match result {
             Ok(deferred) => {
                 if let Some(readiness) = &application.pending {
-                    if application.published.len() != readiness.sources.len() {
-                        return Err(RunnerError::Internal(
-                            "incomplete Guest archive publication".into(),
-                        ));
+                    let paths = (0..readiness.sources.len())
+                        .filter(|index| !application.published.contains(index))
+                        .map(|index| readiness.ready_path(&application.runtime, index))
+                        .collect::<Vec<_>>();
+                    let paths = paths
+                        .iter()
+                        .map(|path| {
+                            path.to_str().ok_or_else(|| {
+                                RunnerError::Internal("invalid Guest readiness path".into())
+                            })
+                        })
+                        .collect::<RunnerResult<Vec<_>>>()?;
+                    let writes = paths
+                        .iter()
+                        .map(|path| WriteFileEntry { path, content: &[] })
+                        .collect::<Vec<_>>();
+                    if writes.is_empty() {
+                        return Ok(deferred);
+                    }
+                    match sandbox.write_private_files(&writes).await {
+                        Ok(()) => Ok(deferred),
+                        Err(error) => Err(error.into()),
                     }
                 } else {
                     application.send(GuestStorageInput::from_plan(prepared.plan.clone()))?;
+                    Ok(deferred)
                 }
-                Ok(deferred)
             }
             Err(error) => Err(error),
         }
