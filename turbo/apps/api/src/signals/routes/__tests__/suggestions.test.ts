@@ -1199,7 +1199,7 @@ describe("Agent suggestions", () => {
     const thread = await accept(
       threads.create({
         headers: humanHeaders,
-        body: { agentId: owner.agentId },
+        body: {},
       }),
       [201],
     );
@@ -1301,7 +1301,7 @@ describe("Agent suggestions", () => {
     const thread = await accept(
       threads.create({
         headers: humanHeaders,
-        body: { agentId: owner.agentId },
+        body: {},
       }),
       [201],
     );
@@ -1370,7 +1370,7 @@ describe("Agent suggestions", () => {
     const thread = await accept(
       threads.create({
         headers: humanHeaders,
-        body: { agentId: secondary.agentId },
+        body: {},
       }),
       [201],
     );
@@ -1495,7 +1495,7 @@ describe("Suggestion custom follow-ups", () => {
     const thread = await accept(
       threads.create({
         headers: humanHeaders,
-        body: { agentId: fixture.agentId },
+        body: {},
       }),
       [201],
     );
@@ -1608,7 +1608,7 @@ describe("Suggestion custom follow-ups", () => {
     const thread = await accept(
       setupApp({ context, routes: chatThreadCreateRoutes })(
         chatThreadsContract,
-      ).create({ headers: humanHeaders, body: { agentId: fixture.agentId } }),
+      ).create({ headers: humanHeaders, body: {} }),
       [201],
     );
     const contextPart = suggestionContextPart({
@@ -1698,7 +1698,7 @@ describe("Suggestion custom follow-ups", () => {
     const thread = await accept(
       setupApp({ context, routes: chatThreadCreateRoutes })(
         chatThreadsContract,
-      ).create({ headers: humanHeaders, body: { agentId: fixture.agentId } }),
+      ).create({ headers: humanHeaders, body: {} }),
       [201],
     );
     const events = setupApp({ context, routes: chatEventsRoutes })(
@@ -1788,7 +1788,7 @@ describe("Suggestion custom follow-ups", () => {
     const thread = await accept(
       setupApp({ context, routes: chatThreadCreateRoutes })(
         chatThreadsContract,
-      ).create({ headers: humanHeaders, body: { agentId: fixture.agentId } }),
+      ).create({ headers: humanHeaders, body: {} }),
       [201],
     );
     await accept(
@@ -1861,7 +1861,7 @@ describe("Suggestion custom follow-ups", () => {
     const thread = await accept(
       setupApp({ context, routes: chatThreadCreateRoutes })(
         chatThreadsContract,
-      ).create({ headers: humanHeaders, body: { agentId: fixture.agentId } }),
+      ).create({ headers: humanHeaders, body: {} }),
       [201],
     );
     const events = setupApp({ context, routes: chatEventsRoutes })(

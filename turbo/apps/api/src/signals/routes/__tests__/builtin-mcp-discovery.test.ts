@@ -124,7 +124,7 @@ describe("builtin MCP discovery authority", () => {
           chatThreadsContract,
         ).create({
           headers: { authorization: "Bearer clerk-session" },
-          body: { agentId },
+          body: {},
         }),
         [201],
       );

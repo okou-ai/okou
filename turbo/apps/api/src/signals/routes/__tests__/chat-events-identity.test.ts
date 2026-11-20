@@ -226,7 +226,7 @@ describe("CHAT-02: run-scoped agent-token chat launches", () => {
       const createdThread = await accept(
         chatThreadsClient().create({
           headers: { authorization: `Bearer ${okouToken}` },
-          body: { agentId, title: "Run-scoped handoff" },
+          body: { title: "Run-scoped handoff" },
         }),
         [201],
       );
