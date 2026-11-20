@@ -252,10 +252,9 @@ public struct ChatComposerAccess: Sendable {
     target: ChatConnectorTarget, search: String = "", cursor: String? = nil
   ) async throws -> ChatConnectorAccounts {
     var query = target.query + [URLQueryItem(name: "limit", value: "50")]
-    if !search.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-      query.append(URLQueryItem(name: "search", value: search))
-    }
-    if let cursor { query.append(URLQueryItem(name: "cursor", value: cursor)) }
+    let term = String(search.unicodeScalars.drop(while: CharacterSet.ecmaScriptWhitespace.contains))
+    if !term.isEmpty { query.append(URLQueryItem(name: "search", value: term)) }
+    if let cursor, !cursor.isEmpty { query.append(URLQueryItem(name: "cursor", value: cursor)) }
     let response: ChatConnectorAccounts = try await client.request(
       "/api/connector-accounts/connections", query: query)
     guard response.connections.allSatisfy({ $0.target == target }),

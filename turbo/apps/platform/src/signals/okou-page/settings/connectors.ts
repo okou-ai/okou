@@ -5,7 +5,6 @@ import { toast } from "@okouai/ui/components/ui/sonner";
 import { accept } from "../../../lib/accept.ts";
 import { now } from "../../../lib/time.ts";
 import type { ConnectorDeviceAuthStartOptions } from "@okouai/connectors/connector-config";
-import { isConnectorAppOauthCallbackEnabled } from "@okouai/connectors/app-oauth-callback";
 import {
   connectorAuthMethodIdSchema,
   type ConnectorAuthMethodId,
@@ -2122,9 +2121,7 @@ const startConnectorBrowserAuthorization$ = command(
         fetchOptions: { signal },
         body: {
           ...body,
-          ...(isConnectorAppOauthCallbackEnabled(args.connectorSlug)
-            ? { callbackTarget: "app" as const }
-            : {}),
+          callbackTarget: "app",
         },
       }),
       [200],

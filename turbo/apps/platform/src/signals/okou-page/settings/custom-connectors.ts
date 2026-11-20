@@ -87,7 +87,14 @@ async function readCustomConnectorCompletion(
 ): Promise<boolean> {
   signal.throwIfAborted();
   if (connector && isIntegrationManagedCustomConnector(connector)) {
-    return customConnectorManagedStatusSchema.parse(connector).connected;
+    const status = customConnectorManagedStatusSchema.parse(connector);
+    if (
+      status.connected &&
+      status.connectedAccountId?.toLowerCase() !== connectionId.toLowerCase()
+    ) {
+      throw new Error("Connector account response identity mismatch.");
+    }
+    return status.connected;
   }
   return await readConnectorAccountCompletion(
     createClient,

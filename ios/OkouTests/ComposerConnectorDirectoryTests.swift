@@ -17,8 +17,7 @@ final class ComposerConnectorDirectoryTests: XCTestCase {
       XCTAssertEqual(request.url?.path, "/api/connector-catalog/discovery")
       let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems
       XCTAssertEqual(query?.first(where: { $0.name == "keyword" })?.value, "team chat")
-      XCTAssertEqual(
-        query?.first(where: { $0.name == "category" })?.value, "communication-collaboration")
+      XCTAssertNil(query?.first(where: { $0.name == "category" }))
       reads.withLock { $0 += 1 }
       started.fulfill()
       await gate.wait()
@@ -29,7 +28,7 @@ final class ComposerConnectorDirectoryTests: XCTestCase {
       resources.close()
       gate.open()
     }
-    resources.update(search: "team chat", category: "communication-collaboration")
+    resources.update(search: " team chat ", category: "communication-collaboration")
     let first = try own(resources.store.get(resources.catalog))
     await fulfillment(of: [started], timeout: 3)
     let second = try own(resources.store.get(resources.catalog))
