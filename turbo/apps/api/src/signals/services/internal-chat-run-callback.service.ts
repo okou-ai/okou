@@ -1899,25 +1899,6 @@ function channelQueuedMessageAdmissionFailure(
   }
 }
 
-export function queuedIntegrationLaunchFields(
-  launchMaterial: QueuedLaunchMaterial,
-  agentId: string,
-) {
-  const { delivery } = launchMaterial;
-  return {
-    ...delivery,
-    ...(delivery.telegramDelivery
-      ? { telegramDelivery: { ...delivery.telegramDelivery, agentId } }
-      : {}),
-    ...(delivery.emailDelivery
-      ? { emailDelivery: { ...delivery.emailDelivery, agentId } }
-      : {}),
-    ...(delivery.agentphoneDelivery
-      ? { agentphoneDelivery: { ...delivery.agentphoneDelivery, agentId } }
-      : {}),
-  };
-}
-
 interface QueuedAdmissionFailureDelivery {
   readonly chatThreadId: string;
   readonly userId: string;
