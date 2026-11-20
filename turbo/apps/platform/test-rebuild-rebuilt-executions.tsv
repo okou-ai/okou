@@ -1965,3 +1965,40 @@ sidebar-pinned-links-005	turbo/apps/platform/src/views/okou-page/__tests__/sideb
 sidebar-pinned-links-006	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-pinned-links.test.tsx	Pinned links preserve the current agent and unread filter for [MouseRight] activation	89	passed
 sidebar-pinned-links-008	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-pinned-links.test.tsx	Pinned links preserve the current agent and unread filter for keyboard activation	104	passed
 sidebar-pinned-links-010	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-pinned-links.test.tsx	Alt-click still opens a thread in the sidebar pane	117	passed
+sidebar-mac-shortcut-001	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-mac-shortcut.test.tsx	The Mac shortcut toggles the chat list while composing	104	passed
+keyboard-shortcut-hints-001	turbo/apps/platform/src/views/okou-page/__tests__/keyboard-shortcut-hints.test.tsx	Keep the new chat shortcut usable in a Mac browser	50	passed
+keyboard-shortcut-hints-003	turbo/apps/platform/src/views/okou-page/__tests__/keyboard-shortcut-hints.test.tsx	Keep the chat list shortcut usable in a Mac browser	61	passed
+keyboard-shortcut-hints-005	turbo/apps/platform/src/views/okou-page/__tests__/keyboard-shortcut-hints.test.tsx	Keep the search shortcut usable in a Mac browser	77	passed
+search-result-number-shortcuts-001	turbo/apps/platform/src/views/okou-page/__tests__/search-result-number-shortcuts.test.tsx	Limit empty search to 25 cached chats in sidebar order	56	passed
+search-result-number-shortcuts-002	turbo/apps/platform/src/views/okou-page/__tests__/search-result-number-shortcuts.test.tsx	Number only the first nine search results and open the ninth on Mac Chrome	101	passed
+thread-list-number-shortcuts-002	turbo/apps/platform/src/views/okou-page/__tests__/thread-list-number-shortcuts.test.tsx	Open the ninth chat using its visible hint	73	passed
+thread-list-number-shortcuts-003	turbo/apps/platform/src/views/okou-page/__tests__/thread-list-number-shortcuts.test.tsx	Keep browser mode free of number shortcuts	87	passed
+unread-only-shortcut-001	turbo/apps/platform/src/views/okou-page/__tests__/unread-only-shortcut.test.tsx	Toggle unread-only chats and expose the shortcut	59	passed
+unread-only-shortcut-003	turbo/apps/platform/src/views/okou-page/__tests__/unread-only-shortcut.test.tsx	Open the first unread chat from the shortcut	90	passed
+unread-only-shortcut-004	turbo/apps/platform/src/views/okou-page/__tests__/unread-only-shortcut.test.tsx	Only the latest shortcut toggle navigates	121	passed
+project-order-002	turbo/apps/platform/src/views/okou-page/__tests__/project-order.test.tsx	The focused Project row and menu own reorder keys instead of the current pinned chat	189	passed
+project-order-003	turbo/apps/platform/src/views/okou-page/__tests__/project-order.test.tsx	Project page reorder preserves composer text and ignores composition, repeats and other modifiers	216	passed
+project-order-006	turbo/apps/platform/src/views/okou-page/__tests__/project-order.test.tsx	Filtered lists keep canonical Project order and hide reorder actions	245	passed
+chat-pin-shortcuts-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-pin-shortcuts.test.tsx	Reorder immediately after selecting a chat with draft "Unsent draft"	117	passed
+chat-pin-shortcuts-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-pin-shortcuts.test.tsx	Move the current pin one position in either direction without navigating	151	passed
+chat-pin-shortcuts-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-pin-shortcuts.test.tsx	Stop at the first and last pinned positions	167	passed
+chat-pin-shortcuts-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-pin-shortcuts.test.tsx	Reorder the focused sidebar row on the new-chat page	183	passed
+chat-pin-shortcuts-006	turbo/apps/platform/src/views/okou-page/__tests__/chat-pin-shortcuts.test.tsx	Reorder the focused sidebar menu trigger on the new-chat page	183	passed
+chat-pin-shortcuts-008	turbo/apps/platform/src/views/okou-page/__tests__/chat-pin-shortcuts.test.tsx	Reorder from the side composer while keeping its draft and main chat selected	206	passed
+chat-pin-shortcuts-009	turbo/apps/platform/src/views/okou-page/__tests__/chat-pin-shortcuts.test.tsx	Reorder from inline rename while keeping its edit and focus	221	passed
+chat-pin-shortcuts-015	turbo/apps/platform/src/views/okou-page/__tests__/chat-pin-shortcuts.test.tsx	Show Windows menu hints and pinned shortcut help	237	passed
+home-route-002	turbo/apps/platform/src/views/okou-page/__tests__/home-route.test.tsx	Home preserves a prompt handoff (My Okou=false)	57	passed
+home-route-003	turbo/apps/platform/src/views/okou-page/__tests__/home-route.test.tsx	Home preserves a prompt handoff (My Okou=true)	57	passed
+project-cache-002	turbo/apps/platform/src/views/okou-page/__tests__/project-cache.test.tsx	An empty cached chat list discovers a newly published snapshot	86	passed
+project-cache-006	turbo/apps/platform/src/views/okou-page/__tests__/project-cache.test.tsx	Projects restore persisted events before an expired cursor is rebuilt	125	passed
+project-cache-007	turbo/apps/platform/src/views/okou-page/__tests__/project-cache.test.tsx	Project cache stays private when another account opens the same browser	164	passed
+project-cache-008	turbo/apps/platform/src/views/okou-page/__tests__/project-cache.test.tsx	Project cache stays private when another workspace opens the same browser	164	passed
+pwa-navigation-001	turbo/apps/platform/src/views/okou-page/__tests__/pwa-navigation.test.tsx	Keep the desktop navigation in a desktop PWA	67	passed
+pwa-navigation-003	turbo/apps/platform/src/views/okou-page/__tests__/pwa-navigation.test.tsx	Open workspace search from the compact mobile chat header (standalone: false)	87	passed
+pwa-navigation-006	turbo/apps/platform/src/views/okou-page/__tests__/pwa-navigation.test.tsx	Browse and filter mobile browser chats before opening a conversation and returning	139	passed
+pwa-navigation-007	turbo/apps/platform/src/views/okou-page/__tests__/pwa-navigation.test.tsx	Slide conversations in from the mobile chat list and out back to the tabs	235	passed
+pwa-navigation-008	turbo/apps/platform/src/views/okou-page/__tests__/pwa-navigation.test.tsx	My Okou's chats tab is its chat list at / and composes a new chat there	312	passed
+pwa-navigation-009	turbo/apps/platform/src/views/okou-page/__tests__/pwa-navigation.test.tsx	Leave the slide to the browser after an edge swipe back	371	passed
+pwa-navigation-014	turbo/apps/platform/src/views/okou-page/__tests__/pwa-navigation.test.tsx	Point to unread chats in other agents from the tabs and the agent switcher	412	passed
+pwa-navigation-015	turbo/apps/platform/src/views/okou-page/__tests__/pwa-navigation.test.tsx	Keep a PWA home prompt handoff in the prepared chat composer	489	passed
+pwa-navigation-017	turbo/apps/platform/src/views/okou-page/__tests__/pwa-navigation.test.tsx	Switch the mobile browser chat list to another agent	515	passed

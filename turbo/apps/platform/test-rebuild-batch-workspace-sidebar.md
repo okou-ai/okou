@@ -25,3 +25,14 @@ The Project results establish where the candidate stopped. The next attempt
 should synchronize the named row's committed expansion before advancing the
 existing animation-frame fixture, while retaining the pre-frame and running
 phase assertions.
+
+## Accepted files
+
+The workspace entry and sidebar controls batch accepted 36 of 68 frozen rows
+across ten files. The navigation and shortcuts batch accepted 37 of 69 frozen
+rows across ten files. Both batches passed targeted Vitest, Platform test
+TypeScript, ESLint and both Oxlint configurations before BDD removal.
+
+`project-order-003` mentions ArrowUp in When and ArrowDown in Then for the open
+menu. The retained row checks both keys with the menu open and asserts the
+Project order after each key.
