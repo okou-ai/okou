@@ -31,7 +31,7 @@ export function ForYouCardHeading({
           {title}
         </h3>
         {description && (
-          <p className="mt-2 text-sm leading-6 text-muted-foreground wrap-break-word">
+          <p className="mt-3 text-sm leading-6 text-muted-foreground wrap-break-word">
             {description}
           </p>
         )}
