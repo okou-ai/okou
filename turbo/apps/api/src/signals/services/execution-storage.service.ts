@@ -1,9 +1,4 @@
-import {
-  CANONICAL_CLAUDE_MEMORY_MOUNT_PATH,
-  CANONICAL_CODEX_MEMORY_MOUNT_PATH,
-  CANONICAL_PI_MEMORY_MOUNT_PATH,
-  type StoredStorageMountEntry,
-} from "@okouai/api-contracts/contracts/runners";
+import type { StoredStorageMountEntry } from "@okouai/api-contracts/contracts/runners";
 import {
   MEMORY_ARTIFACT_NAME,
   SYSTEM_ORG_ID,
@@ -34,23 +29,17 @@ export interface AcceptedMemoryMount {
   readonly archiveCache: MemberMemoryHead["archiveCache"];
 }
 
-const memoryMountPaths = Object.freeze({
-  "claude-code": CANONICAL_CLAUDE_MEMORY_MOUNT_PATH,
-  codex: CANONICAL_CODEX_MEMORY_MOUNT_PATH,
-  pi: CANONICAL_PI_MEMORY_MOUNT_PATH,
-});
-
 export function buildMemberMemoryMount(
   owner: MemberMemoryOwner,
   head: MemberMemoryHead,
-  framework: keyof typeof memoryMountPaths,
+  mountPath: string,
 ): AcceptedMemoryMount {
   const mount = {
     ...owner,
     name: MEMORY_ARTIFACT_NAME,
     storageId: head.storageId,
     version: head.versionId,
-    mountPath: memoryMountPaths[framework],
+    mountPath,
     writeback: true as const,
     missingRootPolicy: "preserveParentVersion" as const,
   };

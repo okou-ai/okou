@@ -1,7 +1,4 @@
-import type {
-  ExecutionContext,
-  PreparedExecutionContext,
-} from "@okouai/api-contracts/contracts/runners";
+import type { ExecutionContext } from "@okouai/api-contracts/contracts/runners";
 import { command } from "ccstate";
 import type { ContentBundle } from "@okouai/api-contracts/contracts/content-bundle";
 import { presignedGetUrlSignerForBucket } from "../external/s3";
@@ -13,14 +10,14 @@ import {
   signStoragePresignedUrls,
   type StoragePresignedUrlCacheWrite,
 } from "./system-storage-presigned-url-cache.service";
-import type { CapturedExecutionPackages } from "./execution-workflow-selection";
+import type {
+  CapturedExecutionPackages,
+  ExecutionPackageMounts,
+} from "./execution-workflow-selection";
 
 export function selectExecutionContentBundles(
   packages: CapturedExecutionPackages,
-  context: Pick<
-    PreparedExecutionContext,
-    "officialWorkflowBundles" | "seedSkillBundles" | "templateGuidanceBundles"
-  > & { readonly skillRoot: string },
+  context: ExecutionPackageMounts & { readonly skillRoot: string },
 ) {
   const workflows = packages.workflows.map(({ name, contentBundle }) => {
     return { ...contentBundle, mountPath: `${context.skillRoot}/${name}` };

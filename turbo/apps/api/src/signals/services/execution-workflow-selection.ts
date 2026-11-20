@@ -1,6 +1,9 @@
 import {
   CANONICAL_CLAUDE_CONFIG_DIR,
+  CANONICAL_CLAUDE_MEMORY_MOUNT_PATH,
   CANONICAL_CODEX_HOME_DIR,
+  CANONICAL_CODEX_MEMORY_MOUNT_PATH,
+  CANONICAL_PI_MEMORY_MOUNT_PATH,
   PI_SKILLS_ROOT,
   type PreparedExecutionContext,
 } from "@okouai/api-contracts/contracts/runners";
@@ -48,6 +51,11 @@ export interface CapturedExecutionPackages {
   }[];
   readonly instructionsBundle: ContentBundle;
 }
+
+export type ExecutionPackageMounts = Pick<
+  PreparedExecutionContext,
+  "officialWorkflowBundles" | "seedSkillBundles" | "templateGuidanceBundles"
+>;
 
 /**
  * Shared projection for prompt picks and the Automation target statement.
@@ -172,30 +180,64 @@ export function selectExecutionPackages(
   };
 }
 
-/** Resolve package destinations for this Run's accepted launch framework. */
+// Workflow packages mount under the skills root. Each framework reserves a
+// separate Memory destination and applies it after the package mounts.
+const frameworkMountPaths = {
+  "claude-code": {
+    skillRoot: `${CANONICAL_CLAUDE_CONFIG_DIR}/skills`,
+    memoryMountPath: CANONICAL_CLAUDE_MEMORY_MOUNT_PATH,
+  },
+  codex: {
+    skillRoot: `${CANONICAL_CODEX_HOME_DIR}/skills`,
+    memoryMountPath: CANONICAL_CODEX_MEMORY_MOUNT_PATH,
+  },
+  pi: {
+    skillRoot: PI_SKILLS_ROOT,
+    memoryMountPath: CANONICAL_PI_MEMORY_MOUNT_PATH,
+  },
+} as const;
+
 export function prepareRunPackageMounts(args: {
-  readonly framework: PreparedExecutionContext["cliAgentType"];
+  readonly framework: keyof typeof frameworkMountPaths;
   readonly skillVolumes: readonly SkillVolume[];
   readonly officialWorkflow: OfficialWorkflowObservation | undefined;
 }) {
-  const skillRoot =
-    args.framework === "pi"
-      ? PI_SKILLS_ROOT
-      : args.framework === "codex"
-        ? `${CANONICAL_CODEX_HOME_DIR}/skills`
-        : `${CANONICAL_CLAUDE_CONFIG_DIR}/skills`;
-  const skillMounts = normalizeMountOverlay(
+  const { skillRoot, memoryMountPath } = frameworkMountPaths[args.framework];
+  const packageMounts = normalizeMountOverlay(
     resolveRunSkillVolumes(args.skillVolumes, skillRoot),
-  );
+  ).filter(({ mountPath }) => {
+    return mountPath !== memoryMountPath;
+  });
   return {
     skillRoot,
-    skillMounts,
-    protectedMountPaths: skillMounts.flatMap((mount) => {
+    memoryMountPath,
+    protectedMountPaths: packageMounts.flatMap((mount) => {
       return "templateGuidanceBundle" in mount ? [mount.mountPath] : [];
     }),
-    officialWorkflowBundles:
-      args.officialWorkflow?.definitions.map(({ name, contentBundle }) => {
-        return { ...contentBundle, mountPath: `${skillRoot}/${name}` };
-      }) ?? [],
+    mounts: {
+      officialWorkflowBundles:
+        args.officialWorkflow?.definitions.map(({ name, contentBundle }) => {
+          return { ...contentBundle, mountPath: `${skillRoot}/${name}` };
+        }) ?? [],
+      seedSkillBundles: packageMounts.flatMap((mount) => {
+        return "contentBundle" in mount
+          ? [{ ...mount.contentBundle, mountPath: mount.mountPath }]
+          : [];
+      }),
+      templateGuidanceBundles: packageMounts.flatMap((mount, index) => {
+        if (!("templateGuidanceBundle" in mount)) {
+          return [];
+        }
+        const laterPaths = packageMounts.slice(index + 1).map((later) => {
+          return later.mountPath;
+        });
+        return [
+          {
+            ...mount.templateGuidanceBundle,
+            beforeMountPaths: [...laterPaths, memoryMountPath],
+          },
+        ];
+      }),
+    } satisfies ExecutionPackageMounts,
   };
 }
