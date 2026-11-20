@@ -175,8 +175,7 @@ export function createThreadContext(
   );
   const emailMailboxConnections$ = createEmailMailboxConnections(
     pickedEvent$,
-    connectedAccounts.selectedStoredConnectorSources$,
-    orgId,
+    connectedAccounts.selectedStoredConnectorAccounts$,
   );
   const inputSources = {
     connectorSelection$: connectedAccounts.connectorSelection$,

@@ -22,6 +22,7 @@ import { now, nowDate } from "../../lib/time";
 import { joinAll, safeSync } from "../utils";
 import type {
   AgentRunContextSignals,
+  BootstrapConnectorAccount,
   BootstrapConnectorObservation,
 } from "./agent-run-context.signals";
 import type {
@@ -68,10 +69,7 @@ import {
 } from "./custom-connector.service";
 import { countBucket } from "./dispatch-count-bucket";
 import type { RunConnectorScope } from "./execution-connector-selection";
-import type {
-  ConnectorSourceResult,
-  ConnectorSourceSnapshot,
-} from "./execution-connector-sources.service";
+import type { ConnectorSourceSnapshot } from "./execution-connector-sources.service";
 import type { createThreadConnectorSources } from "./thread-connector-sources.service";
 import type { PickedThreadInputEvent } from "./thread-run-prompt/types";
 
@@ -80,6 +78,16 @@ const log = logger("api:thread-connected-accounts");
 type DispatchTiming$ = Computed<ApiDispatchTimingCollector>;
 
 export type ConnectedAccountsError = ReturnType<typeof badRequestMessage>;
+
+type SelectedStoredConnectorAccount = Pick<
+  StoredConnectorMaterializationSnapshotRow,
+  | "connectorId"
+  | "connectorSlug"
+  | "userId"
+  | "needsReconnect"
+  | "externalEmail"
+  | "displayName"
+>;
 
 function isConnectedAccountsError(
   value: unknown,
@@ -98,8 +106,8 @@ export interface ConnectedAccounts {
   readonly threadSelections$: Computed<
     Promise<readonly ConnectorAccountSelection[]>
   >;
-  readonly selectedStoredConnectorSources$: Computed<
-    Promise<readonly ConnectorSourceResult[]>
+  readonly selectedStoredConnectorAccounts$: Computed<
+    Promise<readonly SelectedStoredConnectorAccount[]>
   >;
 }
 
@@ -136,11 +144,7 @@ function createConnectorMaterialization(
     accounts,
     prepared,
   );
-  const stored = createStoredConnectorSnapshotSignals(
-    connectors$,
-    inputs,
-    storedRows,
-  );
+  const stored = createStoredConnectorSnapshotSignals(inputs, storedRows);
   const customStorage = createCustomConnectorStorageSignals(
     connectors$,
     inputs,
@@ -209,7 +213,7 @@ function createConnectorMaterialization(
     connectorSelection$: prepared.connectorSelection$,
     connectorSnapshot$,
     threadSelections$,
-    selectedStoredConnectorSources$: stored.selectedStoredConnectorSources$,
+    selectedStoredConnectorAccounts$: stored.selectedStoredConnectorAccounts$,
   };
 }
 
@@ -630,65 +634,32 @@ function createStoredConnectorRowSignals(
 }
 
 function createStoredConnectorSnapshotSignals(
-  connectors$: AgentRunContextSignals["connectors$"],
   inputs: ConnectorInputSignals,
   storedRows: StoredConnectorRowSignals,
 ) {
   const { connectorInput$ } = inputs;
   const { selectedStoredConnectorRows$ } = storedRows;
-  const selectedStoredConnectorSources$ = computed(async (get) => {
-    const selected = await get(selectedStoredConnectorRows$);
-    if (!selected || isConnectedAccountsError(selected)) {
-      return [];
-    }
-    const ids = new Set(
-      selected.rows.map((row) => {
-        return row.connectorId;
-      }),
-    );
-    return (await get(connectors$)).connectorSources.filter((result) => {
-      const source =
-        result.kind === "available" ? result.snapshot.source : result.source;
-      return source.kind === "builtin" && ids.has(source.sourceId);
-    });
-  });
+  const selectedStoredConnectorAccounts$ = computed(
+    async (get): Promise<readonly SelectedStoredConnectorAccount[]> => {
+      const selected = await get(selectedStoredConnectorRows$);
+      return selected && !isConnectedAccountsError(selected)
+        ? selected.rows
+        : [];
+    },
+  );
   const storedConnectorSnapshot$ = computed(
     async (
       get,
     ): Promise<
       StoredConnectorMaterializationSnapshot | null | ConnectedAccountsError
     > => {
-      const [selected, sources] = await Promise.all([
-        get(selectedStoredConnectorRows$),
-        get(selectedStoredConnectorSources$),
-      ]);
+      const selected = await get(selectedStoredConnectorRows$);
       if (!selected || isConnectedAccountsError(selected)) {
         return selected;
       }
-      const available = new Map(
-        sources.flatMap((result) => {
-          return result.kind === "available"
-            ? [[result.snapshot.source.sourceId, result.snapshot] as const]
-            : [];
-        }),
-      );
-      const rows = selected.rows.flatMap((row) => {
-        const source = available.get(row.connectorId);
-        return source
-          ? [
-              {
-                ...row,
-                variableValues: source.variables,
-                secretNames: source.credentials.map((credential) => {
-                  return credential.name;
-                }),
-              },
-            ]
-          : [];
-      });
       return materializeStoredConnectorSnapshotRows(
         {
-          rows,
+          rows: selected.rows,
           allowedConnectorSlugs: selected.args.allowedConnectorSlugs,
           connectorCatalogSnapshot: selected.args.connectorCatalogSnapshot,
         },
@@ -696,7 +667,7 @@ function createStoredConnectorSnapshotSignals(
       );
     },
   );
-  return { selectedStoredConnectorSources$, storedConnectorSnapshot$ };
+  return { selectedStoredConnectorAccounts$, storedConnectorSnapshot$ };
 }
 
 type CustomConnectorStorageSignals = ReturnType<
@@ -1114,7 +1085,10 @@ interface StoredConnectorRuntimeRowCandidate {
   readonly userId: string;
 }
 
-interface StoredConnectorMaterializationSnapshotRow extends StoredConnectorRuntimeRowCandidate {
+interface StoredConnectorMaterializationSnapshotRow
+  extends
+    StoredConnectorRuntimeRowCandidate,
+    Pick<BootstrapConnectorAccount, "externalEmail" | "displayName"> {
   readonly secretNames: readonly string[];
   readonly variableValues: Readonly<Record<string, string>>;
 }

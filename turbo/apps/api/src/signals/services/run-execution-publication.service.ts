@@ -6,33 +6,20 @@ import { templateGuidanceMountPath } from "@okouai/api-contracts/contracts/templ
 import { command } from "ccstate";
 import { nowDate } from "../../lib/time";
 import { generateFirewallToken, generateSandboxToken } from "../auth/tokens";
-import { joinAllInOrder } from "../utils";
 import type { ExecutionContextRun } from "./execution-runtime-context";
 import type { ExecutionNetworkPolicyInputs } from "./admitted-execution-facts";
 import {
-  signExecutionContentBundles$,
-  type selectExecutionContentBundles,
-} from "./execution-content-bundle";
-import type { ContentBundleUrlCacheSnapshot } from "./content-bundle-presigned-url-cache";
-import {
-  activeNetworkPolicyRefreshesFromGrants,
+  activeNetworkPolicyRefreshesAt,
   mergeNetworkPolicyRefreshes,
   networkPolicyRefreshesRecord,
+  prepareNetworkPolicyRefreshInputs,
+  type PreparedNetworkPolicyRefreshInputs,
 } from "./connector-network-policy-refresh.service";
 
 export interface ExecutionPublicationRun extends ExecutionContextRun {
   readonly prompt: string;
   readonly appendSystemPrompt: string | null;
   readonly isFirstRun: boolean;
-}
-
-interface ExecutionPublicationInput {
-  readonly run: ExecutionPublicationRun;
-  readonly reuseKey: string;
-  readonly preparedContext: PreparedExecutionContext;
-  readonly networkPolicyInputs: ExecutionNetworkPolicyInputs | null;
-  readonly bundles: ReturnType<typeof selectExecutionContentBundles>;
-  readonly bundleUrlCache: ContentBundleUrlCacheSnapshot;
 }
 
 function secretValuesForRunner(
@@ -45,65 +32,44 @@ function secretValuesForRunner(
   return [token];
 }
 
-type RefreshedExecutionPolicies = Pick<
-  PreparedExecutionContext,
-  "networkPolicies"
-> &
-  Pick<ExecutionContext, "networkPolicyRefreshes">;
-
-const prepareExecutionNetworkPolicyRefreshes$ = command(
+export const prepareExecutionNetworkPolicy$ = command(
   async (
     _context,
     args: {
-      readonly preparedContext: PreparedExecutionContext;
+      readonly connectorRuntimeTargets: PreparedExecutionContext["connectorRuntimeTargets"];
       readonly networkPolicyInputs: ExecutionNetworkPolicyInputs | null;
     },
-  ): Promise<RefreshedExecutionPolicies> => {
-    const builtinConnectorSlugs = [
-      ...new Set(
-        args.preparedContext.connectorRuntimeTargets.flatMap((target) => {
-          return target.kind === "builtin" ? [target.connectorSlug] : [];
-        }),
-      ),
-    ];
+  ): Promise<PreparedNetworkPolicyRefreshInputs | null> => {
+    const builtinConnectorSlugs = args.connectorRuntimeTargets.flatMap(
+      (target) => {
+        return target.kind === "builtin" ? [target.connectorSlug] : [];
+      },
+    );
     if (builtinConnectorSlugs.length === 0) {
-      return {
-        networkPolicies: args.preparedContext.networkPolicies,
-        networkPolicyRefreshes: undefined,
-      };
+      return null;
     }
     if (args.networkPolicyInputs === null) {
       throw new Error(
         "Connector network policy refresh requires execution inputs",
       );
     }
-    const refreshes = await activeNetworkPolicyRefreshesFromGrants(
-      {
-        ...args.networkPolicyInputs,
-        connectorSlugs: builtinConnectorSlugs,
-      },
-      nowDate(),
-    );
-    return {
-      networkPolicies: mergeNetworkPolicyRefreshes(
-        args.preparedContext.networkPolicies,
-        refreshes,
-      ),
-      networkPolicyRefreshes: networkPolicyRefreshesRecord(refreshes),
-    };
+    return await prepareNetworkPolicyRefreshInputs({
+      ...args.networkPolicyInputs,
+      connectorSlugs: builtinConnectorSlugs,
+    });
   },
 );
 
-function executionContextBody(args: {
+export function buildExecutionContext(args: {
   readonly run: ExecutionPublicationRun;
   readonly reuseKey: string;
   readonly preparedContext: PreparedExecutionContext;
-  readonly secretValues: string[];
-  readonly refreshedPolicies: RefreshedExecutionPolicies;
+  readonly networkPolicyInputs: PreparedNetworkPolicyRefreshInputs | null;
   readonly contentBundles: ExecutionContext["contentBundles"];
-  readonly sandboxToken: string;
-  readonly firewallToken: string;
 }) {
+  const refreshes = args.networkPolicyInputs
+    ? activeNetworkPolicyRefreshesAt(args.networkPolicyInputs, nowDate())
+    : [];
   const {
     officialWorkflowBundles: _officialWorkflowBundles,
     seedSkillBundles: _seedSkillBundles,
@@ -137,57 +103,25 @@ function executionContextBody(args: {
           return mount;
         }),
     },
-    sandboxToken: args.sandboxToken,
-    firewallToken: args.firewallToken,
-    secretValues: args.secretValues,
-    connectorRuntimeTargets: args.preparedContext.connectorRuntimeTargets,
-    networkPolicies: args.refreshedPolicies.networkPolicies,
-    networkPolicyRefreshes: args.refreshedPolicies.networkPolicyRefreshes,
-  } satisfies ExecutionContext;
-}
-
-/** Produce one complete Runner request before durable dispatch ownership. */
-export const prepareExecutionPublication$ = command(
-  async ({ set }, args: ExecutionPublicationInput, signal: AbortSignal) => {
-    // Fallible preparation must finish before durable direct dispatch ownership.
-    const secretValues = secretValuesForRunner(args.preparedContext);
-    signal.throwIfAborted();
-    const [refreshedPolicies, signed] = await joinAllInOrder(
-      [
-        set(prepareExecutionNetworkPolicyRefreshes$, {
-          preparedContext: args.preparedContext,
-          networkPolicyInputs: args.networkPolicyInputs,
-        }),
-        set(
-          signExecutionContentBundles$,
-          args.bundles,
-          args.bundleUrlCache,
-          signal,
-        ),
-      ],
-      signal,
-    );
-    const sandboxToken = generateSandboxToken(
+    sandboxToken: generateSandboxToken(
       args.run.userId,
       args.run.id,
       args.run.orgId,
-    );
-    return {
-      executionContext: executionContextBody({
-        run: args.run,
-        reuseKey: args.reuseKey,
-        preparedContext: args.preparedContext,
-        secretValues,
-        refreshedPolicies,
-        contentBundles: signed.contentBundles,
-        sandboxToken,
-        firewallToken: generateFirewallToken(
-          args.run.userId,
-          args.run.id,
-          args.run.orgId,
-        ),
-      }),
-      cacheWrites: signed.cacheWrites,
-    };
-  },
-);
+    ),
+    firewallToken: generateFirewallToken(
+      args.run.userId,
+      args.run.id,
+      args.run.orgId,
+    ),
+    secretValues: secretValuesForRunner(args.preparedContext),
+    connectorRuntimeTargets: args.preparedContext.connectorRuntimeTargets,
+    networkPolicies:
+      refreshes.length === 0
+        ? args.preparedContext.networkPolicies
+        : mergeNetworkPolicyRefreshes(
+            args.preparedContext.networkPolicies,
+            refreshes,
+          ),
+    networkPolicyRefreshes: networkPolicyRefreshesRecord(refreshes),
+  } satisfies ExecutionContext;
+}
