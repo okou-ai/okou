@@ -1711,7 +1711,13 @@ async fn populate_cache_inner(
             // Keep the existing four-body envelope: cold bodies retain their
             // admission until staging, including bodies already downloaded.
             let ordinary_concurrency = CONCURRENCY.saturating_sub(owned_keys.len());
-            if !owned_keys.is_empty() && ordinary_concurrency > 0 && !target_groups.is_empty() {
+            // A saturated delivery can hand off decoded inputs and direct URLs
+            // early when none of the ordinary groups needs a cache body read.
+            let has_ready_inputs = application.is_some() && !decoded_outcomes.is_empty();
+            if !owned_keys.is_empty()
+                && !target_groups.is_empty()
+                && (ordinary_concurrency > 0 || has_ready_inputs)
+            {
                 let prepared = population::prepare_mixed(
                     delivery,
                     home,
