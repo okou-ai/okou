@@ -1961,21 +1961,6 @@ function driveScopeRequired(connectionId: string) {
 
 type DriveScopeRequiredResponse = ReturnType<typeof driveScopeRequired>;
 
-/**
- * Upload an owned artifact to the caller's authorized Google Drive account.
- *
- * Error mapping:
- *  - 404 "Artifact file not found" — no owned, ready artifact for the id.
- *  - 400 "Connect and authorize Google Drive for this agent before uploading
- *    artifacts" — no Agent grant or no matching connected account.
- *  - 400 "Connect Google Drive before syncing artifacts" — the account
- *    needs reconnection or has no usable credentials.
- *  - 400 "This artifact file cannot be synced to Google Drive" — file
- *    location is missing or doesn't match a caller-owned artifact prefix.
- *  - 400 "Google Drive upload failed with HTTP <status>" — upload error
- *    after refresh-token retry exhausted.
- *  - 200 with `{ id, name, webViewLink }`.
- */
 const resolveArtifactDriveUploadAccount$ = command(
   async ({ set }, args: SyncArtifactArgs, signal: AbortSignal) => {
     if (!("chatThreadId" in args)) {
@@ -1990,6 +1975,24 @@ const resolveArtifactDriveUploadAccount$ = command(
   },
 );
 
+/**
+ * Upload an owned artifact to the caller's authorized Google Drive account.
+ *
+ * Error mapping:
+ *  - 404 "Artifact file not found" — no owned, ready artifact for the id.
+ *  - 400 "Google Drive account is unavailable in this Chat" — no eligible
+ *    account for the Chat or the requested account is no longer selected.
+ *  - 400 "Connect and authorize Google Drive for this agent before uploading
+ *    artifacts" — no Agent grant or no matching connected account.
+ *  - 400 "Connect Google Drive before syncing artifacts" — the account
+ *    needs reconnection or has no usable credentials.
+ *  - 400 "This artifact file cannot be synced to Google Drive" — file
+ *    location is missing or doesn't match a caller-owned artifact prefix.
+ *  - 400 "Google Drive upload failed with HTTP <status>" — upload error
+ *    after refresh-token retry exhausted.
+ *  - 403 `GOOGLE_DRIVE_SCOPE_REQUIRED` — exact-account consent is needed.
+ *  - 200 with `{ id, name, webViewLink }`.
+ */
 export const syncArtifactToGoogleDrive$ = command(
   async (
     { get, set },

@@ -87,6 +87,7 @@ interface OauthRequest {
 interface DriveMockControl {
   readonly completeAuthorization: () => void;
   readonly requireNewConnection: () => void;
+  readonly requireReconnect: () => void;
   readonly requireScopeConsent: () => void;
   readonly selectOtherAccount: () => void;
   readonly oauthRequests: readonly OauthRequest[];
@@ -195,7 +196,7 @@ function installDriveMocks(
                   : artifactConnectionState === "reconnect-required"
                     ? {
                         action: "reconnect",
-                        connectionId: SELECTED_DRIVE_CONNECTION_ID,
+                        connectionId: artifactConnectionId,
                       }
                     : { action: "unavailable" },
             },
@@ -410,6 +411,12 @@ function installDriveMocks(
     requireNewConnection: () => {
       connectionState = "not-connected";
       artifactConnectionState = "not-connected";
+      selectedAccountReady = false;
+      artifactSynced = false;
+    },
+    requireReconnect: () => {
+      connectionState = "reconnect-required";
+      artifactConnectionState = "reconnect-required";
       selectedAccountReady = false;
       artifactSynced = false;
     },
@@ -1075,6 +1082,39 @@ test("Sync with the artifact's ready Drive account when the default needs attent
   });
 });
 
+test("Reconnect the same Drive account when refreshed status requires it", async () => {
+  mockWideScreen();
+  const popup = installAuthorizationPopup();
+  const drive = installDriveMocks(context, "connected");
+  await setupPage({
+    context,
+    path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
+    host: "app.okou.ai",
+  });
+  await openDriveArtifactMenu("Upload to Google Drive");
+  click(roleItemNamed("menuitem", "Upload to Google Drive"));
+  await expectSyncCompletedPreview();
+
+  drive.requireReconnect();
+  context.mocks.ably.trigger(
+    `chatThreadDetailChanged:${NAVIGATION_ARTIFACT_THREAD_ID}`,
+  );
+  const reconnect = await waitFor(() => {
+    const item = roleItemNamed("menuitem", "Connect Google Drive");
+    expect(item).not.toHaveAttribute("aria-disabled", "true");
+    return item;
+  });
+  click(reconnect);
+  await waitFor(() => {
+    expect(popup.location.href).toBe(AUTHORIZATION_URL);
+    expect(drive.oauthRequests[0]?.account).toStrictEqual({
+      intent: "reconnect",
+      connectionId: SELECTED_DRIVE_CONNECTION_ID,
+    });
+  });
+  expect(drive.syncRequests).toHaveLength(1);
+});
+
 test("Keep a reopened artifact usable after cancelling the remaining Drive setup", async () => {
   mockWideScreen();
   const popup = installAuthorizationPopup();
@@ -1447,7 +1487,7 @@ describe("google editor conversion", () => {
     );
   });
 
-  it("connects Drive from the document preview dialog and exposes the converted file without refreshing its snapshot", async () => {
+  it("keeps the editor link after both uploads from a newly connected preview", async () => {
     const popup = installAuthorizationPopup();
     const drive = installDriveMocks(context, "not-connected", {
       filename: "report.txt",
@@ -1510,6 +1550,32 @@ describe("google editor conversion", () => {
         return item.textContent?.trim() === "Synced to Google Drive";
       }),
     ).toBeUndefined();
+    click(roleItemNamed("menuitem", "Upload to Google Drive"));
+    await waitFor(() => {
+      expect(drive.syncRequests[1]).toStrictEqual({
+        artifactId: DRIVE_ARTIFACT_ID,
+        chatThreadId: NAVIGATION_ARTIFACT_THREAD_ID,
+        connectionId: NEW_DRIVE_CONNECTION_ID,
+        mode: "original",
+      });
+    });
+    await waitFor(() => {
+      expect(screen.getAllByText("Synced to Google Drive")).toHaveLength(2);
+    });
+    expect(popup.open.calls).toHaveLength(1);
+    await waitFor(() => {
+      expect(buttonNamed("Download options", preview)).toHaveAttribute(
+        "aria-expanded",
+        "false",
+      );
+    });
+    click(buttonNamed("Download options", preview));
+    await waitFor(() => {
+      expect(roleItemNamed("menuitem", "Open in Google Docs")).toHaveAttribute(
+        "href",
+        "https://drive.google.test/file/drive-file-1",
+      );
+    });
   });
 
   it("does not mark an unconverted response as a successful native document", async () => {

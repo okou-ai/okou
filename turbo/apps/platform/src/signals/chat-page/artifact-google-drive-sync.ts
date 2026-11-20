@@ -8,6 +8,7 @@ import {
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { artifactGoogleDriveContract } from "@okouai/api-contracts/client/artifact-google-drive";
 import type { artifactGoogleDriveContract as SourceArtifactGoogleDriveContract } from "@okouai/api-contracts/contracts/artifact-google-drive";
+import type { ChatThreadArtifactGoogleDriveRecovery } from "@okouai/api-contracts/contracts/chat-threads";
 import { accept } from "../../lib/accept.ts";
 import { i18n } from "../../i18n/index.ts";
 import { apiClient$, type ApiClientFactory } from "../api-client.ts";
@@ -20,7 +21,7 @@ type GoogleDriveUploadedFile = zInfer<
 
 type ArtifactGoogleDriveSyncParams = {
   readonly threadId: string;
-  readonly connectRecovery?: { readonly action: "connect" } | undefined;
+  readonly recoveryAtStart?: ChatThreadArtifactGoogleDriveRecovery | undefined;
   readonly connectionId?: string;
   readonly successMessage?: string;
 } & ArtifactGoogleDriveSyncFile;
@@ -134,7 +135,7 @@ type GoogleDriveSyncAccount = {
   readonly threadId: string;
   readonly connectionId: string | undefined;
   readonly ready: boolean;
-  readonly connectRecovery?: { readonly action: "connect" } | undefined;
+  readonly recoveryAtStart?: ChatThreadArtifactGoogleDriveRecovery | undefined;
   readonly recovery?: NonNullable<GoogleDriveUploadDenied["body"]["recovery"]>;
   readonly googleImport?: GoogleDriveUploadedFile | undefined;
 };
@@ -185,7 +186,7 @@ export const syncArtifactAndRefresh$ = command(
         artifactId: params.artifactId,
         threadId: params.threadId,
         connectionId: result.recovery.connectionId,
-        connectRecovery: params.connectRecovery,
+        recoveryAtStart: params.recoveryAtStart,
         ready: false,
         recovery: result.recovery,
         googleImport: sameCurrentAccount ? account.googleImport : undefined,
@@ -200,7 +201,7 @@ export const syncArtifactAndRefresh$ = command(
         artifactId: params.artifactId,
         threadId: params.threadId,
         connectionId: params.connectionId,
-        connectRecovery: params.connectRecovery,
+        recoveryAtStart: params.recoveryAtStart,
         ready: true,
         googleImport:
           params.mode === "google"
@@ -241,7 +242,7 @@ export const finishArtifactDriveReconnect$ = command(
       threadId: account.threadId,
       connectionId: params.connectionId,
       ready: true,
-      connectRecovery: account.connectRecovery,
+      recoveryAtStart: account.recoveryAtStart,
       googleImport: account.googleImport,
     });
   },

@@ -239,16 +239,24 @@ function useGoogleDriveCompletedOperation(
   syncTarget: ArtifactDownloadSyncTarget | undefined,
 ) {
   const operation = useGet(googleDriveSyncAccount$);
-  return operation &&
-    operation.artifactId === syncTarget?.artifactId &&
-    operation.threadId === syncTarget.threadId &&
-    ((operation.connectionId !== undefined &&
-      operation.connectionId === syncTarget.connectionId) ||
-      (syncTarget.connectionId === undefined &&
-        operation.connectRecovery !== undefined &&
-        operation.connectRecovery === syncTarget.recovery))
-    ? operation
-    : undefined;
+  if (
+    !operation ||
+    operation.artifactId !== syncTarget?.artifactId ||
+    operation.threadId !== syncTarget.threadId
+  ) {
+    return undefined;
+  }
+  const { connectionId, recovery } = syncTarget;
+  // An acknowledgment can bridge the status that started the action.
+  // A refreshed recovery status takes precedence, even for the same account.
+  if (recovery && recovery !== operation.recoveryAtStart) {
+    return undefined;
+  }
+  const sameAccount =
+    connectionId !== undefined && operation.connectionId === connectionId;
+  const firstConnection =
+    connectionId === undefined && recovery?.action === "connect";
+  return sameAccount || firstConnection ? operation : undefined;
 }
 
 function useGoogleDriveAvailability(
@@ -436,6 +444,7 @@ function useGoogleDriveMenuAction(
             threadId: syncTarget.threadId,
             artifactId: syncTarget.artifactId,
             connectionId: availability.googleDriveConnectionId,
+            recoveryAtStart: syncTarget.recovery,
             filename: syncTarget.filename,
             mode,
           },
@@ -472,10 +481,7 @@ function useGoogleDriveMenuAction(
                 threadId: syncTarget.threadId,
                 artifactId: syncTarget.artifactId,
                 filename: syncTarget.filename,
-                connectRecovery:
-                  syncTarget.recovery?.action === "connect"
-                    ? syncTarget.recovery
-                    : undefined,
+                recoveryAtStart: syncTarget.recovery,
                 mode,
               },
           options: {
