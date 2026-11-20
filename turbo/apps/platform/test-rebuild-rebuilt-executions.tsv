@@ -1741,3 +1741,28 @@ composer-visualization-preferences-003	turbo/apps/platform/src/views/okou-page/_
 composer-visualization-preferences-004	turbo/apps/platform/src/views/okou-page/__tests__/composer-visualization-preferences.test.tsx	A destination A-to-B-to-A Chart choice survives the first blocked send	278	passed
 composer-visualization-preferences-007	turbo/apps/platform/src/views/okou-page/__tests__/composer-visualization-preferences.test.tsx	An A-to-B-to-A next-draft Chart choice survives an earlier blocked send	347	passed
 diagram-rendering-002	turbo/apps/platform/src/views/okou-page/__tests__/diagram-rendering.test.tsx	A failed Mermaid layout leaves its source readable and other diagrams usable	46	passed
+markdown-cjk-emphasis-001	turbo/apps/platform/src/views/okou-page/__tests__/markdown-cjk-emphasis.test.tsx	Complete CJK emphasis pairs render semantic bold, italic, and nested emphasis by default	38	passed
+markdown-cjk-emphasis-002	turbo/apps/platform/src/views/okou-page/__tests__/markdown-cjk-emphasis.test.tsx	Opening and closing punctuation boundaries work independently next to CJK text	78	passed
+markdown-cjk-emphasis-003	turbo/apps/platform/src/views/okou-page/__tests__/markdown-cjk-emphasis.test.tsx	CJK boundary repair preserves code, escapes, link destinations, math source, and literal asterisks	109	passed
+markdown-cjk-emphasis-008	turbo/apps/platform/src/views/okou-page/__tests__/markdown-cjk-emphasis.test.tsx	Rendered text preserves authored zero-width spaces and Copy message keeps the exact raw source	205	passed
+markdown-cjk-emphasis-009	turbo/apps/platform/src/views/okou-page/__tests__/markdown-cjk-emphasis.test.tsx	Streaming leaves unclosed runs literal and repairs only a pair completed by appended text	249	passed
+markdown-content-001	turbo/apps/platform/src/views/okou-page/__tests__/markdown-content.test.tsx	A blockquote remains recognizable when HTML is treated as text	37	passed
+markdown-content-002	turbo/apps/platform/src/views/okou-page/__tests__/markdown-content.test.tsx	Common Markdown features remain recognizable	68	passed
+markdown-content-003	turbo/apps/platform/src/views/okou-page/__tests__/markdown-content.test.tsx	Email contacts and compose templates keep their native mail destinations	111	passed
+markdown-content-004	turbo/apps/platform/src/views/okou-page/__tests__/markdown-content.test.tsx	A complete HEX color has a preview in a plain assistant response	149	passed
+markdown-content-006	turbo/apps/platform/src/views/okou-page/__tests__/markdown-content.test.tsx	Media links keep their text while image syntax shows a preview	177	passed
+markdown-interactions-001	turbo/apps/platform/src/views/okou-page/__tests__/markdown-interactions.test.tsx	Copying one of several code blocks confirms only that block	113	passed
+markdown-interactions-003	turbo/apps/platform/src/views/okou-page/__tests__/markdown-interactions.test.tsx	Repeated rendering keeps rich message content stable	123	passed
+markdown-math-001	turbo/apps/platform/src/views/okou-page/__tests__/markdown-math.test.tsx	Agent formulas render from explicit delimiters without treating currency as math	20	passed
+markdown-mermaid-001	turbo/apps/platform/src/views/okou-page/__tests__/markdown-mermaid.test.tsx	Closing a Mermaid artifact split view releases its blob and preserves the inline diagrams	129	passed
+markdown-mermaid-003	turbo/apps/platform/src/views/okou-page/__tests__/markdown-mermaid.test.tsx	A streaming Mermaid diagram stays readable until complete	144	passed
+markdown-parser-isolation-002	turbo/apps/platform/src/views/okou-page/__tests__/markdown-parser-isolation.test.tsx	Opening Instructions preserves literal plus signs as an unfinished reply grows	99	passed
+markdown-parser-isolation-004	turbo/apps/platform/src/views/okou-page/__tests__/markdown-parser-isolation.test.tsx	Opening Instructions keeps rich Activity logs readable	123	passed
+markdown-time-001	turbo/apps/platform/src/views/okou-page/__tests__/markdown-time.test.tsx	Markdown times use the browser timezone for each instant	24	passed
+markdown-time-003	turbo/apps/platform/src/views/okou-page/__tests__/markdown-time.test.tsx	Missing, invalid, and timezone-free datetimes retain their original text	55	passed
+paid-media-creation-002	turbo/apps/platform/src/views/okou-page/__tests__/paid-media-creation.test.tsx	An image creation notice opens settings and a confirmed save restores creation	70	passed
+paid-media-creation-004	turbo/apps/platform/src/views/okou-page/__tests__/paid-media-creation.test.tsx	Gallery notices follow each paid branch for a member using default feature switches	122	passed
+raw-video-thumbnail-001	turbo/apps/platform/src/views/okou-page/__tests__/raw-video-thumbnail.test.tsx	Raw video resolves an authorized artifact-reference poster before displaying a thumbnail	27	passed
+raw-video-thumbnail-003	turbo/apps/platform/src/views/okou-page/__tests__/raw-video-thumbnail.test.tsx	Shared raw videos preserve playback with or without public posters	88	passed
+thread-resource-thumbnails-001	turbo/apps/platform/src/views/okou-page/__tests__/thread-resource-thumbnails.test.tsx	Thread artifacts use authorized thumbnails and open the original image	68	passed
+thread-resource-thumbnails-002	turbo/apps/platform/src/views/okou-page/__tests__/thread-resource-thumbnails.test.tsx	Workspace search uses a small authorized thumbnail for a private image	99	passed
