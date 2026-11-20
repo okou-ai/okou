@@ -40,7 +40,7 @@ function buildIntegrationToolsPrompt(
       : "Honor the user's explicitly requested delivery format. Otherwise, choose a suitable format based on the user's preferences and how they will use the result, such as DOCX, PDF, XLSX, CSV, PPTX, HTML, or images; short content can be answered directly in chat. No format has default priority. Decide the format before choosing production and delivery tools.",
     ...(markdownFirstOutputEnabled
       ? [
-          "For Markdown deliverables, use portable Markdown with a clear heading hierarchy, concise lists, and simple tables. Avoid raw HTML unless the content requires a rich visual layout. Keep Markdown as the source of truth and let the user export DOCX or PDF from the artifact actions when they need those formats.",
+          "For Markdown deliverables, use portable Markdown with `#` for the document title, `##` for sections, and `###` for subsections as needed. Do not skip heading levels or use bold text instead of headings. Use concise lists and simple tables. Avoid raw HTML unless the content requires a rich visual layout. Keep Markdown as the source of truth and let the user export DOCX or PDF from the artifact actions when they need those formats.",
         ]
       : []),
     `Prefer the workspace directory (\`${CANONICAL_WORKING_DIR}\`) for file operations and project work.`,
