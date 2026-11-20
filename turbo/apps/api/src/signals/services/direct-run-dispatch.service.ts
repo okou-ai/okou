@@ -15,7 +15,10 @@ import { API_INVOCATION_MAX_DURATION_SECONDS } from "../../lib/invocation-budget
 import { monotonicNow, now, nowDate } from "../../lib/time";
 import { apiStartTime$ } from "../context/hono";
 import { postRunnerDispatch } from "../external/runner-ingress";
-import { currentRunnerDispatchTransport } from "../external/runner-dispatch-transport";
+import {
+  currentRunnerDispatchTransport,
+  runnerDispatchPath,
+} from "../external/runner-dispatch-transport";
 import { failUnacceptedRun$ } from "./agent-run-terminal-transition.service";
 import {
   prepareDirectRun$,
@@ -77,7 +80,7 @@ export const prepareDirectRunDispatch$ = command(
             safeSync(() => {
               dispatchTransport.reserve(
                 input.run.id,
-                `https://${target.hostname}`,
+                `https://${target.hostname}${runnerDispatchPath(target.runnerId, input.run.id)}`,
                 signal,
               );
             });

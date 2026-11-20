@@ -2,6 +2,11 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { singleton } from "../../lib/singleton";
 
 export type PreconnectedSocketUse = "pending" | "ready";
+export type RunnerDispatchSocketUse = "first_use" | "reused";
+
+export function runnerDispatchPath(runnerId: string, runId: string): string {
+  return `/runners/${runnerId}/control/runs/${runId}/dispatch`;
+}
 
 export interface RunnerDispatchRequest {
   readonly method: "POST";
@@ -9,7 +14,6 @@ export interface RunnerDispatchRequest {
   readonly redirect: "error";
   readonly headers: Record<string, string>;
   readonly body: string;
-  readonly signal: AbortSignal;
 }
 
 export interface RunnerDispatchResponse {
@@ -20,16 +24,18 @@ export interface RunnerDispatchResponse {
 }
 
 export interface RunnerDispatchTransport {
-  readonly reserve: (
-    runId: string,
-    origin: string,
-    signal: AbortSignal,
-  ) => void;
+  readonly reserve: (runId: string, url: string, signal: AbortSignal) => void;
   readonly fetch: (
     url: string,
     options: RunnerDispatchRequest,
+    onSocketUse:
+      | ((
+          connection: RunnerDispatchSocketUse,
+          preconnection: PreconnectedSocketUse | undefined,
+        ) => void)
+      | undefined,
+    signal: AbortSignal,
   ) => Promise<RunnerDispatchResponse>;
-  readonly takeSocketUse: (socket: object) => PreconnectedSocketUse | undefined;
 }
 
 // Only Vercel installs this context.

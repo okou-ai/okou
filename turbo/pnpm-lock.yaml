@@ -272,9 +272,6 @@ importers:
       tar:
         specifier: '>=7.5.21'
         version: 7.5.22
-      undici:
-        specifier: ^7.30.1
-        version: 7.30.1
       uuid:
         specifier: ^14.0.0
         version: 14.0.0

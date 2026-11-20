@@ -1,19 +1,22 @@
-import { connect as connectTls, type ConnectionOptions } from "node:tls";
-import { Agent, buildConnector, fetch } from "undici";
+import { once } from "node:events";
+import {
+  IncomingMessage,
+  validateHeaderValue,
+  type ClientRequest,
+} from "node:http";
+import { Agent, request, type RequestOptions } from "node:https";
+import { json } from "node:stream/consumers";
+import type { ConnectionOptions } from "node:tls";
 import { monotonicNow } from "./lib/time";
 import type {
   PreconnectedSocketUse,
+  RunnerDispatchResponse,
   RunnerDispatchTransport,
 } from "./signals/external/runner-dispatch-transport";
 
 const MAX_PRECONNECTIONS = 4;
 const PRECONNECTION_LIFETIME_MS = 1000;
 
-type Connector = ReturnType<typeof buildConnector>;
-type Adoption = (
-  options: Parameters<Connector>[0],
-  callback: Parameters<Connector>[1],
-) => boolean;
 type PreconnectionOutcome =
   PreconnectedSocketUse | "failed" | "expired" | "cancelled" | "instance_cap";
 
@@ -26,28 +29,60 @@ interface TransportOptions {
   ) => void;
 }
 
+interface Reservation {
+  readonly take: () => PreconnectedSocketUse | undefined;
+  readonly request: ClientRequest;
+}
+
+function toDispatchResponse(incoming: IncomingMessage): RunnerDispatchResponse {
+  return {
+    status: incoming.statusCode ?? 0,
+    headers: {
+      get(name) {
+        const value = incoming.headers[name.toLowerCase()];
+        return Array.isArray(value) ? value.join(", ") : (value ?? null);
+      },
+    },
+    body: {
+      cancel() {
+        incoming.destroy();
+        return Promise.resolve();
+      },
+    },
+    json() {
+      return json(incoming);
+    },
+  };
+}
+
+function guardResponseErrors(incoming: IncomingMessage): void {
+  // Abort can destroy the response before the caller starts reading it.
+  incoming.on("error", () => {
+    incoming.destroy();
+  });
+}
+
 export function createRunnerDispatchTransport({
   ca,
   observe,
 }: TransportOptions): RunnerDispatchTransport {
-  const reservations = new Map<string, Adoption>();
-  const socketUses = new WeakMap<object, PreconnectedSocketUse>();
-  const open = buildConnector({ ca });
-  const preconnect = new Agent({
-    connect(options, callback) {
-      const origin = `${options.protocol}//${options.host ?? options.hostname}`;
-      if (!reservations.get(origin)?.(options, callback)) {
-        open(options, callback);
-      }
-    },
-  });
+  const agent = new Agent({ keepAlive: true, ca });
+  const reservations = new Map<string, Reservation>();
+  const reservedOrigins = new Set<string>();
 
-  function reserve(runId: string, origin: string, signal: AbortSignal): void {
-    const stats = preconnect.stats[origin];
+  function reserve(runId: string, url: string, signal: AbortSignal): void {
+    const target = new URL(url);
+    const origin = target.origin;
+    const socketOptions: RequestOptions = {
+      host: target.hostname,
+      port: target.port ? Number(target.port) : 443,
+      ca,
+    };
+    const agentKey = agent.getName(socketOptions);
     if (
       signal.aborted ||
-      reservations.has(origin) ||
-      (stats && "free" in stats && stats.free > 0)
+      reservedOrigins.has(origin) ||
+      agent.freeSockets[agentKey]?.length
     ) {
       return;
     }
@@ -55,98 +90,108 @@ export function createRunnerDispatchTransport({
       observe(runId, "instance_cap", 0);
       return;
     }
-    const { hostname, port } = new URL(origin);
+
+    // Node assigns a socket before end() sends any HTTP bytes.
     const startedAt = monotonicNow();
-    const socket = connectTls({
-      host: hostname,
-      servername: hostname,
-      port: port ? Number(port) : 443,
-      ALPNProtocols: ["http/1.1"],
-      ca,
-    });
+    const pending = request(target, { agent, method: "POST" });
     const expiry = AbortSignal.timeout(PRECONNECTION_LIFETIME_MS);
     let ready = false;
-    let claimant:
-      | {
-          options: Parameters<Connector>[0];
-          callback: Parameters<Connector>[1];
-          use: PreconnectedSocketUse;
-        }
-      | undefined;
 
     const finish = (outcome: PreconnectionOutcome) => {
-      if (reservations.get(origin) !== adopt) {
+      if (reservations.get(url) !== reservation) {
         return;
       }
-      reservations.delete(origin);
+      reservations.delete(url);
+      reservedOrigins.delete(origin);
       signal.removeEventListener("abort", onAbort);
       expiry.removeEventListener("abort", onExpiry);
-      const used = outcome === "ready" || outcome === "pending";
-      if (used && claimant) {
-        socket.off("error", onFailure);
-        socket.off("close", onFailure);
-        socketUses.set(socket, outcome);
-        claimant.callback(null, socket);
+      if (outcome === "ready" || outcome === "pending") {
+        pending.off("error", onFailure);
+        pending.off("close", onFailure);
       } else {
-        socket.destroy();
-        if (claimant) {
-          // No HTTP bytes were sent on the speculative connection.
-          open(claimant.options, claimant.callback);
-        }
+        pending.destroy();
       }
       observe(runId, outcome, monotonicNow() - startedAt);
     };
 
     const onAbort = () => {
-      return finish("cancelled");
+      finish("cancelled");
     };
     const onExpiry = () => {
-      return finish("expired");
+      finish("expired");
     };
     const onFailure = () => {
-      return finish("failed");
+      finish("failed");
     };
-    const adopt: Adoption = (options, callback) => {
-      if (claimant || socket.destroyed) {
-        return false;
-      }
-      claimant = { options, callback, use: ready ? "ready" : "pending" };
-      // The pool now owns the handshake and may be serving a different Run.
-      signal.removeEventListener("abort", onAbort);
-      if (ready) {
-        // Undici calls the connector from its resume loop. Delivering a ready
-        // socket inline would re-enter the loop and lose its send wake-up.
-        queueMicrotask(() => {
-          finish(socket.destroyed ? "failed" : "ready");
-        });
-      }
-      return true;
+    const reservation: Reservation = {
+      request: pending,
+      take() {
+        if (pending.destroyed) {
+          finish("failed");
+          return undefined;
+        }
+        const use = ready ? "ready" : "pending";
+        finish(use);
+        return use;
+      },
     };
-    reservations.set(origin, adopt);
-    socket.once("secureConnect", () => {
-      ready = true;
-      if (claimant) {
-        finish(claimant.use);
+    reservations.set(url, reservation);
+    reservedOrigins.add(origin);
+    pending.once("socket", (socket) => {
+      if (pending.reusedSocket) {
+        ready = true;
+        return;
       }
+      socket.once("secureConnect", () => {
+        ready = true;
+      });
     });
-    socket.once("error", onFailure);
-    socket.once("close", onFailure);
+    pending.once("error", onFailure);
+    pending.once("close", onFailure);
     signal.addEventListener("abort", onAbort, { once: true });
     expiry.addEventListener("abort", onExpiry, { once: true });
   }
 
   return {
     reserve,
-    fetch(url, options) {
-      return fetch(url, {
-        ...options,
-        dispatcher: preconnect,
+    async fetch(url, options, onSocketUse, signal) {
+      signal.throwIfAborted();
+      for (const [name, value] of Object.entries(options.headers)) {
+        validateHeaderValue(name, value);
+      }
+      const reservation = reservations.get(url);
+      const preconnection = reservation?.take();
+      const outbound =
+        reservation && preconnection
+          ? reservation.request
+          : request(url, { agent, method: options.method });
+
+      const response = once(outbound, "response", { signal });
+      const onAbort = () => {
+        outbound.destroy();
+      };
+      outbound.on("error", onAbort);
+      outbound.once("close", () => {
+        signal.removeEventListener("abort", onAbort);
       });
-    },
-    takeSocketUse(socket) {
-      const use = socketUses.get(socket);
-      socketUses.delete(socket);
-      return use;
+      signal.addEventListener("abort", onAbort, { once: true });
+      outbound.once("finish", () => {
+        onSocketUse?.(
+          outbound.reusedSocket ? "reused" : "first_use",
+          preconnection,
+        );
+      });
+      outbound.once("response", guardResponseErrors);
+      for (const [name, value] of Object.entries(options.headers)) {
+        outbound.setHeader(name, value);
+      }
+      outbound.setHeader("content-length", Buffer.byteLength(options.body));
+      outbound.end(options.body);
+      const [incoming]: unknown[] = await response;
+      if (!(incoming instanceof IncomingMessage)) {
+        throw new Error("Expected a Runner HTTP response");
+      }
+      return toDispatchResponse(incoming);
     },
   };
 }

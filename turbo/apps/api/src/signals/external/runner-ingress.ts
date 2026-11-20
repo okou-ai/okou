@@ -14,8 +14,8 @@ import type { DirectRunTarget } from "../services/direct-run-ownership.service";
 import { recordSandboxOperation } from "./sandbox-op-log";
 import {
   currentRunnerDispatchTransport,
+  runnerDispatchPath,
   type PreconnectedSocketUse,
-  type RunnerDispatchTransport,
   type RunnerDispatchRequest,
   type RunnerDispatchResponse,
 } from "./runner-dispatch-transport";
@@ -37,10 +37,10 @@ interface DispatchTransportObservation {
   readonly origin: string;
   readonly path: string;
   readonly startedAt: number;
-  readonly runnerTransport: RunnerDispatchTransport | undefined;
   sendCount: number;
   connection?: "first_use" | "reused";
   sendHeadersMs?: number;
+  requestFlushedMs?: number;
   preconnectedSocketUse?: PreconnectedSocketUse;
 }
 
@@ -84,13 +84,9 @@ const dispatchTransport = singleton(() => {
     const active = diagnosticRecord(event.request)
       ? requests.get(event.request)
       : undefined;
-    const preconnectedSocketUse = active?.runnerTransport?.takeSocketUse(
-      event.socket,
-    );
     if (active && ++active.sendCount === 1) {
       active.connection = connection;
       active.sendHeadersMs = monotonicNow() - active.startedAt;
-      active.preconnectedSocketUse = preconnectedSocketUse;
     }
   });
 
@@ -127,6 +123,22 @@ function definitelyNotConnected(error: unknown): boolean {
   return error.cause instanceof Error && definitelyNotConnected(error.cause);
 }
 
+function dispatchRequestOptions(
+  body: string,
+  serviceToken: string,
+): RunnerDispatchRequest {
+  return {
+    method: "POST",
+    redirect: "error",
+    cache: "no-store",
+    headers: {
+      authorization: `Bearer ${serviceToken}`,
+      "content-type": "application/json",
+    },
+    body,
+  };
+}
+
 /** A failed response is never made into evidence against an earlier attempt. */
 export async function postRunnerDispatch(
   args: {
@@ -148,39 +160,39 @@ export async function postRunnerDispatch(
   let observation: DispatchObservation | undefined;
   const startedAt = monotonicNow();
   const origin = `https://${target.hostname}`;
-  const path = `/runners/${target.runnerId}/control/runs/${runId}/dispatch`;
+  const path = runnerDispatchPath(target.runnerId, runId);
   const runnerTransport = currentRunnerDispatchTransport();
   const transport: DispatchTransportObservation = {
     origin,
     path,
     startedAt,
     sendCount: 0,
-    runnerTransport,
   };
   return await (async () => {
     const dispatch = () => {
-      const options: RunnerDispatchRequest = {
-        method: "POST",
-        redirect: "error",
-        cache: "no-store",
-        headers: {
-          authorization: `Bearer ${serviceToken}`,
-          "content-type": "application/json",
-        },
-        body,
-        signal: AbortSignal.any([
-          signal,
-          AbortSignal.timeout(Math.max(1, Math.ceil(timeoutMs))),
-        ]),
-      };
+      const options = dispatchRequestOptions(body, serviceToken);
+      const deadline = AbortSignal.any([
+        signal,
+        AbortSignal.timeout(Math.max(1, Math.ceil(timeoutMs))),
+      ]);
       const url = origin + path;
       return runnerTransport
-        ? runnerTransport.fetch(url, options)
-        : fetch(url, options);
+        ? runnerTransport.fetch(
+            url,
+            options,
+            (connection, preconnection) => {
+              transport.sendCount = 1;
+              transport.connection = connection;
+              transport.preconnectedSocketUse = preconnection;
+              transport.requestFlushedMs = monotonicNow() - startedAt;
+            },
+            deadline,
+          )
+        : fetch(url, { ...options, signal: deadline });
     };
     // Worker-native fetch does not use Node's Undici diagnostic channels.
     const fetched = await settleIncludingAbort(
-      currentRequestRuntime()
+      currentRequestRuntime() || runnerTransport
         ? dispatch()
         : dispatchTransport().run(transport, dispatch),
     );
@@ -232,6 +244,7 @@ export async function postRunnerDispatch(
               : "unknown",
           api_send_headers_ms:
             transport.sendCount === 1 ? transport.sendHeadersMs : undefined,
+          api_request_flushed_ms: transport.requestFlushedMs,
           api_preconnect_socket_use:
             transport.sendCount === 1
               ? transport.preconnectedSocketUse
