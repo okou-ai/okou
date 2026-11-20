@@ -730,6 +730,7 @@ class ChatListModel(
                     publishRows()
                 }
                 var confirmation: ReadConfirmation? = null
+                var archiveRejected = false
                 try {
                     acknowledgement?.join()
                     requireCurrent()
@@ -787,17 +788,10 @@ class ChatListModel(
                     requireCurrent()
                     // The target may have disappeared while the workspace is still authorized.
                     if (error !is ApiFailure.Http || error.status != 404) onFailure(error)
-                    if (
+                    archiveRejected =
                         archiveAction &&
                             error is ApiFailure.Http &&
-                            error.status in 400..499 &&
-                            error.status != 408
-                    ) {
-                        requireCurrent()
-                        rowEdits = rowEdits - edits.toSet()
-                        publishRows(mutable.value.copy(failedRowAction = action))
-                        return@launch
-                    }
+                            error.status in setOf(400, 401, 403, 404)
                     if (!action.updatesChat && current()) {
                         mutable.value = mutable.value.copy(failedRowAction = action)
                     }
@@ -814,7 +808,7 @@ class ChatListModel(
                 }
                 val confirmedAction = coroutineScope {
                     if (action.updatesIndicators) launch { readIndicatorsAfterWrite() }
-                    if (action.updatesChat) confirmRowEdits(action, edits)
+                    if (action.updatesChat) confirmRowEdits(action, edits, archiveRejected)
                     else confirmation?.receiptCoversIntent == true
                 }
                 if (confirmedAction && undo != null && pendingUndo === undo && current()) {
@@ -1048,21 +1042,28 @@ class ChatListModel(
         listReadRequests.trySend(Unit)
     }
 
-    private suspend fun confirmRowEdits(action: ChatRowAction, edits: List<ChatRowEdit>): Boolean {
+    private suspend fun confirmRowEdits(
+        action: ChatRowAction,
+        edits: List<ChatRowEdit>,
+        archiveRejected: Boolean,
+    ): Boolean {
         requireCurrent()
         if (edits.none { it in rowEdits }) return true
         // A missing response can still leave a committed event on the server.
         val completion = CompletableDeferred<Unit>(currentCoroutineContext()[Job])
-        listReadBatch().confirmations.add(ListConfirmation(edits, completion))
+        val batch = listReadBatch()
+        batch.confirmations.add(ListConfirmation(edits, completion))
+        // Archive's documented rejections precede its write. Restore from a successful read.
+        if (archiveRejected) edits.forEach { batch.discardOnSuccess.add(it.eventId) }
         listReadRequests.trySend(Unit)
         completion.await()
         requireCurrent()
         val unresolved = edits.filter { it in rowEdits }
-        if (unresolved.isNotEmpty()) {
-            unconfirmedRowEvents.addAll(unresolved.map { it.eventId })
+        if (unresolved.isNotEmpty()) unconfirmedRowEvents.addAll(unresolved.map { it.eventId })
+        if (archiveRejected || unresolved.isNotEmpty()) {
             mutable.value = mutable.value.copy(failedRowAction = action)
         }
-        return unresolved.isEmpty()
+        return !archiveRejected && unresolved.isEmpty()
     }
 
     private suspend fun readPendingListBatch() {

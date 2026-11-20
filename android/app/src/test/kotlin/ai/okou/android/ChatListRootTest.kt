@@ -1002,6 +1002,60 @@ class ChatListRootTest {
     }
 
     @Test
+    @Config(qualifiers = "en-rUS-w400dp-h800dp")
+    fun aRejectedArchiveSwipeRestoresTheRowAfterReadingAndCanBeRetried() {
+        val app = compose.activity.application as ChatListApplication
+        val requests = AtomicInteger()
+        val reading = CountDownLatch(1)
+        val releaseRead = CountDownLatch(1)
+        val events = app.fixture.rowEventTail()
+        val eventResponse = app.fixture.events
+        app.fixture.events = { request ->
+            if (requests.get() == 1 && request.requestUrl?.queryParameter("sinceSeqId") != null) {
+                reading.countDown()
+                releaseRead.await()
+            }
+            eventResponse(request)
+        }
+        app.fixture.commandResponse = { request ->
+            if (request.requestUrl?.encodedPath != "/api/chat-threads/$CHAT_PERSONAL/archive") null
+            else if (requests.incrementAndGet() == 1) MockResponse().setResponseCode(400)
+            else {
+                events.add(24L to request.rowEvent(24, CHAT_PERSONAL, "archived"))
+                MockResponse().setResponseCode(204)
+            }
+        }
+        try {
+            app.responseGate.countDown()
+            awaitListAndNames()
+            val rowTag = "chat_$CHAT_PERSONAL"
+            val row = compose.onNodeWithTag(rowTag)
+            compose.onNodeWithTag("chat_list").performScrollToNode(hasTestTag(rowTag))
+            row.performTouchInput { swipe(center.copy(x = width * 0.8f), center) }
+            compose.waitUntil(10_000) { compose.runOnIdle { reading.count == 0L } }
+            row.assertDoesNotExist()
+            releaseRead.countDown()
+            compose.waitUntil(10_000) {
+                compose
+                    .onAllNodesWithText("Could not confirm the chat change.")
+                    .fetchSemanticsNodes()
+                    .isNotEmpty()
+            }
+            row.assertIsDisplayed()
+            compose.onNodeWithText("Undo").assertDoesNotExist()
+
+            row.performTouchInput { swipe(center.copy(x = width * 0.8f), center) }
+            compose.waitUntil(10_000) {
+                compose.onAllNodesWithText("Chat archived").fetchSemanticsNodes().isNotEmpty()
+            }
+            row.assertDoesNotExist()
+            assertEquals(2, requests.get())
+        } finally {
+            releaseRead.countDown()
+        }
+    }
+
+    @Test
     @Config(qualifiers = "en-rUS-w1000dp-h800dp")
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun archiveAndRestoreUpdatePlacementAndKeepTheOpenConversation() {
