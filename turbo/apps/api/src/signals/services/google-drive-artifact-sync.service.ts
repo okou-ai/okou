@@ -132,6 +132,13 @@ const workspaceImportErrorResponseSchema = zObject({
     details: array(driveErrorDetailSchema).optional(),
   }),
 });
+const conversionErrorResponseSchema = zObject({
+  error: zObject({
+    errors: array(zObject({ reason: string().optional() })).optional(),
+  }),
+});
+const UNSUPPORTED_CONVERSION_REASON = "conversionUnsupportedConversionPath";
+
 const driveErrorReasonSchema = zEnum([
   "authError",
   "badRequest",
@@ -144,7 +151,7 @@ const driveErrorReasonSchema = zEnum([
   "userRateLimitExceeded",
   "backendError",
   "notFound",
-  "conversionUnsupportedConversionPath",
+  UNSUPPORTED_CONVERSION_REASON,
   "ACCESS_TOKEN_SCOPE_INSUFFICIENT",
 ]);
 
@@ -2235,11 +2242,8 @@ const reuseWorkspaceImport$ = command(
 async function logTerminalDriveUploadFailure(
   upload: DriveUploadResponse,
   signal: AbortSignal,
-): Promise<readonly string[]> {
-  const providerReasons = await readDriveErrorReasons(
-    upload.response.clone(),
-    signal,
-  );
+): Promise<void> {
+  const providerReasons = await readDriveErrorReasons(upload.response, signal);
   signal.throwIfAborted();
   log.warn("Google Drive artifact upload failed", {
     operation: "artifact_upload",
@@ -2248,7 +2252,29 @@ async function logTerminalDriveUploadFailure(
     providerReasons,
     attempt: upload.attempt,
   });
-  return providerReasons;
+}
+
+async function isUnsupportedConversion(
+  response: Response,
+  signal: AbortSignal,
+): Promise<boolean> {
+  // The conversion decision retains its original full-body parser and uses the request lifetime.
+  const body = await settle(
+    readBoundedResponseText(response, Infinity, signal),
+    signal,
+  );
+  if (!body.ok || body.value.kind !== "text") {
+    return false;
+  }
+  const parsed = conversionErrorResponseSchema.safeParse(
+    safeJsonParse(body.value.text),
+  );
+  return (
+    parsed.success &&
+    (parsed.data.error.errors ?? []).some((entry) => {
+      return entry.reason === UNSUPPORTED_CONVERSION_REASON;
+    })
+  );
 }
 
 async function finishDriveUpload(
@@ -2266,11 +2292,19 @@ async function finishDriveUpload(
   const { upload, accessToken, targetMimeType, conversionTarget } = args;
   const { response } = upload;
   if (!response.ok) {
-    const providerReasons = await logTerminalDriveUploadFailure(upload, signal);
-    if (
-      targetMimeType !== undefined &&
-      providerReasons.includes("conversionUnsupportedConversionPath")
-    ) {
+    // Conversion owns the original body when it needs the full provider error.
+    // Other failures give their only stream to the bounded diagnostics reader.
+    const diagnostics =
+      targetMimeType === undefined ? response : response.clone();
+    const [unsupportedConversion] = await Promise.all([
+      targetMimeType !== undefined && isUnsupportedConversion(response, signal),
+      logTerminalDriveUploadFailure(
+        { ...upload, response: diagnostics },
+        signal,
+      ),
+    ]);
+    signal.throwIfAborted();
+    if (unsupportedConversion) {
       return badRequestMessage(
         conversionTarget && conversionTarget !== "presentation"
           ? "Google could not convert this document or spreadsheet"

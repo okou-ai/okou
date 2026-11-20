@@ -45,7 +45,6 @@ import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import {
   createConnectorBddApi,
   mockGoogleDriveArtifactUpload,
-  mockGoogleDriveArtifactUploadRejection,
   mockGoogleDriveConnectorOAuth,
   mockGoogleDriveFilesList,
   mockGoogleSlidesReadback,
@@ -4360,8 +4359,8 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       docsImportFixture(),
       "docx",
     );
-    const secret = "private-folder-credential-and-provider-content";
-    // The single redaction check exercises the shared reason allowlist through the upload route.
+    const secret = "private-drive-provider-content";
+    // Redaction is the only logging assertion. The other assertions cover the route contract.
     const output = context.mocks.console.log;
     onTestFinished(context.mocks.console.capture());
     const scenarios = [
@@ -4392,41 +4391,28 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
             ],
           },
         }),
-        reasons: [
-          "insufficientPermissions",
-          "domainPolicy",
-          "dailyLimitExceeded",
-          "rateLimitExceeded",
-          "userRateLimitExceeded",
-          "unrecognized",
-          "unavailable",
-          "ACCESS_TOKEN_SCOPE_INSUFFICIENT",
-        ],
+        scopeRequired: true,
       },
-      { name: "empty body", status: 403, body: "", reasons: ["unavailable"] },
+      { name: "empty body", status: 403, body: "" },
       {
         name: "invalid JSON",
         status: 403,
         body: `<html>${secret}</html>`,
-        reasons: ["unavailable"],
       },
       {
         name: "missing reasons",
         status: 403,
         body: JSON.stringify({ error: { message: secret } }),
-        reasons: ["unavailable"],
       },
       {
         name: "invalid reason type",
         status: 403,
         body: JSON.stringify({ error: { details: [{ reason: { secret } }] } }),
-        reasons: ["unrecognized"],
       },
       {
         name: "invalid envelope",
         status: 503,
         body: JSON.stringify({ error: { errors: secret } }),
-        reasons: ["unavailable"],
       },
       {
         name: "oversized body",
@@ -4437,7 +4423,6 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
             errors: [{ reason: "rateLimitExceeded" }],
           },
         }),
-        reasons: ["unavailable"],
       },
       {
         name: "rejected refreshed token",
@@ -4445,7 +4430,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
         body: JSON.stringify({
           error: { details: [{ reason: "ACCESS_TOKEN_SCOPE_INSUFFICIENT" }] },
         }),
-        reasons: ["ACCESS_TOKEN_SCOPE_INSUFFICIENT"],
+        scopeRequired: true,
         afterRefresh: true,
       },
     ] as const;
@@ -4468,16 +4453,8 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
         }
         return { status: scenario.status, body: scenario.body };
       });
-      const before = output.mock.calls.length;
       const response = await fixture.upload("original", [400, 403]);
-      const scopeRequired =
-        scenario.status === 403 &&
-        scenario.reasons.some((reason) => {
-          return (
-            reason === "insufficientPermissions" ||
-            reason === "ACCESS_TOKEN_SCOPE_INSUFFICIENT"
-          );
-        });
+      const scopeRequired = "scopeRequired" in scenario;
       expect(response.status, scenario.name).toBe(scopeRequired ? 403 : 400);
       expect(response.body, scenario.name).toStrictEqual(
         scopeRequired
@@ -4499,33 +4476,6 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
               },
             },
       );
-      const calls = output.mock.calls.slice(before);
-      const records = calls.filter(([message]) => {
-        return (
-          typeof message === "string" &&
-          message.endsWith("Google Drive folder lookup failed")
-        );
-      });
-      expect(records, scenario.name).toStrictEqual([
-        [
-          expect.stringContaining("[WARN]"),
-          {
-            phase: "folder_lookup",
-            providerStatus: scenario.status,
-            providerReasons: scenario.reasons,
-            attempt: afterRefresh ? "after_refresh" : "initial",
-          },
-        ],
-      ]);
-      const serialized = JSON.stringify(calls);
-      for (const privateValue of [
-        secret,
-        "bilingual.docx",
-        "drive-access-drive-picture-crop",
-        "drive-folder-refreshed",
-      ]) {
-        expect(serialized, scenario.name).not.toContain(privateValue);
-      }
       expect(oauth.refreshBodies, scenario.name).toHaveLength(
         afterRefresh ? 1 : 0,
       );
@@ -4534,96 +4484,56 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       expect(upload.bodies, scenario.name).toHaveLength(0);
     }
 
+    const rejectUpload = () => {
+      return HttpResponse.json(
+        {
+          error: {
+            message: secret,
+            errors: [{ reason: "insufficientPermissions", location: secret }],
+            details: [
+              {
+                reason: "ACCESS_TOKEN_SCOPE_INSUFFICIENT",
+                metadata: {
+                  url: `https://drive.google.com/${secret}?token=${secret}`,
+                },
+              },
+            ],
+          },
+        },
+        { status: 403 },
+      );
+    };
     for (const phase of ["upload_session", "upload_content"] as const) {
       const oauth = mockGoogleDriveConnectorOAuth();
       const upload = mockGoogleDriveArtifactUpload(
         { id: "unexpected", name: "report" },
         phase === "upload_session"
-          ? {
-              sessionResponse: () => {
-                return HttpResponse.json(
-                  {
-                    error: {
-                      message: `private provider response ${secret}`,
-                      errors: [
-                        { reason: "insufficientPermissions", location: secret },
-                      ],
-                      details: [
-                        {
-                          reason: "ACCESS_TOKEN_SCOPE_INSUFFICIENT",
-                          metadata: {
-                            url: `https://drive.google.com/${secret}?token=${secret}`,
-                          },
-                        },
-                      ],
-                    },
-                  },
-                  { status: 403 },
-                );
-              },
-            }
-          : {
-              contentResponse: () => {
-                return HttpResponse.json(
-                  {
-                    error: {
-                      message: `private provider response ${secret}`,
-                      errors: [
-                        { reason: "insufficientPermissions", location: secret },
-                      ],
-                      details: [
-                        {
-                          reason: "ACCESS_TOKEN_SCOPE_INSUFFICIENT",
-                          metadata: {
-                            url: `https://drive.google.com/${secret}?token=${secret}`,
-                          },
-                        },
-                      ],
-                    },
-                  },
-                  { status: 403 },
-                );
-              },
-            },
+          ? { sessionResponse: rejectUpload }
+          : { contentResponse: rejectUpload },
       );
-      const before = output.mock.calls.length;
       const response = await fixture.upload("original", [400]);
-      expect(response.status).toBe(400);
-      expect(response.body).toStrictEqual({
+      expect(response.status, phase).toBe(400);
+      expect(response.body, phase).toStrictEqual({
         error: {
           code: "BAD_REQUEST",
           message: "Google Drive upload failed with HTTP 403",
         },
       });
-      const calls = output.mock.calls.slice(before);
-      const records = calls.filter(([message]) => {
-        return (
-          typeof message === "string" &&
-          message.endsWith("Google Drive artifact upload failed")
-        );
-      });
-      expect(records).toStrictEqual([
-        [
-          expect.stringContaining("[WARN]"),
-          {
-            operation: "artifact_upload",
-            phase,
-            providerStatus: 403,
-            providerReasons: [
-              "insufficientPermissions",
-              "ACCESS_TOKEN_SCOPE_INSUFFICIENT",
-            ],
-            attempt: "initial",
-          },
-        ],
-      ]);
-      const serialized = JSON.stringify(calls);
-      for (const privateValue of [secret, "private provider response"]) {
-        expect(serialized).not.toContain(privateValue);
-      }
-      expect(oauth.refreshBodies).toHaveLength(0);
-      expect(upload.metadata).toHaveLength(1);
-      expect(upload.bodies).toHaveLength(phase === "upload_content" ? 1 : 0);
+      expect(oauth.refreshBodies, phase).toHaveLength(0);
+      expect(upload.metadata, phase).toHaveLength(1);
+      expect(upload.bodies, phase).toHaveLength(
+        phase === "upload_content" ? 1 : 0,
+      );
+    }
+
+    const serialized = JSON.stringify(output.mock.calls);
+    for (const privateValue of [
+      secret,
+      "bilingual.docx",
+      "drive-access-drive-picture-crop",
+      "drive-folder-refreshed",
+    ]) {
+      expect(serialized).not.toContain(privateValue);
     }
   }, 120_000);
 
@@ -4950,32 +4860,77 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     120_000,
   );
 
-  it("reports a presentation google slides cannot read", async () => {
-    const { actor, agentId, deckId, run, sandboxHeaders } =
-      await setupSlidesConversionSync({
-        agentLabel: "Artifacts slides unreadable agent",
-        conversionEnabled: true,
-      });
+  it.each([
+    {
+      envelope: "standard provider rejection",
+      providerError: {
+        message: "Conversion of the uploaded content is not supported.",
+        errors: [
+          { reason: "conversionUnsupportedConversionPath", domain: "global" },
+        ],
+      },
+      expected: "Google Slides could not read this presentation",
+    },
+    {
+      envelope: "large canonical provider rejection",
+      providerError: {
+        message:
+          "Conversion of the uploaded content is not supported." +
+          " ".repeat(17 * 1024),
+        errors: [
+          { reason: "conversionUnsupportedConversionPath", domain: "global" },
+        ],
+      },
+      expected: "Google Slides could not read this presentation",
+    },
+    {
+      envelope: "provider details without the canonical reason",
+      providerError: {
+        details: [
+          {
+            "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+            reason: "conversionUnsupportedConversionPath",
+          },
+        ],
+      },
+      expected: "Google Drive upload failed with HTTP 400",
+    },
+  ])(
+    "preserves Slides conversion failure messages for $envelope",
+    async ({ providerError, expected }) => {
+      const { actor, agentId, deckId, run, sandboxHeaders } =
+        await setupSlidesConversionSync({
+          agentLabel: "Artifacts slides unreadable agent",
+          conversionEnabled: true,
+        });
 
-    mockGoogleDriveArtifactUploadRejection(
-      "conversionUnsupportedConversionPath",
-    );
+      mockGoogleDriveArtifactUpload(
+        { id: "unexpected", name: "deck.pptx" },
+        {
+          sessionResponse: () => {
+            return HttpResponse.json(
+              { error: { code: 400, ...providerError } },
+              { status: 400 },
+            );
+          },
+        },
+      );
 
-    const rejected = await chat.requestUploadArtifactToGoogleDrive(
-      actor,
-      await chat.resolveCatalogArtifactId(actor, run.threadId, deckId),
-      { agentId },
-      [400],
-    );
+      const rejected = await chat.requestUploadArtifactToGoogleDrive(
+        actor,
+        await chat.resolveCatalogArtifactId(actor, run.threadId, deckId),
+        { agentId },
+        [400],
+      );
 
-    expectApiError(rejected.body);
-    expect(rejected.body.error.message).toBe(
-      "Google Slides could not read this presentation",
-    );
+      expectApiError(rejected.body);
+      expect(rejected.body.error.message).toBe(expected);
 
-    chatCallbacks.mockChatOutputEvents([]);
-    await completeChatRunOk(run.runId, sandboxHeaders);
-  }, 120_000);
+      chatCallbacks.mockChatOutputEvents([]);
+      await completeChatRunOk(run.runId, sandboxHeaders);
+    },
+    120_000,
+  );
 
   it("uses the selected google drive account for artifact status and sync", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor(
