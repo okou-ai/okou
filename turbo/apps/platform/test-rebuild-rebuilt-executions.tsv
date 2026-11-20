@@ -1900,3 +1900,32 @@ credit-usage-display-007	turbo/apps/platform/src/views/okou-page/__tests__/credi
 credit-usage-display-008	turbo/apps/platform/src/views/okou-page/__tests__/credit-usage-display.test.tsx	Chat stays usable and shows no hint amount when settled usage cannot be read	357	passed
 credit-usage-display-010	turbo/apps/platform/src/views/okou-page/__tests__/credit-usage-display.test.tsx	Credit usage shows managed labels and merges catalog aliases and Auto presets in en-US	406	passed
 credit-usage-display-011	turbo/apps/platform/src/views/okou-page/__tests__/credit-usage-display.test.tsx	Credit usage preserves ambiguous upstream identifiers and uncataloged historical models	478	passed
+billing-checkout-completion-001	turbo/apps/platform/src/views/okou-page/__tests__/billing-checkout-completion.test.tsx	Returning from concurrency checkout confirms purchased capacity	33	passed
+billing-checkout-completion-003	turbo/apps/platform/src/views/okou-page/__tests__/billing-checkout-completion.test.tsx	A confirmed usage-pack purchase displays its confirmation	52	passed
+billing-plans-entry-001	turbo/apps/platform/src/views/okou-page/__tests__/billing-plans-entry.test.tsx	Dismissing the sidebar upgrade flow returns to the chat screen	92	passed
+billing-plans-entry-002	turbo/apps/platform/src/views/okou-page/__tests__/billing-plans-entry.test.tsx	An admin on mobile navigation opens the plans from Me	116	passed
+billing-plans-entry-003	turbo/apps/platform/src/views/okou-page/__tests__/billing-plans-entry.test.tsx	Delayed eligibility and catalog loading lead to plan selection and configuration	132	passed
+billing-plans-entry-005	turbo/apps/platform/src/views/okou-page/__tests__/billing-plans-entry.test.tsx	Closing pending eligibility does not reopen the modal when the response arrives	191	passed
+billing-plans-entry-009	turbo/apps/platform/src/views/okou-page/__tests__/billing-plans-entry.test.tsx	A billing refresh preserves configuration and keyboard focus	219	passed
+billing-survey-001	turbo/apps/platform/src/views/okou-page/__tests__/billing-survey.test.tsx	Ask a free workspace admin why they are not upgrading and thank them with credits	153	passed
+billing-survey-002	turbo/apps/platform/src/views/okou-page/__tests__/billing-survey.test.tsx	Leave the out-of-credits card unchanged once the member has answered	202	passed
+billing-survey-003	turbo/apps/platform/src/views/okou-page/__tests__/billing-survey.test.tsx	Ask why a purchase was not completed when Stripe sends the member back	221	passed
+billing-survey-004	turbo/apps/platform/src/views/okou-page/__tests__/billing-survey.test.tsx	Wait for the restored plans dialog to close before asking about canceled checkout	263	passed
+billing-survey-006	turbo/apps/platform/src/views/okou-page/__tests__/billing-survey.test.tsx	Wait while a recent Checkout may still be open in another tab	309	passed
+marketing-checkout-001	turbo/apps/platform/src/views/okou-page/__tests__/marketing-checkout.test.tsx	A checkout action sends a Marketing event without waiting for it	102	passed
+marketing-checkout-003	turbo/apps/platform/src/views/okou-page/__tests__/marketing-checkout.test.tsx	An expired plan preview keeps the quoted amount visible with the confirmation error	133	passed
+settings-wallet-cards-001	turbo/apps/platform/src/views/okou-page/__tests__/settings-wallet-cards.test.tsx	shows Link CARD methods with the default first and one management action in a new tab	104	passed
+settings-wallet-cards-002	turbo/apps/platform/src/views/okou-page/__tests__/settings-wallet-cards.test.tsx	uses the provider name when card details are absent and does not invent a default	144	passed
+settings-wallet-cards-003	turbo/apps/platform/src/views/okou-page/__tests__/settings-wallet-cards.test.tsx	keeps cards usable when the brand is unknown or its artwork fails to load	169	passed
+settings-wallet-cards-005	turbo/apps/platform/src/views/okou-page/__tests__/settings-wallet-cards.test.tsx	keeps cards and transactions on tab return and refreshes both after a wallet change	208	passed
+settings-wallet-cards-010	turbo/apps/platform/src/views/okou-page/__tests__/settings-wallet-cards.test.tsx	hides cards after disconnect even when an earlier refresh completes later	302	passed
+banking-card-realtime-001	turbo/apps/platform/src/views/okou-page/__tests__/banking-card-realtime.test.tsx	Duplicate banking cards update together on events and recover after a continuity gap	12	passed
+org-invoices-tab-001	turbo/apps/platform/src/views/okou-page/__tests__/org-invoices-tab.test.tsx	Open an individual invoice from invoice history	81	passed
+org-usage-tab-001	turbo/apps/platform/src/views/okou-page/__tests__/org-usage-tab.test.tsx	Review workspace credit balance and additions	243	passed
+org-usage-tab-005	turbo/apps/platform/src/views/okou-page/__tests__/org-usage-tab.test.tsx	Explain the composition of a workspace credit balance	260	passed
+org-usage-tab-006	turbo/apps/platform/src/views/okou-page/__tests__/org-usage-tab.test.tsx	Review credit usage by workspace member	295	passed
+org-usage-tab-008	turbo/apps/platform/src/views/okou-page/__tests__/org-usage-tab.test.tsx	Team usage groups historical data and new enrichment while conserving non-model credits	311	passed
+org-usage-tab-009	turbo/apps/platform/src/views/okou-page/__tests__/org-usage-tab.test.tsx	Review workspace credit usage for the last seven days	453	passed
+org-switcher-001	turbo/apps/platform/src/views/okou-page/__tests__/org-switcher.test.tsx	Join an invited workspace from the workspace switcher	44	passed
+org-switcher-002	turbo/apps/platform/src/views/okou-page/__tests__/org-switcher.test.tsx	Show the brand default for workspaces that never uploaded a logo	151	passed
+organization-refresh-001	turbo/apps/platform/src/views/okou-page/__tests__/organization-refresh.test.tsx	A temporary authentication refresh keeps the active workspace	34	passed
