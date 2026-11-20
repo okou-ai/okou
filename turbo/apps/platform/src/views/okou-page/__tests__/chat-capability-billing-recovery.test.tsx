@@ -2,6 +2,7 @@ import {
   billingCheckoutContract,
   billingStatusContract,
 } from "@okouai/api-contracts/contracts/billing";
+import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-event-send";
 import { screen } from "@testing-library/react";
 import { expect, test } from "vitest";
 
@@ -16,9 +17,12 @@ import {
   createChatRunFixtures,
   findEnabledButton,
   promptEvent,
+  publishRunUpdate,
   queryButton,
   readyChat,
   RUN_PATH,
+  RUN_THREAD_ID,
+  sendText,
 } from "./chat-run-test-fixtures.ts";
 
 const context = testContext();
@@ -152,4 +156,51 @@ test("Show that a previously blocked chat can continue after credits return", as
   );
   expect(queryButton("Upgrade to Pro")).toBeNull();
   expect(queryButton("$100")).toBeNull();
+});
+
+test("Show a new credit rejection with the current balance", async () => {
+  const workspace = arrangeWorkspace("admin", {
+    tier: "pro",
+    credits: 25_000,
+  });
+  const events = await openBlockedChat("insufficient_credits");
+  await expect(
+    screen.findByText("Credits available"),
+  ).resolves.toBeInTheDocument();
+  // The balance runs out, so the API rejects the next message the way it
+  // rejects a queued input: the input is replaced and an error follows it.
+  workspace.credits = 0;
+  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+    events.push(
+      {
+        id: "e0000000-0000-4000-a000-000000000b03",
+        role: "user",
+        content: body.prompt ?? "",
+        ...(body.userMessage ? { userMessage: body.userMessage } : {}),
+        revokesEventId: body.clientEventId,
+        error: "insufficient_credits",
+        runId: undefined,
+        seqId: 100,
+        createdAt: "2026-11-20T08:00:00.000Z",
+      },
+      {
+        id: "e0000000-0000-4000-a000-000000000b04",
+        role: "assistant",
+        content: null,
+        error: "insufficient_credits",
+        runId: undefined,
+        seqId: 101,
+        createdAt: "2026-11-20T08:00:00.001Z",
+      },
+    );
+    publishRunUpdate(RUN_THREAD_ID);
+    return respond(201, { threadId: RUN_THREAD_ID });
+  });
+
+  await sendText("Try the summary again");
+
+  await expect(
+    screen.findAllByText("You're out of credits"),
+  ).resolves.not.toHaveLength(0);
+  expect(screen.queryByText("Credits available")).not.toBeInTheDocument();
 });
