@@ -22,6 +22,7 @@ Show format download items and report conversion failures in a toast. [Registrat
 - **Then** The format actions are available and a failed conversion reports an error in a toast.
 - **Disposition** retain.
 - **Source** `test-rebuild-upstream-eaae30ac.bdd.md` at `1aeb21ec`.
+- **Upstream update** #49642 (`6164b16820`) waits for the conversion error inside Notifications, then checks that the same toast is unique on the page.
 
 ## upstream-eaae30ac-settings-refresh-state-109-01
 
