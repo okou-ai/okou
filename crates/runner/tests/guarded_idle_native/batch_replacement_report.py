@@ -52,8 +52,9 @@ def validate(directory, cases=CASES, policy_key="native_batch_replacement_policy
     zero = dict.fromkeys(COUNTS, 0) | {"closed": False}
     for case, events in witnesses.items():
         terminal = terminals[case]
-        if tuple(e["phase"] for e in events) != PHASES:
-            raise ValueError("missing duplicate or unordered replacement phases")
+        report.validate_witness_phases(
+            events, PHASES, "missing duplicate or unordered replacement phases",
+        )
         identity = terminal[1]["sandbox_id"], terminal[1]["backing_generation"]
         if any((e["sandbox_id"], e["backing_generation"]) != identity for e in events):
             raise ValueError("replacement changed the original physical owner")

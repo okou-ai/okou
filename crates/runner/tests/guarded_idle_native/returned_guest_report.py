@@ -56,8 +56,9 @@ def validate(directory):
     for case, events in witnesses.items():
         terminal = terminals[case]
         stage = case.split("-")[1]
-        if tuple(e["phase"] for e in events) != PHASES:
-            raise ValueError("missing duplicate or unordered returned Guest phases")
+        report.validate_witness_phases(
+            events, PHASES, "missing duplicate or unordered returned Guest phases",
+        )
         identity = terminal[1]["sandbox_id"], terminal[1]["backing_generation"]
         if any((e["sandbox_id"], e["backing_generation"]) != identity for e in events):
             raise ValueError("returned Guest lost original identity")

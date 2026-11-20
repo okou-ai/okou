@@ -37,8 +37,9 @@ def validate(directory):
     paths, runners = set(), set()
     for case, events in witnesses.items():
         terminal = terminals[case]
-        if tuple(event["phase"] for event in events) != PHASES:
-            raise ValueError("missing duplicate or reordered native unpark phases")
+        report.validate_witness_phases(
+            events, PHASES, "missing duplicate or reordered native unpark phases",
+        )
         identity = terminal[1]["sandbox_id"], terminal[1]["backing_generation"]
         if any((event["sandbox_id"], event["backing_generation"]) != identity for event in events):
             raise ValueError("native unpark changed original physical owner")

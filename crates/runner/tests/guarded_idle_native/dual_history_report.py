@@ -60,8 +60,9 @@ def validate(directory):
 
     for case in sorted(CASES):
         events, core, terminal = (groups[p][case] for p in (PREFIX, replacement.PREFIX, report.PREFIX))
-        if tuple(e["phase"] for e in events) != PHASES:
-            raise ValueError("missing duplicate or unordered dual-history phases")
+        report.validate_witness_phases(
+            events, PHASES, "missing duplicate or unordered dual-history phases",
+        )
         old, old_backing = identity(terminal[1]["sandbox_id"]), identity(terminal[1]["backing_generation"])
         prep = core[0]["evidence"]["preparation"]
         new, new_backing = identity(prep["sandbox_id"]), identity(prep["backing_generation"])
