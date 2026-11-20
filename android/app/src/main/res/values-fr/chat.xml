@@ -1,4 +1,8 @@
 <resources>
+    <string name="chat_list_offline">Hors ligne</string>
+    <string name="chat_list_refresh_failed">Échec de l’actualisation de la liste des chats</string>
+    <string name="chat_list_first_load_failed">Chargement temporairement indisponible</string>
+    <string name="chat_list_load_when_online">Les chats se chargeront dès que vous serez de nouveau en ligne.</string>
     <string name="chat_list_title">Discussions</string>
     <string name="chat_refresh">Actualiser les discussions</string>
     <string name="chat_loading">Chargement des discussions…</string>
