@@ -1643,7 +1643,6 @@ const runWorkflowInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     {
       auth,
       body,
-      expectedAgentId: agent.id,
       userId: auth.userId,
       orgId: auth.orgId,
       skipThreadSortTouch: true,

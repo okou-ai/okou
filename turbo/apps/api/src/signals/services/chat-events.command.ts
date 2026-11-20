@@ -243,8 +243,6 @@ type OrganizationAuthContext = AuthContext & {
   readonly orgId: string;
 };
 interface NormalSendRequest {
-  /** An existing binding already observed by an internal caller. */
-  readonly expectedAgentId?: string;
   readonly enqueueTiming?: ChatEnqueueTimingCollector;
   readonly projectId?: string;
   readonly body: NormalSendBody;
@@ -2504,9 +2502,7 @@ const prepareNormalSendContext$ = command(
             signal,
           );
     if (
-      (request.body.threadId !== undefined && !existing?.agentId) ||
-      (request.expectedAgentId !== undefined &&
-        request.expectedAgentId !== existing?.agentId)
+      request.body.threadId !== undefined && !existing
     ) {
       return notFound("Chat thread not found");
     }

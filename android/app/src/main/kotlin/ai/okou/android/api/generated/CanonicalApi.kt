@@ -19,30 +19,16 @@ import retrofit2.http.QueryMap
 
 internal interface CanonicalApi {
     @GET("/api/agents/{id}/draft")
-    suspend fun `agentDraft`(
-        @Header("Authorization") token: String,
-        @Path("id") `pathId`: String,
-    ): Response<ComposerDraft>
+    suspend fun `agentDraft`(@Header("Authorization") token: String, @Path("id") `pathId`: String): Response<ComposerDraft>
 
     @GET("/api/chat-threads/{id}/draft")
-    suspend fun `threadDraft`(
-        @Header("Authorization") token: String,
-        @Path("id") `pathId`: String,
-    ): Response<ComposerDraft>
+    suspend fun `threadDraft`(@Header("Authorization") token: String, @Path("id") `pathId`: String): Response<ComposerDraft>
 
     @PATCH("/api/agents/{id}/draft")
-    suspend fun `saveAgentDraft`(
-        @Header("Authorization") token: String,
-        @Path("id") `pathId`: String,
-        @Body body: SaveAgentDraft,
-    ): Response<Unit>
+    suspend fun `saveAgentDraft`(@Header("Authorization") token: String, @Path("id") `pathId`: String, @Body body: SaveAgentDraft): Response<Unit>
 
     @PATCH("/api/chat-threads/{id}")
-    suspend fun `saveThreadDraft`(
-        @Header("Authorization") token: String,
-        @Path("id") `pathId`: String,
-        @Body body: SaveThreadDraft,
-    ): Response<Unit>
+    suspend fun `saveThreadDraft`(@Header("Authorization") token: String, @Path("id") `pathId`: String, @Body body: SaveThreadDraft): Response<Unit>
 
     @GET("/api/model-catalog")
     suspend fun `recoveryCatalog`(@Header("Authorization") token: String): Response<RecoveryCatalog>
@@ -51,89 +37,55 @@ internal interface CanonicalApi {
     suspend fun `recoveryModels`(@Header("Authorization") token: String): Response<RecoveryModels>
 
     @GET("/api/me/3rd-party-subscriptions")
-    suspend fun `recoverySubscriptions`(
-        @Header("Authorization") token: String
-    ): Response<RecoverySubscriptions>
+    suspend fun `recoverySubscriptions`(@Header("Authorization") token: String): Response<RecoverySubscriptions>
 
     @GET("/api/billing/status")
     suspend fun `recoveryBilling`(@Header("Authorization") token: String): Response<RecoveryBilling>
 
     @POST("/api/me/model-provider-accounts/{id}/subscription-reset")
-    suspend fun `resetSubscription`(
-        @Header("Authorization") token: String,
-        @Path("id") `pathId`: String,
-        @Body body: ResetSubscriptionRequest,
-    ): Response<ResetSubscriptionResult>
+    suspend fun `resetSubscription`(@Header("Authorization") token: String, @Path("id") `pathId`: String, @Body body: ResetSubscriptionRequest): Response<ResetSubscriptionResult>
 
-    @GET("/api/android/updates") suspend fun `androidUpdates`(): Response<AndroidUpdates>
+    @GET("/api/android/updates")
+    suspend fun `androidUpdates`(): Response<AndroidUpdates>
 
     @POST("/api/chat-threads")
-    suspend fun `createThread`(
-        @Header("Authorization") token: String,
-        @Body body: CreateThreadRequest,
-    ): Response<CreatedThread>
+    suspend fun `createThread`(@Header("Authorization") token: String, @Body body: CreateThreadRequest): Response<CreatedThread>
 
     @POST("/api/chat/events")
-    suspend fun `sendInput`(
-        @Header("Authorization") token: String,
-        @Body body: SendRequest,
-    ): Response<AcceptedInput>
+    suspend fun `sendInput`(@Header("Authorization") token: String, @Body body: SendRequest): Response<AcceptedInput>
 
     @GET("/api/chat-threads/{threadId}/inputs/{eventId}/status")
-    suspend fun `inputStatus`(
-        @Header("Authorization") token: String,
-        @Path("threadId") `pathThreadId`: String,
-        @Path("eventId") `pathEventId`: String,
-    ): Response<InputStatus>
+    suspend fun `inputStatus`(@Header("Authorization") token: String, @Path("threadId") `pathThreadId`: String, @Path("eventId") `pathEventId`: String): Response<InputStatus>
 
     @GET("/api/onboarding/status")
-    suspend fun `onboardingStatus`(
-        @Header("Authorization") token: String
-    ): Response<OnboardingStatus>
+    suspend fun `onboardingStatus`(@Header("Authorization") token: String): Response<OnboardingStatus>
 
     @GET("/api/instructions")
-    suspend fun `personalInstructions`(
-        @Header("Authorization") token: String
-    ): Response<PersonalInstructions>
+    suspend fun `personalInstructions`(@Header("Authorization") token: String): Response<PersonalInstructions>
 
     @PUT("/api/instructions")
-    suspend fun `updatePersonalInstructions`(
-        @Header("Authorization") token: String,
-        @Body body: UpdateInstructionsRequest,
-    ): Response<PersonalInstructions>
+    suspend fun `updatePersonalInstructions`(@Header("Authorization") token: String, @Body body: UpdateInstructionsRequest): Response<PersonalInstructions>
 
     @GET("/api/org")
     suspend fun `organization`(@Header("Authorization") token: String): Response<Organization>
 
     @POST("/api/realtime/token")
-    suspend fun `realtimeToken`(
-        @Header("Authorization") token: String,
-        @Body body: RealtimeTokenRequest,
-    ): Response<RealtimeToken>
+    suspend fun `realtimeToken`(@Header("Authorization") token: String, @Body body: RealtimeTokenRequest): Response<RealtimeToken>
 
     @GET("/api/user-preferences")
     suspend fun `preferences`(@Header("Authorization") token: String): Response<UserPreferences>
 
     @POST("/api/user-preferences/initialize")
-    suspend fun `initializePreferences`(
-        @Header("Authorization") token: String,
-        @Body body: InitializePreferencesRequest,
-    ): Response<UserPreferences>
+    suspend fun `initializePreferences`(@Header("Authorization") token: String, @Body body: InitializePreferencesRequest): Response<UserPreferences>
 
     @POST("/api/user-preferences")
-    suspend fun `updatePreferences`(
-        @Header("Authorization") token: String,
-        @Body body: UpdatePreferencesRequest,
-    ): Response<UserPreferences>
+    suspend fun `updatePreferences`(@Header("Authorization") token: String, @Body body: UpdatePreferencesRequest): Response<UserPreferences>
 
     @GET("/api/chat-threads/snapshot")
     suspend fun `chatSnapshot`(@Header("Authorization") token: String): Response<ChatSnapshot>
 
     @GET("/api/chat-threads/events")
-    suspend fun `chatEvents`(
-        @Header("Authorization") token: String,
-        @Query("sinceSeqId") `querySinceSeqId`: Long? = null,
-    ): Response<ChatEvents>
+    suspend fun `chatEvents`(@Header("Authorization") token: String, @Query("sinceSeqId") `querySinceSeqId`: Long? = null): Response<ChatEvents>
 
     @GET("/api/indicators")
     suspend fun `indicators`(@Header("Authorization") token: String): Response<Indicators>
@@ -145,158 +97,56 @@ internal interface CanonicalApi {
     suspend fun `projectSnapshot`(@Header("Authorization") token: String): Response<ProjectSnapshot>
 
     @GET("/api/projects/events")
-    suspend fun `projectEvents`(
-        @Header("Authorization") token: String,
-        @Query("sinceSeqId") `querySinceSeqId`: Long,
-    ): Response<ProjectEvents>
+    suspend fun `projectEvents`(@Header("Authorization") token: String, @Query("sinceSeqId") `querySinceSeqId`: Long): Response<ProjectEvents>
 
     @POST("/api/chat/events/catch-up")
-    suspend fun `historyCatchUp`(
-        @Header("Authorization") token: String,
-        @Body body: HistoryCatchUpRequest,
-    ): Response<HistoryCatchUp>
+    suspend fun `historyCatchUp`(@Header("Authorization") token: String, @Body body: HistoryCatchUpRequest): Response<HistoryCatchUp>
 
     @GET("/api/chat-threads/{threadId}/event-snapshot")
-    suspend fun `historySnapshot`(
-        @Header("Authorization") token: String,
-        @Path("threadId") `pathThreadId`: String,
-    ): Response<HistorySnapshot>
+    suspend fun `historySnapshot`(@Header("Authorization") token: String, @Path("threadId") `pathThreadId`: String): Response<HistorySnapshot>
 
     @GET("/api/chat-threads/{threadId}/event-rows")
-    suspend fun `historyRowsWire`(
-        @Header("Authorization") token: String,
-        @Path("threadId") `pathThreadId`: String,
-        @QueryMap parameters: Map<String, String>,
-    ): Response<HistoryRows>
+    suspend fun `historyRowsWire`(@Header("Authorization") token: String, @Path("threadId") `pathThreadId`: String, @QueryMap parameters: Map<String, String>): Response<HistoryRows>
 
     @GET("/api/chat-threads/{id}")
-    suspend fun `threadDetail`(
-        @Header("Authorization") token: String,
-        @Path("id") `pathId`: String,
-    ): Response<ThreadDetail>
+    suspend fun `threadDetail`(@Header("Authorization") token: String, @Path("id") `pathId`: String): Response<ThreadDetail>
 
     @POST("/api/chat-threads/{id}/mark-read")
-    suspend fun `markRead`(
-        @Header("Authorization") token: String,
-        @Path("id") `pathId`: String,
-    ): Response<ReadState>
+    suspend fun `markRead`(@Header("Authorization") token: String, @Path("id") `pathId`: String): Response<ReadState>
 
     @POST("/api/chat-threads/{id}/mark-unread")
-    suspend fun `markUnread`(
-        @Header("Authorization") token: String,
-        @Path("id") `pathId`: String,
-    ): Response<ReadState>
+    suspend fun `markUnread`(@Header("Authorization") token: String, @Path("id") `pathId`: String): Response<ReadState>
 
     @POST("/api/chat-threads/{id}/mute")
-    suspend fun `muteThread`(
-        @Header("Authorization") token: String,
-        @Path("id") `pathId`: String,
-        @Query("eventId") `queryEventId`: String? = null,
-    ): Response<Unit>
+    suspend fun `muteThread`(@Header("Authorization") token: String, @Path("id") `pathId`: String, @Query("eventId") `queryEventId`: String? = null): Response<Unit>
 
     @POST("/api/chat-threads/{id}/unmute")
-    suspend fun `unmuteThread`(
-        @Header("Authorization") token: String,
-        @Path("id") `pathId`: String,
-        @Query("eventId") `queryEventId`: String? = null,
-    ): Response<Unit>
+    suspend fun `unmuteThread`(@Header("Authorization") token: String, @Path("id") `pathId`: String, @Query("eventId") `queryEventId`: String? = null): Response<Unit>
 
     @POST("/api/chat-threads/{id}/archive")
-    suspend fun `archiveThread`(
-        @Header("Authorization") token: String,
-        @Path("id") `pathId`: String,
-        @Query("eventId") `queryEventId`: String? = null,
-    ): Response<Unit>
+    suspend fun `archiveThread`(@Header("Authorization") token: String, @Path("id") `pathId`: String, @Query("eventId") `queryEventId`: String? = null): Response<Unit>
 
     @POST("/api/chat-threads/{id}/unarchive")
-    suspend fun `unarchiveThread`(
-        @Header("Authorization") token: String,
-        @Path("id") `pathId`: String,
-        @Query("eventId") `queryEventId`: String? = null,
-    ): Response<Unit>
+    suspend fun `unarchiveThread`(@Header("Authorization") token: String, @Path("id") `pathId`: String, @Query("eventId") `queryEventId`: String? = null): Response<Unit>
 
     @POST("/api/chat-threads/{id}/rename")
-    suspend fun `renameThread`(
-        @Header("Authorization") token: String,
-        @Path("id") `pathId`: String,
-        @Body body: RenameThreadRequest,
-    ): Response<Unit>
+    suspend fun `renameThread`(@Header("Authorization") token: String, @Path("id") `pathId`: String, @Body body: RenameThreadRequest): Response<Unit>
 
     @POST("/api/chat-threads/{id}/pin")
-    suspend fun `pinThread`(
-        @Header("Authorization") token: String,
-        @Path("id") `pathId`: String,
-        @Query("eventId") `queryEventId`: String? = null,
-        @Query("pinOrder") `queryPinOrder`: String? = null,
-    ): Response<Unit>
+    suspend fun `pinThread`(@Header("Authorization") token: String, @Path("id") `pathId`: String, @Query("eventId") `queryEventId`: String? = null, @Query("pinOrder") `queryPinOrder`: String? = null): Response<Unit>
 
     @POST("/api/chat-threads/{id}/unpin")
-    suspend fun `unpinThread`(
-        @Header("Authorization") token: String,
-        @Path("id") `pathId`: String,
-        @Query("eventId") `queryEventId`: String? = null,
-    ): Response<Unit>
+    suspend fun `unpinThread`(@Header("Authorization") token: String, @Path("id") `pathId`: String, @Query("eventId") `queryEventId`: String? = null): Response<Unit>
 
     @POST("/api/chat-threads/{id}/pin-order")
-    suspend fun `reorderPinnedThread`(
-        @Header("Authorization") token: String,
-        @Path("id") `pathId`: String,
-        @Body body: ReorderPinnedThreadRequest,
-    ): Response<Unit>
+    suspend fun `reorderPinnedThread`(@Header("Authorization") token: String, @Path("id") `pathId`: String, @Body body: ReorderPinnedThreadRequest): Response<Unit>
 }
 
-internal suspend fun CanonicalApi.`historyRows`(
-    token: String,
-    `pathThreadId`: String,
-    query: HistoryRowsQuery,
-): Response<HistoryRows> = `historyRowsWire`(token, `pathThreadId`, query.toQueryParameters())
+internal suspend fun CanonicalApi.`historyRows`(token: String, `pathThreadId`: String, query: HistoryRowsQuery): Response<HistoryRows> =
+    `historyRowsWire`(token, `pathThreadId`, query.toQueryParameters())
 
 internal fun HistoryRowsQuery.toQueryParameters(): Map<String, String> {
     val value = Json.encodeToJsonElement(HistoryRowsQuery.serializer(), this) as JsonObject
-    require(
-        listOf(
-                (value.keys.all { it in setOf("sinceSeqId", "sinceEventId", "limit") } &&
-                    value["sinceSeqId"].let { field ->
-                        (field is JsonPrimitive &&
-                            !field.isString &&
-                            field.doubleOrNull?.let { it.isFinite() && it == 0.0 } == true)
-                    } &&
-                    !value.containsKey("sinceEventId") &&
-                    value["limit"].let { field ->
-                        (field is JsonPrimitive &&
-                            !field.isString &&
-                            field.doubleOrNull?.let { it.isFinite() && it >= 1.0 && it <= 50.0 } ==
-                                true)
-                    }),
-                (value.keys.all { it in setOf("sinceSeqId", "sinceEventId", "limit") } &&
-                    value["sinceSeqId"].let { field ->
-                        (field is JsonPrimitive &&
-                            !field.isString &&
-                            field.doubleOrNull?.let {
-                                it.isFinite() &&
-                                    it % 1.0 == 0.0 &&
-                                    it <= 9007199254740991.0 &&
-                                    it > 0.0
-                            } == true)
-                    } &&
-                    value["sinceEventId"].let { field ->
-                        (field is JsonPrimitive &&
-                            field.isString &&
-                            Regex(
-                                    "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)\$"
-                                )
-                                .containsMatchIn(field.content))
-                    } &&
-                    value["limit"].let { field ->
-                        (field is JsonPrimitive &&
-                            !field.isString &&
-                            field.doubleOrNull?.let { it.isFinite() && it >= 1.0 && it <= 50.0 } ==
-                                true)
-                    }),
-            )
-            .count { it } == 1
-    ) {
-        "Invalid HistoryRowsQuery"
-    }
+    require(listOf((value.keys.all { it in setOf("sinceSeqId", "sinceEventId", "limit") } && value["sinceSeqId"].let { field -> (field is JsonPrimitive && !field.isString && field.doubleOrNull?.let { it.isFinite() && it == 0.0 } == true) } && !value.containsKey("sinceEventId") && value["limit"].let { field -> (field is JsonPrimitive && !field.isString && field.doubleOrNull?.let { it.isFinite() && it >= 1.0 && it <= 50.0 } == true) }), (value.keys.all { it in setOf("sinceSeqId", "sinceEventId", "limit") } && value["sinceSeqId"].let { field -> (field is JsonPrimitive && !field.isString && field.doubleOrNull?.let { it.isFinite() && it % 1.0 == 0.0 && it <= 9007199254740991.0 && it > 0.0 } == true) } && value["sinceEventId"].let { field -> (field is JsonPrimitive && field.isString && Regex("^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)\$").containsMatchIn(field.content)) } && value["limit"].let { field -> (field is JsonPrimitive && !field.isString && field.doubleOrNull?.let { it.isFinite() && it >= 1.0 && it <= 50.0 } == true) })).count { it } == 1) { "Invalid HistoryRowsQuery" }
     return value.mapValues { (_, field) -> (field as JsonPrimitive).content }
 }

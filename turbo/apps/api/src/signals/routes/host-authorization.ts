@@ -130,7 +130,6 @@ const continueAuthorization$ = command(
           auth,
           orgId: auth.orgId,
           userId: auth.userId,
-          expectedAgentId: current.agentId,
           body: {
             threadId: current.row.chatThreadId,
             clientEventId: id,

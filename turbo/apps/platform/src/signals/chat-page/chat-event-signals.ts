@@ -147,7 +147,6 @@ function createSendInputChatEvent({
         sendChatEvent(
           get(apiClient$),
           {
-            agentId: input.agentId,
             prompt: input.prompt,
             threadId,
             hasTextContent: input.hasTextContent,
@@ -211,7 +210,6 @@ function createSendRevokeChatEvent({
         sendChatEvent(
           get(apiClient$),
           {
-            agentId: input.agentId,
             threadId,
             revokesEventId: input.revokesEventId,
             clientEventId,
@@ -257,7 +255,6 @@ function createSendInterruptChatEvent({
         sendChatEvent(
           get(apiClient$),
           {
-            agentId: input.agentId,
             threadId,
             interruptsRunId: input.interruptsRunId,
             clientEventId,

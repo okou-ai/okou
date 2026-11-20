@@ -28,8 +28,8 @@ data class RunControlIntent(
 ) {
     fun request(): SendRequest =
         when (kind) {
-            RunControlKind.Interrupt -> SendRequestVariant3(agentId, threadId, targetId, id)
-            RunControlKind.Revoke -> SendRequestVariant2(agentId, threadId, targetId, id)
+            RunControlKind.Interrupt -> SendRequestVariant3(threadId, targetId, id)
+            RunControlKind.Revoke -> SendRequestVariant2(threadId, targetId, id)
         }
 }
 

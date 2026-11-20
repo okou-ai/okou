@@ -139,7 +139,7 @@ public actor ChatCommands {
       throw ChatError.agentUnavailable
     }
     let body = SendBody(
-      agentId: metadata.agentId, threadId: thread.id,
+      threadId: thread.id,
       prompt: prompt.isEmpty
         ? (document?.hasFeedback == true
           ? "(see quoted passages)"
@@ -183,14 +183,14 @@ public actor ChatCommands {
     // Stop is explicit. Changing saved settings does not revoke an admitted run.
     for eventID in current.queuedEventIDs {
       let body = RevokeBody(
-        agentId: thread.agentID, threadId: thread.id,
+        threadId: thread.id,
         revokesEventId: eventID, clientEventId: UUID().uuidString)
       let _: ChatSendResponse = try await client.request(
         "/api/chat/events", method: "POST", body: JSONEncoder().encode(body))
     }
     for runID in current.activeRunIDs {
       let body = InterruptBody(
-        agentId: thread.agentID, threadId: thread.id,
+        threadId: thread.id,
         interruptsRunId: runID, clientEventId: UUID().uuidString)
       let _: ChatSendResponse = try await client.request(
         "/api/chat/events", method: "POST", body: JSONEncoder().encode(body))
@@ -354,7 +354,6 @@ public actor ChatCommands {
     }
   }
   private struct SendBody: Encodable {
-    let agentId: String
     let threadId: String
     let prompt: String
     let clientEventId: String
@@ -366,12 +365,11 @@ public actor ChatCommands {
     let reasoningEffort: String?
     let computerAccess: ChatComputerAccess
     enum Keys: String, CodingKey {
-      case agentId, threadId, prompt, clientEventId, chatThreadSortEventId, userMessage
+      case threadId, prompt, clientEventId, chatThreadSortEventId, userMessage
       case hasTextContent, sourceRunId, computerUseHostId, cloudBrowserEnabled, model, runOptions
     }
     func encode(to encoder: Encoder) throws {
       var container = encoder.container(keyedBy: Keys.self)
-      try container.encode(agentId, forKey: .agentId)
       try container.encode(threadId, forKey: .threadId)
       try container.encode(prompt, forKey: .prompt)
       try container.encode(clientEventId, forKey: .clientEventId)
@@ -391,13 +389,11 @@ public actor ChatCommands {
     }
   }
   private struct InterruptBody: Encodable {
-    let agentId: String
     let threadId: String
     let interruptsRunId: String
     let clientEventId: String
   }
   private struct RevokeBody: Encodable {
-    let agentId: String
     let threadId: String
     let revokesEventId: String
     let clientEventId: String

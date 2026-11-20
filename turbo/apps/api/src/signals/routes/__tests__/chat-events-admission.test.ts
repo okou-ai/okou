@@ -1,3 +1,5 @@
+import { instructionsContract } from "@okouai/api-contracts/contracts/instructions";
+import { instructionsRoutes } from "../instructions";
 import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
 import { userPreferencesRoutes } from "../user-preferences";
 import { createPublicComputerUseScenario } from "./helpers/public-computer-use-scenario";
@@ -864,11 +866,10 @@ describe("CHAT-02: admission without spendable credits", () => {
     const fixture = createPublicChatAdmissionFixture(context);
     await fixture.run(async () => {
       const { actor, agentId } = await fixture.createPaidNativeActor();
-      await createBddApi(context).updateAgentInstructions(
-        actor,
-        agentId,
-        `Pending ${randomUUID()}`,
-      );
+      await accept(setupApp({ context, routes: instructionsRoutes })(instructionsContract).update({
+        headers: sessionHeaders(actor),
+        body: { content: `Pending ${randomUUID()}` },
+      }), [200]);
       const thread = await chat.createThread(actor, { agentId });
       const signing = holdDownloadSigning(context);
       const pendingEventId = randomUUID();

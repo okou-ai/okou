@@ -4,7 +4,6 @@ import chalk from "chalk";
 import { Command } from "commander";
 
 import {
-  getChatThreadAgentId,
   sendChatEvent,
 } from "../../lib/api/domains/chat";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
@@ -82,18 +81,15 @@ Notes:
     withErrorHandler(async (options: CancelOptions) => {
       const threadId = resolveChatThreadId(options.threadId);
       const target = resolveTarget(options);
-      const agentId = await getChatThreadAgentId({ threadId });
       const controlEventId = randomUUID();
       const result = await sendChatEvent(
         target.kind === "run"
           ? {
-              agentId,
               threadId,
               interruptsRunId: target.id,
               clientEventId: controlEventId,
             }
           : {
-              agentId,
               threadId,
               revokesEventId: target.id,
               clientEventId: controlEventId,

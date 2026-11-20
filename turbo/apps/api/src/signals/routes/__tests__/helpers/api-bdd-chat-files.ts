@@ -1647,9 +1647,6 @@ export function createChatFilesBddApi(context: TestContext) {
               const selectedModel =
                 body.model === undefined ? defaultModel : body.model;
               return {
-                ...(body.agentId === undefined
-                  ? {}
-                  : { agentId: body.agentId }),
                 prompt: body.prompt,
                 ...(body.threadId === undefined
                   ? {}
@@ -1701,7 +1698,6 @@ export function createChatFilesBddApi(context: TestContext) {
             })()
           : "interruptsRunId" in body
             ? {
-                agentId: body.agentId,
                 threadId: body.threadId,
                 interruptsRunId: body.interruptsRunId,
                 ...(body.clientEventId === undefined
@@ -1709,7 +1705,6 @@ export function createChatFilesBddApi(context: TestContext) {
                   : { clientEventId: body.clientEventId }),
               }
             : {
-                agentId: body.agentId,
                 threadId: body.threadId,
                 revokesEventId: body.revokesEventId,
                 ...(body.clientEventId === undefined

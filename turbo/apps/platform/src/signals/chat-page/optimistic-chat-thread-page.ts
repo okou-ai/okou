@@ -196,7 +196,6 @@ function createNewThreadOptimisticEventEntry({
 }
 
 function newThreadSendBody({
-  agentId,
   threadId,
   clientEventId,
   prepared,
@@ -207,7 +206,6 @@ function newThreadSendBody({
   cloudBrowserEnabled,
   sourceRunId,
 }: {
-  agentId: string;
   threadId: string;
   clientEventId: string;
   prepared: PreparedNewThreadPayload;
@@ -220,7 +218,6 @@ function newThreadSendBody({
 }) {
   const runOptions = runOptionsFromModelProviderSelection(modelSelection);
   return {
-    agentId,
     prompt: prepared.prompt,
     threadId,
     hasTextContent: prepared.hasTextContent,
@@ -865,7 +862,6 @@ const sendNewThreadMessage$ = command(
       signal.throwIfAborted();
     }
     const sendBody = newThreadSendBody({
-      agentId,
       threadId,
       clientEventId,
       prepared,

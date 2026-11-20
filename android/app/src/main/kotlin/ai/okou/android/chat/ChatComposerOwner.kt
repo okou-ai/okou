@@ -528,7 +528,6 @@ internal class ChatComposerOwner(
                     )
                 else null,
                 SendRequestVariant1(
-                    agentId = agent,
                     prompt = entry.text,
                     threadId = threadId,
                     clientEventId = eventId,

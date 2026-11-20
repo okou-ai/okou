@@ -3252,7 +3252,6 @@ function launchThreadBindingCte({
           eq(chatThreads.id, createArgs.chatThreadId),
           eq(chatThreads.userId, createArgs.userId),
           chatThreadOrganizationCondition(createArgs.orgId),
-          sql`${chatThreads.agentId} IS NOT DISTINCT FROM ${expected.threadAgentId}::uuid`,
           sql`${chatThreads.framework} IS NOT DISTINCT FROM ${expected.framework}::text`,
           sql`${chatThreads.frameworkSessionId} IS NOT DISTINCT FROM ${expected.frameworkSessionId}::text`,
           sql`${chatThreads.frameworkSessionRunId} IS NOT DISTINCT FROM ${expected.frameworkSessionRunId}::uuid`,

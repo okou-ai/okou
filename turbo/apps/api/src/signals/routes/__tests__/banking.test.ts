@@ -90,7 +90,9 @@ async function createBankingRun(args: BankingFixtureArgs = {}) {
   const workflows = createWorkflowsBddApi(context);
   const run =
     args.triggerSource === "automation-event"
-      ? await workflows.startEventAutomationRun(actor, agent.agentId)
+      ? await workflows.startEventAutomationRun(
+          actor, await bdd.bootstrapLimitedFreeOnboarding(actor, {}),
+        )
       : await api.createThreadRun(actor, {
           agentId: agent.agentId,
           prompt: "banking precondition",

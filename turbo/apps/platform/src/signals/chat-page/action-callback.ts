@@ -69,7 +69,6 @@ export const runChatActionCallback$ = command(
     await sendChatEvent(
       get(apiClient$),
       {
-        agentId: args.agentId,
         threadId: args.threadId,
         prompt: args.callbackPrompt,
         hasTextContent: true,
