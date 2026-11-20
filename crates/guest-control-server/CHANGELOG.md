@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.142](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.141...guest-control-server-v0.24.142) (2026-11-20)
+
+
+### Refactoring
+
+* **runner:** retire optional execution package handling ([#49568](https://github.com/okou-ai/okou/issues/49568)) ([3ec3a12](https://github.com/okou-ai/okou/commit/3ec3a12f234394a2594d07852747fe45f1c08433))
+
 ## [0.24.141](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.140...guest-control-server-v0.24.141) (2026-11-20)
 
 

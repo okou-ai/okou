@@ -3,7 +3,7 @@ import {
   type ImageModel,
 } from "@okouai/core/image-model-catalog";
 import { computed, type Computed } from "ccstate";
-import type { RunPromptAndSkills } from "../run-prompt-and-skills";
+import type { RunPrompt } from "../run-prompt-and-skills";
 
 const RESTRICTED_EXPLICIT_CONTENT_PROMPT = [
   "# Restricted Explicit Content",
@@ -34,8 +34,8 @@ function builtInImageModelPrompt(model: ImageModel): string {
 export function createRuntimePrompt(
   selectedImageModel$: Computed<Promise<ImageModel>>,
   disabledPaidTools$: Computed<Promise<readonly string[]>>,
-): Computed<Promise<RunPromptAndSkills>> {
-  return computed(async (get): Promise<RunPromptAndSkills> => {
+): Computed<Promise<RunPrompt>> {
+  return computed(async (get): Promise<RunPrompt> => {
     const disabledPaidTools = await get(disabledPaidTools$);
     const imageModelPrompt = disabledPaidTools.includes("image-generation")
       ? ""
@@ -46,7 +46,6 @@ export function createRuntimePrompt(
         restrictedExplicitContent: RESTRICTED_EXPLICIT_CONTENT_PROMPT,
       },
       userPromptVariables: {},
-      skillVolumes: [],
     };
   });
 }

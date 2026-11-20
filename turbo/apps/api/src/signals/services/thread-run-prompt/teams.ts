@@ -4,14 +4,14 @@ import {
   teamsPromptFromContext,
   type TeamsThreadContext,
 } from "../teams-queued-launch-context.service";
-import type { RunPromptAndSkills } from "../run-prompt-and-skills";
+import type { RunPrompt } from "../run-prompt-and-skills";
 import type { PickedThreadInputEvent } from "./types";
 
 export function createTeamsThreadPrompt(
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
   context$: Computed<Promise<TeamsThreadContext>>,
   featureSwitches$: Computed<Promise<FeatureSwitchContext>>,
-): Computed<Promise<RunPromptAndSkills | null>> {
+): Computed<Promise<RunPrompt | null>> {
   return computed(async (get) => {
     const pickedEvent = await get(pickedEvent$);
     if (pickedEvent?.contextType !== "teams") {
@@ -45,7 +45,6 @@ export function createTeamsThreadPrompt(
         integrationContext: material.appendSystemPrompt,
         channelUserIdentity: identity.join("\n"),
       },
-      skillVolumes: [],
     };
   });
 }

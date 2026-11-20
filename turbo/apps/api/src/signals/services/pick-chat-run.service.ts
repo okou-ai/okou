@@ -24,7 +24,7 @@ import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
 import { db$, writeDb$ } from "../external/db";
 import { waitUntil } from "../context/wait-until";
 import { nowDate } from "../../lib/time";
-import type { ChatThreadRequestFacts } from "./chat-thread-request-facts";
+import type { EnqueuedChatInputFacts } from "./chat-run-preparation-facts";
 import type { ReleasedRunSlot } from "./agent-run-terminal-transition.service";
 import {
   prepareDirectRunDispatch$,
@@ -55,7 +55,7 @@ interface LeasedThreadClaim extends ThreadClaim {
   readonly userId: string;
   readonly agentId: string;
   readonly context?: AgentRunContextSignals;
-  readonly requestFacts?: ChatThreadRequestFacts;
+  readonly requestInput?: EnqueuedChatInputFacts;
 }
 
 /** One pick launches a run, observes full capacity, or launches nothing. */
@@ -99,7 +99,7 @@ function createCapturedClaimObjects(
       claimId: claim.claimId,
     },
     context,
-    claim.requestFacts,
+    claim.requestInput,
   );
   // Reobserve occupancy after release, but retain the same org capacity snapshot.
   // Newly purchased slots take effect only in a subsequent context.
@@ -116,7 +116,7 @@ interface PickInput {
   readonly chatThreadId?: string;
   readonly after?: OrgPickCursor | null;
   readonly context?: AgentRunContextSignals;
-  readonly requestFacts?: ChatThreadRequestFacts;
+  readonly requestInput?: EnqueuedChatInputFacts;
   readonly publishedLease?: PublishedChatThreadLease;
 }
 
@@ -126,18 +126,18 @@ export interface PickIteration {
 }
 
 function captureThreadClaim(
-  receipt: Omit<LeasedThreadClaim, "context" | "requestFacts">,
+  receipt: Omit<LeasedThreadClaim, "context" | "requestInput">,
   input: PickInput,
 ): LeasedThreadClaim {
-  const { context, requestFacts } = input;
+  const { context, requestInput } = input;
   return Object.freeze({
     ...receipt,
     ...(context === undefined ? {} : { context }),
-    ...(requestFacts?.orgId === receipt.orgId &&
-    requestFacts.thread.id === receipt.chatThreadId &&
-    requestFacts.thread.userId === receipt.userId &&
-    requestFacts.thread.agentId === receipt.agentId
-      ? { requestFacts }
+    ...(requestInput?.orgId === receipt.orgId &&
+    requestInput.chatThreadId === receipt.chatThreadId &&
+    requestInput.userId === receipt.userId &&
+    requestInput.agentId === receipt.agentId
+      ? { requestInput }
       : {}),
   });
 }

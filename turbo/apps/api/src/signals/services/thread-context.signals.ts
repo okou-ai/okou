@@ -18,7 +18,7 @@ import {
   type ChatThreadContinuation,
   resolveChatThreadContinuation,
 } from "./chat-session-continuity.service";
-import type { ChatThreadRequestRow } from "./chat-thread-request-facts";
+import type { PickedChatThread } from "./chat-run-preparation-facts";
 import { createDiscordThreadContext } from "./discord-thread-prompt-context.service";
 import {
   executionPackageSourcesSchema,
@@ -488,7 +488,7 @@ function createThreadExecutionPackageSources(
 
 function createThreadHostGrant(
   selected: AgentRunContextSignals,
-  thread$: Computed<Promise<ChatThreadRequestRow | null>>,
+  thread$: Computed<Promise<PickedChatThread | null>>,
 ) {
   return computed(async (get) => {
     const thread = await get(thread$);
@@ -556,7 +556,7 @@ function createThreadContinuation(
 
 function createThreadPhoneUseGrant(
   bootstrap: AgentRunContextSignals,
-  thread$: Computed<Promise<ChatThreadRequestRow | null>>,
+  thread$: Computed<Promise<PickedChatThread | null>>,
 ) {
   return computed(async (get) => {
     const features = await get(bootstrap.featureSwitches$);

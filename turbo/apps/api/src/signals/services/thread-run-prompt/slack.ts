@@ -4,14 +4,14 @@ import {
   slackPromptFromContext,
   type SlackThreadContext,
 } from "../slack-queued-launch-context.service";
-import type { RunPromptAndSkills } from "../run-prompt-and-skills";
+import type { RunPrompt } from "../run-prompt-and-skills";
 import type { PickedThreadInputEvent } from "./types";
 
 export function createSlackThreadPrompt(
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
   context$: Computed<Promise<SlackThreadContext>>,
   featureSwitches$: Computed<Promise<FeatureSwitchContext>>,
-): Computed<Promise<RunPromptAndSkills | null>> {
+): Computed<Promise<RunPrompt | null>> {
   return computed(async (get) => {
     const pickedEvent = await get(pickedEvent$);
     if (pickedEvent?.contextType !== "slack") {
@@ -40,7 +40,6 @@ export function createSlackThreadPrompt(
         integrationContext: material.appendSystemPrompt,
         channelUserIdentity: identity.join("\n"),
       },
-      skillVolumes: [],
     };
   });
 }
