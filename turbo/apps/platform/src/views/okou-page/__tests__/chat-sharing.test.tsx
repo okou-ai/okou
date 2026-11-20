@@ -224,9 +224,7 @@ async function setupMessageSharing(
       0,
     );
     expect(
-      screen.getAllByText(
-        "Choose who can view this chat. Only you can change access.",
-      ).length,
+      screen.getAllByText("Only you can change access.").length,
     ).toBeGreaterThan(0);
   });
   return {
@@ -469,7 +467,7 @@ test("Share selected message groups as a public conversation snapshot", async ()
   ]);
   expect(within(answerGroup).getByRole("checkbox")).toBeChecked();
   expect(within(answerGroup).getByRole("checkbox")).toHaveAttribute(
-    "aria-disabled",
+    "aria-readonly",
     "true",
   );
   click(within(answerGroup).getByText("Deselect message group"));

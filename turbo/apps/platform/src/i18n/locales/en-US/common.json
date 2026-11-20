@@ -2492,6 +2492,7 @@
       "workingFor": "Working for {{duration}}"
     },
     "sharing": {
+      "accessNote": "Only you can change access.",
       "cancel": "Cancel",
       "copyFailed": "Could not copy the link",
       "create": "Create link",
@@ -2511,8 +2512,7 @@
       "shareCount_other": "Share {{count}} messages",
       "shareLink": "Shared chat link",
       "start": "Share messages",
-      "tooLarge": "Select fewer messages to share",
-      "visibilityDescription": "Choose who can view this chat. Only you can change access."
+      "tooLarge": "Select fewer messages to share"
     },
     "shortcuts": {
       "number": "number"

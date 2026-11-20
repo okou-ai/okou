@@ -2482,6 +2482,7 @@
       "workingFor": "已工作 {{duration}}"
     },
     "sharing": {
+      "accessNote": "只有你能修改权限。",
       "cancel": "取消",
       "copyFailed": "无法复制链接",
       "create": "创建链接",
@@ -2499,8 +2500,7 @@
       "shareCount_other": "分享 {{count}} 条消息",
       "shareLink": "分享对话链接",
       "start": "分享消息",
-      "tooLarge": "选择的消息过多，请减少后再分享",
-      "visibilityDescription": "选择谁可以查看此对话，只有你能修改权限。"
+      "tooLarge": "选择的消息过多，请减少后再分享"
     },
     "shortcuts": {
       "number": "数字"

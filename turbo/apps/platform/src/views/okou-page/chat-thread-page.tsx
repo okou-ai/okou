@@ -237,6 +237,7 @@ import { chatEventRenderKey } from "../../signals/chat-page/chat-event-group-key
 import {
   chatGroupForSharing,
   shareableEventFromChatEvent,
+  type SharedThreadSelectionPhase,
 } from "../../signals/chat-page/chat-thread-sharing.ts";
 import { ConnectModal } from "./components/settings/add-connection-dialog.tsx";
 import { useConnectorAccountLabel } from "./components/settings/use-connector-account-label.ts";
@@ -3691,7 +3692,7 @@ function ChatThreadBottomBar({
             </p>
             <p className="mt-0.5 text-xs text-muted-foreground">
               {t(($) => {
-                return $.chat.sharing.visibilityDescription;
+                return $.chat.sharing.accessNote;
               })}
             </p>
             {createLoadable.state === "hasError" ? (
@@ -6115,32 +6116,57 @@ function SelectablePagedGroupRow({
         data-chat-share-selectable-group
         data-chat-scroll-anchor-alias-event-ids={aliasEventIds}
         data-selected={hasSelection || undefined}
-        className={cn(
-          "relative -mx-2 -my-1.5 grid grid-cols-[1.75rem_minmax(0,1fr)] gap-2 rounded-xl px-2 py-1.5 transition-colors",
-          // Keep the checkbox outside the reading column only once the pane
-          // has enough gutter for it and, in the avatar layout, the avatar.
-          nameLine
-            ? "@[960px]:-mr-3 @[960px]:-ml-[54px] @[960px]:grid-cols-[2.25rem_minmax(0,1fr)] @[960px]:gap-2.5 @[960px]:pr-3"
-            : "@[1060px]:-mr-3 @[1060px]:-ml-[100px] @[1060px]:grid-cols-[2.25rem_minmax(0,1fr)] @[1060px]:gap-2.5 @[1060px]:pr-3",
-          // A user message keeps a 32px action row under its bubble. Sharing
-          // offers no per-message action, so the row leaves the tint and its
-          // height moves to the margin: the tint hugs the bubble and the next
-          // group stays where it was.
-          group.role === "user" &&
-            "mb-[26px] [&_[data-chat-user-message-actions]]:hidden",
-          "data-selected:bg-gray-50 dark:data-selected:bg-gray-100",
-          phase === "selecting" &&
-            (hasSelection
-              ? "[@media(hover:hover)]:has-[[data-chat-share-selection]:hover]:bg-state-hover-overlay"
-              : "[@media(hover:hover)]:has-[[data-chat-share-selection]:hover]:bg-state-hover"),
-        )}
+        className={shareGroupClassName({
+          nameLine,
+          role: group.role,
+          phase,
+          hasSelection,
+        })}
       >
         <ShareGroupSelectionColumn role={group.role} {...selection} />
-        <div className={cn("min-w-0", !nameLine && "@[900px]:pl-[46px]")}>
+        <div
+          className={cn(
+            "min-w-0 transition-opacity",
+            !nameLine && "@[900px]:pl-[46px]",
+            // Once the link exists, what was left out steps back so the
+            // shared messages read as the result.
+            phase === "created" && !hasSelection && "opacity-40",
+          )}
+        >
           {messages}
         </div>
       </div>
     </>
+  );
+}
+
+function shareGroupClassName({
+  nameLine,
+  role,
+  phase,
+  hasSelection,
+}: {
+  readonly nameLine: boolean;
+  readonly role: ChatEventGroup["role"];
+  readonly phase: SharedThreadSelectionPhase;
+  readonly hasSelection: boolean;
+}): string {
+  return cn(
+    "relative -mx-2 -my-1 grid grid-cols-[1.75rem_minmax(0,1fr)] gap-2 rounded-xl px-2 py-1.5 transition-colors",
+    // Keep the checkbox outside the reading column only once the pane
+    // has enough gutter for it and, in the avatar layout, the avatar.
+    nameLine
+      ? "@[960px]:-mr-3 @[960px]:-ml-[54px] @[960px]:grid-cols-[2.25rem_minmax(0,1fr)] @[960px]:gap-2.5 @[960px]:pr-3"
+      : "@[1060px]:-mr-3 @[1060px]:-ml-[100px] @[1060px]:grid-cols-[2.25rem_minmax(0,1fr)] @[1060px]:gap-2.5 @[1060px]:pr-3",
+    // Sharing offers no per-message action, so a user message drops the
+    // action row under its bubble. Every group then sits the same 16px
+    // from the next, and the tint hugs the bubble.
+    role === "user" && "[&_[data-chat-user-message-actions]]:hidden",
+    "data-selected:bg-gray-50 dark:data-selected:bg-gray-100",
+    phase === "selecting" &&
+      (hasSelection
+        ? "[@media(hover:hover)]:has-[[data-chat-share-selection]:hover]:bg-state-hover-overlay"
+        : "[@media(hover:hover)]:has-[[data-chat-share-selection]:hover]:bg-state-hover"),
   );
 }
 
@@ -6185,7 +6211,6 @@ function ShareGroupSelectionColumn({
     <Field.Root
       data-chat-share-selection
       className="group/share-selection relative flex justify-center"
-      disabled={!selecting}
     >
       {/* The label covers the whole column, including the row's padding,
           and keeps its text for assistive technology only. */}
@@ -6208,7 +6233,9 @@ function ShareGroupSelectionColumn({
         <Checkbox
           checked={allSelected}
           indeterminate={indeterminate}
-          disabled={!selecting}
+          // Once the link exists the selection is the record of what was
+          // shared: read-only, at full strength rather than faded as disabled.
+          readOnly={!selecting}
           className={cn(shareGroupCheckboxHoverClass(props))}
           onCheckedChange={onToggle}
         />

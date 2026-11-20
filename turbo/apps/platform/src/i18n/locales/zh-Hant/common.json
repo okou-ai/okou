@@ -2482,6 +2482,7 @@
       "workingFor": "已工作 {{duration}}"
     },
     "sharing": {
+      "accessNote": "只有你能修改權限。",
       "cancel": "取消",
       "copyFailed": "無法複製連結",
       "create": "建立連結",
@@ -2499,8 +2500,7 @@
       "shareCount_other": "分享 {{count}} 則訊息",
       "shareLink": "分享對話連結",
       "start": "分享訊息",
-      "tooLarge": "選擇的訊息過多，請減少後再分享",
-      "visibilityDescription": "選擇誰可以查看此對話，只有你能修改權限。"
+      "tooLarge": "選擇的訊息過多，請減少後再分享"
     },
     "shortcuts": {
       "number": "數字"

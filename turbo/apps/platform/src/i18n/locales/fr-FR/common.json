@@ -2537,6 +2537,7 @@
       "workingFor": "En cours depuis {{duration}}"
     },
     "sharing": {
+      "accessNote": "Vous seul pouvez modifier l’accès.",
       "cancel": "Annuler",
       "copyFailed": "Impossible de copier le lien",
       "create": "Créer un lien",
@@ -2558,8 +2559,7 @@
       "shareCount_other": "Partager {{count}} messages",
       "shareLink": "Lien de la conversation partagée",
       "start": "Partager des messages",
-      "tooLarge": "Sélectionnez moins de messages à partager",
-      "visibilityDescription": "Choisissez qui peut voir cette conversation. Vous seul pouvez modifier l’accès."
+      "tooLarge": "Sélectionnez moins de messages à partager"
     },
     "shortcuts": {
       "number": "numéro"

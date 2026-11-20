@@ -2482,6 +2482,7 @@
       "workingFor": "{{duration}}作業中"
     },
     "sharing": {
+      "accessNote": "アクセス権を変更できるのはあなただけです。",
       "cancel": "キャンセル",
       "copyFailed": "リンクをコピーできませんでした",
       "create": "リンクを作成",
@@ -2499,8 +2500,7 @@
       "shareCount_other": "{{count}}件のメッセージを共有",
       "shareLink": "共有された会話のリンク",
       "start": "メッセージを共有",
-      "tooLarge": "共有するメッセージを減らしてください",
-      "visibilityDescription": "この会話を閲覧できる人を選択します。アクセス権を変更できるのはあなただけです。"
+      "tooLarge": "共有するメッセージを減らしてください"
     },
     "shortcuts": {
       "number": "番号"

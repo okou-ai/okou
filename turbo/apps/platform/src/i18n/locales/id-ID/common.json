@@ -2482,6 +2482,7 @@
       "workingFor": "Bekerja selama {{duration}}"
     },
     "sharing": {
+      "accessNote": "Hanya Anda yang dapat mengubah akses.",
       "cancel": "Batal",
       "copyFailed": "Tautan tidak dapat disalin",
       "create": "Buat tautan",
@@ -2499,8 +2500,7 @@
       "shareCount_other": "Bagikan {{count}} pesan",
       "shareLink": "Tautan percakapan yang dibagikan",
       "start": "Bagikan pesan",
-      "tooLarge": "Pilih lebih sedikit pesan untuk dibagikan",
-      "visibilityDescription": "Pilih siapa yang dapat melihat percakapan ini. Hanya Anda yang dapat mengubah akses."
+      "tooLarge": "Pilih lebih sedikit pesan untuk dibagikan"
     },
     "shortcuts": {
       "number": "nomor"

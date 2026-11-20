@@ -20,7 +20,7 @@ export function ChatShareSelectionControls({
   return (
     <div className="flex min-w-0 items-center gap-2">
       <span
-        className="truncate text-sm font-medium text-foreground"
+        className="truncate text-sm font-medium text-foreground tabular-nums"
         role="status"
       >
         {t(
