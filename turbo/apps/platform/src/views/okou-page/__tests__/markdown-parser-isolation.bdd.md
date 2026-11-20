@@ -11,6 +11,8 @@ Original test `Opening Instructions preserves literal plus signs in a new stream
 - **When** A new streamed reply arrives containing bold Markdown and `++Reply`.
 - **Then** The bold label renders as bold, `++Reply` remains literal text, and no underline is created.
 
+Upstream practice: #49556 opens Instructions in Settings and then selects the chat. #49629 scopes the initial text and the new streamed reply to that chat’s transcript. The literal plus signs and the bold label remain the outcomes for 001.
+
 ## markdown-parser-isolation-002
 
 Original test `Opening Instructions preserves literal plus signs as an unfinished reply grows`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/markdown-parser-isolation.test.tsx#L118).
