@@ -46,6 +46,13 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.ChatShareRefresh]: {
+    maintainer: "ming@okou.ai",
+    displayName: "Refined message sharing",
+    description:
+      "Share messages from a card in the composer's place: Select all, one selection count, unselected messages faded back, and a Copy link action once the link exists.",
+    enabled: false,
+  },
   [FeatureSwitchKey.OnboardingMultipleOutputs]: {
     maintainer: "scarlettx@okou.ai",
     description:

@@ -1,6 +1,6 @@
 import {
-  ChatShareCloseButton,
-  ChatShareSelectionControls,
+  ChatShareHeaderControls,
+  useChatShareRefresh,
 } from "./chat-share-selection-controls.tsx";
 import {
   ChatComposerFooter,
@@ -574,11 +574,14 @@ function DesktopChatThreadHeader({ thread }: { thread: ChatPanelSignals }) {
   const pageSignal = useGet(pageSignal$);
   const sharingPhase = useGet(thread.sharing.phase$);
   const startSharing = useSet(thread.sharing.start$);
+  const shareRefresh = useChatShareRefresh();
   if (sharingPhase !== "idle") {
     return (
       <ChatPageHeader>
-        <ChatShareSelectionControls sharing={thread.sharing} />
-        <ChatShareCloseButton sharing={thread.sharing} />
+        <ChatShareHeaderControls
+          sharing={thread.sharing}
+          refreshed={shareRefresh}
+        />
       </ChatPageHeader>
     );
   }
@@ -3591,7 +3594,7 @@ function SharedThreadCreatedLink({
       />
       {visibility ? (
         <div className="grid gap-2 composer-wide:flex composer-wide:shrink-0 composer-wide:items-center">
-          <SharedThreadShareMenu session={visibility} showLabel />
+          <SharedThreadShareMenu session={visibility} showLabel refreshed />
           <SharedThreadCopyLinkButton session={visibility} />
         </div>
       ) : null}
@@ -3627,7 +3630,7 @@ function SharedThreadCopyLinkButton({
 /** Sharing takes the composer's place, so it takes the composer's surface.
  * Its radius is concentric with the controls it holds: their 8px plus the
  * card's 12px padding gives the 20px surface radius. */
-function ChatShareFooter({ children }: { readonly children: ReactNode }) {
+function ChatShareCard({ children }: { readonly children: ReactNode }) {
   return (
     <ChatComposerFooter>
       <div className="@container/composer">
@@ -3643,15 +3646,8 @@ function ChatShareFooter({ children }: { readonly children: ReactNode }) {
   );
 }
 
-function ChatThreadBottomBar({
-  thread,
-  discoveryInContent,
-}: {
-  readonly thread: ChatPanelSignals;
-  readonly discoveryInContent: boolean;
-}) {
+function ChatShareFooter({ thread }: { readonly thread: ChatPanelSignals }) {
   const { t } = useTranslation();
-  const phase = useGet(thread.sharing.phase$);
   const selectedCount = useGet(thread.sharing.selectedCount$);
   const sharedThreadId = useGet(thread.sharing.createdSharedThreadId$);
   const audience = useGet(thread.sharing.audience$);
@@ -3660,21 +3656,12 @@ function ChatThreadBottomBar({
   const [createLoadable, createSharedThread] = useLoadableSet(
     thread.sharing.create$,
   );
-  if (phase === "idle") {
-    return withChatScrollLayout(
-      <ChatThreadComposer
-        thread={thread}
-        discoveryInContent={discoveryInContent}
-      />,
-    );
-  }
-
   const creating = createLoadable.state === "loading";
   const shareUrl = sharedThreadId
     ? `${window.location.origin}/share/threads/${sharedThreadId}`
     : null;
-  return withChatScrollLayout(
-    <ChatShareFooter>
+  return (
+    <ChatShareCard>
       {shareUrl ? (
         <SharedThreadCreatedLink
           key={shareUrl}
@@ -3705,6 +3692,7 @@ function ChatThreadBottomBar({
             <SharedThreadAudiencePicker
               audience={audience}
               disabled={creating}
+              refreshed
               onChange={changeAudience}
             />
             <Button
@@ -3723,13 +3711,165 @@ function ChatThreadBottomBar({
                 <LinkIcon size={16} />
               )}
               {t(($) => {
-                return $.chat.sharing.create;
+                return $.chat.sharing.createLink;
               })}
             </Button>
           </div>
         </div>
       )}
-    </ChatShareFooter>,
+    </ChatShareCard>
+  );
+}
+
+function LegacySharedThreadCreatedLink({
+  thread,
+  shareUrl,
+}: {
+  readonly thread: ChatPanelSignals;
+  readonly shareUrl: string;
+}) {
+  const { t } = useTranslation();
+  const visibility = useGet(thread.sharing.visibility$);
+  const close = useSet(thread.sharing.close$);
+  const pageSignal = useGet(pageSignal$);
+  return (
+    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+      <Input
+        readOnly
+        value={shareUrl}
+        aria-label={t(($) => {
+          return $.chat.sharing.shareLink;
+        })}
+        className="min-w-0 flex-1"
+      />
+      <div className="flex shrink-0 items-center gap-2">
+        {visibility && <SharedThreadShareMenu session={visibility} showLabel />}
+        <Button
+          variant="outline"
+          onClick={() => {
+            detach(
+              close(pageSignal),
+              Reason.DomCallback,
+              "close shared thread selection",
+            );
+          }}
+        >
+          {t(($) => {
+            return $.chat.sharing.close;
+          })}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function LegacyChatShareFooter({
+  thread,
+}: {
+  readonly thread: ChatPanelSignals;
+}) {
+  const { t } = useTranslation();
+  const selectedCount = useGet(thread.sharing.selectedCount$);
+  const sharedThreadId = useGet(thread.sharing.createdSharedThreadId$);
+  const audience = useGet(thread.sharing.audience$);
+  const changeAudience = useSet(thread.sharing.changeAudience$);
+  const pageSignal = useGet(pageSignal$);
+  const [createLoadable, createSharedThread] = useLoadableSet(
+    thread.sharing.create$,
+  );
+  const creating = createLoadable.state === "loading";
+  const shareUrl = sharedThreadId
+    ? `${window.location.origin}/share/threads/${sharedThreadId}`
+    : null;
+  return (
+    <footer className="relative shrink-0 border-t border-border/60 px-4 py-3 sm:px-6">
+      <div className="mx-auto flex w-full max-w-[900px] flex-col gap-2">
+        {shareUrl ? (
+          <LegacySharedThreadCreatedLink
+            key={shareUrl}
+            thread={thread}
+            shareUrl={shareUrl}
+          />
+        ) : (
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-foreground">
+                {t(
+                  ($) => {
+                    return $.chat.sharing.selectedCount;
+                  },
+                  { count: selectedCount },
+                )}
+              </p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {t(($) => {
+                  return $.chat.sharing.visibilityDescription;
+                })}
+              </p>
+              {createLoadable.state === "hasError" ? (
+                <p className="mt-0.5 text-xs text-destructive">
+                  {t(($) => {
+                    return $.chat.sharing.createFailed;
+                  })}
+                </p>
+              ) : null}
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <SharedThreadAudiencePicker
+                audience={audience}
+                disabled={creating}
+                onChange={changeAudience}
+              />
+              <Button
+                disabled={selectedCount === 0 || creating}
+                onClick={() => {
+                  detach(
+                    createSharedThread(pageSignal),
+                    Reason.DomCallback,
+                    "create shared thread",
+                  );
+                }}
+              >
+                {creating ? (
+                  <Loader2 size={16} className="animate-spin" />
+                ) : (
+                  <Share2 size={16} />
+                )}
+                {t(($) => {
+                  return $.chat.sharing.create;
+                })}
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
+    </footer>
+  );
+}
+
+function ChatThreadBottomBar({
+  thread,
+  discoveryInContent,
+}: {
+  readonly thread: ChatPanelSignals;
+  readonly discoveryInContent: boolean;
+}) {
+  const phase = useGet(thread.sharing.phase$);
+  const refreshed = useChatShareRefresh();
+  if (phase === "idle") {
+    return withChatScrollLayout(
+      <ChatThreadComposer
+        thread={thread}
+        discoveryInContent={discoveryInContent}
+      />,
+    );
+  }
+  return withChatScrollLayout(
+    refreshed ? (
+      <ChatShareFooter thread={thread} />
+    ) : (
+      <LegacyChatShareFooter thread={thread} />
+    ),
   );
 }
 
@@ -6012,7 +6152,7 @@ function shareGroupDates(
   return { leadingDate, contentDates };
 }
 
-function SelectablePagedGroupRow({
+function RefreshedSelectablePagedGroupRow({
   group,
   thread,
   modelChanges,
@@ -6170,6 +6310,148 @@ function shareGroupClassName({
   );
 }
 
+function SelectablePagedGroupRow(props: Parameters<typeof PagedGroupRow>[0]) {
+  return useChatShareRefresh() ? (
+    <RefreshedSelectablePagedGroupRow {...props} />
+  ) : (
+    <LegacySelectablePagedGroupRow {...props} />
+  );
+}
+
+function LegacySelectablePagedGroupRow({
+  group,
+  thread,
+  modelChanges,
+  stackFirstOnPrevious,
+  dateDividers,
+  runWorkSection,
+  statusRow,
+  statusTailEvents,
+}: Parameters<typeof PagedGroupRow>[0]) {
+  const { t } = useTranslation();
+  const phase = useGet(thread.sharing.phase$);
+  const selectedEventIds = useGet(thread.sharing.selectedEventIds$);
+  const toggle = useSet(thread.sharing.toggle$);
+  const nameLine =
+    useLastResolved(featureSwitches$)?.[FeatureSwitchKey.ChatReplyNameLine] ===
+    true;
+  const sharing = phase !== "idle";
+  const displayGroup = sharing ? chatGroupForSharing(group) : group;
+  const content = (
+    <PagedGroupRow
+      group={displayGroup}
+      thread={thread}
+      modelChanges={modelChanges}
+      stackFirstOnPrevious={sharing ? false : stackFirstOnPrevious}
+      dateDividers={dateDividers}
+      runWorkSection={sharing ? undefined : runWorkSection}
+      statusRow={sharing ? undefined : statusRow}
+      statusTailEvents={sharing ? undefined : statusTailEvents}
+    />
+  );
+  const events = displayGroup.events.flatMap((event) => {
+    const shareable = shareableEventFromChatEvent(event);
+    return shareable ? [shareable] : [];
+  });
+  if (phase === "idle" || events.length === 0) {
+    return content;
+  }
+  const selectedCount = events.filter((event) => {
+    return selectedEventIds.has(event.id);
+  }).length;
+  const allSelected = selectedCount === events.length;
+  const indeterminate = selectedCount > 0 && !allSelected;
+
+  const toggleGroup = () => {
+    if (phase !== "selecting") {
+      return;
+    }
+    const result = toggle(group.beginEventId, events);
+    if (result === "too-large") {
+      toast.error(
+        t(($) => {
+          return $.chat.sharing.tooLarge;
+        }),
+      );
+    }
+  };
+
+  const aliasEventIds =
+    group.role === "assistant"
+      ? [
+          ...group.events,
+          ...(runWorkSection
+            ? runWorkSection.hiddenGroups.flatMap((hiddenGroup) => {
+                return hiddenGroup.events;
+              })
+            : []),
+        ]
+          .map((event) => {
+            return event.id;
+          })
+          .join(" ")
+      : undefined;
+  const selection = {
+    allSelected,
+    indeterminate,
+    selecting: phase === "selecting",
+    onToggle: toggleGroup,
+  };
+  // Preserve the message list's rhythm inside this group, including the gaps
+  // that back-to-back user bubbles stack into.
+  const messages = (
+    <div
+      className={cn("flex min-w-0 flex-col", CHAT_THREAD_MESSAGE_ROW_GAP_CLASS)}
+    >
+      {content}
+    </div>
+  );
+
+  if (nameLine) {
+    return (
+      <div
+        data-chat-share-selectable-group
+        data-chat-scroll-anchor-alias-event-ids={aliasEventIds}
+        data-selected={allSelected || undefined}
+        className={cn(
+          // The padding the tint needs is spent by the negative margin, so
+          // the group keeps the height it has outside sharing.
+          "relative -mx-2 -my-1.5 grid grid-cols-[1.75rem_minmax(0,1fr)] gap-2 rounded-xl px-2 py-1.5 transition-colors",
+          // Once the gutter has room, the selection column sits outside the
+          // reading column, so starting a share does not move the transcript.
+          // The 900px column is centred in 24px of padding, so the 54px gutter
+          // clears the scroll viewport's edge only from a 960px container.
+          "@[960px]:-mr-3 @[960px]:-ml-[54px] @[960px]:grid-cols-[2.25rem_minmax(0,1fr)] @[960px]:gap-2.5 @[960px]:pr-3",
+          "data-selected:bg-state-selected",
+          phase === "selecting" &&
+            (allSelected
+              ? "[@media(hover:hover)]:has-[[data-chat-share-selection]:hover]:bg-state-selected-hover"
+              : "[@media(hover:hover)]:has-[[data-chat-share-selection]:hover]:bg-state-hover"),
+        )}
+      >
+        {/* The selection column owns selection. Message content stays
+            outside it so text selection, links, and message actions keep
+            their owners. */}
+        <LegacyShareGroupSelectionColumn role={group.role} {...selection} />
+        {messages}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      data-chat-share-selectable-group
+      data-chat-scroll-anchor-alias-event-ids={aliasEventIds}
+      className="relative -my-1 flex flex-col gap-2 rounded-lg py-1"
+    >
+      {/* The full-width label owns selection. Message content stays outside
+          it so text selection, links, and message actions keep their owners. */}
+      <ShareGroupLabelRow {...selection} />
+      {messages}
+    </div>
+  );
+}
+
 interface ShareGroupSelectionProps {
   allSelected: boolean;
   indeterminate: boolean;
@@ -6237,6 +6519,81 @@ function ShareGroupSelectionColumn({
           // shared: read-only, at full strength rather than faded as disabled.
           readOnly={!selecting}
           className={cn(shareGroupCheckboxHoverClass(props))}
+          onCheckedChange={onToggle}
+        />
+      </span>
+    </Field.Root>
+  );
+}
+
+function ShareGroupLabelRow(props: ShareGroupSelectionProps) {
+  const { t } = useTranslation();
+  const { allSelected, indeterminate, selecting, onToggle } = props;
+  return (
+    <Field.Root
+      className="group/share-selection relative"
+      disabled={!selecting}
+    >
+      <Field.Label
+        className={cn(
+          buttonVariants({ variant: "quiet", size: "lg" }),
+          "w-full justify-start pr-10 pl-3 data-disabled:pointer-events-none data-disabled:opacity-50",
+        )}
+      >
+        {shareGroupSelectionLabel(t, allSelected)}
+      </Field.Label>
+      <Checkbox
+        checked={allSelected}
+        indeterminate={indeterminate}
+        disabled={!selecting}
+        className={cn(
+          "absolute top-1/2 right-3 h-5 w-5 -translate-y-1/2 border-muted-foreground",
+          shareGroupCheckboxHoverClass(props),
+        )}
+        onCheckedChange={onToggle}
+      />
+    </Field.Root>
+  );
+}
+
+function LegacyShareGroupSelectionColumn({
+  role,
+  ...props
+}: ShareGroupSelectionProps & { role: ChatEventGroup["role"] }) {
+  const { t } = useTranslation();
+  const { allSelected, indeterminate, selecting, onToggle } = props;
+  return (
+    <Field.Root
+      data-chat-share-selection
+      className="group/share-selection relative flex justify-center"
+      disabled={!selecting}
+    >
+      {/* The label covers the whole column, including the row's padding,
+          and keeps its text for assistive technology only. */}
+      <Field.Label className="absolute -inset-y-1.5 -left-2 -right-2 cursor-default data-disabled:pointer-events-none @[960px]:-right-2.5">
+        <span className="sr-only">
+          {shareGroupSelectionLabel(t, allSelected)}
+        </span>
+      </Field.Label>
+      {/* Centred on the group's first line: the name line of a reply, or the
+          first text line of a bubble. Sticky, so a long reply keeps its
+          checkbox in view. */}
+      <span
+        className={cn(
+          "sticky top-2 flex items-center",
+          role === "assistant"
+            ? "h-8"
+            : "h-[calc(1lh+1.5rem)] text-[0.9375rem] leading-[1.7]",
+        )}
+      >
+        <Checkbox
+          checked={allSelected}
+          indeterminate={indeterminate}
+          disabled={!selecting}
+          className={cn(
+            "h-5 w-5 border-muted-foreground",
+            shareGroupCheckboxHoverClass(props),
+          )}
           onCheckedChange={onToggle}
         />
       </span>

@@ -1029,9 +1029,7 @@ test("Preserve the reading position while entering and leaving sharing mode", as
   click(buttonNamed("Share messages"));
   await waitFor(() => {
     expect(buttonNamed("Cancel")).toBeInTheDocument();
-    expect(screen.getAllByText(/^0 of \d+ selected$/).length).toBeGreaterThan(
-      0,
-    );
+    expect(screen.getAllByText("0 selected").length).toBeGreaterThan(0);
   });
   geometry.setViewportHeight(VIEWPORT_HEIGHT - 80);
   geometry.refresh();
@@ -1042,7 +1040,7 @@ test("Preserve the reading position while entering and leaving sharing mode", as
   click(buttonNamed("Cancel"));
   await waitFor(() => {
     expect(buttonNamed("Share messages")).toBeInTheDocument();
-    expect(screen.queryAllByText(/^0 of \d+ selected$/)).toHaveLength(0);
+    expect(screen.queryAllByText("0 selected")).toHaveLength(0);
   });
   geometry.setViewportHeight(VIEWPORT_HEIGHT);
   geometry.refresh();

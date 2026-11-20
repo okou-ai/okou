@@ -2484,9 +2484,11 @@
     "sharing": {
       "accessNote": "アクセス権を変更できるのはあなただけです。",
       "cancel": "キャンセル",
+      "close": "閉じる",
       "copyFailed": "リンクをコピーできませんでした",
-      "create": "リンクを作成",
+      "create": "共有",
       "createFailed": "共有された会話を作成できませんでした。",
+      "createLink": "リンクを作成",
       "deselectAll": "すべて選択解除",
       "deselectGroup": "メッセージグループの選択を解除",
       "done": "完了",
@@ -2496,12 +2498,14 @@
       "messageShareFailed": "共有リンクを作成できませんでした。",
       "organizationDescription": "組織内のメンバーのみ",
       "selectAll": "すべて選択",
+      "selectedCount_other": "{{count}}件選択中",
       "selectedOfTotal_other": "{{total}}件中{{count}}件を選択中",
       "selectGroup": "メッセージグループを選択",
       "selectPrompt": "共有するメッセージを選択してください",
       "shareLink": "共有された会話のリンク",
       "start": "メッセージを共有",
-      "tooLarge": "共有するメッセージを減らしてください"
+      "tooLarge": "共有するメッセージを減らしてください",
+      "visibilityDescription": "この会話を閲覧できる人を選択します。アクセス権を変更できるのはあなただけです。"
     },
     "shortcuts": {
       "number": "番号"

@@ -2494,9 +2494,11 @@
     "sharing": {
       "accessNote": "Nur du kannst den Zugriff ändern.",
       "cancel": "Abbrechen",
+      "close": "Schließen",
       "copyFailed": "Der Link konnte nicht kopiert werden",
-      "create": "Link erstellen",
+      "create": "Teilen",
       "createFailed": "Die geteilte Unterhaltung konnte nicht erstellt werden.",
+      "createLink": "Link erstellen",
       "deselectAll": "Auswahl aufheben",
       "deselectGroup": "Nachrichtengruppe abwählen",
       "done": "Fertig",
@@ -2507,13 +2509,16 @@
       "messageShareFailed": "Der geteilte Link konnte nicht erstellt werden.",
       "organizationDescription": "Nur Personen in deiner Organisation",
       "selectAll": "Alle auswählen",
+      "selectedCount_one": "{{count}} ausgewählt",
+      "selectedCount_other": "{{count}} ausgewählt",
       "selectedOfTotal_one": "{{count}} von {{total}} ausgewählt",
       "selectedOfTotal_other": "{{count}} von {{total}} ausgewählt",
       "selectGroup": "Nachrichtengruppe auswählen",
       "selectPrompt": "Wähle die Nachrichten aus, die du teilen möchtest",
       "shareLink": "Link zur geteilten Unterhaltung",
       "start": "Nachrichten teilen",
-      "tooLarge": "Wähle weniger Nachrichten zum Teilen aus"
+      "tooLarge": "Wähle weniger Nachrichten zum Teilen aus",
+      "visibilityDescription": "Wähle, wer diese Unterhaltung sehen kann. Nur du kannst den Zugriff ändern."
     },
     "shortcuts": {
       "number": "Nummer"

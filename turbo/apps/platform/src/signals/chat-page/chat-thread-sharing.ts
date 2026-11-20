@@ -20,6 +20,8 @@ import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { writeToClipboard } from "../okou-page/clipboard.ts";
 import { resetSignal } from "../utils.ts";
+import { featureSwitches$ } from "../external/feature-switch.ts";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { ChatEventGroup, EnrichedChatEvent } from "./chat-event.ts";
 import { messageDocumentToDisplayText } from "../okou-page/user-message-document-codec.ts";
 import type { ChatThreadScrollSignals } from "./chat-thread-scroll.ts";
@@ -336,12 +338,33 @@ function createShareCommand({
     }
     set(internalCreatedSharedThreadId$, result.body.id);
     set(internalPhase$, "created");
-    // Copy through the link's own Copy link action, so the confirmation is
-    // that button reading "Copied" rather than a toast over the header. A
-    // failed copy still toasts.
+    const refreshed =
+      (await get(featureSwitches$))[FeatureSwitchKey.ChatShareRefresh] === true;
+    signal.throwIfAborted();
     const session = get(visibility$);
-    if (session) {
+    if (refreshed && session) {
+      // Copy through the link's own Copy link action, so the confirmation is
+      // that button reading "Copied" rather than a toast over the header. A
+      // failed copy still toasts.
       await set(session.copy$, signal);
+      return;
+    }
+    const copied = await writeToClipboard(
+      `${window.location.origin}/share/threads/${result.body.id}`,
+    );
+    signal.throwIfAborted();
+    if (copied) {
+      toast.success(
+        i18n.t(($) => {
+          return $.chat.sharing.linkCopied;
+        }),
+      );
+    } else {
+      toast.error(
+        i18n.t(($) => {
+          return $.chat.sharing.copyFailed;
+        }),
+      );
     }
   });
 }

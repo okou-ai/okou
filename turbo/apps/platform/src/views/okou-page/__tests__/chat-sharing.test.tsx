@@ -41,6 +41,14 @@ const PROMPT = "Summarize the launch plan";
 const FOLLOW_UP_PROMPT = "Keep it short";
 const ANSWER = "The launch plan has three phases.";
 
+/** The suite covers the `ChatShareRefresh` design; one test keeps the legacy
+ * flow the switch falls back to. */
+function withShareRefresh(
+  featureSwitches?: Partial<Record<FeatureSwitchKey, boolean>>,
+): Partial<Record<FeatureSwitchKey, boolean>> {
+  return { [FeatureSwitchKey.ChatShareRefresh]: true, ...featureSwitches };
+}
+
 function mockConversation(
   chatEvents: MockChatEventInput[] = standardConversation(),
 ): void {
@@ -212,7 +220,7 @@ async function setupMessageSharing(
     context,
     path: `/chats/${THREAD_ID}`,
     host: "app.okou.ai",
-    featureSwitches,
+    featureSwitches: withShareRefresh(featureSwitches),
   });
   await screen.findByText(PROMPT);
   await waitFor(() => {
@@ -393,6 +401,7 @@ test("A growing selected message group becomes partial and can select its new me
     context,
     path: `/chats/${THREAD_ID}`,
     host: "app.okou.ai",
+    featureSwitches: withShareRefresh(),
   });
   await screen.findByText(PROMPT);
   await waitFor(() => {
@@ -489,6 +498,7 @@ test("Hide passage actions throughout sharing and restore them afterward", async
     context,
     path: `/chats/${THREAD_ID}`,
     host: "app.okou.ai",
+    featureSwitches: withShareRefresh(),
   });
   await screen.findByText(ANSWER);
   selectAnswerText();
@@ -562,7 +572,7 @@ async function startSharingBackToBackPrompts(
     context,
     path: `/chats/${THREAD_ID}`,
     host: "app.okou.ai",
-    featureSwitches,
+    featureSwitches: withShareRefresh(featureSwitches),
   });
 
   await screen.findByText(FOLLOW_UP_PROMPT);
@@ -635,6 +645,7 @@ test("Replacing a selected live answer clears it before the next answer is share
     context,
     path: `/chats/${THREAD_ID}`,
     host: "app.okou.ai",
+    featureSwitches: withShareRefresh(),
   });
 
   await screen.findByText(ANSWER);
@@ -723,6 +734,7 @@ test("Select all includes the complete transcript after selected messages move o
     context,
     path: `/chats/${THREAD_ID}`,
     host: "app.okou.ai",
+    featureSwitches: withShareRefresh(),
   });
 
   await screen.findByText(ANSWER);
@@ -857,6 +869,7 @@ test.each(["running", "failed"] as const)(
       context,
       path: `/chats/${THREAD_ID}`,
       host: "app.okou.ai",
+      featureSwitches: withShareRefresh(),
     });
 
     await screen.findByText("Launch answer 3");
@@ -934,6 +947,7 @@ test("Sharing while awaiting the first answer hides the run indicator until canc
     context,
     path: `/chats/${THREAD_ID}`,
     host: "app.okou.ai",
+    featureSwitches: withShareRefresh(),
   });
 
   await screen.findByText(PROMPT);
@@ -979,6 +993,7 @@ test("An oversized Select all leaves the existing selection intact", async () =>
     context,
     path: `/chats/${THREAD_ID}`,
     host: "app.okou.ai",
+    featureSwitches: withShareRefresh(),
   });
 
   await screen.findByText("A normal message remains available");
@@ -1131,6 +1146,7 @@ async function setupAudienceMessageShare(
     context,
     path: `/chats/${THREAD_ID}`,
     host: "app.okou.ai",
+    featureSwitches: withShareRefresh(),
   });
   await screen.findByText(ANSWER);
   await waitFor(() => {
@@ -1291,6 +1307,7 @@ test("A previous share failure does not revert a newer copy confirmation", async
     context,
     path: `/chats/${THREAD_ID}`,
     host: "app.okou.ai",
+    featureSwitches: withShareRefresh(),
   });
   await screen.findByText(ANSWER);
   await waitFor(() => {
@@ -1327,4 +1344,44 @@ test("A visibility share fails without publishing when its API is unavailable", 
   expect(
     screen.queryByRole("textbox", { name: "Shared chat link" }),
   ).not.toBeInTheDocument();
+});
+
+test("Without the refreshed design, sharing keeps the legacy footer and copy toast", async () => {
+  const clipboard = context.mocks.browser.clipboardWriteText();
+  mockConversation();
+  context.mocks.api(sharedThreadVisibilityContract.create, ({ respond }) => {
+    return respond(201, { id: SHARED_THREAD_ID });
+  });
+  await setupPage({
+    context,
+    path: `/chats/${THREAD_ID}`,
+    host: "app.okou.ai",
+  });
+  await screen.findByText(PROMPT);
+  await waitFor(() => {
+    expect(buttonsNamed("Share messages").length).toBeGreaterThan(0);
+  });
+  click(requiredButtonNamed("Share messages"));
+  await screen.findAllByText("0 selected");
+  expect(
+    screen.getAllByText(
+      "Choose who can view this chat. Only you can change access.",
+    ).length,
+  ).toBeGreaterThan(0);
+  expect(buttonsNamed("Select all")).toHaveLength(0);
+  expect(requiredButtonNamed("Share")).toBeDisabled();
+
+  click(screen.getAllByText("Select message group")[0]!);
+  await screen.findAllByText("1 selected");
+  click(requiredButtonNamed("Share"));
+  await screen.findByRole("textbox", { name: "Shared chat link" });
+  await expect(screen.findByText("Link copied")).resolves.toBeInTheDocument();
+  expect(clipboard.writes).toStrictEqual([
+    `https://app.okou.ai/share/threads/${SHARED_THREAD_ID}`,
+  ]);
+
+  click(requiredButtonNamed("Close"));
+  await waitFor(() => {
+    expect(buttonsNamed("Share messages").length).toBeGreaterThan(0);
+  });
 });

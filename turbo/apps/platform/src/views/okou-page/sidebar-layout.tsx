@@ -1,6 +1,6 @@
 import {
-  ChatShareCloseButton,
-  ChatShareSelectionControls,
+  ChatShareHeaderControls,
+  useChatShareRefresh,
 } from "./chat-share-selection-controls.tsx";
 import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
 import { ProjectDialogs } from "../projects/project-dialogs.tsx";
@@ -235,13 +235,13 @@ function MobileShareButtonLeaf() {
 
 function MobileSharingOverlayInner({ thread }: { thread: ChatPanelSignals }) {
   const phase = useGet(thread.sharing.phase$);
+  const refreshed = useChatShareRefresh();
   if (phase === "idle") {
     return null;
   }
   return (
     <div className="absolute inset-0 z-20 flex items-center justify-between gap-2 bg-background px-4">
-      <ChatShareSelectionControls sharing={thread.sharing} />
-      <ChatShareCloseButton sharing={thread.sharing} />
+      <ChatShareHeaderControls sharing={thread.sharing} refreshed={refreshed} />
     </div>
   );
 }

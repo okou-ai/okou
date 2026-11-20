@@ -2494,9 +2494,11 @@
     "sharing": {
       "accessNote": "Only you can change access.",
       "cancel": "Cancel",
+      "close": "Close",
       "copyFailed": "Could not copy the link",
-      "create": "Create link",
+      "create": "Share",
       "createFailed": "Could not create the shared chat.",
+      "createLink": "Create link",
       "deselectAll": "Deselect all",
       "deselectGroup": "Deselect message group",
       "done": "Done",
@@ -2507,13 +2509,16 @@
       "messageShareFailed": "The shared link could not be created.",
       "organizationDescription": "Only people in your organization",
       "selectAll": "Select all",
+      "selectedCount_one": "{{count}} selected",
+      "selectedCount_other": "{{count}} selected",
       "selectedOfTotal_one": "{{count}} of {{total}} selected",
       "selectedOfTotal_other": "{{count}} of {{total}} selected",
       "selectGroup": "Select message group",
       "selectPrompt": "Select the messages to share",
       "shareLink": "Shared chat link",
       "start": "Share messages",
-      "tooLarge": "Select fewer messages to share"
+      "tooLarge": "Select fewer messages to share",
+      "visibilityDescription": "Choose who can view this chat. Only you can change access."
     },
     "shortcuts": {
       "number": "number"

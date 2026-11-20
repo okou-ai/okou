@@ -1,12 +1,81 @@
 import { Button } from "@okouai/ui";
 import { toast } from "@okouai/ui/components/ui/sonner";
-import { useGet, useSet } from "ccstate-react";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { useGet, useLastResolved, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
+import { featureSwitches$ } from "../../signals/external/feature-switch.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import type { ChatThreadSharingSignals } from "../../signals/chat-page/chat-thread-sharing.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 
-export function ChatShareSelectionControls({
+/** Whether chat sharing uses the `ChatShareRefresh` design. */
+export function useChatShareRefresh(): boolean {
+  return (
+    useLastResolved(featureSwitches$)?.[FeatureSwitchKey.ChatShareRefresh] ===
+    true
+  );
+}
+
+/** The two ends of the sharing header: selection on the leading edge, leaving
+ * sharing on the trailing one. `refreshed` comes from a parent that stays
+ * mounted outside sharing, so the first sharing frame already knows the switch
+ * instead of flashing the legacy controls. */
+export function ChatShareHeaderControls({
+  sharing,
+  refreshed,
+}: {
+  readonly sharing: ChatThreadSharingSignals;
+  readonly refreshed: boolean;
+}) {
+  return refreshed ? (
+    <>
+      <ChatShareSelectionControls sharing={sharing} />
+      <ChatShareCloseButton sharing={sharing} />
+    </>
+  ) : (
+    <LegacyChatShareHeaderControls sharing={sharing} />
+  );
+}
+
+function LegacyChatShareHeaderControls({
+  sharing,
+}: {
+  readonly sharing: ChatThreadSharingSignals;
+}) {
+  const { t } = useTranslation();
+  const selectedCount = useGet(sharing.selectedCount$);
+  const close = useSet(sharing.close$);
+  const pageSignal = useGet(pageSignal$);
+  return (
+    <>
+      <span className="text-sm font-medium text-foreground">
+        {t(
+          ($) => {
+            return $.chat.sharing.selectedCount;
+          },
+          { count: selectedCount },
+        )}
+      </span>
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => {
+          detach(
+            close(pageSignal),
+            Reason.DomCallback,
+            "close shared thread selection",
+          );
+        }}
+      >
+        {t(($) => {
+          return $.chat.sharing.cancel;
+        })}
+      </Button>
+    </>
+  );
+}
+
+function ChatShareSelectionControls({
   sharing,
 }: {
   readonly sharing: ChatThreadSharingSignals;
@@ -65,7 +134,7 @@ export function ChatShareSelectionControls({
 
 /** Leaves sharing. Once the link exists nothing is discarded, so it reads as
  * Done rather than Cancel. */
-export function ChatShareCloseButton({
+function ChatShareCloseButton({
   sharing,
 }: {
   readonly sharing: ChatThreadSharingSignals;
