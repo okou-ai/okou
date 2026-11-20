@@ -180,7 +180,7 @@ fn workload_placement_confirmation_rejects_wrong_marker() {
 
 #[test]
 fn tool_placement_descriptor_and_handshake_round_trip() {
-    let (server, client) = UnixStream::pair().unwrap();
+    let (server, client) = tool_placement_stream_pair();
     let placement = std::fs::File::open("/dev/null").unwrap();
     let expected = placement.metadata().unwrap();
     let server = std::thread::spawn(move || {
@@ -198,10 +198,7 @@ fn tool_placement_descriptor_and_handshake_round_trip() {
 
 #[test]
 fn tool_placement_launcher_check_error_prevents_confirmation() {
-    let (broker, launcher) = UnixStream::pair().unwrap();
-    launcher
-        .set_read_timeout(Some(Duration::from_secs(1)))
-        .unwrap();
+    let (broker, launcher) = tool_placement_stream_pair();
     let placement = std::fs::File::options()
         .write(true)
         .open("/dev/null")
@@ -218,13 +215,7 @@ fn tool_placement_launcher_check_error_prevents_confirmation() {
 
 #[test]
 fn tool_placement_broker_check_error_prevents_ack() {
-    let (broker, launcher) = UnixStream::pair().unwrap();
-    broker
-        .set_read_timeout(Some(Duration::from_secs(1)))
-        .unwrap();
-    launcher
-        .set_read_timeout(Some(Duration::from_secs(1)))
-        .unwrap();
+    let (broker, launcher) = tool_placement_stream_pair();
     let placement = std::fs::File::open("/dev/null").unwrap();
     let worker = std::thread::spawn(move || {
         offer_tool_placement(&broker, placement.as_fd(), || {
@@ -241,6 +232,16 @@ fn tool_placement_broker_check_error_prevents_ack() {
         worker.join().unwrap().unwrap_err().raw_os_error(),
         Some(libc::EPERM)
     );
+}
+
+fn tool_placement_stream_pair() -> (UnixStream, UnixStream) {
+    let (broker, launcher) = UnixStream::pair().unwrap();
+    for stream in [&broker, &launcher] {
+        stream
+            .set_read_timeout(Some(Duration::from_secs(1)))
+            .unwrap();
+    }
+    (broker, launcher)
 }
 
 #[test]
