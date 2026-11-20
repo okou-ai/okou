@@ -604,20 +604,19 @@ Don't nudge records the no-repeat direction and Undo targets that feedback. [Wit
 A custom direction continues the chat its card names without touching its saved draft. [Withdrawn registration](https://github.com/okou-ai/okou/blob/b666cd0503/turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx#L1049).
 
 - **Given** A For you suggestion names a chat that already has a saved draft as its custom-direction target (customOption.threadId).
-- **When** The member opens the card direction editor, which names the chat in its header, writes a direction and sends.
+- **When** The member opens the card direction editor, labelled “What do you have in mind?”, writes a direction and sends.
 - **Then** One message goes to that chat with the suggestion and the direction. The saved draft is neither loaded into the card composer nor overwritten. For you advances after the send.
 - **Upstream source** [Registration on main](https://github.com/okou-ai/okou/blob/579c32b870/turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx#L1292).
 - **Disposition** Retained upstream ID in the execution ledger at `4855592c`. Rebuild pending after the kept-group withdrawal.
 
-## upstream-a678cec8-agent-suggestions-1032-01
+## upstream-e5077f39-agent-suggestions-1054-01
 
-Sending after removing the quote leaves the suggestion available. [Withdrawn registration](https://github.com/okou-ai/okou/blob/b666cd0503/turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx#L1111).
+Selecting a suggested action switches away from the open custom composer. [Registration](https://github.com/okou-ai/okou/blob/e5077f3958/turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx#L1054).
 
-- **Given** A For you card opens a new-chat direction composer prefilled with the suggestion quote.
-- **When** The member writes a message, removes the quote, and sends.
-- **Then** The standalone text is sent. The same suggestion stays available on For you.
-- **Upstream source** [Registration on main](https://github.com/okou-ai/okou/blob/579c32b870/turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx#L1067).
-- **Disposition** Retained upstream ID in the execution ledger at `4855592c`. Rebuild pending after the kept-group withdrawal.
+- **Given** The current suggestion offers a prepared action and an inline custom composer with an unsent note.
+- **When** The member chooses the prepared action on that card while the composer is open.
+- **Then** The sent confirmation appears, the composer closes, the prepared message is sent in place of the typed note, and the card is consumed.
+- **Disposition** New retained regression from #49618. The open, edited composer distinguishes it from frozen agent-suggestions-036 (choose a prepared action directly) and agent-suggestions-037 (send the custom direction). The former removable-quote scenario has its own historical ID and retirement in the withdrawal checkpoint.
 
 ## upstream-8ee03b20-agent-suggestions-1311-01
 

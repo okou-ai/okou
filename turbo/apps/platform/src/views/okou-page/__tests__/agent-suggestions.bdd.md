@@ -152,16 +152,16 @@ Original test `Suggestion options start in the default Agent after visiting a se
 Original test `Custom direction opens a dialog composer for the default Agent without touching its home draft`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx#L983).
 
 - **Given** The homepage has a draft and For you shows a suggestion with a custom-direction action.
-- **When** The user opens the custom-direction dialog, enters a direction, and closes it without sending.
-- **Then** The dialog composer starts from the suggestion title without its background quote or homepage draft; Send starts disabled and becomes enabled after text entry. The suggestion is not consumed, remains visible, and the homepage draft remains unchanged.
+- **When** The user opens the inline custom composer, enters a direction, then follows the Okou home link without sending.
+- **Then** The inline composer shows the suggestion title and excludes the background quote and homepage draft. It has no target heading, Close or Remove feedback action. Send starts disabled and becomes enabled after typing. The suggestion stays available and returning home shows the original draft. [#49618](https://github.com/okou-ai/okou/pull/49618).
 
 ## agent-suggestions-020
 
 Original test `Each custom direction dialog starts from its own card's background`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx#L1019).
 
 - **Given** Two suggestion cards have different titles and background quotes.
-- **When** The user enters text in the first card's custom-direction dialog, closes it, navigates to the second card, and opens its dialog.
-- **Then** The second dialog starts with the second card's title and does not contain the first card's title or entered direction. Closing it leaves the second card visible.
+- **When** The user enters text in the first card's inline custom composer, follows the second card's link, and opens that card's composer.
+- **Then** The first editor disappears when the second card opens. Its composer shows the second title without the first title or unsent direction.
 
 ## agent-suggestions-021
 

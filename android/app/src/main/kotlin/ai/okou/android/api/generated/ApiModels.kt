@@ -6355,12 +6355,6 @@ data class ProjectEventsEventsItem(
 data class ProjectEvents(val `events`: List<ProjectEventsEventsItem>, val `hasMore`: Boolean)
 
 @Serializable
-data class FeatureSwitches(
-    val `switches`: Map<String, Boolean>,
-    val `effectiveSwitches`: Map<String, Boolean>,
-)
-
-@Serializable
 data class HistoryCatchUp(
     val `events`: Map<String, List<Map<String, JsonElement>>>,
     val `notFoundThreads`: List<String>,

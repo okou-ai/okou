@@ -9,7 +9,7 @@ import { defaultAgentId$ } from "../agent.ts";
 import { rootSignal$ } from "../root-signal.ts";
 import { navigateTo$ } from "../route.ts";
 import { ROUTES } from "../route-paths.ts";
-import { onRef, resetSignal } from "../utils.ts";
+import { resetSignal } from "../utils.ts";
 import { createThreadMetaLookup } from "../chat-page/chat-thread-event-sourcing.ts";
 import {
   createInPlaceThreadComposerSignals,
@@ -104,14 +104,13 @@ interface SuggestionThreadTarget {
   readonly kind: "thread";
   readonly id: string;
   readonly agentId: string;
-  readonly title: string | null;
 }
 
 /**
  * A custom direction continues the chat the card names, or starts a new chat
  * when the card names none or that chat is no longer available.
  */
-export type SuggestionDirectionTarget =
+type SuggestionDirectionTarget =
   { readonly kind: "new"; readonly agentId: string } | SuggestionThreadTarget;
 
 interface SuggestionDirectionSession {
@@ -162,12 +161,8 @@ const directionGraph$ = computed((get) => {
   };
 });
 
-/** The card whose custom direction is being written, and where it goes. */
-export const suggestionDirection$ = computed((get) => {
-  const session = get(internalDirectionSession$);
-  return session
-    ? { itemId: session.entry.item.id, target: session.target }
-    : null;
+export const suggestionDirectionItemId$ = computed((get) => {
+  return get(internalDirectionSession$)?.entry.item.id ?? null;
 });
 
 export const suggestionDirectionComposer$ = computed((get) => {
@@ -179,26 +174,6 @@ const closeSuggestionDirection$ = command(({ set }) => {
   set(internalDirectionComposer$, null);
   set(internalDirectionSession$, null);
 });
-
-const directionFocusReturnId$ = state<string | null>(null);
-
-export const collapseSuggestionDirection$ = command(({ get, set }) => {
-  const itemId = get(internalDirectionSession$)?.entry.item.id ?? null;
-  set(directionFocusReturnId$, itemId);
-  set(closeSuggestionDirection$);
-});
-
-export const restoreDirectionFocusOnRef$ = onRef<HTMLButtonElement>(
-  command(({ get, set }, trigger: HTMLButtonElement) => {
-    if (
-      get(directionFocusReturnId$) ===
-      trigger.dataset.suggestionDirectionTrigger
-    ) {
-      set(directionFocusReturnId$, null);
-      trigger.focus({ preventScroll: true });
-    }
-  }),
-);
 
 /**
  * An accepted send closes the composer and moves the card below the waiting ones
@@ -302,7 +277,6 @@ export const openSuggestionDirection$ = command(
     entry: AgentSuggestionEntry,
     pageSignal: AbortSignal,
   ): Promise<void> => {
-    set(directionFocusReturnId$, null);
     const signal = set(resetDirection$, pageSignal);
     set(internalDirectionComposer$, null);
     const agentId = await get(defaultAgentId$);
@@ -329,7 +303,6 @@ export const openSuggestionDirection$ = command(
               kind: "thread",
               id: threadId,
               agentId: thread.agentId,
-              title: thread.title,
             }
           : { kind: "new", agentId },
       finish: (sentThreadId, submission) => {
@@ -481,6 +454,7 @@ export const startAgentSuggestion$ = command(
     if (!agentId) {
       throw new Error("Suggestion target is unavailable");
     }
+    set(closeSuggestionDirection$);
     // The send and the recorded choice outlive the home visit.
     const signal = get(rootSignal$);
     if (option.threadId === null) {

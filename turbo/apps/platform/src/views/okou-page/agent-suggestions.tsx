@@ -22,13 +22,10 @@ import {
   submitSuggestionFeedbackWithUndo$,
 } from "../../signals/okou-page/agent-suggestion-session.ts";
 import {
-  collapseSuggestionDirection$,
-  restoreDirectionFocusOnRef$,
   openSuggestionDirection$,
   startAgentSuggestion$,
-  suggestionDirection$,
+  suggestionDirectionItemId$,
   suggestionDirectionComposer$,
-  type SuggestionDirectionTarget,
 } from "../../signals/okou-page/agent-suggestions.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
@@ -227,12 +224,9 @@ function SuggestionDirectionEntry({
 }) {
   const { t } = useTranslation();
   const open = useSet(openSuggestionDirection$);
-  const restoreFocus = useSet(restoreDirectionFocusOnRef$);
   const signal = useGet(pageSignal$);
   return (
     <Button
-      ref={restoreFocus}
-      data-suggestion-direction-trigger={entry.item.id}
       type="button"
       variant="quiet"
       className={cn(SUGGESTION_ROW, SUGGESTION_DIRECTION_TRIGGER)}
@@ -258,80 +252,40 @@ function SuggestionDirection({
 }: {
   readonly entry: AgentSuggestionEntry;
 }) {
-  const direction = useGet(suggestionDirection$);
-  return direction?.itemId === entry.item.id ? (
-    <SuggestionDirectionComposer direction={direction} />
+  const itemId = useGet(suggestionDirectionItemId$);
+  return itemId === entry.item.id ? (
+    <SuggestionDirectionComposer />
   ) : (
     <SuggestionDirectionEntry entry={entry} />
   );
 }
 
-/**
- * The card's own composer opens in place of the direction trigger, as an
- * accordion: the row keeps its fill and becomes a header that names the chat
- * the direction goes to, with the close control in the column the trigger's
- * icon used. The composer grows in beneath it once it is ready and fills the
- * row's width, so the heading, the quote and the caret share the option text's
- * left edge and the composer keeps its standard radius.
- */
-function SuggestionDirectionComposer({
-  direction,
-}: {
-  readonly direction: {
-    readonly itemId: string;
-    readonly target: SuggestionDirectionTarget;
-  };
-}) {
+function SuggestionDirectionComposer() {
   const { t } = useTranslation();
-  const headingId = `suggestion-direction-heading-${direction.itemId}`;
   const prepared = useLoadable(suggestionDirectionComposer$);
-  const close = useSet(collapseSuggestionDirection$);
-  const { target } = direction;
-  const newChatTitle = t(($) => {
-    return $.chat.newChat;
-  });
   const composer =
     prepared.state === "hasData" && prepared.data ? prepared.data : null;
   const ready = composer !== null || prepared.state === "hasError";
   return (
     <section
-      aria-labelledby={headingId}
-      className="min-w-0 rounded-3xl bg-muted"
+      aria-label={t(($) => {
+        return $.chat.agentSuggestions.customPlaceholder;
+      })}
+      aria-busy={!ready}
+      className="min-w-0"
     >
-      <div className="flex min-h-12 min-w-0 items-center gap-2 pr-2 pl-4">
-        <h3
-          id={headingId}
-          className="min-w-0 flex-1 truncate text-sm leading-6 font-normal text-foreground"
-        >
-          {target.kind === "thread"
-            ? (target.title ?? newChatTitle)
-            : newChatTitle}
-        </h3>
-        {!ready && (
+      {!ready && (
+        <div className="flex min-h-14 items-center justify-center rounded-3xl bg-muted">
           <Loader2
             size={16}
-            className="shrink-0 animate-spin text-muted-foreground"
+            className="animate-spin text-muted-foreground"
             aria-hidden
           />
-        )}
-        <Button
-          type="button"
-          variant="quiet"
-          size="icon-sm"
-          showTooltip
-          aria-label={t(($) => {
-            return $.workflows.common.close;
-          })}
-          onClick={() => {
-            close();
-          }}
-        >
-          <X />
-        </Button>
-      </div>
+        </div>
+      )}
       <div
         className={cn(
-          "grid min-w-0",
+          "grid min-w-0 rounded-3xl",
           ready
             ? "grid-rows-[1fr] motion-safe:animate-suggestion-direction-expand"
             : "grid-rows-[0fr] overflow-clip",
