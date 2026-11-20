@@ -3624,8 +3624,9 @@ function SharedThreadCopyLinkButton({
   );
 }
 
-/** Sharing takes the composer's place, so it takes the composer's surface,
- * with the radius of the buttons it holds. */
+/** Sharing takes the composer's place, so it takes the composer's surface.
+ * Its radius is concentric with the controls it holds: their 8px plus the
+ * card's 12px padding gives the 20px surface radius. */
 function ChatShareFooter({ children }: { readonly children: ReactNode }) {
   return (
     <ChatComposerFooter>
@@ -3633,7 +3634,7 @@ function ChatShareFooter({ children }: { readonly children: ReactNode }) {
         <Card
           surface="composer"
           data-slot="chat-share-card"
-          className="rounded-lg p-3 composer-wide:pl-4"
+          className="rounded-surface p-3 composer-wide:pl-4"
         >
           {children}
         </Card>
