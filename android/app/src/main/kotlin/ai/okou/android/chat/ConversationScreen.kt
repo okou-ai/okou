@@ -1,6 +1,7 @@
 package ai.okou.android.chat
 
 import ai.okou.android.R
+import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -19,11 +20,13 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.structuralEqualityPolicy
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -40,10 +43,23 @@ fun ConversationRoute(
     list: ChatListUiState,
     modifier: Modifier = Modifier,
     visible: Boolean = true,
+    composer: ChatComposerModel? = null,
+    historyAvailable: Boolean = true,
 ) {
     // Capture this composition's value: a deferred effect must not read a newer State.value.
     val state = model.uiState.collectAsStateWithLifecycle().value
     val output = model.output.state.collectAsStateWithLifecycle().value
+    val input = composer?.uiState?.collectAsStateWithLifecycle()
+    val localMessages by
+        remember(input, threadId) {
+            derivedStateOf(structuralEqualityPolicy()) {
+                input?.value?.messagesFor(threadId).orEmpty()
+            }
+        }
+    val thread = state.thread?.takeIf { historyAvailable && it.id == threadId }
+    val transcript = state.transcript.takeIf { thread != null }
+    val messages = transcript?.withOutput(output, threadId).orEmpty()
+    val previews = localMessages.filterNot { it.eventId in transcript?.persistedIds.orEmpty() }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val actionColors =
         ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurface)
@@ -52,9 +68,10 @@ fun ConversationRoute(
             mutableStateOf<ConversationReadSession?>(null)
         }
     // Restored navigation can mount this route before the history resource selects its thread.
-    DisposableEffect(model, threadId, state.generation, lifecycle, visible) {
+    val readVisible = visible && historyAvailable
+    DisposableEffect(model, threadId, state.generation, lifecycle, readVisible) {
         fun update() {
-            if (visible && lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+            if (readVisible && lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
                 if (visit == null) visit = model.beginVisit(threadId, state.generation)
             } else {
                 visit?.let(model::endVisit)
@@ -77,82 +94,122 @@ fun ConversationRoute(
     val readState = visit?.readState?.collectAsStateWithLifecycle()?.value
     key(threadId) {
         val position = rememberLazyListState()
+        LaunchedEffect(position, previews.lastOrNull()?.eventId) {
+            if (previews.isNotEmpty())
+                position.scrollToItem(
+                    messages.size + previews.lastIndex + if (historyAvailable) 1 else 0
+                )
+        }
         LazyColumn(
             modifier.fillMaxSize().testTag("conversation"),
             state = position,
             contentPadding = PaddingValues(20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            val thread = state.thread?.takeIf { it.id == threadId }
-            item {
-                if (thread != null) {
-                    Text(
-                        list.agents.firstOrNull { it.agentId == thread.agentId }?.displayName
-                            ?: stringResource(R.string.chat_agent_identity, thread.agentId)
-                    )
-                    thread.selectedModel?.let { Text(it) }
-                }
-                TextButton(onClick = model::refresh, colors = actionColors) {
-                    Text(stringResource(R.string.chat_refresh))
-                }
-            }
-            if (thread == null || state.phase == HistoryPhase.Loading)
-                item { Text(stringResource(R.string.history_loading)) }
-            if (thread != null) {
-                if (state.source == ChatListSource.Cache)
-                    item { Text(stringResource(R.string.chat_cached)) }
-                when (state.phase) {
-                    HistoryPhase.Failed ->
-                        item {
-                            Text(stringResource(R.string.history_failed))
+            if (historyAvailable) {
+                item(key = "conversation_status") {
+                    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        Column {
+                            if (thread != null) {
+                                Text(
+                                    list.agents
+                                        .firstOrNull { it.agentId == thread.agentId }
+                                        ?.displayName
+                                        ?: stringResource(
+                                            R.string.chat_agent_identity,
+                                            thread.agentId,
+                                        )
+                                )
+                                thread.selectedModel?.let { Text(it) }
+                            }
                             TextButton(onClick = model::refresh, colors = actionColors) {
-                                Text(stringResource(R.string.retry))
+                                Text(stringResource(R.string.chat_refresh))
                             }
                         }
-                    HistoryPhase.Missing -> item { Text(stringResource(R.string.history_missing)) }
-                    else -> Unit
-                }
-                if (state.cacheUnavailable)
-                    item { Text(stringResource(R.string.chat_cache_unavailable)) }
-                if (readState == HistoryReadState.Failed)
-                    item {
-                        Text(stringResource(R.string.history_read_failed))
-                        TextButton(onClick = model::refresh, colors = actionColors) {
-                            Text(stringResource(R.string.retry))
-                        }
-                    }
-                state.transcript?.let { transcript ->
-                    val messages = transcript.withOutput(output, threadId)
-                    item {
-                        Text(stringResource(transcript.execution.label()))
-                        Text(stringResource(R.string.history_work_steps, transcript.workSteps))
-                    }
-                    if (
-                        output.threadId == threadId &&
-                            (transcript.activeRunId != null || output.messages.isNotEmpty())
-                    )
-                        item {
-                            Text(
-                                stringResource(
-                                    when (output.phase) {
-                                        RunOutputPhase.CatchingUp -> R.string.output_catching_up
-                                        RunOutputPhase.Live -> R.string.output_live
-                                        RunOutputPhase.Waiting -> R.string.output_waiting
+                        if (thread == null || state.phase == HistoryPhase.Loading)
+                            Text(stringResource(R.string.history_loading))
+                        if (thread != null) {
+                            if (state.source == ChatListSource.Cache)
+                                Text(stringResource(R.string.chat_cached))
+                            when (state.phase) {
+                                HistoryPhase.Failed ->
+                                    Column {
+                                        Text(stringResource(R.string.history_failed))
+                                        TextButton(
+                                            onClick = model::refresh,
+                                            colors = actionColors,
+                                        ) {
+                                            Text(stringResource(R.string.retry))
+                                        }
                                     }
-                                )
-                            )
+                                HistoryPhase.Missing ->
+                                    Text(stringResource(R.string.history_missing))
+                                else -> Unit
+                            }
+                            if (state.cacheUnavailable)
+                                Text(stringResource(R.string.chat_cache_unavailable))
+                            if (readState == HistoryReadState.Failed)
+                                Column {
+                                    Text(stringResource(R.string.history_read_failed))
+                                    TextButton(onClick = model::refresh, colors = actionColors) {
+                                        Text(stringResource(R.string.retry))
+                                    }
+                                }
                         }
-                    if (messages.isEmpty() && state.phase == HistoryPhase.Ready)
-                        item { Text(stringResource(R.string.history_empty)) }
-                    items(messages, key = { it.id }) { message -> HistoryMessageCard(message) }
+                        if (transcript != null) {
+                            Column {
+                                Text(stringResource(transcript.execution.label()))
+                                Text(
+                                    stringResource(
+                                        R.string.history_work_steps,
+                                        transcript.workSteps,
+                                    )
+                                )
+                            }
+                            if (
+                                output.threadId == threadId &&
+                                    (transcript.activeRunId != null || output.messages.isNotEmpty())
+                            )
+                                Text(
+                                    stringResource(
+                                        when (output.phase) {
+                                            RunOutputPhase.CatchingUp -> R.string.output_catching_up
+                                            RunOutputPhase.Live -> R.string.output_live
+                                            RunOutputPhase.Waiting -> R.string.output_waiting
+                                        }
+                                    )
+                                )
+                            if (
+                                messages.isEmpty() &&
+                                    previews.isEmpty() &&
+                                    state.phase == HistoryPhase.Ready
+                            )
+                                Text(stringResource(R.string.history_empty))
+                        }
+                    }
                 }
+            }
+            items(messages, key = { it.id }) { message -> HistoryMessageCard(message) }
+            items(previews, key = { it.eventId }) { preview ->
+                HistoryMessageCard(
+                    HistoryMessage(
+                        preview.eventId,
+                        null,
+                        HistoryRole.User,
+                        listOf(HistoryBlock(HistoryBlockKind.Text, preview.text)),
+                    ),
+                    deliveryStatus =
+                        preview.disposition?.label()
+                            ?: if (preview.sending) R.string.composer_sending
+                            else R.string.composer_unconfirmed,
+                )
             }
         }
     }
 }
 
 @Composable
-internal fun HistoryMessageCard(message: HistoryMessage) {
+internal fun HistoryMessageCard(message: HistoryMessage, @StringRes deliveryStatus: Int? = null) {
     OutlinedCard(Modifier.fillMaxWidth().testTag("message_${message.id}")) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
@@ -165,6 +222,7 @@ internal fun HistoryMessageCard(message: HistoryMessage) {
                 ),
                 style = MaterialTheme.typography.labelLarge,
             )
+            deliveryStatus?.let { Text(stringResource(it)) }
             if (message.queued) Text(stringResource(R.string.history_queued))
             if (message.rejected) Text(stringResource(R.string.history_rejected))
             message.status?.let { status ->

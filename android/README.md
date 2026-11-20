@@ -712,6 +712,15 @@ Foreground/manual opening refreshes a clean editor; automatic live draft events
 remain later work. Sending and clearing a saved draft are separate operations;
 uncertain submissions retain their original identities and never replay on open.
 
+A sent text draft appears in the conversation immediately using its frozen input
+ID. The first send opens the timeline with its allocated thread ID while creation
+and list catch-up run. The editor keeps its recovery controls until the first send
+and chat row are confirmed. Canonical history replaces the local bubble by input
+ID, including rejection and revocation. The existing journal restores unresolved
+input after recreation. Receipt-backed bubbles stay in workspace memory until
+history arrives, with confirmed messages read from canonical history after process
+restart.
+
 Focused JVM/controlled HTTPS tests cover Web codec/204 responses, held hydration,
 serialized edits/clears, offline store reopening and send/recovery preservation.
 The API35 Release journey covers held draft loading, native editing, foreground
