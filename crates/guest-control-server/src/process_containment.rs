@@ -1579,18 +1579,18 @@ fn place_tool_peer_in_scope(
         let placement = OpenOptions::new()
             .write(true)
             .open(tool_path.join(CGROUP_PROCS_FILE))?;
-        process_control_ipc::send_tool_placement(stream, placement.as_fd())?;
-        process_control_ipc::read_tool_placement_confirmation(stream)?;
-        if !peer_matches(stream, expected_uid, &tool_path)? {
-            return Err(io::Error::new(
-                io::ErrorKind::PermissionDenied,
-                "peer did not enter the assigned tool cgroup",
-            ));
-        }
-        if let Some(check) = admission_check {
-            check()?;
-        }
-        process_control_ipc::write_tool_placement_ack(stream)
+        process_control_ipc::offer_tool_placement(stream, placement.as_fd(), || {
+            if !peer_matches(stream, expected_uid, &tool_path)? {
+                return Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "peer did not enter the assigned tool cgroup",
+                ));
+            }
+            if let Some(check) = admission_check {
+                check()?;
+            }
+            Ok(())
+        })
     })();
     if placement_result.is_err() && matches!(read_populated(&tool_path), Ok(false)) {
         let _ = fs::remove_dir(&tool_path);
