@@ -25,14 +25,13 @@ import { formatAppNumber } from "../../i18n/format.ts";
 import { getMarkdownTableDimensions } from "../../lib/markdown-table-dimensions.ts";
 import { captureArtifactAction } from "../../lib/posthog.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import { currentChatThreadId$ } from "../../signals/agent-chat.ts";
 import {
   exportMarkdownTable$,
   markdownTableConnection$,
   connectMarkdownTable$,
   closeMarkdownTableConnection$,
+  type TableGoogleConnection,
 } from "../../signals/markdown-table-export.ts";
-import { cancelBuiltinConnectorConnection$ } from "../../signals/okou-page/settings/connectors.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { MarkdownHorizontalScroll } from "./markdown-horizontal-scroll.tsx";
 
@@ -61,7 +60,7 @@ function ExportableTable({
 }: ComponentPropsWithoutRef<"table"> & { node: Element }) {
   const { t } = useTranslation();
   const signal = useGet(pageSignal$);
-  const threadId = useGet(currentChatThreadId$);
+  const threadId = node.data?.tableExportThreadId;
   const connection = useGet(markdownTableConnection$);
   const [operation, exportTable] = useLoadableSet(exportMarkdownTable$);
   const pending = operation.state === "loading";
@@ -79,7 +78,7 @@ function ExportableTable({
           },
     );
     detach(
-      exportTable(node, mode, signal),
+      exportTable(node, mode, threadId, signal),
       Reason.DomCallback,
       "export markdown table",
     );
@@ -177,28 +176,33 @@ function ExportableTable({
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
-      <TableGoogleConnectionDialog node={node} />
     </Card>
   );
 }
 
-function TableGoogleConnectionDialog({ node }: { readonly node: Element }) {
+export function MarkdownTableConnectionDialog() {
+  const connection = useGet(markdownTableConnection$);
+  return connection ? (
+    <TableGoogleConnectionDialog connection={connection} />
+  ) : null;
+}
+
+function TableGoogleConnectionDialog({
+  connection,
+}: {
+  readonly connection: TableGoogleConnection;
+}) {
   const { t } = useTranslation();
   const signal = useGet(pageSignal$);
-  const connection = useGet(markdownTableConnection$);
   const closeConnection = useSet(closeMarkdownTableConnection$);
-  const cancelConnection = useSet(cancelBuiltinConnectorConnection$);
   const [connectionOperation, connect] = useLoadableSet(connectMarkdownTable$);
-  if (connection?.params.table !== node) {
-    return null;
-  }
+  const connecting = connectionOperation.state === "loading";
   return (
     <Dialog
       open
       onOpenChange={(open) => {
         if (!open) {
-          cancelConnection();
-          closeConnection();
+          closeConnection(connection, connecting);
         }
       }}
     >
@@ -206,7 +210,9 @@ function TableGoogleConnectionDialog({ node }: { readonly node: Element }) {
         <DialogHeader>
           <DialogTitle>
             {t(($) => {
-              return $.artifacts.googleDrive.connect;
+              return connection.account.intent === "reconnect"
+                ? $.artifacts.googleDrive.reconnect
+                : $.artifacts.googleDrive.connect;
             })}
           </DialogTitle>
         </DialogHeader>
@@ -217,7 +223,7 @@ function TableGoogleConnectionDialog({ node }: { readonly node: Element }) {
         )}
         <DialogFooter>
           <Button
-            disabled={connectionOperation.state === "loading"}
+            disabled={connecting}
             onClick={() => {
               detach(
                 connect(connection, signal),
@@ -226,9 +232,7 @@ function TableGoogleConnectionDialog({ node }: { readonly node: Element }) {
               );
             }}
           >
-            {connectionOperation.state === "loading" && (
-              <Loader2 className="animate-spin" />
-            )}
+            {connecting && <Loader2 className="animate-spin" />}
             {t(($) => {
               return $.connectors.actions.connect;
             })}

@@ -524,7 +524,6 @@
       "video": "VID"
     },
     "googleDrive": {
-      "agentLoading": "에이전트가 아직 로딩 중입니다",
       "connect": "Google Drive 연결",
       "conversionUnconfirmed": "Google 변환 결과를 확인할 수 없습니다. 다시 시도하기 전에 Drive를 확인하세요.",
       "openDocs": "Google Docs에서 열기",

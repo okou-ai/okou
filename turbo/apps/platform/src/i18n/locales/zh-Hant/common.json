@@ -524,7 +524,6 @@
       "video": "影片"
     },
     "googleDrive": {
-      "agentLoading": "智能體還在載入",
       "connect": "連線 Google Drive",
       "conversionUnconfirmed": "無法確認 Google 轉換結果，請檢查雲端硬碟後再重試。",
       "openDocs": "在 Google 文件中開啟",

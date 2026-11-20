@@ -376,16 +376,19 @@ export const openThreadBrowserSession$ = command(
 );
 
 /**
- * Promote a message attachment from the lightbox into split view. The lightbox
- * is page-global, so the main (left) thread hosts the sidebar.
+ * Promote a message attachment into the sidebar of its viewing Chat.
  */
 export const openThreadArtifactSplitView$ = command(
-  ({ get, set }, input: ArtifactRefInput) => {
+  ({ get, set }, input: ArtifactRefInput, threadId?: string): boolean => {
+    if (threadId) {
+      return set(openArtifactSidebar$, input, threadId);
+    }
     const thread = get(currentLeftThread$) ?? get(currentRightThread$);
     if (!thread) {
-      return;
+      return false;
     }
     set(openAttachmentOnThread$, thread, input, get(pageSignal$));
+    return true;
   },
 );
 
@@ -413,7 +416,7 @@ export const openArtifactSidebar$ = command(
  * sidebar, leaving the caller on its own preview surface.
  */
 export const openArtifactInOpenSidebar$ = command(
-  ({ get, set }, input: ArtifactRefInput): boolean => {
+  ({ get, set }, input: ArtifactRefInput, threadId?: string): boolean => {
     const active = get(activeThreadSidebar$);
     if (
       active?.target.type !== "artifacts" &&
@@ -421,10 +424,7 @@ export const openArtifactInOpenSidebar$ = command(
     ) {
       return false;
     }
-    // The owning thread already holds the page's only utility sidebar, so this
-    // swaps its content without closing and reopening the pane.
-    set(active.thread.sidebar.openAttachment$, input, get(pageSignal$));
-    return true;
+    return set(openArtifactSidebar$, input, threadId);
   },
 );
 

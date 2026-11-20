@@ -320,6 +320,7 @@ const listChatThreadArtifactsInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(authContext$);
     const params = get(pathParamsOf(chatThreadArtifactsContract.list));
+    const query = get(queryOf(chatThreadArtifactsContract.list));
     const [runs, lookup] = await Promise.all([
       get(
         chatThreadArtifacts({
@@ -333,6 +334,7 @@ const listChatThreadArtifactsInner$ = command(
           threadId: params.threadId,
           orgId: auth.orgId,
           userId: auth.userId,
+          driveAccountModel: query?.driveAccountModel,
         },
         signal,
       ),

@@ -31,4 +31,16 @@ export const artifactGoogleDriveContract: ClientDescriptor<
       503: true,
     },
   },
+  uploadFromChat: {
+    method: "POST",
+    path: "/api/artifacts/:artifactId/google-drive/chat-uploads",
+    statuses: {
+      200: true,
+      400: true,
+      401: true,
+      403: true,
+      404: true,
+      503: true,
+    },
+  },
 };

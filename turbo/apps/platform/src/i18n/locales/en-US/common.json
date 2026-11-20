@@ -525,7 +525,6 @@
       "video": "VID"
     },
     "googleDrive": {
-      "agentLoading": "Agent is still loading",
       "connect": "Connect Google Drive",
       "conversionUnconfirmed": "Google conversion could not be confirmed. Check Drive before retrying.",
       "openDocs": "Open in Google Docs",

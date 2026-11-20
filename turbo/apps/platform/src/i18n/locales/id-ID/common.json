@@ -524,7 +524,6 @@
       "video": "VID"
     },
     "googleDrive": {
-      "agentLoading": "Agen masih memuat",
       "connect": "Hubungkan Google Drive",
       "conversionUnconfirmed": "Konversi Google tidak dapat dikonfirmasi. Periksa Drive sebelum mencoba lagi.",
       "openDocs": "Buka di Google Docs",

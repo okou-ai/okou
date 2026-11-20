@@ -62,6 +62,7 @@ import { SubscriptionPurchaseConfirmDialog } from "./components/org-manage/subsc
 import { CheckoutAbandonedSurveyDialog } from "./components/billing-survey.tsx";
 import { lightboxUrl$ } from "../../signals/okou-page/attachment-chips.ts";
 import { AttachmentLightbox } from "./attachment-chips.tsx";
+import { MarkdownTableConnectionDialog } from "../components/markdown-table.tsx";
 import { skillImportDialogOpen$ } from "../../signals/skill-import/skill-import-dialog.ts";
 import { SkillImportDialog } from "../skill-import/skill-import-dialog.tsx";
 import { CreateAgentDialogContainer } from "../agents-page/create-agent-dialog.tsx";
@@ -541,6 +542,7 @@ function SidebarLayoutInner({ children }: { children: ReactNode }) {
       <SubscriptionPurchaseConfirmDialog />
       <CheckoutAbandonedSurveyDialog />
       <AttachmentLightboxMount />
+      <MarkdownTableConnectionDialog />
       <SkillImportDialogMount />
       <CreateAgentDialogContainer />
       <QueueDrawer />

@@ -540,7 +540,6 @@
       "video": "VID"
     },
     "googleDrive": {
-      "agentLoading": "El agente sigue cargando",
       "connect": "Conectar Google Drive",
       "conversionUnconfirmed": "No se pudo confirmar la conversión de Google. Revisa Drive antes de reintentar.",
       "openDocs": "Abrir en Google Docs",
