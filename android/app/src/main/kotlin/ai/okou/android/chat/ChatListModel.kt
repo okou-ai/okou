@@ -242,6 +242,7 @@ class ChatListModel(
     private var pendingListRead: ListReadBatch? = null
     private var listRetry: Job? = null
     private var listRetryAt: Long? = null
+    private var listFailureNotice: Job? = null
     private var firstListFailureAt: Long? = null
     private var filterListFailures = 0
     private var listFailures = 0
@@ -976,17 +977,26 @@ class ChatListModel(
     }
 
     private fun resetListFailureNotice() {
+        listFailureNotice?.cancel()
+        listFailureNotice = null
         firstListFailureAt = null
         filterListFailures = 0
     }
 
     private fun recordListReadFailure(error: Exception, reportingFilter: ChatListFilter?) {
         val now = monotonicMillis()
-        if (reportingFilter == mutable.value.filter) {
+        if (reportingFilter == mutable.value.filter && filterListFailures < 3) {
             val firstFailure = firstListFailureAt ?: now.also { firstListFailureAt = it }
-            filterListFailures = (filterListFailures + 1).coerceAtMost(3)
-            if (filterListFailures == 3 && now - firstFailure >= 30_000)
-                mutable.value = mutable.value.copy(sustainedRefreshFailure = true)
+            filterListFailures++
+            if (filterListFailures == 3) {
+                val remaining = (30_000 - (now - firstFailure)).coerceAtLeast(0)
+                listFailureNotice =
+                    viewModelScope.launch {
+                        delay(remaining)
+                        if (current())
+                            mutable.value = mutable.value.copy(sustainedRefreshFailure = true)
+                    }
+            }
         }
         val retryAfter =
             when (error) {
