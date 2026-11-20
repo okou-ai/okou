@@ -82,13 +82,7 @@ import {
 } from "../external/realtime";
 
 import { getOfficialTelegramBotConfig } from "../external/telegram-official";
-import {
-  joinAllInOrder,
-  onRejection,
-  safeSync,
-  settle,
-  tapError,
-} from "../utils";
+import { joinAllInOrder, safeSync, settle, tapError } from "../utils";
 import type { DirectRunDispatchResult } from "./direct-run-dispatch.service";
 import type { AdmittedRunLaunch } from "./direct-run-preparation.service";
 import {
@@ -1241,6 +1235,9 @@ export function createThreadClaimRunObjects(
           OFFICIAL_WORKFLOW_THREAD_READ_ONLY_MESSAGE,
         );
       }
+      if (event.contextType === "automation") {
+        throw new Error("Automation cannot enter the prompt assembler");
+      }
       return {
         id: event.id,
         createdAt: event.createdAt,
@@ -1408,9 +1405,6 @@ export function createThreadClaimRunObjects(
         case "discord": {
           return await get(discordPromptMaterial$);
         }
-        case "automation": {
-          throw new Error("Automation cannot enter the prompt assembler");
-        }
       }
       throw new QueuedPromptLaunchUnavailableError();
     },
@@ -1549,30 +1543,18 @@ export function createThreadClaimRunObjects(
       }
       const head = await get(head$);
       const timing = get(promptTiming$);
+      const startedAt = now();
       const prepared = await settle(
         (async () => {
-          const startedAt = now();
-          const result = await onRejection(
-            (async () => {
-              return await get(promptRunInput$);
-            })(),
-            () => {
-              timing.recordElapsed({
-                actionType:
-                  "api_dispatch_pre_create_agent_chat_callback_auto_send_build_input",
-                spanKind: "top_level",
-                startedAt,
-              });
-            },
-          );
+          return await get(promptRunInput$);
+        })().finally(() => {
           timing.recordElapsed({
             actionType:
               "api_dispatch_pre_create_agent_chat_callback_auto_send_build_input",
             spanKind: "top_level",
             startedAt,
           });
-          return result;
-        })(),
+        }),
       );
       if (!prepared.ok) {
         return queuedPromptPreparationRejection(prepared.error, head);

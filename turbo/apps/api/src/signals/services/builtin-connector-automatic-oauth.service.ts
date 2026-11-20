@@ -15,7 +15,7 @@ import {
 import { connectors } from "@okouai/db/schema/connector";
 import { builtinConnectorAccountOauthBindings } from "@okouai/db/schema/connector-account-oauth-binding";
 import { builtinConnectorDcrRegistrations } from "@okouai/db/schema/connector-dcr-registration";
-import { connectorOauthStates } from "@okouai/db/runtime/connector-oauth-state";
+import { connectorOauthStates } from "@okouai/db/schema/connector-oauth-state";
 import { secrets } from "@okouai/db/schema/secret";
 import { command } from "ccstate";
 import { and, eq, isNull, sql } from "drizzle-orm";

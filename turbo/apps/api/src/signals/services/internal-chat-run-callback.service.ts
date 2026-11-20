@@ -82,7 +82,6 @@ import type {
 } from "./chat-queue-run-assembly";
 import type {
   QueuedUserMessage,
-  QueuedUserMessageContextType,
   QueuedUserMessageTriggerSource,
 } from "./chat-queued-event.service";
 import type { ChatRunFinishedEvent } from "./chat-run-finished-event";
@@ -1466,8 +1465,7 @@ const runCompletedChatCallbackSideEffects$ = command(
     },
     signal: AbortSignal,
   ): Promise<void> => {
-    // The post-processing steps are mutually independent. Run them after queued
-    // auto-send so LLM/push latency does not delay the next run.
+    // Summary, follow-ups, and push run independently in the background.
     const saveSummaryStep = set(
       saveRunSummary$,
       {
@@ -1743,15 +1741,9 @@ function unreachableQueuedContextType(contextType: never): never {
   throw new Error(`Unsupported queued context type: ${String(contextType)}`);
 }
 
-function unreachableQueuedMessageContext(
-  contextType: Extract<QueuedUserMessageContextType, "automation">,
-): never {
-  throw new Error(`${contextType} context cannot route a queued user message`);
-}
-
 function requiredQueuedDelivery<Delivery>(
   delivery: Delivery | undefined,
-  contextType: QueuedUserMessageContextType,
+  contextType: QueuedUserMessage["contextType"],
 ): Delivery {
   if (!delivery) {
     throw new Error(`${contextType} queue item is missing delivery material`);
@@ -1917,9 +1909,6 @@ function channelQueuedMessageAdmissionFailure(
           contextType,
         ),
       };
-    }
-    case "automation": {
-      return unreachableQueuedMessageContext(contextType);
     }
     default: {
       return unreachableQueuedContextType(contextType);

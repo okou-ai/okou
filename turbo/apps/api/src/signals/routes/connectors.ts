@@ -11,7 +11,7 @@ import {
 import type { PublicConnectorCatalogDetail } from "@okouai/api-contracts/contracts/connector-catalog";
 import { connectorGrantScopes } from "@okouai/connectors/connector-auth-method";
 import { connectors } from "@okouai/db/schema/connector";
-import { connectorOauthStates } from "@okouai/db/runtime/connector-oauth-state";
+import { connectorOauthStates } from "@okouai/db/schema/connector-oauth-state";
 
 import { authContext$, organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
