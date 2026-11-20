@@ -47,7 +47,6 @@ interface ChatThreadEventAppend {
   readonly orgId?: string | null;
   readonly chatThreadId: string;
   readonly agentId: string;
-  readonly reassignedAgentId?: string;
   readonly eventId?: string;
   readonly title?: string | null;
   readonly pinOrder?: string | null;
@@ -143,14 +142,14 @@ export function chatThreadEventInsertPlan(
       RETURNING last_seq_id`;
   const insertion = sql`INSERT INTO ${chatThreadEvents} (
       id, user_id, org_id, seq_id, chat_thread_id, kind, agent_id, project_id,
-      reassigned_agent_id, title,
+      title,
       pin_order, muted, hidden, selected_model, model_settings, model_settings_patch,
       service_tier, computer_use_host_id, cloud_browser_enabled, created_at
     ) SELECT
       ${event.id},
       ${args.userId}, ${orgId}, ${event.sequence},
       ${chatThreadId}::uuid, ${event.kind},
-      ${agentId}::uuid, ${args.projectId ?? null}::uuid, ${args.reassignedAgentId ?? null}::uuid,
+      ${agentId}::uuid, ${args.projectId ?? null}::uuid,
       ${args.title ?? null}, ${args.pinOrder ?? null}, ${args.muted ?? null}, ${args.hidden ?? null},
       ${args.selectedModel ?? null},
       ${args.modelSettings === undefined ? null : JSON.stringify(args.modelSettings)}::jsonb,
@@ -253,7 +252,6 @@ type ChatThreadEventRow = {
   readonly projectId: string | null;
   readonly chatThreadId: string;
   readonly agentId: string | null;
-  readonly reassignedAgentId: string | null;
   readonly title: string | null;
   readonly pinOrder: string | null;
   readonly muted: boolean | null;
@@ -274,7 +272,6 @@ const chatThreadEventSelection = Object.freeze({
   projectId: chatThreadEvents.projectId,
   chatThreadId: chatThreadEvents.chatThreadId,
   agentId: chatThreadEvents.agentId,
-  reassignedAgentId: chatThreadEvents.reassignedAgentId,
   title: chatThreadEvents.title,
   pinOrder: chatThreadEvents.pinOrder,
   muted: chatThreadEvents.muted,
@@ -295,7 +292,6 @@ const pageChatThreadEventSelection = Object.freeze({
   projectId: pageChatThreadEvent.projectId,
   chatThreadId: pageChatThreadEvent.chatThreadId,
   agentId: pageChatThreadEvent.agentId,
-  reassignedAgentId: pageChatThreadEvent.reassignedAgentId,
   title: pageChatThreadEvent.title,
   pinOrder: pageChatThreadEvent.pinOrder,
   muted: pageChatThreadEvent.muted,
@@ -329,9 +325,9 @@ function toApiChatThreadEvent(
     seqId: row.seqId,
     chatThreadId: row.chatThreadId,
     agentId: row.agentId,
-    ...(row.reassignedAgentId === null
-      ? {}
-      : { reassignedAgentId: row.reassignedAgentId }),
+    ...(row.kind === "agent_reassigned"
+      ? { reassignedAgentId: row.agentId }
+      : {}),
     title: row.title,
     pinOrder: row.pinOrder,
     ...(row.muted === null ? {} : { muted: row.muted }),
@@ -355,7 +351,10 @@ function toApiChatThreadEvent(
   if (row.kind === "project_updated" || row.kind === "created") {
     return { ...event, kind: row.kind, projectId: row.projectId };
   }
-  return { ...event, kind: row.kind };
+  return {
+    ...event,
+    kind: row.kind === "agent_reassigned" ? "sort_touched" : row.kind,
+  };
 }
 
 function chatThreadEventRowsAfterCursor(args: {

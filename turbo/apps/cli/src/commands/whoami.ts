@@ -1,7 +1,5 @@
 import { ApiRequestError } from "../lib/api/core/client-factory";
 import { getCurrentMember } from "../lib/api/domains/auth";
-import { modeHelp } from "../lib/command/single-agent";
-import { isPersonalExecution } from "../lib/personal-execution";
 import { Command } from "commander";
 import chalk from "chalk";
 import {
@@ -11,7 +9,6 @@ import {
 } from "../lib/api/config";
 import { getOrg } from "../lib/api/domains/orgs";
 import { withErrorHandler } from "../lib/command/with-error-handler";
-import { getOkouAgentId } from "../lib/okou-env";
 import { listRunConnectorAccounts } from "../lib/api/domains/run-connector-accounts";
 import { connectorAccountTargetKey } from "@okouai/api-contracts/contracts/connector-accounts";
 import { policyIcon } from "../lib/utils/format-utils";
@@ -171,26 +168,21 @@ async function printChatConnectorPermissions() {
 }
 
 async function printRunIdentity(
-  agentId: string | undefined,
   payload: ReturnType<typeof decodeSandboxTokenPayload>,
 ): Promise<void> {
-  const personal = isPersonalExecution();
-  if (personal) {
-    console.log(`User ID:    ${payload?.userId ?? chalk.dim("unavailable")}`);
-    console.log(
-      `Chat ID:    ${process.env.OKOU_CHAT_THREAD_ID ?? chalk.dim("unavailable")}`,
-    );
-  } else console.log(`Agent ID:   ${agentId}`);
+  console.log(`User ID:    ${payload?.userId ?? chalk.dim("unavailable")}`);
+  console.log(
+    `Chat ID:    ${process.env.OKOU_CHAT_THREAD_ID ?? chalk.dim("unavailable")}`,
+  );
   console.log(`Run ID:     ${payload?.runId ?? chalk.dim("unavailable")}`);
   console.log(`Org ID:     ${payload?.orgId ?? chalk.dim("unavailable")}`);
   await printWorkspace();
 }
 
 async function showSandboxInfo(showPermissions: boolean): Promise<void> {
-  const agentId = getOkouAgentId();
   const payload = decodeSandboxTokenPayload();
 
-  await printRunIdentity(agentId, payload);
+  await printRunIdentity(payload);
 
   // Capabilities section
   if (payload?.capabilities?.length) {
@@ -231,7 +223,7 @@ async function showLocalInfo(): Promise<void> {
   const token = await getToken();
   let payload = token ? decodeSandboxTokenPayload(token) : undefined;
   const isExpired = payload ? payload.exp * 1000 <= Date.now() : false;
-  if (token && !isExpired && isPersonalExecution()) {
+  if (token && !isExpired) {
     const member = await getCurrentMember().catch((error: unknown) => {
       if (error instanceof ApiRequestError && error.status === 401)
         return undefined;
@@ -276,34 +268,20 @@ async function showLocalInfo(): Promise<void> {
 
 export const whoamiCommand = new Command()
   .name("whoami")
-  .description("Show agent identity, run ID, and capabilities")
+  .description("Show your user, workspace, Run and capabilities")
   .option(
     "--permissions",
     "Show Chat account allowance and active member permissions inside a Run",
   )
   .addHelpText(
     "after",
-    modeHelp(
-      `
-Examples:
-  okou whoami
-  okou whoami --permissions
-
-Notes:
-  - Inside sandbox: shows agent ID, run ID, org ID, and granted capabilities
-  - Connector account identity comes from the current run's admitted accounts
-  - --permissions shows current Chat account allowance and shared member rules,
-    including absolute expiry. These rules apply across your Chats and accounts.
-  - Outside a Run, shows authentication and workspace information
-  - Your agent ID is also available as $OKOU_AGENT_ID`,
-      `
+    `
 Shows your authenticated user, workspace, Chat and Run, plus effective capabilities.
 Use --permissions for connector enablement, fine-grained permissions and original expiry.
 Accounts admitted to this Run remain authoritative; missing details grant nothing.
 Switching accounts does not reset permissions. Inspect saved personal Instructions
 with okou instructions view; editing them applies to the next start of work.
 Outside a Run, --permissions does not expand connector permissions.`,
-    ),
   )
   .action(
     withErrorHandler(async (options: { permissions?: boolean }) => {

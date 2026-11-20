@@ -11,6 +11,8 @@ Original test `Historical run usage appears when scrolling reveals its answer`. 
 - **When** The user opens the chat, then scrolls to reveal the first answer and opens its usage details.
 - **Then** Initially, only the latest answer and its 67-credit button appear. Scrolling reveals the first answer and its 61-credit button; its details show 61, not the hint's 999, while the latest run's 67-credit button remains.
 
+**Upstream update (#49645).** After scrolling, wait for the historical answer within the transcript viewport and verify it is the unique matching answer on the page before opening its usage details. The updated upstream registration maps to this existing frozen ID.
+
 ## credit-usage-display-002
 
 Original test `A run shows settled usage only after its first usage hint arrives`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/credit-usage-display.test.tsx#L204).

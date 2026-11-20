@@ -463,10 +463,10 @@ try {
   async function replayPublishedMetadata() {
     const events = array(object({ value: chatThreadEventSchema })).parse(
       await sql`SELECT jsonb_build_object(
-      'id',id,'seqId',seq_id,'kind',kind,'chatThreadId',chat_thread_id,'agentId',agent_id,
+      'id',id,'seqId',seq_id,'kind',CASE WHEN kind='agent_reassigned' THEN 'sort_touched' ELSE kind::text END,'chatThreadId',chat_thread_id,'agentId',agent_id,
       'projectId',project_id,'title',title,'pinOrder',pin_order,
       'createdAt',to_char(created_at,'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
-    ) || CASE WHEN reassigned_agent_id IS NULL THEN '{}'::jsonb ELSE jsonb_build_object('reassignedAgentId',reassigned_agent_id) END AS value
+    ) || CASE WHEN kind<>'agent_reassigned' THEN '{}'::jsonb ELSE jsonb_build_object('reassignedAgentId',agent_id) END AS value
     FROM chat_thread_events WHERE chat_thread_id=${chat} ORDER BY seq_id`,
     );
     return replayChatThreadEvents(

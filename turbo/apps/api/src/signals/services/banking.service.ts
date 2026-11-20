@@ -383,7 +383,6 @@ export const bankingAccounts$ = command(
         runId: auth.access.runId,
         action: "accounts.read",
         status: "allowed",
-        agentId: auth.access.agentId,
         connectionId: auth.access.connectionId,
       });
       signal.throwIfAborted();
@@ -429,7 +428,6 @@ export const bankingAccounts$ = command(
       runId: auth.access.runId,
       action: "accounts.read",
       status: "allowed",
-      agentId: auth.access.agentId,
       connectionId: auth.access.connectionId,
     });
     signal.throwIfAborted();
@@ -489,7 +487,6 @@ export const bankingBalances$ = command(
       runId: auth.access.runId,
       action: "balances.read",
       status: "allowed",
-      agentId: auth.access.agentId,
       connectionId: auth.access.connectionId,
       providerAccountId: args.body.accountId,
     });
@@ -562,7 +559,6 @@ export const bankingTransactions$ = command(
       runId: auth.access.runId,
       action: "transactions.read",
       status: "allowed",
-      agentId: auth.access.agentId,
       connectionId: auth.access.connectionId,
       providerAccountId: args.body.accountId,
     });

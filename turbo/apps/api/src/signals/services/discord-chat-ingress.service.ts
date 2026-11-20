@@ -324,13 +324,13 @@ function canonicalRouteCreationWrites(): SQL {
     RETURNING last_seq_id
   ), created_event AS (
     INSERT INTO ${e} (
-      user_id, org_id, seq_id, chat_thread_id, kind, agent_id, reassigned_agent_id,
+      user_id, org_id, seq_id, chat_thread_id, kind, agent_id,
       title, pin_order, muted, selected_model, model_settings, model_settings_patch,
       service_tier, computer_use_host_id, cloud_browser_enabled, created_at
     )
     SELECT inserted_thread.user_id, creation_input.org_id, reserved.last_seq_id,
       inserted_thread.id, 'created'::chat_thread_event_kind, inserted_thread.agent_id,
-      NULL, inserted_thread.title, NULL, NULL, inserted_thread.selected_model,
+      inserted_thread.title, NULL, NULL, inserted_thread.selected_model,
       inserted_thread.model_settings, NULL,
       CASE WHEN ${eq(sql`inserted_thread.codex_service_tier`, sql`'fast'`)} THEN 'priority' ELSE NULL END,
       NULL, inserted_thread.cloud_browser_enabled, inserted_thread.created_at

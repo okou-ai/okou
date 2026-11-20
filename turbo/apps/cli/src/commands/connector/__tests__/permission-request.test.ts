@@ -1,4 +1,3 @@
-import { capturedRunToken } from "../../../test/fixtures/captured-run-token";
 /**
  * Tests for okou connector permission-request command.
  *
@@ -502,33 +501,6 @@ describe("okou connector permission-request command", () => {
     );
   });
 
-  it("rejects callback prompts for a different agent", async () => {
-    vi.stubEnv("OKOU_AGENT_ID", "agent-current");
-    vi.stubEnv("OKOU_CHAT_THREAD_ID", "thread-abc-123");
-
-    await expect(async () => {
-      await permissionRequestCommand.parseAsync([
-        "node",
-        "cli",
-        "slack",
-        "--permission",
-        SLACK_READ_PERMISSION,
-        "--url",
-        SLACK_READ_URL,
-        "--agent",
-        "agent-other",
-        "--callback-prompt",
-        "Continue",
-      ]);
-    }).rejects.toThrow("process.exit called");
-
-    expect(mockConsoleError).toHaveBeenCalledWith(
-      expect.stringContaining(
-        "--agent agent-other conflicts with the current run's Agent agent-current",
-      ),
-    );
-  });
-
   it("outputs an allow grant link for unknown endpoints", async () => {
     vi.stubEnv("OKOU_API_BACKEND_URL", "https://app.okou.ai");
     vi.stubEnv("OKOU_AGENT_ID", "agent-abc-123");
@@ -586,49 +558,6 @@ describe("okou connector permission-request command", () => {
       "/agents/current-workspace-executor/permissions?",
     );
     expect(logCalls).not.toContain("/agents/permissions");
-  });
-
-  it("honors explicit selection from a retained Run credential", async () => {
-    vi.stubEnv("OKOU_API_BACKEND_URL", "https://app.okou.ai");
-    vi.stubEnv("OKOU_TOKEN", capturedRunToken(["agent:read"]));
-    vi.stubEnv("OKOU_AGENT_ID", "");
-
-    await permissionRequestCommand.parseAsync([
-      "node",
-      "cli",
-      "slack",
-      "--permission",
-      SLACK_READ_PERMISSION,
-      "--url",
-      SLACK_READ_URL,
-      "--agent",
-      "target-agent-123",
-    ]);
-
-    const logCalls = mockConsoleLog.mock.calls.flat().join("\n");
-    expect(logCalls).toContain("/agents/target-agent-123/permissions?");
-    expect(logCalls).toContain("connectorSlug=slack");
-    expect(logCalls).toContain("action=allow");
-  });
-
-  it("accepts --agent when it matches the current run's Agent", async () => {
-    vi.stubEnv("OKOU_API_BACKEND_URL", "https://app.okou.ai");
-    vi.stubEnv("OKOU_AGENT_ID", "target-agent-123");
-
-    await permissionRequestCommand.parseAsync([
-      "node",
-      "cli",
-      "slack",
-      "--permission",
-      SLACK_READ_PERMISSION,
-      "--url",
-      SLACK_READ_URL,
-      "--agent",
-      "target-agent-123",
-    ]);
-
-    const logCalls = mockConsoleLog.mock.calls.flat().join("\n");
-    expect(logCalls).toContain("/agents/target-agent-123/permissions?");
   });
 
   it("transforms www.okou.ai to app.okou.ai", async () => {

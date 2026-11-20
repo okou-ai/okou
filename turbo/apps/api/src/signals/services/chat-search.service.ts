@@ -49,22 +49,20 @@ type ChatSearchInput = {
   readonly userId: string;
   readonly orgId: string;
   readonly keyword: string;
-  readonly agentId?: string;
   readonly projectId?: string;
   readonly projectMetadata?: boolean;
 };
 
 function chatSearchScope(
-  args: Pick<ChatSearchInput, "userId" | "orgId" | "agentId" | "projectId">,
+  args: Pick<ChatSearchInput, "userId" | "orgId" | "projectId">,
 ) {
   return and(
     eq(chatEventSearchMessages.userId, args.userId),
     eq(chatEventSearchMessages.orgId, args.orgId),
+    eq(chatThreads.userId, args.userId),
+    eq(chatThreads.orgId, args.orgId),
     eq(chatThreads.hidden, false),
     args.projectId ? eq(chatThreads.projectId, args.projectId) : undefined,
-    args.agentId
-      ? eq(chatEventSearchMessages.agentId, args.agentId)
-      : undefined,
   );
 }
 
@@ -75,7 +73,7 @@ async function findChatSearchMatches(
   /**
    * Take up to 500 scoped keyword hits without ordering them, then sort only
    * those visible-thread candidates by time. This intentionally does not
-   * find the newest hits across all history; missing Agents are not backfilled.
+   * find the newest hits across all history.
    */
   const tsquery = chatSearchBigramTsquery(args.keyword);
   if (tsquery === null) {
@@ -129,6 +127,7 @@ async function findChatSearchMatches(
       createdAt: chatEventSearchMessages.createdAt,
       text: chatEventSearchMessages.text,
       existingChatThreadId: chatThreads.id,
+      threadAgentId: chatThreads.agentId,
       agentName: agents.name,
       projectId: projects.id,
       projectName: projects.name,
@@ -145,13 +144,9 @@ async function findChatSearchMatches(
     .leftJoin(
       agents,
       and(
-        eq(agents.id, chatEventSearchMessages.agentId),
-        args.projectMetadata
-          ? and(
-              eq(agents.orgId, args.orgId),
-              visibleJoinedAgentCondition(args.userId),
-            )
-          : undefined,
+        eq(agents.id, chatThreads.agentId),
+        eq(agents.orgId, args.orgId),
+        visibleJoinedAgentCondition(args.userId),
       ),
     )
     .leftJoin(
@@ -173,7 +168,9 @@ async function findChatSearchMatches(
   return matches.flatMap((candidate): ChatSearchMatchRow[] => {
     if (
       candidate.existingChatThreadId === null ||
-      candidate.agentName === null ||
+      (args.projectMetadata &&
+        candidate.threadAgentId !== null &&
+        candidate.agentName === null) ||
       (args.projectId !== undefined && candidate.projectId !== args.projectId)
     ) {
       return [];
@@ -186,7 +183,7 @@ async function findChatSearchMatches(
         role: candidate.role,
         createdAt: candidate.createdAt,
         text: candidate.text,
-        agentName: candidate.agentName,
+        agentName: candidate.agentName ?? "Okou",
         projectId: candidate.projectId,
         projectName: candidate.projectName,
       },

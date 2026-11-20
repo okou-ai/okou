@@ -31,7 +31,7 @@ function output(value: unknown, json: boolean | undefined) {
   console.log(JSON.stringify(value, null, json ? undefined : 2));
 }
 export const projectCommand = new Command("project")
-  .description("Manage your private cross-agent Projects")
+  .description("Manage your private workspace Projects")
   .addCommand(
     new Command("list").option("--json", "Print JSON").action(
       withErrorHandler(async (options: { json?: boolean }) => {

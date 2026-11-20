@@ -465,7 +465,6 @@ export const buildGithubAppInstallUrl$ = command(
         authMethod: "github-app-install",
         userId: args.userId,
         orgId: args.orgId,
-        agentId: args.composeId,
         redirectUri: callbackRedirectUri,
         oauthContext: args.userAuthorization
           ? JSON.stringify({

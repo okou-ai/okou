@@ -1,4 +1,3 @@
-import { isPersonalExecution } from "../../lib/personal-execution";
 import chalk from "chalk";
 import { Command } from "commander";
 
@@ -45,16 +44,14 @@ Notes:
         await getPlatformOrigin(),
       ).href;
       if (options.json) {
-        console.log(JSON.stringify({ ...thread, url }));
+        const { agentId: _agentId, ...metadata } = thread;
+        console.log(JSON.stringify({ ...metadata, url }));
         return;
       }
 
       console.log(chalk.green("✓ Chat thread loaded"));
       console.log(chalk.dim(`  Thread: ${thread.id}`));
       console.log(chalk.cyan(`  URL:    [Open chat](${url})`));
-      if (thread.agentId && !isPersonalExecution()) {
-        console.log(chalk.dim(`  Agent:  ${thread.agentId}`));
-      }
       console.log(chalk.dim(`  Title:  ${thread.title ?? "(untitled)"}`));
       const catalog = await getModelCatalog();
       console.log(

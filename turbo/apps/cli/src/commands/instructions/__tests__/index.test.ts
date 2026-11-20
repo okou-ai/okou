@@ -184,24 +184,6 @@ describe("personal Instructions CLI", () => {
     expect(stdout).not.toHaveBeenCalled();
   });
 
-  it("uses the signed Run mode without consulting live feature switches", async () => {
-    let featureReads = 0;
-    server.use(
-      http.get("*/api/feature-switches", () => {
-        featureReads++;
-        return HttpResponse.json({
-          switches: {},
-          effectiveSwitches: { singleAgent: true },
-        });
-      }),
-    );
-    await run("view", "--json");
-    vi.stubEnv("OKOU_TOKEN", runToken());
-    await expect(run("view", "--json")).rejects.toThrow("exit");
-    expect(featureReads).toBe(0);
-    expect(log).toHaveBeenCalledTimes(1);
-  });
-
   it("uses authenticated member mode outside a Run and surfaces API authorization failure", async () => {
     vi.stubEnv("OKOU_TOKEN", "member-token");
     server.use(

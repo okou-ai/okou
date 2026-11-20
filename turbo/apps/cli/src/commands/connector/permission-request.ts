@@ -1,4 +1,3 @@
-import { modeHelp } from "../../lib/command/single-agent";
 import { Command, Option } from "commander";
 import { UNKNOWN_PERMISSION_GRANT } from "@okouai/connectors/firewall-types";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
@@ -17,7 +16,6 @@ import { createComputerUseAuthorizationRequest } from "../../lib/api/domains/com
 import { getOkouToken } from "../../lib/okou-env";
 import { resolvePermissionActionAgentId } from "./agent-context";
 import {
-  CALLBACK_PROMPT_GUIDANCE,
   CALLBACK_PROMPT_MAX_LENGTH,
   connectorActionCallbackAvailable,
   finalizeActionUrl,
@@ -264,13 +262,6 @@ const callbackPromptAvailable = connectorActionCallbackAvailable();
 if (!callbackPromptAvailable) {
   callbackPromptOption.hideHelp();
 }
-const callbackPromptExample = callbackPromptAvailable
-  ? '  okou connector permission-request github --permission contents:write --url https://api.github.com/repos/okou-ai/okou --method POST --callback-prompt "Re-check the permission, then continue the previous task"\n'
-  : "";
-const callbackPromptNotes = callbackPromptAvailable
-  ? `  - Use --callback-prompt only for this turn's single access action: one permission, Browser, Computer Use, or one batch permission link\n  - ${CALLBACK_PROMPT_GUIDANCE}\n`
-  : "";
-
 export const permissionRequestCommand = addAwsDiagnosticOptions(
   new Command()
     .name("permission-request")
@@ -283,12 +274,6 @@ export const permissionRequestCommand = addAwsDiagnosticOptions(
     )
     .addOption(
       new Option("--permission <name>", "The permission name to request"),
-    )
-    .addOption(
-      new Option(
-        "--agent <id>",
-        "Agent ID whose permission page should be opened (must match OKOU_AGENT_ID inside a run)",
-      ),
     )
     .addOption(
       new Option(
@@ -309,58 +294,7 @@ export const permissionRequestCommand = addAwsDiagnosticOptions(
   .addOption(callbackPromptOption)
   .addHelpText(
     "after",
-    modeHelp(
-      `
-Examples:
-  okou connector permission-request github --permission contents:read --url https://api.github.com/repos/okou-ai/okou --method GET
-${callbackPromptExample}  okou connector permission-request gmail --permission messages.write --url https://gmail.googleapis.com/gmail/v1/users/me/messages --method POST --agent <agent-id>
-  okou connector permission-request cloudflare --permission __unknown__ --url https://api.cloudflare.com/client/v4/example --method POST
-  okou connector permission-request computer-use --permission computer-use:write
-  okou connector permission-request browser --permission browser:write
-  okou connector permission-request --batch-file ./permissions.json --agent <agent-id>
-
-Notes:
-  - AWS options mirror connector check; they preserve the described AWS
-    operation when this command rechecks a named permission. They do not verify
-    a SigV4 signature or send a request to AWS; never include secrets.
-  - Plan the concrete connector operations needed for this task; do not request hypothetical future access
-  - Check okou whoami --permissions first and skip permissions already allowed
-  - First run okou connector check --url <FAILED_URL> --method <METHOD>; use its firewall-denial URL and omit secret query strings or fragments
-  - Use the exact permission and URL/method diagnosed by connector check
-  - For multiple builtin HTTP permissions, --batch-file accepts a JSON array of
-    1–20 strict items: {"connector":"github","permission":"contents:read","url":"https://api.github.com/repos/okou-ai/okou","method":"GET"}
-    Optional item fields: awsService, awsAction, awsTarget, awsQueryParam (array),
-    awsHeaderPresent (array). All single-request flags and selector are excluded.
-    Every item is diagnosed before one deduplicated batch approval link is output;
-    already-allowed items are skipped. A current Agent or --agent is required.
-  - Provider OAuth errors such as Slack missing_scope or needed are provider scopes, not Okou permission names
-  - A platform URL is output only when that request maps to a denied or approval-required permission
-  - Builtin requests require --url and run-scoped policy data; an unavailable
-    non-run diagnostic cannot produce a builtin permission approval
-  - Use --permission __unknown__ only for diagnosed builtin deny/ask unknown endpoints
-  - unknown-endpoint means no named permission matched; unknown-policy identifies
-    the fallback policy used. Neither label alone means access was denied.
-    Follow policy.outcome: allow needs no additional permission approval; deny/ask
-    blocks the request; unavailable means permission status could not be determined.
-    An allowed permission check does not verify credentials or upstream API success.
-  - Custom HTTP connectors with permission bundles use Connectors settings
-    > Permissions. MCP connector access is controlled by Chat account allowance.
-    Custom UUIDs, full slugs, and exact unique display names, optionally prefixed
-    with custom:, resolve to this settings guidance rather than a builtin approval link.
-  - For custom unknown endpoints, only deny/ask outcomes need an administrator to
-    review the connector's routing and permission definition. There is no custom
-    unknown-endpoint approval control.
-  - Inside a run, --agent must match the current Agent; omit it to use OKOU_AGENT_ID.
-    Outside a run, --agent selects the Agent's permission page.
-    Agent selection does not change the accounts admitted to a run.
-  - The user chooses the permission duration on the confirmation page
-  - --callback-prompt requires the current web chat and its current Agent;
-    it is unsupported for custom, Browser, and Computer Use authorization
-${callbackPromptNotes}  - One batch link may use a single callback for all included permissions
-  - When multiple separate connector or permission action links are needed, do not use callbacks; return each ordinary action URL on its own line and wait for all confirmations
-  - Return every generated action URL verbatim with all query parameters
-  - Builtin permission requests update the current user's connector grants after confirmation`,
-      `
+    `
 Request only the concrete builtin permission diagnosed by connector check.
 Inspect okou whoami --permissions first; already-allowed permissions need no approval.
 Supply a selector, --permission, the failed --url and --method, plus observed AWS
@@ -383,7 +317,6 @@ do not use callbacks; return the ordinary links.
 Accounts and authorization resolve from your workspace execution context; switching
 accounts never resets permissions. Browser/Computer Use consent remains separate.
 `,
-    ),
   )
   .action(
     withErrorHandler(
@@ -392,7 +325,6 @@ accounts never resets permissions. Browser/Computer Use consent remains separate
         opts: {
           permission?: string;
           batchFile?: string;
-          agent?: string;
           url?: string;
           method: string;
           awsService?: string;
@@ -427,7 +359,7 @@ accounts never resets permissions. Browser/Computer Use consent remains separate
           }
           const batch = await resolvePermissionRequestBatch({
             batchFile: opts.batchFile,
-            agentId: await resolvePermissionActionAgentId(opts.agent),
+            agentId: await resolvePermissionActionAgentId(),
             callbackPrompt: opts.callbackPrompt,
           });
           for (const summary of batch.summaries) console.log(summary);
@@ -464,7 +396,7 @@ accounts never resets permissions. Browser/Computer Use consent remains separate
             "Supply a selector and --permission for a single request, or use --batch-file <path>.",
           );
         }
-        const agentId = await resolvePermissionActionAgentId(opts.agent);
+        const agentId = await resolvePermissionActionAgentId();
         if (opts.url !== undefined) {
           validateDiagnosticUrl(opts.url);
         }
