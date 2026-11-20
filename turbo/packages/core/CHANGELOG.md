@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.857.6](https://github.com/okou-ai/okou/compare/core-v8.857.5...core-v8.857.6) (2026-11-20)
+
+
+### Refactoring
+
+* retire the single-agent feature switch ([#49556](https://github.com/okou-ai/okou/issues/49556)) ([4e5707d](https://github.com/okou-ai/okou/commit/4e5707de3ea728c59038345c47399cd51510a499))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.95.3
+
 ## [8.857.5](https://github.com/okou-ai/okou/compare/core-v8.857.4...core-v8.857.5) (2026-11-20)
 
 

@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.32.38](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.37...guest-storage-apply-v0.32.38) (2026-11-20)
+
+
+### Refactoring
+
+* **runner:** retire optional execution package handling ([#49568](https://github.com/okou-ai/okou/issues/49568)) ([3ec3a12](https://github.com/okou-ai/okou/commit/3ec3a12f234394a2594d07852747fe45f1c08433))
+
+
+### Performance Improvements
+
+* **guest-storage-apply:** shorten medium remote archive batches ([#49541](https://github.com/okou-ai/okou/issues/49541)) ([f743269](https://github.com/okou-ai/okou/commit/f7432695ce4856ab3b2f22e243b0c6cb05e71b9f))
+* **guest-storage-apply:** summarize stale-path cleanup successes ([#49601](https://github.com/okou-ai/okou/issues/49601)) ([d185d77](https://github.com/okou-ai/okou/commit/d185d77b85131b96a61f14c4e5f759073b0ef59c))
+
 ## [0.32.37](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.36...guest-storage-apply-v0.32.37) (2026-11-20)
 
 

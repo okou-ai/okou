@@ -4,12 +4,12 @@ import {
   type FeatureSwitchContext,
 } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import type { RunPromptAndSkills } from "../run-prompt-and-skills";
+import type { RunPrompt } from "../run-prompt-and-skills";
 export function createPhoneUsePrompt(
   grant$: Computed<Promise<{ deviceId: string; grantId: string } | null>>,
   featureSwitches$: Computed<Promise<FeatureSwitchContext>>,
 ) {
-  return computed(async (get): Promise<RunPromptAndSkills> => {
+  return computed(async (get): Promise<RunPrompt> => {
     const features = await get(featureSwitches$);
     const grant = await get(grant$);
     const enabled = isFeatureEnabled(FeatureSwitchKey.PhoneUse, features);
@@ -31,7 +31,6 @@ export function createPhoneUsePrompt(
           : "",
       },
       userPromptVariables: {},
-      skillVolumes: [],
     };
   });
 }

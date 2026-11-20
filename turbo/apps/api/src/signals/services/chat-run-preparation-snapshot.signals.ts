@@ -2,8 +2,9 @@ import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { chatEvents } from "@okouai/db/schema/chat-event";
+import { chatNetworkBodyCaptures } from "@okouai/db/schema/chat-network-body-capture";
 import { computed } from "ccstate";
-import { and, asc, count, eq, exists, lt, not, sql } from "drizzle-orm";
+import { and, asc, count, eq, exists, lt, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 
 import {
@@ -18,16 +19,11 @@ import {
 } from "./canonical-chat-event-read.service";
 import { queuedThreadInputCondition } from "./chat-queued-event.service";
 import {
-  chatThreadRequestSelection,
-  type ChatThreadRequestFacts,
-} from "./chat-thread-request-facts";
+  pickedThreadColumns,
+  type EnqueuedChatInputFacts,
+} from "./chat-run-preparation-facts";
 import { officialWorkflowThreadCondition } from "./official-workflow-policy.service";
 import type { PickedThreadInputEvent } from "./thread-run-prompt/types";
-
-/** Preparation facts only: neither a connector grant nor commit-time authority. */
-export interface ChatRunPreparationFacts {
-  readonly isOfficialWorkflowThread: boolean;
-}
 
 function buildPreparationTables(
   claim: { readonly orgId: string; readonly chatThreadId: string },
@@ -99,11 +95,11 @@ function buildPreparationTables(
   return { occupancy, head };
 }
 
-/** Read the FIFO head and its owned Thread in one availability statement. */
+/** Capture availability, the FIFO head, and its Thread binding together. */
 export function createChatRunPreparationSnapshot(
   claim: { readonly orgId: string; readonly chatThreadId: string },
   bootstrap: AgentRunContextSignals,
-  requestFacts?: ChatThreadRequestFacts,
+  requestInput?: EnqueuedChatInputFacts,
 ) {
   return computed(async (get) => {
     const database = get(db$);
@@ -112,10 +108,25 @@ export function createChatRunPreparationSnapshot(
     const { occupancy, head } = buildPreparationTables(
       claim,
       capacity,
-      requestFacts?.input.id,
+      requestInput?.id,
     );
     const hasCapacity =
       capacity === 0 ? sql`true` : lt(occupancy.activeCount, capacity);
+    const hasPromptCapacity = and(
+      hasCapacity,
+      eq(head.eventType, "input.prompt"),
+    );
+    const storedCapture = exists(
+      new QueryBuilder()
+        .select({ id: chatNetworkBodyCaptures.chatEventId })
+        .from(chatNetworkBodyCaptures)
+        .where(eq(chatNetworkBodyCaptures.chatEventId, head.id)),
+    );
+    // The receipt can supply the flag only for the input it committed.
+    const capture = requestInput
+      ? sql`CASE WHEN ${eq(head.id, requestInput.id)}
+          THEN ${requestInput.captureNetworkBodies} ELSE ${storedCapture} END`
+      : storedCapture;
     const [row] = await database
       .with(occupancy, head)
       .select({
@@ -126,8 +137,7 @@ export function createChatRunPreparationSnapshot(
             .from(activeAgentRuns)
             .where(eq(activeAgentRuns.chatThreadId, claim.chatThreadId)),
         ).mapWith(pgBooleanDecoder),
-        // An immediate send already owns its Thread snapshot.
-        ...(requestFacts ? {} : { thread: chatThreadRequestSelection() }),
+        thread: pickedThreadColumns,
         head: {
           id: head.id,
           chatThreadId: head.chatThreadId,
@@ -143,32 +153,33 @@ export function createChatRunPreparationSnapshot(
         },
         // No head/full queues do not inspect policy; automation
         // inputs bypass the prompt-only Official thread policy as before.
-        isOfficialWorkflowThread: sql`CASE WHEN ${not(hasCapacity)} THEN false
-            WHEN ${eq(head.eventType, "input.prompt")} THEN ${officialWorkflowThreadCondition(
-              {
-                threadId: claim.chatThreadId,
-                orgId: claim.orgId,
-                userId: bootstrap.userId,
-              },
-            )} ELSE false END`.mapWith(pgBooleanDecoder),
+        isOfficialWorkflowThread:
+          sql`CASE WHEN ${hasPromptCapacity} THEN ${officialWorkflowThreadCondition(
+            {
+              threadId: claim.chatThreadId,
+              orgId: claim.orgId,
+              userId: bootstrap.userId,
+            },
+          )} ELSE false END`.mapWith(pgBooleanDecoder),
+        captureNetworkBodies:
+          sql`CASE WHEN ${hasPromptCapacity} THEN ${capture} ELSE false END`.mapWith(
+            pgBooleanDecoder,
+          ),
       })
       .from(occupancy)
       .leftJoin(head, sql`true`)
       .leftJoin(
         chatThreads,
-        requestFacts
-          ? sql`false`
-          : and(
-              eq(chatThreads.id, head.chatThreadId),
-              eq(chatThreads.userId, bootstrap.userId),
-              eq(chatThreads.agentId, bootstrap.agentId),
-            ),
+        and(
+          eq(chatThreads.id, head.chatThreadId),
+          eq(chatThreads.userId, bootstrap.userId),
+          eq(chatThreads.agentId, bootstrap.agentId),
+        ),
       );
     if (!row) {
       throw new Error("Chat preparation occupancy returned no row");
     }
-    const thread = requestFacts?.thread ?? row.thread;
-    const picked = row.head;
+    const { thread, head: picked } = row;
     if (!thread || !picked) {
       return {
         hasCapacity: row.hasCapacity,
@@ -177,8 +188,7 @@ export function createChatRunPreparationSnapshot(
       };
     }
     // Only this request's actual FIFO head may use its canonical input facts.
-    const owned =
-      requestFacts?.input.id === picked.id ? requestFacts.input : undefined;
+    const owned = requestInput?.id === picked.id ? requestInput : undefined;
     const pickedEvent: PickedThreadInputEvent = {
       ...picked,
       userMessage: owned ? owned.userMessage : picked.userMessage,
@@ -191,6 +201,7 @@ export function createChatRunPreparationSnapshot(
       thread,
       preparation: {
         isOfficialWorkflowThread: row.isOfficialWorkflowThread,
+        captureNetworkBodies: row.captureNetworkBodies,
       },
     };
     return {

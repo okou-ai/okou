@@ -7,7 +7,7 @@ import {
   buildAgentToolsPrompt,
   buildAgentToolsPromptInputs,
 } from "../agent-tools-prompt.service";
-import type { RunPromptAndSkills } from "../run-prompt-and-skills";
+import type { RunPrompt } from "../run-prompt-and-skills";
 
 function buildExecutionTimeLimitPrompt(): string {
   const executionHours = AGENT_EXECUTION_TIMEOUT_SECONDS / (60 * 60);
@@ -32,8 +32,8 @@ export function createAgentPrompt(
   cloudBrowserEnabled$: Computed<Promise<boolean>>,
   disabledPaidTools$: Computed<Promise<readonly string[]>>,
   singleAgent$: Computed<Promise<boolean>>,
-): Computed<Promise<RunPromptAndSkills>> {
-  return computed(async (get): Promise<RunPromptAndSkills> => {
+): Computed<Promise<RunPrompt>> {
+  return computed(async (get): Promise<RunPrompt> => {
     const [
       agent,
       featureSwitchContext,
@@ -63,7 +63,6 @@ export function createAgentPrompt(
         ),
       },
       userPromptVariables: {},
-      skillVolumes: [],
     };
   });
 }

@@ -1,17 +1,15 @@
 <resources>
+    <string name="chat_list_offline">オフライン</string>
+    <string name="chat_list_refresh_failed">チャット一覧を更新できませんでした</string>
+    <string name="chat_list_first_load_failed">一時的に読み込めません</string>
+    <string name="chat_list_load_when_online">オンラインに戻るとチャットが読み込まれます。</string>
     <string name="chat_list_title">チャット</string>
     <string name="chat_refresh">チャットを更新</string>
     <string name="chat_loading">チャットを読み込み中…</string>
-    <string name="chat_refreshing">チャットを更新中…</string>
-    <string name="chat_load_failed">チャットを読み込めませんでした。接続を確認して再試行してください。</string>
     <string name="chat_refresh_failed">更新できませんでした。最後に読み込んだチャットを表示しています。</string>
     <string name="chat_cached">保存済みのチャットを表示しています。</string>
     <string name="chat_cache_unavailable">オフライン保存を利用できません。再起動後にこれらのチャットを表示できない場合があります。</string>
-    <string name="chat_metadata_loading">Okou とプロジェクトの名前を読み込み中…</string>
     <string name="chat_metadata_unavailable">一部の Okou またはプロジェクトの情報を利用できません。</string>
-    <string name="chat_status_unavailable">状態を更新できませんでした。以前の表示は古い可能性があります。</string>
-    <string name="chat_status_loading">アクティブ・未読状態を確認中…</string>
-    <string name="chat_refresh_status">状態を更新</string>
     <string name="chat_inbox">受信トレイ</string>
     <string name="chat_mark_all_read">すべて既読にする</string>
     <string name="chat_mark_all_read_unconfirmed">一部のチャットが未読のままの可能性があります。</string>
@@ -31,7 +29,6 @@
     <string name="chat_agent_identity">Okou · %1$s</string>
     <string name="chat_pinned">ピン留め済み</string>
     <string name="chat_active">アクティブ</string>
-    <string name="chat_metadata_cached">保存済みの Okou とプロジェクトの名前を表示しています。</string>
     <string name="chat_actions">チャットの操作</string>
     <string name="chat_mark_read">既読にする</string>
     <string name="chat_mark_unread">未読にする</string>

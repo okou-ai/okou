@@ -94,6 +94,7 @@ class SessionModel(
     private val appearanceCache: MemberAppearanceCache,
     private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
     updatesRequired: Flow<Boolean> = emptyFlow(),
+    private val connectivity: Flow<Boolean> = emptyFlow(),
 ) : ViewModel() {
     @Volatile private var generation = 0L
     private val mutable = MutableStateFlow(SessionUiState(generation))
@@ -260,6 +261,7 @@ class SessionModel(
                                 onFailure = { error -> workspaceFailure(ticket, snapshot, error) },
                                 dispatcher = dispatcher,
                                 realtime = owner,
+                                connectivity = connectivity,
                             )
                         }
                     val opened = OpeningWorkspace.Authorized(identity, organization, chats)

@@ -1,5 +1,21 @@
 # Changelog
 
+## [10.35.2](https://github.com/okou-ai/okou/compare/cli-v10.35.1...cli-v10.35.2) (2026-11-20)
+
+
+### Refactoring
+
+* retire the single-agent feature switch ([#49556](https://github.com/okou-ai/okou/issues/49556)) ([4e5707d](https://github.com/okou-ai/okou/commit/4e5707de3ea728c59038345c47399cd51510a499))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.95.3
+    * @okouai/core bumped to 8.857.6
+    * @okouai/pi-agent-runtime bumped to 1.52.18
+
 ## [10.35.1](https://github.com/okou-ai/okou/compare/cli-v10.35.0...cli-v10.35.1) (2026-11-20)
 
 

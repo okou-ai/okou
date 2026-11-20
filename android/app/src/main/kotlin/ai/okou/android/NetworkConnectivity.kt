@@ -1,4 +1,4 @@
-package ai.okou.android.updates
+package ai.okou.android
 
 import android.content.Context
 import android.net.ConnectivityManager
@@ -11,7 +11,7 @@ import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 
-internal fun Context.observeUpdateConnectivity(): Flow<Boolean> {
+internal fun Context.observeValidatedConnectivity(): Flow<Boolean> {
     val manager = checkNotNull(getSystemService(ConnectivityManager::class.java))
     return callbackFlow {
             val callback =

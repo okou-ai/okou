@@ -54,10 +54,13 @@ export type SeedSkillVolume = SkillVolume & {
   readonly source: "system_skill";
 };
 
-/** Prompt text and skill or template guidance packages for one run. */
-export interface RunPromptAndSkills {
+export interface RunPrompt {
   readonly systemPromptVariables: SystemPromptVariables;
   readonly userPromptVariables: UserPromptVariables;
+}
+
+/** Prompt text and the packages that support it. */
+export interface RunPromptAndSkills extends RunPrompt {
   readonly skillVolumes: readonly SkillVolume[];
 }
 
@@ -83,27 +86,14 @@ function mergePromptVariables<T extends object>(target: T, source: T): void {
   }
 }
 
-export function mergeRunPromptAndSkills(
-  parts: readonly RunPromptAndSkills[],
-): RunPromptAndSkills {
+export function mergeRunPrompt(parts: readonly RunPrompt[]): RunPrompt {
   const systemPromptVariables: SystemPromptVariables = {};
   const userPromptVariables: UserPromptVariables = {};
-  const skillVolumes: SkillVolume[] = [];
   for (const part of parts) {
     mergePromptVariables(systemPromptVariables, part.systemPromptVariables);
     mergePromptVariables(userPromptVariables, part.userPromptVariables);
-    skillVolumes.push(...part.skillVolumes);
   }
-  return {
-    systemPromptVariables,
-    userPromptVariables,
-    // Preserve mount precedence while keeping each source's captured order.
-    skillVolumes: skillVolumes.sort((left, right) => {
-      return (
-        VOLUME_SOURCE_ORDER[left.source] - VOLUME_SOURCE_ORDER[right.source]
-      );
-    }),
-  };
+  return { systemPromptVariables, userPromptVariables };
 }
 
 type ResolvedSkillVolume =
@@ -118,7 +108,11 @@ export function resolveRunSkillVolumes(
   volumes: readonly SkillVolume[],
   skillsRoot: string,
 ): readonly ResolvedSkillVolume[] {
-  return volumes.map((volume) => {
+  // Preserve mount precedence and each source's captured order.
+  const ordered = [...volumes].sort((left, right) => {
+    return VOLUME_SOURCE_ORDER[left.source] - VOLUME_SOURCE_ORDER[right.source];
+  });
+  return ordered.map((volume) => {
     if (volume.source === "request_additional_volume") {
       return volume;
     }
@@ -135,7 +129,7 @@ interface RenderedRunPrompts {
 }
 
 /** Render the complete prompt contributions in their stable injection order. */
-export function renderRunPrompts(part: RunPromptAndSkills): RenderedRunPrompts {
+export function renderRunPrompts(part: RunPrompt): RenderedRunPrompts {
   const variables = part.systemPromptVariables;
   return {
     userPrompt: part.userPromptVariables.message ?? "",

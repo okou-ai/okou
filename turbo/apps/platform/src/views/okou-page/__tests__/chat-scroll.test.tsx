@@ -1,5 +1,11 @@
 import { chatThreadEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
-import { act, fireEvent, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 
 import {
@@ -63,8 +69,10 @@ interface ChatScrollGeometry {
   readonly growBeforeMessages: (height: number) => void;
 }
 
+type PublishedChatEvent = MockChatEventInput & { readonly seqId: number };
+
 interface MutableConversation {
-  readonly publish: (events: readonly MockChatEventInput[]) => void;
+  readonly publish: (events: readonly PublishedChatEvent[]) => Promise<void>;
 }
 
 function rect(top: number, height: number, width = 800, left = 0): DOMRect {
@@ -249,7 +257,7 @@ function installViewportHeightBeforeOpen(viewportHeight: number): void {
   );
 }
 
-function completedTurn(turn: number): MockChatEventInput[] {
+function completedTurn(turn: number): PublishedChatEvent[] {
   const runId = `scroll-run-${turn.toString()}`;
   const minute = turn.toString().padStart(2, "0");
   const firstSeqId = (turn - 1) * 3 + 1;
@@ -311,6 +319,8 @@ function mockMutableConversation(
     chatEvents: [...initialEvents],
     activeRunIds: [...activeRunIds],
   });
+  let acknowledgeRows:
+    ((rows: readonly { seqId: number }[]) => void) | undefined;
   const rowsSince = (sinceSeqId: number) => {
     return mockChatEventRows(normalizeMockChatEvents(events, threadId))
       .filter((row) => {
@@ -328,33 +338,54 @@ function mockMutableConversation(
   context.mocks.api(
     chatThreadEventsContract.rows,
     ({ params, query, respond }) => {
-      return respond(
-        200,
-        chatEventRowsResponse(
-          params.threadId === threadId
-            ? rowsSince(query.sinceSeqId).slice(0, query.limit ?? 50)
-            : [],
-          query,
-        ),
-      );
+      const rows =
+        params.threadId === threadId
+          ? rowsSince(query.sinceSeqId).slice(0, query.limit ?? 50)
+          : [];
+      const response = respond(200, chatEventRowsResponse(rows, query));
+      acknowledgeRows?.(rows);
+      return response;
     },
   );
   // The Worker may warm its cache through the batched endpoint before the
   // page fetches rows. Both endpoints must describe the same persisted events.
   context.mocks.api(chatThreadEventsContract.catchUp, ({ body, respond }) => {
-    return respond(200, {
-      events: Object.fromEntries(
-        body.map(([id, sinceSeqId]) => {
-          return [id, id === threadId ? rowsSince(sinceSeqId) : []];
-        }),
-      ),
+    const eventRows = body.map(([id, sinceSeqId]) => {
+      return [id, id === threadId ? rowsSince(sinceSeqId) : []] as const;
+    });
+    const response = respond(200, {
+      events: Object.fromEntries(eventRows),
       notFoundThreads: [],
     });
+    for (const [, rows] of eventRows) {
+      acknowledgeRows?.(rows);
+    }
+    return response;
   });
   return {
-    publish: (nextEvents) => {
-      events.push(...nextEvents);
-      createChatEvent(threadId);
+    publish: async (nextEvents) => {
+      const pendingSeqIds = new Set(
+        nextEvents.map((event) => {
+          return event.seqId;
+        }),
+      );
+      const returned = context.mocks.deferred<void>();
+      acknowledgeRows = (rows) => {
+        for (const row of rows) {
+          pendingSeqIds.delete(row.seqId);
+        }
+        if (pendingSeqIds.size === 0) {
+          acknowledgeRows = undefined;
+          returned.resolve();
+        }
+      };
+      // The notification starts an asynchronous catch-up. Wait for the mock
+      // API to return this batch before asserting its effect on the page.
+      await act(async () => {
+        events.push(...nextEvents);
+        createChatEvent(threadId);
+        await returned.promise;
+      });
     },
   };
 }
@@ -675,9 +706,7 @@ test("Keep the pre-hide anchor when incoming messages arrive behind automations"
   const anchorY = anchorById(container, readingId).getBoundingClientRect().top;
   await openUtilityAutomations();
   const frames = controlRevealFrames();
-  act(() => {
-    conversation.publish(completedTurn(9));
-  });
+  await conversation.publish(completedTurn(9));
   await screen.findByText("History answer 9");
   geometry.writes.length = 0;
   click(buttonByLabel("Close automations"));
@@ -777,9 +806,7 @@ test("Hand the retained primary transcript restore to the new Router page when t
     ).toBe(nextAnchorY);
     expect(container.scrollTop).toBe(550);
   });
-  act(() => {
-    conversation.publish(completedTurn(9));
-  });
+  await conversation.publish(completedTurn(9));
   await screen.findByText("History answer 9");
   await frames.paint();
   await waitFor(() => {
@@ -809,9 +836,7 @@ test("Keep a fresh live history capture after tail when incoming messages arrive
   await openUtilityAutomations();
   expect(container.clientHeight).toBe(0);
   const frames = controlRevealFrames();
-  act(() => {
-    conversation.publish(completedTurn(9));
-  });
+  await conversation.publish(completedTurn(9));
   await screen.findByText("History answer 9");
   click(buttonByLabel("Close automations"));
   await waitFor(() => {
@@ -883,25 +908,23 @@ test("Keep the captured oldest message when automations closes during incoming M
   const anchorY = anchorById(container, readingId).getBoundingClientRect().top;
   await openUtilityAutomations();
   const frames = controlRevealFrames();
-  act(() => {
-    conversation.publish(
-      completedTurn(9).map((event) => {
-        return event.id === "scroll-assistant-9"
-          ? {
-              ...event,
-              content: [
-                "History answer 9",
-                "",
-                "```mermaid",
-                "flowchart TD",
-                `  Incoming@{ img: "${imageUrl}", h: 80 }`,
-                "```",
-              ].join("\n"),
-            }
-          : event;
-      }),
-    );
-  });
+  await conversation.publish(
+    completedTurn(9).map((event) => {
+      return event.id === "scroll-assistant-9"
+        ? {
+            ...event,
+            content: [
+              "History answer 9",
+              "",
+              "```mermaid",
+              "flowchart TD",
+              `  Incoming@{ img: "${imageUrl}", h: 80 }`,
+              "```",
+            ].join("\n"),
+          }
+        : event;
+    }),
+  );
   // This gate is the real renderer's external Image.decode, not an internal
   // presentation mock. Close only once preparation has genuinely suspended.
   await waitFor(() => {
@@ -1318,7 +1341,7 @@ test("Preserve the visible message as content grows", async () => {
   });
 });
 
-async function completeRunWhileReadingExpandedWork() {
+test("Keep expanded work history and its duration visible after the run completes", async () => {
   // A live run demands activity summaries, whose contract requires a UUID run ID.
   const activeRunId = "a0000000-0000-4000-a000-000000000937";
   const conversation = mockMutableConversation(
@@ -1352,58 +1375,50 @@ async function completeRunWhileReadingExpandedWork() {
     ],
     [activeRunId],
   );
-  await setupPage({
-    context,
-    path: `/chats/${THREAD_IDS.expandedWork}`,
-    host: "app.okou.ai",
-  });
-  await screen.findByText("Reading the rollout health report");
-  await waitFor(() => {
-    expect(
-      document.querySelector("[data-chat-skeleton]"),
-    ).not.toBeInTheDocument();
-  });
+  const container = await openConversation(
+    THREAD_IDS.expandedWork,
+    "Reading the rollout health report",
+  );
+  const transcript = within(container);
 
   click(buttonByLabel("Expand work history"));
-  await screen.findByText("Checked the first rollout stage");
-  const container = chatScrollContainer();
+  await transcript.findByText("Checked the first rollout stage");
   const geometry = installChatScrollGeometry(container);
   scrollFromUser(container, geometry.bottomScrollTop() - 150);
   await expectHistoryPositionHeld();
+  const readingAnchor = geometry.firstVisibleAnchor();
+  const readingAnchorId = anchorId(readingAnchor);
+  const readingTop = readingAnchor.getBoundingClientRect().top;
 
-  act(() => {
-    conversation.publish([
-      {
-        id: "scroll-expanded-work-final",
-        role: "assistant",
-        content: "The rollout is healthy",
-        runId: activeRunId,
-        seqId: 22,
-        createdAt: "2026-08-20T12:21:00.000Z",
-      },
-      {
-        id: "scroll-expanded-work-complete",
-        role: "assistant",
-        content: null,
-        runId: activeRunId,
-        runLifecycleEvent: "completed",
-        seqId: 23,
-        createdAt: "2026-08-20T12:21:01.000Z",
-      },
-    ]);
-  });
+  await conversation.publish([
+    {
+      id: "scroll-expanded-work-final",
+      role: "assistant",
+      content: "The rollout is healthy",
+      runId: activeRunId,
+      seqId: 22,
+      createdAt: "2026-08-20T12:21:00.000Z",
+    },
+    {
+      id: "scroll-expanded-work-complete",
+      role: "assistant",
+      content: null,
+      runId: activeRunId,
+      runLifecycleEvent: "completed",
+      seqId: 23,
+      createdAt: "2026-08-20T12:21:01.000Z",
+    },
+  ]);
 
-  await screen.findByText("The rollout is healthy");
-  await screen.findByText("Worked for 1 min");
-}
-
-test("Keep expanded work history and its duration visible after the run completes", async () => {
-  await completeRunWhileReadingExpandedWork();
-  await waitFor(() => {
-    expect(screen.getByText("Checked the first rollout stage")).toBeVisible();
-    expect(buttonByLabel("Collapse work history")).toBeVisible();
-    expect(screen.getByText("Worked for 1 min")).toBeVisible();
-  });
+  await expect(
+    transcript.findByText("The rollout is healthy"),
+  ).resolves.toBeInTheDocument();
+  expect(transcript.getByText("Checked the first rollout stage")).toBeVisible();
+  expect(buttonByLabel("Collapse work history")).toBeVisible();
+  expect(transcript.getByText("Worked for 1 min")).toBeVisible();
+  expect(
+    anchorById(container, readingAnchorId).getBoundingClientRect().top,
+  ).toBe(readingTop);
 });
 
 test("Follow new messages while reading the latest reply", async () => {
@@ -1418,9 +1433,7 @@ test("Follow new messages while reading the latest reply", async () => {
   const geometry = installChatScrollGeometry(container);
   expect(container.scrollTop).toBe(geometry.bottomScrollTop());
 
-  act(() => {
-    conversation.publish(completedTurn(6));
-  });
+  await conversation.publish(completedTurn(6));
 
   const incomingAnswer = await screen.findByText("History answer 6");
   expect(incomingAnswer).toBeVisible();
@@ -1446,9 +1459,7 @@ test("Preserve the reading position when new messages are added", async () => {
   const readingAnchorId = anchorId(readingAnchor);
   const readingTop = readingAnchor.getBoundingClientRect().top;
 
-  act(() => {
-    conversation.publish(completedTurn(11));
-  });
+  await conversation.publish(completedTurn(11));
 
   const liveAnswer = await screen.findByText("History answer 11");
   expect(liveAnswer).toBeVisible();
@@ -1458,9 +1469,7 @@ test("Preserve the reading position when new messages are added", async () => {
     ).toBe(readingTop);
   });
 
-  act(() => {
-    conversation.publish(completedTurn(12));
-  });
+  await conversation.publish(completedTurn(12));
 
   const nextAnswer = await screen.findByText("History answer 12");
   expect(nextAnswer).toBeVisible();

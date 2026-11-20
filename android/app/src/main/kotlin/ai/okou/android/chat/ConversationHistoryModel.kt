@@ -65,10 +65,18 @@ class ConversationHistoryModel(
     private var job: Job? = null
     private var detailJob: Job? = null
     private var visit: ConversationReadSession? = null
-    private var confirmed: CachedHistory? = null
+
+    private data class ConfirmedTimeline(
+        val history: CachedHistory,
+        val transcript: HistoryTranscript,
+    )
+
+    private var confirmed: ConfirmedTimeline? = null
+    // The active timeline is kept separately. Only inactive visits count toward this limit.
+    private val recent = linkedMapOf<String, ConfirmedTimeline>()
 
     internal fun checkpoint(threadId: String): HistoryCheckpoint? =
-        confirmed?.checkpoint?.takeIf { current(generation) && it.threadId == threadId }
+        confirmed?.history?.checkpoint?.takeIf { current(generation) && it.threadId == threadId }
 
     private val dirty = mutableMapOf<String, CachedHistory>()
     private val invalidations = Channel<Long>(Channel.CONFLATED)
@@ -105,8 +113,19 @@ class ConversationHistoryModel(
         visit?.close()
         visit = null
         output.visible(false)
-        confirmed = null
-        publish(ConversationUiState(thread = thread, generation = generation))
+        confirmed?.let { recent[it.history.checkpoint.threadId] = it }
+        val restored = recent.remove(thread.id)
+        if (recent.size > 3) recent.remove(recent.keys.first())
+        confirmed = restored
+        publish(
+            ConversationUiState(
+                thread = thread,
+                transcript = restored?.transcript,
+                source = restored?.let { ChatListSource.Cache },
+                cacheUnavailable = thread.id in dirty,
+                generation = generation,
+            )
+        )
         refresh()
     }
 
@@ -153,7 +172,7 @@ class ConversationHistoryModel(
         publish(mutable.value.copy(phase = HistoryPhase.Loading, confirmation = null))
         job =
             scope.launch {
-                var saved = confirmed ?: dirty[thread.id]
+                var saved = dirty[thread.id] ?: confirmed?.history
                 if (saved == null) {
                     try {
                         saved = cache.loadHistory(thread.id)
@@ -167,7 +186,7 @@ class ConversationHistoryModel(
                 if (saved != null && confirmed == null) {
                     val transcript = withContext(dispatcher) { projectHistory(saved.checkpoint) }
                     requireCurrent(ticket)
-                    confirmed = saved
+                    confirmed = ConfirmedTimeline(saved, transcript)
                     publish(
                         mutable.value.copy(transcript = transcript, source = ChatListSource.Cache)
                     )
@@ -195,7 +214,7 @@ class ConversationHistoryModel(
                     }
                     val transcript = withContext(dispatcher) { projectHistory(next.checkpoint) }
                     requireCurrent(ticket)
-                    confirmed = next
+                    confirmed = ConfirmedTimeline(next, transcript)
                     publish(
                         mutable.value.copy(
                             transcript = transcript,
@@ -257,6 +276,7 @@ class ConversationHistoryModel(
 
     private suspend fun missing(threadId: String, ticket: Long, error: Exception) {
         confirmed = null
+        recent.remove(threadId)
         dirty.remove(threadId)
         publish(
             mutable.value.copy(
@@ -277,6 +297,12 @@ class ConversationHistoryModel(
             requireCurrent(ticket)
             publish(mutable.value.copy(cacheUnavailable = true))
         }
+    }
+
+    internal fun forgetWarmedHistory(threadId: String) {
+        if (retired || !authorized() || mutable.value.thread?.id == threadId) return
+        recent.remove(threadId)
+        dirty.remove(threadId)
     }
 
     fun refreshAfterSend(threadId: String) {
@@ -329,6 +355,9 @@ class ConversationHistoryModel(
         detailJob?.cancel()
         visit?.close()
         visit = null
+        confirmed = null
+        recent.clear()
         dirty.clear()
+        mutable.value = ConversationUiState(generation = generation)
     }
 }

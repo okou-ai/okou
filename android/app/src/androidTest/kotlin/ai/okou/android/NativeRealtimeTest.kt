@@ -186,7 +186,8 @@ class NativeRealtimeTest {
                 shown == visible
             }
             device.awaitChatList(app)
-            text(app.getString(R.string.realtime_connecting))
+            val connecting = app.getString(R.string.realtime_connecting)
+            assertFalse(device.hasObject(label(connecting)))
             scenario.onActivity {
                 val ready =
                     checkNotNull(
@@ -201,6 +202,8 @@ class NativeRealtimeTest {
             condition { chats?.uiState?.value?.threads?.any { it.id == CHAT_PERSONAL } == true }
             reveal("Personal chat")
             text("Personal chat").click()
+            step = "Show realtime status in the open conversation"
+            text(connecting)
             assertNotNull(
                 device.wait(
                     Until.findObject(By.pkg(app.packageName).textContains("Native history")),

@@ -1,17 +1,15 @@
 <resources>
+    <string name="chat_list_offline">Offline</string>
+    <string name="chat_list_refresh_failed">Daftar chat gagal diperbarui</string>
+    <string name="chat_list_first_load_failed">Untuk sementara tidak dapat dimuat</string>
+    <string name="chat_list_load_when_online">Chat akan dimuat saat Anda kembali online.</string>
     <string name="chat_list_title">Chat</string>
     <string name="chat_refresh">Muat ulang chat</string>
     <string name="chat_loading">Memuat chat…</string>
-    <string name="chat_refreshing">Memperbarui chat…</string>
-    <string name="chat_load_failed">Chat tidak dapat dimuat. Periksa koneksi lalu coba lagi.</string>
     <string name="chat_refresh_failed">Tidak dapat memperbarui. Menampilkan chat terakhir yang dimuat.</string>
     <string name="chat_cached">Menampilkan chat tersimpan.</string>
     <string name="chat_cache_unavailable">Penyimpanan offline tidak tersedia. Chat ini mungkin tidak tersedia setelah aplikasi dimulai ulang.</string>
-    <string name="chat_metadata_loading">Memuat nama Okou dan Proyek…</string>
     <string name="chat_metadata_unavailable">Sebagian informasi Okou atau Proyek tidak tersedia.</string>
-    <string name="chat_status_unavailable">Status tidak dapat diperbarui. Indikator sebelumnya mungkin sudah tidak akurat.</string>
-    <string name="chat_status_loading">Memeriksa status aktif dan belum dibaca…</string>
-    <string name="chat_refresh_status">Perbarui status</string>
     <string name="chat_inbox">Kotak masuk</string>
     <string name="chat_mark_all_read">Tandai semua sebagai telah dibaca</string>
     <string name="chat_mark_all_read_unconfirmed">Beberapa chat mungkin masih belum dibaca.</string>
@@ -31,7 +29,6 @@
     <string name="chat_agent_identity">Okou · %1$s</string>
     <string name="chat_pinned">Disematkan</string>
     <string name="chat_active">Aktif</string>
-    <string name="chat_metadata_cached">Menampilkan nama Okou dan Proyek yang tersimpan.</string>
     <string name="chat_actions">Tindakan chat</string>
     <string name="chat_mark_read">Tandai sudah dibaca</string>
     <string name="chat_mark_unread">Tandai belum dibaca</string>

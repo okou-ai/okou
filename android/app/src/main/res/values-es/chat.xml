@@ -1,17 +1,15 @@
 <resources>
+    <string name="chat_list_offline">Sin conexión</string>
+    <string name="chat_list_refresh_failed">No se pudo actualizar la lista de chats</string>
+    <string name="chat_list_first_load_failed">No se puede cargar temporalmente</string>
+    <string name="chat_list_load_when_online">Los chats se cargarán al volver a conectarte.</string>
     <string name="chat_list_title">Chats</string>
     <string name="chat_refresh">Actualizar chats</string>
     <string name="chat_loading">Cargando chats…</string>
-    <string name="chat_refreshing">Actualizando chats…</string>
-    <string name="chat_load_failed">No se pudieron cargar los chats. Comprueba tu conexión e inténtalo de nuevo.</string>
     <string name="chat_refresh_failed">No se pudieron actualizar. Se muestran los últimos chats cargados.</string>
     <string name="chat_cached">Se muestran los chats guardados.</string>
     <string name="chat_cache_unavailable">El almacenamiento sin conexión no está disponible. Estos chats podrían no estar disponibles después de reiniciar.</string>
-    <string name="chat_metadata_loading">Cargando nombres de Okou y proyectos…</string>
     <string name="chat_metadata_unavailable">Parte de la información de Okou o de los proyectos no está disponible.</string>
-    <string name="chat_status_unavailable">No se pudo actualizar el estado. Los indicadores anteriores pueden estar desactualizados.</string>
-    <string name="chat_status_loading">Comprobando actividad y estado de lectura…</string>
-    <string name="chat_refresh_status">Actualizar estado</string>
     <string name="chat_inbox">Bandeja de entrada</string>
     <string name="chat_mark_all_read">Marcar todo como leído</string>
     <string name="chat_mark_all_read_unconfirmed">Es posible que algunos chats sigan sin leer.</string>
@@ -32,7 +30,6 @@
     <string name="chat_agent_identity">Okou · %1$s</string>
     <string name="chat_pinned">Fijado</string>
     <string name="chat_active">Activo</string>
-    <string name="chat_metadata_cached">Se muestran los nombres guardados de Okou y proyectos.</string>
     <string name="chat_actions">Acciones del chat</string>
     <string name="chat_mark_read">Marcar como leído</string>
     <string name="chat_mark_unread">Marcar como no leído</string>

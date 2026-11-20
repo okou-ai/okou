@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.5](https://github.com/okou-ai/okou/compare/runner-provider-v0.21.4...runner-provider-v0.21.5) (2026-11-20)
+
+
+### Refactoring
+
+* **runner:** retire optional execution package handling ([#49568](https://github.com/okou-ai/okou/issues/49568)) ([3ec3a12](https://github.com/okou-ai/okou/commit/3ec3a12f234394a2594d07852747fe45f1c08433))
+
 ## [0.21.4](https://github.com/okou-ai/okou/compare/runner-provider-v0.21.3...runner-provider-v0.21.4) (2026-11-20)
 
 ## [0.21.3](https://github.com/okou-ai/okou/compare/runner-provider-v0.21.2...runner-provider-v0.21.3) (2026-11-20)

@@ -5,14 +5,14 @@ import {
   telegramPromptFromContext,
   type TelegramThreadContext,
 } from "../telegram-queued-launch-context.service";
-import type { RunPromptAndSkills } from "../run-prompt-and-skills";
+import type { RunPrompt } from "../run-prompt-and-skills";
 import type { PickedThreadInputEvent } from "./types";
 
 export function createTelegramThreadPrompt(
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
   context$: Computed<Promise<TelegramThreadContext>>,
   featureSwitches$: Computed<Promise<FeatureSwitchContext>>,
-): Computed<Promise<RunPromptAndSkills | null>> {
+): Computed<Promise<RunPrompt | null>> {
   return computed(async (get) => {
     const pickedEvent = await get(pickedEvent$);
     if (pickedEvent?.contextType !== "telegram") {
@@ -50,7 +50,6 @@ export function createTelegramThreadPrompt(
         integrationContext: material.appendSystemPrompt,
         channelUserIdentity: identity.join("\n"),
       },
-      skillVolumes: [],
     };
   });
 }

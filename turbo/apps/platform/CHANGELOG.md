@@ -13,6 +13,28 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1160.0](https://github.com/okou-ai/okou/compare/app-v0.1159.0...app-v0.1160.0) (2026-11-20)
+
+
+### Features
+
+* **platform:** give the bottom capability cards room above their buttons ([#49558](https://github.com/okou-ai/okou/issues/49558)) ([069d88d](https://github.com/okou-ai/okou/commit/069d88d718e2bbdf2c9c876f086cec0e6784df8c))
+
+
+### Refactoring
+
+* **platform:** simplify project dialog closing ([#49593](https://github.com/okou-ai/okou/issues/49593)) ([7ff3bdc](https://github.com/okou-ai/okou/commit/7ff3bdc0e3606592e895f3545b62d4c1265640ca))
+* retire the single-agent feature switch ([#49556](https://github.com/okou-ai/okou/issues/49556)) ([4e5707d](https://github.com/okou-ai/okou/commit/4e5707de3ea728c59038345c47399cd51510a499))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.95.3
+    * @okouai/core bumped to 8.857.6
+    * @okouai/ui bumped to 1.21.75
+
 ## [0.1159.0](https://github.com/okou-ai/okou/compare/app-v0.1158.0...app-v0.1159.0) (2026-11-20)
 
 

@@ -1,17 +1,15 @@
 <resources>
+    <string name="chat_list_offline">Hors ligne</string>
+    <string name="chat_list_refresh_failed">Échec de l’actualisation de la liste des chats</string>
+    <string name="chat_list_first_load_failed">Chargement temporairement indisponible</string>
+    <string name="chat_list_load_when_online">Les chats se chargeront dès que vous serez de nouveau en ligne.</string>
     <string name="chat_list_title">Discussions</string>
     <string name="chat_refresh">Actualiser les discussions</string>
     <string name="chat_loading">Chargement des discussions…</string>
-    <string name="chat_refreshing">Actualisation des discussions…</string>
-    <string name="chat_load_failed">Impossible de charger les discussions. Vérifiez votre connexion et réessayez.</string>
     <string name="chat_refresh_failed">Actualisation impossible. Les dernières discussions chargées sont affichées.</string>
     <string name="chat_cached">Les discussions enregistrées sont affichées.</string>
     <string name="chat_cache_unavailable">Le stockage hors ligne est indisponible. Ces discussions pourraient être indisponibles après un redémarrage.</string>
-    <string name="chat_metadata_loading">Chargement des noms Okou et des projets…</string>
     <string name="chat_metadata_unavailable">Certaines informations Okou ou de projet sont indisponibles.</string>
-    <string name="chat_status_unavailable">Actualisation des états impossible. Les anciens indicateurs peuvent être obsolètes.</string>
-    <string name="chat_status_loading">Vérification des états actif et non lu…</string>
-    <string name="chat_refresh_status">Actualiser les états</string>
     <string name="chat_inbox">Boîte de réception</string>
     <string name="chat_mark_all_read">Tout marquer comme lu</string>
     <string name="chat_mark_all_read_unconfirmed">Certaines discussions sont peut-être encore non lues.</string>
@@ -32,7 +30,6 @@
     <string name="chat_agent_identity">Okou · %1$s</string>
     <string name="chat_pinned">Épinglée</string>
     <string name="chat_active">Active</string>
-    <string name="chat_metadata_cached">Les noms Okou et des projets enregistrés sont affichés.</string>
     <string name="chat_actions">Actions de la discussion</string>
     <string name="chat_mark_read">Marquer comme lu</string>
     <string name="chat_mark_unread">Marquer comme non lu</string>

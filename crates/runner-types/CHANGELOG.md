@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.2](https://github.com/okou-ai/okou/compare/runner-types-v0.19.1...runner-types-v0.19.2) (2026-11-20)
+
+
+### Refactoring
+
+* **runner:** retire optional execution package handling ([#49568](https://github.com/okou-ai/okou/issues/49568)) ([3ec3a12](https://github.com/okou-ai/okou/commit/3ec3a12f234394a2594d07852747fe45f1c08433))
+
 ## [0.19.1](https://github.com/okou-ai/okou/compare/runner-types-v0.19.0...runner-types-v0.19.1) (2026-11-20)
 
 
