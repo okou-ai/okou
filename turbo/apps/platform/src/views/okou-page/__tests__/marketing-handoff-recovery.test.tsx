@@ -4,6 +4,7 @@ import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { cleanup, screen, waitFor } from "@testing-library/react";
 import { HttpResponse } from "msw";
 import { expect, test, vi } from "vitest";
+import { mockOnboardingDraft } from "../../../__tests__/mock-onboarding-draft.ts";
 import { fill, setupPage } from "../../../__tests__/page-helper.ts";
 import {
   createTestRuntime,
@@ -154,6 +155,7 @@ test.each([true, false])(
 );
 
 test("An unavailable task resumes the saved onboarding step and edited request", async () => {
+  const savedDraft = mockOnboardingDraft(context);
   context.mocks.data.onboardingStatus({
     needsOnboarding: true,
     onboardingComplete: false,
@@ -173,6 +175,11 @@ test("An unavailable task resumes the saved onboarding step and edited request",
     await screen.findByLabelText("Your first task"),
     "Keep my onboarding draft",
   );
+  await waitFor(() => {
+    expect(savedDraft()?.answers.startingPromptDraft).toBe(
+      "Keep my onboarding draft",
+    );
+  });
   originalApp.store.set(stopOriginalPage$);
   cleanup();
   vi.mocked(window.history.pushState).mockRestore();

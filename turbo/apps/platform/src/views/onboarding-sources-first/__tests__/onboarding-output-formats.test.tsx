@@ -1,7 +1,6 @@
-import { onboardingDraftContract } from "@okouai/api-contracts/contracts/onboarding";
-import type { OnboardingDraftPayload } from "@okouai/api-contracts/validators/onboarding";
 import { cleanup, screen, waitFor } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
+import { mockOnboardingDraft } from "../../../__tests__/mock-onboarding-draft.ts";
 import {
   click,
   fill,
@@ -203,15 +202,7 @@ test("the selected format reserves space within the saved prompt limit", async (
 });
 
 test("a reload preserves the task and separate format selection without duplicating instructions", async () => {
-  let savedDraft: (OnboardingDraftPayload & { revision: string }) | null = null;
-  context.mocks.api(onboardingDraftContract.get, ({ respond }) => {
-    return respond(200, { draft: savedDraft });
-  });
-  context.mocks.api(onboardingDraftContract.save, ({ body, respond }) => {
-    const revision = crypto.randomUUID();
-    savedDraft = { ...body, revision };
-    return respond(200, { revision });
-  });
+  const savedDraft = mockOnboardingDraft(context);
   let sentPrompt: string | undefined;
   mockChatLifecycle(context, {
     onRunCreate: (body) => {
@@ -226,7 +217,7 @@ test("a reload preserves the task and separate format selection without duplicat
   await waitFor(() => {
     expect(input).toHaveValue(TASK);
     expect(button("Presentation")).toHaveAttribute("aria-pressed", "true");
-    expect(savedDraft?.answers.startingPromptOutput?.format).toBe(
+    expect(savedDraft()?.answers.startingPromptOutput?.format).toBe(
       "presentation",
     );
   });
