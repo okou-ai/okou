@@ -562,14 +562,14 @@ agent-suggestions-021	turbo/apps/platform/src/views/okou-page/__tests__/agent-su
 agent-suggestions-022	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx	The custom direction editor sends the background files without the home draft	967	passed
 agent-suggestions-028	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx	Choosing an action confirms the send while its consumption is still saving	670	passed
 agent-suggestions-037	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx	For you expands the composer inside the active card and advances after sending	1009	passed
-agent-suggestions-004	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions-deck.test.tsx	For you preloads details when its sidebar shows an unread dot	168	passed
-agent-suggestions-007	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions-deck.test.tsx	For you opens the new owner's cards after an active workspace change	203	passed
-agent-suggestions-023	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions-deck.test.tsx	Not planned advances to the next card and Undo restores the selected card	252	passed
-agent-suggestions-025	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions-deck.test.tsx	Feedback on a card that left the pool refreshes the suggestions with a notice	274	passed
-agent-suggestions-026	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions-deck.test.tsx	Retrying feedback for a card that has since left the pool refreshes the suggestions	330	passed
-agent-suggestions-027	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions-deck.test.tsx	Slow feedback leaves other cards usable and Undo restores the original card in order	378	passed
-agent-suggestions-039	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions-deck.test.tsx	An empty For you page stays accessible and reports zero suggestions	428	passed
-agent-suggestions-041	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions-deck.test.tsx	For you handles a suggestion and a platform event in the same deck	440	passed
+agent-suggestions-004	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions-deck.test.tsx	For you preloads details when its sidebar shows an unread dot	172	passed
+agent-suggestions-007	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions-deck.test.tsx	For you opens the new owner's cards after an active workspace change	207	passed
+agent-suggestions-023	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions-deck.test.tsx	Not planned advances to the next card and Undo restores the selected card	256	passed
+agent-suggestions-025	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions-deck.test.tsx	Feedback on a card that left the pool refreshes the suggestions with a notice	278	passed
+agent-suggestions-026	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions-deck.test.tsx	Retrying feedback for a card that has since left the pool refreshes the suggestions	334	passed
+agent-suggestions-027	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions-deck.test.tsx	Slow feedback leaves other cards usable and Undo restores the original card in order	382	passed
+agent-suggestions-039	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions-deck.test.tsx	An empty For you page stays accessible and reports zero suggestions	432	passed
+agent-suggestions-041	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions-deck.test.tsx	For you handles a suggestion and a platform event in the same deck	444	passed
 connectors-accounts-001	turbo/apps/platform/src/views/okou-page/__tests__/connectors-accounts.test.tsx	Manage each saved account's default availability independently	247	passed
 connectors-accounts-003	turbo/apps/platform/src/views/okou-page/__tests__/connectors-accounts.test.tsx	Disconnect an account while retaining another enabled account	282	passed
 connectors-accounts-004	turbo/apps/platform/src/views/okou-page/__tests__/connectors-accounts.test.tsx	Keep the exact account and current reconnect UI when future setup metadata is present	329	passed

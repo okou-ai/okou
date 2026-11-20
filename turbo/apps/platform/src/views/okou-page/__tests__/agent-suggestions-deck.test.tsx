@@ -162,7 +162,11 @@ async function undoFrom(message: string): Promise<void> {
   if (!toast) {
     throw new Error(`Expected a toast for "${message}"`);
   }
-  click(getAction("button", "Undo", toast));
+  const undo = getAction("button", "Undo", toast);
+  click(undo);
+  await waitFor(() => {
+    expect(undo).not.toBeInTheDocument();
+  });
 }
 
 test("For you preloads details when its sidebar shows an unread dot", async () => {
