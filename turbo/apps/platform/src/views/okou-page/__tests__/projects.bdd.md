@@ -217,7 +217,7 @@ Original test `Deleting a Project closes its dialog before its chats finish sync
 
 Original test `A rejected Project deletion stays open and can be retried`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/projects.test.tsx#L1359).
 
-- **Given** The user has opened the deletion dialog for Launch, and the first deletion attempt will be rejected.
+- **Given** The user has opened the deletion dialog for Launch, its thread query returns an empty list, and the first deletion attempt will be rejected. Project thread deletion is enabled by default since [#49617](https://github.com/okou-ai/okou/pull/49617).
 - **When** The user confirms deletion, then retries after the rejection.
 - **Then** While the request is pending, the delete button is disabled and Launch remains. The rejected attempt shows an error, leaves the dialog open, and re-enables the button. A successful retry closes the dialog, removes Launch, and keeps the user on the current chat.
 
