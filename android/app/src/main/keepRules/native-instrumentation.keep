@@ -764,6 +764,7 @@
 }
 -keep,allowobfuscation class kotlin.collections.MapsKt__MapsJVMKt {
   public static int mapCapacity(int);
+  public static java.util.Map mapOf(kotlin.Pair);
 }
 -keep,allowobfuscation class kotlin.collections.MapsKt__MapsKt {
   public static java.util.Map emptyMap();
