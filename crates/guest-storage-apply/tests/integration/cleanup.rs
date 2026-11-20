@@ -27,6 +27,56 @@ fn cleanup_manifest(
 }
 
 #[test]
+fn cleanup_reports_only_completed_ordinary_removals() {
+    let fixture = BinaryLoggingFixture::new("cleanup-summary").unwrap();
+    let first = fixture.dir.path().join("first");
+    let second = fixture.dir.path().join("second");
+    let missing = fixture.dir.path().join("missing");
+    let preserved = fixture.dir.path().join("preserved");
+    for directory in [&first, &second, &preserved] {
+        fs::create_dir(directory).unwrap();
+        fs::write(directory.join("content"), b"contents").unwrap();
+    }
+    let manifest =
+        cleanup_manifest(&[&first, &second, &missing, &preserved], Some(&preserved)).unwrap();
+
+    let output = fixture.run_manifest_stdin(&manifest).unwrap();
+    assert!(output.status.success());
+    assert!(!first.exists());
+    assert!(!second.exists());
+    assert_eq!(fs::read(preserved.join("content")).unwrap(), b"contents");
+    let logs = fixture.read_system_log().unwrap();
+    let mut cleanup_reports = logs.lines().filter(|line| line.contains("Cleaned stale"));
+    assert!(
+        cleanup_reports
+            .next()
+            .is_some_and(|line| line.ends_with("Cleaned stale storage paths: 2"))
+    );
+    assert!(cleanup_reports.next().is_none());
+}
+
+#[test]
+fn failed_cleanup_reports_completed_count_before_the_path_warning() {
+    let fixture = BinaryLoggingFixture::new("cleanup-partial-summary").unwrap();
+    let removed = fixture.dir.path().join("removed");
+    let blocked = fixture.dir.path().join("blocked");
+    let failing_path = blocked.join("child");
+    fs::create_dir(&removed).unwrap();
+    fs::write(&blocked, b"regular file").unwrap();
+    let manifest = cleanup_manifest(&[&removed, &failing_path], None).unwrap();
+
+    let output = fixture.run_manifest_stdin(&manifest).unwrap();
+    assert!(!output.status.success());
+    assert!(!removed.exists());
+    assert_eq!(fs::read(blocked).unwrap(), b"regular file");
+    let logs = fixture.read_system_log().unwrap();
+    let summary = "Cleaned stale storage paths: 1";
+    let warning = format!("Failed to safely clean {}", failing_path.display());
+    assert_eq!(logs.matches(summary).count(), 1);
+    assert!(logs.find(summary).unwrap() < logs.find(&warning).unwrap());
+}
+
+#[test]
 fn selective_cleanup_rejects_symlinked_root_and_stops() {
     let dir = tempfile::tempdir().unwrap();
     let cleanup_root = dir.path().join("cleanup");

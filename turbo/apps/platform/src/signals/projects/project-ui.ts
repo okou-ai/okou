@@ -20,7 +20,7 @@ export const projectDialog$ = computed((get) => {
   const dialog = get(internalDialog$);
   return dialog && dialog.kind !== "delete" && !dialog.open ? null : dialog;
 });
-// Let Base UI finish closing and restore focus after a moved row mounts.
+// Keep the session mounted until Base UI finishes closing.
 export const projectDialogSession$ = computed((get) => {
   return get(internalDialog$);
 });
@@ -118,10 +118,3 @@ export const resetProjectUi$ = command(({ set }) => {
   set(internalName$, "");
   set(internalSearch$, "");
 });
-
-export const projectDialogHasSuccessor$ = command(
-  ({ get }, expected: ProjectDialog) => {
-    const current = get(projectDialog$);
-    return current !== null && current !== expected;
-  },
-);

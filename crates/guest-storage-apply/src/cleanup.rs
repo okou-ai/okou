@@ -132,6 +132,7 @@ where
         .collect::<Vec<_>>();
     sorted.sort_by_key(|path| path.logical.components().count());
 
+    let mut removed_paths = 0;
     for path in sorted {
         if preserved.is_preserved_or_descendant(&path.logical) {
             continue;
@@ -148,6 +149,7 @@ where
             match is_mount_point(&path.logical) {
                 Ok(mount_point) => mount_point,
                 Err(e) => {
+                    log_removed_paths(removed_paths);
                     log_warn!(
                         LOG_TAG,
                         "Failed to classify cleanup path {}: {e}",
@@ -167,6 +169,7 @@ where
                 &is_mount_point,
                 &remove_entry,
             ) {
+                log_removed_paths(removed_paths);
                 log_warn!(
                     LOG_TAG,
                     "Failed to safely clean {}: {e}",
@@ -196,11 +199,10 @@ where
             }
         } else {
             match remove_tree(path.original) {
-                Ok(RemoveOutcome::Removed) => {
-                    log_info!(LOG_TAG, "Cleaned stale path: {}", path.original.display());
-                }
+                Ok(RemoveOutcome::Removed) => removed_paths += 1,
                 Ok(RemoveOutcome::Missing) => {}
                 Err(e) => {
+                    log_removed_paths(removed_paths);
                     log_warn!(
                         LOG_TAG,
                         "Failed to safely clean {}: {e}",
@@ -211,7 +213,14 @@ where
             }
         }
     }
+    log_removed_paths(removed_paths);
     true
+}
+
+fn log_removed_paths(count: usize) {
+    if count > 0 {
+        log_info!(LOG_TAG, "Cleaned stale storage paths: {count}");
+    }
 }
 
 struct CleanupPath<'a> {

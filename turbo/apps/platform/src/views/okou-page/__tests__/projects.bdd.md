@@ -3,6 +3,8 @@
 Baseline [b0a10287edf4](https://github.com/okou-ai/okou/tree/b0a10287edf4242383c28e39c6f7675053febb32).
 Source [projects.test.tsx](projects.test.tsx).
 
+After the freeze, [#49593](https://github.com/okou-ai/okou/pull/49593) removed explicit final-focus targets from Project dialogs. The affected scenarios now observe dismissal, the Project row or the active route.
+
 ## projects-001
 
 Original test `My Okou's Project rows expose title folding and a home link before their menu`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/projects.test.tsx#L234).
@@ -201,7 +203,7 @@ Original test `creates, renames and deletes a Project through the shared dialogs
 
 - **Given** The user is viewing an ordinary chat with no additional Project created.
 - **When** The user creates Campaign, renames it Campaign two, then deletes it through the Project dialogs.
-- **Then** Campaign appears expanded before creation confirmation arrives; the dialog closes without navigating away from the chat. The renamed Project appears, and after deletion Campaign two disappears and focus returns to Create Project.
+- **Then** Campaign appears expanded before creation confirmation arrives; the dialog closes without navigating away from the chat. The renamed Project appears, and after deletion Campaign two disappears while the user stays on the same chat.
 
 ## projects-026
 
@@ -209,7 +211,7 @@ Original test `Deleting a Project closes its dialog before its chats finish sync
 
 - **Given** Launch has an assigned chat, and the user is viewing another chat.
 - **When** The user confirms deletion of Launch while synchronization of its chat membership is still pending.
-- **Then** The deletion dialog closes and Launch disappears before chat synchronization finishes. After synchronization, the formerly assigned chat is available outside the Project, and the current conversation and Create Project focus are preserved.
+- **Then** The deletion dialog closes and Launch disappears before chat synchronization finishes. After synchronization, the formerly assigned chat is available outside the Project, and the user stays in the current conversation.
 
 ## projects-027
 
@@ -217,7 +219,7 @@ Original test `A rejected Project deletion stays open and can be retried`. [Regi
 
 - **Given** The user has opened the deletion dialog for Launch, and the first deletion attempt will be rejected.
 - **When** The user confirms deletion, then retries after the rejection.
-- **Then** While the request is pending, the delete button is disabled and Launch remains. The rejected attempt shows an error, leaves the dialog open, and re-enables the button. A successful retry closes the dialog, removes Launch, and returns focus to Create Project without navigating away.
+- **Then** While the request is pending, the delete button is disabled and Launch remains. The rejected attempt shows an error, leaves the dialog open, and re-enables the button. A successful retry closes the dialog, removes Launch, and keeps the user on the current chat.
 
 ## projects-028
 
@@ -393,7 +395,7 @@ Original test `Project rename closes immediately and yields to persisted events`
 
 - **Given** Launch exists and its rename request has not yet been confirmed by the server.
 - **When** The user saves the name “Launch renamed,” then the server sends persisted rename events naming it “Launch confirmed.”
-- **Then** The rename dialog closes immediately, the optimistic name appears, and focus returns to its options control before confirmation. The persisted name later replaces it.
+- **Then** The rename dialog closes immediately, and the optimistic name appears before confirmation. The persisted name later replaces it.
 
 ## projects-050
 

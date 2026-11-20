@@ -142,8 +142,8 @@ Project deletion confirmation includes every archived page and returns safely to
 
 - **Given** My Okou and Project thread deletion are enabled. The Project "Launch" has 101 member chats, alternately archived, spanning more than one page of the member list. The user is viewing an unrelated chat.
 - **When** The user opens Delete from the Project's options, chooses to delete the Project and its 101 threads, then selects Back and presses Escape.
-- **Then** The choice names all 101 threads. The confirmation lists members from every page, including archived ones, warns that this cannot be undone and focuses Back. Back returns focus to the delete-all choice. Escape closes the choices and returns focus to the Project's options; the Project stays in the sidebar and the user stays on the same chat.
-- **Disposition** retain (#49121).
+- **Then** The choice names all 101 threads. The confirmation lists members from every page, including archived ones, warns that this cannot be undone and focuses Back. Back dismisses the confirmation. Escape closes the choices; the Project stays in the sidebar and the user stays on the same chat.
+- **Disposition** retain (#49121). [#49593](https://github.com/okou-ai/okou/pull/49593) changed the final observation to dialog dismissal.
 - **Source** `test-rebuild-gwt-checklist.tsv` at `4855592c`.
 
 ## upstream-e0e20862-project-deletion-303-01
@@ -152,8 +152,8 @@ A new Project member requires reviewing the changed list before deleting anythin
 
 - **Given** The Project has one member chat when the user opens the full-deletion confirmation, and a second member joins before they confirm.
 - **When** The user confirms Permanently delete, then confirms again after the review prompt.
-- **Then** The first confirmation describes deleting the Project and 1 thread. Confirming asks the user to review the updated list without deleting any chat, and the list now shows both members and describes 2 threads. Confirming again deletes the Project, removes it from the sidebar and moves focus to Create Project.
-- **Disposition** retain (#49121).
+- **Then** The first confirmation describes deleting the Project and 1 thread. Confirming asks the user to review the updated list without deleting any chat, and the list now shows both members and describes 2 threads. Confirming again deletes the Project, removes it from the sidebar and closes the deletion dialog.
+- **Disposition** retain (#49121). [#49593](https://github.com/okou-ai/okou/pull/49593) changed the final observation to dialog dismissal.
 - **Source** `test-rebuild-gwt-checklist.tsv` at `4855592c`.
 
 ## upstream-e0e20862-project-deletion-363-01
