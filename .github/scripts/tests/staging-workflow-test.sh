@@ -30,7 +30,7 @@ ts_checks = [
 ]
 validation = ts_checks + ['file-size-check', 'test-migrate', 'lint-runtime-api-compat']
 deployed = [
-    'deploy-api', 'deploy-app', 'prepare-cli', 'deploy-runner-prepare', 'deploy-runner-start',
+    'deploy-api', 'deploy-app', 'prepare-cli', 'select-runner-placement', 'deploy-runner-prepare', 'deploy-runner-start',
     'cli-e2e-01-serial', 'cli-e2e-02-browser', 'cli-e2e-02-playwright',
 ]
 finalizers = ['cli-e2e-02-playwright-finalize', 'cli-e2e-03-runner-cleanup']
@@ -236,7 +236,7 @@ gate(push | {'vars.PRODUCTION_RELEASE_FREEZE': 'true'}, True)
 for name in deployed + [name for name in validation if name in needs(jobs['ci-gate-turbo'])]:
     for failure in ['failure', 'cancelled']:
         gate(push | {f'needs.{name}.result': failure}, False)
-for name in ['deploy-app', 'prepare-cli', 'cli-e2e-01-serial', 'deploy-runner-prepare', 'deploy-runner-start']:
+for name in ['deploy-app', 'prepare-cli', 'cli-e2e-01-serial', 'select-runner-placement', 'deploy-runner-prepare', 'deploy-runner-start']:
     gate(push | {f'needs.{name}.result': 'skipped'}, False)
 for name in finalizers:
     assert condition(jobs[name], push | {'needs.cli-e2e-02-playwright.result': 'failure'})

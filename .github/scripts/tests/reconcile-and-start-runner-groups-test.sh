@@ -214,6 +214,7 @@ run_case() {
     RUNNER_SERVICE_REF="$service_ref" \
     RUNNER_SHA_MAP="$runner_sha_map" \
     SNAPSHOT_HASH_MAP='{"arm-1":"snapshot-arm","x86-1":"snapshot-x86-1","x86-2":"snapshot-x86-2"}' \
+    SELECTED_HOST="$selected_host" \
     VERCEL_BYPASS=test-bypass \
     AWS_ACCESS_KEY_ID=test-access \
     AWS_SECRET_ACCESS_KEY=test-secret \
@@ -227,6 +228,12 @@ run_case() {
     GITHUB_OUTPUT="${case_dir}/github-output" \
     bash "${tmp_dir}/run-deployment" "$script" >"${case_dir}/output" 2>&1 || status=$?
 
+  if [ "$failure" = placement ]; then
+    [ "$status" -eq 2 ] || fail "${case_name}: invalid placement must fail"
+    [ ! -s "${case_dir}/service.log" ] || fail "${case_name}: invalid placement touched services"
+    [ ! -s "${case_dir}/github-output" ] || fail "${case_name}: invalid placement published a receipt"
+    return
+  fi
   if [ "$failure" != none ]; then
     [ "$status" -ne 0 ] || fail "${case_name}: ${failure} failure must fail deployment"
     if [ "$failure" = cancel ]; then
@@ -280,7 +287,9 @@ run_case() {
   done
 }
 
-# These image refs select the same hosts as the existing Crates behavior lane.
+# The supplied host is authoritative, even when it differs from the old local selection.
+run_case explicit-placement pr-1 x86-2 3 none
+run_case invalid-placement pr-1 missing-host 0 placement
 run_case x86 pr-1 x86-1 2 none
 run_case x86 pr-1 x86-1 2 none
 run_case arm pr-2 arm-1 1 none

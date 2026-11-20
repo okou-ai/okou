@@ -79,12 +79,21 @@ stripe = stripe_steps.find { |step| step.fetch("run", "").include?("start-stripe
 raise "Stripe replacement must share the cleanup namespace lock" unless
   stripe && stripe.fetch("run").include?("with-runner-lifecycle-lock.sh") && !stripe.key?("continue-on-error")
 stripe_ssh = stripe_steps.find { |step| step["uses"] == "./.github/actions/setup-ssh-tunnel" }
-runner_host = "${{ fromJSON(needs.deploy-runner-start.outputs.runner-receipt).host }}"
-unless stripe_job.fetch("needs").include?("deploy-runner-start") &&
-    stripe_job.fetch("if").include?("needs.deploy-runner-start.result == 'success'") &&
+placement = turbo.fetch("select-runner-placement")
+selection = named_step(placement, "Select the shared Runner and Stripe host")
+unless placement.fetch("needs") == ["prepare"] &&
+    placement.dig("outputs", "host") == "${{ steps.select.outputs.host }}" &&
+    selection&.dig("env", "JOB_REF") == "${{ needs.prepare.outputs.runner-image-job-ref }}" &&
+    selection.fetch("run").include?('select-context "$JOB_REF"')
+  raise "placement must resolve the existing Runner selection once before deployment"
+end
+runner_host = "${{ needs.select-runner-placement.outputs.host }}"
+unless stripe_job.fetch("needs").include?("select-runner-placement") &&
+    !stripe_job.fetch("needs").include?("deploy-runner-start") &&
+    stripe_job.fetch("if").include?("needs.select-runner-placement.result == 'success'") &&
     stripe_ssh&.dig("with", "ssh-hosts") == runner_host &&
     stripe.dig("env", "METAL_HOSTS") == runner_host
-  raise "Stripe SSH setup and replacement must use the successful Runner deployment host"
+  raise "Stripe SSH setup and replacement must use the shared host before Runner readiness"
 end
 
 prepare = turbo.fetch("deploy-runner-prepare")
@@ -96,6 +105,10 @@ end
 unless start.fetch("permissions") == {"actions" => "read", "contents" => "read"}
   raise "runner recovery must have read-only workflow permissions"
 end
+unless start.fetch("needs").include?("select-runner-placement") &&
+    turbo.fetch("ci-gate-turbo").fetch("needs").include?("select-runner-placement")
+  raise "Runner start and the Turbo gate must wait for placement"
+end
 
 locked_start = named_step(start, "Reconcile and start runner under lifecycle lock")
 raise "missing locked runner reconciliation and start" unless locked_start
@@ -104,6 +117,7 @@ unless locked_start.dig("env", "AWS_METAL_RUNNER_HOSTS") ==
     locked_start.dig("env", "BIN_DIR") == "${{ needs.deploy-runner-prepare.outputs.bin-dir }}" &&
     locked_start.dig("env", "JOB_REF") == "${{ needs.prepare.outputs.runner-image-job-ref }}" &&
     locked_start.dig("env", "METAL_HOSTS") == "${{ secrets.AWS_METAL_RUNNER_HOSTS }}" &&
+    locked_start.dig("env", "SELECTED_HOST") == runner_host &&
     locked_start.dig("env", "RUNNER_SHA_MAP") ==
       "${{ needs.deploy-runner-prepare.outputs.runner-sha-map }}" &&
     locked_start.fetch("run").include?(".github/scripts/runner/with-runner-lifecycle-lock.sh") &&
