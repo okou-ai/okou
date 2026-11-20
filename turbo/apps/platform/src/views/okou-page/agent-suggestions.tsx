@@ -45,9 +45,11 @@ const SUGGESTION_ROW =
   "h-auto min-h-14 w-full justify-between gap-3 whitespace-normal rounded-3xl px-4 py-3 text-left text-sm font-normal [&:hover]:bg-state-hover-overlay";
 
 // An option is a raised button on the card; the direction trigger stays a
-// quiet input-like row in the nested fill.
+// quiet input-like row in the nested fill. The option's outline is an inset
+// ring rather than a border, so it takes no width and the label keeps the
+// 16px inset the heading aligns to.
 const SUGGESTION_OPTION =
-  "border border-border bg-card text-foreground shadow-[0_1px_2px_rgb(37_33_33/0.04)] hover:border-control-border hover:bg-card hover:shadow-surface";
+  "bg-card text-foreground shadow-[0_1px_2px_rgb(37_33_33/0.04)] inset-ring inset-ring-border hover:bg-card hover:shadow-surface hover:inset-ring-control-border";
 
 const SUGGESTION_DIRECTION_TRIGGER =
   "bg-nested-fill text-muted-foreground hover:bg-nested-fill";
@@ -460,8 +462,9 @@ export function AgentSuggestionCard({
         {active && <SuggestionDirection entry={entry} />}
       </div>
       <SuggestionFeedback entry={entry} />
-      {/* Dismissing closes the whole card, so it sits on the card's corner.
-          It comes last so ordinary paint order keeps it above the artwork. */}
+      {/* Dismissing closes the whole card, so it sits in the card's corner,
+          inside the padding, where it cannot cover the artwork. It comes last
+          so ordinary paint order keeps it above everything else. */}
       <Button
         type="button"
         variant="quiet"
@@ -470,7 +473,7 @@ export function AgentSuggestionCard({
         aria-label={t(($) => {
           return $.chat.agentSuggestions.dismiss;
         })}
-        className="absolute top-5.5 right-5 sm:top-8.5 sm:right-8"
+        className="absolute top-1.5 right-1.5 sm:top-3 sm:right-3"
         onClick={() => {
           detach(
             submitFeedback(item.id, "dismissed", signal),
