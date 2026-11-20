@@ -7,7 +7,7 @@ import { isMorningBriefDefinitionName } from "@okouai/api-contracts/contracts/mo
 import { settle } from "../../utils";
 import type { AgentRunContextSignals } from "../agent-run-context.signals";
 import type { ThreadContext } from "../thread-context.signals";
-import type { RunPromptAndSkills } from "../run-prompt-and-skills";
+import type { RunPrompt } from "../run-prompt-and-skills";
 import { createSuggestionFeedbackContext } from "../suggestion-feedback-context.service";
 import { SUGGESTION_FEEDBACK_INSTRUCTION } from "../suggestion-feedback-instructions";
 import type { PickedThreadInputEvent } from "./types";
@@ -16,13 +16,12 @@ export function createSuggestionsPrompt(
   bootstrap: AgentRunContextSignals,
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
   threadContext: ThreadContext,
-): Computed<Promise<RunPromptAndSkills>> {
+): Computed<Promise<RunPrompt>> {
   const feedback$ = createSuggestionFeedbackContext(bootstrap, pickedEvent$);
   return computed(async (get) => {
-    const empty: RunPromptAndSkills = {
+    const empty: RunPrompt = {
       systemPromptVariables: {},
       userPromptVariables: {},
-      skillVolumes: [],
     };
     const features = await get(bootstrap.featureSwitches$);
     if (!isFeatureEnabled(FeatureSwitchKey.AgentSuggestion, features)) {
@@ -63,7 +62,6 @@ export function createSuggestionsPrompt(
         ].join("\n\n"),
       },
       userPromptVariables: {},
-      skillVolumes: [],
     };
   });
 }

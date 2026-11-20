@@ -4,14 +4,14 @@ import {
   agentphoneSystemPromptFromContext,
   type AgentPhoneThreadContext,
 } from "../agentphone-queued-launch-context.service";
-import type { RunPromptAndSkills } from "../run-prompt-and-skills";
+import type { RunPrompt } from "../run-prompt-and-skills";
 import type { PickedThreadInputEvent } from "./types";
 
 export function createAgentPhoneThreadPrompt(
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
   context$: Computed<Promise<AgentPhoneThreadContext>>,
   featureSwitches$: Computed<Promise<FeatureSwitchContext>>,
-): Computed<Promise<RunPromptAndSkills | null>> {
+): Computed<Promise<RunPrompt | null>> {
   return computed(async (get) => {
     const pickedEvent = await get(pickedEvent$);
     if (pickedEvent?.contextType !== "agentphone") {
@@ -33,7 +33,6 @@ export function createAgentPhoneThreadPrompt(
           ? `Text message handle: ${context.phoneHandle}`
           : "",
       },
-      skillVolumes: [],
     };
   });
 }
