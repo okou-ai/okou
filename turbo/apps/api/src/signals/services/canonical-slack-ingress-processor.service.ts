@@ -8,7 +8,6 @@ import { slackChatThreadRoutes } from "@okouai/db/schema/slack-chat-thread-route
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { agents } from "@okouai/db/schema/agent";
 import { command } from "ccstate";
 import {
   and,
@@ -726,9 +725,11 @@ const persistClaimedCanonicalSlackIngress$ = command(
         .innerJoin(slackChatThreadRoutes, plan.routeJoin)
         .innerJoin(
           chatThreads,
-          eq(chatThreads.id, slackChatThreadRoutes.chatThreadId),
+          and(
+            eq(chatThreads.id, slackChatThreadRoutes.chatThreadId),
+            eq(chatThreads.userId, slackChatThreadRoutes.userId),
+          ),
         )
-        .innerJoin(agents, eq(agents.id, chatThreads.agentId))
         .innerJoin(slackOrgConnections, plan.connectionJoin)
         .innerJoin(slackOrgInstallations, plan.installationJoin)
         .where(plan.condition)

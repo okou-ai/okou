@@ -1001,7 +1001,8 @@ test("Suggestion options start in the default Agent after visiting a secondary A
   const sender = context.mocks.deferred<string>();
   context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
     if (!sender.settled()) {
-      sender.resolve(body.agentId);
+      expect(body).not.toHaveProperty("agentId");
+      sender.resolve(body.threadId ?? threadId);
     }
     return respond(201, {
       threadId: body.threadId ?? threadId,
@@ -1019,7 +1020,7 @@ test("Suggestion options start in the default Agent after visiting a secondary A
   expect(pathname()).toBe(suggestionPath);
   click(button(makeOption().label));
   await screen.findByText(SENT);
-  await expect(sender.promise).resolves.toBe(agentId);
+  await expect(sender.promise).resolves.toBe(threadId);
   expect(pathname()).toBe(suggestionPath);
 });
 test("Custom direction opens a full composer for a new chat without touching the home draft", async () => {

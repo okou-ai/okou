@@ -118,7 +118,7 @@ test("a workspace notification completes wallet consent and continues the owning
   );
   const prompts: string[] = [];
   context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
-    expect(body.agentId).toBe("c0000000-0000-4000-a000-000000000071");
+    expect(body).not.toHaveProperty("agentId");
     expect(body.threadId).toBe(context.resourceId);
     expect(body.clientEventId).toBe(AUTHORIZATION_ID);
     expect(body.userMessage).toStrictEqual({

@@ -72,10 +72,15 @@ async function carrier(existingActor?: ApiTestUser, unattended = false) {
     displayName: "Wallet agent",
     visibility: "private",
   });
-  const run = unattended
+  const workflowAgentId = unattended
+    ? (await bdd.readOnboardingStatus(actor)).defaultAgentId
+    : undefined;
+  if (unattended && !workflowAgentId)
+    throw new Error("Expected the personal workflow namespace");
+  const run = workflowAgentId
     ? await createWorkflowsBddApi(context).startEventAutomationRun(
         actor,
-        agent.agentId,
+        workflowAgentId,
       )
     : await api.createThreadRun(actor, {
         agentId: agent.agentId,
@@ -1003,7 +1008,7 @@ test("prevents an in-flight OAuth callback from resurrecting a disconnected gran
   ).toBeFalsy();
 });
 
-test("shares a workspace wallet across agents while isolating purchase approvals", async () => {
+test("shares purchase history and approved spends across runs of the same workspace member", async () => {
   const fixture = await carrier();
   server.use(
     tokenHandler(),
@@ -1019,6 +1024,7 @@ test("shares a workspace wallet across agents while isolating purchase approvals
     [200],
   );
   provider.approve();
+  provider.credentials({ card: virtualCard() });
   await accept(
     client().getSpend({
       headers: fixture.headers,
@@ -1036,7 +1042,7 @@ test("shares a workspace wallet across agents while isolating purchase approvals
       headers: otherAgent.headers,
       params: { id: created.body.id },
     }),
-    [404],
+    [200],
   );
   await accept(
     client().spendCredentials({
@@ -1044,7 +1050,7 @@ test("shares a workspace wallet across agents while isolating purchase approvals
       params: { id: created.body.id },
       body: {},
     }),
-    [404],
+    [200],
   );
   const secondPurchase = { ...purchase(), test: false };
   spendProvider(secondPurchase);
@@ -2810,14 +2816,14 @@ test("paginates owner-isolated recorded spend history and retains it after reaut
         client().listSpends({ headers: other.headers, query: {} }),
         [200],
       )
-    ).body.data,
-  ).toStrictEqual([]);
+    ).body.data.map((row) => row.id),
+  ).toEqual(expect.arrayContaining([first.body.id, second.body.id]));
   await accept(
     client().listSpends({
       headers: other.headers,
       query: { startingAfter: first.body.id },
     }),
-    [400],
+    [200],
   );
   server.use(
     tokenHandler({

@@ -36,6 +36,7 @@ const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 describe("new chat event member defaults", () => {
   it("dispatches a member run without an organization default agent", async () => {
     const { actor } = await entitledNativeChatActor();
+    if (!actor.orgId) throw new Error("Expected member organization");
     const database = db();
     await database
       .update(orgMetadata)

@@ -963,16 +963,14 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
 
   it("creates a thread without a model as Auto when the member has no preference", async () => {
     const actor = bdd.user();
-    const agent = await bdd.createAgent(actor, {
-      displayName: "Auto default thread agent",
-    });
+    await bdd.createAgent(actor, { displayName: "Auto default thread agent" });
     const eventId = randomUUID();
     const created = await accept(
       setupApp({ context, routes: chatThreadCreateRoutes })(
         chatThreadsContract,
       ).create({
         headers: authHeaders(actor),
-        body: { agentId: agent.agentId, eventId },
+        body: { eventId },
       }),
       [201],
     );

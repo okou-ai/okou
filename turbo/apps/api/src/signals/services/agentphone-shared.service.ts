@@ -1,4 +1,3 @@
-import { agents } from "@okouai/db/schema/agent";
 import {
   getAgentPhoneConversationParticipants,
   isAgentPhoneApiError,
@@ -428,21 +427,6 @@ function displayLabel(row: {
   return plainLabel(row.agentDisplayName) ?? row.agentName;
 }
 
-const resolveComposeLabel$ = command(
-  async ({ get }, composeId: string): Promise<string | undefined> => {
-    const db = get(db$);
-    const [row] = await db
-      .select({
-        agentDisplayName: agents.displayName,
-        agentName: agents.name,
-      })
-      .from(agents)
-      .where(eq(agents.id, composeId))
-      .limit(1);
-    return row ? displayLabel(row) : undefined;
-  },
-);
-
 export const resolveOrgDefaultComposeId$ = command(
   async ({ get }, orgId: string): Promise<string | null> => {
     const db = get(db$);
@@ -452,26 +436,5 @@ export const resolveOrgDefaultComposeId$ = command(
       .where(eq(orgMetadata.orgId, orgId))
       .limit(1);
     return metadata?.defaultAgentId ?? null;
-  },
-);
-
-export const resolveAgentPhoneReplyFooterText$ = command(
-  async (
-    { set },
-    args: {
-      readonly orgId: string;
-      readonly composeId: string;
-    },
-  ): Promise<string | undefined> => {
-    const orgDefaultComposeId = await set(
-      resolveOrgDefaultComposeId$,
-      args.orgId,
-    );
-    if (!orgDefaultComposeId || args.composeId === orgDefaultComposeId) {
-      return undefined;
-    }
-
-    const label = await set(resolveComposeLabel$, args.composeId);
-    return label ? `Responded by ${label}` : undefined;
   },
 );

@@ -306,22 +306,22 @@ function hasSlackSource(event: ChatEvent): boolean {
 async function ownedThreadWhere(
   actor: ApiTestUser,
   matches: (event: ChatEvent) => boolean,
-): Promise<{ readonly chatThreadId: string; readonly agentId: string }> {
+): Promise<{ readonly chatThreadId: string }> {
   const lifecycle = await chat.requestThreadEvents(actor, {}, [200]);
   if (lifecycle.status !== 200) {
     throw new Error("Expected the caller's chat thread lifecycle events");
   }
-  const created = new Map<string, string>();
+  const created = new Set<string>();
   for (const event of lifecycle.body.events) {
     if (event.kind === "created") {
-      created.set(event.chatThreadId, event.agentId);
+      created.add(event.chatThreadId);
     }
   }
-  const matched: { chatThreadId: string; agentId: string }[] = [];
-  for (const [chatThreadId, agentId] of created) {
+  const matched: { chatThreadId: string }[] = [];
+  for (const chatThreadId of created) {
     const { events } = await chat.listThreadEvents(actor, chatThreadId);
     if (events.some(matches)) {
-      matched.push({ chatThreadId, agentId });
+      matched.push({ chatThreadId });
     }
   }
   expect(matched).toHaveLength(1);
@@ -1809,7 +1809,6 @@ describe("INT-01: Slack app deep webhook flows", () => {
       assistantText: "finished initial mention",
     });
     const web = await chat.sendAndLaunch(scenario.actor, {
-      agentId: thread.agentId,
       threadId: thread.chatThreadId,
       prompt: "continue from Web",
     });
@@ -2856,17 +2855,16 @@ describe("INT-01: Slack app deep webhook flows", () => {
     await flushWaitUntilForTest();
 
     const run1Id = await observeSlackRun(runnerGroup);
-    // The Slack route's thread and the agent it launched with are public
-    // through the caller's thread lifecycle.
-    const { chatThreadId: canonicalChatThreadId, agentId: defaultAgentId } =
-      await ownedThreadWhere(actor, launchedBy(run1Id));
+    const { chatThreadId: canonicalChatThreadId } = await ownedThreadWhere(
+      actor,
+      launchedBy(run1Id),
+    );
     const execution1 = await runs.executionInput(run1Id);
     await chatCallbacks.registerPushSubscription(actor);
     chatCallbacks.enableVapid();
     const queuedWebMessage = await chat.requestSendEvent(
       actor,
       {
-        agentId: defaultAgentId,
         prompt: "keep the web session separate",
         threadId: canonicalChatThreadId,
         clientEventId: randomUUID(),

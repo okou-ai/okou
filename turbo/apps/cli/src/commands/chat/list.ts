@@ -1,8 +1,5 @@
 import { isPersonalExecution } from "../../lib/personal-execution";
-import {
-  personalCommandMode,
-  personalExecutorId,
-} from "../../lib/command/single-agent";
+import { personalCommandMode } from "../../lib/command/single-agent";
 import { listProjectThreads } from "../../lib/api/domains/projects";
 import chalk from "chalk";
 import { Command } from "commander";
@@ -93,13 +90,12 @@ async function listScope(options: ListOptions) {
   ) {
     throw new Error("Use a valid --project-id without --no-project");
   }
-  const agentId =
-    personal && options.projectId === undefined
-      ? await personalExecutorId()
-      : options.allAgents ||
-          (options.projectId !== undefined && options.agent === undefined)
-        ? undefined
-        : resolveAgentId(options.agent);
+  const agentId = personal
+    ? undefined
+    : options.allAgents ||
+        (options.projectId !== undefined && options.agent === undefined)
+      ? undefined
+      : resolveAgentId(options.agent);
   const limit =
     options.limit === "all"
       ? Infinity
@@ -228,7 +224,7 @@ Notes:
         console.log(
           [
             thread.id.padEnd(38),
-            ...(options.allAgents ? [thread.agentId.padEnd(38)] : []),
+            ...(options.allAgents ? [(thread.agentId ?? "-").padEnd(38)] : []),
             ...("unreadAt" in thread
               ? [formatIsoTimestamp(thread.unreadAt).padEnd(20)]
               : []),

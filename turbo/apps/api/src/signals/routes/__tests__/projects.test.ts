@@ -80,13 +80,16 @@ async function agent(actor: ApiTestUser) {
     visibility: "private",
   });
 }
-async function thread(actor: ApiTestUser, agentId: string, projectId?: string) {
+async function thread(
+  actor: ApiTestUser,
+  _agentId: string,
+  projectId?: string,
+) {
   return (
     await accept(
       threads().create({
         headers: headers(actor),
         body: {
-          agentId,
           clientThreadId: randomUUID(),
           eventId: randomUUID(),
           projectId,

@@ -114,7 +114,7 @@ export function createAgentThreadReadPreparation(args: {
       .where(
         and(
           eq(chatThreads.userId, args.userId),
-          eq(chatThreads.agentId, args.agentId),
+          eq(chatThreads.orgId, args.orgId),
           eq(chatThreads.muted, false),
           gte(
             chatThreads.lastMessageAt,

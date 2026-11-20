@@ -75,7 +75,7 @@ describe("chat relationships", () => {
     await accept(
       threads.create({
         headers: { authorization: `Bearer ${token}` },
-        body: { agentId, clientThreadId: humanThread.id },
+        body: { clientThreadId: humanThread.id },
       }),
       [201],
     );

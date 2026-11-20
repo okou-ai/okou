@@ -128,13 +128,13 @@ type BddSendEventBody =
       readonly sourceRunId?: string;
     }
   | {
-      readonly agentId: string;
+      readonly agentId?: string;
       readonly threadId: string;
       readonly revokesEventId: string;
       readonly clientEventId?: string;
     }
   | {
-      readonly agentId: string;
+      readonly agentId?: string;
       readonly threadId: string;
       readonly interruptsRunId: string;
       readonly clientEventId?: string;
@@ -541,7 +541,6 @@ export function createChatFilesBddApi(context: TestContext) {
         threadsClient().create({
           headers: authenticate(context, actor),
           body: {
-            agentId: body.agentId,
             ...(body.title === undefined ? {} : { title: body.title }),
             ...(body.clientThreadId === undefined
               ? {}
@@ -574,7 +573,6 @@ export function createChatFilesBddApi(context: TestContext) {
         threadsClient().create({
           headers: authenticate(context, actor),
           body: {
-            agentId: body.agentId,
             ...(body.title === undefined ? {} : { title: body.title }),
             ...(body.clientThreadId === undefined
               ? {}

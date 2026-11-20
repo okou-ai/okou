@@ -421,7 +421,6 @@ async function createChatThread(
   await accept(
     client.create({
       body: {
-        agentId: args.agentId,
         projectId: args.projectId,
         clientThreadId: args.clientThreadId,
         eventId: args.eventId,

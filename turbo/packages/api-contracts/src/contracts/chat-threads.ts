@@ -412,7 +412,6 @@ export type ComposerDraft = zInfer<typeof composerDraftSchema>;
 
 const chatThreadCreateBodySchema = object({
   projectId: uuid().optional(),
-  agentId: string().min(1).optional(),
   clientThreadId: uuid().optional(),
   eventId: chatThreadEventIdSchema.optional(),
   initialRemoteAccessOverrides: array(initialRemoteAccessOverrideSchema)
