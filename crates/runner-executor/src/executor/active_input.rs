@@ -54,9 +54,12 @@ impl ActiveInputForwarder {
         };
         let stop = CancellationToken::new();
         let stop_for_task = stop.clone();
-        let task = tokio::spawn(async move {
+        let task = async move {
             run_forwarder(run_id, source, control, job_cancel, stop_for_task).await;
-        });
+        };
+        #[cfg(test)]
+        let task = tests::inherit_shutdown_clock(task);
+        let task = tokio::spawn(task);
         Some(Self {
             stop,
             task: AbortOnDropHandle::new(task),
@@ -250,7 +253,10 @@ async fn forward(
                 () = job_cancel.cancelled() => {},
             }
         } => {
-            match tokio::time::timeout(ACTIVE_INPUT_SHUTDOWN_GRACE, operation.as_mut()).await {
+            let grace = tokio::time::timeout(ACTIVE_INPUT_SHUTDOWN_GRACE, operation.as_mut());
+            #[cfg(test)]
+            let grace = tests::wait_for_shutdown_grace(grace);
+            match grace.await {
                 Ok(outcome) => outcome,
                 Err(_) => {
                     // Dropping the provider future runs its partial-write and
