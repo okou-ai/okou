@@ -37,6 +37,7 @@ import {
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { EmailConnectDialog } from "./email-connect-dialog.tsx";
+import { EmailMark } from "./components/email-mark.tsx";
 
 export function EmailCard() {
   const compact = useLastResolved(worksChannelCards$);
@@ -64,10 +65,7 @@ function ClassicEmailCard() {
         className={surfaceVariants({ className: "flex flex-col" })}
       >
         <div className="flex items-center gap-4 p-4">
-          <Mail
-            aria-hidden="true"
-            className="h-7 w-7 shrink-0 text-foreground"
-          />
+          <EmailMark className="h-7 w-7 shrink-0" />
           <div className="flex min-w-0 flex-1 flex-col gap-1">
             <div className="truncate text-sm font-medium text-foreground">
               {t(($) => {
@@ -193,7 +191,7 @@ function CompactEmailCard() {
       >
         <WorksChannelCardContent
           actionsPlacement={email ? "footer" : "header"}
-          icon={<Mail aria-hidden="true" className="size-5 text-foreground" />}
+          icon={<EmailMark className="size-5" />}
           title={t(($) => {
             return $.works.email.title;
           })}
