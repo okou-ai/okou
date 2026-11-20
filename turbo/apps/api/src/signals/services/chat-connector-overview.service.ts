@@ -7,7 +7,6 @@ import {
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import { connectorAuthMethodIdSchema } from "@okouai/api-contracts/contracts/connector-identity";
 import type { ConnectedConnectors } from "@okouai/api-contracts/contracts/connected-connectors";
-import { agents } from "@okouai/db/schema/agent";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { connectors } from "@okouai/db/schema/connector";
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
@@ -90,12 +89,12 @@ export function chatConnectorOverview(
     const [thread] = await get(db$)
       .select({ id: chatThreads.id })
       .from(chatThreads)
-      .innerJoin(agents, eq(agents.id, chatThreads.agentId))
+
       .where(
         and(
           eq(chatThreads.id, owner.threadId),
           eq(chatThreads.userId, owner.userId),
-          eq(agents.orgId, owner.orgId),
+          eq(chatThreads.orgId, owner.orgId),
         ),
       )
       .limit(1);

@@ -1,7 +1,6 @@
 import { vncHostSchema } from "@okouai/api-contracts/contracts/vnc-access";
 import { remoteHostIdentitySchema } from "@okouai/api-contracts/contracts/remote-host-identity";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { agents } from "@okouai/db/schema/agent";
 import {
   sshConnectionNeedsRebind,
   sshConnections,
@@ -17,7 +16,6 @@ import {
   zodDriverValueDecoder,
 } from "../../lib/db-structured-result";
 import { writeDb$ } from "../external/db";
-import { visibleJoinedAgentCondition } from "./agent-data.service";
 import { vncCreationTimestamp } from "./remote-connection-creation-timestamp.utils";
 import type { VncOwner } from "./vnc-owner-lifecycle.service";
 import { visibleVncNativeRole } from "./vnc-network-authority";
@@ -65,14 +63,6 @@ const loadRunVncHostRows$ = command(
       })
       .from(agentRuns)
 
-      .innerJoin(
-        agents,
-        and(
-          eq(agents.id, agentRuns.agentId),
-          eq(agents.orgId, agentRuns.orgId),
-          visibleJoinedAgentCondition(owner.userId),
-        ),
-      )
       .leftJoin(
         vncConnections,
         and(

@@ -90,7 +90,7 @@ class ChatComposerApiTest {
     private fun input(thread: String, text: String = "你好 👋\n**verbatim**") =
         Json.decodeFromJsonElement<SendRequestVariant1>(
             Json.parseToJsonElement(
-                """{"agentId":"$CHAT_AGENT","threadId":"$thread","clientEventId":"${UUID.randomUUID()}","chatThreadSortEventId":"${UUID.randomUUID()}","prompt":${JsonPrimitive(text)},"userMessage":{"version":1,"parts":[{"type":"text","text":${JsonPrimitive(text)}}]},"hasTextContent":true}"""
+                """{"threadId":"$thread","clientEventId":"${UUID.randomUUID()}","chatThreadSortEventId":"${UUID.randomUUID()}","prompt":${JsonPrimitive(text)},"userMessage":{"version":1,"parts":[{"type":"text","text":${JsonPrimitive(text)}}]},"hasTextContent":true}"""
             )
         )
 
@@ -101,7 +101,6 @@ class ChatComposerApiTest {
                 fixture.service
                     .createThread(
                         CreateThreadRequest(
-                            agentId = CHAT_AGENT,
                             clientThreadId = UUID.randomUUID().toString(),
                             eventId = UUID.randomUUID().toString(),
                         )
@@ -176,7 +175,6 @@ class ChatComposerApiTest {
             val created =
                 fixture.service.createThread(
                     CreateThreadRequest(
-                        agentId = CHAT_AGENT,
                         projectId = CHAT_PROJECT,
                         clientThreadId = thread,
                         eventId = UUID.randomUUID().toString(),

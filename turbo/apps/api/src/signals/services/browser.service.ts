@@ -13,7 +13,6 @@ import {
 import type { BrowserDisplaySize } from "@okouai/core/browser-display";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { agents } from "@okouai/db/schema/agent";
 import { browserOwnerProfiles as profiles } from "@okouai/db/schema/browser-owner";
 import { browserChatSessions as windows } from "@okouai/db/schema/browser-chat-session";
 import { env } from "../../lib/env";
@@ -497,7 +496,6 @@ function browserContext(input$: BrowserInputNode) {
       ? await db
           .select({
             chatThreadId: agentRuns.chatThreadId,
-            agentId: agentRuns.agentId,
             status: agentRuns.status,
           })
           .from(agentRuns)
@@ -512,11 +510,10 @@ function browserContext(input$: BrowserInputNode) {
           .limit(1)
       : [];
     const chatThreadId = input.chatThreadId ?? run?.chatThreadId;
-    const runAgentId = run?.agentId;
     if (
       !chatThreadId ||
       (input.runId && !run) ||
-      (run && (!runAgentId || run.chatThreadId !== chatThreadId))
+      (run && run.chatThreadId !== chatThreadId)
     ) {
       return missing();
     }
@@ -526,16 +523,11 @@ function browserContext(input$: BrowserInputNode) {
         enabled: chatThreads.cloudBrowserEnabled,
       })
       .from(chatThreads)
-      .innerJoin(
-        agents,
-        and(eq(agents.id, chatThreads.agentId), eq(agents.orgId, input.orgId)),
-      )
       .where(
         and(
           eq(chatThreads.id, chatThreadId),
           eq(chatThreads.userId, input.userId),
-          or(eq(agents.visibility, "public"), eq(agents.owner, input.userId)),
-          runAgentId ? eq(chatThreads.agentId, runAgentId) : undefined,
+          eq(chatThreads.orgId, input.orgId),
         ),
       )
       .limit(1);
