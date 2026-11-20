@@ -379,7 +379,7 @@ try {
   const frontier =
     await sql`SELECT max(created_at)::text AS value FROM drizzle.__drizzle_migrations`;
   await assert.rejects(
-    applyPendingMigrations(sql),
+    applyPendingMigrations(sql, { beforeMillis: migration.when + 1 }),
     /Inactive batch Project copy identity collision/u,
   );
   assert.deepEqual(await snapshot(), before);
@@ -398,7 +398,7 @@ try {
     CREATE TEMP TABLE before_personal AS SELECT * FROM instructions;
     CREATE TEMP TABLE before_flags AS SELECT * FROM user_feature_switches;
   `);
-  await applyPendingMigrations(sql);
+  await applyPendingMigrations(sql, { beforeMillis: migration.when + 1 });
   assert.deepEqual(await snapshot(), before);
   const batchChecks = await verifyInactiveBatch(sql);
   assert.ok(
@@ -498,7 +498,7 @@ try {
   const after =
     await sql`SELECT (SELECT count(*) FROM workflows)::int AS workflows,(SELECT count(*) FROM projects)::int AS projects,
     (SELECT count(*) FROM project_events)::int AS projects_events,(SELECT count(*) FROM chat_thread_events)::int AS chat_events`;
-  await applyPendingMigrations(sql);
+  await applyPendingMigrations(sql, { beforeMillis: migration.when + 1 });
   assert.deepEqual(
     await sql`SELECT (SELECT count(*) FROM workflows)::int AS workflows,(SELECT count(*) FROM projects)::int AS projects,
     (SELECT count(*) FROM project_events)::int AS projects_events,(SELECT count(*) FROM chat_thread_events)::int AS chat_events`,
