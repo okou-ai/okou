@@ -297,7 +297,7 @@ const loadAuthorizedComputerUseHostId$ = command(
           and(
             eq(chatThreads.id, requiredChatThreadId(args.request)),
             eq(chatThreads.userId, args.userId),
-            isNotNull(chatThreads.agentId),
+            eq(chatThreads.orgId, args.request.orgId),
           ),
         )
         .limit(1);
@@ -478,7 +478,7 @@ const applyTeamsAuthorizationScope$ = command(
         and(
           eq(chatThreads.id, sql`(SELECT id FROM selected_route)`),
           eq(chatThreads.userId, args.userId),
-          isNotNull(chatThreads.agentId),
+          eq(chatThreads.orgId, args.orgId),
         ),
       )
       .returning({
