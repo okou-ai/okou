@@ -80,7 +80,7 @@ function ForYouStack() {
     ...settled,
   ];
   return (
-    <div className="mx-auto my-auto w-full max-w-176 py-6">
+    <div className="relative mx-auto my-auto w-full max-w-176 py-6">
       <div
         className="relative isolate mb-6 grid min-h-(--for-you-card-min-height)"
         style={
@@ -142,23 +142,16 @@ function ForYouStack() {
             >
               <ForYouCardContents entry={entry} active={active}>
                 {card.kind === "event" ? (
-                  <PlatformFeedEvent
-                    entry={card.entry}
-                    active={active}
-                    navigation={<ForYouNavigation />}
-                  />
+                  <PlatformFeedEvent entry={card.entry} active={active} />
                 ) : (
-                  <AgentSuggestionCard
-                    active={active}
-                    entry={card.entry}
-                    navigation={<ForYouNavigation />}
-                  />
+                  <AgentSuggestionCard active={active} entry={card.entry} />
                 )}
               </ForYouCardContents>
             </Card>
           );
         })}
       </div>
+      <ForYouNavigation />
     </div>
   );
 }
@@ -195,7 +188,13 @@ function ForYouNavigation() {
           aria-label={t(($) => {
             return $.chat.agentSuggestions.homeCard.navigation;
           })}
-          className="flex items-center justify-end gap-1"
+          className={cn(
+            // Paging moves through the whole stack, so the controls sit
+            // outside the card: on its flanks when the page has room, below
+            // it otherwise.
+            "-mt-3 flex items-center justify-end gap-2",
+            "@min-[56rem]/for-you:pointer-events-none @min-[56rem]/for-you:absolute @min-[56rem]/for-you:inset-0 @min-[56rem]/for-you:m-0",
+          )}
         >
           {[
             {
@@ -236,10 +235,14 @@ function ForYouNavigation() {
                     );
                   }
                 }}
-                className={buttonVariants({
-                  variant: "quiet",
-                  size: "icon",
-                })}
+                className={cn(
+                  buttonVariants({ variant: "neutral", size: "icon-lg" }),
+                  "rounded-full bg-card shadow-surface",
+                  "@min-[56rem]/for-you:pointer-events-auto @min-[56rem]/for-you:absolute @min-[56rem]/for-you:top-[calc(50%-0.75rem)] @min-[56rem]/for-you:-translate-y-1/2",
+                  direction === "previous"
+                    ? "@min-[56rem]/for-you:-left-17"
+                    : "@min-[56rem]/for-you:-right-17",
+                )}
               >
                 <Icon aria-hidden className="size-4" />
               </Link>
@@ -382,7 +385,7 @@ export function ForYouPage() {
         className="pointer-events-none absolute inset-0 size-full select-none object-cover"
       />
       <ForYouHeader />
-      <main className="relative flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden px-4 pb-safe-offset-8 pt-4 sm:px-8 sm:pt-6">
+      <main className="@container/for-you relative flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden px-4 pb-safe-offset-8 pt-4 sm:px-8 sm:pt-6">
         {deck.state === "hasError" ? (
           <div
             role="alert"
