@@ -756,10 +756,10 @@ body {
   from {
     grid-template-rows: 0fr;
     overflow: clip;
-    background-color: var(--color-nested-fill);
+    background-color: var(--color-muted);
   }
   45% {
-    background-color: var(--color-nested-fill);
+    background-color: var(--color-muted);
   }
   to {
     grid-template-rows: 1fr;
