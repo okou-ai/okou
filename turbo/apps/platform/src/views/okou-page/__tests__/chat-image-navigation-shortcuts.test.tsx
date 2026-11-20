@@ -1,0 +1,264 @@
+import {
+  artifactReferencePath,
+  artifactReferencesContract,
+} from "@okouai/api-contracts/contracts/artifact-references";
+
+import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { expect, test, vi } from "vitest";
+
+import { click, setupPage } from "../../../__tests__/page-helper.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "../sidebar-breakpoint.ts";
+import {
+  ATTACHMENT_RUN_ID,
+  ATTACHMENT_THREAD_ID,
+  artifactFile,
+  findNamedButton,
+  getNamedButton,
+  mockAttachmentChat,
+  publicArtifactUrl,
+  queryNamedButton,
+} from "./chat-attachment-test-helpers.ts";
+
+const context = testContext();
+
+function galleryFiles(imageUrl = publicArtifactUrl) {
+  return ["first", "second", "third"].map((name) => {
+    return artifactFile(`${name}.png`, {
+      id: `shortcut-${name}`,
+      contentType: "image/png",
+      url: imageUrl(`${name}.png`),
+    });
+  });
+}
+
+function mockGallery(imageUrl = publicArtifactUrl): void {
+  context.mocks.browser.matchMedia((query) => {
+    return (
+      query === SIDEBAR_DESKTOP_MEDIA_QUERY || query === "(min-width: 1280px)"
+    );
+  });
+  mockAttachmentChat(context, {
+    chatEvents: [
+      {
+        id: "shortcut-gallery",
+        role: "assistant",
+        content: ["first", "second", "third"]
+          .map((name) => {
+            return `![${name}.png](${imageUrl(`${name}.png`)})`;
+          })
+          .join("\n"),
+        runId: ATTACHMENT_RUN_ID,
+        runEventId: "shortcut-gallery-event",
+        sequenceNumber: 1,
+        createdAt: "2026-03-10T00:00:01Z",
+      },
+    ],
+    artifacts: galleryFiles(imageUrl),
+  });
+}
+
+async function openGallery(): Promise<HTMLElement> {
+  const thumbnail = await screen.findByAltText("first.png");
+  const action = thumbnail.closest<HTMLElement>("a, button");
+  if (!action) {
+    throw new Error("Expected the first image's preview action");
+  }
+  click(action);
+  const dialog = await screen.findByRole("dialog", {
+    name: "first.png preview",
+  });
+  await waitFor(() => {
+    expect(within(dialog).getByRole("group")).toHaveFocus();
+  });
+  return dialog;
+}
+
+async function openGallerySidebar(
+  user: ReturnType<typeof userEvent.setup>,
+): Promise<HTMLElement> {
+  await openGallery();
+  click(await findNamedButton("Open in split view"));
+  const sidebar = await screen.findByTestId("artifact-sidebar");
+  await expect(
+    within(sidebar).findByTestId("artifact-sidebar-body-image"),
+  ).resolves.toHaveAttribute("alt", "first.png");
+  await waitFor(() => {
+    expect(screen.queryByTestId("attachment-lightbox")).toBeNull();
+  });
+  await user.click(within(sidebar).getByTestId("zoomable-image-canvas"));
+  expect(
+    within(sidebar).getByRole("group", { name: "first.png preview" }),
+  ).toHaveFocus();
+  return sidebar;
+}
+
+async function expectImage(surface: "lightbox" | "sidebar", filename: string) {
+  await waitFor(() => {
+    expect(
+      screen.getByTestId(
+        surface === "lightbox"
+          ? "attachment-lightbox-image"
+          : "artifact-sidebar-body-image",
+      ),
+    ).toHaveAttribute("alt", filename);
+  });
+}
+
+test("Arrow keys move between gallery images and stop at the boundaries", async () => {
+  mockGallery();
+  const user = userEvent.setup({ delay: null });
+  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
+  const dialog = await openGallery();
+
+  await user.keyboard("{ArrowRight}");
+  await expectImage("lightbox", "second.png");
+  await user.keyboard("{ArrowRight}");
+  await expectImage("lightbox", "third.png");
+  expect(queryNamedButton("Next image artifact", dialog)).toBeNull();
+  await user.keyboard("{ArrowRight}");
+  expect(screen.getByTestId("attachment-lightbox-image")).toHaveAttribute(
+    "alt",
+    "third.png",
+  );
+  await user.keyboard("{ArrowLeft}");
+  await expectImage("lightbox", "second.png");
+});
+
+test("An inaccessible gallery image still lets the user reach the next image", async () => {
+  const restricted = artifactReferencePath(
+    "f0000000-0000-4000-a000-000000000093",
+    "second.png",
+  );
+  mockGallery((filename) => {
+    return filename === "second.png" ? restricted : publicArtifactUrl(filename);
+  });
+  context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
+    return respond(404, {
+      error: { code: "NOT_FOUND", message: "Artifact unavailable" },
+    });
+  });
+  const user = userEvent.setup({ delay: null });
+  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
+  const dialog = await openGallery();
+
+  await user.keyboard("{ArrowRight}");
+
+  await expect(
+    within(dialog).findByRole("heading", {
+      name: "You can’t view this artifact",
+    }),
+  ).resolves.toBeInTheDocument();
+  await user.keyboard("{ArrowRight}");
+  await expectImage("lightbox", "third.png");
+});
+
+test("Sidebar navigation decodes a resolved private URL without replacing its focus owner", async () => {
+  const id = "f0000000-0000-4000-a000-000000000092";
+  const canonical = artifactReferencePath(id, "second.png");
+  const secondUrl = publicArtifactUrl("second.png");
+  const urlReady = context.mocks.deferred<void>();
+  const decodeReady = context.mocks.deferred<void>();
+  mockGallery((filename) => {
+    return filename === "second.png" ? canonical : publicArtifactUrl(filename);
+  });
+  context.mocks.api(artifactReferencesContract.resolve, async ({ respond }) => {
+    await urlReady.promise;
+    return respond(200, {
+      downloadUrl: new URL("?download=1", secondUrl).href,
+      url: secondUrl,
+      filename: "second.png",
+      contentType: "image/png",
+      expiresAt: "2099-01-01T00:00:00.000Z",
+      target: { kind: "file", id },
+    });
+  });
+  vi.spyOn(HTMLImageElement.prototype, "decode").mockImplementation(function (
+    this: HTMLImageElement,
+  ) {
+    Object.defineProperties(this, {
+      naturalWidth: { configurable: true, value: 1200 },
+      naturalHeight: { configurable: true, value: 700 },
+    });
+    if (this.dataset.testid === "artifact-sidebar-body-image") {
+      if (this.src === secondUrl) {
+        return decodeReady.promise;
+      }
+    }
+    return Promise.resolve();
+  });
+  const user = userEvent.setup({ delay: null });
+  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
+  const sidebar = await openGallerySidebar(user);
+  const owner = within(sidebar).getByRole("group");
+
+  await user.keyboard("{ArrowRight}");
+  expect(owner).toHaveFocus();
+  urlReady.resolve();
+  await waitFor(() => {
+    expect(
+      within(sidebar).getByTestId("artifact-sidebar-body-image"),
+    ).toHaveAttribute("src", secondUrl);
+  });
+  const image = within(sidebar).getByTestId("artifact-sidebar-body-image");
+  expect(image).not.toBeVisible();
+  expect(owner).toHaveFocus();
+  decodeReady.resolve();
+  await waitFor(() => {
+    expect(image).toBeVisible();
+  });
+  expect(within(sidebar).getByRole("group")).toHaveFocus();
+});
+
+test("Image shortcuts yield to modifiers and toolbar menus in both fullscreen modes", async () => {
+  mockGallery();
+  const user = userEvent.setup({ delay: null });
+  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
+  const dialog = await openGallery();
+
+  for (const modifier of ["Alt", "Control", "Meta", "Shift"]) {
+    await user.keyboard(`{${modifier}>}{ArrowRight}{/${modifier}}`);
+    expect(screen.getByTestId("attachment-lightbox-image")).toHaveAttribute(
+      "alt",
+      "first.png",
+    );
+  }
+  await user.click(getNamedButton("Download options", dialog));
+  const menu = await screen.findByRole("menu");
+  await user.keyboard("{ArrowRight}");
+  expect(menu).toBeInTheDocument();
+  expect(screen.getByTestId("attachment-lightbox-image")).toHaveAttribute(
+    "alt",
+    "first.png",
+  );
+  await user.keyboard("{Escape}");
+  await user.click(getNamedButton("Enter fullscreen", dialog));
+  await user.keyboard("{ArrowRight}");
+  expect(screen.getByTestId("attachment-lightbox-image")).toHaveAttribute(
+    "alt",
+    "first.png",
+  );
+  await user.click(within(dialog).getByTestId("artifact-dialog-image-stage"));
+  await user.keyboard("{ArrowRight}");
+  await expectImage("lightbox", "second.png");
+  await user.click(getNamedButton("Exit fullscreen", dialog));
+  await user.click(getNamedButton("Open in split view", dialog));
+  const sidebar = await screen.findByTestId("artifact-sidebar");
+  await waitFor(() => {
+    return expect(screen.queryByTestId("attachment-lightbox")).toBeNull();
+  });
+  await user.click(getNamedButton("Enter fullscreen", sidebar));
+  await user.keyboard("{ArrowRight}");
+  expect(screen.getByTestId("artifact-sidebar-body-image")).toHaveAttribute(
+    "alt",
+    "second.png",
+  );
+  await user.click(within(sidebar).getByTestId("zoomable-image-canvas"));
+  await user.keyboard("{ArrowRight}");
+  await expectImage("sidebar", "third.png");
+  await user.click(getNamedButton("Exit fullscreen", sidebar));
+  await user.click(within(sidebar).getByTestId("zoomable-image-canvas"));
+  await user.keyboard("{ArrowLeft}");
+  await expectImage("sidebar", "second.png");
+});

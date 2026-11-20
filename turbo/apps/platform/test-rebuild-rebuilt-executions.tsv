@@ -1639,3 +1639,39 @@ chat-runless-delivery-001	turbo/apps/platform/src/views/okou-page/__tests__/chat
 chat-runless-delivery-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-runless-delivery.test.tsx	keeps run work history off a delivery that has no Run	136	passed
 chat-thinking-brand-motion-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-thinking-brand-motion.test.tsx	Show the brand thinking artwork during a run	18	passed
 chat-unsupported-image-previews-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-unsupported-image-previews.test.tsx	assistant BMP images display the original in the thread and lightbox	27	passed
+chat-conversation-locator-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-conversation-locator.test.tsx	sampled markers show the first-turn timestamp across the whole conversation	66	passed
+chat-conversation-locator-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-conversation-locator.test.tsx	first-turn navigation reaches beyond the rendered conversation	91	passed
+chat-conversation-locator-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-conversation-locator.test.tsx	leaving the locator hides its timestamp preview	118	passed
+chat-metadata-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-metadata.test.tsx	Late thread details do not replace the conversation the user chose	193	passed
+chat-metadata-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-metadata.test.tsx	A newly available thread appears after a thread-list event	254	passed
+chat-metadata-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-metadata.test.tsx	Returning to an interrupted chat does not reuse abandoned details	304	passed
+chat-metadata-008	turbo/apps/platform/src/views/okou-page/__tests__/chat-metadata.test.tsx	Unavailable metadata still waits for the canonical conversation	390	passed
+chat-metadata-009	turbo/apps/platform/src/views/okou-page/__tests__/chat-metadata.test.tsx	Cold left and right conversations resolve independently	438	passed
+chat-missing-agent-recovery-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-missing-agent-recovery.test.tsx	A missing agent never falls back to a default the user cannot reach	48	passed
+chat-missing-agent-recovery-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-missing-agent-recovery.test.tsx	A missing agent falls back to a visible agent when no default is recorded	56	passed
+chat-missing-agent-recovery-006	turbo/apps/platform/src/views/okou-page/__tests__/chat-missing-agent-recovery.test.tsx	A resolvable agent still opens its chat page	64	passed
+chat-model-projection-refresh-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-model-projection-refresh.test.tsx	Keep the draft through a held and failed projection refresh	150	passed
+chat-model-projection-refresh-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-model-projection-refresh.test.tsx	Keep effort through a held and failed projection refresh	157	passed
+chat-model-projection-refresh-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-model-projection-refresh.test.tsx	Keep Fast through a failed projection refresh	168	passed
+chat-sync-recovery-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-sync-recovery.test.tsx	Ordinary notifications update a hidden chat tab through direct	115	passed
+chat-sync-recovery-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-sync-recovery.test.tsx	A realtime continuity gap catches up without another chat notification	147	passed
+chat-sync-recovery-006	turbo/apps/platform/src/views/okou-page/__tests__/chat-sync-recovery.test.tsx	A credential gap catches up Project changes without another notification at /	171	passed
+chat-codex-execution-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-codex-execution.test.tsx	shows catalog-supported Max for a saved Ultra preference when Codex execution is false	31	passed
+chat-codex-execution-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-codex-execution.test.tsx	enabling Codex in Lab preserves a saved Ultra preference that Pi cannot use	48	passed
+chat-codex-execution-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-codex-execution.test.tsx	does not expand the catalog's efforts when Codex execution is enabled	92	passed
+chat-emoji-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-emoji.test.tsx	Retain a thread icon when resizing from mobile to desktop	86	passed
+chat-emoji-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-emoji.test.tsx	Change a thread icon before its save finishes	104	passed
+chat-emoji-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-emoji.test.tsx	Restore chat focus after closing the mobile emoji picker	135	passed
+chat-emoji-006	turbo/apps/platform/src/views/okou-page/__tests__/chat-emoji.test.tsx	Keep one focused emoji picker when resizing from mobile to desktop	155	passed
+chat-emoji-007	turbo/apps/platform/src/views/okou-page/__tests__/chat-emoji.test.tsx	Keep one focused emoji picker when resizing from desktop to mobile	155	passed
+chat-emoji-010	turbo/apps/platform/src/views/okou-page/__tests__/chat-emoji.test.tsx	Keyboard category navigation preserves search until activation	192	passed
+chat-engagement-telemetry-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-engagement-telemetry.test.tsx	chat engagement telemetry reports expanding completed work history through the range control	57	passed
+chat-engagement-telemetry-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-engagement-telemetry.test.tsx	chat engagement telemetry reports recommendation frequency by kind in rows	126	passed
+chat-fork-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-fork.test.tsx	Fork keeps the source project	85	passed
+chat-fork-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-fork.test.tsx	F opens a Fork composer carrying the captured selection	160	passed
+chat-fork-006	turbo/apps/platform/src/views/okou-page/__tests__/chat-fork.test.tsx	Fork sends the selected passage and its source to a new personal chat	183	passed
+chat-fork-007	turbo/apps/platform/src/views/okou-page/__tests__/chat-fork.test.tsx	Forward sends the passage with its source thread to the chosen agent	229	passed
+chat-image-navigation-shortcuts-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-image-navigation-shortcuts.test.tsx	Arrow keys move between gallery images and stop at the boundaries	109	passed
+chat-image-navigation-shortcuts-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-image-navigation-shortcuts.test.tsx	An inaccessible gallery image still lets the user reach the next image	129	passed
+chat-image-navigation-shortcuts-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-image-navigation-shortcuts.test.tsx	Sidebar navigation decodes a resolved private URL without replacing its focus owner	157	passed
+chat-image-navigation-shortcuts-007	turbo/apps/platform/src/views/okou-page/__tests__/chat-image-navigation-shortcuts.test.tsx	Image shortcuts yield to modifiers and toolbar menus in both fullscreen modes	214	passed

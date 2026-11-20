@@ -1,0 +1,141 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { expect, test } from "vitest";
+
+import { click } from "../../../__tests__/page-helper.ts";
+import {
+  conversationEvents,
+  messageAnchor,
+  messageOffset,
+  mockChatGeometry,
+  requiredElement,
+  VIEWPORT_HEIGHT,
+} from "./chat-conversation-locator-test-helpers.ts";
+import {
+  chatScrollContainer,
+  setupPage,
+  createChatLifecycleHelpers,
+} from "./chat-lifecycle-test-helpers.ts";
+
+const context = testContext();
+const { mockChatLifecycleWithoutBrowserSession } =
+  createChatLifecycleHelpers(context);
+
+const MAX_TICK_COUNT = 24;
+const TICK_PITCH = 10;
+
+async function setupLocatorConversation({
+  threadId,
+  turnCount,
+}: {
+  threadId: string;
+  turnCount: number;
+}) {
+  mockChatGeometry();
+  mockChatLifecycleWithoutBrowserSession({
+    threadId,
+    threadTitle: "Locator sampled history",
+    chatEvents: conversationEvents(turnCount),
+  });
+  await setupPage({
+    context,
+    path: `/chats/${threadId}`,
+    host: "app.okou.ai",
+    locale: "en-US",
+    env: { TZ: "UTC" },
+  });
+
+  await screen.findByText(`Locator answer ${String(turnCount)}`);
+  const container = chatScrollContainer();
+  const rail = requiredElement("[data-conversation-locator]");
+  const tickCount = Math.min(turnCount, MAX_TICK_COUNT);
+  await waitFor(() => {
+    expect(rail.querySelectorAll("[data-locator-tick]")).toHaveLength(
+      tickCount,
+    );
+  });
+  return { container, rail, tickCount };
+}
+
+function endpointMarkY(tickCount: number, endpoint: "first" | "last"): number {
+  const halfTrack = ((tickCount - 1) * TICK_PITCH) / 2;
+  return VIEWPORT_HEIGHT / 2 + (endpoint === "first" ? -halfTrack : halfTrack);
+}
+
+test("sampled markers show the first-turn timestamp across the whole conversation", async () => {
+  const user = userEvent.setup();
+  const { container, rail, tickCount } = await setupLocatorConversation({
+    threadId: "b0000000-0000-4000-a000-000000000825",
+    // One turn above the compact scale limit proves that the whole thread is
+    // sampled without making unrelated interaction cases render 60 events.
+    turnCount: MAX_TICK_COUNT + 1,
+  });
+  expect(
+    within(container).queryByText("Locator question 1"),
+  ).not.toBeInTheDocument();
+
+  await user.pointer({
+    target: rail,
+    coords: { clientX: 12, clientY: endpointMarkY(tickCount, "first") },
+  });
+  const preview = requiredElement("[data-conversation-locator-preview]");
+  await waitFor(() => {
+    expect(within(preview).getByText("Aug 1, 10:00 AM")).toHaveAttribute(
+      "datetime",
+      "2026-08-01T10:00:00.000Z",
+    );
+  });
+});
+
+test("first-turn navigation reaches beyond the rendered conversation", async () => {
+  const user = userEvent.setup();
+  const { container, rail, tickCount } = await setupLocatorConversation({
+    threadId: "b0000000-0000-4000-a000-000000000830",
+    turnCount: 8,
+  });
+  expect(
+    within(container).queryByText("Locator question 1"),
+  ).not.toBeInTheDocument();
+  await user.pointer({
+    target: rail,
+    coords: { clientX: 12, clientY: endpointMarkY(tickCount, "first") },
+  });
+  click(rail);
+
+  await within(container).findByText("Locator question 1");
+  await waitFor(() => {
+    // The first message cannot move below the top edge without overscrolling.
+    expect(messageOffset("Locator question 1", container)).toBe(0);
+    expect(
+      messageAnchor("Locator question 1", container).querySelector(
+        "[data-locator-landed]",
+      ),
+    ).toBeInTheDocument();
+  });
+});
+
+test("leaving the locator hides its timestamp preview", async () => {
+  const user = userEvent.setup();
+  const { rail, tickCount } = await setupLocatorConversation({
+    threadId: "b0000000-0000-4000-a000-000000000829",
+    turnCount: 8,
+  });
+
+  await user.pointer({
+    target: rail,
+    coords: { clientX: 12, clientY: endpointMarkY(tickCount, "first") },
+  });
+  const preview = requiredElement("[data-conversation-locator-preview]");
+  await waitFor(() => {
+    expect(within(preview).getByText("Aug 1, 10:00 AM")).toHaveAttribute(
+      "datetime",
+      "2026-08-01T10:00:00.000Z",
+    );
+  });
+
+  await user.unhover(rail);
+  await waitFor(() => {
+    expect(preview).not.toBeInTheDocument();
+  });
+});
