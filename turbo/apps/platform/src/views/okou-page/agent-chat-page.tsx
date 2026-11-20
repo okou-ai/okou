@@ -283,13 +283,7 @@ export function AgentComposerPage() {
         {taglineHeading}
       </div>
     );
-  return (
-    <CapabilityHomePage
-      signals={composerSignals}
-      heading={heading}
-      entrance={animateGreeting}
-    />
-  );
+  return <CapabilityHomePage signals={composerSignals} heading={heading} />;
 }
 
 export function AgentChatPage({ project = false }: { project?: boolean }) {

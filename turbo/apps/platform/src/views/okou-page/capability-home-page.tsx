@@ -242,13 +242,7 @@ function WorkflowCapabilityCard({
   );
 }
 
-function CapabilityCards({
-  signals,
-  entrance,
-}: {
-  readonly signals: ComposerSignals;
-  readonly entrance: boolean;
-}) {
+function CapabilityCards({ signals }: { readonly signals: ComposerSignals }) {
   const { t } = useTranslation();
   const createTitle = t(($) => {
     return $.chat.capabilityHome.create.title;
@@ -262,15 +256,10 @@ function CapabilityCards({
   const swap = useHomeSwap(signals);
   // Explore takes the top row in halves. Below it the row runs 5:4, which still
   // fits Create's five choices on one line and gives Workflow the width its
-  // wide flow drawing needs. On the first home of the session the rows rise in
-  // one 70ms step after the greeting: the top row at 140ms, the bottom at 210.
+  // wide flow drawing needs.
   return (
     <div
-      className={cn(
-        "grid min-w-0 gap-3 @2xl:grid-cols-18",
-        entrance &&
-          "[&>*]:motion-safe:animate-capability-row-in [&>*:nth-child(-n+2)]:[--capability-row-delay:140ms] [&>*:nth-child(n+3)]:[--capability-row-delay:210ms]",
-      )}
+      className="grid min-w-0 gap-3 @2xl:grid-cols-18"
       role="group"
       aria-label={t(($) => {
         return $.chat.capabilityHome.capabilities;
@@ -336,12 +325,9 @@ function CapabilityCards({
 export function CapabilityHomeContent({
   signals,
   heading,
-  entrance = false,
 }: {
   readonly signals: ComposerSignals;
   readonly heading?: ReactNode;
-  /** Whether the cards rise in, as the greeting does on the session's first home. */
-  readonly entrance?: boolean;
 }) {
   const selected = useGet(signals.taskChips.home.task$);
   const focusEditor = useSet(signals.editor.focus$);
@@ -396,9 +382,8 @@ export function CapabilityHomeContent({
               // showing it never pushes the cards or the composer down.
               <div className={cn(GREETING_ROW, "items-center")}>{heading}</div>
             )}
-            <CapabilityCards signals={signals} entrance={entrance} />
+            <CapabilityCards signals={signals} />
             <CapabilityHomeCompliance
-              entrance={entrance}
               // The block takes its focused hide control with it; the
               // composer is where the page's focus starts, so it goes there.
               onHidden={focusEditor}
@@ -433,11 +418,9 @@ export function CapabilityHomeContent({
 export function CapabilityHomePage({
   signals,
   heading,
-  entrance,
 }: {
   readonly signals: ComposerSignals;
   readonly heading: ReactNode;
-  readonly entrance: boolean;
 }) {
   return (
     <ChatPageLayout
@@ -453,11 +436,7 @@ export function CapabilityHomePage({
         </ChatComposerFooter>
       }
     >
-      <CapabilityHomeContent
-        signals={signals}
-        heading={heading}
-        entrance={entrance}
-      />
+      <CapabilityHomeContent signals={signals} heading={heading} />
     </ChatPageLayout>
   );
 }
