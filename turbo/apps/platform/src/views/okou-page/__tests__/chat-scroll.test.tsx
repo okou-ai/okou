@@ -807,7 +807,14 @@ test("Hand the retained primary transcript restore to the new Router page when t
     expect(container.scrollTop).toBe(550);
   });
   await conversation.publish(completedTurn(9));
-  await screen.findByText("History answer 9");
+  // Avoid building full-page diagnostics while the realtime row is pending.
+  const transcript = within(container);
+  await waitFor(
+    () => {
+      expect(transcript.queryByText("History answer 9")).toBeInTheDocument();
+    },
+    { container },
+  );
   await frames.paint();
   await waitFor(() => {
     expect(
