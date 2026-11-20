@@ -1,14 +1,15 @@
 package ai.okou.android.chat
 
+import ai.okou.android.LocalActivityStatusColor
 import ai.okou.android.R
-import ai.okou.android.api.generated.IndicatorsThreadsValue
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -33,6 +34,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -43,12 +45,15 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isShiftPressed
@@ -59,6 +64,7 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.isSecondaryPressed
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -66,10 +72,12 @@ import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.collapse
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.expand
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -77,7 +85,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import java.text.NumberFormat
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
@@ -94,10 +105,13 @@ internal fun ChatListScreen(
     toggleProject: (String) -> Unit,
     listState: LazyListState,
     newChat: (String?) -> Unit,
+    showInbox: () -> Unit,
     selectedChatId: String?,
+    wide: Boolean,
     actionsEnabled: Boolean,
     refreshEnabled: Boolean,
     startupRecovery: @Composable (() -> Unit)?,
+    feedback: @Composable () -> Unit,
 ) {
     var renamingId by remember { mutableStateOf<String?>(null) }
     val renaming =
@@ -131,17 +145,28 @@ internal fun ChatListScreen(
             chatListGroups(state)
         }
     val indicators = state.indicators?.threads.orEmpty()
+    val unreadChatIds = state.indicators?.unreadAt.orEmpty().keys
     val sections =
-        remember(groups, collapsed, indicators) { chatListSections(groups, collapsed, indicators) }
+        remember(groups, collapsed, indicators, unreadChatIds) {
+            chatListSections(groups, collapsed, indicators, unreadChatIds)
+        }
     val runningKeys =
         remember(indicators, sections) {
             buildSet {
-                indicators.forEach { (id, indicator) ->
-                    if (indicator == IndicatorsThreadsValue.ACTIVE) add(id)
-                }
                 sections.forEach { section ->
-                    if (section.foldedStatus == ChatRowStatus.Running) {
-                        add(projectRowKey(checkNotNull(section.group.project).id))
+                    when (section.foldedStatus) {
+                        ChatRowStatus.Running ->
+                            add(projectRowKey(checkNotNull(section.group.project).id))
+                        null ->
+                            section.group.threads.forEach { thread ->
+                                if (
+                                    chatRowStatus(indicators[thread.id], thread.muted == true) ==
+                                        ChatRowStatus.Running
+                                ) {
+                                    add(thread.id)
+                                }
+                            }
+                        else -> Unit
                     }
                 }
             }
@@ -164,6 +189,11 @@ internal fun ChatListScreen(
             state.agents.none { it.isDefaultAgent } &&
             state.threads.any { it.hidden != true && it.projectId !in knownProjects }
     val refreshLabel = stringResource(R.string.chat_refresh)
+    val listLabel = stringResource(R.string.chat_list_title)
+    val widthDp = LocalConfiguration.current.screenWidthDp
+    val largeCompact = widthDp >= 600
+    val listInset = if (wide) 12.dp else if (largeCompact) 24.dp else 16.dp
+    val outline = MaterialTheme.colorScheme.outline
     PullToRefreshBox(
         isRefreshing = state.confirmedAt != null && state.listPhase == ChatReadPhase.Loading,
         onRefresh = { if (refreshEnabled) refresh() },
@@ -172,6 +202,7 @@ internal fun ChatListScreen(
     ) {
         LazyColumn(
             Modifier.widthIn(max = 720.dp).fillMaxSize().testTag("chat_list").semantics {
+                contentDescription = listLabel
                 if (refreshEnabled && state.listPhase != ChatReadPhase.Loading) {
                     customActions =
                         listOf(
@@ -182,22 +213,10 @@ internal fun ChatListScreen(
                         )
                 }
             },
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(24.dp),
+            contentPadding =
+                PaddingValues(start = listInset, end = listInset, top = 4.dp, bottom = 100.dp),
             state = listState,
         ) {
-            item {
-                Text(
-                    stringResource(R.string.chat_list_title),
-                    style = MaterialTheme.typography.headlineLarge,
-                    modifier = Modifier.semantics { heading() },
-                )
-                ChatAction(
-                    R.string.composer_new,
-                    { newChat(null) },
-                    enabled = actionsEnabled,
-                    icon = R.drawable.ic_edit_square,
-                )
-            }
             if (startupRecovery != null) item { startupRecovery() }
             if (state.source == ChatListSource.Cache) item { ChatNotice(R.string.chat_cached) }
             if (state.listPhase == ChatReadPhase.Loading)
@@ -246,25 +265,26 @@ internal fun ChatListScreen(
                         item(key = projectRowKey(project.id)) {
                             ProjectRow(
                                 project.name,
-                                collapsed = foldedStatus != null,
-                                status = foldedStatus ?: ChatRowStatus.None,
+                                activity = section.foldedActivity,
                                 runningFrame = runningFrame,
                                 row = section.firstRow,
                                 toggle = { toggleProject(project.id) },
+                                newChat = if (actionsEnabled) ({ newChat(project.id) }) else null,
                             )
                         }
-                        if (foldedStatus == null) {
+                        if (foldedStatus == null && group.threads.isEmpty()) {
                             item(key = "project_actions_${project.id}") {
-                                Column(Modifier.padding(start = 24.dp)) {
-                                    if (group.threads.isEmpty()) {
+                                Column(Modifier.projectChildIndent(outline)) {
+                                    if (!actionsEnabled) {
                                         ChatNotice(R.string.chat_project_empty)
                                     }
-                                    ChatAction(
+                                    ChatListTextAction(
                                         R.string.composer_new_project,
-                                        { newChat(project.id) },
+                                        R.drawable.ic_add,
                                         enabled = actionsEnabled,
-                                        icon = R.drawable.ic_edit_square,
-                                    )
+                                    ) {
+                                        newChat(project.id)
+                                    }
                                 }
                             }
                         }
@@ -274,12 +294,16 @@ internal fun ChatListScreen(
                         itemsIndexed(group.threads, key = { _, thread -> thread.id }) {
                             index,
                             thread ->
-                            Column(Modifier.padding(start = if (project == null) 0.dp else 24.dp)) {
+                            Column(
+                                if (project == null) Modifier
+                                else Modifier.projectChildIndent(outline)
+                            ) {
                                 ChatRow(
                                     thread,
                                     chatRowStatus(indicators[thread.id], thread.muted == true),
-                                    thread.id == selectedChatId,
-                                    runningFrame,
+                                    unread = thread.id in unreadChatIds,
+                                    isSelected = thread.id == selectedChatId,
+                                    runningFrame = runningFrame,
                                     row = section.firstChatRow + index,
                                     actions =
                                         if (actionsEnabled) state.rowActions(thread, group, index)
@@ -312,12 +336,56 @@ internal fun ChatListScreen(
                         (state.filter != ChatListFilter.Unread ||
                             state.indicatorsPhase == ChatReadPhase.Ready)
                 ) {
-                    item { ChatNotice(R.string.chat_empty) }
+                    item {
+                        Column(
+                            Modifier.padding(start = 12.dp, end = 12.dp, top = 24.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Text(
+                                stringResource(R.string.chat_empty),
+                                Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                                style = chatListTitleStyle().copy(fontWeight = FontWeight.SemiBold),
+                            )
+                            if (state.filter != ChatListFilter.Inbox) {
+                                ChatListTextAction(
+                                    R.string.chat_back_to_inbox,
+                                    R.drawable.ic_arrow_back,
+                                    onClick = showInbox,
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
+        val end =
+            when {
+                wide -> 20.dp
+                largeCompact -> 32.dp
+                widthDp < 360 -> 16.dp
+                else -> 24.dp
+            }
+        Column(
+            Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(bottom = 16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            feedback()
+            NewChatAction(
+                Modifier.align(Alignment.End).padding(end = end),
+                enabled = actionsEnabled,
+                onClick = { newChat(null) },
+            )
+        }
     }
 }
+
+private fun Modifier.projectChildIndent(color: Color): Modifier =
+    drawBehind {
+            val inset = 20.5.dp.toPx()
+            val x = if (layoutDirection == LayoutDirection.Ltr) inset else size.width - inset
+            drawLine(color, Offset(x, 0f), Offset(x, size.height), strokeWidth = 1.dp.toPx())
+        }
+        .padding(start = 24.dp)
 
 @Composable
 private fun RenameChatDialog(
@@ -364,63 +432,139 @@ private fun projectRowKey(id: String) = "group_$id"
 @Composable
 private fun ProjectRow(
     name: String,
-    collapsed: Boolean,
-    status: ChatRowStatus,
+    activity: ProjectActivity?,
     runningFrame: LongState,
     row: Int,
     toggle: () -> Unit,
+    newChat: (() -> Unit)?,
 ) {
-    val label = status.label()
-    Row(
-        Modifier.fillMaxWidth()
-            .heightIn(min = 52.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .clickable(role = Role.Button, onClick = toggle)
-            .semantics {
-                heading()
-                if (label != null) stateDescription = label
-                if (collapsed) {
-                    expand {
-                        toggle()
-                        true
+    val collapsed = activity != null
+    val status = activity?.status ?: ChatRowStatus.None
+    val locale = LocalConfiguration.current.locales[0]
+    val number = remember(locale) { NumberFormat.getIntegerInstance(locale) }
+    val unread = stringResource(R.string.chat_unread)
+    val running = stringResource(R.string.chat_active)
+    val label =
+        listOfNotNull(
+                activity?.unread?.takeIf { it > 0 }?.let { "$unread ${number.format(it)}" },
+                activity?.running?.takeIf { it > 0 }?.let { "$running ${number.format(it)}" },
+            )
+            .joinToString()
+    var menuOpen by remember(newChat != null) { mutableStateOf(false) }
+    val openMenu: (() -> Unit)? = if (newChat != null) ({ menuOpen = true }) else null
+    Box {
+        Row(
+            Modifier.fillMaxWidth()
+                .heightIn(min = 52.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .contextMenuInput(openMenu)
+                .combinedClickable(
+                    role = Role.Button,
+                    onClick = toggle,
+                    onLongClick = openMenu,
+                    onLongClickLabel = stringResource(R.string.chat_more_actions),
+                )
+                .semantics {
+                    heading()
+                    if (label.isNotEmpty()) stateDescription = label
+                    if (collapsed) {
+                        expand {
+                            toggle()
+                            true
+                        }
+                    } else {
+                        collapse {
+                            toggle()
+                            true
+                        }
                     }
-                } else {
-                    collapse {
-                        toggle()
-                        true
+                }
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                painterResource(if (collapsed) R.drawable.ic_folder else R.drawable.ic_folder_open),
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp),
+            )
+            Spacer(Modifier.width(8.dp))
+            Row(
+                Modifier.weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    name,
+                    Modifier.weight(1f, fill = false),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = chatListTitleStyle(),
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Icon(
+                    painterResource(
+                        if (collapsed) R.drawable.ic_chevron_right else R.drawable.ic_expand_more
+                    ),
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(16.dp),
+                )
+            }
+            if (status != ChatRowStatus.None) {
+                Spacer(Modifier.width(8.dp))
+                ChatStatusGlyph(status, runningFrame, row)
+            }
+        }
+        if (newChat != null) {
+            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.composer_new_project)) },
+                    leadingIcon = {
+                        Icon(painterResource(R.drawable.ic_edit_square), contentDescription = null)
+                    },
+                    onClick = {
+                        menuOpen = false
+                        newChat()
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun Modifier.contextMenuInput(openMenu: (() -> Unit)?): Modifier {
+    val latestOpenMenu by rememberUpdatedState(openMenu)
+    return onKeyEvent {
+            val open = latestOpenMenu
+            if (
+                open != null &&
+                    it.type == KeyEventType.KeyUp &&
+                    (it.key == Key.Menu || it.key == Key.F10 && it.isShiftPressed)
+            ) {
+                open()
+                true
+            } else false
+        }
+        .pointerInput(Unit) {
+            awaitPointerEventScope {
+                while (true) {
+                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                    if (event.type == PointerEventType.Press && event.buttons.isSecondaryPressed) {
+                        event.changes.forEach { it.consume() }
+                        latestOpenMenu?.invoke()
                     }
                 }
             }
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(
-            painterResource(
-                if (collapsed) R.drawable.ic_chevron_right else R.drawable.ic_expand_more
-            ),
-            contentDescription = null,
-            modifier = Modifier.size(16.dp),
-        )
-        Spacer(Modifier.width(8.dp))
-        Text(
-            name,
-            Modifier.weight(1f),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            style = MaterialTheme.typography.bodyLarge,
-            fontWeight = FontWeight.SemiBold,
-        )
-        if (status != ChatRowStatus.None) {
-            Spacer(Modifier.width(8.dp))
-            ChatStatusGlyph(status, runningFrame, row)
         }
-    }
 }
 
 @Composable
 private fun ChatRow(
     thread: ConfirmedChat,
     status: ChatRowStatus,
+    unread: Boolean,
     isSelected: Boolean,
     runningFrame: LongState,
     row: Int,
@@ -436,10 +580,9 @@ private fun ChatRow(
     val labels =
         listOfNotNull(
             status.label(),
+            if (status == ChatRowStatus.Running && unread) stringResource(R.string.chat_unread)
+            else null,
             if (thread.pinnedAt != null) stringResource(R.string.chat_pinned) else null,
-            if (thread.muted == true && status == ChatRowStatus.Running) {
-                stringResource(R.string.chat_muted)
-            } else null,
             pendingAction?.let {
                 stringResource(
                     if (it.updatesChat) R.string.chat_row_action_pending
@@ -455,30 +598,7 @@ private fun ChatRow(
                 .heightIn(min = 52.dp)
                 .clip(shape)
                 .then(if (isSelected) Modifier.background(colors.secondaryContainer) else Modifier)
-                .onKeyEvent {
-                    if (
-                        openMenu != null &&
-                            it.type == KeyEventType.KeyUp &&
-                            (it.key == Key.Menu || it.key == Key.F10 && it.isShiftPressed)
-                    ) {
-                        openMenu()
-                        true
-                    } else false
-                }
-                .pointerInput(actions, pendingAction) {
-                    awaitPointerEventScope {
-                        while (true) {
-                            val event = awaitPointerEvent(PointerEventPass.Initial)
-                            if (
-                                event.type == PointerEventType.Press &&
-                                    event.buttons.isSecondaryPressed
-                            ) {
-                                event.changes.forEach { it.consume() }
-                                openMenu?.invoke()
-                            }
-                        }
-                    }
-                }
+                .contextMenuInput(openMenu)
                 .combinedClickable(
                     enabled = enabled,
                     onClick = open,
@@ -499,13 +619,11 @@ private fun ChatRow(
                 color = if (isSelected) colors.onSecondaryContainer else colors.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.bodyLarge,
+                style = chatListTitleStyle(),
                 fontWeight = if (status == ChatRowStatus.Unread) FontWeight.SemiBold else null,
             )
-            if (status != ChatRowStatus.None) {
-                Spacer(Modifier.width(8.dp))
-                ChatStatusGlyph(status, runningFrame, row)
-            }
+            Spacer(Modifier.width(8.dp))
+            ChatStatusGlyph(status, runningFrame, row)
         }
         if (actions.isNotEmpty()) {
             DropdownMenu(
@@ -528,6 +646,14 @@ private fun ChatRow(
         }
     }
 }
+
+@Composable
+private fun chatListTitleStyle() =
+    MaterialTheme.typography.bodyLarge.copy(
+        fontSize = 16.sp,
+        lineHeight = 24.sp,
+        letterSpacing = 0.sp,
+    )
 
 private fun ChatRowAction.label(): Int =
     when (this) {
@@ -571,10 +697,7 @@ private fun ChatRowStatus.label(): String? =
 
 @Composable
 private fun ChatStatusGlyph(status: ChatRowStatus, runningFrame: LongState, row: Int) {
-    // Web uses sky-600. A lighter blue keeps the mark legible on dark selection fills.
-    val color =
-        if (MaterialTheme.colorScheme.background.luminance() < 0.5f) Color(0xFF38BDF8)
-        else Color(0xFF0084D1)
+    val color = LocalActivityStatusColor.current
     Box(Modifier.size(16.dp), contentAlignment = Alignment.Center) {
         when (status) {
             ChatRowStatus.Unread -> Canvas(Modifier.size(8.dp)) { drawCircle(color) }
@@ -593,26 +716,74 @@ private fun ChatStatusGlyph(status: ChatRowStatus, runningFrame: LongState, row:
 }
 
 @Composable
-private fun ChatAction(
-    label: Int,
-    action: () -> Unit,
-    enabled: Boolean = true,
-    @DrawableRes icon: Int? = null,
-) {
+private fun ChatAction(label: Int, action: () -> Unit, enabled: Boolean = true) {
     TextButton(
         onClick = action,
         enabled = enabled,
         colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
     ) {
-        if (icon != null) {
-            Icon(
-                painterResource(icon),
-                contentDescription = null,
-                modifier = Modifier.size(ButtonDefaults.IconSize),
-            )
-            Spacer(Modifier.width(ButtonDefaults.IconSpacing))
-        }
         Text(stringResource(label))
+    }
+}
+
+@Composable
+private fun NewChatAction(modifier: Modifier, enabled: Boolean, onClick: () -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    Surface(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = modifier.alpha(if (enabled) 1f else 0.4f).semantics { role = Role.Button },
+        shape = RoundedCornerShape(16.dp),
+        color = colors.inverseSurface,
+        contentColor = colors.inverseOnSurface,
+        shadowElevation = 3.dp,
+    ) {
+        Row(
+            Modifier.heightIn(min = 56.dp).padding(horizontal = 16.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(painterResource(R.drawable.ic_edit_square), null, Modifier.size(22.dp))
+            Text(
+                stringResource(R.string.composer_new),
+                style =
+                    MaterialTheme.typography.labelLarge.copy(
+                        fontSize = 14.sp,
+                        lineHeight = 20.sp,
+                        letterSpacing = 0.sp,
+                    ),
+                fontWeight = FontWeight(550),
+            )
+        }
+    }
+}
+
+@Composable
+private fun ChatListTextAction(
+    label: Int,
+    @DrawableRes icon: Int,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
+    TextButton(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier.heightIn(min = 48.dp),
+        shape = RoundedCornerShape(9.dp),
+        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
+        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
+    ) {
+        Icon(painterResource(icon), null, Modifier.size(16.dp))
+        Spacer(Modifier.width(6.dp))
+        Text(
+            stringResource(label),
+            style =
+                MaterialTheme.typography.labelMedium.copy(
+                    fontSize = 13.sp,
+                    lineHeight = 20.sp,
+                    letterSpacing = 0.sp,
+                ),
+        )
     }
 }
 
@@ -627,7 +798,7 @@ private fun ChatNotice(message: Int) {
 
 internal fun ChatListFilter.label() =
     when (this) {
-        ChatListFilter.Recent -> R.string.chat_all
+        ChatListFilter.Inbox -> R.string.chat_inbox
         ChatListFilter.Unread -> R.string.chat_unread
         ChatListFilter.Archived -> R.string.chat_archived
         ChatListFilter.Muted -> R.string.chat_muted

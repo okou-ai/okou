@@ -12,9 +12,15 @@
     <string name="chat_status_unavailable">無法更新狀態，先前的標記可能已過時。</string>
     <string name="chat_status_loading">正在檢查活躍和未讀狀態…</string>
     <string name="chat_refresh_status">重新整理狀態</string>
-    <string name="chat_all">全部</string>
+    <string name="chat_inbox">收件匣</string>
+    <string name="chat_mark_all_read">全部標為已讀</string>
+    <string name="chat_mark_all_read_unconfirmed">有些聊天可能仍未讀。</string>
+    <plurals name="chat_mark_all_read_success">
+        <item quantity="other">已將 %1$d 則聊天標為已讀</item>
+    </plurals>
     <string name="chat_filter">篩選</string>
-    <string name="chat_clear_filter">清除篩選</string>
+    <string name="chat_filter_subtitle">篩選 · %1$s</string>
+    <string name="chat_back_to_inbox">返回收件匣</string>
     <string name="chat_more_actions">更多操作</string>
     <string name="chat_unread">未讀</string>
     <string name="chat_archived">已封存</string>

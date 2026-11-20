@@ -78,14 +78,7 @@ class NativeComposerDraftTest {
                         10_000,
                     )
                 )
-            checkNotNull(
-                device.wait(
-                    Until.findObject(
-                        By.pkg(app.packageName).text(app.getString(R.string.chat_list_title))
-                    ),
-                    10_000,
-                )
-            )
+            checkNotNull(device.wait(Until.findObject(chatListRegion(app)), 10_000))
             device
                 .findObject(
                     UiSelector()

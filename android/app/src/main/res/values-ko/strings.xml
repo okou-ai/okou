@@ -118,6 +118,7 @@
     <string name="updates_preparing">업데이트 준비 중…</string>
     <string name="updates_check">업데이트 확인</string>
     <string name="updates_view">업데이트 보기</string>
+    <string name="updates_toolbar">업데이트</string>
     <string name="updates_later">나중에</string>
     <string name="updates_download">업데이트 다운로드</string>
     <string name="updates_install">업데이트 설치</string>

@@ -1,4 +1,4 @@
-//! Read-only input shared by Guest Control and the ordinary file-write helper.
+//! Read-only, immutable input shared with Guest helpers.
 
 use std::io;
 use std::os::fd::{AsRawFd, BorrowedFd};
@@ -7,7 +7,7 @@ use std::ptr::NonNull;
 use nix::fcntl::{FcntlArg, SealFlag, fcntl};
 use nix::sys::stat::fstat;
 
-/// A mapping of an immutable batch input.
+/// A mapping of immutable helper input.
 pub struct SealedInput {
     address: NonNull<u8>,
     length: usize,

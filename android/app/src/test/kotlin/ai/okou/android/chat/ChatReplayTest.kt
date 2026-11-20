@@ -149,7 +149,7 @@ class ChatReplayTest {
                     Indicators(
                         emptyMap(),
                         mapOf(projectRow.id to IndicatorsThreadsValue.UNREAD),
-                        emptyMap(),
+                        mapOf(projectRow.id to "2026-11-13T00:00:00Z"),
                     ),
                 filter = ChatListFilter.Unread,
             )
@@ -160,17 +160,15 @@ class ChatReplayTest {
                 it.threads.isEmpty()
             }
         )
-        assertTrue(
-            chatListGroups(
-                    state.copy(
-                        indicators =
-                            state.indicators?.copy(
-                                threads = mapOf(projectRow.id to IndicatorsThreadsValue.ACTIVE)
-                            )
-                    )
-                )
-                .all { it.threads.isEmpty() }
+        val active =
+            checkNotNull(state.indicators)
+                .copy(threads = mapOf(projectRow.id to IndicatorsThreadsValue.ACTIVE))
+        assertEquals(
+            projectRow,
+            chatListGroups(state.copy(indicators = active)).first().threads.single(),
         )
+        val read = state.copy(indicators = active.copy(unreadAt = emptyMap()))
+        assertTrue(chatListGroups(read).all { it.threads.isEmpty() })
     }
 
     @Test
@@ -200,7 +198,7 @@ class ChatReplayTest {
                     Indicators(
                         emptyMap(),
                         mapOf(CHAT_IN_PROJECT to IndicatorsThreadsValue.UNREAD),
-                        emptyMap(),
+                        mapOf(CHAT_IN_PROJECT to "2026-11-13T00:00:00Z"),
                     ),
             )
         val (projectGroup, outsideGroup) = chatListGroups(state)
@@ -291,7 +289,7 @@ class ChatReplayTest {
     }
 
     @Test
-    fun mutedChatsKeepRunningStatusAndCollapsedProjectsPreferVisibleUnread() {
+    fun mutedChatsSuppressActivityAndCollapsedProjectsPreferVisibleUnread() {
         val rows =
             replay(
                 event(1, "created"),
@@ -305,22 +303,31 @@ class ChatReplayTest {
                 running.id to IndicatorsThreadsValue.ACTIVE,
                 unread.id to IndicatorsThreadsValue.UNREAD,
             )
+        val unreadIds = setOf(running.id, unread.id)
         assertEquals(
-            ChatRowStatus.Running,
+            ChatRowStatus.Muted,
             chatRowStatus(indicators[running.id], running.muted == true),
         )
         assertEquals(ChatRowStatus.Muted, chatRowStatus(indicators[unread.id], muted = true))
         assertEquals(
-            ChatRowStatus.Unread,
-            collapsedProjectStatus(listOf(running, unread), indicators),
+            ProjectActivity(unread = 1, running = 0),
+            collapsedProjectActivity(listOf(running, unread), indicators, unreadIds),
         )
         assertEquals(
-            ChatRowStatus.Running,
-            collapsedProjectStatus(listOf(running, unread.copy(muted = true)), indicators),
+            ProjectActivity(unread = 1, running = 1),
+            collapsedProjectActivity(
+                listOf(running.copy(muted = false), unread.copy(muted = true)),
+                indicators,
+                unreadIds,
+            ),
         )
         assertEquals(
-            ChatRowStatus.None,
-            collapsedProjectStatus(listOf(unread.copy(muted = true)), indicators),
+            ProjectActivity(unread = 0, running = 0),
+            collapsedProjectActivity(
+                listOf(running, unread.copy(muted = true)),
+                indicators,
+                unreadIds,
+            ),
         )
     }
 
@@ -351,12 +358,13 @@ class ChatReplayTest {
             )
         val indicators = mapOf(CHAT_IN_PROJECT to IndicatorsThreadsValue.ACTIVE)
 
-        val (open, afterOpen) = chatListSections(groups, emptyList(), indicators)
+        val (open, afterOpen) = chatListSections(groups, emptyList(), indicators, emptySet())
         assertEquals(0, open.firstRow)
         assertEquals(1, open.firstChatRow)
         assertEquals(3, afterOpen.firstChatRow)
 
-        val (folded, afterFolded) = chatListSections(groups, listOf(project.id), indicators)
+        val (folded, afterFolded) =
+            chatListSections(groups, listOf(project.id), indicators, emptySet())
         assertEquals(ChatRowStatus.Running, folded.foldedStatus)
         assertEquals(1, afterFolded.firstChatRow)
     }

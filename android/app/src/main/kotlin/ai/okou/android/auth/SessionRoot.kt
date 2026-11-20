@@ -7,11 +7,15 @@ import ai.okou.android.SettingsIcon
 import ai.okou.android.SettingsRow
 import ai.okou.android.SettingsScreen
 import ai.okou.android.SettingsSection
+import ai.okou.android.WorkspaceFilterSubtitle
 import ai.okou.android.api.generated.Organization
+import ai.okou.android.chat.ChatListFilter
 import ai.okou.android.chat.WorkspaceRealtimeLifecycle
 import ai.okou.android.instructions.PersonalInstructionsSettings
 import ai.okou.android.preferences.MemberPreferencesSettings
 import ai.okou.android.state.SettingsDestination
+import ai.okou.android.workspaceListPaneWidth
+import ai.okou.android.workspaceListTitleStyle
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -20,6 +24,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
@@ -46,6 +51,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -108,7 +114,9 @@ fun SessionRoot(
                     },
                     recovery = ready?.recovery,
                     workspaceTitle =
-                        organization?.let { { WorkspaceTitle(it, state, chooseWorkspace) } },
+                        organization?.let { workspace ->
+                            { filter -> WorkspaceTitle(workspace, state, filter, chooseWorkspace) }
+                        },
                     openUpdate = openUpdate,
                     startupRecovery =
                         if (state.stage == SessionStage.Unavailable) {
@@ -314,43 +322,65 @@ private fun AccountSettings(openInstructions: () -> Unit, signOut: () -> Unit) {
 private fun WorkspaceTitle(
     workspace: Organization,
     state: SessionUiState,
+    filter: ChatListFilter,
     chooseWorkspace: (String) -> Unit,
 ) {
     val canSwitch = state.ready != null && state.memberships.size > 1
+    val window = LocalConfiguration.current
+    val pane = workspaceListPaneWidth(window.screenWidthDp, window.screenHeightDp)
+    val logoSize = if (pane == null) 28.dp else 26.dp
+    val spacing = if (pane == null) 8.dp else 6.dp
     var choosing by remember { mutableStateOf(false) }
     val identity: @Composable RowScope.() -> Unit = {
         val logo = remember(workspace.id) { workspaceLogo(workspace.id) }
         Image(
             painterResource(logo),
             contentDescription = null,
-            modifier = Modifier.size(32.dp).clip(RoundedCornerShape(8.dp)),
+            modifier = Modifier.size(logoSize).clip(RoundedCornerShape(8.dp)),
         )
-        Text(
-            workspace.name,
-            modifier = Modifier.padding(start = 8.dp).weight(1f, fill = false),
-            style = MaterialTheme.typography.titleLarge,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        if (canSwitch) {
-            Icon(
-                painterResource(R.drawable.ic_expand_more),
-                stringResource(R.string.auth_switch_workspace),
-                Modifier.padding(start = 4.dp).size(16.dp),
-            )
+        Column(Modifier.padding(start = spacing).weight(1f, fill = false)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    workspace.name,
+                    Modifier.weight(1f, fill = false),
+                    style = workspaceListTitleStyle(window.screenWidthDp, pane),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (canSwitch) {
+                    Icon(
+                        painterResource(R.drawable.ic_expand_more),
+                        stringResource(R.string.auth_switch_workspace),
+                        Modifier.padding(start = spacing).size(14.dp),
+                    )
+                }
+            }
+            WorkspaceFilterSubtitle(filter)
         }
     }
     if (canSwitch) {
         TextButton(
             onClick = { choosing = true },
+            modifier = Modifier.heightIn(min = 48.dp),
+            shape = RoundedCornerShape(12.dp),
             colors =
                 ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
-            contentPadding = PaddingValues(0.dp),
+            contentPadding =
+                PaddingValues(
+                    start = spacing,
+                    top = spacing,
+                    end = if (pane == 320 || window.screenWidthDp < 360) 0.dp else spacing,
+                    bottom = spacing,
+                ),
             content = identity,
         )
         if (choosing) WorkspaceChooser(state, chooseWorkspace) { choosing = false }
     } else {
-        Row(verticalAlignment = Alignment.CenterVertically, content = identity)
+        Row(
+            Modifier.heightIn(min = 48.dp).padding(spacing),
+            verticalAlignment = Alignment.CenterVertically,
+            content = identity,
+        )
     }
 }
 

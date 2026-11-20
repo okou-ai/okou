@@ -1,5 +1,6 @@
 use bytes::Bytes;
 use guest_contracts::agent_instructions::InstructionOperation;
+use guest_contracts::storage_files;
 use guest_contracts::storage_resources::StorageResourceUsage;
 use serde::{Serialize, Serializer};
 use std::io;
@@ -37,6 +38,11 @@ const THREAD_WORKER: &str = "gctl-store";
 const THREAD_STDIN: &str = "gctl-store-in";
 const THREAD_STDOUT: &str = "gctl-store-out";
 const THREAD_STDERR: &str = "gctl-store-err";
+#[cfg(target_os = "linux")]
+const SEALED_STORAGE_MIN_BYTES: usize = 1024 * 1024;
+// Keep oversized decoded requests on the pipe used by the larger receive tier.
+#[cfg(target_os = "linux")]
+const SEALED_STORAGE_MAX_BYTES: usize = 8 * 1024 * 1024;
 
 #[derive(Clone)]
 pub(crate) enum GuestStorageManifestProgram {
@@ -361,6 +367,45 @@ struct RunManifestInput<'a> {
     drain_deadline: Duration,
 }
 
+fn configure_helper_stdin(
+    command: &mut Command,
+    instruction_operation: Option<InstructionOperation>,
+    input: Bytes,
+) -> Option<Bytes> {
+    let argument = match instruction_operation {
+        Some(operation) => operation.helper_argument(),
+        None if input.starts_with(storage_files::INPUT_MAGIC) => storage_files::STDIN_ARGUMENT,
+        None => "--manifest-stdin",
+    };
+    #[cfg(target_os = "linux")]
+    if argument == storage_files::STDIN_ARGUMENT
+        && (SEALED_STORAGE_MIN_BYTES..=SEALED_STORAGE_MAX_BYTES).contains(&input.len())
+    {
+        use std::os::unix::fs::FileExt;
+
+        let file = crate::sealed_input::create(c"guest-storage-files").and_then(|file| {
+            // Keep the inherited stdin offset at zero.
+            file.write_all_at(&input, 0)?;
+            crate::sealed_input::seal(&file)?;
+            Ok(file)
+        });
+        match file {
+            Ok(file) => {
+                command
+                    .arg(storage_files::SEALED_STDIN_ARGUMENT)
+                    .stdin(CommandStdio::Owned(file.into()));
+                return None;
+            }
+            Err(error) => log(
+                "WARN",
+                &format!("Failed to prepare sealed Storage input: {error}"),
+            ),
+        }
+    }
+    command.arg(argument).stdin(CommandStdio::Piped);
+    Some(input)
+}
+
 fn run_manifest(input: RunManifestInput<'_>) -> CapturedHelperOutput {
     let RunManifestInput {
         instruction_operation,
@@ -402,26 +447,18 @@ fn run_manifest(input: RunManifestInput<'_>) -> CapturedHelperOutput {
         }
     };
     let mut command = Command::new(program.path());
-    let argument = match instruction_operation {
-        Some(operation) => operation.helper_argument(),
-        None if manifest_json.starts_with(guest_contracts::storage_files::INPUT_MAGIC) => {
-            "--storage-files-stdin"
-        }
-        None => "--manifest-stdin",
-    };
+    let stdin_payload = configure_helper_stdin(&mut command, instruction_operation, manifest_json);
     let output_limit = if instruction_operation.is_some() {
         guest_control_proto::GUEST_AGENT_INSTRUCTIONS_OUTPUT_LIMIT_BYTES
     } else {
         GUEST_STORAGE_MANIFEST_OUTPUT_LIMIT_BYTES
     };
     command
-        .arg(argument)
         .env(guest_contracts::env::RUN_ID_ENV, run_id)
         .env(
             guest_contracts::runtime_paths::CANONICAL_GUEST_RUNTIME_DIR_ENV,
             runtime_dir,
         )
-        .stdin(CommandStdio::Piped)
         .stdout(CommandStdio::Piped)
         .stderr(CommandStdio::Piped);
     let mut child = match command.spawn(false, &process_containment) {
@@ -437,14 +474,18 @@ fn run_manifest(input: RunManifestInput<'_>) -> CapturedHelperOutput {
         }
     };
 
-    let Some(stdin) = child.stdin.take() else {
-        return abort_spawned(
-            child,
-            process_containment,
-            resources,
-            started,
-            "storage helper stdin pipe missing",
-        );
+    let stdin = match (stdin_payload, child.stdin.take()) {
+        (Some(input), Some(stdin)) => Some((stdin, input)),
+        (None, None) => None,
+        _ => {
+            return abort_spawned(
+                child,
+                process_containment,
+                resources,
+                started,
+                "unexpected storage helper stdin pipe",
+            );
+        }
     };
     let Some(stdout) = child.stdout.take() else {
         drop(stdin);
@@ -519,7 +560,9 @@ fn run_manifest(input: RunManifestInput<'_>) -> CapturedHelperOutput {
             );
         }
     };
-    let stdin_writer = match FixedInputWriter::spawn(stdin, manifest_json, THREAD_STDIN) {
+    let stdin_writer =
+        stdin.map(|(stdin, input)| FixedInputWriter::spawn(stdin, input, THREAD_STDIN));
+    let stdin_writer = match stdin_writer.transpose() {
         Ok(writer) => writer,
         Err(error) => {
             drain_cancel.cancel();
@@ -555,7 +598,7 @@ fn run_manifest(input: RunManifestInput<'_>) -> CapturedHelperOutput {
         ProcessContainmentCleanupMode::for_wait_outcome(&outcome, cancellation_observed);
     let containment_result =
         process_containment.cleanup_with_storage_resources(cleanup_mode, resources);
-    let stdin_result = stdin_writer.join();
+    let stdin_result = stdin_writer.map_or(Ok(()), FixedInputWriter::join);
     if !matches!(outcome, WaitOutcome::Exited(_))
         || cancellation_observed
         || containment_result.is_err()

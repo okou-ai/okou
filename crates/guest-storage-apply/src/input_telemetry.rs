@@ -1,7 +1,7 @@
-//! Additive, fixed-cardinality attribution for `--storage-files-stdin` only.
+//! Additive, fixed-cardinality attribution for binary Storage helper input.
 //!
-//! The phases measure stale-manifest removal, bounded stdin read, envelope
-//! framing, manifest JSON parsing, decoded-file construction **and validation**,
+//! The phases measure stale-manifest removal, bounded stdin read or mapping,
+//! envelope framing, manifest JSON parsing, decoded-file construction **and validation**,
 //! and mount-binding validation. `decode_validate` does not isolate copying from
 //! validation. Every attempted decoded input emits one zero-duration
 //! `input_payload_bytes_*` classification: the actual binary payload length

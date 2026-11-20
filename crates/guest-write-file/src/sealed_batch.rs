@@ -2,7 +2,7 @@ use std::io::{self, Write};
 use std::os::fd::{AsFd, BorrowedFd};
 
 use super::{MAX_BATCH_PAYLOAD_BYTES, write_batch};
-use guest_contracts::file_write::sealed_input::SealedInput;
+use guest_contracts::sealed_input::SealedInput;
 
 fn write_sealed_batch(input: BorrowedFd<'_>) -> io::Result<()> {
     let mapping = SealedInput::map(input, MAX_BATCH_PAYLOAD_BYTES)?;

@@ -28,6 +28,11 @@ pub const INPUT_MAGIC: &[u8; 8] = b"VM0FILE1";
 pub const MAX_MANIFEST_BYTES: usize = 64 * 1024;
 /// Maximum complete binary helper input.
 pub const MAX_INPUT_BYTES: usize = 16 + MAX_MANIFEST_BYTES + MAX_PAYLOAD_BYTES;
+/// Fixed Guest helper argument for binary Storage input read from stdin.
+pub const STDIN_ARGUMENT: &str = "--storage-files-stdin";
+/// Fixed Guest helper argument for binary Storage input mapped from sealed stdin.
+#[cfg(target_os = "linux")]
+pub const SEALED_STDIN_ARGUMENT: &str = "--storage-files-sealed-stdin";
 
 mod bindings;
 pub use bindings::{conflicting_mounts, validate_bindings};

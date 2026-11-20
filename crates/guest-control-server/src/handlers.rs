@@ -142,22 +142,6 @@ fn handle_write_files(
 }
 
 #[cfg(target_os = "linux")]
-pub(crate) fn create_batch_input() -> io::Result<File> {
-    use rustix::fs::{MemfdFlags, memfd_create};
-
-    let flags = MemfdFlags::CLOEXEC | MemfdFlags::ALLOW_SEALING | MemfdFlags::NOEXEC_SEAL;
-    Ok(File::from(memfd_create(c"guest-write-files", flags)?))
-}
-
-#[cfg(target_os = "linux")]
-fn seal_batch_input(file: &File) -> io::Result<()> {
-    use rustix::fs::{SealFlags, fcntl_add_seals};
-
-    let seals = SealFlags::WRITE | SealFlags::SHRINK | SealFlags::GROW | SealFlags::SEAL;
-    Ok(fcntl_add_seals(file, seals)?)
-}
-
-#[cfg(target_os = "linux")]
 fn batch_deadline() -> std::time::Instant {
     use std::time::{Duration, Instant};
 
@@ -483,10 +467,10 @@ pub(crate) fn decode_write_files_message(
 pub(crate) fn seal_and_validate_batch_input(file: &File) -> io::Result<WriteFilesStats> {
     use std::os::fd::AsFd;
 
-    use guest_contracts::file_write::sealed_input::SealedInput;
+    use guest_contracts::sealed_input::SealedInput;
     use guest_control_proto::{MAX_MESSAGE_SIZE, MIN_BODY_SIZE};
 
-    seal_batch_input(file)?;
+    crate::sealed_input::seal(file)?;
     let mapping = SealedInput::map(file.as_fd(), MAX_MESSAGE_SIZE - MIN_BODY_SIZE)?;
     decode_write_files_message(mapping.as_bytes())
         .map(|decoded| decoded.stats)
