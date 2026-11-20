@@ -549,7 +549,7 @@ describe.each(["feishu", "lark"] as const)("%s integration UI", (platform) => {
     });
 
     await waitFor(() => {
-      expect(pathname()).toBe(`/agents/${HOME_AGENT_ID}/chat`);
+      expect(pathname()).toBe("/");
     });
     expect(screen.queryByText(`${provider.name} bots`)).not.toBeInTheDocument();
   });

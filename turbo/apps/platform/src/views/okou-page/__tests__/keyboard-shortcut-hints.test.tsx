@@ -61,7 +61,7 @@ test.each(platforms)(
     const { user, modifier } = await prepareActionShortcuts(platform);
     await user.keyboard(`{${modifier}>}{Shift>}o{/Shift}{/${modifier}}`);
     await waitFor(() => {
-      expect(pathname()).toBe(`/agents/${CHAT_LIST_AGENT_ID}/chat`);
+      expect(pathname()).toBe("/");
     });
   },
 );

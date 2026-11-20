@@ -199,7 +199,7 @@ test("overlapping saves to one preference read back the committed value", async 
   });
 });
 
-test.each(["reopening Settings", "returning to Preference"])(
+test.each(["reopening Settings", "returning to My Okou"])(
   "%s refreshes a Suggestions preference changed elsewhere after a save",
   async (entry) => {
     let enabled = false;
@@ -211,7 +211,7 @@ test.each(["reopening Settings", "returning to Preference"])(
       });
     });
     context.mocks.api(
-      proactiveSuggestionsContract.update,
+      proactiveSuggestionsContract.updateWithFeed,
       ({ body, respond }) => {
         enabled = body.enabled;
         return respond(200, {
@@ -223,7 +223,7 @@ test.each(["reopening Settings", "returning to Preference"])(
     );
     await setupPage({
       context,
-      path: "/agents?settings=preference",
+      path: "/?settings=my-okou",
       featureSwitches: { [FeatureSwitchKey.AgentSuggestion]: true },
     });
     const suggestions = await screen.findByRole("switch", {
@@ -256,9 +256,8 @@ test.each(["reopening Settings", "returning to Preference"])(
       const rail = await screen.findByTestId("labeled-nav-rail");
       click(within(rail).getByLabelText("Test User"));
       click(within(await screen.findByRole("menu")).getByText("Settings"));
-    } else {
-      click(getSettingsButton("Preference"));
     }
+    click(getSettingsButton("My Okou"));
     const reopened = await screen.findByRole("dialog", { name: "Settings" });
     await waitFor(() => {
       const refreshed = within(reopened).getByRole("switch", {
@@ -305,7 +304,13 @@ test("saving time zone keeps enabled Morning brief unchanged", async () => {
 
 test.each([
   { name: "Morning brief", contract: morningBriefPreferenceContract },
-  { name: "Suggestions", contract: proactiveSuggestionsContract },
+  {
+    name: "Suggestions",
+    contract: {
+      get: proactiveSuggestionsContract.get,
+      update: proactiveSuggestionsContract.updateWithFeed,
+    },
+  },
 ])(
   "updates $name from the save response while leaving other preferences usable",
   async ({ name, contract }) => {
@@ -336,7 +341,7 @@ test.each([
     );
     await setupPage({
       context,
-      path: "/agents?settings=preference",
+      path: "/?settings=my-okou",
       featureSwitches: {
         [FeatureSwitchKey.AgentSuggestion]: true,
       },

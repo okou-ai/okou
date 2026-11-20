@@ -18,8 +18,8 @@ export function retainedWorkflowCaller(context: TestContext) {
     const owner = publicRunOwner(context, actor, {
       continueAcceptedOperations: true,
     });
-    try {
-      return await owner.run(async () => {
+    return await owner
+      .run(async () => {
         bdd.acceptAgentStorageWrites();
         runs.acceptStorageDownloads();
         runs.acceptTelemetryIngest();
@@ -49,10 +49,8 @@ export function retainedWorkflowCaller(context: TestContext) {
           throw new Error("Expected a retained Run credential");
         }
         return { authorization: "Bearer " + token };
-      });
-    } finally {
-      restore();
-    }
+      })
+      .finally(restore);
   }
 
   return async (actor: ApiTestUser) => {

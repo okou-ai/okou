@@ -173,7 +173,7 @@ test("The ideas catalog still offers connector-free use cases", async () => {
   ).resolves.toBeVisible();
 });
 
-test("The breadcrumb links back to the Agent chat", async () => {
+test("The breadcrumb links back to My Okou", async () => {
   configureAgent();
   mockCatalog([]);
 
@@ -194,7 +194,7 @@ test("The breadcrumb links back to the Agent chat", async () => {
   click(back);
 
   await findComposer();
-  expect(pathname()).toBe(`/agents/${AGENT_ID}/chat`);
+  expect(pathname()).toBe("/");
 });
 
 function configureWorkspaceAgents(): void {
@@ -247,7 +247,7 @@ test("A custom Agent can start the instruction self-management example", async (
       "Update yourself: add the following instructions — ...",
     );
   });
-  expect(pathname()).toBe(`/agents/${AGENT_ID}/chat`);
+  expect(pathname()).toBe("/");
 });
 
 test("Connector-dependent ideas fail closed when availability cannot be verified", async () => {
@@ -288,15 +288,14 @@ test("A use case is hidden when any required connector is unavailable", async ()
 });
 
 test.each([
-  { path: "/ideas", destination: "/", targetAgent: DEFAULT_AGENT_ID },
+  { path: "/ideas", destination: "/" },
   {
     path: IDEAS_PATH,
     destination: `/agents/${AGENT_ID}/chat`,
-    targetAgent: AGENT_ID,
   },
 ])(
   "A card on $path exposes its prompt link and opens by keyboard",
-  async ({ path, destination, targetAgent }) => {
+  async ({ path, destination }) => {
     const user = userEvent.setup({ delay: null });
     context.mocks.data.agents([
       {
@@ -342,7 +341,7 @@ test.each([
     await waitFor(() => {
       expect(composer.textContent).toBe(STANDUP_PROMPT);
     });
-    expect(pathname()).toBe(`/agents/${targetAgent}/chat`);
+    expect(pathname()).toBe("/");
   },
 );
 
@@ -369,7 +368,9 @@ test("Search for a use case and start it with the agent", async () => {
   click(idea);
 
   const composer = await findComposer();
-  expect(composer.textContent).toBe(REVENUECAT_PROMPT);
+  await waitFor(() => {
+    expect(composer.textContent).toBe(REVENUECAT_PROMPT);
+  });
 });
 
 test("Start the Zapier migration idea from the available connector catalog", async () => {
@@ -385,7 +386,9 @@ test("Start the Zapier migration idea from the available connector catalog", asy
   click(await screen.findByText("Zapier → Okou migration"));
 
   const composer = await findComposer();
-  expect(composer.textContent).toBe(
-    "Help me migrate my Zapier workflows to Okou. I have zaps for: new Slack message → Notion, Gmail → Google Sheets, and GitHub PR → Slack",
-  );
+  await waitFor(() => {
+    expect(composer.textContent).toBe(
+      "Help me migrate my Zapier workflows to Okou. I have zaps for: new Slack message → Notion, Gmail → Google Sheets, and GitHub PR → Slack",
+    );
+  });
 });

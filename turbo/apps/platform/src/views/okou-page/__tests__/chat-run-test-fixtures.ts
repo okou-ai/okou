@@ -326,6 +326,7 @@ export function createChatRunFixtures(context: TestContext) {
       requestedModel === null || mockCatalogHasModel(requestedModel)
         ? requestedModel
         : DEFAULT_MODEL;
+    context.mocks.data.onboardingStatus({ defaultAgentId: AGENT_ID });
     context.mocks.data.agents([
       {
         agentId: AGENT_ID,

@@ -523,7 +523,7 @@ test("Release the cached subscription on navigation and reload the returning Cha
   click(await findFastControl("button", "Connectors"));
   click(await findFastControl("button", "New chat"));
   await waitFor(() => {
-    expect(window.location.pathname).toBe(`/agents/${SCOUT_AGENT_ID}/chat`);
+    expect(window.location.pathname).toBe("/");
   });
   await findComposer();
   await waitFor(() => {

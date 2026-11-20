@@ -609,7 +609,7 @@ test("Release a pending account save and its cached state when leaving the Chat"
   await user.keyboard("{Escape}{Escape}");
   click(await findFastControl("button", "New chat"));
   await waitFor(() => {
-    expect(window.location.pathname).toBe(`/agents/${SCOUT_AGENT_ID}/chat`);
+    expect(window.location.pathname).toBe("/");
     expect(requestSignal.aborted).toBeTruthy();
   });
   response.resolve();

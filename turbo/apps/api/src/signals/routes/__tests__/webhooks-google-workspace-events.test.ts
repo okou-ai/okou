@@ -1,3 +1,4 @@
+import { retainedWorkflowCaller } from "./helpers/retained-workflow-caller";
 import { Buffer } from "node:buffer";
 import { generateKeyPairSync, randomUUID, sign as signData } from "node:crypto";
 
@@ -43,6 +44,7 @@ const mocks = createRouteMocks(context);
 const runs = createRunsApi(context);
 const runReadsApi = createRunReadsApi(context);
 const workflows = createWorkflowsBddApi(context);
+const retainedHeaders = retainedWorkflowCaller(context);
 
 const PUSH_AUDIENCE =
   "https://api.okou.ai/api/webhooks/google-workspace-events";
@@ -899,7 +901,7 @@ describe("Google Workspace Events subscription lifecycle", () => {
     installWorkflowVolumeS3Fixture(context, fixture.volumeObjects);
     const copied = await accept(
       workflowDetailClient().copy({
-        headers: authHeaders(fixture.actor),
+        headers: await retainedHeaders(fixture.actor),
         params: { workflowId: fixture.workflowId },
         body: { toAgentId: targetAgent.agentId },
       }),

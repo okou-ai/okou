@@ -2032,6 +2032,16 @@ test("A hidden For you page leaves its card unread until the member sees it", as
   expect(screen.getByText("1 to go")).toBeInTheDocument();
 });
 
+async function openSourceSettings() {
+  const rail = await screen.findByTestId("labeled-nav-rail");
+  click(within(rail).getByLabelText("Test User"));
+  const menu = await screen.findByRole("menu");
+  click(within(menu).getByText("Settings"));
+  const dialog = await screen.findByRole("dialog", { name: "Settings" });
+  click(within(dialog).getByRole("button", { name: "My Okou" }));
+  return dialog;
+}
+
 test("A failed system update source change keeps the saved choice and allows an explicit retry", async () => {
   mockPool(numberedSuggestions(2));
   let enabled = true;
@@ -2068,8 +2078,7 @@ test("A failed system update source change keeps the saved choice and allows an 
     featureSwitches: features,
   });
   await activeForYouCard("Suggested action 1");
-  click(button("My Okou"));
-  const dialog = await screen.findByRole("dialog", { name: "Settings" });
+  const dialog = await openSourceSettings();
   const toggle = await within(dialog).findByRole("switch", {
     name: "System updates",
   });
@@ -2126,8 +2135,7 @@ test("For you source choices persist without removing delivered cards and only e
   await activeForYouCard("Suggested action 1");
   let row = link(suggestionPath);
   await within(row).findByText("Unread");
-  click(button("My Okou"));
-  const dialog = await screen.findByRole("dialog", { name: "Settings" });
+  const dialog = await openSourceSettings();
   const suggestions = await within(dialog).findByRole("switch", {
     name: "Suggestions",
   });
@@ -2171,10 +2179,7 @@ test("For you source choices persist without removing delivered cards and only e
   click(link(suggestionPath));
   await activeForYouCard("Suggested action 1");
   row = link(suggestionPath);
-  click(button("My Okou"));
-  const reopened = await screen.findByRole("dialog", {
-    name: "Settings",
-  });
+  const reopened = await openSourceSettings();
   const toggle = await within(reopened).findByRole("switch", {
     name: "Suggestions",
   });
@@ -2229,8 +2234,7 @@ test("System updates remain unread with optional sources off until their card is
   });
   expect(screen.getByText(event.content.automationName)).toBeInTheDocument();
   expect(screen.getByText("1 to go")).toBeInTheDocument();
-  click(button("My Okou"));
-  const dialog = await screen.findByRole("dialog", { name: "Settings" });
+  const dialog = await openSourceSettings();
   const suggestions = await within(dialog).findByRole("switch", {
     name: "Suggestions",
   });

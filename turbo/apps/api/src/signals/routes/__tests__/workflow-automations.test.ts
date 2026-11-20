@@ -1183,10 +1183,11 @@ describe("okou workflow automations", () => {
   it("lists owned workflow automations across visible workflows", async () => {
     const scenario = await setupFixture();
     const { agentId, workflowId } = scenario;
-    const { agentId: secondAgentId, workflowId: secondWorkflowId } =
-      await createAgentWithWorkflow(scenario, {
-        agentDisplayName: "Second Automation Agent",
-      });
+    const secondWorkflowName = "second-workspace-automation";
+    const secondWorkflowId = await wf.createWorkflow(scenario.actor, {
+      agentId,
+      name: secondWorkflowName,
+    });
 
     const first = await accept(
       automationsClient().create({
@@ -1236,8 +1237,8 @@ describe("okou workflow automations", () => {
         {
           automationId: second.body.id,
           workflowId: secondWorkflowId,
-          workflowName: WORKFLOW_NAME,
-          agentId: secondAgentId,
+          workflowName: secondWorkflowName,
+          agentId,
         },
       ]),
     );
@@ -3652,7 +3653,9 @@ describe("okou workflow automations", () => {
     );
     expect(stop.calls).toBe(0);
 
-    const agentScenario = await setupFixture();
+    const ownerScenario = await setupFixture();
+    const target = await createAgentWithWorkflow(ownerScenario);
+    const agentScenario = { ...ownerScenario, ...target };
     await connectGmail(
       agentScenario,
       `agent-cascade-${agentScenario.fixture.userId}@example.com`,
@@ -4324,7 +4327,7 @@ describe("okou workflow automations", () => {
         2,
       ),
     );
-    expect(execution.appendSystemPrompt).toContain("# Agent Identity");
+    expect(execution.appendSystemPrompt).toContain("Your name is Okou.");
 
     const automation = await wf.readAutomation(created.body.id);
     expect(automation).toMatchObject({
@@ -4352,7 +4355,10 @@ describe("okou workflow automations", () => {
 
   it("shares one lazy destination across concurrent and repeated Run now requests", async () => {
     const requestedAt = Date.UTC(2026, 7, 1, 12, 34, 56, 123);
-    const owned = await publicChatActor(context, { clockTime: requestedAt });
+    const owned = await publicChatActor(context, {
+      clockTime: requestedAt,
+      useDefaultAgent: true,
+    });
     await owned.run(async () => {
       const workflowId = await wf.createWorkflow(owned.actor, {
         agentId: owned.agentId,
@@ -4428,7 +4434,7 @@ describe("okou workflow automations", () => {
       await runs.heartbeatRunner(owned.runnerGroup);
       const execution = await owned.executionInput(active.runId);
       expect(execution.prompt).toContain(`/${WORKFLOW_NAME}`);
-      expect(execution.appendSystemPrompt).toContain("# Agent Identity");
+      expect(execution.appendSystemPrompt).toContain("Your name is Okou.");
     });
   });
 
@@ -4515,17 +4521,17 @@ describe("okou workflow automations", () => {
   });
 
   it("keeps lazy destinations distinct for workflows and owners of one public workflow", async () => {
-    const owned = await publicChatActor(context, { tier: "team" });
+    const owned = await publicChatActor(context, {
+      tier: "team",
+      useDefaultAgent: true,
+    });
     await owned.run(async () => {
-      const sharedAgent = await wf.createAgent(owned.actor, {
-        visibility: "public",
-      });
       const workflowId = await wf.createWorkflow(owned.actor, {
-        agentId: sharedAgent.agentId,
+        agentId: owned.agentId,
         name: WORKFLOW_NAME,
       });
       const secondWorkflowId = await wf.createWorkflow(owned.actor, {
-        agentId: sharedAgent.agentId,
+        agentId: owned.agentId,
         name: "second-lazy-workflow",
       });
       const createAndRun = async (id: string) => {

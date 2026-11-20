@@ -47,6 +47,7 @@ function isolatedAuth(): Exclude<SetupPageAuth, null> {
 }
 
 function configureChatPrerequisites(): void {
+  context.mocks.data.onboardingStatus({ defaultAgentId: AGENT_ID });
   context.mocks.data.agents([{ agentId: AGENT_ID }]);
   context.mocks.data.userModelPreference({
     selectedModel: "claude-sonnet-5",

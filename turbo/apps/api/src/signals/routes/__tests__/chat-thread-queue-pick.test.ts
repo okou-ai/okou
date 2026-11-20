@@ -354,10 +354,11 @@ describe("CHAT-02: queued chat thread picks", () => {
 
   it("launches an automation event appended before a user message first (strict FIFO)", async () => {
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
-    const { actor, agentId, runnerGroup } = await entitledNativeChatActor(
-      {},
-      "team",
-    );
+    const {
+      actor,
+      defaultAgentId: agentId,
+      runnerGroup,
+    } = await entitledNativeChatActor({}, "team");
     const automation = await createWebhookAutomation(actor, agentId);
     const blocker = await sendChatRun(actor, {
       agentId,
@@ -471,7 +472,10 @@ describe("CHAT-02: queued chat thread picks", () => {
   }, 90_000);
 
   it("leaves a queued automation event for the pick while steering later prompts", async () => {
-    const { actor, agentId } = await entitledNativeChatActor({}, "team");
+    const { actor, defaultAgentId: agentId } = await entitledNativeChatActor(
+      {},
+      "team",
+    );
     const automation = await createWebhookAutomation(actor, agentId);
     const running = await sendChatRun(actor, {
       agentId,

@@ -633,7 +633,7 @@ describe("POST /api/webhooks/github for workflow automations", () => {
       for (const excluded of testCase.excludedPrompt ?? []) {
         expect(execution.prompt).not.toContain(excluded);
       }
-      expect(execution.appendSystemPrompt).toContain("# Agent Identity");
+      expect(execution.appendSystemPrompt).toContain("Your name is Okou.");
     },
   );
 
@@ -1044,7 +1044,7 @@ describe("POST /api/webhooks/github for workflow automations", () => {
     );
     expect(execution.prompt).toContain('"attempt": 2');
     expect(execution.prompt).toContain('"triggeringEvent": "push"');
-    expect(execution.appendSystemPrompt).toContain("# Agent Identity");
+    expect(execution.appendSystemPrompt).toContain("Your name is Okou.");
   });
 
   it("accepts startup failures with GitHub's documented nullable run fields", async () => {
@@ -1117,6 +1117,6 @@ describe("POST /api/webhooks/github for workflow automations", () => {
     expect(execution.prompt).toContain('"name": null');
     expect(execution.prompt).toContain('"actor": null');
     expect(execution.prompt).toContain('"triggeringActor": null');
-    expect(execution.appendSystemPrompt).toContain("# Agent Identity");
+    expect(execution.appendSystemPrompt).toContain("Your name is Okou.");
   });
 });
