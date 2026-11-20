@@ -10,6 +10,7 @@ import ai.okou.android.preferences.applyApplicationLocale
 import ai.okou.android.preferences.resetApplicationLocale
 import ai.okou.android.state.SavedStatePolicy
 import ai.okou.android.updates.AppUpdateSettings
+import ai.okou.android.updates.AppUpdates
 import ai.okou.android.updates.UpdateHost
 import ai.okou.android.updates.updateToolbarAction
 import android.content.ActivityNotFoundException
@@ -51,10 +52,10 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.currentStateAsState
-import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
-import androidx.lifecycle.withResumed
+import java.io.File
 import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
@@ -64,19 +65,16 @@ class MainActivity : AppCompatActivity() {
     private var editing by mutableStateOf(false)
     private var windowFocused by mutableStateOf(false)
     private val updateInstall by
-        viewModels<UpdateInstallModel> { viewModelFactory { initializer { UpdateInstallModel() } } }
+        viewModels<UpdateInstallModel> {
+            viewModelFactory { initializer { UpdateInstallModel(updates) } }
+        }
     private val sourceSettings =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-            val pending = updateInstall.attempt as? UpdateInstallAttempt.Authorizing
-            if (pending != null) {
-                updateInstall.attempt = UpdateInstallAttempt.Idle
-                if (canInstallPackages()) installUpdate(pending.release)
-            }
+            updateInstall.authorizationReturned(canInstallPackages())
         }
     private val packageInstaller =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-            if (updateInstall.attempt == UpdateInstallAttempt.Installer)
-                updateInstall.attempt = UpdateInstallAttempt.Idle
+            updateInstall.installerReturned()
         }
     private val session: SessionModel by viewModels {
         viewModelFactory {
@@ -155,6 +153,18 @@ class MainActivity : AppCompatActivity() {
             ) {
                 val installEnabled = updateInstall.attempt == UpdateInstallAttempt.Idle
                 val keyboardVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+                val verified = updateInstall.attempt as? UpdateInstallAttempt.Verified
+                LaunchedEffect(
+                    verified,
+                    updateState.selectedRelease,
+                    updateState.canInstall,
+                    lifecycleState,
+                    windowFocused,
+                    editing,
+                    keyboardVisible,
+                ) {
+                    if (verified != null) launchInstaller(verified)
+                }
                 val pending = updateInstall.automaticRelease
                 val automaticInstall =
                     pending?.takeIf {
@@ -166,17 +176,12 @@ class MainActivity : AppCompatActivity() {
                             !keyboardVisible
                     }
                 LaunchedEffect(pending, updateState.selectedRelease) {
-                    if (
-                        pending != null &&
-                            updates.state.value.selectedRelease != pending &&
-                            updateInstall.automaticRelease == pending
-                    )
-                        updateInstall.automaticRelease = null
+                    updateInstall.discardObsoleteDownload()
                 }
                 UpdateHost(
                     updateState.copy(required = updateRequired),
                     { updates.check() },
-                    ::downloadUpdate,
+                    updateInstall::download,
                     updates::defer,
                     ::installUpdate,
                     installEnabled,
@@ -209,7 +214,7 @@ class MainActivity : AppCompatActivity() {
                         updateToolbarAction =
                             updateToolbarAction(
                                 updateState,
-                                ::downloadUpdate,
+                                updateInstall::download,
                                 ::installUpdate,
                                 installEnabled,
                                 openUpdates,
@@ -223,9 +228,7 @@ class MainActivity : AppCompatActivity() {
                         updateState.canInstall && updateState.selectedRelease == explanation.release
                     ) {
                         AlertDialog(
-                            onDismissRequest = {
-                                updateInstall.attempt = UpdateInstallAttempt.Idle
-                            },
+                            onDismissRequest = { updateInstall.dismissExplanation(explanation) },
                             shape = RoundedCornerShape(28.dp),
                             containerColor = MaterialTheme.colorScheme.surface,
                             title = {
@@ -260,7 +263,7 @@ class MainActivity : AppCompatActivity() {
                             },
                             dismissButton = {
                                 TextButton(
-                                    onClick = { updateInstall.attempt = UpdateInstallAttempt.Idle },
+                                    onClick = { updateInstall.dismissExplanation(explanation) },
                                     colors =
                                         ButtonDefaults.textButtonColors(
                                             contentColor = MaterialTheme.colorScheme.onSurface
@@ -272,8 +275,7 @@ class MainActivity : AppCompatActivity() {
                         )
                     } else {
                         LaunchedEffect(explanation) {
-                            if (updateInstall.attempt == explanation)
-                                updateInstall.attempt = UpdateInstallAttempt.Idle
+                            updateInstall.dismissExplanation(explanation)
                         }
                     }
                 }
@@ -302,28 +304,17 @@ class MainActivity : AppCompatActivity() {
     private fun canInstallPackages() =
         Build.VERSION.SDK_INT < 26 || packageManager.canRequestPackageInstalls()
 
+    private fun canHandOffUpdate() =
+        lifecycle.currentState == Lifecycle.State.RESUMED && windowFocused
+
     private fun canAutomaticallyInstall() =
-        lifecycle.currentState == Lifecycle.State.RESUMED &&
-            windowFocused &&
+        canHandOffUpdate() &&
             !editing &&
             ViewCompat.getRootWindowInsets(window.decorView)
                 ?.isVisible(WindowInsetsCompat.Type.ime()) != true
 
-    private fun downloadUpdate(release: AndroidUpdatesRelease) {
-        if (updates.download(release)) updateInstall.automaticRelease = release
-    }
-
     private fun authorizeUpdate(explanation: UpdateInstallAttempt.Explain) {
-        if (updateInstall.attempt != explanation) return
-        val release = explanation.release
-        val current = updates.state.value
-        updateInstall.attempt = UpdateInstallAttempt.Idle
-        if (!current.canInstall || current.selectedRelease != release) return
-        if (canInstallPackages()) {
-            installUpdate(release)
-            return
-        }
-        updateInstall.attempt = UpdateInstallAttempt.Authorizing(release)
+        if (!updateInstall.beginAuthorization(explanation, canInstallPackages())) return
         try {
             sourceSettings.launch(
                 Intent(
@@ -332,11 +323,9 @@ class MainActivity : AppCompatActivity() {
                 )
             )
         } catch (_: ActivityNotFoundException) {
-            updateInstall.attempt = UpdateInstallAttempt.Idle
-            updates.installFailed(release)
+            updateInstall.launchFailed(explanation.release)
         } catch (_: SecurityException) {
-            updateInstall.attempt = UpdateInstallAttempt.Idle
-            updates.installFailed(release)
+            updateInstall.launchFailed(explanation.release)
         }
     }
 
@@ -344,56 +333,130 @@ class MainActivity : AppCompatActivity() {
         installUpdate(release, automatic = false)
 
     private fun installUpdate(release: AndroidUpdatesRelease, automatic: Boolean) {
-        if (updateInstall.attempt != UpdateInstallAttempt.Idle) return
-        if (automatic && (updateInstall.automaticRelease != release || !canAutomaticallyInstall()))
-            return
-        val current = updates.state.value
-        if (!current.canInstall || current.selectedRelease != release) return
-        if (!canInstallPackages()) {
-            updateInstall.automaticRelease = null
-            updateInstall.attempt = UpdateInstallAttempt.Explain(release)
-            return
-        }
-        updateInstall.attempt = UpdateInstallAttempt.Verifying
-        lifecycleScope.launch {
-            try {
-                val file = updates.installationFile(release) ?: return@launch
-                lifecycle.withResumed {
-                    val eligible = updates.state.value
-                    if (!eligible.canInstall || eligible.selectedRelease != release)
-                        return@withResumed
-                    if (automatic && !canAutomaticallyInstall()) return@withResumed
-                    updateInstall.automaticRelease = null
-                    if (!canInstallPackages()) {
-                        updateInstall.attempt = UpdateInstallAttempt.Explain(release)
-                        return@withResumed
-                    }
-                    val uri =
-                        FileProvider.getUriForFile(this@MainActivity, "$packageName.updates", file)
-                    updateInstall.attempt = UpdateInstallAttempt.Installer
-                    packageInstaller.launch(
-                        Intent(Intent.ACTION_VIEW)
-                            .setDataAndType(uri, "application/vnd.android.package-archive")
-                            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    )
-                }
-            } catch (_: ActivityNotFoundException) {
-                updateInstall.attempt = UpdateInstallAttempt.Idle
-                updates.installFailed(release)
-            } catch (_: SecurityException) {
-                updateInstall.attempt = UpdateInstallAttempt.Idle
-                updates.installFailed(release)
-            } finally {
-                if (updateInstall.attempt == UpdateInstallAttempt.Verifying)
-                    updateInstall.attempt = UpdateInstallAttempt.Idle
-            }
+        if (automatic && !canAutomaticallyInstall()) return
+        updateInstall.install(release, automatic, canInstallPackages())
+    }
+
+    private fun launchInstaller(verified: UpdateInstallAttempt.Verified) {
+        val foregroundReady =
+            if (verified.automatic) canAutomaticallyInstall() else canHandOffUpdate()
+        val file =
+            updateInstall.takeVerifiedFile(verified, foregroundReady, canInstallPackages())
+                ?: return
+        try {
+            val uri = FileProvider.getUriForFile(this, "$packageName.updates", file)
+            packageInstaller.launch(
+                Intent(Intent.ACTION_VIEW)
+                    .setDataAndType(uri, "application/vnd.android.package-archive")
+                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            )
+        } catch (_: ActivityNotFoundException) {
+            updateInstall.launchFailed(verified.release)
+        } catch (_: SecurityException) {
+            updateInstall.launchFailed(verified.release)
         }
     }
 }
 
-private class UpdateInstallModel : ViewModel() {
+private class UpdateInstallModel(private val updates: AppUpdates) : ViewModel() {
     var attempt by mutableStateOf<UpdateInstallAttempt>(UpdateInstallAttempt.Idle)
+        private set
+
     var automaticRelease by mutableStateOf<AndroidUpdatesRelease?>(null)
+        private set
+
+    fun download(release: AndroidUpdatesRelease) {
+        if (updates.download(release)) automaticRelease = release
+    }
+
+    fun discardObsoleteDownload() {
+        if (automaticRelease != updates.state.value.selectedRelease) automaticRelease = null
+    }
+
+    fun install(release: AndroidUpdatesRelease, automatic: Boolean, authorized: Boolean) {
+        if (attempt != UpdateInstallAttempt.Idle || !canInstall(release)) return
+        if (automatic && automaticRelease != release) return
+        if (authorized) verify(release, automatic)
+        else {
+            automaticRelease = null
+            attempt = UpdateInstallAttempt.Explain(release)
+        }
+    }
+
+    fun dismissExplanation(explanation: UpdateInstallAttempt.Explain) {
+        if (attempt == explanation) attempt = UpdateInstallAttempt.Idle
+    }
+
+    fun beginAuthorization(
+        explanation: UpdateInstallAttempt.Explain,
+        authorized: Boolean,
+    ): Boolean {
+        if (attempt != explanation) return false
+        val release = explanation.release
+        if (!canInstall(release)) {
+            dismissExplanation(explanation)
+            return false
+        }
+        if (authorized) {
+            verify(release, automatic = false)
+            return false
+        }
+        attempt = UpdateInstallAttempt.Authorizing(release)
+        return true
+    }
+
+    fun authorizationReturned(authorized: Boolean) {
+        val pending = attempt as? UpdateInstallAttempt.Authorizing ?: return
+        attempt = UpdateInstallAttempt.Idle
+        if (authorized) install(pending.release, automatic = false, authorized = true)
+    }
+
+    private fun verify(release: AndroidUpdatesRelease, automatic: Boolean) {
+        attempt = UpdateInstallAttempt.Verifying
+        viewModelScope.launch {
+            try {
+                val file = updates.installationFile(release) ?: return@launch
+                attempt = UpdateInstallAttempt.Verified(release, file, automatic)
+            } finally {
+                if (attempt == UpdateInstallAttempt.Verifying) attempt = UpdateInstallAttempt.Idle
+            }
+        }
+    }
+
+    fun takeVerifiedFile(
+        verified: UpdateInstallAttempt.Verified,
+        foregroundReady: Boolean,
+        authorized: Boolean,
+    ): File? {
+        if (attempt != verified) return null
+        val release = verified.release
+        if (!canInstall(release)) {
+            attempt = UpdateInstallAttempt.Idle
+            return null
+        }
+        if (!foregroundReady) return null
+        automaticRelease = null
+        if (!authorized) {
+            attempt = UpdateInstallAttempt.Explain(release)
+            return null
+        }
+        attempt = UpdateInstallAttempt.Installer
+        return verified.file
+    }
+
+    fun installerReturned() {
+        if (attempt == UpdateInstallAttempt.Installer) attempt = UpdateInstallAttempt.Idle
+    }
+
+    fun launchFailed(release: AndroidUpdatesRelease) {
+        attempt = UpdateInstallAttempt.Idle
+        updates.installFailed(release)
+    }
+
+    private fun canInstall(release: AndroidUpdatesRelease): Boolean {
+        val current = updates.state.value
+        return current.canInstall && current.selectedRelease == release
+    }
 }
 
 private sealed interface UpdateInstallAttempt {
@@ -404,6 +467,12 @@ private sealed interface UpdateInstallAttempt {
     data class Authorizing(val release: AndroidUpdatesRelease) : UpdateInstallAttempt
 
     data object Verifying : UpdateInstallAttempt
+
+    data class Verified(
+        val release: AndroidUpdatesRelease,
+        val file: File,
+        val automatic: Boolean,
+    ) : UpdateInstallAttempt
 
     data object Installer : UpdateInstallAttempt
 }

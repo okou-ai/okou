@@ -13,6 +13,7 @@ import androidx.annotation.DrawableRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
@@ -144,7 +145,11 @@ internal fun UpdateHost(
         LaunchedEffect(Unit) { details = false }
         RequiredUpdateScreen(state, check, download, install, installEnabled)
     } else {
-        Column(Modifier.fillMaxSize().safeDrawingPadding()) {
+        Column(
+            Modifier.fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
+                .safeDrawingPadding()
+        ) {
             if (showAnnouncement && state.announce) {
                 val release = checkNotNull(state.displayedRelease)
                 Surface(color = MaterialTheme.colorScheme.surfaceVariant) {
@@ -350,16 +355,18 @@ private fun RequiredUpdateScreen(
             (LocalWindowInfo.current.containerSize.height.toDp() * 0.08f).coerceIn(24.dp, 72.dp)
         }
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-        Box(Modifier.fillMaxSize().safeDrawingPadding(), contentAlignment = Alignment.Center) {
+        BoxWithConstraints(
+            Modifier.fillMaxSize().safeDrawingPadding(),
+            contentAlignment = Alignment.TopCenter,
+        ) {
             Column(
                 Modifier.widthIn(max = 560.dp)
-                    .fillMaxSize()
-                    .padding(start = 24.dp, end = 24.dp, bottom = 24.dp),
-                verticalArrangement = Arrangement.spacedBy(24.dp),
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .heightIn(min = maxHeight)
+                    .padding(start = 24.dp, end = 24.dp, bottom = 24.dp)
             ) {
-                Column(
-                    Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(top = top)
-                ) {
+                Column(Modifier.padding(top = top)) {
                     Icon(
                         painterResource(R.drawable.okou_wordmark),
                         contentDescription = null,
@@ -388,6 +395,10 @@ private fun RequiredUpdateScreen(
                         UpdateMetadata(state.installedVersion, release, includeTarget = true)
                     }
                 }
+                // Keep the action near the bottom when it fits and reachable by scrolling
+                // otherwise.
+                Spacer(Modifier.weight(1f))
+                Spacer(Modifier.height(24.dp))
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     UpdateProblemText(state)
                     if (state.canInstall && state.problem == null)

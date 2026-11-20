@@ -16,9 +16,13 @@ import android.os.LocaleList
 import android.provider.Settings
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.core.content.FileProvider
 import androidx.lifecycle.Lifecycle
@@ -92,6 +96,18 @@ class UpdateRootTest {
     }
 
     @Test
+    @Config(qualifiers = "w240dp-h200dp")
+    fun requiredUpdateActionIsReachableInACompactWindow() {
+        app.fixture.heldCheck!!.complete(Unit)
+        app.updates.requireUpdate(RequiredUpdate("99.0.0"))
+        compose.waitUntil(10_000) { app.updates.state.value.canDownload }
+        val update = compose.onNodeWithText("Update")
+        update.assertIsNotDisplayed().performScrollTo().assertIsDisplayed().performClick()
+        compose.waitUntil(10_000) { app.updates.state.value.transfer is UpdateTransfer.Downloading }
+        compose.onNodeWithText("Updating · 0%").assertIsDisplayed()
+    }
+
+    @Test
     fun requiredDiscoveryKeepsTheAppliedLocaleWhileTheSessionIsRestoring() {
         compose.waitUntil(10_000) { app.updates.state.value.check == UpdateCheck.Checking }
         val locales = checkNotNull(app.getSystemService(LocaleManager::class.java))
@@ -154,6 +170,46 @@ class UpdateRootTest {
         assertTrue(app.updates.state.value.required)
         assertTrue(app.updates.state.value.transfer is UpdateTransfer.Ready)
         assertEquals(1, app.fixture.downloadedReleases.size)
+    }
+
+    @Test
+    fun manualInstallationSurvivesActivityRecreationDuringVerification() {
+        val packageManager = shadowOf(app.packageManager)
+        packageManager.setCanRequestPackageInstalls(false)
+        app.fixture.heldCheck!!.complete(Unit)
+        app.updates.requireUpdate(RequiredUpdate("99.0.0"))
+        compose.waitUntil(10_000) { app.updates.state.value.canDownload }
+        compose.onNodeWithText("Update").performClick()
+        finishDownload()
+        compose.onNodeWithText("Allow update installation").assertIsDisplayed()
+        compose.onNodeWithText("Later").performClick()
+
+        packageManager.setCanRequestPackageInstalls(true)
+        val verification = CompletableDeferred<Unit>()
+        app.fixture.heldRecovery = verification
+        try {
+            val install = compose.onNodeWithText("Continue installation")
+            install.performClick().assertIsNotEnabled()
+            assertNoPlatformLaunch()
+            compose.activityRule.scenario.recreate()
+            install.assertIsNotEnabled()
+            assertNoPlatformLaunch()
+
+            // Multi-window can leave an Activity resumed without window focus.
+            compose.activityRule.scenario.onActivity {
+                it.onWindowFocusChanged(false)
+                verification.complete(Unit)
+            }
+            assertNoPlatformLaunch()
+            compose.activityRule.scenario.onActivity { it.onWindowFocusChanged(true) }
+            val launched = nextLaunch()
+            assertEquals(Intent.ACTION_VIEW, launched.intent.action)
+            returnFrom(launched.requestCode)
+            install.assertIsDisplayed().assertIsEnabled()
+            assertNoPlatformLaunch()
+        } finally {
+            verification.complete(Unit)
+        }
     }
 
     @Test
