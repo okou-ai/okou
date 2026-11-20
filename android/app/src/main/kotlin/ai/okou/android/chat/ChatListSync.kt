@@ -16,14 +16,20 @@ class ChatListSync(
     private val service: ChatListService,
     private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) {
-    suspend fun synchronize(cached: ChatCheckpoint?): MetadataSyncResult<ChatCheckpoint> =
+    data class Result(
+        val checkpoint: ChatCheckpoint,
+        val changed: Boolean,
+        val eventsBeforeRebase: List<ChatEventsEventsItem> = emptyList(),
+    )
+
+    suspend fun synchronize(cached: ChatCheckpoint?): Result =
         withContext(dispatcher) {
             // Like Web, an empty cursor needs a fresh snapshot: the server may have
             // compacted creations since an earlier empty cache was written.
             val useCache = cached != null && cached.cursor.seqId > 0
             val confirmed =
                 tail(if (useCache) checkNotNull(cached) else snapshot(), fromSnapshot = !useCache)
-            val result = MetadataSyncResult(confirmed.checkpoint, confirmed.changed)
+            val result = Result(confirmed.checkpoint, confirmed.changed)
             if (
                 confirmed.replacement ||
                     confirmed.checkpoint.events.size <= CHAT_THREAD_SNAPSHOT_REBASE_THRESHOLD
@@ -43,7 +49,7 @@ class ChatListSync(
             val rebased = tail(snapshot, fromSnapshot = true).checkpoint
             // A lagging snapshot must not roll back a tail already confirmed in this refresh.
             if (rebased.cursor.seqId < confirmed.checkpoint.cursor.seqId) result
-            else MetadataSyncResult(rebased, changed = true)
+            else Result(rebased, changed = true, eventsBeforeRebase = confirmed.checkpoint.events)
         }
 
     private suspend fun snapshot(): ChatCheckpoint {

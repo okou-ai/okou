@@ -864,12 +864,16 @@ class ChatListRootTest {
         compose.waitUntil(10_000) {
             compose.onAllNodesWithText(failed).fetchSemanticsNodes().isNotEmpty()
         }
-        row.assert(muted)
+        row.assert(!muted)
         assertEquals(
             listOf("mute", "mark-read"),
             commands.map { it.requestUrl?.pathSegments?.last() },
         )
 
+        compose.onNodeWithText("Refresh chats").performClick()
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(target.and(muted).and(available)).fetchSemanticsNodes().isNotEmpty()
+        }
         rejectRead.set(false)
         row.performSemanticsAction(SemanticsActions.OnLongClick)
         compose.onNodeWithText("Unmute chat").performClick()
@@ -898,7 +902,7 @@ class ChatListRootTest {
     @Test
     @Config(qualifiers = "en-rUS-w1000dp-h800dp")
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
-    fun archiveAndRestoreFollowConfirmedPlacementAndKeepTheOpenConversation() {
+    fun archiveAndRestoreUpdatePlacementAndKeepTheOpenConversation() {
         val app = compose.activity.application as ChatListApplication
         val fixture = app.fixture
         val readback = CountDownLatch(1)
@@ -945,7 +949,7 @@ class ChatListRootTest {
             row.performTouchInput { longClick() }
             compose.onNodeWithText("Archive chat").performClick()
             compose.waitUntil(10_000) { compose.runOnIdle { readback.count == 0L } }
-            row.assert(!SemanticsMatcher.keyIsDefined(SemanticsActions.OnLongClick))
+            row.assertDoesNotExist()
             compose.onNodeWithTag("conversation").assertExists()
             release.countDown()
             compose.waitUntil(10_000) { compose.onAllNodes(target).fetchSemanticsNodes().isEmpty() }
@@ -960,6 +964,7 @@ class ChatListRootTest {
             val filterLayout = filterLayouts.single()
             assertEquals(filterLabel.length, filterLayout.getLineEnd(0, visibleEnd = true))
             compose.onNodeWithTag("chat_list").performScrollToNode(target)
+            awaitRowActionSettled(CHAT_PERSONAL)
             compose.onNodeWithTag(rowTag).performSemanticsAction(SemanticsActions.OnLongClick)
             compose.onNodeWithText("Unarchive chat").performClick()
             compose.waitUntil(10_000) { compose.onAllNodes(target).fetchSemanticsNodes().isEmpty() }
@@ -968,6 +973,7 @@ class ChatListRootTest {
             compose.onNodeWithTag("chat_list").performScrollToNode(target)
             compose.onNodeWithTag(rowTag).assertExists()
             compose.onNodeWithTag("conversation").assertExists()
+            awaitRowActionSettled(CHAT_PERSONAL)
             assertEquals(
                 listOf("archive", "unarchive"),
                 commands.map { it.requestUrl?.pathSegments?.last() },
@@ -983,10 +989,11 @@ class ChatListRootTest {
 
     @Test
     @Config(qualifiers = "en-rUS-w400dp-h800dp")
-    fun titleAndPinsFollowAuthoritativeReadback() {
+    fun titleAndPinsAppearBeforeWriteAndReadbackComplete() {
         val app = compose.activity.application as ChatListApplication
         val readback = CountDownLatch(1)
         val release = CountDownLatch(1)
+        val pinResponse = CountDownLatch(1)
         val fixture = app.fixture
         val events =
             fixture.rowEventTail {
@@ -1014,6 +1021,7 @@ class ChatListRootTest {
                     }
                     "/api/chat-threads/$CHAT_PERSONAL/pin" -> {
                         commands.add(request)
+                        pinResponse.await()
                         val rank = request.requestUrl?.queryParameter("pinOrder")
                         events.add(
                             25L to
@@ -1063,9 +1071,10 @@ class ChatListRootTest {
                 )
             }
             compose.waitUntil(10_000) { compose.runOnIdle { readback.count == 0L } }
-            row.assert(hasText("Personal chat"))
+            row.assert(hasText("Weekly brief"))
             assertEquals(1, commands.size)
             release.countDown()
+            awaitRowActionSettled(CHAT_PERSONAL)
             compose.waitUntil(10_000) {
                 compose.onAllNodesWithText("Weekly brief").fetchSemanticsNodes().isNotEmpty()
             }
@@ -1077,10 +1086,21 @@ class ChatListRootTest {
             row.performSemanticsAction(SemanticsActions.OnLongClick)
             compose.onNodeWithText("Rename chat").assertExists()
             compose.onNodeWithText("Pin chat").performClick()
+            val pendingPin =
+                SemanticsMatcher.expectValue(
+                    SemanticsProperties.StateDescription,
+                    "Active, Pinned, Updating chat…",
+                )
+            compose.waitUntil(10_000) {
+                compose.onAllNodes(personal.and(pendingPin)).fetchSemanticsNodes().isNotEmpty()
+            }
+            pinResponse.countDown()
+            awaitRowActionSettled(CHAT_PERSONAL)
             compose.waitUntil(10_000) {
                 compose.onAllNodes(personal.and(pinned)).fetchSemanticsNodes().isNotEmpty()
             }
             choose("Unpin chat")
+            awaitRowActionSettled(CHAT_PERSONAL)
             compose.waitUntil(10_000) {
                 compose.onAllNodes(personal.and(!pinned)).fetchSemanticsNodes().isNotEmpty()
             }
@@ -1105,6 +1125,7 @@ class ChatListRootTest {
             )
         } finally {
             release.countDown()
+            pinResponse.countDown()
         }
     }
 
@@ -1193,11 +1214,21 @@ class ChatListRootTest {
                 .isNotEmpty()
         }
         assertTrue(
+            target.fetchSemanticsNode().boundsInRoot.top <
+                first.fetchSemanticsNode().boundsInRoot.top
+        )
+        compose.onNodeWithText("Refresh chats").performClick()
+        compose.waitUntil(10_000) {
+            first.fetchSemanticsNode().boundsInRoot.top <
+                target.fetchSemanticsNode().boundsInRoot.top
+        }
+        assertTrue(
             first.fetchSemanticsNode().boundsInRoot.top <
                 target.fetchSemanticsNode().boundsInRoot.top
         )
         rejectMoved.set(false)
         moveDown()
+        awaitRowActionSettled(CHAT_PERSONAL)
         compose.waitUntil(10_000) {
             target.fetchSemanticsNode().boundsInRoot.top <
                 first.fetchSemanticsNode().boundsInRoot.top
@@ -1220,6 +1251,13 @@ class ChatListRootTest {
                 .toSet()
                 .size,
         )
+    }
+
+    private fun awaitRowActionSettled(id: String) {
+        val model =
+            ViewModelProvider(compose.activity)[SessionModel::class.java].uiState.value.ready?.chats
+        checkNotNull(model)
+        compose.waitUntil(10_000) { id !in model.uiState.value.pendingRowActions }
     }
 
     private fun RecordedRequest.jsonCommandBody() =
