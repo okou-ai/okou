@@ -74,6 +74,7 @@ import { recordTemplateUsage } from "../../lib/template-usage-log";
 
 import { monotonicNow, now, nowDate, nowDateSql } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
+import { recordSandboxOperations } from "../external/sandbox-op-log";
 import {
   publishChatIndicatorsChangedSafely,
   publishDesktopShellAuthorizationChangedSafely,
@@ -122,6 +123,7 @@ import {
   queuedThreadInputCondition,
   type QueuedUserMessage,
   type QueuedUserMessageContextType,
+  type QueuedUserMessageTriggerSource,
 } from "./chat-queued-event.service";
 import { finalizeClaimedRunUserMessage$ } from "./chat-run-event.service";
 import { randomUUID } from "node:crypto";
@@ -131,7 +133,6 @@ import {
 } from "@okouai/db/schema/chat-thread-event";
 import { agents } from "@okouai/db/schema/agent";
 import {
-  ChatCallbackPreCreateTimingCollector,
   type CreateQueuedChatRunInput,
   deliverQueuedPromptRejection$,
   deliverUnexpectedQueuedPromptRejection$,
@@ -371,9 +372,66 @@ function queueHeadRejectionSql(args: {
       (SELECT id FROM assistant) AS "assistantEventId"`;
 }
 
-interface QueuedPromptGraphInput {
-  readonly head: ChatQueueHeadContext;
-  readonly timing: ChatCallbackPreCreateTimingCollector;
+type QueuedPromptTimingSpanKind = "top_level" | "nested";
+
+type QueuedPromptTimingActionType =
+  | "api_dispatch_pre_create_agent_chat_callback_auto_send_build_input"
+  | "api_dispatch_pre_create_agent_chat_callback_auto_send_queue_age";
+
+interface QueuedPromptTimingRecord {
+  readonly actionType: QueuedPromptTimingActionType;
+  readonly spanKind: QueuedPromptTimingSpanKind;
+  readonly durationMs: number;
+  readonly timestamp: string;
+}
+
+class QueuedPromptTimingCollector {
+  private readonly records: QueuedPromptTimingRecord[] = [];
+  private flushed = false;
+
+  recordElapsed(args: {
+    readonly actionType: QueuedPromptTimingActionType;
+    readonly spanKind: QueuedPromptTimingSpanKind;
+    readonly startedAt: number;
+    readonly finishedAt?: number;
+  }): void {
+    if (this.flushed) {
+      return;
+    }
+    const finishedAt = args.finishedAt ?? now();
+    this.records.push({
+      actionType: args.actionType,
+      spanKind: args.spanKind,
+      durationMs: Math.max(0, finishedAt - args.startedAt),
+      timestamp: new Date(finishedAt).toISOString(),
+    });
+  }
+
+  flush(runId: string, triggerSource: QueuedUserMessageTriggerSource): void {
+    if (this.flushed) {
+      return;
+    }
+    this.flushed = true;
+    const records = this.records.splice(0);
+    recordSandboxOperations(
+      records.map((record) => {
+        return {
+          sandboxType: "runner",
+          actionType: record.actionType,
+          durationMs: record.durationMs,
+          success: true,
+          runId,
+          timestamp: record.timestamp,
+          dimensions: {
+            span_kind: record.spanKind,
+            trigger_source: triggerSource,
+            agent_run_origin: "direct",
+            agent_run_pre_create_source: "chat_callback_auto_send",
+          },
+        };
+      }),
+    );
+  }
 }
 
 class QueuedPromptInputInvalidError extends Error {}
@@ -740,7 +798,7 @@ type ClaimLaunchRecord =
       readonly kind: "prompt";
       readonly context: QueuedPromptLaunchContext;
       readonly templateUsageIdentities: readonly TemplateUsageIdentity[];
-      readonly timing: ChatCallbackPreCreateTimingCollector;
+      readonly timing: QueuedPromptTimingCollector;
     }
   | {
       readonly kind: "automation";
@@ -1113,7 +1171,7 @@ export function createThreadClaimRunObjects(
     };
   });
   const promptTiming$ = computed(() => {
-    return new ChatCallbackPreCreateTimingCollector();
+    return new QueuedPromptTimingCollector();
   });
   // Runner and guest `api_to_*` rows start at `POST /api/chat/events` receipt,
   // and only for the input that request committed and then picked itself.
@@ -1143,15 +1201,6 @@ export function createThreadClaimRunObjects(
       agentId: bootstrap.agentId,
     };
   });
-  const promptInput$ = computed(
-    async (get): Promise<QueuedPromptGraphInput> => {
-      const head = await get(head$);
-      return {
-        head,
-        timing: get(promptTiming$),
-      };
-    },
-  );
   const queuedInput$ = computed(async (get) => {
     const event = await get(pickedEvent$);
     if (!event) {
@@ -1368,7 +1417,7 @@ export function createThreadClaimRunObjects(
   );
   const runTemplates$ = threadContext.templates$;
   const captureNetworkBodies$ = computed(async (get) => {
-    const { head } = await get(promptInput$);
+    const head = await get(head$);
     if (requestFacts?.input.id === head.id) {
       return requestFacts.input.captureNetworkBodies;
     }
@@ -1498,8 +1547,8 @@ export function createThreadClaimRunObjects(
       if (early) {
         return early;
       }
-      const input = await get(promptInput$);
-      const { head, timing } = input;
+      const head = await get(head$);
+      const timing = get(promptTiming$);
       const prepared = await settle(
         (async () => {
           const startedAt = now();
@@ -1563,10 +1612,7 @@ export function createThreadClaimRunObjects(
       get(runTemplates$),
     ]);
     if (!material.ok) {
-      queuedPromptPreparationRejection(
-        material.error,
-        (await get(promptInput$)).head,
-      );
+      queuedPromptPreparationRejection(material.error, await get(head$));
       return false;
     }
     return !("error" in templates);
@@ -1598,10 +1644,7 @@ export function createThreadClaimRunObjects(
     }
     const material = await settle(get(promptMaterial$));
     if (!material.ok) {
-      queuedPromptPreparationRejection(
-        material.error,
-        (await get(promptInput$)).head,
-      );
+      queuedPromptPreparationRejection(material.error, await get(head$));
       return null;
     }
     return material.value;
@@ -3062,8 +3105,11 @@ export function createThreadClaimRunObjects(
           recordQueuedPromptRunLaunch$,
           launched.context,
           pending.admittedLaunch.run.id,
-          launched.timing,
           signal,
+        );
+        launched.timing.flush(
+          pending.admittedLaunch.run.id,
+          launched.context.runInput.triggerSource,
         );
       } else {
         await set(
