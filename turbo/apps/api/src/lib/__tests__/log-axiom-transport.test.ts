@@ -45,7 +45,10 @@ import { webhooksAgentHealthUsageTelemetryRoutes } from "../../signals/routes/we
 import { createDeferredPromise } from "../../signals/utils";
 import { flushWaitUntilForTest } from "../../signals/context/wait-until";
 import { healthRoutes } from "../../signals/routes/health";
-import { createBrowserFixtures } from "../../signals/routes/__tests__/helpers/browser-fixture";
+import {
+  createBrowserFixtures,
+  PROVIDER_URL,
+} from "../../signals/routes/__tests__/helpers/browser-fixture";
 import { createChatFilesBddApi } from "../../signals/routes/__tests__/helpers/api-bdd-chat-files";
 import { controlBrowserDeadline } from "../../signals/routes/__tests__/helpers/browser-deadline";
 import { mockOptionalEnv } from "../env";
@@ -227,7 +230,7 @@ test.each([
               }
             : {
                 errorKind: "provider",
-                providerStatus: 503,
+                mappedHttpStatus: 503,
                 errorCode: "BROWSER_USE_TIMEOUT",
                 nativePhase: failure,
               }),
@@ -245,6 +248,66 @@ test.each([
       f.provider.native.windowReply = "reply";
       f.provider.native.onWithheldReply = undefined;
       f.provider.native.beforeNativeWindowReply = undefined;
+      expect((await view(chat)).window).toStrictEqual(first.window);
+      expect(f.provider.sessionRequests).toHaveLength(1);
+    });
+  },
+);
+
+// Logger-owned status and redaction contract at the provider HTTP boundary.
+test.each([401, 403])(
+  "records the upstream Browser session lookup HTTP %i alongside the mapped status",
+  async (upstreamHttpStatus) => {
+    const { fixture, open, view } = createBrowserFixtures(context);
+    const f = await fixture();
+    await f.owned.run(async () => {
+      const chat = await f.start();
+      const first = await open(chat);
+      const [providerSessionId] = f.provider.sessionIds;
+      if (!providerSessionId) {
+        throw new Error("Expected the external Browser provider session");
+      }
+      const threads = createChatFilesBddApi(context);
+      const sibling = await threads.createThread(f.owned.actor, {
+        agentId: f.owned.agentId,
+        model: f.owned.model,
+      });
+      const privateDetail = "private-provider-auth-detail";
+      server.use(
+        http.get(
+          `${PROVIDER_URL}/browsers/${providerSessionId}`,
+          () => {
+            return HttpResponse.json(
+              { detail: privateDetail },
+              { status: upstreamHttpStatus },
+            );
+          },
+          { once: true },
+        ),
+      );
+
+      await threads.deleteThread(f.owned.actor, sibling.id);
+      const warning = context.mocks.axiomLogging.warn.mock.calls
+        .filter(([message]) => {
+          return message === "Browser window reconciliation failed";
+        })
+        .at(-1);
+      const record = object({})
+        .catchall(string().or(number()).or(boolean()))
+        .parse(warning?.[1]);
+      expect(record).toStrictEqual({
+        instanceId: first.window?.instanceId,
+        primaryWindowId: first.window?.primaryWindowId,
+        phase: "find-provider",
+        errorKind: "provider",
+        errorCode: "BROWSER_USE_AUTH_ERROR",
+        mappedHttpStatus: 503,
+        upstreamHttpStatus,
+        context: "BrowserReconcile",
+      });
+      const serialized = JSON.stringify(warning);
+      expect(serialized).not.toContain(privateDetail);
+      expect(serialized).not.toContain(providerSessionId);
       expect((await view(chat)).window).toStrictEqual(first.window);
       expect(f.provider.sessionRequests).toHaveLength(1);
     });

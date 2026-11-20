@@ -245,7 +245,12 @@ export class BrowserUseProviderError extends Error {
   readonly status: 502 | 503;
   readonly code: string;
 
-  constructor(status: 502 | 503, code: string, message: string) {
+  constructor(
+    status: 502 | 503,
+    code: string,
+    message: string,
+    readonly upstreamHttpStatus?: number,
+  ) {
     super(message);
     this.name = "BrowserUseProviderError";
     this.status = status;
@@ -3905,25 +3910,29 @@ function providerMessage(body: unknown): string {
 }
 
 function providerError(response: Response, body: unknown) {
+  const { status } = response;
   const message = providerMessage(body);
-  if (response.status === 401 || response.status === 403) {
+  if (status === 401 || status === 403) {
     return new BrowserUseProviderError(
       503,
       "BROWSER_USE_AUTH_ERROR",
       "Managed browser provider authentication failed",
+      status,
     );
   }
-  if (response.status === 402 || response.status === 429) {
+  if (status === 402 || status === 429) {
     return new BrowserUseProviderError(
       503,
       "BROWSER_USE_CAPACITY",
       "Managed browser capacity is temporarily unavailable",
+      status,
     );
   }
   return new BrowserUseProviderError(
     502,
     "BROWSER_USE_ERROR",
     `Managed browser provider failed: ${message}`,
+    status,
   );
 }
 
