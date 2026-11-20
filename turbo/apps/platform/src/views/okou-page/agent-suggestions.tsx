@@ -338,7 +338,12 @@ function SuggestionDirectionComposer({
                   })}
             </p>
           ) : composer ? (
-            <div className="w-full min-w-0" data-chat-composer>
+            <div
+              // The composer indents its paragraph 4px past the quote; here the
+              // caret shares the heading's and the quote's left edge instead.
+              className="w-full min-w-0 [&_.ProseMirror_p]:pl-0"
+              data-chat-composer
+            >
               <ChatComposer signals={composer} showPendingItems={false} />
             </div>
           ) : null}
