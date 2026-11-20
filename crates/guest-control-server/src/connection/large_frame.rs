@@ -12,10 +12,10 @@ use crate::error::to_io_error;
 use crate::log::log;
 use crate::sealed_input;
 
-// Ordinary batches at the sealed-helper cutoff are still incomplete after a
-// socket read. Receive them into the helper's input before the decoder can
-// build a heap buffer for the whole payload.
-pub(super) const STREAMED_BATCH_MIN_BYTES: usize = 4 * 1024 * 1024;
+// Stream ordinary batches from 1 MiB into the sealed helper input while the
+// frame is incomplete. This avoids full decoder buffering and the helper pipe
+// copy for medium archive staging requests.
+pub(super) const STREAMED_BATCH_MIN_BYTES: usize = 1024 * 1024;
 
 // Keep small inputs in the decoder's reusable buffer. The sealed file holds
 // both the RPC context and the helper input and must fit the helper's map limit.
