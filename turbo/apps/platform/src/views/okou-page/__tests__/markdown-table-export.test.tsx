@@ -261,7 +261,6 @@ function mockTableCloudFiles(
   context.mocks.api(
     artifactCatalogContract.get,
     ({ params, query, respond }) => {
-      expect(query.driveAccountModel).toBe("chat");
       const connectionId =
         query.chatThreadId && driveAccounts[query.chatThreadId];
       if (!connectionId) {

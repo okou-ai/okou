@@ -10,10 +10,6 @@ import {
 } from "../connector-schemas";
 import { builtinConnectorsSlugCallbackContract } from "../connectors-slug-callback";
 import { connectorChangedPayloadSchema } from "../realtime";
-import {
-  userBuiltinConnectorEnabledSlugsSchema,
-  userBuiltinConnectorUpdateSchema,
-} from "../user-connectors";
 import { connectorCatalogContract } from "../connector-catalog";
 import { connectorAccountsContract } from "../connector-accounts";
 import {
@@ -247,11 +243,6 @@ describe("connector client response contracts", () => {
         },
       }),
     ).toMatchObject({ connector: connectorIdentity });
-    expect(
-      userBuiltinConnectorEnabledSlugsSchema.parse({
-        enabledConnectorSlugs: ["github"],
-      }),
-    ).toStrictEqual({ enabledConnectorSlugs: ["github"] });
     expect(
       connectorChangedPayloadSchema.parse({ connectorSlug: "github" }),
     ).toStrictEqual({ connectorSlug: "github" });
@@ -573,18 +564,6 @@ describe("connector client request contracts", () => {
       outcome: "target-unavailable",
       target,
       reason: "not-admitted",
-    });
-  });
-
-  it("accepts canonical user connector updates", () => {
-    expect(
-      userBuiltinConnectorUpdateSchema.parse({
-        enabledConnectorSlugs: ["github"],
-        operation: "add",
-      }),
-    ).toStrictEqual({
-      enabledConnectorSlugs: ["github"],
-      operation: "add",
     });
   });
 

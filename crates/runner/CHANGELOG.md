@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.249.78](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.77...runner-rs-v0.249.78) (2026-11-20)
+
+
+### Refactoring
+
+* **runner:** share packaged guest cgroup counter parsing ([#49537](https://github.com/okou-ai/okou/issues/49537)) ([4fe8d1c](https://github.com/okou-ai/okou/commit/4fe8d1c8dfe607d357d55f4eba33b64983a0e246))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.249.77](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.76...runner-rs-v0.249.77) (2026-11-20)
 
 ### Release Dependencies

@@ -1192,7 +1192,7 @@ export const chatThreadArtifactsContract = c.router({
     path: "/api/chat-threads/:threadId/artifacts",
     headers: authHeadersSchema,
     pathParams: chatThreadThreadIdPathParamsSchema,
-    query: object({ driveAccountModel: literal("chat").optional() }).optional(),
+    query: object({}).optional(),
     responses: {
       200: object({
         runs: array(chatThreadArtifactRunSchema),

@@ -2,7 +2,6 @@ import { mockClerkUsers } from "./clerk-users";
 
 import { authContract } from "@okouai/api-contracts/contracts/auth";
 import { pushSubscriptionsContract } from "@okouai/api-contracts/contracts/push-subscriptions";
-import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import {
   userModelPreferenceContract,
   type UpdateUserModelPreferenceRequest,
@@ -12,7 +11,6 @@ import {
 import { setupAppWithRoutes } from "../../../../__tests__/test-app";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { authMeRoutes } from "../../auth-me";
-import { agentsRoutes } from "../../agents";
 import { pushSubscriptionsRoutes } from "../../push-subscriptions";
 import { userModelPreferenceRoutes } from "../../user-model-preference";
 import { userPreferencesRoutes } from "../../user-preferences";
@@ -50,7 +48,6 @@ interface RegisterPushBody {
 
 const userConfigRoutes = [
   ...authMeRoutes,
-  ...agentsRoutes,
   ...userModelPreferenceRoutes,
   ...pushSubscriptionsRoutes,
   ...userPreferencesRoutes,
@@ -150,54 +147,6 @@ export function createUserConfigBddApi(context: TestContext) {
         [200],
       );
       return response.body;
-    },
-
-    async updateUserBuiltinConnectors(
-      credential: Credential,
-      agentId: string,
-      enabledConnectorSlugs: readonly string[],
-      operation?: "replace" | "add" | "remove",
-    ): Promise<{ readonly enabledConnectorSlugs: string[] }> {
-      const client = setupAppWithRoutes({ context, routes: userConfigRoutes })(
-        userBuiltinConnectorsContract,
-      );
-      const body =
-        operation === undefined
-          ? { enabledConnectorSlugs: [...enabledConnectorSlugs] }
-          : { enabledConnectorSlugs: [...enabledConnectorSlugs], operation };
-      const response = await accept(
-        client.update({
-          headers: authenticate(credential),
-          params: { id: agentId },
-          body,
-        }),
-        [200],
-      );
-      return response.body;
-    },
-
-    async requestUpdateUserConnectors(
-      credential: Credential | null,
-      agentId: string,
-      enabledConnectorSlugs: readonly string[],
-      statuses: readonly (200 | 400 | 401 | 403 | 404)[],
-      operation?: "replace" | "add" | "remove",
-    ) {
-      const client = setupAppWithRoutes({ context, routes: userConfigRoutes })(
-        userBuiltinConnectorsContract,
-      );
-      const body =
-        operation === undefined
-          ? { enabledConnectorSlugs: [...enabledConnectorSlugs] }
-          : { enabledConnectorSlugs: [...enabledConnectorSlugs], operation };
-      return await accept(
-        client.update({
-          headers: authenticate(credential),
-          params: { id: agentId },
-          body,
-        }),
-        statuses,
-      );
     },
 
     async readModelPreference(

@@ -1941,11 +1941,6 @@ export const clientContractImportManifest = [
     bindings: [],
   },
   {
-    module: "user-connectors",
-    contracts: ["userBuiltinConnectorsContract"],
-    bindings: [],
-  },
-  {
     module: "user-export",
     contracts: ["userExportContract"],
     bindings: [],

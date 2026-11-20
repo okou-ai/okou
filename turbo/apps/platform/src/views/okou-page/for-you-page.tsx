@@ -64,7 +64,7 @@ const STACK_LAYERS = [
 ] as const;
 
 const STACK_CARD =
-  "@container/suggestion col-start-1 row-start-1 flex origin-[50%_85%] touch-pan-y flex-col rounded-3xl p-6 shadow-[0_1px_2px_rgb(37_33_33/0.05),0_10px_26px_rgb(37_33_33/0.06)] sm:p-9";
+  "@container/suggestion col-start-1 row-start-1 flex origin-[50%_85%] touch-pan-y flex-col rounded-3xl p-7 shadow-[0_1px_2px_rgb(37_33_33/0.05),0_10px_26px_rgb(37_33_33/0.06)] sm:p-10";
 
 // The torn-paper edge is an alpha strip repeated along the banner's bottom;
 // the solid layer above it overlaps the strip's opaque top rows. Its top fades

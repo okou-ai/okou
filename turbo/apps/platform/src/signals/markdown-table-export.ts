@@ -272,7 +272,7 @@ const saveTableToGoogle$ = command(
     const detail = await accept(
       get(apiClient$)(artifactCatalogContract).get({
         params: { artifactId: params.artifactId },
-        query: { chatThreadId: params.threadId, driveAccountModel: "chat" },
+        query: { chatThreadId: params.threadId },
         fetchOptions: { signal },
       }),
       [200],

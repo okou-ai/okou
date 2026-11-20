@@ -25,7 +25,7 @@ import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise } from "../../utils";
 import { createRouteMocks } from "./helpers/route-test";
-import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import type { ApiTestUser } from "./helpers/api-bdd";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import {
@@ -69,7 +69,6 @@ const context = testContext();
 
 const store = createStore();
 const mocks = createRouteMocks(context);
-const bdd = createBddApi(context);
 const chatCallbacks = createChatCallbacksApi(context);
 const chatApi = createChatFilesBddApi(context);
 const connectorsApi = createConnectorBddApi(context);
@@ -2508,13 +2507,6 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
             state: authorizationState(oauth.authorizationUrl),
           });
         });
-        await fixture.run(() => {
-          return runsApi.setDriveExportAuthorization(
-            actorFor({ orgId, userId }),
-            agentId,
-          );
-        });
-
         const driveFolders: DriveFolderFixture[] = [];
         const driveUploadBodies: string[] = [];
         const driveContentBodies: string[] = [];
@@ -2601,10 +2593,10 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
         })(artifactGoogleDriveContract);
         const driveSync = await fixture.run(() => {
           return accept(
-            driveClient.upload({
+            driveClient.uploadFromChat({
               headers: { authorization: "Bearer clerk-session" },
               params: { artifactId: canonicalAssetId },
-              body: { agentId },
+              body: { chatThreadId: threadId, mode: "original" },
             }),
             [200],
           );
@@ -2618,10 +2610,10 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
 
         const retryDriveSync = await fixture.run(() => {
           return accept(
-            driveClient.upload({
+            driveClient.uploadFromChat({
               headers: { authorization: "Bearer clerk-session" },
               params: { artifactId: canonicalAssetId },
-              body: { agentId },
+              body: { chatThreadId: threadId, mode: "original" },
             }),
             [200],
           );
@@ -2630,7 +2622,7 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
 
         const runDriveSync = await fixture.run(() => {
           return accept(
-            driveClient.upload({
+            driveClient.uploadFromChat({
               headers: {
                 authorization: `Bearer ${okouToken({
                   userId,
@@ -2639,7 +2631,7 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
                 })}`,
               },
               params: { artifactId: canonicalAssetId },
-              body: { agentId },
+              body: { chatThreadId: threadId, mode: "original" },
             }),
             [200],
           );
@@ -2752,12 +2744,16 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
         });
         const uploaded = await fixture.run(() => {
           return accept(
-            uploadClient.upload({
+            uploadClient.uploadFromChat({
               headers: {
                 authorization: `Bearer ${okouToken({ userId, orgId, runId: destination.runId })}`,
               },
               params: { artifactId: catalogEntry.id },
-              body: { agentId, connectionId: selectedAccount.id },
+              body: {
+                chatThreadId: destination.threadId,
+                connectionId: selectedAccount.id,
+                mode: "original",
+              },
             }),
             [200],
           );
@@ -2772,21 +2768,25 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
         const uploadRequest = {
           headers: { authorization: "Bearer clerk-session" },
           params: { artifactId: catalogEntry.id },
-          body: { agentId, connectionId: selectedAccount.id },
+          body: {
+            chatThreadId: destination.threadId,
+            connectionId: selectedAccount.id,
+            mode: "original" as const,
+          },
         };
         context.mocks.clerk.authenticateRequest.mockResolvedValue({
           isAuthenticated: false,
         });
         await fixture.run(() => {
           return accept(
-            uploadClient.upload({ ...uploadRequest, headers: {} }),
+            uploadClient.uploadFromChat({ ...uploadRequest, headers: {} }),
             [401],
           );
         });
         mocks.clerk.session(userId, orgId);
         await fixture.run(() => {
           return accept(
-            uploadClient.upload({
+            uploadClient.uploadFromChat({
               ...uploadRequest,
               params: { artifactId: randomUUID() },
             }),
@@ -2795,16 +2795,16 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
         });
         await fixture.run(() => {
           return accept(
-            uploadClient.upload({
+            uploadClient.uploadFromChat({
               ...uploadRequest,
-              body: { ...uploadRequest.body, agentId: randomUUID() },
+              body: { ...uploadRequest.body, chatThreadId: randomUUID() },
             }),
             [400],
           );
         });
         await fixture.run(() => {
           return accept(
-            uploadClient.upload({
+            uploadClient.uploadFromChat({
               ...uploadRequest,
               body: { ...uploadRequest.body, connectionId: randomUUID() },
             }),
@@ -2813,7 +2813,7 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
         });
         await fixture.run(() => {
           return accept(
-            uploadClient.upload({
+            uploadClient.uploadFromChat({
               ...uploadRequest,
               headers: {
                 authorization: `Bearer ${sandboxToken(destination.runId)}`,
@@ -2822,22 +2822,14 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
             [403],
           );
         });
-        const otherAgent = await fixture.run(() => {
-          return bdd.createAgent(actor, {
-            displayName: "Unauthorized upload Agent",
-          });
-        });
-        await fixture.run(() => {
-          return runsApi.setDriveExportAuthorization(actor, otherAgent.agentId);
-        });
         await fixture.run(() => {
           return accept(
-            uploadClient.upload({
+            uploadClient.uploadFromChat({
               ...uploadRequest,
               headers: {
                 authorization: `Bearer ${okouToken({ userId, orgId, runId: destination.runId })}`,
               },
-              body: { ...uploadRequest.body, agentId: otherAgent.agentId },
+              body: { ...uploadRequest.body, chatThreadId: threadId },
             }),
             [400],
           );
@@ -2868,7 +2860,7 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
         mocks.clerk.session(userId, orgId);
         await fixture.run(() => {
           return accept(
-            uploadClient.upload({
+            uploadClient.uploadFromChat({
               ...uploadRequest,
               body: { ...uploadRequest.body, connectionId: foreignAccount.id },
             }),
@@ -2926,7 +2918,7 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
         });
         await fixture.run(() => {
           return accept(
-            uploadClient.upload({
+            uploadClient.uploadFromChat({
               ...uploadRequest,
               params: { artifactId: ordinaryEntry.id },
             }),
@@ -3083,7 +3075,10 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
           const artifactId = requiredDriveArtifactId(groupedFiles, fileId);
           await fixture.run(() => {
             return accept(
-              uploadClient.upload({ ...uploadRequest, params: { artifactId } }),
+              uploadClient.uploadFromChat({
+                ...uploadRequest,
+                params: { artifactId },
+              }),
               [200],
             );
           });
@@ -3101,7 +3096,7 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
         };
         const detachedUpload = await fixture.run(() => {
           return accept(
-            uploadClient.upload({
+            uploadClient.uploadFromChat({
               ...uploadRequest,
               params: { artifactId: groupedCanonical.artifactId },
             }),
@@ -3118,7 +3113,7 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
         mocks.clerk.session("user_foreign_artifact_owner", orgId);
         await fixture.run(() => {
           return accept(
-            uploadClient.upload({
+            uploadClient.uploadFromChat({
               ...uploadRequest,
               params: { artifactId: groupedCanonical.artifactId },
             }),
@@ -3128,7 +3123,7 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
         mocks.clerk.session(userId, "org_foreign_artifact_owner");
         await fixture.run(() => {
           return accept(
-            uploadClient.upload({
+            uploadClient.uploadFromChat({
               ...uploadRequest,
               params: { artifactId: groupedCanonical.artifactId },
             }),

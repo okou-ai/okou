@@ -27,9 +27,9 @@ import { waitUntil } from "../context/wait-until";
 import { safeSync, settle } from "../utils";
 import type { BootstrapAgent } from "./agent-data.service";
 import {
-  createMemberMemoryContext,
-  type MemberMemoryContext,
-} from "./agent-storage-context.service";
+  createMemberMemoryHead,
+  type MemberMemoryHead,
+} from "./member-memory-head.service";
 import {
   connectorSourceSnapshotsFromRows,
   type ConnectorSourceIdentity,
@@ -166,7 +166,7 @@ export interface AgentRunContextSignals {
   readonly seedSkills$: ReturnType<
     typeof createGlobalModelContext
   >["seedSkills$"];
-  readonly memory$: Computed<Promise<MemberMemoryContext>>;
+  readonly memory$: Computed<Promise<MemberMemoryHead | null>>;
   readonly featureSwitches$: Computed<Promise<BootstrapFeatureSwitchContext>>;
   readonly disabledPaidTools$: Computed<Promise<readonly PaidToolId[]>>;
   readonly environment$: Computed<Promise<BootstrapEnvironment>>;
@@ -578,7 +578,7 @@ function createIdentityContext(
           return capturedFeatureSwitchContext(scope, member, overrides, agent);
         });
   const connectorContext = createConnectorContextGroups(userId, orgId, agentId);
-  const memory$ = createMemberMemoryContext(scope);
+  const memory$ = createMemberMemoryHead(scope);
   const disabledPaidTools$ =
     sharedMember?.disabledPaidTools$ ?? memberContext.disabledPaidTools$;
   const environment$ = computed(async (get) => {

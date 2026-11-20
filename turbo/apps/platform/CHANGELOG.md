@@ -13,6 +13,33 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1159.0](https://github.com/okou-ai/okou/compare/app-v0.1158.0...app-v0.1159.0) (2026-11-20)
+
+
+### Features
+
+* **platform:** raise for you options and align them to the heading ([#49534](https://github.com/okou-ai/okou/issues/49534)) ([cf4f4ac](https://github.com/okou-ai/okou/commit/cf4f4acb49c63c2f5595c7f7a22755b9c905d371))
+* **platform:** strengthen home capability card art in light and dark ([#49549](https://github.com/okou-ai/okou/issues/49549)) ([df44b2d](https://github.com/okou-ai/okou/commit/df44b2da186d260d34c5c23b95d628ee9f3a7de9))
+
+
+### Bug Fixes
+
+* **connectors:** align web and ios connection requests ([#49530](https://github.com/okou-ai/okou/issues/49530)) ([8343cc9](https://github.com/okou-ai/okou/commit/8343cc9e65b2da35c1a45fdf189d8cc91508461d))
+
+
+### Refactoring
+
+* **drive:** retire agent-scoped artifact exports ([#49545](https://github.com/okou-ai/okou/issues/49545)) ([8622b04](https://github.com/okou-ai/okou/commit/8622b04aa8c1c872e2dcb4fa52184072f6e6eda6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.95.2
+    * @okouai/core bumped to 8.857.5
+    * @okouai/ui bumped to 1.21.74
+
 ## [0.1158.0](https://github.com/okou-ai/okou/compare/app-v0.1157.0...app-v0.1158.0) (2026-11-20)
 
 

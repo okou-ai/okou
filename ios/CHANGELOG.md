@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.51.5](https://github.com/okou-ai/okou/compare/ios-v0.51.4...ios-v0.51.5) (2026-11-20)
+
+
+### Bug Fixes
+
+* **connectors:** align web and ios connection requests ([#49530](https://github.com/okou-ai/okou/issues/49530)) ([8343cc9](https://github.com/okou-ai/okou/commit/8343cc9e65b2da35c1a45fdf189d8cc91508461d))
+
 ## [0.51.4](https://github.com/okou-ai/okou/compare/ios-v0.51.3...ios-v0.51.4) (2026-11-20)
 
 

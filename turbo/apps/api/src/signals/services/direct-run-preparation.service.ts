@@ -7,7 +7,7 @@ import { env } from "../../lib/env";
 import { monotonicNow, nowDate } from "../../lib/time";
 import { rawSqlReadDb$ } from "../external/db";
 import { recordSandboxOperations } from "../external/sandbox-op-log";
-import { joinAll } from "../utils";
+import { joinAll, settleIncludingAbort } from "../utils";
 import type { AdmittedExecutionFacts } from "./admitted-execution-facts";
 import {
   selectExecutionContentBundles,
@@ -36,7 +36,7 @@ import {
 /** Receipt from durable Thread Run admission. */
 export interface AdmittedRunLaunch {
   readonly run: ExecutionPublicationRun;
-  readonly memoryMounts: readonly AcceptedMemoryMount[];
+  readonly memoryMount: AcceptedMemoryMount;
   readonly facts: AdmittedExecutionFacts;
   readonly runnerGroup: string;
   readonly profile: string;
@@ -45,7 +45,16 @@ export interface AdmittedRunLaunch {
   readonly predecessorRunId: string | null;
 }
 
+export type PrefetchedDirectRunPackages = ReturnType<
+  typeof prepareDirectRunPackages
+> & {
+  readonly cache: ReturnType<typeof readExecutionBundleCache$.write>;
+};
+
 export interface DirectRunCachePublication {
+  readonly runId: string;
+  readonly runnerGroup: string;
+  readonly profile: string;
   readonly cacheWrites: readonly StoragePresignedUrlCacheWrite[];
   readonly bundleCacheRead: {
     readonly startedAt: string;
@@ -58,36 +67,50 @@ const bundleCacheRowSchema = object({
   cachedBundleUrls: array(cachedContentBundleUrlSchema),
 });
 
-const readExecutionBundleCache$ = command(
-  async ({ get }, bundleHashes: readonly string[], signal: AbortSignal) => {
-    signal.throwIfAborted();
-    const db = get(rawSqlReadDb$);
-    const cache = get(contentBundleUrlCacheContext$);
-    const timestamp = nowDate().toISOString();
-    const startedAt = monotonicNow();
-    const rows = await db.execute(sql`SELECT
-      ${contentBundleUrlCacheSnapshotSql(cache, bundleHashes)} AS "cachedBundleUrls"`);
-    signal.throwIfAborted();
-    const [row] = parseRawRows(bundleCacheRowSchema, rows);
-    if (!row) {
-      throw new Error("Execution bundle cache query returned no row");
-    }
-    const readyAt = monotonicNow();
-    return {
-      bundleUrlCache: { context: cache, rows: row.cachedBundleUrls },
-      timing: { timestamp, startedAt, readyAt },
-    };
+export function prepareDirectRunPackages(
+  input: Pick<AdmittedRunLaunch, "facts" | "memoryMount">,
+) {
+  const context = executionPackages(input);
+  const bundles = selectExecutionContentBundles(
+    input.facts.executionPackages,
+    context,
+  );
+  return { context, bundles };
+}
+
+export const readExecutionBundleCache$ = command(
+  ({ get }, bundleHashes: readonly string[], signal: AbortSignal) => {
+    return settleIncludingAbort(async () => {
+      signal.throwIfAborted();
+      const db = get(rawSqlReadDb$);
+      const cache = get(contentBundleUrlCacheContext$);
+      const timestamp = nowDate().toISOString();
+      const startedAt = monotonicNow();
+      const rows = await db.execute(sql`SELECT
+        ${contentBundleUrlCacheSnapshotSql(cache, bundleHashes)} AS "cachedBundleUrls"`);
+      signal.throwIfAborted();
+      const [row] = parseRawRows(bundleCacheRowSchema, rows);
+      if (!row) {
+        throw new Error("Execution bundle cache query returned no row");
+      }
+      const readyAt = monotonicNow();
+      return {
+        bundleUrlCache: { context: cache, rows: row.cachedBundleUrls },
+        timing: { timestamp, startedAt, readyAt },
+      };
+    });
   },
 );
 
 export const prepareDirectRun$ = command(
-  async ({ set }, input: AdmittedRunLaunch, signal: AbortSignal) => {
+  async (
+    { set },
+    input: AdmittedRunLaunch,
+    packages: PrefetchedDirectRunPackages,
+    signal: AbortSignal,
+  ) => {
     signal.throwIfAborted();
-    const packageContext = executionPackages(input);
-    const bundles = selectExecutionContentBundles(
-      input.facts.executionPackages,
-      packageContext,
-    );
+    const { context: packageContext, bundles, cache } = packages;
     const [runtime, publication] = await joinAll([
       (async () => {
         const prepared = await set(
@@ -105,18 +128,18 @@ export const prepareDirectRun$ = command(
         return { prepared, readyAt, networkPolicyInputs };
       })(),
       (async () => {
-        const cache = await set(
-          readExecutionBundleCache$,
-          bundles.hashes,
-          signal,
-        );
+        const snapshot = await cache;
+        signal.throwIfAborted();
+        if (!snapshot.ok) {
+          throw snapshot.error;
+        }
         const signed = await set(
           signExecutionContentBundles$,
           bundles,
-          cache.bundleUrlCache,
+          snapshot.value.bundleUrlCache,
           signal,
         );
-        return { signed, timing: cache.timing };
+        return { signed, timing: snapshot.value.timing };
       })(),
     ]);
     signal.throwIfAborted();
@@ -136,6 +159,9 @@ export const prepareDirectRun$ = command(
     });
     return {
       cachePublication: {
+        runId: run.id,
+        runnerGroup: input.runnerGroup,
+        profile: input.profile,
         cacheWrites: [
           ...prepared.storageCacheWrites,
           ...publication.signed.cacheWrites,
@@ -166,15 +192,7 @@ export const prepareDirectRun$ = command(
 
 /** The pick entry owns this optional publication independently of delivery. */
 export const publishDirectRunCache$ = command(
-  async (
-    { set },
-    args: DirectRunCachePublication & {
-      readonly runId: string;
-      readonly runnerGroup: string;
-      readonly profile: string;
-    },
-    signal: AbortSignal,
-  ) => {
+  async ({ set }, args: DirectRunCachePublication, signal: AbortSignal) => {
     const publication = await set(
       persistStoragePresignedUrls$,
       args.cacheWrites,

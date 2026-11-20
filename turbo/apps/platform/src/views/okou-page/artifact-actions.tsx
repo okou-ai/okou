@@ -384,7 +384,6 @@ function resolveGoogleDrivePendingAction(
           },
         };
       }
-      case "authorize":
       case "unavailable": {
         return { kind: "unavailable" };
       }

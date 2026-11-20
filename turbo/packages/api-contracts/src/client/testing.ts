@@ -697,8 +697,6 @@ import { usageRecordContract as OriginalUsageRecordContract } from "../contracts
 import { usageRecordContract } from "./usage-record";
 import { usageMembersContract as OriginalUsageMembersContract } from "../contracts/usage";
 import { usageMembersContract } from "./usage";
-import { userBuiltinConnectorsContract as OriginalUserBuiltinConnectorsContract } from "../contracts/user-connectors";
-import { userBuiltinConnectorsContract } from "./user-connectors";
 import { userExportContract as OriginalUserExportContract } from "../contracts/user-export";
 import { userExportContract } from "./user-export";
 import { userModelPreferenceContract as OriginalUserModelPreferenceContract } from "../contracts/user-model-preference";
@@ -1321,7 +1319,6 @@ export const clientDescriptorContracts: readonly (readonly [
   [uploadsContract, OriginalUploadsContract],
   [usageRecordContract, OriginalUsageRecordContract],
   [usageMembersContract, OriginalUsageMembersContract],
-  [userBuiltinConnectorsContract, OriginalUserBuiltinConnectorsContract],
   [userExportContract, OriginalUserExportContract],
   [userModelPreferenceContract, OriginalUserModelPreferenceContract],
   [userPreferencesContract, OriginalUserPreferencesContract],

@@ -19,16 +19,18 @@ import {
 const context = testContext();
 const AGENT_ID = "00000000-0000-0000-0000-000000000001";
 
-test.each(["feishu", "lark"] as const)(
-  "Preserve the %s managed default connection lifecycle",
-  async (brand) => {
-    const connectionId = crypto.randomUUID();
-    const connector = customConnector({
+async function reconnectManagedAccount(
+  brand: "feishu" | "lark",
+  mismatched = false,
+) {
+  const connectionId = crypto.randomUUID();
+  const managedConnector = (connectedAccountId: string) => {
+    return customConnector({
       slug: `_${brand}`,
       displayName: "Managed workspace",
       authMode: "oauth",
       connected: true,
-      connectedAccountId: connectionId,
+      connectedAccountId,
       fields: [],
       headerInjections: [
         {
@@ -49,49 +51,61 @@ test.each(["feishu", "lark"] as const)(
         authorizationParams: {},
       },
     });
-    context.mocks.api(customConnectorsContract.list, ({ respond }) => {
-      return respond(200, { connectors: [connector] });
-    });
-    context.mocks.api(connectorAccountsContract.connections, ({ respond }) => {
-      return respond(403, {
-        error: {
-          code: "FORBIDDEN",
-          message: "Ordinary account list unavailable",
-        },
-      });
-    });
-    const mutations: ConnectorAccountMutationIntent[] = [];
-    context.mocks.api(connectorAccountsContract.connection, ({ respond }) => {
-      return respond(404, {
-        error: {
-          code: "NOT_FOUND",
-          message: "Managed accounts are not ordinary accounts",
-        },
-      });
-    });
-    context.mocks.api(
-      customConnectorOAuth2Contract.start,
-      ({ body, respond }) => {
-        mutations.push(body.account);
-        return respond(200, {
-          result: "connected",
-          connector,
-          connectionId: connectionId,
-        });
+  };
+  const connector = managedConnector(connectionId);
+  context.mocks.api(customConnectorsContract.list, ({ respond }) => {
+    return respond(200, { connectors: [connector] });
+  });
+  context.mocks.api(connectorAccountsContract.connections, ({ respond }) => {
+    return respond(403, {
+      error: {
+        code: "FORBIDDEN",
+        message: "Ordinary account list unavailable",
       },
-    );
-    const authWindow = context.mocks.browser.authWindow();
-    context.mocks.browser.open(authWindow);
-    await setupPage({
-      context,
-      path: `/connectors/${connector.slug}/connect?agentId=${AGENT_ID}`,
     });
-    await screen.findByText("Managed workspace connected");
-    click(getConnectorAction("button", "Reconnect"));
-    const dialog = await screen.findByRole("dialog", {
-      name: "Connect Managed workspace",
+  });
+  const mutations: ConnectorAccountMutationIntent[] = [];
+  context.mocks.api(connectorAccountsContract.connection, ({ respond }) => {
+    return respond(404, {
+      error: {
+        code: "NOT_FOUND",
+        message: "Managed accounts are not ordinary accounts",
+      },
     });
-    click(getConnectorAction("button", "Continue", dialog));
+  });
+  context.mocks.api(
+    customConnectorOAuth2Contract.start,
+    ({ body, respond }) => {
+      mutations.push(body.account);
+      return respond(200, {
+        result: "connected",
+        connector: mismatched
+          ? managedConnector(crypto.randomUUID())
+          : connector,
+        connectionId,
+      });
+    },
+  );
+  const authWindow = context.mocks.browser.authWindow();
+  context.mocks.browser.open(authWindow);
+  await setupPage({
+    context,
+    path: `/connectors/${connector.slug}/connect?agentId=${AGENT_ID}`,
+  });
+  await screen.findByText("Managed workspace connected");
+  click(getConnectorAction("button", "Reconnect"));
+  const dialog = await screen.findByRole("dialog", {
+    name: "Connect Managed workspace",
+  });
+  click(getConnectorAction("button", "Continue", dialog));
+  return { dialog, mutations, authWindow, connectionId };
+}
+
+test.each(["feishu", "lark"] as const)(
+  "Preserve the %s managed default connection lifecycle",
+  async (brand) => {
+    const { mutations, authWindow, connectionId } =
+      await reconnectManagedAccount(brand);
     await waitFor(() => {
       expect(
         screen.queryByRole("dialog", { name: "Connect Managed workspace" }),
@@ -106,3 +120,15 @@ test.each(["feishu", "lark"] as const)(
     expect(screen.queryByText(/Ordinary account list unavailable/u)).toBeNull();
   },
 );
+
+test("Reject a managed reconnect receipt whose account differs from the connector", async () => {
+  const { dialog, mutations, connectionId } = await reconnectManagedAccount(
+    "feishu",
+    true,
+  );
+  await expect(
+    screen.findByText(/Connector account response identity mismatch/u),
+  ).resolves.toBeInTheDocument();
+  expect(dialog).toBeInTheDocument();
+  expect(mutations).toStrictEqual([{ intent: "reconnect", connectionId }]);
+});

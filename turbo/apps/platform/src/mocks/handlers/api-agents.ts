@@ -1,4 +1,3 @@
-import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import { chatRelationsContract } from "@okouai/api-contracts/contracts/chat-relations";
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
@@ -65,45 +64,10 @@ export function resetMockAgents(): void {
   mockAgents = [...DEFAULT_AGENTS];
 }
 
-const mockEnabledConnectorSlugsByAgent = new Map<string, string[]>();
-
-export function resetMockUserConnectors(): void {
-  mockEnabledConnectorSlugsByAgent.clear();
-}
-
-function mockConnectorUpdateResponse(
-  current: readonly string[],
-  requested: readonly string[],
-  operation: "replace" | "add" | "remove" | undefined,
-): string[] {
-  if (operation === "add") {
-    return Array.from(new Set([...current, ...requested]));
-  }
-  if (operation === "remove") {
-    return current.filter((value) => {
-      return !requested.includes(value);
-    });
-  }
-  return [...requested];
-}
-
 export const apiAgentsHandlers = [
   // GET /api/agents
   mockApi(agentsMainContract.list, ({ respond }) => {
     return respond(200, mockAgents);
-  }),
-
-  // PUT /api/agents/:id/user-connectors
-  mockApi(userBuiltinConnectorsContract.update, ({ body, params, respond }) => {
-    const enabledConnectorSlugs = mockConnectorUpdateResponse(
-      mockEnabledConnectorSlugsByAgent.get(params.id) ?? [],
-      body.enabledConnectorSlugs,
-      body.operation,
-    );
-    mockEnabledConnectorSlugsByAgent.set(params.id, enabledConnectorSlugs);
-    return respond(200, {
-      enabledConnectorSlugs,
-    });
   }),
 
   // GET /api/agents/:id
