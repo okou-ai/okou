@@ -13,6 +13,28 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1156.0](https://github.com/okou-ai/okou/compare/app-v0.1155.1...app-v0.1156.0) (2026-11-20)
+
+
+### Features
+
+* **platform:** use a colored email mark on the Email channel card ([#49475](https://github.com/okou-ai/okou/issues/49475)) ([c37e991](https://github.com/okou-ai/okou/commit/c37e9910acd2f376cd82e177bd549dba5a1d3cd4))
+
+
+### Bug Fixes
+
+* **app:** avoid duplicate startup project and thread reads ([#49440](https://github.com/okou-ai/okou/issues/49440)) ([23cd576](https://github.com/okou-ai/okou/commit/23cd576df69210cb535f8f819e27906c36d57dc6))
+* **app:** keep check-in feedback in the rewards menu ([#49459](https://github.com/okou-ai/okou/issues/49459)) ([44fa0d5](https://github.com/okou-ai/okou/commit/44fa0d5b0f0081dbdbac2b89553831df76749907))
+* **platform:** improve chat sharing selection controls ([#49038](https://github.com/okou-ai/okou/issues/49038)) ([ad72ee8](https://github.com/okou-ai/okou/commit/ad72ee8660d9450fa57e8df86389fe30c1e9abae))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.857.2
+    * @okouai/ui bumped to 1.21.71
+
 ## [0.1155.1](https://github.com/okou-ai/okou/compare/app-v0.1155.0...app-v0.1155.1) (2026-11-20)
 
 

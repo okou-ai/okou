@@ -10,6 +10,22 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.97.2](https://github.com/okou-ai/okou/compare/api-v2.97.1...api-v2.97.2) (2026-11-20)
+
+
+### Refactoring
+
+* **api:** retire legacy run callbacks and simplify queued prompts ([#49448](https://github.com/okou-ai/okou/issues/49448)) ([e704f76](https://github.com/okou-ai/okou/commit/e704f76b00fe4bd450a293de15e6a594c2637261))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.857.2
+    * @okouai/db bumped to 2.55.0
+    * @okouai/pi-agent-runtime bumped to 1.52.14
+
 ## [2.97.1](https://github.com/okou-ai/okou/compare/api-v2.97.0...api-v2.97.1) (2026-11-20)
 
 

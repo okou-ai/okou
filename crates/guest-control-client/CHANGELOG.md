@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.118](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.117...guest-control-client-v0.23.118) (2026-11-20)
+
+
+### Performance Improvements
+
+* **guest-control:** borrow ordinary file batch contents ([#49472](https://github.com/okou-ai/okou/issues/49472)) ([f9292e2](https://github.com/okou-ai/okou/commit/f9292e2095dc2fd874833ab576a1bedc22381a62))
+
 ## [0.23.117](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.116...guest-control-client-v0.23.117) (2026-11-20)
 
 
