@@ -38,7 +38,7 @@ function installMessageSearch(threadId: string): string[] {
       results: [
         {
           chatThreadId: threadId,
-          agentName: "Support Agent",
+          agentName: "Okou",
           matchedMessage: {
             chatThreadId: threadId,
             role: "user",

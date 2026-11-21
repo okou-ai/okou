@@ -618,9 +618,7 @@ internal class ChatComposerOwner(
         val recovery = connection.recovery ?: return
         val selected =
             recovery.selection()?.takeIf {
-                it.failureId == failureId &&
-                    it.threadId == target.threadId &&
-                    it.agentId == target.agentId
+                it.failureId == failureId && it.threadId == target.threadId
             } ?: return
         val state = mutable.value
         if (

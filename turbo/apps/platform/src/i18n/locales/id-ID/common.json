@@ -86,7 +86,6 @@
           "title": "Provider sementara tidak tersedia"
         }
       },
-      "fallbackAgent": "Agen",
       "fields": {
         "duration": "Durasi",
         "model": "Model",

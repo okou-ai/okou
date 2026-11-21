@@ -259,18 +259,16 @@ describe("chat search publication", () => {
       }),
     );
     expect(result).toStrictEqual(
-      native.results.map(
-        ({ agentName: _name, chatThreadId, matchedMessage, matchedRanges }) => {
-          const { chatThreadId: messageThreadId, ...message } = matchedMessage;
-          return {
-            threadId: chatThreadId,
-            projectId: null,
-            projectName: null,
-            matchedRanges,
-            matchedMessage: { ...message, threadId: messageThreadId },
-          };
-        },
-      ),
+      native.results.map(({ chatThreadId, matchedMessage, matchedRanges }) => {
+        const { chatThreadId: messageThreadId, ...message } = matchedMessage;
+        return {
+          threadId: chatThreadId,
+          projectId: null,
+          projectName: null,
+          matchedRanges,
+          matchedMessage: { ...message, threadId: messageThreadId },
+        };
+      }),
     );
 
     createRouteMocks(context).clerk.session(

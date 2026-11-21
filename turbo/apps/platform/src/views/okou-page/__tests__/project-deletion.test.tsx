@@ -1,3 +1,4 @@
+import { CHAT_LIST_AGENT_ID } from "./chat-list-test-helpers.ts";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -78,7 +79,7 @@ function installDeletion(threads: readonly ChatThreadSnapshotProjection[]) {
   const projectEvents: ProjectEvent[] = [];
   const projectDeleted = context.mocks.deferred<void>();
   const threadEvents: ChatThreadEvent[] = [];
-  context.mocks.data.onboardingStatus({ defaultAgentId: ordinary.agentId });
+  context.mocks.data.onboardingStatus({ defaultAgentId: CHAT_LIST_AGENT_ID });
   context.mocks.api(projectsContract.get, ({ respond }) => {
     if (
       projectEvents.some((event) => {
@@ -146,7 +147,6 @@ function installDeletion(threads: readonly ChatThreadSnapshotProjection[]) {
       seqId: threadEvents.length + 2,
       kind: "deleted",
       chatThreadId: threadId,
-      agentId: thread.agentId,
       title: thread.title,
       selectedModel: thread.selectedModel,
       serviceTier: thread.serviceTier,

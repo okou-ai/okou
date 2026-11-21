@@ -43,7 +43,7 @@ export const workflows = pgTable(
   {
     id: uuid("id").defaultRandom().primaryKey(),
     orgId: text("org_id").notNull(),
-    // Deleting the owning agent cascades to its Workflow rows.
+    // Legacy namespace for Workflow lookups.
     agentId: uuid("agent_id").notNull(),
     name: varchar("name", { length: 64 }).notNull(),
     visibility: varchar("visibility", { length: 16 })
@@ -81,7 +81,7 @@ export const workflows = pgTable(
         name: "workflows_agent_id_agents_id_fk",
         columns: [table.agentId],
         foreignColumns: [agents.id],
-      }).onDelete("cascade"),
+      }).onDelete("restrict"),
       agentIdx: index("idx_workflows_agent").on(table.agentId, table.name),
       importSessionIdx: index("idx_workflows_import_session").on(
         table.importSessionId,

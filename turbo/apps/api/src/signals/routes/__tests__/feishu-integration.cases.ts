@@ -5521,8 +5521,7 @@ export function registerFeishuIntegrationTests(
       it("runs a Feishu DM file with downloadable resource context", async () => {
         const firstUploadCall = context.mocks.s3.send.mock.calls.length;
         const fixture = await setupFeishuRunFixture();
-        const { actor, runnerGroup, appId, callbackUrl, defaultAgentId } =
-          fixture;
+        const { actor, runnerGroup, appId, callbackUrl } = fixture;
         fixtureState.oauthTokenExpiresInSeconds = 0;
         await connectFixtureUser(fixture);
         const customConnectorClient = setupApp({
@@ -5711,7 +5710,7 @@ export function registerFeishuIntegrationTests(
         });
         const chatThreadCreated = requireValue(
           threadEvents.body.events.find((event) => {
-            return event.kind === "created" && event.agentId === defaultAgentId;
+            return event.kind === "created";
           }),
           "Expected the canonical Feishu file chat thread",
         );
@@ -5832,8 +5831,7 @@ export function registerFeishuIntegrationTests(
         "runs a rich post with imported and native images in %s",
         async (chatType) => {
           const fixture = await setupFeishuRunFixture();
-          const { actor, runnerGroup, appId, callbackUrl, defaultAgentId } =
-            fixture;
+          const { actor, runnerGroup, appId, callbackUrl } = fixture;
           await connectFixtureUser(fixture);
           const messageId = `om_post_${randomUUID()}`;
           const uploads = captureIntegrationInputUploads(context);
@@ -5989,9 +5987,7 @@ export function registerFeishuIntegrationTests(
           });
           const thread = requireValue(
             threads.body.events.find((event) => {
-              return (
-                event.kind === "created" && event.agentId === defaultAgentId
-              );
+              return event.kind === "created";
             }),
             "Expected a canonical rich post thread",
           );
@@ -6604,8 +6600,7 @@ export function registerFeishuIntegrationTests(
 
       it("retains platform run history when a model change starts a fresh session", async () => {
         const fixture = await setupFeishuRunFixture();
-        const { actor, runnerGroup, appId, callbackUrl, defaultAgentId } =
-          fixture;
+        const { actor, runnerGroup, appId, callbackUrl } = fixture;
         const providerThreadId = `omt_${randomUUID()}`;
         await startFeishuDmSession(fixture, providerThreadId);
         await configureNativeModels(actor);
@@ -6623,7 +6618,7 @@ export function registerFeishuIntegrationTests(
         });
         const thread = requireValue(
           threads.body.events.find((event) => {
-            return event.kind === "created" && event.agentId === defaultAgentId;
+            return event.kind === "created";
           }),
           "Expected the integration chat thread",
         );
@@ -6686,8 +6681,7 @@ export function registerFeishuIntegrationTests(
 
       it("builds Feishu DM context and canonical response metadata", async () => {
         const fixture = await setupFeishuRunFixture();
-        const { actor, runnerGroup, appId, callbackUrl, defaultAgentId } =
-          fixture;
+        const { actor, runnerGroup, appId, callbackUrl } = fixture;
         await connectFixtureUser(fixture);
         fixtureState.outboundMessages = [];
         context.mocks.ably.publish.mockClear();
@@ -6786,7 +6780,7 @@ export function registerFeishuIntegrationTests(
         });
         const chatThreadCreated = requireValue(
           threadEvents.body.events.find((event) => {
-            return event.kind === "created" && event.agentId === defaultAgentId;
+            return event.kind === "created";
           }),
           "Expected the canonical Feishu chat thread",
         );
@@ -7626,7 +7620,7 @@ export function registerSharedFeishuConversationTests(): void {
 
     it("reuses one Feishu DM thread for concurrent input and a changed chat destination", async () => {
       const fixture = await setupFeishuRunFixture();
-      const { actor, appId, callbackUrl, defaultAgentId } = fixture;
+      const { actor, appId, callbackUrl } = fixture;
       await connectFixtureUser(fixture);
       const before = await readFeishuThreadEvents(actor);
       const previousIds = new Set(
@@ -7653,7 +7647,6 @@ export function registerSharedFeishuConversationTests(): void {
       });
       expect(created).toHaveLength(1);
       const thread = requireValue(created[0], "Expected the new DM thread");
-      expect(thread.agentId).toBe(defaultAgentId);
 
       const movedPrompt = "continue in the changed Feishu chat";
       const moved = await own(() => {
@@ -8045,8 +8038,7 @@ export function registerSharedFeishuConversationTests(): void {
 
     it("terminalizes and delivers a queued Feishu admission failure exactly once", async () => {
       const fixture = await setupFeishuRunFixture();
-      const { actor, runnerGroup, appId, callbackUrl, defaultAgentId } =
-        fixture;
+      const { actor, runnerGroup, appId, callbackUrl } = fixture;
       if (!actor.orgId) {
         throw new Error("Expected an org-scoped Feishu actor");
       }
@@ -8146,7 +8138,7 @@ export function registerSharedFeishuConversationTests(): void {
       });
       const thread = requireValue(
         threadEvents.body.events.find((event) => {
-          return event.kind === "created" && event.agentId === defaultAgentId;
+          return event.kind === "created";
         }),
         "Expected the queued Feishu chat thread",
       );
@@ -8255,8 +8247,7 @@ export function registerSharedFeishuConversationTests(): void {
 
     it("persists a queued Feishu admission failure when delivery fails", async () => {
       const fixture = await setupFeishuRunFixture();
-      const { actor, runnerGroup, appId, callbackUrl, defaultAgentId } =
-        fixture;
+      const { actor, runnerGroup, appId, callbackUrl } = fixture;
       if (!actor.orgId) {
         throw new Error("Expected an org-scoped Feishu actor");
       }
@@ -8341,7 +8332,7 @@ export function registerSharedFeishuConversationTests(): void {
       });
       const thread = requireValue(
         threadEvents.body.events.find((event) => {
-          return event.kind === "created" && event.agentId === defaultAgentId;
+          return event.kind === "created";
         }),
         "Expected the failed-delivery Feishu chat thread",
       );

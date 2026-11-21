@@ -27,8 +27,7 @@ function logDetail(): LogDetail {
   return {
     id: RUN_ID,
     sessionId: "session-1",
-    agentId: "c0000000-0000-4000-a000-000000000001",
-    displayName: "Checkout Export",
+
     framework: "claude-code",
     modelProvider: null,
     selectedModel: null,
@@ -145,9 +144,7 @@ test("A user can download all retained diagnostics for an older activity", async
 
   await setupPage({ context, path: `/activities/${RUN_ID}` });
   await waitFor(() => {
-    expect(
-      screen.getByRole("heading", { name: "Checkout Export" }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Okou" })).toBeInTheDocument();
   });
   await expect(
     screen.findByText("Checkout diagnostics exported"),
@@ -171,7 +168,6 @@ test("A user can download all retained diagnostics for an older activity", async
   expect(downloaded.events).toStrictEqual([activityEvent()]);
   expect(downloaded.meta).toMatchObject({
     id: RUN_ID,
-    displayName: "Checkout Export",
     framework: "codex",
     appendSystemPrompt: "Use the captured diagnostic context",
   });

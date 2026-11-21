@@ -36,6 +36,7 @@ import {
   chatEvents,
 } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
+import { chatThreads as legacyChatThreads } from "@okouai/db/schema/chat-thread";
 import { chatThreadDrafts } from "@okouai/db/schema/chat-thread-draft";
 import {
   CANONICAL_ASSET_VERSION,
@@ -61,6 +62,7 @@ import {
 import { settle } from "../utils";
 import {
   pgBooleanDecoder,
+  pgNullDecoder,
   pgTextDecoder,
 } from "../../lib/db-structured-result";
 import {
@@ -327,7 +329,9 @@ type IndicatorScope = {
   readonly userId: string;
   readonly orgId: string;
   readonly includeActiveUnread: boolean;
+  readonly includeLegacyAgents: boolean;
 };
+
 type IndicatorThreadRow = {
   readonly threadId: string;
   readonly agentId: string | null;
@@ -349,10 +353,13 @@ function newestUnreadIndicators(rows: UnreadIndicatorRow[]) {
 }
 
 function createIndicatorRows(args: IndicatorScope) {
+  const legacyThreadAgentId = args.includeLegacyAgents
+    ? legacyChatThreads.agentId
+    : sql`NULL`.mapWith(pgNullDecoder);
   const activeRows$ = computed(
     async (get): Promise<readonly IndicatorThreadRow[]> => {
       return await get(db$)
-        .select({ threadId: chatThreads.id, agentId: chatThreads.agentId })
+        .select({ threadId: chatThreads.id, agentId: legacyThreadAgentId })
         .from(agentRuns)
         .innerJoin(chatThreads, eq(chatThreads.id, agentRuns.chatThreadId))
         .where(
@@ -366,7 +373,7 @@ function createIndicatorRows(args: IndicatorScope) {
             eq(chatThreads.orgId, args.orgId),
           ),
         )
-        .groupBy(chatThreads.id, chatThreads.agentId)
+        .groupBy(chatThreads.id)
         .orderBy(desc(max(agentRuns.createdAt)))
         .limit(INDICATOR_ACTIVE_LIMIT);
     },
@@ -380,7 +387,7 @@ function createIndicatorRows(args: IndicatorScope) {
       const candidates = await db
         .select({
           threadId: chatThreads.id,
-          agentId: chatThreads.agentId,
+          agentId: legacyThreadAgentId,
           lastReadAt: chatThreads.lastReadAt,
           archived: chatThreads.archived,
         })
@@ -520,7 +527,9 @@ export function chatIndicators(
         agentIndicators[row.agentId] = "unread";
       }
     }
-    return { agents: agentIndicators, threads, unreadAt };
+    return args.includeLegacyAgents
+      ? { agents: agentIndicators, threads, unreadAt }
+      : { threads, unreadAt };
   });
 }
 

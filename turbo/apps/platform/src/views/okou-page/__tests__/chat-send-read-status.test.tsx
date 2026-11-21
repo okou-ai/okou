@@ -42,7 +42,7 @@ test.each(["pending", "unauthorized"] as const)(
           });
         }
       }
-      return respond(200, { agents: {}, threads: {}, unreadAt: {} });
+      return respond(200, { threads: {}, unreadAt: {} });
     });
     await setupPage({
       context,
@@ -114,7 +114,7 @@ test("Unread refresh failure ends submission without cancelling the pending POST
         error: { code: "UNAUTHORIZED", message: "Unauthorized" },
       });
     }
-    return respond(200, { agents: {}, threads: {}, unreadAt: {} });
+    return respond(200, { threads: {}, unreadAt: {} });
   });
   await setupPage({
     context,

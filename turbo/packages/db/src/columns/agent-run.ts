@@ -15,7 +15,6 @@ import {
 import type { CodexServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
 import type { RunFailureReasonToken } from "@okouai/api-contracts/contracts/run-failure-reasons";
 import { chatThreads } from "../schema/chat-thread";
-import { agents } from "../schema/agent";
 import { workflowAutomations } from "../schema/workflow";
 import type {
   AgentRunLaunchSnapshot,
@@ -29,15 +28,6 @@ export function agentRunColumns() {
   return {
     id: uuid("id").defaultRandom().primaryKey(),
     userId: text("user_id").notNull(), // Clerk user ID - owner of this run
-    // Genuine Agent identity captured at Run admission.
-    agentId: uuid("agent_id").references(
-      (): AnyPgColumn => {
-        return agents.id;
-      },
-      {
-        onDelete: "set null",
-      },
-    ),
     // Actual native identity reported by the Framework, not the model provider.
     framework: varchar("framework", { length: 64 }),
     frameworkSessionId: varchar("framework_session_id", { length: 255 }),

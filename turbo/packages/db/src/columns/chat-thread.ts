@@ -7,7 +7,6 @@ import {
   varchar,
 } from "drizzle-orm/pg-core";
 import type { CodexServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
-import { agents } from "../schema/agent";
 import { computerUseHosts } from "../schema/computer-use-host";
 import type { ModelSettings } from "@okouai/db/jsonb-contracts/chat-model-settings";
 
@@ -17,12 +16,6 @@ export function chatThreadColumns() {
     id: uuid("id").defaultRandom().primaryKey(),
     userId: text("user_id").notNull(),
     orgId: text("org_id").notNull(),
-    agentId: uuid("agent_id").references(
-      () => {
-        return agents.id;
-      },
-      { onDelete: "cascade" },
-    ),
     projectId: uuid("project_id"),
     title: text("title"),
     /**

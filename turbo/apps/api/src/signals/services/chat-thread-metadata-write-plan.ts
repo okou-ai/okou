@@ -24,7 +24,7 @@ export function metadataModelSettingsPatchSql(patch: ModelSettingsPatch): SQL {
 }
 
 const metadataResultSql = sql`SELECT
-  id AS "threadId", agent_id AS "agentId", left(title, 500) AS title,
+  id AS "threadId", left(title, 500) AS title,
   COALESCE(length(title) > 500, false) AS "titleTruncated",
   selected_model AS "selectedModel", model_settings AS "modelSettings",
   codex_service_tier AS "codexServiceTier", updated_at::text AS "updatedAt"

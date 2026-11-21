@@ -158,14 +158,11 @@ async function firewallRun(
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
   const runnerGroup = await runs.configureRunnerGroup();
-  const agents: string[] = [];
+
   const modelAccounts = new Set<string>();
   codexAccounts.owned.set(actor.userId, modelAccounts);
   const owner = publicRunOwner(context, actor, {
     afterRuns: async () => {
-      for (const agentId of agents) {
-        await bdd.deleteAgent(actor, agentId);
-      }
       const support = createAuthDeviceSupportApi(context);
       for (const id of modelAccounts) {
         await support.deletePersonalModelProviderAccount(actor, id);
@@ -201,7 +198,7 @@ async function firewallRun(
       displayName: "BDD firewall agent",
       visibility: "private",
     });
-    agents.push(agent.agentId);
+
     await options.prepareAgent?.(actor, agent.agentId);
     const run = await runs.createThreadRun(actor, {
       agentId: agent.agentId,

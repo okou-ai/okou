@@ -416,6 +416,6 @@ test("Measure the threads inside a singleton snapshot on demand", async () => {
   expect(measure).toBeEnabled();
   const values = within(snapshot).getAllByRole("definition");
   expect(values[0]).toHaveTextContent("3");
-  expect(values[1]).toHaveTextContent(/^[1-9][\d.]*KB$/u);
+  expect(values[1]).toHaveTextContent(/^[1-9][\d.]*(?:B|KB)$/u);
   expect(values[2]).toHaveTextContent(/^[\d,.]+ ms$/u);
 });

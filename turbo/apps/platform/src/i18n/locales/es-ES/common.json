@@ -88,7 +88,6 @@
           "title": "Proveedor temporalmente no disponible"
         }
       },
-      "fallbackAgent": "Agente",
       "fields": {
         "duration": "Duración",
         "model": "Modelo",

@@ -85,7 +85,6 @@ function userMessage(text: string): UserMessageInputDocument {
 function chatThread(title: string): ChatThreadSnapshotProjection {
   return {
     id: THREAD_ID,
-    agentId: AGENT_ID,
     title,
     sortAt: CREATED_AT,
     createdAt: CREATED_AT,

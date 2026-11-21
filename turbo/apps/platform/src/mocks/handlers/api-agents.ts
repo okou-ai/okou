@@ -129,7 +129,7 @@ export const apiAgentsHandlers = [
 
   // GET /api/indicators
   mockApi(chatThreadsContract.indicators, ({ respond }) => {
-    return respond(200, { agents: {}, threads: {}, unreadAt: {} });
+    return respond(200, { threads: {}, unreadAt: {} });
   }),
 
   // GET /api/chat-thread-drafts

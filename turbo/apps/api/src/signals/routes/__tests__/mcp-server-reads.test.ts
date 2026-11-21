@@ -742,17 +742,9 @@ describe("thin MCP Web adapters", () => {
     expect(page).toStrictEqual({
       snapshot: { chatThreads: [], latestEventId: null, latestSeqId: null },
       ...nativeEvents,
-      events: nativeEvents.events.map(
-        ({
-          id,
-          chatThreadId,
-          agentId: _agentId,
-          reassignedAgentId: _reassignedAgentId,
-          ...event
-        }) => {
-          return { ...event, eventId: id, threadId: chatThreadId };
-        },
-      ),
+      events: nativeEvents.events.map(({ id, chatThreadId, ...event }) => {
+        return { ...event, eventId: id, threadId: chatThreadId };
+      }),
     });
     expect(
       page.events.some((event) => {

@@ -69,7 +69,6 @@ curl() {
     local request_url="${!#}"
     local fail_with_body_enabled=false
     local saw_fail_with_body=false
-    local saw_no_fail_with_body=false
     local saw_vercel_write_out=false
     local write_out='' connect_timeout='' max_time='' request_payload=''
     local attempt
@@ -85,7 +84,6 @@ curl() {
                 ;;
             --no-fail-with-body)
                 fail_with_body_enabled=false
-                saw_no_fail_with_body=true
                 ;;
             --write-out)
                 shift
@@ -180,25 +178,6 @@ curl() {
             echo "curl: (28) Operation timed out" >&2
             return 28
             ;;
-        no-fail-with-body | no-fail-with-body-failure)
-            [[ "$saw_no_fail_with_body" == true ]] || {
-                echo "curl did not receive --no-fail-with-body" >&2
-                return 94
-            }
-            [[ "$fail_with_body_enabled" == false ]] || {
-                echo "caller --no-fail-with-body did not override --fail-with-body" >&2
-                return 95
-            }
-            [[ "$write_out" == $'\n%{http_code}' ]] || {
-                echo "curl did not retain the caller write-out" >&2
-                return 96
-            }
-            if [[ "$MOCK_CURL_MODE" == "no-fail-with-body" ]]; then
-                printf '{"error":{"message":"Cannot delete agent while its configuration is being migrated","code":"CONFLICT"}}\n409'
-            else
-                printf '{"error":"Internal server error"}\n500'
-            fi
-            ;;
         *)
             echo "unexpected mock curl mode: $MOCK_CURL_MODE" >&2
             return 97
@@ -208,15 +187,6 @@ curl() {
 
 run_request() {
     if runner_api_curl "$@" >"$stdout_file" 2>"$stderr_file"; then
-        request_status=0
-    else
-        request_status=$?
-    fi
-}
-
-run_agent_teardown() {
-    if delete_runner_agent_for_stage0_teardown "$1" \
-        >"$stdout_file" 2>"$stderr_file"; then
         request_status=0
     else
         request_status=$?
@@ -266,25 +236,6 @@ assert_file_excludes "$stderr_file" "$E2E_API_TOKEN"
 assert_file_excludes "$stderr_file" "$VERCEL_AUTOMATION_BYPASS_SECRET"
 assert_file_excludes "$stderr_file" "sensitive-request-payload"
 assert_file_excludes "$stderr_file" "sensitive-query-value"
-
-MOCK_CURL_MODE=no-fail-with-body
-MOCK_CURL_EXPECTED_URL="https://pr-27981-api.vm6.ai/api/agents/agent-1"
-MOCK_CURL_EXPECTED_VERCEL_WRITE_OUT='%{onerror}%{stderr}Vercel logs: https://vercel.com/okou/vm0-api/logs?search=requestHost%%3Apr-27981-api.vm6.ai+requestPath%%3A%%2Fapi%%2Fagents%%2Fagent-1+status%%3A%{http_code}&timeline=past12Hours\n'
-run_agent_teardown "agent-1"
-assert_status 0
-assert_file_equals '' "$stdout_file"
-assert_file_equals '' "$stderr_file"
-
-MOCK_CURL_MODE=no-fail-with-body-failure
-run_agent_teardown "agent-1"
-assert_status 1
-assert_file_equals '' "$stdout_file"
-assert_file_equals \
-    $'Stage 0 Runner E2E agent teardown failed with HTTP 500: {"error":"Internal server error"}\nVercel logs: https://vercel.com/okou/vm0-api/logs?search=requestHost%3Apr-27981-api.vm6.ai+requestPath%3A%2Fapi%2Fagents%2Fagent-1+status%3A500&timeline=past12Hours\n' \
-    "$stderr_file"
-assert_file_excludes "$stderr_file" "$E2E_API_TOKEN"
-assert_file_excludes "$stderr_file" "$VERCEL_AUTOMATION_BYPASS_SECRET"
-assert_file_excludes "$stderr_file" "sensitive-request-payload"
 
 # A stalled request produces no response at all, so a plain GET is sent again.
 # See the merge-group Turbo run 33464652878, where four runner shards gave up

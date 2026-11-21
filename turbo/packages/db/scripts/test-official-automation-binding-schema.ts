@@ -128,7 +128,9 @@ export async function validateOfficialAutomationBindingSchema(
   } finally {
     try {
       if (agentCreated) {
-        // Existing foreign keys cascade to this agent's workflow and automations.
+        await client.query(`DELETE FROM "workflows" WHERE "agent_id" = $1`, [
+          agentId,
+        ]);
         await client.query(`DELETE FROM "agents" WHERE "id" = $1`, [agentId]);
       }
     } finally {

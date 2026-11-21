@@ -25,7 +25,6 @@ import { pathname } from "../../../signals/location.ts";
 
 const context = testContext();
 const THREAD_ID = "b0000000-0000-4000-a000-000000000951";
-const AGENT_ID = "c0000000-0000-4000-a000-000000000001";
 
 async function setupHeaderPage(threadEvents: readonly ChatThreadEvent[] = []) {
   mockChatLifecycle(context, {
@@ -117,7 +116,6 @@ test("Keep menu pin changes responsive across resize and save", async () => {
       events.push(
         chatListEvent(951, events.length + 1, "pinned", params.id, {
           id: query?.eventId,
-          agentId: "c0000000-0000-4000-a000-000000000001",
           pinOrder: query?.pinOrder,
         }),
       );
@@ -130,13 +128,11 @@ test("Keep menu pin changes responsive across resize and save", async () => {
       events.push(
         chatListEvent(951, events.length + 1, "unpinned", params.id, {
           id: query?.eventId,
-          agentId: "c0000000-0000-4000-a000-000000000001",
         }),
       );
       // A following server event makes completed reconciliation observable.
       events.push(
         chatListEvent(951, events.length + 1, "renamed", params.id, {
-          agentId: "c0000000-0000-4000-a000-000000000001",
           title: "😀 Pin changes saved",
         }),
       );
@@ -276,7 +272,6 @@ test("Archive from the mobile header and return home before saving", async () =>
       events.push(
         chatListEvent(951, 1, "archived", params.id, {
           id: query?.eventId,
-          agentId: AGENT_ID,
         }),
       );
       changeChatThreadList();
@@ -310,7 +305,6 @@ test("Undo a header archive from its toast and return to the thread", async () =
       events.push(
         chatListEvent(951, 1, "archived", params.id, {
           id: query?.eventId,
-          agentId: AGENT_ID,
         }),
       );
       changeChatThreadList();
@@ -323,7 +317,6 @@ test("Undo a header archive from its toast and return to the thread", async () =
       events.push(
         chatListEvent(951, 2, "unarchived", params.id, {
           id: query?.eventId,
-          agentId: AGENT_ID,
         }),
       );
       changeChatThreadList();
@@ -363,7 +356,6 @@ function mockMuteRequests(events: ChatThreadEvent[]) {
       events.push(
         chatListEvent(951, events.length + 1, "sort_touched", params.id, {
           id: query?.eventId,
-          agentId: AGENT_ID,
           muted,
         }),
       );
@@ -433,7 +425,7 @@ test("Unarchive from the mobile header and stay in the current thread", async ()
   context.mocks.browser.matchMedia(false);
   const unarchiveResponse = context.mocks.deferred<void>();
   const events: ChatThreadEvent[] = [
-    chatListEvent(951, 1, "archived", THREAD_ID, { agentId: AGENT_ID }),
+    chatListEvent(951, 1, "archived", THREAD_ID),
   ];
   context.mocks.api(
     chatThreadArchiveContract.unarchive,
@@ -442,7 +434,6 @@ test("Unarchive from the mobile header and stay in the current thread", async ()
       events.push(
         chatListEvent(951, 2, "unarchived", params.id, {
           id: query?.eventId,
-          agentId: AGENT_ID,
         }),
       );
       changeChatThreadList();
@@ -484,9 +475,7 @@ test("Stay in the archived thread and show the unarchive API error", async () =>
   context.mocks.api(chatThreadArchiveContract.unarchive, ({ respond }) => {
     return respond(500, { error: { message: "Unarchive request failed" } });
   });
-  await setupHeaderPage([
-    chatListEvent(951, 1, "archived", THREAD_ID, { agentId: AGENT_ID }),
-  ]);
+  await setupHeaderPage([chatListEvent(951, 1, "archived", THREAD_ID)]);
   click(buttonNamed("More actions"));
   await screen.findByRole("menu");
   click(menuItemNamed("Unarchive chat"));

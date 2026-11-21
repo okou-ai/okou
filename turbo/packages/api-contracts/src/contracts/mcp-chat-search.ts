@@ -60,7 +60,6 @@ export const mcpProjectChatSearchContract = c.router({
     ...mcpChatSearchContract.search,
     path: "/internal/mcp/chat/search",
     query: mcpChatSearchContract.search.query
-      .omit({ agentId: true })
       .extend({
         projectId: uuid().toLowerCase().optional(),
       })

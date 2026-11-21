@@ -18,7 +18,6 @@ import {
 
 import { mockPrivateUrlSequence } from "./chat-attachment-test-helpers.ts";
 import {
-  CAPABILITY_AGENT_ID,
   completedConversation,
   FIRST_CAPABILITY_RUN_ID,
   readyChat,
@@ -111,8 +110,6 @@ test("Keep Copy to the right of an active run's logs before any assistant output
     return respond(200, {
       id: params.id,
       sessionId: "capability-session",
-      agentId: CAPABILITY_AGENT_ID,
-      displayName: "Run inspection",
       framework: "claude-code",
       modelProvider: "claude-code-oauth-token",
       selectedModel: "claude-sonnet-5",
@@ -153,7 +150,7 @@ test("Keep Copy to the right of an active run's logs before any assistant output
 
   click(logs);
   await expect(
-    screen.findByRole("heading", { name: "Run inspection" }),
+    screen.findByRole("heading", { name: "Okou" }),
   ).resolves.toBeVisible();
   expect(window.location.pathname).toBe(
     `/activities/${FIRST_CAPABILITY_RUN_ID}`,
@@ -238,8 +235,6 @@ test("Copy workflow trigger bubbles and inspect their associated runs", async ()
     return respond(200, {
       id: params.id,
       sessionId: "workflow-session",
-      agentId: CAPABILITY_AGENT_ID,
-      displayName: "Workflow run inspection",
       framework: "claude-code",
       modelProvider: "claude-code-oauth-token",
       selectedModel: "claude-sonnet-4-6",
@@ -291,7 +286,7 @@ test("Copy workflow trigger bubbles and inspect their associated runs", async ()
 
   click(logs);
   await expect(
-    screen.findByRole("heading", { name: "Workflow run inspection" }),
+    screen.findByRole("heading", { name: "Okou" }),
   ).resolves.toBeVisible();
   expect(window.location.pathname).toBe(
     `/activities/${FIRST_CAPABILITY_RUN_ID}`,
@@ -351,8 +346,6 @@ test("Inspect a response from its prompt or copy it from history", async () => {
     return respond(200, {
       id: params.id,
       sessionId: "capability-session",
-      agentId: CAPABILITY_AGENT_ID,
-      displayName: "Response inspection",
       framework: "claude-code",
       modelProvider: "claude-code-oauth-token",
       selectedModel: "claude-sonnet-5",
@@ -392,7 +385,7 @@ test("Inspect a response from its prompt or copy it from history", async () => {
   click(linkIn(promptActions, "View run logs"));
 
   const inspectionHeading = await screen.findByRole("heading", {
-    name: "Response inspection",
+    name: "Okou",
   });
   expect(inspectionHeading).toBeVisible();
   expect(window.location.pathname).toBe(

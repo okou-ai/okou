@@ -196,10 +196,25 @@ describe("GET /api/indicators", () => {
 
     const indicators = await accept(client().indicators({ headers }), [200]);
     expect(indicators.body).toStrictEqual({
-      agents: {},
       threads: { [unread.threadId]: "unread" },
       unreadAt: { [unread.threadId]: unread.unreadAt },
     });
+    for (const [clientType, version] of [
+      ["iOS", "0.51.7"],
+      ["Android", "0.36.0"],
+    ] as const) {
+      const legacy = await accept(
+        client().indicators({
+          headers,
+          extraHeaders: {
+            "X-Client-Type": clientType,
+            "X-Client-Version": version,
+          },
+        }),
+        [200],
+      );
+      expect(legacy.body).toStrictEqual({ ...indicators.body, agents: {} });
+    }
     await expect(
       chat.readThread(actor, unread.threadId),
     ).resolves.toMatchObject({ lastReadAt: before.unread });
@@ -246,7 +261,6 @@ describe("GET /api/indicators", () => {
 
     const indicators = await accept(client().indicators({ headers }), [200]);
     expect(indicators.body).toStrictEqual({
-      agents: {},
       threads: { [ownerUnread.threadId]: "unread" },
       unreadAt: { [ownerUnread.threadId]: ownerUnread.unreadAt },
     });
@@ -314,7 +328,6 @@ describe("GET /api/indicators", () => {
       [200],
     );
     expect(indicators.body).toStrictEqual({
-      agents: {},
       threads: {
         [rerun.threadId]: "active",
         [unread.threadId]: "unread",
@@ -405,7 +418,6 @@ describe("GET /api/indicators", () => {
     };
     const indicators = await accept(client().indicators({ headers }), [200]);
     expect(indicators.body).toStrictEqual({
-      agents: {},
       threads: recent,
       unreadAt: {},
     });
@@ -421,7 +433,6 @@ describe("GET /api/indicators", () => {
       return response.body;
     };
     await expect(readIndependentIndicators()).resolves.toStrictEqual({
-      agents: {},
       threads: { ...recent, [older.threadId]: "unread" },
       unreadAt: { [older.threadId]: older.unreadAt },
     });

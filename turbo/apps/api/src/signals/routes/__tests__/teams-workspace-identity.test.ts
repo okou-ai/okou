@@ -695,7 +695,6 @@ test.each([
         expect(listed.body.data).toHaveLength(1);
         const run = listed.body.data[0]!;
         expect(run).toMatchObject({
-          agentId: null,
           triggerSource: "teams",
           status: "running",
         });

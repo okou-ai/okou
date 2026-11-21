@@ -248,7 +248,7 @@ describe("bulk Agent read-cursor notifications stay bounded", () => {
       chat.readThreadMetadata(fixture.actor, threadId),
     ).resolves.toMatchObject({ muted: true });
     expect(publishedReadCursorPayloads()).toStrictEqual([
-      { threadId, agentId: undefined, lastReadAt: marked.lastReadAt },
+      { threadId, lastReadAt: marked.lastReadAt },
     ]);
     await chat.requestSetThreadMuted(fixture.actor, threadId, false, [204]);
     await expect(visibleUnreadThreadIds(fixture)).resolves.toStrictEqual(

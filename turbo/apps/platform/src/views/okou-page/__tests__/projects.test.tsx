@@ -1,3 +1,4 @@
+import { CHAT_LIST_AGENT_ID } from "./chat-list-test-helpers.ts";
 import {
   act,
   cleanup,
@@ -337,7 +338,7 @@ test("Projects stay visible when returning from a chat to My Okou during a refre
     caseId: 111,
     threads: [ordinary, member],
   });
-  context.mocks.data.onboardingStatus({ defaultAgentId: ordinary.agentId });
+  context.mocks.data.onboardingStatus({ defaultAgentId: CHAT_LIST_AGENT_ID });
   metadata();
   const refreshStarted = context.mocks.deferred<void>();
   const releaseRefresh = context.mocks.deferred<void>();
@@ -653,7 +654,7 @@ async function setupProjectNavigation(
     threads: [b, a2, a, a1],
   });
   // A Project page lists the default Agent's chats, so these belong to it.
-  context.mocks.data.onboardingStatus({ defaultAgentId: b.agentId });
+  context.mocks.data.onboardingStatus({ defaultAgentId: CHAT_LIST_AGENT_ID });
   metadata(extraProjects);
   await setupPage({
     context,
@@ -901,7 +902,6 @@ test("A folded Project prioritizes unread over running chats, and an unfolded on
   ]);
   context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
     return respond(200, {
-      agents: {},
       threads: {
         [researchOlderUnread.id]: "unread",
         [researchRunning.id]: "active",
@@ -1307,7 +1307,6 @@ test("Deleting a Project closes its dialog before its chats finish synchronizing
       seqId: 2,
       kind: "project_updated",
       chatThreadId: member.id,
-      agentId: member.agentId,
       projectId: null,
       title: member.title,
       selectedModel: member.selectedModel,
@@ -1477,7 +1476,6 @@ test("Creating a Project from a chat moves it immediately and survives navigatio
       seqId: 2,
       kind: "project_updated",
       chatThreadId: ordinary.id,
-      agentId: ordinary.agentId,
       projectId: body.id,
       title: ordinary.title,
       selectedModel: ordinary.selectedModel,
@@ -1704,7 +1702,6 @@ test("Thread menu searches and changes Project membership while preserving the o
         seqId: events.length + 2,
         kind: "project_updated",
         chatThreadId: params.id,
-        agentId: ordinary.agentId,
         title: ordinary.title,
         projectId: body.projectId,
         selectedModel: ordinary.selectedModel,
@@ -1822,7 +1819,6 @@ test("A rejected Project move does not replace a later confirmed move", async ()
       seqId: events.length + 2,
       kind: "project_updated",
       chatThreadId: thread.id,
-      agentId: thread.agentId,
       title: thread.title,
       projectId,
       selectedModel: thread.selectedModel,
@@ -1915,7 +1911,6 @@ test("Dropping over an existing Project chat moves immediately while the request
         seqId: 2,
         kind: "project_updated",
         chatThreadId: params.id,
-        agentId: ordinary.agentId,
         title: ordinary.title,
         projectId: body.projectId,
         selectedModel: ordinary.selectedModel,
@@ -2000,7 +1995,6 @@ test.each(["chat row", "empty list space"] as const)(
           seqId: 2,
           kind: "project_updated",
           chatThreadId: params.id,
-          agentId: member.agentId,
           title: member.title,
           projectId: body.projectId,
           selectedModel: member.selectedModel,
@@ -2252,7 +2246,7 @@ test("Home, Project, and conversation navigation preserves the correct draft and
       [ordinary.id, textContinuityDraft("Conversation-only draft")],
     ]),
   });
-  context.mocks.data.onboardingStatus({ defaultAgentId: ordinary.agentId });
+  context.mocks.data.onboardingStatus({ defaultAgentId: CHAT_LIST_AGENT_ID });
   metadata();
   // Each owner supplies its own persisted draft. Home and Projects share the
   // agent draft; a conversation has its own draft.
@@ -2266,7 +2260,7 @@ test("Home, Project, and conversation navigation preserves the correct draft and
   mockThreadCreation(created);
   await setupPage({
     context,
-    path: `/agents/${ordinary.agentId}/chat`,
+    path: "/?compose=1",
     ...workspace.pageOptions,
   });
   const editor = () => {
@@ -2340,7 +2334,7 @@ test("A Project message keeps its membership in the conversation it opens", asyn
     caseId: 116,
     threads: [ordinary],
   });
-  context.mocks.data.onboardingStatus({ defaultAgentId: ordinary.agentId });
+  context.mocks.data.onboardingStatus({ defaultAgentId: CHAT_LIST_AGENT_ID });
   metadata();
   const created: {
     threadId?: string;
@@ -2408,13 +2402,13 @@ test("The composer's + menu starts a new chat in a Project and keeps the message
     caseId: 117,
     threads: [ordinary],
   });
-  context.mocks.data.onboardingStatus({ defaultAgentId: ordinary.agentId });
+  context.mocks.data.onboardingStatus({ defaultAgentId: CHAT_LIST_AGENT_ID });
   metadata([{ id: campaignId, name: "Campaign" }]);
   const created: { threadId?: string; projectId?: string | null } = {};
   mockThreadCreation(created);
   await setupPage({
     context,
-    path: `/agents/${ordinary.agentId}/chat`,
+    path: "/?compose=1",
     ...workspace.pageOptions,
   });
   await fill(
@@ -2485,7 +2479,7 @@ test("Removing the Project chip returns the message to a chat outside any Projec
     caseId: 118,
     threads: [ordinary],
   });
-  context.mocks.data.onboardingStatus({ defaultAgentId: ordinary.agentId });
+  context.mocks.data.onboardingStatus({ defaultAgentId: CHAT_LIST_AGENT_ID });
   metadata();
   const created: { threadId?: string; projectId?: string | null } = {};
   mockThreadCreation(created);
@@ -2529,7 +2523,7 @@ test("The composer shows a Project name's emoji on its folder, as the sidebar do
     caseId: 230,
     threads: [ordinary],
   });
-  context.mocks.data.onboardingStatus({ defaultAgentId: ordinary.agentId });
+  context.mocks.data.onboardingStatus({ defaultAgentId: CHAT_LIST_AGENT_ID });
   metadata([{ id: coffee, name: "☕ Coffee" }]);
   await setupPage({
     context,
@@ -2563,7 +2557,7 @@ test("A Project named from the composer's + menu opens with the message and acce
     caseId: 119,
     threads: [ordinary],
   });
-  context.mocks.data.onboardingStatus({ defaultAgentId: ordinary.agentId });
+  context.mocks.data.onboardingStatus({ defaultAgentId: CHAT_LIST_AGENT_ID });
   metadata();
   const events: ProjectEvent[] = [];
   let confirmedProjectId: string | undefined;
@@ -2620,7 +2614,7 @@ test("A Project named from the composer's + menu opens with the message and acce
   });
   await setupPage({
     context,
-    path: `/agents/${ordinary.agentId}/chat`,
+    path: "/?compose=1",
     ...workspace.pageOptions,
   });
   await fill(
@@ -2735,7 +2729,6 @@ test("The Project home starts a conversation with the default Agent after visiti
       seqId: 2,
       kind: "created",
       chatThreadId: thread.id,
-      agentId: thread.agentId,
       projectId: thread.projectId,
       title: thread.title,
       selectedModel: thread.selectedModel,
@@ -2992,7 +2985,7 @@ test.each([
       ...continuityThread(99, 1, "Planning chat"),
       projectId: initialProjectId,
     };
-    context.mocks.data.onboardingStatus({ defaultAgentId: thread.agentId });
+    context.mocks.data.onboardingStatus({ defaultAgentId: CHAT_LIST_AGENT_ID });
     const initialPath = mobile ? "/" : `/chats/${thread.id}`;
     const workspace = installContinuityWorkspace(context, {
       caseId: 99,
@@ -3019,7 +3012,6 @@ test.each([
           seqId: 2,
           kind: "project_updated",
           chatThreadId: params.id,
-          agentId: thread.agentId,
           projectId: body.projectId,
           title: thread.title,
           selectedModel: thread.selectedModel,
@@ -3145,7 +3137,7 @@ test("PWA uses the same Projects and a bottom sheet for Thread membership", asyn
     caseId: 96,
     threads: [ordinary, member],
   });
-  context.mocks.data.onboardingStatus({ defaultAgentId: ordinary.agentId });
+  context.mocks.data.onboardingStatus({ defaultAgentId: CHAT_LIST_AGENT_ID });
   metadata();
   await setupPage({
     context,

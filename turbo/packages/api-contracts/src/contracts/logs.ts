@@ -52,8 +52,6 @@ export type TriggerSource = zInfer<typeof triggerSourceSchema>;
 const logEntrySchema = object({
   id: uuid(),
   sessionId: string().nullable(),
-  agentId: string().nullable(),
-  displayName: string().nullable(),
   framework: string().nullable(),
   triggerSource: triggerSourceSchema.nullable(),
   status: logStatusSchema,
@@ -66,12 +64,10 @@ const logEntrySchema = object({
 
 /**
  * Available filter values returned by the list endpoint.
- * agents contains canonical agent IDs.
  */
 const logsFiltersSchema = object({
   statuses: array(logStatusSchema),
   sources: array(triggerSourceSchema),
-  agents: array(string()),
 });
 
 export type LogsFilters = zInfer<typeof logsFiltersSchema>;
@@ -100,9 +96,6 @@ export const logsListContract = c.router({
     path: "/api/logs",
     headers: authHeadersSchema,
     query: listQuerySchema.extend({
-      search: string().optional(),
-      agentId: uuid().optional(),
-      name: string().optional(),
       since: timestampQueryNumberSchema.optional(),
 
       status: logStatusSchema.optional(),

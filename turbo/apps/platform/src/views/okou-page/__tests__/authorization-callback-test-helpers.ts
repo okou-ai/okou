@@ -11,7 +11,6 @@ export function mockAuthorizationCallbackThread(
     }
     return respond(200, {
       id: threadId,
-      agentId: "90000000-0000-4000-8000-000000000001",
       title: "Authorization callback",
       selectedModel: null,
       modelSettings: {},

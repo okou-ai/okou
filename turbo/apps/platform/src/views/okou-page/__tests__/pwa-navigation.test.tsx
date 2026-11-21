@@ -598,7 +598,6 @@ test("Show the Chats tab unread indicator across all Chats", async () => {
   });
   context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
     return respond(200, {
-      agents: {},
       threads: { [thread.id]: "unread" },
       unreadAt: { [thread.id]: "2026-11-21T00:00:00.000Z" },
     });
