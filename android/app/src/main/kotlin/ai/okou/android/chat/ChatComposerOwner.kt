@@ -829,7 +829,6 @@ internal class ChatComposerOwner(
         val result = op.connection.service.sendInput(pending.send)
         requireCurrent(op)
         if (result.threadId != pending.threadId) throw ApiFailure.IncompatibleResponse()
-        op.connection.chatList?.acknowledgeOutgoingActivity(pending)
         settle(op, pending, TextDisposition.Accepted)
     }
 
@@ -936,6 +935,7 @@ internal class ChatComposerOwner(
             journal.defaultAgentId?.let { synchronize(op.connection, ServerDraftTarget(it, false)) }
             synchronize(op.connection, ServerDraftTarget(pending.threadId, true))
         }
+        op.connection.chatList?.acknowledgeOutgoingActivity(pending)
         op.connection.accepted(pending.threadId)
     }
 
