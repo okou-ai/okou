@@ -1,7 +1,7 @@
 package ai.okou.android.chat
 
 import ai.okou.android.auth.WorkspaceIdentity
-import ai.okou.android.storage.workspaceStorageKey
+import ai.okou.android.auth.workspaceStorageKey
 import android.content.Context
 import android.util.AtomicFile
 import java.io.File
@@ -42,11 +42,9 @@ class RunControlJournalStore(
     private val json = Json { encodeDefaults = false }
     private var closed = false
 
-    private fun key(identity: WorkspaceIdentity) = identity.workspaceStorageKey()
-
     internal fun attach(identity: WorkspaceIdentity, connection: RunControlsOwner.Connection) =
         controls
-            .getOrPut(key(identity)) { RunControlsOwner(this, identity) }
+            .getOrPut(identity.workspaceStorageKey()) { RunControlsOwner(this, identity) }
             .also { it.attach(connection) }
 
     internal fun detach(
@@ -54,12 +52,12 @@ class RunControlJournalStore(
         connection: RunControlsOwner.Connection,
         control: RunControlsOwner,
     ) {
-        if (control.detach(connection)) controls.remove(key(identity), control)
+        if (control.detach(connection)) controls.remove(identity.workspaceStorageKey(), control)
     }
 
     fun persist(identity: WorkspaceIdentity, journal: RunControlJournal): Deferred<Unit> {
         journal.validate()
-        val key = key(identity)
+        val key = identity.workspaceStorageKey()
         val value = Write(journal)
         synchronized(guard) {
             check(!closed)
@@ -84,7 +82,7 @@ class RunControlJournalStore(
     }
 
     suspend fun load(identity: WorkspaceIdentity): RestoredRunControls {
-        val key = key(identity)
+        val key = identity.workspaceStorageKey()
         while (true) {
             val value = synchronized(guard) { latest[key] }
             if (value != null) {

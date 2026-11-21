@@ -4,7 +4,7 @@ import ai.okou.android.api.generated.UserPreferences
 import ai.okou.android.api.generated.UserPreferencesColorTheme
 import ai.okou.android.api.generated.UserPreferencesTheme
 import ai.okou.android.auth.WorkspaceIdentity
-import ai.okou.android.storage.workspaceStorageKey
+import ai.okou.android.auth.workspaceStorageKey
 import android.util.AtomicFile
 import android.util.Log
 import java.io.File

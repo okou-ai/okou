@@ -40,9 +40,10 @@ workspace ID. Session renewal and signing back into the same account preserve
 that key. Revalidate workspace authorization before restoring protected content
 and retire stale publication. A key locates the data and conveys no access.
 
-Retire workspace consumers and cancel their work when the authorized workspace
-closes. Keep process-owned storage available for other consumers. Do physical
-file or database cleanup off Main.
+When a workspace closes, retire its cache lease and cancel work owned by its
+presentation. Process-owned journals can finish writes they have already
+accepted, including draft commits. Their completion cannot publish into a
+retired presentation. Do physical file or database cleanup off Main.
 
 ## Reads, writes, and recovery
 
@@ -56,9 +57,8 @@ file or database cleanup off Main.
 - Keep confirmed cache records separate from optimistic mutations and temporary
   stream deltas. Recovery can rebuild a server-backed cache. Preserve drafts and
   unresolved operations that cannot be reconstructed from the server.
-- Treat filenames, scoped keys, and encodings as persistence contracts. When
-  changing them, define how existing installations read or migrate their data.
-  Test reopening actual storage, identity isolation, and affected failure paths.
+- Define the recovery policy for each store. Test reopening actual storage,
+  identity isolation, and affected failure paths.
 
 For chat caches, follow Web's snapshot, event replay, cursor, and consistency
 semantics. Keep one lazy Room database per process and edit related rows in a
@@ -66,5 +66,5 @@ transaction. Store snapshots as per-entity rows so tail appends avoid rewriting
 an archive. Use the AndroidX bundled SQLite driver to avoid CursorWindow's
 per-row limit, and export Room schemas through its Gradle plugin. Read canonical
 data with streaming and cursor-progress checks so native decoding handles the
-same legitimate records as Web. Tests must close or checkpoint SQLite before
-copying or restoring its files.
+same legitimate records as Web. Test fixtures should close the database before
+copying its files and before replacing them during restore.

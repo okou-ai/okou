@@ -18,7 +18,6 @@ import ai.okou.android.preferences.MemberAppearance
 import ai.okou.android.preferences.MemberAppearanceCache
 import ai.okou.android.preferences.MemberPreferencesModel
 import ai.okou.android.preferences.appearance
-import ai.okou.android.storage.scopeHash
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore

@@ -372,7 +372,7 @@ class SessionModelTest {
             runCurrent()
             assertEquals(SessionStage.Ready, model.uiState.value.stage)
             assertEquals(
-                ai.okou.android.storage.scopeHash(listOf("org:member", "org:member", "known")),
+                scopeHash(listOf("org:member", "org:member", "known")),
                 resources.single().identity.authorizationScope,
             )
             assertEquals(auth.available, model.uiState.value.memberships)

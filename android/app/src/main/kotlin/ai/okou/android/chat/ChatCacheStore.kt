@@ -6,7 +6,7 @@ import ai.okou.android.api.generated.ChatEventsEventsItem
 import ai.okou.android.api.generated.ProjectArchive
 import ai.okou.android.api.generated.ProjectEventsEventsItem
 import ai.okou.android.auth.WorkspaceIdentity
-import ai.okou.android.storage.workspaceStorageKey
+import ai.okou.android.auth.workspaceStorageKey
 import android.content.Context
 import android.util.AtomicFile
 import android.util.Log

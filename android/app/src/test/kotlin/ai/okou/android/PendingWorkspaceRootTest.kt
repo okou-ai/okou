@@ -15,6 +15,7 @@ import ai.okou.android.auth.OpeningWorkspace
 import ai.okou.android.auth.SessionModel
 import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.auth.WorkspaceSession
+import ai.okou.android.auth.scopeHash
 import ai.okou.android.chat.CachedChatNavigation
 import ai.okou.android.chat.ChatCheckpoint
 import ai.okou.android.chat.ChatCursor
@@ -24,7 +25,6 @@ import ai.okou.android.chat.HistoryCursor
 import ai.okou.android.chat.HistoryEvent
 import ai.okou.android.chat.HistoryPage
 import ai.okou.android.chat.cursor
-import ai.okou.android.storage.scopeHash
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher

@@ -1,8 +1,15 @@
-package ai.okou.android.storage
+package ai.okou.android.auth
 
-import ai.okou.android.auth.WorkspaceIdentity
 import java.security.MessageDigest
 import okhttp3.HttpUrl.Companion.toHttpUrl
+
+data class WorkspaceIdentity(
+    val apiOrigin: String,
+    val userId: String,
+    val sessionId: String,
+    val workspaceId: String,
+    val authorizationScope: String = "",
+)
 
 /** Stable across sign-ins to the same account and workspace on the same backend. */
 internal fun WorkspaceIdentity.workspaceStorageKey(): String =

@@ -1,7 +1,7 @@
 package ai.okou.android.chat
 
 import ai.okou.android.auth.WorkspaceIdentity
-import ai.okou.android.storage.workspaceStorageKey
+import ai.okou.android.auth.workspaceStorageKey
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
