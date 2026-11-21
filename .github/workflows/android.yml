@@ -205,6 +205,8 @@ jobs:
       - name: Smoke-test the optimized Release APK
         id: release-smoke
         timeout-minutes: 20
+        env:
+          SENTRY_DSN_ANDROID: ${{ vars.SENTRY_DSN_ANDROID }}
         run: bash android/scripts/test-release.sh
       - name: Verify the Release artifact pair exists
         id: release-artifacts

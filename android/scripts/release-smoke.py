@@ -4,6 +4,7 @@
 import os
 from pathlib import Path
 import re
+import shlex
 import signal
 import subprocess
 import sys
@@ -37,6 +38,8 @@ def wait_until(emulator, check, description, seconds):
             if check():
                 return
         except subprocess.TimeoutExpired:
+            # Device commands can time out during boot or UI transitions.
+            # Keep polling until the readiness deadline.
             pass
         time.sleep(1)
     raise TimeoutError("Timed out waiting for " + description)
@@ -56,10 +59,12 @@ def run(apk, artifacts, avd_home):
     )
 
     def device(*args, check=True, timeout=15):
-        return subprocess.run(
-            [adb, "-s", SERIAL, *args], capture_output=True, text=True,
-            check=check, timeout=timeout,
+        result = subprocess.run(
+            [adb, "-s", SERIAL, *args], capture_output=True, text=True, timeout=timeout,
         )
+        if check and result.returncode:
+            raise RuntimeError(f"adb {' '.join(args)} failed: {result.stdout}{result.stderr}")
+        return result
 
     def auth_surface():
         dumped = device("shell", f"rm -f {UI_DUMP} && uiautomator dump {UI_DUMP}", check=False)
@@ -86,11 +91,16 @@ def run(apk, artifacts, avd_home):
             device("shell", "cmd", "connectivity", "airplane-mode", "enable")
             device("shell", "svc", "wifi", "disable")
             device("install", str(apk), timeout=90)
+            launcher = ("-a", "android.intent.action.MAIN", "-c", "android.intent.category.LAUNCHER")
+            component = device(
+                "shell", "cmd", "package", "resolve-activity", "--components", *launcher, "-p", PACKAGE,
+            ).stdout.strip()
+            if not component.startswith(f"{PACKAGE}/"):
+                raise RuntimeError(f"No launcher activity for {PACKAGE}: {component}")
             for journey in ("cold start", "relaunch after process stop"):
                 device("shell", "am", "force-stop", PACKAGE)
                 started = device(
-                    "shell", "am", "start", "-W", "-a", "android.intent.action.MAIN",
-                    "-c", "android.intent.category.LAUNCHER", "-p", PACKAGE, timeout=45,
+                    "shell", "am", "start", "-W", *launcher, "-n", shlex.quote(component), timeout=45,
                 )
                 if "Status: ok" not in started.stdout:
                     raise RuntimeError(f"Launcher failed: {started.stdout} {started.stderr}")
@@ -101,7 +111,7 @@ def run(apk, artifacts, avd_home):
                 raise RuntimeError("Release app crashed during startup smoke")
         finally:
             try:
-                diagnostics = device("logcat", "-d", "-b", "main", "-b", "crash", check=False)
+                diagnostics = device("logcat", "-d", "-b", "main", "-b", "system", "-b", "crash", check=False)
                 (artifacts / "release-smoke-logcat.log").write_text(
                     diagnostics.stdout + diagnostics.stderr
                 )

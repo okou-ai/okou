@@ -378,8 +378,9 @@ The smoke test installs the R8-optimized APK signed with a disposable key. The
 shared publishing builder supplies the unsigned APK and R8 mapping. The harness
 verifies the signed payload and mapping, boots an isolated API 35 emulator and
 uses the launcher and platform UI Automator from the host to check initial startup
-and relaunch after stopping the process. The emulator runs offline and exercises
-the public unauthenticated surface with the production Application.
+and relaunch after stopping the process. CI uses the same public Sentry DSN as
+publishing. The offline emulator exercises the public unauthenticated surface
+with the production Application.
 
 To run the smoke locally on Linux x64, set up the SDK, install the emulator
 packages and run the helper from `android/`:
@@ -435,17 +436,14 @@ production release job independently builds, signs and verifies its exact-target
 APK; it does not consume validation artifacts. Ordinary change selection includes
 Android sources/docs, CI inputs, Web semantic colors, and shared font/color-evaluator
 assets. One job runs the JVM tests and lint, then uploads the Debug APK for seven
-days. A separate Linux/KVM job uses the production unsigned-build script to
-assemble and verify the optimized Release APK, then runs the instrumented suite
-against its signed counterpart on the managed API 35 phone. That job also uploads
-the unsigned APK and compressed R8 map for seven days.
+days. Two separate Linux/KVM jobs run the Debug device integration tests and
+the Release smoke tests. The Release job uploads the unsigned APK and compressed
+R8 map for seven days.
 The final `ci-gate-android` check always reports an aggregate result. For
-non-release changes it requires successful change detection and both selected
-JVM/build and instrumentation jobs to succeed; only explicit unselected results
-permit skipped native checks.
-Cancellation, failure or an unexpected skip fails the gate. Emulator functional
-evidence does not establish OEM input-method behavior or physical-device startup
-budgets.
+non-release changes it requires successful change detection and all three jobs
+to pass when Android checks are selected. Cancellation, failure or an unexpected
+skip fails the gate. Emulator functional evidence does not establish OEM
+input-method behavior or physical-device startup budgets.
 
 The shared security workflow retains Semgrep scanning. Its result handler
 recognizes the intentionally public MAIN/LAUNCHER only after the strict source
@@ -477,14 +475,14 @@ and dependency-provided consumer rules. Debug stays unoptimized. Run
 `app/build/outputs/mapping/release/mapping.txt` is required to retrace obfuscated
 stack traces; the release job publishes a versioned `.txt.gz` copy alongside the
 APK. Decompress that file with `gzip -d` before retracing a production stack trace.
-Add narrowly scoped rules under `app/src/main/keepRules/*.keep` only when an
-actual reflection/JNI or separately loaded instrumentation boundary requires them.
+Add narrowly scoped rules under `app/src/main/keepRules/*.keep` only when a
+runtime boundary such as reflection or JNI requires them.
 
-When native Release tests fail or are cancelled, CI retains their original diagnostics and runs
-the matching AGP Retrace against both app and test-driver logs. It validates the
-actual signed tested APK's R8 marker against the compressed mapping's compiler version and map ID,
-and verifies the mapping hash before restoring frames. Restored logs and byte
-identity receipts live under `build/reports/retraced/`. For a downloaded crash:
+When Release smoke fails, CI runs AGP Retrace on the app logcat if the signed APK
+and log are available. It validates the tested APK's R8 marker against the compressed
+mapping's compiler version and map ID, and verifies the mapping hash before restoring
+frames. The Release smoke evidence contains the original diagnostics and the retraced
+output. Use the following command for a downloaded crash.
 
 ```bash
 python3 scripts/retrace-release.py app.apk version-mapping.txt.gz crash.txt retraced

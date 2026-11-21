@@ -50,6 +50,9 @@ assert 'publish-android' in jobs['update-rollback-dashboard']['needs']
 # Execute the shared release action and Android's aggregate gate as Actions does.
 android = json.loads(subprocess.check_output(
     ['yq', '-o=json', 'explode(.)', str(root / '.github/workflows/android.yml')], text=True))['jobs']
+smoke, = (step for step in android['release-smoke']['steps'] if step.get('id') == 'release-smoke')
+publisher, = (step for step in job['steps'] if 'SENTRY_DSN_ANDROID' in step.get('env', {}))
+assert smoke['env']['SENTRY_DSN_ANDROID'] == publisher['env']['SENTRY_DSN_ANDROID']
 screenshots = json.loads(subprocess.check_output(
     ['yq', '-o=json', '.', str(root / '.github/workflows/android-screenshots.yml')], text=True))['jobs']['capture']
 
