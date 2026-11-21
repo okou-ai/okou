@@ -2857,6 +2857,8 @@ async fn probe_cached_archive(
         let metadata = std::fs::metadata(&archive_path);
         let stat_elapsed = stat_started.elapsed();
         let archive_may_exist = cached_archive_presence(metadata, &archive_path)?;
+        // An accepted probe can finish after caller cancellation, including
+        // tightening permissions on an existing lock.
         let reader_result = lock::try_acquire_existing_shared_or_missing_blocking(&lock_path);
         Ok::<_, RunnerError>((archive_may_exist, reader_result, stat_elapsed))
     })

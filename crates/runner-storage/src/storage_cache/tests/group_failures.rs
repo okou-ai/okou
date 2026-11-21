@@ -1,6 +1,42 @@
 use super::*;
 
 #[tokio::test]
+async fn archive_stat_error_leaves_existing_lock_mode_unchanged() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let temp = tempfile::tempdir().unwrap();
+    let home = home_at(&temp);
+    let sandbox = MockSandbox::new("archive-stat-error");
+    let mut telemetry = new_telemetry();
+    let name = "invalid-cache-directory";
+    let version = "v1";
+    let cache_dir = home.storage_cache_dir(name, version);
+    std::fs::create_dir_all(cache_dir.parent().unwrap()).unwrap();
+    std::fs::write(&cache_dir, b"not a directory").unwrap();
+    let archive_path = cache_dir.join("archive.tar.gz");
+    write_storage_lock(&home, name, version);
+    let lock_path = home.storage_lock(name, version);
+    // A probe would tighten this trusted legacy lock to mode 0600.
+    std::fs::set_permissions(&lock_path, std::fs::Permissions::from_mode(0o644)).unwrap();
+    let original = "https://r2.example.com/stat-error.tar.gz";
+    let mut plan = fresh_storage_plan(original.into(), name, version);
+
+    let error = populate_cache(&mut plan, &sandbox, &home, &mut telemetry)
+        .await
+        .err()
+        .expect("an invalid archive path must fail population");
+
+    assert!(
+        matches!(&error, RunnerError::Internal(message) if message.contains("stat cached") && message.contains(&archive_path.display().to_string())),
+        "got: {error}"
+    );
+    let lock_mode = std::fs::metadata(&lock_path).unwrap().permissions().mode();
+    assert_eq!(lock_mode & 0o777, 0o644);
+    assert_eq!(storage_archive_url(&plan, 0), Some(original));
+    assert!(sandbox.write_files_calls().is_empty());
+}
+
+#[tokio::test]
 async fn group_processing_lock_error_preserves_source_and_cache() {
     let temp = tempfile::tempdir().unwrap();
     let home = home_at(&temp);
