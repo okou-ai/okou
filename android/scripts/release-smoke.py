@@ -13,7 +13,8 @@ import time
 from xml.etree import ElementTree
 
 PACKAGE = "ai.okou.android"
-SERIAL = "emulator-5580"
+PORT = "5580"
+SERIAL = f"emulator-{PORT}"
 IMAGE = "system-images;android-35;default;x86_64"
 UI_DUMP = "/data/local/tmp/okou-release-smoke.xml"
 
@@ -48,23 +49,51 @@ def wait_until(emulator, check, description, seconds):
 def run(apk, artifacts, avd_home):
     sdk = Path(os.environ["ANDROID_HOME"])
     adb = sdk / "platform-tools" / "adb"
-    manager = sdk / "cmdline-tools" / "13114758" / "bin" / "avdmanager"
-    devices = subprocess.check_output([adb, "devices"], text=True, timeout=15)
-    if any(line.split()[:1] == [SERIAL] for line in devices.splitlines()):
-        raise RuntimeError(f"{SERIAL} is already in use")
-    environment = dict(os.environ, ANDROID_AVD_HOME=str(avd_home))
-    subprocess.run(
-        [manager, "create", "avd", "-n", "release-smoke", "-k", IMAGE, "-d", "pixel_2"],
-        input="no\n", text=True, env=environment, check=True, timeout=60,
-    )
 
-    def device(*args, check=True, timeout=15):
+    def adb_command(*args, check=True, timeout=15):
         result = subprocess.run(
-            [adb, "-s", SERIAL, *args], capture_output=True, text=True, timeout=timeout,
+            [adb, *args], capture_output=True, text=True, timeout=timeout,
         )
         if check and result.returncode:
             raise RuntimeError(f"adb {' '.join(args)} failed: {result.stdout}{result.stderr}")
         return result
+
+    devices = adb_command("devices").stdout
+    if any(line.split()[:1] == [SERIAL] for line in devices.splitlines()):
+        raise RuntimeError(f"{SERIAL} is already in use")
+
+    avd_name = avd_home.name
+    manager = sdk / "cmdline-tools" / "13114758" / "bin" / "avdmanager"
+    environment = dict(os.environ, ANDROID_AVD_HOME=str(avd_home))
+    subprocess.run(
+        [manager, "create", "avd", "-n", avd_name, "-k", IMAGE, "-d", "pixel_2"],
+        input="no\n", text=True, env=environment, check=True, timeout=60,
+    )
+
+    transport = None
+
+    def booted():
+        nonlocal transport
+        devices = adb_command("devices", "-l").stdout
+        candidate = re.search(
+            rf"^{SERIAL}[ \t]+device\b[^\n]*\btransport_id:(\d+)\b", devices, re.MULTILINE,
+        )
+        if candidate is None:
+            return False
+        result = adb_command(
+            "-t", candidate[1], "shell", "getprop ro.boot.qemu.avd_name && getprop sys.boot_completed",
+            check=False,
+        )
+        properties = result.stdout.splitlines()
+        if result.returncode or not properties or not properties[0]:
+            return False
+        if properties[0] != avd_name:
+            raise RuntimeError(f"{SERIAL} belongs to a different AVD")
+        transport = candidate[1]
+        return properties[1:] == ["1"]
+
+    def device(*args, check=True, timeout=15):
+        return adb_command("-t", transport, *args, check=check, timeout=timeout)
 
     def auth_surface():
         dumped = device("shell", f"rm -f {UI_DUMP} && uiautomator dump {UI_DUMP}", check=False)
@@ -78,14 +107,12 @@ def run(apk, artifacts, avd_home):
 
     with (artifacts / "release-smoke-emulator.log").open("w") as log:
         emulator = subprocess.Popen(
-            [sdk / "emulator" / "emulator", "-avd", "release-smoke", "-port", "5580",
+            [sdk / "emulator" / "emulator", "-avd", avd_name, "-port", PORT,
              "-no-window", "-no-audio", "-no-snapshot", "-gpu", "swiftshader_indirect"],
             env=environment, stdout=log, stderr=subprocess.STDOUT,
         )
         try:
-            wait_until(emulator, lambda: device(
-                "shell", "getprop", "sys.boot_completed", check=False,
-            ).stdout.strip() == "1", "Android boot", 180)
+            wait_until(emulator, booted, "Android boot", 180)
             device("shell", "input", "keyevent", "KEYCODE_WAKEUP")
             device("shell", "wm", "dismiss-keyguard")
             device("shell", "cmd", "connectivity", "airplane-mode", "enable")
@@ -111,10 +138,11 @@ def run(apk, artifacts, avd_home):
                 raise RuntimeError("Release app crashed during startup smoke")
         finally:
             try:
-                diagnostics = device("logcat", "-d", "-b", "main", "-b", "system", "-b", "crash", check=False)
-                (artifacts / "release-smoke-logcat.log").write_text(
-                    diagnostics.stdout + diagnostics.stderr
-                )
+                if transport is not None:
+                    diagnostics = device("logcat", "-d", "-b", "main", "-b", "system", "-b", "crash", check=False)
+                    (artifacts / "release-smoke-logcat.log").write_text(
+                        diagnostics.stdout + diagnostics.stderr
+                    )
             except (OSError, subprocess.TimeoutExpired) as error:
                 print(f"Could not collect emulator logcat: {error}", file=sys.stderr)
             finally:

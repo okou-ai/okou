@@ -25,6 +25,47 @@ class ReleaseDiagnosticsTest(unittest.TestCase):
         self.assertFalse(surface('<hierarchy><node package="ai.okou.android" text=""/></hierarchy>'))
         self.assertFalse(surface('<hierarchy>'))
 
+    def test_release_smoke_leaves_a_competing_emulator_untouched(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            scripts = {
+                "cmdline-tools/13114758/bin/avdmanager": "#!/bin/sh\nexit 0\n",
+                "emulator/emulator": "#!/bin/sh\nexec sleep 60\n",
+                "platform-tools/adb": '''#!/usr/bin/env python3
+import os
+from pathlib import Path
+import sys
+
+args = sys.argv[1:]
+if args == ['devices']:
+    print('List of devices attached')
+elif args == ['devices', '-l']:
+    print('List of devices attached\\nemulator-5580\\tdevice transport_id:41')
+elif args == ['-t', '41', 'shell', 'getprop ro.boot.qemu.avd_name && getprop sys.boot_completed']:
+    print('other-avd\\n1')
+elif args == ['-s', 'emulator-5580', 'shell', 'getprop', 'sys.boot_completed']:
+    print('1')
+else:
+    with (Path(os.environ['ANDROID_HOME']) / 'unexpected-adb').open('a') as log:
+        print(' '.join(args), file=log)
+    sys.exit(2)
+''',
+            }
+            for filename, script in scripts.items():
+                path = root / filename
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(script)
+                path.chmod(0o755)
+
+            result = subprocess.run(
+                [sys.executable, str(SCRIPTS / "release-smoke.py"), str(root / "test.apk"), str(root)],
+                env=dict(os.environ, ANDROID_HOME=str(root)), capture_output=True, text=True, timeout=15,
+            )
+            unexpected = root / "unexpected-adb"
+            self.assertFalse(unexpected.exists(), unexpected.read_text() if unexpected.exists() else "")
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("belongs to a different AVD", result.stderr)
+
     def test_native_gate_rejects_incomplete_failed_and_skipped_results(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
