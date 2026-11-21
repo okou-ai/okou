@@ -194,3 +194,13 @@ Original test `Replace a stale assistant answer with its correction`. [Registrat
 - **Given** A conversation has an assistant answer that is later revoked by a corrected answer.
 - **When** The conversation is displayed after the correction.
 - **Then** “Revised launch plan” is visible and “Obsolete launch plan” is absent.
+
+### Batch 41 disposition
+
+The Router cases for 002, 003, 010, 012, 015, 018, 021, 022 and 023 are accepted. The frozen scenarios above remain available while the three profile-link clauses are open.
+
+- **013.** The active rich output displayed its text, image, PDF and upgrade card with one work label and no history toggle. Its transcript had zero agent-profile links after those results appeared.
+- **014.** With the reply-name switch enabled, the completed answer displayed “Okou” as unlinked workspace text. The frozen “Run Agent” profile link was unavailable. The updated workspace-name registration keeps its existing upstream owner.
+- **016.** The running turn displayed its final upgrade card, thinking and a history toggle, with its earlier text hidden. Its transcript had zero agent-profile links.
+
+The implementation and upstream dispositions are recorded in [batch 41 evidence](../../../../test-rebuild-rework-checkpoint.md#batch-41-evidence). The independently mapped upstream working-dots scenario keeps its original ID.

@@ -57,7 +57,11 @@ export default defineConfig({
     __OKOU_APP_VERSION__: JSON.stringify("0.540.0"),
   },
   test: {
-    css: { include: [/browser-session-card-fixture\.css(?:\?.*)?$/u] },
+    css: {
+      include: [
+        /(?:browser-session-card|chat-relation-title)-fixture\.css(?:\?.*)?$/u,
+      ],
+    },
     coverage: {
       exclude: [
         "src/**/__tests__/**",
