@@ -1,4 +1,3 @@
-import { decodeSandboxTokenPayload } from "../../lib/api/sandbox-token";
 import { open } from "node:fs/promises";
 
 import {
@@ -307,7 +306,7 @@ function connectorIdentity(
 
 export function isRunBoundConnectorContext(): boolean {
   return (
-    Boolean(decodeSandboxTokenPayload()?.runId) ||
+    getOkouConnectorAccountContextFile() !== undefined ||
     getOkouAgentId() !== undefined
   );
 }

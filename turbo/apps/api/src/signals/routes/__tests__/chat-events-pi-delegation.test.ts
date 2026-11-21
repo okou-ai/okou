@@ -78,7 +78,6 @@ async function expectAgentTokenThreadOwnershipBoundaries(args: {
 
 async function expectAgentChatProvenance(args: {
   readonly actor: ApiTestUser;
-  readonly agentId: string;
   readonly delegatedEventId: string;
   readonly delegatedRunId: string;
   readonly orgId: string;
@@ -106,7 +105,6 @@ async function expectAgentChatProvenance(args: {
     kind: "agent",
     runId: args.source.runId,
     threadId: args.source.threadId,
-    agentId: args.agentId,
     titleSnapshot: "New thread",
     href: `/chats/${args.source.threadId}#run-${args.source.runId}`,
   });
@@ -205,7 +203,6 @@ describe("CHAT-02: model-first routing", () => {
     });
     await expectAgentChatProvenance({
       actor,
-      agentId,
       delegatedEventId,
       delegatedRunId,
       orgId,

@@ -5,7 +5,6 @@ import {
 } from "./chat-event-publication.service";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { agents } from "@okouai/db/schema/agent";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatSlackContext } from "@okouai/db/schema/chat-slack-context";
 import { slackChatIngress } from "@okouai/db/schema/slack-chat-ingress";
@@ -316,7 +315,7 @@ const readSlackSessionStopRoutes$ = command(
         chatThreadId: slackChatThreadRoutes.chatThreadId,
         userId: slackChatThreadRoutes.userId,
         slackUserId: slackOrgConnections.slackUserId,
-        orgId: agents.orgId,
+        orgId: chatThreads.orgId,
         installationOrgId: slackOrgInstallations.orgId,
         encryptedBotToken: slackOrgInstallations.encryptedBotToken,
       })
@@ -333,7 +332,6 @@ const readSlackSessionStopRoutes$ = command(
         chatThreads,
         eq(chatThreads.id, slackChatThreadRoutes.chatThreadId),
       )
-      .innerJoin(agents, eq(agents.id, chatThreads.agentId))
       .where(
         and(
           eq(slackOrgConnections.userId, slackChatThreadRoutes.userId),

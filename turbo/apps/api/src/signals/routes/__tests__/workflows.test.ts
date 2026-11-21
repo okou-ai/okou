@@ -1,4 +1,3 @@
-import { retainedWorkflowCaller } from "./helpers/retained-workflow-caller";
 import {
   contentBundleDigest,
   readContentBundle,
@@ -10,7 +9,6 @@ import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createPublicAutomationRunApi } from "./helpers/public-automation-run";
 
-import { agentsMainContract } from "@okouai/api-contracts/contracts/agents";
 import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   workflowAutomationsContract,
@@ -30,7 +28,6 @@ import { extractFilesFromTarGz } from "../../../lib/tar";
 import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { createDeferredPromise } from "../../utils";
-import { agentsRoutes } from "../agents";
 import { chatThreadRoutes } from "../chat-threads";
 import { workflowAutomationsRoutes } from "../workflow-automations";
 import { workflowsRoutes } from "../workflows";
@@ -66,29 +63,13 @@ const automationRuns = createPublicAutomationRunApi(context);
 const connectorApi = createConnectorBddApi(context);
 const STAFF_ORG_ID = "org_3ANttyrbWYJk6JKRSTRLEsbsDLe";
 
-type StaffFixture =
-  | {
-      readonly kind: "workflow";
-      readonly actor: ApiTestUser;
-      readonly workflowId: string;
-    }
-  | {
-      readonly kind: "agent";
-      readonly actor: ApiTestUser;
-      readonly agentId: string;
-    };
+type StaffFixture = {
+  readonly actor: ApiTestUser;
+  readonly workflowId: string;
+};
 
 async function cleanupStaffFixture(fixture: StaffFixture): Promise<void> {
-  switch (fixture.kind) {
-    case "workflow": {
-      await miscApi.deleteWorkflow(fixture.actor, fixture.workflowId, [204]);
-      return;
-    }
-    case "agent": {
-      await bdd.deleteAgent(fixture.actor, fixture.agentId);
-      return;
-    }
-  }
+  await miscApi.deleteWorkflow(fixture.actor, fixture.workflowId, [204]);
 }
 
 const trackStaffFixture =
@@ -102,8 +83,6 @@ function user(options: ApiTestUserOptions = {}): ApiTestUser {
   return bdd.user(options);
 }
 
-const retainedHeaders = retainedWorkflowCaller(context);
-
 function authHeaders(actor: ApiTestUser) {
   mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
   return { authorization: "Bearer clerk-session" };
@@ -116,13 +95,6 @@ async function workspaceExecutor(actor: ApiTestUser) {
   }
   installVolumeS3Fixture(workflowObjects());
   return { agentId: defaultAgentId };
-}
-
-async function workflowCreationHeaders(actor: ApiTestUser, agentId: string) {
-  const { defaultAgentId } = await bdd.readOnboardingStatus(actor);
-  return agentId === defaultAgentId
-    ? authHeaders(actor)
-    : await retainedHeaders(actor);
 }
 
 function collectionClient() {
@@ -214,34 +186,16 @@ function createCaseWorkflowObjects() {
 }
 const workflowObjects = createCaseWorkflowObjects();
 
-async function createAgent(
-  actor: ApiTestUser,
-  body: Parameters<typeof bdd.createAgent>[1] = {},
-) {
-  bdd.acceptAgentStorageWrites();
-  const agent = await bdd.createAgent(actor, body);
-  installVolumeS3Fixture(workflowObjects());
-  if (actor.orgId === STAFF_ORG_ID) {
-    await registerStaffFixture({
-      kind: "agent",
-      actor,
-      agentId: agent.agentId,
-    });
-  }
-  return agent;
-}
-
 async function createWorkflow(actor: ApiTestUser, body: WorkflowCreateRequest) {
   const workflow = await accept(
     collectionClient().create({
-      headers: await workflowCreationHeaders(actor, body.agentId),
+      headers: authHeaders(actor),
       body,
     }),
     [201],
   );
   if (actor.orgId === STAFF_ORG_ID) {
     await registerStaffFixture({
-      kind: "workflow",
       actor,
       workflowId: workflow.body.id,
     });
@@ -309,7 +263,7 @@ async function requestCreateWorkflow<
 ) {
   return await accept(
     collectionClient().create({
-      headers: await workflowCreationHeaders(actor, body.agentId),
+      headers: authHeaders(actor),
       body,
     }),
     statuses,
@@ -359,10 +313,7 @@ describe("workflows", () => {
   it("creates private workflows by default and hides them from other org members", async () => {
     const owner = user();
     const otherMember = user({ orgId: owner.orgId, orgRole: "org:member" });
-    const agent = await createAgent(owner, {
-      displayName: "Owner Agent",
-      visibility: "private",
-    });
+    const agent = await workspaceExecutor(owner);
 
     const created = await createWorkflow(owner, {
       agentId: agent.agentId,
@@ -381,13 +332,13 @@ describe("workflows", () => {
     });
 
     const ownerList = await accept(
-      collectionClient().list({ headers: await retainedHeaders(owner) }),
+      collectionClient().list({ headers: authHeaders(owner) }),
       [200],
     );
     expect(names(ownerList.body)).toContain(created.body.name);
 
     const memberList = await accept(
-      collectionClient().list({ headers: await retainedHeaders(otherMember) }),
+      collectionClient().list({ headers: authHeaders(otherMember) }),
       [200],
     );
     expect(names(memberList.body)).not.toContain(created.body.name);
@@ -494,7 +445,7 @@ describe("workflows", () => {
     }
   });
 
-  it("runs public workflows for members and hides workflows on private agents", async () => {
+  it("runs public workflows for members and hides another member's private workflow", async () => {
     const owner = user({ orgRole: "org:admin" });
     const member = user({ orgId: owner.orgId, orgRole: "org:member" });
     await bdd.completeOnboarding(member);
@@ -520,14 +471,10 @@ describe("workflows", () => {
       publicWorkflow.body.id,
     );
 
-    const privateAgent = await createAgent(owner, {
-      displayName: "Hidden Private Workflow Agent",
-      visibility: "private",
-    });
     const privateWorkflow = await createWorkflow(owner, {
-      agentId: privateAgent.agentId,
+      agentId: publicAgent.agentId,
       name: `private-run-workflow-${randomUUID().slice(0, 8)}`,
-      visibility: "public",
+      visibility: "private",
       instruction: "# private run workflow",
     });
     const hidden = await accept(
@@ -545,10 +492,7 @@ describe("workflows", () => {
   it("requires agent write-permission to create public workflows under an agent", async () => {
     const owner = user();
     const member = user({ orgId: owner.orgId, orgRole: "org:member" });
-    const agent = await createAgent(owner, {
-      displayName: "Public Agent",
-      visibility: "public",
-    });
+    const agent = await workspaceExecutor(owner);
     const workflowName = `public-workflow-${randomUUID().slice(0, 8)}`;
 
     const rejected = await requestCreateWorkflow(
@@ -583,7 +527,7 @@ describe("workflows", () => {
     });
 
     const memberList = await accept(
-      collectionClient().list({ headers: await retainedHeaders(member) }),
+      collectionClient().list({ headers: authHeaders(member) }),
       [200],
     );
     expect(memberList.body).toContainEqual(
@@ -630,10 +574,7 @@ describe("workflows", () => {
     async (maintainer) => {
       const agentOwner = user();
       const author = user({ orgId: agentOwner.orgId });
-      const agent = await createAgent(agentOwner, {
-        displayName: "Shared Public Agent",
-        visibility: "public",
-      });
+      const agent = await workspaceExecutor(agentOwner);
       const workflow = await createWorkflow(author, {
         agentId: agent.agentId,
         name: `public-maintenance-${randomUUID().slice(0, 8)}`,
@@ -648,7 +589,7 @@ describe("workflows", () => {
       };
       const actor = maintainers[maintainer];
       const listed = await accept(
-        collectionClient().list({ headers: await retainedHeaders(actor) }),
+        collectionClient().list({ headers: authHeaders(actor) }),
         [200],
       );
       expect(listed.body).toContainEqual(
@@ -703,10 +644,7 @@ describe("workflows", () => {
   it("allows a public workflow owner to withdraw sharing without gaining publication rights", async () => {
     const agentOwner = user();
     const author = user({ orgId: agentOwner.orgId });
-    const agent = await createAgent(agentOwner, {
-      displayName: "Shared Public Agent",
-      visibility: "public",
-    });
+    const agent = await workspaceExecutor(agentOwner);
     const workflow = await createWorkflow(author, {
       agentId: agent.agentId,
       name: `withdraw-sharing-${randomUUID().slice(0, 8)}`,
@@ -753,10 +691,7 @@ describe("workflows", () => {
       orgId: agentOwner.orgId,
       orgRole: "org:member",
     });
-    const agent = await createAgent(agentOwner, {
-      displayName: "Shared Agent",
-      visibility: "public",
-    });
+    const agent = await workspaceExecutor(agentOwner);
     const workflowName = `member-private-workflow-${randomUUID().slice(0, 8)}`;
 
     const created = await createWorkflow(member, {
@@ -807,7 +742,7 @@ describe("workflows", () => {
     );
 
     const memberList = await accept(
-      collectionClient().list({ headers: await retainedHeaders(member) }),
+      collectionClient().list({ headers: authHeaders(member) }),
       [200],
     );
     expect(memberList.body).toContainEqual(
@@ -819,36 +754,29 @@ describe("workflows", () => {
     );
 
     const agentOwnerList = await accept(
-      collectionClient().list({ headers: await retainedHeaders(agentOwner) }),
+      collectionClient().list({ headers: authHeaders(agentOwner) }),
       [200],
     );
     expect(names(agentOwnerList.body)).not.toContain(workflowName);
 
     const otherMemberList = await accept(
-      collectionClient().list({ headers: await retainedHeaders(otherMember) }),
+      collectionClient().list({ headers: authHeaders(otherMember) }),
       [200],
     );
     expect(names(otherMemberList.body)).not.toContain(workflowName);
   });
 
-  it("binds a newly created workflow only to a current matching agent chat thread", async () => {
+  it("binds a newly created workflow only to the member’s own chat thread", async () => {
     const actor = user();
-    const sourceAgent = await createAgent(actor, {
-      displayName: "Source Agent",
-      visibility: "private",
-    });
-    const targetAgent = await createAgent(actor, {
-      displayName: "Target Agent",
-      visibility: "private",
-    });
+    const agent = await workspaceExecutor(actor);
     const sourceThread = await chat.createThread(actor, {
-      agentId: sourceAgent.agentId,
+      agentId: agent.agentId,
       title: "Source chat",
     });
 
     context.mocks.ably.publish.mockClear();
     const sourceWorkflow = await createWorkflow(actor, {
-      agentId: sourceAgent.agentId,
+      agentId: agent.agentId,
       chatThreadId: sourceThread.id,
       name: `source-workflow-${randomUUID().slice(0, 8)}`,
       instruction: "# source workflow",
@@ -868,15 +796,16 @@ describe("workflows", () => {
     expect(preparedSource.body.prompt).toContain(sourceWorkflow.body.id);
 
     context.mocks.ably.publish.mockClear();
-    const targetWorkflow = await createWorkflow(actor, {
-      agentId: targetAgent.agentId,
+    const peer = user({ orgId: actor.orgId, orgRole: "org:member" });
+    const targetWorkflow = await createWorkflow(peer, {
+      agentId: agent.agentId,
       chatThreadId: sourceThread.id,
       name: `target-workflow-${randomUUID().slice(0, 8)}`,
       instruction: "# target workflow",
     });
     const preparedTarget = await accept(
       detailClient().chatThread({
-        headers: authHeaders(actor),
+        headers: authHeaders(peer),
         params: { workflowId: targetWorkflow.body.id },
       }),
       [200],
@@ -890,10 +819,7 @@ describe("workflows", () => {
 
   it("creates a workflow when its chat thread notification fails", async () => {
     const actor = user();
-    const agent = await createAgent(actor, {
-      displayName: "Realtime Failure Agent",
-      visibility: "private",
-    });
+    const agent = await workspaceExecutor(actor);
     const thread = await chat.createThread(actor, {
       agentId: agent.agentId,
       title: "Realtime failure chat",
@@ -920,14 +846,9 @@ describe("workflows", () => {
 
   it("protects public workflow slugs while allowing private overrides", async () => {
     const actor = user();
-    const agent = await createAgent(actor, {
-      displayName: "Unique Slug Agent",
-      visibility: "public",
-    });
-    const otherAgent = await createAgent(actor, {
-      displayName: "Other Unique Slug Agent",
-      visibility: "public",
-    });
+    const agent = await workspaceExecutor(actor);
+    const other = user();
+    const otherAgent = await workspaceExecutor(other);
     const workflowName = `shared-workflow-${randomUUID().slice(0, 8)}`;
 
     const publicWorkflow = await createWorkflow(actor, {
@@ -943,7 +864,7 @@ describe("workflows", () => {
       displayName: "Private Workflow",
       instruction: "# private override",
     });
-    await createWorkflow(actor, {
+    await createWorkflow(other, {
       agentId: otherAgent.agentId,
       name: workflowName,
       visibility: "public",
@@ -966,7 +887,7 @@ describe("workflows", () => {
 
     const scopedList = await accept(
       collectionClient().list({
-        headers: await retainedHeaders(actor),
+        headers: authHeaders(actor),
         query: { agentId: agent.agentId },
       }),
       [200],
@@ -991,14 +912,9 @@ describe("workflows", () => {
 
   it("lists only the agent's unshadowed workflows with composer fields", async () => {
     const actor = user();
-    const agent = await createAgent(actor, {
-      displayName: "Composer Workflow Agent",
-      visibility: "public",
-    });
-    const otherAgent = await createAgent(actor, {
-      displayName: "Other Composer Workflow Agent",
-      visibility: "public",
-    });
+    const agent = await workspaceExecutor(actor);
+    const other = user();
+    const otherAgent = await workspaceExecutor(other);
     const workflowName = `composer-workflow-${randomUUID().slice(0, 8)}`;
 
     const publicWorkflow = await createWorkflow(actor, {
@@ -1015,7 +931,7 @@ describe("workflows", () => {
       description: "Private override",
       instruction: "# private override",
     });
-    const otherAgentWorkflow = await createWorkflow(actor, {
+    const otherAgentWorkflow = await createWorkflow(other, {
       agentId: otherAgent.agentId,
       name: `other-${workflowName}`,
       instruction: "# other agent workflow",
@@ -1023,7 +939,7 @@ describe("workflows", () => {
 
     const composerList = await accept(
       collectionClient().composer({
-        headers: await retainedHeaders(actor),
+        headers: authHeaders(actor),
         query: { agentId: agent.agentId },
       }),
       [200],
@@ -1045,10 +961,7 @@ describe("workflows", () => {
   it("rejects same-owner private workflow slugs while allowing other-owner private slugs", async () => {
     const actor = user();
     const other = user({ orgId: actor.orgId, orgRole: "org:member" });
-    const agent = await createAgent(actor, {
-      displayName: "Private Slug Agent",
-      visibility: "public",
-    });
+    const agent = await workspaceExecutor(actor);
     const workflowName = `private-workflow-${randomUUID().slice(0, 8)}`;
 
     await createWorkflow(actor, {
@@ -1087,13 +1000,13 @@ describe("workflows", () => {
     "returns one creation and one name conflict for concurrent %s workflows",
     async (visibility) => {
       const actor = user();
-      const agent = await createAgent(actor, { visibility: "public" });
+      const agent = await workspaceExecutor(actor);
       const workflowName = `create-race-${randomUUID().slice(0, 8)}`;
       const results = await Promise.all(
         ["First", "Second"].map(async (instruction) => {
           return accept(
             collectionClient().create({
-              headers: await retainedHeaders(actor),
+              headers: authHeaders(actor),
               body: {
                 agentId: agent.agentId,
                 name: workflowName,
@@ -1114,7 +1027,7 @@ describe("workflows", () => {
       ).toStrictEqual([201, 409]);
       const listed = await accept(
         collectionClient().list({
-          headers: await retainedHeaders(actor),
+          headers: authHeaders(actor),
           query: { agentId: agent.agentId },
         }),
         [200],
@@ -1128,7 +1041,7 @@ describe("workflows", () => {
     "returns one update and one name conflict for concurrent %s renames",
     async (visibility) => {
       const actor = user();
-      const agent = await createAgent(actor, { visibility: "public" });
+      const agent = await workspaceExecutor(actor);
       const workflowName = `rename-race-${randomUUID().slice(0, 8)}`;
       const sources = await Promise.all(
         ["first", "second"].map((suffix) => {
@@ -1179,11 +1092,12 @@ describe("workflows", () => {
 
   it("rejects a body edit without its source attachments and supports explicit replacement", async () => {
     const actor = user();
-    const agent = await createAgent(actor, { visibility: "private" });
-    const destination = await createAgent(actor, { visibility: "private" });
+    const agent = await workspaceExecutor(actor);
+    const destination = await workspaceExecutor(actor);
     const s3 = installVolumeS3Fixture();
     const workflow = await createWorkflow(actor, {
       agentId: agent.agentId,
+      visibility: "public",
       name: `unavailable-source-${randomUUID().slice(0, 8)}`,
       instruction: "Keep the existing attachments",
       files: [{ path: "keep.txt", content: "retained" }],
@@ -1198,7 +1112,7 @@ describe("workflows", () => {
     })(workflowsDetailContract);
     await expect(
       client.copy({
-        headers: await retainedHeaders(actor),
+        headers: authHeaders(actor),
         params: { workflowId: workflow.body.id },
         body: { toAgentId: destination.agentId },
       }),
@@ -1247,10 +1161,7 @@ describe("workflows", () => {
 
   it("renames workflow slugs through metadata update and rejects duplicate public slugs", async () => {
     const actor = user();
-    const agent = await createAgent(actor, {
-      displayName: "Rename Agent",
-      visibility: "public",
-    });
+    const agent = await workspaceExecutor(actor);
     const existingName = `existing-workflow-${randomUUID().slice(0, 8)}`;
     const renamedName = `renamed-workflow-${randomUUID().slice(0, 8)}`;
     await createWorkflow(actor, {
@@ -1292,10 +1203,7 @@ describe("workflows", () => {
 
   it("rejects renaming a private workflow to another same-owner private slug", async () => {
     const actor = user();
-    const agent = await createAgent(actor, {
-      displayName: "Private Rename Agent",
-      visibility: "public",
-    });
+    const agent = await workspaceExecutor(actor);
     const existingName = `private-existing-${randomUUID().slice(0, 8)}`;
     await createWorkflow(actor, {
       agentId: agent.agentId,
@@ -1321,10 +1229,7 @@ describe("workflows", () => {
 
   it("rejects publishing a private workflow when the public slug is already taken", async () => {
     const actor = user();
-    const agent = await createAgent(actor, {
-      displayName: "Publish Conflict Agent",
-      visibility: "public",
-    });
+    const agent = await workspaceExecutor(actor);
     const workflowName = `publish-conflict-${randomUUID().slice(0, 8)}`;
     await createWorkflow(actor, {
       agentId: agent.agentId,
@@ -1352,10 +1257,7 @@ describe("workflows", () => {
 
   it("rejects a slow attachment update after its private Workflow is published", async () => {
     const actor = user();
-    const agent = await createAgent(actor, {
-      displayName: "Pending Publication Agent",
-      visibility: "public",
-    });
+    const agent = await workspaceExecutor(actor);
     const s3 = installVolumeS3Fixture();
     const workflow = await createWorkflow(actor, {
       agentId: agent.agentId,
@@ -1417,20 +1319,7 @@ describe("workflows", () => {
     async (visibility) => {
       const actor = user();
       bdd.acceptAgentStorageWrites();
-      const client = (await setupApp({ context, routes: agentsRoutes }))(
-        agentsMainContract,
-      );
-      const createdAgent = await accept(
-        client.create({
-          headers: authHeaders(actor),
-          body: {
-            displayName: "Superseded Workflow Agent",
-            visibility: "public",
-          },
-        }),
-        [201],
-      );
-      const agent = createdAgent.body;
+      const agent = await workspaceExecutor(actor);
       const s3 = installVolumeS3Fixture();
       const workflow = await createWorkflow(actor, {
         agentId: agent.agentId,
@@ -1493,10 +1382,7 @@ describe("workflows", () => {
 
   it("rejects an older attachment publication after a metadata-only edit at the same clock instant", async () => {
     const actor = user();
-    const agent = await createAgent(actor, {
-      displayName: "Concurrent Workflow Metadata Agent",
-      visibility: "public",
-    });
+    const agent = await workspaceExecutor(actor);
     const s3 = installVolumeS3Fixture();
     const workflow = await createWorkflow(actor, {
       agentId: agent.agentId,
@@ -1587,12 +1473,9 @@ describe("workflows", () => {
     }
   });
 
-  it("makes a deleted Agent's Workflow unavailable for reading, editing and publishing", async () => {
+  it("makes a deleted Workflow unavailable for reading, editing and publishing", async () => {
     const actor = user();
-    const agent = await createAgent(actor, {
-      displayName: "Deleted Workflow Agent",
-      visibility: "public",
-    });
+    const agent = await workspaceExecutor(actor);
     const workflow = await createWorkflow(actor, {
       agentId: agent.agentId,
       name: `deleted-agent-${randomUUID().slice(0, 8)}`,
@@ -1610,7 +1493,13 @@ describe("workflows", () => {
       { path: "owned.txt", content: "Owned package to retire" },
     ]);
 
-    await bdd.deleteAgent(actor, agent.agentId);
+    await accept(
+      detailClient().delete({
+        headers: authHeaders(actor),
+        params: { workflowId: workflow.body.id },
+      }),
+      [204],
+    );
 
     const missing = await accept(
       detailClient().get({
@@ -1637,31 +1526,25 @@ describe("workflows", () => {
 
   it("rejects copying a workflow when the caller already has that private slug on the target agent", async () => {
     const actor = user();
-    const sourceAgent = await createAgent(actor, {
-      displayName: "Private Copy Source Agent",
-      visibility: "private",
-    });
-    const targetAgent = await createAgent(actor, {
-      displayName: "Private Copy Target Agent",
-      visibility: "private",
-    });
+    const agent = await workspaceExecutor(actor);
     const workflowName = `copy-conflict-${randomUUID().slice(0, 8)}`;
     const source = await createWorkflow(actor, {
-      agentId: sourceAgent.agentId,
+      agentId: agent.agentId,
+      visibility: "public",
       name: workflowName,
       instruction: "# source workflow",
     });
     await createWorkflow(actor, {
-      agentId: targetAgent.agentId,
+      agentId: agent.agentId,
       name: workflowName,
       instruction: "# existing private workflow",
     });
 
     const duplicate = await accept(
       detailClient().copy({
-        headers: await retainedHeaders(actor),
+        headers: authHeaders(actor),
         params: { workflowId: source.body.id },
-        body: { toAgentId: targetAgent.agentId },
+        body: { toAgentId: agent.agentId },
       }),
       [409],
     );
@@ -1670,39 +1553,26 @@ describe("workflows", () => {
     );
   });
 
-  it("publishes one complete copy when different source workflows compete for the same private slug", async () => {
+  it("publishes one complete private copy when concurrent requests compete for the same slug", async () => {
     const actor = user();
-    const firstSourceAgent = await createAgent(actor, {
-      displayName: "First Concurrent Copy Source",
-      visibility: "private",
-    });
-    const secondSourceAgent = await createAgent(actor, {
-      displayName: "Second Concurrent Copy Source",
-      visibility: "private",
-    });
-    const targetAgent = await createAgent(actor, {
-      displayName: "Concurrent Copy Target",
-      visibility: "private",
-    });
+    const targetAgent = await workspaceExecutor(actor);
     const workflowName = `concurrent-copy-${randomUUID().slice(0, 8)}`;
-    const sources = await Promise.all(
-      [firstSourceAgent, secondSourceAgent].map(async (agent, index) => {
-        const instruction = `# Source workflow ${index + 1}`;
-        const created = await createWorkflow(actor, {
-          agentId: agent.agentId,
-          name: workflowName,
-          visibility: "private",
-          instruction,
-        });
-        return { workflowId: created.body.id, instruction };
-      }),
-    );
-
+    const instruction = "# Source workflow";
+    const source = await createWorkflow(actor, {
+      agentId: targetAgent.agentId,
+      name: workflowName,
+      visibility: "public",
+      instruction,
+    });
+    const sources = [0, 1].map(() => ({
+      workflowId: source.body.id,
+      instruction,
+    }));
     const copies = await Promise.all(
       sources.map(async (source) => {
         const response = await accept(
           detailClient().copy({
-            headers: await retainedHeaders(actor),
+            headers: authHeaders(actor),
             params: { workflowId: source.workflowId },
             body: { toAgentId: targetAgent.agentId },
           }),
@@ -1733,13 +1603,16 @@ describe("workflows", () => {
 
     const targetWorkflows = await accept(
       collectionClient().list({
-        headers: await retainedHeaders(actor),
+        headers: authHeaders(actor),
         query: { agentId: targetAgent.agentId },
       }),
       [200],
     );
-    expect(targetWorkflows.body).toHaveLength(1);
-    expect(targetWorkflows.body[0]).toMatchObject({
+    const privateCopies = targetWorkflows.body.filter(
+      (item) => item.visibility === "private",
+    );
+    expect(privateCopies).toHaveLength(1);
+    expect(privateCopies[0]).toMatchObject({
       id: winner.response.body.id,
       name: workflowName,
       visibility: "private",
@@ -1768,10 +1641,7 @@ describe("workflows", () => {
 
   it("rejects demoting a public workflow when the owner already has that private slug", async () => {
     const actor = user();
-    const agent = await createAgent(actor, {
-      displayName: "Private Demote Agent",
-      visibility: "public",
-    });
+    const agent = await workspaceExecutor(actor);
     const workflowName = `demote-conflict-${randomUUID().slice(0, 8)}`;
     await createWorkflow(actor, {
       agentId: agent.agentId,
@@ -1807,16 +1677,10 @@ describe("workflows", () => {
     await api.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
     });
-    const sourceAgent = await createAgent(actor, {
-      displayName: "Copy Source Agent",
-      visibility: "private",
-    });
-    const targetAgent = await createAgent(actor, {
-      displayName: "Copy Target Agent",
-      visibility: "private",
-    });
+    const agent = await workspaceExecutor(actor);
     const workflow = await createWorkflow(actor, {
-      agentId: sourceAgent.agentId,
+      agentId: agent.agentId,
+      visibility: "public",
       name: `copy-source-${randomUUID().slice(0, 8)}`,
       instruction: "# copy source",
     });
@@ -1850,10 +1714,6 @@ describe("workflows", () => {
     api.acceptTelemetryIngest();
     onTestFinished(async () => {
       await automationRuns.cleanup(actor);
-      const cleanupBdd = createBddApi(context);
-      cleanupBdd.acceptAgentStorageWrites();
-      await cleanupBdd.deleteAgent(actor, sourceAgent.agentId);
-      await cleanupBdd.deleteAgent(actor, targetAgent.agentId);
     });
     const sourceRun = await automationRuns.start(
       actor,
@@ -1865,14 +1725,14 @@ describe("workflows", () => {
     });
     const copied = await accept(
       detailClient().copy({
-        headers: await retainedHeaders(actor),
+        headers: authHeaders(actor),
         params: { workflowId: workflow.body.id },
-        body: { toAgentId: targetAgent.agentId },
+        body: { toAgentId: agent.agentId },
       }),
       [201],
     );
     expect(copied.body).toMatchObject({
-      agentId: targetAgent.agentId,
+      agentId: agent.agentId,
       name: workflow.body.name,
       ownerUserId: actor.userId,
     });
@@ -1918,16 +1778,10 @@ describe("workflows", () => {
 
   it("copies schedule-only workflows without binding a chat thread", async () => {
     const actor = user();
-    const sourceAgent = await createAgent(actor, {
-      displayName: "Schedule Copy Source Agent",
-      visibility: "private",
-    });
-    const targetAgent = await createAgent(actor, {
-      displayName: "Schedule Copy Target Agent",
-      visibility: "private",
-    });
+    const agent = await workspaceExecutor(actor);
     const workflow = await createWorkflow(actor, {
-      agentId: sourceAgent.agentId,
+      agentId: agent.agentId,
+      visibility: "public",
       name: `schedule-copy-${randomUUID().slice(0, 8)}`,
       instruction: "# schedule copy source",
     });
@@ -1946,9 +1800,9 @@ describe("workflows", () => {
 
     const copied = await accept(
       detailClient().copy({
-        headers: await retainedHeaders(actor),
+        headers: authHeaders(actor),
         params: { workflowId: workflow.body.id },
-        body: { toAgentId: targetAgent.agentId },
+        body: { toAgentId: agent.agentId },
       }),
       [201],
     );
@@ -1978,16 +1832,10 @@ describe("workflows", () => {
       { ...actor, orgId: actor.orgId },
       {},
     );
-    const sourceAgent = await createAgent(actor, {
-      displayName: "Gmail Copy Source Agent",
-      visibility: "private",
-    });
-    const targetAgent = await createAgent(actor, {
-      displayName: "Gmail Copy Target Agent",
-      visibility: "private",
-    });
+    const agent = await workspaceExecutor(actor);
     const workflow = await createWorkflow(actor, {
-      agentId: sourceAgent.agentId,
+      agentId: agent.agentId,
+      visibility: "public",
       name: `gmail-copy-${randomUUID().slice(0, 8)}`,
       instruction: "# Gmail copy source",
     });
@@ -2099,9 +1947,9 @@ describe("workflows", () => {
 
     await accept(
       detailClient().copy({
-        headers: await retainedHeaders(actor),
+        headers: authHeaders(actor),
         params: { workflowId: workflow.body.id },
-        body: { toAgentId: targetAgent.agentId },
+        body: { toAgentId: agent.agentId },
       }),
       [201],
     );
@@ -2120,16 +1968,10 @@ describe("workflows", () => {
       );
     }
     await api.grantProEntitlement(actor, { tier: "team" });
-    const sourceAgent = await createAgent(actor, {
-      displayName: "Calendar Copy Source Agent",
-      visibility: "private",
-    });
-    const targetAgent = await createAgent(actor, {
-      displayName: "Calendar Copy Target Agent",
-      visibility: "private",
-    });
+    const agent = await workspaceExecutor(actor);
     const workflow = await createWorkflow(actor, {
-      agentId: sourceAgent.agentId,
+      agentId: agent.agentId,
+      visibility: "public",
       name: `calendar-copy-${randomUUID().slice(0, 8)}`,
       instruction: "# Calendar copy source",
     });
@@ -2171,14 +2013,14 @@ describe("workflows", () => {
       }),
     );
 
-    await connectGoogleCalendarAccount(actor, sourceAgent.agentId, {
+    await connectGoogleCalendarAccount(actor, agent.agentId, {
       accessToken: "calendar-copy-first-token",
       email: `calendar-copy-first-${randomUUID()}@example.test`,
       subject: `calendar-copy-first-${randomUUID()}`,
     });
     const secondAccount = await connectGoogleCalendarAccount(
       actor,
-      sourceAgent.agentId,
+      agent.agentId,
       {
         accessToken: "calendar-copy-second-token",
         email: `calendar-copy-second-${randomUUID()}@example.test`,
@@ -2218,9 +2060,9 @@ describe("workflows", () => {
 
     await accept(
       detailClient().copy({
-        headers: await retainedHeaders(actor),
+        headers: authHeaders(actor),
         params: { workflowId: workflow.body.id },
-        body: { toAgentId: targetAgent.agentId },
+        body: { toAgentId: agent.agentId },
       }),
       [201],
     );
@@ -2239,16 +2081,10 @@ describe("workflows", () => {
       );
     }
     await api.grantProEntitlement(actor, { tier: "team" });
-    const sourceAgent = await createAgent(actor, {
-      displayName: "Notion Copy Source Agent",
-      visibility: "private",
-    });
-    const targetAgent = await createAgent(actor, {
-      displayName: "Notion Copy Target Agent",
-      visibility: "private",
-    });
+    const agent = await workspaceExecutor(actor);
     const workflow = await createWorkflow(actor, {
-      agentId: sourceAgent.agentId,
+      agentId: agent.agentId,
+      visibility: "public",
       name: `notion-copy-${randomUUID().slice(0, 8)}`,
       instruction: "# Notion copy source",
     });
@@ -2376,9 +2212,9 @@ describe("workflows", () => {
 
     const copied = await accept(
       detailClient().copy({
-        headers: await retainedHeaders(actor),
+        headers: authHeaders(actor),
         params: { workflowId: workflow.body.id },
-        body: { toAgentId: targetAgent.agentId },
+        body: { toAgentId: agent.agentId },
       }),
       [201],
     );
@@ -2441,16 +2277,10 @@ describe("workflows", () => {
       );
     }
     await api.grantProEntitlement(actor, { tier: "team" });
-    const sourceAgent = await createAgent(actor, {
-      displayName: "Google Forms Copy Source Agent",
-      visibility: "private",
-    });
-    const targetAgent = await createAgent(actor, {
-      displayName: "Google Forms Copy Target Agent",
-      visibility: "private",
-    });
+    const agent = await workspaceExecutor(actor);
     const workflow = await createWorkflow(actor, {
-      agentId: sourceAgent.agentId,
+      agentId: agent.agentId,
+      visibility: "public",
       name: `google-forms-copy-${randomUUID().slice(0, 8)}`,
       instruction: "# Google Forms copy source",
     });
@@ -2610,9 +2440,9 @@ describe("workflows", () => {
 
     const copied = await accept(
       detailClient().copy({
-        headers: await retainedHeaders(actor),
+        headers: authHeaders(actor),
         params: { workflowId: workflow.body.id },
-        body: { toAgentId: targetAgent.agentId },
+        body: { toAgentId: agent.agentId },
       }),
       [201],
     );
@@ -2646,7 +2476,7 @@ describe("workflows", () => {
 
   it("reuses current attachment bytes across body edits and file ordering, and never reactivates retired packages", async () => {
     const actor = user();
-    const agent = await createAgent(actor, { visibility: "private" });
+    const agent = await workspaceExecutor(actor);
     const s3 = installVolumeS3Fixture();
     const files = [
       { path: "zeta.txt", content: "附件" },
@@ -2746,7 +2576,7 @@ describe("workflows", () => {
 
   it("normalizes duplicate attachment paths consistently across order and umask", async () => {
     const actor = user();
-    const agent = await createAgent(actor, { visibility: "private" });
+    const agent = await workspaceExecutor(actor);
     const s3 = installVolumeS3Fixture();
     const files = [
       { path: "duplicate.txt", content: "first duplicate" },
@@ -2808,10 +2638,7 @@ describe("workflows", () => {
   it("reads and updates workflow content, audit metadata, and deletion through API responses", async () => {
     const creator = user();
     const updater = user({ orgId: creator.orgId, orgRole: "org:admin" });
-    const agent = await createAgent(creator, {
-      displayName: "Audit Agent",
-      visibility: "public",
-    });
+    const agent = await workspaceExecutor(creator);
     const workflow = await createWorkflow(creator, {
       agentId: agent.agentId,
       name: `audit-workflow-${randomUUID().slice(0, 8)}`,
@@ -2890,7 +2717,7 @@ async function ownerProfileFixture(
   visibility: "public" | "private" = "public",
 ) {
   const owner = user();
-  const agent = await createAgent(owner, { visibility: "public" });
+  const agent = await workspaceExecutor(owner);
   const workflow = await createWorkflow(owner, {
     agentId: agent.agentId,
     name: `profile-${randomUUID().slice(0, 8)}`,
@@ -2915,7 +2742,7 @@ describe("workflow owner profiles", () => {
       new Error("Profiles are offline"),
     );
     const listed = await accept(
-      collectionClient().list({ headers: await retainedHeaders(owner) }),
+      collectionClient().list({ headers: authHeaders(owner) }),
       [200],
     );
     const detail = await accept(
@@ -2967,15 +2794,21 @@ describe("workflow owner profiles", () => {
     expect(context.mocks.clerk.users.getUser).not.toHaveBeenCalled();
   });
 
-  it("does not disclose a public workflow after its agent becomes private", async () => {
-    const { owner, workflow, agent } = await ownerProfileFixture();
+  it("does not disclose a workflow profile after sharing is withdrawn", async () => {
+    const { owner, workflow } = await ownerProfileFixture();
     const other = user({ orgId: owner.orgId, orgRole: "org:member" });
     mockNow(now() + 16 * 60 * 1000);
     context.mocks.clerk.users.getUser.mockResolvedValue(
       ownerProfileUser(owner.userId),
     );
     await accept(readOwnerProfile(other, workflow.id), [200]);
-    await bdd.updateAgent(owner, agent.agentId, { visibility: "private" });
+    await accept(
+      visibilityClient().demote({
+        headers: authHeaders(owner),
+        params: { workflowId: workflow.id },
+      }),
+      [200],
+    );
     context.mocks.clerk.users.getUser.mockClear();
     await accept(readOwnerProfile(other, workflow.id), [404]);
     expect(context.mocks.clerk.users.getUser).not.toHaveBeenCalled();

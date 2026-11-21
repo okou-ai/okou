@@ -75,8 +75,9 @@ async function carrier(existingActor?: ApiTestUser, unattended = false) {
   const workflowAgentId = unattended
     ? (await bdd.readOnboardingStatus(actor)).defaultAgentId
     : undefined;
-  if (unattended && !workflowAgentId)
+  if (unattended && !workflowAgentId) {
     throw new Error("Expected the personal workflow namespace");
+  }
   const run = workflowAgentId
     ? await createWorkflowsBddApi(context).startEventAutomationRun(
         actor,
@@ -2819,7 +2820,7 @@ test("paginates owner-isolated recorded spend history and retains it after reaut
     ).body.data.map((row) => {
       return row.id;
     }),
-  ).toEqual(expect.arrayContaining([first.body.id, second.body.id]));
+  ).toStrictEqual(expect.arrayContaining([first.body.id, second.body.id]));
   await accept(
     client().listSpends({
       headers: other.headers,

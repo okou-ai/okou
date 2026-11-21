@@ -248,8 +248,9 @@ final class ChatConnectorTests: XCTestCase {
   func testMismatchedThreadRejectsAnOldActionBeforeConnectorReads() async throws {
     let fixture = ChatHTTPFixture { request in
       XCTAssertTrue(request.url!.path.hasSuffix("/metadata"))
-      return ChatHTTPResponse(body: FixtureData.metadata.replacingOccurrences(
-        of: FixtureData.threadID, with: FixtureData.siblingID))
+      return ChatHTTPResponse(
+        body: FixtureData.metadata.replacingOccurrences(
+          of: FixtureData.threadID, with: FixtureData.siblingID))
     }
     let status = try await ChatConnectorService(client: fixture.client).status(action())
     XCTAssertNil(status)

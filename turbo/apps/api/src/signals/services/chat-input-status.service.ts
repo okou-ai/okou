@@ -4,7 +4,6 @@ import {
   chatEvents,
   chatEventTerminalPredicate,
 } from "@okouai/db/schema/chat-event";
-import { agents } from "@okouai/db/schema/agent";
 import { computed, type Computed } from "ccstate";
 import { and, eq } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
@@ -82,10 +81,6 @@ export function chatInputStatus(
         },
       })
       .from(chatThreads)
-      .innerJoin(
-        agents,
-        and(eq(agents.id, chatThreads.agentId), eq(agents.orgId, args.orgId)),
-      )
       .leftJoin(
         original,
         and(
@@ -111,6 +106,7 @@ export function chatInputStatus(
       .where(
         and(
           eq(chatThreads.id, args.threadId),
+          eq(chatThreads.orgId, args.orgId),
           eq(chatThreads.userId, args.userId),
         ),
       )

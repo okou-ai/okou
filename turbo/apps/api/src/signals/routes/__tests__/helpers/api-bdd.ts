@@ -1,3 +1,5 @@
+import { instructionsContract } from "@okouai/api-contracts/contracts/instructions";
+import { instructionsRoutes } from "../../instructions";
 import { mockClerkUsers } from "./clerk-users";
 import { randomUUID } from "node:crypto";
 
@@ -428,6 +430,20 @@ export function createBddApi(context: TestContext) {
         [200],
       );
       return response.body;
+    },
+
+    async updatePersonalInstructions(
+      nextUser: ApiTestUser,
+      content: string,
+    ): Promise<void> {
+      const client = setupAppWithRoutes({
+        context,
+        routes: instructionsRoutes,
+      })(instructionsContract);
+      await accept(
+        client.update({ headers: authenticate(nextUser), body: { content } }),
+        [200],
+      );
     },
 
     async updateAgentInstructions(

@@ -227,7 +227,7 @@ describe("Microsoft Teams integration CLI routes", () => {
     expect(captured.authorization).toBe("Bearer bot-framework-token");
     expect(captured.body).toMatchObject({
       type: "message",
-      text: "Hello from Teams CLI\n\nSent via API caller credential · Triggered by <at>Ada Lovelace</at>",
+      text: "Hello from Teams CLI\n\nTriggered by <at>Ada Lovelace</at>",
       entities: [
         {
           type: "mention",
@@ -339,8 +339,7 @@ describe("Microsoft Teams integration CLI routes", () => {
       expect(captured.conversationId).toBe(outgoing.dmConversationId);
       expect(captured.body).toMatchObject({
         type: "message",
-        summary:
-          "Pick a workflow\n\nSent via API caller credential · Triggered by <at>Ada Lovelace</at>",
+        summary: "Pick a workflow\n\nTriggered by <at>Ada Lovelace</at>",
         attachments: [
           {
             contentType: "application/vnd.microsoft.card.adaptive",
@@ -351,7 +350,7 @@ describe("Microsoft Teams integration CLI routes", () => {
                 { type: "TextBlock", text: "Pick a workflow", wrap: true },
                 {
                   type: "TextBlock",
-                  text: "Sent via API caller credential · Triggered by <at>Ada Lovelace</at>",
+                  text: "Triggered by <at>Ada Lovelace</at>",
                   size: "Small",
                   isSubtle: true,
                   wrap: true,

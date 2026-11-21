@@ -14,17 +14,13 @@ import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 const context = testContext();
 const api = createRunsApi(context);
 
-describe("Published Agent instructions in direct Runs", () => {
+describe("Published member instructions in direct Runs", () => {
   it("keeps each Run's published instruction bytes across later edits", async () => {
     const owned = await publicChatActor(context);
     await owned.run(async () => {
       const bdd = createBddApi(context);
       const s3 = installWorkflowVolumeS3Fixture(context);
-      await bdd.updateAgentInstructions(
-        owned.actor,
-        owned.agentId,
-        "A at admission",
-      );
+      await bdd.updatePersonalInstructions(owned.actor, "A at admission");
       const queued = await api.createThreadRun(owned.actor, {
         agentId: owned.agentId,
         prompt: "execute with admitted instructions",
@@ -32,7 +28,7 @@ describe("Published Agent instructions in direct Runs", () => {
       });
       const current =
         "\uFEFF  B after Run creation\r\n中文\n[AGENT_PROFILE]\n  ";
-      await bdd.updateAgentInstructions(owned.actor, owned.agentId, current);
+      await bdd.updatePersonalInstructions(owned.actor, current);
       const { execution } = await owned.runExecution(queued.runId);
       const selected = execution.contentBundles.instructions!;
       expect(
@@ -40,9 +36,8 @@ describe("Published Agent instructions in direct Runs", () => {
           .get("instructions.md")
           ?.toString(),
       ).toBe("A at admission");
-      await bdd.updateAgentInstructions(
+      await bdd.updatePersonalInstructions(
         owned.actor,
-        owned.agentId,
         "C after first publication",
       );
       expect(
@@ -74,12 +69,8 @@ describe("Published Agent instructions in direct Runs", () => {
     await owned.run(async () => {
       const bdd = createBddApi(context);
       const s3 = installWorkflowVolumeS3Fixture(context);
-      await bdd.updateAgentInstructions(
-        owned.actor,
-        owned.agentId,
-        "Old managed file",
-      );
-      await bdd.updateAgentInstructions(owned.actor, owned.agentId, "");
+      await bdd.updatePersonalInstructions(owned.actor, "Old managed file");
+      await bdd.updatePersonalInstructions(owned.actor, "");
       const queued = await api.createThreadRun(owned.actor, {
         agentId: owned.agentId,
         prompt: "clear instructions",
@@ -95,7 +86,7 @@ describe("Published Agent instructions in direct Runs", () => {
     });
   });
 
-  it("launches a member send with the Agent instructions authorized before attachment verification", async () => {
+  it("launches a member send with the personal instructions authorized before attachment verification", async () => {
     const owned = await publicChatActor(context);
     await owned.run(async () => {
       const bdd = createBddApi(context);
@@ -117,9 +108,8 @@ describe("Published Agent instructions in direct Runs", () => {
       const s3 = installWorkflowVolumeS3Fixture(context, new Map(), {
         bundlesOnly: true,
       });
-      await bdd.updateAgentInstructions(
-        owned.actor,
-        owned.agentId,
+      await bdd.updatePersonalInstructions(
+        member,
         "Instructions at send authorization",
       );
       const send = context.mocks.s3.send.getMockImplementation();
@@ -131,9 +121,8 @@ describe("Published Agent instructions in direct Runs", () => {
           command instanceof ListObjectsV2Command &&
           command.input.Prefix === buildArtifactPrefix(member.userId, fileId)
         ) {
-          await bdd.updateAgentInstructions(
-            owned.actor,
-            owned.agentId,
+          await bdd.updatePersonalInstructions(
+            member,
             "Instructions for subsequent Runs",
           );
           await bdd.updateAgentMetadata(owned.actor, owned.agentId, {
@@ -158,18 +147,6 @@ describe("Published Agent instructions in direct Runs", () => {
             },
           ],
         },
-      });
-      const rejected = await chat.requestSendEvent(
-        member,
-        {
-          agentId: owned.agentId,
-          model: "gpt-6-luna",
-          prompt: "Require current private Agent authority",
-        },
-        [403],
-      );
-      expect(rejected.body).toMatchObject({
-        error: { message: "Only the private agent owner can run this agent" },
       });
       const { execution } = await owned.runExecution(runId);
       expect(
