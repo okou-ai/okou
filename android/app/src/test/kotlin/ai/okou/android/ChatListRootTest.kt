@@ -1108,29 +1108,28 @@ class ChatListRootTest {
 
         val available = SemanticsMatcher.keyIsDefined(SemanticsActions.OnLongClick)
         val muted = SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Muted")
-        val failed = "Could not confirm the chat change."
+        val unconfirmed = "Could not confirm the chat change."
+        val rejected = "Could not finish changing the chat."
         compose.waitUntil(10_000) {
             compose.onAllNodes(target.and(muted).and(available)).fetchSemanticsNodes().isNotEmpty()
         }
-        compose.onNodeWithText(failed).assertDoesNotExist()
+        compose.onNodeWithText(unconfirmed).assertDoesNotExist()
         row.performSemanticsAction(SemanticsActions.OnLongClick)
         compose.onNodeWithText("Mark as read").assertDoesNotExist()
         compose.onNodeWithText("Mark as unread").assertDoesNotExist()
         compose.onNodeWithText("Unmute chat").performClick()
         compose.waitUntil(10_000) {
-            compose.onAllNodesWithText(failed).fetchSemanticsNodes().isNotEmpty()
+            compose.onAllNodesWithText(rejected).fetchSemanticsNodes().isNotEmpty()
         }
-        row.assert(!muted)
+        row.assert(muted)
+        compose.onNodeWithText("Refresh chats").assertDoesNotExist()
         assertEquals(
             listOf("mute", "mark-read"),
             commands.map { it.requestUrl?.pathSegments?.last() },
         )
 
-        compose.onNodeWithText("Refresh chats").performClick()
-        compose.waitUntil(10_000) {
-            compose.onAllNodes(target.and(muted).and(available)).fetchSemanticsNodes().isNotEmpty()
-        }
         rejectRead.set(false)
+        awaitRowActionSettled(CHAT_IN_PROJECT)
         row.performSemanticsAction(SemanticsActions.OnLongClick)
         compose.onNodeWithText("Unmute chat").performClick()
         compose.waitUntil(10_000) {
@@ -1357,15 +1356,18 @@ class ChatListRootTest {
     }
 
     @Test
-    fun aRejectedArchiveSwipeRestoresTheRowAfterReadingAndCanBeRetried() {
+    fun aRejectedArchiveSwipeRestoresTheRowDuringRefreshAndCanBeRetried() {
         val app = compose.activity.application as ChatListApplication
         val requests = AtomicInteger()
+        val holdRead = AtomicBoolean(false)
         val reading = CountDownLatch(1)
         val releaseRead = CountDownLatch(1)
+        val writing = CountDownLatch(1)
+        val rejectWrite = CountDownLatch(1)
         val events = app.fixture.rowEventTail()
         val eventResponse = app.fixture.events
         app.fixture.events = { request ->
-            if (requests.get() == 1 && request.requestUrl?.queryParameter("sinceSeqId") != null) {
+            if (holdRead.get() && request.requestUrl?.queryParameter("sinceSeqId") != null) {
                 reading.countDown()
                 releaseRead.await()
             }
@@ -1373,8 +1375,11 @@ class ChatListRootTest {
         }
         app.fixture.commandResponse = { request ->
             if (request.requestUrl?.encodedPath != "/api/chat-threads/$CHAT_PERSONAL/archive") null
-            else if (requests.incrementAndGet() == 1) MockResponse().setResponseCode(400)
-            else {
+            else if (requests.incrementAndGet() == 1) {
+                writing.countDown()
+                rejectWrite.await()
+                MockResponse().setResponseCode(400)
+            } else {
                 events.add(24L to request.rowEvent(24, CHAT_PERSONAL, "archived"))
                 MockResponse().setResponseCode(204)
             }
@@ -1385,20 +1390,25 @@ class ChatListRootTest {
             val rowTag = "chat_$CHAT_PERSONAL"
             val row = compose.onNodeWithTag(rowTag)
             compose.onNodeWithTag("chat_list").performScrollToNode(hasTestTag(rowTag))
-            row.performTouchInput { swipe(center.copy(x = width * 0.8f), center) }
+            holdRead.set(true)
+            reconnectList(app)
             compose.waitUntil(10_000) { compose.runOnIdle { reading.count == 0L } }
+            row.performTouchInput { swipe(center.copy(x = width * 0.8f), center) }
+            compose.waitUntil(10_000) { compose.runOnIdle { writing.count == 0L } }
             row.assertDoesNotExist()
-            releaseRead.countDown()
+            rejectWrite.countDown()
             compose.waitUntil(10_000) {
                 compose
-                    .onAllNodesWithText("Could not confirm the chat change.")
+                    .onAllNodesWithText("Could not finish changing the chat.")
                     .fetchSemanticsNodes()
                     .isNotEmpty()
             }
             row.assertIsDisplayed()
+            compose.onNodeWithText("Refresh chats").assertDoesNotExist()
             compose.onNodeWithText("Undo").assertDoesNotExist()
             awaitRowActionSettled(CHAT_PERSONAL)
 
+            releaseRead.countDown()
             row.performTouchInput { swipe(center.copy(x = width * 0.8f), center) }
             compose.waitUntil(10_000) {
                 compose.onAllNodesWithText("Chat archived").fetchSemanticsNodes().isNotEmpty()
@@ -1406,6 +1416,7 @@ class ChatListRootTest {
             row.assertDoesNotExist()
             assertEquals(2, requests.get())
         } finally {
+            rejectWrite.countDown()
             releaseRead.countDown()
         }
     }
