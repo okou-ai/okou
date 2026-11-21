@@ -24,16 +24,42 @@ jobs:
       contents: read
       pull-requests: read
     outputs:
-      skip: ${{ steps.check.outputs.skip }}
+      skip: ${{ steps.queue.outputs.skip || steps.check.outputs.skip }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 2
           sparse-checkout: .github/actions/detect-release
           persist-credentials: false
       - uses: ./.github/actions/detect-release
         id: check
+        if: github.event_name != 'merge_group'
+      - name: Identify a standalone release queue entry
+        id: queue
+        if: github.event_name == 'merge_group'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          QUEUE_REF: ${{ github.event.merge_group.head_ref }}
+          QUEUE_BASE: ${{ github.event.merge_group.base_sha }}
+        run: |
+          # With squash merging, earlier entries in the group sit between
+          # QUEUE_BASE and HEAD. They must take the ordinary security path.
+          parents=$(git show -s --format=%P HEAD)
+          skip=false
+          if [[ -n "$QUEUE_BASE" && "$parents" == "$QUEUE_BASE" && "$QUEUE_REF" =~ ^refs/heads/gh-readonly-queue/main/pr-([0-9]+)- ]]; then
+            number=${BASH_REMATCH[1]}
+            if pr=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$number"); then
+              skip=$(jq -r --arg repo "$GITHUB_REPOSITORY" '
+                .head.repo.full_name == $repo and .base.ref == "main" and
+                .head.ref == "release-please--branches--main" and .user.login == "github-actions[bot]"
+              ' <<< "$pr")
+            fi
+          fi
+          echo "skip=$skip" >> "$GITHUB_OUTPUT"
 
   action-pins:
+    needs: [detect-release]
+    if: github.event_name != 'merge_group' || needs.detect-release.outputs.skip != 'true'
     name: Action Pins
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -361,6 +387,7 @@ jobs:
           shellcheck -x -P .github/scripts/artifacts \
             .github/scripts/artifacts/r2-copy.sh \
             .github/scripts/artifacts/fetch-okou-app-artifact.sh \
+            .github/scripts/artifacts/upload-okou-app-artifact.sh \
             .github/scripts/artifacts/fetch-okou-desktop-artifact.sh
           shellcheck -x -P .github/scripts:.github/scripts/runner .github/scripts/runner/runner-binary-github.sh .github/scripts/tests/runner-binary-github-test.sh
           shellcheck -x -P .github/scripts/runner \
@@ -436,7 +463,7 @@ jobs:
   release-workspace-coverage:
     needs: [detect-release]
     name: Release Please Workspace Coverage
-    if: ${{ needs.detect-release.outputs.skip == 'true' && github.event_name != 'push' }}
+    if: ${{ needs.detect-release.outputs.skip == 'true' && github.event_name == 'pull_request' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -503,6 +530,15 @@ jobs:
           ACTION_PINS_RESULT: ${{ needs.action-pins.result }}
           RELEASE_WORKSPACE_COVERAGE_RESULT: ${{ needs.release-workspace-coverage.result }}
         run: |
+          if [[ "${{ needs.detect-release.result }}" != "success" ]]; then
+            echo "::error::Security release classification did not succeed"
+            exit 1
+          fi
+          if [[ "$EVENT_NAME" == "merge_group" && "$IS_RELEASE" == "true" ]]; then
+            [[ "$ACTION_PINS_RESULT" == "skipped" && "$RELEASE_WORKSPACE_COVERAGE_RESULT" == "skipped" ]] || exit 1
+            echo "Release security checks passed on the PR before queue admission."
+            exit 0
+          fi
           if [[ "$ACTION_PINS_RESULT" != "success" ]]; then
             echo "::error::action-pins: expected success, got $ACTION_PINS_RESULT"
             exit 1
