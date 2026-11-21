@@ -22,6 +22,17 @@ import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.encodeToJsonElement
 
+@Serializable data class RenameProjectRequest(val `eventId`: String, val `name`: String)
+
+@Serializable
+data class RenamedProject(
+    val `id`: String,
+    val `name`: String,
+    val `createdAt`: String,
+    val `updatedAt`: String,
+    val `sortOrder`: String? = null,
+)
+
 @Serializable data class RenameThreadRequest(val `title`: String, val `eventId`: String? = null)
 
 @Serializable data class ReorderPinnedThreadRequest(val `pinOrder`: String, val `eventId`: String)

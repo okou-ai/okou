@@ -55,4 +55,9 @@
     <string name="chat_delete_title">删除聊天？</string>
     <string name="chat_delete_description">这将永久删除该聊天。聊天中正在运行的任务会立即停止，关联的自动化会被暂停。此操作无法撤销。</string>
     <string name="chat_delete_confirm">删除</string>
+    <string name="chat_rename_project">重命名项目</string>
+    <string name="chat_project_name">项目名称</string>
+    <string name="chat_project_rename_unconfirmed">无法确认项目名称。</string>
+    <string name="chat_project_rename_save">保存</string>
+    <string name="chat_project_rename_pending">正在重命名项目…</string>
 </resources>

@@ -57,4 +57,9 @@
     <string name="chat_delete_title">¿Eliminar el chat?</string>
     <string name="chat_delete_description">Esto eliminará permanentemente este chat. Cualquier tarea que se esté ejecutando en este chat se detendrá inmediatamente. Todas las automatizaciones vinculadas se pausarán. Esta acción no puede deshacerse.</string>
     <string name="chat_delete_confirm">Eliminar</string>
+    <string name="chat_rename_project">Renombrar proyecto</string>
+    <string name="chat_project_name">Nombre del proyecto</string>
+    <string name="chat_project_rename_unconfirmed">No se pudo confirmar el nombre del proyecto.</string>
+    <string name="chat_project_rename_save">Guardar</string>
+    <string name="chat_project_rename_pending">Renombrando proyecto…</string>
 </resources>

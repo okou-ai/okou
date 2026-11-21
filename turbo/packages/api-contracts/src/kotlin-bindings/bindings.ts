@@ -257,6 +257,12 @@ export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
     route: chatThreadRenameContract.rename,
   },
   {
+    name: "renameProject",
+    request: "RenameProjectRequest",
+    response: "RenamedProject",
+    route: projectsContract.update,
+  },
+  {
     name: "deleteThread",
     response: "Unit",
     route: chatThreadByIdContract.delete,
@@ -288,6 +294,16 @@ export interface KotlinTypeBinding {
 }
 
 export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
+  {
+    name: "RenameProjectRequest",
+    schema: projectsContract.update.body,
+    direction: "input",
+  },
+  {
+    name: "RenamedProject",
+    schema: projectsContract.update.responses[200],
+    direction: "output",
+  },
   {
     name: "RenameThreadRequest",
     schema: chatThreadRenameContract.rename.body,
