@@ -194,7 +194,8 @@ internal fun ChatTitleSearch(
             // Let the restored list position apply to the result rows once data is available.
             LazyColumn(resultsWidth) {
                 when {
-                    state.offline -> item { SearchNotice(R.string.chat_list_load_when_online) }
+                    state.offline ->
+                        item { ChatContentLoadNotice(R.string.chat_list_load_when_online) }
                     failure != null ->
                         item {
                             SearchNotice(

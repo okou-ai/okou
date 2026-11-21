@@ -364,10 +364,10 @@ internal fun ChatListScreen(
             if (state.confirmedAt == null || missingUnread) {
                 when {
                     state.offline ->
-                        item { ChatListLoadNotice(R.string.chat_list_load_when_online) }
+                        item { ChatContentLoadNotice(R.string.chat_list_load_when_online) }
                     firstLoadFailure != null ->
                         item {
-                            ChatListLoadNotice(R.string.chat_list_first_load_failed)
+                            ChatContentLoadNotice(R.string.chat_list_first_load_failed)
                             if (firstLoadFailure == ChatListReadFailure.NeedsRetry)
                                 ChatAction(
                                     R.string.retry,
@@ -988,11 +988,11 @@ private fun ChatListTextAction(
 }
 
 @Composable
-private fun ChatListLoadNotice(message: Int) {
-    Box(
-        Modifier.heightIn(min = 48.dp).padding(horizontal = 12.dp),
-        contentAlignment = Alignment.CenterStart,
-    ) {
+internal fun ChatContentLoadNotice(
+    @StringRes message: Int,
+    modifier: Modifier = Modifier.padding(horizontal = 12.dp),
+) {
+    Box(modifier.heightIn(min = 48.dp), contentAlignment = Alignment.CenterStart) {
         Text(
             stringResource(message),
             modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },

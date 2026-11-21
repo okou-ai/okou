@@ -381,7 +381,8 @@ class ChatListRootTest {
                 }
             }
             org.junit.Assert.assertTrue(indicatorReads.get() >= 2)
-            val message = compose.onNodeWithText("Native history", substring = true)
+            compose.onNodeWithTag("conversation").performScrollToIndex(1)
+            val message = compose.onNodeWithText("Hello history")
             val input = compose.onNode(hasTestTag("message_input") and hasSetTextAction())
             val messageBounds = message.getUnclippedBoundsInRoot()
             val inputBounds = input.getUnclippedBoundsInRoot()

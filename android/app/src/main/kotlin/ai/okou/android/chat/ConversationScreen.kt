@@ -48,6 +48,8 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
+private const val HistoryFeedbackDelayMillis = 250L
+
 @Composable
 fun ConversationRoute(
     model: ConversationHistoryModel,
@@ -84,10 +86,17 @@ fun ConversationRoute(
         key(threadId) {
             rememberChatWaitIndicator(
                 transcript != null && state.phase == HistoryPhase.Loading && !list.offline,
-                delayMillis = 250,
+                delayMillis = HistoryFeedbackDelayMillis,
             )
         }
     val realtimePhase = realtime?.phase?.collectAsStateWithLifecycle()?.value
+    val showRealtimeConnecting =
+        key(threadId) {
+            rememberChatWaitIndicator(
+                realtimePhase == RealtimePhase.Connecting && !waitingForHistory && !list.offline,
+                delayMillis = HistoryFeedbackDelayMillis,
+            )
+        }
     val messageInset = if (currentWindowSizeDp().width >= 600) 32.dp else 24.dp
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val actionColors =
@@ -150,7 +159,7 @@ fun ConversationRoute(
                                 previews.isEmpty() &&
                                 state.phase != HistoryPhase.Missing
                         ) {
-                            Text(stringResource(R.string.chat_list_load_when_online))
+                            ChatContentLoadNotice(R.string.chat_list_load_when_online, Modifier)
                             return@item
                         }
                         if (waitingForHistory) {
@@ -228,30 +237,37 @@ fun ConversationRoute(
                 if (showSync && messages.isEmpty() && previews.isEmpty())
                     item(key = "conversation_sync") { HistorySyncNotice() }
             }
-            Column(Modifier.fillMaxWidth().padding(horizontal = messageInset)) {
-                if (list.offline && (transcript != null || previews.isNotEmpty())) {
+            val historyNotice =
+                when {
+                    thread == null || list.offline -> null
+                    state.phase == HistoryPhase.Failed -> R.string.history_failed
+                    readState == HistoryReadState.Failed -> R.string.history_read_failed
+                    state.cacheUnavailable -> R.string.chat_cache_unavailable
+                    else -> null
+                }
+            when {
+                list.offline && (transcript != null || previews.isNotEmpty()) ->
                     Text(
                         stringResource(R.string.chat_list_offline),
+                        Modifier.padding(horizontal = messageInset),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodyMedium,
                     )
-                }
-                if (thread != null && !list.offline) {
-                    val refreshFailed = state.phase == HistoryPhase.Failed
-                    val readFailed = readState == HistoryReadState.Failed
-                    if (state.cacheUnavailable)
-                        Text(stringResource(R.string.chat_cache_unavailable))
-                    if (refreshFailed) Text(stringResource(R.string.history_failed))
-                    if (readFailed) Text(stringResource(R.string.history_read_failed))
-                    if (refreshFailed || readFailed) {
-                        TextButton(onClick = model::refresh, colors = actionColors) {
-                            Text(stringResource(R.string.retry))
+                historyNotice != null ->
+                    Column(Modifier.fillMaxWidth().padding(horizontal = messageInset)) {
+                        Text(stringResource(historyNotice))
+                        if (historyNotice != R.string.chat_cache_unavailable) {
+                            TextButton(onClick = model::refresh, colors = actionColors) {
+                                Text(stringResource(R.string.retry))
+                            }
                         }
                     }
-                }
-            }
-            if (realtime != null && !list.offline && realtimePhase == RealtimePhase.Unavailable) {
-                RealtimeNotice(realtime, realtimePhase)
+                realtime != null &&
+                    realtimePhase != null &&
+                    !list.offline &&
+                    (realtimePhase == RealtimePhase.Unavailable ||
+                        (showRealtimeConnecting && !showSync)) ->
+                    RealtimeNotice(realtime, realtimePhase)
             }
         }
     }
@@ -300,7 +316,7 @@ private fun ConversationSkeleton() {
         verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
         repeat(2) { turn ->
-            Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(20.dp)) {
                 ChatSkeletonBlock(
                     Modifier.align(Alignment.End)
                         .fillMaxWidth(if (turn == 0) .44f else .35f)
