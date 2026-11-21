@@ -312,7 +312,7 @@ function userExportPublicationChecks(
         ),
       )
       .orderBy(asc(workflows.id))
-      .for("share", { of: [workflows, agents] })
+      .for("share", { of: workflows })
       .getSQL(),
   });
   const threadIds = authorityIds(
