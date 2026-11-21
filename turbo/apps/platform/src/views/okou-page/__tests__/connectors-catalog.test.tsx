@@ -1,6 +1,15 @@
+import { builtinConnectorOauthStartContract } from "@okouai/api-contracts/contracts/connectors";
+import { browserAuthMethod } from "./chat-capability-connector-test-helpers.ts";
+import {
+  mockPublicConnectorStatus,
+  getConnectorCard,
+  customConnector,
+  mockConnectors,
+  publicStatusItem,
+} from "./connector-page-test-helpers.ts";
+import { waitFor, screen } from "@testing-library/react";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import { customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connectors";
-import { screen } from "@testing-library/react";
 import { test, expect } from "vitest";
 import {
   click,
@@ -9,11 +18,6 @@ import {
   queryAllByRoleFast,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import {
-  customConnector,
-  mockConnectors,
-  publicStatusItem,
-} from "./connector-page-test-helpers.ts";
 import { findButton, queryButton } from "./chat-run-test-fixtures.ts";
 const context = testContext();
 test("connectors-catalog-008 an incoming Axiom search can be replaced with GitHub and an empty result", async () => {
@@ -87,4 +91,43 @@ test("connectors-catalog-015 the Custom scope offers Acme Search and custom crea
   expect(queryButton("Filter connectors")).toBeNull();
   expect(screen.queryAllByTestId(/^connector-shelf-/)).toHaveLength(0);
   await expect(findButton("New custom connector")).resolves.toBeEnabled();
+});
+
+test("connectors-catalog-010 the unconnected GitHub catalog card launches its OAuth destination", async () => {
+  const github = publicStatusItem({
+    connectorSlug: "github",
+    label: "GitHub",
+    description: "Track pull requests in shared repositories.",
+    authMethods: [browserAuthMethod()],
+    singleAuthCodeAuthMethodId: "oauth",
+  });
+  context.mocks.api(connectorCatalogContract.get, ({ respond }) => {
+    return respond(200, { connector: github });
+  });
+  mockPublicConnectorStatus(context, [github]);
+  const popup = context.mocks.browser.authWindow();
+  Object.defineProperty(popup, "location", { value: { href: "about:blank" } });
+  context.mocks.browser.open(popup);
+  const destination = "https://github.example.test/connect/workspace";
+  context.mocks.api(
+    builtinConnectorOauthStartContract.start,
+    ({ params, respond }) => {
+      return respond(200, {
+        authorizationUrl:
+          params.connectorSlug === "github" ? destination : "about:blank",
+        oauthAttemptId: crypto.randomUUID(),
+      });
+    },
+  );
+  await setupPage({ context, path: "/connectors" });
+  const connect = await findButton("Connect GitHub");
+  const card = getConnectorCard("GitHub");
+  expect(card).toHaveTextContent(github.description!);
+  expect(card).not.toHaveTextContent("No accounts");
+  expect(queryButton("Manage GitHub access", card)).toBeNull();
+  click(connect);
+  await waitFor(() => {
+    return expect(popup.location.href).toBe(destination);
+  });
+  popup.close();
 });
