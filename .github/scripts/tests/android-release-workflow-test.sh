@@ -55,7 +55,7 @@ screenshots = json.loads(subprocess.check_output(
 
 # A path or pin mismatch changes the Actions cache version even when the key matches.
 restores = []
-for consumer in (android['build-test'], android['instrumentation'], screenshots, job):
+for consumer in (android['build-test'], android['instrumentation'], android['release-smoke'], screenshots, job):
     setup, = (step for step in consumer['steps'] if step.get('uses', '').startswith('gradle/actions/setup-gradle@'))
     assert setup['with']['cache-provider'] == 'external'
     restore, = (step for step in consumer['steps'] if step.get('uses', '').startswith('actions/cache/restore@'))
@@ -77,7 +77,7 @@ assert android['detect-release']['permissions']['pull-requests'] == 'read'
 assert android['detect']['needs'] == ['detect-release']
 assert 'detect-release' in android['ci-gate-android']['needs']
 assert android['ci-gate-android']['if'] == 'always()'
-for native in ['build-test', 'instrumentation']:
+for native in ['build-test', 'instrumentation', 'release-smoke']:
     assert android[native]['needs'] == 'detect'
 
 with tempfile.TemporaryDirectory() as temp:
@@ -128,11 +128,11 @@ print(os.environ['QUEUED_BRANCH'])
     assert failed.returncode != 0, failed.stderr
 
     gate_env = dict(RELEASE_DETECT='success', IS_RELEASE='false', DETECT='success',
-                    NEEDED='true', BUILD='success', INSTRUMENTATION='success')
+                    NEEDED='true', BUILD='success', INSTRUMENTATION='success', RELEASE_SMOKE='success')
     for values, passed in [
         ({}, True),
-        ({'IS_RELEASE': 'true', 'DETECT': 'skipped', 'NEEDED': '', 'BUILD': 'skipped', 'INSTRUMENTATION': 'skipped'}, True),
-        ({'NEEDED': 'false', 'BUILD': 'skipped', 'INSTRUMENTATION': 'skipped'}, True),
+        ({'IS_RELEASE': 'true', 'DETECT': 'skipped', 'NEEDED': '', 'BUILD': 'skipped', 'INSTRUMENTATION': 'skipped', 'RELEASE_SMOKE': 'skipped'}, True),
+        ({'NEEDED': 'false', 'BUILD': 'skipped', 'INSTRUMENTATION': 'skipped', 'RELEASE_SMOKE': 'skipped'}, True),
         ({'RELEASE_DETECT': 'failure', 'IS_RELEASE': 'true'}, False),
         ({'RELEASE_DETECT': 'cancelled'}, False),
         ({'IS_RELEASE': ''}, False),
@@ -141,6 +141,8 @@ print(os.environ['QUEUED_BRANCH'])
         ({'BUILD': 'failure'}, False),
         ({'INSTRUMENTATION': 'cancelled'}, False),
         ({'INSTRUMENTATION': 'skipped'}, False),
+        ({'RELEASE_SMOKE': 'failure'}, False),
+        ({'RELEASE_SMOKE': 'skipped'}, False),
     ]:
         result = execute(gate, gate_env | values)
         assert (result.returncode == 0) is passed, (values, result.stdout, result.stderr)

@@ -136,25 +136,81 @@ jobs:
           test -c /dev/kvm
           sudo chown "$(id -u):$(id -g)" /dev/kvm
           test -r /dev/kvm && test -w /dev/kvm
-      - name: Test the optimized release on Android API 35
-        id: native-tests
+      - name: Run Debug device integration tests
         timeout-minutes: 20
         shell: bash
         working-directory: android
         run: |
           set -euo pipefail
+          export ANDROID_HOME=${ANDROID_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/android-sdk}
           mkdir -p build/reports/instrumentation
-          bash scripts/test-release.sh \
+          python3 scripts/run-native-tests.py build/reports/instrumentation/logcat -- \
+            ./gradlew :app:pixel2Api35DebugAndroidTest --no-daemon \
             -Pandroid.testoptions.manageddevices.emulator.gpu=swiftshader_indirect \
             --stacktrace --console=plain \
             2>&1 | tee build/reports/instrumentation/gradle.log
           python3 scripts/check-native-results.py \
-            app/build/outputs/androidTest-results/managedDevice/release/pixel2Api35 10
+            app/build/outputs/androidTest-results/managedDevice/debug/pixel2Api35 10
+      - name: Retain Debug device reports and diagnostics
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: android-instrumentation-api35-${{ github.sha }}${{ github.run_attempt != '1' && format('-attempt-{0}', github.run_attempt) || '' }}
+          path: |
+            android/build/reports/instrumentation/
+            android/app/build/reports/androidTests/
+            android/app/build/outputs/androidTest-results/
+            android/app/build/outputs/managed_device_android_test_additional_output/
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Save shared Android Gradle dependencies
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.gradle-dependencies.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: *android-gradle-dependencies
+          key: ${{ steps.gradle-dependencies.outputs.cache-primary-key }}
+
+  release-smoke:
+    needs: detect
+    if: needs.detect.outputs.needed == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Fetch complete history for versioned builds
+        run: >-
+          git -c protocol.version=2 fetch --no-tags --no-recurse-submodules
+          --unshallow --filter=tree:0 origin "$GITHUB_SHA"
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
+        with:
+          cache-provider: external
+      - *restore-android-gradle-dependencies
+      - name: Install Android SDK
+        run: bash android/scripts/setup-sdk.sh --accept-licenses
+      - name: Enable emulator hardware acceleration
+        run: |
+          test -c /dev/kvm
+          sudo chown "$(id -u):$(id -g)" /dev/kvm
+          test -r /dev/kvm && test -w /dev/kvm
+      - name: Install the Release smoke emulator
+        run: |
+          export ANDROID_HOME=${ANDROID_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/android-sdk}
+          "$ANDROID_HOME/cmdline-tools/13114758/bin/sdkmanager" --sdk_root="$ANDROID_HOME" \
+            emulator 'system-images;android-35;default;x86_64'
+      - name: Smoke-test the optimized Release APK
+        id: release-smoke
+        timeout-minutes: 20
+        run: bash android/scripts/test-release.sh
       - name: Verify the Release artifact pair exists
         id: release-artifacts
-        if: ${{ !cancelled() && (steps.native-tests.outcome == 'success' || steps.native-tests.outputs.release-directory != '') }}
+        if: ${{ !cancelled() && (steps.release-smoke.outcome == 'success' || steps.release-smoke.outputs.release-directory != '') }}
         env:
-          RELEASE_ARTIFACTS: ${{ steps.native-tests.outputs.release-directory }}
+          RELEASE_ARTIFACTS: ${{ steps.release-smoke.outputs.release-directory }}
         run: |
           version=$(cat android/version.txt)
           if [[ -z "$RELEASE_ARTIFACTS" ||
@@ -169,69 +225,35 @@ jobs:
         with:
           name: okou-android-release-${{ github.sha }}
           path: |
-            ${{ steps.native-tests.outputs.release-directory }}/okou-android-*-unsigned.apk
-            ${{ steps.native-tests.outputs.release-directory }}/okou-android-*-mapping.txt.gz
+            ${{ steps.release-smoke.outputs.release-directory }}/okou-android-*-unsigned.apk
+            ${{ steps.release-smoke.outputs.release-directory }}/okou-android-*-mapping.txt.gz
           if-no-files-found: error
           overwrite: true
           retention-days: 7
-      - name: Retain Android test reports and diagnostics
+      - name: Restore Release smoke stack traces
+        if: ${{ failure() && steps.release-smoke.outputs.release-directory != '' }}
+        timeout-minutes: 2
+        working-directory: android
+        env:
+          RELEASE_ARTIFACTS: ${{ steps.release-smoke.outputs.release-directory }}
+        run: |
+          export ANDROID_HOME=${ANDROID_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/android-sdk}
+          if test -s "$RELEASE_ARTIFACTS/tested-app.apk" && test -s "$RELEASE_ARTIFACTS/release-smoke-logcat.log"; then
+            python3 scripts/retrace-release.py \
+              "$RELEASE_ARTIFACTS/tested-app.apk" "$RELEASE_ARTIFACTS"/okou-android-*-mapping.txt.gz \
+              "$RELEASE_ARTIFACTS/release-smoke-logcat.log" "$RELEASE_ARTIFACTS/retraced"
+          fi
+      - name: Retain Release smoke evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: android-instrumentation-api35-${{ github.sha }}${{ github.run_attempt != '1' && format('-attempt-{0}', github.run_attempt) || '' }}
-          path: |
-            android/build/reports/instrumentation/
-            android/build/reports/release/
-            android/app/build/reports/androidTests/
-            android/app/build/outputs/androidTest-results/
-            android/app/build/outputs/managed_device_android_test_additional_output/
-            android/app/build/outputs/apk/androidTest/release/
+          name: android-release-smoke-api35-${{ github.sha }}${{ github.run_attempt != '1' && format('-attempt-{0}', github.run_attempt) || '' }}
+          path: android/build/reports/release/
           if-no-files-found: warn
           retention-days: 7
-      - name: Restore failed release stack traces
-        id: restore-failed-traces
-        if: always() && steps.native-tests.outcome != 'success'
-        shell: bash
-        working-directory: android
-        env:
-          RELEASE_ARTIFACTS: ${{ steps.native-tests.outputs.release-directory }}
-        run: |
-          set -euo pipefail
-          export ANDROID_HOME="${ANDROID_HOME:-$HOME/.local/share/android-sdk}"
-          reports=app/build/outputs/androidTest-results/managedDevice/release
-          release=$RELEASE_ARTIFACTS
-          diagnostics=build/reports/instrumentation
-          if test -d "$reports"; then
-            cp -R "$reports" "$diagnostics/managed-device"
-          fi
-          if test -n "$release" && test -s "$release/tested-app-mapping.txt.gz"; then
-            python3 scripts/retrace-release.py \
-              "$release/tested-app.apk" "$release/tested-app-mapping.txt.gz" \
-              "$diagnostics" build/reports/retraced/app
-            if test -s "$release/native-test-mapping.txt.gz"; then
-              python3 scripts/retrace-release.py \
-                "$release/native-test.apk" "$release/native-test-mapping.txt.gz" \
-                "$diagnostics" build/reports/retraced/test-driver
-            fi
-          fi
-      - name: Retain restored Android stack traces
-        if: always() && steps.restore-failed-traces.outcome == 'success'
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: android-retraced-api35-${{ github.sha }}${{ github.run_attempt != '1' && format('-attempt-{0}', github.run_attempt) || '' }}
-          path: android/build/reports/retraced/
-          if-no-files-found: warn
-          retention-days: 7
-
-      - name: Save shared Android Gradle dependencies
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.gradle-dependencies.outputs.cache-hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: *android-gradle-dependencies
-          key: ${{ steps.gradle-dependencies.outputs.cache-primary-key }}
 
   ci-gate-android:
-    needs: [detect-release, detect, build-test, instrumentation]
+    needs: [detect-release, detect, build-test, instrumentation, release-smoke]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -244,6 +266,7 @@ jobs:
           NEEDED: ${{ needs.detect.outputs.needed }}
           BUILD: ${{ needs.build-test.result }}
           INSTRUMENTATION: ${{ needs.instrumentation.result }}
+          RELEASE_SMOKE: ${{ needs.release-smoke.result }}
         run: |
           if [ "$RELEASE_DETECT" != success ]; then
             echo "::error::Android release classification must succeed; got $RELEASE_DETECT"
@@ -261,15 +284,15 @@ jobs:
             echo "::error::Android change detection must succeed; got $DETECT"
             exit 1
           fi
-          case "$NEEDED:$BUILD:$INSTRUMENTATION" in
-            true:success:success)
-              echo 'Android JVM tests, emulator instrumentation, lint and APK assembly passed.'
+          case "$NEEDED:$BUILD:$INSTRUMENTATION:$RELEASE_SMOKE" in
+            true:success:success:success)
+              echo 'Android JVM tests, Debug device tests, lint, and Release smoke passed.'
               ;;
-            false:skipped:skipped)
+            false:skipped:skipped:skipped)
               echo 'Android checks were not needed for these changes.'
               ;;
             *)
-              echo "::error::Unexpected Android CI results: needed=$NEEDED, build=$BUILD, instrumentation=$INSTRUMENTATION"
+              echo "::error::Unexpected Android CI results: needed=$NEEDED, build=$BUILD, instrumentation=$INSTRUMENTATION, release-smoke=$RELEASE_SMOKE"
               exit 1
               ;;
           esac
