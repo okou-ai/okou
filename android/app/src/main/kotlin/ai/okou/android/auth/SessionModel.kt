@@ -72,6 +72,9 @@ sealed interface OpeningWorkspace {
         val organization: Organization,
         val chats: ChatListModel,
         val projectExpansion: ProjectExpansionModel,
+        val composer: ChatComposerModel,
+        val controls: RunControlsModel,
+        val recovery: AssistantRecoveryModel,
     ) : OpeningWorkspace
 }
 
@@ -272,8 +275,53 @@ class SessionModel(
                                 connectivity = connectivity,
                             )
                         }
+                    val controls =
+                        store.workspaceModel {
+                            RunControlsModel(
+                                owner,
+                                runControlJournal,
+                                identity,
+                                chats.history,
+                                { current(ticket, snapshot) },
+                                { workspaceFailure(ticket, snapshot, it) },
+                                dispatcher,
+                            )
+                        }
+                    val recovery =
+                        store.workspaceModel {
+                            AssistantRecoveryModel(
+                                owner,
+                                chats.history,
+                                controls,
+                                { current(ticket, snapshot) },
+                                { workspaceFailure(ticket, snapshot, it) },
+                                dispatcher,
+                            )
+                        }
+                    val composer =
+                        store.workspaceModel {
+                            ChatComposerModel(
+                                owner,
+                                composerJournal,
+                                identity,
+                                { current(ticket, snapshot) },
+                                { workspaceFailure(ticket, snapshot, it) },
+                                chats::refreshAfterSend,
+                                recovery,
+                                chats.history,
+                                chats,
+                            )
+                        }
                     val opened =
-                        OpeningWorkspace.Authorized(identity, organization, chats, projectExpansion)
+                        OpeningWorkspace.Authorized(
+                            identity,
+                            organization,
+                            chats,
+                            projectExpansion,
+                            composer,
+                            controls,
+                            recovery,
+                        )
                     val knownMemberships =
                         if (fastAccess == null) memberships
                         else
@@ -364,53 +412,14 @@ class SessionModel(
                     onFailure = { error -> workspaceFailure(ticket, snapshot, error) },
                 )
             }
-        val identity = opened.identity
-        val chats = opened.chats
-        val controls =
-            store.workspaceModel {
-                RunControlsModel(
-                    owner,
-                    runControlJournal,
-                    identity,
-                    chats.history,
-                    { current(ticket, snapshot) },
-                    { workspaceFailure(ticket, snapshot, it) },
-                    dispatcher,
-                )
-            }
-        val recovery =
-            store.workspaceModel {
-                AssistantRecoveryModel(
-                    owner,
-                    chats.history,
-                    controls,
-                    { current(ticket, snapshot) },
-                    { workspaceFailure(ticket, snapshot, it) },
-                    dispatcher,
-                )
-            }
         val instructions =
             store.workspaceModel {
                 PersonalInstructionsModel(
                     owner,
                     instructionsDrafts,
-                    identity,
+                    opened.identity,
                     { current(ticket, snapshot) },
                     { workspaceFailure(ticket, snapshot, it) },
-                )
-            }
-        val composer =
-            store.workspaceModel {
-                ChatComposerModel(
-                    owner,
-                    composerJournal,
-                    identity,
-                    { current(ticket, snapshot) },
-                    { workspaceFailure(ticket, snapshot, it) },
-                    chats::refreshAfterSend,
-                    recovery,
-                    chats.history,
-                    chats,
                 )
             }
         mutable.value =
@@ -418,15 +427,15 @@ class SessionModel(
                 stage = SessionStage.Ready,
                 ready =
                     ReadyWorkspace(
-                        identity,
+                        opened.identity,
                         opened.organization,
                         preferences,
-                        chats,
+                        opened.chats,
                         opened.projectExpansion,
                         instructions,
-                        composer,
-                        controls,
-                        recovery,
+                        opened.composer,
+                        opened.controls,
+                        opened.recovery,
                     ),
                 working = false,
                 cachedAppearance = null,
@@ -435,7 +444,7 @@ class SessionModel(
         preferences.uiState
             .map { it.confirmed.appearance }
             .distinctUntilChanged()
-            .collect { appearanceCache.save(identity, it) }
+            .collect { appearanceCache.save(opened.identity, it) }
     }
 
     private fun current(ticket: Long, snapshot: AuthenticationState): Boolean {

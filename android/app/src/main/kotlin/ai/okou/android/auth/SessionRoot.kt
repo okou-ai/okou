@@ -88,7 +88,7 @@ internal fun SessionRoot(
                 if (ready != null) WorkspaceRealtimeLifecycle(ready.chats.updates)
                 OkouApp(
                     ready?.chats ?: opened?.chats,
-                    ready?.composer,
+                    ready?.composer ?: opened?.composer,
                     ready?.controls,
                     projectExpansion = ready?.projectExpansion ?: opened?.projectExpansion,
                     settingsContent = { destination, openInstructions ->
@@ -116,6 +116,7 @@ internal fun SessionRoot(
                         },
                     updateToolbarAction = updateToolbarAction,
                     onUpdateEditingChanged = onUpdateEditingChanged,
+                    workspaceReady = ready != null,
                     startupRecovery =
                         if (state.stage == SessionStage.Unavailable) {
                             {
