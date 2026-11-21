@@ -169,9 +169,9 @@ export const indicatorSchema = zEnum(["active", "unread"]);
  * precedence, so an unread Agent can still have an active thread.
  *
  * Reads are non-atomic and may observe different states during Run transitions.
- * They cover up to 50 recent active threads and 50 unread threads. With
- * includeActiveUnread, an unread candidate known to be active keeps its active
- * indicator, even when outside the recent active set.
+ * They cover up to 50 recent active threads and 50 unread threads. The opt-in
+ * selects unread watermarks independently of the active window. A thread in
+ * both windows shows activity and still has an unread watermark.
  * Unread selection examines up to 128 newest unmuted candidate threads
  * with messages after their read watermark within seven days, and terminal
  * markers within that lookback. Missing entries do not prove inactivity,

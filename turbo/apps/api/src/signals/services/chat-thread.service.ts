@@ -335,7 +335,6 @@ type IndicatorThreadRow = {
 type UnreadIndicatorRow = IndicatorThreadRow & {
   readonly unreadAt: Date;
   readonly archived: boolean;
-  readonly active: boolean;
 };
 
 function newestUnreadIndicators(rows: UnreadIndicatorRow[]) {
@@ -408,7 +407,7 @@ function createIndicatorRows(args: IndicatorScope) {
         return row.threadId;
       });
 
-      const [terminalRows, activeRows] = await Promise.all([
+      const [terminalRows, activeCandidates] = await Promise.all([
         db
           .selectDistinctOn([chatEvents.chatThreadId], {
             threadId: chatEvents.chatThreadId,
@@ -427,23 +426,19 @@ function createIndicatorRows(args: IndicatorScope) {
             desc(chatEvents.createdAt),
             desc(chatEvents.id),
           ),
-        db
-          .selectDistinct({ threadId: agentRuns.chatThreadId })
-          .from(agentRuns)
-          .where(
-            and(
-              inArray(agentRuns.chatThreadId, candidateIds),
-              inArray(agentRuns.status, [...ACTIVE_RUN_STATUSES]),
-              isNotNull(agentRuns.triggerSource),
-              // Only the opt-in result exposes these Runs as active indicators.
-              args.includeActiveUnread
-                ? and(
-                    eq(agentRuns.userId, args.userId),
-                    eq(agentRuns.orgId, args.orgId),
-                  )
-                : undefined,
-            ),
-          ),
+        // The default projection excludes active candidates before the unread limit.
+        args.includeActiveUnread
+          ? []
+          : db
+              .selectDistinct({ threadId: agentRuns.chatThreadId })
+              .from(agentRuns)
+              .where(
+                and(
+                  inArray(agentRuns.chatThreadId, candidateIds),
+                  inArray(agentRuns.status, [...ACTIVE_RUN_STATUSES]),
+                  isNotNull(agentRuns.triggerSource),
+                ),
+              ),
       ]);
 
       const latestTerminalAt = new Map<string, Date>();
@@ -451,7 +446,7 @@ function createIndicatorRows(args: IndicatorScope) {
         latestTerminalAt.set(row.threadId, row.createdAt);
       }
       const activeIds = new Set(
-        activeRows.map((row) => {
+        activeCandidates.map((row) => {
           return row.threadId;
         }),
       );
@@ -459,10 +454,9 @@ function createIndicatorRows(args: IndicatorScope) {
       const unreadRows: UnreadIndicatorRow[] = [];
       for (const candidate of candidates) {
         const unreadAt = latestTerminalAt.get(candidate.threadId);
-        const active = activeIds.has(candidate.threadId);
         if (
           unreadAt === undefined ||
-          (active && !args.includeActiveUnread) ||
+          activeIds.has(candidate.threadId) ||
           (candidate.lastReadAt !== null &&
             unreadAt.getTime() <= candidate.lastReadAt.getTime())
         ) {
@@ -473,7 +467,6 @@ function createIndicatorRows(args: IndicatorScope) {
           agentId: candidate.agentId,
           unreadAt,
           archived: candidate.archived,
-          active,
         });
       }
       return newestUnreadIndicators(unreadRows);
@@ -491,8 +484,8 @@ function createIndicatorRows(args: IndicatorScope) {
  *
  * Each indicator source returns at most 50 rows. Only Run terminal markers
  * contribute unread indicators; they are resolved for at most 128 candidate
- * threads with uncorrelated reads. Active wins for a thread. Clients can
- * request its unread watermark independently from its presentation status.
+ * threads with uncorrelated reads. Active wins for a thread in the active
+ * window. Clients can request unread watermarks independently from that window.
  */
 export function chatIndicators(
   args: IndicatorScope,
@@ -514,19 +507,16 @@ export function chatIndicators(
       }
     }
     for (const row of unreadRows) {
-      // The independent activity reads can disagree during a Run transition.
-      const active = row.active || threads[row.threadId] === "active";
+      const active = threads[row.threadId] === "active";
       if (active && !args.includeActiveUnread) {
         continue;
       }
       unreadAt[row.threadId] = row.unreadAt.toISOString();
-      threads[row.threadId] = active ? "active" : "unread";
-      if (row.agentId === null) {
+      if (active) {
         continue;
       }
-      if (active) {
-        agentIndicators[row.agentId] ??= "active";
-      } else if (!row.archived) {
+      threads[row.threadId] = "unread";
+      if (row.agentId !== null && !row.archived) {
         agentIndicators[row.agentId] = "unread";
       }
     }

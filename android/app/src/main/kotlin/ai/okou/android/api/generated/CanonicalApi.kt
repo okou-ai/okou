@@ -139,7 +139,7 @@ internal interface CanonicalApi {
     @GET("/api/indicators")
     suspend fun `indicators`(
         @Header("Authorization") token: String,
-        @Query("includeActiveUnread") `queryIncludeActiveUnread`: Boolean? = null,
+        @Query("includeActiveUnread") `queryIncludeActiveUnread`: String? = null,
     ): Response<Indicators>
 
     @GET("/api/agents")
