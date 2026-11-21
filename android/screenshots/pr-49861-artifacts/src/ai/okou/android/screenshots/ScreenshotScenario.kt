@@ -20,6 +20,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.BySelector
+import androidx.test.uiautomator.Condition
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.Until
 import java.util.UUID
@@ -58,6 +59,7 @@ class ScreenshotScenario {
             )
             auth.state.value = testAuthenticationState(user = user)
             try {
+                device.executeShellCommand("wm size 1080x2340")
                 ActivityScenario.launch(MainActivity::class.java).use { scenario ->
                     node(By.desc("成果")).click()
                     node(By.text(data.checklist.title))
@@ -66,11 +68,28 @@ class ScreenshotScenario {
                     node(By.text("更早"))
                     ScreenshotCapture.capture("artifacts-catalog.png")
 
-                    val field = node(By.desc("搜索成果"))
-                    field.click()
-                    field.text = "产品发布"
-                    node(By.text(data.summary.title))
-                    assertTrue(device.wait(Until.gone(By.pkg(app.packageName).text("昨天")), 10_000))
+                    val editor = By.clazz("android.widget.EditText").enabled(true)
+                    node(editor).click()
+                    node(editor).text = "产品发布"
+                    assertTrue(
+                        "Native query reaches the catalog",
+                        device.wait(
+                            Condition { data.catalogQueries.contains(null to "产品发布") },
+                            12_000,
+                        ),
+                    )
+                    assertTrue(
+                        "Matching results render without date sections",
+                        device.wait(
+                            Condition {
+                                instrumentation.uiAutomation.clearCache()
+                                device.hasObject(
+                                    By.pkg(app.packageName).text(data.summary.title)
+                                ) && !device.hasObject(By.pkg(app.packageName).text("昨天"))
+                            },
+                            10_000,
+                        ),
+                    )
                     var keyboardVisible = false
                     scenario.onActivity {
                         keyboardVisible =

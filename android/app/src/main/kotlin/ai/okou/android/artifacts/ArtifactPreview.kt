@@ -6,7 +6,6 @@ import ai.okou.android.chat.HistoryMarkdown
 import ai.okou.android.chat.rememberChatWaitIndicator
 import android.annotation.SuppressLint
 import android.content.Context
-import android.net.Uri
 import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
@@ -50,6 +49,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -72,6 +72,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import okhttp3.HttpUrl
@@ -252,7 +253,7 @@ internal fun ArtifactAction(
 @Composable
 private fun PreviewContent(preview: ArtifactPreviewState?, offline: Boolean) {
     val content = preview?.content
-    var siteScroll by rememberSaveable { mutableStateOf(0) }
+    var siteScroll by rememberSaveable { mutableIntStateOf(0) }
     val problem = preview?.problem
     val web =
         preview?.item?.kind in setOf(ArtifactKind.Website, ArtifactKind.Presentation) &&
@@ -444,7 +445,7 @@ private fun MediaArtifactPreview(content: ArtifactContent.Media) {
                         failed = true
                         true
                     }
-                    setVideoURI(Uri.parse(content.url.toString()))
+                    setVideoURI(content.url.toString().toUri())
                     player = this
                 }
             },

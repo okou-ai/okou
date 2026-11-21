@@ -59,6 +59,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -77,6 +78,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 
@@ -110,6 +112,7 @@ internal fun ArtifactCatalogList(
         }
     val searchFocus = remember { FocusRequester() }
     val rowFocus = remember { FocusRequester() }
+    val noticePadding = Modifier.padding(16.dp)
 
     LaunchedEffect(restoreRow, page) {
         if (restoreRow != null && page != null) {
@@ -149,7 +152,7 @@ internal fun ArtifactCatalogList(
             ArtifactFilters(filter, onFilter)
         }
         if (state.offline && page?.items?.isNotEmpty() == true) {
-            ArtifactListNotice(R.string.artifact_offline_cached)
+            ArtifactListNotice(R.string.artifact_offline_cached, noticePadding)
         }
         val showSkeleton =
             rememberChatWaitIndicator(page == null && !state.offline && state.problem == null)
@@ -161,14 +164,19 @@ internal fun ArtifactCatalogList(
         ) {
             if (page == null) {
                 when {
-                    state.offline -> item { ArtifactListNotice(R.string.artifact_offline_catalog) }
-                    state.problem != null -> item { ArtifactListNotice(state.problem.label()) }
+                    state.offline ->
+                        item {
+                            ArtifactListNotice(R.string.artifact_offline_catalog, noticePadding)
+                        }
+                    state.problem != null ->
+                        item { ArtifactListNotice(state.problem.label(), noticePadding) }
                     showSkeleton -> items(4) { ArtifactRowSkeleton() }
                 }
             } else if (page.items.isEmpty()) {
                 item {
                     when {
-                        state.offline -> ArtifactListNotice(R.string.artifact_offline_catalog)
+                        state.offline ->
+                            ArtifactListNotice(R.string.artifact_offline_catalog, noticePadding)
                         query.keyword.isNotBlank() ->
                             ArtifactEmpty(
                                 R.string.artifact_no_matches,
@@ -183,7 +191,7 @@ internal fun ArtifactCatalogList(
                             ) {
                                 onFilter(ArtifactFilter.All)
                             }
-                        else -> ArtifactListNotice(R.string.artifact_empty)
+                        else -> ArtifactListNotice(R.string.artifact_empty, noticePadding)
                     }
                 }
             }
@@ -224,7 +232,9 @@ internal fun ArtifactCatalogList(
                 }
             }
             if (page?.items?.isNotEmpty() == true && !state.offline) {
-                state.problem?.let { problem -> item { ArtifactListNotice(problem.label()) } }
+                state.problem?.let { problem ->
+                    item { ArtifactListNotice(problem.label(), noticePadding) }
+                }
                 if (state.reading == ArtifactCatalogRead.More) item { ArtifactRowSkeleton() }
             }
         }
@@ -447,16 +457,13 @@ private fun ArtifactEmpty(@StringRes label: Int, @StringRes action: Int, onClick
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        ArtifactListNotice(label, Modifier)
+        ArtifactListNotice(label)
         ArtifactAction(action, onClick = onClick)
     }
 }
 
 @Composable
-private fun ArtifactListNotice(
-    @StringRes label: Int,
-    modifier: Modifier = Modifier.padding(16.dp),
-) {
+private fun ArtifactListNotice(@StringRes label: Int, modifier: Modifier = Modifier) {
     Text(
         stringResource(label),
         Modifier.fillMaxWidth().then(modifier).semantics { liveRegion = LiveRegionMode.Polite },
@@ -486,6 +493,8 @@ internal class ArtifactDates(
     val yesterday: Long,
     private val formatTime: java.text.DateFormat,
     private val formatDate: java.text.DateFormat,
+    private val formatMonthDay: java.text.DateFormat,
+    private val startOfYear: Long,
     private val todayLabel: String,
     private val yesterdayLabel: String,
 ) {
@@ -499,7 +508,10 @@ internal class ArtifactDates(
     fun timestamp(time: Long, showDay: Boolean): String {
         val value = Date(time)
         val day = group(time)
-        if (day == ArtifactDay.Earlier) return formatDate.format(value)
+        if (day == ArtifactDay.Earlier) {
+            return if (time >= startOfYear) formatMonthDay.format(value)
+            else formatDate.format(value)
+        }
         val clock = formatTime.format(value)
         return if (showDay) "${if (day == ArtifactDay.Today) todayLabel else yesterdayLabel} $clock"
         else clock
@@ -509,6 +521,7 @@ internal class ArtifactDates(
 @Composable
 internal fun rememberArtifactDates(): ArtifactDates {
     val context = LocalContext.current
+    val locale = LocalConfiguration.current.locales[0]
     val calendar =
         Calendar.getInstance().apply {
             set(Calendar.HOUR_OF_DAY, 0)
@@ -517,16 +530,20 @@ internal fun rememberArtifactDates(): ArtifactDates {
             set(Calendar.MILLISECOND, 0)
         }
     val today = calendar.timeInMillis
+    val startOfYear =
+        (calendar.clone() as Calendar).apply { set(Calendar.DAY_OF_YEAR, 1) }.timeInMillis
     calendar.add(Calendar.DATE, -1)
     val yesterday = calendar.timeInMillis
     val todayLabel = stringResource(R.string.artifact_today)
     val yesterdayLabel = stringResource(R.string.artifact_yesterday)
-    return remember(context, today, yesterday, todayLabel, yesterdayLabel) {
+    return remember(context, locale, today, yesterday, todayLabel, yesterdayLabel) {
         ArtifactDates(
             today,
             yesterday,
             DateFormat.getTimeFormat(context),
             DateFormat.getMediumDateFormat(context),
+            SimpleDateFormat(DateFormat.getBestDateTimePattern(locale, "MMMd"), locale),
+            startOfYear,
             todayLabel,
             yesterdayLabel,
         )

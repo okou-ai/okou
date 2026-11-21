@@ -226,7 +226,7 @@ internal fun WorkspaceListToolbar(
 }
 
 @Composable
-internal fun WorkspaceToolEntries(openArtifacts: (() -> Unit)?, artifactModifier: Modifier) {
+internal fun WorkspaceToolEntries(openArtifacts: (() -> Unit)?, artifactFocus: FocusRequester) {
     val stackBelow = with(LocalDensity.current) { 16.sp.toDp() * 19 }
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val stacked = maxWidth <= stackBelow
@@ -251,7 +251,7 @@ internal fun WorkspaceToolEntries(openArtifacts: (() -> Unit)?, artifactModifier
                 R.drawable.ic_inventory_2,
                 R.string.workspace_artifacts,
                 stacked,
-                artifactModifier.weight(1f),
+                Modifier.weight(1f).focusRequester(artifactFocus),
                 onClick = openArtifacts,
             )
         }

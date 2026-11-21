@@ -80,7 +80,6 @@ import androidx.compose.runtime.structuralEqualityPolicy
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -573,7 +572,7 @@ internal fun OkouApp(
                 if (chats != null) {
                     WorkspaceToolEntries(
                         openArtifacts = if (artifacts == null) null else ::openArtifacts,
-                        artifactModifier = Modifier.focusRequester(artifactEntryFocus),
+                        artifactFocus = artifactEntryFocus,
                     )
                 }
             }
