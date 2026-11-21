@@ -14,18 +14,18 @@ APPROVED_ACTIONS = {
     "actions/cache/restore": "55cc8345863c7cc4c66a329aec7e433d2d1c52a9",  # v6.1.0
     "actions/cache/save": "55cc8345863c7cc4c66a329aec7e433d2d1c52a9",  # v6.1.0
     "actions/checkout": "3d3c42e5aac5ba805825da76410c181273ba90b1",  # v7.0.1
-    "actions/create-github-app-token": "64ab729a6294000f5aa4a4bc0b73d1f32bc45510",  # v3.3.0
+    "actions/create-github-app-token": "f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc",  # v3.4.0
     "actions/download-artifact": "9000827ccba6bdab643e8b6fd33ac0654aef8333",  # v8.0.2
     "actions/github-script": "3a2844b7e9c422d3c10d287c895573f7108da1b3",  # v9.0.0
     "actions/setup-node": "949feb2413d6458794dcd2491c4babbbce0c15c1",  # v7.1.0
-    "actions/setup-java": "77dd5b2ce225ea11469928ac317850245a74ae78",  # v6.2.0
+    "actions/setup-java": "d1374f8ac74474200d16ef8ecee22c7ae7a51880",  # v6.3.0
     "actions/setup-python": "6d4fd22b20465ccc0f7354476588e8df7c9ca0e0",  # v7
     "actions/upload-artifact": "cf430e030ddbb5b0abf93d22962f4752f3646cd9",  # v7.0.2
-    "astral-sh/setup-uv": "68559e99cc807c1eb7e9238fd43a15bba460eec2",  # v10.3.3
+    "astral-sh/setup-uv": "1db35dd8eee11c5894872e0b383ae6c406cf738d",  # v10.4.0
     "bobheadxi/deployments": "648679e8e4915b27893bd7dbc35cb504dc915bc8",  # v1
     "codecov/codecov-action": "303a32d7a59b442fa8d48b6a1cc6825c09c847a5",  # v7.1.1
     "docker/build-push-action": "c3c9e263c25d99ce0380d002d59b67737d91b0dc",  # v7.4.0
-    "docker/login-action": "81c6f93d4bc991e510b342a00b419b3bb4efc5c6",  # v4.7.0
+    "docker/login-action": "8aa5831fb8d48d8f76594c7ddde61ae58019f550",  # v4.8.0
     "docker/setup-buildx-action": "f87e5991a6d7451dcb8d9637bfbc97413f497069",  # v4.4.1
     "dopplerhq/secrets-fetch-action": "451892f16195f9ac360e1a5bcbf0b5fd0e957534",  # v2.0.0
     "github/codeql-action/analyze": "33d7b85da1a04171e211befe2c739303b9a4c066",  # v4.39.3
@@ -37,7 +37,7 @@ APPROVED_ACTIONS = {
     "pnpm/action-setup": "73e46992e05b19abd31f2f3c20e0e7370d762115",  # v6.1.1
     "slackapi/slack-github-action": "dcb1066f776dd043e64d0e8ba94ca15cc7e1875d",  # v4.0.0
     "swatinem/rust-cache": "d1527c8f67ef9af357290475d4af4b0fab8f12e0",  # v2.9.3
-    "taiki-e/install-action": "cfdb7ed4ccc7c7dce37759eae89dc5674b469b39",  # v2.90.3
+    "taiki-e/install-action": "75a7c0f87bd666af3cdb75c5b9e9d03ab6044e6f",  # v2.90.6
 }
 SHA_PATTERN = re.compile(r"[0-9a-f]{40}")
 
