@@ -170,3 +170,7 @@ Original test `Enter confirms a note and one drag is a single undo step`. [Regis
 - **Given** An image contains an annotation with no note.
 - **When** The user edits it to “Raise this panel,” presses Enter, then drags the mark and presses Ctrl+Z once.
 - **Then** Enter confirms the note and closes its editor; one undo restores the mark’s original left position of 8% after the drag.
+
+### Batch 42 disposition
+
+- `chat-attachment-annotation-018` remains unaccepted. A restored one-mark draft without a copy rebuilds and enables Send. The separate requirement for exactly one original-image read cannot be established through the permitted page evidence.

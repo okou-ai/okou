@@ -114,3 +114,10 @@ Original test `Continue saving the next pin change after an earlier request fail
 - **Given** A chat thread is open on mobile. The first pin request is pending and will fail, and the following unpin request will also fail.
 - **When** Choose Pin chat, choose Unpin chat before the pin request completes, then allow both requests to finish.
 - **Then** The app shows both pin and unpin errors, and Pin chat is enabled afterward, showing that the next pin change was sent despite the earlier failure.
+
+### Batch 42 disposition
+
+- `chat-thread-header-actions-001` remains unaccepted. The desktop More menu exposes Automations, Manage emails and Open browser. Its starting Pin action is on mobile. Pinning via the sidebar would change the entry point.
+- `chat-thread-header-actions-002` remains unaccepted. Even with a thread draft email, the desktop More menu has those three items. The frozen Back control, primary email action and Rename menu path belong to mobile.
+- `chat-thread-header-actions-003` remains unaccepted. On mobile, Manage emails is primary. More contains Pin, Rename, Mute, Archive, Automations and Open browser. The frozen three-item menu, email launch and focus-return sequence belong to desktop.
+- `chat-thread-header-actions-008` remains unaccepted. Hold the archive denial until the page leaves the thread. The app is at / when the error appears. The frozen agent-specific chat destination was retired with the workspace-chat changes.

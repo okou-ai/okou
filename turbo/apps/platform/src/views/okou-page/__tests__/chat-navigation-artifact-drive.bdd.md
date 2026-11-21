@@ -178,3 +178,9 @@ Original test `google editor conversion > does not mark an unconverted response 
 - **Given** A text artifact is ready for Google Docs conversion, but the upload response returns the original file unchanged.
 - **When** I upload it to Google Docs.
 - **Then** The app reports that conversion could not be confirmed and advises checking Drive before retrying; it does not treat the response as a successful native document.
+
+### Batch 42 disposition
+
+- `chat-navigation-artifact-drive-004` remains unaccepted. During a catalog and account-list outage, the connected artifact offers direct upload using its selected account, confirms sync and downloads. There is no Connect or authorization step for this snapshot.
+- `chat-navigation-artifact-drive-013` remains unaccepted. Once authorization starts a pending upload, closing its preview aborts the external request. Reopening yields a usable Download menu with no pending operation to cancel. The frozen order requires cancellation after reopening.
+- `chat-navigation-artifact-drive-017` remains unaccepted. The reconnected account successfully receives Google conversion followed by original upload; the Docs link survives. A separate clause requires absence of another OAuth request. Neither link persistence nor the two uploads proves that request-level condition.
