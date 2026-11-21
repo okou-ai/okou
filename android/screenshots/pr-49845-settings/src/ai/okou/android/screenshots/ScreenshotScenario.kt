@@ -21,7 +21,16 @@ import ai.okou.android.updates.UpdateService
 import ai.okou.android.updates.UpdateStore
 import android.app.LocaleManager
 import android.view.KeyEvent
+import android.view.View
+import android.view.ViewGroup
 import android.view.accessibility.AccessibilityWindowInfo
+import android.view.inspector.WindowInspector
+import androidx.compose.ui.platform.ViewRootForTest
+import androidx.compose.ui.semantics.SemanticsNode
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -142,7 +151,8 @@ class ScreenshotScenario {
                         WAIT,
                     )
                 )
-            editor.text = "# 回复偏好\n先给结论，用 **简体中文**。"
+            val editedInstructions = "# 回复偏好\n先给结论，用 **简体中文**。"
+            editor.text = editedInstructions
             checkNotNull(
                 device.wait(
                     Until.findObject(
@@ -159,6 +169,7 @@ class ScreenshotScenario {
                 }
             )
                 assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
+            awaitStyledInstructions(editedInstructions)
             capture("06-instructions.png")
             backToSettings()
 
@@ -261,6 +272,41 @@ class ScreenshotScenario {
     private fun capture(file: String) {
         device.waitForIdle()
         ScreenshotCapture.capture(file)
+    }
+
+    private fun awaitStyledInstructions(source: String) {
+        val styled =
+            object : Condition<UiDevice, Boolean> {
+                override fun apply(unused: UiDevice): Boolean {
+                    var ready = false
+                    instrumentation.runOnMainSync {
+                        ready =
+                            WindowInspector.getGlobalWindowViews().any {
+                                it.containsInstructions(source)
+                            }
+                    }
+                    return ready
+                }
+            }
+        check(device.wait(styled, WAIT) == true) { "Expected rendered heading and bold text" }
+    }
+
+    private fun View.containsInstructions(source: String): Boolean =
+        when (this) {
+            is ViewRootForTest ->
+                semanticsOwner.unmergedRootSemanticsNode.containsInstructions(source)
+            is ViewGroup -> (0 until childCount).any { getChildAt(it).containsInstructions(source) }
+            else -> false
+        }
+
+    private fun SemanticsNode.containsInstructions(source: String): Boolean {
+        val text = config.getOrNull(SemanticsProperties.EditableText)
+        return if (text?.text != source) children.any { it.containsInstructions(source) }
+        else
+            text.spanStyles.any { it.start == 0 && it.item.fontSize == 25.sp } &&
+                text.spanStyles.any {
+                    it.start > source.indexOf('\n') && it.item.fontWeight == FontWeight.Bold
+                }
     }
 
     private fun overrideValue(command: String) =
