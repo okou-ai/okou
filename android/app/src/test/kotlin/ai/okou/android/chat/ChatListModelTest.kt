@@ -132,6 +132,38 @@ class ChatListModelTest {
         override suspend fun indicators() = statusRead()
     }
 
+    private inner class ArchiveService : Service() {
+        private val events =
+            mutableListOf(
+                17L to chatEventWire(),
+                18L to
+                    chatEventWire(
+                        id = "77777777-7777-4777-8777-777777777777",
+                        seq = 18,
+                        thread = CHAT_IN_PROJECT,
+                        title = "Second chat",
+                    ),
+            )
+        var beforeArchive: suspend (String) -> Unit = {}
+
+        override suspend fun chatEvents(since: Long?) =
+            page(events.filter { it.first > (since ?: 0) }.map { it.second })
+
+        override suspend fun setArchived(threadId: String, archived: Boolean, eventId: String) {
+            if (archived) beforeArchive(threadId)
+            val seq = events.last().first + 1
+            events.add(
+                seq to
+                    chatEventWire(
+                        id = eventId,
+                        seq = seq,
+                        thread = threadId,
+                        kind = if (archived) "archived" else "unarchived",
+                    )
+            )
+        }
+    }
+
     private suspend fun TestScope.withCatchUpModel(
         service: ChatListService,
         realtime: TestRealtimeService? = null,
@@ -354,6 +386,108 @@ class ChatListModelTest {
             store.clear()
             runCurrent()
             Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun aLaterRejectedArchiveDoesNotHideAnEarlierConfirmedUndo() = runTest {
+        val firstArchive = CompletableDeferred<Unit>()
+        val secondArchive = CompletableDeferred<Unit>()
+        val indicators = CompletableDeferred<Indicators>()
+        val source = ArchiveService()
+        source.beforeArchive = { threadId ->
+            if (threadId == CHAT_IN_PROJECT) {
+                secondArchive.await()
+                throw ApiFailure.Http(400, null, null, null)
+            }
+            firstArchive.await()
+        }
+        withCatchUpModel(source) { model ->
+            model.refresh()
+            advanceUntilIdle()
+            source.statusRead = { indicators.await() }
+            model.performRowAction(CHAT_PERSONAL, ChatRowAction.Archive)
+            model.performRowAction(CHAT_IN_PROJECT, ChatRowAction.Archive)
+            runCurrent()
+            firstArchive.complete(Unit)
+            advanceUntilIdle()
+            val undo = model.uiState.value.rowUndo
+            assertEquals(ChatReadPhase.Loading, model.uiState.value.indicatorsPhase)
+            assertEquals(CHAT_PERSONAL, undo?.threadId)
+
+            secondArchive.complete(Unit)
+            advanceUntilIdle()
+            assertSame(undo, model.uiState.value.rowUndo)
+            assertTrue(model.uiState.value.threads.single { it.id == CHAT_PERSONAL }.archived)
+            assertFalse(model.uiState.value.threads.single { it.id == CHAT_IN_PROJECT }.archived)
+
+            model.undoRowAction(checkNotNull(undo))
+            advanceUntilIdle()
+            assertFalse(model.uiState.value.threads.single { it.id == CHAT_PERSONAL }.archived)
+            assertNull(model.uiState.value.rowUndo)
+            indicators.complete(Indicators(emptyMap(), emptyMap(), emptyMap()))
+            advanceUntilIdle()
+        }
+    }
+
+    @Test
+    fun anEarlierArchiveConfirmingLateKeepsTheNewerUndo() = runTest {
+        val firstArchive = CompletableDeferred<Unit>()
+        val source = ArchiveService()
+        source.beforeArchive = { if (it == CHAT_PERSONAL) firstArchive.await() }
+        withCatchUpModel(source) { model ->
+            model.refresh()
+            advanceUntilIdle()
+            model.performRowAction(CHAT_PERSONAL, ChatRowAction.Archive)
+            model.performRowAction(CHAT_IN_PROJECT, ChatRowAction.Archive)
+            advanceUntilIdle()
+            val undo = model.uiState.value.rowUndo
+            assertEquals(CHAT_IN_PROJECT, undo?.threadId)
+
+            firstArchive.complete(Unit)
+            advanceUntilIdle()
+            assertTrue(model.uiState.value.threads.all { it.archived })
+            assertSame(undo, model.uiState.value.rowUndo)
+
+            model.undoRowAction(checkNotNull(undo))
+            advanceUntilIdle()
+            val archived = model.uiState.value.threads.filter { it.archived }
+            assertEquals(listOf(CHAT_PERSONAL), archived.map { it.id })
+        }
+    }
+
+    @Test
+    fun aRejectedUnarchiveDoesNotSettleAnEarlierUnconfirmedArchive() = runTest {
+        val source =
+            object : Service() {
+                override suspend fun chatEvents(since: Long?) =
+                    if (since == null) page() else page(emptyList())
+
+                override suspend fun setArchived(
+                    threadId: String,
+                    archived: Boolean,
+                    eventId: String,
+                ) {
+                    if (archived) throw IOException("Unavailable response")
+                    throw ApiFailure.Http(400, null, null, null)
+                }
+            }
+        withCatchUpModel(source) { model ->
+            model.refresh()
+            advanceUntilIdle()
+            model.performRowAction(CHAT_PERSONAL, ChatRowAction.Archive)
+            advanceUntilIdle()
+            assertTrue(model.uiState.value.threads.single().archived)
+
+            model.performRowAction(CHAT_PERSONAL, ChatRowAction.Unarchive)
+            advanceUntilIdle()
+            assertTrue(model.uiState.value.threads.single().archived)
+            assertEquals(ChatRowAction.Unarchive, model.uiState.value.failedRowAction)
+            assertNull(model.uiState.value.rowUndo)
+
+            model.reloadAfterRowActionFailure()
+            advanceUntilIdle()
+            assertFalse(model.uiState.value.threads.single().archived)
         }
     }
 
