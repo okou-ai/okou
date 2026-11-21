@@ -147,7 +147,6 @@ describe("artifact catalog lazy Drive detail metadata", () => {
     expect(ready.body.googleDriveConnectionId).toBe(connection.id);
     expect(ready.body.googleDriveSync).toStrictEqual({
       status: "not_synced",
-      accountReady: true,
     });
     expect(provider.queries).toHaveLength(1);
   });
@@ -240,7 +239,6 @@ describe("artifact catalog lazy Drive detail metadata", () => {
     expect(detail.body.googleDriveConnectionId).toBe(connection.id);
     expect(detail.body.googleDriveSync).toStrictEqual({
       status: "synced",
-      accountReady: true,
       originalUploaded: true,
       id: "converted-copy",
       name: "report",
@@ -370,7 +368,6 @@ describe("artifact catalog lazy Drive detail metadata", () => {
       );
       expect(detail.body.googleDriveSync).toStrictEqual({
         status: "not_synced",
-        accountReady: true,
       });
     }
     expect(refresh.refreshBodies).toHaveLength(1);

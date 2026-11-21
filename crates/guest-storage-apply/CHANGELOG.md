@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.32.39](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.38...guest-storage-apply-v0.32.39) (2026-11-21)
+
+
+### Documentation
+
+* link workflow copy adapters to their retirement issue ([#49675](https://github.com/okou-ai/okou/issues/49675)) ([4806b77](https://github.com/okou-ai/okou/commit/4806b774b21d728224cf8995d5d333e7da9dd7c4))
+
 ## [0.32.38](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.37...guest-storage-apply-v0.32.38) (2026-11-20)
 
 

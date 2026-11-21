@@ -287,7 +287,6 @@ function mockTableCloudFiles(
         googleDriveConnectionId: connectionId,
         googleDriveSync: options.googleDriveSync?.() ?? {
           status: "not_synced",
-          accountReady: true,
         },
       });
     },
@@ -567,7 +566,7 @@ test.each(["ready", "connect", "reconnect", "scope-required"] as const)(
                   ? { action: "reconnect", connectionId: CONNECTION_ID }
                   : { action: "connect" },
             }
-          : { status: "not_synced", accountReady: true };
+          : { status: "not_synced" };
       },
     });
     context.mocks.api(

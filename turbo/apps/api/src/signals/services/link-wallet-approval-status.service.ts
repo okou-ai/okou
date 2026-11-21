@@ -43,6 +43,7 @@ export const walletApprovalStatus$ = command(
             linkWalletSpends.authorizationId,
           ),
           isNull(linkWalletConnections.revokedAt),
+          isNull(linkWalletConnections.retiredAt),
         ),
       )
       .where(

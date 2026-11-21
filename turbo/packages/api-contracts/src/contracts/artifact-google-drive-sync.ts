@@ -20,19 +20,11 @@ export const chatThreadArtifactGoogleDriveRecoverySchema = discriminatedUnion(
   ],
 );
 
-const chatThreadArtifactGoogleDriveAccountReadyShape = {
-  /**
-   * Emitted when the Chat allows the account and its credentials are ready.
-   */
-  accountReady: literal(true),
-};
-
 export const chatThreadArtifactGoogleDriveSyncSchema = discriminatedUnion(
   "status",
   [
     object({
       status: literal("synced"),
-      ...chatThreadArtifactGoogleDriveAccountReadyShape,
       id: string(),
       name: string(),
       webViewLink: string().nullable(),
@@ -41,7 +33,6 @@ export const chatThreadArtifactGoogleDriveSyncSchema = discriminatedUnion(
     }),
     object({
       status: literal("not_synced"),
-      ...chatThreadArtifactGoogleDriveAccountReadyShape,
     }),
     object({
       status: literal("disconnected"),
@@ -49,7 +40,6 @@ export const chatThreadArtifactGoogleDriveSyncSchema = discriminatedUnion(
     }),
     object({
       status: literal("unknown"),
-      ...chatThreadArtifactGoogleDriveAccountReadyShape,
     }),
   ],
 );

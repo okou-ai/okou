@@ -26,15 +26,14 @@ describe("agentDrafts schema", () => {
       columns: [
         "user_id",
         "org_id",
-        "agent_id",
         "draft_user_message",
         "draft_attachments",
         "created_at",
         "updated_at",
       ],
-      indexes: ["idx_agent_drafts_user_org_agent"],
+      indexes: ["idx_agent_drafts_user_org"],
       checks: ["agent_drafts_draft_user_message_check"],
-      foreignKeys: ["agent_drafts_agent_id_agents_id_fk"],
+      foreignKeys: [],
     });
   });
 

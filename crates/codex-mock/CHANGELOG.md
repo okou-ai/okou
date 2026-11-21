@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.90](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.89...codex-mock-v0.12.90) (2026-11-21)
+
+
+### Refactoring
+
+* **codex-mock:** centralize turn input persistence metadata ([#49640](https://github.com/okou-ai/okou/issues/49640)) ([6f537e3](https://github.com/okou-ai/okou/commit/6f537e3b922a3821a0db007a829e428bdf148f07))
+
 ## [0.12.89](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.88...codex-mock-v0.12.89) (2026-11-20)
 
 ## [0.12.88](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.87...codex-mock-v0.12.88) (2026-11-20)

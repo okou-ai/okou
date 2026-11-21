@@ -391,7 +391,7 @@ describe("CHAT-02: run-level model overrides", () => {
     "promotes queued and immediate $name Fast from $origin into the Runner execution",
     async ({ route, origin }) => {
       const owned = await publicChatActor(context);
-      const { actor, agentId } = owned;
+      const { actor } = owned;
       await owned.run(async () => {
         await api.ensurePersonalSubscriptionModel(actor, {
           model: "claude-fable-5-1",
@@ -417,7 +417,6 @@ describe("CHAT-02: run-level model overrides", () => {
           route.type === "codex-oauth-token" ? "fast" : "priority";
         const queuedId = randomUUID();
         const body = {
-          agentId,
           threadId: anchor.threadId,
           clientEventId: queuedId,
           prompt: "queued Luna Fast",
@@ -465,7 +464,6 @@ describe("CHAT-02: run-level model overrides", () => {
 
         const immediateId = randomUUID();
         const immediateBody = {
-          agentId,
           clientEventId: immediateId,
           prompt: "immediate Luna Fast",
           model: route.selectedModel,
