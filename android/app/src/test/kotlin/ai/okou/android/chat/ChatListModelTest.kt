@@ -132,6 +132,38 @@ class ChatListModelTest {
         override suspend fun indicators() = statusRead()
     }
 
+    private inner class ArchiveService : Service() {
+        private val events =
+            mutableListOf(
+                17L to chatEventWire(),
+                18L to
+                    chatEventWire(
+                        id = "77777777-7777-4777-8777-777777777777",
+                        seq = 18,
+                        thread = CHAT_IN_PROJECT,
+                        title = "Second chat",
+                    ),
+            )
+        var beforeArchive: suspend (String) -> Unit = {}
+
+        override suspend fun chatEvents(since: Long?) =
+            page(events.filter { it.first > (since ?: 0) }.map { it.second })
+
+        override suspend fun setArchived(threadId: String, archived: Boolean, eventId: String) {
+            if (archived) beforeArchive(threadId)
+            val seq = events.last().first + 1
+            events.add(
+                seq to
+                    chatEventWire(
+                        id = eventId,
+                        seq = seq,
+                        thread = threadId,
+                        kind = if (archived) "archived" else "unarchived",
+                    )
+            )
+        }
+    }
+
     private suspend fun TestScope.withCatchUpModel(
         service: ChatListService,
         realtime: TestRealtimeService? = null,
@@ -174,43 +206,14 @@ class ChatListModelTest {
         val firstArchive = CompletableDeferred<Unit>()
         val secondArchive = CompletableDeferred<Unit>()
         val indicators = CompletableDeferred<Indicators>()
-        val events =
-            mutableListOf(
-                17L to chatEventWire(),
-                18L to
-                    chatEventWire(
-                        id = "77777777-7777-4777-8777-777777777777",
-                        seq = 18,
-                        thread = CHAT_IN_PROJECT,
-                        title = "Second chat",
-                    ),
-            )
-        val source =
-            object : Service() {
-                override suspend fun chatEvents(since: Long?) =
-                    page(events.filter { it.first > (since ?: 0) }.map { it.second })
-
-                override suspend fun setArchived(
-                    threadId: String,
-                    archived: Boolean,
-                    eventId: String,
-                ) {
-                    if (threadId == CHAT_IN_PROJECT) {
-                        secondArchive.await()
-                        throw ApiFailure.Http(400, null, null, null)
-                    }
-                    if (archived) firstArchive.await()
-                    val seq = events.last().first + 1
-                    events.add(
-                        seq to
-                            chatEventWire(
-                                id = eventId,
-                                seq = seq,
-                                kind = if (archived) "archived" else "unarchived",
-                            )
-                    )
-                }
+        val source = ArchiveService()
+        source.beforeArchive = { threadId ->
+            if (threadId == CHAT_IN_PROJECT) {
+                secondArchive.await()
+                throw ApiFailure.Http(400, null, null, null)
             }
+            firstArchive.await()
+        }
         withCatchUpModel(source) { model ->
             model.refresh()
             advanceUntilIdle()
@@ -236,6 +239,32 @@ class ChatListModelTest {
             assertNull(model.uiState.value.rowUndo)
             indicators.complete(Indicators(emptyMap(), emptyMap(), emptyMap()))
             advanceUntilIdle()
+        }
+    }
+
+    @Test
+    fun anEarlierArchiveConfirmingLateKeepsTheNewerUndo() = runTest {
+        val firstArchive = CompletableDeferred<Unit>()
+        val source = ArchiveService()
+        source.beforeArchive = { if (it == CHAT_PERSONAL) firstArchive.await() }
+        withCatchUpModel(source) { model ->
+            model.refresh()
+            advanceUntilIdle()
+            model.performRowAction(CHAT_PERSONAL, ChatRowAction.Archive)
+            model.performRowAction(CHAT_IN_PROJECT, ChatRowAction.Archive)
+            advanceUntilIdle()
+            val undo = model.uiState.value.rowUndo
+            assertEquals(CHAT_IN_PROJECT, undo?.threadId)
+
+            firstArchive.complete(Unit)
+            advanceUntilIdle()
+            assertTrue(model.uiState.value.threads.all { it.archived })
+            assertSame(undo, model.uiState.value.rowUndo)
+
+            model.undoRowAction(checkNotNull(undo))
+            advanceUntilIdle()
+            val archived = model.uiState.value.threads.filter { it.archived }
+            assertEquals(listOf(CHAT_PERSONAL), archived.map { it.id })
         }
     }
 
