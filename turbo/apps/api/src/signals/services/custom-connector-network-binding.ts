@@ -1,6 +1,6 @@
 import { customConnectorNetworkMetadataSchema } from "@okouai/api-contracts/validators/custom-connector-network";
 import { cloudflareAccessConfigs } from "@okouai/db/schema/cloudflare-access-config";
-import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
+import { orgCustomConnectors } from "@okouai/db/runtime/org-custom-connector";
 import { orgCustomConnectorCloudflareBindings } from "@okouai/db/schema/org-custom-connector-cloudflare-binding";
 import { and, eq, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";

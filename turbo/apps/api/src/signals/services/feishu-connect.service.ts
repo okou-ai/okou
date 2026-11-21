@@ -4,7 +4,7 @@ import { object, uuid } from "zod";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { connectors } from "@okouai/db/schema/connector";
-import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
+import { orgCustomConnectors } from "@okouai/db/runtime/org-custom-connector";
 import { secrets } from "@okouai/db/schema/secret";
 import type { FeishuPlatform } from "@okouai/core/feishu-platform";
 import { command, computed } from "ccstate";
