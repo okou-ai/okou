@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemGestures
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -36,12 +37,16 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.abs
 import kotlin.math.roundToInt
+
+private val swipeReveal = 112.dp
+private val swipeLabelInset = 12.dp
 
 @Composable
 internal fun ChatRowSwipe(
@@ -72,7 +77,7 @@ internal fun ChatRowSwipe(
             Modifier.pointerInput(readAction, archiveAction, direction, leftEdge, rightEdge) {
                 val directionSign = if (direction == LayoutDirection.Ltr) 1f else -1f
                 val threshold = 72.dp.toPx()
-                val reveal = 112.dp.toPx()
+                val reveal = swipeReveal.toPx()
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
                     val x = windowX + down.position.x
@@ -83,9 +88,10 @@ internal fun ChatRowSwipe(
                     )
                         return@awaitEachGesture
                     val start =
-                        awaitHorizontalTouchSlopOrCancellation(down.id) { change, overSlop ->
-                            val logical = overSlop * directionSign
+                        awaitHorizontalTouchSlopOrCancellation(down.id) { change, _ ->
+                            if (change.id != down.id) return@awaitHorizontalTouchSlopOrCancellation
                             val delta = change.position - down.position
+                            val logical = delta.x * directionSign
                             val available =
                                 if (logical > 0) readAction != null else archiveAction != null
                             if (available && abs(delta.x) > abs(delta.y)) change.consume()
@@ -98,9 +104,11 @@ internal fun ChatRowSwipe(
                     try {
                         val released =
                             horizontalDrag(start.id) { change ->
-                                distance += change.positionChange().x * directionSign
-                                offset = distance.coerceIn(minimum, maximum)
-                                change.consume()
+                                if (change.id == down.id) {
+                                    distance += change.positionChange().x * directionSign
+                                    offset = distance.coerceIn(minimum, maximum)
+                                    change.consume()
+                                }
                             }
                         if (released) {
                             val selected =
@@ -127,13 +135,16 @@ internal fun ChatRowSwipe(
             Box(
                 Modifier.matchParentSize()
                     .background(colors.secondaryContainer)
-                    .padding(horizontal = 12.dp)
+                    .padding(horizontal = swipeLabelInset)
                     .clearAndSetSemantics {},
                 contentAlignment = if (offset > 0) Alignment.CenterStart else Alignment.CenterEnd,
             ) {
                 Text(
                     stringResource(revealed.label()),
+                    modifier = Modifier.widthIn(max = swipeReveal - swipeLabelInset),
                     color = colors.onSecondaryContainer,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
                     style =
                         MaterialTheme.typography.labelMedium.copy(
                             fontSize = 13.sp,
