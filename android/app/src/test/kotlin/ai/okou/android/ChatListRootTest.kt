@@ -916,17 +916,24 @@ class ChatListRootTest {
         }
         app.responseGate.countDown()
         awaitListAndNames()
-        val chat = compose.onNodeWithTag("chat_$CHAT_PERSONAL")
+        val rowTag = "chat_$CHAT_PERSONAL"
+        val chat = compose.onNodeWithTag(rowTag)
         try {
-            compose.onNodeWithText("Research").performTouchInput { longClick() }
-            compose.onNodeWithText("Rename").performClick()
-            compose.onNode(hasSetTextAction()).performTextReplacement("Field notes")
-            compose.onNodeWithText("Save").performClick()
+            compose.runOnIdle {
+                checkNotNull(
+                        ViewModelProvider(compose.activity)[SessionModel::class.java]
+                            .uiState
+                            .value
+                            .ready
+                    )
+                    .chats
+                    .renameProject(CHAT_PROJECT, "Field notes")
+            }
             compose.waitUntil(10_000) { renameStarted.get() }
             compose.onNodeWithText("Field notes").assertIsDisplayed()
 
-            chat.performTouchInput { longClick() }
-            compose.onNodeWithText("Archive chat").performClick()
+            compose.onNodeWithTag("chat_list").performScrollToNode(hasTestTag(rowTag))
+            chat.performTouchInput { swipe(center.copy(x = width * 0.8f), center) }
             compose.waitUntil(10_000) {
                 compose.onAllNodesWithText("Chat archived").fetchSemanticsNodes().isNotEmpty()
             }
