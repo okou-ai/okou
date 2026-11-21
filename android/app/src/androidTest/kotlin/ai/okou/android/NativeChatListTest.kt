@@ -225,30 +225,17 @@ class NativeChatListTest {
                 checkNotNull(
                     device.wait(Until.findObject(By.pkg(app.packageName).text(value)), 10_000)
                 )
-            fun tool(label: String) {
-                val node =
-                    checkNotNull(
+            fun tool(label: String) =
+                checkNotNull(
                         device.wait(Until.findObject(By.pkg(app.packageName).desc(label)), 10_000)
                     ) {
                         "Missing workspace tool $label"
                     }
-                val enabled = label == app.getString(R.string.workspace_artifacts)
-                assertEquals("Workspace tool $label availability", enabled, node.isEnabled)
-                if (enabled) {
-                    node.click()
-                    assertNotNull(
-                        device.wait(
-                            Until.findObject(
-                                By.pkg(app.packageName)
-                                    .desc(app.getString(R.string.artifact_search))
-                            ),
-                            10_000,
-                        )
-                    )
-                    assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
-                    device.awaitChatList(app)
-                } else assertFalse(node.isClickable)
-            }
+                    .also { node ->
+                        val enabled = label == app.getString(R.string.workspace_artifacts)
+                        assertEquals("Workspace tool $label availability", enabled, node.isEnabled)
+                        if (!enabled) assertFalse(node.isClickable)
+                    }
             fun click(selector: UiSelector) {
                 // Resolve at action time. The SDK return acknowledges accessibility events;
                 // verify Compose's actual application outcomes below instead.
@@ -308,6 +295,17 @@ class NativeChatListTest {
             device.awaitChatList(app)
             revealText("Research")
             toolLabels.forEach { tool(it) }
+            tool(app.getString(R.string.workspace_artifacts)).click()
+            assertNotNull(
+                device.wait(
+                    Until.findObject(
+                        By.pkg(app.packageName).desc(app.getString(R.string.artifact_search))
+                    ),
+                    10_000,
+                )
+            )
+            assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
+            device.awaitChatList(app)
             takeScreenshot().writeToTestStorage("android-list-home")
             click(UiSelector().description(app.getString(R.string.chat_search_workspace)))
             text(app.getString(R.string.chat_search_recent))
