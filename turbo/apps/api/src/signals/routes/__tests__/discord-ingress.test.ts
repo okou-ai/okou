@@ -1092,7 +1092,6 @@ describe("canonical Discord ingress", () => {
       expect(created).toHaveLength(1);
       expect(created[0]).toMatchObject({
         chatThreadId: thread.id,
-        agentId: actor.defaultAgentId,
         selectedModel: thread.selectedModel,
         modelSettings: thread.modelSettings,
         cloudBrowserEnabled: thread.cloudBrowserEnabled,

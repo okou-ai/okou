@@ -4404,7 +4404,6 @@ describe("okou workflow automations", () => {
       ).toStrictEqual([
         expect.objectContaining({
           chatThreadId: threadId,
-          agentId: owned.agentId,
           title: "Lazy workflow destination",
           selectedModel: "claude-fable-5-1",
           modelSettings: {},

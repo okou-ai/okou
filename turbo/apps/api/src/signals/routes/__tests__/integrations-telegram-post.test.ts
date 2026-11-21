@@ -2518,7 +2518,6 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     expect(first.seqId).toBeLessThan(second.seqId);
     for (const event of created) {
       expect(event).toMatchObject({
-        agentId: fixture.composeId,
         title: null,
         selectedModel: "claude-fable-5-1",
         modelSettings: preference.body.modelSettings,

@@ -86,7 +86,6 @@
           "title": "Anbieter vorübergehend nicht erreichbar"
         }
       },
-      "fallbackAgent": "Agent",
       "fields": {
         "duration": "Dauer",
         "model": "Modell",

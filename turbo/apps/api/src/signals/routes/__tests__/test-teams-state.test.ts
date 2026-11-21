@@ -176,7 +176,6 @@ describe("Teams message launch context", () => {
         expect.objectContaining({
           status: "running",
           triggerSource: "teams",
-          agentId: null,
           prompt: "hello from teams diagnostics",
         }),
       );
@@ -194,7 +193,6 @@ describe("Teams message launch context", () => {
       expect(detail.body).toMatchObject({
         status: "running",
         triggerSource: "teams",
-        agentId: null,
         prompt: "hello from teams diagnostics",
       });
       const execution = await createRunsApi(context).executionInput(

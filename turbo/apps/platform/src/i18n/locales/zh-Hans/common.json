@@ -86,7 +86,6 @@
           "title": "提供方暂时不可用"
         }
       },
-      "fallbackAgent": "智能体",
       "fields": {
         "duration": "时长",
         "model": "模型",
