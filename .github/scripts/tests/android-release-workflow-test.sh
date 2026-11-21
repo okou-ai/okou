@@ -26,7 +26,39 @@ for value, expected in [('true', True), ('false', False), ('', False)]:
 checkout = next(step for step in job['steps'] if step.get('uses', '').startswith('actions/checkout'))
 assert checkout['with']['ref'] == '${{ needs.release-please.outputs.release_target }}'
 assert checkout['with']['persist-credentials'] is False
-assert checkout['with']['fetch-depth'] == 0
+assert checkout['with']['fetch-depth'] == 1
+assert job['env']['ANDROID_RELEASE_SOURCE_SHA'] == checkout['with']['ref']
+history, = (step for step in job['steps'] if step.get('name') == 'Fetch complete history for the release source')
+build, = (step for step in job['steps'] if 'SENTRY_DSN_ANDROID' in step.get('env', {}))
+assert job['steps'].index(checkout) < job['steps'].index(history) < job['steps'].index(build)
+
+with tempfile.TemporaryDirectory() as temp:
+    origin = Path(temp) / 'origin'
+    source = Path(temp) / 'source'
+
+    def git(directory, *args):
+        return subprocess.check_output(['git', '-C', str(directory), *args], text=True).strip()
+
+    origin.mkdir()
+    git(origin, 'init', '-q', '--initial-branch=main')
+    git(origin, 'config', 'uploadpack.allowFilter', 'true')
+    for message in ('ancestor', 'release', 'later push'):
+        git(origin, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.com',
+            'commit', '-q', '--allow-empty', '-m', message)
+    release_sha = git(origin, 'rev-parse', 'HEAD^')
+    git(origin, 'tag', 'later-tag')
+    source.mkdir()
+    git(source, 'init', '-q')
+    git(source, 'remote', 'add', 'origin', origin.as_uri())
+    git(source, 'fetch', '-q', '--depth=1', '--no-tags', 'origin', release_sha)
+    git(source, 'switch', '-q', '--detach', release_sha)
+    subprocess.run(['bash', '-ec', history['run']], cwd=source, check=True,
+                   env=dict(os.environ, ANDROID_RELEASE_SOURCE_SHA=release_sha, GITHUB_SHA='invalid'))
+    assert git(source, 'rev-parse', 'HEAD') == release_sha
+    assert git(source, 'rev-parse', '--is-shallow-repository') == 'false'
+    assert git(source, 'rev-list', '--count', 'HEAD') == '2'
+    assert git(source, 'for-each-ref', 'refs/remotes', 'refs/tags') == ''
+
 assert job['environment'] == 'production'
 assert job['permissions'] == {'contents': 'write'}
 assert not any('artifact' in step.get('uses', '') for step in job['steps'])

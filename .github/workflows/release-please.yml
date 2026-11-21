@@ -546,7 +546,11 @@ jobs:
         with:
           ref: ${{ needs.release-please.outputs.release_target }}
           persist-credentials: false
-          fetch-depth: 0
+          fetch-depth: 1
+      - name: Fetch complete history for the release source
+        run: >-
+          git -c protocol.version=2 fetch --no-tags --no-recurse-submodules
+          --unshallow --filter=tree:0 origin "$ANDROID_RELEASE_SOURCE_SHA"
       - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: temurin
