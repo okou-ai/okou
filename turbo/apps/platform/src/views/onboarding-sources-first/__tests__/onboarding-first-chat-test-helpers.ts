@@ -3,10 +3,12 @@ import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads
 import type { TestContext } from "../../../signals/__tests__/test-helpers.ts";
 import { createDeferredPromise } from "../../../signals/utils.ts";
 
-export function receiveFirstChat(context: TestContext) {
-  const received = createDeferredPromise<{ prompt: string; threadId: string }>(
+export function receiveFirstChat(
+  context: TestContext,
+  received = createDeferredPromise<{ prompt: string; threadId: string }>(
     context.signal,
-  );
+  ),
+) {
   context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
     if (!body.threadId || typeof body.prompt !== "string") {
       throw new Error("Expected a text prompt addressed to a chat");

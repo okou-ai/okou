@@ -174,7 +174,7 @@ Another member's saved task and step survive editing on a shared browser. [Regis
 - **Given** Onboarding is incomplete, the server draft is unavailable, and the browser holds saved task and step progress from another member of the organization.
 - **When** The current member opens the ready step and types "Summarize this week's work".
 - **Then** The task field shows the new text, and the other member's saved task and step stay unchanged in browser storage.
-- **Disposition** retain; added by #49384, which retired `onboarding-progress-005`.
+- **Disposition** retain; added by #49384 for shared-browser member isolation. The older-API rollback scenario `onboarding-progress-005` was removed separately in [#49278](https://github.com/okou-ai/okou/pull/49278).
 - **Source** written from the main registration at `25d468f6`.
 
 ## upstream-ae05e279-chat-message-pdf-370-01

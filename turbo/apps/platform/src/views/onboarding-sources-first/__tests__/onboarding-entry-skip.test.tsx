@@ -1,11 +1,16 @@
+import { click, setupPage, startPage } from "../../../__tests__/page-helper.ts";
+import {
+  getAction,
+  findAction,
+} from "../../okou-page/__tests__/connector-integrations-test-helpers.ts";
 import { expect, test } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 import { billingRedeemCodeContract } from "@okouai/api-contracts/contracts/billing";
 import { onboardingCompleteContract } from "@okouai/api-contracts/contracts/onboarding";
 import { marketingEventsContract } from "@okouai/api-contracts/contracts/marketing-events";
-import { setupPage, startPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
+  documentInstructions,
   receiveFirstChat,
   findSentPrompt,
 } from "./onboarding-first-chat-test-helpers.ts";
@@ -127,4 +132,106 @@ test("onboarding-entry-skip-002 the redeemed task opens in chat while the authen
   } finally {
     release.resolve();
   }
+});
+
+test("onboarding-entry-skip-008 an explicit false skip flag leaves the linked task ready to edit", async () => {
+  newcomer();
+  const task = "Prepare the quarterly supplier review";
+  await setupPage({
+    context,
+    path:
+      "/onboarding?" +
+      new URLSearchParams({ skipOnboarding: "false", prompt: task }),
+  });
+  await expect(
+    screen.findByLabelText("Onboarding prompt"),
+  ).resolves.toHaveValue(task);
+  expect(getAction("button", "Next")).toBeEnabled();
+});
+test("onboarding-entry-skip-009 a rejected redemption can be completed manually with the original task", async () => {
+  newcomer();
+  const code = "TRIAL-PARTNER";
+  const task = "Draft the partner launch checklist";
+  let valid = false;
+  context.mocks.api(billingRedeemCodeContract.create, ({ body, respond }) => {
+    expect(body.code).toBe(code);
+    return valid
+      ? respond(200, { redeemed: true })
+      : respond(400, {
+          error: {
+            code: "INVALID_CODE",
+            message: "This partner code is invalid.",
+          },
+        });
+  });
+  const sent = receiveFirstChat(context);
+  await setupPage({
+    context,
+    path:
+      "/onboarding?" +
+      new URLSearchParams({
+        skipOnboarding: "true",
+        prompt: task,
+        redeemCode: code,
+      }),
+  });
+  await expect(
+    screen.findByText("This partner code is invalid.", { selector: "p" }),
+  ).resolves.toBeVisible();
+  click(await findAction("link", "Continue with onboarding"));
+  const editor = await screen.findByLabelText("Onboarding prompt");
+  expect(editor).toHaveValue(task);
+  expect(editor).toBeEnabled();
+  expect(editor).not.toHaveAttribute("readonly");
+  expect(new URL(location.href).searchParams.get("redeemCode")).toBe(code);
+  valid = true;
+  click(getAction("button", "Next"));
+  const receipt = await sent;
+  expect(receipt.prompt).toBe(task + "\n\n" + documentInstructions);
+  await expect(findSentPrompt(receipt.prompt)).resolves.toBeVisible();
+  expect(location.pathname).toBe("/chats/" + receipt.threadId);
+});
+test("onboarding-entry-skip-011 automatic entry keeps the task pending while the workspace is being prepared", async () => {
+  newcomer();
+  const task = "List my open handoffs";
+  const pending = context.mocks.deferred<void>();
+  const release = context.mocks.deferred<void>();
+  context.mocks.api(
+    onboardingCompleteContract.complete,
+    async ({ respond }) => {
+      if (!pending.settled()) {
+        pending.resolve();
+      }
+      await release.promise;
+      context.mocks.data.onboardingStatus({
+        needsOnboarding: false,
+        onboardingComplete: true,
+      });
+      return respond(200, { needsOnboarding: false, onboardingComplete: true });
+    },
+  );
+  const delivery = context.mocks.deferred<{
+    prompt: string;
+    threadId: string;
+  }>();
+  const sent = receiveFirstChat(context, delivery);
+  try {
+    await startPage({
+      context,
+      path:
+        "/onboarding?" +
+        new URLSearchParams({ skipOnboarding: "true", prompt: task }),
+    });
+    await pending.promise;
+    await expect(
+      screen.findByRole("status", { name: "Getting your workspace ready" }),
+    ).resolves.toBeVisible();
+    expect(delivery.settled()).toBeFalsy();
+  } finally {
+    release.resolve();
+  }
+  const receipt = await sent;
+  expect(receipt.prompt).toBe(task);
+  await expect(findSentPrompt(task)).resolves.toBeVisible();
+  expect(location.pathname).toBe("/chats/" + receipt.threadId);
 });

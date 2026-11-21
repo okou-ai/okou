@@ -1,3 +1,6 @@
+import germanCopy from "../../../i18n/locales/de-DE/common.json";
+import germanUrl from "../../../i18n/locales/de-DE/common.json?url";
+import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -188,4 +191,245 @@ test("onboarding-pasted-text-008 mixed image and text clipboard keeps the oversi
   expect(
     screen.queryByRole("list", { name: "Attachments" }),
   ).not.toBeInTheDocument();
+});
+
+test("onboarding-pasted-text-009 a reserved final attachment slot leaves the next paste in the editor", async () => {
+  const user = userEvent.setup();
+  const files = Array.from({ length: 9 }, (_, index) => {
+    return {
+      filename: "Reference-" + String(index) + ".txt",
+      hash: index.toString(16).padStart(64, "0"),
+      contentType: "text/plain",
+      size: 20,
+    };
+  });
+  context.mocks.data.onboardingStatus({
+    needsOnboarding: true,
+    onboardingComplete: false,
+  });
+  context.mocks.api(marketingHandoffsContract.resolve, ({ respond }) => {
+    return respond(200, { version: 1, prompt: task, options: {}, files });
+  });
+  const held = context.mocks.deferred<void>();
+  const release = context.mocks.deferred<void>();
+  context.mocks.api(
+    marketingHandoffsContract.upload,
+    async ({ body, respond }) => {
+      if (!held.settled()) {
+        held.resolve();
+      }
+      await release.promise;
+      return respond(200, {
+        hash,
+        filename: body.filename,
+        contentType: body.contentType,
+        size: 10_001,
+      });
+    },
+  );
+  await setupPage({ context, path: "/onboarding?handoff=" + hash });
+  const editor = await screen.findByLabelText("Onboarding prompt");
+  const fallback = "Q".repeat(10_001);
+  try {
+    await user.click(editor);
+    await user.keyboard("{End}");
+    await user.paste("K".repeat(10_001));
+    await held.promise;
+    const remove = await findAction("button", "Remove Pasted text-1.txt");
+    await user.click(editor);
+    await user.keyboard("{End}");
+    await user.paste(fallback);
+    await expect(
+      screen.findByText(/up to 10 files.*remains in the prompt/i),
+    ).resolves.toBeVisible();
+    expect(editor).toHaveValue(task + fallback);
+    expect(getAction("button", "Next")).toBeDisabled();
+    click(remove);
+    await waitFor(() => {
+      return expect(getAction("button", "Next")).toBeEnabled();
+    });
+    expect(screen.queryByText(/Pasted text-\d+\.txt/i)).not.toBeInTheDocument();
+    for (const file of files) {
+      expect(screen.getByText(file.filename)).toBeVisible();
+    }
+  } finally {
+    release.resolve();
+  }
+});
+test("onboarding-pasted-text-010 a ten-megabyte UTF-8 document uploads intact at the inclusive limit", async () => {
+  const bytes = 10 * 1024 * 1024;
+  const text = "é".repeat((bytes - 2) / 2) + "\nZ";
+  const received = context.mocks.deferred<{
+    data: string;
+    contentType: string;
+  }>();
+  context.mocks.api(marketingHandoffsContract.upload, ({ body, respond }) => {
+    if (!received.settled()) {
+      received.resolve(body);
+    }
+    return respond(200, {
+      hash,
+      filename: body.filename,
+      contentType: body.contentType,
+      size: bytes,
+    });
+  });
+  const user = userEvent.setup();
+  const editor = await openEditor(task);
+  await user.click(editor);
+  await user.paste(text);
+  const payload = await received.promise;
+  expect(payload.contentType).toBe("text/plain");
+  const content = Buffer.from(payload.data, "base64");
+  expect(content.byteLength).toBe(bytes);
+  expect(content.toString("utf8") === text).toBeTruthy();
+  await expect(screen.findByText("Pasted text-1.txt")).resolves.toBeVisible();
+  expect(editor).toHaveValue(task);
+  await waitFor(() => {
+    return expect(getAction("button", "Next")).toBeEnabled();
+  });
+});
+test("onboarding-pasted-text-011 a paste one byte above the upload limit replaces the selected draft inline", async () => {
+  const user = userEvent.setup();
+  const editor = await openEditor(task);
+  const text = "X".repeat(10 * 1024 * 1024 + 1);
+  await user.click(editor);
+  await user.keyboard("{Control>}a{/Control}");
+  await user.paste(text);
+  await expect(
+    screen.findByText(/exceeds the 10 MB limit.*remains in the prompt/i),
+  ).resolves.toBeVisible();
+  expect(
+    editor instanceof HTMLTextAreaElement && editor.value === text,
+  ).toBeTruthy();
+  expect(getAction("button", "Next")).toBeDisabled();
+  expect(
+    screen.queryByRole("list", { name: "Attachments" }),
+  ).not.toBeInTheDocument();
+});
+test("onboarding-pasted-text-015 preview Skip cancels the ongoing text upload and opens the composer", async () => {
+  const user = userEvent.setup();
+  const ingress = context.mocks.deferred<Request>();
+  const release = context.mocks.deferred<void>();
+  context.mocks.api(
+    marketingHandoffsContract.upload,
+    async ({ request, body, respond }) => {
+      if (!ingress.settled()) {
+        ingress.resolve(request);
+      }
+      await release.promise;
+      return respond(200, {
+        hash,
+        contentType: body.contentType,
+        filename: body.filename,
+        size: 12_500,
+      });
+    },
+  );
+  context.mocks.data.onboardingStatus({
+    needsOnboarding: true,
+    onboardingComplete: false,
+  });
+  await setupPage({
+    context,
+    host: "pr-40584-app-okou-app-preview.vm0.workers.dev",
+    path: "/onboarding?prompt=Prepare+a+brief",
+  });
+  const editor = await screen.findByLabelText("Onboarding prompt");
+  await user.click(editor);
+  try {
+    await user.paste("W".repeat(12_500));
+    const req = await ingress.promise;
+    expect(req.signal.aborted).toBeFalsy();
+    click(await findAction("button", "Skip"));
+    await expect(
+      screen.findByRole("textbox", { name: "Message" }),
+    ).resolves.toBeVisible();
+    await waitFor(() => {
+      return expect(req.signal.aborted).toBeTruthy();
+    });
+    expect(
+      screen.queryByLabelText("Onboarding prompt"),
+    ).not.toBeInTheDocument();
+    expect(location.pathname).toBe("/");
+  } finally {
+    release.resolve();
+  }
+});
+test("onboarding-pasted-text-014 the German Document instruction counts against the same submitted task limit", async () => {
+  const english =
+    "Create a complete document with the results in the requested file format (Markdown by default). Upload it as an artifact and include the working artifact link in your final response.";
+  const german =
+    "Erstelle ein vollständiges Dokument mit den Ergebnissen im gewünschten Dateiformat (standardmäßig Markdown). Lade es als Artefakt hoch und füge deiner abschließenden Antwort einen funktionierenden Link zum Artefakt hinzu.";
+  const initial = "x".repeat(20_000 - 2 - english.length);
+  context.mocks.http.get(germanUrl, () => {
+    return HttpResponse.json(germanCopy);
+  });
+  context.mocks.data.onboardingStatus({
+    needsOnboarding: true,
+    onboardingComplete: false,
+  });
+  context.mocks.api(marketingHandoffsContract.resolve, ({ respond }) => {
+    return respond(200, {
+      version: 1,
+      prompt: initial,
+      options: {},
+      files: [],
+    });
+  });
+  await setupPage({ context, path: "/onboarding?handoff=" + hash });
+  const editor = await screen.findByLabelText("Onboarding prompt");
+  await expect(
+    screen.findByText(
+      "20000 / 20000 characters (including output instructions)",
+    ),
+  ).resolves.toBeVisible();
+  expect(editor).toHaveValue(initial);
+  expect(getAction("button", "Document")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  click(await findAction("button", "Test User"));
+  click(await screen.findByText("Settings", { exact: true }));
+  click(await screen.findByRole("combobox", { name: "Language" }));
+  click(await screen.findByRole("option", { name: /Deutsch/ }));
+  await waitFor(() => {
+    return expect(document.documentElement.lang).toBe("de-DE");
+  });
+  const user = userEvent.setup();
+  await user.keyboard("{Escape}");
+  await expect(
+    screen.findByText(
+      String(initial.length + 2 + german.length) +
+        " / 20000 Zeichen (einschließlich Ausgabeanweisungen)",
+    ),
+  ).resolves.toBeVisible();
+  expect(editor).toHaveValue(initial);
+  expect(getAction("button", "Dokument")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await user.click(editor);
+  await user.keyboard(
+    "{Control>}{End}{/Control}{Backspace>" +
+      String(german.length - english.length) +
+      "/}",
+  );
+  const edited = initial.slice(0, 20_000 - 2 - german.length);
+  expect(editor).toHaveValue(edited);
+  expect(
+    screen.getByText(
+      "20000 / 20000 Zeichen (einschließlich Ausgabeanweisungen)",
+    ),
+  ).toBeVisible();
+  const saved = context.mocks.deferred<string>();
+  context.mocks.api(marketingHandoffsContract.create, ({ body, respond }) => {
+    if (!saved.settled()) {
+      saved.resolve(body.prompt);
+    }
+    const savedHash = "b".repeat(64);
+    return respond(200, { hash: savedHash, shortHash: savedHash.slice(0, 12) });
+  });
+  click(await findAction("button", "Nächste"));
+  await expect(saved.promise).resolves.toBe(edited + "\n\n" + german);
 });
