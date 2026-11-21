@@ -1082,10 +1082,28 @@ class ChatListModelTest {
     }
 
     @Test
-    fun writeDuringOlderReadGetsOneTrailingReadWhenNotificationIsMissed() = runTest {
-        val events = mutableListOf(chatEventWire())
+    fun mixedOptimisticRowsSurviveAnOlderReadAndSettleWithTheirOwnEvidence() = runTest {
+        val other =
+            chatEventWire(id = HISTORY_LAST_EVENT, seq = 18, thread = CHAT_IN_PROJECT)
+                .replace(CHAT_DATE, "2026-11-14T00:00:00.000Z")
+        val events = mutableListOf(chatEventWire(), other)
         var reads = 0
         val olderRead = CompletableDeferred<Unit>()
+        val trailingRead = CompletableDeferred<Unit>()
+        val preview = ProvisionalChat("cccccccc-cccc-4ccc-8ccc-cccccccccccc", CHAT_PROJECT)
+        val sortEvent = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+        val outgoing =
+            PendingText(
+                "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                CHAT_PERSONAL,
+                null,
+                json.decodeFromString<SendRequestVariant1>(
+                    """{"prompt":"Hello","threadId":"$CHAT_PERSONAL",
+                            "userMessage":{"version":1,"parts":[{"type":"text","text":"Hello"}]},
+                            "hasTextContent":true,"chatThreadSortEventId":"$sortEvent"}"""
+                ),
+                TextStage.Sending,
+            )
         val source =
             Service().apply {
                 listRead = {
@@ -1101,46 +1119,79 @@ class ChatListModelTest {
                     eventId: String,
                 ) {
                     events.add(
-                        chatEventWire(id = eventId, seq = 18, kind = "renamed", title = title)
+                        chatEventWire(id = eventId, seq = 19, kind = "renamed", title = title)
                     )
                 }
             }
         withCatchUpModel(service) { model ->
             model.refresh()
             advanceUntilIdle()
+            assertEquals(CHAT_IN_PROJECT, model.uiState.value.threadsByRecency.first().id)
             val initialReads = reads
             source.listRead = {
                 reads++
                 val captured = page(events)
-                if (reads == initialReads + 1) olderRead.await()
+                when (reads - initialReads) {
+                    1 -> olderRead.await()
+                    2 -> trailingRead.await()
+                }
                 captured
             }
 
             model.refreshList()
             runCurrent()
             model.renameThread(CHAT_PERSONAL, "Local edit")
+            model.showOutgoingActivity(outgoing)
+            model.retainAcceptedNewChats(listOf(preview))
             model.reloadAfterRowActionFailure()
             runCurrent()
             assertEquals(initialReads + 1, reads)
             assertEquals(ChatRowAction.Rename, model.uiState.value.pendingRowActions[CHAT_PERSONAL])
 
-            olderRead.complete(Unit)
-            advanceUntilIdle()
-            assertEquals(initialReads + 2, reads)
-            assertTrue(model.uiState.value.pendingRowActions.isEmpty())
-            assertNull(model.uiState.value.failedRowAction)
-
             events.add(
                 chatEventWire(
                     id = "77777777-7777-4777-8777-777777777777",
-                    seq = 19,
+                    seq = 20,
+                    thread = preview.threadId,
+                    extra = ""","projectId":"$CHAT_PROJECT"""",
+                )
+            )
+            olderRead.complete(Unit)
+            runCurrent()
+            assertEquals(initialReads + 2, reads)
+            val held = model.uiState.value
+            assertEquals("Local edit", held.threads.single { it.id == CHAT_PERSONAL }.title)
+            assertEquals(listOf(preview), held.acceptedNewChats)
+            assertEquals(CHAT_PERSONAL, held.threadsByRecency.first().id)
+
+            trailingRead.complete(Unit)
+            advanceUntilIdle()
+            val confirmed = model.uiState.value
+            assertTrue(confirmed.pendingRowActions.isEmpty())
+            assertNull(confirmed.failedRowAction)
+            assertTrue(confirmed.acceptedNewChats.isEmpty())
+            assertEquals(
+                CHAT_PROJECT,
+                confirmed.threads.single { it.id == preview.threadId }.projectId,
+            )
+            assertEquals(CHAT_PERSONAL, confirmed.threadsByRecency.first().id)
+
+            events.add(
+                chatEventWire(
+                    id = "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+                    seq = 21,
                     kind = "renamed",
                     title = "Remote edit",
                 )
             )
             model.refreshList()
             advanceUntilIdle()
-            assertEquals("Remote edit", model.uiState.value.threads.single().title)
+            assertEquals(
+                "Remote edit",
+                model.uiState.value.threads.single { it.id == CHAT_PERSONAL }.title,
+            )
+            model.refreshAfterSendFailure(outgoing, rejected = true)
+            assertEquals(CHAT_IN_PROJECT, model.uiState.value.threadsByRecency.first().id)
         }
     }
 

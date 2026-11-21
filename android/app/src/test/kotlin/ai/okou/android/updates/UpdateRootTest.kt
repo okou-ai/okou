@@ -23,13 +23,11 @@ import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertHasNoClickAction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
-import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.core.content.FileProvider
 import androidx.lifecycle.Lifecycle
@@ -101,7 +99,7 @@ class UpdateRootTest {
         compose.waitUntil(10_000) { app.updates.state.value.available }
         compose.onNodeWithText("View update").performClick()
         compose.onNodeWithText("A useful update").assertExists()
-        compose.onNodeWithText("Update").performSemanticsAction(SemanticsActions.OnClick)
+        compose.onNodeWithText("Download update").performSemanticsAction(SemanticsActions.OnClick)
         compose.waitUntil(10_000) { app.fixture.progress != null }
         app.fixture.progress!!(617)
         compose.onNodeWithText("Updating · 50%").assertExists()
@@ -131,8 +129,8 @@ class UpdateRootTest {
             compose.waitUntil(10_000) { app.updates.state.value.canDownload }
             val openDetails = compose.onNodeWithText("View update")
             openDetails.performClick()
-            val title = compose.onNodeWithText("Update to 99.0.0")
-            val update = compose.onNodeWithText("Update")
+            val title = compose.onNodeWithText("App updates")
+            val update = compose.onNodeWithText("Download update")
             val titleBounds = title.assertIsDisplayed().getUnclippedBoundsInRoot()
             val actionBounds = update.assertIsDisplayed().getUnclippedBoundsInRoot()
             update.performSemanticsAction(SemanticsActions.OnClick)
@@ -168,10 +166,20 @@ class UpdateRootTest {
         app.fixture.heldCheck!!.complete(Unit)
         app.updates.requireUpdate(RequiredUpdate("99.0.0"))
         compose.waitUntil(10_000) { app.updates.state.value.canDownload }
-        val update = compose.onNodeWithText("Update")
-        update.assertIsNotDisplayed().performScrollTo().assertIsDisplayed().performClick()
+        val update = compose.onNodeWithText("Download update")
+        compose.onNodeWithText("Update required").assertIsDisplayed()
+        val bounds = update.assertIsDisplayed().getUnclippedBoundsInRoot()
+        update.performClick()
         compose.waitUntil(10_000) { app.updates.state.value.transfer is UpdateTransfer.Downloading }
-        compose.onNodeWithText("Preparing…").assertIsDisplayed().assertHasNoClickAction()
+        val progress =
+            compose.onNode(
+                SemanticsMatcher.expectValue(
+                    SemanticsProperties.ProgressBarRangeInfo,
+                    ProgressBarRangeInfo.Indeterminate,
+                )
+            )
+        assertEquals(bounds, progress.assertIsDisplayed().getUnclippedBoundsInRoot())
+        compose.onNodeWithText("Preparing…").assertHasNoClickAction()
     }
 
     @Test
@@ -196,7 +204,7 @@ class UpdateRootTest {
             app.online.value = true
             discovery.complete(Unit)
             compose.waitUntil(10_000) { app.updates.state.value.canDownload }
-            compose.onNodeWithText("Update").assertIsEnabled()
+            compose.onNodeWithText("Download update").assertIsEnabled()
         } finally {
             discovery.complete(Unit)
         }
@@ -235,7 +243,7 @@ class UpdateRootTest {
         packageManager.setCanRequestPackageInstalls(false)
         app.updates.requireUpdate(RequiredUpdate("99.0.0"))
         compose.waitUntil(10_000) { app.updates.state.value.canDownload }
-        compose.onNodeWithText("Update").assertIsDisplayed().performClick()
+        compose.onNodeWithText("Download update").assertIsDisplayed().performClick()
         finishDownload()
         compose.onNodeWithText("Allow update installation").assertIsDisplayed()
         compose.onNodeWithText("Open Settings").performClick()
@@ -280,7 +288,7 @@ class UpdateRootTest {
         app.fixture.heldCheck!!.complete(Unit)
         app.updates.requireUpdate(RequiredUpdate("99.0.0"))
         compose.waitUntil(10_000) { app.updates.state.value.canDownload }
-        compose.onNodeWithText("Update").performClick()
+        compose.onNodeWithText("Download update").performClick()
         finishDownload()
         compose.onNodeWithText("Allow update installation").assertIsDisplayed()
         compose.onNodeWithText("Later").performClick()
@@ -319,10 +327,10 @@ class UpdateRootTest {
     fun optionalDetailsReturnAfterInstallerCancellationAcrossActivityRecreation() {
         allowInstallAndDiscoverUpdate()
         val openDetails = compose.onNodeWithText("View update")
-        val title = compose.onNodeWithText("Update to 99.0.0")
+        val title = compose.onNodeWithText("App updates")
         val install = compose.onNodeWithText("Continue installation")
         openDetails.performClick()
-        compose.onNodeWithText("Update").performSemanticsAction(SemanticsActions.OnClick)
+        compose.onNodeWithText("Download update").performSemanticsAction(SemanticsActions.OnClick)
         compose.onNodeWithText("Close").performSemanticsAction(SemanticsActions.OnClick)
         compose.activityRule.scenario.onActivity { it.onWindowFocusChanged(true) }
         finishDownload()
@@ -347,7 +355,7 @@ class UpdateRootTest {
     fun backgroundCompletionHandsOffOnlyAfterResuming() {
         allowInstallAndDiscoverUpdate()
         compose.onNodeWithText("View update").performClick()
-        compose.onNodeWithText("Update").performSemanticsAction(SemanticsActions.OnClick)
+        compose.onNodeWithText("Download update").performSemanticsAction(SemanticsActions.OnClick)
         compose.onNodeWithText("Close").performSemanticsAction(SemanticsActions.OnClick)
         compose.waitForIdle()
         compose.activityRule.scenario.moveToState(Lifecycle.State.CREATED)

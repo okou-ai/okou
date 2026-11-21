@@ -79,7 +79,7 @@ class UpdateRecoveryRootTest {
     fun recoveryKeepsPackageIdentityAndControlsUnavailableAcrossRecreation() {
         compose.onNodeWithText("Preparing…").assertIsDisplayed().assertHasNoClickAction()
         compose.onNodeWithText("New version: 99.0.0").assertExists()
-        compose.onNodeWithText("Update").assertDoesNotExist()
+        compose.onNodeWithText("Download update").assertDoesNotExist()
         compose.onNodeWithText("Allow update installation").assertDoesNotExist()
         compose.activityRule.scenario.recreate()
         compose.onNodeWithText("Preparing…").assertIsDisplayed().assertHasNoClickAction()
@@ -100,7 +100,11 @@ class UpdateRecoveryRootTest {
         app.fixture.heldRecovery!!.complete(Unit)
         compose.waitUntil(10_000) { app.updates.state.value.canDownload }
         compose.onNodeWithText("New version: 99.1.0").assertExists()
-        compose.onNodeWithText("Try again").assertIsDisplayed().assertIsEnabled().performClick()
+        compose
+            .onNodeWithText("Retry download")
+            .assertIsDisplayed()
+            .assertIsEnabled()
+            .performClick()
         compose.waitUntil(10_000) { app.fixture.downloadedReleases.isNotEmpty() }
         assertEquals(listOf(app.latest), app.fixture.downloadedReleases)
         compose.onNodeWithText("Preparing…").assertIsDisplayed().assertHasNoClickAction()
