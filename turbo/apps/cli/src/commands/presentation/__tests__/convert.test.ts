@@ -432,7 +432,7 @@ describe("okou presentation convert", () => {
   it("refuses a run whose token lacks the conversion capability", async () => {
     vi.stubEnv("OKOU_TOKEN", okouToken(["artifact:read"]));
     await expect(convert([])).rejects.toThrow(/process\.exit/u);
-    expect(stderr()).toContain("not enabled for this agent run");
+    expect(stderr()).toContain("not enabled for this Run");
   });
 
   it("rejects a slide width that is not a positive number", async () => {

@@ -161,7 +161,7 @@ async function assertOutsideAgentMemory(
   for (const root of AGENT_MEMORY_ROOTS) {
     if (isSameOrInside(target, await canonicalPath(root))) {
       throw new Error(
-        `Chat history output directory ${target} is inside the agent memory directory ${root}. ` +
+        `Chat history output directory ${target} is inside the personal Memory directory ${root}. ` +
           "Memory is saved after every run, so synced history would persist as memory. " +
           `Choose a directory outside memory, for example: okou chat messages --output-dir ${CHAT_HISTORY_OUTPUT_EXAMPLE}`,
       );

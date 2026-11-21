@@ -49,9 +49,7 @@ function pageOptions(command: Command) {
 }
 
 export const walletSpendListCommand = pageOptions(new Command("list"))
-  .description(
-    "List this user's purchase requests for the current Agent, including recorded history",
-  )
+  .description("List your purchase requests, including recorded history")
   .option("--status <status>", "Filter by recorded request status")
   .option("--mode <mode>", "Filter all, live, or test requests (default: all)")
   .action(

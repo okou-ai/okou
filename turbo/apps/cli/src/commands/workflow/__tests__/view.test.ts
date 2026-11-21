@@ -14,7 +14,6 @@ import { server } from "../../../mocks/server";
 import { viewCommand } from "../view";
 import chalk from "chalk";
 
-const AGENT_ID = "11111111-1111-1111-1111-111111111111";
 const WORKFLOW_ID = "22222222-2222-2222-2222-222222222222";
 const PRIVATE_WORKFLOW_ID = "33333333-3333-4333-8333-333333333333";
 const OFFICIAL_WORKFLOW_ID = "44444444-4444-4444-8444-444444444444";
@@ -29,9 +28,6 @@ const OFFICIAL_METADATA = {
 function workflowSummary(overrides: Record<string, unknown> = {}) {
   return {
     id: WORKFLOW_ID,
-    agentId: AGENT_ID,
-    agentName: "my-agent",
-    agentDisplayName: "My Agent",
     name: "tell-a-joke",
     displayName: "Tell a joke",
     description: "Tell one short joke",
@@ -66,7 +62,7 @@ describe("okou workflow view command", () => {
     );
     chalk.level = 0;
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
-    vi.stubEnv("OKOU_TOKEN", capturedRunToken(["agent:read"]));
+    vi.stubEnv("OKOU_TOKEN", capturedRunToken([]));
   });
 
   afterEach(() => {
@@ -149,9 +145,6 @@ describe("okou workflow view command", () => {
         http.get(`http://localhost:3000/api/workflows/${WORKFLOW_ID}`, () => {
           return HttpResponse.json({
             id: WORKFLOW_ID,
-            agentId: AGENT_ID,
-            agentName: "my-agent",
-            agentDisplayName: "My Agent",
             name: "my-workflow",
             displayName: "My Workflow",
             description: "A helpful workflow",
@@ -173,8 +166,6 @@ describe("okou workflow view command", () => {
       expect(logCalls).toContain("my-workflow");
       expect(logCalls).toContain("My Workflow");
       expect(logCalls).toContain("A helpful workflow");
-      expect(logCalls).not.toContain("Agent Name:   My Agent");
-      expect(logCalls).not.toContain(`Agent ID:     ${AGENT_ID}`);
       expect(logCalls).toContain("Do helpful things.");
     });
 
@@ -257,7 +248,7 @@ describe("okou workflow view command", () => {
       expect(mockExit).toHaveBeenCalledWith(1);
     });
 
-    it("should reject invalid workflow refs before requiring agent scope", async () => {
+    it("should reject invalid workflow refs before sending requests", async () => {
       await expect(async () => {
         await viewCommand.parseAsync(["node", "cli", "/tell-a-joke"]);
       }).rejects.toThrow("process.exit called");

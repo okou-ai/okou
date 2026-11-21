@@ -80,7 +80,6 @@ describe("okou connector status command", () => {
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_TOKEN", "test-token");
     vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", undefined);
-    vi.stubEnv("OKOU_AGENT_ID", "");
     vi.stubEnv("OKOU_CHAT_THREAD_ID", "");
     statusCommand.setOptionValue("json", false);
     server.use(stubConnectorAccounts([]));

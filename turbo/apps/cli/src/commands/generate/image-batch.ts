@@ -46,7 +46,7 @@ const MAX_CONCURRENCY = 3;
 const POLL_INTERVAL_MS = 500;
 const RETRY_DELAY_MS = 1_000;
 const BATCH_PRESENTATION_CONTEXT =
-  "asset identifies the material for authored HTML; local paths are relative to the batch directory and are only available inside the agent runtime. Use each item's stable artifact reference for chat. " +
+  "asset identifies the material for authored HTML; local paths are relative to the batch directory and are only available inside the Run. Use each item's stable artifact reference for chat. " +
   ARTIFACT_PRESENTATION_CONTEXT;
 
 const imageBatchArtifactsSchema = object({
