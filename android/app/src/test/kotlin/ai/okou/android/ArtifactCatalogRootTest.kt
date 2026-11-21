@@ -103,6 +103,7 @@ class ArtifactCatalogRootTest {
             model.save(fixture.checklist.id) { error("Denied save opened the destination") }
         }
         awaitText("Download access is unavailable")
+        compose.onNodeWithText("Save file").assertDoesNotExist()
         assertEquals(2, fixture.requestedDownloads.size)
     }
 

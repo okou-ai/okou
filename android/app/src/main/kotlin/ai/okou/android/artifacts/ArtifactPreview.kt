@@ -1,13 +1,12 @@
 package ai.okou.android.artifacts
 
-import ai.okou.android.state.rememberArtifactSiteScroll
 import ai.okou.android.R
 import ai.okou.android.chat.ConfirmedChat
 import ai.okou.android.chat.HistoryMarkdown
 import ai.okou.android.chat.rememberChatWaitIndicator
+import ai.okou.android.state.rememberArtifactSiteScroll
 import android.annotation.SuppressLint
 import android.content.Context
-import android.net.Uri
 import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
@@ -44,7 +43,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -72,6 +70,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import okhttp3.HttpUrl
@@ -273,14 +272,12 @@ private fun PreviewContent(preview: ArtifactPreviewState?, offline: Boolean) {
                 PreviewStatus(R.string.artifact_online_preview, ratio = true)
             content is ArtifactContent.Text ->
                 SelectionContainer(Modifier.padding(16.dp)) {
-                    ProvideTextStyle(
+                    val style =
                         MaterialTheme.typography.bodyLarge.copy(
                             lineHeight = if (content.markdown) 28.sp else 24.sp
                         )
-                    ) {
-                        if (content.markdown) HistoryMarkdown(content.source)
-                        else Text(content.source)
-                    }
+                    if (content.markdown) HistoryMarkdown(content.source, style)
+                    else Text(content.source, style = style)
                 }
             content is ArtifactContent.Image ->
                 Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
@@ -444,7 +441,7 @@ private fun MediaArtifactPreview(content: ArtifactContent.Media) {
                         failed = true
                         true
                     }
-                    setVideoURI(Uri.parse(content.url.toString()))
+                    setVideoURI(content.url.toString().toUri())
                     player = this
                 }
             },

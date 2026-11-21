@@ -78,14 +78,14 @@ internal constructor(
     init {
         viewModelScope.launch {
             connectivity.collect { online ->
-                if (online == !mutable.value.offline) return@collect
-                mutable.update {
-                    it.copy(
+                val current = mutable.value
+                if (online == !current.offline) return@collect
+                mutable.value =
+                    current.copy(
                         offline = !online,
                         reading = null,
-                        page = it.page ?: if (online) null else cachedResults(it.query),
+                        page = current.page ?: if (online) null else cachedResults(current.query),
                     )
-                }
                 if (online && active) {
                     readCatalog()
                     mutable.value.preview?.let { readPreview(it.id) }
@@ -180,7 +180,19 @@ internal constructor(
                             ArtifactSaveResult.Denied
                         } else ArtifactSaveResult.Failed
                     }
-                mutable.update { it.copy(saveResult = id to result) }
+                if (result == ArtifactSaveResult.Denied) {
+                    previews[id]?.let { previews[id] = it.withoutSave() }
+                }
+                mutable.update {
+                    val preview = it.preview
+                    it.copy(
+                        saveResult = id to result,
+                        preview =
+                            if (result == ArtifactSaveResult.Denied && preview?.id == id)
+                                preview.withoutSave()
+                            else preview,
+                    )
+                }
             }
     }
 
@@ -220,14 +232,28 @@ internal constructor(
                     } catch (error: Exception) {
                         val problem = problem(error)
                         currentCoroutineContext().ensureActive()
-                        if (
-                            problem == ArtifactProblem.Denied || problem == ArtifactProblem.Missing
-                        ) {
+                        val denied = problem == ArtifactProblem.Denied
+                        if (denied || problem == ArtifactProblem.Missing) {
                             catalogs.clear()
+                        }
+                        if (denied) {
+                            previewJob?.cancel()
+                            previews.clear()
+                            thumbnails.evictAll()
                         }
                         mutable.update {
                             it.copy(
                                 page = if (catalogs.isEmpty()) null else it.page,
+                                preview =
+                                    if (denied)
+                                        it.preview?.let { preview ->
+                                            ArtifactPreviewState(
+                                                preview.id,
+                                                preview.item,
+                                                problem = problem,
+                                            )
+                                        }
+                                    else it.preview,
                                 problem =
                                     problem.takeIf {
                                         it != ArtifactProblem.Temporary ||
@@ -375,6 +401,9 @@ internal constructor(
             sessionFailure(error)
     }
 }
+
+private fun ArtifactPreviewState.withoutSave(): ArtifactPreviewState =
+    copy(access = access?.copy(save = null, previewOnly = true))
 
 private suspend inline fun retryRead(read: (attempt: Int) -> Boolean) {
     var attempt = 0

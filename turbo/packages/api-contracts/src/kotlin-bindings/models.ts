@@ -974,7 +974,20 @@ ${types
       throw new Error(`${name}: unsupported literal`);
     }
     const union = value.anyOf ?? value.oneOf;
-    if (Array.isArray(union)) return renderUnion(union, name);
+    if (Array.isArray(union)) {
+      // A URI or a hostless reference still has one wire representation.
+      if (
+        Array.isArray(value.anyOf) &&
+        union.some((item) => {
+          return schemaObject(item) && item.type === "string" && Object.keys(item).length === 1;
+        }) &&
+        union.every((item) => {
+          return schemaObject(item) && item.type === "string";
+        })
+      )
+        return "String";
+      return renderUnion(union, name);
+    }
     return renderValue(value, name, parent);
   };
   for (const binding of bindings) {

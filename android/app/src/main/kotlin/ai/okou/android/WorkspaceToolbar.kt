@@ -231,7 +231,7 @@ internal fun WorkspaceToolEntries(
     workflowsFocus: FocusRequester? = null,
     onWorkflowsFocusChanged: (Boolean) -> Unit = {},
     openArtifacts: (() -> Unit)? = null,
-    artifactModifier: Modifier = Modifier,
+    artifactFocus: FocusRequester? = null,
 ) {
     val stackBelow = with(LocalDensity.current) { 16.sp.toDp() * 19 }
     BoxWithConstraints(Modifier.fillMaxWidth()) {
@@ -265,7 +265,11 @@ internal fun WorkspaceToolEntries(
                 R.drawable.ic_inventory_2,
                 R.string.workspace_artifacts,
                 stacked,
-                artifactModifier.weight(1f),
+                Modifier.weight(1f)
+                    .then(
+                        if (artifactFocus == null) Modifier
+                        else Modifier.focusRequester(artifactFocus)
+                    ),
                 action = openArtifacts,
             )
         }
@@ -290,7 +294,10 @@ private fun WorkspaceToolEntry(
                 role = Role.Button
                 disabled()
             }
-        else Modifier.clickable(role = Role.Button, onClick = action).semantics { contentDescription = title }
+        else
+            Modifier.clickable(role = Role.Button, onClick = action).semantics {
+                contentDescription = title
+            }
     val entry =
         modifier
             .heightIn(min = 48.dp)

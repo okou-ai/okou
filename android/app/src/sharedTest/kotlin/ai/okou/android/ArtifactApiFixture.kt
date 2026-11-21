@@ -28,7 +28,7 @@ internal class ArtifactApiFixture(
     private fun title(english: String, han: String) = if (chinese) han else english
 
     val sourceTitle = title("Review release copy and assets", "检查发布文案与素材")
-    private val calendar = Calendar.getInstance().apply { set(Calendar.HOUR_OF_DAY, 10) }
+    private val calendar = Calendar.getInstance()
     val checklist =
         Item(
             "10000000-1000-4000-8000-000000000001",
@@ -41,14 +41,14 @@ internal class ArtifactApiFixture(
             "10000000-1000-4000-8000-000000000002",
             "file",
             title("Product launch summary", "产品发布摘要"),
-            date(-1),
+            date(-1, 17, 40),
         )
     val site =
         Item(
             "10000000-1000-4000-8000-000000000003",
             "hosted-site",
             title("Product launch site", "产品发布介绍页"),
-            date(-1),
+            date(-1, 14, 15),
         )
     val slides =
         Item(
@@ -139,8 +139,17 @@ internal class ArtifactApiFixture(
         }
     }
 
-    private fun date(days: Int): String {
-        val date = (calendar.clone() as Calendar).apply { add(Calendar.DATE, days) }.time
+    private fun date(days: Int, hour: Int = 10, minute: Int = 20): String {
+        val date =
+            (calendar.clone() as Calendar)
+                .apply {
+                    add(Calendar.DATE, days)
+                    set(Calendar.HOUR_OF_DAY, hour)
+                    set(Calendar.MINUTE, minute)
+                    set(Calendar.SECOND, 0)
+                    set(Calendar.MILLISECOND, 0)
+                }
+                .time
         return SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US)
             .apply { timeZone = TimeZone.getTimeZone("UTC") }
             .format(date)

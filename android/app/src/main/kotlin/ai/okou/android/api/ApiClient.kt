@@ -38,11 +38,11 @@ import ai.okou.android.api.generated.UpdateWorkflowRequest
 import ai.okou.android.api.generated.UserPreferences
 import ai.okou.android.api.generated.WorkflowsQuery
 import ai.okou.android.api.generated.WorkflowsQueryScope
-import ai.okou.android.api.generated.workflows
 import ai.okou.android.api.generated.artifactCatalog
 import ai.okou.android.api.generated.artifactDetail
 import ai.okou.android.api.generated.historyRows
 import ai.okou.android.api.generated.resolveArtifactReference
+import ai.okou.android.api.generated.workflows
 import ai.okou.android.chat.HistoryCursor
 import ai.okou.android.chat.ServerDraftTarget
 import ai.okou.android.chat.plainDraftDocument

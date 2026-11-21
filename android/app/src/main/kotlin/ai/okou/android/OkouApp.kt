@@ -1,8 +1,5 @@
 package ai.okou.android
 
-import ai.okou.android.state.rememberArtifactFlag
-import ai.okou.android.state.rememberArtifactId
-import ai.okou.android.state.rememberArtifactPageState
 import ai.okou.android.artifacts.ArtifactCatalogModel
 import ai.okou.android.artifacts.ArtifactsRoute
 import ai.okou.android.chat.AssistantRecoveryModel
@@ -34,6 +31,9 @@ import ai.okou.android.state.WorkflowTab
 import ai.okou.android.state.WorkflowsMode
 import ai.okou.android.state.WorkflowsRoute
 import ai.okou.android.state.WorkspaceTarget
+import ai.okou.android.state.rememberArtifactFlag
+import ai.okou.android.state.rememberArtifactId
+import ai.okou.android.state.rememberArtifactPageState
 import ai.okou.android.state.rememberChatSearchState
 import ai.okou.android.state.rememberConversationUiState
 import ai.okou.android.state.rememberWorkflowsRoute
@@ -191,7 +191,8 @@ internal fun OkouApp(
         onDispose { onUpdateEditingChanged(false) }
     }
     val showList = listWidth != null || searchActive || target == WorkspaceTarget.List
-    val showChatList = settings == null && showList && !searchActive && !showWorkflows && !showArtifacts
+    val showChatList =
+        settings == null && showList && !searchActive && !showWorkflows && !showArtifacts
     val showWorkspaceBack =
         artifactSource != null ||
             listWidth == null && !searchActive && target != WorkspaceTarget.List
@@ -532,7 +533,8 @@ internal fun OkouApp(
     }
 
     BackHandler(
-        !showWorkflows && !showArtifacts &&
+        !showWorkflows &&
+            !showArtifacts &&
             (settings != null || showWorkspaceBack || searchActive || chatFromWorkflows),
         onBack = ::back,
     )
@@ -746,7 +748,7 @@ internal fun OkouApp(
                         workflowsFocus = workflowsFocus,
                         onWorkflowsFocusChanged = { workflowEntryFocused = it },
                         openArtifacts = if (artifacts == null) null else ::openArtifacts,
-                        artifactModifier = Modifier.focusRequester(artifactEntryFocus),
+                        artifactFocus = artifactEntryFocus,
                     )
             }
             LaunchedEffect(Unit) {

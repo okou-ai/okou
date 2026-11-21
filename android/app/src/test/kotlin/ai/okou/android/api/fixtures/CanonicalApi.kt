@@ -12,10 +12,16 @@ internal interface CanonicalApi {
     suspend fun `chatSnapshot`(@Header("Authorization") token: String): Response<ChatSnapshot>
 
     @GET("/api/chat-threads/events")
-    suspend fun `chatEvents`(@Header("Authorization") token: String, @Query("sinceSeqId") `querySinceSeqId`: Long? = null): Response<ChatEvents>
+    suspend fun `chatEvents`(
+        @Header("Authorization") token: String,
+        @Query("sinceSeqId") `querySinceSeqId`: Long? = null,
+    ): Response<ChatEvents>
 
     @GET("/api/indicators")
-    suspend fun `indicators`(@Header("Authorization") token: String, @Query("includeActiveUnread") `queryIncludeActiveUnread`: String? = null): Response<Indicators>
+    suspend fun `indicators`(
+        @Header("Authorization") token: String,
+        @Query("includeActiveUnread") `queryIncludeActiveUnread`: String? = null,
+    ): Response<Indicators>
 
     @GET("/api/agents")
     suspend fun `agents`(@Header("Authorization") token: String): Response<Agents>

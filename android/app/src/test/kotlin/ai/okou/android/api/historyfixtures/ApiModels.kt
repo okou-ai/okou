@@ -17,20 +17,21 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.doubleOrNull
 
-@Serializable(with = HistorySnapshotSerializer::class)
-sealed interface HistorySnapshot
+@Serializable(with = HistorySnapshotSerializer::class) sealed interface HistorySnapshot
 
-@Serializable(with = CanonicalZeroSerializer::class)
-data object CanonicalZero
+@Serializable(with = CanonicalZeroSerializer::class) data object CanonicalZero
 
 object CanonicalZeroSerializer : KSerializer<CanonicalZero> {
     override val descriptor = JsonPrimitive.serializer().descriptor
+
     override fun deserialize(decoder: Decoder): CanonicalZero {
         val input = decoder as? JsonDecoder ?: throw SerializationException("Expected JSON zero")
         val value = input.decodeJsonElement()
-        if (value !is JsonPrimitive || value.isString || value.doubleOrNull != 0.0) throw SerializationException("Expected zero")
+        if (value !is JsonPrimitive || value.isString || value.doubleOrNull != 0.0)
+            throw SerializationException("Expected zero")
         return CanonicalZero
     }
+
     override fun serialize(encoder: Encoder, value: CanonicalZero) {
         val output = encoder as? JsonEncoder ?: throw SerializationException("Expected JSON zero")
         output.encodeJsonElement(JsonPrimitive(0))
@@ -54,71 +55,119 @@ data class HistorySnapshotVariant2(
 ) : HistorySnapshot
 
 object HistorySnapshotSerializer : KSerializer<HistorySnapshot> {
-    override val descriptor = buildClassSerialDescriptor("ai.okou.android.api.historyfixtures.HistorySnapshot")
+    override val descriptor =
+        buildClassSerialDescriptor("ai.okou.android.api.historyfixtures.HistorySnapshot")
+
     override fun deserialize(decoder: Decoder): HistorySnapshot {
-        val input = decoder as? JsonDecoder ?: throw SerializationException("Expected JSON object for HistorySnapshot")
-        val value = input.decodeJsonElement() as? JsonObject ?: throw SerializationException("Expected object for HistorySnapshot")
-        val matches = listOf((value["lastEventId"].let { field -> field === JsonNull }) && (value["expiresInSeconds"].let { field -> (field is JsonPrimitive && !field.isString && field.doubleOrNull?.let { it.isFinite() && it % 1.0 == 0.0 && it <= 9007199254740991.0 && it > 0.0 } == true) }) && (value["lastSeqId"].let { field -> (field is JsonPrimitive && !field.isString && field.doubleOrNull?.let { it.isFinite() && it == 0.0 } == true) }), (value["lastEventId"].let { field -> (field is JsonPrimitive && field.isString && Regex("^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)\$").containsMatchIn(field.content)) }) && (value["expiresInSeconds"].let { field -> (field is JsonPrimitive && !field.isString && field.doubleOrNull?.let { it.isFinite() && it % 1.0 == 0.0 && it <= 9007199254740991.0 && it > 0.0 } == true) }) && (value["lastSeqId"].let { field -> (field is JsonPrimitive && !field.isString && field.doubleOrNull?.let { it.isFinite() && it % 1.0 == 0.0 && it <= 9007199254740991.0 && it > 0.0 } == true) }))
-        if (matches.count { it } != 1) throw SerializationException("Unknown or ambiguous HistorySnapshot variant")
+        val input =
+            decoder as? JsonDecoder
+                ?: throw SerializationException("Expected JSON object for HistorySnapshot")
+        val value =
+            input.decodeJsonElement() as? JsonObject
+                ?: throw SerializationException("Expected object for HistorySnapshot")
+        val matches =
+            listOf(
+                (value["lastEventId"].let { field -> field === JsonNull }) &&
+                    (value["expiresInSeconds"].let { field ->
+                        (field is JsonPrimitive &&
+                            !field.isString &&
+                            field.doubleOrNull?.let {
+                                it.isFinite() &&
+                                    it % 1.0 == 0.0 &&
+                                    it <= 9007199254740991.0 &&
+                                    it > 0.0
+                            } == true)
+                    }) &&
+                    (value["lastSeqId"].let { field ->
+                        (field is JsonPrimitive &&
+                            !field.isString &&
+                            field.doubleOrNull?.let { it.isFinite() && it == 0.0 } == true)
+                    }),
+                (value["lastEventId"].let { field ->
+                    (field is JsonPrimitive &&
+                        field.isString &&
+                        Regex(
+                                "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)\$"
+                            )
+                            .containsMatchIn(field.content))
+                }) &&
+                    (value["expiresInSeconds"].let { field ->
+                        (field is JsonPrimitive &&
+                            !field.isString &&
+                            field.doubleOrNull?.let {
+                                it.isFinite() &&
+                                    it % 1.0 == 0.0 &&
+                                    it <= 9007199254740991.0 &&
+                                    it > 0.0
+                            } == true)
+                    }) &&
+                    (value["lastSeqId"].let { field ->
+                        (field is JsonPrimitive &&
+                            !field.isString &&
+                            field.doubleOrNull?.let {
+                                it.isFinite() &&
+                                    it % 1.0 == 0.0 &&
+                                    it <= 9007199254740991.0 &&
+                                    it > 0.0
+                            } == true)
+                    }),
+            )
+        if (matches.count { it } != 1)
+            throw SerializationException("Unknown or ambiguous HistorySnapshot variant")
         return when (matches.indexOf(true)) {
             0 -> input.json.decodeFromJsonElement(HistorySnapshotVariant1.serializer(), value)
             1 -> input.json.decodeFromJsonElement(HistorySnapshotVariant2.serializer(), value)
             else -> throw SerializationException("Unknown HistorySnapshot variant")
         }
     }
+
     override fun serialize(encoder: Encoder, value: HistorySnapshot) {
         when (value) {
-            is HistorySnapshotVariant1 -> encoder.encodeSerializableValue(HistorySnapshotVariant1.serializer(), value)
-            is HistorySnapshotVariant2 -> encoder.encodeSerializableValue(HistorySnapshotVariant2.serializer(), value)
+            is HistorySnapshotVariant1 ->
+                encoder.encodeSerializableValue(HistorySnapshotVariant1.serializer(), value)
+            is HistorySnapshotVariant2 ->
+                encoder.encodeSerializableValue(HistorySnapshotVariant2.serializer(), value)
         }
     }
 }
 
-@Serializable(with = HistoryRowsRowsItemSerializer::class)
-sealed interface HistoryRowsRowsItem
+@Serializable(with = HistoryRowsRowsItemSerializer::class) sealed interface HistoryRowsRowsItem
 
 @Serializable
 enum class HistoryRowsRowsItemVariant1ContextType {
-    @SerialName("web")
-    WEB,
-    @SerialName("slack")
-    SLACK,
-    @SerialName("discord")
-    DISCORD,
-    @SerialName("wechat")
-    WECHAT,
-    @SerialName("feishu")
-    FEISHU,
-    @SerialName("teams")
-    TEAMS,
-    @SerialName("telegram")
-    TELEGRAM,
-    @SerialName("agentphone")
-    AGENTPHONE,
-    @SerialName("email")
-    EMAIL,
-    @SerialName("automation")
-    AUTOMATION,
-    @SerialName("agent_run")
-    AGENT_RUN,
+    @SerialName("web") WEB,
+    @SerialName("slack") SLACK,
+    @SerialName("discord") DISCORD,
+    @SerialName("wechat") WECHAT,
+    @SerialName("feishu") FEISHU,
+    @SerialName("teams") TEAMS,
+    @SerialName("telegram") TELEGRAM,
+    @SerialName("agentphone") AGENTPHONE,
+    @SerialName("email") EMAIL,
+    @SerialName("automation") AUTOMATION,
+    @SerialName("agent_run") AGENT_RUN,
 }
 
 @Serializable(with = CanonicalOptionalJsonSerializer::class)
 sealed interface CanonicalOptionalJson {
     data object Absent : CanonicalOptionalJson
+
     data class Present(val value: JsonElement) : CanonicalOptionalJson
 }
 
 object CanonicalOptionalJsonSerializer : KSerializer<CanonicalOptionalJson> {
     // A non-nullable property lets explicit JSON null reach this serializer.
     override val descriptor = JsonElement.serializer().descriptor
+
     override fun deserialize(decoder: Decoder): CanonicalOptionalJson {
         val input = decoder as? JsonDecoder ?: throw SerializationException("Expected JSON value")
         return CanonicalOptionalJson.Present(input.decodeJsonElement())
     }
+
     override fun serialize(encoder: Encoder, value: CanonicalOptionalJson) {
         val output = encoder as? JsonEncoder ?: throw SerializationException("Expected JSON value")
-        if (value !is CanonicalOptionalJson.Present) throw SerializationException("Absent JSON field must be omitted")
+        if (value !is CanonicalOptionalJson.Present)
+            throw SerializationException("Absent JSON field must be omitted")
         output.encodeJsonElement(value.value)
     }
 }
@@ -133,8 +182,7 @@ data class HistoryRowsRowsItemVariant1Payload(
 
 @Serializable
 enum class HistoryRowsRowsItemVariant1EventType {
-    @SerialName("run.failed")
-    RUN_FAILED,
+    @SerialName("run.failed") RUN_FAILED
 }
 
 @Serializable
@@ -156,28 +204,17 @@ data class HistoryRowsRowsItemVariant1(
 
 @Serializable
 enum class HistoryRowsRowsItemVariant2ContextType {
-    @SerialName("web")
-    WEB,
-    @SerialName("slack")
-    SLACK,
-    @SerialName("discord")
-    DISCORD,
-    @SerialName("wechat")
-    WECHAT,
-    @SerialName("feishu")
-    FEISHU,
-    @SerialName("teams")
-    TEAMS,
-    @SerialName("telegram")
-    TELEGRAM,
-    @SerialName("agentphone")
-    AGENTPHONE,
-    @SerialName("email")
-    EMAIL,
-    @SerialName("automation")
-    AUTOMATION,
-    @SerialName("agent_run")
-    AGENT_RUN,
+    @SerialName("web") WEB,
+    @SerialName("slack") SLACK,
+    @SerialName("discord") DISCORD,
+    @SerialName("wechat") WECHAT,
+    @SerialName("feishu") FEISHU,
+    @SerialName("teams") TEAMS,
+    @SerialName("telegram") TELEGRAM,
+    @SerialName("agentphone") AGENTPHONE,
+    @SerialName("email") EMAIL,
+    @SerialName("automation") AUTOMATION,
+    @SerialName("agent_run") AGENT_RUN,
 }
 
 @Serializable
@@ -190,14 +227,10 @@ data class HistoryRowsRowsItemVariant2Payload(
 
 @Serializable
 enum class HistoryRowsRowsItemVariant2EventType {
-    @SerialName("input.prompt")
-    INPUT_PROMPT,
-    @SerialName("input.automation")
-    INPUT_AUTOMATION,
-    @SerialName("input.budget")
-    INPUT_BUDGET,
-    @SerialName("input.rejected")
-    INPUT_REJECTED,
+    @SerialName("input.prompt") INPUT_PROMPT,
+    @SerialName("input.automation") INPUT_AUTOMATION,
+    @SerialName("input.budget") INPUT_BUDGET,
+    @SerialName("input.rejected") INPUT_REJECTED,
 }
 
 @Serializable
@@ -218,28 +251,17 @@ data class HistoryRowsRowsItemVariant2(
 
 @Serializable
 enum class HistoryRowsRowsItemVariant3ContextType {
-    @SerialName("web")
-    WEB,
-    @SerialName("slack")
-    SLACK,
-    @SerialName("discord")
-    DISCORD,
-    @SerialName("wechat")
-    WECHAT,
-    @SerialName("feishu")
-    FEISHU,
-    @SerialName("teams")
-    TEAMS,
-    @SerialName("telegram")
-    TELEGRAM,
-    @SerialName("agentphone")
-    AGENTPHONE,
-    @SerialName("email")
-    EMAIL,
-    @SerialName("automation")
-    AUTOMATION,
-    @SerialName("agent_run")
-    AGENT_RUN,
+    @SerialName("web") WEB,
+    @SerialName("slack") SLACK,
+    @SerialName("discord") DISCORD,
+    @SerialName("wechat") WECHAT,
+    @SerialName("feishu") FEISHU,
+    @SerialName("teams") TEAMS,
+    @SerialName("telegram") TELEGRAM,
+    @SerialName("agentphone") AGENTPHONE,
+    @SerialName("email") EMAIL,
+    @SerialName("automation") AUTOMATION,
+    @SerialName("agent_run") AGENT_RUN,
 }
 
 @Serializable
@@ -252,22 +274,14 @@ data class HistoryRowsRowsItemVariant3Payload(
 
 @Serializable
 enum class HistoryRowsRowsItemVariant3EventType {
-    @SerialName("output.message")
-    OUTPUT_MESSAGE,
-    @SerialName("output.error")
-    OUTPUT_ERROR,
-    @SerialName("output.followups")
-    OUTPUT_FOLLOWUPS,
-    @SerialName("run.completed")
-    RUN_COMPLETED,
-    @SerialName("run.cancelled")
-    RUN_CANCELLED,
-    @SerialName("control.interrupt")
-    CONTROL_INTERRUPT,
-    @SerialName("control.revoke")
-    CONTROL_REVOKE,
-    @SerialName("usage.recorded")
-    USAGE_RECORDED,
+    @SerialName("output.message") OUTPUT_MESSAGE,
+    @SerialName("output.error") OUTPUT_ERROR,
+    @SerialName("output.followups") OUTPUT_FOLLOWUPS,
+    @SerialName("run.completed") RUN_COMPLETED,
+    @SerialName("run.cancelled") RUN_CANCELLED,
+    @SerialName("control.interrupt") CONTROL_INTERRUPT,
+    @SerialName("control.revoke") CONTROL_REVOKE,
+    @SerialName("usage.recorded") USAGE_RECORDED,
 }
 
 @Serializable
@@ -287,12 +301,48 @@ data class HistoryRowsRowsItemVariant3(
 ) : HistoryRowsRowsItem
 
 object HistoryRowsRowsItemSerializer : KSerializer<HistoryRowsRowsItem> {
-    override val descriptor = buildClassSerialDescriptor("ai.okou.android.api.historyfixtures.HistoryRowsRowsItem")
+    override val descriptor =
+        buildClassSerialDescriptor("ai.okou.android.api.historyfixtures.HistoryRowsRowsItem")
+
     override fun deserialize(decoder: Decoder): HistoryRowsRowsItem {
-        val input = decoder as? JsonDecoder ?: throw SerializationException("Expected JSON object for HistoryRowsRowsItem")
-        val value = input.decodeJsonElement() as? JsonObject ?: throw SerializationException("Expected object for HistoryRowsRowsItem")
-        val matches = listOf((value["eventType"] as? JsonPrimitive)?.let { it.isString && it.content in setOf("run.failed") } == true, ((value["eventType"] as? JsonPrimitive)?.let { it.isString && it.content in setOf("input.prompt", "input.automation", "input.budget", "input.rejected") } == true) && (!value.containsKey("failureReason")), ((value["eventType"] as? JsonPrimitive)?.let { it.isString && it.content in setOf("output.message", "output.error", "output.followups", "run.completed", "run.cancelled", "control.interrupt", "control.revoke", "usage.recorded") } == true) && (!value.containsKey("failureReason")))
-        if (matches.count { it } != 1) throw SerializationException("Unknown or ambiguous HistoryRowsRowsItem variant")
+        val input =
+            decoder as? JsonDecoder
+                ?: throw SerializationException("Expected JSON object for HistoryRowsRowsItem")
+        val value =
+            input.decodeJsonElement() as? JsonObject
+                ?: throw SerializationException("Expected object for HistoryRowsRowsItem")
+        val matches =
+            listOf(
+                (value["eventType"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("run.failed")
+                } == true,
+                ((value["eventType"] as? JsonPrimitive)?.let {
+                    it.isString &&
+                        it.content in
+                            setOf(
+                                "input.prompt",
+                                "input.automation",
+                                "input.budget",
+                                "input.rejected",
+                            )
+                } == true) && (!value.containsKey("failureReason")),
+                ((value["eventType"] as? JsonPrimitive)?.let {
+                    it.isString &&
+                        it.content in
+                            setOf(
+                                "output.message",
+                                "output.error",
+                                "output.followups",
+                                "run.completed",
+                                "run.cancelled",
+                                "control.interrupt",
+                                "control.revoke",
+                                "usage.recorded",
+                            )
+                } == true) && (!value.containsKey("failureReason")),
+            )
+        if (matches.count { it } != 1)
+            throw SerializationException("Unknown or ambiguous HistoryRowsRowsItem variant")
         return when (matches.indexOf(true)) {
             0 -> input.json.decodeFromJsonElement(HistoryRowsRowsItemVariant1.serializer(), value)
             1 -> input.json.decodeFromJsonElement(HistoryRowsRowsItemVariant2.serializer(), value)
@@ -300,47 +350,82 @@ object HistoryRowsRowsItemSerializer : KSerializer<HistoryRowsRowsItem> {
             else -> throw SerializationException("Unknown HistoryRowsRowsItem variant")
         }
     }
+
     override fun serialize(encoder: Encoder, value: HistoryRowsRowsItem) {
         when (value) {
-            is HistoryRowsRowsItemVariant1 -> encoder.encodeSerializableValue(HistoryRowsRowsItemVariant1.serializer(), value)
-            is HistoryRowsRowsItemVariant2 -> encoder.encodeSerializableValue(HistoryRowsRowsItemVariant2.serializer(), value)
-            is HistoryRowsRowsItemVariant3 -> encoder.encodeSerializableValue(HistoryRowsRowsItemVariant3.serializer(), value)
+            is HistoryRowsRowsItemVariant1 ->
+                encoder.encodeSerializableValue(HistoryRowsRowsItemVariant1.serializer(), value)
+            is HistoryRowsRowsItemVariant2 ->
+                encoder.encodeSerializableValue(HistoryRowsRowsItemVariant2.serializer(), value)
+            is HistoryRowsRowsItemVariant3 ->
+                encoder.encodeSerializableValue(HistoryRowsRowsItemVariant3.serializer(), value)
         }
     }
 }
 
-@Serializable(with = HistoryRowsCursorSerializer::class)
-sealed interface HistoryRowsCursor
+@Serializable(with = HistoryRowsCursorSerializer::class) sealed interface HistoryRowsCursor
 
 @Serializable
-data class HistoryRowsCursorVariant1(
-    val `lastEventId`: JsonNull,
-    val `lastSeqId`: CanonicalZero,
-) : HistoryRowsCursor
+data class HistoryRowsCursorVariant1(val `lastEventId`: JsonNull, val `lastSeqId`: CanonicalZero) :
+    HistoryRowsCursor
 
 @Serializable
-data class HistoryRowsCursorVariant2(
-    val `lastEventId`: String,
-    val `lastSeqId`: Long,
-) : HistoryRowsCursor
+data class HistoryRowsCursorVariant2(val `lastEventId`: String, val `lastSeqId`: Long) :
+    HistoryRowsCursor
 
 object HistoryRowsCursorSerializer : KSerializer<HistoryRowsCursor> {
-    override val descriptor = buildClassSerialDescriptor("ai.okou.android.api.historyfixtures.HistoryRowsCursor")
+    override val descriptor =
+        buildClassSerialDescriptor("ai.okou.android.api.historyfixtures.HistoryRowsCursor")
+
     override fun deserialize(decoder: Decoder): HistoryRowsCursor {
-        val input = decoder as? JsonDecoder ?: throw SerializationException("Expected JSON object for HistoryRowsCursor")
-        val value = input.decodeJsonElement() as? JsonObject ?: throw SerializationException("Expected object for HistoryRowsCursor")
-        val matches = listOf((value["lastEventId"].let { field -> field === JsonNull }) && (value["lastSeqId"].let { field -> (field is JsonPrimitive && !field.isString && field.doubleOrNull?.let { it.isFinite() && it == 0.0 } == true) }), (value["lastEventId"].let { field -> (field is JsonPrimitive && field.isString && Regex("^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)\$").containsMatchIn(field.content)) }) && (value["lastSeqId"].let { field -> (field is JsonPrimitive && !field.isString && field.doubleOrNull?.let { it.isFinite() && it % 1.0 == 0.0 && it <= 9007199254740991.0 && it > 0.0 } == true) }))
-        if (matches.count { it } != 1) throw SerializationException("Unknown or ambiguous HistoryRowsCursor variant")
+        val input =
+            decoder as? JsonDecoder
+                ?: throw SerializationException("Expected JSON object for HistoryRowsCursor")
+        val value =
+            input.decodeJsonElement() as? JsonObject
+                ?: throw SerializationException("Expected object for HistoryRowsCursor")
+        val matches =
+            listOf(
+                (value["lastEventId"].let { field -> field === JsonNull }) &&
+                    (value["lastSeqId"].let { field ->
+                        (field is JsonPrimitive &&
+                            !field.isString &&
+                            field.doubleOrNull?.let { it.isFinite() && it == 0.0 } == true)
+                    }),
+                (value["lastEventId"].let { field ->
+                    (field is JsonPrimitive &&
+                        field.isString &&
+                        Regex(
+                                "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)\$"
+                            )
+                            .containsMatchIn(field.content))
+                }) &&
+                    (value["lastSeqId"].let { field ->
+                        (field is JsonPrimitive &&
+                            !field.isString &&
+                            field.doubleOrNull?.let {
+                                it.isFinite() &&
+                                    it % 1.0 == 0.0 &&
+                                    it <= 9007199254740991.0 &&
+                                    it > 0.0
+                            } == true)
+                    }),
+            )
+        if (matches.count { it } != 1)
+            throw SerializationException("Unknown or ambiguous HistoryRowsCursor variant")
         return when (matches.indexOf(true)) {
             0 -> input.json.decodeFromJsonElement(HistoryRowsCursorVariant1.serializer(), value)
             1 -> input.json.decodeFromJsonElement(HistoryRowsCursorVariant2.serializer(), value)
             else -> throw SerializationException("Unknown HistoryRowsCursor variant")
         }
     }
+
     override fun serialize(encoder: Encoder, value: HistoryRowsCursor) {
         when (value) {
-            is HistoryRowsCursorVariant1 -> encoder.encodeSerializableValue(HistoryRowsCursorVariant1.serializer(), value)
-            is HistoryRowsCursorVariant2 -> encoder.encodeSerializableValue(HistoryRowsCursorVariant2.serializer(), value)
+            is HistoryRowsCursorVariant1 ->
+                encoder.encodeSerializableValue(HistoryRowsCursorVariant1.serializer(), value)
+            is HistoryRowsCursorVariant2 ->
+                encoder.encodeSerializableValue(HistoryRowsCursorVariant2.serializer(), value)
         }
     }
 }
@@ -353,43 +438,25 @@ data class HistoryRows(
 )
 
 @Serializable
-data class ThreadDetail(
-    val `lastReadAt`: String?,
-    val `cancellationRecoveryPending`: Boolean,
-)
+data class ThreadDetail(val `lastReadAt`: String?, val `cancellationRecoveryPending`: Boolean)
 
-@Serializable
-data class ReadState(
-    val `lastReadAt`: String?,
-)
+@Serializable data class ReadState(val `lastReadAt`: String?)
 
-@Serializable(with = RawHistoryRowSerializer::class)
-sealed interface RawHistoryRow
+@Serializable(with = RawHistoryRowSerializer::class) sealed interface RawHistoryRow
 
 @Serializable
 enum class RawHistoryRowVariant1ContextType {
-    @SerialName("web")
-    WEB,
-    @SerialName("slack")
-    SLACK,
-    @SerialName("discord")
-    DISCORD,
-    @SerialName("wechat")
-    WECHAT,
-    @SerialName("feishu")
-    FEISHU,
-    @SerialName("teams")
-    TEAMS,
-    @SerialName("telegram")
-    TELEGRAM,
-    @SerialName("agentphone")
-    AGENTPHONE,
-    @SerialName("email")
-    EMAIL,
-    @SerialName("automation")
-    AUTOMATION,
-    @SerialName("agent_run")
-    AGENT_RUN,
+    @SerialName("web") WEB,
+    @SerialName("slack") SLACK,
+    @SerialName("discord") DISCORD,
+    @SerialName("wechat") WECHAT,
+    @SerialName("feishu") FEISHU,
+    @SerialName("teams") TEAMS,
+    @SerialName("telegram") TELEGRAM,
+    @SerialName("agentphone") AGENTPHONE,
+    @SerialName("email") EMAIL,
+    @SerialName("automation") AUTOMATION,
+    @SerialName("agent_run") AGENT_RUN,
 }
 
 @Serializable
@@ -402,8 +469,7 @@ data class RawHistoryRowVariant1Payload(
 
 @Serializable
 enum class RawHistoryRowVariant1EventType {
-    @SerialName("run.failed")
-    RUN_FAILED,
+    @SerialName("run.failed") RUN_FAILED
 }
 
 @Serializable
@@ -425,28 +491,17 @@ data class RawHistoryRowVariant1(
 
 @Serializable
 enum class RawHistoryRowVariant2ContextType {
-    @SerialName("web")
-    WEB,
-    @SerialName("slack")
-    SLACK,
-    @SerialName("discord")
-    DISCORD,
-    @SerialName("wechat")
-    WECHAT,
-    @SerialName("feishu")
-    FEISHU,
-    @SerialName("teams")
-    TEAMS,
-    @SerialName("telegram")
-    TELEGRAM,
-    @SerialName("agentphone")
-    AGENTPHONE,
-    @SerialName("email")
-    EMAIL,
-    @SerialName("automation")
-    AUTOMATION,
-    @SerialName("agent_run")
-    AGENT_RUN,
+    @SerialName("web") WEB,
+    @SerialName("slack") SLACK,
+    @SerialName("discord") DISCORD,
+    @SerialName("wechat") WECHAT,
+    @SerialName("feishu") FEISHU,
+    @SerialName("teams") TEAMS,
+    @SerialName("telegram") TELEGRAM,
+    @SerialName("agentphone") AGENTPHONE,
+    @SerialName("email") EMAIL,
+    @SerialName("automation") AUTOMATION,
+    @SerialName("agent_run") AGENT_RUN,
 }
 
 @Serializable
@@ -459,14 +514,10 @@ data class RawHistoryRowVariant2Payload(
 
 @Serializable
 enum class RawHistoryRowVariant2EventType {
-    @SerialName("input.prompt")
-    INPUT_PROMPT,
-    @SerialName("input.automation")
-    INPUT_AUTOMATION,
-    @SerialName("input.budget")
-    INPUT_BUDGET,
-    @SerialName("input.rejected")
-    INPUT_REJECTED,
+    @SerialName("input.prompt") INPUT_PROMPT,
+    @SerialName("input.automation") INPUT_AUTOMATION,
+    @SerialName("input.budget") INPUT_BUDGET,
+    @SerialName("input.rejected") INPUT_REJECTED,
 }
 
 @Serializable
@@ -487,28 +538,17 @@ data class RawHistoryRowVariant2(
 
 @Serializable
 enum class RawHistoryRowVariant3ContextType {
-    @SerialName("web")
-    WEB,
-    @SerialName("slack")
-    SLACK,
-    @SerialName("discord")
-    DISCORD,
-    @SerialName("wechat")
-    WECHAT,
-    @SerialName("feishu")
-    FEISHU,
-    @SerialName("teams")
-    TEAMS,
-    @SerialName("telegram")
-    TELEGRAM,
-    @SerialName("agentphone")
-    AGENTPHONE,
-    @SerialName("email")
-    EMAIL,
-    @SerialName("automation")
-    AUTOMATION,
-    @SerialName("agent_run")
-    AGENT_RUN,
+    @SerialName("web") WEB,
+    @SerialName("slack") SLACK,
+    @SerialName("discord") DISCORD,
+    @SerialName("wechat") WECHAT,
+    @SerialName("feishu") FEISHU,
+    @SerialName("teams") TEAMS,
+    @SerialName("telegram") TELEGRAM,
+    @SerialName("agentphone") AGENTPHONE,
+    @SerialName("email") EMAIL,
+    @SerialName("automation") AUTOMATION,
+    @SerialName("agent_run") AGENT_RUN,
 }
 
 @Serializable
@@ -521,22 +561,14 @@ data class RawHistoryRowVariant3Payload(
 
 @Serializable
 enum class RawHistoryRowVariant3EventType {
-    @SerialName("output.message")
-    OUTPUT_MESSAGE,
-    @SerialName("output.error")
-    OUTPUT_ERROR,
-    @SerialName("output.followups")
-    OUTPUT_FOLLOWUPS,
-    @SerialName("run.completed")
-    RUN_COMPLETED,
-    @SerialName("run.cancelled")
-    RUN_CANCELLED,
-    @SerialName("control.interrupt")
-    CONTROL_INTERRUPT,
-    @SerialName("control.revoke")
-    CONTROL_REVOKE,
-    @SerialName("usage.recorded")
-    USAGE_RECORDED,
+    @SerialName("output.message") OUTPUT_MESSAGE,
+    @SerialName("output.error") OUTPUT_ERROR,
+    @SerialName("output.followups") OUTPUT_FOLLOWUPS,
+    @SerialName("run.completed") RUN_COMPLETED,
+    @SerialName("run.cancelled") RUN_CANCELLED,
+    @SerialName("control.interrupt") CONTROL_INTERRUPT,
+    @SerialName("control.revoke") CONTROL_REVOKE,
+    @SerialName("usage.recorded") USAGE_RECORDED,
 }
 
 @Serializable
@@ -556,12 +588,48 @@ data class RawHistoryRowVariant3(
 ) : RawHistoryRow
 
 object RawHistoryRowSerializer : KSerializer<RawHistoryRow> {
-    override val descriptor = buildClassSerialDescriptor("ai.okou.android.api.historyfixtures.RawHistoryRow")
+    override val descriptor =
+        buildClassSerialDescriptor("ai.okou.android.api.historyfixtures.RawHistoryRow")
+
     override fun deserialize(decoder: Decoder): RawHistoryRow {
-        val input = decoder as? JsonDecoder ?: throw SerializationException("Expected JSON object for RawHistoryRow")
-        val value = input.decodeJsonElement() as? JsonObject ?: throw SerializationException("Expected object for RawHistoryRow")
-        val matches = listOf((value["eventType"] as? JsonPrimitive)?.let { it.isString && it.content in setOf("run.failed") } == true, ((value["eventType"] as? JsonPrimitive)?.let { it.isString && it.content in setOf("input.prompt", "input.automation", "input.budget", "input.rejected") } == true) && (!value.containsKey("failureReason")), ((value["eventType"] as? JsonPrimitive)?.let { it.isString && it.content in setOf("output.message", "output.error", "output.followups", "run.completed", "run.cancelled", "control.interrupt", "control.revoke", "usage.recorded") } == true) && (!value.containsKey("failureReason")))
-        if (matches.count { it } != 1) throw SerializationException("Unknown or ambiguous RawHistoryRow variant")
+        val input =
+            decoder as? JsonDecoder
+                ?: throw SerializationException("Expected JSON object for RawHistoryRow")
+        val value =
+            input.decodeJsonElement() as? JsonObject
+                ?: throw SerializationException("Expected object for RawHistoryRow")
+        val matches =
+            listOf(
+                (value["eventType"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("run.failed")
+                } == true,
+                ((value["eventType"] as? JsonPrimitive)?.let {
+                    it.isString &&
+                        it.content in
+                            setOf(
+                                "input.prompt",
+                                "input.automation",
+                                "input.budget",
+                                "input.rejected",
+                            )
+                } == true) && (!value.containsKey("failureReason")),
+                ((value["eventType"] as? JsonPrimitive)?.let {
+                    it.isString &&
+                        it.content in
+                            setOf(
+                                "output.message",
+                                "output.error",
+                                "output.followups",
+                                "run.completed",
+                                "run.cancelled",
+                                "control.interrupt",
+                                "control.revoke",
+                                "usage.recorded",
+                            )
+                } == true) && (!value.containsKey("failureReason")),
+            )
+        if (matches.count { it } != 1)
+            throw SerializationException("Unknown or ambiguous RawHistoryRow variant")
         return when (matches.indexOf(true)) {
             0 -> input.json.decodeFromJsonElement(RawHistoryRowVariant1.serializer(), value)
             1 -> input.json.decodeFromJsonElement(RawHistoryRowVariant2.serializer(), value)
@@ -569,23 +637,23 @@ object RawHistoryRowSerializer : KSerializer<RawHistoryRow> {
             else -> throw SerializationException("Unknown RawHistoryRow variant")
         }
     }
+
     override fun serialize(encoder: Encoder, value: RawHistoryRow) {
         when (value) {
-            is RawHistoryRowVariant1 -> encoder.encodeSerializableValue(RawHistoryRowVariant1.serializer(), value)
-            is RawHistoryRowVariant2 -> encoder.encodeSerializableValue(RawHistoryRowVariant2.serializer(), value)
-            is RawHistoryRowVariant3 -> encoder.encodeSerializableValue(RawHistoryRowVariant3.serializer(), value)
+            is RawHistoryRowVariant1 ->
+                encoder.encodeSerializableValue(RawHistoryRowVariant1.serializer(), value)
+            is RawHistoryRowVariant2 ->
+                encoder.encodeSerializableValue(RawHistoryRowVariant2.serializer(), value)
+            is RawHistoryRowVariant3 ->
+                encoder.encodeSerializableValue(RawHistoryRowVariant3.serializer(), value)
         }
     }
 }
 
-@Serializable(with = RowsQuerySerializer::class)
-sealed interface RowsQuery
+@Serializable(with = RowsQuerySerializer::class) sealed interface RowsQuery
 
 @Serializable
-data class RowsQueryVariant1(
-    val `sinceSeqId`: CanonicalZero,
-    val `limit`: Double,
-) : RowsQuery
+data class RowsQueryVariant1(val `sinceSeqId`: CanonicalZero, val `limit`: Double) : RowsQuery
 
 @Serializable
 data class RowsQueryVariant2(
@@ -595,22 +663,64 @@ data class RowsQueryVariant2(
 ) : RowsQuery
 
 object RowsQuerySerializer : KSerializer<RowsQuery> {
-    override val descriptor = buildClassSerialDescriptor("ai.okou.android.api.historyfixtures.RowsQuery")
+    override val descriptor =
+        buildClassSerialDescriptor("ai.okou.android.api.historyfixtures.RowsQuery")
+
     override fun deserialize(decoder: Decoder): RowsQuery {
-        val input = decoder as? JsonDecoder ?: throw SerializationException("Expected JSON object for RowsQuery")
-        val value = input.decodeJsonElement() as? JsonObject ?: throw SerializationException("Expected object for RowsQuery")
-        val matches = listOf((!value.containsKey("sinceEventId")) && (value["sinceSeqId"].let { field -> (field is JsonPrimitive && !field.isString && field.doubleOrNull?.let { it.isFinite() && it == 0.0 } == true) }) && (!value.containsKey("sinceEventId")) && (value["limit"].let { field -> (field is JsonPrimitive && !field.isString && field.doubleOrNull?.let { it.isFinite() && it >= 1.0 && it <= 50.0 } == true) }), (value.containsKey("sinceEventId")) && (value["sinceSeqId"].let { field -> (field is JsonPrimitive && !field.isString && field.doubleOrNull?.let { it.isFinite() && it % 1.0 == 0.0 && it <= 9007199254740991.0 && it > 0.0 } == true) }) && (value["limit"].let { field -> (field is JsonPrimitive && !field.isString && field.doubleOrNull?.let { it.isFinite() && it >= 1.0 && it <= 50.0 } == true) }))
-        if (matches.count { it } != 1) throw SerializationException("Unknown or ambiguous RowsQuery variant")
+        val input =
+            decoder as? JsonDecoder
+                ?: throw SerializationException("Expected JSON object for RowsQuery")
+        val value =
+            input.decodeJsonElement() as? JsonObject
+                ?: throw SerializationException("Expected object for RowsQuery")
+        val matches =
+            listOf(
+                (!value.containsKey("sinceEventId")) &&
+                    (value["sinceSeqId"].let { field ->
+                        (field is JsonPrimitive &&
+                            !field.isString &&
+                            field.doubleOrNull?.let { it.isFinite() && it == 0.0 } == true)
+                    }) &&
+                    (!value.containsKey("sinceEventId")) &&
+                    (value["limit"].let { field ->
+                        (field is JsonPrimitive &&
+                            !field.isString &&
+                            field.doubleOrNull?.let { it.isFinite() && it >= 1.0 && it <= 50.0 } ==
+                                true)
+                    }),
+                (value.containsKey("sinceEventId")) &&
+                    (value["sinceSeqId"].let { field ->
+                        (field is JsonPrimitive &&
+                            !field.isString &&
+                            field.doubleOrNull?.let {
+                                it.isFinite() &&
+                                    it % 1.0 == 0.0 &&
+                                    it <= 9007199254740991.0 &&
+                                    it > 0.0
+                            } == true)
+                    }) &&
+                    (value["limit"].let { field ->
+                        (field is JsonPrimitive &&
+                            !field.isString &&
+                            field.doubleOrNull?.let { it.isFinite() && it >= 1.0 && it <= 50.0 } ==
+                                true)
+                    }),
+            )
+        if (matches.count { it } != 1)
+            throw SerializationException("Unknown or ambiguous RowsQuery variant")
         return when (matches.indexOf(true)) {
             0 -> input.json.decodeFromJsonElement(RowsQueryVariant1.serializer(), value)
             1 -> input.json.decodeFromJsonElement(RowsQueryVariant2.serializer(), value)
             else -> throw SerializationException("Unknown RowsQuery variant")
         }
     }
+
     override fun serialize(encoder: Encoder, value: RowsQuery) {
         when (value) {
-            is RowsQueryVariant1 -> encoder.encodeSerializableValue(RowsQueryVariant1.serializer(), value)
-            is RowsQueryVariant2 -> encoder.encodeSerializableValue(RowsQueryVariant2.serializer(), value)
+            is RowsQueryVariant1 ->
+                encoder.encodeSerializableValue(RowsQueryVariant1.serializer(), value)
+            is RowsQueryVariant2 ->
+                encoder.encodeSerializableValue(RowsQueryVariant2.serializer(), value)
         }
     }
 }

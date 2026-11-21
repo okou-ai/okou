@@ -1,10 +1,10 @@
 package ai.okou.android.artifacts
 
+import ai.okou.android.R
+import ai.okou.android.chat.ConfirmedChat
 import ai.okou.android.state.rememberArtifactFilter
 import ai.okou.android.state.rememberArtifactFlag
 import ai.okou.android.state.rememberArtifactId
-import ai.okou.android.R
-import ai.okou.android.chat.ConfirmedChat
 import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Intent

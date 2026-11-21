@@ -2,7 +2,6 @@
 // Regenerate: cd turbo && pnpm -F @okouai/api-contracts generate:kotlin
 package ai.okou.android.api.generated
 
-
 // Known at build time. Keep transport and cache values as raw strings.
 internal enum class KnownRunFailureReason(val wireValue: String) {
     UNKNOWN("unknown"),
