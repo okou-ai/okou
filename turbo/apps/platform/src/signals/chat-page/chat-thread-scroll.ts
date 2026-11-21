@@ -17,6 +17,8 @@ import {
 } from "../utils.ts";
 import type { ChatEvent } from "./chat-event-types.ts";
 
+import { visibleTranscriptSpacer } from "./chat-transcript-pages.ts";
+
 const L = logger("AutoScroll");
 const AT_BOTTOM_THRESHOLD_PX = 10;
 const SCROLL_ANCHOR_ATTRIBUTE = "data-chat-scroll-anchor-event-id";
@@ -104,6 +106,12 @@ interface ThreadScrollPositionSignals {
 }
 
 interface ChatThreadScrollRenderWindow {
+  readonly awaitingAnchor$: Computed<boolean>;
+  readonly tailMounted$: Computed<boolean>;
+  readonly positionInSpacer$: Command<
+    ThreadScrollPosition | null,
+    [HTMLElement]
+  >;
   readonly afterThreadScrollPositionChanged$: Command<
     Promise<void>,
     [AbortSignal]
@@ -520,6 +528,7 @@ function createScrollNavigationSignals(
   scroll: InternalScrollSignals,
   runtime: ScrollRuntime,
   pendingScrollAfterRenderRequest$: Computed<ScrollAfterRenderRequest | null>,
+  virtual: ReturnType<typeof createVirtualScrollNavigation>,
 ) {
   const scrollTo$ = command(({ get }, position: ThreadScrollPosition) => {
     releaseHiddenLayout(runtime);
@@ -553,7 +562,7 @@ function createScrollNavigationSignals(
       // part of the current task and cannot paint at the old offset first.
       applyScrollTop(runtime, container, container.scrollHeight);
       runtime.initialized = true;
-      await set(scroll.clearThreadScrollPosition$, signal);
+      await set(virtual.followTail$, signal);
     },
   );
 
@@ -566,7 +575,12 @@ function createScrollNavigationSignals(
       }
       applyScrollTop(runtime, container, 0);
       runtime.initialized = true;
-      await set(scroll.syncThreadScrollPosition$, container, true, signal);
+      const seek = set(virtual.seekSpacer$, container, signal);
+      if (seek) {
+        await seek;
+      } else {
+        await set(scroll.syncThreadScrollPosition$, container, true, signal);
+      }
     },
   );
 
@@ -594,7 +608,10 @@ function createScrollNavigationSignals(
           runtime.initialized = true;
           return;
         }
-        if (get(pendingScrollAfterRenderRequest$) !== null) {
+        if (
+          get(pendingScrollAfterRenderRequest$) !== null ||
+          get(virtual.awaitingAnchor$)
+        ) {
           // The commit marker owns the pending event batch. Keep its anchor
           // until React acknowledges the final DOM for that batch.
           L.debug("layout scroll restore waiting for render commit", {
@@ -681,36 +698,48 @@ function createRequestScrollAfterRender(
  * newer scroll request, such as a jump to a linked message, keeps its target
  * and measures again on its own commit.
  */
-function createFillViewportWithEarlierGroups(
+function createFillTranscriptViewport(
   runtime: ScrollRuntime,
+  position$: Computed<ThreadScrollPosition | null>,
   loadEarlierGroups$: ChatThreadScrollRenderWindow["loadEarlierGroups$"],
   requestScrollAfterRender$: ReturnType<typeof createRequestScrollAfterRender>,
 ) {
   return command(
     async (
-      { set },
+      { get, set },
       committedRevision: number,
+      position: ThreadScrollPosition | null,
       signal: AbortSignal,
     ): Promise<void> => {
       const didPrepend = await set(loadEarlierGroups$, signal);
       signal.throwIfAborted();
+      const current = get(position$);
+      const stillReading = position
+        ? sameScrollPosition(current ?? undefined, position)
+        : current === null;
       if (
+        stillReading &&
         didPrepend &&
         runtime.latestRenderRequestRevision === committedRevision
       ) {
-        await set(requestScrollAfterRender$, null, "instant", signal);
+        await set(requestScrollAfterRender$, position, "instant", signal);
       }
     },
   );
 }
 
-/** Commits scroll only when React acknowledges the matching event batch. */
-function createRenderScrollSignals(
-  threadId: string,
-  scroll: InternalScrollSignals,
-  runtime: ScrollRuntime,
-  loadEarlierGroups$: ChatThreadScrollRenderWindow["loadEarlierGroups$"],
-) {
+function transcriptViewportNeedsContent(
+  container: HTMLElement,
+  atTail: boolean,
+): boolean {
+  return (
+    container.clientHeight > 0 &&
+    ((atTail && container.scrollHeight <= container.clientHeight) ||
+      visibleTranscriptSpacer(container) !== null)
+  );
+}
+
+function createPendingScrollRequestSignals() {
   const internalPendingRequest$ = state<ScrollAfterRenderRequest | null>(null);
   const pendingScrollAfterRenderRequest$ = computed((get) => {
     return get(internalPendingRequest$);
@@ -722,14 +751,34 @@ function createRenderScrollSignals(
       }
     },
   );
+  return {
+    internalPendingRequest$,
+    pendingScrollAfterRenderRequest$,
+    clearPendingRequest$,
+  };
+}
+
+/** Commits scroll only when React acknowledges the matching event batch. */
+function createRenderScrollSignals(
+  threadId: string,
+  scroll: InternalScrollSignals,
+  runtime: ScrollRuntime,
+  loadEarlierGroups$: ChatThreadScrollRenderWindow["loadEarlierGroups$"],
+) {
+  const {
+    internalPendingRequest$,
+    pendingScrollAfterRenderRequest$,
+    clearPendingRequest$,
+  } = createPendingScrollRequestSignals();
   const requestScrollAfterRender$ = createRequestScrollAfterRender(
     threadId,
     scroll,
     runtime,
     internalPendingRequest$,
   );
-  const fillViewportWithEarlierGroups$ = createFillViewportWithEarlierGroups(
+  const fillTranscriptViewport$ = createFillTranscriptViewport(
     runtime,
+    scroll.threadScrollPosition$,
     loadEarlierGroups$,
     requestScrollAfterRender$,
   );
@@ -791,10 +840,10 @@ function createRenderScrollSignals(
         runtime.initialized = true;
         // A tail that fits the viewport cannot produce the scroll event that
         // loads earlier history, so this commit requests it instead.
-        const viewportUnfilled =
-          commitToTail &&
-          container.clientHeight > 0 &&
-          container.scrollHeight <= container.clientHeight;
+        const viewportUnfilled = transcriptViewportNeedsContent(
+          container,
+          commitToTail,
+        );
         set(clearPendingRequest$, revision);
         L.debug("render scroll committed", {
           threadId,
@@ -808,7 +857,12 @@ function createRenderScrollSignals(
           // Like a scroll-triggered load, this outlives the marker, which
           // unmounts once its request clears.
           detach(
-            set(fillViewportWithEarlierGroups$, revision, get(pageSignal$)),
+            set(
+              fillTranscriptViewport$,
+              revision,
+              commitToTail ? null : request.position,
+              get(pageSignal$),
+            ),
             Reason.DomCallback,
             "load earlier chat history into an unfilled viewport",
           );
@@ -851,6 +905,7 @@ function createAttachScrollContainer(
   scroll: InternalScrollSignals,
   navigation: ScrollNavigationSignals,
   runtime: ScrollRuntime,
+  seekSpacer$: Command<Promise<void> | null, [HTMLElement, AbortSignal]>,
 ) {
   return command(({ set }, container: HTMLElement, signal: AbortSignal) => {
     set(scroll.bindScrollContainer$, container);
@@ -885,6 +940,12 @@ function createAttachScrollContainer(
         // viewport attempt; a later layout must not replay its stale anchor.
         if (container.clientHeight > 0) {
           runtime.hasMeasuredPosition = true;
+        }
+      }
+      if (!programmatic && !isAtBottom(container)) {
+        const seek = set(seekSpacer$, container, signal);
+        if (seek) {
+          return seek;
         }
       }
       return set(
@@ -1094,6 +1155,28 @@ function createHiddenScrollLayoutSignals(
   };
 }
 
+function createVirtualScrollNavigation(
+  scroll: InternalScrollSignals,
+  window: ChatThreadScrollRenderWindow,
+  requestScroll$: ReturnType<typeof createRequestScrollAfterRender>,
+) {
+  const seekSpacer$ = command(
+    ({ set }, container: HTMLElement, signal: AbortSignal) => {
+      const position = set(window.positionInSpacer$, container);
+      return position ? set(requestScroll$, position, "instant", signal) : null;
+    },
+  );
+  const followTail$ = command(async ({ get, set }, signal: AbortSignal) => {
+    if (get(scroll.threadScrollPosition$) && !get(window.tailMounted$)) {
+      // Supersede an incoming history commit while the tail page is preparing.
+      await set(requestScroll$, null, "instant", signal);
+    } else {
+      await set(scroll.clearThreadScrollPosition$, signal);
+    }
+  });
+  return { seekSpacer$, followTail$, awaitingAnchor$: window.awaitingAnchor$ };
+}
+
 export function createChatThreadScrollSignals(
   threadId: string,
   position: ThreadScrollPositionSignals,
@@ -1121,16 +1204,25 @@ export function createChatThreadScrollSignals(
     runtime,
     renderWindow.loadEarlierGroups$,
   );
+  const virtual = createVirtualScrollNavigation(
+    scroll,
+    renderWindow,
+    render.requestScrollAfterRender$,
+  );
   const navigation = createScrollNavigationSignals(
     threadId,
     scroll,
     runtime,
     render.pendingScrollAfterRenderRequest$,
+    virtual,
   );
-  const scrollContainerOnRef$ = onRef(
-    createAttachScrollContainer(threadId, scroll, navigation, runtime),
+  const attachContainer$ = createAttachScrollContainer(
+    threadId,
+    scroll,
+    navigation,
+    runtime,
+    virtual.seekSpacer$,
   );
-  const scrollContentOnRef$ = createScrollContentOnRef(threadId, navigation);
   const isProgrammaticScrollEvent$ = command(
     ({ get }, target: EventTarget | null): boolean => {
       const container = get(scroll.scrollContainer$);
@@ -1179,8 +1271,6 @@ export function createChatThreadScrollSignals(
         targetEventId: eventId,
         viewportOffsetTop: viewportHeight * options.viewportRatio,
       };
-      await set(scroll.setThreadScrollPosition$, position, signal);
-      signal.throwIfAborted();
       await set(
         render.requestScrollAfterRender$,
         position,
@@ -1199,8 +1289,8 @@ export function createChatThreadScrollSignals(
 
   return {
     ...hiddenLayout,
-    scrollContainerOnRef$,
-    scrollContentOnRef$,
+    scrollContainerOnRef$: onRef(attachContainer$),
+    scrollContentOnRef$: createScrollContentOnRef(threadId, navigation),
     scrollCommitOnRef$: render.scrollCommitOnRef$,
     pendingScrollAfterRenderRequest$: render.pendingScrollAfterRenderRequest$,
     scrollContainer$: scroll.scrollContainer$,
