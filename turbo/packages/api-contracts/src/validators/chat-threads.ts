@@ -601,16 +601,16 @@ export const userMessageInputDocumentSchema = object({
 
 export function readStoredDraftMessage(value: unknown) {
   if (value == null) return null;
-  const document = readStoredMessageParts(value);
+  const message = readStoredMessageParts(value);
   if (
-    typeof document === "object" &&
-    document !== null &&
-    "parts" in document &&
-    Array.isArray(document.parts) &&
-    document.parts.length === 0
+    typeof message === "object" &&
+    message !== null &&
+    "parts" in message &&
+    Array.isArray(message.parts) &&
+    message.parts.length === 0
   )
     return null;
-  return userMessageInputDocumentSchema.parse(document);
+  return userMessageInputDocumentSchema.parse(message);
 }
 
 const chatEventRecommendedFollowupShape = {

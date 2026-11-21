@@ -225,7 +225,11 @@ function threadSourceStep<T extends { readonly id: string }>(
   const entries = [
     jsonEntry(
       `chat-threads/${thread.id}.json`,
-      { ...thread, ...draftValues },
+      {
+        ...thread,
+        draftUserMessage: readStoredDraftMessage(draftValues.draftUserMessage),
+        draftAttachments: draftValues.draftAttachments,
+      },
       {
         sourceKind: "chat-thread",
         threadId: thread.id,
@@ -365,7 +369,7 @@ const collectThread$ = command(
           codexServiceTier: threadRoot.codexServiceTier,
         },
         draft: {
-          draftUserMessage: readStoredDraftMessage(draft.draftUserMessage),
+          draftUserMessage: draft.draftUserMessage,
           draftAttachments: draft.draftAttachments,
         },
         head: {
