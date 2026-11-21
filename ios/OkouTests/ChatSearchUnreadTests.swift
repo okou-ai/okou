@@ -27,27 +27,27 @@ final class ChatSearchUnreadTests: XCTestCase {
       $0.bulkReadGate = gate
       $0.bulkReadStarted = { started.fulfill() }
     }
-    let pending = Task { await store.list.markAgentRead(agent) }
+    let pending = Task { await store.list.markAllRead() }
     await fulfillment(of: [started], timeout: 2)
-    XCTAssertTrue(store.list.markingAgentRead)
-    await store.list.markAgentRead(SearchUnreadFixture.otherAgent)
+    XCTAssertTrue(store.list.markingAllRead)
+    await store.list.markAllRead()
     await store.setRead(otherThread, read: true)
     gate.open()
     await pending.value
-    XCTAssertFalse(store.list.markingAgentRead)
+    XCTAssertFalse(store.list.markingAllRead)
     XCTAssertTrue(store.list.updatingThreads.isEmpty)
     XCTAssertNotNil(store.list.error)
     XCTAssertTrue(store.list.unreadAgentIDs.contains(agent))
     XCTAssertTrue(store.list.unreadAgentIDs.contains(SearchUnreadFixture.otherAgent))
 
     fixture.state.value.withLock { $0.failWrites = false }
-    await store.list.markAgentRead(agent)
+    await store.list.markAllRead()
     XCTAssertNil(store.list.error)
-    XCTAssertFalse(store.list.markingAgentRead)
+    XCTAssertFalse(store.list.markingAllRead)
     XCTAssertTrue(store.list.updatingThreads.isEmpty)
     XCTAssertFalse(store.list.unreadAgentIDs.contains(agent))
-    XCTAssertTrue(store.list.unreadAgentIDs.contains(SearchUnreadFixture.otherAgent))
-    XCTAssertTrue(store.list.threads.first { $0.id == otherThread.id }?.isUnread == true)
+    XCTAssertTrue(store.list.unreadAgentIDs.isEmpty)
+    XCTAssertFalse(store.list.threads.first { $0.id == otherThread.id }?.isUnread == true)
     XCTAssertEqual(
       store.list.threads.first { $0.id == SearchUnreadFixture.id(1) }?.indicator, .active)
   }
@@ -437,13 +437,13 @@ final class ChatSearchUnreadTests: XCTestCase {
     XCTAssertEqual(
       store.list.threads.first { $0.id == SearchUnreadFixture.id(1) }?.indicator, .active)
     XCTAssertTrue(store.list.threads.first { $0.id == SearchUnreadFixture.id(3) }?.isMuted == true)
-    await store.list.markAgentRead(agent)
-    XCTAssertEqual(fixture.state.value.withLock { $0.bulkAgent }, agent)
+    await store.list.markAllRead()
     XCTAssertTrue(
       store.list.threads(
         agentID: agent, archived: false, onlyUnread: store.sidebar.filter == .unread
-      ).map(\.id) == [SearchUnreadFixture.id(2)])
-    XCTAssertTrue(store.list.threads.first { $0.id == SearchUnreadFixture.id(2) }?.isUnread == true)
+      ).isEmpty)
+    XCTAssertFalse(
+      store.list.threads.first { $0.id == SearchUnreadFixture.id(2) }?.isUnread == true)
     XCTAssertEqual(
       store.list.threads.first { $0.id == SearchUnreadFixture.id(1) }?.indicator, .active)
   }
@@ -460,9 +460,8 @@ final class ChatSearchUnreadTests: XCTestCase {
     await store.setRead(thread, read: true)
     XCTAssertFalse(fixture.state.value.withLock { $0.unread.contains(1) })
     XCTAssertTrue(fixture.state.value.withLock { $0.unread.contains(5) })
-    await store.list.markAgentRead(SearchUnreadFixture.agent)
-    XCTAssertEqual(fixture.state.value.withLock { $0.bulkAgent }, SearchUnreadFixture.agent)
+    await store.list.markAllRead()
     XCTAssertFalse(store.list.unreadAgentIDs.contains(SearchUnreadFixture.agent))
-    XCTAssertTrue(store.list.unreadAgentIDs.contains(SearchUnreadFixture.otherAgent))
+    XCTAssertTrue(store.list.unreadAgentIDs.isEmpty)
   }
 }

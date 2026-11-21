@@ -4,6 +4,7 @@ import ai.okou.android.CHAT_PERSONAL
 import ai.okou.android.ComposerApiFixture
 import ai.okou.android.TestOkouApplication
 import ai.okou.android.auth.WorkspaceIdentity
+import ai.okou.android.auth.workspaceStorageKey
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewmodel.initializer
@@ -107,6 +108,47 @@ class ComposerJournalRecoveryTest {
         assertEquals(1, fixture.posts())
         assertNotNull(model.uiState.value.entry(target).pending)
         return model
+    }
+
+    @Test
+    fun upgradingOfflineNewChatPreservesBothLocalAndWorkspaceText() = check { fixture ->
+        val key = "agent:$CHAT_PERSONAL"
+        val file = fixture.root.resolve("${fixture.api.identity.workspaceStorageKey()}.json")
+        file.writeText(
+            """{"format":3,"defaultAgentId":"$CHAT_PERSONAL","drafts":{"$key":{"text":"Offline edit","dirty":true}},"retainedDrafts":{"$key":"Earlier edit"}}"""
+        )
+        val workspace = ComposerTarget()
+        val path = "/api/chat-drafts/composer"
+        fixture.api.drafts[path] = plainDraftDocument("Workspace edit")
+        val first = fixture.model()
+        first.open(workspace)
+        first.uiState.first {
+            it.sync(workspace) == ComposerSync.Saved &&
+                it.persistence == ComposerPersistence.Durable
+        }
+        fixture.reopen()
+
+        val model = fixture.model()
+        model.open(workspace)
+        val restored = model.uiState.first { it.sync(workspace) == ComposerSync.Saved }
+        assertEquals("Workspace edit", restored.entry(workspace).text)
+        val candidates = restored.journal!!.retainedDrafts
+        assertEquals(setOf("Offline edit", "Earlier edit"), candidates.values.toSet())
+        val offlineKey = candidates.entries.single { it.value == "Offline edit" }.key
+        model.restoreDraft(workspace, offlineKey)
+        assertEquals("Workspace edit", model.uiState.value.entry(workspace).text)
+        model.edit(workspace, "")
+        model.restoreDraft(workspace, offlineKey)
+        model.uiState.first {
+            it.entry(workspace).text == "Offline edit" &&
+                it.sync(workspace) == ComposerSync.Saved &&
+                it.persistence == ComposerPersistence.Durable
+        }
+        assertEquals("Offline edit", fixture.api.drafts[path]?.plainText())
+        assertEquals(
+            listOf("Earlier edit"),
+            model.uiState.value.journal!!.retainedDrafts.values.toList(),
+        )
     }
 
     @Test

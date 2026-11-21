@@ -52,7 +52,6 @@ import {
 } from "../okou-page/user-message-document-codec.ts";
 import { detachedNavigateTo$, searchParams$ } from "../route.ts";
 import { sendChatEvent } from "./chat-event-api.ts";
-import { withOptimisticAgentRunSource } from "./chat-event-signals.ts";
 import type { ChatForwardContext } from "./chat-forward.ts";
 import { registerOptimisticChatThreadEvent$ } from "./chat-thread-event-sourcing.ts";
 import { loadRightThread$ } from "./chat-thread-pane-navigation.ts";
@@ -164,9 +163,7 @@ function annotatedMessagesForNewThread(
   );
   return {
     annotatedUserMessage,
-    optimisticUserMessage: request.forward
-      ? withOptimisticAgentRunSource(annotatedUserMessage, request.forward)
-      : annotatedUserMessage,
+    optimisticUserMessage: annotatedUserMessage,
   };
 }
 

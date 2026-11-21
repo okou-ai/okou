@@ -223,7 +223,7 @@ public actor ChatCommands {
     }
   }
 
-  public func markAgentRead(agentID: String) async throws {
+  public func markAllRead() async throws {
     await acquireReadState()
     defer { releaseReadState() }
     try Task.checkCancellation()
@@ -232,8 +232,8 @@ public actor ChatCommands {
     do {
       try await client.data(
         "/api/chat-thread-unreads/mark-read", method: "POST",
-        body: JSONEncoder().encode(["agentId": agentID]))
-      await sync.changeReadState(.agentRead(agentID: agentID, baseline: baseline))
+        body: Data("{}".utf8))
+      await sync.changeReadState(.allRead(baseline: baseline))
     } catch {
       await sync.changeReadState(.invalidated)
       throw error
