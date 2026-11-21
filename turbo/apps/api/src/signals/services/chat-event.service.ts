@@ -419,7 +419,7 @@ type NewDisplayContext =
       readonly type: "agent_run";
       readonly id: string;
       readonly sourceChatThreadId: string;
-      }
+    }
   | {
       readonly type: "slack";
       readonly workspaceId?: string;
