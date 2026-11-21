@@ -253,7 +253,7 @@ const chatThreadEventSelection = Object.freeze({
   projectId: chatThreadEvents.projectId,
   chatThreadId: chatThreadEvents.chatThreadId,
   agentId: legacyThreadAgentId(
-    chatThreadEvents.agentId,
+    chatThreadEvents.eventExecutorId,
     chatThreadEvents.orgId,
   ),
   title: chatThreadEvents.title,
@@ -276,7 +276,7 @@ const pageChatThreadEventSelection = Object.freeze({
   projectId: pageChatThreadEvent.projectId,
   chatThreadId: pageChatThreadEvent.chatThreadId,
   agentId: legacyThreadAgentId(
-    pageChatThreadEvent.agentId,
+    pageChatThreadEvent.eventExecutorId,
     pageChatThreadEvent.orgId,
   ),
   title: pageChatThreadEvent.title,

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.51.6](https://github.com/okou-ai/okou/compare/ios-v0.51.5...ios-v0.51.6) (2026-11-21)
+
+
+### Refactoring
+
+* scope chat run admission to workspace members ([#49637](https://github.com/okou-ai/okou/issues/49637)) ([30c1941](https://github.com/okou-ai/okou/commit/30c1941239202722c767b1190718538a5c0b00d3))
+
 ## [0.51.5](https://github.com/okou-ai/okou/compare/ios-v0.51.4...ios-v0.51.5) (2026-11-20)
 
 

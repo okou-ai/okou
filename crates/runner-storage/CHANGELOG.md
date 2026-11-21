@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.7](https://github.com/okou-ai/okou/compare/runner-storage-v0.12.6...runner-storage-v0.12.7) (2026-11-21)
+
+
+### Performance Improvements
+
+* **runner-storage:** reuse the open decoded cache entry for age refresh ([#49623](https://github.com/okou-ai/okou/issues/49623)) ([444c73e](https://github.com/okou-ai/okou/commit/444c73ebc56a2ba87ef6782251958c5c1b769696))
+
 ## [0.12.6](https://github.com/okou-ai/okou/compare/runner-storage-v0.12.5...runner-storage-v0.12.6) (2026-11-20)
 
 

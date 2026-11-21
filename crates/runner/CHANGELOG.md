@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.249.81](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.80...runner-rs-v0.249.81) (2026-11-21)
+
+
+### Refactoring
+
+* **runner:** share guarded idle report command entry points ([#49647](https://github.com/okou-ai/okou/issues/49647)) ([0b7ed81](https://github.com/okou-ai/okou/commit/0b7ed81f0aa70f3f8d5d104bf24276b9ecd10e7a))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.249.80](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.79...runner-rs-v0.249.80) (2026-11-20)
 
 ### Release Dependencies
