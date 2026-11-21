@@ -72,11 +72,7 @@ internal fun ComposerJournal.acceptedNewChats(): List<ProvisionalChat> =
         ProvisionalChat(id, key.removePrefix("new:").ifEmpty { null })
     }
 
-data class ComposerTarget(
-    val threadId: String? = null,
-    val agentId: String? = null,
-    val projectId: String? = null,
-) {
+data class ComposerTarget(val threadId: String? = null, val projectId: String? = null) {
     val key: String
         get() = threadId?.let { "thread:$it" } ?: "new:${projectId.orEmpty()}"
 }

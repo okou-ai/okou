@@ -1,6 +1,5 @@
 package ai.okou.android.chat
 
-import ai.okou.android.CHAT_AGENT
 import ai.okou.android.CHAT_PERSONAL
 import ai.okou.android.ComposerApiFixture
 import ai.okou.android.TestOkouApplication
@@ -37,7 +36,7 @@ import org.robolectric.annotation.Config
 @Config(sdk = [35], application = TestOkouApplication::class)
 class ComposerJournalRecoveryTest {
     @get:Rule val temporary = TemporaryFolder()
-    private val target = ComposerTarget(CHAT_PERSONAL, CHAT_AGENT)
+    private val target = ComposerTarget(threadId = CHAT_PERSONAL)
 
     private class Fixture(val root: File, private val dispatcher: CoroutineDispatcher) {
         val api = ComposerApiFixture()
