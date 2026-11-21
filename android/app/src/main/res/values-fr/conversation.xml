@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="conversation_welcome">Sur quoi souhaitez-vous travailler ?</string>
+    <string name="conversation_welcome_detail">Dites à Okou ce que vous souhaitez faire.</string>
+    <string name="conversation_jump_latest">Aller au dernier message</string>
+    <string name="conversation_new_reply">Nouvelle réponse</string>
+    <string name="conversation_view_progress">Voir la progression</string>
+    <string name="conversation_processing">En cours…</string>
+    <string name="conversation_history_offline">L’historique se chargera lorsque vous serez en ligne.</string>
+    <string name="conversation_offline_send">Connectez-vous pour envoyer. Votre brouillon reste ici.</string>
+    <string name="conversation_work">Étapes de travail</string>
+    <string name="conversation_reply_actions">Actions de la réponse</string>
+    <string name="conversation_copy_reply">Copier la réponse</string>
+    <string name="conversation_reply_copied">Réponse copiée</string>
+    <string name="conversation_revoke">Retirer</string>
+    <string name="conversation_stop">Arrêter</string>
+</resources>

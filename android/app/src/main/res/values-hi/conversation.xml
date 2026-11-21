@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="conversation_welcome">आज आप किस काम पर आगे बढ़ना चाहते हैं?</string>
+    <string name="conversation_welcome_detail">Okou को बताएँ कि आप क्या करना चाहते हैं।</string>
+    <string name="conversation_jump_latest">नवीनतम संदेश पर जाएँ</string>
+    <string name="conversation_new_reply">नया जवाब</string>
+    <string name="conversation_view_progress">प्रगति देखें</string>
+    <string name="conversation_processing">काम जारी है…</string>
+    <string name="conversation_history_offline">ऑनलाइन होने पर चैट का इतिहास लोड होगा।</string>
+    <string name="conversation_offline_send">भेजने के लिए ऑनलाइन हों। आपका ड्राफ़्ट यहीं रहेगा।</string>
+    <string name="conversation_work">काम के चरण</string>
+    <string name="conversation_reply_actions">जवाब की कार्रवाइयाँ</string>
+    <string name="conversation_copy_reply">जवाब कॉपी करें</string>
+    <string name="conversation_reply_copied">जवाब कॉपी हो गया</string>
+    <string name="conversation_revoke">वापस लें</string>
+    <string name="conversation_stop">रोकें</string>
+</resources>
