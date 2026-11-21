@@ -121,7 +121,7 @@ describe("workspace bulk read", () => {
     clearPublishedNotifications();
     const marked = await readCursors(fixture);
     await chat.markAllThreadsRead(fixture.actor);
-    expect(publishedReadCursorPayloads()).toStrictEqual([]);
+    expect(context.mocks.ably.publish).not.toHaveBeenCalled();
     await expect(readCursors(fixture)).resolves.toStrictEqual(marked);
   });
 
@@ -190,7 +190,7 @@ describe("workspace bulk read", () => {
     await expect(visibleUnreadThreadIds(fixture)).resolves.toStrictEqual(
       new Set(fixture.threadIds),
     );
-    expect(publishedReadCursorPayloads()).toStrictEqual([]);
+    expect(context.mocks.ably.publish).not.toHaveBeenCalled();
   });
 
   it("excludes muted threads from bulk marking but permits explicit single-thread marking", async () => {
@@ -205,7 +205,7 @@ describe("workspace bulk read", () => {
 
     await chat.markAllThreadsRead(fixture.actor);
     await expect(readCursors(fixture)).resolves.toStrictEqual(before);
-    expect(publishedReadCursorPayloads()).toStrictEqual([]);
+    expect(context.mocks.ably.publish).not.toHaveBeenCalled();
 
     const marked = await chat.markThreadRead(fixture.actor, threadId);
     expect(marked.lastReadAt).not.toBe(before.get(threadId));
