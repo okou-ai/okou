@@ -221,6 +221,8 @@ class ChatListRootTest {
         compose.onNodeWithTag("chat_search").assertDoesNotExist()
         compose.onNodeWithTag("chat_list").assertExists()
         compose.onNodeWithTag("conversation").assertExists()
+        compose.onNodeWithTag("chat_$CHAT_IN_PROJECT").assertDoesNotExist()
+        setResearchExpanded(true)
         compose.onNodeWithTag("chat_$CHAT_IN_PROJECT").assertIsSelected()
     }
 
@@ -283,6 +285,7 @@ class ChatListRootTest {
     @Test
     fun selectedConversationKeepsNavigationUsableAndOnlyVisibleConfirmedContentMarksRead() {
         val app = compose.activity.application as ChatListApplication
+        val historyRequested = CountDownLatch(1)
         val gate = CountDownLatch(1)
         val indicatorsGate = CountDownLatch(1)
         val indicatorReads = java.util.concurrent.atomic.AtomicInteger()
@@ -295,7 +298,12 @@ class ChatListRootTest {
             } else jsonResponse("""{"agents":{},"threads":{},"unreadAt":{}}""")
         }
         app.fixture.beforeHistoryResponse = { request ->
-            if (request.requestUrl?.encodedPath?.endsWith("/event-snapshot") == true) gate.await()
+            // Both a cold open and a prewarmed history read the current event tail.
+            val path = request.requestUrl?.pathSegments.orEmpty()
+            if (path.getOrNull(2) == CHAT_IN_PROJECT && path.lastOrNull() == "event-rows") {
+                historyRequested.countDown()
+                gate.await()
+            }
         }
         try {
             app.responseGate.countDown()
@@ -303,6 +311,7 @@ class ChatListRootTest {
             setResearchExpanded(true)
             compose.onNodeWithTag("chat_list").performScrollToNode(hasText("Project chat"))
             compose.onNodeWithText("Project chat").performClick()
+            compose.waitUntil(10_000) { historyRequested.count == 0L }
             compose.onNodeWithTag("conversation").assertExists()
             compose.onNodeWithText("Loading conversation…").assertExists()
             compose.onNodeWithContentDescription("Settings").performClick()
