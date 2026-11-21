@@ -238,7 +238,7 @@ for event in ['pull_request', 'merge_group', 'push']:
 # Android must publish a result even when detection fails or native work is skipped.
 android = workflow('android')
 android_gate = android['ci-gate-android']
-assert {'detect-release', 'detect', 'build-test', 'instrumentation'} <= set(android_gate['needs'])
+assert {'detect-release', 'detect', 'build-test', 'instrumentation', 'release-smoke'} <= set(android_gate['needs'])
 for needed in ['true', 'false']:
     values = {
         'needs.detect-release.result': 'success',
@@ -247,16 +247,19 @@ for needed in ['true', 'false']:
         'needs.detect.outputs.needed': needed,
         'needs.build-test.result': 'success' if needed == 'true' else 'skipped',
         'needs.instrumentation.result': 'success' if needed == 'true' else 'skipped',
+        'needs.release-smoke.result': 'success' if needed == 'true' else 'skipped',
     }
-    assert condition(android['instrumentation'], values) == (needed == 'true')
+    for job in ['instrumentation', 'release-smoke']:
+        assert condition(android[job], values) == (needed == 'true')
     assert condition(android_gate, values, cancelled=True)
     gate(android, 'ci-gate-android', values, True)
     for failure in ['failure', 'cancelled', 'skipped']:
         blocked = values | {'needs.detect.result': failure}
-        assert not condition(android['instrumentation'], blocked)
+        for job in ['instrumentation', 'release-smoke']:
+            assert not condition(android[job], blocked)
         assert condition(android_gate, blocked)
         gate(android, 'ci-gate-android', blocked, False)
-    for job in ['build-test', 'instrumentation']:
+    for job in ['build-test', 'instrumentation', 'release-smoke']:
         for result in ['failure', 'cancelled', 'skipped' if needed == 'true' else 'success']:
             blocked = values | {f'needs.{job}.result': result}
             assert condition(android_gate, blocked)

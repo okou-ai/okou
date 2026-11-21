@@ -25,7 +25,8 @@ import {
   customConnectorExecutionDefinitionSelection,
   customConnectorExecutionOAuthSelection,
 } from "./custom-connector-definition-selection";
-import { customConnectorSkillBundleSelection } from "./custom-connector-skill-bundle-columns";
+import { orgCustomConnectorSkillPublications } from "@okouai/db/schema/org-custom-connector-skill-publication";
+import { customConnectorSkillPublicationJoin } from "./custom-connector-skill-bundle-columns";
 
 export interface ConnectorMember {
   readonly orgId: string;
@@ -89,18 +90,23 @@ export function memberConnectorSelectionQueries(
     customConnectorExecutionDefinitionSelection();
   const connectorColumns = {
     ...definitionColumns,
-    ...customConnectorSkillBundleSelection(),
+    skillContentBundle: orgCustomConnectorSkillPublications.skillContentBundle,
   };
   const oauthColumns = customConnectorExecutionOAuthSelection();
   const custom = builder
     .select({
       payload: sql`jsonb_build_object(
-      'connector', ${contextJsonProjection(connectorColumns)} || jsonb_build_object('networkBinding', ${networkBinding.sql}),
+      'connector', ${contextJsonProjection(connectorColumns)} || jsonb_build_object(
+        'networkBinding', ${networkBinding.sql}, 'hasSkill', ${isNotNull(orgCustomConnectors.skillMarkdown)}),
       'oauthConfig', CASE WHEN ${orgCustomConnectorOauthConfigs.connectorId} IS NULL THEN NULL ELSE ${contextJsonProjection(oauthColumns)} END)`
         .mapWith(zodDriverValueDecoder(zUnknown()))
         .as("payload"),
     })
     .from(orgCustomConnectors)
+    .leftJoin(
+      orgCustomConnectorSkillPublications,
+      customConnectorSkillPublicationJoin(),
+    )
     .leftJoin(
       orgCustomConnectorOauthConfigs,
       and(

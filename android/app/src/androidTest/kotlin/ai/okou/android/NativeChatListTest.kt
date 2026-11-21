@@ -185,8 +185,8 @@ class NativeChatListTest {
             }
             fun clickText(value: String) = click(UiSelector().text(value))
             fun revealText(value: String) {
-                val target = By.pkg(app.packageName).text(value)
-                val scrollable = By.pkg(app.packageName).scrollable(true)
+                val target = By.pkg(app.packageName).text(value).hasAncestor(chatListRegion(app))
+                val scrollable = chatListRegion(app).scrollable(true)
                 assertTrue(
                     device.wait(
                         object : Condition<UiDevice, Boolean> {
@@ -197,19 +197,18 @@ class NativeChatListTest {
                     )
                 )
                 // The whole list can fit after collapse; only scroll when it is necessary.
-                val container = device.findObject(scrollable)
-                if (!device.hasObject(target) && container != null) {
+                if (!device.hasObject(target)) {
                     val visible =
                         object : Condition<UiObject2, Boolean> {
                             // Resolve virtual descendants from the current window after scrolls.
                             override fun apply(container: UiObject2) = device.hasObject(target)
                         }
-                    if (!container.scrollUntil(Direction.UP, visible)) {
-                        container.scrollUntil(Direction.DOWN, visible)
+                    if (device.findObject(scrollable)?.scrollUntil(Direction.UP, visible) != true) {
+                        device.findObject(scrollable)?.scrollUntil(Direction.DOWN, visible)
                     }
                 }
                 // A scroll result is not a receipt for Compose's eventual visible outcome.
-                text(value)
+                assertNotNull(device.wait(Until.findObject(target), 10_000))
             }
             device.awaitChatList(app)
             scenario.onActivity { activity ->

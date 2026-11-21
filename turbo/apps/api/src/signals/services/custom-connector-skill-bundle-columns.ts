@@ -1,18 +1,25 @@
-import { orgCustomConnectorSkillBundles } from "@okouai/db/runtime/org-custom-connector-skill-bundle";
+import { and, eq } from "drizzle-orm";
+import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
+import { orgCustomConnectorSkillPublications } from "@okouai/db/schema/org-custom-connector-skill-publication";
 import type { PreparedCustomConnectorSkill } from "./custom-connector-skill-bundle.service";
 
-/** Read preparation metadata in the same statement as its authorized revision. */
+export function customConnectorSkillPublicationJoin() {
+  return and(
+    eq(orgCustomConnectorSkillPublications.id, orgCustomConnectors.id),
+    eq(orgCustomConnectorSkillPublications.orgId, orgCustomConnectors.orgId),
+  );
+}
+
 export function customConnectorSkillBundleSelection() {
   return {
-    skillStorageVersionId: orgCustomConnectorSkillBundles.skillStorageVersionId,
-    skillContentBundle: orgCustomConnectorSkillBundles.skillContentBundle,
+    skillContentBundle: orgCustomConnectorSkillPublications.skillContentBundle,
     skillContentBundleSourceVersionId:
-      orgCustomConnectorSkillBundles.skillContentBundleSourceVersionId,
+      orgCustomConnectorSkillPublications.skillContentBundleSourceVersionId,
   } as const;
 }
 
 export type CustomConnectorSkillBundleRow = Pick<
-  typeof orgCustomConnectorSkillBundles.$inferSelect,
+  typeof orgCustomConnectors.$inferSelect,
   keyof ReturnType<typeof customConnectorSkillBundleSelection>
 >;
 

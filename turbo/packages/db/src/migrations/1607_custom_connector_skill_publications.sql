@@ -1,0 +1,1 @@
+CREATE VIEW "public"."org_custom_connector_skill_publications" WITH (security_invoker = true) AS (select "id", "org_id", "skill_content_bundle", "skill_content_bundle_source_version_id" from "org_custom_connectors" where "org_custom_connectors"."skill_content_bundle_source_version_id" = "org_custom_connectors"."skill_storage_version_id");
