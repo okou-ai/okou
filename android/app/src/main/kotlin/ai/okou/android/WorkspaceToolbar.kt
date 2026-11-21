@@ -33,6 +33,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -325,7 +326,6 @@ internal fun WorkspaceMenu(
     items: List<WorkspaceMenuItem>,
     close: () -> Unit,
     filter: Boolean = false,
-    title: String? = null,
     back: () -> Unit = close,
 ) {
     val colors = MaterialTheme.colorScheme
@@ -353,7 +353,7 @@ internal fun WorkspaceMenu(
             shadowElevation = 6.dp,
             border = BorderStroke(1.dp, colors.outline),
         ) {
-            key(filter) { WorkspaceMenuItems(items, filter, title, close, back) }
+            key(filter) { WorkspaceMenuItems(items, filter, close, back) }
         }
     }
 }
@@ -362,7 +362,6 @@ internal fun WorkspaceMenu(
 private fun WorkspaceMenuItems(
     items: List<WorkspaceMenuItem>,
     filter: Boolean,
-    title: String?,
     close: () -> Unit,
     back: () -> Unit,
 ) {
@@ -421,16 +420,6 @@ private fun WorkspaceMenuItems(
             .verticalScroll(rememberScrollState())
             .padding(7.dp)
     ) {
-        if (title != null) {
-            Text(
-                title,
-                Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodySmall,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
         val row: @Composable (Int) -> Unit = { index ->
             WorkspaceMenuRow(
                 items[index],
@@ -477,7 +466,7 @@ private fun WorkspaceMenuRow(item: WorkspaceMenuItem, modifier: Modifier, focuse
         else Modifier.selectable(selected, enabled, role = Role.RadioButton, onClick = onClick)
     val colors = MaterialTheme.colorScheme
     val foreground = if (destructive) colors.error else colors.onSurface
-    val color = if (enabled) foreground else foreground.copy(alpha = 0.4f)
+    val disabledColors = MenuDefaults.itemColors()
     val shape = RoundedCornerShape(10.dp)
     Row(
         modifier
@@ -491,11 +480,26 @@ private fun WorkspaceMenuRow(item: WorkspaceMenuItem, modifier: Modifier, focuse
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (icon != null) {
-            Icon(painterResource(icon), null, Modifier.size(18.dp), tint = color)
+            Icon(
+                painterResource(icon),
+                null,
+                Modifier.size(18.dp),
+                tint = if (enabled) foreground else disabledColors.disabledLeadingIconColor,
+            )
         }
-        Text(label, Modifier.weight(1f), style = filterLabelStyle(), color = color)
+        Text(
+            label,
+            Modifier.weight(1f),
+            style = filterLabelStyle(),
+            color = if (enabled) foreground else disabledColors.disabledTextColor,
+        )
         if (selected == true) {
-            Icon(painterResource(R.drawable.ic_check), null, Modifier.size(18.dp), tint = color)
+            Icon(
+                painterResource(R.drawable.ic_check),
+                null,
+                Modifier.size(18.dp),
+                tint = if (enabled) foreground else disabledColors.disabledTrailingIconColor,
+            )
         }
     }
 }
