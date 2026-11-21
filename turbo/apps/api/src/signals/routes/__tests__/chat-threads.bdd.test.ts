@@ -2230,6 +2230,13 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
         ]),
       },
     ]);
+    const nativeFiles = native.body.runs.flatMap((entry) => {
+      return entry.files;
+    });
+    for (const file of nativeFiles) {
+      expect(file).not.toHaveProperty("googleDriveSync");
+      expect(file).not.toHaveProperty("googleDriveConnectionId");
+    }
     expect(listRecorder.queries).toHaveLength(0);
 
     artifacts = await chat.listThreadArtifacts(actor, run.threadId);
@@ -2239,7 +2246,6 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       })?.googleDriveSync,
     ).toStrictEqual({
       status: "synced",
-      accountReady: true,
       id: "drive-file-1",
       name: "data.csv",
       originalUploaded: true,
@@ -2249,7 +2255,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       artifacts.runs[0]?.files.find((file) => {
         return file.id === pdfId;
       })?.googleDriveSync,
-    ).toStrictEqual({ status: "not_synced", accountReady: true });
+    ).toStrictEqual({ status: "not_synced" });
     expect(listRecorder.queries[0]).toContain("vm0Artifact");
     expect(listRecorder.queries[0]).toContain(run.threadId);
 
@@ -2290,7 +2296,6 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       })?.googleDriveSync,
     ).toMatchObject({
       status: "synced",
-      accountReady: true,
       id: "drive-file-refreshed",
     });
     await chat.listThreadArtifacts(actor, run.threadId);
@@ -2360,7 +2365,6 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       })?.googleDriveSync,
     ).toMatchObject({
       status: "synced",
-      accountReady: true,
       id: "drive-upload-after-refresh",
     });
 
@@ -2375,7 +2379,6 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       artifacts = await chat.listThreadArtifacts(actor, run.threadId);
       expectDriveStatuses(artifacts, {
         status: "unknown",
-        accountReady: true,
       });
     }
     expect(transientRefresh.refreshBodies).toHaveLength(2);
@@ -2456,7 +2459,6 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       })?.googleDriveSync,
     ).toMatchObject({
       status: "synced",
-      accountReady: true,
       id: "drive-file-reconnected",
     });
 
@@ -5001,7 +5003,6 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     artifacts = await chat.listThreadArtifacts(actor, run.threadId);
     expectDriveStatuses(artifacts, {
       status: "not_synced",
-      accountReady: true,
     });
     expect(selectedStatusRecorder.authorizationHeaders).toStrictEqual([
       "Bearer drive-access-drive-selected",
@@ -5284,7 +5285,6 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       for (const file of group.files) {
         expect(file.googleDriveSync).toStrictEqual({
           status: "unknown",
-          accountReady: true,
         });
       }
     }
