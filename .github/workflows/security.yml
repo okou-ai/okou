@@ -361,6 +361,7 @@ jobs:
           shellcheck -x -P .github/scripts/artifacts \
             .github/scripts/artifacts/r2-copy.sh \
             .github/scripts/artifacts/fetch-okou-app-artifact.sh \
+            .github/scripts/artifacts/upload-okou-app-artifact.sh \
             .github/scripts/artifacts/fetch-okou-desktop-artifact.sh
           shellcheck -x -P .github/scripts:.github/scripts/runner .github/scripts/runner/runner-binary-github.sh .github/scripts/tests/runner-binary-github-test.sh
           shellcheck -x -P .github/scripts/runner \

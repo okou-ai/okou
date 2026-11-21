@@ -73,6 +73,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       needed: ${{ steps.changes.outputs.needed }}
+      scripts-needed: ${{ steps.changes.outputs.scripts-needed }}
       release: ${{ steps.changes.outputs.release }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -93,8 +94,7 @@ jobs:
           MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
           PUSH_BEFORE_SHA: ${{ github.event.before }}
         run: |
-          needed=$(bash ios/scripts/ci-changed.sh)
-          echo "needed=$needed" >> "$GITHUB_OUTPUT"
+          bash ios/scripts/ci-changed.sh >> "$GITHUB_OUTPUT"
           # A queued release commit may reuse published validation. Its subject only
           # selects the resolver, which still classifies the whole group's diff.
           release=false
@@ -104,6 +104,8 @@ jobs:
           echo "release=$release" >> "$GITHUB_OUTPUT"
 
   script-checks:
+    needs: detect
+    if: needs.detect.outputs.scripts-needed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -486,7 +488,9 @@ jobs:
     # Every producer must have run and passed; verified release reuse publishes nothing.
     if: >-
       !cancelled() && github.event_name == 'merge_group' && needs.detect.outputs.needed == 'true' &&
-      needs.script-checks.result == 'success' && needs.swiftlint.result == 'success' &&
+      ((needs.detect.outputs.scripts-needed == 'true' && needs.script-checks.result == 'success') ||
+      (needs.detect.outputs.scripts-needed == 'false' && needs.script-checks.result == 'skipped')) &&
+      needs.swiftlint.result == 'success' &&
       needs.test-packages.result == 'success' && needs.build-test.result == 'success' &&
       needs.build-archive.result == 'success'
     runs-on: ubuntu-latest
@@ -549,6 +553,7 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           DETECT_RESULT: ${{ needs.detect.result }}
+          SCRIPTS_NEEDED: ${{ needs.detect.outputs.scripts-needed }}
           SCRIPT_CHECKS_RESULT: ${{ needs.script-checks.result }}
           LINT_RESULT: ${{ needs.swiftlint.result }}
           IOS_NEEDED: ${{ needs.detect.outputs.needed }}
