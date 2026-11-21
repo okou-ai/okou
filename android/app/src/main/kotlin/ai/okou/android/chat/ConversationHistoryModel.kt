@@ -201,8 +201,8 @@ class ConversationHistoryModel(
                     dirty[thread.id] = next
                     var diskFailed = false
                     try {
-                        cache.saveHistory(next.checkpoint, next.confirmedAt)
-                        val disk = cache.loadHistory(thread.id)
+                        val committed = cache.saveHistory(next.checkpoint, next.confirmedAt, saved)
+                        val disk = cache.loadHistory(thread.id, committed)
                         requireCurrent(ticket)
                         if (disk != null) next = disk
                         dirty.remove(thread.id)

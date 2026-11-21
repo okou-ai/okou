@@ -23,7 +23,7 @@ export type CustomConnectorSkillBundleRow = Pick<
   keyof ReturnType<typeof customConnectorSkillBundleSelection>
 >;
 
-/** The version-pair constraint and rollback readers require the legacy mirror. */
+/** Keep both source IDs in sync until the native publication migration has shipped. */
 export function customConnectorSkillBundleValues(
   skill: PreparedCustomConnectorSkill | null,
 ) {

@@ -3704,6 +3704,13 @@
       "when": 1795232889487,
       "tag": "1607_custom_connector_skill_publications",
       "breakpoints": true
+    },
+    {
+      "idx": 1608,
+      "version": "7",
+      "when": 1795260992027,
+      "tag": "1608_prepare_custom_connector_skill_cutover",
+      "breakpoints": true
     }
   ]
 }

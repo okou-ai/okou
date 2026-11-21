@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.34.1](https://github.com/okou-ai/okou/compare/android-v0.34.0...android-v0.34.1) (2026-11-21)
+
+
+### Performance Improvements
+
+* **android:** reuse decoded history after a verified cache write ([#49763](https://github.com/okou-ai/okou/issues/49763)) ([5263acf](https://github.com/okou-ai/okou/commit/5263acfe5142e7b0e584d1eaa7587b73a2540f79))
+
 ## [0.34.0](https://github.com/okou-ai/okou/compare/android-v0.33.0...android-v0.34.0) (2026-11-21)
 
 

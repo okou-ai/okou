@@ -8,7 +8,6 @@ export async function validateConnectorSkillBundleSchema(
   const client = new Client({ connectionString: databaseUrl });
   await client.connect();
   const orgId = `org_${randomUUID()}`;
-  const storageId = randomUUID();
   const connectorId = randomUUID();
   const source = createHash("sha256").update(randomUUID()).digest("hex");
   const nextSource = createHash("sha256").update(randomUUID()).digest("hex");
@@ -24,20 +23,11 @@ export async function validateConnectorSkillBundleSchema(
   }
   try {
     await client.query(
-      "INSERT INTO storages(id,user_id,org_id,name,s3_prefix) VALUES($1,'schema-user',$2,'schema-connector',$3)",
-      [storageId, orgId, `${orgId}/schema`],
-    );
-    for (const id of [source, nextSource]) {
-      await client.query(
-        "INSERT INTO storage_versions(id,storage_id,s3_key,size,archive_size,file_count,created_by) VALUES($1,$2,$3,10,100,1,'schema-user')",
-        [id, storageId, `${orgId}/schema/${id}`],
-      );
-    }
-    // An INSERT using only legacy columns leaves preparation unpopulated.
-    await client.query(
-      `INSERT INTO org_custom_connectors(id,org_id,slug,display_name,auth_mode,prefix_templates,fields,header_injections,query_injections,skill_markdown,skill_storage_version_id,created_by)
-      VALUES($1,$2,'_schema-connector','Schema Connector','none','["https://schema.example.test/"]','[]','[]','[]','Original Skill',$3,'schema-user')`,
-      [connectorId, orgId, source],
+      `INSERT INTO org_custom_connectors
+        (id, org_id, slug, display_name, auth_mode, prefix_templates, created_by)
+       VALUES ($1, $2, '_schema-connector', 'Schema Connector', 'none',
+         '["https://schema.example.test/"]', 'schema-user')`,
+      [connectorId, orgId],
     );
     assert.deepEqual(await readPublication(), []);
     await client.query(
@@ -62,7 +52,11 @@ export async function validateConnectorSkillBundleSchema(
     ] as const) {
       const where = table === "org_custom_connectors" ? "id=$3" : "hash=$3";
       const id = table === "org_custom_connectors" ? connectorId : hash;
-      const update = `UPDATE ${table} SET skill_content_bundle=$1,skill_content_bundle_source_version_id=$2 WHERE ${where}`;
+      const markdown =
+        table === "org_custom_connectors"
+          ? ",skill_markdown=CASE WHEN $2::varchar IS NULL THEN NULL ELSE 'Original Skill' END"
+          : "";
+      const update = `UPDATE ${table} SET skill_content_bundle=$1,skill_content_bundle_source_version_id=$2${markdown} WHERE ${where}`;
       const initial = await client.query(
         `SELECT skill_content_bundle,skill_content_bundle_source_version_id FROM ${table} WHERE ${table === "org_custom_connectors" ? "id=$1" : "hash=$1"}`,
         [id],
@@ -141,25 +135,14 @@ export async function validateConnectorSkillBundleSchema(
         skill_content_bundle_source_version_id: source,
       },
     ]);
-    // A legacy-only edit must immediately withdraw the previous publication.
+    // API 2.100.1 can still dual-write. A later native edit leaves the mirror unchanged.
     await client.query(
-      "UPDATE org_custom_connectors SET skill_markdown='New Skill',skill_storage_version_id=$1,updated_at=now() WHERE id=$2",
-      [nextSource, connectorId],
+      "UPDATE org_custom_connectors SET skill_storage_version_id=$1 WHERE id=$2",
+      [source, connectorId],
     );
-    const stale = await client.query(
-      "SELECT skill_storage_version_id,skill_content_bundle,skill_content_bundle_source_version_id FROM org_custom_connectors WHERE id=$1",
-      [connectorId],
-    );
-    assert.deepEqual(stale.rows, [
-      {
-        skill_storage_version_id: nextSource,
-        skill_content_bundle: bundle,
-        skill_content_bundle_source_version_id: source,
-      },
-    ]);
-    assert.deepEqual(await readPublication(), []);
     await client.query(
-      "UPDATE org_custom_connectors SET skill_content_bundle_source_version_id=$1 WHERE id=$2",
+      `UPDATE org_custom_connectors SET skill_markdown='New Skill', skill_content_bundle_source_version_id=$1
+       WHERE id=$2`,
       [nextSource, connectorId],
     );
     assert.deepEqual(await readPublication(), [
@@ -168,45 +151,37 @@ export async function validateConnectorSkillBundleSchema(
         skill_content_bundle_source_version_id: nextSource,
       },
     ]);
+    await assert.rejects(
+      client.query(
+        "UPDATE org_custom_connectors SET skill_markdown=NULL WHERE id=$1",
+        [connectorId],
+      ),
+      {
+        code: "23514",
+        constraint: "chk_org_custom_connectors_skill_publication_pair",
+      },
+    );
+    await assert.rejects(
+      client.query(
+        "UPDATE org_custom_connectors SET skill_content_bundle=NULL, skill_content_bundle_source_version_id=NULL WHERE id=$1",
+        [connectorId],
+      ),
+      {
+        code: "23514",
+        constraint: "chk_org_custom_connectors_skill_publication_pair",
+      },
+    );
     await client.query(
-      "UPDATE org_custom_connectors SET skill_markdown=NULL,skill_storage_version_id=NULL WHERE id=$1",
+      `UPDATE org_custom_connectors SET skill_markdown=NULL, skill_content_bundle=NULL,
+       skill_content_bundle_source_version_id=NULL WHERE id=$1`,
       [connectorId],
     );
     assert.deepEqual(await readPublication(), []);
-    await client.query(
-      "UPDATE org_custom_connectors SET skill_content_bundle=NULL,skill_content_bundle_source_version_id=NULL WHERE id=$1",
+    const retained = await client.query(
+      "SELECT skill_storage_version_id FROM org_custom_connectors WHERE id=$1",
       [connectorId],
     );
-    // A bundle source is independently owned: new publications need no generic
-    // Storage row, while preceding readers still compare the retained IDs.
-    const independentSource = createHash("sha256")
-      .update(randomUUID())
-      .digest("hex");
-    const independentBundle = { sha256: independentSource, archiveBytes: 123 };
-    await client.query(
-      `UPDATE org_custom_connectors SET skill_markdown='Bundle-only Skill',
-        skill_storage_version_id=$1, skill_content_bundle=$2,
-        skill_content_bundle_source_version_id=$1 WHERE id=$3`,
-      [independentSource, independentBundle, connectorId],
-    );
-    const selected = await client.query(
-      `SELECT skill_storage_version_id, skill_content_bundle,
-        skill_content_bundle_source_version_id FROM org_custom_connectors WHERE id=$1`,
-      [connectorId],
-    );
-    assert.deepEqual(await readPublication(), [
-      {
-        skill_content_bundle: independentBundle,
-        skill_content_bundle_source_version_id: independentSource,
-      },
-    ]);
-    assert.deepEqual(selected.rows, [
-      {
-        skill_storage_version_id: independentSource,
-        skill_content_bundle: independentBundle,
-        skill_content_bundle_source_version_id: independentSource,
-      },
-    ]);
+    assert.deepEqual(retained.rows, [{ skill_storage_version_id: source }]);
   } finally {
     await client.query("DELETE FROM connector_catalog_entries WHERE hash=$1", [
       hash,
@@ -214,13 +189,9 @@ export async function validateConnectorSkillBundleSchema(
     await client.query("DELETE FROM org_custom_connectors WHERE id=$1", [
       connectorId,
     ]);
-    await client.query("DELETE FROM storage_versions WHERE storage_id=$1", [
-      storageId,
-    ]);
-    await client.query("DELETE FROM storages WHERE id=$1", [storageId]);
     await client.end();
   }
   console.log(
-    "Connector Skill bundle constraints and outgoing writer compatibility passed",
+    "Connector Skill bundle constraints and native publication selection passed",
   );
 }

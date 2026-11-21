@@ -140,6 +140,8 @@ readonly CONTENT_BUNDLE_PREPARATION_COMMIT=fc8f99468cc7946843620ff655ae22c09f9cb
 readonly CONTENT_BUNDLE_REFERENCE_ONLY_API_PATH=.github/rollback-floors/content-bundle-reference-only-api
 readonly SEED_SKILL_BUNDLE_ONLY_API_PATH=.github/rollback-floors/seed-skill-bundle-only-api
 readonly BUILT_IN_SKILL_CATALOG_API_PATH=.github/rollback-floors/built-in-skill-catalog-api
+# Native-only Skill writes require #49677's publication view on both API runtimes.
+readonly NATIVE_CUSTOM_CONNECTOR_SKILL_READER_COMMIT=4f5de2f6f8f7f61b0470bdaca4af99a7e3ce2aea
 readonly CONNECTOR_SKILL_BUNDLE_CLAIMS_PATH=.github/rollback-floors/connector-skill-bundle-claims
 readonly SINGLE_CHARACTER_SKILL_READER_PATH=.github/rollback-floors/single-character-skill-bundle-reader
 readonly SINGLE_CHARACTER_SKILL_CAPABILITY_FREE_API_PATH=.github/rollback-floors/single-character-skill-capability-free-api
@@ -235,6 +237,9 @@ if [ -z "$release_tags" ]; then
   fail "Target commit has no release tags: ${TARGET_COMMIT}"
 fi
 
+if ! git merge-base --is-ancestor "$NATIVE_CUSTOM_CONNECTOR_SKILL_READER_COMMIT" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the native custom Connector Skill reader: ${NATIVE_CUSTOM_CONNECTOR_SKILL_READER_COMMIT}."
+fi
 if ! git merge-base --is-ancestor "$IMMUTABLE_DEFAULT_AGENT_WRITER_COMMIT" "$TARGET_COMMIT"; then
   fail "Rollback target predates immutable default Agent identity: ${IMMUTABLE_DEFAULT_AGENT_WRITER_COMMIT}."
 fi

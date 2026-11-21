@@ -277,6 +277,133 @@ class ConversationHistoryTest {
     }
 
     @Test
+    fun historyReadbackReusesCommittedRowsAndLoadsARebuiltPrefix() = runTest {
+        val lease = cache().open(identity) { true }
+        val incoming = checkpoint().copy(replaced = true)
+        val initialWrite = checkNotNull(lease.saveHistory(incoming, 100))
+        val matching = checkNotNull(lease.loadHistory(CHAT_PERSONAL, initialWrite))
+        assertSame(incoming.rows, matching.checkpoint.rows)
+        assertFalse(matching.checkpoint.replaced)
+        assertEquals(100L, matching.confirmedAt)
+
+        val addition = row(id = "another-event", seq = 38)
+        val newer =
+            matching.checkpoint.copy(
+                rows = incoming.rows + addition,
+                cursor = HistoryCursor(addition.id, addition.seqId),
+            )
+        val append = checkNotNull(lease.saveHistory(newer, 200, matching))
+        assertSame(newer.rows, lease.loadHistory(CHAT_PERSONAL, append)?.checkpoint?.rows)
+
+        val archived = row(id = "archived-event", seq = 36)
+        val rebuilt = newer.copy(rows = listOf(archived) + newer.rows, replaced = true)
+        lease.saveWarmedHistory(rebuilt, 200, newer.cursor) { null }
+        val adopted = checkNotNull(lease.loadHistory(CHAT_PERSONAL, append))
+        assertEquals(rebuilt.copy(replaced = false), adopted.checkpoint)
+        assertEquals(200L, adopted.confirmedAt)
+
+        val tail = row(id = "tail-event", seq = 39)
+        val staleAppend =
+            newer.copy(rows = newer.rows + tail, cursor = HistoryCursor(tail.id, tail.seqId))
+        val staleWrite = lease.saveHistory(staleAppend, 300, append)
+        assertNull(staleWrite)
+        val persisted = checkNotNull(lease.loadHistory(CHAT_PERSONAL))
+        assertEquals(rebuilt.rows + tail, persisted.checkpoint.rows)
+    }
+
+    @Test
+    fun reopeningUsesTheArchivedRowsRecoveredByWarming() = runTest {
+        val baseline = checkpoint()
+        val archived = row(id = "archived-event", seq = 38)
+        val tail = row(id = "tail-event", seq = 39)
+        val tailCursor = HistoryCursor(tail.id, tail.seqId)
+        val warmed =
+            baseline.copy(
+                rows = baseline.rows + listOf(archived, tail),
+                cursor = tailCursor,
+                replaced = true,
+            )
+        val service = Service()
+        val lease = cache().open(identity) { true }
+        lease.saveHistory(baseline, 100)
+        val model =
+            ConversationHistoryModel(
+                service,
+                lease,
+                backgroundScope,
+                { true },
+                {},
+                {},
+                StandardTestDispatcher(testScheduler),
+            )
+        try {
+            model.open(thread())
+            model.uiState.first { it.phase == HistoryPhase.Ready }
+            model.open(thread(CHAT_IN_PROJECT))
+            model.uiState.first { it.phase == HistoryPhase.Ready }
+            lease.saveWarmedHistory(warmed, 200, baseline.cursor) { model.uiState.value.thread?.id }
+
+            // The old cursor still exists, but the intermediate row only survives in the archive.
+            service.rowsRead = { _, _ -> HistoryPage(listOf(tail), tailCursor, false) }
+            model.open(thread())
+            val published = model.uiState.first { it.phase == HistoryPhase.Ready }
+            assertEquals(baseline.cursor, service.requested.last())
+            assertEquals(warmed.rows.map { it.id }, published.transcript?.messages?.map { it.id })
+            assertEquals(tailCursor, published.confirmation?.cursor)
+        } finally {
+            model.close()
+            lease.close()
+        }
+    }
+
+    @Test
+    fun anInFlightCatchUpPublishesTheNewerStoredCursor() = runTest {
+        val received = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val baseline = checkpoint()
+        val older = row(id = "older-event", seq = 38)
+        val newer = row(id = "newer-event", seq = 39)
+        val service =
+            Service().apply {
+                rowsRead = { _, _ ->
+                    received.complete(Unit)
+                    release.await()
+                    HistoryPage(listOf(older), HistoryCursor(older.id, older.seqId), false)
+                }
+            }
+        val lease = cache().open(identity) { true }
+        lease.saveHistory(baseline, 100)
+        val model =
+            ConversationHistoryModel(
+                service,
+                lease,
+                backgroundScope,
+                { true },
+                {},
+                {},
+                StandardTestDispatcher(testScheduler),
+            )
+        try {
+            model.open(thread())
+            received.await()
+            val stored =
+                baseline.copy(
+                    rows = baseline.rows + listOf(older, newer),
+                    cursor = HistoryCursor(newer.id, newer.seqId),
+                )
+            lease.saveHistory(stored, 200)
+            release.complete(Unit)
+            val published = model.uiState.first { it.phase == HistoryPhase.Ready }
+            assertEquals(stored.cursor, published.confirmation?.cursor)
+            assertEquals(stored, model.checkpoint(CHAT_PERSONAL))
+            assertEquals(stored, lease.loadHistory(CHAT_PERSONAL)?.checkpoint)
+        } finally {
+            model.close()
+            lease.close()
+        }
+    }
+
+    @Test
     fun visibleReadEffectsAreSeparateFromLoadingAndThreadFailuresStayLocal() = runTest {
         val service = Service()
         val lease = cache().open(identity) { true }

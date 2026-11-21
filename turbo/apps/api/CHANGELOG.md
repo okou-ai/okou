@@ -10,6 +10,20 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.100.4](https://github.com/okou-ai/okou/compare/api-v2.100.3...api-v2.100.4) (2026-11-21)
+
+
+### Refactoring
+
+* **db:** prepare custom connector skill writes before cutover ([#49718](https://github.com/okou-ai/okou/issues/49718)) ([ff65248](https://github.com/okou-ai/okou/commit/ff65248c67bcbafca4a1afe6c5a1d1407db2b7b4))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/db bumped to 2.57.4
+
 ## [2.100.3](https://github.com/okou-ai/okou/compare/api-v2.100.2...api-v2.100.3) (2026-11-21)
 
 
