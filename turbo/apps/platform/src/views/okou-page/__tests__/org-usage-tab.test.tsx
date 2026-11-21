@@ -173,3 +173,85 @@ test("org-usage-tab-009 The seven-day view replaces both members' period totals 
     screen.findByText("Models - 6,100"),
   ).resolves.toBeInTheDocument();
 });
+
+test("org-usage-tab-008 Alice's team ledger moves only data search into Connectors while preserving her 84 credits", async () => {
+  const provider = (provider: string, credits: number, kind?: string) => {
+    return {
+      provider,
+      credits,
+      usageKinds: kind ? [{ kind, credits }] : [],
+    };
+  };
+  context.mocks.api(usageMembersContract.get, ({ respond }) => {
+    return respond(200, {
+      period: { start: "2026-03-01", end: "2026-04-01" },
+      members: [
+        {
+          userId: "alice",
+          email: "alice@ledger.example",
+          inputTokens: 70,
+          outputTokens: 12,
+          cacheReadInputTokens: 0,
+          cacheCreationInputTokens: 0,
+          creditsCharged: 84,
+          breakdown: [
+            {
+              kind: "connector",
+              credits: 14,
+              providers: [
+                provider("slack", 7),
+                provider("catalog", 2, "commerce"),
+                provider("archive", 5, "data-search"),
+              ],
+            },
+            {
+              kind: "other",
+              credits: 60,
+              providers: [
+                provider("archive", 19, "data-search/archive/units"),
+                provider("catalog", 27, "commerce/catalog/units"),
+                provider("legacy-data", 14),
+              ],
+            },
+            {
+              kind: "model",
+              credits: 10,
+              providers: [provider("gpt-5.6-sol", 10)],
+            },
+          ],
+        },
+      ],
+    });
+  });
+  await openWorkspace(context, "/?settings=usage-records");
+  click(await screen.findByText("Team usage", { selector: '[role="tab"]' }));
+  const memberRow = await screen.findByTestId("member-usage-alice");
+  expect(memberRow).toHaveTextContent("alice@ledger.example");
+  expect(within(memberRow).getByText("84")).toBeInTheDocument();
+  const user = userEvent.setup({ delay: null });
+  for (const group of [
+    { kind: "other", heading: "Other - 14", rows: [["Legacy Data", "14"]] },
+    {
+      kind: "connector",
+      heading: "Connectors - 60",
+      rows: [
+        ["Data Search", "53"],
+        ["Slack", "7"],
+      ],
+    },
+    { kind: "model", heading: "Models - 10", rows: [["GPT 5.6 Sol", "10"]] },
+  ]) {
+    const bar = within(memberRow).getByTestId(
+      "member-usage-kind-alice-" + group.kind,
+    );
+    await user.hover(bar);
+    const heading = await screen.findByText(group.heading);
+    const detail = heading.parentElement!;
+    for (const [name, count] of group.rows) {
+      expect(
+        within(detail).getByText(name).nextElementSibling,
+      ).toHaveTextContent(new RegExp("^" + count + "$", "u"));
+    }
+    await user.unhover(bar);
+  }
+});
