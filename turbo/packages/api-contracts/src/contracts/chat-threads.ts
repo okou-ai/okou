@@ -17,6 +17,7 @@ import {
   object,
   record,
   string,
+  stringbool,
   tuple,
   union,
   url,
@@ -464,6 +465,17 @@ export const chatThreadsContract = c.router({
     method: "GET",
     path: "/api/indicators",
     headers: authHeadersSchema,
+    query: object({
+      includeActiveUnread: stringbool({
+        truthy: ["true"],
+        falsy: ["false"],
+        case: "sensitive",
+      })
+        .describe("Include unread terminal watermarks for active threads.")
+        .optional()
+        // Older versions of this route ignored queries.
+        .catch(undefined),
+    }),
     responses: {
       200: indicatorsSchema,
       401: apiErrorSchema,

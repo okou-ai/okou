@@ -11,6 +11,7 @@ import android.window.OnBackInvokedCallback
 import android.window.OnBackInvokedDispatcher
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -96,23 +97,6 @@ internal fun workspaceListTitleStyle(widthDp: Int, listWidth: Int?): TextStyle {
 }
 
 @Composable
-internal fun WorkspaceFilterSubtitle(filter: ChatListFilter) {
-    if (filter == ChatListFilter.Inbox) return
-    Text(
-        stringResource(R.string.chat_filter_subtitle, stringResource(filter.label())),
-        style =
-            MaterialTheme.typography.bodySmall.copy(
-                fontSize = 12.sp,
-                lineHeight = 16.sp,
-                letterSpacing = 0.sp,
-            ),
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-    )
-}
-
-@Composable
 internal fun WorkspaceListToolbar(
     widthDp: Int,
     listWidth: Int?,
@@ -163,6 +147,12 @@ internal fun WorkspaceToolbarActions(
     val settingsAnchor =
         Modifier.focusRequester(settingsFocus).onFocusChanged { anchorFocused = it.isFocused }
     val colors = MaterialTheme.colorScheme
+    val currentFilter = stringResource(list.filter.label())
+    val filterApplied = showFilter && list.filter != ChatListFilter.Inbox
+    val filterTreatment =
+        if (filterApplied) Modifier.background(colors.secondaryContainer, RoundedCornerShape(12.dp))
+        else Modifier
+    val filterTint = if (filterApplied) colors.onSecondaryContainer else colors.onSurfaceVariant
 
     fun closeMenu() {
         restoreMenuFocus = true
@@ -252,17 +242,17 @@ internal fun WorkspaceToolbarActions(
     if (update == null) {
         if (showFilter) {
             Box {
-                val currentFilter = stringResource(list.filter.label())
                 IconButton(
                     onClick = { menu = WorkspaceMenuPage.Filter },
                     modifier =
-                        Modifier.focusRequester(filterFocus).semantics {
+                        Modifier.focusRequester(filterFocus).then(filterTreatment).semantics {
                             stateDescription = currentFilter
                         },
                 ) {
                     Icon(
                         painterResource(R.drawable.ic_filter_list),
                         stringResource(R.string.chat_filter),
+                        tint = filterTint,
                     )
                 }
                 menuContent()
@@ -282,7 +272,10 @@ internal fun WorkspaceToolbarActions(
         UpdateToolbarButton(update, stacked = stackUpdateLabel)
         Box {
             IconButton(
-                modifier = settingsAnchor,
+                modifier =
+                    settingsAnchor.then(filterTreatment).semantics {
+                        if (showFilter) stateDescription = currentFilter
+                    },
                 onClick = {
                     restoreSettingsAnchor = anchorFocused
                     menu = WorkspaceMenuPage.Overflow
@@ -291,6 +284,7 @@ internal fun WorkspaceToolbarActions(
                 Icon(
                     painterResource(R.drawable.ic_more_horiz),
                     stringResource(R.string.chat_more_actions),
+                    tint = filterTint,
                 )
             }
             menuContent()

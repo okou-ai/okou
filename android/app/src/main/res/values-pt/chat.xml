@@ -24,7 +24,6 @@
         <item quantity="other">%1$d conversas marcadas como lidas.</item>
     </plurals>
     <string name="chat_filter">Filtrar</string>
-    <string name="chat_filter_subtitle">Filtro · %1$s</string>
     <string name="chat_back_to_inbox">Voltar para a caixa de entrada</string>
     <string name="chat_more_actions">Mais ações</string>
     <string name="chat_unread">Não lidas</string>

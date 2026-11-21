@@ -105,7 +105,7 @@ internal fun OkouApp(
     projectExpansion: ProjectExpansionModel?,
     settingsContent: @Composable (SettingsDestination, openInstructions: () -> Unit) -> Unit,
     recovery: AssistantRecoveryModel? = null,
-    workspaceTitle: @Composable ((ChatListFilter) -> Unit)? = null,
+    workspaceTitle: @Composable (() -> Unit)? = null,
     updateToolbarAction: UpdateToolbarAction? = null,
     onUpdateEditingChanged: (Boolean) -> Unit = {},
     startupRecovery: @Composable (() -> Unit)? = null,
@@ -469,17 +469,15 @@ internal fun OkouApp(
                 listWidth = listWidth,
                 title = {
                     if (workspaceTitle != null) {
-                        workspaceTitle(list.filter)
+                        workspaceTitle()
                     } else {
-                        Column(Modifier.padding(start = 8.dp)) {
-                            Text(
-                                stringResource(R.string.app_name),
-                                style = workspaceListTitleStyle(window.width, listWidth),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                            WorkspaceFilterSubtitle(list.filter)
-                        }
+                        Text(
+                            stringResource(R.string.app_name),
+                            Modifier.padding(start = 8.dp),
+                            style = workspaceListTitleStyle(window.width, listWidth),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
                     }
                 },
                 actions = toolbarActions,

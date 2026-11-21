@@ -7,9 +7,7 @@ import ai.okou.android.SettingsIcon
 import ai.okou.android.SettingsRow
 import ai.okou.android.SettingsScreen
 import ai.okou.android.SettingsSection
-import ai.okou.android.WorkspaceFilterSubtitle
 import ai.okou.android.api.generated.Organization
-import ai.okou.android.chat.ChatListFilter
 import ai.okou.android.chat.WorkspaceRealtimeLifecycle
 import ai.okou.android.currentWindowSizeDp
 import ai.okou.android.instructions.PersonalInstructionsSettings
@@ -118,7 +116,7 @@ internal fun SessionRoot(
                     recovery = ready?.recovery,
                     workspaceTitle =
                         organization?.let { workspace ->
-                            { filter -> WorkspaceTitle(workspace, state, filter, chooseWorkspace) }
+                            { WorkspaceTitle(workspace, state, chooseWorkspace) }
                         },
                     updateToolbarAction = updateToolbarAction,
                     onUpdateEditingChanged = onUpdateEditingChanged,
@@ -326,7 +324,6 @@ private fun AccountSettings(openInstructions: () -> Unit, signOut: () -> Unit) {
 private fun WorkspaceTitle(
     workspace: Organization,
     state: SessionUiState,
-    filter: ChatListFilter,
     chooseWorkspace: (String) -> Unit,
 ) {
     val canSwitch = state.ready != null && state.memberships.size > 1
@@ -342,24 +339,24 @@ private fun WorkspaceTitle(
             contentDescription = null,
             modifier = Modifier.size(logoSize).clip(RoundedCornerShape(8.dp)),
         )
-        Column(Modifier.padding(start = spacing).weight(1f, fill = false)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    workspace.name,
-                    Modifier.weight(1f, fill = false),
-                    style = workspaceListTitleStyle(window.width, pane),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+        Row(
+            Modifier.padding(start = spacing).weight(1f, fill = false),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                workspace.name,
+                Modifier.weight(1f, fill = false),
+                style = workspaceListTitleStyle(window.width, pane),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (canSwitch) {
+                Icon(
+                    painterResource(R.drawable.ic_expand_more),
+                    stringResource(R.string.auth_switch_workspace),
+                    Modifier.padding(start = spacing).size(14.dp),
                 )
-                if (canSwitch) {
-                    Icon(
-                        painterResource(R.drawable.ic_expand_more),
-                        stringResource(R.string.auth_switch_workspace),
-                        Modifier.padding(start = spacing).size(14.dp),
-                    )
-                }
             }
-            WorkspaceFilterSubtitle(filter)
         }
     }
     if (canSwitch) {

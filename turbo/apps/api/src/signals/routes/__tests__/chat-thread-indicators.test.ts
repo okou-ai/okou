@@ -282,7 +282,7 @@ describe("GET /api/indicators", () => {
     expect(unreads).toStrictEqual(expect.arrayContaining([toggled, untouched]));
   });
 
-  it("reports a finished thread with a new active Run as active instead of unread", async () => {
+  it("keeps an archived active thread unread on request until its terminal watermark is acknowledged", async () => {
     await prepareChatRuntime();
     const actor = bdd.user();
     const agentId = await createEntitledAgent(actor, "Rerun indicator agent");
@@ -300,13 +300,16 @@ describe("GET /api/indicators", () => {
       threadId: rerun.threadId,
       prompt: "Follow-up active Run",
     });
+    await chat.markThreadUnread(actor, rerun.threadId);
+    await chat.requestSetThreadArchived(actor, rerun.threadId, true, [204]);
     await seedMembership(actor);
 
+    const headers = {
+      authorization: `Bearer ${indicatorCredentials.token(actor)}`,
+    };
     const indicators = await accept(
       client().indicators({
-        headers: {
-          authorization: `Bearer ${indicatorCredentials.token(actor)}`,
-        },
+        headers,
       }),
       [200],
     );
@@ -318,6 +321,42 @@ describe("GET /api/indicators", () => {
       },
       unreadAt: { [unread.threadId]: unread.unreadAt },
     });
+    await expect(
+      accept(
+        client().indicators({
+          headers,
+          query: { includeActiveUnread: "ignored" },
+        }),
+        [200],
+      ),
+    ).resolves.toMatchObject({ body: indicators.body });
+
+    const currentIndicators = async () => {
+      const response = await accept(
+        client().indicators({
+          headers,
+          query: { includeActiveUnread: "true" },
+        }),
+        [200],
+      );
+      return response.body;
+    };
+    await expect(currentIndicators()).resolves.toStrictEqual({
+      ...indicators.body,
+      unreadAt: {
+        [unread.threadId]: unread.unreadAt,
+        [rerun.threadId]: rerun.unreadAt,
+      },
+    });
+
+    await expect(chat.markThreadRead(actor, rerun.threadId)).resolves.toEqual({
+      lastReadAt: rerun.unreadAt,
+    });
+    await expect(currentIndicators()).resolves.toStrictEqual(indicators.body);
+
+    await chat.markThreadUnread(actor, rerun.threadId);
+    await chat.requestSetThreadMuted(actor, rerun.threadId, true, [204]);
+    await expect(currentIndicators()).resolves.toStrictEqual(indicators.body);
   });
 
   it("returns the 50 most recent active threads owned by this member", async () => {

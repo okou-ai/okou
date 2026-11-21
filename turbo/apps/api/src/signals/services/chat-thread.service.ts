@@ -323,9 +323,10 @@ export function chatThreadDetail(args: {
     };
   });
 }
-type IndicatorOwner = {
+type IndicatorScope = {
   readonly userId: string;
   readonly orgId: string;
+  readonly includeActiveUnread: boolean;
 };
 type IndicatorThreadRow = {
   readonly threadId: string;
@@ -334,6 +335,7 @@ type IndicatorThreadRow = {
 type UnreadIndicatorRow = IndicatorThreadRow & {
   readonly unreadAt: Date;
   readonly archived: boolean;
+  readonly active: boolean;
 };
 
 function newestUnreadIndicators(rows: UnreadIndicatorRow[]) {
@@ -347,7 +349,7 @@ function newestUnreadIndicators(rows: UnreadIndicatorRow[]) {
   return rows.slice(0, INDICATOR_UNREAD_LIMIT);
 }
 
-function createIndicatorRows(args: IndicatorOwner) {
+function createIndicatorRows(args: IndicatorScope) {
   const activeRows$ = computed(
     async (get): Promise<readonly IndicatorThreadRow[]> => {
       return await get(db$)
@@ -433,6 +435,13 @@ function createIndicatorRows(args: IndicatorOwner) {
               inArray(agentRuns.chatThreadId, candidateIds),
               inArray(agentRuns.status, [...ACTIVE_RUN_STATUSES]),
               isNotNull(agentRuns.triggerSource),
+              // Only the opt-in result exposes these Runs as active indicators.
+              args.includeActiveUnread
+                ? and(
+                    eq(agentRuns.userId, args.userId),
+                    eq(agentRuns.orgId, args.orgId),
+                  )
+                : undefined,
             ),
           ),
       ]);
@@ -450,9 +459,10 @@ function createIndicatorRows(args: IndicatorOwner) {
       const unreadRows: UnreadIndicatorRow[] = [];
       for (const candidate of candidates) {
         const unreadAt = latestTerminalAt.get(candidate.threadId);
+        const active = activeIds.has(candidate.threadId);
         if (
           unreadAt === undefined ||
-          activeIds.has(candidate.threadId) ||
+          (active && !args.includeActiveUnread) ||
           (candidate.lastReadAt !== null &&
             unreadAt.getTime() <= candidate.lastReadAt.getTime())
         ) {
@@ -463,6 +473,7 @@ function createIndicatorRows(args: IndicatorOwner) {
           agentId: candidate.agentId,
           unreadAt,
           archived: candidate.archived,
+          active,
         });
       }
       return newestUnreadIndicators(unreadRows);
@@ -478,19 +489,14 @@ function createIndicatorRows(args: IndicatorOwner) {
  * different states during transitions. Missing entries do not prove inactivity
  * or completion, and exclusions do not promise eventual appearance.
  *
- * Covers up to 128 visible agents in the current organization. Agent IDs are
- * loaded first and passed to the bounded thread reads, so those reads do not
- * join against or correlate to the agents table.
  * Each indicator source returns at most 50 rows. Only Run terminal markers
  * contribute unread indicators; they are resolved for at most 128 candidate
- * threads with uncorrelated reads. Active wins for a thread; unarchived unread
- * wins for an agent, which can still have other active threads. See
- * indicatorsSchema for the public bounds and outcome-observation contract.
+ * threads with uncorrelated reads. Active wins for a thread. Clients can
+ * request its unread watermark independently from its presentation status.
  */
-export function chatIndicators(args: {
-  readonly userId: string;
-  readonly orgId: string;
-}): Computed<Promise<Indicators>> {
+export function chatIndicators(
+  args: IndicatorScope,
+): Computed<Promise<Indicators>> {
   const { activeRows$, unreadRows$ } = createIndicatorRows(args);
   return computed(async (get): Promise<Indicators> => {
     const [activeRows, unreadRows] = await Promise.all([
@@ -508,16 +514,19 @@ export function chatIndicators(args: {
       }
     }
     for (const row of unreadRows) {
-      // The unread reads already exclude threads with active Runs, but they
-      // run concurrently with the active read and can observe a newer Run
-      // state; the active indicator wins either way.
-      if (threads[row.threadId] === "active") {
+      // The independent activity reads can disagree during a Run transition.
+      const active = row.active || threads[row.threadId] === "active";
+      if (active && !args.includeActiveUnread) {
         continue;
       }
-      threads[row.threadId] = "unread";
       unreadAt[row.threadId] = row.unreadAt.toISOString();
-      // Archived chats retain their reading state without requesting attention.
-      if (row.agentId !== null && !row.archived) {
+      threads[row.threadId] = active ? "active" : "unread";
+      if (row.agentId === null) {
+        continue;
+      }
+      if (active) {
+        agentIndicators[row.agentId] ??= "active";
+      } else if (!row.archived) {
         agentIndicators[row.agentId] = "unread";
       }
     }

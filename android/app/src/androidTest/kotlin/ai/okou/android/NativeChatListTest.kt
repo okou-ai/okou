@@ -112,9 +112,13 @@ class NativeChatListTest {
                 .click()
             val unread = app.getString(R.string.chat_unread)
             text(unread).click()
-            val subtitle = app.getString(R.string.chat_filter_subtitle, unread)
             assertTrue(
-                device.wait(Until.hasObject(By.pkg(app.packageName).textContains(subtitle)), 10_000)
+                device.wait(
+                    Until.hasObject(
+                        By.pkg(app.packageName).text(unread).hasAncestor(chatListRegion(app))
+                    ),
+                    10_000,
+                )
             )
             // An unread Project remains visible with its chat rows folded.
             text("Research")
@@ -341,10 +345,11 @@ class NativeChatListTest {
                 assertTrue(device.pressDPadCenter())
                 text(app.getString(R.string.chat_empty))
                 device.awaitKeyboardFocus(By.pkg(app.packageName).desc(filter))
-                val subtitle = app.getString(R.string.chat_filter_subtitle, archived)
                 assertTrue(
                     device.wait(
-                        Until.hasObject(By.pkg(app.packageName).textContains(subtitle)),
+                        Until.hasObject(
+                            By.pkg(app.packageName).text(archived).hasAncestor(chatListRegion(app))
+                        ),
                         10_000,
                     )
                 )
