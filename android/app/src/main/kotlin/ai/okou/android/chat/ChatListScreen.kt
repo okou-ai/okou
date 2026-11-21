@@ -784,8 +784,7 @@ private fun ChatRow(
                     menuOpen = false
                 },
                 title =
-                    thread.title?.takeIf { it.isNotBlank() }
-                        ?: stringResource(R.string.chat_untitled),
+                    title?.takeIf { it.isNotBlank() } ?: stringResource(R.string.chat_untitled),
             )
         }
     }
