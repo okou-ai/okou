@@ -171,11 +171,6 @@ type ForYouCoverId = (typeof forYouCovers)[number]["id"];
 // The first cover is the default.
 export const DEFAULT_FOR_YOU_COVER_ID: ForYouCoverId = forYouCovers[0].id;
 
-// The banner's bottom edge is a repeating torn-paper alpha mask.
-export const forYouCoverTornEdge = platformStaticAssetUrl(
-  "views/for-you/assets/cover-torn-edge-d189ebb4db4f.png",
-);
-
 // Shown once the last card is handled: Okou takes a breather with the user.
 export const forYouCompleteIllustration = platformStaticAssetUrl(
   "views/for-you/assets/take-a-breather-1edc7a6640d4.webp",

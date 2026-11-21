@@ -55,7 +55,6 @@ import {
 import {
   DEFAULT_FOR_YOU_COVER_ID,
   forYouCovers,
-  forYouCoverTornEdge,
 } from "../../lib/for-you-artwork.ts";
 
 const STACK_LAYERS = [
@@ -65,16 +64,6 @@ const STACK_LAYERS = [
 
 const STACK_CARD =
   "@container/suggestion col-start-1 row-start-1 flex origin-[50%_85%] touch-pan-y flex-col rounded-3xl p-7 shadow-[0_1px_2px_rgb(37_33_33/0.05),0_10px_26px_rgb(37_33_33/0.06)] sm:p-10";
-
-// The torn-paper edge is an alpha strip repeated along the banner's bottom;
-// the solid layer above it overlaps the strip's opaque top rows. Its top fades
-// in from the page behind the header, which sits on the banner.
-const COVER_MASK = {
-  maskImage: `linear-gradient(transparent, #000 16px), url("${forYouCoverTornEdge}")`,
-  maskSize: "100% calc(100% - 56px), 1200px 60px",
-  maskPosition: "top left, bottom left",
-  maskRepeat: "no-repeat, repeat-x",
-} satisfies CSSProperties;
 
 function SuggestionSendStatus({
   entry,
@@ -294,7 +283,6 @@ function ForYouCover() {
         src={cover.src}
         alt=""
         draggable={false}
-        style={COVER_MASK}
         className="pointer-events-none size-full select-none object-cover object-[50%_65%]"
       />
       <Popover>
