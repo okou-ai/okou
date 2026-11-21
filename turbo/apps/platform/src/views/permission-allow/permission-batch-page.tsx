@@ -24,7 +24,7 @@ export function PermissionBatchPage() {
             variant="rows"
           />
         ) : signals ? (
-          <PermissionBatchContent signals={signals} standalone />
+          <PermissionBatchContent signals={signals} />
         ) : (
           <p role="alert" className="text-center text-sm text-destructive">
             {t(($) => {

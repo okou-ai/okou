@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="history_syncing">正在同步訊息…</string>
     <string name="history_loading">正在載入對話…</string>
     <string name="history_failed">無法重新整理對話，請重試。</string>
     <string name="history_missing">此對話已刪除或無法使用。</string>

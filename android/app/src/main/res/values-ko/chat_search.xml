@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="chat_search">검색</string>
-    <string name="chat_search_hint">채팅 검색</string>
+    <string name="chat_search_workspace">워크스페이스 검색</string>
     <string name="chat_search_clear">검색 지우기</string>
     <string name="chat_search_recent">최근 채팅</string>
     <string name="chat_search_empty">일치하는 채팅 없음</string>

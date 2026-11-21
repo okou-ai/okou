@@ -273,7 +273,6 @@ export function createPermissionBatchSignals(
   return {
     ...descriptor,
     descriptor,
-    href: permissionBatchActionResourceKey(descriptor),
     ...resources,
     expiresIn$: local.expiresIn$,
     dismissed$: local.dismissed$,

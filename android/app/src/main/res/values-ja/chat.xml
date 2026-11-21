@@ -3,7 +3,7 @@
     <string name="chat_undo_unarchived">チャットのアーカイブを解除しました</string>
     <string name="chat_undo_marked_read">チャットを既読にしました</string>
     <string name="chat_undo">元に戻す</string>
-    <string name="chat_undo_close">閉じる</string>
+    <string name="chat_feedback_dismiss">閉じる</string>
     <string name="chat_list_offline">オフライン</string>
     <string name="chat_list_refresh_failed">チャット一覧を更新できませんでした</string>
     <string name="chat_list_first_load_failed">一時的に読み込めません</string>
@@ -12,7 +12,6 @@
     <string name="chat_refresh">チャットを更新</string>
     <string name="chat_loading">チャットを読み込み中…</string>
     <string name="chat_refresh_failed">更新できませんでした。最後に読み込んだチャットを表示しています。</string>
-    <string name="chat_cached">保存済みのチャットを表示しています。</string>
     <string name="chat_cache_unavailable">オフライン保存を利用できません。再起動後にこれらのチャットを表示できない場合があります。</string>
     <string name="chat_metadata_unavailable">一部の Okou またはプロジェクトの情報を利用できません。</string>
     <string name="chat_inbox">受信トレイ</string>
@@ -58,6 +57,7 @@
     <string name="chat_rename_project">プロジェクト名を変更</string>
     <string name="chat_project_name">プロジェクト名</string>
     <string name="chat_project_rename_unconfirmed">プロジェクト名を確認できませんでした。</string>
+    <string name="chat_project_rename_rejected">プロジェクトの名前を変更できませんでした。</string>
     <string name="chat_project_rename_save">保存</string>
     <string name="chat_project_rename_pending">プロジェクト名を変更中…</string>
 </resources>

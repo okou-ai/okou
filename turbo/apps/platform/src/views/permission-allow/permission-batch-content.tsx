@@ -41,16 +41,16 @@ import { AvatarFromUrl } from "../okou-page/sidebar-shared.tsx";
 
 export function PermissionBatchContent({
   signals,
-  standalone = false,
+  detailsHref,
 }: {
   signals: PermissionBatchSignals;
-  standalone?: boolean;
+  detailsHref?: string;
 }) {
   const features = useLastResolved(featureSwitches$);
   if (!features?.[FeatureSwitchKey.BatchConnectorPermissions]) {
     return null;
   }
-  return <BatchContent signals={signals} standalone={standalone} />;
+  return <BatchContent signals={signals} detailsHref={detailsHref} />;
 }
 
 function useBatchResources(signals: PermissionBatchSignals) {
@@ -746,10 +746,10 @@ function BatchDialog({ batch, href }: BatchViewProps & { href: string }) {
 
 function BatchContent({
   signals,
-  standalone,
+  detailsHref,
 }: {
   signals: PermissionBatchSignals;
-  standalone: boolean;
+  detailsHref?: string;
 }) {
   const { t } = useTranslation();
   const batch = useBatchState(signals);
@@ -762,16 +762,16 @@ function BatchContent({
       </p>
     );
   }
-  if (!standalone) {
+  if (detailsHref !== undefined) {
     // Keep operation state mounted across dialog closes and asynchronous updates.
-    return <BatchDialog batch={batch} href={signals.href} />;
+    return <BatchDialog batch={batch} href={detailsHref} />;
   }
   return (
     <div className="flex w-full min-w-0 flex-col gap-4">
-      <BatchHeader batch={batch} standalone={standalone} />
+      <BatchHeader batch={batch} standalone />
       <BatchPermissionDetails batch={batch} />
       <BatchFeedback batch={batch} />
-      <BatchActions batch={batch} standalone={standalone} />
+      <BatchActions batch={batch} standalone />
     </div>
   );
 }

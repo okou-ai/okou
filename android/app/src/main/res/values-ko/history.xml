@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="history_syncing">메시지 동기화 중…</string>
     <string name="history_loading">대화 불러오는 중…</string>
     <string name="history_failed">대화를 새로고침하지 못했습니다. 다시 시도하세요.</string>
     <string name="history_missing">삭제되었거나 사용할 수 없는 대화입니다.</string>

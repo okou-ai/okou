@@ -3,7 +3,7 @@
     <string name="chat_undo_unarchived">聊天已取消归档</string>
     <string name="chat_undo_marked_read">聊天已标为已读</string>
     <string name="chat_undo">撤销</string>
-    <string name="chat_undo_close">关闭</string>
+    <string name="chat_feedback_dismiss">关闭</string>
     <string name="chat_list_offline">离线</string>
     <string name="chat_list_refresh_failed">列表刷新失败</string>
     <string name="chat_list_first_load_failed">暂时无法加载</string>
@@ -12,7 +12,6 @@
     <string name="chat_refresh">刷新聊天</string>
     <string name="chat_loading">正在加载聊天…</string>
     <string name="chat_refresh_failed">无法刷新，正在显示上次加载的聊天。</string>
-    <string name="chat_cached">正在显示已保存的聊天。</string>
     <string name="chat_cache_unavailable">离线存储不可用，重启后可能无法查看这些聊天。</string>
     <string name="chat_metadata_unavailable">部分 Okou 或项目信息不可用。</string>
     <string name="chat_inbox">收件箱</string>
@@ -58,6 +57,7 @@
     <string name="chat_rename_project">重命名项目</string>
     <string name="chat_project_name">项目名称</string>
     <string name="chat_project_rename_unconfirmed">无法确认项目名称。</string>
+    <string name="chat_project_rename_rejected">无法重命名项目。</string>
     <string name="chat_project_rename_save">保存</string>
     <string name="chat_project_rename_pending">正在重命名项目…</string>
 </resources>

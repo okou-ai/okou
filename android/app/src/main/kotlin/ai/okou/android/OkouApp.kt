@@ -170,6 +170,9 @@ internal fun OkouApp(
     val focus = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     val settingsFocus = remember { FocusRequester() }
+    val searchEntryFocus = remember { FocusRequester() }
+    var searchEntryFocused by remember { mutableStateOf(false) }
+    var restoreSearchFocus by remember { mutableStateOf(false) }
     var restoreSettingsFocus by remember { mutableStateOf(false) }
 
     fun releaseSearchFocus() {
@@ -185,6 +188,7 @@ internal fun OkouApp(
     }
 
     fun openSearch() {
+        restoreSearchFocus = searchEntryFocused
         searchState.reset()
         focusSearch = true
         navigation = navigation.copy(target = target, settings = null, search = SearchRoute.Open)
@@ -468,7 +472,7 @@ internal fun OkouApp(
                     detailTitleStyle.lineHeight.toDp() +
                         if (projectSubtitle != null) projectSubtitleStyle.lineHeight.toDp()
                         else 0.dp
-            maxOf(64.dp, textHeight + 16.dp)
+            maxOf(TopAppBarDefaults.TopAppBarExpandedHeight, textHeight + 16.dp)
         }
 
     val toolbarActions =
@@ -506,10 +510,17 @@ internal fun OkouApp(
                 widthDp = window.width,
                 listWidth = listWidth,
                 avatar = workspaceAvatar,
-                workspaceName = workspaceName,
+                searchFocus = searchEntryFocus,
+                onSearchFocusChanged = { searchEntryFocused = it },
                 openSearch = if (chats != null) ::openSearch else null,
                 actions = toolbarActions,
             )
+            LaunchedEffect(Unit) {
+                if (restoreSearchFocus) {
+                    restoreSearchFocus = false
+                    searchEntryFocus.requestFocus()
+                }
+            }
         }
 
     Scaffold(
@@ -592,6 +603,9 @@ internal fun OkouApp(
                                 ChatTitleSearch(
                                     state = list,
                                     search = searchState,
+                                    widthDp = window.width,
+                                    listWidth = listWidth,
+                                    workspaceName = workspaceName,
                                     focusOnEntry = focusSearch,
                                     onFocused = { focusSearch = false },
                                     onClose = ::closeSearch,
@@ -631,6 +645,9 @@ internal fun OkouApp(
                                     wide = listWidth != null,
                                     newChatEnabled = workspaceReady,
                                     startupRecovery = startupRecovery,
+                                    dismissProjectRenameRejection = {
+                                        chats?.dismissProjectRenameRejection(it)
+                                    },
                                     feedback = {
                                         WorkspaceFeedbackHost(
                                             snackbar,
@@ -670,8 +687,6 @@ internal fun OkouApp(
                                 HorizontalDivider(color = MaterialTheme.colorScheme.outline)
                             }
                             Column(Modifier.widthIn(max = 768.dp).fillMaxWidth().weight(1f)) {
-                                if (target != WorkspaceTarget.List && workspaceReady)
-                                    RealtimeNotice(chats.updates)
                                 when (target) {
                                     WorkspaceTarget.List -> {
                                         if (workspaceReady) {
@@ -704,6 +719,7 @@ internal fun OkouApp(
                                                 Modifier.weight(1f),
                                                 composer = composer,
                                                 historyAvailable = !awaitingCreatedChat,
+                                                realtime = chats.updates.takeIf { workspaceReady },
                                             )
                                             if (
                                                 thread != null &&
@@ -742,9 +758,15 @@ internal fun OkouApp(
                                                     Modifier.weight(1f),
                                                     composer = composer,
                                                     historyAvailable = provisionalChat != null,
+                                                    realtime =
+                                                        chats.updates.takeIf { workspaceReady },
                                                 )
                                             }
-                                        } else Box(Modifier.weight(1f))
+                                        } else {
+                                            Box(Modifier.weight(1f)) {
+                                                if (workspaceReady) RealtimeNotice(chats.updates)
+                                            }
+                                        }
                                         if (createdId == null) {
                                             conversations.Content(checkNotNull(newTarget).key) {
                                                 ChatComposerField(checkNotNull(composer), newTarget)
@@ -845,7 +867,7 @@ private fun WorkspaceFeedbackHost(
                     IconButton(onClick = data::dismiss) {
                         Icon(
                             painterResource(R.drawable.ic_close),
-                            stringResource(R.string.chat_undo_close),
+                            stringResource(R.string.chat_feedback_dismiss),
                         )
                     }
                 }

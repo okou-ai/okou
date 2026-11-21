@@ -3,7 +3,7 @@
     <string name="chat_undo_unarchived">Conversa desarquivada</string>
     <string name="chat_undo_marked_read">Conversa marcada como lida</string>
     <string name="chat_undo">Desfazer</string>
-    <string name="chat_undo_close">Fechar</string>
+    <string name="chat_feedback_dismiss">Fechar</string>
     <string name="chat_list_offline">Sem conexão</string>
     <string name="chat_list_refresh_failed">Não foi possível atualizar a lista de conversas</string>
     <string name="chat_list_first_load_failed">Temporariamente indisponível para carregar</string>
@@ -12,7 +12,6 @@
     <string name="chat_refresh">Atualizar conversas</string>
     <string name="chat_loading">Carregando conversas…</string>
     <string name="chat_refresh_failed">Não foi possível atualizar. Exibindo as últimas conversas carregadas.</string>
-    <string name="chat_cached">Exibindo conversas salvas.</string>
     <string name="chat_cache_unavailable">O armazenamento offline está indisponível. Estas conversas podem não estar disponíveis após reiniciar.</string>
     <string name="chat_metadata_unavailable">Algumas informações do Okou ou dos projetos estão indisponíveis.</string>
     <string name="chat_inbox">Caixa de entrada</string>
@@ -60,6 +59,7 @@
     <string name="chat_rename_project">Renomear projeto</string>
     <string name="chat_project_name">Nome do projeto</string>
     <string name="chat_project_rename_unconfirmed">Não foi possível confirmar o nome do projeto.</string>
+    <string name="chat_project_rename_rejected">Não foi possível renomear o projeto.</string>
     <string name="chat_project_rename_save">Salvar</string>
     <string name="chat_project_rename_pending">Renomeando projeto…</string>
 </resources>

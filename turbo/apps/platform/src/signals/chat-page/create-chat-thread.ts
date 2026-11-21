@@ -1607,6 +1607,7 @@ function createPermissionCardRefRegistrar(cards: EventTreeRegistries) {
       if (descriptor.type === "permission-batch-action") {
         return {
           kind: descriptor.type,
+          originalUrl: descriptor.descriptor.originalUrl,
           signals: set(
             cards.permissionBatchCardSignals.register$,
             descriptor.descriptor,

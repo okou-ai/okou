@@ -26,11 +26,10 @@ export interface PermissionBatchActionDescriptor extends ChatActionCallback {
   readonly items: UserPermissionGrantBatchItem[];
   readonly expiresIn: UserPermissionGrantExpiresIn | null;
   readonly originalUrl: string;
-  readonly href: string;
 }
 
 export function permissionBatchActionResourceKey(
-  descriptor: Omit<PermissionBatchActionDescriptor, "href">,
+  descriptor: PermissionBatchActionDescriptor,
 ): string {
   const params = new URLSearchParams({
     items: JSON.stringify(descriptor.items),
@@ -187,9 +186,6 @@ export function parsePermissionBatchActionUrl(
   } as const;
   return {
     status: "valid",
-    descriptor: {
-      ...descriptor,
-      href: permissionBatchActionResourceKey(descriptor),
-    },
+    descriptor,
   };
 }

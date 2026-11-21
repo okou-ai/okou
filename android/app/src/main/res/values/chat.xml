@@ -3,7 +3,7 @@
     <string name="chat_undo_unarchived">Chat unarchived</string>
     <string name="chat_undo_marked_read">Chat marked as read</string>
     <string name="chat_undo">Undo</string>
-    <string name="chat_undo_close">Dismiss</string>
+    <string name="chat_feedback_dismiss">Dismiss</string>
     <string name="chat_list_offline">Offline</string>
     <string name="chat_list_refresh_failed">Chat list refresh failed</string>
     <string name="chat_list_first_load_failed">Temporarily unable to load</string>
@@ -12,7 +12,6 @@
     <string name="chat_refresh">Refresh chats</string>
     <string name="chat_loading">Loading chats…</string>
     <string name="chat_refresh_failed">Could not refresh. Showing the last loaded chats.</string>
-    <string name="chat_cached">Showing saved chats.</string>
     <string name="chat_cache_unavailable">Offline storage is unavailable. These chats may not be available after restarting.</string>
     <string name="chat_metadata_unavailable">Some Okou or Project information is unavailable.</string>
     <string name="chat_inbox">Inbox</string>
@@ -59,6 +58,7 @@
     <string name="chat_rename_project">Rename Project</string>
     <string name="chat_project_name">Project name</string>
     <string name="chat_project_rename_unconfirmed">Could not confirm the Project name.</string>
+    <string name="chat_project_rename_rejected">Could not rename the Project.</string>
     <string name="chat_project_rename_save">Save</string>
     <string name="chat_project_rename_pending">Renaming Project…</string>
 </resources>
