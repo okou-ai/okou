@@ -2909,6 +2909,7 @@ function ChatThreadRenderedEventGroups({
   const rows = useGet(thread.visibleRows$);
   const layout = useGet(thread.transcriptPages.layout$);
   const bindPages = useSet(thread.transcriptPages.containerOnRef$);
+  const bindPage = useSet(thread.transcriptPages.pageOnRef$);
   const renderRow = (row: ChatThreadRowSignals) => {
     return (
       <ChatThreadRow key={row.model$.toString()} row={row} thread={thread} />
@@ -2927,6 +2928,7 @@ function ChatThreadRenderedEventGroups({
             return (
               <div
                 key={page.key}
+                ref={bindPage}
                 data-transcript-page={page.key}
                 className={cn(
                   "flex flex-col",

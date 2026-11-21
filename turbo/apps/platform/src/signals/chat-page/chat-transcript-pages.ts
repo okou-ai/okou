@@ -1,5 +1,5 @@
 import type { ChatThreadRowSignals } from "./chat-thread-rows.ts";
-import { command, computed, state, type Computed, type State } from "ccstate";
+import { command, computed, state, type Computed } from "ccstate";
 import { onRef } from "../utils.ts";
 import type { ChatEventGroup } from "./chat-event.ts";
 import { isRenderableAssistantEvent } from "./chat-event-display.ts";
@@ -65,33 +65,34 @@ function createPageMeasurements() {
       );
     }),
   );
-  // While mounted, pages occupy their actual height in normal flow. A cached
-  // measurement is only needed when we exchange them for an offscreen spacer.
-  const measureOutgoingPages$ = command(({ get, set }) => {
-    const container = get(container$);
-    if (
-      !container ||
-      !container.closest<HTMLElement>("[data-scroll-container]")?.clientHeight
-    ) {
-      return;
-    }
-    const width = container.getBoundingClientRect().width;
-    if (!width) {
-      return;
-    }
-    const old = get(sizes$);
-    const heights = new Map(old.width === width ? old.heights : []);
-    for (const page of container.querySelectorAll<HTMLElement>(
-      "[data-transcript-page]",
-    )) {
-      heights.set(
-        page.dataset.transcriptPage!,
-        page.getBoundingClientRect().height,
+  // React detaches a page ref before removing its DOM. Capture the final
+  // natural-flow height while it is still available for its spacer.
+  const pageOnRef$ = onRef(
+    command(({ get, set }, page: HTMLElement, signal: AbortSignal) => {
+      signal.addEventListener(
+        "abort",
+        () => {
+          const key = page.dataset.transcriptPage;
+          const { width, height } = page.getBoundingClientRect();
+          if (
+            !key ||
+            !width ||
+            !page.closest<HTMLElement>("[data-scroll-container]")?.clientHeight
+          ) {
+            return;
+          }
+          const previous = get(sizes$);
+          const heights = new Map(
+            previous.width === width ? previous.heights : [],
+          );
+          heights.set(key, height);
+          set(sizes$, { width, heights });
+        },
+        { once: true },
       );
-    }
-    set(sizes$, { width, heights });
-  });
-  return { sizes$, container$, containerOnRef$, measureOutgoingPages$ };
+    }),
+  );
+  return { sizes$, container$, containerOnRef$, pageOnRef$ };
 }
 
 function positionAtOffset(
@@ -210,7 +211,7 @@ interface MountedTranscript {
 }
 
 function createPageGeometry(
-  mounted$: State<MountedTranscript | null>,
+  mounted$: Computed<MountedTranscript | null>,
   sizes$: ReturnType<typeof createPageMeasurements>["sizes$"],
 ) {
   const offsets$ = computed((get) => {
@@ -275,7 +276,7 @@ function createPageGeometry(
   return { layout$, positionInSpacer$ };
 }
 
-export function createTranscriptPages(
+export function createTranscriptWindow(
   groups$: Computed<ChatEventGroup[]>,
   position$: Computed<ThreadScrollPosition | null>,
 ) {
@@ -287,13 +288,9 @@ export function createTranscriptPages(
   const range$ = computed((get) => {
     return pageRange(get(index$), get(position$), get(coverage$));
   });
-  // A range can change before its markdown is ready. Publish the row
-  // assignment and its two spacers together, after reconciling the new rows.
-  const mounted$ = state<MountedTranscript | null>(null);
-  const { sizes$, container$, containerOnRef$, measureOutgoingPages$ } =
-    createPageMeasurements();
+  const measurements = createPageMeasurements();
   const fillViewport$ = command(({ get, set }) => {
-    const viewport = get(container$)?.closest<HTMLElement>(
+    const viewport = get(measurements.container$)?.closest<HTMLElement>(
       "[data-scroll-container]",
     );
     const range = get(range$);
@@ -314,40 +311,44 @@ export function createTranscriptPages(
     set(coverage$, { ...coverage, [side]: coverage[side] + 1 });
     return true;
   });
-  const commitRows$ = command(
-    ({ get, set }, rows: readonly ChatThreadRowSignals[]) => {
-      const index = get(index$);
-      const range = get(range$);
-      if (!index || !range) {
-        set(mounted$, null);
-        return;
-      }
-      const previous = get(mounted$);
-      if (
-        previous &&
-        (range.first !== previous.first || range.last !== previous.last)
-      ) {
-        set(measureOutgoingPages$);
-      }
-      const pages = index.pages
-        .slice(range.first, range.last + 1)
-        .map((): ChatThreadRowSignals[] => {
-          return [];
-        });
-      for (const row of rows) {
-        const page = index.pageByEvent.get(get(row.model$).group.beginEventId);
-        if (page !== undefined) {
-          pages[page - range.first]!.push(row);
+  return { index$, range$, fillViewport$, measurements };
+}
+
+export function createTranscriptPages(
+  window: ReturnType<typeof createTranscriptWindow>,
+  visibleRows$: Computed<readonly ChatThreadRowSignals[]>,
+  position$: Computed<ThreadScrollPosition | null>,
+) {
+  const { index$, range$, fillViewport$, measurements } = window;
+  // Until the next window's signal objects are ready, the existing rows
+  // still determine both the pages on screen and their surrounding spacers.
+  const mounted$ = computed((get): MountedTranscript | null => {
+    const index = get(index$);
+    if (!index) {
+      return null;
+    }
+    const byPage = new Map<number, ChatThreadRowSignals[]>();
+    for (const row of get(visibleRows$)) {
+      const page = index.pageByEvent.get(get(row.model$).group.beginEventId);
+      if (page !== undefined) {
+        const rows = byPage.get(page);
+        if (rows) {
+          rows.push(row);
+        } else {
+          byPage.set(page, [row]);
         }
       }
-      set(mounted$, {
-        index,
-        first: range.first,
-        last: range.last,
-        rows: pages,
-      });
-    },
-  );
+    }
+    if (!byPage.size) {
+      return null;
+    }
+    const first = Math.min(...byPage.keys());
+    const last = Math.max(...byPage.keys());
+    const rows = index.pages.slice(first, last + 1).map((_, i) => {
+      return byPage.get(first + i) ?? [];
+    });
+    return { index, first, last, rows };
+  });
   const tailMounted$ = computed((get) => {
     const mounted = get(mounted$);
     return !mounted || mounted.last === mounted.index.pages.length - 1;
@@ -362,10 +363,7 @@ export function createTranscriptPages(
     const page = index.pageByEvent.get(target.targetEventId);
     return (
       page !== undefined &&
-      (!mounted ||
-        mounted.index !== index ||
-        page < mounted.first ||
-        page > mounted.last)
+      (!mounted || page < mounted.first || page > mounted.last)
     );
   });
   const rangePrepared$ = computed((get) => {
@@ -374,12 +372,14 @@ export function createTranscriptPages(
     return (
       !!mounted &&
       !!range &&
-      mounted.index === get(index$) &&
       mounted.first === range.first &&
       mounted.last === range.last
     );
   });
-  const { layout$, positionInSpacer$ } = createPageGeometry(mounted$, sizes$);
+  const { layout$, positionInSpacer$ } = createPageGeometry(
+    mounted$,
+    measurements.sizes$,
+  );
   return {
     range$,
     rangePrepared$,
@@ -387,9 +387,9 @@ export function createTranscriptPages(
     tailMounted$,
     fillViewport$,
     layout$,
-    containerOnRef$,
+    containerOnRef$: measurements.containerOnRef$,
+    pageOnRef$: measurements.pageOnRef$,
     positionInSpacer$,
-    commitRows$,
   };
 }
 

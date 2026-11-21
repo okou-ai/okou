@@ -64,7 +64,10 @@ import type {
 } from "./chat-event-types.ts";
 import { createChatComposerLayoutOnRef } from "./chat-layout.ts";
 import { createChatRunUsageSignals } from "./chat-run-usage.ts";
-import { createTranscriptPages } from "./chat-transcript-pages.ts";
+import {
+  createTranscriptPages,
+  createTranscriptWindow,
+} from "./chat-transcript-pages.ts";
 import { createChatThreadRows } from "./chat-thread-rows.ts";
 import { createThreadDraftLoad } from "./chat-thread-draft.ts";
 import {
@@ -2942,17 +2945,17 @@ function createChatRenderWindow({
   // its pane shows this thread; a later visit restores from the reading
   // position alone.
   const cursorGroupId$ = state<string | null>(null);
-  const transcriptPages = createTranscriptPages(
+  const transcriptWindow = createTranscriptWindow(
     allSemanticChatGroups$,
     threadScrollPosition$,
   );
   const includesTail$ = computed((get) => {
-    const range = get(transcriptPages.range$);
+    const range = get(transcriptWindow.range$);
     return !range || range.end === get(allSemanticChatGroups$).length;
   });
   const visibleChatGroups$ = computed((get): ChatEventGroup[] => {
     const groups = get(allSemanticChatGroups$);
-    const range = get(transcriptPages.range$);
+    const range = get(transcriptWindow.range$);
     if (range) {
       return groups.slice(range.start, range.end);
     }
@@ -2980,15 +2983,20 @@ function createChatRenderWindow({
       get(eventRenderResources$),
     );
   });
-  const committedGroups$ = state<ChatEventGroup[]>([]);
   const visibleRenderedChatGroups$ = computed((get) => {
-    return Promise.resolve(get(committedGroups$));
+    return Promise.resolve(get(renderedVisibleChatGroups$));
   });
   const { visibleRows$, syncVisibleRows$ } = createChatThreadRows({
     includesTail$,
     renderedGroups$: renderedVisibleChatGroups$,
     threadScrollPosition$,
   });
+
+  const transcriptPages = createTranscriptPages(
+    transcriptWindow,
+    visibleRows$,
+    threadScrollPosition$,
+  );
 
   /**
    * Prepares resources for every event currently in the render window. Every
@@ -3003,11 +3011,7 @@ function createChatRenderWindow({
     diagramCodesForEvents$,
     mermaidDiagrams,
     syncVisibleRunUsage$,
-    syncVisibleRows$: command(({ get, set }) => {
-      set(syncVisibleRows$);
-      set(transcriptPages.commitRows$, get(visibleRows$));
-      set(committedGroups$, get(renderedVisibleChatGroups$));
-    }),
+    syncVisibleRows$,
     initialEventsReady$,
   });
 

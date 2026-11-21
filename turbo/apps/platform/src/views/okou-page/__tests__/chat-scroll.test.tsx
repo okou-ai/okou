@@ -1549,6 +1549,10 @@ test("Drag into unmounted history, retain the message through new output, and re
   const container = await openConversation(id, "History answer 26");
   const geometry = installChatScrollGeometry(container);
   expect(screen.queryByText("History question 1")).toBeNull();
+  const beforeSpacer = container.querySelector<HTMLElement>(
+    '[data-transcript-spacer="before"]',
+  )!;
+  const estimatedHistoryHeight = beforeSpacer.getBoundingClientRect().height;
   scrollFromUser(container, 48);
   await screen.findByText("History question 1");
   await waitFor(() => {
@@ -1569,6 +1573,11 @@ test("Drag into unmounted history, retain the message through new output, and re
   await screen.findByText("History answer 27");
   await waitFor(() => {
     expect(container.scrollTop).toBe(geometry.bottomScrollTop());
+    // The history rows were taller than their initial estimates. Leaving
+    // history must preserve their measured height in the leading spacer.
+    expect(beforeSpacer.getBoundingClientRect().height).toBeGreaterThan(
+      estimatedHistoryHeight,
+    );
   });
   expect(decoded).not.toContain(diagramImage);
 });
