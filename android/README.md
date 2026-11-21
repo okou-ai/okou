@@ -483,11 +483,13 @@ APK. Decompress that file with `gzip -d` before retracing a production stack tra
 Add narrowly scoped rules under `app/src/main/keepRules/*.keep` only when a
 runtime boundary such as reflection or JNI requires them.
 
-When Release smoke fails, CI runs AGP Retrace on the app logcat if the signed APK
-and log are available. It validates the tested APK's R8 marker against the compressed
-mapping's compiler version and map ID, and verifies the mapping hash before restoring
-frames. The Release smoke evidence contains the original diagnostics and the retraced
-output. Use the following command for a downloaded crash.
+CI retains the original Release smoke diagnostics before starting its separate
+retrace job. On failure it extracts app Java crash stacks from logcat and runs the
+matching R8 version from Google Maven with a 30-second command budget. It validates
+the tested APK's R8 marker and the mapping's version, map ID and content hash.
+When a crash stack is available, the separate restored-stack artifact includes
+the extracted input, output and identity receipt. The Android gate uses the
+original smoke result independently of retrace. For a downloaded crash:
 
 ```bash
 python3 scripts/retrace-release.py app.apk version-mapping.txt.gz crash.txt retraced

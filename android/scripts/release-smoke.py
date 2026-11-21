@@ -141,7 +141,10 @@ def run(apk, artifacts, avd_home):
         finally:
             try:
                 if transport is not None:
-                    diagnostics = device("logcat", "-d", "-b", "main", "-b", "system", "-b", "crash", check=False)
+                    diagnostics = device(
+                        "logcat", "-d", "-v", "threadtime", "-b", "main", "-b", "system", "-b", "crash",
+                        check=False,
+                    )
                     (artifacts / "release-smoke-logcat.log").write_text(
                         diagnostics.stdout + diagnostics.stderr
                     )
