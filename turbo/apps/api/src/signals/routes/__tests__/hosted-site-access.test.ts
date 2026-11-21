@@ -938,10 +938,7 @@ test("one publisher cannot redirect another Site's authorization to its own orig
   ).toBe("allow");
 });
 
-test("the App bridge rejects a Clerk JWT issued to an untrusted hosted origin", async () => {
-  const { owner, prepared } = await publish();
-  const api = client(owner);
-  const origin = `https://${prepared.publicSlug}.okou.app`;
+function mockClerkSessionOrigin(user: ApiTestUser, origin: string) {
   context.mocks.clerk.authenticateRequest.mockImplementation(
     (_request, options) => {
       const parties =
@@ -955,13 +952,22 @@ test("the App bridge rejects a Clerk JWT issued to an untrusted hosted origin", 
         isAuthenticated: parties === null || parties.includes(origin),
         toAuth: () => {
           return {
-            userId: owner.userId,
-            sessionId: `sess_${owner.userId}`,
+            userId: user.userId,
+            orgId: user.orgId,
+            orgRole: user.orgRole,
+            sessionId: `sess_${user.userId}`,
           };
         },
       });
     },
   );
+}
+
+test("the App bridge rejects a Clerk JWT issued to an untrusted hosted origin", async () => {
+  const { owner, prepared } = await publish();
+  const api = client(owner);
+  const origin = `https://${prepared.publicSlug}.okou.app`;
+  mockClerkSessionOrigin(owner, origin);
   const response = await accept(
     api.authorizeSiteSession({
       headers,
@@ -982,21 +988,10 @@ test.each([
   "https://demo.okou.app.",
   "https://demo.sites.example.com",
 ])(
-  "general API endpoints reject verified Clerk credentials from %s",
+  "general API endpoints reject Clerk credentials issued to %s",
   async (origin) => {
-    const { owner } = await publish();
-    client(owner);
-    context.mocks.clerk.authenticateRequest.mockResolvedValue({
-      isAuthenticated: true,
-      toAuth: () => {
-        return {
-          userId: owner.userId,
-          orgId: owner.orgId,
-          sessionId: `sess_${owner.userId}`,
-          sessionClaims: { azp: origin },
-        };
-      },
-    });
+    const owner = createBddApi(context).user();
+    mockClerkSessionOrigin(owner, origin);
     const response = await accept(
       setupAppWithRoutes({ context, routes: authMeRoutes })(authContract).me({
         headers,

@@ -9,7 +9,7 @@ import {
 } from "@clerk/backend/errors";
 import { verifyWebhook } from "@clerk/backend/webhooks";
 import { delay } from "signal-timers";
-import { array, number, object, string, url, enum as zEnum } from "zod";
+import { array, number, object, string, enum as zEnum } from "zod";
 import { accept, HttpStatusError } from "@okouai/connectors/accept";
 import { singleton } from "../../lib/singleton";
 import { env } from "../../lib/env";
@@ -940,13 +940,13 @@ export const clerk$: Computed<ClerkClient> = computed((): ClerkClient => {
  */
 export async function authenticateClerkSession(
   request: Request,
-  options?: { readonly authorizedParties: readonly string[] },
+  options: { readonly authorizedParties: readonly string[] },
 ): Promise<ClerkSessionAuthentication> {
   const startedAt = monotonicNow();
   const verification = await settleIncludingAbort(() => {
     return clerkSdk().authenticateRequest(request, {
       acceptsToken: "session_token",
-      ...(options ? { authorizedParties: [...options.authorizedParties] } : {}),
+      authorizedParties: [...options.authorizedParties],
     });
   });
   const durationMs = monotonicNow() - startedAt;
@@ -979,26 +979,6 @@ export async function authenticateClerkSession(
   }
 
   const auth = requestState.toAuth();
-  const party = auth.sessionClaims?.azp;
-  if (typeof party === "string") {
-    const origin = url().safeParse(party);
-    if (!origin.success) {
-      return { identity: null };
-    }
-    const hostname = new URL(origin.data).hostname.replace(/\.$/u, "");
-    // User-hosted origins are never general App clients, including credentials
-    // issued before the satellite was removed. Site delivery uses its own handles.
-    if (
-      [env("OKOU_PUBLIC_HOST_DOMAIN"), env("ZERO_HOST_DOMAIN")].some(
-        (domain) => {
-          const normalized = domain.toLowerCase().replace(/\.$/u, "");
-          return hostname === normalized || hostname.endsWith(`.${normalized}`);
-        },
-      )
-    ) {
-      return { identity: null };
-    }
-  }
   const userId: unknown = auth.userId;
   if (typeof userId !== "string" || userId.length === 0) {
     return { identity: null };

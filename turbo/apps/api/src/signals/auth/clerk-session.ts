@@ -1,5 +1,6 @@
 import { computed, type Computed } from "ccstate";
 
+import { env } from "../../lib/env";
 import { request$ } from "../context/hono";
 import { authenticateClerkSession } from "../external/clerk";
 import { ApiOrgRole } from "../../types/auth";
@@ -30,7 +31,9 @@ function mapClerkOrgRole(orgRole: string | null): ApiOrgRole | undefined {
 
 const requestState$ = computed((get) => {
   const request = get(request$);
-  return authenticateClerkSession(request.raw);
+  return authenticateClerkSession(request.raw, {
+    authorizedParties: [new URL(env("APP_URL")).origin],
+  });
 });
 
 export const clerkSessionAuth$: Computed<
