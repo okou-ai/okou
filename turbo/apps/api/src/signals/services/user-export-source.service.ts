@@ -53,6 +53,7 @@ import {
   pgIntegerDecoder,
   pgInt8ToBigIntDecoder,
   pgInt8ToSafeIntegerDecoder,
+  pgNullDecoder,
 } from "../../lib/db-structured-result";
 import {
   USER_EXPORT_RESTORE_SCRIPT,
@@ -347,7 +348,7 @@ const collectThread$ = command(
           id: threadRoot.id,
           userId: threadRoot.userId,
           title: threadRoot.title,
-          agentId: sql<string | null>`NULL::uuid`,
+          agentId: sql`NULL::uuid`.mapWith(pgNullDecoder),
           orgId: threadRoot.orgId,
           sourceScheduleRunId: threadRoot.sourceScheduleRunId,
           createdAt: threadRoot.createdAt,

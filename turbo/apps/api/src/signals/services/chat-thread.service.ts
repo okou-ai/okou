@@ -1,4 +1,3 @@
-import { pgNullDecoder } from "../../lib/db-structured-result";
 import { normalChatInputInsertSql } from "./normal-chat-input-publication-sql";
 import { db$, writeDb$ } from "../external/db";
 import {
@@ -63,6 +62,7 @@ import {
 import { settle } from "../utils";
 import {
   pgBooleanDecoder,
+  pgNullDecoder,
   pgTextDecoder,
 } from "../../lib/db-structured-result";
 import {

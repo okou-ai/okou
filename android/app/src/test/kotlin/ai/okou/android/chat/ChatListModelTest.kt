@@ -515,11 +515,10 @@ class ChatListModelTest {
     fun aDefinitiveUnreadUndoSettlesWhileIndicatorsAreStillRefreshing() = runTest {
         val unread =
             Indicators(
-                emptyMap(),
                 mapOf(CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD),
                 mapOf(CHAT_PERSONAL to CHAT_DATE),
             )
-        val read = Indicators(emptyMap(), emptyMap(), emptyMap())
+        val read = Indicators(emptyMap(), emptyMap())
         for (rejected in listOf(false, true)) {
             val receipt = CompletableDeferred<ReadState>()
             val readback = CompletableDeferred<Indicators>()
@@ -565,7 +564,6 @@ class ChatListModelTest {
         val displayedRead = CompletableDeferred<Unit>()
         val unread =
             Indicators(
-                emptyMap(),
                 mapOf(CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD),
                 mapOf(CHAT_PERSONAL to CHAT_DATE),
             )
@@ -608,7 +606,7 @@ class ChatListModelTest {
             model.refresh()
             advanceUntilIdle()
             model.selectFilter(ChatListFilter.Unread)
-            source.statusRead = { Indicators(emptyMap(), emptyMap(), emptyMap()) }
+            source.statusRead = { Indicators(emptyMap(), emptyMap()) }
             assertTrue(model.performRowAction(CHAT_PERSONAL, ChatRowAction.MarkRead))
             advanceUntilIdle()
             val offer = checkNotNull(model.uiState.value.rowUndo)
@@ -2109,7 +2107,7 @@ class ChatListModelTest {
     @Test
     fun aRejectedUnmuteKeepsItsReadReceiptWhileIndicatorsAreHeld() = runTest {
         val refresh = CompletableDeferred<Indicators>()
-        val unread = Indicators(emptyMap(), emptyMap(), mapOf(CHAT_PERSONAL to CHAT_DATE))
+        val unread = Indicators(emptyMap(), mapOf(CHAT_PERSONAL to CHAT_DATE))
         val source =
             object : Service() {
                 override suspend fun chatEvents(since: Long?) =
