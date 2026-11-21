@@ -40,6 +40,9 @@ auditConfig:
     - GHSA-ch52-4w7c-c8xp
 
 overrides:
+  # PostCSS 8.5.25 allows source-map-js 1.2.1, affected by GHSA-68fv-2mgg-jv7q.
+  # Remove once host-worker moves to a PostCSS release with a patched floor.
+  "postcss@8.5.25>source-map-js": 1.2.3
   # speech-rule-engine 4.1.4 pins xmldom 0.9.10, which has XML injection and
   # parser DoS advisories. Remove when upstream requires xmldom >=0.9.12.
   "speech-rule-engine>@xmldom/xmldom": ^0.9.12
