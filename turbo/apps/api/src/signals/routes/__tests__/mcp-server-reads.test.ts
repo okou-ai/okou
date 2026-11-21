@@ -605,11 +605,18 @@ describe("thin MCP Web adapters", () => {
   it("returns the generated input identity and persists plain text through the ordinary event stream", async () => {
     await withMockNowForTest(now(), async () => {
       const f = await fixture();
+      const clientId = "https://client.example.test/oauth/metadata";
+      const sending = {
+        ...f,
+        token: () => {
+          return f.token({ client_id: clientId });
+        },
+      };
       const input = {
         prompt: "Figma logo\n请展示最终方案",
       };
-      const result = await send(f, input.prompt);
-      const second = await send(f, input.prompt, result.threadId);
+      const result = await send(sending, input.prompt);
+      const second = await send(sending, input.prompt, result.threadId);
       expect(second.threadId).toBe(result.threadId);
       expect(second.eventId).not.toBe(result.eventId);
       await flushWaitUntilForTest();
@@ -630,12 +637,12 @@ describe("thin MCP Web adapters", () => {
             version: 1,
             parts: [
               { type: "text", text: input.prompt },
-              { type: "source", kind: "mcp", clientId: "mcp_test_client" },
+              { type: "source", kind: "mcp", clientId },
             ],
           },
         },
       });
-      const web = await mcp.web(f.token(), "/api/chat/events", "POST", {
+      const web = await mcp.web(sending.token(), "/api/chat/events", "POST", {
         ...input,
         threadId: result.threadId,
         clientEventId: result.eventId,
