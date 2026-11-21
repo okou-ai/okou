@@ -13,7 +13,6 @@ describe("CHAT-02: model-first routing", () => {
     const {
       run: own,
       actor,
-      agentId,
       runnerGroup,
       runExecution,
       sendChatRun,
@@ -27,7 +26,6 @@ describe("CHAT-02: model-first routing", () => {
       return await api.updateUserModelPreference(actor, "claude-fable-5-1");
     });
     const anchor = await sendChatRun(actor, {
-      agentId,
       prompt: "hold admission capacity",
       model: "claude-fable-5-1",
     });
@@ -38,7 +36,6 @@ describe("CHAT-02: model-first routing", () => {
     mockPiObjectStore();
     const prompt = "keep the complete admission independent";
     const waiting = await sendWaitingChatInput(actor, {
-      agentId,
       prompt,
       model: "gpt-6-luna",
     });

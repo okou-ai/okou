@@ -66,7 +66,7 @@ async function owner() {
   await runs.grantProEntitlement(actor);
   await runs.ensurePersonalSubscriptionModel(actor);
   const { agentId } = await bdd.createAgent(actor, { visibility: "private" });
-  const thread = await chat.createThread(actor, { agentId });
+  const thread = await chat.createThread(actor, {});
   return { actor, agentId, threadId: thread.id, runnerGroup };
 }
 async function start(value: Awaited<ReturnType<typeof owner>>) {
@@ -389,9 +389,7 @@ describe("Chat connector execution", () => {
     const value = await owner();
     const a = await addAccount(value.actor, "A");
     const b = await addAccount(value.actor, "B");
-    const otherThread = await chat.createThread(value.actor, {
-      agentId: value.agentId,
-    });
+    const otherThread = await chat.createThread(value.actor, {});
     session(value.actor);
     await accept(
       access().setThreadOverride({

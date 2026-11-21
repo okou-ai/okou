@@ -84,10 +84,9 @@ async function deferAttachmentMetadata(actor: ApiTestUser, filename: string) {
 
 describe("chat agent bootstrap prefetch", () => {
   it("mounts user memory published through the Sandbox API in matching and independent picks", async () => {
-    const { actor, agentId } = await entitledNativeChatActor();
+    const { actor } = await entitledNativeChatActor();
     const webhooks = createWebhookCallbackApi(context);
     const seed = await sendChatRun(actor, {
-      agentId,
       prompt: "publish my memory",
     });
     const seedExecution = await runExecution(seed.runId);
@@ -127,7 +126,6 @@ describe("chat agent bootstrap prefetch", () => {
     );
     await cancelChatRun(actor, seed.runId, seedExecution.sandboxHeaders);
     const first = await sendChatRun(actor, {
-      agentId,
       prompt: "mount the published memory",
     });
     const firstExecution = await runExecution(first.runId);
@@ -144,7 +142,6 @@ describe("chat agent bootstrap prefetch", () => {
     await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: first.threadId,
         clientEventId: eventId,
         prompt: "independent memory pick",
@@ -183,7 +180,7 @@ describe("chat agent bootstrap prefetch", () => {
     await cancelChatRun(actor, promoted.runId, nextExecution.sandboxHeaders);
   });
   it("preserves a non-default member model preference through prefetch and an independent pick", async () => {
-    const { actor, agentId } = await entitledNativeChatActor();
+    const { actor } = await entitledNativeChatActor();
     await api.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
     });
@@ -192,7 +189,6 @@ describe("chat agent bootstrap prefetch", () => {
     });
     await api.updateUserModelPreference(actor, "claude-sonnet-5-5");
     const first = await sendChatRun(actor, {
-      agentId,
       prompt: "use my saved non-default model",
     });
     const firstExecution = await runExecution(first.runId);
@@ -203,7 +199,6 @@ describe("chat agent bootstrap prefetch", () => {
     await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: first.threadId,
         clientEventId: eventId,
         prompt: "independent pick keeps my selected model",
@@ -251,7 +246,6 @@ describe("chat agent bootstrap prefetch", () => {
       throw new Error("Expected workflow publication");
     }
     const first = await sendChatRun(actor, {
-      agentId,
       prompt: "prefetched skill",
     });
     const firstExecution = await runExecution(first.runId);
@@ -272,7 +266,6 @@ describe("chat agent bootstrap prefetch", () => {
     await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: first.threadId,
         clientEventId: queuedId,
         prompt: "independent skill context",
@@ -319,16 +312,14 @@ describe("chat agent bootstrap prefetch", () => {
   });
 
   it("loads the same read-only context when a later request drains queued input", async () => {
-    const { actor, agentId } = await entitledNativeChatActor();
+    const { actor } = await entitledNativeChatActor();
     const first = await sendChatRun(actor, {
-      agentId,
       prompt: "context anchor",
     });
     const queuedId = randomUUID();
     await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: first.threadId,
         clientEventId: queuedId,
         prompt: "context without the enqueue request",
@@ -363,7 +354,7 @@ describe("chat agent bootstrap prefetch", () => {
     await cancelChatRun(actor, promoted.runId, execution.sandboxHeaders);
   });
   it("preserves the custom account through prefetch and a later independent pick", async () => {
-    const { actor, agentId } = await entitledNativeChatActor();
+    const { actor } = await entitledNativeChatActor();
     const connector = await connectors.createCustomConnector(
       actor,
       manualHttpCustomConnectorCreateBody({
@@ -391,7 +382,6 @@ describe("chat agent bootstrap prefetch", () => {
       baseUrlVars: {},
     };
     const first = await sendChatRun(actor, {
-      agentId,
       prompt: "prefetched custom account",
     });
     const firstExecution = await runExecution(first.runId);
@@ -402,7 +392,6 @@ describe("chat agent bootstrap prefetch", () => {
     await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: first.threadId,
         clientEventId: queuedId,
         prompt: "custom account without the enqueue context",
@@ -437,13 +426,12 @@ describe("chat agent bootstrap prefetch", () => {
   });
 
   it("keeps the captured model selection when the member preference changes during attachment resolution", async () => {
-    const { actor, agentId } = await entitledNativeChatActor();
+    const { actor } = await entitledNativeChatActor();
     const attachment = await deferAttachmentMetadata(
       actor,
       "model-snapshot.txt",
     );
     const sending = sendChatRun(actor, {
-      agentId,
       model: "claude-fable-5-1",
       prompt: "use the captured model selection",
       userMessage: {
@@ -473,10 +461,9 @@ describe("chat agent bootstrap prefetch", () => {
   });
 
   it("continues the session of a Run that completes while a follow-up resolves its attachment", async () => {
-    const { actor, agentId } = await entitledNativeChatActor();
+    const { actor } = await entitledNativeChatActor();
     const model = "claude-fable-5-1";
     const first = await sendChatRun(actor, {
-      agentId,
       model,
       prompt: "Start a session",
     });
@@ -487,7 +474,6 @@ describe("chat agent bootstrap prefetch", () => {
     const sending = chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: first.threadId,
         clientEventId,
         model,
@@ -570,7 +556,7 @@ describe("chat agent bootstrap prefetch", () => {
   );
 
   it("uses the selected default account for each successive pick", async () => {
-    const { actor, agentId } = await entitledNativeChatActor();
+    const { actor } = await entitledNativeChatActor();
     const first = await connectors.connectManualGrant(
       actor,
       "openai",
@@ -589,7 +575,6 @@ describe("chat agent bootstrap prefetch", () => {
       first.id,
     );
     const sent = await sendChatRun(actor, {
-      agentId,
       prompt: "use the first default",
     });
     const execution = await runExecution(sent.runId);
@@ -603,7 +588,6 @@ describe("chat agent bootstrap prefetch", () => {
       second.id,
     );
     const next = await sendChatRun(actor, {
-      agentId,
       threadId: sent.threadId,
       prompt: "use the next default",
     });
@@ -615,9 +599,8 @@ describe("chat agent bootstrap prefetch", () => {
   });
 
   it("delivers a steer input to the active authenticated Runner", async () => {
-    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+    const { actor, runnerGroup } = await entitledNativeChatActor();
     const active = await sendChatRun(actor, {
-      agentId,
       prompt: "keep working",
     });
     const execution = await runExecution(active.runId);
@@ -631,7 +614,6 @@ describe("chat agent bootstrap prefetch", () => {
     const sent = await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: active.threadId,
         prompt: "steer the existing run",
         clientEventId,

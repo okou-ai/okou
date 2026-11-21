@@ -43,7 +43,6 @@ describe("CHAT-02: model-first routing", () => {
     async (prompt) => {
       const {
         actor,
-        agentId,
         run: own,
         sendChatRun,
         sendWaitingChatInput,
@@ -65,14 +64,12 @@ describe("CHAT-02: model-first routing", () => {
           }),
         );
         const anchor = await sendChatRun(actor, {
-          agentId,
           prompt: "hold capacity for the personal Pi input",
           model: "claude-fable-5-1",
         });
         const anchorExecution = await runExecution(anchor.runId);
         await configureSubscriptionPiModel(actor, {}, "gpt-6-luna");
         const waiting = await sendWaitingChatInput(actor, {
-          agentId,
           prompt,
           model: "gpt-6-luna",
         });
@@ -83,7 +80,6 @@ describe("CHAT-02: model-first routing", () => {
           const originalPrompt = turn === 1 ? prompt : `${prompt}\nresume once`;
           if (turn === 2) {
             run = await sendChatRun(actor, {
-              agentId,
               threadId: run.threadId,
               prompt: originalPrompt,
               model: "gpt-6-luna",
@@ -177,7 +173,6 @@ describe("CHAT-02: model-first routing", () => {
       const {
         run: own,
         actor,
-        agentId,
         runExecution,
         sendChatRun,
       } = await publicChatActor(context);
@@ -185,7 +180,6 @@ describe("CHAT-02: model-first routing", () => {
         await configureSubscriptionPiModel(actor, {}, selectedModel);
 
         const run = await sendChatRun(actor, {
-          agentId,
           prompt: "hand a personal Pi turn to Sandbox",
           model: selectedModel,
         });

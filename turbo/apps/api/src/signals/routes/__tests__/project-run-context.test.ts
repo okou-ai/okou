@@ -37,7 +37,6 @@ test("prepares queued inputs from current membership while preserving an already
     throw new Error("Missing organization");
   }
   const first = await fixture.sendChatRun(actor, {
-    agentId,
     prompt: "Start the work",
   });
   const execution = await fixture.runExecution(first.runId);

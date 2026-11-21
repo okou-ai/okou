@@ -110,7 +110,7 @@ async function sendChatPrompt(
   const clientEventId = randomUUID();
   const sent = await chat.requestSendEvent(
     actor,
-    { agentId, prompt, clientEventId },
+    { prompt, clientEventId },
     [201],
   );
   if (sent.status !== 201) {
@@ -981,11 +981,10 @@ describe("RUN-01: run admission boundaries", () => {
       prompt: "second concurrent run",
     });
     const outsider = bdd.user();
-    const foreignCompose = await createThreadAgent(outsider, "bdd-foreign");
+    await createThreadAgent(outsider, "bdd-foreign");
     const crossOrgCompose = await chat.requestSendEvent(
       actor,
       {
-        agentId: foreignCompose.agentId,
         prompt: "run a foreign compose",
         model: "claude-fable-5-1",
       },
@@ -2872,7 +2871,7 @@ describe("RUN-04/OPS-01: agent run logs", () => {
 
   it("returns pending and failed run-log detail residue", async () => {
     const owned = await publicChatActor(context);
-    const { actor, agentId } = owned;
+    const { actor } = owned;
     await owned.run(async () => {
       await bdd.updatePersonalInstructions(actor, `Run detail ${randomUUID()}`);
       const signing = holdDownloadSigning(context);
@@ -2882,7 +2881,6 @@ describe("RUN-04/OPS-01: agent run logs", () => {
         const sent = await chat.requestSendEvent(
           actor,
           {
-            agentId,
             prompt: "pending detail run",
             clientEventId,
           },
@@ -2940,7 +2938,6 @@ describe("RUN-04/OPS-01: agent run logs", () => {
       );
 
       const failedRun = await owned.sendChatRun(actor, {
-        agentId,
         prompt: "failed detail run",
       });
       const { execution } = await owned.runExecution(failedRun.runId);

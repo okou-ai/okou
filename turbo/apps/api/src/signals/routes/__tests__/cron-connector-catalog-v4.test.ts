@@ -344,7 +344,6 @@ describe("connector catalog v4 preparation", () => {
         { credential: "unusable-native-token" },
       );
       const run = await owned.sendChatRun(owned.actor, {
-        agentId: owned.agentId,
         prompt: "Continue without usable connector authentication",
       });
       const { execution, sandboxHeaders } = await owned.runExecution(run.runId);
@@ -516,7 +515,6 @@ describe("connector catalog v4 preparation", () => {
       expect((await publicCatalog()).body).toStrictEqual(serving);
 
       const run = await owned.sendChatRun(owned.actor, {
-        agentId: owned.agentId,
         prompt: "Use the accepted connector after a catalog rejection",
       });
       const { execution, sandboxHeaders } = await owned.runExecution(run.runId);

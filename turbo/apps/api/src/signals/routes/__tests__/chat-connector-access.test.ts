@@ -37,7 +37,7 @@ function accounts() {
 async function ownerWithThread({ actor = bdd.user() } = {}) {
   bdd.acceptAgentStorageWrites();
   const agent = await bdd.createAgent(actor);
-  const thread = await chat.createThread(actor, { agentId: agent.agentId });
+  const thread = await chat.createThread(actor, {});
   mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
   return { actor, agentId: agent.agentId, threadId: thread.id };
 }
@@ -398,9 +398,7 @@ describe("Chat connector account configuration", () => {
 
   it("inherits live defaults, isolates Chat overrides and retains valid replacement selections", async () => {
     const owner = await ownerWithThread();
-    const second = await chat.createThread(owner.actor, {
-      agentId: owner.agentId,
-    });
+    const second = await chat.createThread(owner.actor, {});
     const a = await addAccount(owner.actor, "A");
     const b = await addAccount(owner.actor, "B");
     const params = { threadId: owner.threadId };

@@ -40,7 +40,6 @@ async function sourceFixture() {
     });
   });
   const source = await fixture.sendChatRun(fixture.actor, {
-    agentId: fixture.agentId,
     model: "claude-fable-5-1",
     prompt: "Coordinate related chats",
   });
@@ -71,7 +70,7 @@ describe("chat relationships", () => {
       expect(replayed.body.id).toBe(created.body.id);
       createdIds.push(created.body.id);
     }
-    const humanThread = await chat.createThread(actor, { agentId });
+    const humanThread = await chat.createThread(actor, {});
     await accept(
       threads.create({
         headers: { authorization: `Bearer ${token}` },
@@ -119,7 +118,7 @@ describe("chat relationships", () => {
       runExecution,
       requestSendEventWithBearer,
     } = await sourceFixture();
-    const peer = await chat.createThread(actor, { agentId });
+    const peer = await chat.createThread(actor, {});
     const eventId = randomUUID();
     const send = {
       agentId,
@@ -215,7 +214,6 @@ describe("chat relationships", () => {
     await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: peer.id,
         revokesEventId: recalledId,
         clientEventId: randomUUID(),
@@ -242,7 +240,6 @@ describe("chat relationships", () => {
     await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: peer.id,
         sourceRunId: source.runId,
         prompt: "Human forwarding",
@@ -295,7 +292,6 @@ describe("chat relationships", () => {
   ])("$name", async ({ peerCount, firstPeerMessageCount }) => {
     const {
       actor,
-      agentId,
       source,
       receivedExecution,
       token,
@@ -304,7 +300,7 @@ describe("chat relationships", () => {
     const peerIds: string[] = [];
     const messageIds: string[] = [];
     for (let index = 0; index < peerCount; index++) {
-      const peer = await chat.createThread(actor, { agentId });
+      const peer = await chat.createThread(actor, {});
       peerIds.push(peer.id);
       const messageCount = index === 0 ? firstPeerMessageCount : 1;
       const sendMessage = async (messageIndex: number) => {

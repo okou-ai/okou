@@ -48,7 +48,6 @@ describe("Execution Storage URL freshness", () => {
       const queued = await createChatEventsFixture(context).queueChatRun(
         fixture.actor,
         {
-          agentId,
           prompt: "Cross the URL cache margin",
           model: "claude-fable-5-1",
         },
@@ -120,7 +119,6 @@ describe("Execution Storage URL freshness", () => {
       });
       const sending = settleIncludingAbort(
         chat.sendChatRun(fixture.actor, {
-          agentId,
           model: "claude-fable-5-1",
           prompt: "Use the captured Memory",
           userMessage: {

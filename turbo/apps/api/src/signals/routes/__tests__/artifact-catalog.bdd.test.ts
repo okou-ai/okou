@@ -319,7 +319,6 @@ async function uploadFile(args: {
   readonly threadId: string;
 }> {
   const run = await sendChatRun(args.owner.actor, {
-    agentId: args.owner.agentId,
     prompt: args.prompt,
     ...(args.threadId === undefined ? {} : { threadId: args.threadId }),
   });
@@ -362,7 +361,6 @@ async function publishHostedSite(args: {
   readonly threadId: string;
 }> {
   const run = await sendChatRun(args.owner.actor, {
-    agentId: args.owner.agentId,
     prompt: `publish ${args.site}`,
     ...(args.threadId === undefined ? {} : { threadId: args.threadId }),
   });
@@ -400,7 +398,6 @@ describe("GET /api/artifacts/catalog", () => {
   it("publishes a readable private video catalog and preserves its original chat on reuse", async () => {
     const owner = await catalogActor("Private video catalog owner");
     const first = await sendChatRun(owner.actor, {
-      agentId: owner.agentId,
       prompt: "Produce a private video",
     });
     const execution = await runExecution(owner.runnerGroup, first.runId);
@@ -469,7 +466,6 @@ describe("GET /api/artifacts/catalog", () => {
     const originalCatalog = publications[0]!.catalog;
     await completeChatRunOk(first.runId, execution.sandboxHeaders);
     const second = await sendChatRun(owner.actor, {
-      agentId: owner.agentId,
       prompt: "Reuse the private video",
     });
     const secondExecution = await runExecution(owner.runnerGroup, second.runId);
@@ -946,7 +942,6 @@ describe("GET /api/artifacts/catalog", () => {
     async (mode) => {
       const owner = await catalogActor("Prepared video owner");
       const first = await sendChatRun(owner.actor, {
-        agentId: owner.agentId,
         prompt: "Record the sharing demo",
       });
       const firstExecution = await runExecution(owner.runnerGroup, first.runId);
@@ -1026,7 +1021,6 @@ describe("GET /api/artifacts/catalog", () => {
       await completeChatRunOk(first.runId, firstExecution.sandboxHeaders);
 
       const second = await sendChatRun(owner.actor, {
-        agentId: owner.agentId,
         prompt: "Review the same demo in another conversation",
       });
       const secondExecution = await runExecution(
@@ -1110,7 +1104,6 @@ describe("GET /api/artifacts/catalog", () => {
     await chat.requestSendEvent(
       owner.actor,
       {
-        agentId: owner.agentId,
         prompt: "Review these notes",
         userMessage: {
           version: 1,
@@ -1171,7 +1164,6 @@ describe("GET /api/artifacts/catalog", () => {
     async (container) => {
       const owner = await catalogActor("Artifact catalog video source owner");
       const run = await sendChatRun(owner.actor, {
-        agentId: owner.agentId,
         prompt: "Upload an artifact through the Runner protocol",
       });
       const { execution: receivedExecution } = await runExecution(
@@ -1455,7 +1447,6 @@ describe("GET /api/artifacts/catalog", () => {
     });
 
     const firstChat = await sendChatRun(actor, {
-      agentId: owner.agentId,
       prompt: "update the existing website",
     });
     activeRuns.add(firstChat.runId);
@@ -1486,7 +1477,6 @@ describe("GET /api/artifacts/catalog", () => {
     activeRuns.delete(firstChat.runId);
 
     const secondChat = await sendChatRun(actor, {
-      agentId: owner.agentId,
       prompt: "publish and inspect the same website from another chat",
     });
     activeRuns.add(secondChat.runId);
@@ -1755,7 +1745,6 @@ describe("GET /api/artifacts/catalog", () => {
   it("keeps a Runner output associated with its owning prompt when the run is interrupted", async () => {
     const owner = await catalogActor("Artifact catalog workflow owner");
     const run = await sendChatRun(owner.actor, {
-      agentId: owner.agentId,
       prompt: "Upload an artifact through the Runner protocol",
     });
     const { execution: receivedExecution, sandboxHeaders } = await runExecution(
@@ -1777,7 +1766,6 @@ describe("GET /api/artifacts/catalog", () => {
     await chat.requestSendEvent(
       owner.actor,
       {
-        agentId: owner.agentId,
         threadId: run.threadId,
         interruptsRunId: run.runId,
         clientEventId: interruptId,
@@ -1884,7 +1872,6 @@ describe("shared thread routes", () => {
     const owner = await catalogActor("Saved conversation deletion");
     mockOptionalEnv("OPENROUTER_API_KEY", "shared-title-key");
     const run = await sendChatRun(owner.actor, {
-      agentId: owner.agentId,
       prompt: "Save this conversation",
     });
     await completeChatRunWithMessage(owner, run.runId, "A shared conversation");
@@ -1947,7 +1934,6 @@ describe("shared thread routes", () => {
   it("creates immutable, redacted snapshots from selected visible messages", async () => {
     const owner = await catalogActor("Shared thread test agent");
     const run = await sendChatRun(owner.actor, {
-      agentId: owner.agentId,
       prompt: "Prepare the private launch plan",
     });
     const assistantText = "Here is the **public** launch plan.";
@@ -1978,7 +1964,6 @@ describe("shared thread routes", () => {
       return event.eventType === "run.completed";
     });
     const otherRun = await sendChatRun(owner.actor, {
-      agentId: owner.agentId,
       prompt: "This other thread must stay private",
     });
     const otherEvents = await listSharedThreadEventRefs(
@@ -2187,7 +2172,6 @@ describe("shared thread routes", () => {
     const owner = await catalogActor("Shared thread feature-switch test agent");
     mockOptionalEnv("OPENROUTER_API_KEY", "shared-title-key");
     const run = await sendChatRun(owner.actor, {
-      agentId: owner.agentId,
       prompt: "Prepare the private launch plan",
     });
     const events = await listSharedThreadEventRefs(owner.actor, run.threadId);
@@ -2217,7 +2201,6 @@ describe("artifact catalog source identity", () => {
   it("resolves an owned shared conversation without exposing it to other viewers", async () => {
     const owner = await catalogActor("Shared page artifact owner");
     const run = await sendChatRun(owner.actor, {
-      agentId: owner.agentId,
       prompt: "Share this conversation",
     });
     await completeChatRunWithMessage(owner, run.runId, "A shared plan");

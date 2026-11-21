@@ -59,12 +59,10 @@ export function kotlinCommandFixtureJson(): string {
     JSON.stringify(
       {
         createDefaults: wire(chatThreadsContract.create.body, {
-          agentId,
           clientThreadId: threadId,
           eventId: lifecycleId,
         }),
         createAuto: wire(chatThreadsContract.create.body, {
-          agentId,
           clientThreadId: threadId,
           eventId: lifecycleId,
           projectId,
@@ -73,7 +71,6 @@ export function kotlinCommandFixtureJson(): string {
           title: "项目 🧪",
         }),
         createPinned: wire(chatThreadsContract.create.body, {
-          agentId,
           clientThreadId: threadId,
           model: "gpt-6.1-sol",
           serviceTier: "priority",

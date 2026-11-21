@@ -13,12 +13,11 @@ async function fixture() {
   const actor = bdd.user();
   bdd.acceptAgentStorageWrites();
   await bdd.readOnboardingStatus(actor);
-  const agent = await bdd.createAgent(actor, {
+  await bdd.createAgent(actor, {
     displayName: "Mute test",
     visibility: "private",
   });
   const thread = await chat.createThread(actor, {
-    agentId: agent.agentId,
     title: "Keep this title",
     model: null,
   });

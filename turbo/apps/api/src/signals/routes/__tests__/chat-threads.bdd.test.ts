@@ -451,7 +451,6 @@ async function completeChatRunInThread(
   },
 ): Promise<{ readonly runId: string; readonly threadId: string }> {
   const run = await sendChatRun(actor, {
-    agentId: args.agentId,
     ...(args.threadId === undefined ? {} : { threadId: args.threadId }),
     prompt: args.prompt,
   });
@@ -490,9 +489,8 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
   it("allows execution agent tokens to sync their owner's snapshots and events", async () => {
     const owned = await publicChatActor(context);
     await owned.run(async () => {
-      const { actor, agentId } = owned;
+      const { actor } = owned;
       const run = await owned.sendChatRun(actor, {
-        agentId,
         prompt: "Read chat snapshots",
       });
       const execution = await owned.runExecution(run.runId);
@@ -540,35 +538,28 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     });
   });
 
-  it("requires a signed-in organization member and ignores legacy Agent IDs on creation", async () => {
+  it("requires a signed-in organization member to create a thread", async () => {
     const unauthenticated = await chat.requestCreateThread(
       null,
-      { agentId: randomUUID(), title: "no session" },
+      { title: "no session" },
       [401],
     );
     expectApiError(unauthenticated.body);
     expect(unauthenticated.body.error.code).toBe("UNAUTHORIZED");
 
     const outsider = bdd.user();
-    bdd.acceptAgentStorageWrites();
-    const foreignAgent = await bdd.createAgent(outsider, {
-      displayName: "Foreign-org compose agent",
-    });
-
     const actor = bdd.user();
-    for (const agentId of [randomUUID(), foreignAgent.agentId]) {
-      const created = await chat.requestCreateThread(
-        actor,
-        { agentId, title: "Member chat" },
-        [201],
-      );
-      expect(created.status).toBe(201);
-    }
+    const created = await chat.requestCreateThread(
+      actor,
+      { title: "Member chat" },
+      [201],
+    );
+    expect(created.status).toBe(201);
 
     const orgless = bdd.user({ orgId: null });
     const noOrg = await chat.requestCreateThread(
       orgless,
-      { agentId: foreignAgent.agentId, title: "no org" },
+      { title: "no org" },
       [401],
     );
     expectApiError(noOrg.body);
@@ -580,7 +571,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
   it("returns chat thread snapshot and lifecycle events with cursor expiry", async () => {
     const actor = bdd.user();
     await api.ensurePersonalSubscriptionModel(actor);
-    const agent = await bdd.createAgent(actor, {
+    await bdd.createAgent(actor, {
       displayName: "Thread event sourcing agent",
     });
     const createEventId = randomUUID();
@@ -595,7 +586,6 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     });
 
     const thread = await chat.createThread(actor, {
-      agentId: agent.agentId,
       title: "Initial event title",
       eventId: createEventId,
     });
@@ -729,12 +719,11 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
   it("keeps no-snapshot cursors anchored to real scoped rows", async () => {
     const actor = bdd.user();
     await api.ensurePersonalSubscriptionModel(actor);
-    const agent = await bdd.createAgent(actor, {
+    await bdd.createAgent(actor, {
       displayName: "No-snapshot cursor agent",
     });
     const firstEventId = randomUUID();
     const thread = await chat.createThread(actor, {
-      agentId: agent.agentId,
       title: "No-snapshot cursor thread",
       eventId: firstEventId,
     });
@@ -764,19 +753,17 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     const removedAgent = await bdd.createAgent(actor, {
       displayName: "Agent with sidebar threads to delete",
     });
-    const keptAgent = await bdd.createAgent(actor, {
+    await bdd.createAgent(actor, {
       displayName: "Agent with a retained sidebar thread",
     });
     const removedThreads = await Promise.all(
       ["First deleted thread", "Second deleted thread"].map(async (title) => {
         return await chat.createThread(actor, {
-          agentId: removedAgent.agentId,
           title,
         });
       }),
     );
     const keptThread = await chat.createThread(actor, {
-      agentId: keptAgent.agentId,
       title: "Retained sidebar thread",
     });
     const initialEvents = await allThreadEvents(actor);
@@ -816,17 +803,15 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
   });
 
   it("touches thread sort from existing direct user sends and run-finished markers", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor(
+    const { actor, runnerGroup } = await entitledChatActor(
       "Thread sort touch agent",
     );
     const directSendSortEventId = randomUUID();
     const thread = await chat.createThread(actor, {
-      agentId,
       title: "Existing sort touch thread",
     });
 
     const run = await sendChatRun(actor, {
-      agentId,
       threadId: thread.id,
       prompt: "move this thread when I send it",
       chatThreadSortEventId: directSendSortEventId,
@@ -869,7 +854,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     expect(sortTouches).toHaveLength(2);
   }, 90_000);
   it("rejects explicit thread models without the member's subscription", async () => {
-    const { actor, agentId } = await entitledChatActor(
+    const { actor } = await entitledChatActor(
       "Unavailable explicit thread model agent",
     );
     await api.updateUserModelPreference(actor, "claude-opus-5-5");
@@ -878,7 +863,6 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     const rejectedCreate = await chat.requestCreateThread(
       actor,
       {
-        agentId,
         clientThreadId: rejectedThreadId,
         model: "gpt-6-astra",
       },
@@ -891,7 +875,6 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     await chat.requestReadThread(actor, rejectedThreadId, [404]);
 
     const thread = await chat.createThread(actor, {
-      agentId,
       model: "claude-opus-5-5",
     });
     const rejectedUpdate = await chat.requestUpdateThreadModelSelection(
@@ -907,21 +890,20 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
   }, 90_000);
 
   it("rejects the internal Auto run model as a thread selection", async () => {
-    const { actor, agentId } = await entitledChatActorWithoutRunner(
+    const { actor } = await entitledChatActorWithoutRunner(
       "Auto run model selection agent",
     );
 
     const rejectedThreadId = randomUUID();
     const rejectedCreate = await chat.requestCreateThread(
       actor,
-      { agentId, clientThreadId: rejectedThreadId, model: "okou-1.0" },
+      { clientThreadId: rejectedThreadId, model: "okou-1.0" },
       [400],
     );
     expectApiError(rejectedCreate.body);
     await chat.requestReadThread(actor, rejectedThreadId, [404]);
 
     const thread = await chat.createThread(actor, {
-      agentId,
       model: "claude-fable-5-1",
     });
     const rejectedUpdate = await chat.requestUpdateThreadModelSelection(
@@ -978,11 +960,11 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
         const subscription = await fixture.fund();
         await api.ensurePersonalSubscriptionModel(actor);
         await selectNativeClaudeModel(actor);
-        const agent = await bdd.createAgent(actor, {
+        await bdd.createAgent(actor, {
           displayName: "Limited free model pin agent",
           visibility: "private",
         });
-        const agentId = agent.agentId;
+
         const billingStatus = await api.readBillingStatus(actor);
         await createWebhookCallbackApi(context).postStripeEvent(
           {
@@ -1006,7 +988,6 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
           credits: billingStatus.credits,
         });
         const thread = await chat.createThread(actor, {
-          agentId,
           model,
           title: "limited free model pin",
         });
@@ -1032,14 +1013,13 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     await owned.run(() => {
       return api.ensurePersonalSubscriptionModel(actor);
     });
-    const agent = await owned.run(() => {
+    await owned.run(() => {
       return bdd.createAgent(actor, {
         displayName: "Computer-use thread agent",
       });
     });
     const thread = await owned.run(() => {
       return chat.createThread(actor, {
-        agentId: agent.agentId,
         title: "Computer Use",
       });
     });
@@ -1106,7 +1086,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
   });
 
   it("cancels in-flight runs and cascades schedules when a thread is deleted", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor(
+    const { actor, runnerGroup } = await entitledChatActor(
       "Thread delete cascade agent",
     );
     const peer = bdd.user({ orgId: actor.orgId });
@@ -1128,7 +1108,6 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
 
     // Main thread with a running Run.
     const main = await sendChatRun(actor, {
-      agentId,
       prompt: "delete cascade anchor",
     });
     await api.heartbeatRunner(runnerGroup);
@@ -1141,7 +1120,6 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     // A sibling thread whose run completes: terminal transition drops the
     // active-thread flag.
     const sibling = await sendChatRun(actor, {
-      agentId,
       prompt: "sibling thread completes",
     });
     const siblingExecution = await runExecution(runnerGroup, sibling.runId);
@@ -1154,7 +1132,6 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
 
     // A third thread with its own pending run must survive the delete.
     const other = await sendChatRun(actor, {
-      agentId,
       prompt: "other thread stays active",
     });
 
@@ -1267,7 +1244,6 @@ describe("CHAT-01 chat thread read state", () => {
     // An active Run keeps its thread out of the unread aggregate
     // until it completes and leaves a run-finished marker.
     const activeRun = await sendChatRun(owner, {
-      agentId: agentA,
       prompt: "unread aggregate with active run",
     });
     const activeExecution = await runExecution(runnerGroup, activeRun.runId);
@@ -1375,11 +1351,11 @@ describe("CHAT-01 chat thread read state", () => {
     await bdd.completeOnboarding(peer);
     const sameUserOtherOrg = bdd.user({ userId: owner.userId });
 
-    const peerAgent = await bdd.createAgent(peer, {
+    await bdd.createAgent(peer, {
       displayName: "Active ids peer agent",
       visibility: "private",
     });
-    const otherOrgAgent = await bdd.createAgent(sameUserOtherOrg, {
+    await bdd.createAgent(sameUserOtherOrg, {
       displayName: "Active ids other org agent",
       visibility: "private",
     });
@@ -1398,23 +1374,19 @@ describe("CHAT-01 chat thread read state", () => {
 
     // Peer-user and cross-org active runs must not leak into the owner list.
     await sendChatRun(peer, {
-      agentId: peerAgent.agentId,
       prompt: "peer active thread",
     });
     await sendChatRun(sameUserOtherOrg, {
-      agentId: otherOrgAgent.agentId,
       prompt: "other org active thread",
     });
 
     // Owner: one running Run and one send over the org concurrency
     // cap, which admits as a queued run.
     const runningRun = await sendChatRun(owner, {
-      agentId: ownerAgent,
       prompt: "active running thread",
     });
     const runningExecution = await runExecution(runnerGroup, runningRun.runId);
     const queuedRun = await sendChatRun(owner, {
-      agentId: ownerAgent,
       prompt: "active queued thread",
     });
 
@@ -1481,7 +1453,6 @@ describe("CHAT-01 chat thread read state", () => {
 
       mockNow(currentTime - 7 * DAY_MS - 1);
       const activeRun = await sendChatRun(actor, {
-        agentId,
         prompt: "old active indicator",
       });
 
@@ -1686,12 +1657,11 @@ describe("CHAT-01 chat thread read state", () => {
 
 describe("CHAT-03 run usage events", () => {
   it("reads zero-credit usage and omits runs without settled usage", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor(
+    const { actor, runnerGroup } = await entitledChatActor(
       "Zero-credit usage message agent",
     );
 
     const agentRun = await sendChatRun(actor, {
-      agentId,
       prompt: "record zero-credit usage",
     });
     const { sandboxHeaders: okouSandboxHeaders } = await runExecution(
@@ -1734,7 +1704,6 @@ describe("CHAT-03 run usage events", () => {
     // A run with no usage has no monetary receipt; it must not inherit another
     // run's amount merely because both belong to the same member.
     const quietRun = await sendChatRun(actor, {
-      agentId,
       prompt: "complete without recording usage",
     });
     const { sandboxHeaders: quietSandboxHeaders } = await runExecution(
@@ -1774,7 +1743,6 @@ describe("CHAT-01 chat search", () => {
 
     const owned = await publicChatActor(context);
     const source = await owned.sendChatRun(owned.actor, {
-      agentId: owned.agentId,
       prompt: "check sandbox search authorization",
     });
     const { execution } = await owned.runExecution(source.runId);
@@ -1797,10 +1765,9 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     "exports a hosted %s as an owned bundle to Google Drive",
     async (artifactKind) => {
       const owned = await publicChatActor(context);
-      const { actor, agentId } = owned;
+      const { actor } = owned;
       mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
       const run = await owned.sendChatRun(actor, {
-        agentId,
         prompt: "Create a hosted HTML artifact",
       });
       const execution = await owned.runExecution(run.runId);
@@ -1886,10 +1853,9 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
   // `hosted-site`, so the old condition uploaded its entry document alone.
   it("exports a public presentation deck to Google Drive as an owned bundle", async () => {
     const owned = await publicChatActor(context);
-    const { actor, agentId } = owned;
+    const { actor } = owned;
     mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
     const run = await owned.sendChatRun(actor, {
-      agentId,
       prompt: "Create a public HTML deck",
     });
     const execution = await owned.runExecution(run.runId);
@@ -1969,10 +1935,9 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
 
   it("exports a self-contained hosted page to Google Drive as that page", async () => {
     const owned = await publicChatActor(context);
-    const { actor, agentId } = owned;
+    const { actor } = owned;
     mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
     const run = await owned.sendChatRun(actor, {
-      agentId,
       prompt: "Create a self-contained HTML artifact",
     });
     const execution = await owned.runExecution(run.runId);
@@ -2027,14 +1992,13 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
   });
 
   it("groups run uploads and reports google drive sync status", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor(
+    const { actor, runnerGroup } = await entitledChatActor(
       "Artifacts drive status agent",
     );
     const objectStore = chatCallbacks.acceptChatObjectStorage();
     const peer = bdd.user({ orgId: actor.orgId });
 
     const run = await sendChatRun(actor, {
-      agentId,
       prompt: "produce thread artifacts",
     });
     const { execution: receivedExecution, sandboxHeaders } = await runExecution(
@@ -2522,9 +2486,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     readonly conversionEnabled: boolean;
     readonly source?: { readonly filename: string; readonly body: Buffer };
   }) {
-    const { actor, agentId, runnerGroup } = await entitledChatActor(
-      params.agentLabel,
-    );
+    const { actor, runnerGroup } = await entitledChatActor(params.agentLabel);
     if (params.conversionEnabled) {
       await createBillingMediaApi(context).updateFeatureSwitches(actor, {
         [FeatureSwitchKey.GoogleSlidesConversion]: true,
@@ -2533,7 +2495,6 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     const objectStore = chatCallbacks.acceptChatObjectStorage();
 
     const run = await sendChatRun(actor, {
-      agentId,
       prompt: "produce an artifact",
     });
     const { execution: receivedExecution, sandboxHeaders } = await runExecution(
@@ -3107,7 +3068,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
         ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         : picturePptxMime;
     const owned = await publicChatActor(context);
-    const { actor, agentId } = owned;
+    const { actor } = owned;
     owned.ownsFeatureSwitches();
     await owned.run(() => {
       return createBillingMediaApi(context).updateFeatureSwitches(actor, {
@@ -3115,7 +3076,6 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       });
     });
     const run = await owned.sendChatRun(actor, {
-      agentId,
       prompt: "Create an Office document for Google conversion",
     });
     const { execution } = await owned.runExecution(run.runId);
@@ -4882,7 +4842,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
   );
 
   it("uses the selected google drive account for artifact status and sync", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor(
+    const { actor, runnerGroup } = await entitledChatActor(
       "Artifacts selected drive account agent",
     );
     if (!actor.orgId) {
@@ -4891,7 +4851,6 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     const objectStore = chatCallbacks.acceptChatObjectStorage();
 
     const run = await sendChatRun(actor, {
-      agentId,
       prompt: "produce an account-bound artifact",
     });
     const { execution: receivedExecution, sandboxHeaders } = await runExecution(
@@ -5144,14 +5103,13 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
   }, 120_000);
 
   it("dedupes artifact urls and lists hosted sites beside run files", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor(
+    const { actor, runnerGroup } = await entitledChatActor(
       "Artifacts dedupe agent",
     );
     const objectStore = chatCallbacks.acceptChatObjectStorage();
 
     // Run 1 uploads its own file plus the shared one.
     const run1 = await sendChatRun(actor, {
-      agentId,
       prompt: "first artifact run",
     });
     const execution1 = await runExecution(runnerGroup, run1.runId);
@@ -5179,7 +5137,6 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     // Run 2 in the same thread re-completes the shared upload: the later
     // run owns the deduplicated URL.
     const run2 = await sendChatRun(actor, {
-      agentId,
       threadId: run1.threadId,
       prompt: "second artifact run",
     });
@@ -5294,13 +5251,12 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
   }, 120_000);
 
   it("keeps files generated beside a hosted site visible", async () => {
-    const { actor, agentId, runnerGroup } =
+    const { actor, runnerGroup } =
       await entitledChatActor("Hosted media agent");
     const objectStore = chatCallbacks.acceptChatObjectStorage();
 
     // One run generates deliverables and then publishes a site alongside them.
     const run = await sendChatRun(actor, {
-      agentId,
       prompt: "generate media then publish a site",
     });
     await flushWaitUntilForTest();

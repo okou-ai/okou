@@ -510,7 +510,6 @@ describe("connector catalog valid lifecycle", () => {
       });
     });
     const run = await owner.sendChatRun(owner.actor, {
-      agentId: owner.agentId,
       prompt: "Use the X Connector Skill",
       model: "gpt-6-luna",
     });
@@ -703,7 +702,6 @@ describe("connector catalog valid lifecycle", () => {
       "Reuse all exact published connector skills",
     ]) {
       const run = await owned.sendChatRun(owned.actor, {
-        agentId: owned.agentId,
         prompt,
       });
       const { execution, sandboxHeaders } = await owned.runExecution(run.runId);
@@ -765,7 +763,6 @@ describe("connector catalog valid lifecycle", () => {
       ]);
     });
     const queued = await owned.queueChatRun(owned.actor, {
-      agentId: owned.agentId,
       prompt: "Use the first published skill",
     });
     const updateStart = context.mocks.s3.send.mock.calls.length;
@@ -802,7 +799,6 @@ describe("connector catalog valid lifecycle", () => {
     const first = await queued.launch();
     await check(first.runId, updated);
     const later = await owned.sendChatRun(owned.actor, {
-      agentId: owned.agentId,
       prompt: "Use the updated published skill",
     });
     await check(later.runId, updated);

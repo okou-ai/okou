@@ -36,7 +36,6 @@ async function seedChatThread(title: string): Promise<ChatThreadFixture> {
     visibility: "private",
   });
   const thread = await chat.createThread(actor, {
-    agentId: agent.agentId,
     title,
   });
   if (!actor.orgId) {
@@ -112,11 +111,10 @@ describe("POST /api/chat-threads/:id/rename", () => {
   it("keeps the metadata title aligned with concurrent ordered rename events", async () => {
     const actor = bdd.user();
     bdd.acceptAgentStorageWrites();
-    const agent = await bdd.createAgent(actor, {
+    await bdd.createAgent(actor, {
       displayName: "Concurrent renames",
     });
     const thread = await chat.createThread(actor, {
-      agentId: agent.agentId,
       title: "Original title",
     });
     const eventIds = [randomUUID(), randomUUID()];
@@ -159,11 +157,10 @@ describe("POST /api/chat-threads/:id/rename", () => {
   it("retains a caller's event identity when the same rename is delivered twice", async () => {
     const actor = bdd.user();
     bdd.acceptAgentStorageWrites();
-    const agent = await bdd.createAgent(actor, {
+    await bdd.createAgent(actor, {
       displayName: "Rename delivery identity",
     });
     const thread = await chat.createThread(actor, {
-      agentId: agent.agentId,
       title: "Original title",
     });
     const eventId = randomUUID();

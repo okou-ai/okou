@@ -68,7 +68,7 @@ export async function chargePublicDataUsage(
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
   await bdd.completeOnboarding(actor);
-  const agent = await bdd.createAgent(actor, {
+  await bdd.createAgent(actor, {
     displayName: "Data billing fixture",
     visibility: "private",
   });
@@ -77,7 +77,6 @@ export async function chargePublicDataUsage(
   const sent = await createChatFilesBddApi(context).requestSendEvent(
     actor,
     {
-      agentId: agent.agentId,
       prompt: "Consume data for billing verification",
       model: null,
       clientEventId,

@@ -107,11 +107,10 @@ async function approveAndResume(
       return event.eventType === "input.prompt";
     }),
   );
-  const { agentId } = await scenario.prepareActor(actor);
+  await scenario.prepareActor(actor);
   await chat.requestSendEvent(
     actor,
     {
-      agentId,
       threadId: initial.threadId,
       clientEventId: request.id,
       prompt:
@@ -183,12 +182,11 @@ describe("Desktop Shell command pipeline", () => {
           (await api.readDesktopShellAccess(actor, requested.body.id)).body,
         ).toMatchObject({ status: "pending", approvalBlockedReason: null });
 
-        const { agentId } = await scenario.prepareActor(actor);
+        await scenario.prepareActor(actor);
         const send = async (clientEventId: string) => {
           await chat.requestSendEvent(
             actor,
             {
-              agentId,
               threadId: source.threadId,
               prompt: "Continue working in this chat",
               clientEventId,
@@ -339,13 +337,12 @@ describe("Desktop Shell command pipeline", () => {
         expect(
           (await api.readDesktopShellAccess(actor, requested.body.id)).body,
         ).toMatchObject({ status: "pending", approvalBlockedReason: null });
-        const { agentId } = await scenario.prepareActor(actor);
+        await scenario.prepareActor(actor);
         const nextEventId = randomUUID();
         if (authorization === "queued send") {
           await chat.requestSendEvent(
             actor,
             {
-              agentId,
               threadId: source.threadId,
               prompt: "Keep working on this computer",
               clientEventId: randomUUID(),
@@ -382,7 +379,6 @@ describe("Desktop Shell command pipeline", () => {
           await chat.requestSendEvent(
             actor,
             {
-              agentId,
               threadId: source.threadId,
               prompt: "Continue on the other computer",
               computerUseHostId: secondHost.hostId,

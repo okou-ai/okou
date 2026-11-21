@@ -68,12 +68,11 @@ async function project(actor: ApiTestUser, name: string) {
 
 async function thread(actor: ApiTestUser) {
   bdd.acceptAgentStorageWrites();
-  const agent = await bdd.createAgent(actor, {
+  await bdd.createAgent(actor, {
     displayName: "Native OAuth",
     visibility: "private",
   });
   return await chat.createThread(actor, {
-    agentId: agent.agentId,
     model: null,
   });
 }

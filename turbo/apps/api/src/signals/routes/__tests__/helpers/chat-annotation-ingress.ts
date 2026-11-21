@@ -350,7 +350,7 @@ export async function createPublicAnnotationIngress(
   if (!defaultAgentId) {
     throw new Error("Expected the annotation owner's Agent");
   }
-  const agentId = defaultAgentId;
+
   await runs.heartbeatRunner(group);
 
   async function cancelOwnedRuns() {
@@ -711,7 +711,6 @@ export async function createPublicAnnotationIngress(
   }
   async function githubInput(text: string, href: string) {
     await chat.sendAndLaunch(actor, {
-      agentId,
       prompt: text,
       userMessage: {
         version: 1,

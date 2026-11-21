@@ -125,7 +125,6 @@ async function saveOwnedFeedback(
     return createRunsApi(context).registerDirectRunner(owned.runnerGroup);
   });
   const ordinary = await owned.sendChatRun(owned.actor, {
-    agentId: defaultAgentId,
     model: owned.model,
     prompt: "Review the owner's current suggestions",
   });

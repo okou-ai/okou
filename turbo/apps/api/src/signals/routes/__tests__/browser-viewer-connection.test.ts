@@ -109,7 +109,6 @@ async function viewerScenario() {
   });
   const params = await owned.run(async () => {
     const sent = await chat.sendAndLaunch(owned.actor, {
-      agentId: owned.agentId,
       prompt: "Open my browser viewer",
       cloudBrowserEnabled: true,
     });

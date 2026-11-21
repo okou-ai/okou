@@ -196,7 +196,6 @@ async function queueChatEvent(
   const sent = await chat.requestSendEvent(
     actor,
     {
-      agentId: body.agentId,
       threadId: body.threadId,
       prompt: body.prompt,
       clientEventId: messageId,

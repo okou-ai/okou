@@ -69,7 +69,6 @@ describe("connector failure isolation in dispatched Runs", () => {
         );
 
         const run = await owned.sendChatRun(owned.actor, {
-          agentId: owned.agentId,
           prompt:
             "Continue with healthy tools when one connector is unavailable",
         });
@@ -154,7 +153,6 @@ describe("connector failure isolation in dispatched Runs", () => {
         }
 
         const next = await owned.sendChatRun(owned.actor, {
-          agentId: owned.agentId,
           prompt: "Start another Run after a connector authentication failure",
         });
         const nextRun = await owned.runExecution(next.runId);

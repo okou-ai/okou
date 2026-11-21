@@ -36,10 +36,9 @@ describe("builtin MCP discovery authority", () => {
     const owned = await publicChatActor(context);
     owned.ownsFeatureSwitches();
     await owned.run(async () => {
-      const { actor, agentId } = owned;
+      const { actor } = owned;
 
       const absentRun = await owned.sendChatRun(actor, {
-        agentId,
         prompt: "Discover without a binding",
       });
       const absentExecution = await owned.runExecution(absentRun.runId);
@@ -60,7 +59,6 @@ describe("builtin MCP discovery authority", () => {
         absentExecution.sandboxHeaders,
       );
       const admitted = await owned.sendChatRun(actor, {
-        agentId,
         prompt: "Discover admitted accounts",
       });
       const execution = await owned.runExecution(admitted.runId);
@@ -95,7 +93,7 @@ describe("builtin MCP discovery authority", () => {
     const owned = await publicChatActor(context);
     owned.ownsFeatureSwitches();
     await owned.run(async () => {
-      const { actor, agentId } = owned;
+      const { actor } = owned;
 
       mockEnv("APP_URL", "https://app.okou.ai");
       await connectors.connectManualGrant(actor, "manual-mcp", "api-token", {
@@ -142,7 +140,6 @@ describe("builtin MCP discovery authority", () => {
         [200],
       );
       const run = await owned.sendChatRun(actor, {
-        agentId,
         threadId: thread.body.id,
         prompt: "Reconnect the selected account",
       });

@@ -41,10 +41,9 @@ const {
 describe("CHAT-02: run-level model overrides", () => {
   describe("subscription account preparation", () => {
     it("rejects a personal account disconnected while its input is queued", async () => {
-      const { actor, agentId } = await entitledNativeChatActor();
+      const { actor } = await entitledNativeChatActor();
       mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
       const anchor = await sendChatRun(actor, {
-        agentId,
         prompt: "hold capacity",
         model: "claude-fable-5-1",
       });
@@ -56,7 +55,6 @@ describe("CHAT-02: run-level model overrides", () => {
       mockPiResourceArchiveDownloads();
       const clientEventId = randomUUID();
       const waiting = await sendWaitingChatInput(actor, {
-        agentId,
         model: "gpt-6-luna",
         prompt: "reject a disconnected queued account",
         clientEventId,
@@ -127,7 +125,7 @@ describe("CHAT-02: run-level model overrides", () => {
 
   describe("final subscription authority", () => {
     async function prepareSubscriptionExecution() {
-      const { actor, agentId } = await entitledChatActor();
+      const { actor } = await entitledChatActor();
       const identity = `held-subscription-${randomUUID()}`;
       const captured = await configureSubscriptionPiModel(actor, {
         accountId: identity,
@@ -137,7 +135,6 @@ describe("CHAT-02: run-level model overrides", () => {
       mockPiResourceArchiveDownloads();
       mockPiObjectStore();
       const run = await sendChatRun(actor, {
-        agentId,
         model: "gpt-6-luna",
         prompt: "preserve final subscription authority",
         runOptions: { codexServiceTier: "fast" },
@@ -197,7 +194,7 @@ describe("CHAT-02: run-level model overrides", () => {
   // it no longer revokes the prepared subscription. `personal-subscription-run-
   // identity` owns that retention contract; this case keeps the refresh path.
   it("rejects a prepared subscription when its captured account needs a reconnect", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
     await configureSubscriptionPiModel(actor, {
       accountId: "prepared-subscription-account",
       accessTokenExpiresAt: Math.floor(now() / 1000) + 7200,
@@ -205,7 +202,6 @@ describe("CHAT-02: run-level model overrides", () => {
     mockPiResourceArchiveDownloads();
     mockPiObjectStore();
     const run = await sendChatRun(actor, {
-      agentId,
       model: "gpt-6-luna",
       prompt: "retain subscription revocation at execution",
       runOptions: { codexServiceTier: "fast" },
@@ -258,7 +254,6 @@ describe("CHAT-02: run-level model overrides", () => {
       const {
         run: own,
         actor,
-        agentId,
         runExecution,
         sendChatRun,
       } = await publicChatActor(context);
@@ -269,7 +264,6 @@ describe("CHAT-02: run-level model overrides", () => {
       const objects = mockPiObjectStore();
 
       const first = await sendChatRun(actor, {
-        agentId,
         model: route.selectedModel,
         prompt: "Luna standard start",
       });
@@ -299,7 +293,6 @@ describe("CHAT-02: run-level model overrides", () => {
         first.runId,
       );
       const fast = await sendChatRun(actor, {
-        agentId,
         threadId: first.threadId,
         model: route.selectedModel,
         prompt: "Luna Fast continuation",
@@ -339,7 +332,6 @@ describe("CHAT-02: run-level model overrides", () => {
         );
       });
       const standard = await sendChatRun(actor, {
-        agentId,
         threadId: first.threadId,
         model: route.selectedModel,
         prompt: "Luna standard return",
@@ -405,12 +397,10 @@ describe("CHAT-02: run-level model overrides", () => {
           model: "claude-fable-5-1",
         });
         const source = await owned.sendChatRun(actor, {
-          agentId,
           prompt: "source run for Luna handoff",
           model: "claude-fable-5-1",
         });
         const anchor = await owned.sendChatRun(actor, {
-          agentId,
           prompt: "hold the Luna target thread",
           model: "claude-fable-5-1",
         });

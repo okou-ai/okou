@@ -405,7 +405,6 @@ export function createRunsApi(context: TestContext) {
       if (body.agentId !== defaultAgentId) {
         // Exercise legacy clients that create the thread before sending.
         const thread = await chat.createThread(actor, {
-          agentId: body.agentId,
           model: body.model,
         });
         threadId = thread.id;
@@ -474,7 +473,6 @@ export function createRunsApi(context: TestContext) {
     const sent = await chat.requestSendEvent(
       actor,
       {
-        agentId: body.agentId,
         prompt: body.prompt,
         clientEventId,
         ...(body.model === undefined ? {} : { model: body.model }),

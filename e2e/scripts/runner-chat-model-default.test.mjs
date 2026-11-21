@@ -11,7 +11,7 @@ function serializedSend(model, profileModel) {
   // Capture this helper's outgoing DTO, not a mocked backend outcome.
   const script = `source "$1"
 runner_api_curl() { printf '%s\\n' "$5"; }
-_runner_chat_post_parts "agent" "prompt" '[{"type":"text","text":"prompt"}]' "" "$2" "event" false`;
+_runner_chat_post_parts "prompt" '[{"type":"text","text":"prompt"}]' "" "$2" "event" false`;
   return JSON.parse(
     execFileSync("bash", ["-c", script, "runner-chat-dto", helper, model], {
       encoding: "utf8",
@@ -23,7 +23,6 @@ _runner_chat_post_parts "agent" "prompt" '[{"type":"text","text":"prompt"}]' "" 
 test("new chats omit the model when exercising the product default", () => {
   const body = serializedSend("", "");
   assert.equal(Object.hasOwn(body, "model"), false);
-  assert.equal(body.agentId, "agent");
   assert.equal(body.clientEventId, "event");
 });
 

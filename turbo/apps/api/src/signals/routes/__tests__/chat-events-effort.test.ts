@@ -23,16 +23,14 @@ const {
 describe("CHAT effort: thread configuration", () => {
   it("dispatches gpt-6-luna with xhigh as the default Pi effort", async () => {
     const model = "gpt-6-luna";
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
 
     await configureSubscriptionPiModel(actor, {}, model);
     const thread = await chat.createThread(actor, {
-      agentId,
       model,
     });
     mockPiObjectStore();
     const sent = await sendChatRun(actor, {
-      agentId,
       threadId: thread.id,
       prompt: "/unknown-command use the Luna default",
     });
@@ -47,7 +45,7 @@ describe("CHAT effort: thread configuration", () => {
     await cancelChatRun(actor, sent.runId, execution.sandboxHeaders);
   }, 90_000);
   it("applies requested and saved native effort through the execution protocol", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
 
     await configureSubscriptionPiModel(actor).then(() => {
       return api.ensurePersonalSubscriptionModel(actor, {
@@ -55,7 +53,6 @@ describe("CHAT effort: thread configuration", () => {
       });
     });
     const thread = await chat.createThread(actor, {
-      agentId,
       title: "Saved effort",
     });
     await chat.updateThreadModelSelection(
@@ -67,7 +64,6 @@ describe("CHAT effort: thread configuration", () => {
       },
     );
     const saved = await sendChatRun(actor, {
-      agentId,
       threadId: thread.id,
       prompt: "Use saved effort",
     });
@@ -78,7 +74,6 @@ describe("CHAT effort: thread configuration", () => {
     await cancelChatRun(actor, saved.runId, savedExecution.sandboxHeaders);
 
     const explicit = await sendChatRun(actor, {
-      agentId,
       prompt: "New explicit effort",
       runOptions: { reasoningEffort: "extra" },
     });
@@ -99,7 +94,6 @@ describe("CHAT effort: thread configuration", () => {
     );
 
     const override = await sendChatRun(actor, {
-      agentId,
       threadId: thread.id,
       prompt: "Use another model's native default",
       model: "gpt-6-astra",
@@ -142,7 +136,7 @@ describe("CHAT effort: thread configuration", () => {
   ] as const)(
     "falls back from unavailable $model $effort without deleting the preference",
     async ({ model, effort, pi, effectiveEffort }) => {
-      const { actor, agentId } = await entitledChatActor();
+      const { actor } = await entitledChatActor();
 
       await (pi
         ? configureSubscriptionPiModel(actor, {}, model)
@@ -151,7 +145,6 @@ describe("CHAT effort: thread configuration", () => {
         mockPiObjectStore();
       }
       const thread = await chat.createThread(actor, {
-        agentId,
         title: "Unsupported effort route",
         model,
       });
@@ -162,7 +155,6 @@ describe("CHAT effort: thread configuration", () => {
           });
         }
         const sent = await sendChatRun(actor, {
-          agentId,
           threadId: thread.id,
           prompt: pi
             ? "/unknown-command use the route fallback"
@@ -216,7 +208,7 @@ describe("CHAT effort: thread configuration", () => {
   ] as const)(
     "preserves enqueued settings after thread edits and retries with Pi $pi and $requestedEffort effort",
     async ({ requestedEffort, effectiveEffort, pi }) => {
-      const { actor, agentId } = await entitledChatActor();
+      const { actor } = await entitledChatActor();
 
       const selectedModel = pi ? "gpt-6-sol" : "claude-fable-5-1";
 
@@ -228,7 +220,6 @@ describe("CHAT effort: thread configuration", () => {
             model: "claude-fable-5-1",
           }));
       const active = await sendChatRun(actor, {
-        agentId,
         prompt: "Active task",
       });
       const activeExecution = await runExecution(active.runId);
@@ -248,7 +239,6 @@ describe("CHAT effort: thread configuration", () => {
       const queued = await chat.requestSendEvent(
         actor,
         {
-          agentId,
           threadId: active.threadId,
           prompt,
           clientEventId,
@@ -264,7 +254,6 @@ describe("CHAT effort: thread configuration", () => {
       const retry = await chat.requestSendEvent(
         actor,
         {
-          agentId,
           threadId: active.threadId,
           prompt,
           clientEventId,
@@ -352,13 +341,12 @@ describe("CHAT effort: thread configuration", () => {
   );
 
   it("offers Fast on the direct OpenAI Astra route", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
 
     await configureSubscriptionPiModel(actor).then(() => {
       return api.updateUserModelPreference(actor, "gpt-6-astra");
     });
     const thread = await chat.createThread(actor, {
-      agentId,
       title: "Direct API Fast",
       model: "gpt-6-astra",
     });
@@ -381,13 +369,12 @@ describe("CHAT effort: thread configuration", () => {
   }, 90_000);
 
   it("preserves Fast when changing effort", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
 
     await configureSubscriptionPiModel(actor).then(() => {
       return api.updateUserModelPreference(actor, "gpt-6-astra");
     });
     const thread = await chat.createThread(actor, {
-      agentId,
       title: "Independent Fast",
       model: "gpt-6-astra",
     });
@@ -401,7 +388,6 @@ describe("CHAT effort: thread configuration", () => {
       serviceTier: "priority",
     });
     const sent = await sendChatRun(actor, {
-      agentId,
       threadId: thread.id,
       prompt: "Fast with saved effort",
     });
@@ -414,7 +400,6 @@ describe("CHAT effort: thread configuration", () => {
     );
     await cancelChatRun(actor, sent.runId, execution.sandboxHeaders);
     const explicit = await sendChatRun(actor, {
-      agentId,
       threadId: thread.id,
       prompt: "Change effort and retain Fast",
       runOptions: { reasoningEffort: "ultra" },

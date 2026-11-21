@@ -44,7 +44,6 @@ async function createCursorFixture(): Promise<CursorFixture> {
   const actor = bdd.user();
   const agent = await chat.createAgentForChatThread(actor);
   const thread = await chat.createThread(actor, {
-    agentId: agent.agentId,
     title: `Read cursor ${randomUUID()}`,
   });
   return {
@@ -83,7 +82,6 @@ async function createUnreadCursorFixture(): Promise<CursorFixture> {
     visibility: "private",
   });
   const { runId, threadId } = await chat.sendAndLaunch(actor, {
-    agentId: agent.agentId,
     prompt: `read cursor ${randomUUID()}`,
   });
   await runs.requestCancelRun(actor, runId, [200]);

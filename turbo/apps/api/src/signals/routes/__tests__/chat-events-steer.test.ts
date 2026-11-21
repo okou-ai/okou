@@ -47,7 +47,6 @@ async function sendQueuedPrompt(
   const sent = await chat.requestSendEvent(
     actor,
     {
-      agentId,
       threadId,
       prompt,
       clientEventId,
@@ -93,7 +92,7 @@ describe("CHAT-02: steering input prompts into a running run", () => {
   )(
     "renders $kind steering from current settings after starting disabled=$initiallyDisabled",
     async ({ kind, title, template, initiallyDisabled }) => {
-      const { actor, agentId } = await entitledNativeChatActor();
+      const { actor } = await entitledNativeChatActor();
       await setPaidToolDisabled(
         context,
         actor,
@@ -101,7 +100,6 @@ describe("CHAT-02: steering input prompts into a running run", () => {
         initiallyDisabled,
       );
       const active = await sendChatRun(actor, {
-        agentId,
         prompt: "Start with captured tool settings",
       });
       const execution = await runExecution(active.runId);
@@ -116,7 +114,6 @@ describe("CHAT-02: steering input prompts into a running run", () => {
       await chat.requestSendEvent(
         actor,
         {
-          agentId,
           threadId: active.threadId,
           clientEventId: eventId,
           prompt: request,
@@ -193,7 +190,7 @@ describe("CHAT-02: steering input prompts into a running run", () => {
       throw new Error("Expected an organization");
     }
     const actor = { ...owner, orgId: owner.orgId };
-    const active = await sendChatRun(actor, { agentId, prompt: "Start a run" });
+    const active = await sendChatRun(actor, { prompt: "Start a run" });
     const execution = await runExecution(active.runId);
     const eventId = randomUUID();
     const userMessage = userMessageWithTemplate("Prepare an invoice", {
@@ -203,7 +200,6 @@ describe("CHAT-02: steering input prompts into a running run", () => {
     await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: active.threadId,
         clientEventId: eventId,
         prompt: "Prepare an invoice",
@@ -245,12 +241,12 @@ describe("CHAT-02: steering input prompts into a running run", () => {
   });
 
   it("includes cover guidance for a template steered into an existing run", async () => {
-    const { actor: owner, agentId } = await entitledNativeChatActor();
+    const { actor: owner } = await entitledNativeChatActor();
     if (!owner.orgId) {
       throw new Error("Expected an organization");
     }
     const actor = { ...owner, orgId: owner.orgId };
-    const active = await sendChatRun(actor, { agentId, prompt: "Start a run" });
+    const active = await sendChatRun(actor, { prompt: "Start a run" });
     const execution = await runExecution(active.runId);
     const template = WEBSITE_TEMPLATE_ITEMS[0];
     if (!template) {
@@ -259,7 +255,6 @@ describe("CHAT-02: steering input prompts into a running run", () => {
     await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: active.threadId,
         prompt: "Make a website",
         clientEventId: randomUUID(),
@@ -293,7 +288,6 @@ describe("CHAT-02: steering input prompts into a running run", () => {
   it("returns the next prompt after the run's own input and declares it steered once", async () => {
     const { actor, agentId } = await entitledNativeChatActor();
     const active = await sendChatRun(actor, {
-      agentId,
       prompt: "run that steers queued prompts",
     });
     const execution = await runExecution(active.runId);
@@ -414,7 +408,6 @@ describe("CHAT-02: steering input prompts into a running run", () => {
   it("skips recalled prompts and rejects unknown input", async () => {
     const { actor, agentId } = await entitledNativeChatActor();
     const active = await sendChatRun(actor, {
-      agentId,
       prompt: "run that skips unsteerable input",
     });
     const execution = await runExecution(active.runId);
@@ -448,7 +441,7 @@ describe("CHAT-02: steering input prompts into a running run", () => {
     // The user recalls the prompt between the read and the declaration.
     await chat.requestSendEvent(
       actor,
-      { agentId, threadId: active.threadId, revokesEventId: recalledEventId },
+      { threadId: active.threadId, revokesEventId: recalledEventId },
       [201],
     );
     const recalled = await api.requestDeclareSteeredInputAs(
@@ -500,7 +493,6 @@ describe("CHAT-02: steering input prompts into a running run", () => {
   it("rejects a declaration once the run ended and another run took the prompt", async () => {
     const { actor, agentId } = await entitledNativeChatActor();
     const first = await sendChatRun(actor, {
-      agentId,
       prompt: "run that ends before steering",
     });
     const firstExecution = await runExecution(first.runId);
@@ -575,14 +567,12 @@ describe("CHAT-02: steering input prompts into a running run", () => {
     await owned.run(async () => {
       await api.updateUserModelPreference(actor, "claude-fable-5-1");
       const other = await owned.sendChatRun(actor, {
-        agentId,
         prompt: "another run of the same user",
       });
       const otherExecution = await owned.runExecution(other.runId);
       await cancelChatRun(actor, other.runId, otherExecution.sandboxHeaders);
       const otherToken = otherExecution.execution.sandboxToken;
       const active = await owned.sendChatRun(actor, {
-        agentId,
         prompt: "run whose steering is protected",
       });
       const execution = await owned.runExecution(active.runId);

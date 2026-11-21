@@ -770,7 +770,6 @@ describe("workflows", () => {
     const actor = user();
     const agent = await workspaceExecutor(actor);
     const sourceThread = await chat.createThread(actor, {
-      agentId: agent.agentId,
       title: "Source chat",
     });
 
@@ -821,7 +820,6 @@ describe("workflows", () => {
     const actor = user();
     const agent = await workspaceExecutor(actor);
     const thread = await chat.createThread(actor, {
-      agentId: agent.agentId,
       title: "Realtime failure chat",
     });
 

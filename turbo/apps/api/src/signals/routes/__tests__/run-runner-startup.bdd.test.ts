@@ -77,7 +77,6 @@ test.each(["sandbox", "home", "blank", "cold"] as const)(
     const owned = await publicChatActor(context);
     await owned.run(async () => {
       const run = await owned.sendChatRun(owned.actor, {
-        agentId: owned.agentId,
         prompt: "Persist actual startup resource",
       });
       await expect(readStartupPath(owned.actor, run.runId)).resolves.toBeNull();
@@ -123,7 +122,6 @@ test("telemetry and completion leave startup unknown until an authenticated repo
   const owned = await publicChatActor(context);
   await owned.run(async () => {
     const run = await owned.sendChatRun(owned.actor, {
-      agentId: owned.agentId,
       prompt: "Keep unreported startup unknown",
     });
     const { sandboxHeaders, execution } = await owned.runExecution(run.runId);
@@ -163,7 +161,6 @@ test("same-value retries succeed and conflicting or telemetry reports cannot ove
   const owned = await publicChatActor(context);
   await owned.run(async () => {
     const run = await owned.sendChatRun(owned.actor, {
-      agentId: owned.agentId,
       prompt: "Replay startup receipt",
     });
     const { sandboxHeaders, execution } = await owned.runExecution(run.runId);
@@ -192,7 +189,6 @@ test("concurrent conflicting startup reports accept exactly one immutable fact",
   const owned = await publicChatActor(context);
   await owned.run(async () => {
     const run = await owned.sendChatRun(owned.actor, {
-      agentId: owned.agentId,
       prompt: "Arbitrate startup receipts",
     });
     const { sandboxHeaders } = await owned.runExecution(run.runId);
@@ -227,7 +223,6 @@ test("startup writes and reads preserve Run token, user and organization boundar
   const owned = await publicChatActor(context);
   await owned.run(async () => {
     const run = await owned.sendChatRun(owned.actor, {
-      agentId: owned.agentId,
       prompt: "Authorize startup setting",
     });
     const { sandboxHeaders } = await owned.runExecution(run.runId);

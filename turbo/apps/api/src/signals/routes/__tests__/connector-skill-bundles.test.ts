@@ -44,7 +44,6 @@ describe("Connector Skill bundle delivery", () => {
       return { selected, s3, connectionId: account.connectionId };
     });
     const queued = await owner.queueChatRun(owner.actor, {
-      agentId: owner.agentId,
       model: "claude-fable-5-1",
       prompt: "Use the selected custom Skill",
     });
@@ -162,7 +161,6 @@ describe("Connector Skill bundle delivery", () => {
       });
       const mountPath = `${root}/${getCustomConnectorSkillName(selected.slug, selected.id)}`;
       const queued = await owner.queueChatRun(owner.actor, {
-        agentId: owner.agentId,
         prompt: "Use the selected Connector Skill",
         model,
       });
@@ -208,7 +206,6 @@ describe("Connector Skill bundle delivery", () => {
         });
       });
       const next = await owner.sendChatRun(owner.actor, {
-        agentId: owner.agentId,
         prompt: "Use the updated Connector Skill",
         model,
       });
@@ -255,7 +252,6 @@ describe("Connector Skill bundle delivery", () => {
         }
       });
       const collisionRun = await owner.sendChatRun(owner.actor, {
-        agentId: owner.agentId,
         prompt: "Use the overriding Workflows",
         model,
       });

@@ -98,7 +98,7 @@ async function connectorActor() {
       async queue(prompt: string) {
         const queued = await createChatEventsFixture(context).queueChatRun(
           actor,
-          { agentId: agent.agentId, prompt, model: "claude-fable-5-1" },
+          { prompt, model: "claude-fable-5-1" },
           (blocker) => {
             owner.rememberExecution(blocker.runId, blocker.sandboxToken);
             waitingThreads.add(blocker.threadId);

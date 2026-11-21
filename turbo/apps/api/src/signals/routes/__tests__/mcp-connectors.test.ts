@@ -93,7 +93,7 @@ async function createRunForAgent(
   owned: Awaited<ReturnType<typeof publicChatActor>>,
   selections: readonly ConnectorAccountSelection[] = [],
 ) {
-  const { actor, agentId } = owned;
+  const { actor } = owned;
   mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
   const thread = await accept(
     setupApp({ context, routes: chatThreadCreateRoutes })(
@@ -118,7 +118,6 @@ async function createRunForAgent(
     );
   }
   const run = await owned.sendChatRun(actor, {
-    agentId,
     threadId: thread.body.id,
     prompt: "Discover MCP connectors",
   });

@@ -193,7 +193,6 @@ describe("chat event annotations", () => {
     const claimedPendingId = randomUUID();
     const prompt = "github claimed replacement";
     const sent = await chat.sendAndLaunch(actor, {
-      agentId: defaultAgentId,
       clientEventId: claimedPendingId,
       prompt,
       userMessage: {

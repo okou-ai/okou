@@ -520,12 +520,11 @@ describe("thin MCP Web adapters", () => {
     ).toBe("BAD_REQUEST");
 
     expect(listed.content[0]?.text).not.toContain("agentId");
-    const retained = await bdd.createAgent(f.actor, {
+    await bdd.createAgent(f.actor, {
       visibility: "private",
       displayName: "Retained Agent",
     });
     const thread = await chat.createThread(f.actor, {
-      agentId: retained.agentId,
       title: "Retained Chat",
     });
     const continued = await send(f, "continue the retained Chat", thread.id);
@@ -921,11 +920,10 @@ describe("thin MCP Web adapters", () => {
       ).code,
     ).toBe("NOT_FOUND");
     const unrelated = bdd.user({ orgId: `org_${randomUUID()}` });
-    const unrelatedAgent = await bdd.createAgent(unrelated, {
+    await bdd.createAgent(unrelated, {
       displayName: "Other organization",
     });
     const thread = await chat.createThread(unrelated, {
-      agentId: unrelatedAgent.agentId,
       title: "Other organization",
     });
     expect(
@@ -946,11 +944,10 @@ describe("thin MCP Web adapters", () => {
       userId: f.actor.userId,
       orgId: `org_${randomUUID()}`,
     });
-    const agent = await bdd.createAgent(other, {
+    await bdd.createAgent(other, {
       displayName: "Same user, different organization",
     });
     const thread = await chat.createThread(other, {
-      agentId: agent.agentId,
       title: "Other organization thread",
     });
     for (const endpoint of ["event-snapshot", "event-rows?sinceSeqId=0"]) {

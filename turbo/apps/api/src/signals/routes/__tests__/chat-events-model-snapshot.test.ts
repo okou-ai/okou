@@ -84,11 +84,10 @@ describe("accepted model source snapshots", () => {
 
   it("keeps the accepted Claude source through disconnection and uses a new source on the next Run", async () => {
     const owned = await publicChatActor(context);
-    const { actor, agentId, providerId, model } = owned;
+    const { actor, providerId, model } = owned;
     const attachment = holdAttachment(actor.userId);
     const sending = settleIncludingAbort(
       owned.sendChatRun(actor, {
-        agentId,
         model,
         prompt: "use my accepted model",
         userMessage: attachment.userMessage,
@@ -125,7 +124,6 @@ describe("accepted model source snapshots", () => {
       return cancelChatRun(actor, first.runId, firstExecution.sandboxHeaders);
     });
     const next = await owned.sendChatRun(actor, {
-      agentId,
       model,
       prompt: "use the newly connected source",
     });
@@ -149,7 +147,7 @@ describe("accepted model source snapshots", () => {
         },
       });
       owned.ownsFeatureSwitches();
-      const { actor, agentId } = owned;
+      const { actor } = owned;
       const firstIdentity = `accepted-${randomUUID()}`;
       const laterIdentity = `reconnected-${randomUUID()}`;
       const connected = await owned.run(() => {
@@ -167,7 +165,6 @@ describe("accepted model source snapshots", () => {
       const attachment = holdAttachment(actor.userId);
       const sending = settleIncludingAbort(
         owned.sendChatRun(actor, {
-          agentId,
           model: "gpt-6-luna",
           prompt: "use my accepted model",
           userMessage: attachment.userMessage,
@@ -246,7 +243,6 @@ describe("accepted model source snapshots", () => {
         return cancelChatRun(actor, first.runId, firstExecution.sandboxHeaders);
       });
       const next = await owned.sendChatRun(actor, {
-        agentId,
         model: "gpt-6-luna",
         prompt: "use the reconnected identity",
       });

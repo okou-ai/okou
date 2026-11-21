@@ -128,9 +128,8 @@ describe("personal native subscription activation", () => {
   );
 
   it("keeps official Claude member subscription credentials on Claude Code with Pi enabled", async () => {
-    const { actor, agentId } = await entitledNativeChatActor();
+    const { actor } = await entitledNativeChatActor();
     const run = await sendChatRun(actor, {
-      agentId,
       model: "claude-fable-5-1",
       prompt: "retain official Claude subscription ownership",
     });

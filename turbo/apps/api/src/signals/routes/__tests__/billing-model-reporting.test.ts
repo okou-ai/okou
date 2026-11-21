@@ -26,14 +26,12 @@ describe("Billing model reporting", () => {
     mockNow(at);
     const {
       actor,
-      agentId,
       run: own,
       sendChatRun,
       runExecution,
     } = await publicChatActor(context, { clockTime: at });
     await own(async () => {
       const run = await sendChatRun(actor, {
-        agentId,
         prompt: "Publish first usage while completing",
         model: "auto",
       });
@@ -152,14 +150,12 @@ describe("Billing model reporting", () => {
       mockNow(at);
       const {
         actor,
-        agentId,
         run: own,
         sendChatRun,
         runExecution,
       } = await publicChatActor(context, { clockTime: at });
       await own(async () => {
         const run = await sendChatRun(actor, {
-          agentId,
           prompt: "Report usage before unsuccessful completion",
           model: "auto",
         });
@@ -251,7 +247,6 @@ describe("Billing model reporting", () => {
     const historyObjects = fixture.mockPiObjectStore();
     await own(async () => {
       const run = await sendChatRun(actor, {
-        agentId,
         prompt: "Report captured usage",
         model: "auto",
       });

@@ -338,7 +338,6 @@ runner_chat_send() {
 # that revokes the sent input and carries its `runId`.
 # Prints the send response with that `runId` added.
 runner_chat_send_parts() {
-    local agent_id="$1"
     local prompt="$2"
     local parts="$3"
     local thread_id="$4"
@@ -351,7 +350,6 @@ runner_chat_send_parts() {
         client_event_id="$(_runner_uuid)"
     fi
     send_response="$(_runner_chat_post_parts \
-        "$agent_id" \
         "$prompt" \
         "$parts" \
         "$thread_id" \
@@ -421,13 +419,12 @@ _runner_chat_wait_for_input_run() {
 # Posts one chat input and prints the raw send response without waiting for a
 # run. `client_event_id` is required so callers can follow the input.
 _runner_chat_post_parts() {
-    local agent_id="$1"
-    local prompt="$2"
-    local parts="$3"
-    local thread_id="$4"
-    local selected_model="$5"
-    local client_event_id="$6"
-    local capture_network_bodies="${7:-false}"
+    local prompt="$1"
+    local parts="$2"
+    local thread_id="$3"
+    local selected_model="$4"
+    local client_event_id="$5"
+    local capture_network_bodies="${6:-false}"
     local payload
 
     # Mock Codex probes select their model through the profile; explicit real
@@ -439,14 +436,12 @@ _runner_chat_post_parts() {
 
     if [[ -n "$thread_id" ]]; then
         payload="$(jq -nc \
-            --arg agentId "$agent_id" \
             --arg prompt "$prompt" \
             --arg threadId "$thread_id" \
             --arg clientEventId "$client_event_id" \
             --argjson parts "$parts" \
             --argjson captureNetworkBodies "$capture_network_bodies" \
             '{
-                agentId: $agentId,
                 prompt: $prompt,
                 threadId: $threadId,
                 clientEventId: $clientEventId,
@@ -455,14 +450,12 @@ _runner_chat_post_parts() {
             } + if $captureNetworkBodies then {captureNetworkBodies: true} else {} end')"
     else
         payload="$(jq -nc \
-            --arg agentId "$agent_id" \
             --arg prompt "$prompt" \
             --arg model "$selected_model" \
             --arg clientEventId "$client_event_id" \
             --argjson parts "$parts" \
             --argjson captureNetworkBodies "$capture_network_bodies" \
             '{
-                agentId: $agentId,
                 prompt: $prompt,
                 clientEventId: $clientEventId,
                 userMessage: {version: 1, parts: $parts},
@@ -674,7 +667,6 @@ runner_chat_steer() {
     # one, so it is posted without waiting for a run of its own.
     steer_event_id="$(_runner_uuid)"
     steer_response="$(_runner_chat_post_parts \
-        "$agent_id" \
         "$steer_prompt" \
         "$(jq -nc --arg prompt "$steer_prompt" '[{type: "text", text: $prompt}]')" \
         "$thread_id" \

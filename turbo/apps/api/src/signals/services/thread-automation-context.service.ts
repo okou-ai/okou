@@ -50,7 +50,6 @@ export interface ThreadAutomationTarget {
     typeof workflows.$inferSelect,
     | "id"
     | "orgId"
-    | "agentId"
     | "name"
     | "ownerUserId"
     | "visibility"
@@ -122,7 +121,6 @@ export function createThreadAutomationSnapshot(
         workflow: {
           id: workflows.id,
           orgId: workflows.orgId,
-          agentId: workflows.agentId,
           name: workflows.name,
           ownerUserId: workflows.ownerUserId,
           visibility: workflows.visibility,

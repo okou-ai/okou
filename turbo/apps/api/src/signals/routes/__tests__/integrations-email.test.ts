@@ -2158,11 +2158,10 @@ describe("Email integration", () => {
 
   it("does not infer an email recipient for a Web-originated run", async () => {
     const { actor } = await entitledActor();
-    const agent = await bdd.createAgent(actor, {
+    await bdd.createAgent(actor, {
       displayName: "Web-only agent",
     });
     const sent = await files.sendAndLaunch(actor, {
-      agentId: agent.agentId,
       prompt: "A web request",
     });
     const execution = await runs.executionInput(sent.runId);
@@ -2974,9 +2973,8 @@ describe("Email workspace binding", () => {
   it("does not use an account's binding for a Web run or a browser session", async () => {
     const { actor } = await entitledActor();
     await expect(connectedEmails()).resolves.toStrictEqual([actor.email]);
-    const agent = await bdd.createAgent(actor, { displayName: "Web agent" });
+    await bdd.createAgent(actor, { displayName: "Web agent" });
     const sent = await files.sendAndLaunch(actor, {
-      agentId: agent.agentId,
       prompt: "Inspect my email workspace",
     });
     const execution = await runs.executionInput(sent.runId);

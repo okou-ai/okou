@@ -135,7 +135,6 @@ async function createCancelledThread(args: {
   readonly prompt: string;
 }): Promise<SeededThread> {
   const sent = await chat.sendAndLaunch(args.actor, {
-    agentId: args.agentId,
     prompt: args.prompt,
     model: "claude-fable-5-1",
   });
@@ -298,7 +297,6 @@ describe("GET /api/indicators", () => {
       prompt: "Still unread indicator thread",
     });
     await chat.sendAndLaunch(actor, {
-      agentId,
       threadId: rerun.threadId,
       prompt: "Follow-up active Run",
     });
@@ -329,16 +327,12 @@ describe("GET /api/indicators", () => {
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "0");
     const actor = bdd.user();
     const peer = bdd.user({ orgId: orgIdOf(actor) });
-    const visibleAgentId = await createEntitledAgent(
-      actor,
-      "Visible active indicator agent",
-    );
+    await createEntitledAgent(actor, "Visible active indicator agent");
     const hiddenAgent = await bdd.createAgent(peer, {
       displayName: "Hidden active indicator agent",
       visibility: "public",
     });
     const visible = await chat.sendAndLaunch(actor, {
-      agentId: visibleAgentId,
       prompt: "Visible active indicator",
     });
 
@@ -347,7 +341,6 @@ describe("GET /api/indicators", () => {
     const recent: Record<string, string> = {};
     for (let index = 0; index < 50; index += 1) {
       const sent = await chat.sendAndLaunch(actor, {
-        agentId: hiddenAgent.agentId,
         prompt: `Later active indicator ${index}`,
       });
       recent[sent.threadId] = "active";

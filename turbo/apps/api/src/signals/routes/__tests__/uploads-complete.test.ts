@@ -107,7 +107,6 @@ async function createRunUploadFixture(
   let runId: string;
   if (options.chatThread) {
     const sent = await chat.sendAndLaunch(actor, {
-      agentId: agent.agentId,
       prompt: "produce a thread-linked uploaded artifact",
     });
     runId = sent.runId;
@@ -277,10 +276,9 @@ describe("POST /api/uploads/complete", () => {
   });
 
   it("associates completed-run uploads with their owning thread and retains files after thread deletion", async () => {
-    const { actor, agentId } = await eventsFixture.entitledNativeChatActor();
+    const { actor } = await eventsFixture.entitledNativeChatActor();
     const orgId = requireOrgId(actor);
     const run = await eventsFixture.sendChatRun(actor, {
-      agentId,
       prompt: "Produce an artifact that finishes uploading after execution.",
     });
     const execution = await eventsFixture.runExecution(run.runId);

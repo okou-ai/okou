@@ -38,9 +38,8 @@ function mention(projectId: string, nameSnapshot = "Captured project") {
 
 describe("project reference admission through chat send", () => {
   it("admits ordinary chat messages without Project references", async () => {
-    const { actor, agentId } = await fixture.entitledNativeChatActor();
+    const { actor } = await fixture.entitledNativeChatActor();
     const run = await fixture.sendChatRun(actor, {
-      agentId,
       prompt: "No project references",
     });
     expect((await fixture.api.readRun(actor, run.runId)).prompt).toBe(
@@ -50,7 +49,7 @@ describe("project reference admission through chat send", () => {
   });
 
   it("preserves multiple, repeated and mixed-case references in ordinary parts and feedback notes", async () => {
-    const { actor, agentId } = await fixture.entitledNativeChatActor();
+    const { actor } = await fixture.entitledNativeChatActor();
     const first = await createProject(actor, "Research");
     const second = await createProject(actor, "Launch");
     const document: UserMessageInputDocument = {
@@ -73,7 +72,6 @@ describe("project reference admission through chat send", () => {
     };
     const eventId = randomUUID();
     const run = await fixture.sendChatRun(actor, {
-      agentId,
       clientEventId: eventId,
       prompt: "Compare projects",
       userMessage: document,
@@ -97,15 +95,14 @@ describe("project reference admission through chat send", () => {
   it.each(["ordinary", "feedback"] as const)(
     "rejects a mixed valid/missing batch from %s without publishing an input",
     async (location) => {
-      const { actor, agentId } = await fixture.entitledNativeChatActor();
+      const { actor } = await fixture.entitledNativeChatActor();
       const project = await createProject(actor, "Available");
-      const thread = await fixture.chat.createThread(actor, { agentId });
+      const thread = await fixture.chat.createThread(actor, {});
       const before = await fixture.chat.listThreadEvents(actor, thread.id);
       const references = [mention(project.id), mention(randomUUID())];
       const result = await fixture.chat.requestSendEvent(
         actor,
         {
-          agentId,
           threadId: thread.id,
           prompt: "Unavailable project",
           userMessage: {
@@ -133,7 +130,7 @@ describe("project reference admission through chat send", () => {
   it.each(["user", "organization"] as const)(
     "rejects a batch containing a foreign %s project without leaking its existence",
     async (boundary) => {
-      const { actor, agentId } = await fixture.entitledNativeChatActor();
+      const { actor } = await fixture.entitledNativeChatActor();
       const own = await createProject(actor, "Own");
       const foreign = fixture.bdd.user(
         boundary === "user" ? { orgId: actor.orgId } : { userId: actor.userId },
@@ -142,7 +139,6 @@ describe("project reference admission through chat send", () => {
       const result = await fixture.chat.requestSendEvent(
         actor,
         {
-          agentId,
           prompt: "Cannot use a foreign project",
           userMessage: {
             version: 1,
@@ -182,13 +178,12 @@ describe("project reference admission through chat send", () => {
   });
 
   it("does not enqueue references for an already aborted application owner", async () => {
-    const { actor, agentId } = await fixture.entitledNativeChatActor();
+    const { actor } = await fixture.entitledNativeChatActor();
     const project = await createProject(actor, "Available");
-    const thread = await fixture.chat.createThread(actor, { agentId });
+    const thread = await fixture.chat.createThread(actor, {});
     const response = await fixture.requestSendEventRaw(
       actor,
       {
-        agentId,
         threadId: thread.id,
         prompt: "Aborted reference send",
         hasTextContent: true,
@@ -206,9 +201,9 @@ describe("project reference admission through chat send", () => {
   });
 
   it("keeps the captured input or rejects admission when a referenced project is deleted concurrently", async () => {
-    const { actor, agentId } = await fixture.entitledNativeChatActor();
+    const { actor } = await fixture.entitledNativeChatActor();
     const project = await createProject(actor, "Deleting");
-    const thread = await fixture.chat.createThread(actor, { agentId });
+    const thread = await fixture.chat.createThread(actor, {});
     const eventId = randomUUID();
     const document: UserMessageInputDocument = {
       version: 1,
@@ -218,7 +213,6 @@ describe("project reference admission through chat send", () => {
       fixture.chat.requestSendEvent(
         actor,
         {
-          agentId,
           threadId: thread.id,
           clientEventId: eventId,
           prompt: "Concurrent deletion",

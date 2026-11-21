@@ -358,7 +358,6 @@ export function createPublicComputerUseScenario(
             return chat.requestSendEvent(
               actor,
               {
-                agentId: setup.agentId,
                 prompt: "Use the selected Desktop",
                 ...(threadId ? { threadId } : {}),
                 clientEventId,

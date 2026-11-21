@@ -23,7 +23,6 @@ async function executionUpload(options: { readonly stage?: boolean } = {}) {
   createRouteMocks(context).clerk.session(actor.userId, actor.orgId);
   const owner = await fixture.entitledNativeChatActor(actor);
   const run = await fixture.sendChatRun(actor, {
-    agentId: owner.agentId,
     prompt: "Publish an uploaded report",
   });
   const { execution, sandboxHeaders } = await fixture.runExecution(run.runId);

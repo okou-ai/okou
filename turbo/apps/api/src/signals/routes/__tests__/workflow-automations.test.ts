@@ -1398,7 +1398,6 @@ describe("okou workflow automations", () => {
       expect(createdUrl.hostname).toBe("api.okou.ai");
 
       const sourceRun = await owned.sendChatRun(actor, {
-        agentId,
         prompt: "read configured webhook credentials",
       });
 

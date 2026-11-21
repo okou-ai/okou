@@ -25,7 +25,7 @@ const {
 describe("chat concurrency capacity prefetch", () => {
   it("keeps the captured subscription limit while live occupancy queues and releases fresh picks", async () => {
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
-    const { actor, agentId, customerId } = await entitledNativeChatActor();
+    const { actor, customerId } = await entitledNativeChatActor();
     if (!actor.orgId) {
       throw new Error("Expected an organization-scoped actor");
     }
@@ -46,7 +46,6 @@ describe("chat concurrency capacity prefetch", () => {
       ],
     });
     const blocker = await sendChatRun(actor, {
-      agentId,
       prompt: "hold the base slot",
     });
     const fileId = randomUUID();
@@ -76,7 +75,6 @@ describe("chat concurrency capacity prefetch", () => {
       return await originalSend(request);
     });
     const sending = sendChatRun(actor, {
-      agentId,
       prompt: "use the captured paid slot",
       userMessage: {
         version: 1,
@@ -106,7 +104,6 @@ describe("chat concurrency capacity prefetch", () => {
     // Both active runs still count, including the one admitted by the snapshot.
     const eventId = randomUUID();
     const waiting = await sendWaitingChatInput(actor, {
-      agentId,
       prompt: "wait for live occupancy to fall below the fresh limit",
       clientEventId: eventId,
     });

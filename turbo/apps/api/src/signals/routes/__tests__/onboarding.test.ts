@@ -296,11 +296,11 @@ describe("member source-first onboarding", () => {
     }
     const existing = bdd.user({ orgId: admin.orgId, orgRole: "org:member" });
     bdd.acceptAgentStorageWrites();
-    const agent = await bdd.createAgent(existing, {
+    await bdd.createAgent(existing, {
       displayName: "Existing member agent",
       visibility: "private",
     });
-    await chat.createThread(existing, { agentId: agent.agentId });
+    await chat.createThread(existing, {});
     const member = {
       userId: existing.userId,
       orgId: admin.orgId,
@@ -333,28 +333,26 @@ describe("member source-first onboarding", () => {
       orgRole: "org:member",
     });
     bdd.acceptAgentStorageWrites();
-    const peerAgent = await bdd.createAgent(peer, {
+    await bdd.createAgent(peer, {
       displayName: "Peer agent",
       visibility: "private",
     });
-    await chat.createThread(peer, { agentId: peerAgent.agentId });
-    const otherOrgAgent = await bdd.createAgent(sameUserElsewhere, {
+    await chat.createThread(peer, {});
+    await bdd.createAgent(sameUserElsewhere, {
       displayName: "Other workspace agent",
       visibility: "private",
     });
-    await chat.createThread(sameUserElsewhere, {
-      agentId: otherOrgAgent.agentId,
-    });
+    await chat.createThread(sameUserElsewhere, {});
     await expect(statusAs(actor)).resolves.toMatchObject({
       needsOnboarding: true,
       isAdmin: false,
     });
 
-    const ownAgent = await bdd.createAgent(member, {
+    await bdd.createAgent(member, {
       displayName: "Member agent",
       visibility: "private",
     });
-    await chat.createThread(member, { agentId: ownAgent.agentId });
+    await chat.createThread(member, {});
     await expect(statusAs(actor)).resolves.toMatchObject({
       needsOnboarding: false,
       isAdmin: false,
