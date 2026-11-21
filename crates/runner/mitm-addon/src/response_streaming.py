@@ -59,6 +59,25 @@ class _ResponseStreamSetup(NamedTuple):
     reject_uninspectable: bool = False
 
 
+def _log_response_inspection_interruption(
+    flow: http.HTTPFlow,
+    message: str,
+    error: str,
+    *,
+    usage_protocol: str | None = None,
+) -> None:
+    log_usage_underbilling(
+        flow_metadata.proxy_log_path(flow.metadata),
+        message,
+        "response_inspection_interrupted",
+        "risk",
+        run_id=flow_metadata.run_id(flow.metadata),
+        firewall_name=flow_metadata.firewall_name(flow.metadata),
+        **({"usage_protocol": usage_protocol} if usage_protocol is not None else {}),
+        parse_error=error,
+    )
+
+
 class _ConnectorResponseFinalizer:
     """Own connector completion and its one-shot interruption opt-in."""
 
@@ -91,14 +110,10 @@ class _ConnectorResponseFinalizer:
 
     def interrupt(self, error: str) -> None:
         self.fail_decode(error)
-        log_usage_underbilling(
-            flow_metadata.proxy_log_path(self._flow.metadata),
+        _log_response_inspection_interruption(
+            self._flow,
             "Deferred connector response inspection was interrupted",
-            "response_inspection_interrupted",
-            "risk",
-            run_id=flow_metadata.run_id(self._flow.metadata),
-            firewall_name=flow_metadata.firewall_name(self._flow.metadata),
-            parse_error=error,
+            error,
         )
 
     def finish(self) -> None:
@@ -312,15 +327,11 @@ def _configure_model_sse_inspection(
         run_usage.observe(flow, usage_dict)
         run_usage.mark(flow, "parse_error")
         run_usage.mark(flow, "interrupted")
-        log_usage_underbilling(
-            flow_metadata.proxy_log_path(flow.metadata),
+        _log_response_inspection_interruption(
+            flow,
             "Deferred model SSE response inspection was interrupted",
-            "response_inspection_interrupted",
-            "risk",
-            run_id=flow_metadata.run_id(flow.metadata),
-            firewall_name=flow_metadata.firewall_name(flow.metadata),
+            error,
             usage_protocol=usage_protocol,
-            parse_error=error,
         )
 
     sse_inspection = response_inspection.CooperativeResponseInspection(
@@ -406,15 +417,11 @@ def _configure_model_json_inspection(
         finished = True
         run_usage.mark(flow, "parse_error")
         run_usage.mark(flow, "interrupted")
-        log_usage_underbilling(
-            flow_metadata.proxy_log_path(flow.metadata),
+        _log_response_inspection_interruption(
+            flow,
             "Deferred model JSON response inspection was interrupted",
-            "response_inspection_interrupted",
-            "risk",
-            run_id=flow_metadata.run_id(flow.metadata),
-            firewall_name=flow_metadata.firewall_name(flow.metadata),
+            error,
             usage_protocol=model_protocol,
-            parse_error=error,
         )
 
     if decode_session is not None:
