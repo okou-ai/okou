@@ -75,11 +75,12 @@ fun ConversationRoute(
     val transcript = state.transcript.takeIf { thread != null }
     val messages = transcript?.withOutput(output, threadId).orEmpty()
     val previews = localMessages.filterNot { it.eventId in transcript?.persistedIds.orEmpty() }
+    val hasContent = transcript != null || previews.isNotEmpty()
+    val firstReadFailed = !hasContent && thread != null && state.phase == HistoryPhase.Failed
     val waitingForHistory =
         historyAvailable &&
             !list.offline &&
-            transcript == null &&
-            previews.isEmpty() &&
+            !hasContent &&
             (thread == null || state.phase == HistoryPhase.Loading)
     val showSkeleton = key(threadId) { rememberChatWaitIndicator(waitingForHistory) }
     val showSync =
@@ -90,6 +91,7 @@ fun ConversationRoute(
             )
         }
     val realtimePhase = realtime?.phase?.collectAsStateWithLifecycle()?.value
+    val reconnect = realtime.takeIf { !list.offline && realtimePhase == RealtimePhase.Unavailable }
     val showRealtimeConnecting =
         key(threadId) {
             rememberChatWaitIndicator(
@@ -153,15 +155,18 @@ fun ConversationRoute(
             ) {
                 if (historyAvailable) {
                     item(key = "conversation_status") {
-                        if (
-                            list.offline &&
-                                transcript == null &&
-                                previews.isEmpty() &&
-                                state.phase != HistoryPhase.Missing
-                        ) {
+                        if (list.offline && !hasContent && state.phase != HistoryPhase.Missing) {
                             ChatContentLoadNotice(
                                 R.string.chat_list_load_when_online,
                                 horizontalPadding = 0.dp,
+                            )
+                            return@item
+                        }
+                        if (firstReadFailed) {
+                            ChatContentLoadNotice(
+                                R.string.chat_list_first_load_failed,
+                                horizontalPadding = 0.dp,
+                                retry = if (reconnect == null) model::refresh else null,
                             )
                             return@item
                         }
@@ -242,35 +247,32 @@ fun ConversationRoute(
             }
             val historyNotice =
                 when {
-                    thread == null || list.offline -> null
+                    thread == null || list.offline || firstReadFailed -> null
                     state.phase == HistoryPhase.Failed -> R.string.history_failed
                     readState == HistoryReadState.Failed -> R.string.history_read_failed
-                    state.cacheUnavailable -> R.string.chat_cache_unavailable
+                    state.cacheUnavailable && hasContent -> R.string.chat_cache_unavailable
                     else -> null
                 }
             when {
-                list.offline && (transcript != null || previews.isNotEmpty()) ->
+                list.offline && hasContent ->
                     Text(
                         stringResource(R.string.chat_list_offline),
                         Modifier.padding(horizontal = messageInset),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodyMedium,
                     )
+                // Reconnecting invalidates the history through the workspace owner too.
+                reconnect != null -> RealtimeNotice(reconnect, RealtimePhase.Unavailable)
                 historyNotice != null ->
-                    Column(Modifier.fillMaxWidth().padding(horizontal = messageInset)) {
-                        Text(stringResource(historyNotice))
-                        if (historyNotice != R.string.chat_cache_unavailable) {
-                            TextButton(onClick = model::refresh, colors = actionColors) {
-                                Text(stringResource(R.string.retry))
-                            }
-                        }
-                    }
-                realtime != null &&
-                    realtimePhase != null &&
-                    !list.offline &&
-                    (realtimePhase == RealtimePhase.Unavailable ||
-                        (showRealtimeConnecting && !showSync)) ->
-                    RealtimeNotice(realtime, realtimePhase)
+                    ChatContentLoadNotice(
+                        historyNotice,
+                        horizontalPadding = messageInset,
+                        retry =
+                            if (historyNotice != R.string.chat_cache_unavailable) model::refresh
+                            else null,
+                    )
+                realtime != null && showRealtimeConnecting && !showSync ->
+                    RealtimeNotice(realtime, RealtimePhase.Connecting)
             }
         }
     }

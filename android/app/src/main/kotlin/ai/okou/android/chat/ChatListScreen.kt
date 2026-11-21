@@ -368,14 +368,15 @@ internal fun ChatListScreen(
                         item { ChatContentLoadNotice(R.string.chat_list_load_when_online) }
                     firstLoadFailure != null ->
                         item {
-                            ChatContentLoadNotice(R.string.chat_list_first_load_failed)
-                            if (firstLoadFailure == ChatListReadFailure.NeedsRetry)
-                                ChatAction(
-                                    R.string.retry,
-                                    if (missingUnread) retryIndicators else retryList,
-                                    enabled =
-                                        missingUnread || state.listPhase != ChatReadPhase.Loading,
-                                )
+                            ChatContentLoadNotice(
+                                R.string.chat_list_first_load_failed,
+                                retry =
+                                    (if (missingUnread) retryIndicators else retryList).takeIf {
+                                        firstLoadFailure == ChatListReadFailure.NeedsRetry
+                                    },
+                                retryEnabled =
+                                    missingUnread || state.listPhase != ChatReadPhase.Loading,
+                            )
                         }
                     skeletonVisible -> item { ChatListSkeleton() }
                 }
@@ -989,22 +990,30 @@ private fun ChatListTextAction(
 }
 
 @Composable
-internal fun ChatContentLoadNotice(@StringRes message: Int, horizontalPadding: Dp = 12.dp) {
-    Box(
-        Modifier.heightIn(min = 48.dp).padding(horizontal = horizontalPadding),
-        contentAlignment = Alignment.CenterStart,
-    ) {
-        Text(
-            stringResource(message),
-            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style =
-                MaterialTheme.typography.bodyMedium.copy(
-                    fontSize = 14.sp,
-                    lineHeight = 20.sp,
-                    letterSpacing = 0.sp,
-                ),
-        )
+internal fun ChatContentLoadNotice(
+    @StringRes message: Int,
+    horizontalPadding: Dp = 12.dp,
+    retry: (() -> Unit)? = null,
+    retryEnabled: Boolean = true,
+) {
+    Column {
+        Box(
+            Modifier.heightIn(min = 48.dp).padding(horizontal = horizontalPadding),
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            Text(
+                stringResource(message),
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style =
+                    MaterialTheme.typography.bodyMedium.copy(
+                        fontSize = 14.sp,
+                        lineHeight = 20.sp,
+                        letterSpacing = 0.sp,
+                    ),
+            )
+        }
+        if (retry != null) ChatAction(R.string.retry, retry, enabled = retryEnabled)
     }
 }
 

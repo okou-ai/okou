@@ -1,6 +1,7 @@
 package ai.okou.android
 
 import ai.okou.android.auth.SessionModel
+import ai.okou.android.chat.ChatChanges
 import ai.okou.android.chat.ChatRowAction
 import android.os.Looper
 import androidx.compose.ui.semantics.SemanticsActions
@@ -208,6 +209,33 @@ class ChatListRootTest {
         compose.onNodeWithTag("conversation").assertExists()
         compose.onNodeWithContentDescription("Back").performClick()
         compose.onNodeWithTag("chat_search_query").assert(hasText(title))
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w400dp-h800dp")
+    fun titleSearchKeepsTheResultAndOffersRetryAfterAnActionableRefreshFailure() {
+        val app = compose.activity.application as ChatListApplication
+        val realtime = app.realtimeService as TestRealtimeService
+        app.responseGate.countDown()
+        awaitListAndNames()
+        compose.onNodeWithContentDescription("Search workspace").performClick()
+        val input = compose.onNodeWithTag("chat_search_query")
+        input.performTextInput("personal")
+        val result = compose.onNodeWithText("Personal chat")
+        val resultBounds = result.getUnclippedBoundsInRoot()
+        val events = app.fixture.events
+        app.fixture.events = { MockResponse().setResponseCode(400) }
+        realtime.invalidate(ChatChanges(list = true))
+
+        val retry = compose.onNodeWithText(app.getString(R.string.retry))
+        compose.waitUntilExactlyOneExists(hasText(app.getString(R.string.retry)), 5_000)
+        retry.assertIsDisplayed().assertIsEnabled()
+        assertEquals(resultBounds, result.getUnclippedBoundsInRoot())
+        input.assertIsFocused().assert(hasText("personal"))
+        app.fixture.events = events
+        retry.performClick()
+        compose.waitUntilDoesNotExist(hasText(app.getString(R.string.retry)), 5_000)
+        assertEquals(resultBounds, result.getUnclippedBoundsInRoot())
     }
 
     @Test

@@ -6,10 +6,10 @@ import ai.okou.android.WorkspaceSearchToolbar
 import ai.okou.android.state.ChatSearchState
 import ai.okou.android.workspaceSearchControlHeight
 import ai.okou.android.workspaceSearchTextStyle
-import androidx.annotation.StringRes
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -26,8 +26,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -41,6 +41,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
@@ -198,10 +199,10 @@ internal fun ChatTitleSearch(
                         item { ChatContentLoadNotice(R.string.chat_list_load_when_online) }
                     failure != null ->
                         item {
-                            SearchNotice(
+                            ChatContentLoadNotice(
                                 R.string.chat_list_first_load_failed,
-                                retryFailedRead,
-                                retryEnabled,
+                                retry = retryFailedRead,
+                                retryEnabled = retryEnabled,
                             )
                         }
                     showSkeleton -> item { ChatListSkeleton() }
@@ -218,65 +219,86 @@ internal fun ChatTitleSearch(
             }
             return@Column
         }
-        LazyColumn(resultsWidth.testTag("chat_search_results"), state = search.position) {
-            item(key = "search_heading") {
-                if (results.isEmpty()) {
-                    SearchNotice(R.string.chat_search_empty)
-                } else {
-                    Text(
-                        stringResource(
-                            if (keyword.isEmpty()) R.string.chat_search_recent
-                            else R.string.chat_list_title
-                        ),
-                        Modifier.padding(horizontal = 12.dp, vertical = 8.dp).semantics {
-                            heading()
-                        },
-                        style = MaterialTheme.typography.titleSmall,
-                    )
-                }
+        val status =
+            when {
+                state.offline -> R.string.chat_list_offline
+                state.sustainedRefreshFailure || retryFailedRead != null ->
+                    R.string.chat_list_refresh_failed
+                else -> null
             }
-            if (results.isNotEmpty()) {
-                items(results, key = { it.id }) { chat ->
-                    val project = projectNames[chat.projectId]
-                    val subtitle =
-                        if (chat.archived) listOfNotNull(project, archived).joinToString(" · ")
-                        else project
-                    Column(
-                        Modifier.fillMaxWidth()
-                            .heightIn(min = ChatListRowHeight)
-                            .clip(ChatListRowShape)
-                            .clickable(role = Role.Button) { onOpen(chat) }
-                            .padding(ChatListRowPadding),
-                        verticalArrangement = Arrangement.Center,
-                    ) {
-                        Text(
-                            chat.searchTitle(untitled),
-                            style = chatListTitleStyle(),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        if (!subtitle.isNullOrEmpty()) {
-                            Text(
-                                subtitle,
-                                color = colors.onSurfaceVariant,
-                                fontSize = 13.sp,
-                                lineHeight = 20.sp,
+        BoxWithConstraints(resultsWidth) {
+            val inlineStatus = maxHeight < with(LocalDensity.current) { chatInlineFeedbackHeight() }
+            val feedback =
+                @Composable {
+                    if (status != null) {
+                        OutlinedCard(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+                            ChatContentLoadNotice(
+                                status,
+                                retry = retryFailedRead,
+                                retryEnabled = retryEnabled,
                             )
                         }
                     }
                 }
-            }
-            when {
-                state.offline ->
-                    item(key = "search_status") { SearchNotice(R.string.chat_list_offline) }
-                state.sustainedRefreshFailure ->
-                    item(key = "search_status") {
-                        SearchNotice(
-                            R.string.chat_list_refresh_failed,
-                            retryFailedRead,
-                            retryEnabled,
-                        )
+            Column(Modifier.fillMaxSize()) {
+                LazyColumn(
+                    Modifier.fillMaxWidth().weight(1f).testTag("chat_search_results"),
+                    state = search.position,
+                ) {
+                    item(key = "search_heading") {
+                        if (results.isEmpty()) {
+                            Text(
+                                stringResource(R.string.chat_search_empty),
+                                Modifier.padding(12.dp),
+                            )
+                        } else {
+                            Text(
+                                stringResource(
+                                    if (keyword.isEmpty()) R.string.chat_search_recent
+                                    else R.string.chat_list_title
+                                ),
+                                Modifier.padding(horizontal = 12.dp, vertical = 8.dp).semantics {
+                                    heading()
+                                },
+                                style = MaterialTheme.typography.titleSmall,
+                            )
+                        }
                     }
+                    if (results.isNotEmpty()) {
+                        items(results, key = { it.id }) { chat ->
+                            val project = projectNames[chat.projectId]
+                            val subtitle =
+                                if (chat.archived)
+                                    listOfNotNull(project, archived).joinToString(" · ")
+                                else project
+                            Column(
+                                Modifier.fillMaxWidth()
+                                    .heightIn(min = ChatListRowHeight)
+                                    .clip(ChatListRowShape)
+                                    .clickable(role = Role.Button) { onOpen(chat) }
+                                    .padding(ChatListRowPadding),
+                                verticalArrangement = Arrangement.Center,
+                            ) {
+                                Text(
+                                    chat.searchTitle(untitled),
+                                    style = chatListTitleStyle(),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                if (!subtitle.isNullOrEmpty()) {
+                                    Text(
+                                        subtitle,
+                                        color = colors.onSurfaceVariant,
+                                        fontSize = 13.sp,
+                                        lineHeight = 20.sp,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    if (inlineStatus && status != null) item(key = "search_status") { feedback() }
+                }
+                if (!inlineStatus) feedback()
             }
         }
     }
@@ -284,18 +306,3 @@ internal fun ChatTitleSearch(
 
 private fun ConfirmedChat.searchTitle(untitled: String): String =
     title?.takeIf(String::isNotBlank) ?: untitled
-
-@Composable
-private fun SearchNotice(
-    @StringRes label: Int,
-    retry: (() -> Unit)? = null,
-    retryEnabled: Boolean = true,
-) {
-    Column(Modifier.padding(12.dp)) {
-        Text(stringResource(label))
-        if (retry != null)
-            TextButton(onClick = retry, enabled = retryEnabled) {
-                Text(stringResource(R.string.retry))
-            }
-    }
-}

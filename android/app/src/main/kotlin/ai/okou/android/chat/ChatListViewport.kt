@@ -40,6 +40,7 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -49,6 +50,8 @@ import kotlinx.coroutines.delay
 internal val ChatListRowHeight = 52.dp
 internal val ChatListRowShape = RoundedCornerShape(8.dp)
 internal val ChatListRowPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+
+internal fun Density.chatInlineFeedbackHeight() = maxOf(216.dp, 16.sp.toDp() * 9)
 
 internal enum class ChatListStatus {
     Offline,
@@ -74,7 +77,7 @@ internal fun ChatListViewport(
 ) {
     SubcomposeLayout(modifier) { bounds ->
         val height = bounds.maxHeight
-        val short = height < maxOf(216.dp, 16.sp.toDp() * 9).roundToPx()
+        val short = height < chatInlineFeedbackHeight().roundToPx()
         val edge = 16.dp.roundToPx()
         val gap = 8.dp.roundToPx()
         val loose = bounds.copy(minWidth = 0, minHeight = 0)

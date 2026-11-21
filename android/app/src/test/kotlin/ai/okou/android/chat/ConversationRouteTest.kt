@@ -8,6 +8,7 @@ import ai.okou.android.OkouTheme
 import ai.okou.android.R
 import ai.okou.android.RecoveryApiFixture
 import ai.okou.android.TestOkouApplication
+import ai.okou.android.TestRealtimeService
 import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.generated.ChatArchive
 import ai.okou.android.api.generated.HistorySnapshot
@@ -18,7 +19,9 @@ import androidx.activity.ComponentActivity
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -100,29 +103,7 @@ class ConversationRouteTest {
     @Test
     fun visibleVisitsTrackSelectionLifecycleAndReadRecovery() {
         val visible = mutableStateOf(true)
-        val model =
-            compose.runOnIdle {
-                val storage = ChatCacheStore(compose.activity.application, temporary.newFolder())
-                cache = storage
-                ViewModelProvider(
-                        owners,
-                        viewModelFactory {
-                            initializer {
-                                ChatListModel(
-                                    fixture.service,
-                                    storage,
-                                    fixture.identity,
-                                    { true },
-                                    {},
-                                )
-                            }
-                        },
-                    )[ChatListModel::class.java]
-                    .also {
-                        ownerJob = it.viewModelScope.coroutineContext[Job]
-                        it.refresh()
-                    }
-            }
+        val model = createListModel()
         compose.setContent {
             val list by model.uiState.collectAsStateWithLifecycle()
             OkouTheme {
@@ -196,6 +177,82 @@ class ConversationRouteTest {
         }
         assertEquals(6, fixture.readRequests.get())
     }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w400dp-h800dp")
+    fun conversationRecoversAnInitialHistoryFailureAndKeepsRealtimeRetryReachable() {
+        val realtime = TestRealtimeService()
+        val model = createListModel(realtime)
+        val historyRows = fixture.historyRows
+        val markRead = fixture.historyMarkRead
+        fixture.historyRows = { MockResponse().setResponseCode(503) }
+        fixture.historyCatchUp = { MockResponse().setResponseCode(503) }
+        compose.runOnIdle { model.updates.foreground(true) }
+        compose.setContent {
+            val list by model.uiState.collectAsStateWithLifecycle()
+            OkouTheme {
+                ConversationRoute(model.history, CHAT_IN_PROJECT, list, realtime = model.updates)
+            }
+        }
+        compose.waitUntil(10_000) {
+            compose.runOnIdle {
+                model.uiState.value.listPhase == ChatReadPhase.Ready &&
+                    model.updates.phase.value == RealtimePhase.Connected
+            }
+        }
+        compose.runOnIdle {
+            model.history.open(model.uiState.value.threads.single { it.id == CHAT_IN_PROJECT })
+        }
+        val initialFailure = compose.activity.getString(R.string.chat_list_first_load_failed)
+        val retryLabel = compose.activity.getString(R.string.retry)
+        compose.waitUntilExactlyOneExists(
+            hasText(initialFailure) and hasAnyAncestor(hasTestTag("conversation")),
+            5_000,
+        )
+        fixture.historyRows = historyRows
+        fixture.historyMarkRead = { MockResponse().setResponseCode(503) }
+        compose.onNodeWithText(retryLabel).performClick()
+        val readFailure = compose.activity.getString(R.string.history_read_failed)
+        compose.waitUntilExactlyOneExists(hasText(readFailure), 5_000)
+        compose.onNodeWithText("Hello history").assertExists()
+
+        realtime.snapshot.value = RealtimeSnapshot(RealtimePhase.Unavailable)
+        val realtimeFailure = compose.activity.getString(R.string.realtime_unavailable)
+        compose.waitUntilExactlyOneExists(hasText(realtimeFailure), 5_000)
+        val opened = realtime.opened.get()
+        fixture.historyMarkRead = markRead
+        compose.onNodeWithText(retryLabel).performClick()
+        compose.waitUntil(5_000) { realtime.opened.get() > opened }
+        realtime.snapshot.value = RealtimeSnapshot(RealtimePhase.Connected)
+        compose.waitUntilDoesNotExist(hasText(realtimeFailure), 5_000)
+        compose.waitUntilDoesNotExist(hasText(readFailure), 5_000)
+        compose.onNodeWithText("Hello history").assertExists()
+    }
+
+    private fun createListModel(realtime: RealtimeService? = null): ChatListModel =
+        compose.runOnIdle {
+            val storage = ChatCacheStore(compose.activity.application, temporary.newFolder())
+            cache = storage
+            ViewModelProvider(
+                    owners,
+                    viewModelFactory {
+                        initializer {
+                            ChatListModel(
+                                fixture.service,
+                                storage,
+                                fixture.identity,
+                                { true },
+                                {},
+                                realtime = realtime,
+                            )
+                        }
+                    },
+                )[ChatListModel::class.java]
+                .also {
+                    ownerJob = it.viewModelScope.coroutineContext[Job]
+                    it.refresh()
+                }
+        }
 
     @Test
     fun anEffectCannotAcknowledgeContentThatArrivedAfterItsComposition() {
