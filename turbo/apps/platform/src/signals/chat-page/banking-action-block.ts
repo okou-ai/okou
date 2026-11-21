@@ -280,7 +280,7 @@ function createBankingUiSignals(): Pick<
   return { uiState$, updateUiState$ };
 }
 
-function createBankingSignals(
+export function createBankingSignals(
   descriptor: BankingActionDescriptor,
 ): BankingSignals {
   const statusSignals = createBankingStatusSignals(descriptor);

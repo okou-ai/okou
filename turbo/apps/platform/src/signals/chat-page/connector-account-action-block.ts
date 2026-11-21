@@ -13,7 +13,7 @@ import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-id
 
 import { runConnectorAccountsContract } from "@okouai/api-contracts/client/run-connector-accounts";
 
-import { command, computed, type Command, type Computed } from "ccstate";
+import { command, computed, state, type Command, type Computed } from "ccstate";
 
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
@@ -179,7 +179,7 @@ function customActionConnector(
 function createConnectorAccountConfirmSignal(
   descriptor: ConnectorAccountActionDescriptor,
   status$: ConnectorAccountActionSignals["status$"],
-  connector: ComposerConnectorSignals,
+  reload$: Command<void, []>,
 ): ConnectorAccountActionSignals["confirm$"] {
   return command(async ({ get, set }, signal: AbortSignal): Promise<void> => {
     const status = await get(status$);
@@ -202,7 +202,7 @@ function createConnectorAccountConfirmSignal(
       [200],
       signal,
     );
-    set(connector.chatAccess.reload$);
+    set(reload$);
     await set(
       runChatActionCallback$,
       {
@@ -215,19 +215,31 @@ function createConnectorAccountConfirmSignal(
   });
 }
 
-function createConnectorAccountActionSignals(
+export function createConnectorAccountActionSignals(
   descriptor: ConnectorAccountActionDescriptor,
-  connector: ComposerConnectorSignals,
+  connector?: ComposerConnectorSignals,
 ): ConnectorAccountActionSignals {
   const target = descriptor.selection.target;
   const connector$ =
     target.kind === "builtin"
       ? builtinActionConnector(target.connectorSlug)
       : customActionConnector(target.customConnectorId);
-  const accessRevision$ = connector.chatAccess.targetRevision(target);
+  const revision$ = state(0);
+  const accessRevision$ = connector?.chatAccess.targetRevision(target);
+  const reload$ =
+    connector?.chatAccess.reload$ ??
+    command(({ set }) => {
+      set(revision$, (revision) => {
+        return revision + 1;
+      });
+    });
   const status$ = computed(
     async (get): Promise<ConnectorAccountActionStatus> => {
-      get(accessRevision$);
+      if (accessRevision$) {
+        get(accessRevision$);
+      } else {
+        get(revision$);
+      }
       const client = get(apiClient$);
       const [account, access] = await Promise.all([
         accept(
@@ -260,11 +272,7 @@ function createConnectorAccountActionSignals(
     ...descriptor,
     status$,
     connector$,
-    confirm$: createConnectorAccountConfirmSignal(
-      descriptor,
-      status$,
-      connector,
-    ),
+    confirm$: createConnectorAccountConfirmSignal(descriptor, status$, reload$),
   };
 }
 
