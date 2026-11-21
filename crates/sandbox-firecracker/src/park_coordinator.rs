@@ -104,15 +104,7 @@ impl ParkCoordinator {
         guest_control_client::ExternalOperationReservation,
         CancellationToken,
     )> {
-        let inner = self.inner();
-        if inner.state != CoordinatorState::Open
-            || inner.active_run_id.as_deref() != Some(expected_run_id)
-        {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::NotConnected,
-                "guest assignment unavailable",
-            ));
-        }
+        let inner = self.lock_open_guest_assignment(expected_run_id)?;
         Ok((
             guest.reserve_external_operation()?,
             inner.assignment_cancel.child_token(),
@@ -123,6 +115,14 @@ impl ParkCoordinator {
         &self,
         expected_run_id: &str,
     ) -> std::io::Result<CancellationToken> {
+        let inner = self.lock_open_guest_assignment(expected_run_id)?;
+        Ok(inner.assignment_cancel.child_token())
+    }
+
+    fn lock_open_guest_assignment(
+        &self,
+        expected_run_id: &str,
+    ) -> std::io::Result<MutexGuard<'_, Inner>> {
         let inner = self.inner();
         if inner.state != CoordinatorState::Open
             || inner.active_run_id.as_deref() != Some(expected_run_id)
@@ -132,7 +132,7 @@ impl ParkCoordinator {
                 "guest assignment unavailable",
             ));
         }
-        Ok(inner.assignment_cancel.child_token())
+        Ok(inner)
     }
 
     pub(crate) fn begin_prepare_park(&self) -> Result<ParkAttempt, PrepareParkError> {
