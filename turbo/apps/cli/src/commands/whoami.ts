@@ -93,7 +93,7 @@ function printConnectorPermissions(info: ConnectorPermissionInfo): void {
 }
 
 /**
- * Workspace identity is supplementary: whoami must still print the agent
+ * Workspace identity is supplementary: whoami must still print the Run
  * identity, capabilities, and connectors when the org lookup fails or 404s.
  */
 async function printWorkspace(): Promise<void> {

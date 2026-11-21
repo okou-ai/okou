@@ -14,7 +14,6 @@ beforeEach(() => {
   vi.stubEnv("OKOU_API_BACKEND_URL", undefined);
   vi.stubEnv("OKOU_APP_URL", undefined);
   vi.stubEnv("OKOU_TOKEN", "");
-  vi.stubEnv("OKOU_AGENT_ID", "");
   vi.stubEnv("OKOU_CHAT_THREAD_ID", "");
   vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", undefined);
   vi.stubEnv("VERCEL_AUTOMATION_BYPASS_SECRET", undefined);

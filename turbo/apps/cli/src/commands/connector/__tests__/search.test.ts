@@ -96,7 +96,6 @@ describe("okou connector search command", () => {
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_TOKEN", "test-token");
     vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", undefined);
-    vi.stubEnv("OKOU_AGENT_ID", undefined);
     searchCommand.setOptionValue("limit", undefined);
     searchCommand.setOptionValue("callbackPrompt", undefined);
     searchCommand.setOptionValue("json", false);
@@ -354,7 +353,7 @@ describe("okou connector search command", () => {
     });
   });
 
-  describe("without agent context", () => {
+  describe("without Run context", () => {
     it("returns github first for an exact slug match", async () => {
       await searchCommand.parseAsync(["node", "cli", "github"]);
 
