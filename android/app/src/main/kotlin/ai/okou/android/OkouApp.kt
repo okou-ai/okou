@@ -111,6 +111,7 @@ internal fun OkouApp(
     updateToolbarAction: UpdateToolbarAction? = null,
     onUpdateEditingChanged: (Boolean) -> Unit = {},
     startupRecovery: @Composable (() -> Unit)? = null,
+    workspaceReady: Boolean = composer != null,
 ) {
     val list =
         chats?.uiState?.collectAsStateWithLifecycle()?.value
@@ -119,16 +120,26 @@ internal fun OkouApp(
                     if (startupRecovery == null) ChatReadPhase.Loading else ChatReadPhase.Idle
             )
     var navigation by rememberWorkspaceNavigation()
-    val settings = navigation.settings.takeIf { composer != null }
+    val composerInput = composer?.uiState?.collectAsStateWithLifecycle()
+    val settings = navigation.settings.takeIf { workspaceReady }
+    val requestedTarget = navigation.target
+    val restoringFirstSend =
+        !workspaceReady &&
+            requestedTarget is WorkspaceTarget.NewChat &&
+            composerInput
+                ?.value
+                ?.entry(ComposerTarget(projectId = requestedTarget.projectId))
+                ?.let { it.pending != null || it.createdThreadId != null } == true
     // Let protected destinations wait for preparation without blocking authorized chat navigation.
     val target =
         if (
             chats == null ||
-                (composer == null &&
-                    (navigation.settings != null || navigation.target is WorkspaceTarget.NewChat))
+                (!workspaceReady &&
+                    (navigation.settings != null ||
+                        requestedTarget is WorkspaceTarget.NewChat && !restoringFirstSend))
         )
             WorkspaceTarget.List
-        else navigation.target
+        else requestedTarget
     // Window configuration changes on resize. IME insets only change the space inside the panes.
     val window = currentWindowSizeDp()
     val listWidth = workspaceListPaneWidth(window.width, window.height)
@@ -299,7 +310,7 @@ internal fun OkouApp(
     }
 
     fun startNewChat(projectId: String?) {
-        val activeComposer = composer ?: return
+        val activeComposer = composer?.takeIf { workspaceReady } ?: return
         activeComposer.beginNew(projectId)
         conversations.open(ComposerTarget(projectId = projectId).key)
         val search =
@@ -308,7 +319,6 @@ internal fun OkouApp(
         navigation = navigation.copy(target = WorkspaceTarget.NewChat(projectId), search = search)
     }
 
-    val composerInput = composer?.uiState?.collectAsStateWithLifecycle()
     val pendingChats by
         remember(composerInput) {
             derivedStateOf(structuralEqualityPolicy()) {
@@ -467,10 +477,10 @@ internal fun OkouApp(
                     list = list,
                     selectFilter = chats::selectFilter,
                     markAllRead = chats::markAllRead,
-                    update = updateToolbarAction.takeIf { showList && composer != null },
+                    update = updateToolbarAction.takeIf { showList && workspaceReady },
                     settingsFocus = settingsFocus,
                     openSettings =
-                        if (composer == null) null
+                        if (!workspaceReady) null
                         else
                             { restore ->
                                 restoreSettingsFocus = restore
@@ -613,7 +623,7 @@ internal fun OkouApp(
                                             (target as? WorkspaceTarget.Chat)?.id ?: provisionalId
                                         else null,
                                     wide = listWidth != null,
-                                    newChatEnabled = composer != null,
+                                    newChatEnabled = workspaceReady,
                                     startupRecovery = startupRecovery,
                                     feedback = {
                                         WorkspaceFeedbackHost(
@@ -654,11 +664,11 @@ internal fun OkouApp(
                                 HorizontalDivider(color = MaterialTheme.colorScheme.outline)
                             }
                             Column(Modifier.widthIn(max = 768.dp).fillMaxWidth().weight(1f)) {
-                                if (target != WorkspaceTarget.List && composer != null)
+                                if (target != WorkspaceTarget.List && workspaceReady)
                                     RealtimeNotice(chats.updates)
                                 when (target) {
                                     WorkspaceTarget.List -> {
-                                        if (composer != null) {
+                                        if (workspaceReady) {
                                             Box(
                                                 Modifier.fillMaxSize()
                                                     .testTag("workspace_new_chat"),

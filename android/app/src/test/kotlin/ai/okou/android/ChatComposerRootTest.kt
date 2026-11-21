@@ -1,6 +1,12 @@
 package ai.okou.android
 
+import ai.okou.android.api.ApiFailure
+import ai.okou.android.api.WorkspaceTokenProvider
+import ai.okou.android.api.generated.UserPreferences
+import ai.okou.android.auth.OpeningWorkspace
 import ai.okou.android.auth.SessionModel
+import ai.okou.android.auth.WorkspaceIdentity
+import ai.okou.android.auth.WorkspaceSession
 import ai.okou.android.chat.ChatReadPhase
 import ai.okou.android.chat.ComposerJournalStore
 import ai.okou.android.chat.ComposerPersistence
@@ -34,6 +40,7 @@ import androidx.test.core.app.ActivityScenario
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.runBlocking
 import okhttp3.mockwebserver.MockResponse
@@ -54,6 +61,7 @@ class ComposerRootApplication : TestOkouApplication() {
     lateinit var cacheSnapshot: ChatCacheSnapshot
     val contextGate = CountDownLatch(1)
     val sendGate = CountDownLatch(1)
+    var preferencesResponse = CompletableDeferred(Unit)
     val journalDirectory by lazy { noBackupFilesDir.resolve("composer-root-${UUID.randomUUID()}") }
 
     override fun onCreate() {
@@ -65,6 +73,19 @@ class ComposerRootApplication : TestOkouApplication() {
         journalStore = ComposerJournalStore(this, journalDirectory)
         cacheSnapshot = ChatCacheSnapshot(noBackupFilesDir.resolve("chat-list"), chatCache)
         super.onCreate()
+    }
+
+    override fun createWorkspaceSession(
+        identity: WorkspaceIdentity,
+        tokens: WorkspaceTokenProvider,
+    ): WorkspaceSession {
+        val service = super.createWorkspaceSession(identity, tokens)
+        return object : WorkspaceSession by service {
+            override suspend fun preferences(): UserPreferences {
+                preferencesResponse.await()
+                return service.preferences()
+            }
+        }
     }
 }
 
@@ -98,13 +119,13 @@ class ChatComposerRootTest {
 
     private fun captureOwners(activity: MainActivity = compose.activity) {
         compose.runOnIdle {
-            val ready =
-                checkNotNull(
-                    ViewModelProvider(activity)[SessionModel::class.java].uiState.value.ready
-                )
-            editorJob = ready.composer.viewModelScope.coroutineContext[Job]
-            editor = ready.composer
-            listJob = ready.chats.viewModelScope.coroutineContext[Job]
+            val state = ViewModelProvider(activity)[SessionModel::class.java].uiState.value
+            val opened = state.opening as? OpeningWorkspace.Authorized
+            val composer = checkNotNull(state.ready?.composer ?: opened?.composer)
+            val chats = checkNotNull(state.ready?.chats ?: opened?.chats)
+            editorJob = composer.viewModelScope.coroutineContext[Job]
+            editor = composer
+            listJob = chats.viewModelScope.coroutineContext[Job]
         }
     }
 
@@ -318,7 +339,7 @@ class ChatComposerRootTest {
     }
 
     @Test
-    fun pendingFirstSendRestoresFromStorageInTheInbox() {
+    fun pendingFirstSendRestoresAndCanRetryWhileWorkspacePreferencesAreUnavailable() {
         val app = compose.activity.application as ComposerRootApplication
         cleanupApplication = app
         val create = CountDownLatch(1)
@@ -343,15 +364,25 @@ class ChatComposerRootTest {
             create.countDown()
             runBlocking { checkNotNull(app.journalStore).close() }
             app.journalStore = ComposerJournalStore(app, app.journalDirectory)
+            app.preferencesResponse = CompletableDeferred()
             val fresh = ActivityScenario.launch<MainActivity>(Intent(app, MainActivity::class.java))
             replacement = fresh
             val row = "chat_${pending.threadId}"
-            compose.waitUntil(10_000) {
-                compose.onAllNodesWithTag(row).fetchSemanticsNodes().size == 1
-            }
+            awaitConversation { compose.onAllNodesWithTag(row).fetchSemanticsNodes().size == 1 }
             var activity: MainActivity? = null
             fresh.onActivity { activity = it }
             captureOwners(checkNotNull(activity))
+            compose.onNodeWithTag(row).assertIsDisplayed()
+            compose.onNodeWithContentDescription("Settings").assertDoesNotExist()
+            compose.runOnIdle {
+                app.preferencesResponse.completeExceptionally(
+                    ApiFailure.Http(503, null, null, null)
+                )
+            }
+            val unavailable = "Could not load your session or workspace. Please try again."
+            awaitConversation {
+                compose.onAllNodesWithText(unavailable).fetchSemanticsNodes().isNotEmpty()
+            }
             compose.onNodeWithTag(row).assertIsDisplayed().performClick()
             messageText(pending.eventId, prompt).assertIsDisplayed()
             compose.onNodeWithText("Check delivery").assertExists()
@@ -362,9 +393,27 @@ class ChatComposerRootTest {
                     it.method == "POST" && it.requestUrl?.encodedPath == "/api/chat-threads"
                 },
             )
+            val retry = "Retry this same message"
+            awaitConversation { editor?.uiState?.value?.busy?.isEmpty() == true }
+            app.sendGate.countDown()
+            compose.onNodeWithText(retry).assertIsEnabled().performClick()
+            awaitConversation { app.fixture.inputs.containsKey(pending.eventId) }
+            assertEquals(1, app.fixture.created.size)
+            assertEquals(setOf(pending.eventId), app.fixture.inputs.keys)
+
+            list.countDown()
+            awaitConversation {
+                compose.onAllNodesWithText("New conversation").fetchSemanticsNodes().isNotEmpty() &&
+                    editor?.uiState?.value?.entry(ComposerTarget())?.createdThreadId == null
+            }
+            messageText(pending.eventId, prompt).assertIsDisplayed()
+            compose.onNodeWithContentDescription("Back").performClick()
+            compose.onNodeWithTag(row).assertIsDisplayed()
+            compose.onNodeWithContentDescription("Settings").assertDoesNotExist()
         } finally {
             create.countDown()
             list.countDown()
+            app.preferencesResponse.complete(Unit)
         }
     }
 

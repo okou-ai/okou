@@ -244,10 +244,12 @@ class SessionModelTest {
             assertEquals(SessionStage.LoadingWorkspace, model.uiState.value.stage)
             assertEquals(cached, model.uiState.value.cachedAppearance)
             assertNull(model.uiState.value.ready)
+            val opened = model.uiState.value.opening as OpeningWorkspace.Authorized
 
             preferences.complete(Unit)
             runCurrent()
             val ready = requireNotNull(model.uiState.value.ready)
+            assertSame(opened.composer, ready.composer)
             assertEquals(confirmed.theme, ready.preferences.uiState.value.theme)
             assertEquals(confirmed.colorTheme, ready.preferences.uiState.value.colorTheme)
             assertEquals(confirmed, disk.load(ready.identity))
