@@ -70,7 +70,6 @@ import {
 import { countBucket } from "./dispatch-count-bucket";
 import type { RunConnectorScope } from "./execution-connector-selection";
 import type { ConnectorSourceSnapshot } from "./execution-connector-sources.service";
-import type { createThreadConnectorSources } from "./thread-connector-sources.service";
 import type { PickedThreadInputEvent } from "./thread-run-prompt/types";
 
 const log = logger("api:thread-connected-accounts");
@@ -118,13 +117,11 @@ export function createConnectedAccountsSignals(
   execution: AgentRunContextSignals,
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
   dispatchTiming$: DispatchTiming$,
-  threadSources$: ReturnType<typeof createThreadConnectorSources>,
 ): ConnectedAccounts {
   const inputs = createConnectorInputSignals(
     pickedEvent$,
     execution,
     dispatchTiming$,
-    threadSources$,
   );
   const accounts = createThreadAccountSignals(inputs);
   const connectors$ = computed(async (get) => {
@@ -220,13 +217,15 @@ function createConnectorMaterialization(
 type ConnectorInputSignals = ReturnType<typeof createConnectorInputSignals>;
 
 function createChatAccountInputSignals(
-  execution: Pick<AgentRunContextSignals, "connectors$">,
-  threadSources$: ReturnType<typeof createThreadConnectorSources>,
+  execution: Pick<
+    AgentRunContextSignals,
+    "connectors$" | "threadConnectorSources$"
+  >,
 ) {
   const effectiveAccounts$ = computed(async (get) => {
     const [snapshot, threadSources] = await joinAll([
       get(execution.connectors$),
-      get(threadSources$),
+      get(execution.threadConnectorSources$),
     ]);
     const accounts = snapshot.connectorAccounts;
     const enabledById = new Map(
@@ -254,12 +253,11 @@ function createConnectorInputSignals(
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
   execution: AgentRunContextSignals,
   dispatchTiming$: DispatchTiming$,
-  threadSources$: ReturnType<typeof createThreadConnectorSources>,
 ) {
   const connectorInput$ = computed(async (get) => {
     const [event, sources] = await Promise.all([
       get(pickedEvent$),
-      get(threadSources$),
+      get(execution.threadConnectorSources$),
     ]);
     if (!event) {
       throw new Error("Connected accounts require a picked event");
@@ -272,10 +270,7 @@ function createConnectorInputSignals(
       timing: get(dispatchTiming$),
     };
   });
-  const effectiveAccounts$ = createChatAccountInputSignals(
-    execution,
-    threadSources$,
-  );
+  const effectiveAccounts$ = createChatAccountInputSignals(execution);
   const connectorScope$ = computed(async (get): Promise<RunConnectorScope> => {
     const { scope } = await get(execution.memberConnectorSelection$);
     const accounts = await get(effectiveAccounts$);
@@ -338,16 +333,9 @@ function createConnectorInputSignals(
   const ownedThread$ = computed(async (get) => {
     const [event, sources] = await Promise.all([
       get(pickedEvent$),
-      get(threadSources$),
+      get(execution.threadConnectorSources$),
     ]);
-    const identity = sources?.identity;
-    return Boolean(
-      event &&
-      identity &&
-      identity.chatThreadId === event.chatThreadId &&
-      identity.userId === execution.userId &&
-      identity.orgId === execution.orgId,
-    );
+    return event !== null && sources !== null;
   });
   return {
     connectorInput$,

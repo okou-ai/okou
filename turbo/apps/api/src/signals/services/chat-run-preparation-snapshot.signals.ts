@@ -3,8 +3,13 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatNetworkBodyCaptures } from "@okouai/db/schema/chat-network-body-capture";
+import {
+  memberMemories,
+  memoryVersions,
+} from "@okouai/db/schema/member-memory";
+import { systemStoragePresignedUrlCache } from "@okouai/db/runtime/system-storage-presigned-url-cache";
 import { computed } from "ccstate";
-import { and, asc, count, eq, exists, lt, sql } from "drizzle-orm";
+import { and, asc, count, eq, exists, isNotNull, lt, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 
 import {
@@ -23,6 +28,12 @@ import {
   type EnqueuedChatInputFacts,
 } from "./chat-run-preparation-facts";
 import { officialWorkflowThreadCondition } from "./official-workflow-policy.service";
+import {
+  memberMemoryArchiveCondition,
+  memberMemoryHeadFields,
+  memberMemoryOwnerCondition,
+  memberMemoryRevisionCondition,
+} from "./member-memory-head.service";
 import type { PickedThreadInputEvent } from "./thread-run-prompt/types";
 
 function buildPreparationTables(
@@ -95,7 +106,7 @@ function buildPreparationTables(
   return { occupancy, head };
 }
 
-/** Capture availability, the FIFO head, and its Thread binding together. */
+/** Capture availability, the FIFO head, the native binding, and the Memory HEAD together. */
 export function createChatRunPreparationSnapshot(
   claim: { readonly orgId: string; readonly chatThreadId: string },
   bootstrap: AgentRunContextSignals,
@@ -137,6 +148,9 @@ export function createChatRunPreparationSnapshot(
             .from(activeAgentRuns)
             .where(eq(activeAgentRuns.chatThreadId, claim.chatThreadId)),
         ).mapWith(pgBooleanDecoder),
+        memory: memberMemoryHeadFields.memory,
+        revision: memberMemoryHeadFields.revision,
+        archiveCache: memberMemoryHeadFields.archiveCache,
         thread: pickedThreadColumns,
         head: {
           id: head.id,
@@ -175,7 +189,17 @@ export function createChatRunPreparationSnapshot(
           eq(chatThreads.userId, bootstrap.userId),
           eq(chatThreads.orgId, bootstrap.orgId),
         ),
-      );
+      )
+      .leftJoin(
+        memberMemories,
+        and(
+          isNotNull(chatThreads.id),
+          hasCapacity,
+          memberMemoryOwnerCondition(bootstrap),
+        ),
+      )
+      .leftJoin(memoryVersions, memberMemoryRevisionCondition)
+      .leftJoin(systemStoragePresignedUrlCache, memberMemoryArchiveCondition());
     if (!row) {
       throw new Error("Chat preparation occupancy returned no row");
     }
@@ -185,6 +209,7 @@ export function createChatRunPreparationSnapshot(
         hasCapacity: row.hasCapacity,
         threadHasActiveRun: row.threadHasActiveRun,
         pickedEvent: null,
+        memoryHead: undefined,
       };
     }
     // Only this request's actual FIFO head may use its canonical input facts.
@@ -208,6 +233,11 @@ export function createChatRunPreparationSnapshot(
       hasCapacity: row.hasCapacity,
       threadHasActiveRun: row.threadHasActiveRun,
       pickedEvent,
+      memoryHead: {
+        memory: row.memory,
+        revision: row.revision,
+        archiveCache: row.archiveCache,
+      },
     };
   });
 }

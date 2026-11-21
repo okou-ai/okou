@@ -266,7 +266,10 @@ import {
 import type { AutomationRow } from "./workflow-automation-enqueue.service";
 import { workflowAutomationTriggerSource } from "./workflow-automation-trigger-source";
 import { recordWorkflowAdmissionDuration } from "./workflow-queue-admission-timing.service";
-import { createMemberMemoryHead } from "./member-memory-head.service";
+import {
+  createMemberMemoryHead,
+  decodeMemberMemoryHead,
+} from "./member-memory-head.service";
 import {
   buildMemberMemoryMount,
   type AcceptedMemoryMount,
@@ -814,7 +817,6 @@ interface RejectedQueueHead {
 
 /** The Thread child's public surface: input readiness and run start. */
 export interface ThreadClaimRunObjects {
-  readonly threadResources$: Computed<Promise<void>>;
   /** Entry-owned early reads; consumers retain their individual dependencies. */
   readonly inputResources$: Computed<Promise<void>>;
   readonly threadHasActiveRun$: Computed<Promise<boolean>>;
@@ -958,13 +960,6 @@ export function createThreadClaimRunObjects(
     pickedEvent$,
     chatThreadId,
   );
-  const threadResources$ = computed(async (get) => {
-    // Request feature/member facts are already warm. Cold background picks
-    // retain demand loading rather than expanding optional sources on rejection.
-    if (requestInput) {
-      await get(threadContext.threadConnectorSources$);
-    }
-  });
   const okouTokenInput$ = createOkouTokenInputSignals(
     bootstrap,
     pickedEvent$,
@@ -2107,22 +2102,18 @@ export function createThreadClaimRunObjects(
     ]);
     return ready && validSource;
   });
-  // Join the early Memory read once source admission allows the Run plan.
+  // The pick captured Memory alongside the predecessor session binding.
   const preparedMemory$ = computed(async (get) => {
     if (!(await get(resourceAllowed$))) {
       return null;
     }
-    const [plan, memory] = await Promise.all([
-      get(runPlan$),
-      settle(get(bootstrap.memory$)),
-    ]);
+    const plan = await get(runPlan$);
     if (!plan || isRouteError(plan)) {
       return plan;
     }
-    if (!memory.ok) {
-      throw memory.error;
-    }
-    return { head: memory.value };
+    return {
+      head: decodeMemberMemoryHead((await get(preparation$)).memoryHead),
+    };
   });
   const runnerPackages$ = computed(async (get) => {
     const [route, officialWorkflow, automation] = await Promise.all([
@@ -2881,7 +2872,6 @@ export function createThreadClaimRunObjects(
   );
   return {
     threadHasActiveRun$,
-    threadResources$,
     inputResources$,
     hasFirstPickableChatEvent$,
     orgHasCapacity$,

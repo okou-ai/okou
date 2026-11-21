@@ -1,12 +1,10 @@
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { chatThreadConnectorAccessOverrides } from "@okouai/db/schema/chat-thread-connector-access";
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
-import { computed, type Computed } from "ccstate";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
-import { array, unknown as zUnknown } from "zod";
+import { array, object, unknown as zUnknown } from "zod";
 import { zodDriverValueDecoder } from "../../lib/db-structured-result";
-import { db$ } from "../external/db";
 import {
   contextJsonProjection,
   contextJsonRows,
@@ -29,63 +27,61 @@ const accessColumns = Object.freeze({
   enabled: chatThreadConnectorAccessOverrides.enabled,
 });
 
-/** First coherent Thread preferences; no picked input or feature wait is needed. */
-export function createThreadConnectorSources(
-  identity$: Computed<Promise<ThreadConnectorIdentity | null>>,
+const threadSourcesDecoder = zodDriverValueDecoder(
+  object({
+    selections: array(contextProjectionSchema(selectionColumns)),
+    accessOverrides: array(contextProjectionSchema(accessColumns)),
+  }).nullable(),
+);
+
+export function threadConnectorSourcesColumn(
+  identity: ThreadConnectorIdentity,
+  newThread: boolean,
 ) {
-  return computed(async (get) => {
-    const identity = await get(identity$);
-    if (!identity) {
-      return null;
-    }
-    const builder = new QueryBuilder();
-    const selections = builder
-      .select({
-        payload: contextJsonProjection(selectionColumns)
-          .mapWith(zodDriverValueDecoder(zUnknown()))
-          .as("payload"),
-      })
-      .from(chatThreadConnectorSelections)
-      .where(
-        eq(chatThreadConnectorSelections.chatThreadId, identity.chatThreadId),
-      )
-      .orderBy(
-        asc(chatThreadConnectorSelections.connectorSlug),
-        asc(chatThreadConnectorSelections.customConnectorId),
-      );
-    const access = builder
-      .select({
-        payload: contextJsonProjection(accessColumns)
-          .mapWith(zodDriverValueDecoder(zUnknown()))
-          .as("payload"),
-      })
-      .from(chatThreadConnectorAccessOverrides)
-      .where(
-        eq(
-          chatThreadConnectorAccessOverrides.chatThreadId,
-          identity.chatThreadId,
-        ),
-      );
-    const [row] = await get(db$)
-      .select({
-        selections: contextJsonRows(selections).mapWith(
-          zodDriverValueDecoder(
-            array(contextProjectionSchema(selectionColumns)),
-          ),
-        ),
-        accessOverrides: contextJsonRows(access).mapWith(
-          zodDriverValueDecoder(array(contextProjectionSchema(accessColumns))),
-        ),
-      })
-      .from(chatThreads)
-      .where(
-        and(
-          eq(chatThreads.id, identity.chatThreadId),
-          eq(chatThreads.userId, identity.userId),
-          eq(chatThreads.orgId, identity.orgId),
-        ),
-      )
-      .limit(1);
-    return row ? { identity, ...row } : null;
-  });
+  if (newThread) {
+    // First-message publication must create the Thread to use this context.
+    // That insert starts with no saved selections or access overrides.
+    return sql`'{"selections":[],"accessOverrides":[]}'::jsonb`.mapWith(
+      threadSourcesDecoder,
+    );
+  }
+  const { chatThreadId } = identity;
+  const builder = new QueryBuilder();
+  const selections = builder
+    .select({
+      payload: contextJsonProjection(selectionColumns)
+        .mapWith(zodDriverValueDecoder(zUnknown()))
+        .as("payload"),
+    })
+    .from(chatThreadConnectorSelections)
+    .where(eq(chatThreadConnectorSelections.chatThreadId, chatThreadId))
+    .orderBy(
+      asc(chatThreadConnectorSelections.connectorSlug),
+      asc(chatThreadConnectorSelections.customConnectorId),
+    );
+  const access = builder
+    .select({
+      payload: contextJsonProjection(accessColumns)
+        .mapWith(zodDriverValueDecoder(zUnknown()))
+        .as("payload"),
+    })
+    .from(chatThreadConnectorAccessOverrides)
+    .where(eq(chatThreadConnectorAccessOverrides.chatThreadId, chatThreadId));
+  const statement = builder
+    .select({
+      payload: sql`jsonb_build_object(
+        'selections', ${contextJsonRows(selections)},
+        'accessOverrides', ${contextJsonRows(access)}
+      )`.mapWith(threadSourcesDecoder),
+    })
+    .from(chatThreads)
+    .where(
+      and(
+        eq(chatThreads.id, chatThreadId),
+        eq(chatThreads.userId, identity.userId),
+        eq(chatThreads.orgId, identity.orgId),
+      ),
+    )
+    .limit(1);
+  return sql`(${statement})`.mapWith(threadSourcesDecoder);
 }
