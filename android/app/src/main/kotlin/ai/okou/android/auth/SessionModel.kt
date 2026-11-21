@@ -331,6 +331,8 @@ class SessionModel(
                     mutable.value =
                         mutable.value.copy(memberships = knownMemberships, opening = opened)
                     preparation?.let(chats::restoreStartupCache)
+                    // After handoff, a preferences failure must not cancel chat restoration.
+                    preparation = null
                     chats.refresh()
                     loadRemainingMemberships(ticket, snapshot)
                     finishPreparation(ticket, snapshot, opened)
