@@ -6,6 +6,7 @@ import { proactiveSuggestionsRoutes } from "../proactive-preferences";
 import { createRouteMocks } from "./helpers/route-test";
 import { createPublicRunnerMemory } from "./helpers/public-runner-memory";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
+import { createFirewallApi } from "./helpers/api-bdd-firewall";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { readPiExecutionMemory } from "./helpers/pi-memory-session";
 
@@ -132,8 +133,16 @@ describe("ordinary Pi published personal Memory", () => {
         orgRole: "org:member",
       });
       await foreign.run(async () => {
-        const foreignAgent = await foreign.initializeNative();
+        // This member joins the existing paid workspace and only needs Codex.
+        foreign.bdd.acceptAgentStorageWrites();
+        foreign.api.acceptStorageDownloads();
+        createFirewallApi(context).seedClerkDirectory(foreign.actor);
+        await foreign.bdd.completeOnboarding(foreign.actor);
         await chat.configureSubscriptionPiModel(foreign.actor);
+        const { agentId: foreignAgent } = await foreign.bdd.createAgent(
+          foreign.actor,
+          { displayName: "Owned Memory carrier", visibility: "private" },
+        );
         foreign.installObjects();
         const receivedExecution = await foreign.startExecution(
           foreignAgent,
