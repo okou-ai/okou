@@ -213,14 +213,15 @@ internal fun RunControlsFeedback(controls: ConversationRunControls) {
             TextButton(
                 onClick = { model.check(threadId) },
                 enabled =
-                    !controls.offline && pending.none {
-                        state.phases[it.id] in
-                            setOf(
-                                RunControlPhase.Preparing,
-                                RunControlPhase.Sending,
-                                RunControlPhase.Checking,
-                            )
-                    },
+                    !controls.offline &&
+                        pending.none {
+                            state.phases[it.id] in
+                                setOf(
+                                    RunControlPhase.Preparing,
+                                    RunControlPhase.Sending,
+                                    RunControlPhase.Checking,
+                                )
+                        },
             ) {
                 Text(stringResource(R.string.controls_check))
             }
@@ -240,7 +241,10 @@ internal fun RunControlsFeedback(controls: ConversationRunControls) {
         controls.confirmed?.let {
             if (it.detailPhase == ChatReadPhase.Failed) {
                 Text(stringResource(R.string.controls_recovery_failed))
-                TextButton(onClick = { model.refreshRecovery(threadId) }, enabled = !controls.offline) {
+                TextButton(
+                    onClick = { model.refreshRecovery(threadId) },
+                    enabled = !controls.offline,
+                ) {
                     Text(stringResource(R.string.retry))
                 }
             } else if (
@@ -248,7 +252,10 @@ internal fun RunControlsFeedback(controls: ConversationRunControls) {
                     it.detail?.cancellationRecoveryPending == true
             ) {
                 Text(stringResource(R.string.controls_recovering))
-                TextButton(onClick = { model.refreshRecovery(threadId) }, enabled = !controls.offline) {
+                TextButton(
+                    onClick = { model.refreshRecovery(threadId) },
+                    enabled = !controls.offline,
+                ) {
                     Text(stringResource(R.string.controls_check))
                 }
             }

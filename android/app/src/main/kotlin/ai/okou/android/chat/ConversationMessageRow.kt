@@ -84,8 +84,11 @@ internal fun conversationMessages(messages: List<HistoryMessage>): List<Conversa
             if (!message.visibleInConversation()) continue
             val preceding = previous
             if (preceding != null) {
-                if (message.isReply() && preceding.isReply() &&
-                    message.runId != null && message.runId == preceding.runId
+                if (
+                    message.isReply() &&
+                        preceding.isReply() &&
+                        message.runId != null &&
+                        message.runId == preceding.runId
                 ) {
                     earlier += preceding
                 } else {
@@ -321,9 +324,7 @@ internal fun ConversationActivity(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (label == R.string.conversation_processing && runningFrame != null) {
-            Canvas(Modifier.size(14.dp)) {
-                drawRunningWave(color, runningFrame.longValue, row = 0)
-            }
+            Canvas(Modifier.size(14.dp)) { drawRunningWave(color, runningFrame.longValue, row = 0) }
         } else {
             Box(Modifier.size(8.dp).background(color, CircleShape))
         }
