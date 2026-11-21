@@ -10,6 +10,20 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.100.5](https://github.com/okou-ai/okou/compare/api-v2.100.4...api-v2.100.5) (2026-11-21)
+
+
+### Refactoring
+
+* **api:** stop mirroring custom connector skill writes ([#49780](https://github.com/okou-ai/okou/issues/49780)) ([c45ea3b](https://github.com/okou-ai/okou/commit/c45ea3bb479b9db4106a054134ee6bcfaf4a0988))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/db bumped to 2.57.5
+
 ## [2.100.4](https://github.com/okou-ai/okou/compare/api-v2.100.3...api-v2.100.4) (2026-11-21)
 
 
