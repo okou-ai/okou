@@ -118,7 +118,6 @@ async function catalogActor(
 async function sendChatRun(
   actor: ApiTestUser,
   body: {
-    readonly agentId: string;
     readonly prompt: string;
     readonly threadId?: string;
   },
