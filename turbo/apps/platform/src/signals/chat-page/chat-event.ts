@@ -3,7 +3,7 @@ import type { Root } from "hast";
 import { command } from "ccstate";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { navigateToNewChat$ } from "../okou-page/nav.ts";
-import { currentChatThreadId$, chatThreads$ } from "../agent-chat.ts";
+import { currentChatThreadId$ } from "../agent-chat.ts";
 import {
   chatThreadArchiveContract,
   chatThreadMuteContract,
@@ -374,32 +374,17 @@ export const setChatThreadMuted$ = command(
 export const renameChatThread$ = command(
   async (
     { get, set },
-    {
-      threadId,
-      title,
-      agentId,
-    }: { threadId: string; title: string; agentId?: string | null },
+    { threadId, title }: { threadId: string; title: string },
     signal: AbortSignal,
   ) => {
+    signal.throwIfAborted();
     const eventId = crypto.randomUUID();
-    let optimisticAgentId = agentId?.trim() || null;
-    if (!optimisticAgentId) {
-      const threads = await get(chatThreads$);
-      signal.throwIfAborted();
-      optimisticAgentId =
-        threads.find((thread) => {
-          return thread.id === threadId;
-        })?.agentId ?? null;
-    }
-    if (optimisticAgentId) {
-      set(registerOptimisticChatThreadEvent$, {
-        id: eventId,
-        kind: "renamed",
-        chatThreadId: threadId,
-        agentId: optimisticAgentId,
-        title,
-      });
-    }
+    set(registerOptimisticChatThreadEvent$, {
+      id: eventId,
+      kind: "renamed",
+      chatThreadId: threadId,
+      title,
+    });
 
     const client = get(apiClient$)(chatThreadRenameContract);
     signal.throwIfAborted();

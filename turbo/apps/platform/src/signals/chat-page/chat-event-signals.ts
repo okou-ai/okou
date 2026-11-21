@@ -57,7 +57,6 @@ export function withOptimisticAgentRunSource(
 export interface SendInputChatEvent {
   readonly kind: "input";
   readonly delivery: "run" | "queue";
-  readonly agentId?: string;
   readonly prompt: string;
   readonly hasTextContent: boolean;
   readonly userMessage: UserMessageInputDocument;
@@ -73,13 +72,11 @@ export interface SendInputChatEvent {
 
 export interface SendRevokeChatEvent {
   readonly kind: "revoke";
-  readonly agentId?: string;
   readonly revokesEventId: string;
 }
 
 export interface SendInterruptChatEvent {
   readonly kind: "interrupt";
-  readonly agentId?: string;
   readonly interruptsRunId: string;
 }
 
@@ -120,7 +117,6 @@ function createSendInputChatEvent({
       set(touchOptimisticChatThreadSort$, {
         id: chatThreadSortEventId,
         threadId,
-        agentId: input.agentId,
         createdAt,
       });
       const optimisticEventChanged = set(

@@ -333,8 +333,7 @@ function LabeledChatRailLink() {
       }
       icon={okouEntry ? OkouRailIcon : (MessageCircle as NavIcon)}
       isActive={
-        activeId !== null &&
-        ["home", "agentChat", "agentIdeas", "chat"].includes(activeId)
+        activeId !== null && ["home", "agentChat", "chat"].includes(activeId)
       }
       showBadge={false}
       onNavigate={showInbox}

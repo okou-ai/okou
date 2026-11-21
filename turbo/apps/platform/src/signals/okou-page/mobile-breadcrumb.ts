@@ -160,11 +160,7 @@ export const mobileBreadcrumb$ = computed(
       return await get(workflowsBreadcrumb$);
     }
 
-    if (
-      route === "agents" ||
-      route === "agentDetail" ||
-      route === "agentPermissions"
-    ) {
+    if (route === "agentPermissions") {
       return await get(teamDetailBreadcrumb$);
     }
 
@@ -219,12 +215,7 @@ export const mobileBreadcrumb$ = computed(
     }
 
     // Chat-related routes
-    if (
-      route !== "home" &&
-      route !== "agentChat" &&
-      route !== "agentIdeas" &&
-      route !== "chat"
-    ) {
+    if (route !== "home" && route !== "agentChat" && route !== "chat") {
       return null;
     }
 

@@ -1,73 +1,7 @@
 {
   "actions": {
-    "cancel": "Cancelar",
-    "close": "Fechar",
-    "copying": "Copiando…",
-    "delete": "Excluir agente",
-    "deleting": "Excluindo…",
-    "discard": "Descartar",
-    "save": "Salvar",
-    "saving": "Salvando…"
+    "close": "Fechar"
   },
-  "avatar": {
-    "accessibilityDescription": "Personalize o estilo, a cor e os detalhes faciais do avatar do agente.",
-    "actions": {
-      "customize": "Personalizar avatar"
-    },
-    "create": "Criar avatar personalizado",
-    "description": "Escolha um estilo ou embaralhe para ter uma surpresa.",
-    "editDescription": "Ajuste qualquer detalhe ou embaralhe para um novo visual.",
-    "editTitle": "Editar avatar",
-    "nextStep": "Próxima etapa",
-    "previousStep": "Etapa anterior",
-    "randomize": "Gerar avatar aleatório",
-    "shuffleHint": "Embaralhe e experimente um visual aleatório!",
-    "steps": {
-      "color": "Cor",
-      "face": "Rosto",
-      "hair": "Cabelo",
-      "mood": "Humor",
-      "skin": "Pele",
-      "sweater": "Suéter"
-    },
-    "title": "Dê um rosto ao seu agente",
-    "use": "Usar este avatar"
-  },
-  "delete": {
-    "dangerZone": "Zona de perigo",
-    "dangerZoneDescription": "Remova permanentemente este agente e todos os seus dados. Esta ação não pode ser desfeita.",
-    "description": "Exclui o agente, seus workflows, automações e o histórico de conversa de todos.",
-    "irreversible": "Esta ação não pode ser desfeita.",
-    "success": "Agente excluído",
-    "title": "Excluir {{agentName}}?",
-    "workflows": {
-      "copyTo": "Copiar para {{agentName}}",
-      "deleteWithAgent": "Excluir com o agente",
-      "description": "Copie um workflow para outro agente para mantê-lo. Todo o restante será excluído.",
-      "handle": "Definir destino do workflow {{workflowTitle}}",
-      "loadFailed": "Não foi possível carregar os fluxos de trabalho.",
-      "loading": "Carregando workflows…",
-      "title": "Manter algum workflow?"
-    }
-  },
-  "detail": {
-    "chatWith": "Conversar com {{agentName}}",
-    "defaultDescription": "Seu colega de equipe de IA, ajustado para você",
-    "notFound": {
-      "back": "Voltar para a equipe",
-      "description": "O agente “{{agentId}}” não existe ou você não tem acesso a ele.",
-      "title": "Agente não encontrado"
-    },
-    "sectionNavigation": "Seção de detalhes do agente",
-    "tabs": {
-      "instructions": "Instruções",
-      "profile": "Perfil"
-    }
-  },
-  "errors": {
-    "unknown": "Erro desconhecido"
-  },
-  "fallbackName": "Agente",
   "ideation": {
     "all": "Todos",
     "catalog": {
@@ -194,10 +128,6 @@
           "personal-weekly-digest": {
             "description": "Pull requests, e-mail e calendário em uma única atualização no Slack",
             "title": "Resumo semanal pessoal"
-          },
-          "self-update-instructions": {
-            "description": "Atualize as instruções do agente diretamente na conversa",
-            "title": "Atualizar as próprias instruções"
           },
           "send-messages-on-your-behalf": {
             "description": "Publica comunicados para a equipe no Slack por você",
@@ -434,91 +364,6 @@
     },
     "title": "Ideias e casos de uso"
   },
-  "instructions": {
-    "editor": {
-      "accessibilityLabel": "Editor de instruções",
-      "footerHint": "Edite as instruções diretamente para personalizar o comportamento do seu agente.",
-      "placeholder": "Escreva instruções para seu agente...",
-      "toolbar": {
-        "blockquote": "Citação",
-        "bold": "Negrito",
-        "bulletList": "Lista com marcadores",
-        "heading1": "Título 1",
-        "heading2": "Título 2",
-        "heading3": "Título 3",
-        "inlineCode": "Código em linha",
-        "italic": "Itálico",
-        "orderedList": "Lista numerada",
-        "strikethrough": "Tachado"
-      }
-    },
-    "saved": "Instruções salvas"
-  },
-  "list": {
-    "title": "Agentes"
-  },
-  "profile": {
-    "fields": {
-      "avatar": {
-        "description": "Crie seu próprio avatar.",
-        "label": "Avatar"
-      },
-      "description": {
-        "description": "No que este agente ajuda — visível para os colegas de equipe.",
-        "label": "Descrição",
-        "placeholder": "O que este agente faz?"
-      },
-      "name": {
-        "description": "Exibido na lista da equipe e quando este agente fala.",
-        "label": "Nome",
-        "placeholder": "Como devemos chamá-lo?"
-      },
-      "tone": {
-        "accessibilityLabel": "Como {{agentName}} se comunica",
-        "description": "Estilo das respostas. A prévia é atualizada quando você muda o tom.",
-        "groupLabel": "Tom",
-        "label": "Como ele se comunica"
-      },
-      "visibility": {
-        "description": "Visível para todas as pessoas deste workspace.",
-        "label": "Tornar público"
-      }
-    },
-    "makePrivate": {
-      "confirm": "Tornar privado",
-      "description": "Enquanto este agente for privado, outros membros perderão o acesso ao histórico de conversas com ele. O acesso será restaurado se você torná-lo público novamente.",
-      "title": "Tornar {{agentName}} privado?",
-      "warningDescription": "Outros membros não verão mais {{agentName}} nem as conversas que tiveram com ele.",
-      "warningTitle": "Os membros perderão o acesso"
-    },
-    "saved": "Perfil salvo",
-    "tones": {
-      "direct": {
-        "agentSample": "Sexta-feira. Enviarei um rascunho na quinta.",
-        "hint": "Sem rodeios",
-        "label": "Direto",
-        "userSample": "Preciso do relatório do terceiro trimestre até sexta-feira."
-      },
-      "friendly": {
-        "agentSample": "Pode deixar! Entrego o relatório do terceiro trimestre até sexta-feira — envio um rascunho na quinta para você dar uma olhada.",
-        "hint": "Caloroso e acessível",
-        "label": "Amigável",
-        "userSample": "Preciso do relatório do terceiro trimestre até sexta-feira."
-      },
-      "professional": {
-        "agentSample": "O relatório do terceiro trimestre estará pronto até sexta-feira. Enviarei um rascunho na quinta para sua revisão.",
-        "hint": "Claro e refinado",
-        "label": "Profissional",
-        "userSample": "Preciso do relatório do terceiro trimestre até sexta-feira."
-      },
-      "supportive": {
-        "agentSample": "Vou garantir que você receba o relatório do terceiro trimestre até sexta-feira. Enviarei um rascunho na quinta para que tenha tempo de revisar. Avise se precisar de mais alguma coisa.",
-        "hint": "Ao seu lado",
-        "label": "Prestativo",
-        "userSample": "Preciso do relatório do terceiro trimestre até sexta-feira."
-      }
-    }
-  },
   "sidebar": {
     "escapeShortcut": "Esc",
     "filterAll": "Todos",
@@ -538,8 +383,5 @@
   },
   "status": {
     "unread": "Não lido"
-  },
-  "unsaved": {
-    "message": "Você tem alterações não salvas"
   }
 }

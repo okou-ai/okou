@@ -1,73 +1,7 @@
 {
   "actions": {
-    "cancel": "Abbrechen",
-    "close": "Schließen",
-    "copying": "Kopieren…",
-    "delete": "Agent löschen",
-    "deleting": "Löschen…",
-    "discard": "Verwerfen",
-    "save": "Speichern",
-    "saving": "Speichern…"
+    "close": "Schließen"
   },
-  "avatar": {
-    "accessibilityDescription": "Passen Sie den Stil, die Farbe und die Gesichtsdetails des Agenten-Avatars an.",
-    "actions": {
-      "customize": "Avatar anpassen"
-    },
-    "create": "Benutzerdefinierten Avatar erstellen",
-    "description": "Wählen Sie einen Stil oder klicken Sie auf „Mischen“, um eine Überraschung zu erleben.",
-    "editDescription": "Passen Sie einzelne Details an oder mischen Sie für einen neuen Look.",
-    "editTitle": "Avatar bearbeiten",
-    "nextStep": "Nächster Schritt",
-    "previousStep": "Vorheriger Schritt",
-    "randomize": "Avatar zufällig auswählen",
-    "shuffleHint": "Mischen Sie – probieren Sie einen zufälligen Look!",
-    "steps": {
-      "color": "Farbe",
-      "face": "Gesicht",
-      "hair": "Haar",
-      "mood": "Stimmung",
-      "skin": "Haut",
-      "sweater": "Pullover"
-    },
-    "title": "Geben Sie Ihrem Agenten ein Gesicht",
-    "use": "Diesen Avatar verwenden"
-  },
-  "delete": {
-    "dangerZone": "Gefahrenzone",
-    "dangerZoneDescription": "Entfernen Sie diesen Agenten und alle seine Daten dauerhaft. Diese Aktion kann nicht rückgängig gemacht werden.",
-    "description": "Löscht den Agenten, seine Workflows, Automatisierungen und den Chatverlauf aller Personen.",
-    "irreversible": "Dies kann nicht rückgängig gemacht werden.",
-    "success": "Agent gelöscht",
-    "title": "{{agentName}} löschen?",
-    "workflows": {
-      "copyTo": "Nach {{agentName}} kopieren",
-      "deleteWithAgent": "Mit Agent löschen",
-      "description": "Kopieren Sie einen Workflow auf einen anderen Agenten, um ihn zu behalten. Alles, was noch übrig ist, wird gelöscht.",
-      "handle": "Workflow {{workflowTitle}} verwalten",
-      "loadFailed": "Workflows konnten nicht geladen werden.",
-      "loading": "Workflows werden geladen…",
-      "title": "Workflows behalten?"
-    }
-  },
-  "detail": {
-    "chatWith": "Chatten Sie mit {{agentName}}",
-    "defaultDescription": "Ihr KI-Teamkollege, auf Sie zugeschnitten",
-    "notFound": {
-      "back": "Zurück zum Team",
-      "description": "Der Agent „{{agentId}}“ existiert nicht oder Sie haben keinen Zugriff darauf.",
-      "title": "Agent nicht gefunden"
-    },
-    "sectionNavigation": "Bereich der Agentendetails",
-    "tabs": {
-      "instructions": "Anweisungen",
-      "profile": "Profil"
-    }
-  },
-  "errors": {
-    "unknown": "Unbekannter Fehler"
-  },
-  "fallbackName": "Agent",
   "ideation": {
     "all": "Alle",
     "catalog": {
@@ -194,10 +128,6 @@
           "personal-weekly-digest": {
             "description": "Pull-Requests, E-Mail und Kalender in einem Slack-Update",
             "title": "Persönlicher wöchentlicher Überblick"
-          },
-          "self-update-instructions": {
-            "description": "Aktualisieren Sie die Agentenanweisungen direkt im Chat",
-            "title": "Anweisungen zur Selbstaktualisierung"
           },
           "send-messages-on-your-behalf": {
             "description": "Veröffentlicht Teamankündigungen für Sie auf Slack",
@@ -434,91 +364,6 @@
     },
     "title": "Ideen und Anwendungsfälle"
   },
-  "instructions": {
-    "editor": {
-      "accessibilityLabel": "Editor für Anweisungen",
-      "footerHint": "Bearbeiten Sie die Anweisungen direkt, um das Verhalten Ihres Agenten anzupassen.",
-      "placeholder": "Schreiben Sie Anweisungen für Ihren Agenten...",
-      "toolbar": {
-        "blockquote": "Blockzitat",
-        "bold": "Fett",
-        "bulletList": "Aufzählung",
-        "heading1": "Überschrift 1",
-        "heading2": "Überschrift 2",
-        "heading3": "Überschrift 3",
-        "inlineCode": "Inline-Code",
-        "italic": "Kursiv",
-        "orderedList": "Geordnete Liste",
-        "strikethrough": "Durchgestrichen"
-      }
-    },
-    "saved": "Anweisungen gespeichert"
-  },
-  "list": {
-    "title": "Agenten"
-  },
-  "profile": {
-    "fields": {
-      "avatar": {
-        "description": "Erstellen Sie Ihren eigenen Avatar.",
-        "label": "Avatar"
-      },
-      "description": {
-        "description": "Wobei dieser Agent hilft – sichtbar für Teamkollegen.",
-        "label": "Beschreibung",
-        "placeholder": "Was macht dieser Agent?"
-      },
-      "name": {
-        "description": "Wird in der Teamliste angezeigt und wenn dieser Agent spricht.",
-        "label": "Name",
-        "placeholder": "Wie sollen wir ihn nennen?"
-      },
-      "tone": {
-        "accessibilityLabel": "Wie {{agentName}} klingt",
-        "description": "Sprachstil für Antworten. Die Vorschau wird aktualisiert, wenn Sie den Ton ändern.",
-        "groupLabel": "Ton",
-        "label": "Klang"
-      },
-      "visibility": {
-        "description": "Für jeden in diesem Arbeitsbereich sichtbar.",
-        "label": "Öffentlich machen"
-      }
-    },
-    "makePrivate": {
-      "confirm": "Privat machen",
-      "description": "Solange dieser Agent privat ist, verlieren andere Mitglieder den Zugriff auf ihre Chats mit ihm. Sie erhalten wieder Zugriff, wenn Sie ihn erneut öffentlich machen.",
-      "title": "{{agentName}} privat machen?",
-      "warningDescription": "Andere Mitglieder sehen {{agentName}} oder ihre Chats darunter nicht mehr.",
-      "warningTitle": "Mitglieder verlieren den Zugriff"
-    },
-    "saved": "Profil gespeichert",
-    "tones": {
-      "direct": {
-        "agentSample": "Freitag. Ich schicke am Donnerstag einen Entwurf.",
-        "hint": "Auf den Punkt gebracht",
-        "label": "Direkt",
-        "userSample": "Ich brauche den Q3-Bericht bis Freitag."
-      },
-      "friendly": {
-        "agentSample": "Klar! Den Q3-Bericht schicke ich Ihnen bis Freitag. Am Donnerstag schicke ich Ihnen einen Entwurf, damit Sie einen Blick darauf werfen können.",
-        "hint": "Warm und zugänglich",
-        "label": "Freundlich",
-        "userSample": "Ich brauche den Q3-Bericht bis Freitag."
-      },
-      "professional": {
-        "agentSample": "Ich werde den Q3-Bericht bis Freitag fertig haben. Ich schicke Ihnen bis Donnerstag einen Entwurf zur Überprüfung.",
-        "hint": "Klar und poliert",
-        "label": "Professionell",
-        "userSample": "Ich brauche den Q3-Bericht bis Freitag."
-      },
-      "supportive": {
-        "agentSample": "Ich werde dafür sorgen, dass Sie bis Freitag den Q3-Bericht haben. Ich schicke Ihnen am Donnerstag einen Entwurf, damit Sie Zeit zum Überprüfen haben – lassen Sie es mich wissen, wenn Sie noch etwas wünschen.",
-        "hint": "An Ihrer Seite",
-        "label": "Unterstützend",
-        "userSample": "Ich brauche den Q3-Bericht bis Freitag."
-      }
-    }
-  },
   "sidebar": {
     "escapeShortcut": "Esc",
     "filterAll": "Alle",
@@ -537,8 +382,5 @@
   },
   "status": {
     "unread": "Ungelesen"
-  },
-  "unsaved": {
-    "message": "Sie haben nicht gespeicherte Änderungen"
   }
 }

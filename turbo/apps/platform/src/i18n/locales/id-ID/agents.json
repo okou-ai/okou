@@ -1,73 +1,7 @@
 {
   "actions": {
-    "cancel": "Batal",
-    "close": "Tutup",
-    "copying": "Menyalin…",
-    "delete": "Hapus agen",
-    "deleting": "Menghapus…",
-    "discard": "Buang",
-    "save": "Simpan",
-    "saving": "Menyimpan…"
+    "close": "Tutup"
   },
-  "avatar": {
-    "accessibilityDescription": "Sesuaikan gaya, warna, dan detail wajah avatar agen.",
-    "actions": {
-      "customize": "Sesuaikan avatar"
-    },
-    "create": "Buat avatar kustom",
-    "description": "Pilih gaya atau tekan acak untuk kejutan.",
-    "editDescription": "Ubah bagian mana pun, atau tekan acak untuk tampilan baru.",
-    "editTitle": "Edit avatar",
-    "nextStep": "Langkah berikutnya",
-    "previousStep": "Langkah sebelumnya",
-    "randomize": "Acak avatar",
-    "shuffleHint": "Acak — coba tampilan acak!",
-    "steps": {
-      "color": "Warna",
-      "face": "Wajah",
-      "hair": "Rambut",
-      "mood": "Suasana hati",
-      "skin": "Kulit",
-      "sweater": "Sweter"
-    },
-    "title": "Beri agen Anda wajah",
-    "use": "Gunakan avatar ini"
-  },
-  "delete": {
-    "dangerZone": "Zona bahaya",
-    "dangerZoneDescription": "Hapus agen ini dan semua datanya secara permanen. Tindakan ini tidak dapat dibatalkan.",
-    "description": "Menghapus agen ini, alur kerja, otomatisasi, dan riwayat chat semua orang.",
-    "irreversible": "Ini tidak bisa dibatalkan.",
-    "success": "Agen dihapus",
-    "title": "Hapus {{agentName}}?",
-    "workflows": {
-      "copyTo": "Salin ke {{agentName}}",
-      "deleteWithAgent": "Hapus bersama agen",
-      "description": "Salin alur kerja ke agen lain agar tetap tersimpan. Sisanya akan dihapus.",
-      "handle": "Tangani alur kerja {{workflowTitle}}",
-      "loadFailed": "Alur kerja tidak dapat dimuat.",
-      "loading": "Memuat alur kerja…",
-      "title": "Simpan alur kerja yang ingin dipertahankan?"
-    }
-  },
-  "detail": {
-    "chatWith": "Chat dengan {{agentName}}",
-    "defaultDescription": "Rekan kerja AI Anda, disesuaikan untuk Anda",
-    "notFound": {
-      "back": "Kembali ke tim",
-      "description": "Agen “{{agentId}}” tidak ada atau Anda tidak memiliki akses ke sana.",
-      "title": "Agen tidak ditemukan"
-    },
-    "sectionNavigation": "Bagian detail agen",
-    "tabs": {
-      "instructions": "Instruksi",
-      "profile": "Profil"
-    }
-  },
-  "errors": {
-    "unknown": "Kesalahan tidak dikenal"
-  },
-  "fallbackName": "Agen",
   "ideation": {
     "all": "Semua",
     "catalog": {
@@ -194,10 +128,6 @@
           "personal-weekly-digest": {
             "description": "Pull request, email, dan kalender dalam satu pembaruan Slack",
             "title": "Ringkasan mingguan pribadi"
-          },
-          "self-update-instructions": {
-            "description": "Perbarui instruksi agen langsung di chat",
-            "title": "Instruksi pembaruan mandiri"
           },
           "send-messages-on-your-behalf": {
             "description": "Mengeposkan pengumuman tim ke Slack untuk Anda",
@@ -434,91 +364,6 @@
     },
     "title": "Ide & Use Case"
   },
-  "instructions": {
-    "editor": {
-      "accessibilityLabel": "Editor instruksi",
-      "footerHint": "Edit instruksi secara langsung untuk menyesuaikan perilaku agen Anda.",
-      "placeholder": "Tulis instruksi untuk agen Anda...",
-      "toolbar": {
-        "blockquote": "Blok kutipan",
-        "bold": "Tebal",
-        "bulletList": "Daftar berpoin",
-        "heading1": "Judul 1",
-        "heading2": "Judul 2",
-        "heading3": "Judul 3",
-        "inlineCode": "Kode sebaris",
-        "italic": "Miring",
-        "orderedList": "Daftar bernomor",
-        "strikethrough": "Coret"
-      }
-    },
-    "saved": "Instruksi disimpan"
-  },
-  "list": {
-    "title": "Agen"
-  },
-  "profile": {
-    "fields": {
-      "avatar": {
-        "description": "Buat avatar Anda sendiri.",
-        "label": "Avatar"
-      },
-      "description": {
-        "description": "Yang dibantu oleh agen ini—terlihat oleh rekan tim.",
-        "label": "Deskripsi",
-        "placeholder": "Apa yang dilakukan agen ini?"
-      },
-      "name": {
-        "description": "Ditampilkan di daftar tim dan saat agen ini berbicara.",
-        "label": "Nama",
-        "placeholder": "Apa nama yang ingin kita gunakan?"
-      },
-      "tone": {
-        "accessibilityLabel": "Bagaimana {{agentName}} terdengar",
-        "description": "Gaya balasan. Pratinjau diperbarui saat nada berubah.",
-        "groupLabel": "Nada",
-        "label": "Bagaimana terdengar"
-      },
-      "visibility": {
-        "description": "Terlihat oleh semua orang di ruang kerja ini.",
-        "label": "Jadikan publik"
-      }
-    },
-    "makePrivate": {
-      "confirm": "Jadikan pribadi",
-      "description": "Saat agen ini bersifat pribadi, anggota lain kehilangan akses ke riwayat chat di bawahnya. Mereka akan mendapat akses kembali jika Anda menjadikannya publik lagi.",
-      "title": "Jadikan {{agentName}} pribadi?",
-      "warningDescription": "Anggota lain tidak akan lagi melihat {{agentName}} atau chat di bawahnya.",
-      "warningTitle": "Anggota kehilangan akses"
-    },
-    "saved": "Profil disimpan",
-    "tones": {
-      "direct": {
-        "agentSample": "Jumat. Saya akan kirim draf pada Kamis.",
-        "hint": "Langsung ke inti",
-        "label": "Langsung",
-        "userSample": "Saya butuh laporan Q3 pada hari Jumat."
-      },
-      "friendly": {
-        "agentSample": "Tentu! Saya akan pastikan laporan Q3 sampai ke Anda pada hari Jumat—saya akan mengirim draf pada Kamis agar Anda bisa meninjaunya.",
-        "hint": "Hangat dan mudah didekati",
-        "label": "Ramah",
-        "userSample": "Saya butuh laporan Q3 pada hari Jumat."
-      },
-      "professional": {
-        "agentSample": "Saya akan menyiapkan laporan Q3 pada hari Jumat. Saya akan mengirim draf pada Kamis untuk ditinjau.",
-        "hint": "Jelas dan rapi",
-        "label": "Profesional",
-        "userSample": "Saya butuh laporan Q3 pada hari Jumat."
-      },
-      "supportive": {
-        "agentSample": "Saya akan memastikan Anda menerima laporan Q3 pada hari Jumat. Saya akan mengirim draf pada Kamis agar Anda punya waktu untuk meninjau—beri tahu saya jika Anda ingin hal lain.",
-        "hint": "Selalu mendukung",
-        "label": "Mendukung",
-        "userSample": "Saya butuh laporan Q3 pada hari Jumat."
-      }
-    }
-  },
   "sidebar": {
     "escapeShortcut": "Esc",
     "filterAll": "Semua",
@@ -536,8 +381,5 @@
   },
   "status": {
     "unread": "Belum dibaca"
-  },
-  "unsaved": {
-    "message": "Anda memiliki perubahan yang belum disimpan"
   }
 }

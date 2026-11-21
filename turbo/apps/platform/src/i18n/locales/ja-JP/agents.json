@@ -1,73 +1,7 @@
 {
   "actions": {
-    "cancel": "キャンセル",
-    "close": "閉じる",
-    "copying": "コピー中…",
-    "delete": "エージェントの削除",
-    "deleting": "削除中…",
-    "discard": "破棄",
-    "save": "保存",
-    "saving": "保存中…"
+    "close": "閉じる"
   },
-  "avatar": {
-    "accessibilityDescription": "エージェントのアバターのスタイル、色、顔の詳細をカスタマイズします。",
-    "actions": {
-      "customize": "アバターのカスタマイズ"
-    },
-    "create": "カスタムアバターを作成する",
-    "description": "スタイルを選ぶか、シャッフルしてランダムな見た目を試せます。",
-    "editDescription": "各パーツを微調整するか、シャッフルして新しい見た目にできます。",
-    "editTitle": "アバターを編集",
-    "nextStep": "次のステップ",
-    "previousStep": "前のステップ",
-    "randomize": "アバターをランダム化する",
-    "shuffleHint": "シャッフル — ランダムに見てみましょう!",
-    "steps": {
-      "color": "色",
-      "face": "顔",
-      "hair": "髪",
-      "mood": "気分",
-      "skin": "肌",
-      "sweater": "セーター"
-    },
-    "title": "エージェントの顔を作成",
-    "use": "このアバターを使用"
-  },
-  "delete": {
-    "dangerZone": "危険な操作",
-    "dangerZoneDescription": "このエージェントとそのすべてのデータを完全に削除します。この操作は元に戻すことができません。",
-    "description": "エージェント、そのワークフロー、オートメーション、および全員のチャット履歴を削除します。",
-    "irreversible": "これを元に戻すことはできません。",
-    "success": "エージェントが削除されました",
-    "title": "{{agentName}} を削除しますか?",
-    "workflows": {
-      "copyTo": "{{agentName}} にコピーします",
-      "deleteWithAgent": "エージェントと一緒に削除",
-      "description": "ワークフローを別のエージェントにコピーして保持します。残ったものはすべて削除されます。",
-      "handle": "ワークフロー「{{workflowTitle}}」を処理",
-      "loadFailed": "ワークフローを読み込めませんでした。",
-      "loading": "ワークフローを読み込み中…",
-      "title": "ワークフローを残しますか？"
-    }
-  },
-  "detail": {
-    "chatWith": "{{agentName}} とチャットする",
-    "defaultDescription": "あなた向けに調整されたAIチームメイト",
-    "notFound": {
-      "back": "チームに戻る",
-      "description": "エージェント「{{agentId}}」が存在しないか、アクセス権がありません。",
-      "title": "エージェントが見つかりません"
-    },
-    "sectionNavigation": "エージェント詳細セクション",
-    "tabs": {
-      "instructions": "指示",
-      "profile": "プロフィール"
-    }
-  },
-  "errors": {
-    "unknown": "不明なエラー"
-  },
-  "fallbackName": "エージェント",
   "ideation": {
     "all": "すべて",
     "catalog": {
@@ -194,10 +128,6 @@
           "personal-weekly-digest": {
             "description": "プルリクエスト、メール、カレンダーを1件のSlack更新にまとめます",
             "title": "個人的な毎週のダイジェスト"
-          },
-          "self-update-instructions": {
-            "description": "エージェントの指示をチャット内で直接更新する",
-            "title": "自己更新の手順"
           },
           "send-messages-on-your-behalf": {
             "description": "チームのお知らせを Slack に投稿します",
@@ -434,91 +364,6 @@
     },
     "title": "アイデアと使用例"
   },
-  "instructions": {
-    "editor": {
-      "accessibilityLabel": "指示エディター",
-      "footerHint": "指示を直接編集して、エージェントの動作をカスタマイズします。",
-      "placeholder": "エージェントへの指示を書きます...",
-      "toolbar": {
-        "blockquote": "ブロッククォート",
-        "bold": "太字",
-        "bulletList": "箇条書きリスト",
-        "heading1": "見出し1",
-        "heading2": "見出し2",
-        "heading3": "見出し 3",
-        "inlineCode": "インラインコード",
-        "italic": "イタリック体",
-        "orderedList": "順序付きリスト",
-        "strikethrough": "取り消し線"
-      }
-    },
-    "saved": "指示を保存しました"
-  },
-  "list": {
-    "title": "エージェント"
-  },
-  "profile": {
-    "fields": {
-      "avatar": {
-        "description": "独自のアバターを作成します。",
-        "label": "アバター"
-      },
-      "description": {
-        "description": "このエージェントが何を支援するか - チームメイトに表示されます。",
-        "label": "説明",
-        "placeholder": "このエージェントは何をするのですか?"
-      },
-      "name": {
-        "description": "チームリストとこのエージェントが話すときに表示されます。",
-        "label": "名前",
-        "placeholder": "名前を入力"
-      },
-      "tone": {
-        "accessibilityLabel": "{{agentName}}の話し方",
-        "description": "返信の話し方を設定します。トーンを変更するとプレビューも更新されます。",
-        "groupLabel": "トーン",
-        "label": "話し方"
-      },
-      "visibility": {
-        "description": "このワークスペース内の全員に表示されます。",
-        "label": "公開する"
-      }
-    },
-    "makePrivate": {
-      "confirm": "非公開にする",
-      "description": "このエージェントが非公開である間、他のメンバーはそのエージェントの下にあるチャット履歴にアクセスできなくなります。再度公開すると、アクセスが回復されます。",
-      "title": "{{agentName}}を非公開にしますか？",
-      "warningDescription": "他のメンバーには {{agentName}} またはその下のチャットが表示されなくなります。",
-      "warningTitle": "メンバーはアクセスできなくなります"
-    },
-    "saved": "プロフィールを保存しました",
-    "tones": {
-      "direct": {
-        "agentSample": "金曜日。木曜日に草案を送ります。",
-        "hint": "要点を簡潔に",
-        "label": "簡潔",
-        "userSample": "金曜日までに第 3 四半期のレポートが必要です。"
-      },
-      "friendly": {
-        "agentSample": "確かに！第 3 四半期のレポートは金曜日までにお送りします。木曜日に草稿をお送りしますので、ご覧ください。",
-        "hint": "温かくて親しみやすい",
-        "label": "フレンドリー",
-        "userSample": "金曜日までに第 3 四半期のレポートが必要です。"
-      },
-      "professional": {
-        "agentSample": "第 3 四半期のレポートは金曜日までに準備する予定です。あなたのレビューのために木曜日までに草稿を送ります。",
-        "hint": "クリアで洗練された",
-        "label": "プロフェッショナル",
-        "userSample": "金曜日までに第 3 四半期のレポートが必要です。"
-      },
-      "supportive": {
-        "agentSample": "第 3 四半期のレポートは金曜日までに必ず提出します。木曜日に下書きをお送りしますので、ご検討いただく時間を設けてください。他にご要望があればお知らせください。",
-        "hint": "いつでも味方に",
-        "label": "サポート重視",
-        "userSample": "金曜日までに第 3 四半期のレポートが必要です。"
-      }
-    }
-  },
   "sidebar": {
     "escapeShortcut": "Esc",
     "filterAll": "すべて",
@@ -536,8 +381,5 @@
   },
   "status": {
     "unread": "未読"
-  },
-  "unsaved": {
-    "message": "未保存の変更があります"
   }
 }

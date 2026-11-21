@@ -54,7 +54,7 @@ import {
   ROUTES,
   type RouteKey,
 } from "../route-paths.ts";
-import { defaultAgentId$, currentAgentId$ } from "../agent.ts";
+import { defaultAgentId$ } from "../agent.ts";
 import { ensureDraft$ } from "../chat-page/create-chat-thread.ts";
 import {
   reloadWorkflowData$,
@@ -718,22 +718,6 @@ function isOfficialWorkflow(
   return workflow.official !== null;
 }
 
-/** The current agent detail route's visible workflows. */
-export const currentAgentVisibleWorkflows$ = computed(
-  async (get): Promise<readonly WorkflowSummary[]> => {
-    get(workflowReloadVersion$);
-    const agentId = get(currentAgentId$);
-    if (!agentId) {
-      return [];
-    }
-    const client = get(apiClient$)(workflowsCollectionContract);
-    const result = await accept(client.list({ query: { agentId } }), [200]);
-    return result.body.filter((workflow) => {
-      return !isOfficialWorkflow(workflow);
-    });
-  },
-);
-
 export const allVisibleWorkflows$ = computed(
   async (get): Promise<readonly WorkflowSummary[]> => {
     get(workflowReloadVersion$);
@@ -864,26 +848,6 @@ export const deleteWorkflow$ = command(
   },
 );
 
-export const copyWorkflow$ = command(
-  async (
-    { get, set },
-    input: { workflowId: string; toAgentId: string },
-    signal: AbortSignal,
-  ): Promise<WorkflowSummary> => {
-    const client = get(apiClient$)(workflowsDetailContract);
-    const result = await accept(
-      client.copy({
-        params: { workflowId: input.workflowId },
-        body: { toAgentId: input.toAgentId },
-        fetchOptions: { signal },
-      }),
-      [201],
-    );
-    signal.throwIfAborted();
-    set(reloadWorkflows$);
-    return result.body;
-  },
-);
 export const openWorkflowChat$ = command(
   async ({ get, set }, workflowId: string, signal: AbortSignal) => {
     const client = get(apiClient$)(workflowsDetailContract);

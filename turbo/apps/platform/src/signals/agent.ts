@@ -24,10 +24,7 @@ export const defaultAgentId$ = computed(async (get) => {
   return status.defaultAgentId;
 });
 
-const internalAgentByIdReload$ = state(0);
-
 const defaultAgent$ = computed(async (get) => {
-  get(internalAgentByIdReload$);
   const defaultId = await get(defaultAgentId$);
   if (!defaultId) {
     return null;
@@ -43,7 +40,6 @@ const defaultAgent$ = computed(async (get) => {
  */
 export function agentById(id: string): Computed<Promise<AgentResponse>> {
   return computed(async (get) => {
-    get(internalAgentByIdReload$);
     if (id === (await get(defaultAgentId$))) {
       const defaultAgent = await get(defaultAgent$);
       if (defaultAgent) {
@@ -56,22 +52,11 @@ export function agentById(id: string): Computed<Promise<AgentResponse>> {
   });
 }
 
-export const reloadAgentById$ = command(({ set }) => {
-  set(internalAgentByIdReload$, (prev) => {
-    return prev + 1;
-  });
-});
-
 export const defaultAgentName$ = assistantName$;
 
 export const currentAgentId$ = computed((get) => {
   const route = get(activeRoute$);
-  if (
-    route !== "agentDetail" &&
-    route !== "agentChat" &&
-    route !== "agentIdeas" &&
-    route !== "agentPermissions"
-  ) {
+  if (route !== "agentChat" && route !== "agentPermissions") {
     return null;
   }
 
@@ -94,14 +79,6 @@ export const defaultAgentChatPageActive$ = computed(async (get) => {
     return false;
   }
   return agentId === (await get(defaultAgentId$));
-});
-
-export const currentAgent$ = computed((get) => {
-  const agentId = get(currentAgentId$);
-  if (!agentId) {
-    return null;
-  }
-  return get(agentById(agentId));
 });
 
 const internalReloadAgents$ = state(0);

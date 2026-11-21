@@ -1,73 +1,7 @@
 {
   "actions": {
-    "cancel": "Annulla",
-    "close": "Chiudi",
-    "copying": "Copia in corso…",
-    "delete": "Elimina agente",
-    "deleting": "Eliminazione in corso…",
-    "discard": "Scarta",
-    "save": "Salva",
-    "saving": "Salvataggio…"
+    "close": "Chiudi"
   },
-  "avatar": {
-    "accessibilityDescription": "Personalizza lo stile, il colore e i dettagli del viso dell'avatar dell'agente.",
-    "actions": {
-      "customize": "Personalizza l'avatar"
-    },
-    "create": "Crea avatar personalizzato",
-    "description": "Scegli uno stile oppure usa Mescola per una sorpresa.",
-    "editDescription": "Ritocca ogni dettaglio oppure usa Mescola per un nuovo look.",
-    "editTitle": "Modifica avatar",
-    "nextStep": "Prossimo passo",
-    "previousStep": "Passaggio precedente",
-    "randomize": "Genera un avatar casuale",
-    "shuffleHint": "Mescola — prova un look casuale!",
-    "steps": {
-      "color": "Colore",
-      "face": "Viso",
-      "hair": "Capelli",
-      "mood": "Umore",
-      "skin": "Pelle",
-      "sweater": "Maglione"
-    },
-    "title": "Dai un volto al tuo agente",
-    "use": "Usa questo avatar"
-  },
-  "delete": {
-    "dangerZone": "Zona pericolosa",
-    "dangerZoneDescription": "Rimuovi definitivamente questo agente e tutti i suoi dati. Questa azione non può essere annullata.",
-    "description": "Elimina l'agente, i suoi flussi di lavoro, le automazioni e la cronologia chat di tutti.",
-    "irreversible": "L'operazione non può essere annullata.",
-    "success": "Agente eliminato",
-    "title": "Eliminare {{agentName}}?",
-    "workflows": {
-      "copyTo": "Copia su {{agentName}}",
-      "deleteWithAgent": "Elimina con l'agente",
-      "description": "Copia un flusso di lavoro su un altro agente per conservarlo. Tutto ciò che resta viene cancellato.",
-      "handle": "Gestisci workflow {{workflowTitle}}",
-      "loadFailed": "Impossibile caricare i workflow.",
-      "loading": "Caricamento dei workflow…",
-      "title": "Vuoi conservare dei workflow?"
-    }
-  },
-  "detail": {
-    "chatWith": "Chatta con {{agentName}}",
-    "defaultDescription": "Il tuo collega IA, pensato per te",
-    "notFound": {
-      "back": "Torna al team",
-      "description": "L'agente \"{{agentId}}\" non esiste o non puoi accedervi.",
-      "title": "Agente non trovato"
-    },
-    "sectionNavigation": "Sezione dei dettagli dell'agente",
-    "tabs": {
-      "instructions": "Istruzioni",
-      "profile": "Profilo"
-    }
-  },
-  "errors": {
-    "unknown": "Errore sconosciuto"
-  },
-  "fallbackName": "Agente",
   "ideation": {
     "all": "Tutto",
     "catalog": {
@@ -194,10 +128,6 @@
           "personal-weekly-digest": {
             "description": "Estrai richieste, e-mail e calendario in un unico aggiornamento Slack",
             "title": "Digest settimanale personale"
-          },
-          "self-update-instructions": {
-            "description": "Aggiorna le istruzioni dell'agente direttamente nella chat",
-            "title": "Istruzioni per l'autoaggiornamento"
           },
           "send-messages-on-your-behalf": {
             "description": "Pubblica gli annunci del team su Slack per te",
@@ -434,91 +364,6 @@
     },
     "title": "Idee e casi d'uso"
   },
-  "instructions": {
-    "editor": {
-      "accessibilityLabel": "Editor delle istruzioni",
-      "footerHint": "Modifica direttamente le istruzioni per personalizzare il comportamento del tuo agente.",
-      "placeholder": "Scrivi le istruzioni per il tuo agente...",
-      "toolbar": {
-        "blockquote": "Citazione in blocco",
-        "bold": "Grassetto",
-        "bulletList": "Elenco puntato",
-        "heading1": "Rubrica 1",
-        "heading2": "Rubrica 2",
-        "heading3": "Rubrica 3",
-        "inlineCode": "Codice in linea",
-        "italic": "Corsivo",
-        "orderedList": "Elenco ordinato",
-        "strikethrough": "Barrato"
-      }
-    },
-    "saved": "Istruzioni salvate"
-  },
-  "list": {
-    "title": "Agenti"
-  },
-  "profile": {
-    "fields": {
-      "avatar": {
-        "description": "Crea il tuo avatar.",
-        "label": "Avatar"
-      },
-      "description": {
-        "description": "In cosa è utile questo agente; visibile ai colleghi.",
-        "label": "Descrizione",
-        "placeholder": "Cosa fa questo agente?"
-      },
-      "name": {
-        "description": "Mostrato nell'elenco del team e quando questo agente risponde.",
-        "label": "Nome",
-        "placeholder": "Come vuoi chiamarlo?"
-      },
-      "tone": {
-        "accessibilityLabel": "Come suona {{agentName}}",
-        "description": "Stile delle risposte. L'anteprima si aggiorna quando cambi tono.",
-        "groupLabel": "Tono",
-        "label": "Come comunica"
-      },
-      "visibility": {
-        "description": "Visibile a tutti in quest'area di lavoro.",
-        "label": "Rendi pubblico"
-      }
-    },
-    "makePrivate": {
-      "confirm": "Rendi privato",
-      "description": "Quando questo agente è privato, gli altri membri perdono l'accesso alla cronologia delle chat associate. Lo recupereranno se renderai nuovamente pubblico l'agente.",
-      "title": "Rendere privato {{agentName}}?",
-      "warningDescription": "Gli altri membri non vedranno più {{agentName}} né le chat associate.",
-      "warningTitle": "I membri perdono l'accesso"
-    },
-    "saved": "Profilo salvato",
-    "tones": {
-      "direct": {
-        "agentSample": "Venerdì. Giovedì manderò una bozza.",
-        "hint": "Diretto al punto",
-        "label": "Diretto",
-        "userSample": "Mi serve il rapporto del terzo trimestre entro venerdì."
-      },
-      "friendly": {
-        "agentSample": "Certo! Ti farò avere il resoconto del terzo trimestre entro venerdì, ti invierò una bozza giovedì così potrai dargli un'occhiata.",
-        "hint": "Caloroso e alla mano",
-        "label": "Amichevole",
-        "userSample": "Mi serve il rapporto del terzo trimestre entro venerdì."
-      },
-      "professional": {
-        "agentSample": "Avrò il rapporto del terzo trimestre pronto entro venerdì. Invierò una bozza entro giovedì per la tua revisione.",
-        "hint": "Chiaro e curato",
-        "label": "Professionale",
-        "userSample": "Mi serve il rapporto del terzo trimestre entro venerdì."
-      },
-      "supportive": {
-        "agentSample": "Mi assicurerò che tu abbia il rapporto del terzo trimestre entro venerdì. Giovedì invierò una bozza in modo che tu abbia tempo di rivederla: fammi sapere se desideri qualcos'altro.",
-        "hint": "Sempre al tuo fianco",
-        "label": "Di supporto",
-        "userSample": "Mi serve il rapporto del terzo trimestre entro venerdì."
-      }
-    }
-  },
   "sidebar": {
     "escapeShortcut": "Esc",
     "filterAll": "Tutti",
@@ -538,8 +383,5 @@
   },
   "status": {
     "unread": "Non letto"
-  },
-  "unsaved": {
-    "message": "Sono presenti modifiche non salvate"
   }
 }
