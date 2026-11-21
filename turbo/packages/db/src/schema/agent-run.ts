@@ -1,4 +1,3 @@
-import { agents } from "./agent";
 import { agentRunColumns } from "../columns/agent-run";
 import type {
   AgentRunSecretNames,
@@ -13,22 +12,11 @@ import {
   text,
   jsonb,
   varchar,
-  uuid,
-  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
 const migrationColumns = {
   ...agentRunColumns(),
-  // Migration-only storage for the outgoing API.
-  agentId: uuid("agent_id").references(
-    (): AnyPgColumn => {
-      return agents.id;
-    },
-    {
-      onDelete: "set null",
-    },
-  ),
   // Retain historical statistics outside application runtime projections.
   artifactResult: varchar("artifact_result", { length: 20 }),
   // Retain historical diagnostics without exposing this column to application
@@ -157,7 +145,6 @@ export const agentRuns = pgTable("agent_runs", migrationColumns, (table) => {
       table.status,
       table.createdAt.desc(),
     ),
-    index("idx_agent_runs_agent").on(table.agentId),
     index("idx_agent_runs_threadless_created_id")
       .on(table.createdAt, table.id)
       .where(

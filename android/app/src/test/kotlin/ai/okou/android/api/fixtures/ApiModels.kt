@@ -320,16 +320,9 @@ enum class IndicatorsThreadsValue {
 }
 
 @Serializable
-enum class IndicatorsAgentsValue {
-    @SerialName("active") ACTIVE,
-    @SerialName("unread") UNREAD,
-}
-
-@Serializable
 data class Indicators(
     val `threads`: Map<String, IndicatorsThreadsValue>,
     val `unreadAt`: Map<String, String>,
-    val `agents`: Map<String, IndicatorsAgentsValue>? = null,
 )
 
 @Serializable

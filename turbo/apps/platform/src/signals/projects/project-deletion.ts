@@ -1,8 +1,6 @@
 import { command, computed, state } from "ccstate";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createProjectOperationId } from "@okouai/core/project-operation-id";
 import { now } from "../../lib/time.ts";
-import { featureSwitches$ } from "../external/feature-switch.ts";
 import { projectsContract } from "@okouai/api-contracts/client/projects";
 import { chatThreadByIdContract } from "@okouai/api-contracts/client/chat-threads";
 import type { ChatThreadSnapshotProjection } from "@okouai/api-contracts/contracts/chat-threads";
@@ -82,12 +80,8 @@ export const refreshProjectDeletion$ = command(
   },
 );
 export const initializeProjectDeletion$ = onRef(
-  command(async ({ get, set }, _element: HTMLElement, signal: AbortSignal) => {
-    const features = await get(featureSwitches$);
-    signal.throwIfAborted();
-    if (features[FeatureSwitchKey.ProjectThreadDeletion]) {
-      await set(refreshProjectDeletion$, signal);
-    }
+  command(async ({ set }, _element: HTMLElement, signal: AbortSignal) => {
+    await set(refreshProjectDeletion$, signal);
   }),
 );
 export const confirmProjectThreadDeletion$ = command(

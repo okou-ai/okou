@@ -1,6 +1,6 @@
 {
-  "id": "e27ce6c0-234b-4130-9b6d-4c6847c31f82",
-  "prevId": "392c8ab5-6de6-472a-ba40-5c7274b350ae",
+  "id": "392c8ab5-6de6-472a-ba40-5c7274b350ae",
+  "prevId": "64edf074-a8b5-43ce-ae72-4efe78cdf8e7",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -454,12 +454,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "agent_id": {
-          "name": "agent_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "framework": {
           "name": "framework",
           "type": "varchar(64)",
@@ -867,21 +861,6 @@
           "method": "btree",
           "with": {}
         },
-        "idx_agent_runs_agent": {
-          "name": "idx_agent_runs_agent",
-          "columns": [
-            {
-              "expression": "agent_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "idx_agent_runs_threadless_created_id": {
           "name": "idx_agent_runs_threadless_created_id",
           "columns": [
@@ -972,19 +951,6 @@
         }
       },
       "foreignKeys": {
-        "agent_runs_agent_id_agents_id_fk": {
-          "name": "agent_runs_agent_id_agents_id_fk",
-          "tableFrom": "agent_runs",
-          "tableTo": "agents",
-          "columnsFrom": [
-            "agent_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
         "agent_runs_workflow_automation_id_workflow_automations_id_fk": {
           "name": "agent_runs_workflow_automation_id_workflow_automations_id_fk",
           "tableFrom": "agent_runs",
@@ -5642,12 +5608,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "source_agent_id": {
-          "name": "source_agent_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "source_user_id": {
           "name": "source_user_id",
           "type": "text",
@@ -8822,12 +8782,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "agent_id": {
-          "name": "agent_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "project_id": {
           "name": "project_id",
           "type": "uuid",
@@ -8999,55 +8953,6 @@
           "method": "btree",
           "with": {}
         },
-        "idx_chat_threads_user_agent_pinned": {
-          "name": "idx_chat_threads_user_agent_pinned",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "agent_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"chat_threads\".\"pinned_at\" IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_chat_threads_user_agent_last_message": {
-          "name": "idx_chat_threads_user_agent_last_message",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "agent_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "last_message_at",
-              "isExpression": false,
-              "asc": false,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "idx_chat_threads_user_last_message_id": {
           "name": "idx_chat_threads_user_last_message_id",
           "columns": [
@@ -9077,19 +8982,6 @@
         }
       },
       "foreignKeys": {
-        "chat_threads_agent_id_agents_id_fk": {
-          "name": "chat_threads_agent_id_agents_id_fk",
-          "tableFrom": "chat_threads",
-          "tableTo": "agents",
-          "columnsFrom": [
-            "agent_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
         "chat_threads_computer_use_host_id_computer_use_hosts_id_fk": {
           "name": "chat_threads_computer_use_host_id_computer_use_hosts_id_fk",
           "tableFrom": "chat_threads",
@@ -9101,21 +8993,6 @@
             "id"
           ],
           "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "chat_threads_agent_org_fk": {
-          "name": "chat_threads_agent_org_fk",
-          "tableFrom": "chat_threads",
-          "tableTo": "agents",
-          "columnsFrom": [
-            "agent_id",
-            "org_id"
-          ],
-          "columnsTo": [
-            "id",
-            "org_id"
-          ],
-          "onDelete": "no action",
           "onUpdate": "no action"
         },
         "chat_threads_project_owner_fk": {
@@ -37743,6 +37620,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "agent_id": {
+          "name": "agent_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
         "name": {
           "name": "name",
           "type": "varchar(64)",
@@ -37844,6 +37727,27 @@
         }
       },
       "indexes": {
+        "idx_workflows_agent": {
+          "name": "idx_workflows_agent",
+          "columns": [
+            {
+              "expression": "agent_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "name",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "idx_workflows_import_session": {
           "name": "idx_workflows_import_session",
           "columns": [
@@ -37859,11 +37763,17 @@
           "method": "btree",
           "with": {}
         },
-        "idx_workflows_public_name_unique": {
-          "name": "idx_workflows_public_name_unique",
+        "idx_workflows_public_agent_name_unique": {
+          "name": "idx_workflows_public_agent_name_unique",
           "columns": [
             {
               "expression": "org_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "agent_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -37881,11 +37791,17 @@
           "method": "btree",
           "with": {}
         },
-        "idx_workflows_private_owner_name_unique": {
-          "name": "idx_workflows_private_owner_name_unique",
+        "idx_workflows_ordinary_private_owner_agent_name_unique": {
+          "name": "idx_workflows_ordinary_private_owner_agent_name_unique",
           "columns": [
             {
               "expression": "org_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "agent_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -37959,6 +37875,68 @@
           "method": "btree",
           "with": {}
         },
+        "idx_workflows_official_owner_agent_definition_unique": {
+          "name": "idx_workflows_official_owner_agent_definition_unique",
+          "columns": [
+            {
+              "expression": "org_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "agent_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "owner_user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "official_definition_name",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "official_definition_name IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_workflows_morning_brief_owner_agent_unique": {
+          "name": "idx_workflows_morning_brief_owner_agent_unique",
+          "columns": [
+            {
+              "expression": "org_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "agent_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "owner_user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "official_definition_name IN ('morning-brief', 'internal-test-morning-brief')",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "idx_workflows_org": {
           "name": "idx_workflows_org",
           "columns": [
@@ -37996,7 +37974,21 @@
           "with": {}
         }
       },
-      "foreignKeys": {},
+      "foreignKeys": {
+        "workflows_agent_id_agents_id_fk": {
+          "name": "workflows_agent_id_agents_id_fk",
+          "tableFrom": "workflows",
+          "tableTo": "agents",
+          "columnsFrom": [
+            "agent_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},

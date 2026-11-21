@@ -1719,52 +1719,6 @@ jobs:
             '{version: 1, commitSha: $commit_sha, manifestSha256: $manifest_sha256}' \
             > /tmp/okou-app-ready.json
 
-      - name: Upload canonical app artifact
-        if: steps.existing.outputs.exists != 'true'
-        env:
-          ARTIFACT_PREFIX: ${{ steps.artifact.outputs.prefix }}
-        run: |
-          set -euo pipefail
-
-          r2_endpoint="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
-          artifact_uri="s3://${R2_BUCKET_NAME}/${ARTIFACT_PREFIX}"
-          cache_control="public, max-age=31536000, immutable"
-
-          aws s3 rm "$artifact_uri/" \
-            --endpoint-url "$r2_endpoint" \
-            --recursive
-
-          # A single archive keeps readers to one request instead of one per
-          # file, which is where R2 kept breaking the transfer mid-stream.
-          tar -czf /tmp/okou-app-dist.tar.gz -C turbo/apps/platform/dist .
-
-          aws s3api put-object \
-            --endpoint-url "$r2_endpoint" \
-            --bucket "$R2_BUCKET_NAME" \
-            --key "${ARTIFACT_PREFIX}/dist.tar.gz" \
-            --body /tmp/okou-app-dist.tar.gz \
-            --content-type application/gzip \
-            --cache-control "$cache_control"
-
-          aws s3api put-object \
-            --endpoint-url "$r2_endpoint" \
-            --bucket "$R2_BUCKET_NAME" \
-            --key "${ARTIFACT_PREFIX}/manifest.json" \
-            --body /tmp/okou-app-manifest.json \
-            --content-type application/json \
-            --cache-control "$cache_control"
-
-          aws s3api put-object \
-            --endpoint-url "$r2_endpoint" \
-            --bucket "$R2_BUCKET_NAME" \
-            --key "${ARTIFACT_PREFIX}/ready.json" \
-            --body /tmp/okou-app-ready.json \
-            --content-type application/json \
-            --cache-control "$cache_control" \
-            --if-none-match "*"
-
-          echo "Artifact ready: ${artifact_uri}/"
-
       - name: Prepare standalone app Worker preview
         id: worker-preview
         env:
@@ -1788,9 +1742,7 @@ jobs:
               "$artifact_uri" \
               "$canonical_dist"
           else
-            # This job built and uploaded the artifact, so the canonical bytes
-            # are still on disk. Reading them back from R2 only adds latency and
-            # a network failure mode.
+            # Publish the archive and shared assets from these same local bytes.
             canonical_dist="turbo/apps/platform/dist"
           fi
 
@@ -1803,15 +1755,27 @@ jobs:
             echo "shell=$worker_shell"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Publish immutable app assets to R2
+      - name: Publish app artifact and immutable assets to R2
         env:
+          ARTIFACT_EXISTS: ${{ steps.existing.outputs.exists }}
+          ARTIFACT_PREFIX: ${{ steps.artifact.outputs.prefix }}
           CANONICAL_ASSETS: ${{ steps.worker-preview.outputs.canonical-dist }}/assets
         run: |
           r2_endpoint="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
-          bash .github/scripts/release/publish-okou-app-assets.sh \
-            "$r2_endpoint" \
-            "$R2_BUCKET_NAME" \
-            "$CANONICAL_ASSETS"
+          if [[ "$ARTIFACT_EXISTS" == "true" ]]; then
+            # Retry any missing shared assets even when the archive is ready.
+            exec bash .github/scripts/release/publish-okou-app-assets.sh "$r2_endpoint" "$R2_BUCKET_NAME" "$CANONICAL_ASSETS"
+          fi
+
+          bash .github/scripts/artifacts/upload-okou-app-artifact.sh "$r2_endpoint" &
+          archive_pid=$!
+          trap 'kill "$archive_pid" 2>/dev/null || true' EXIT
+          asset_status=0
+          bash .github/scripts/release/publish-okou-app-assets.sh "$r2_endpoint" "$R2_BUCKET_NAME" "$CANONICAL_ASSETS" || asset_status=$?
+          archive_status=0
+          wait "$archive_pid" || archive_status=$?
+          trap - EXIT
+          (( asset_status == 0 && archive_status == 0 ))
 
       - name: Deploy standalone app Worker preview
         id: worker-deploy

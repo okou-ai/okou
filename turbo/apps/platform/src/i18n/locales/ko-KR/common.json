@@ -4783,7 +4783,6 @@
     "create": "Create Project",
     "delete": "Delete",
     "deleteChoiceDescription": "Delete just the Project to keep your threads, or delete it together with its threads.",
-    "deleteDescription": "Only the Project will be deleted. Your chats and their histories will be kept.",
     "deleteError": "Could not delete Project",
     "deleteProjectAndThreads_other": "Delete project and {{count}} threads…",
     "deleteProjectOnly": "Delete project only",

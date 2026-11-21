@@ -413,7 +413,7 @@ case "${1:-}" in
       printf '%s\n' "${MOCK_WORKFLOW_ATTACHMENT_COMMIT-7171717171717171717171717171717171717171}"
     elif [[ "$*" == *rollback-floors/wechat-workflows-only* ]]; then
       printf '%s\n' "${MOCK_WECHAT_WORKFLOWS_ONLY_COMMIT-5959595959595959595959595959595959595959}"
-    elif [[ "$*" == *1611_retire_workflow_agent_scope.sql* ]]; then
+    elif [[ "$*" == *1612_retire_workflow_agent_scope.sql* ]]; then
       printf '%s\n' "bcd1540000000000000000000000000000000000"
     elif [[ "$*" == *1375_workflow_name_scopes.sql* ]]; then
       printf '%s\n' "${MOCK_WORKFLOW_NAME_SCOPES_COMMIT-52525252525252525252525252525252525252ab}"
@@ -2214,8 +2214,10 @@ ruby - \
     raise "production migrations must finish before API deployment"
   end
 
-  artifact_upload_step = turbo.fetch("deploy-app").fetch("steps").find { |step| step["name"] == "Upload canonical app artifact" }
-  artifact_upload_run = artifact_upload_step.fetch("run")
+  artifact_upload_step = turbo.fetch("deploy-app").fetch("steps").find { |step| step["name"] == "Publish app artifact and immutable assets to R2" }
+  script = ".github/scripts/artifacts/upload-okou-app-artifact.sh"
+  raise "deploy-app must publish the archive" unless artifact_upload_step.fetch("run").include?(script)
+  artifact_upload_run = File.read(File.join(File.dirname(ARGV[0]), "../../", script))
   raise "deploy-app must upload the archived App artifact" unless artifact_upload_run.include?("/dist.tar.gz")
   raise "deploy-app must not upload per-file App artifacts" if artifact_upload_run.include?("aws s3 cp turbo/apps/platform/dist")
 RUBY

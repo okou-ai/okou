@@ -1,5 +1,5 @@
 {
-  "id": "392c8ab5-6de6-472a-ba40-5c7274b350ae",
+  "id": "64edf074-a8b5-43ce-ae72-4efe78cdf8e7",
   "prevId": "a53d3a1a-aa41-4ca2-8aa4-7733cc103c2e",
   "version": "7",
   "dialect": "postgresql",
@@ -744,12 +744,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "agent_id": {
-          "name": "agent_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "artifact_result": {
           "name": "artifact_result",
           "type": "varchar(20)",
@@ -867,21 +861,6 @@
           "method": "btree",
           "with": {}
         },
-        "idx_agent_runs_agent": {
-          "name": "idx_agent_runs_agent",
-          "columns": [
-            {
-              "expression": "agent_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "idx_agent_runs_threadless_created_id": {
           "name": "idx_agent_runs_threadless_created_id",
           "columns": [
@@ -991,19 +970,6 @@
           "tableTo": "chat_threads",
           "columnsFrom": [
             "chat_thread_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "agent_runs_agent_id_agents_id_fk": {
-          "name": "agent_runs_agent_id_agents_id_fk",
-          "tableFrom": "agent_runs",
-          "tableTo": "agents",
-          "columnsFrom": [
-            "agent_id"
           ],
           "columnsTo": [
             "id"
@@ -5642,12 +5608,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "source_agent_id": {
-          "name": "source_agent_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "source_user_id": {
           "name": "source_user_id",
           "type": "text",
@@ -8956,12 +8916,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "agent_id": {
-          "name": "agent_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
@@ -8995,55 +8949,6 @@
           ],
           "isUnique": false,
           "where": "\"chat_threads\".\"project_id\" IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_chat_threads_user_agent_pinned": {
-          "name": "idx_chat_threads_user_agent_pinned",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "agent_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"chat_threads\".\"pinned_at\" IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_chat_threads_user_agent_last_message": {
-          "name": "idx_chat_threads_user_agent_last_message",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "agent_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "last_message_at",
-              "isExpression": false,
-              "asc": false,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -9088,34 +8993,6 @@
             "id"
           ],
           "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "chat_threads_agent_id_agents_id_fk": {
-          "name": "chat_threads_agent_id_agents_id_fk",
-          "tableFrom": "chat_threads",
-          "tableTo": "agents",
-          "columnsFrom": [
-            "agent_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "chat_threads_agent_org_fk": {
-          "name": "chat_threads_agent_org_fk",
-          "tableFrom": "chat_threads",
-          "tableTo": "agents",
-          "columnsFrom": [
-            "agent_id",
-            "org_id"
-          ],
-          "columnsTo": [
-            "id",
-            "org_id"
-          ],
-          "onDelete": "no action",
           "onUpdate": "no action"
         },
         "chat_threads_project_owner_fk": {
@@ -37944,56 +37821,6 @@
           ],
           "isUnique": true,
           "where": "visibility = 'private' AND official_definition_name IS NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_workflows_official_member_definition": {
-          "name": "idx_workflows_official_member_definition",
-          "columns": [
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "owner_user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "official_definition_name",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "official_definition_name IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_workflows_morning_brief_member": {
-          "name": "idx_workflows_morning_brief_member",
-          "columns": [
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "owner_user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "official_definition_name IN ('morning-brief', 'internal-test-morning-brief')",
           "concurrently": false,
           "method": "btree",
           "with": {}

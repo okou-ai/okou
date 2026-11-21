@@ -304,7 +304,7 @@ fi
 
 # The Workflow cutover removes a column used by both the API and the scheduler.
 workflow_member_scope_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
-  origin/main -- turbo/packages/db/src/migrations/1611_retire_workflow_agent_scope.sql | sed -n '1p')
+  origin/main -- turbo/packages/db/src/migrations/1612_retire_workflow_agent_scope.sql | sed -n '1p')
 if [[ ! "$workflow_member_scope_commit" =~ ^[0-9a-f]{40}$ ]]; then
   fail "Cannot resolve the merged Workflow member-scope migration on main."
 fi

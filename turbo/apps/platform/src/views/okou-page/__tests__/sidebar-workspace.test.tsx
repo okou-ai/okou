@@ -61,7 +61,6 @@ async function setupWorkspaceSearch({
           ? [
               {
                 chatThreadId: INCIDENT_THREAD_ID,
-                agentName: "Okou",
                 matchedMessage: {
                   chatThreadId: INCIDENT_THREAD_ID,
                   role: "user" as const,

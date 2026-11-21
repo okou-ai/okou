@@ -16,6 +16,7 @@ import {
   chatThreadArchiveContract,
   chatThreadArtifactFileSchema,
   chatThreadArtifactRunSchema,
+  chatSearchContract,
   chatThreadArtifactsContract,
   chatThreadByIdContract,
   chatThreadComputerUseHostContract,
@@ -66,7 +67,6 @@ import { hostContract } from "../contracts/host";
 import { iosNotificationsContract } from "../contracts/ios-notifications";
 import { instructionsContract } from "../contracts/instructions";
 import { iosPushRegistrationsContract } from "../contracts/ios-push-registrations";
-import { mcpChatSearchContract } from "../contracts/mcp-chat-search";
 import { modelCatalogContract } from "../contracts/model-catalog";
 import { orgContract } from "../contracts/org-routes";
 import { personalModelProviderAccountsByIdContract } from "../contracts/personal-model-providers";
@@ -431,8 +431,8 @@ const iosContracts: readonly {
     route: iosPushRegistrationsContract.unregister,
   },
   {
-    id: "ios.mcpChatSearchContract.search",
-    route: mcpChatSearchContract.search,
+    id: "ios.chatSearchContract.search",
+    route: chatSearchContract.search,
   },
   { id: "ios.modelCatalogContract.get", route: modelCatalogContract.get },
   { id: "ios.orgContract.get", route: orgContract.get },

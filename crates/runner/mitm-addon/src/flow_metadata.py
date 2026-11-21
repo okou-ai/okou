@@ -38,6 +38,18 @@ def proxy_log_path(meta: Mapping[str, object]) -> str:
     return _metadata_str(meta, metadata_keys.SANDBOX_PROXY_LOG_PATH)
 
 
+def set_sandbox_log_context(
+    meta: MutableMapping[str, object],
+    sandbox_info: Mapping[str, object],
+    *,
+    run_id: object,
+) -> None:
+    """Copy the registry's shared HTTP and TCP log attribution."""
+    meta[metadata_keys.SANDBOX_RUN_ID] = run_id
+    meta[metadata_keys.SANDBOX_NETWORK_LOG_PATH] = sandbox_info.get("networkLogPath", "")
+    meta[metadata_keys.SANDBOX_PROXY_LOG_PATH] = sandbox_info.get("proxyLogPath", "")
+
+
 def sandbox_auth_key(meta: Mapping[str, object]) -> str:
     return _metadata_str(meta, metadata_keys.SANDBOX_AUTH_KEY)
 

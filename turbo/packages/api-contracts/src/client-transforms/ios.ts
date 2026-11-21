@@ -1,4 +1,3 @@
-import { iosLegacyIndicators } from "./chat-indicators";
 import { iosChatUltrafastTransforms } from "./chat-ultrafast";
 import type { ClientResponseTransform } from "./types";
 import {
@@ -9,7 +8,6 @@ import {
 // Complete compatibility inventory for build-time checks. Runtime routes import
 // their own transforms directly and never load this aggregate registry.
 export const iosResponseTransforms: readonly ClientResponseTransform[] = [
-  iosLegacyIndicators,
   ...Object.values(iosChatUltrafastTransforms),
   iosEmailChatRowsTransform,
   iosEmailChatCatchUpTransform,
