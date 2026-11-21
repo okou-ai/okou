@@ -81,7 +81,7 @@ class NativeChatListTest {
         }
         try {
             launch()
-            text("Project chat")
+            text("Research")
             assertTrue(
                 device.wait(
                     object : Condition<UiDevice, Boolean> {
@@ -116,7 +116,8 @@ class NativeChatListTest {
             assertTrue(
                 device.wait(Until.hasObject(By.pkg(app.packageName).textContains(subtitle)), 10_000)
             )
-            text("Project chat")
+            // An unread Project remains visible with its chat rows folded.
+            text("Research")
             Log.i(
                 "OkouNativeUnread",
                 "launch-to-usable-unread=${SystemClock.elapsedRealtime() - launchedAt}ms chats=2 projects=1",
@@ -126,7 +127,7 @@ class NativeChatListTest {
 
             release.countDown()
             text(app.getString(R.string.chat_refresh_failed))
-            text("Project chat")
+            text("Research")
             fail.set(false)
             text(app.getString(R.string.retry)).click()
             text(app.getString(R.string.chat_empty))
