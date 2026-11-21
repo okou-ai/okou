@@ -205,8 +205,10 @@ internal fun OkouApp(
             list.threads.firstOrNull { it.id == chat.id && it.hidden != true }
         }
 
+    val showConversationFeedback = settings == null && !showChatList && thread != null
+    val showRowFeedback = showChatList || showConversationFeedback
     LaunchedEffect(chats, showChatList) { if (!showChatList) chats?.clearRowUndo() }
-    if (showChatList && chats != null) ChatUndoFeedback(chats, list, snackbar)
+    if (showRowFeedback && chats != null) ChatUndoFeedback(chats, list, snackbar)
     list.failedRowAction
         ?.takeIf { list.rowUndo == null }
         ?.let { action ->
@@ -216,9 +218,9 @@ internal fun OkouApp(
                     else R.string.chat_read_action_failed
                 )
             val refreshLabel = stringResource(R.string.chat_refresh)
-            LaunchedEffect(chats, action, message, showChatList) {
+            LaunchedEffect(chats, action, message, showRowFeedback) {
                 if (
-                    showChatList &&
+                    showRowFeedback &&
                         snackbar.showSnackbar(
                             message,
                             actionLabel = refreshLabel,
@@ -617,7 +619,7 @@ internal fun OkouApp(
         containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets.safeDrawing,
         snackbarHost = {
-            if (!showChatList) {
+            if (!showChatList && !showConversationFeedback) {
                 WorkspaceFeedbackHost(snackbar, Modifier.padding(bottom = 16.dp))
             }
         },
@@ -753,6 +755,12 @@ internal fun OkouApp(
                                                         offline = list.offline,
                                                     )
                                             }
+                                            if (showConversationFeedback)
+                                                WorkspaceFeedbackHost(
+                                                    snackbar,
+                                                    Modifier.padding(horizontal = 16.dp)
+                                                        .testTag("conversation_feedback"),
+                                                )
                                             if (
                                                 composerTarget != null &&
                                                     pendingNewChat == null &&
