@@ -2859,11 +2859,37 @@ async fn read_cache_entry(
     reader: nix::fcntl::Flock<std::fs::File>,
     metrics: &mut CacheProcessMetrics,
 ) -> RunnerResult<(CachedArchive, nix::fcntl::Flock<std::fs::File>)> {
-    let size = match fs::metadata(archive_path).await {
+    let started_at = Instant::now();
+    let path = archive_path.to_path_buf();
+    // Keep the lock for both metadata and any read admitted by that metadata.
+    let (result, reader, stat_elapsed) = tokio::task::spawn_blocking(move || {
+        let stat_started = Instant::now();
+        let metadata = std::fs::metadata(&path);
+        let stat_elapsed = stat_started.elapsed();
+        (read_cache_entry_body(&path, metadata), reader, stat_elapsed)
+    })
+    .await
+    .map_err(|error| RunnerError::Internal(format!("cached archive read task: {error}")))?;
+    let cached = result?;
+    if matches!(&cached, CachedArchive::Hit(_)) {
+        metrics.record(
+            STORAGE_CACHE_HIT_READ,
+            started_at.elapsed().saturating_sub(stat_elapsed),
+            true,
+            None,
+        );
+        touch_mtime(cache_dir);
+    }
+    Ok((cached, reader))
+}
+
+fn read_cache_entry_body(
+    archive_path: &Path,
+    metadata: io::Result<std::fs::Metadata>,
+) -> RunnerResult<CachedArchive> {
+    let size = match metadata {
         Ok(metadata) => metadata.len(),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => {
-            return Ok((CachedArchive::Missing, reader));
-        }
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(CachedArchive::Missing),
         Err(error) => {
             return Err(RunnerError::Internal(format!(
                 "stat cached {}: {error}",
@@ -2872,36 +2898,20 @@ async fn read_cache_entry(
         }
     };
     if size == 0 {
-        return Ok((CachedArchive::Empty, reader));
+        return Ok(CachedArchive::Empty);
     }
     if size > CACHE_MAX_SIZE {
-        return Ok((
-            CachedArchive::OverSize {
-                observed_size: size,
-            },
-            reader,
-        ));
+        return Ok(CachedArchive::OverSize {
+            observed_size: size,
+        });
     }
-
-    let started_at = Instant::now();
-    let path = archive_path.to_path_buf();
-    // The accepted read retains the shared lock if its async caller is cancelled.
-    let (result, reader) = tokio::task::spawn_blocking(move || {
-        let result = read_cached_archive(&path, Some(size), CACHE_MAX_SIZE);
-        (result, reader)
-    })
-    .await
-    .map_err(|error| RunnerError::Internal(format!("cached archive read task: {error}")))?;
-    let cached = match result? {
-        DownloadBody::Complete(bytes) => {
-            metrics.record(STORAGE_CACHE_HIT_READ, started_at.elapsed(), true, None);
-            touch_mtime(cache_dir);
-            CachedArchive::Hit(bytes)
-        }
-        DownloadBody::Empty => CachedArchive::Empty,
-        DownloadBody::OverSize { observed_size } => CachedArchive::OverSize { observed_size },
-    };
-    Ok((cached, reader))
+    Ok(
+        match read_cached_archive(archive_path, Some(size), CACHE_MAX_SIZE)? {
+            DownloadBody::Complete(bytes) => CachedArchive::Hit(bytes),
+            DownloadBody::Empty => CachedArchive::Empty,
+            DownloadBody::OverSize { observed_size } => CachedArchive::OverSize { observed_size },
+        },
+    )
 }
 
 #[derive(Debug, PartialEq, Eq)]
