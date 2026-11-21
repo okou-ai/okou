@@ -129,9 +129,9 @@ public struct ChatConnectorService: Sendable {
         let metadata: ThreadMetadata = try await client.request(
           "/api/chat-threads/\(threadID)/metadata")
         guard metadata.id.lowercased() == threadID.lowercased() else { return nil }
-      } else {
-        let agent: Metadata = try await client.request("/api/agents/\(action.agentID)")
-        guard agent.agentId.lowercased() == action.agentID.lowercased() else { return nil }
+      } else if let agentID = action.agentID {
+        let agent: Metadata = try await client.request("/api/agents/\(agentID)")
+        guard agent.agentId.lowercased() == agentID.lowercased() else { return nil }
       }
       return try await readStatus(action)
     } catch let error as APIClientError where error.statusCode == 404 { return nil }

@@ -40,7 +40,7 @@ extension ChatComposerAccess {
     client.baseURL.appending(path: "api/desktop/updates/stable/darwin/arm64/dmg")
   }
 
-  public func validate(agentID: String, threadID: String?) async throws {
+  public func validate(agentID: String?, threadID: String?) async throws {
     if let threadID {
       let metadata: ThreadMetadata = try await client.request(
         "/api/chat-threads/\(threadID)/metadata")
@@ -48,7 +48,7 @@ extension ChatComposerAccess {
         throw APIClientError.http(
           status: 409, message: "This chat is unavailable.")
       }
-    } else {
+    } else if let agentID {
       struct Agent: Decodable, Sendable { let agentId: String }
       let agent: Agent = try await client.request("/api/agents/\(agentID)")
       guard agent.agentId.lowercased() == agentID.lowercased() else {

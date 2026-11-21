@@ -343,7 +343,7 @@ final class ComposerWorkflowResourceTests: XCTestCase {
   }
 
   func testNewChatWorkflowSurvivesReopenAndUsesTextProtocol() async throws {
-    let fixture = workflowFixture()
+    let fixture = workflowFixture(memberScope: true)
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: directory) }
     let storage = ChatDraftStorage(
@@ -500,12 +500,14 @@ final class ComposerWorkflowResourceTests: XCTestCase {
 @MainActor
 extension XCTestCase {
 
-  fileprivate func workflowFixture(failSend: Bool = false) -> AttachmentFlowFixture {
+  fileprivate func workflowFixture(failSend: Bool = false, memberScope: Bool = false) -> AttachmentFlowFixture {
     AttachmentFlowFixture(
       failSend: failSend,
       workflows: { request in
         let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems
-        guard query == [URLQueryItem(name: "agentId", value: AttachmentFlowFixture.agentID)] else {
+        let expected =
+          memberScope ? [] : [URLQueryItem(name: "agentId", value: AttachmentFlowFixture.agentID)]
+        guard (query ?? []) == expected else {
           throw URLError(.badURL)
         }
         return ChatHTTPResponse(body: workflowResponse)
