@@ -527,9 +527,17 @@ function createScrollNavigationSignals(
   threadId: string,
   scroll: InternalScrollSignals,
   runtime: ScrollRuntime,
-  pendingScrollAfterRenderRequest$: Computed<ScrollAfterRenderRequest | null>,
-  virtual: ReturnType<typeof createVirtualScrollNavigation>,
+  render: ReturnType<typeof createRenderScrollSignals>,
+  window: ChatThreadScrollRenderWindow,
 ) {
+  const seekSpacer$ = command(
+    ({ set }, container: HTMLElement, signal: AbortSignal) => {
+      const position = set(window.positionInSpacer$, container);
+      return position
+        ? set(render.requestScrollAfterRender$, position, "instant", signal)
+        : null;
+    },
+  );
   const scrollTo$ = command(({ get }, position: ThreadScrollPosition) => {
     releaseHiddenLayout(runtime);
     const container = get(scroll.scrollContainer$);
@@ -562,7 +570,12 @@ function createScrollNavigationSignals(
       // part of the current task and cannot paint at the old offset first.
       applyScrollTop(runtime, container, container.scrollHeight);
       runtime.initialized = true;
-      await set(virtual.followTail$, signal);
+      if (get(scroll.threadScrollPosition$) && !get(window.tailMounted$)) {
+        // Supersede an incoming history commit while the tail page is preparing.
+        await set(render.requestScrollAfterRender$, null, "instant", signal);
+      } else {
+        await set(scroll.clearThreadScrollPosition$, signal);
+      }
     },
   );
 
@@ -575,7 +588,7 @@ function createScrollNavigationSignals(
       }
       applyScrollTop(runtime, container, 0);
       runtime.initialized = true;
-      const seek = set(virtual.seekSpacer$, container, signal);
+      const seek = set(seekSpacer$, container, signal);
       if (seek) {
         await seek;
       } else {
@@ -609,8 +622,8 @@ function createScrollNavigationSignals(
           return;
         }
         if (
-          get(pendingScrollAfterRenderRequest$) !== null ||
-          get(virtual.awaitingAnchor$)
+          get(render.pendingScrollAfterRenderRequest$) !== null ||
+          get(window.awaitingAnchor$)
         ) {
           // The commit marker owns the pending event batch. Keep its anchor
           // until React acknowledges the final DOM for that batch.
@@ -644,6 +657,7 @@ function createScrollNavigationSignals(
   );
 
   return {
+    seekSpacer$,
     scrollTo$,
     scrollToBottom$,
     scrollToTop$,
@@ -1155,28 +1169,6 @@ function createHiddenScrollLayoutSignals(
   };
 }
 
-function createVirtualScrollNavigation(
-  scroll: InternalScrollSignals,
-  window: ChatThreadScrollRenderWindow,
-  requestScroll$: ReturnType<typeof createRequestScrollAfterRender>,
-) {
-  const seekSpacer$ = command(
-    ({ set }, container: HTMLElement, signal: AbortSignal) => {
-      const position = set(window.positionInSpacer$, container);
-      return position ? set(requestScroll$, position, "instant", signal) : null;
-    },
-  );
-  const followTail$ = command(async ({ get, set }, signal: AbortSignal) => {
-    if (get(scroll.threadScrollPosition$) && !get(window.tailMounted$)) {
-      // Supersede an incoming history commit while the tail page is preparing.
-      await set(requestScroll$, null, "instant", signal);
-    } else {
-      await set(scroll.clearThreadScrollPosition$, signal);
-    }
-  });
-  return { seekSpacer$, followTail$, awaitingAnchor$: window.awaitingAnchor$ };
-}
-
 export function createChatThreadScrollSignals(
   threadId: string,
   position: ThreadScrollPositionSignals,
@@ -1204,24 +1196,19 @@ export function createChatThreadScrollSignals(
     runtime,
     renderWindow.loadEarlierGroups$,
   );
-  const virtual = createVirtualScrollNavigation(
-    scroll,
-    renderWindow,
-    render.requestScrollAfterRender$,
-  );
   const navigation = createScrollNavigationSignals(
     threadId,
     scroll,
     runtime,
-    render.pendingScrollAfterRenderRequest$,
-    virtual,
+    render,
+    renderWindow,
   );
   const attachContainer$ = createAttachScrollContainer(
     threadId,
     scroll,
     navigation,
     runtime,
-    virtual.seekSpacer$,
+    navigation.seekSpacer$,
   );
   const isProgrammaticScrollEvent$ = command(
     ({ get }, target: EventTarget | null): boolean => {
