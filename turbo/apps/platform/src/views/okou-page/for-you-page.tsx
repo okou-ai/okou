@@ -50,6 +50,8 @@ import { ForYouSources } from "./for-you-sources.tsx";
 import { PlatformFeedEvent } from "./platform-feed-event.tsx";
 import {
   forYouCover$,
+  forYouPaintedCover$,
+  markForYouCoverPainted$,
   selectForYouCover$,
 } from "../../signals/okou-page/for-you-artwork.ts";
 import {
@@ -57,26 +59,37 @@ import {
   forYouCovers,
 } from "../../lib/for-you-artwork.ts";
 
-// The header sits on the cover. This scrim washes the cover's own tint behind the
-// title, subtitle and progress, then eases out past the header's bottom edge
-// so no band edge shows on dark covers.
-const HEADER_SCRIM = {
-  backgroundImage: `linear-gradient(${[
-    [0.8, 0],
-    [0.8, 45],
-    [0.66, 55],
-    [0.49, 63],
-    [0.33, 71],
-    [0.19, 79],
-    [0.08, 87],
-    [0.02, 94],
-    [0, 100],
-  ]
-    .map(([alpha, stop]) => {
-      return `rgb(var(--for-you-scrim) / ${String(alpha)}) ${String(stop)}%`;
-    })
-    .join(", ")})`,
-} satisfies CSSProperties;
+// The header sits on the cover. Its scrim washes the cover's own colors behind
+// the title, subtitle and progress, then eases out past the header's bottom
+// edge so no band edge shows.
+const HEADER_SCRIM_MASK = `linear-gradient(${[
+  [0.85, 0],
+  [0.85, 45],
+  [0.7, 55],
+  [0.52, 63],
+  [0.35, 71],
+  [0.2, 79],
+  [0.08, 87],
+  [0.02, 94],
+  [0, 100],
+]
+  .map(([alpha, stop]) => {
+    return `rgb(0 0 0 / ${String(alpha)}) ${String(stop)}%`;
+  })
+  .join(", ")})`;
+
+type ForYouHeaderColors = (typeof forYouCovers)[number]["header"]["wide"];
+
+function headerScrim({ tint: [left, middle, right] }: ForYouHeaderColors) {
+  return {
+    backgroundImage: `linear-gradient(to right, rgb(${left}) 15%, rgb(${middle}) 50%, rgb(${right}) 85%)`,
+    maskImage: HEADER_SCRIM_MASK,
+  } satisfies CSSProperties;
+}
+
+function headerInk({ tone }: ForYouHeaderColors) {
+  return tone === "dark" ? "255 255 255" : "36 36 36";
+}
 
 const STACK_LAYERS = [
   "z-3 translate-y-2 scale-x-[0.98] shadow-[0_1px_2px_rgb(37_33_33/0.05),0_4px_8px_rgb(37_33_33/0.035)]",
@@ -297,6 +310,7 @@ function ForYouCover() {
   const { t } = useTranslation();
   const cover = useGet(forYouCover$);
   const select = useSet(selectForYouCover$);
+  const markPainted = useSet(markForYouCoverPainted$);
   return (
     <div className="group/cover relative -mx-4 h-58 shrink-0 sm:-mx-8 sm:h-56">
       <img
@@ -304,6 +318,9 @@ function ForYouCover() {
         src={cover.src}
         alt=""
         draggable={false}
+        onLoad={() => {
+          markPainted(cover.id);
+        }}
         className="pointer-events-none size-full select-none object-cover object-[50%_65%]"
       />
       <Popover>
@@ -388,12 +405,35 @@ function ForYouCover() {
   );
 }
 
+// Compact and wide layouts show different parts of the artwork behind the
+// header, so each gets its own scrim colors.
+function ForYouHeaderScrim({
+  cover,
+}: {
+  readonly cover: (typeof forYouCovers)[number];
+}) {
+  return (
+    <>
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-27 @min-[56rem]/for-you:hidden"
+        style={headerScrim(cover.header.compact)}
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 top-0 -z-10 hidden h-27 @min-[56rem]/for-you:block"
+        style={headerScrim(cover.header.wide)}
+      />
+    </>
+  );
+}
+
 // The header follows the cover, not the color scheme: its ink is fixed rather
 // than a theme token, which would flip in dark mode.
-function headerColors(cover: (typeof forYouCovers)[number]): CSSProperties {
+function headerInkVars(cover: (typeof forYouCovers)[number]): CSSProperties {
   return {
-    "--for-you-scrim": cover.tint,
-    "--for-you-ink": cover.tone === "dark" ? "255 255 255" : "36 36 36",
+    "--for-you-ink-wide": headerInk(cover.header.wide),
+    "--for-you-ink-compact": headerInk(cover.header.compact),
   } as CSSProperties;
 }
 
@@ -414,25 +454,20 @@ function ForYouHeader() {
   const steps = cards.slice(firstStep, firstStep + 7);
   const browse = useSet(browseForYou$);
   const signal = useGet(pageSignal$);
-  const cover = useGet(forYouCover$);
+  const cover = useGet(forYouPaintedCover$);
   return (
     <header
-      data-tone={cover.tone}
-      style={headerColors(cover)}
-      className="group/header absolute inset-x-0 top-0 z-10 grid h-14 grid-flow-col grid-cols-[6.5rem_minmax(0,1fr)] items-center gap-3 px-4 sm:h-15 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-8 sm:px-8"
+      style={headerInkVars(cover)}
+      className="absolute inset-x-0 top-0 z-10 grid h-14 grid-flow-col grid-cols-[6.5rem_minmax(0,1fr)] items-center gap-3 px-4 sm:h-15 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-8 sm:px-8 [--for-you-ink:var(--for-you-ink-compact)] @min-[56rem]/for-you:[--for-you-ink:var(--for-you-ink-wide)]"
     >
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-27"
-        style={HEADER_SCRIM}
-      />
+      <ForYouHeaderScrim cover={cover} />
       <div className="min-w-0">
         <h1 className="text-base font-semibold text-[rgb(var(--for-you-ink)/0.9)] sm:text-lg">
           {t(($) => {
             return $.chat.agentSuggestions.forYou.title;
           })}
         </h1>
-        <p className="mt-0.5 truncate text-xs text-[rgb(var(--for-you-ink)/0.7)]">
+        <p className="mt-0.5 truncate text-xs text-[rgb(var(--for-you-ink)/0.85)]">
           {t(($) => {
             return $.chat.agentSuggestions.forYou.subtitle;
           })}
@@ -479,14 +514,14 @@ function ForYouHeader() {
                     );
                   }
                 }}
-                className="group flex h-11 min-w-0 flex-1 items-center rounded-lg px-1.5 hover:bg-state-hover focus-visible:bg-state-hover sm:px-2"
+                className="group flex h-11 min-w-0 flex-1 items-center rounded-lg px-1.5 outline-[rgb(var(--for-you-ink)/0.85)] hover:bg-[rgb(var(--for-you-ink)/0.08)] focus-visible:bg-[rgb(var(--for-you-ink)/0.08)] focus-visible:outline-2 focus-visible:-outline-offset-2 sm:px-2"
               >
                 <span
                   aria-hidden
                   className={cn(
-                    "h-1 w-full rounded-full bg-[rgb(var(--for-you-ink)/0.12)] transition-colors group-data-[tone=dark]/header:bg-[rgb(var(--for-you-ink)/0.3)]",
+                    "h-1 w-full rounded-full bg-[rgb(var(--for-you-ink)/0.2)] transition-colors",
                     index === position &&
-                      "bg-linear-to-r from-primary/65 via-primary to-primary-hover",
+                      "bg-linear-to-r from-primary/65 via-primary to-primary-hover shadow-[0_0_0_1px_rgb(var(--for-you-ink)/0.25)]",
                   )}
                 />
               </Link>
@@ -494,13 +529,13 @@ function ForYouHeader() {
           })}
         </nav>
         {cards.length > 0 && (
-          <span className="shrink-0 whitespace-nowrap text-xs tabular-nums text-[rgb(var(--for-you-ink)/0.7)]">
+          <span className="shrink-0 whitespace-nowrap text-xs tabular-nums text-[rgb(var(--for-you-ink)/0.85)]">
             <span className="text-[rgb(var(--for-you-ink)/0.9)]">
               {position + 1}
             </span>
             <span
               aria-hidden
-              className="mx-1 text-[rgb(var(--for-you-ink)/0.3)]"
+              className="mx-1 text-[rgb(var(--for-you-ink)/0.35)]"
             >
               /
             </span>

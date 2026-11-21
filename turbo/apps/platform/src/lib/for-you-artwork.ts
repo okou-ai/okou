@@ -1,10 +1,12 @@
 import { platformStaticAssetUrl } from "./static-assets.ts";
 
-// Okou-original 2.5:1 covers for the For you banner. `tint` is the average
-// RGB of the band the header sits on (37-49% of the artwork's height), pushed
-// away from the header text: darkened 20% for `dark` covers (white text) and
-// lifted 30% toward white for `light` covers (dark text). The header scrim
-// uses it so the wash matches each cover instead of whitening it.
+// Okou-original 2.5:1 covers for the For you banner. `header` holds the colors
+// the header uses over each cover: `wide` for containers of 56rem and up, where
+// the header sits on 34-47% of the artwork's height, and `compact` below that,
+// where it sits on the top 26%. Each `tint` is the average color of the left,
+// middle and right of that band, pushed 20% away from the header ink and then
+// far enough to reach 5:1 against it; `tone` picks white ink (`dark`) or dark
+// ink (`light`) by the left part, under the title.
 export const forYouCovers = [
   {
     id: "cover-01",
@@ -14,8 +16,16 @@ export const forYouCovers = [
     thumbnail: platformStaticAssetUrl(
       "views/for-you/assets/cover-01-thumb-beb59cdbe6bd.webp",
     ),
-    tint: "158 209 221",
-    tone: "light",
+    header: {
+      wide: {
+        tone: "light",
+        tint: ["118 200 226", "137 205 225", "115 196 223"],
+      },
+      compact: {
+        tone: "light",
+        tint: ["91 185 224", "91 185 224", "91 185 224"],
+      },
+    },
   },
   {
     id: "cover-02",
@@ -25,8 +35,16 @@ export const forYouCovers = [
     thumbnail: platformStaticAssetUrl(
       "views/for-you/assets/cover-02-thumb-6e0c54da4455.webp",
     ),
-    tint: "210 200 192",
-    tone: "light",
+    header: {
+      wide: {
+        tone: "light",
+        tint: ["194 192 190", "209 208 205", "226 224 215"],
+      },
+      compact: {
+        tone: "light",
+        tint: ["209 237 250", "208 237 250", "209 237 249"],
+      },
+    },
   },
   {
     id: "cover-03",
@@ -36,8 +54,16 @@ export const forYouCovers = [
     thumbnail: platformStaticAssetUrl(
       "views/for-you/assets/cover-03-thumb-72da71763deb.webp",
     ),
-    tint: "17 91 87",
-    tone: "dark",
+    header: {
+      wide: {
+        tone: "dark",
+        tint: ["11 82 81", "14 89 86", "11 90 87"],
+      },
+      compact: {
+        tone: "light",
+        tint: ["247 236 205", "253 240 208", "252 240 211"],
+      },
+    },
   },
   {
     id: "cover-04",
@@ -47,8 +73,16 @@ export const forYouCovers = [
     thumbnail: platformStaticAssetUrl(
       "views/for-you/assets/cover-04-thumb-eaf89a5a0480.webp",
     ),
-    tint: "165 191 211",
-    tone: "light",
+    header: {
+      wide: {
+        tone: "light",
+        tint: ["185 205 225", "132 170 197", "129 176 217"],
+      },
+      compact: {
+        tone: "light",
+        tint: ["124 175 223", "123 175 223", "123 175 223"],
+      },
+    },
   },
   {
     id: "cover-05",
@@ -58,8 +92,16 @@ export const forYouCovers = [
     thumbnail: platformStaticAssetUrl(
       "views/for-you/assets/cover-05-thumb-87f12089b719.webp",
     ),
-    tint: "169 165 165",
-    tone: "light",
+    header: {
+      wide: {
+        tone: "dark",
+        tint: ["100 97 98", "100 98 101", "115 108 114"],
+      },
+      compact: {
+        tone: "dark",
+        tint: ["89 94 125", "89 93 125", "89 93 125"],
+      },
+    },
   },
   {
     id: "cover-06",
@@ -69,8 +111,16 @@ export const forYouCovers = [
     thumbnail: platformStaticAssetUrl(
       "views/for-you/assets/cover-06-thumb-95ca9506d7b5.webp",
     ),
-    tint: "165 202 157",
-    tone: "light",
+    header: {
+      wide: {
+        tone: "light",
+        tint: ["169 213 196", "159 199 153", "138 180 97"],
+      },
+      compact: {
+        tone: "light",
+        tint: ["205 235 242", "204 235 242", "205 236 243"],
+      },
+    },
   },
   {
     id: "cover-07",
@@ -80,8 +130,16 @@ export const forYouCovers = [
     thumbnail: platformStaticAssetUrl(
       "views/for-you/assets/cover-07-thumb-ad9879df695e.webp",
     ),
-    tint: "135 176 208",
-    tone: "light",
+    header: {
+      wide: {
+        tone: "light",
+        tint: ["133 170 214", "157 186 218", "129 157 167"],
+      },
+      compact: {
+        tone: "light",
+        tint: ["177 213 234", "177 213 235", "175 213 234"],
+      },
+    },
   },
   {
     id: "cover-08",
@@ -91,8 +149,16 @@ export const forYouCovers = [
     thumbnail: platformStaticAssetUrl(
       "views/for-you/assets/cover-08-thumb-e4b71d5847f1.webp",
     ),
-    tint: "242 202 95",
-    tone: "light",
+    header: {
+      wide: {
+        tone: "light",
+        tint: ["241 197 73", "240 195 73", "240 194 72"],
+      },
+      compact: {
+        tone: "light",
+        tint: ["199 213 214", "203 213 206", "201 213 208"],
+      },
+    },
   },
   {
     id: "cover-09",
@@ -102,8 +168,16 @@ export const forYouCovers = [
     thumbnail: platformStaticAssetUrl(
       "views/for-you/assets/cover-09-thumb-2c41b44bce1d.webp",
     ),
-    tint: "17 41 70",
-    tone: "dark",
+    header: {
+      wide: {
+        tone: "dark",
+        tint: ["17 40 70", "18 41 70", "17 41 70"],
+      },
+      compact: {
+        tone: "dark",
+        tint: ["13 35 63", "13 35 63", "19 41 66"],
+      },
+    },
   },
   {
     id: "cover-10",
@@ -113,8 +187,16 @@ export const forYouCovers = [
     thumbnail: platformStaticAssetUrl(
       "views/for-you/assets/cover-10-thumb-b31ebc318796.webp",
     ),
-    tint: "205 207 195",
-    tone: "light",
+    header: {
+      wide: {
+        tone: "light",
+        tint: ["184 223 210", "186 220 206", "213 149 139"],
+      },
+      compact: {
+        tone: "light",
+        tint: ["172 219 210", "173 219 210", "176 220 210"],
+      },
+    },
   },
   {
     id: "cover-11",
@@ -124,8 +206,16 @@ export const forYouCovers = [
     thumbnail: platformStaticAssetUrl(
       "views/for-you/assets/cover-11-thumb-32fd94948836.webp",
     ),
-    tint: "241 213 211",
-    tone: "light",
+    header: {
+      wide: {
+        tone: "light",
+        tint: ["246 208 205", "242 210 209", "229 214 219"],
+      },
+      compact: {
+        tone: "light",
+        tint: ["148 203 233", "147 202 233", "149 203 232"],
+      },
+    },
   },
   {
     id: "cover-12",
@@ -135,8 +225,16 @@ export const forYouCovers = [
     thumbnail: platformStaticAssetUrl(
       "views/for-you/assets/cover-12-thumb-2c69c0ec1771.webp",
     ),
-    tint: "151 194 214",
-    tone: "light",
+    header: {
+      wide: {
+        tone: "light",
+        tint: ["117 178 201", "134 193 217", "152 187 207"],
+      },
+      compact: {
+        tone: "light",
+        tint: ["104 179 213", "105 179 213", "105 178 213"],
+      },
+    },
   },
   {
     id: "cover-13",
@@ -146,8 +244,16 @@ export const forYouCovers = [
     thumbnail: platformStaticAssetUrl(
       "views/for-you/assets/cover-13-thumb-3a78b4a5581b.webp",
     ),
-    tint: "183 206 195",
-    tone: "light",
+    header: {
+      wide: {
+        tone: "light",
+        tint: ["125 166 142", "201 226 221", "165 195 171"],
+      },
+      compact: {
+        tone: "light",
+        tint: ["173 219 229", "173 221 234", "174 221 234"],
+      },
+    },
   },
   {
     id: "cover-14",
@@ -157,8 +263,16 @@ export const forYouCovers = [
     thumbnail: platformStaticAssetUrl(
       "views/for-you/assets/cover-14-thumb-b2e919051b48.webp",
     ),
-    tint: "86 101 104",
-    tone: "dark",
+    header: {
+      wide: {
+        tone: "dark",
+        tint: ["85 103 103", "100 111 117", "86 99 101"],
+      },
+      compact: {
+        tone: "light",
+        tint: ["177 197 212", "191 209 225", "189 207 222"],
+      },
+    },
   },
   {
     id: "cover-15",
@@ -168,8 +282,16 @@ export const forYouCovers = [
     thumbnail: platformStaticAssetUrl(
       "views/for-you/assets/cover-15-thumb-6a93a13eb6c8.webp",
     ),
-    tint: "228 214 179",
-    tone: "light",
+    header: {
+      wide: {
+        tone: "light",
+        tint: ["250 233 189", "247 225 164", "186 173 157"],
+      },
+      compact: {
+        tone: "light",
+        tint: ["253 224 150", "253 225 151", "253 225 152"],
+      },
+    },
   },
   {
     id: "cover-16",
@@ -179,8 +301,16 @@ export const forYouCovers = [
     thumbnail: platformStaticAssetUrl(
       "views/for-you/assets/cover-16-thumb-8ff4893544d7.webp",
     ),
-    tint: "161 204 211",
-    tone: "light",
+    header: {
+      wide: {
+        tone: "light",
+        tint: ["137 186 192", "145 196 203", "147 210 233"],
+      },
+      compact: {
+        tone: "light",
+        tint: ["113 190 228", "113 189 228", "113 189 228"],
+      },
+    },
   },
   {
     id: "cover-17",
@@ -190,8 +320,16 @@ export const forYouCovers = [
     thumbnail: platformStaticAssetUrl(
       "views/for-you/assets/cover-17-thumb-2527d154ca8f.webp",
     ),
-    tint: "138 82 68",
-    tone: "dark",
+    header: {
+      wide: {
+        tone: "light",
+        tint: ["248 147 122", "184 138 124", "196 137 122"],
+      },
+      compact: {
+        tone: "light",
+        tint: ["251 165 109", "249 165 109", "250 166 109"],
+      },
+    },
   },
   {
     id: "cover-18",
@@ -201,8 +339,16 @@ export const forYouCovers = [
     thumbnail: platformStaticAssetUrl(
       "views/for-you/assets/cover-18-thumb-d742db4b4a7f.webp",
     ),
-    tint: "202 226 239",
-    tone: "light",
+    header: {
+      wide: {
+        tone: "light",
+        tint: ["197 222 238", "194 225 243", "194 220 233"],
+      },
+      compact: {
+        tone: "light",
+        tint: ["174 211 241", "173 211 241", "173 211 241"],
+      },
+    },
   },
 ] as const;
 
