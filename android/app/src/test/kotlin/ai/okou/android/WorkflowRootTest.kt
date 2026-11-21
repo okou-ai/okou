@@ -2,13 +2,13 @@ package ai.okou.android
 
 import ai.okou.android.auth.SessionModel
 import ai.okou.android.chat.ComposerJournalStore
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
-import androidx.compose.ui.test.hasText
-import androidx.compose.ui.test.isSelectable
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
@@ -18,6 +18,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -99,7 +100,12 @@ class WorkflowRootTest {
         waitFor("Release checklist")
         val row = compose.onNodeWithTag("workflow_row_$WORKFLOW_RELEASE").getUnclippedBoundsInRoot()
         assertTrue(row.bottom - row.top >= 80.dp)
-        compose.onNode(hasText("Workspace shared") and isSelectable()).performClick()
+        val sharedScope =
+            SemanticsMatcher.expectValue(
+                SemanticsProperties.Text,
+                listOf(AnnotatedString("Workspace shared")),
+            )
+        compose.onNode(sharedScope).performClick()
         compose.onNodeWithText("Release checklist").assertDoesNotExist()
         compose.onNodeWithTag("workflow_row_$WORKFLOW_SHARED").performClick()
         waitForTag("workflow_detail_title")
