@@ -8,6 +8,8 @@ import android.content.Intent
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.isDisplayed
@@ -213,6 +215,14 @@ class PersonalInstructionsSettingsTest {
         app.readGate.countDown()
         awaitPhase(InstructionsPhase.Ready)
         val input = compose.onNodeWithTag("instructions_editor")
+        val save = compose.onNodeWithText("Save")
+        val saved = checkNotNull(model.uiState.value.saved).content
+        save.assertIsNotEnabled()
+        input.performScrollTo().performClick()
+        input.performTextReplacement(saved + " ")
+        save.assertIsEnabled()
+        input.performTextReplacement(saved)
+        save.assertIsNotEnabled()
         input.performScrollTo().performTextReplacement("Keep **my** 中文 👋 draft")
         compose.waitUntil(10_000) {
             input.fetchSemanticsNode().config[SemanticsProperties.EditableText].spanStyles.any {
@@ -220,6 +230,34 @@ class PersonalInstructionsSettingsTest {
             }
         }
         input.performTextInputSelection(TextRange(5, 8))
+        val chats =
+            compose.runOnIdle {
+                checkNotNull(
+                        ViewModelProvider(compose.activity)[SessionModel::class.java]
+                            .uiState
+                            .value
+                            .ready
+                    )
+                    .chats
+            }
+        fun connectivity(online: Boolean) {
+            compose.runOnIdle { app.connectivity.value = online }
+            compose.waitUntil(10_000) {
+                compose.runOnIdle { chats.uiState.value.offline == !online }
+            }
+        }
+        val offlineHint = compose.onNodeWithText("Connect to save your changes.")
+        connectivity(false)
+        save.performScrollTo().performSemanticsAction(SemanticsActions.OnClick)
+        offlineHint.assertIsDisplayed()
+        connectivity(true)
+        offlineHint.assertDoesNotExist()
+        input.assertIsFocused()
+        assertEquals(
+            TextRange(5, 8),
+            input.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange],
+        )
+        assertEquals(0, app.fixture.requests.count { it.method == "PUT" })
         app.fixture.externalEdit("Changed on Web")
         compose.runOnIdle { model.refresh() }
         awaitPhase(InstructionsPhase.Conflict)
@@ -254,13 +292,15 @@ class PersonalInstructionsSettingsTest {
         compose.onNodeWithText("Personal Instructions").performScrollTo().performClick()
         awaitPhase(InstructionsPhase.Ready)
         val large = "Personal instructions 👋 ".repeat(5_000)
-        input.performScrollTo().performTextReplacement(large)
+        input.performScrollTo().performClick().performTextReplacement(large)
         input.performTextInputSelection(TextRange(13))
+        input.assertIsFocused()
         // Recreation also verifies the shared whole-Activity saved-state budget.
         compose.activityRule.scenario.recreate()
         compose.waitUntil(10_000) {
             compose.runOnIdle { model.uiState.value.phase == InstructionsPhase.Ready }
         }
+        input.assertIsFocused()
         assertEquals(
             large,
             input.fetchSemanticsNode().config[SemanticsProperties.EditableText].text,
