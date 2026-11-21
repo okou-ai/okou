@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Validate two complete native histories and phased ownership of one cache entry."""
 
-import argparse
 import json
 import pathlib
 import re
@@ -146,6 +145,4 @@ def validate(directory):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("directory", type=pathlib.Path)
-    print(json.dumps(validate(parser.parse_args().directory), indent=2, sort_keys=True))
+    report.run_cli(validate, __doc__, sort_keys=True)
